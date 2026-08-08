@@ -140,6 +140,22 @@ one, stop and flag it.
 
 ## 6. Working agreement
 
+- **Every PR updates `docs/` to match the design it lands.** `docs/` is the
+  authoritative design source (see the header of this file), which only holds if
+  it describes the engine as it actually is. A PR that changes behaviour, adds or
+  retires a parameter, resolves an R-code, or invalidates something a spec asserts
+  is **not complete until the affected spec is updated in the same PR** — the code
+  change and the doc change are one unit of work, not a change plus a follow-up.
+  Specifically:
+  - Changed mechanics ⇒ update the spec section that describes them.
+  - New tunable ⇒ document it where its siblings are documented, and say whether
+    the value is confirmed or a placeholder.
+  - Resolved R-code ⇒ mark it resolved where it is listed, with the resolution.
+  - A measurement that contradicts a spec claim ⇒ correct the claim and cite the
+    run, rather than leaving the doc to be believed and the code to be true.
+
+  If a change genuinely touches no spec, say so explicitly in the PR body. Silence
+  reads as an oversight, because usually it is one.
 - **Make concrete decisions; flag open questions as R-codes.** A decision plus a
   flagged R-code beats an open-ended clarifying question. Existing families:
   `R-MC*` (mineral cost / combat), `R-L*` (loadout), `R-ARENA*`, `R-MX*` (matching),
