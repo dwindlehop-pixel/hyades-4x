@@ -33,6 +33,22 @@
 //!    capped at `max_survey_hops`, so total exploration is a product of three
 //!    integers no swept knob touches.
 //!
+//! ## Status: the bugs it found are fixed; it is now a regression detector
+//!
+//! Everything above is why this driver was written, and the diagnosis held: the
+//! binding constraint was `k_high` starving the Mining-outpost class, not any of
+//! the swept economy knobs. With the snowball defaults ratified (R-AC16/R-AC17),
+//! the same run reports the opposite of what it originally found — mining pairs
+//! and freighter legs in the thousands, scouts built by production centers, and
+//! coverage up from 41 worlds to over 1,500 at a 4,000-year horizon.
+//!
+//! It earns its keep from here as a **regression detector**: if the hauling path
+//! or the scout order ever breaks again, the "INERT" verdicts and the zero
+//! counters come straight back. Every conclusion it prints is derived from the
+//! run rather than asserted in prose, precisely so it cannot go stale the way an
+//! earlier version did — that one hardcoded "the fleet is never replenished"
+//! and printed it directly beneath a line counting 125 replenishment orders.
+//!
 //! Run with: `cargo run --release --example coverage_trace`
 
 use std::collections::{HashMap, HashSet};
@@ -346,23 +362,37 @@ fn main() {
     );
     println!("planets ever scanned into knowledge, (player, planet) pairs: {}", o.known_planets);
 
-    // Survey reach is a hard product of three integers, none of which any swept
-    // knob touches: each seat launches `survey_vehicles` scouts, each of which
-    // makes at most `max_survey_hops` hops. Nothing can be colonized that was
-    // never scanned, so this is a ceiling on coverage independent of economy.
+    // The *bootstrap* fan-out is a hard product of three integers. It used to be
+    // the whole survey budget, and therefore a hard ceiling on coverage; now that
+    // production centers build scouts too it is only the opening allowance, and
+    // the run routinely exceeds it. Reported as a ratio so the line stays true
+    // either way instead of asserting a ceiling that no longer holds.
     let doctrine = Doctrine::default();
     let cfg = SimConfig::new(SEED);
-    let reach = PLAYERS * doctrine.survey_vehicles * cfg.max_survey_hops;
+    let bootstrap_reach = PLAYERS * doctrine.survey_vehicles * cfg.max_survey_hops;
     println!(
-        "  survey reach ceiling = players({}) x survey_vehicles({}) x max_survey_hops({}) = {}",
-        PLAYERS, doctrine.survey_vehicles, cfg.max_survey_hops, reach
+        "  bootstrap survey allowance = players({}) x survey_vehicles({}) x max_survey_hops({}) = {}",
+        PLAYERS, doctrine.survey_vehicles, cfg.max_survey_hops, bootstrap_reach
     );
-    println!(
-        "  => at most {:.1}% of the {} coverage targets can EVER be known, so 100% coverage\n     \
-         is unreachable by construction and 0/10 full-coverage seeds is structural, not tuning",
-        reach as f64 / o.targets as f64 * 100.0,
-        o.targets
-    );
+    let ratio = o.hops_total as f64 / bootstrap_reach as f64;
+    if ratio > 1.0 {
+        println!(
+            "  => {} hops actually flown = {ratio:.1}x that allowance, so survey is NOT budget-capped:\n     \
+             centers are replenishing the fleet and {} of {} worlds ({:.1}%) were reached",
+            o.hops_total,
+            o.distinct_scanned,
+            o.galaxy_planets,
+            o.distinct_scanned as f64 / o.galaxy_planets as f64 * 100.0
+        );
+    } else {
+        println!(
+            "  => {} hops flown, within the allowance: survey is budget-capped, and at most\n     \
+             {:.1}% of the {} coverage targets can ever be known",
+            o.hops_total,
+            bootstrap_reach as f64 / o.targets as f64 * 100.0,
+            o.targets
+        );
+    }
 
     println!("\nthe hauling economy the swept knobs parameterize:");
     println!("  MiningPair orders ever issued: {}", o.fp.mining_pairs);
@@ -414,32 +444,48 @@ fn main() {
     println!("\nsurvey fleet:");
     println!("  scout entities that ever flew: {}", o.scouts);
     println!(
-        "  expected = players({}) x survey_vehicles({}) = {}",
+        "  of which free at bootstrap = players({}) x survey_vehicles({}) = {}",
         PLAYERS,
         doctrine.survey_vehicles,
-        reach / cfg.max_survey_hops
+        PLAYERS * doctrine.survey_vehicles
     );
     println!("  LightVehicle build orders issued after bootstrap: {}", o.fp.lights);
     println!("  hops completed: {}   chains run to termination: {}", o.hops_total, o.chains_exhausted);
     println!("  longest chain: {} hops (max_survey_hops = {})", o.max_hops_seen, cfg.max_survey_hops);
 
-    let time_bound = o.last_scan_time < cfg.horizon_years * 0.95;
-    println!(
-        "\nverdict: the survey budget is a fixed product, spent in full. Every chain ran to\n  \
-         the {}-hop cap and stopped; the fleet is never replenished, because BuildOrder::\n  \
-         LightVehicle is constructed nowhere in the autopilot — the only scouts that exist\n  \
-         are the {} launched free at bootstrap. {}",
-        cfg.max_survey_hops,
-        o.scouts,
-        if time_bound {
-            format!(
-                "The horizon is NOT the constraint: the last scan\n  landed at t={:.0} of {:.0} yr, leaving the galaxy {:.1}% unexplored with time to spare.",
-                o.last_scan_time,
-                cfg.horizon_years,
-                100.0 - o.distinct_scanned as f64 / o.galaxy_planets as f64 * 100.0
-            )
-        } else {
-            format!("The horizon binds too: scanning ran to t={:.0} yr.", o.last_scan_time)
-        }
-    );
+    // Derived, not asserted. An earlier version hardcoded "the fleet is never
+    // replenished, because BuildOrder::LightVehicle is constructed nowhere" — true
+    // when written, and printed directly underneath a line reporting 125 such
+    // orders once the scout fix landed. A diagnostic that states conclusions its
+    // own numbers contradict is worse than one that states none.
+    let replenished = o.fp.lights > 0;
+    let time_bound = o.last_scan_time >= cfg.horizon_years * 0.95;
+    let unexplored = 100.0 - o.distinct_scanned as f64 / o.galaxy_planets as f64 * 100.0;
+    println!("\nverdict:");
+    if replenished {
+        println!(
+            "  survey scales with the empire — {} of the {} scouts were built by production\n  \
+             centers after bootstrap, so exploration is no longer a fixed budget.",
+            o.fp.lights, o.scouts
+        );
+    } else {
+        println!(
+            "  survey is capped at the bootstrap fan-out: {} scouts, none replenished, so\n  \
+             exploration is a fixed product no economy knob can move.",
+            o.scouts
+        );
+    }
+    if time_bound {
+        println!(
+            "  The horizon binds: scanning was still running at t={:.0} of {:.0} yr, with {unexplored:.1}%\n  \
+             of the galaxy still dark. A longer horizon would explore further.",
+            o.last_scan_time, cfg.horizon_years
+        );
+    } else {
+        println!(
+            "  The horizon does NOT bind: the last scan landed at t={:.0} of {:.0} yr, leaving\n  \
+             {unexplored:.1}% of the galaxy dark with time to spare.",
+            o.last_scan_time, cfg.horizon_years
+        );
+    }
 }
