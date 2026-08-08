@@ -55,6 +55,7 @@ struct Fingerprint {
     deepens: u64,
     colonies: u64,
     mining_pairs: u64,
+    lights: u64,
     covered: usize,
 }
 
@@ -163,7 +164,9 @@ fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
                 *e = (*e).max(pop_level);
 
                 let gated = pop_level < cfg.medium_min_level;
-                let can_deepen = infra + 1.0 <= k_potential + 1e-9;
+                // Must mirror `production_choice`'s guard exactly, or the
+                // buckets below describe a decision the engine never made.
+                let can_deepen = infra < k_potential - 1e-9;
                 if !gated {
                     at_gate += 1;
                     if can_deepen {
@@ -195,7 +198,7 @@ fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
                     BuildOrder::UpgradeInfrastructure => fp.deepens += 1,
                     BuildOrder::ColonyVehicle { .. } => fp.colonies += 1,
                     BuildOrder::MiningPair { .. } => fp.mining_pairs += 1,
-                    BuildOrder::LightVehicle { .. } => {}
+                    BuildOrder::LightVehicle { .. } => fp.lights += 1,
                 }
             }
             LogEvent::ColonyFounded { planet, .. } => {
@@ -271,8 +274,8 @@ fn pct(n: u64, d: u64) -> f64 {
 fn isolate(label: &str, values: &[f64], apply: impl Fn(&mut SimConfig, &mut Doctrine, f64)) {
     println!("\n-- {label} --");
     println!(
-        "{:>12}  {:>10}  {:>8}  {:>9}  {:>13}  {:>8}",
-        "value", "decisions", "deepens", "colonies", "mining_pairs", "covered"
+        "{:>12}  {:>10}  {:>8}  {:>9}  {:>8}  {:>8}  {:>8}",
+        "value", "decisions", "deepens", "colonies", "mining", "scouts", "covered"
     );
     let mut first: Option<Fingerprint> = None;
     let mut all_same = true;
@@ -282,8 +285,8 @@ fn isolate(label: &str, values: &[f64], apply: impl Fn(&mut SimConfig, &mut Doct
         apply(&mut cfg, &mut doc, v);
         let o = run(SEED, cfg, doc);
         println!(
-            "{:>12.2}  {:>10}  {:>8}  {:>9}  {:>13}  {:>8}",
-            v, o.fp.decisions, o.fp.deepens, o.fp.colonies, o.fp.mining_pairs, o.fp.covered
+            "{:>12.2}  {:>10}  {:>8}  {:>9}  {:>8}  {:>8}  {:>8}",
+            v, o.fp.decisions, o.fp.deepens, o.fp.colonies, o.fp.mining_pairs, o.fp.lights, o.fp.covered
         );
         match first {
             None => first = Some(o.fp),
@@ -416,7 +419,7 @@ fn main() {
         doctrine.survey_vehicles,
         reach / cfg.max_survey_hops
     );
-    println!("  LightVehicle build orders issued after bootstrap: {}", 0);
+    println!("  LightVehicle build orders issued after bootstrap: {}", o.fp.lights);
     println!("  hops completed: {}   chains run to termination: {}", o.hops_total, o.chains_exhausted);
     println!("  longest chain: {} hops (max_survey_hops = {})", o.max_hops_seen, cfg.max_survey_hops);
 

@@ -516,6 +516,12 @@ pub struct SimConfig {
     /// Minimum development level to build medium vehicles (colony/mining). Per
     /// the production schedule this is **3** (2 = limited, 3 = medium, 4 = all).
     pub medium_min_level: u8,
+    /// Minimum development level to build *limited* vehicles — the Scout/LCV
+    /// survey craft. The same production schedule that puts medium at 3 puts
+    /// limited at **2**; before this field existed the autopilot returned
+    /// `Idle` for everything below `medium_min_level`, so the limited tier was
+    /// unreachable and a level-2 center could do nothing but hoard minerals.
+    pub limited_min_level: u8,
     /// Mineral cost of one General Systems Vehicle — "1 CMY mineral = 1 fleet"
     /// (`Hyades_vehicle_roles.md` §6, confirmed this conversation, revising
     /// the earlier "3 CMY = 3 fleets" anchor to the same ratio in cleaner
@@ -582,6 +588,7 @@ impl SimConfig {
             colony_seed_pop: 1.0,
             max_survey_hops: 40,
             medium_min_level: 3,
+            limited_min_level: 2,
             general_vehicle_cost: 1.0,
             medium_fleet_size: 3.0,
             limited_fleet_size: 9.0,
@@ -1214,18 +1221,6 @@ impl Simulation {
         let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
         let target_level = infra.round() + 1.0;
 
-        let ctx = ProductionContext {
-            center_pos,
-            level,
-            infra,
-            k_potential,
-            stockpile_total: stock_total,
-            medium_min_level: self.config.medium_min_level,
-            infra_cost: target_level,
-            colonizer_cost: role_cost(Role::Colonizer, &self.config),
-            mining_pair_cost: role_cost(Role::Miner, &self.config) + role_cost(Role::Freighter, &self.config),
-        };
-
         let info = *self.world.player_info.get(pe).unwrap();
         // Live mineral pressure for this center: 1 when broke for its next infra
         // upgrade, 0 when it can comfortably afford it. Drives the ranking toward
@@ -1251,6 +1246,23 @@ impl Simulation {
                 }
             }
         }
+        // Built after `cands`, so the survey decision can see how much frontier
+        // this empire has left to aim at.
+        let ctx = ProductionContext {
+            center_pos,
+            level,
+            infra,
+            k_potential,
+            stockpile_total: stock_total,
+            medium_min_level: self.config.medium_min_level,
+            limited_min_level: self.config.limited_min_level,
+            infra_cost: target_level,
+            colonizer_cost: role_cost(Role::Colonizer, &self.config),
+            mining_pair_cost: role_cost(Role::Miner, &self.config) + role_cost(Role::Freighter, &self.config),
+            light_vehicle_cost: role_cost(Role::Scout, &self.config),
+            candidate_count: cands.len(),
+        };
+
         let order = self.autopilots[p].production_choice(&doctrine, &ctx, &cands);
         self.log.push(
             self.clock,
@@ -1280,7 +1292,22 @@ impl Simulation {
         let center_pid = *self.world.planet_id.get(center).unwrap();
         match order {
             BuildOrder::Idle => {}
-            BuildOrder::LightVehicle { heading } => self.launch_survey(p, center_pos, heading, 0),
+            // Bootstrap's opening fan-out calls `launch_survey` directly and is
+            // free by design (autopilot-doc §2, "built free as starting units").
+            // A scout ordered by a production center is a real build and is paid
+            // for out of the center's stockpile like every other order — without
+            // this the autopilot could mint unlimited free survey craft.
+            BuildOrder::LightVehicle { heading } => {
+                let cost = role_cost(Role::Scout, &self.config);
+                if self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
+                    self.launch_survey(p, center_pos, heading, 0);
+                    let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
+                    self.log.push(
+                        self.clock,
+                        LogEvent::BuildApplied { player: p as u32, center: center_pid, order, cost, stockpile_after },
+                    );
+                }
+            }
             BuildOrder::UpgradeInfrastructure => {
                 let target = self.world.factors.get(center).unwrap().infra.round() + 1.0;
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {

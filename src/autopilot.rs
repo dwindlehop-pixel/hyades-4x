@@ -85,6 +85,15 @@ pub struct Doctrine {
     pub survey_vehicles: usize,
     /// Survey acceleration in g (base `1.0`).
     pub survey_accel_g: f64,
+    /// How many known, unclaimed candidate worlds the empire wants on hand.
+    /// When [`ProductionContext::candidate_count`] falls below this, a center
+    /// at the limited tier builds a Scout instead of idling — this is what
+    /// makes survey scale with the empire rather than being fixed at the
+    /// bootstrap fan-out. `0` restores the old behavior (never build survey
+    /// craft after bootstrap). **Placeholder magnitude** pending MC (R-AC16):
+    /// seed-1 probing put the best value nearer 1024, but 64 is the
+    /// conservative default until a sweep confirms it.
+    pub survey_reserve: usize,
 
     // --- Expand (autopilot-doc §4) ---
     pub expand_bias: ExpandBias,
@@ -108,6 +117,7 @@ impl Default for Doctrine {
             growth_rate: 0.5,
             survey_vehicles: 6,
             survey_accel_g: 1.0,
+            survey_reserve: 64,
             expand_bias: ExpandBias::ProductionCentersFirst,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
@@ -200,6 +210,9 @@ pub struct ProductionContext {
     /// Minimum level required to build "medium" vehicles (colony/mining). Per the
     /// production schedule this is **3** (2 = limited, 3 = medium/rapid, 4 = all).
     pub medium_min_level: u8,
+    /// Minimum level required to build "limited" vehicles — the Scout/LCV. The
+    /// same schedule puts this at **2**, one tier below expansion.
+    pub limited_min_level: u8,
     /// Mineral cost to raise infra by one level (= the target level).
     pub infra_cost: f64,
     /// Mineral cost of a Colonizer (an MSV) — `Hyades_vehicle_roles.md` §6's
@@ -208,6 +221,17 @@ pub struct ProductionContext {
     /// Mineral cost of a Miner + its paired Freighter (an LSV + an MSV),
     /// bundled since they're built together (§4.4).
     pub mining_pair_cost: f64,
+    /// Mineral cost of one Scout (an LCV) — the survey craft the limited tier
+    /// unlocks. Bootstrap hands each seat `survey_vehicles` of these free
+    /// (autopilot-doc §2); every later one is paid for out of a center's
+    /// stockpile like any other build.
+    pub light_vehicle_cost: f64,
+    /// Known, unclaimed, non-Barren worlds this empire could still expand to.
+    /// The autopilot builds survey craft to keep this above
+    /// [`Doctrine::survey_reserve`] — expansion consumes candidates, so without
+    /// replenishment the empire runs out of places to go long before it runs
+    /// out of galaxy.
+    pub candidate_count: usize,
 }
 
 /// The swappable per-seat decision **algorithm** (`Hyades_vehicle_roles.md`
@@ -323,12 +347,21 @@ impl Autopilot for BaselineAutopilot {
     }
 
     fn production_choice(&self, doctrine: &Doctrine, ctx: &ProductionContext, candidates: &[Candidate]) -> BuildOrder {
-        let deepen_possible = ctx.infra + 1.0 <= ctx.k_potential + 1e-9;
+        // Deepen while any headroom remains below the ceiling, rather than only
+        // when a whole level fits under it. `K = min(hab, bio, infra)`, so infra
+        // overshooting `k_potential` buys nothing — but *blocking* the last
+        // partial step strands a center below the level bands for good. A world
+        // with `k_potential = 2.86` sits at infra 2 under the old
+        // `infra + 1 <= k_potential` test, which caps `K` at 2, which caps
+        // population at 2, which never crosses the level-3 band edge (~2.675).
+        // It then hoards minerals it can never spend. Measured on seed 1: 1050
+        // of 2435 Idle decisions were centers in exactly that state, several
+        // holding 3.5–4.7 minerals against a 3-mineral upgrade.
+        let deepen_possible = ctx.infra < ctx.k_potential - 1e-9;
         let can_afford_infra = ctx.stockpile_total + 1e-9 >= ctx.infra_cost;
 
-        // Below the medium gate the only growth move is to deepen toward the
-        // expansion level; save (Idle) if the upgrade isn't yet affordable.
-        if ctx.level < ctx.medium_min_level {
+        // Below even the limited tier there is nothing to build; deepen or save.
+        if ctx.level < ctx.limited_min_level {
             return if deepen_possible && can_afford_infra {
                 BuildOrder::UpgradeInfrastructure
             } else {
@@ -336,7 +369,37 @@ impl Autopilot for BaselineAutopilot {
             };
         }
 
-        // Mature enough to expand. Find the best colony target and outpost.
+        // The limited tier unlocks survey craft. Replenishing the scout fleet is
+        // what lets expansion compound: colonies are drawn from *known* worlds,
+        // so an empire that never scouts again exhausts its candidate list and
+        // stops, however rich it gets.
+        let wants_survey = ctx.candidate_count < doctrine.survey_reserve;
+        let can_afford_light = ctx.stockpile_total + 1e-9 >= ctx.light_vehicle_cost;
+
+        // Between the limited and medium tiers, survey is the only outward move.
+        if ctx.level < ctx.medium_min_level {
+            // Deepening toward the medium gate stays the priority — that is what
+            // turns this center into a colonizer — but a center that cannot
+            // deepen (capped, or saving) still contributes survey rather than
+            // idling with a full stockpile.
+            if deepen_possible && can_afford_infra {
+                return BuildOrder::UpgradeInfrastructure;
+            }
+            return if wants_survey && can_afford_light && !deepen_possible {
+                BuildOrder::LightVehicle { heading: Vec3::ZERO }
+            } else {
+                BuildOrder::Idle
+            };
+        }
+
+        // With nothing known left to expand to, survey is the only move that can
+        // ever restart expansion. This is the one case where it outranks
+        // everything: no candidates means every other branch below returns Idle.
+        if candidates.is_empty() && can_afford_light {
+            return BuildOrder::LightVehicle { heading: Vec3::ZERO };
+        }
+
+        // Find the best colony target and outpost.
         let best_center =
             candidates.iter().filter(|c| c.ranked.class == PlanetClass::ProductionCenter).max_by(score_then_id);
         let best_colony = candidates.iter().filter(|c| c.ranked.class == PlanetClass::Colony).max_by(score_then_id);
@@ -380,24 +443,38 @@ impl Autopilot for BaselineAutopilot {
             None => f64::NEG_INFINITY,
         };
 
+        // Survey is the fallback for a cycle that would otherwise be spent idle,
+        // never a pre-emption of an affordable expansion. That ordering matters:
+        // an earlier revision gave survey outright priority whenever the frontier
+        // was below `survey_reserve`, which made the knob non-monotonic —
+        // reserve=256 reached 1047 colonies but reserve=4096 collapsed to 3,
+        // because centers scouted every cycle and never colonized at all. As a
+        // fallback it is self-limiting: raising the reserve converts idle cycles
+        // into survey and can never starve expansion.
+        let survey_fallback = if wants_survey && can_afford_light {
+            BuildOrder::LightVehicle { heading: Vec3::ZERO }
+        } else {
+            BuildOrder::Idle
+        };
+
         if w_deepen >= w_expand && deepen_possible {
             // Prefer depth: upgrade if funded, else save toward it.
             if can_afford_infra {
                 BuildOrder::UpgradeInfrastructure
             } else {
-                BuildOrder::Idle
+                survey_fallback
             }
         } else if let Some((order, _)) = outward {
             // Prefer expansion: build if funded, else save toward the vehicle.
             if can_expand {
                 order
             } else {
-                BuildOrder::Idle
+                survey_fallback
             }
         } else if deepen_possible && can_afford_infra {
             BuildOrder::UpgradeInfrastructure
         } else {
-            BuildOrder::Idle
+            survey_fallback
         }
     }
 }
@@ -473,7 +550,14 @@ mod tests {
         assert_eq!(ap.choose_survey_target(&doctrine, Vec3::ZERO, None, &cands), Some(PlanetId(2)));
     }
 
+    /// A center with a comfortably stocked frontier, so the survey branch stays
+    /// out of the way of the deepen/expand cases these tests are about. Use
+    /// [`prod_ctx_frontier`] to exercise survey itself.
     fn prod_ctx(level: u8, infra: f64, stockpile: f64) -> ProductionContext {
+        prod_ctx_frontier(level, infra, stockpile, usize::MAX)
+    }
+
+    fn prod_ctx_frontier(level: u8, infra: f64, stockpile: f64, candidate_count: usize) -> ProductionContext {
         ProductionContext {
             center_pos: Vec3::ZERO,
             level,
@@ -481,9 +565,12 @@ mod tests {
             k_potential: 4.0,
             stockpile_total: stockpile,
             medium_min_level: 3,
+            limited_min_level: 2,
             infra_cost: infra + 1.0,
             colonizer_cost: 1.0,
             mining_pair_cost: 1.0,
+            light_vehicle_cost: 0.25,
+            candidate_count,
         }
     }
 
@@ -515,5 +602,83 @@ mod tests {
         let cands = vec![Candidate { view: v, ranked }];
         let order = ap.production_choice(&doctrine, &ctx, &cands);
         assert!(matches!(order, BuildOrder::ColonyVehicle { .. }));
+    }
+
+    /// One `Candidate` a mature center would happily colonize.
+    fn one_colony_candidate(ap: &BaselineAutopilot, doctrine: &Doctrine) -> Vec<Candidate> {
+        let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
+        let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
+        let ranked = ap.rank(doctrine, &v, &rctx);
+        vec![Candidate { view: v, ranked }]
+    }
+
+    #[test]
+    fn partial_headroom_below_the_ceiling_still_deepens() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        // k_potential 2.86: a whole level does NOT fit above infra 2, but there
+        // is real headroom. The old `infra + 1 <= k_potential` guard stranded
+        // this center at K=2 forever, below the level-3 band edge (~2.675), so
+        // it could never build anything and hoarded minerals it could not spend.
+        let mut ctx = prod_ctx(2, 2.0, 5.0);
+        ctx.k_potential = 2.86;
+        assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::UpgradeInfrastructure);
+    }
+
+    #[test]
+    fn limited_tier_builds_survey_when_capped_and_frontier_is_thin() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        // Level 2 (limited tier), infra already at the ceiling so deepening is
+        // impossible, minerals on hand, and a thin frontier. Before the limited
+        // tier existed this returned Idle and the stockpile sat dead forever.
+        let mut ctx = prod_ctx_frontier(2, 3.0, 5.0, 0);
+        ctx.k_potential = 3.0;
+        assert!(matches!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::LightVehicle { .. }));
+    }
+
+    #[test]
+    fn below_the_limited_tier_never_builds_survey() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        let mut ctx = prod_ctx_frontier(1, 3.0, 5.0, 0);
+        ctx.k_potential = 3.0; // capped, so deepening is off the table too
+        assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::Idle);
+    }
+
+    #[test]
+    fn survey_never_preempts_an_affordable_expansion() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        // Thin frontier (0 < survey_reserve) AND an affordable colony target.
+        // Survey must stay a fallback: an earlier revision gave it priority here,
+        // which made `survey_reserve` non-monotonic — a large reserve had every
+        // center scouting every cycle and colonies collapsed from 1047 to 3.
+        let ctx = prod_ctx_frontier(3, 3.0, 2.0, 0);
+        let cands = one_colony_candidate(&ap, &doctrine);
+        assert!(matches!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::ColonyVehicle { .. }));
+    }
+
+    #[test]
+    fn mature_center_surveys_when_it_cannot_afford_to_expand() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        // Same thin frontier, but too poor for the colony ship and capped so it
+        // cannot deepen either — the cycle would otherwise be pure Idle. A scout
+        // is cheap enough to afford, so the idle capacity goes to survey.
+        let mut ctx = prod_ctx_frontier(3, 3.0, 0.3, 0);
+        ctx.k_potential = 3.0;
+        let cands = one_colony_candidate(&ap, &doctrine);
+        assert!(matches!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::LightVehicle { .. }));
+    }
+
+    #[test]
+    fn survey_reserve_zero_restores_the_old_never_scout_behaviour() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine { survey_reserve: 0, ..Doctrine::default() };
+        let mut ctx = prod_ctx_frontier(3, 3.0, 0.3, 0);
+        ctx.k_potential = 3.0;
+        let cands = one_colony_candidate(&ap, &doctrine);
+        assert_eq!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::Idle);
     }
 }
