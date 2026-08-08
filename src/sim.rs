@@ -179,9 +179,38 @@ struct PlayerInfo {
 #[derive(Clone, Debug, Default)]
 struct Knowledge {
     scanned: BTreeSet<PlanetId>,
-    visited: BTreeSet<PlanetId>,
+    /// Worlds a survey craft has been *dispatched to* (marked at launch, so two
+    /// scouts never chase the same target). A **bitmap, not a set**: this is
+    /// membership-tested once per planet per `survey_candidates` call and never
+    /// iterated, and profiling put that one `BTreeSet::contains` at the top of
+    /// the whole engine — 63% of instructions once scouts became plentiful.
+    /// O(1) indexed access instead of O(log n) pointer chasing.
+    visited: VisitedMask,
     targeted: BTreeSet<PlanetId>,
     exploited: BTreeSet<PlanetId>,
+}
+
+/// Dense per-planet flag set, indexed by [`PlanetId`]. Grows on demand so a
+/// default-constructed [`Knowledge`] needs no galaxy size up front.
+#[derive(Clone, Debug, Default)]
+struct VisitedMask {
+    bits: Vec<bool>,
+}
+
+impl VisitedMask {
+    #[inline]
+    fn insert(&mut self, pid: PlanetId) {
+        let i = pid.0 as usize;
+        if i >= self.bits.len() {
+            self.bits.resize(i + 1, false);
+        }
+        self.bits[i] = true;
+    }
+
+    #[inline]
+    fn contains(&self, pid: PlanetId) -> bool {
+        self.bits.get(pid.0 as usize).copied().unwrap_or(false)
+    }
 }
 
 /// A ship's current **role** (`Hyades_vehicle_roles.md` §1/§7) — a Component,
@@ -643,6 +672,9 @@ pub struct FleetSummary {
 pub struct Simulation {
     world: World,
     config: SimConfig,
+    /// Reused buffer for `fill_survey_candidates` — see that method. Not state:
+    /// cleared on every use, so it never affects results.
+    survey_scratch: Vec<PlanetView>,
     bands: PopBands,
 
     planet_entity: Vec<Entity>,
@@ -711,6 +743,7 @@ impl Simulation {
         let mut sim = Simulation {
             world,
             config,
+            survey_scratch: Vec::new(),
             bands: galaxy.bands,
             planet_entity,
             player_entity,
@@ -905,11 +938,12 @@ impl Simulation {
 
         // Contact unit: continue scouting to the next nearest unscanned world.
         if voyage.hops + 1 < self.config.max_survey_hops {
-            let cands = self.survey_candidates(p);
+            let mut cands = core::mem::take(&mut self.survey_scratch);
+            self.fill_survey_candidates(p, &mut cands);
             let doctrine = *self.world.doctrine.get(pe).unwrap();
-            if let Some(next_pid) =
-                self.autopilots[p].choose_survey_target(&doctrine, here, voyage.heading_bias, &cands)
-            {
+            let next = self.autopilots[p].choose_survey_target(&doctrine, here, voyage.heading_bias, &cands);
+            self.survey_scratch = cands;
+            if let Some(next_pid) = next {
                 self.world.knowledge.get_mut(pe).unwrap().visited.insert(next_pid);
                 let next = self.planet_entity[next_pid.0 as usize];
                 let accel = doctrine.survey_accel_g * G;
@@ -1405,11 +1439,14 @@ impl Simulation {
     }
 
     fn launch_survey(&mut self, p: usize, from: Vec3, heading: Vec3, hops: usize) {
-        let cands = self.survey_candidates(p);
+        let mut cands = core::mem::take(&mut self.survey_scratch);
+        self.fill_survey_candidates(p, &mut cands);
         let bias = if heading == Vec3::ZERO { None } else { Some(heading) };
         let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
         let accel = doctrine.survey_accel_g * G;
-        if let Some(target_pid) = self.autopilots[p].choose_survey_target(&doctrine, from, bias, &cands) {
+        let picked = self.autopilots[p].choose_survey_target(&doctrine, from, bias, &cands);
+        self.survey_scratch = cands;
+        if let Some(target_pid) = picked {
             self.world.knowledge.get_mut(self.player_entity[p]).unwrap().visited.insert(target_pid);
             let target = self.planet_entity[target_pid.0 as usize];
             let dest = *self.world.position.get(target).unwrap();
@@ -1458,20 +1495,25 @@ impl Simulation {
         self.world.motion.insert(e, Motion { origin: pos, dest: pos, depart: self.clock, arrive: self.clock, accel });
     }
 
-    fn survey_candidates(&self, p: usize) -> Vec<PlanetView> {
+    /// Fill `out` with this player's unowned, unvisited worlds. Takes a caller-
+    /// owned buffer rather than returning a fresh `Vec`: this runs on every
+    /// scout hop and every launch, and the list can hold thousands of
+    /// `PlanetView`s, so allocating one per call was pure churn (memcpy alone
+    /// was 4% of engine instructions). Callers `mem::take` the scratch buffer,
+    /// fill it, and put it back.
+    fn fill_survey_candidates(&self, p: usize, out: &mut Vec<PlanetView>) {
+        out.clear();
         let visited = &self.world.knowledge.get(self.player_entity[p]).unwrap().visited;
-        let mut out = Vec::new();
         for &e in &self.planet_entity {
             if self.world.owner.contains(e) {
                 continue;
             }
             let pid = *self.world.planet_id.get(e).unwrap();
-            if visited.contains(&pid) {
+            if visited.contains(pid) {
                 continue;
             }
             out.push(self.view_of(e));
         }
-        out
     }
 
     fn view_of(&self, e: Entity) -> PlanetView {
