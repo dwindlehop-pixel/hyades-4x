@@ -201,7 +201,10 @@ fn main() {
 
     // Round 2: how much cargo one freighter haul actually moves — directly
     // gates how fast hauling can relieve a starved center's pressure.
-    sweep_config("cargo_unit_size", &mut cfg, doctrine, &[2.5, 5.0, 7.5, 10.0, 15.0], |c, v| c.cargo_unit_size = v);
+    // Range shifted downward: `coverage_trace` shows this saturates above ~5,
+    // with 2.5 the best of the old points, so the old [2.5, 15] spent four of
+    // five trials on a plateau. The interesting region is *below* 5.
+    sweep_config("cargo_unit_size", &mut cfg, doctrine, &[1.0, 1.5, 2.5, 4.0, 6.0], |c, v| c.cargo_unit_size = v);
 
     // Round 3: how fast an outpost extracts in the first place — no amount
     // of hauling helps if there's nothing sitting at the outpost to load.
@@ -210,7 +213,15 @@ fn main() {
     });
 
     // Round 4: reinvest_bias — how hard to favor expansion over deepening.
-    sweep_doctrine("reinvest_bias", cfg, &mut doctrine, &[0.0, 0.1, 0.25, 0.4, 0.5], |d, v| d.reinvest_bias = v);
+    // **Not a dial in practice, a cliff.** production_choice weighs
+    // b*deepen_headroom against (1-b)*score; headroom is bounded by
+    // k_potential <= ~4 while score runs well above it, so expansion wins
+    // everywhere below roughly b = 0.95 and deepening wins above. The old
+    // [0.0, 0.5] range sat entirely on one side and measured a flat line —
+    // `coverage_trace` confirms an identical run fingerprint across all five
+    // of those values, before *and* after the snowball ratification. Sample
+    // across the switch instead, or this round is five wasted trials.
+    sweep_doctrine("reinvest_bias", cfg, &mut doctrine, &[0.0, 0.5, 0.9, 0.97, 1.0], |d, v| d.reinvest_bias = v);
 
     // Round 5: growth_rate — how fast pop climbs toward whatever K is
     // currently achievable.
