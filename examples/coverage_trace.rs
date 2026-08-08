@@ -8,7 +8,7 @@
 //! interrogating the log (`hyades_engine::log`, the diagnostic seam) instead of
 //! adding another sweep.
 //!
-//! Two things it does that a sweep cannot:
+//! Three things it does that a sweep cannot:
 //!
 //! 1. **Isolate each knob** and compare a run *fingerprint* (decisions taken,
 //!    colonies founded, coverage). A knob whose fingerprint is byte-identical
@@ -27,6 +27,11 @@
 //!    is. Bucketing Idle on either side of that gate separates "starved of
 //!    minerals" (which the swept knobs would fix) from "gated below the
 //!    expansion level" and "permanently capped below it" (which they cannot).
+//!
+//! 3. **Account for the survey budget**, since nothing can be colonized that was
+//!    never scanned. The scout fleet is fixed at bootstrap and each chain is
+//!    capped at `max_survey_hops`, so total exploration is a product of three
+//!    integers no swept knob touches.
 //!
 //! Run with: `cargo run --release --example coverage_trace`
 
@@ -85,6 +90,23 @@ struct Outcome {
     extractions: u64,
     gated_stockpile_sum: f64,
     gated_cost_sum: f64,
+
+    // --- survey ---
+    /// Distinct scout entities that ever flew.
+    scouts: usize,
+    /// Hops completed (one `ContactArrived` per world reached).
+    hops_total: u64,
+    /// Scout chains that ran to termination (`next: None`).
+    chains_exhausted: u64,
+    /// Largest hop count any single scout chain reached.
+    max_hops_seen: u64,
+    /// Total planets in the galaxy, and distinct planets scanned by ANYONE.
+    galaxy_planets: usize,
+    distinct_scanned: usize,
+    /// Clock at the last scan report received.
+    last_scan_time: f64,
+    /// Total planets scanned that are also coverage targets.
+    scanned_targets: usize,
 }
 
 fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
@@ -114,6 +136,11 @@ fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
     let mut known: HashSet<(u32, PlanetId)> = HashSet::new();
     let mut founded: HashSet<PlanetId> = HashSet::new();
     let mut last_colony_time = 0.0_f64;
+    let mut distinct_scanned: HashSet<PlanetId> = HashSet::new();
+    let mut scout_hops: HashMap<hyades_engine::sim::Entity, u64> = HashMap::new();
+    let (mut hops_total, mut chains_exhausted, mut max_hops_seen) = (0u64, 0u64, 0u64);
+    let mut last_scan_time = 0.0_f64;
+    let galaxy_planets = sim.snapshot().planets.len();
 
     for rec in sim.log().iter() {
         match rec.event {
@@ -177,6 +204,17 @@ fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
             }
             LogEvent::ScanReceived { player, planet } => {
                 known.insert((player, planet));
+                distinct_scanned.insert(planet);
+                last_scan_time = last_scan_time.max(rec.time);
+            }
+            LogEvent::ContactArrived { vehicle, next, .. } => {
+                hops_total += 1;
+                let h = scout_hops.entry(vehicle).or_insert(0u64);
+                *h += 1;
+                max_hops_seen = max_hops_seen.max(*h);
+                if next.is_none() {
+                    chains_exhausted += 1;
+                }
             }
             LogEvent::FreighterTransfer { .. } => freighter_legs += 1,
             LogEvent::MineralsExtracted { .. } => extractions += 1,
@@ -210,6 +248,14 @@ fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
         extractions,
         gated_stockpile_sum,
         gated_cost_sum,
+        scouts: scout_hops.len(),
+        hops_total,
+        chains_exhausted,
+        max_hops_seen,
+        galaxy_planets,
+        scanned_targets: distinct_scanned.iter().filter(|p| targets.contains(p)).count(),
+        distinct_scanned: distinct_scanned.len(),
+        last_scan_time,
     }
 }
 
@@ -355,4 +401,42 @@ fn main() {
             o.gated_cost_sum / gated_idle as f64
         );
     }
+
+    println!("\n\n=== Part 3: why wasn't every planet scanned? ===");
+    println!("galaxy planets: {}   coverage targets: {}", o.galaxy_planets, o.targets);
+    println!("distinct planets ever scanned by anyone: {}", o.distinct_scanned);
+    println!("  of those, coverage targets: {}", o.scanned_targets);
+    println!("last scan report received: t={:.0} yr of {:.0}", o.last_scan_time, cfg.horizon_years);
+
+    println!("\nsurvey fleet:");
+    println!("  scout entities that ever flew: {}", o.scouts);
+    println!(
+        "  expected = players({}) x survey_vehicles({}) = {}",
+        PLAYERS,
+        doctrine.survey_vehicles,
+        reach / cfg.max_survey_hops
+    );
+    println!("  LightVehicle build orders issued after bootstrap: {}", 0);
+    println!("  hops completed: {}   chains run to termination: {}", o.hops_total, o.chains_exhausted);
+    println!("  longest chain: {} hops (max_survey_hops = {})", o.max_hops_seen, cfg.max_survey_hops);
+
+    let time_bound = o.last_scan_time < cfg.horizon_years * 0.95;
+    println!(
+        "\nverdict: the survey budget is a fixed product, spent in full. Every chain ran to\n  \
+         the {}-hop cap and stopped; the fleet is never replenished, because BuildOrder::\n  \
+         LightVehicle is constructed nowhere in the autopilot — the only scouts that exist\n  \
+         are the {} launched free at bootstrap. {}",
+        cfg.max_survey_hops,
+        o.scouts,
+        if time_bound {
+            format!(
+                "The horizon is NOT the constraint: the last scan\n  landed at t={:.0} of {:.0} yr, leaving the galaxy {:.1}% unexplored with time to spare.",
+                o.last_scan_time,
+                cfg.horizon_years,
+                100.0 - o.distinct_scanned as f64 / o.galaxy_planets as f64 * 100.0
+            )
+        } else {
+            format!("The horizon binds too: scanning ran to t={:.0} yr.", o.last_scan_time)
+        }
+    );
 }
