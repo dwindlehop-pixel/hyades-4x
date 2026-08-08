@@ -46,6 +46,28 @@ cargo run --release --example montecarlo         # balance sweeps
 Baseline as of the combat refactor: **79 unit + 4 smoke + 4 determinism tests pass.**
 The MC sweeps are slow in debug; always use `--release` for them.
 
+### Always run sweeps unbuffered
+
+**Never pipe a long run through `tail`, `head`, `sort`, or a bare `grep`.** Those
+stages hold their input until EOF (or fill a 4 KiB block first), so a sweep that is
+printing a row a minute shows *nothing at all* until it finishes. The run looks hung,
+and the natural reaction — kill it and retry — throws away the work. This has already
+cost two sweeps in this repo: an 80-run coordinate-descent sweep and a throughput
+benchmark, both abandoned as "stalled" while they were in fact running fine behind a
+`| tail`.
+
+- Let the harness print straight to the terminal, or redirect to a file (`> out.txt`)
+  and read the file as it grows. Both stream.
+- Filtering is fine if the filter streams: `grep --line-buffered`, `awk` with
+  `fflush()`, `stdbuf -oL <cmd>`.
+- In a harness that prints one row per expensive trial, call
+  `std::io::stdout().flush()` after each row. Rust's stdout is line-buffered to a
+  terminal but **block**-buffered to a pipe or file, so the flush is what makes a
+  partial run readable — and a partial result you can read beats a complete one you
+  killed.
+- Long sweeps belong in the background from the start, with output to a file, so
+  progress is inspectable without blocking on them.
+
 ### CI gates
 
 `.github/workflows/ci.yml` runs on every push and PR. Before you push, the four
@@ -237,16 +259,21 @@ i.e. supremacy is slot-organic by construction.
 
   | scenario | vehicles | throughput | margin vs floor |
   |---|---|---|---|
-  | defaults, 3 seats | 56 | 28,966 yr/s | 11,586× |
-  | defaults, 12 seats | 205 | 3,037 yr/s | 1,215× |
-  | full colonization (R-AC17), 3 seats | 5,629 | **323 yr/s** | **129×** |
+  | defaults, 3 seats, 4 kyr | 56 | 28,966 yr/s | 11,586× |
+  | defaults, 12 seats, 4 kyr | 205 | 3,037 yr/s | 1,215× |
+  | full colonization (R-AC17), 3 seats, 4 kyr | 5,629 | 323 yr/s | 129× |
+  | full colonization (R-AC17), 3 seats, 8 kyr | 9,486 | **77 yr/s** | **31×** |
 
-  Throughput tracks vehicle count almost inversely: 100× the vehicles cost 90× the
-  speed. The 12-seat baseline corroborates the old 2,116 figure, so the number was
-  never wrong — it was measured on a game that stalled at a few dozen colonies. A
-  12-seat *full-colonization* run is the real worst case and has not been measured;
-  extrapolating the linear trend puts it in the tens of yr/s, i.e. a margin in the
-  low tens rather than 847×.
+  The 12-seat baseline corroborates the old 2,116 figure, so that number was never
+  wrong — it was measured on a game that stalled at a few dozen colonies.
+
+  **Degradation is superlinear in entity count, which is the part to worry about.**
+  Between the last two rows, 1.7× the vehicles costs 4.2× the throughput — the run
+  also spends more of its life at the high-vehicle end, so cost compounds with both
+  fleet size and duration. The margin has already fallen from 847× to **31× at three
+  seats**. A 12-seat full-colonization run is the true worst case and **has not been
+  measured**; on this trend it plausibly lands in single-digit multiples of the floor,
+  or under it. Measure that case before assuming any headroom remains.
 
   Two things to do:
   1. **`examples/bench_hex_size.rs` does not exist in this tree** despite being cited
