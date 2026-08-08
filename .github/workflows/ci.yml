@@ -89,7 +89,7 @@ jobs:
         run: cargo build --release --examples --verbose
       - name: Run
         run: |
-          for ex in trace montecarlo combat_arena coverage_time; do
+          for ex in trace montecarlo combat_arena coverage_time coverage_trace; do
             echo "::group::$ex"
             cargo run --release --example "$ex"
             echo "::endgroup::"
