@@ -3,7 +3,7 @@ name = "hyades-engine"
 version = "0.1.0"
 edition = "2021"
 description = "Hyades simulation engine: galaxy generation, discrete-event relativistic autopilot simulation, and the autopilot policy interface. Presentation-free, dependency-free, WASM-targetable."
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 
 # The engine is the SAME code the Monte-Carlo balancer and the production game
 # both link against. It is therefore:
