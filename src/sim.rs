@@ -56,6 +56,7 @@ use std::collections::{BTreeSet, BinaryHeap};
 
 use crate::autopilot::{
     Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext,
+    SurveyView,
 };
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
@@ -615,7 +616,9 @@ impl SimConfig {
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
             colony_seed_pop: 1.0,
-            max_survey_hops: 40,
+            // 120 — ratified with the snowball defaults: a 40-hop chain retired
+            // scouts while most of the galaxy was still dark.
+            max_survey_hops: 120,
             medium_min_level: 3,
             limited_min_level: 2,
             general_vehicle_cost: 1.0,
@@ -674,7 +677,7 @@ pub struct Simulation {
     config: SimConfig,
     /// Reused buffer for `fill_survey_candidates` — see that method. Not state:
     /// cleared on every use, so it never affects results.
-    survey_scratch: Vec<PlanetView>,
+    survey_scratch: Vec<SurveyView>,
     bands: PopBands,
 
     planet_entity: Vec<Entity>,
@@ -1501,18 +1504,25 @@ impl Simulation {
     /// `PlanetView`s, so allocating one per call was pure churn (memcpy alone
     /// was 4% of engine instructions). Callers `mem::take` the scratch buffer,
     /// fill it, and put it back.
-    fn fill_survey_candidates(&self, p: usize, out: &mut Vec<PlanetView>) {
+    fn fill_survey_candidates(&self, p: usize, out: &mut Vec<SurveyView>) {
         out.clear();
         let visited = &self.world.knowledge.get(self.player_entity[p]).unwrap().visited;
         for &e in &self.planet_entity {
-            if self.world.owner.contains(e) {
-                continue;
-            }
             let pid = *self.world.planet_id.get(e).unwrap();
             if visited.contains(pid) {
                 continue;
             }
-            out.push(self.view_of(e));
+            // Remote tier only (autopilot-doc §1): position plus the K-ceiling
+            // factors. Deliberately NOT filtered on `owner` — ownership needs a
+            // close-range scan, so skipping a world because it is *actually*
+            // owned would be omniscience. A scout learns that on arrival.
+            let f = self.world.factors.get(e).unwrap();
+            out.push(SurveyView {
+                id: pid,
+                position: *self.world.position.get(e).unwrap(),
+                habitability: f.hab,
+                biosphere: f.bio,
+            });
         }
     }
 
@@ -1774,9 +1784,21 @@ mod tests {
     use super::*;
     use crate::galaxy::GalaxyConfig;
 
+    /// Unit tests exercise *mechanics*, not the full expansion arc. The shipped
+    /// defaults now snowball to thousands of vehicles across the 4,000-year
+    /// horizon — that is the design, but it turns every full `run()` into a
+    /// multi-second sim and the suite from 6 s into 315 s. So tests pin a short
+    /// horizon; long-run coverage questions belong in an example or the offline
+    /// search, not here.
+    fn test_cfg(seed: u64) -> SimConfig {
+        let mut cfg = SimConfig::new(seed);
+        cfg.horizon_years = 600.0;
+        cfg
+    }
+
     fn run_default(players: usize, seed: u64) -> (Simulation, SimReport) {
         let galaxy = Galaxy::generate(GalaxyConfig::new(players, seed)).unwrap();
-        let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(seed));
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(seed));
         let report = sim.run();
         (sim, report)
     }
@@ -1830,7 +1852,7 @@ mod tests {
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 11)).unwrap();
         let hw = galaxy.homeworlds[0];
         let before = galaxy.planet(hw).minerals.metallicity();
-        let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(11));
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
         sim.run();
         let after = {
             let e = sim.planet_entity[hw.0 as usize];
@@ -1881,7 +1903,7 @@ mod tests {
     #[test]
     fn enabling_a_category_captures_real_events() {
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 17)).unwrap();
-        let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(17));
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(17));
         sim.set_log_filter(crate::log::LogFilter::all());
         sim.run();
 
@@ -1903,7 +1925,7 @@ mod tests {
         // simulation's deterministic results.
         let mk = |logging: bool| {
             let g = Galaxy::generate(GalaxyConfig::new(6, 2024)).unwrap();
-            let mut s = Simulation::with_baseline(g, SimConfig::new(2024));
+            let mut s = Simulation::with_baseline(g, test_cfg(2024));
             if logging {
                 s.set_log_filter(crate::log::LogFilter::all());
             }
@@ -1932,7 +1954,7 @@ mod tests {
         // that a consumer can correlate a log line with the continuous-position
         // seam. Confirm that round trip actually works.
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
-        let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(5));
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(5));
         sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Vehicles));
         sim.run();
 
@@ -2258,7 +2280,7 @@ mod tests {
     #[test]
     fn fleets_group_by_owner_role_and_theater() {
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 9)).unwrap();
-        let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(9));
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(9));
         sim.run();
 
         let fleets = sim.fleets_at(sim.clock());

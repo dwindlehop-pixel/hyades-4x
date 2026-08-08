@@ -98,11 +98,37 @@ that reads only `id` and `position` and keeps one result. Profiling put that one
 query and its view construction at **81% of all engine instructions**. Getting the
 trigger right does not by itself make an evaluation cheap.
 
-**R-SIM1 (new, open):** `Autopilot::choose_survey_target` takes `&[PlanetView]`
-(88 bytes/entry: hab, bio, a 24-byte `MineralField`, owner, pop_level) and reads
-28 bytes of it. Splitting out a light `SurveyView { id, position }` would cut the
-dominant remaining cost, at the price of a second view type in the fog-of-war
-contract of §1. Not done — it is a contract change, not an optimization.
+**R-SIM1 (resolved).** `choose_survey_target` now takes `&[SurveyView]` —
+`{ id, position, habitability, biosphere }` — instead of the 88-byte
+`PlanetView`. This began as an optimization and turned out to be a **fog-of-war
+correctness fix**, which is the more important half:
+
+- The old candidate list filtered on **ground-truth ownership**, so a scout
+  silently avoided worlds owned by an empire it had never met. §1 requires a
+  close-range scan to learn ownership; that filter was omniscience.
+- The old view also carried `minerals`, `owner` and `pop_level` for *unvisited*
+  worlds — all three close-scan-only under §1's two-tier model.
+
+`SurveyView` is exactly the remote tier, so the boundary is now enforced by the
+type rather than by the policy choosing not to peek.
+
+The two effects pull opposite ways on speed and both should be recorded.
+Narrowing the view made each entry cheaper; dropping the ownership filter made
+the list *longer*, because owned worlds are no longer skipped — and at full
+colonization that is thousands of extra entries. Measured (seed 1, 3 seats):
+horizon 2,500 went 1.188 s → 0.859 s (2,104 → 2,910 yr/s), while horizon 4,000
+was a wash at ~8.9 s. **Fog of war is not free**, and the light view is roughly
+what pays for it.
+
+**R-SIM2 (new, open):** the survey scan is still O(planets) per arrival. Position
+is static, so a spatial index over planet points with a per-player visited mask
+would make nearest-unvisited O(log n) — but `choose_survey_target` is policy, and
+the engine cannot accelerate a query it does not define. Resolving this means
+deciding whether the trait exposes *"nearest unvisited to a point, optionally
+hemisphere-biased"* as an engine-provided primitive rather than a scan the policy
+performs itself. Note an incremental frontier *list* was already tried and
+reverted: it cut the scanned count 39% and ran slower, because swap-removal cost
+more in locality than it saved in count (§2b).
 
 ## 3. The round loop
 

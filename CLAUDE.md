@@ -193,6 +193,21 @@ one, stop and flag it.
 8. **LOU role expectation:** chaff in late-game main battle fleets, *not* useful force
    projection — but genuinely useful for Mao-style insurgency (harass, avoid, strike
    the resting/retreating enemy).
+9. **The snowball is the design — simulate it, not the stalled baseline.** An empire
+   that compounds until it has colonized every colonizable world is the intended
+   arc, and the shipped defaults produce it (R-AC16/R-AC17). The configuration that
+   plateaued at a few dozen colonies was a *bug surface*, never a reference point:
+   do not benchmark against it, do not tune against it, and do not treat a
+   parameter as inert because it did nothing while expansion was broken —
+   `cargo_unit_size` and `outpost_mining_fraction` looked dead for exactly that
+   reason. Corollaries that keep biting:
+   - **Thousands of vehicles is normal.** Engine cost must be measured at full
+     colonization; a benchmark on a stalled galaxy measures nothing real (§7).
+   - **Tests must pin a short horizon explicitly.** Unit tests exercise mechanics,
+     and a full-length default run now costs seconds each — the suite went 6 s → 315 s
+     the moment the defaults were ratified, and back to ~5 s once tests set their own
+     horizon. Anything genuinely about long-run coverage belongs in an example or
+     the offline search.
 
 ---
 
@@ -279,13 +294,9 @@ i.e. supremacy is slot-organic by construction.
 - Wire `matching.rs` into `lib.rs` and swap the call sites in `sim.rs`.
 - Refactor three long functions: `sys_production_tick` (~149 lines), `apply_build`
   (~148), `production_choice` (~137).
-- Recalibrate `centrality_scale`/`k_high` — currently tuned to an old ~25 ly extent;
-  the galaxy is now hundreds of ly. **`k_high` is now known to be the binding
-  constraint on the whole expansion loop** (R-AC17, `Hyades_autopilot_colonization_growth.md`
-  §6a): at the default 1.5 against a galaxy where 99% of planets have
-  `min(hab,bio) ≥ 1.76`, the Mining-outpost class is unreachable, so no outpost is
-  ever placed, no freighter ever flies, and the §5 hauling economy is dead code at
-  runtime. Flagged for ratification, not yet changed.
+- Recalibrate **`centrality_scale`** — still tuned to an old ~25 ly extent; the galaxy
+  is now hundreds of ly. (`k_high` was the other half of this and is now **resolved**
+  at 3.2 — R-AC17.)
 - **Watch simulation throughput as fleets grow — optimize before it nears 2.5 yr/s.**
   The confirmed floor is **2.5 simulated-years/real-second**. `galaxy.rs` cites
   **2,116 yr/s** at the 12-player worst case (an 847× margin) and `Hyades_matching.md`
@@ -295,13 +306,16 @@ i.e. supremacy is slot-organic by construction.
 
   | scenario | vehicles | throughput | margin vs floor |
   |---|---|---|---|
-  | defaults, 3 seats, 4 kyr | 56 | 28,966 yr/s | 11,586× |
-  | defaults, 12 seats, 4 kyr | 205 | 3,037 yr/s | 1,215× |
-  | full colonization (R-AC17), 3 seats, 4 kyr | 5,629 | 323 yr/s | 129× |
-  | full colonization (R-AC17), 3 seats, 8 kyr | 9,486 | **77 yr/s** | **31×** |
+  | *stalled config (no longer shipped)*, 3 seats, 4 kyr | 56 | 28,966 yr/s | 11,586× |
+  | *stalled config (no longer shipped)*, 12 seats, 4 kyr | 205 | 3,037 yr/s | 1,215× |
+  | **shipped defaults**, 3 seats, 4 kyr | 5,649 | **456 yr/s** | **182×** |
+  | shipped defaults, 3 seats, 8 kyr | 9,486 | 77 yr/s *(pre-optimization)* | 31× |
+  | **shipped defaults, 12 seats — the real worst case** | — | **not yet measured** | — |
 
-  The 12-seat baseline corroborates the old 2,116 figure, so that number was never
-  wrong — it was measured on a game that stalled at a few dozen colonies.
+  The first two rows are kept only as the historical baseline: they are the
+  configuration design law #9 says never to benchmark against, and they are why the
+  old 2,116 yr/s figure looked comfortable. Nothing was wrong with that measurement —
+  it was taken on a game that stalled at a few dozen colonies.
 
   **Degradation is superlinear in entity count, which is the part to worry about.**
   Between the last two rows, 1.7× the vehicles costs 4.2× the throughput — the run

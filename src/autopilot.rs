@@ -38,7 +38,11 @@ pub struct RankWeights {
     pub w_k: f64,
     pub w_mineral: f64,
     pub w_hub: f64,
-    /// K-potential at/above which a world is "high-K" (center- or colony-class).
+    /// K-potential at/above which a world is "high-K" (center- or colony-class);
+    /// below it, a mineral-rich world is a *Mining outpost* instead. **This
+    /// threshold gates the entire hauling economy** — set it under the galaxy's
+    /// K distribution and no outpost is ever classified, so no freighter ever
+    /// flies and colonies cannot fund their way to the expansion tier (R-AC17).
     pub k_high: f64,
     /// mineral_value at/above which a low-K world is a mining outpost.
     pub mineral_high: f64,
@@ -59,7 +63,14 @@ impl Default for RankWeights {
             w_k: 1.0,
             w_mineral: 0.8,
             w_hub: 1.2,
-            k_high: 1.5,
+            // 3.2 — ratified: "the snowball is the design". The old 1.5 was
+            // tuned to a ~25 ly galaxy; against the current one, where 99% of
+            // planets have min(hab,bio) >= 1.76, it made the Mining-outpost
+            // class unreachable and stalled expansion at a few dozen colonies.
+            // 3.2 sits just above the median K (~3.22), so the low-K half of the
+            // galaxy becomes mining and the high-K half becomes colonies.
+            // Validated 4/4 test-bed seeds to 100% of colonizable worlds.
+            k_high: 3.2,
             mineral_high: 2.0,
             hub_high: 0.8,
             centrality_scale: 150.0,
@@ -90,9 +101,9 @@ pub struct Doctrine {
     /// at the limited tier builds a Scout instead of idling — this is what
     /// makes survey scale with the empire rather than being fixed at the
     /// bootstrap fan-out. `0` restores the old behavior (never build survey
-    /// craft after bootstrap). **Placeholder magnitude** pending MC (R-AC16):
-    /// seed-1 probing put the best value nearer 1024, but 64 is the
-    /// conservative default until a sweep confirms it.
+    /// craft after bootstrap). **1024, ratified** (R-AC16) as part of the
+    /// snowball defaults; the offline search may refine it, but the stalled
+    /// low-reserve configuration is no longer the reference.
     pub survey_reserve: usize,
 
     // --- Expand (autopilot-doc §4) ---
@@ -117,7 +128,10 @@ impl Default for Doctrine {
             growth_rate: 0.5,
             survey_vehicles: 6,
             survey_accel_g: 1.0,
-            survey_reserve: 64,
+            // 1024 — ratified with k_high above; survey must scale with the
+            // empire or expansion outruns its own map. Monotone by construction
+            // (survey is a fallback, never a pre-emption), so raising it is safe.
+            survey_reserve: 1024,
             expand_bias: ExpandBias::ProductionCentersFirst,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
@@ -139,6 +153,37 @@ pub struct PlanetView {
 
 impl PlanetView {
     /// Ceiling infra can be built to (autopilot-doc §3).
+    #[inline]
+    pub fn k_potential(&self) -> f64 {
+        self.habitability.min(self.biosphere)
+    }
+}
+
+/// What a survey craft may know about a world it has **not yet visited** — the
+/// *remote* tier of `Hyades_autopilot_colonization_growth.md` §1.
+///
+/// The spec draws the fog line precisely: *"Biosphere and Habitability are known
+/// from interstellar distance (remote spectroscopy). Ownership, infrastructure,
+/// and mineral density require a close-range scan."* So a survey target may be
+/// picked on position and the K-ceiling factors, and on nothing else — this type
+/// exists so that boundary is enforced by the type system rather than by the
+/// policy's good manners.
+///
+/// It replaced [`PlanetView`] in [`Autopilot::choose_survey_target`], which had
+/// been handing out `minerals`, `owner` and `pop_level` for unscanned worlds
+/// (all close-scan-only facts) and filtering the candidate list on ground-truth
+/// ownership. Sizing the view to the query also removed the engine's single
+/// hottest cost — see `Hyades_simulation_model.md` §2b.
+#[derive(Clone, Copy, Debug)]
+pub struct SurveyView {
+    pub id: PlanetId,
+    pub position: Vec3,
+    pub habitability: f64,
+    pub biosphere: f64,
+}
+
+impl SurveyView {
+    /// Ceiling infra could be built to, from remote spectroscopy alone.
     #[inline]
     pub fn k_potential(&self) -> f64 {
         self.habitability.min(self.biosphere)
@@ -258,7 +303,7 @@ pub trait Autopilot {
         doctrine: &Doctrine,
         from: Vec3,
         heading_bias: Option<Vec3>,
-        unscanned: &[PlanetView],
+        unscanned: &[SurveyView],
     ) -> Option<PlanetId>;
 
     /// Decide this cycle's build for a production center (autopilot-doc §§4–6),
@@ -326,7 +371,7 @@ impl Autopilot for BaselineAutopilot {
         _doctrine: &Doctrine,
         from: Vec3,
         heading_bias: Option<Vec3>,
-        unscanned: &[PlanetView],
+        unscanned: &[SurveyView],
     ) -> Option<PlanetId> {
         // Prefer the heading hemisphere (dot > 0); fall back to global nearest.
         let pick = |restrict: bool| -> Option<(PlanetId, f64)> {
@@ -539,14 +584,16 @@ mod tests {
         assert_eq!(ap.rank(&doctrine, &v, &ctx).class, PlanetClass::Colony);
     }
 
+    /// A remote-tier sighting: position plus K factors, nothing close-scan-only.
+    fn survey_view(id: u32, pos: Vec3) -> SurveyView {
+        SurveyView { id: PlanetId(id), position: pos, habitability: 1.0, biosphere: 1.0 }
+    }
+
     #[test]
     fn survey_prefers_nearest() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let cands = vec![
-            view(1, Vec3::new(100.0, 0.0, 0.0), 1.0, 1.0, MineralField::default()),
-            view(2, Vec3::new(10.0, 0.0, 0.0), 1.0, 1.0, MineralField::default()),
-        ];
+        let cands = vec![survey_view(1, Vec3::new(100.0, 0.0, 0.0)), survey_view(2, Vec3::new(10.0, 0.0, 0.0))];
         assert_eq!(ap.choose_survey_target(&doctrine, Vec3::ZERO, None, &cands), Some(PlanetId(2)));
     }
 
