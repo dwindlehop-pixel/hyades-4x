@@ -1,0 +1,25 @@
+[package]
+name = "hyades-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Hyades simulation engine: galaxy generation, discrete-event relativistic autopilot simulation, and the autopilot policy interface. Presentation-free, dependency-free, WASM-targetable."
+license = "MIT OR Apache-2.0"
+
+# The engine is the SAME code the Monte-Carlo balancer and the production game
+# both link against. It is therefore:
+#   * dependency-free  (deterministic across native + wasm32; no supply chain)
+#   * presentation-free (no rendering, no I/O, no hex/command-view code here)
+#   * deterministic     (hand-rolled seeded PRNG, ordered event queue)
+[dependencies]
+
+[lib]
+# crate-type rlib keeps it linkable by the native MC harness AND by a wasm
+# host crate (which would add wasm-bindgen itself — NOT here, to keep the
+# engine host-agnostic and swappable per the decoupling requirement).
+crate-type = ["rlib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"   # smaller wasm; the engine never relies on unwinding

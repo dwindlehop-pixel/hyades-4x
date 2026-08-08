@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+
+# Library crate: leave the lockfile untracked.
+# (The comment must be on its own line — git only treats `#` as a comment at the
+# start of a line, so a trailing one would become part of the pattern.)
+Cargo.lock

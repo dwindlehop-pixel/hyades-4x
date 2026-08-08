@@ -1,0 +1,5 @@
+# Matches the engine sources as authored: wide lines, compact single-line
+# structs/calls. Keeps `cargo fmt --check` enforceable without reflowing the
+# tree away from the style the specs and comments were written against.
+max_width = 120
+use_small_heuristics = "Max"
