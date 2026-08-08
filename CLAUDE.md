@@ -308,22 +308,26 @@ i.e. supremacy is slot-organic by construction.
   |---|---|---|---|
   | *stalled config (no longer shipped)*, 3 seats, 4 kyr | 56 | 28,966 yr/s | 11,586× |
   | *stalled config (no longer shipped)*, 12 seats, 4 kyr | 205 | 3,037 yr/s | 1,215× |
-  | **shipped defaults**, 3 seats, 4 kyr | 5,649 | **456 yr/s** | **182×** |
-  | shipped defaults, 3 seats, 8 kyr | 9,486 | 77 yr/s *(pre-optimization)* | 31× |
-  | **shipped defaults, 12 seats — the real worst case** | — | **not yet measured** | — |
+  | **shipped defaults**, 3 seats, 4 kyr | 5,649 | 456 yr/s | 182× |
+  | **shipped defaults**, 3 seats, 8 kyr | 9,501 | **79 yr/s** | **32×** |
+  | **shipped defaults**, 12 seats, 4 kyr | 14,649 | 128 yr/s | 51× |
+  | shipped defaults, 12 seats, 8 kyr | — | not yet measured | — |
 
   The first two rows are kept only as the historical baseline: they are the
   configuration design law #9 says never to benchmark against, and they are why the
   old 2,116 yr/s figure looked comfortable. Nothing was wrong with that measurement —
   it was taken on a game that stalled at a few dozen colonies.
 
-  **Degradation is superlinear in entity count, which is the part to worry about.**
-  Between the last two rows, 1.7× the vehicles costs 4.2× the throughput — the run
-  also spends more of its life at the high-vehicle end, so cost compounds with both
-  fleet size and duration. The margin has already fallen from 847× to **31× at three
-  seats**. A 12-seat full-colonization run is the true worst case and **has not been
-  measured**; on this trend it plausibly lands in single-digit multiples of the floor,
-  or under it. Measure that case before assuming any headroom remains.
+  **Degradation is superlinear in duration, not just in fleet size.** 3 seats over
+  8 kyr carries 1.7× the vehicles of the 4 kyr run but costs 5.8× the throughput,
+  because the longer run also spends more of its life at the high-vehicle end. Seat
+  count is gentler than that: 12 seats holds 2.6× the vehicles of 3 seats at the same
+  horizon for 3.6× the cost, roughly linear.
+
+  So the worst case is **long horizons, not wide tables** — which matters because
+  full coverage needs ~8 kyr. 12 seats at 8 kyr is the untested corner; extrapolating
+  the 8-kyr penalty onto the 12-seat row puts it near **20 yr/s, an ~8× margin**.
+  Still above the floor, but the 847× headroom `galaxy.rs` advertises is gone.
 
   Two things to do:
   1. **`examples/bench_hex_size.rs` does not exist in this tree** despite being cited
