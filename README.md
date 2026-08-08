@@ -30,7 +30,7 @@ cargo run --release --example laser_vs_missile   # ROU laser-vs-missile sweep
 cargo run --release --example combat_arena       # kinematic interception harness
 cargo run --release --example montecarlo         # balance sweeps
 cargo run --release --example coverage_time      # colonization coverage timing
-cargo run --release --example min_time_search    # minimum-time flight search
+cargo run --release --example min_time_search    # coverage parameter search (offline; ~40 min)
 cargo run --release --example trace              # single-run diagnostic log
 ```
 
@@ -58,7 +58,7 @@ zero-dependency posture out to the build system.
 | `lint` | `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` |
 | `wasm` | `cargo check --lib --target wasm32-unknown-unknown` |
 | `examples` | builds every example, runs the four fast ones |
-| `balance` | the slow tuned sweeps (`laser_vs_missile`, `min_time_search`) |
+| `balance` | `tests/balance.rs` (tuned combat) and `coverage_trace` |
 
 `RUSTFLAGS: -D warnings` is set workflow-wide, so a plain rustc warning fails
 the build too, not just a clippy lint.

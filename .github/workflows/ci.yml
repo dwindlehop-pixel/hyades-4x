@@ -119,7 +119,17 @@ jobs:
       # ~28 full-colonization sims and takes minutes, not seconds.
       - name: coverage_trace
         run: cargo run --release --example coverage_trace
-      # No assertions on this one yet — see R-AC17/R-SIM2. Running it still
-      # catches a panic or a NaN-poisoned sweep.
-      - name: min_time_search
-        run: cargo run --release --example min_time_search
+      # min_time_search is deliberately NOT run here. It is an offline job: at the
+      # ratified snowball defaults each of its ~270 trials is a full-colonization
+      # sim (~9 s locally), so the search is ~40 min on this hardware and longer on
+      # a runner — it would spend most of an hour to time out at 60 min. Its cost
+      # grew precisely because the economy started working, which is the good
+      # outcome, not a regression to defend against here.
+      #
+      # Run it by hand when tuning:  cargo run --release --example min_time_search
+      #
+      # CI still covers this ground: coverage_trace above exercises the same
+      # engine paths across ~28 sims and fails on a panic, and tests/balance.rs
+      # asserts the combat side. What is missing is a *bounded* economy assertion
+      # — see R-AC17/R-SIM2 — which is a threshold decision, not a timeout to
+      # paper over.

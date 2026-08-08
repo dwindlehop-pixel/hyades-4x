@@ -81,8 +81,13 @@ cargo check --lib --target wasm32-unknown-unknown   # holds the §1 portability 
 ```
 
 `RUSTFLAGS: -D warnings` is set workflow-wide, so a bare rustc warning is a
-build failure too. The slow tuned sweeps (`laser_vs_missile`, `min_time_search`)
-run in their own `balance` job so they do not block fast feedback.
+build failure too. The slow work runs in its own `balance` job so it does not
+block fast feedback: `tests/balance.rs` (the tuned combat goldens) and
+`coverage_trace`.
+
+`min_time_search` is **not in CI** — it is an offline job. At the ratified
+defaults each of its ~270 trials is a full-colonization sim, putting the search
+around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 
 ---
 
