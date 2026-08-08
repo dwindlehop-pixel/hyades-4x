@@ -69,6 +69,41 @@ Two rules bind the model:
 
 This is planetside economy, not space-combat terrain: it never adds cover or initiative to the void fight. It is the disciplined version of "terraforming" — fast for infrastructure, slow for biosphere, glacial for habitability.
 
+## 2b. How entities are evaluated — arrival-driven, locally scoped
+
+Entities are **not** stepped by a per-tick sweep. This is a discrete-event
+simulation: a ship re-decides what to do next **when it arrives somewhere**
+(`ContactArrive`, `FreighterArrive`, `ColonyArrive`, `ScrapArrive`) — the only
+moment its situation has actually changed. Production centers are the single
+cadence-driven exception: one tick per center per `cycle_years`, because growth
+is a rate, not an event. Everything else is arrival-driven.
+
+That choice sets the engine's cost model, and both halves of it matter:
+
+> `cost = entities × arrivals-per-entity × work-per-evaluation`
+
+Fleet size grows without bound as an empire snowballs — that is the *design*, so
+the first two factors are not available to trim. **Only `work-per-evaluation` is
+ours to control, which is why an entity's decision must be scoped to what it
+reads rather than to the size of the galaxy.** A query that walks every planet is
+O(galaxy) per arrival and therefore O(entities × galaxy) overall; at full
+colonization that is the difference between a sweep that finishes and one that
+does not.
+
+The worked example, because it was measured rather than assumed (seed 1, 3 seats,
+full colonization, 4,000 yr): survey re-targeting fires on `ContactArrive`, the
+correct trigger — but each call built a `PlanetView` for every unvisited world in
+the galaxy, **15,653 evaluations × ~4,100–6,725 planets**, to serve a decision
+that reads only `id` and `position` and keeps one result. Profiling put that one
+query and its view construction at **81% of all engine instructions**. Getting the
+trigger right does not by itself make an evaluation cheap.
+
+**R-SIM1 (new, open):** `Autopilot::choose_survey_target` takes `&[PlanetView]`
+(88 bytes/entry: hab, bio, a 24-byte `MineralField`, owner, pop_level) and reads
+28 bytes of it. Splitting out a light `SurveyView { id, position }` would cut the
+dominant remaining cost, at the price of a second view type in the fog-of-war
+contract of §1. Not done — it is a contract change, not an optimization.
+
 ## 3. The round loop
 
 1. **Income & growth** — pop ticks up logistically, minerals accrue per hex, the tree expands, hands refill (deterministically — you choose, you do not roll).

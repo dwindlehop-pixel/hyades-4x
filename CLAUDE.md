@@ -124,6 +124,42 @@ combat logic into the arena or into an example.
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`
   guards this — never weaken it to make a feature fit.
 - **Zero dependencies.** Do not add crates to `Cargo.toml`.
+- **Entities evaluate on their own arrival events — never on a tick sweep, and never
+  by rescanning the galaxy.** This is a discrete-event engine: a ship decides what to
+  do next *when it arrives somewhere* (`ContactArrive`, `FreighterArrive`,
+  `ColonyArrive`, `ScrapArrive`), which is the only moment its situation actually
+  changed. Production centers are the one cadence-driven exception, one tick per
+  center per `cycle_years`; everything else is arrival-driven.
+
+  The trigger is only half the rule. **Evaluation count scales with entity count, so
+  per-evaluation cost must be local — O(what the decision reads), not O(galaxy).**
+  The two multiply, and that product is what sets simulation speed:
+
+  > `cost = entities × arrivals-per-entity × work-per-evaluation`
+
+  Fleets grow without bound as the game snowballs, so the first two factors are the
+  *design*, not something to trim. Only the third is ours to control, and it is
+  therefore the one that must stay small.
+
+  Measured violation, kept here as the worked example (seed 1, 3 seats, full
+  colonization, horizon 4,000): survey re-targeting fires on `ContactArrive`, which is
+  the correct trigger — but each evaluation walked every planet in the galaxy and
+  built a full `PlanetView` for each survivor. That is **15,653 evaluations × ~4,100–6,725
+  planets ≈ 64–105 M view constructions**, for a decision that reads only `id` and
+  `position` and keeps exactly one result. Callgrind put `survey_candidates` +
+  `view_of` at **81% of all engine instructions**. The trigger was right and the
+  engine was still spending four fifths of its life there.
+
+  Practical form of the rule:
+  - Hand a decision only the fields it reads. An 88-byte view for a query that uses
+    28 bytes of it is a 3× memory-traffic tax on the hottest path.
+  - Do not materialize a collection you only `min_by`/`max_by` over.
+  - Prefer incremental or spatial structures to full scans — but **measure, because
+    fewer items is not automatically faster.** An incrementally-maintained unvisited
+    frontier cut the scanned count 39% (mean 4,114 of 6,725) and came out *slower*
+    at horizon 4,000 (9.67 s vs 8.90 s): swap-removal scrambled the order, trading a
+    sequential walk for random access across three component stores. Locality beat
+    count. That attempt is reverted; the finding is not.
 
 ---
 
@@ -291,7 +327,13 @@ i.e. supremacy is slot-organic by construction.
   of thousands of simulated years against a 4,000-year default horizon.
 - Counter-graph matrix partition (card contract §8.3): define Red-class positions vs.
   Blue/Green-edge positions so the mineral substitution law has mechanical grip.
-- Open R-codes: R-ARENA1–7, R-MX1–6, R-XM5–7.
+- **R-SIM1 — light survey view.** `Autopilot::choose_survey_target` takes
+  `&[PlanetView]` (88 B/entry) and reads 28 B of it — `id` and `position`. Sizing the
+  view to the query is the largest remaining per-ship win (`view_of` alone was 18% of
+  engine instructions), but it adds a second view type to the fog-of-war contract
+  (`Hyades_simulation_model.md` §1/§2b), so it is a contract decision, not a free
+  optimization. Deliberately not taken yet.
+- Open R-codes: R-ARENA1–7, R-MX1–6, R-XM5–7, R-AC16–17, R-SIM1.
 
 ---
 
