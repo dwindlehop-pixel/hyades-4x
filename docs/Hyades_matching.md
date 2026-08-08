@@ -21,10 +21,21 @@ some queue; **change nothing if the existing approach is best.**
 
 **Partially yes, and mostly not for raw speed.** Honest accounting:
 
-- **Speed today:** with the 600-planet cap and the 847× throughput margin
+- **Speed today:** ~~with the 600-planet cap and the 847× throughput margin
   from `bench_hex_size.rs`, the existing O(P) scans are not the bottleneck
   yet. Each freighter load is one ~600-element scan; each production cycle
-  likewise. At current entity counts this is microseconds.
+  likewise. At current entity counts this is microseconds.~~
+  **Superseded — both premises have expired.** (a) There is no 600-planet
+  cap any more: `GalaxyConfig::new(3, seed)` generates **6,725** planets, so
+  every O(P) scan is ~11× the length this paragraph assumed. (b) The 847×
+  margin cites `examples/bench_hex_size.rs`, which **is not present in this
+  tree** (it is also cited by `galaxy.rs`, `tests/smoke.rs` and
+  `tests/determinism.rs`); until it is restored the margin is unverified.
+  (c) "At current entity counts" was written when colonization stalled at a
+  few dozen colonies — the expansion fixes take a 3-seat game to thousands
+  of vehicles, and the scans multiply per agent exactly as "Speed tomorrow"
+  below predicts. Treat that paragraph as the live one and re-measure before
+  concluding the scans are cheap. See CLAUDE.md §7 for the throughput watch.
 - **Speed tomorrow:** the costs are *multiplicative* where it hurts — the
   Monte-Carlo balancer runs thousands of sims × parameter sweeps, and the
   scans multiply per-agent (F freighters × P planets per hauling wave,

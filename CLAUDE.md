@@ -222,7 +222,44 @@ i.e. supremacy is slot-organic by construction.
 - Refactor three long functions: `sys_production_tick` (~149 lines), `apply_build`
   (~148), `production_choice` (~137).
 - Recalibrate `centrality_scale`/`k_high` — currently tuned to an old ~25 ly extent;
-  the galaxy is now hundreds of ly.
+  the galaxy is now hundreds of ly. **`k_high` is now known to be the binding
+  constraint on the whole expansion loop** (R-AC17, `Hyades_autopilot_colonization_growth.md`
+  §6a): at the default 1.5 against a galaxy where 99% of planets have
+  `min(hab,bio) ≥ 1.76`, the Mining-outpost class is unreachable, so no outpost is
+  ever placed, no freighter ever flies, and the §5 hauling economy is dead code at
+  runtime. Flagged for ratification, not yet changed.
+- **Watch simulation throughput as fleets grow — optimize before it nears 2.5 yr/s.**
+  The confirmed floor is **2.5 simulated-years/real-second**. `galaxy.rs` cites
+  **2,116 yr/s** at the 12-player worst case (an 847× margin) and `Hyades_matching.md`
+  §"Speed today" leans on the same figure — but both date from a galaxy that barely
+  colonized. **Entity count is the first-order cost**, and it is now the thing that
+  moves. Measured release-mode, seed 1, this machine:
+
+  | scenario | vehicles | throughput | margin vs floor |
+  |---|---|---|---|
+  | defaults, 3 seats | 56 | 28,966 yr/s | 11,586× |
+  | defaults, 12 seats | 205 | 3,037 yr/s | 1,215× |
+  | full colonization (R-AC17), 3 seats | 5,629 | **323 yr/s** | **129×** |
+
+  Throughput tracks vehicle count almost inversely: 100× the vehicles cost 90× the
+  speed. The 12-seat baseline corroborates the old 2,116 figure, so the number was
+  never wrong — it was measured on a game that stalled at a few dozen colonies. A
+  12-seat *full-colonization* run is the real worst case and has not been measured;
+  extrapolating the linear trend puts it in the tens of yr/s, i.e. a margin in the
+  low tens rather than 847×.
+
+  Two things to do:
+  1. **`examples/bench_hex_size.rs` does not exist in this tree** despite being cited
+     by `galaxy.rs` (×3), `tests/smoke.rs`, `tests/determinism.rs`, and
+     `Hyades_matching.md`. Restore or rewrite it so the claim is checkable, and make
+     it sweep *entity count*, not just hex size.
+  2. Treat approaching 2.5 yr/s in testing as the trigger to **optimize, not to shrink
+     the scenario**. First suspects are the O(P) scans that now run against 6,725
+     planets rather than the 600 `Hyades_matching.md` assumed — `most_needed_center`
+     per freighter load and the candidate scan per production cycle — which is exactly
+     what wiring `matching.rs` in is meant to fix. Throughput is also a *search*
+     problem: the balancer's value scales with runs per hour, so speed lost to entity
+     count is balance coverage not bought.
 - Pacing tension: at correct hex-derived scale, full galaxy exploration may need tens
   of thousands of simulated years against a 4,000-year default horizon.
 - Counter-graph matrix partition (card contract §8.3): define Red-class positions vs.
