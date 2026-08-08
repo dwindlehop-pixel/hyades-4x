@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A push that supersedes an in-flight run cancels it; the balance sweeps are
+# long enough that stacking them up is wasteful.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # Build + the whole test suite: 79 unit, 4 determinism, 4 smoke.
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version && cargo --version
+      - name: Build
+        run: cargo build --all-targets --verbose
+      - name: Test
+        run: cargo test --all-targets --verbose
+      # --all-targets skips doctests; the module docs carry the spec prose, so
+      # run them separately rather than letting them rot uncompiled.
+      - name: Doctests
+        run: cargo test --doc --verbose
+
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default stable
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # lib.rs states the portability contract: no clock, no filesystem, no network,
+  # no threads, no OS RNG — which is exactly what makes the engine wasm-targetable.
+  # Compiling for wasm32 is the only thing that actually holds that claim honest.
+  wasm:
+    name: wasm32 check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --no-self-update
+          rustup default stable
+      - name: cargo check (wasm32-unknown-unknown)
+        run: cargo check --lib --target wasm32-unknown-unknown --verbose
+
+  # The short drivers, run for real so a panic or a NaN-poisoned sweep fails CI.
+  examples:
+    name: examples (fast)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      - name: Build all examples
+        run: cargo build --release --examples --verbose
+      - name: Run
+        run: |
+          for ex in trace montecarlo combat_arena coverage_time; do
+            echo "::group::$ex"
+            cargo run --release --example "$ex"
+            echo "::endgroup::"
+          done
+
+  # The tuned sweeps. Minutes each, so they get their own job rather than
+  # holding up the fast feedback above. MIGRATION.md pins the expected result:
+  # missiles favored closing at -0.002c, lasers at rest/receding, and 200-v-100
+  # lasers winning with light casualties.
+  balance:
+    name: balance sweeps (slow)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      - name: laser_vs_missile
+        run: cargo run --release --example laser_vs_missile
+      - name: min_time_search
+        run: cargo run --release --example min_time_search
