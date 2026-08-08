@@ -96,9 +96,7 @@ jobs:
           done
 
   # The tuned sweeps. Minutes each, so they get their own job rather than
-  # holding up the fast feedback above. MIGRATION.md pins the expected result:
-  # missiles favored closing at -0.002c, lasers at rest/receding, and 200-v-100
-  # lasers winning with light casualties.
+  # holding up the fast feedback above.
   balance:
     name: balance sweeps (slow)
     runs-on: ubuntu-latest
@@ -109,7 +107,16 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --no-self-update
           rustup default stable
-      - name: laser_vs_missile
-        run: cargo run --release --example laser_vs_missile
+      # tests/balance.rs pins the tuned laser-vs-missile outcome: the golden
+      # win table, the per-seed survivor counts, and the design properties
+      # MIGRATION.md states. #[ignore]d so a plain `cargo test` stays fast, and
+      # --nocapture keeps the human-readable sweep in the log — which is what
+      # the laser_vs_missile example used to be here for. It is not run
+      # separately any more; the test covers the same ground and asserts.
+      - name: Tuned balance (tests/balance.rs)
+        run: cargo test --release --test balance -- --ignored --nocapture
+      # No assertions on this one yet: the search currently reports 0/10 seeds
+      # fully covered, so there is no defensible floor to pin until that is
+      # understood. Running it still catches a panic or a NaN-poisoned sweep.
       - name: min_time_search
         run: cargo run --release --example min_time_search
