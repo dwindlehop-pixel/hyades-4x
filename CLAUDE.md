@@ -383,7 +383,7 @@ Status, so this is not re-derived each time:
 | 6 | `min_time_search` as a reachability-cone query | R-O31 | open — same function, reverse direction |
 | 7 | Route intercept and accept/decline through *believed* `a_max` | R-O41 | open — this is where surprise attack comes from |
 | 8 | Permissive role eligibility with varying competence | R-O44 | open — mostly a roles-§4 doc change plus item 1 |
-| 9 | `FAIR_COUNTS` rejects 18 while galaxy §2 lists it fair | R-O12 | open — **a genuine contradiction in the tree**, confirmed: `galaxy.rs:472` is `[2, 3, 6, 12]` and `starting_hex_radius` carries an `18 => 4.5` branch. Needs a decision, not a guess |
+| 9 | `FAIR_COUNTS` rejects 18 while galaxy §2 lists it fair | R-O12 | **done** — now `[2, 3, 6, 12, 18]`. A radius-`r` hex ring holds `6r` cells, so the family is 6/12/18/24…; 9 and 15 are multiples of 3 but form no ring, so `% 3` would be the wrong predicate. The three ring radii were exactly `N/6 + 1.5`, so the existing `18 => 4.5` branch was the family's third term and the list was one term short — replaced by that closed form. **Balance targets the 2-neighbour configs (3/6/12/18); N=2 is supported but not a balance target**, which also settles R-O9's missing Green as accepted rather than open |
 | 10 | Seed roster LSV+LCV; default doctrine 100% LSV Scout | R-O42 | open — needs item 2 |
 | 11 | Derive `hull_dry_mass` from mineral cost | R-O57 | open — **coupled to 12**, see below |
 | 13 | Slag as a bank entry | R-O59 | open |

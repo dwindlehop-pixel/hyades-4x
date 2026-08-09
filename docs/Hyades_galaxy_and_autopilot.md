@@ -23,7 +23,11 @@ Homeworlds seed in **adjacent hexes forming a vertex-transitive cluster** where 
 | **6r** (12, 18) | radius-`r` ring | 2 | inner region | yes |
 | **4, 5, 7** | — | — | — | **no symmetric config** |
 
-Cliques cap at 3, rings come in 6s, 4/5/7 have no equal-adjacency arrangement → **2, 3, 6 are clean tables**. The **neutral core** is equidistant from all — early contested space. **R-G2:** supported counts + core contents.
+Cliques cap at 3, rings come in 6s, 4/5/7 have no equal-adjacency arrangement. A radius-`r` ring holds exactly **6r** cells, so the ring family is **6, 12, 18, 24, …** — note that 9 and 15 are multiples of 3 but form *no* ring, so a `% 3` rule would be the wrong predicate. The **neutral core** is equidistant from all — early contested space.
+
+**Balance targets the 2-neighbour configurations — 3, 6, 12, 18 — where every seat borders exactly two others.** **N=2 is supported but is not a balance target** (ratified): the domino gives each player *one* neighbour, and the `p % 3` archetype cycle leaves it with Blue and Red and no Green. Both are accepted consequences of a configuration nothing is tuned around — which **resolves R-O9** as "known and accepted" rather than as a defect to fix.
+
+**R-O12 (resolved): `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12, 18]`.** It had been truncated at 12 while `starting_hex_radius` already carried an `18 => 4.5` branch; all three of its ring radii are exactly `N/6 + 1.5`, so that branch was the third term of the family rather than a stray, and the list was simply one term short. The engine now expresses the family as that closed form instead of three magic numbers. **R-G2:** core contents (supported counts now settled).
 
 ---
 

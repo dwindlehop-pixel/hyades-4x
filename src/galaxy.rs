@@ -331,9 +331,18 @@ impl GalaxyConfig {
     fn starting_hex_radius(players: usize) -> f64 {
         match players {
             0..=3 => 1.5, // ~3 hexes' worth of starting radius (tri-hex clique)
-            6 => 2.5,     // ring(r=1) + center, generously
-            12 => 3.5,    // 6r, r=2
-            18 => 4.5,    // 6r, r=3
+            // The `6r` ring family, as one closed form instead of three magic
+            // numbers: a radius-`r` ring holds `6r` hexes, so `r = N/6`. This
+            // reproduces the previous table exactly — 6 → 2.5, 12 → 3.5,
+            // 18 → 4.5 — and keeps extending correctly if a larger ring is ever
+            // admitted to FAIR_COUNTS.
+            n if n % 6 == 0 => (n / 6) as f64 + 1.5,
+            // Unreachable for a generated galaxy: `Galaxy::generate` rejects
+            // non-fair counts before this runs. It survives only for callers
+            // poking `hex_grid_radius` on an unvalidated config, and is
+            // deliberately *not* the ring formula — at 18 it would say 3.95
+            // against the ring's 4.5, so letting it serve the family would
+            // silently mis-size the galaxy.
             n => 1.5 + ((n as f64) / 3.0).sqrt(),
         }
     }
@@ -469,7 +478,24 @@ pub struct Galaxy {
 
 impl Galaxy {
     /// The fair (vertex-transitive) seat counts (§2).
-    pub const FAIR_COUNTS: [usize; 4] = [2, 3, 6, 12];
+    ///
+    /// A hex ring at radius `r` holds exactly `6r` cells, so the ring family is
+    /// **6, 12, 18, 24, …** — which is why 9 and 15 are *not* here despite being
+    /// multiples of 3: neither forms a ring. Below the rings sit two special
+    /// cases: the **tri-hex clique** at 3, and the **domino** at 2.
+    ///
+    /// **18 was missing (R-O12, resolved).** `starting_hex_radius` already
+    /// carried an `18 => 4.5` branch, and all three of its ring radii are
+    /// exactly `N/6 + 1.5`, so the branch was the third term of the family, not
+    /// a stray — the list was simply truncated one term early.
+    ///
+    /// **Balance targets the 2-neighbour configurations** — 3, 6, 12, 18 — where
+    /// every seat borders exactly two others. **N=2 is supported but is not a
+    /// balance target**: the domino gives each player *one* neighbour, and the
+    /// `p % 3` archetype cycle leaves it with Blue and Red and no Green (R-O9).
+    /// Both are accepted consequences of a configuration nothing is tuned
+    /// around, not defects to fix.
+    pub const FAIR_COUNTS: [usize; 5] = [2, 3, 6, 12, 18];
 
     #[inline]
     pub fn planet(&self, id: PlanetId) -> &Planet {
@@ -597,6 +623,49 @@ mod tests {
     fn rejects_unfair_counts() {
         for n in [4usize, 5, 7, 8, 11] {
             assert_eq!(Galaxy::generate(GalaxyConfig::new(n, 1)).err(), Some(GenError::UnfairPlayerCount(n)));
+        }
+    }
+
+    #[test]
+    fn fair_counts_are_the_ring_family_plus_the_two_special_cases() {
+        // A hex ring at radius r holds 6r cells, so the family is 6, 12, 18…
+        // 9 and 15 are multiples of 3 but form no ring, which is why an
+        // archetype-style `% 3` rule would be the wrong predicate here.
+        for &n in &Galaxy::FAIR_COUNTS {
+            assert!(n == 2 || n == 3 || n % 6 == 0, "{n} is neither a special case nor a 6r ring");
+        }
+        for n in [6usize, 12, 18] {
+            assert!(Galaxy::FAIR_COUNTS.contains(&n), "ring count {n} must be fair");
+        }
+        for n in [4usize, 5, 7, 9, 15] {
+            assert!(!Galaxy::FAIR_COUNTS.contains(&n), "{n} forms no vertex-transitive cluster");
+        }
+    }
+
+    #[test]
+    fn ring_radius_is_the_closed_form_that_replaced_the_magic_numbers() {
+        // r + 1.5 where r = N/6, which is exactly what the old hand-written
+        // table said for 6/12/18. Pinned so the family cannot drift back apart.
+        for n in [6usize, 12, 18, 24] {
+            let expected = (n / 6) as f64 + 1.5;
+            let cfg = GalaxyConfig { players: n, ..GalaxyConfig::new(6, 1) };
+            assert!(
+                (cfg.hex_grid_radius() - (expected + cfg.hex_rings_beyond_start)).abs() < 1e-12,
+                "N={n} radius drifted off the 6r closed form"
+            );
+        }
+    }
+
+    #[test]
+    fn eighteen_seats_generate_a_symmetric_ring() {
+        // R-O12: 18 is a 2-neighbour configuration and must place like one.
+        let g = Galaxy::generate(GalaxyConfig::new(18, 1)).expect("18 is a fair count");
+        assert_eq!(g.homeworlds.len(), 18);
+        let hw: Vec<_> = g.homeworlds.iter().map(|&id| g.planet(id).position).collect();
+        let d0 = hw[0].distance(hw[1]);
+        for i in 0..hw.len() {
+            let d = hw[i].distance(hw[(i + 1) % hw.len()]);
+            assert!((d - d0).abs() < 1e-9, "ring spacing not uniform at seat {i}: {d} vs {d0}");
         }
     }
 
