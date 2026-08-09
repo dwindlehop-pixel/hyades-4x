@@ -361,6 +361,24 @@ scanning.
 
 ## 7. Hull, class, and role are three separate things (R-O29)
 
+> **Engine status: R-O29 resolved.** `BuildOrder` is now
+> `{ Idle, UpgradeInfrastructure, Hull { hull_type, class } }` — the three
+> mission-named variants (`LightVehicle`, `ColonyVehicle`, `MiningPair`) are
+> gone. Production decides *which object to make*; `Autopilot::assign_role`
+> then returns a `Tasking { role, target }` for the finished hull, so the role
+> is a post-production decision made against the same candidate list the
+> production choice saw. The paired freighter of the old `MiningPair` is now a
+> consequence of assigning `Role::Miner` (roles §5), not of the order's name.
+>
+> The split is **behaviour-neutral** at the shipped defaults: seed 1, 3 seats,
+> 4,000 yr gives 1,183 colonies / 1,594 miner taskings / 5,845 planets scanned /
+> 240 scouts both before and after. That is the intended outcome — this item
+> removes an observation leak, it does not change what gets built.
+>
+> Doctrine still reaches role assignment through `expand_bias` (which Colonizer
+> target to prefer); what it no longer does is announce the mission in the
+> order itself.
+
 `BuildOrder::ColonyVehicle { .. }` names the mission in the build order, which
 leaks doctrine at range for free. Split it:
 
@@ -758,14 +776,14 @@ is why exotic synthesis is pair production (§9.6).
 
 | # | Change | Blocks / R-code |
 |---|---|---|
-| 1 | Split `BuildOrder::ColonyVehicle` (and mining/freighter builds) into `BuildOrder::Hull { hull_type, class }` + separate role assignment | R-O29 |
+| 1 | ~~Split `BuildOrder::ColonyVehicle` (and mining/freighter builds) into `BuildOrder::Hull { hull_type, class }` + separate role assignment~~ **done** — see §7 | R-O29 **resolved** |
 | 2 | Add a **Design/roster component** — which hull types and classes a player has unlocked | **R-O28** (blocks σ_vector for Design entirely) |
 | 3 | Add **diplomatic fields** to `Doctrine` — trade lanes, partners, pact state | R-O27 / R-A3 |
 | 4 | Add a **throttle fraction** to `Doctrine`; derive observed acceleration from trajectory, not the stat block | R-O40 |
 | 5 | Equalise colony cargo mass and mineral cargo mass | R-O32 |
 | 6 | Expose `min_time_search` as a **reachability cone** query (same function, reverse direction); prune candidates via the existing BSP tree | R-O31 |
 | 7 | Route intercept and sim §4 accept/decline through **believed `a_max`** | R-O41 |
-| 8 | Rewrite roles §4 eligibility lists as **permissive with competence** | R-O44 |
+| 8 | ~~Rewrite roles §4 eligibility lists as **permissive with competence**~~ **done** — roles §4 now opens with the permissive rule and every per-role list reads "Competent:", with capability-zero (a Limited hull's absent cargo hold) distinguished from a forbidden assignment. `Autopilot::assign_role` matches: it declines on *no viable target*, never on hull type | R-O44 **resolved** |
 | 9 | `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12]` and rejects 18, while galaxy §2 lists 6r (12, 18) as fair and `starting_hex_radius` already carries an `18 => 4.5` branch | R-O12 |
 | 10 | Seed the starting roster: LSV + LCV, one class each; default doctrine 100% LSV Scout | R-O42 |
 | 11 | **Derive `hull_dry_mass` from mineral cost** — delete it as an independent field. Resolves the flagged placeholder rather than reconciling it | R-O57 |

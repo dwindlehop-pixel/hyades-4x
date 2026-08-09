@@ -114,20 +114,35 @@ This resolves the open size-naming placeholder from `Hyades_command_cards.md`
 
 Every role has a **default behavior** and zero or more **contingent
 behaviors** (a trigger condition and what the entity does instead).
-Eligibility is a function of which Hull-type value (and sometimes Loadout,
-§6) the entity's components show — never of the entity's bare ID, which
+
+**Eligibility is permissive; competence varies (R-O44,
+`Hyades_standing_layer_and_observation.md` §7).** Any hull may be assigned any
+role. The per-role lists below are therefore **competence statements, not
+gates** — they say which hulls do the job well, and the reason they do. A
+restricted list would leak role from hull, which is exactly what the
+`BuildOrder::Hull` split (R-O29) exists to prevent: if only Contact hulls can
+scout, seeing a Contact hull *is* seeing a scout.
+
+Two things are worth keeping apart here, because they look alike and are not:
+
+- **Competence** is a *degree*. An LSV in the Scout role is slow and carries no
+  dedicated sensor fit; it scouts badly, and legally.
+- **Capability** is a *fact about the loadout*. A Limited hull has zero cargo
+  capacity (§6), so a Limited Colonizer carries no pop and founds nothing when
+  it arrives. That is not the rules refusing the assignment — it is the
+  assignment being worth nothing, which an observer only learns by watching the
+  ship do nothing on arrival. Competence zero is the floor of the same scale,
+  not a separate rule.
+
+Whatever a role reads, it reads from the components the entity actually shows
+(Hull-type, and sometimes Loadout, §6) — never from the entity's bare ID, which
 carries no such information itself.
 
 ### 4.1 Scout — Contact
 
-- **Eligible:** ~~GCV, GCU, LCV, LCU.~~ **Superseded (R-O44,
-  `Hyades_standing_layer_and_observation.md` §7): eligibility is permissive with
-  varying competence — any hull may take any role, badly or well.** A restricted
-  list leaks role from hull, which is exactly what the `BuildOrder::Hull` split
-  (R-O29) exists to prevent: if only Contact hulls can scout, seeing a Contact
-  hull *is* seeing a scout. An LSV scouts poorly — slow, no dedicated sensor fit
-  — but legally. The four hulls above remain the *competent* choices, which is a
-  statement about effectiveness, not permission.
+- **Competent:** GCV, GCU, LCV, LCU. (Formerly written as an eligibility
+  restriction; **superseded by R-O44** — see the §4 preamble. Any hull may
+  scout; these four are the ones that scout well.)
 - **Default:** fly to nearest unscanned world, close-scan it, repeat
   (`Hyades_autopilot_colonization_growth.md` §2).
 - **Contingent — mission exhausted, LCV:** no unknown planets remain →
@@ -148,9 +163,10 @@ carries no such information itself.
 
 ### 4.2 Colonizer — Systems
 
-- **Eligible: MSV, GSV.** Confirmed (R-V9 resolved): founding requires
+- **Competent: MSV, GSV.** Confirmed (R-V9 resolved): founding requires
   **carrying 1 pop as cargo** to seed the new colony, and Limited has 0 cargo
-  capacity (§6), so a Colonizer must be Medium or larger. The pop is expended
+  capacity (§6), so a Limited Colonizer arrives empty and founds nothing —
+  capability zero rather than a forbidden assignment (§4 preamble). The pop is expended
   on founding — it becomes the colony's seed population, the same way the hull
   itself becomes the colony's level-1 infrastructure.
 - **Default:** target highest-rank ProductionCenter-class world, else
@@ -169,7 +185,7 @@ carries no such information itself.
 
 ### 4.3 Miner — Systems
 
-- **Eligible:** any Systems-class size. A Limited miner has zero cargo (§6)
+- **Competent:** any Systems-class size. A Limited miner has zero cargo (§6)
   and needs a partner to hold what it extracts — "another ship, or
   infrastructure." The engine already does the infrastructure half of this
   correctly: extraction deposits into the **outpost's own `stockpile`
@@ -186,7 +202,8 @@ carries no such information itself.
 
 ### 4.4 Freighter — Systems
 
-- **Eligible:** MSV, GSV (stated outright).
+- **Competent:** MSV, GSV (stated outright). A Limited freighter hauls nothing,
+  for the same §6 reason a Limited Colonizer seeds nothing.
 - **Default:** shuttle cargo between a Miner's outpost and its production
   center, until the outpost is exhausted.
 - **Contingent — threatened.** May become **Tribute**: yield the ship/cargo
@@ -205,7 +222,9 @@ matching last turn's "orbital rail accelerator to .99c, onboard mass driver
 for terminal correction only, ship consumed on delivery, maneuver-and-reuse
 sacrificed."
 
-- **Eligible:** Systems Vehicle, size TBD (**R-V10**).
+- **Competent:** Systems Vehicle, size TBD (**R-V10**). R-O44 makes the
+  assignment permissive; what is still open is which sizes deliver a strike
+  worth the hull.
 - **Requires:** a rail-accelerator structure at the launch system — a new
   infrastructure concept not yet in `Hyades_simulation_model.md` §2's
   structure list (**R-V11**).
@@ -441,4 +460,9 @@ not yet articulable, so deliberately not spec'd here.
 affordable, rather than a competing bias dial) — ready to formalize once §7
 is ratified, since production choice becomes "what does my current Role's
 System say to build," which is a cleaner home for it than the standalone
-`BuildOrder` match written before this conversation.
+`BuildOrder` match written before this conversation. **Partly overtaken by
+R-O29:** that match no longer names missions — it is
+`{ Idle, UpgradeInfrastructure, Hull { hull_type, class } }`, and role
+assignment has moved out of it into `Autopilot::assign_role`. The bias dial
+survives (`expand_bias` picks the Colonizer's target); what is deferred is
+replacing the dial itself.

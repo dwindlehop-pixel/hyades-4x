@@ -56,7 +56,7 @@ use std::collections::{BTreeSet, BinaryHeap};
 
 use crate::autopilot::{
     Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext,
-    SurveyView,
+    SurveyView, Tasking,
 };
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
@@ -1495,36 +1495,27 @@ impl Simulation {
                 chosen: order,
             },
         );
-        self.apply_build(p, center, center_pos, order);
+        self.apply_build_with(p, center, center_pos, order, &cands);
 
         self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
     }
 
     // --- build application -------------------------------------------------
 
-    fn apply_build(&mut self, p: usize, center: Entity, center_pos: Vec3, order: BuildOrder) {
+    /// Apply a production order. `candidates` is the empire's current candidate
+    /// list, used to **task** a finished hull — production decides *what object*
+    /// to make, role assignment decides *what it is for* (R-O29).
+    fn apply_build_with(
+        &mut self,
+        p: usize,
+        center: Entity,
+        center_pos: Vec3,
+        order: BuildOrder,
+        candidates: &[Candidate],
+    ) {
         let center_pid = *self.world.planet_id.get(center).unwrap();
         match order {
             BuildOrder::Idle => {}
-            // Bootstrap's opening fan-out calls `launch_survey` directly and is
-            // free by design (autopilot-doc §2, "built free as starting units").
-            // A scout ordered by a production center is a real build and is paid
-            // for out of the center's stockpile like every other order — without
-            // this the autopilot could mint unlimited free survey craft.
-            BuildOrder::LightVehicle { heading } => {
-                if !self.roster_permits(p, role_hull_type(Role::Scout)) {
-                    return;
-                }
-                let cost = role_cost(Role::Scout, &self.config);
-                if self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
-                    self.launch_survey(p, center_pos, heading, 0);
-                    let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
-                    self.log.push(
-                        self.clock,
-                        LogEvent::BuildApplied { player: p as u32, center: center_pid, order, cost, stockpile_after },
-                    );
-                }
-            }
             BuildOrder::UpgradeInfrastructure => {
                 let target = self.world.factors.get(center).unwrap().infra.round() + 1.0;
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
@@ -1542,40 +1533,52 @@ impl Simulation {
                     );
                 }
             }
-            BuildOrder::ColonyVehicle { target } => {
-                if !self.roster_permits(p, role_hull_type(Role::Colonizer)) {
+            BuildOrder::Hull { hull_type, class } => {
+                if !self.roster_permits(p, hull_type) {
                     return;
                 }
-                self.mark_targeted(p, target);
-                let cost = role_cost(Role::Colonizer, &self.config);
-                if self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
-                    let te = self.planet_entity[target.0 as usize];
-                    self.spawn_courier(p, Role::Colonizer, center, center_pos, te);
-                    let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
-                    self.log.push(
-                        self.clock,
-                        LogEvent::BuildApplied { player: p as u32, center: center_pid, order, cost, stockpile_after },
-                    );
+                let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
+                // The job is chosen here, after the object exists — not in the
+                // order, which is all a rival could read off the shipyard.
+                let tasking = self.autopilots[p].assign_role(&doctrine, hull_type, class, candidates);
+                let Some(Tasking { role, target }) = tasking else {
+                    return; // nothing worth building this hull for right now
+                };
+
+                // A Miner is produced together with the Freighter that hauls for
+                // it (roles §5: the nearest center produces both), so the pair is
+                // one economic act even though it is two objects.
+                let paired_freighter = role == Role::Miner;
+                let mut cost = role_cost(role, &self.config);
+                if paired_freighter {
+                    if !self.roster_permits(p, role_hull_type(Role::Freighter)) {
+                        return;
+                    }
+                    cost += role_cost(Role::Freighter, &self.config);
                 }
-            }
-            BuildOrder::MiningPair { target } => {
-                if !self.roster_permits(p, role_hull_type(Role::Miner))
-                    || !self.roster_permits(p, role_hull_type(Role::Freighter))
-                {
+
+                if let Some(t) = target {
+                    self.mark_targeted(p, t);
+                }
+                if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
                     return;
                 }
-                self.mark_targeted(p, target);
-                let cost = role_cost(Role::Miner, &self.config) + role_cost(Role::Freighter, &self.config);
-                if self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
-                    let te = self.planet_entity[target.0 as usize];
-                    self.spawn_courier(p, Role::Miner, center, center_pos, te);
-                    self.spawn_freighter(p, center, center_pos, te);
-                    let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
-                    self.log.push(
-                        self.clock,
-                        LogEvent::BuildApplied { player: p as u32, center: center_pid, order, cost, stockpile_after },
-                    );
+                match (role, target) {
+                    (Role::Scout, _) => self.launch_survey(p, center_pos, Vec3::ZERO, 0),
+                    (r, Some(t)) => {
+                        let te = self.planet_entity[t.0 as usize];
+                        self.spawn_courier(p, r, center, center_pos, te);
+                        if paired_freighter {
+                            self.spawn_freighter(p, center, center_pos, te);
+                        }
+                    }
+                    (_, None) => {}
                 }
+                let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
+                self.log.push(
+                    self.clock,
+                    LogEvent::BuildApplied { player: p as u32, center: center_pid, order, cost, stockpile_after },
+                );
             }
         }
     }
@@ -2265,31 +2268,32 @@ mod tests {
     }
 
     #[test]
-    fn enforcing_the_starting_roster_halts_expansion_which_is_why_it_is_off() {
-        // The reason `enforce_roster` defaults to false, pinned as a test so the
-        // tradeoff is not rediscovered by surprise. The colonizer and freighter
-        // ride on MSV, which §7.1's starting roster does not include, and the
-        // engine has no card system to unlock it — so enforcement forbids every
-        // expansion build permanently. Measured over a full 4,000-year run this
-        // is 3 colonies against 1,183.
+    fn enforcing_the_starting_roster_forbids_the_medium_hull_which_is_why_it_is_off() {
+        // The reason `enforce_roster` defaults to false, pinned so the tradeoff
+        // is not rediscovered by surprise. The colonizer and freighter ride on
+        // MSV, which §7.1's starting roster does not include, and the engine has
+        // no card system to unlock it — so enforcement forbids every expansion
+        // build permanently. Measured over a full 4,000-year run that is 3
+        // colonies and 18 vehicles against 1,183 and 4,778.
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
         let mut cfg = test_cfg(3);
         cfg.enforce_roster = true;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
-        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
-        let target = sim.planet_entity[40];
-        let target_pid = *sim.world.planet_id.get(target).unwrap();
-        let pos = *sim.world.position.get(home).unwrap();
-        let before = sim.world.next;
 
-        sim.apply_build(0, home, pos, BuildOrder::ColonyVehicle { target: target_pid });
-        assert_eq!(sim.world.next, before, "an MSV colonizer must not spawn against the seeded roster");
+        // Seeded roster: the Limited pair is buildable, the Medium hull is not.
+        assert!(sim.roster_permits(0, HullType::LimitedSystems));
+        assert!(sim.roster_permits(0, HullType::LimitedContactVehicle));
+        assert!(!sim.roster_permits(0, HullType::MediumSystems), "MSV must be forbidden by the seeded roster");
 
-        // The same order succeeds once the design is unlocked, so the gate is
-        // the roster and not something incidental.
+        // Unlocking it is the only thing that changes the answer, so the gate is
+        // demonstrably the roster and not something incidental.
         sim.world.roster.get_mut(sim.player_entity[0]).unwrap().unlock(HullType::MediumSystems, Class::Unnamed);
-        sim.apply_build(0, home, pos, BuildOrder::ColonyVehicle { target: target_pid });
-        assert!(sim.world.next > before, "unlocking MSV must let the colonizer through");
+        assert!(sim.roster_permits(0, HullType::MediumSystems));
+
+        // And with enforcement off — the shipped default — nothing is gated.
+        let galaxy2 = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let sim2 = Simulation::with_baseline(galaxy2, test_cfg(3));
+        assert!(sim2.roster_permits(0, HullType::MediumSystems), "default config must not gate anything");
     }
 
     #[test]

@@ -21,6 +21,7 @@
 use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
 use crate::resources::MineralField;
+use crate::sim::{Class, HullType, Role};
 
 /// Which of the two cheap classes the colony pipeline reaches for first
 /// (autopilot-doc §4; R-AC1 / R-A1). Default is production-centers-first.
@@ -260,16 +261,31 @@ pub struct Candidate {
 pub enum BuildOrder {
     /// Nothing affordable/worth building this cycle.
     Idle,
-    /// A survey craft launched along `heading` (the opening fan-out, §2).
-    LightVehicle { heading: Vec3 },
     /// Spend minerals to raise this center's own infrastructure by one level
     /// (deepening toward `K`). Cost = target level (1→2 costs 2, …).
     UpgradeInfrastructure,
-    /// A colony vehicle bound for a center- or colony-class world (§4). Founds a
-    /// colony and is recycled into its level-1 infrastructure on arrival.
-    ColonyVehicle { target: PlanetId },
-    /// A mining vehicle bound for a mining outpost (§5); it shuttles cargo home.
-    MiningPair { target: PlanetId },
+    /// **Production makes an object, not a mission** (R-O29,
+    /// `Hyades_standing_layer_and_observation.md` §7).
+    ///
+    /// The old variants named the job — `ColonyVehicle { target }`,
+    /// `MiningPair { target }` — which leaked doctrine for free: anyone reading
+    /// a shipyard learned not just that a hull was laid down but what it was
+    /// *for*, with no scan and no lag. Hull and class are what production
+    /// decides; [`Tasking`] is a separate decision made afterwards by
+    /// [`Autopilot::assign_role`], and role is reassignable thereafter.
+    Hull { hull_type: HullType, class: Class },
+}
+
+/// What a freshly-produced hull is *for* — assigned after production, never as
+/// part of the build order (R-O29). Reassignable: roles §4 already keys
+/// eligibility to hull plus loadout, so this is the existing model; the build
+/// order was the leak.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Tasking {
+    pub role: Role,
+    /// Where it is going. `None` for a hull with nothing to do yet, which holds
+    /// station rather than launching.
+    pub target: Option<PlanetId>,
 }
 
 /// Everything a production center needs to weigh deepen-vs-expand this cycle.
@@ -342,6 +358,20 @@ pub trait Autopilot {
     /// weighing infrastructure-deepening against colonizing or mining under the
     /// center's mineral budget and level gates.
     fn production_choice(&self, doctrine: &Doctrine, ctx: &ProductionContext, candidates: &[Candidate]) -> BuildOrder;
+
+    /// Task a hull that production has just finished (R-O29). Called *after*
+    /// the object exists, with the empire's current candidate list — so the
+    /// job is chosen from the situation at completion, not baked into the
+    /// build order where a rival could read it off the shipyard.
+    ///
+    /// Returning `None` means the hull has nothing to do and holds station.
+    fn assign_role(
+        &self,
+        doctrine: &Doctrine,
+        hull: HullType,
+        class: Class,
+        candidates: &[Candidate],
+    ) -> Option<Tasking>;
 }
 
 /// The baseline colonization/growth policy (`Hyades_autopilot_colonization_growth.md`).
@@ -430,6 +460,47 @@ impl Autopilot for BaselineAutopilot {
         pick(heading_bias.is_some()).or_else(|| pick(false)).map(|(id, _)| id)
     }
 
+    fn assign_role(
+        &self,
+        doctrine: &Doctrine,
+        hull: HullType,
+        _class: Class,
+        candidates: &[Candidate],
+    ) -> Option<Tasking> {
+        // Eligibility is **permissive with varying competence** (R-O44): any
+        // hull may take any role. What differs is how well it does the job, so
+        // this picks the competent assignment for each hull rather than the
+        // only legal one.
+        let best = |want: PlanetClass| candidates.iter().filter(|c| c.ranked.class == want).max_by(score_then_id);
+        match hull {
+            // A Contact hull scouts. It needs no target here — `launch_survey`
+            // picks the nearest unvisited world from the survey frontier.
+            HullType::LimitedContactVehicle
+            | HullType::LimitedContactUnit
+            | HullType::GeneralContactVehicle
+            | HullType::GeneralContactUnit => Some(Tasking { role: Role::Scout, target: None }),
+
+            // A Medium hull settles, preferring whichever class doctrine leads
+            // with — the same order `production_choice` weighed.
+            HullType::MediumSystems => {
+                let (a, b) = match doctrine.expand_bias {
+                    ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
+                    ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
+                };
+                best(a).or_else(|| best(b)).map(|c| Tasking { role: Role::Colonizer, target: Some(c.ranked.id) })
+            }
+
+            // A Limited Systems hull mines; the freighter that hauls for it is
+            // produced alongside (roles §5 — the center produces both).
+            HullType::LimitedSystems => {
+                best(PlanetClass::MiningOutpost).map(|c| Tasking { role: Role::Miner, target: Some(c.ranked.id) })
+            }
+
+            // Nothing else is produced yet; hold rather than invent a mission.
+            _ => None,
+        }
+    }
+
     fn production_choice(&self, doctrine: &Doctrine, ctx: &ProductionContext, candidates: &[Candidate]) -> BuildOrder {
         // Deepen while any headroom remains below the ceiling, rather than only
         // when a whole level fits under it. `K = min(hab, bio, infra)`, so infra
@@ -470,7 +541,7 @@ impl Autopilot for BaselineAutopilot {
                 return BuildOrder::UpgradeInfrastructure;
             }
             return if wants_survey && can_afford_light && !deepen_possible {
-                BuildOrder::LightVehicle { heading: Vec3::ZERO }
+                hull_order(HullType::LimitedContactVehicle)
             } else {
                 BuildOrder::Idle
             };
@@ -480,7 +551,7 @@ impl Autopilot for BaselineAutopilot {
         // ever restart expansion. This is the one case where it outranks
         // everything: no candidates means every other branch below returns Idle.
         if candidates.is_empty() && can_afford_light {
-            return BuildOrder::LightVehicle { heading: Vec3::ZERO };
+            return hull_order(HullType::LimitedContactVehicle);
         }
 
         // Find the best colony target and outpost.
@@ -496,19 +567,18 @@ impl Autopilot for BaselineAutopilot {
         };
 
         // The best outward move (colony vs mining, by score).
+        // What the center *wants* to reach still drives which hull it lays down —
+        // but the order records the hull, not the errand. `assign_role` re-derives
+        // the job from the same candidate list once the object exists.
         let outward = match (colony_target, best_mining) {
             (Some(col), Some(mine)) if mine.ranked.score > col.ranked.score => {
-                Some((BuildOrder::MiningPair { target: mine.ranked.id }, mine.ranked.score))
+                Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost))
             }
-            (Some(col), _) => Some((BuildOrder::ColonyVehicle { target: col.ranked.id }, col.ranked.score)),
-            (None, Some(mine)) => Some((BuildOrder::MiningPair { target: mine.ranked.id }, mine.ranked.score)),
+            (Some(col), _) => Some((hull_order(HullType::MediumSystems), col.ranked.score, ctx.colonizer_cost)),
+            (None, Some(mine)) => Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost)),
             (None, None) => None,
         };
-        let outward_cost = match &outward {
-            Some((BuildOrder::ColonyVehicle { .. }, _)) => ctx.colonizer_cost,
-            Some((BuildOrder::MiningPair { .. }, _)) => ctx.mining_pair_cost,
-            _ => 0.0,
-        };
+        let outward_cost = outward.map(|(_, _, c)| c).unwrap_or(0.0);
         let can_expand = ctx.stockpile_total + 1e-9 >= outward_cost;
 
         // Deepen-vs-expand as a genuine convex dial. `reinvest_bias` shifts weight
@@ -523,7 +593,7 @@ impl Autopilot for BaselineAutopilot {
         let deepen_headroom = (ctx.k_potential - ctx.infra).max(0.0);
         let w_deepen = if deepen_possible { b * deepen_headroom } else { f64::NEG_INFINITY };
         let w_expand = match outward {
-            Some((_, score)) => (1.0 - b) * score,
+            Some((_, score, _)) => (1.0 - b) * score,
             None => f64::NEG_INFINITY,
         };
 
@@ -536,7 +606,7 @@ impl Autopilot for BaselineAutopilot {
         // fallback it is self-limiting: raising the reserve converts idle cycles
         // into survey and can never starve expansion.
         let survey_fallback = if wants_survey && can_afford_light {
-            BuildOrder::LightVehicle { heading: Vec3::ZERO }
+            hull_order(HullType::LimitedContactVehicle)
         } else {
             BuildOrder::Idle
         };
@@ -548,7 +618,7 @@ impl Autopilot for BaselineAutopilot {
             } else {
                 survey_fallback
             }
-        } else if let Some((order, _)) = outward {
+        } else if let Some((order, _, _)) = outward {
             // Prefer expansion: build if funded, else save toward the vehicle.
             if can_expand {
                 order
@@ -561,6 +631,18 @@ impl Autopilot for BaselineAutopilot {
             survey_fallback
         }
     }
+}
+
+/// A build order for `hull`, taking whichever class this policy names for it.
+/// Classes are seeded by the roster (R-O42); until Design cards author more,
+/// the two starting designs are the only named ones.
+fn hull_order(hull: HullType) -> BuildOrder {
+    let class = match hull {
+        HullType::LimitedSystems => Class::Meadow,
+        HullType::LimitedContactVehicle => Class::Tor,
+        _ => Class::Unnamed,
+    };
+    BuildOrder::Hull { hull_type: hull, class }
 }
 
 /// Deterministic comparison for `max_by`: higher score wins, ties broken by id.
@@ -692,7 +774,7 @@ mod tests {
         let ranked = ap.rank(&doctrine, &v, &rctx);
         let cands = vec![Candidate { view: v, ranked }];
         let order = ap.production_choice(&doctrine, &ctx, &cands);
-        assert!(matches!(order, BuildOrder::ColonyVehicle { .. }));
+        assert!(matches!(order, BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }));
     }
 
     /// One `Candidate` a mature center would happily colonize.
@@ -757,7 +839,10 @@ mod tests {
         // tier existed this returned Idle and the stockpile sat dead forever.
         let mut ctx = prod_ctx_frontier(2, 3.0, 5.0, 0);
         ctx.k_potential = 3.0;
-        assert!(matches!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::LightVehicle { .. }));
+        assert!(matches!(
+            ap.production_choice(&doctrine, &ctx, &[]),
+            BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+        ));
     }
 
     #[test]
@@ -779,7 +864,10 @@ mod tests {
         // center scouting every cycle and colonies collapsed from 1047 to 3.
         let ctx = prod_ctx_frontier(3, 3.0, 2.0, 0);
         let cands = one_colony_candidate(&ap, &doctrine);
-        assert!(matches!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::ColonyVehicle { .. }));
+        assert!(matches!(
+            ap.production_choice(&doctrine, &ctx, &cands),
+            BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }
+        ));
     }
 
     #[test]
@@ -792,7 +880,10 @@ mod tests {
         let mut ctx = prod_ctx_frontier(3, 3.0, 0.3, 0);
         ctx.k_potential = 3.0;
         let cands = one_colony_candidate(&ap, &doctrine);
-        assert!(matches!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::LightVehicle { .. }));
+        assert!(matches!(
+            ap.production_choice(&doctrine, &ctx, &cands),
+            BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+        ));
     }
 
     #[test]

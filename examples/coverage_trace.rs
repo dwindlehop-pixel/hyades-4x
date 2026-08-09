@@ -56,6 +56,7 @@ use std::collections::{HashMap, HashSet};
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, BuildOrder, Doctrine};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
+use hyades_engine::sim::HullType;
 
 const PLAYERS: usize = 3;
 const SEED: u64 = 1;
@@ -218,9 +219,15 @@ fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
                         }
                     }
                     BuildOrder::UpgradeInfrastructure => fp.deepens += 1,
-                    BuildOrder::ColonyVehicle { .. } => fp.colonies += 1,
-                    BuildOrder::MiningPair { .. } => fp.mining_pairs += 1,
-                    BuildOrder::LightVehicle { .. } => fp.lights += 1,
+                    // Post-R-O29 the order names the hull, not the errand, so
+                    // these buckets read the hull type. Medium = a settler,
+                    // Limited Systems = a miner-and-freighter pair, LCV = a
+                    // scout — the same three things, now inferred rather than
+                    // announced, which is the point of the split.
+                    BuildOrder::Hull { hull_type: HullType::MediumSystems, .. } => fp.colonies += 1,
+                    BuildOrder::Hull { hull_type: HullType::LimitedSystems, .. } => fp.mining_pairs += 1,
+                    BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. } => fp.lights += 1,
+                    BuildOrder::Hull { .. } => {}
                 }
             }
             LogEvent::ColonyFounded { planet, .. } => {
