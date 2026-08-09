@@ -142,6 +142,45 @@ each entry. Sizing the view to the query is the largest remaining per-ship win
 to the fog-of-war contract (`Hyades_simulation_model.md` §1/§2b). **Deliberately
 not taken yet** — it is a contract decision, not a free optimization.
 
+### T-30. The round/command layer — netcode B1
+
+Sim §3's four phases (income → hidden simultaneous command → resolution →
+aftermath) and `Hyades_netcode.md`'s protocol clock `r` have **no engine
+counterpart**. `Simulation::run()` drains a discrete-event queue to a horizon;
+there is no round boundary, no simultaneous order, and no `apply_orders`.
+
+This is the **largest single gap between the engine and the shipped design**,
+and it is simulation work rather than network work. Netcode §5's barrier, §5.1's
+order coercion, §5.2's timeout-as-message and §11's single inbound entry point
+all attach here and nowhere else. Direction is fully specified; the shape inside
+the engine is not.
+
+When it lands, give the engine **exactly one** inbound entry point
+(`apply_orders`) rather than enforcing the one-directional seam by convention —
+netcode H9/§2.1. Today the seam is trivially safe because there is no inbound
+path at all; that is the property to preserve, not to rediscover.
+
+### T-31. A card system — netcode B2
+
+Cards are the game's entire action layer and the engine has none. Blocks:
+`card_id` in the wire payload (netcode §4.2), roster enforcement (T-25),
+counter-graph disruption (T-13), and every "a card does X" clause across the
+specs. R-C1 (the closed list of legal `target_rule` kinds) is the first thing
+inside it, and R-NET4's field widths are blocked on R-C1 in turn.
+
+### T-32. The state digest — netcode B3
+
+Netcode §8.1's Merkle root over `galaxy`, `players`, `vehicles`, `event_queue`,
+`rng_cursor`, `exchange_books`, `counter_graph`. **Two leaves have no engine
+representation at all** — `exchange_books` waits on T-01 and `counter_graph` on
+T-13 — and the other five have no canonical encoding.
+
+Two rules from the spec worth carrying into the implementation: digest the
+authoritative state and *not* `Snapshot` (a projection lets divergence hide in
+what it drops, and the event queue and RNG cursor especially must be inside),
+and exchange leaf vectors on mismatch so a desync localizes to a subsystem
+rather than to a round number.
+
 ### T-15. Production-queue redesign — roles §10, deferred
 
 Expand whenever affordable, rather than through a competing bias dial. Partly
@@ -153,6 +192,32 @@ become "what does my current Role's System say to build". The dial
 ---
 
 ## Band C — open question with a concrete test
+
+### T-33. `Knowledge` stores membership, not observations — netcode B4
+
+`Knowledge::scanned` is a `BTreeSet<PlanetId>`, so it records *that* a world was
+scanned and never *what was seen*. Every subsequent read through `view_of`
+re-reads current ground truth — `factors`, `density`, `population`, `owner` — so
+a 500-year-old scan yields today's values with **zero lag**.
+
+That is netcode §2.1's causal failure exactly: an agent acting on information
+that has not reached it. Note what it is *not* — it is not a desync risk, since
+every client computes the same wrong thing, so no checkpoint will ever catch it.
+It is a game-correctness bug that §2.1 promotes to a design-law violation.
+
+The fix is to store observed values with an as-of round, which is the same
+per-player-per-planet storage R-SIM4 (T-26) flags as expensive at fleet scale —
+so the two should be designed together. Concrete test once it lands: a scan,
+then a change to the world, then a read must return the *pre-change* value until
+light has had time to carry the update.
+
+### T-34. Colonization filters on instantaneous global ownership — netcode B5
+
+The colonization candidate loop skips a world when `world.owner.contains(e)`,
+whether or not the acting player has observed the claim. The survey path makes
+the same kind of call but documents it and defers to R-SIM3; the colonization
+path does neither, and it is the one that matters — it reads a rival's state
+with no observation behind it. Narrower than T-33 and fixable independently.
 
 ### T-16. R-O63 — the biosphere regrowth magnitude
 
@@ -218,6 +283,26 @@ cadence and per-fill light-lag (2); distance-discounted price as a doctrine knob
 versus price-then-distance (3); mining-bid concurrency quantity (4); one Book
 per (empire, commodity) versus per-commodity merge (5).
 
+### T-35. Netcode ratification points with concrete tests
+
+Open `R-NET` calls that name their own experiment: **R-NET5** (Merkle leaf
+partition and checkpoint cadence), **R-NET7** (headless replay throughput vs.
+match length — decides whether snapshot-assisted catch-up is needed),
+**R-NET10** (enable `simd128` in the pinned build), **R-NET15** (state-digest
+cost at an 18-seat galaxy — planet count there is *unmeasured*, do not
+extrapolate from 12). R-NET15 pairs naturally with T-24, which has the same
+unmeasured 18-seat corner.
+
+### T-36. Netcode policy calls needing a decision, not a measurement
+
+**R-NET6** (does a defaulted round consume the action or refund it — fires in
+~30% of rounds at 18 seats, so it is a balance decision rather than a corner
+case), **R-NET8** (even split under `SimpleMajority`; the spec recommends Halt,
+since a seat-order tiebreak rewards whoever bribed seat 0), **R-NET16**
+(match-start admission threshold), **R-NET17** (liveness beacon as a second
+eclipse tell, against putting per-round data back on a server that currently
+carries none), **R-NET18** (`m_ingress` and spectator gossip degree `d`).
+
 ### T-24. Throughput watch — the 12-seat × 8-kyr corner is unmeasured
 
 Confirmed floor is **2.5 simulated-years/real-second**. Measured: 3 seats/4 kyr
@@ -243,6 +328,16 @@ build permanently — 3 colonies and 18 vehicles against 1,183 and 4,778 over
 Not an argument against §7.1; an ordering constraint. **Blocked on the card
 layer existing at all**, which is the vague part — no card system is specified
 in engine terms yet.
+
+### T-37. Everything in netcode outside the crate
+
+Topology (§3), the 144-byte frame (§4), genesis assembly (§7), relay and
+reconnection (§9), server posture (§10), client hardening (§11). **None of it
+blocks on the engine** and none of it lives in this repo — it is client and
+service work whose only contract with `hyades-engine` is determinism, one
+inbound entry point, and no host access, all of which hold today (see the
+netcode engine-status block). Listed so it is tracked somewhere; it needs a home
+before it needs a design.
 
 ### T-26. R-SIM4 — departure-traffic confidence
 

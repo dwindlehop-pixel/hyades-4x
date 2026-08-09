@@ -13,6 +13,12 @@ long-range observable, not mass or hull count), the counter-graph as a
 per-player ladder disrupted by cards, and mass conservation. §11 is the engine
 roadmap; see §7 below for what has landed.
 
+**`docs/Hyades_netcode.md` (Rev 4)** is the other spec that constrains engine
+work rather than describing game content: it makes bit-reproducibility a
+*network* property, not only an MC one, and its §2.1 is design law #15. Its
+engine-status block lists the five implementation blockers, audited — and what
+is already clean, which is most of the foundation.
+
 ---
 
 ## 1. What Hyades is
@@ -52,8 +58,8 @@ cargo run --release --example combat_arena       # kinematic interception harnes
 cargo run --release --example montecarlo         # balance sweeps
 ```
 
-Baseline as of the shell-model landing (R-O57/R-O58): **99 unit + 4 smoke + 4
-determinism tests pass**, ~35 s wall for `cargo test --all-targets`.
+Baseline as of the netcode audit: **99 unit + 4 smoke + 5 determinism tests
+pass**, ~42 s wall for `cargo test --all-targets`.
 The MC sweeps are slow in debug; always use `--release` for them.
 
 ### The 60-second rule for tests and CI
@@ -63,7 +69,7 @@ only exception and they are offline, never in CI. Current costs:
 
 | step | cost |
 |---|---|
-| `cargo test --all-targets` (unit + determinism + smoke) | ~35 s |
+| `cargo test --all-targets` (unit + determinism + smoke) | ~42 s |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
 | `coverage_trace` | ~19 s |
 | `coverage_time` | ~49 s |
@@ -297,6 +303,37 @@ one, stop and flag it.
      the moment the defaults were ratified, and back to ~5 s once tests set their own
      horizon. Anything genuinely about long-run coverage belongs in an example or
      the offline search.
+15. **The presentation seam is read-only and one-directional** (R-NET13,
+   `docs/Hyades_netcode.md` §2.1). The *command layer* presents perfect
+   information — the board is fully visible, as in the tabletop lineage. The
+   *simulation* must not act on it. In-world agents decide from light-lagged,
+   player-relative knowledge only; `Snapshot` projects sim → presentation, and
+   the sole inbound channel is `apply_orders`. Nothing else derived from what a
+   player can see may cross back.
+
+   Two different things break if it does. **Causally:** every edge in the theater
+   carries a light-travel delay, and that gap *is* the counterplay window — an
+   agent acting on information that has not reached it deletes the mechanic
+   rather than merely cheating at it. **Numerically:** presentation state differs
+   per client by construction (render pace, catch-up progress, viewport), so
+   anything flowing back from it injects per-client nondeterminism into hashed
+   state, which is a desync.
+
+   Keep the asymmetry visible in the UI: *the human has perfect information and
+   plays under it; the human's empire does not, and executes under light-lag.*
+   That gap is the game. Enforce it structurally — one inbound entry point — not
+   by convention. **Two known violations are open:** T-33 (`Knowledge` stores
+   membership, not observations, so every read is zero-lag ground truth) and
+   T-34 (colonization filters on instantaneous global ownership).
+16. **NaN or infinity in replicated state is a fatal error, not a value**
+   (R-NET11, netcode §6 H3). Core WASM picks arithmetic-NaN payloads
+   *nondeterministically*, so NaN bits differ across browser engines even with
+   relaxed SIMD disabled — a NaN that reaches the hashed state is an
+   intermittent, unreproducible desync with no reproducer to hand a bug report.
+   Guarded today by `no_nan_or_infinity_reaches_replicated_state`; when the state
+   digest lands (T-32) the check belongs inside it. Infinities are deterministic
+   and so not a desync, but they become NaN in one subtraction and no quantity in
+   this model is legitimately infinite.
 
 ---
 
