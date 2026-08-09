@@ -268,7 +268,7 @@ impl Role {
 /// Units and Offensive types exist in the enum for completeness (the spec's
 /// full ten-type roster) but nothing spawns them yet — no militarization or
 /// combat exists in the engine.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HullType {
     LimitedSystems,
     MediumSystems,
@@ -280,6 +280,88 @@ pub enum HullType {
     LimitedOffensive,
     RapidOffensive,
     GeneralOffensive,
+}
+
+/// A named **design** within a hull type — the Banks-convention class name.
+///
+/// Hull, class and role are three separate things (R-O29,
+/// `Hyades_standing_layer_and_observation.md` §7): the hull is the object's
+/// size and family, the class is the specific design of it an empire has
+/// unlocked, and the role is what that object is currently being used for.
+/// Only the first two are chosen at production; the role is assigned after and
+/// is reassignable.
+///
+/// **R-O42b (open): the flavour names are proposed, not authored.** §7.1
+/// suggests Meadow for the LSV and Tor for the LCV — small landforms, scaling
+/// the Banks convention down to Limited sizes — and lists alternates. They are
+/// carried here so the roster has something concrete to hold; renaming them is
+/// a one-line change and the author's call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Class {
+    /// LSV — proposed *Meadow*-class (alts: Fen, Holm, Croft, Hollow).
+    Meadow,
+    /// LCV — proposed *Tor*-class (alts: Spur, Cairn, Shoal, Gully).
+    Tor,
+    /// A hull type whose classes are not yet authored. Everything the engine
+    /// builds beyond the two seeded designs uses this until Design cards give
+    /// it a name — it keeps the roster total rather than pretending the rest of
+    /// the taxonomy already exists.
+    Unnamed,
+}
+
+/// The **roster**: which `(hull, class)` designs a player can build at all
+/// (R-O28, §5's "Design" — *the roster*, as distinct from Doctrine, which is
+/// policy over it).
+///
+/// Design is **permanent and strictly earlier-is-better**: entries are added by
+/// tree cards and never removed, and a scan that reads a roster reads it
+/// forever (§5's asymmetric leak — Design never goes stale, Doctrine dies on
+/// retasking). That is why this is a set of unlocks rather than a mutable
+/// vector of stats.
+///
+/// Storing it is what unblocks **σ_vector for Design**, which §3 flagged as
+/// having no engine component at all: with a roster in the world, the distance
+/// between a pre-card and post-card roster is computable.
+#[derive(Clone, Debug, Default)]
+pub struct Roster {
+    /// Sorted, deduplicated — iteration order must be deterministic.
+    unlocked: Vec<(HullType, Class)>,
+}
+
+impl Roster {
+    /// Add a design. Idempotent; keeps the list sorted so iteration is stable.
+    pub fn unlock(&mut self, hull: HullType, class: Class) {
+        if let Err(at) = self.unlocked.binary_search(&(hull, class)) {
+            self.unlocked.insert(at, (hull, class));
+        }
+    }
+
+    pub fn has(&self, hull: HullType, class: Class) -> bool {
+        self.unlocked.binary_search(&(hull, class)).is_ok()
+    }
+
+    /// Can this empire build *any* design of this hull type?
+    pub fn has_hull(&self, hull: HullType) -> bool {
+        self.unlocked.iter().any(|&(h, _)| h == hull)
+    }
+
+    /// The first unlocked class for `hull`, if any — what a build order uses
+    /// when doctrine names a hull but not a specific design.
+    pub fn class_for(&self, hull: HullType) -> Option<Class> {
+        self.unlocked.iter().find(|&&(h, _)| h == hull).map(|&(_, c)| c)
+    }
+
+    pub fn designs(&self) -> &[(HullType, Class)] {
+        &self.unlocked
+    }
+
+    pub fn len(&self) -> usize {
+        self.unlocked.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.unlocked.is_empty()
+    }
 }
 
 impl HullType {
@@ -443,6 +525,9 @@ struct World {
     /// `autopilots` Vec — which is now a stateless per-seat algorithm
     /// selector, not a behavioral-state holder.
     doctrine: ComponentStore<Doctrine>,
+    /// Per-player **Design**: the roster of unlocked `(hull, class)` designs
+    /// (R-O28). Written only by tree cards; permanent once written.
+    roster: ComponentStore<Roster>,
 }
 
 impl World {
@@ -469,6 +554,7 @@ impl World {
             player_info: ComponentStore::new(),
             knowledge: ComponentStore::new(),
             doctrine: ComponentStore::new(),
+            roster: ComponentStore::new(),
         }
     }
 
@@ -585,6 +671,18 @@ pub struct SimConfig {
     /// autopilot hauling minerals to wherever they're needed, not a founding
     /// windfall. See `sys_freighter_arrive` / `most_needed_center`.)
     pub homeworld_start_minerals: f64,
+    /// Enforce the Design roster: refuse to build a hull type the player has
+    /// not unlocked (R-O28/R-O42).
+    ///
+    /// **Defaults to `false`, and that is a stopgap, not a preference.** §7.1
+    /// ratifies a starting roster of LSV + LCV only, which is correct for the
+    /// card game — but the engine has **no card system**, so there is no unlock
+    /// path and enforcement would permanently forbid the Medium hull the
+    /// colonizer and freighter are built on. Expansion would halt at turn 0.
+    /// The roster is therefore seeded and queryable now (so σ_vector for Design
+    /// is measurable) but not yet binding. Flip this on with the card layer, or
+    /// with a doctrine that can unlock designs.
+    pub enforce_roster: bool,
     /// Fraction of a center's local density mined into its stockpile per cycle.
     pub center_mining_fraction: f64,
     /// Logistic regrowth rate of planetary **biosphere mass** per production
@@ -648,6 +746,7 @@ impl SimConfig {
             medium_fleet_size: 3.0,
             limited_fleet_size: 9.0,
             homeworld_start_minerals: 3.0,
+            enforce_roster: false,
             center_mining_fraction: 0.15,
             biosphere_regen_rate: 0.10,
             outpost_mining_fraction: 0.2,
@@ -867,6 +966,22 @@ impl Simulation {
             // `default_doctrine()` is read; the component is authoritative
             // from here on (`Hyades_vehicle_roles.md` §9).
             self.world.doctrine.insert(pe, self.autopilots[p].default_doctrine());
+
+            // Seed this seat's Design roster (R-O42, §7.1). The ratified
+            // starting state is **LSV and LCV only, one class each** — so at
+            // turn 0 a scout, a settler and a hauler are literally the same
+            // object, and the long-range observable carries almost no
+            // information because every empire's fleet looks identical.
+            // Inscrutability early is total *by construction* rather than by
+            // card design, and legibility grows as rosters diverge.
+            //
+            // See `roster_permits` for why this does not yet *restrict* what
+            // production may build: with no card system there is no unlock
+            // path, so enforcing the roster would halt colonization outright.
+            let mut roster = Roster::default();
+            roster.unlock(HullType::LimitedSystems, Class::Meadow);
+            roster.unlock(HullType::LimitedContactVehicle, Class::Tor);
+            self.world.roster.insert(pe, roster);
 
             // Seed the homeworld's stockpile so it can begin deepening infra.
             let seed = self.config.homeworld_start_minerals / 3.0;
@@ -1397,6 +1512,9 @@ impl Simulation {
             // for out of the center's stockpile like every other order — without
             // this the autopilot could mint unlimited free survey craft.
             BuildOrder::LightVehicle { heading } => {
+                if !self.roster_permits(p, role_hull_type(Role::Scout)) {
+                    return;
+                }
                 let cost = role_cost(Role::Scout, &self.config);
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
                     self.launch_survey(p, center_pos, heading, 0);
@@ -1425,6 +1543,9 @@ impl Simulation {
                 }
             }
             BuildOrder::ColonyVehicle { target } => {
+                if !self.roster_permits(p, role_hull_type(Role::Colonizer)) {
+                    return;
+                }
                 self.mark_targeted(p, target);
                 let cost = role_cost(Role::Colonizer, &self.config);
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
@@ -1438,6 +1559,11 @@ impl Simulation {
                 }
             }
             BuildOrder::MiningPair { target } => {
+                if !self.roster_permits(p, role_hull_type(Role::Miner))
+                    || !self.roster_permits(p, role_hull_type(Role::Freighter))
+                {
+                    return;
+                }
                 self.mark_targeted(p, target);
                 let cost = role_cost(Role::Miner, &self.config) + role_cost(Role::Freighter, &self.config);
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
@@ -1452,6 +1578,16 @@ impl Simulation {
                 }
             }
         }
+    }
+
+    /// May player `p` build `hull`? Always yes while `enforce_roster` is off —
+    /// see that field for why it is off. Kept as one predicate so turning
+    /// enforcement on is a config change rather than a code change.
+    fn roster_permits(&self, p: usize, hull: HullType) -> bool {
+        if !self.config.enforce_roster {
+            return true;
+        }
+        self.world.roster.get(self.player_entity[p]).map(|r| r.has_hull(hull)).unwrap_or(false)
     }
 
     fn mark_targeted(&mut self, p: usize, target: PlanetId) {
@@ -2091,6 +2227,69 @@ mod tests {
         let l3 = sim3.world.spawn();
         sim3.world.cargo.insert(l3, m);
         assert!((sim3.laden_accel(l3, base) - base * G).abs() < 1e-12);
+    }
+
+    #[test]
+    fn roster_unlocks_are_idempotent_and_deterministically_ordered() {
+        let mut r = Roster::default();
+        assert!(r.is_empty());
+        r.unlock(HullType::MediumSystems, Class::Unnamed);
+        r.unlock(HullType::LimitedSystems, Class::Meadow);
+        r.unlock(HullType::LimitedSystems, Class::Meadow); // repeat is a no-op
+        assert_eq!(r.len(), 2, "unlocking twice must not duplicate");
+        assert!(r.has(HullType::LimitedSystems, Class::Meadow));
+        assert!(r.has_hull(HullType::MediumSystems));
+        assert!(!r.has_hull(HullType::GeneralOffensive));
+        assert_eq!(r.class_for(HullType::LimitedSystems), Some(Class::Meadow));
+        assert_eq!(r.class_for(HullType::GeneralSystems), None);
+        // Sorted, so iteration is stable across runs — Design is per-player
+        // state the balancer compares, and an unstable order would break that.
+        let mut sorted = r.designs().to_vec();
+        sorted.sort();
+        assert_eq!(r.designs(), &sorted[..]);
+    }
+
+    #[test]
+    fn seats_start_with_the_ratified_lsv_plus_lcv_roster() {
+        // R-O42/§7.1: LSV and LCV only, one class each — at turn 0 a scout, a
+        // settler and a hauler are the same object.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let sim = Simulation::with_baseline(galaxy, test_cfg(1));
+        for p in 0..3 {
+            let r = sim.world.roster.get(sim.player_entity[p]).expect("every seat has a roster");
+            assert_eq!(r.len(), 2, "seat {p} roster should hold exactly the two seeded designs");
+            assert!(r.has(HullType::LimitedSystems, Class::Meadow));
+            assert!(r.has(HullType::LimitedContactVehicle, Class::Tor));
+            assert!(!r.has_hull(HullType::MediumSystems), "MSV must not be unlocked at start");
+        }
+    }
+
+    #[test]
+    fn enforcing_the_starting_roster_halts_expansion_which_is_why_it_is_off() {
+        // The reason `enforce_roster` defaults to false, pinned as a test so the
+        // tradeoff is not rediscovered by surprise. The colonizer and freighter
+        // ride on MSV, which §7.1's starting roster does not include, and the
+        // engine has no card system to unlock it — so enforcement forbids every
+        // expansion build permanently. Measured over a full 4,000-year run this
+        // is 3 colonies against 1,183.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let mut cfg = test_cfg(3);
+        cfg.enforce_roster = true;
+        let mut sim = Simulation::with_baseline(galaxy, cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let target = sim.planet_entity[40];
+        let target_pid = *sim.world.planet_id.get(target).unwrap();
+        let pos = *sim.world.position.get(home).unwrap();
+        let before = sim.world.next;
+
+        sim.apply_build(0, home, pos, BuildOrder::ColonyVehicle { target: target_pid });
+        assert_eq!(sim.world.next, before, "an MSV colonizer must not spawn against the seeded roster");
+
+        // The same order succeeds once the design is unlocked, so the gate is
+        // the roster and not something incidental.
+        sim.world.roster.get_mut(sim.player_entity[0]).unwrap().unlock(HullType::MediumSystems, Class::Unnamed);
+        sim.apply_build(0, home, pos, BuildOrder::ColonyVehicle { target: target_pid });
+        assert!(sim.world.next > before, "unlocking MSV must let the colonizer through");
     }
 
     #[test]

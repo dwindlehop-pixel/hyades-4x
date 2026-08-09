@@ -377,6 +377,20 @@ scouts badly — slow, no dedicated sensor fit — but legally.
 
 ### 7.1 Starting state (R-O42)
 
+> **Engine status.** The roster component exists (R-O28 resolved: `sim::Roster`,
+> a per-player set of `(HullType, Class)` written only by tree cards) and seats
+> are seeded with exactly LSV(Meadow) + LCV(Tor). **Enforcement is off by
+> default**, because there is no card system yet and therefore no unlock path:
+> the colonizer and freighter ride on the Medium hull, which this starting
+> roster excludes, so enforcing it forbids every expansion build for the whole
+> game. Measured on seed 1 over 4,000 years, enforcement takes the run from
+> 1,183 colonies and 4,778 vehicles to **3 colonies and 18 vehicles** — the
+> homeworlds and the bootstrap scouts, nothing else.
+>
+> That is not an argument against §7.1; it is the ordering constraint it
+> implies. **The starting roster cannot bind until Design cards can unlock the
+> Medium hull.** Flip `SimConfig::enforce_roster` on together with that layer.
+
 - **Roster at game start: LSV and LCV only, one class each.**
 - **Default doctrine: 100% LSV in the Scout role.**
 - Class names follow the Banks convention already in `Hulls & classes`, which
