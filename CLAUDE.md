@@ -248,15 +248,26 @@ one, stop and flag it.
    property, not a card property** — arming a fleet is loud unless you also buy
    thrust. A ship may fly below peak and never above it, so observed `a` is a
    *lower bound*, which is where surprise attack comes from (L4, §6.2/§6.4).
-11. **Mass is conserved, and cost and dry mass are one number** (L6/R-O57).
-   Minerals spent become hull; wastage degrades to slag rather than vanishing;
-   expended ordnance leaves the fleet lighter. Population is the sole exclusion.
-   Negative and imaginary mass are *not* exceptions — which is why exotic
-   synthesis is pair production.
-12. **No categorical strategic classification may be co-extensive with a colour
+11. **Mass is conserved with no exclusions, and cost and dry mass are one
+   number** (L6/R-O57). Minerals spent become hull; wastage degrades to slag
+   rather than vanishing; expended ordnance leaves the fleet lighter. Negative
+   and imaginary mass are *not* exceptions — which is why exotic synthesis is
+   pair production. **Nor is population:** biosphere is a mass in kilotons and
+   population growth consumes it 1:1. Biosphere is the one *renewable* stock,
+   regrowing logistically toward `bio_max`, so ecology is a rate rather than an
+   exemption — which is what makes biological damage durable and gives Warfare a
+   target that is neither hulls nor infrastructure.
+12. **No retroactive refits** (R-O47b). A Design write never reaches a hull
+   already in the field by fiat; realization is `on_refit`, so a fleet-wide
+   change lands staggered by transit time. Retroactive would change every
+   acceleration signature at once, laglessly, with no build to watch for — the
+   instant global state change the light-lagged observation model exists to rule
+   out. The recall is itself a signal, and it cannot be offset by a thrust write
+   because what leaks is the movement, not the mass.
+13. **No categorical strategic classification may be co-extensive with a colour
    domain** (L1/R-O34) — it would lock out exactly the archetype poor in that
    colour. Continuous classifications expressed as magnitude are exempt.
-13. **The snowball is the design — simulate it, not the stalled baseline.** An empire
+14. **The snowball is the design — simulate it, not the stalled baseline.** An empire
    that compounds until it has colonized every colonizable world is the intended
    arc, and the shipped defaults produce it (R-AC16/R-AC17). The configuration that
    plateaued at a few dozen colonies was a *bug surface*, never a reference point:

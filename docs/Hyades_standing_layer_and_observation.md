@@ -459,10 +459,21 @@ that holds `a` constant** (R-O52). That is the concealment combo, and it means
 the strongest-and-quietest Design play costs two cards rather than one — which
 is the right price for it.
 
-Whether a retrofit applies retroactively to hulls already in the field or
+~~Whether a retrofit applies retroactively to hulls already in the field or
 `on_new_production` only (contract §5) remains the biggest lever on its strength
-(**R-O47b**): retroactive means the whole fleet's signature changes in one tick,
-lagless, with no build to watch for.
+(**R-O47b**)~~ — **resolved: no retroactive refits.** A Design write never
+reaches a hull already in the field by fiat. Realization is `on_refit`: the hull
+must reach a friendly port, so a fleet-wide change lands **staggered by transit
+time** rather than in one tick.
+
+This is what keeps the observation model honest. A retroactive refit would change
+the whole fleet's acceleration signature simultaneously and laglessly, with no
+build to watch for and no counterplay window — exactly the "instant global state
+change" that §6's light-lagged channels exist to rule out. Under `on_refit` the
+**recall is itself a signal** in the kinetic channel, and it cannot be offset by
+a thrust write the way a build can (R-O52), because what leaks is the movement
+rather than the mass. Refitting hulls are also *out of position*, which makes a
+retrofit a vulnerability window rather than a power spike.
 
 ### 8.2 Numbers versus Design — the exchange rate (R-O49)
 
@@ -509,9 +520,35 @@ deeply — without additional machinery.
 ### 9.1 The law (R-O57)
 
 **Mass is conserved.** Minerals spent become hull; hull destroyed becomes
-wreck-field; hull scrapped returns to the bank. Population is the one exclusion
-— biological growth converts local planetary material, so worlds are an open
-reservoir for biomass and a closed one for minerals.
+wreck-field; hull scrapped returns to the bank.
+
+~~Population is the one exclusion — biological growth converts local planetary
+material, so worlds are an open reservoir for biomass and a closed one for
+minerals.~~ **Amended: there is no exclusion.** Biosphere is a *mass* — kilotons,
+the same unit as minerals and population — and **population growth consumes it
+1:1**, so people are made of something and population mass is conserved like
+everything else. What distinguishes biosphere is not that it is exempt from the
+ledger but that it is the **only renewable entry in it**: it regrows on its own,
+logistically toward a pristine ceiling `bio_max`.
+
+That turns the reservoir from open to *rate-limited*, which is a better object
+than either an exemption or a hard cap:
+
+- **Ecology becomes a stock with a refill rate**, so a world that grows too fast
+  draws its own `K = min(hab, bio, infra)` down and throttles itself, then
+  recovers. Self-limiting, no clamp required.
+- **Biological damage becomes durable rather than momentary.** Cards raise or
+  lower the regrowth rate (`Doctrine::biosphere_regen_bonus`) and can attack
+  `bio_max` itself. Cratering an ecology is worth doing precisely because
+  recovery is a rate, and an opponent who has had their regrowth zeroed does not
+  get the world back.
+- **It gives the Greening tree a resource to be about** that is not minerals,
+  and gives Warfare a target that is not hulls or infrastructure.
+
+**R-O63 (new, open):** the regrowth rate magnitude. `SimConfig::biosphere_regen_rate`
+defaults to `0.10` of the remaining deficit per cycle — a **placeholder**. It sets
+how long a razed world stays razed, so it is the dial that decides whether
+biological warfare is a real strategy or a rounding error.
 
 **Cost and dry mass are one number.** This is the direct consequence and it
 deletes a placeholder: `hull_dry_mass` no longer needs independent
@@ -691,10 +728,13 @@ late; committing it in round 1 beats committing it in round 4 by the same
 factor a Kinetic counter would lose. One shared decay function `f(r)`. Per
 R-O37 this applies to **Design writes only**. Belongs in contract §5.
 
-**L6 — Mass is conserved (R-O57, §9).** Minerals spent are hull dry mass; there
-is no second number. Wastage degrades to slag rather than vanishing; ordnance
-expended leaves the fleet lighter; wrecks retain their mass. The single
-exclusion is population, which converts local planetary biomass. Negative and
+**L6 — Mass is conserved (R-O57, §9), with no exclusions.** Minerals spent are
+hull dry mass; there is no second number. Wastage degrades to slag rather than
+vanishing; ordnance expended leaves the fleet lighter; wrecks retain their mass.
+**Population is not an exception**: biosphere is a mass in kilotons and
+population growth consumes it 1:1, so people are made of something. Biosphere is
+instead the one **renewable** entry — it regrows logistically toward `bio_max`,
+which makes ecology a stock with a refill rate rather than an open reservoir. Negative and
 imaginary masses are **not** an exception — conservation holds for them, which
 is why exotic synthesis is pair production (§9.6).
 

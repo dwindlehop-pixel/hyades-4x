@@ -116,7 +116,20 @@ struct Homeworld;
 #[derive(Clone, Copy, Debug)]
 struct Factors {
     hab: f64,
+    /// **Standing biological mass, in kilotons** — the same unit as population
+    /// and minerals, which is what makes the exchange between them exact.
+    ///
+    /// Unlike minerals this is a *renewable* stock: it regrows logistically
+    /// toward [`Self::bio_max`], and it is the only thing in the engine that
+    /// increases without being built. Population growth **consumes** it 1:1 and
+    /// population decline returns it, which is what closes L6's old exclusion —
+    /// people are made of biomass, so population mass is conserved rather than
+    /// conjured from an open reservoir.
     bio: f64,
+    /// Pristine biosphere: the ceiling `bio` regrows toward. Cards raise or
+    /// lower it; a strike that craters a world's ecology lowers this, not just
+    /// the standing stock, which is what makes such damage durable.
+    bio_max: f64,
     /// Built infrastructure. Integer-valued; deepened one level at a time.
     infra: f64,
 }
@@ -574,6 +587,16 @@ pub struct SimConfig {
     pub homeworld_start_minerals: f64,
     /// Fraction of a center's local density mined into its stockpile per cycle.
     pub center_mining_fraction: f64,
+    /// Logistic regrowth rate of planetary **biosphere mass** per production
+    /// cycle, as a fraction of the remaining deficit below `bio_max`.
+    ///
+    /// Biosphere is the one renewable stock (L6): population growth consumes it
+    /// 1:1 and it grows back on its own. The rate is what turns a razed
+    /// ecology into a *durable* wound rather than a momentary one — set it high
+    /// and biological damage is cosmetic, set it low and a strike costs the
+    /// victim centuries. **Placeholder magnitude** pending MC (R-O63); `0.10`
+    /// recovers roughly a third of a deficit over four cycles.
+    pub biosphere_regen_rate: f64,
     /// Fraction of an outpost's density extracted per mining tick.
     pub outpost_mining_fraction: f64,
     pub mining_tick_years: f64,
@@ -626,6 +649,7 @@ impl SimConfig {
             limited_fleet_size: 9.0,
             homeworld_start_minerals: 3.0,
             center_mining_fraction: 0.15,
+            biosphere_regen_rate: 0.10,
             outpost_mining_fraction: 0.2,
             mining_tick_years: 50.0,
             density_floor: 0.01,
@@ -711,7 +735,16 @@ impl Simulation {
         for pl in &galaxy.planets {
             let e = world.spawn();
             world.position.insert(e, pl.position);
-            world.factors.insert(e, Factors { hab: pl.habitability, bio: pl.biosphere, infra: pl.infrastructure });
+            world.factors.insert(
+                e,
+                Factors {
+                    hab: pl.habitability,
+                    bio: pl.biosphere,
+                    // A wild world is at its pristine ceiling by definition.
+                    bio_max: pl.biosphere,
+                    infra: pl.infrastructure,
+                },
+            );
             world.density.insert(e, pl.minerals);
             world.stockpile.insert(e, Minerals::default());
             world.population.insert(e, pl.population);
@@ -1230,17 +1263,46 @@ impl Simulation {
             );
         }
 
-        // 2) Grow: population logistic toward K = min(hab, bio, infra).
+        // 2) Grow: population logistic toward K = min(hab, bio, infra), paid for
+        // out of the planet's biological mass.
+        //
+        // Population is **not** an exception to mass conservation (L6, amended):
+        // a kiloton of people is a kiloton of biosphere that stopped being
+        // biosphere. Growth draws from `bio` 1:1 and is capped by what is
+        // actually standing; decline returns it. Biosphere then regrows
+        // logistically toward `bio_max`, which makes it the only self-replenishing
+        // stock in the engine and puts a *rate* — not just a ceiling — between an
+        // empire and its population.
+        //
+        // Note the feedback this creates: drawing biosphere down lowers
+        // `K = min(hab, bio, infra)`, so a world that grows too fast throttles
+        // itself and then recovers. That is the intended ecology, not a bug.
         let growth = doctrine.growth_rate;
+        let regen = self.config.biosphere_regen_rate * doctrine.biosphere_regen_bonus;
         let k = self.world.factors.get(center).unwrap().k();
         {
-            let pop = self.world.population.get_mut(center).unwrap();
-            if *pop < 0.01 {
-                *pop = 0.01;
-            }
+            let pop_now = *self.world.population.get(center).unwrap();
+            let start = if pop_now < 0.01 { 0.01 } else { pop_now };
+            let mut delta = 0.0;
             if k > 0.0 {
-                *pop += growth * *pop * (1.0 - *pop / k);
-                *pop = pop.clamp(0.0, k);
+                let grown = (start + growth * start * (1.0 - start / k)).clamp(0.0, k);
+                delta = grown - start;
+            }
+            let f = self.world.factors.get_mut(center).unwrap();
+            if delta > 0.0 {
+                // Cannot grow more people than there is biomass to make them of.
+                delta = delta.min(f.bio.max(0.0));
+                f.bio -= delta;
+            } else {
+                // Decline returns mass to the biosphere.
+                f.bio -= delta;
+            }
+            *self.world.population.get_mut(center).unwrap() = start + delta;
+
+            // Logistic regrowth toward the pristine ceiling.
+            if f.bio_max > 0.0 && regen > 0.0 {
+                f.bio += regen * f.bio.max(0.0) * (1.0 - f.bio / f.bio_max);
+                f.bio = f.bio.clamp(0.0, f.bio_max);
             }
         }
         self.log.push(
@@ -2032,6 +2094,67 @@ mod tests {
     }
 
     #[test]
+    fn population_growth_is_paid_for_out_of_biosphere() {
+        // L6, amended: population is no longer an exception to mass
+        // conservation. Every kiloton of people is a kiloton of biosphere that
+        // stopped being biosphere, so pop + bio is invariant across a growth
+        // step once regrowth is switched off.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
+        let mut cfg = test_cfg(5);
+        cfg.biosphere_regen_rate = 0.0; // isolate the exchange from the regrowth
+        let mut sim = Simulation::with_baseline(galaxy, cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        sim.world.factors.insert(home, Factors { hab: 4.0, bio: 4.0, bio_max: 4.0, infra: 4.0 });
+        *sim.world.population.get_mut(home).unwrap() = 1.0;
+
+        let before = *sim.world.population.get(home).unwrap() + sim.world.factors.get(home).unwrap().bio;
+        sim.sys_production_tick(home);
+        let f = sim.world.factors.get(home).unwrap();
+        let pop = *sim.world.population.get(home).unwrap();
+
+        assert!(pop > 1.0, "population should have grown, got {pop}");
+        assert!(f.bio < 4.0, "biosphere should have been drawn down, got {}", f.bio);
+        assert!((pop + f.bio - before).abs() < 1e-9, "pop+bio not conserved: {before} -> {}", pop + f.bio);
+    }
+
+    #[test]
+    fn biosphere_regrows_toward_its_pristine_ceiling_but_never_past_it() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 6)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(6));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        // A cratered ecology: standing mass far below the pristine ceiling.
+        sim.world.factors.insert(home, Factors { hab: 4.0, bio: 0.5, bio_max: 4.0, infra: 4.0 });
+        *sim.world.population.get_mut(home).unwrap() = 0.01;
+
+        let mut last = 0.5;
+        for _ in 0..40 {
+            sim.sys_production_tick(home);
+            let bio = sim.world.factors.get(home).unwrap().bio;
+            assert!(bio <= 4.0 + 1e-9, "biosphere exceeded its ceiling: {bio}");
+            last = bio;
+        }
+        assert!(last > 0.5, "a razed biosphere should recover over time, got {last}");
+    }
+
+    #[test]
+    fn a_dead_biosphere_stays_dead_when_doctrine_zeroes_regrowth() {
+        // The hostile-card case: reducing regen to zero makes the wound durable
+        // rather than momentary.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 7)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(7));
+        let pe = sim.player_entity[0];
+        sim.world.doctrine.get_mut(pe).unwrap().biosphere_regen_bonus = 0.0;
+        let home = sim.world.player_info.get(pe).unwrap().home;
+        sim.world.factors.insert(home, Factors { hab: 4.0, bio: 0.0, bio_max: 4.0, infra: 4.0 });
+        *sim.world.population.get_mut(home).unwrap() = 0.01;
+
+        for _ in 0..20 {
+            sim.sys_production_tick(home);
+        }
+        assert_eq!(sim.world.factors.get(home).unwrap().bio, 0.0, "regen_bonus=0 must leave the biosphere dead");
+    }
+
+    #[test]
     fn exhausted_scouts_scrap_and_recover_minerals() {
         // "An LCV should scrap itself at the nearest friendly colony after
         // there's no unknown planets" — confirmed this conversation.
@@ -2136,7 +2259,7 @@ mod tests {
         // pressure reads ~0.
         let colony = sim.planet_entity[15];
         sim.world.owner.insert(colony, PlayerId(0));
-        sim.world.factors.insert(colony, Factors { hab: 3.0, bio: 3.0, infra: 1.0 });
+        sim.world.factors.insert(colony, Factors { hab: 3.0, bio: 3.0, bio_max: 3.0, infra: 1.0 });
         sim.world.stockpile.insert(colony, Minerals::default());
 
         {
@@ -2164,7 +2287,7 @@ mod tests {
 
         let colony = sim.planet_entity[15];
         sim.world.owner.insert(colony, PlayerId(0));
-        sim.world.factors.insert(colony, Factors { hab: 3.0, bio: 3.0, infra: 1.0 });
+        sim.world.factors.insert(colony, Factors { hab: 3.0, bio: 3.0, bio_max: 3.0, infra: 1.0 });
         sim.world.stockpile.insert(colony, Minerals::default());
         {
             let s = sim.world.stockpile.get_mut(home).unwrap();

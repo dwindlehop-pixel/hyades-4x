@@ -90,6 +90,12 @@ pub struct Doctrine {
     pub productivity_step: f64,
     /// Logistic growth rate `r` for population toward `K` per cycle.
     pub growth_rate: f64,
+    /// Multiplier on `SimConfig::biosphere_regen_rate` for this empire's worlds.
+    /// The card lever on ecology: Growth-tree cards raise it to make a
+    /// biosphere recover faster, and hostile cards lower it — or attack
+    /// `bio_max` directly — to make the wound durable. `1.0` is untouched
+    /// baseline; `0.0` means a razed world never comes back on its own.
+    pub biosphere_regen_bonus: f64,
 
     // --- Explore / Survey (autopilot-doc §2) ---
     /// Number of survey vehicles in the opening fan-out. Base `6` (cube faces).
@@ -137,6 +143,7 @@ impl Default for Doctrine {
         Doctrine {
             productivity_step: 0.20,
             growth_rate: 0.5,
+            biosphere_regen_bonus: 1.0,
             survey_vehicles: 6,
             survey_accel_g: 1.0,
             // 1024 — ratified with k_high above; survey must scale with the
