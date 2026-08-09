@@ -105,6 +105,17 @@ pub struct Doctrine {
     /// snowball defaults; the offline search may refine it, but the stalled
     /// low-reserve configuration is no longer the reference.
     pub survey_reserve: usize,
+    /// Skip survey targets showing [`SurveyView::industrial_signature`] — a
+    /// pop-4 world is almost certainly already held, so flying to it spends a
+    /// hop to learn something the spectrometry already said.
+    ///
+    /// **Default `false`, deliberately** (R-SIM3). Early game there is no
+    /// filtering at all: an empire that has not developed the instruments or the
+    /// doctrine to act on remote signatures simply flies out and finds out, and
+    /// those wasted hops are part of what early expansion costs. This is exactly
+    /// the shape of a card — one field, standing behavior, flipped when the
+    /// right tech or board state is reached (`Hyades_card_contract.md` §5).
+    pub survey_avoids_inhabited: bool,
 
     // --- Expand (autopilot-doc §4) ---
     pub expand_bias: ExpandBias,
@@ -132,6 +143,8 @@ impl Default for Doctrine {
             // empire or expansion outruns its own map. Monotone by construction
             // (survey is a fallback, never a pre-emption), so raising it is safe.
             survey_reserve: 1024,
+            // Off until a card or board state turns it on — see the field doc.
+            survey_avoids_inhabited: false,
             expand_bias: ExpandBias::ProductionCentersFirst,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
@@ -180,6 +193,18 @@ pub struct SurveyView {
     pub position: Vec3,
     pub habitability: f64,
     pub biosphere: f64,
+    /// **Inferential tier** (R-SIM3): this world carries the waste-heat and
+    /// atmospheric signature of a pop-4 civilization, legible at interstellar
+    /// range. It does *not* say who owns it — the industry of billions is simply
+    /// not concealable from spectrometry, so an empire may reasonably conclude
+    /// the world is taken without ever having gone there.
+    ///
+    /// Pop-4 is the only occupancy signal modelled today, because it is the one
+    /// that is exact: a threshold on realized population. The richer signal the
+    /// design calls for — departure traffic, where repeated sightings of ships
+    /// leaving raise confidence — needs accumulated light-lagged observations
+    /// and is R-SIM4.
+    pub industrial_signature: bool,
 }
 
 impl SurveyView {
@@ -368,15 +393,22 @@ impl Autopilot for BaselineAutopilot {
 
     fn choose_survey_target(
         &self,
-        _doctrine: &Doctrine,
+        doctrine: &Doctrine,
         from: Vec3,
         heading_bias: Option<Vec3>,
         unscanned: &[SurveyView],
     ) -> Option<PlanetId> {
+        // Occupancy inferred at range, not ownership known by visiting. Gated on
+        // doctrine so the early game does no filtering at all (R-SIM3) — the
+        // engine always reports the signature; whether to act on it is a
+        // standing behavior a card edits.
+        let legible_as_taken = |p: &SurveyView| doctrine.survey_avoids_inhabited && p.industrial_signature;
+
         // Prefer the heading hemisphere (dot > 0); fall back to global nearest.
         let pick = |restrict: bool| -> Option<(PlanetId, f64)> {
             unscanned
                 .iter()
+                .filter(|p| !legible_as_taken(p))
                 .filter(|p| {
                     !restrict
                         || match heading_bias {
@@ -586,7 +618,12 @@ mod tests {
 
     /// A remote-tier sighting: position plus K factors, nothing close-scan-only.
     fn survey_view(id: u32, pos: Vec3) -> SurveyView {
-        SurveyView { id: PlanetId(id), position: pos, habitability: 1.0, biosphere: 1.0 }
+        SurveyView { id: PlanetId(id), position: pos, habitability: 1.0, biosphere: 1.0, industrial_signature: false }
+    }
+
+    /// The same, but radiating the waste heat of a pop-4 civilization.
+    fn inhabited_survey_view(id: u32, pos: Vec3) -> SurveyView {
+        SurveyView { industrial_signature: true, ..survey_view(id, pos) }
     }
 
     #[test]
@@ -657,6 +694,38 @@ mod tests {
         let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         let ranked = ap.rank(doctrine, &v, &rctx);
         vec![Candidate { view: v, ranked }]
+    }
+
+    #[test]
+    fn survey_ignores_the_industrial_signature_by_default() {
+        // R-SIM3: early game does no filtering. The nearest world is visibly
+        // inhabited and the scout goes anyway — finding out costs a hop, and
+        // that cost is the early game's to pay.
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        assert!(!doctrine.survey_avoids_inhabited, "filtering must be off until a card enables it");
+        let cands =
+            vec![inhabited_survey_view(1, Vec3::new(10.0, 0.0, 0.0)), survey_view(2, Vec3::new(100.0, 0.0, 0.0))];
+        assert_eq!(ap.choose_survey_target(&doctrine, Vec3::ZERO, None, &cands), Some(PlanetId(1)));
+    }
+
+    #[test]
+    fn survey_avoids_the_industrial_signature_once_doctrine_enables_it() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine { survey_avoids_inhabited: true, ..Doctrine::default() };
+        let cands =
+            vec![inhabited_survey_view(1, Vec3::new(10.0, 0.0, 0.0)), survey_view(2, Vec3::new(100.0, 0.0, 0.0))];
+        assert_eq!(ap.choose_survey_target(&doctrine, Vec3::ZERO, None, &cands), Some(PlanetId(2)));
+    }
+
+    #[test]
+    fn survey_still_flies_when_every_candidate_looks_inhabited() {
+        // Filtering must never strand a scout with nothing to do; an inhabited
+        // world is a worse target than an empty one, not worse than no target.
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine { survey_avoids_inhabited: true, ..Doctrine::default() };
+        let cands = vec![inhabited_survey_view(1, Vec3::new(10.0, 0.0, 0.0))];
+        assert_eq!(ap.choose_survey_target(&doctrine, Vec3::ZERO, None, &cands), None);
     }
 
     #[test]

@@ -130,16 +130,41 @@ thousands (§2b), and it would sit oddly beside a command layer whose cards issu
 lag their empire's knowledge, the mechanism is the existing **light-speed delay**
 on event propagation, not a private per-ship map.
 
-**R-SIM3 (open):** what the autopilot may read about an **unscanned** world.
-§1 says two contradictory-sounding things — the command view is "omniscient over
-realized state" (R-AC1), and autopilot units "act only on what they have
-scanned". Today the engine splits the difference: survey targeting sees only the
-remote tier (position, hab, bio), while colonization reads realized state for
-worlds already in `scanned`. The open question is ownership of a world nobody has
-visited: filtering survey candidates on it makes scouting efficient but lets an
-empire dodge worlds it has no way to know are claimed; not filtering costs wasted
-hops, which is the current behaviour. This is a design call about how much the
-autopilot inherits from the omniscient command view, not an optimization.
+**R-SIM3 (resolved).** What may the autopilot know about a world nobody has
+visited? Not a binary. **Occupancy is inferable at range, with confidence** —
+ownership does not require a visit, it requires evidence:
+
+- **Pop-4 industrial signature.** The waste heat and atmospheric chemistry of
+  billions is not concealable; spectrometry reads it across interstellar
+  distance. A world at the top population band is legible as *taken* without
+  anyone going there. This is a third, **inferential** tier sitting between §1's
+  remote tier (position, hab, bio) and its close-scan tier (ownership,
+  infrastructure, mineral density) — it does not identify *whose* it is.
+- **Departure traffic.** Ships observed leaving a world are evidence of activity,
+  and repeated sightings raise confidence. Unlike pop-4 this is a *graded* signal
+  accumulated over time, so it needs stored light-lagged observations rather than
+  a threshold on current state — filed as R-SIM4.
+
+**Crucially, none of it filters anything in the early game.** The default is to
+fly out and find out: `Doctrine::survey_avoids_inhabited` is `false`, so a scout
+targets the nearest unvisited world even when it is visibly ablaze with industry,
+and the wasted hop is part of what early expansion costs. Acting on remote
+signatures is something an empire *earns* — the field is exactly the shape a card
+edits (`Hyades_card_contract.md` §5: one field, standing behavior), flipped when
+the right instruments or board state arrive. The engine always reports the
+signature; doctrine decides whether the policy is allowed to use it.
+
+That split is the general answer to the §1 tension. The **command view** stays
+omniscient over realized state (R-AC1) because the player is planning; the
+**autopilot** acts on what its instruments justify, and what they justify widens
+over the course of a game.
+
+**R-SIM4 (new, open):** departure-traffic confidence. Needs per-player
+accumulated observations of ship departures, light-lagged, with a confidence
+that rises on repeat sightings and presumably decays — plus a decision about
+where that state lives, since a per-player × per-planet observation table is the
+kind of storage §2b warns about. The pop-4 threshold is deliberately the cheap
+half of R-SIM3, taken first because it is exact and needs no new state.
 
 **R-SIM2 (new, open):** the survey scan is still O(planets) per arrival. Position
 is static, so a spatial index over planet points with a per-player visited mask

@@ -391,7 +391,14 @@ i.e. supremacy is slot-organic by construction.
   engine instructions), but it adds a second view type to the fog-of-war contract
   (`Hyades_simulation_model.md` §1/§2b), so it is a contract decision, not a free
   optimization. Deliberately not taken yet.
-- Open R-codes: R-ARENA1–7, R-MX1–6, R-XM5–7, R-SIM2 (survey scan cost), R-SIM3 (what the autopilot may read about an unscanned world). Resolved this round: R-AC16, R-AC17, R-SIM1.
+- **R-SIM4 — departure-traffic confidence.** R-SIM3 settled that occupancy is
+  *inferable at range*: the pop-4 industrial signature is implemented (exact, no
+  new state), but the graded signal — repeated sightings of ships leaving a world
+  raising confidence it is held — needs accumulated light-lagged observations per
+  player per planet, which is exactly the storage §4 warns about at fleet scale.
+- Open R-codes: R-ARENA1–7, R-MX1–6, R-XM5–7, R-SIM2 (survey scan cost), R-SIM4
+  (departure-traffic confidence). Resolved this round: R-AC16, R-AC17, R-SIM1,
+  R-SIM3.
 
 ---
 

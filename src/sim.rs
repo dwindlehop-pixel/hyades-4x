@@ -1527,11 +1527,18 @@ impl Simulation {
             // to the craft. Whether the autopilot should instead see realized
             // ownership everywhere (R-AC1's omniscient command view) is R-SIM3.
             let f = self.world.factors.get(e).unwrap();
+            // Inferential tier (R-SIM3): a pop-4 world radiates the waste heat of
+            // billions, which spectrometry reads across interstellar distance.
+            // Reported unconditionally; `Doctrine::survey_avoids_inhabited`
+            // decides whether the policy acts on it, and defaults to off.
+            let pop = *self.world.population.get(e).unwrap();
+            let industrial_signature = self.bands.level(pop) >= 4;
             out.push(SurveyView {
                 id: pid,
                 position: *self.world.position.get(e).unwrap(),
                 habitability: f.hab,
                 biosphere: f.bio,
+                industrial_signature,
             });
         }
     }
