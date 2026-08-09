@@ -60,6 +60,12 @@ use hyades_engine::prelude::*;
 const PLAYERS: usize = 3;
 const SEED: u64 = 1;
 
+/// Part 1 asks a yes/no question — *does this knob move the run at all* — and a
+/// shorter horizon answers it just as well as a full one, for a fraction of the
+/// cost. Part 2/3 stay at the shipped horizon because they characterise the real
+/// run rather than comparing two of them.
+const ISOLATE_HORIZON: f64 = 2000.0;
+
 /// Same definition `min_time_search` and `coverage_time` score against.
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
     galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
@@ -297,6 +303,7 @@ fn isolate(label: &str, values: &[f64], apply: impl Fn(&mut SimConfig, &mut Doct
     let mut all_same = true;
     for &v in values {
         let mut cfg = SimConfig::new(SEED);
+        cfg.horizon_years = ISOLATE_HORIZON;
         let mut doc = Doctrine::default();
         apply(&mut cfg, &mut doc, v);
         let o = run(SEED, cfg, doc);
@@ -329,19 +336,15 @@ fn main() {
     println!("(min_time_search swept these jointly by coordinate descent, which cannot");
     println!(" distinguish 'weakly coupled' from 'not connected to the run at all')");
 
-    isolate("cargo_unit_size", &[2.5, 5.0, 7.5, 10.0, 15.0], |c, _, v| c.cargo_unit_size = v);
-    isolate("outpost_mining_fraction", &[0.1, 0.2, 0.3, 0.4, 0.5], |c, _, v| c.outpost_mining_fraction = v);
-    isolate("reinvest_bias (the range min_time_search swept)", &[0.0, 0.1, 0.25, 0.4, 0.5], |_, d, v| {
-        d.reinvest_bias = v
-    });
+    isolate("cargo_unit_size", &[1.0, 2.5, 6.0], |c, _, v| c.cargo_unit_size = v);
+    isolate("outpost_mining_fraction", &[0.1, 0.3, 0.5], |c, _, v| c.outpost_mining_fraction = v);
+    isolate("reinvest_bias (the range min_time_search swept)", &[0.0, 0.25, 0.5], |_, d, v| d.reinvest_bias = v);
     // The deepen-vs-expand dial compares b*headroom against (1-b)*score.
     // `headroom` is bounded by k_potential (<= 1), while `score` is a weighted
     // sum that runs well above 1, so deepening cannot win anywhere in [0, 0.5]
     // — the swept range sits entirely on one side of the switch. Push past it.
-    isolate("reinvest_bias (past the range it swept)", &[0.5, 0.9, 0.99, 0.999, 1.0], |_, d, v| d.reinvest_bias = v);
-    isolate("medium_fleet_size (the one that DID move it)", &[3.0, 4.0, 6.0, 8.0, 12.0], |c, _, v| {
-        c.medium_fleet_size = v
-    });
+    isolate("reinvest_bias (past the range it swept)", &[0.9, 0.97, 1.0], |_, d, v| d.reinvest_bias = v);
+    isolate("medium_fleet_size (the one that DID move it)", &[3.0, 8.0, 12.0], |c, _, v| c.medium_fleet_size = v);
 
     println!("\n\n=== Part 2: where the run actually spends its decisions (baseline) ===");
     let o = run(SEED, SimConfig::new(SEED), Doctrine::default());

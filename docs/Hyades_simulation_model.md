@@ -120,6 +120,27 @@ horizon 2,500 went 1.188 s → 0.859 s (2,104 → 2,910 yr/s), while horizon 4,0
 was a wash at ~8.9 s. **Fog of war is not free**, and the light view is roughly
 what pays for it.
 
+**Fog is per player, never per unit.** `Knowledge` is a single set on the player
+entity — scanned, visited, targeted — so every craft an empire owns draws on the
+same map, and a world one scout has been sent to is excluded for all of them.
+There is deliberately no per-entity knowledge layer: it would be a second fog
+model to keep coherent, it would cost per-unit storage against fleets that run to
+thousands (§2b), and it would sit oddly beside a command layer whose cards issue
+**instant global orders** (`Hyades_card_contract.md` §2). Where units *should*
+lag their empire's knowledge, the mechanism is the existing **light-speed delay**
+on event propagation, not a private per-ship map.
+
+**R-SIM3 (open):** what the autopilot may read about an **unscanned** world.
+§1 says two contradictory-sounding things — the command view is "omniscient over
+realized state" (R-AC1), and autopilot units "act only on what they have
+scanned". Today the engine splits the difference: survey targeting sees only the
+remote tier (position, hab, bio), while colonization reads realized state for
+worlds already in `scanned`. The open question is ownership of a world nobody has
+visited: filtering survey candidates on it makes scouting efficient but lets an
+empire dodge worlds it has no way to know are claimed; not filtering costs wasted
+hops, which is the current behaviour. This is a design call about how much the
+autopilot inherits from the omniscient command view, not an optimization.
+
 **R-SIM2 (new, open):** the survey scan is still O(planets) per arrival. Position
 is static, so a spatial index over planet points with a per-player visited mask
 would make nearest-unvisited O(log n) — but `choose_survey_target` is policy, and

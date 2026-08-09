@@ -8,18 +8,12 @@
 
 use hyades_engine::prelude::*;
 
-fn fresh(players: usize, seed: u64) -> Simulation {
-    let galaxy = Galaxy::generate(GalaxyConfig::new(players, seed)).unwrap();
-    Simulation::with_baseline(galaxy, SimConfig::new(seed))
-}
-
-/// Like `fresh`, but with a shorter horizon — determinism holds at any
-/// point in the run, so proving it doesn't need the full default horizon.
-/// Kept short specifically for the 12-player case, whose galaxy is now
-/// ~14k planets at the default 10 ly hex (this conversation's benchmarked
-/// value) — full-length debug-mode runs at that count are slow to iterate
-/// on locally even though release-mode throughput comfortably clears the
-/// confirmed 2.5-simulated-years/real-second target (`bench_hex_size.rs`).
+/// Build a run with an explicit, short horizon — determinism holds at any
+/// point in the run, so proving it does not need the full default horizon.
+/// Every test here pins one explicitly: the shipped defaults snowball to
+/// thousands of vehicles across 4,000 years (CLAUDE.md design law #9), and a
+/// full-length debug run costs a minute-plus each. Bit-identity is a property
+/// of the arithmetic, not of how long you let it accumulate.
 fn fresh_short(players: usize, seed: u64, horizon_years: f64) -> Simulation {
     let galaxy = Galaxy::generate(GalaxyConfig::new(players, seed)).unwrap();
     let mut cfg = SimConfig::new(seed);
@@ -54,8 +48,8 @@ fn continuous_positions_are_bit_identical_across_the_timeline() {
     // count or the full step budget to prove the property, and the galaxy is
     // now thousands of planets at the default 10 ly hex (this conversation) —
     // `checks` below still clears its floor by a wide margin either way.
-    let mut a = fresh(3, 4242);
-    let mut b = fresh(3, 4242);
+    let mut a = fresh_short(3, 4242, 800.0);
+    let mut b = fresh_short(3, 4242, 800.0);
 
     let mut checks = 0u64;
     for _ in 0..1500 {
@@ -86,17 +80,17 @@ fn continuous_positions_are_bit_identical_across_the_timeline() {
 fn positions_never_exceed_lightspeed() {
     // Sample displacement over small windows the whole way to the horizon; no
     // entity may move faster than c (= 1 ly/yr).
-    let mut sim = fresh(3, 808);
+    let mut sim = fresh_short(3, 808, 800.0);
     sim.run();
     let dt = 0.25;
     let mut t = 0.0;
-    while t < 4000.0 {
+    while t < 800.0 {
         let p0 = sim.positions_at(t);
         let p1 = sim.positions_at(t + dt);
         for (u, v) in p0.iter().zip(p1.iter()) {
             assert!(u.distance(*v) <= dt + 1e-6, "superluminal motion near t={t}");
         }
-        t += 37.0; // stride across the timeline
+        t += 7.0; // stride across the timeline
     }
 }
 

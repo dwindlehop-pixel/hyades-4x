@@ -27,7 +27,15 @@ use hyades_engine::prelude::*;
 /// The standard test bed: a fixed seed set, fixed player count. Every
 /// algorithm/parameter variant gets compared against the *same* galaxies, so
 /// differences in outcome are the algorithm's doing, not sampling luck.
-const TEST_BED_SEEDS: &[u64] = &[1, 7, 42, 55, 99, 123, 2024, 31337, 8675309, 271828];
+/// Two of the ten standard test-bed seeds. Each trial is now a full snowball
+/// run (design law #9), so the original ten across two doctrines was 20 runs and
+/// ~227 s — well past the 60 s budget CI targets (three seeds still cost 66 s).
+/// Two preserves what this driver is actually for: the *doctrine comparison*
+/// between the two beds below. Seed breadth is the offline search's job, and it
+/// is not time-boxed. The full bed is kept here for it to reference.
+const TEST_BED_SEEDS: &[u64] = &[1, 7];
+#[allow(dead_code)]
+const FULL_TEST_BED: &[u64] = &[1, 7, 42, 55, 99, 123, 2024, 31337, 8675309, 271828];
 const PLAYERS: usize = 3;
 
 /// `K_potential > 0` planets — the actual coverage target, not raw planet
@@ -131,14 +139,11 @@ fn main() {
     run_test_bed("Cheaper Colonizers (medium_fleet_size=6)", expand_cfg);
 
     println!(
-        "\nReading: 6/10 seeds now reach full coverage (up from 0/10 before\n\
-         `colony_seed_minerals` — see `min_time_search.rs`'s module doc for the\n\
-         diagnosis: without a mineral seed, ~98% of colonies could never afford\n\
-         deepening past infra 2 on their own local mining, a permanent trap with\n\
-         no fix available at the doctrine/fleet-cost level). The remaining 4\n\
-         seeds are near-misses (201-202/203) — the last 1-2 worlds are low-K\n\
-         stragglers correctly deprioritized by ranking, not blocked outright.\n\
-         Run `min_time_search.rs` for the actual coordinate-descent search over\n\
-         the remaining parameters (reinvest_bias, growth_rate, medium_fleet_size)."
+        "\nReading: coverage is what fraction of the galaxy's K_potential>0 worlds\n\
+         anyone has colonized by the horizon. Under the ratified snowball defaults\n\
+         (R-AC16/R-AC17) expansion compounds instead of stalling, so the interesting\n\
+         question is no longer *whether* it moves but how far it gets in 4,000 years —\n\
+         full coverage currently needs closer to 8,000. Run `min_time_search` offline\n\
+         for the coordinate-descent search over the remaining parameters."
     );
 }

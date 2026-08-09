@@ -1513,9 +1513,19 @@ impl Simulation {
                 continue;
             }
             // Remote tier only (autopilot-doc §1): position plus the K-ceiling
-            // factors. Deliberately NOT filtered on `owner` — ownership needs a
-            // close-range scan, so skipping a world because it is *actually*
-            // owned would be omniscience. A scout learns that on arrival.
+            // factors, which spectroscopy reads at interstellar range.
+            //
+            // Fog is **per player, not per unit** — `Knowledge` is one shared set
+            // on the player entity, so a world any of this empire's craft has
+            // been sent to is excluded for all of them. Nothing here models an
+            // individual scout's ignorance; that would be a second, per-entity
+            // fog layer, and cards issue *instant global* orders (card-contract
+            // §2) so the command layer already acts empire-wide.
+            //
+            // Ownership is not filtered because it is not in the remote tier —
+            // an unscanned world's owner is unknown to the *empire*, not merely
+            // to the craft. Whether the autopilot should instead see realized
+            // ownership everywhere (R-AC1's omniscient command view) is R-SIM3.
             let f = self.world.factors.get(e).unwrap();
             out.push(SurveyView {
                 id: pid,

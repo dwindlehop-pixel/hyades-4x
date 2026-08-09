@@ -46,6 +46,35 @@ cargo run --release --example montecarlo         # balance sweeps
 Baseline as of the combat refactor: **79 unit + 4 smoke + 4 determinism tests pass.**
 The MC sweeps are slow in debug; always use `--release` for them.
 
+### The 60-second rule for tests and CI
+
+**Every test target and every CI step must finish in ≤60 s.** Searches are the
+only exception and they are offline, never in CI. Current costs:
+
+| step | cost |
+|---|---|
+| `cargo test` (unit + determinism + smoke) | ~24 s |
+| `tests/balance.rs` (release, `--ignored`) | ~52 s |
+| `coverage_trace` | ~17 s |
+| `coverage_time` | ~49 s |
+| `montecarlo` | ~56 s |
+
+Ratifying the snowball defaults blew every one of these past the budget at once —
+the unit suite alone went 6 s → 315 s — because a default-config run is now a
+full-colonization sim. The fix is never to weaken what a check proves; it is to
+spend fewer *runs* on it:
+
+- **Pin an explicit horizon in tests.** Determinism is a property of the
+  arithmetic, not of how long you accumulate it; 800 yr proves it as well as
+  4,000 and costs a twelfth as much (85 s → 7 s).
+- **Cut samples, not the question.** `coverage_trace` asks "does this knob move
+  the run at all", which three values answer as well as five (230 s → 17 s, every
+  verdict preserved). `balance.rs` went to three seeds (86 s → 52 s), and
+  `coverage_time` to two, keeping its doctrine *comparison* — the thing it is for.
+- **Say what the trim cost.** Fewer seeds is less variance coverage. That is the
+  offline search's job, and it is not time-boxed — so record the tradeoff where
+  the constant is defined rather than letting it look like the full bed.
+
 ### Always run sweeps unbuffered
 
 **Never pipe a long run through `tail`, `head`, `sort`, or a bare `grep`.** Those
@@ -346,8 +375,14 @@ i.e. supremacy is slot-organic by construction.
      what wiring `matching.rs` in is meant to fix. Throughput is also a *search*
      problem: the balancer's value scales with runs per hour, so speed lost to entity
      count is balance coverage not bought.
-- Pacing tension: at correct hex-derived scale, full galaxy exploration may need tens
-  of thousands of simulated years against a 4,000-year default horizon.
+- **Raise coverage inside a fixed 4,000-year run — do not extend the horizon.**
+  The ratified defaults reach ~24% of colonizable worlds by 4,000 yr and need
+  roughly 8,000 for 100%. **4,000 is the run length; the coverage reached within it
+  is the objective to improve.** That reframes the offline search: it is looking for
+  a configuration that compounds *faster*, not for a longer clock. It also keeps the
+  search affordable — doubling the horizon doubles every trial, and §2's 60-second
+  rule already had to absorb the snowball once. The `centrality_scale` recalibration
+  above and R-SIM2 are the two nearest levers.
 - Counter-graph matrix partition (card contract §8.3): define Red-class positions vs.
   Blue/Green-edge positions so the mineral substitution law has mechanical grip.
 - **R-SIM1 — light survey view.** `Autopilot::choose_survey_target` takes
@@ -356,7 +391,7 @@ i.e. supremacy is slot-organic by construction.
   engine instructions), but it adds a second view type to the fog-of-war contract
   (`Hyades_simulation_model.md` §1/§2b), so it is a contract decision, not a free
   optimization. Deliberately not taken yet.
-- Open R-codes: R-ARENA1–7, R-MX1–6, R-XM5–7, R-AC16–17, R-SIM1.
+- Open R-codes: R-ARENA1–7, R-MX1–6, R-XM5–7, R-SIM2 (survey scan cost), R-SIM3 (what the autopilot may read about an unscanned world). Resolved this round: R-AC16, R-AC17, R-SIM1.
 
 ---
 
