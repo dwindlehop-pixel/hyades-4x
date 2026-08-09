@@ -226,7 +226,7 @@ a separate factor, not folded into this. **R-H6** confirm player-relative
 is a wanted feature, not an oversight to close off.
 
 **Out of scope here:** actual card text/costs for tolerance-widening or
-terraforming effects (Growth/Politics tree content, per `hyades_todo.md`'s
+terraforming effects (Growth/Politics tree content, per `hyades_todo.md` T-29's
 adjacent note that Growth/Production/Politics will carry nonconsensual-
 interaction cards — this is the consensual, own-empire-improvement side of
 the same trees); implementation in code, pending ratification.

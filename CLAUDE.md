@@ -52,7 +52,8 @@ cargo run --release --example combat_arena       # kinematic interception harnes
 cargo run --release --example montecarlo         # balance sweeps
 ```
 
-Baseline as of the combat refactor: **79 unit + 4 smoke + 4 determinism tests pass.**
+Baseline as of the shell-model landing (R-O57/R-O58): **99 unit + 4 smoke + 4
+determinism tests pass**, ~35 s wall for `cargo test --all-targets`.
 The MC sweeps are slow in debug; always use `--release` for them.
 
 ### The 60-second rule for tests and CI
@@ -62,9 +63,9 @@ only exception and they are offline, never in CI. Current costs:
 
 | step | cost |
 |---|---|
-| `cargo test` (unit + determinism + smoke) | ~24 s |
+| `cargo test --all-targets` (unit + determinism + smoke) | ~35 s |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
-| `coverage_trace` | ~17 s |
+| `coverage_trace` | ~19 s |
 | `coverage_time` | ~49 s |
 | `montecarlo` | ~56 s |
 
@@ -223,6 +224,20 @@ one, stop and flag it.
    efficient. Any strategic value for smaller//fragmented fleets must therefore come
    from *combat-specific effects* (Lanchester's square law, indivisibility as a
    liability), not from the cost curve.
+
+   **This law was silently false in the engine until R-O58, and the way it failed is
+   the thing to learn from.** Cost was on area (correct) but capacity was the
+   *abstract slot count* 0/1/2 from roles §6, which is near-linear — so a General hull
+   cost 9× a Limited and hauled 2 units where a Medium cost 3× and hauled 1: **0.100
+   against 0.067 per unit hauled, i.e. fragmenting was cheaper.** Neither half looked
+   wrong on its own, and both were individually ratified. A law about a *ratio* is not
+   checked by checking its numerator and its denominator separately, so assert the
+   ratio — `shell_model_ladders_are_derived_not_tuned` now does.
+
+   The shell model also supplies the counterweight this law says must come from
+   combat, without combat: a laden General hull is dramatically slower than an empty
+   one and a laden Limited hull barely differs, so **large hulls broadcast their load
+   state and small ones do not** (standing-layer §9.2).
 4. **The Ship Testing Arena is the required empirical harness** for setting per-class
    `r_eq`. These values cannot be derived analytically.
 5. **`most_needed_center` is retained permanently as a test oracle** (single-supply
@@ -333,20 +348,33 @@ seeder; `ArenaShip` renamed `Combatant`; tuned weapon constants gathered into
 The uploaded bundle was internally inconsistent across branches; these were
 **reconstructed** and their *magnitudes are placeholders*:
 
-- `sim::hull_dry_mass`, `sim::hull_base_thrust`, `sim::hull_thrust_multiplier_range`
-  — **R-O57 supersedes the reconciliation**: cost and dry mass are one number, so
-  `hull_dry_mass` should be *derived from mineral cost and deleted* as an
-  independent field rather than reconciled against git history. Coupled to
-  R-O58 (shell model); see the roadmap below for why the two must land together.
+- ~~`sim::hull_dry_mass`~~ — **closed by deletion (R-O57).** It is now
+  `cost_fraction(hull) × general_vehicle_cost`, with `SimConfig::dry_mass` and
+  `cargo_mass_per_unit` removed. No reconciliation against git history was
+  needed or possible: under conservation no independent value can be correct.
+  The reconstruction was costing 30× — one mineral massed 6.0 as hull and 0.2 as
+  cargo — and it inverted design law #3, making fragmentation the cheaper way to
+  haul mass.
+- `sim::hull_base_thrust`, `sim::hull_thrust_multiplier_range` — still
+  placeholders, but **no longer load-bearing for absolute mass.**
+  `Combatant::max_accel` divides thrust by dry mass and `hull_base_thrust` is
+  thrust-to-mass × dry mass, so the mass scale cancels exactly; empty-hull accel
+  depends only on `hull_thrust_to_mass`. Pinned by
+  `combat_acceleration_is_untouched_by_the_dry_mass_rebasing`, and confirmed by
+  `tests/balance.rs` reproducing its goldens bit-for-bit across the R-O57/R-O58
+  landing. **New: R-O65** — the 1.2/1.1/1.0 Systems ladder in
+  `hull_thrust_to_mass` contradicts the shell model, which says empty-hull accel
+  is size-independent. Not flattened, because it is an MC-tuned combat surface;
+  needs ratification.
 - `math::Vec3::cross`, public `sim::role_hull_type`
 - `examples/combat_arena.rs` referenced `SimConfig::general_fleet_size` (absent here);
   substituted `1.0`, since General is the cost reference.
 
-**These set the absolute ROU acceleration the laser-vs-missile balance rests on.**
-If the prior definitions exist in git history, restore them and re-certify before
-building on top.
+**The remaining two set the absolute ROU acceleration the laser-vs-missile
+balance rests on.** If the prior definitions exist in git history, restore them
+and re-certify before building on top.
 
-### Next: R-MC9c (the active workstream)
+### Next: R-MC9c (the active workstream) — `hyades_todo.md` T-12
 
 Layer onto `combat::resolve_engagement`, all as `CombatConfig` fields + slot-derived stats:
 
@@ -370,58 +398,79 @@ i.e. supremacy is slot-organic by construction.
 ### The standing-layer ratification — engine roadmap
 
 `docs/Hyades_standing_layer_and_observation.md` §11 lists 15 engine work items.
-Status, so this is not re-derived each time:
+Status, so this is not re-derived each time. **Six have landed** (1, 2, 5, 8, 9,
+11+12); the eight still open are carried in `docs/hyades_todo.md` under their
+T-codes, and item 10 is blocked rather than open:
 
 | # | Item | R-code | Status |
 |---|---|---|---|
 | 5 | Colony cargo mass ≡ mineral cargo mass | R-O32 | **done** — `laden_accel` now masses `pop_cargo`; it was massless, so a laden colony ship flew like an empty hull and the burn read out cargo *type*, the one thing §6.2 exists to hide |
-| 12 | Verify the shell model's 1 : 2.2 : 4 radius prediction | R-O58b | **checked — it fails.** See below |
+| 12 | Re-base hull mass on surface area (shell), contents on volume | R-O58/R-O58b | **done** — landed with 11; see below |
 | 1 | `BuildOrder::Hull { hull_type, class }` + role assigned after production | R-O29 | **done** — the three mission-named variants are gone; `Autopilot::assign_role` returns a `Tasking { role, target }` for the finished hull, and the old `MiningPair`'s freighter is now a consequence of assigning `Role::Miner`. **Behaviour-neutral**, verified by stashing the diff: seed 1 / 3 seats / 4 kyr gives 1,183 colonies, 1,594 miner taskings, 5,845 scanned, 240 scouts both with and without |
 | 2 | Design/roster component | **R-O28** | **done** — `Roster` (a sorted, idempotent set of `(HullType, Class)`) is a per-player component written only by tree cards. Unblocks σ_vector for Design: the distance between pre- and post-card rosters is now computable. `Class` also introduces the Banks-convention design names (R-O42b: Meadow/Tor proposed, flavour subject to authorship) |
-| 3 | Diplomatic fields on `Doctrine` | R-O27/R-A3 | open — no field list specified yet |
-| 4 | Throttle fraction; observe `a` from trajectory not the stat block | R-O40 | open |
-| 6 | `min_time_search` as a reachability-cone query | R-O31 | open — same function, reverse direction |
-| 7 | Route intercept and accept/decline through *believed* `a_max` | R-O41 | open — this is where surprise attack comes from |
+| 3 | Diplomatic fields on `Doctrine` | R-O27/R-A3 | open — no field list specified yet (**T-11**) |
+| 4 | Throttle fraction; observe `a` from trajectory not the stat block | R-O40 | open (**T-09**) |
+| 6 | `min_time_search` as a reachability-cone query | R-O31 | open — same function, reverse direction (**T-05**) |
+| 7 | Route intercept and accept/decline through *believed* `a_max` | R-O41 | open — this is where surprise attack comes from (**T-10**) |
 | 8 | Permissive role eligibility with varying competence | R-O44 | **done** — roles §4 now states the permissive rule once and every per-role list reads "Competent:", separating *competence* (a degree — an LSV scouts badly) from *capability* (a fact — a Limited hull has no cargo hold, so a Limited Colonizer founds nothing). Engine matches: `assign_role` declines on no viable target, never on hull type |
 | 9 | `FAIR_COUNTS` rejects 18 while galaxy §2 lists it fair | R-O12 | **done** — now `[2, 3, 6, 12, 18]`. A radius-`r` hex ring holds `6r` cells, so the family is 6/12/18/24…; 9 and 15 are multiples of 3 but form no ring, so `% 3` would be the wrong predicate. The three ring radii were exactly `N/6 + 1.5`, so the existing `18 => 4.5` branch was the family's third term and the list was one term short — replaced by that closed form. **Balance targets the 2-neighbour configs (3/6/12/18); N=2 is supported but not a balance target**, which also settles R-O9's missing Green as accepted rather than open |
-| 10 | Seed roster LSV+LCV; default doctrine 100% LSV Scout | R-O42 | **half done, half blocked.** Seats are seeded with exactly LSV(Meadow) + LCV(Tor) per §7.1, and `SimConfig::enforce_roster` gates production on it — but it **defaults off**, because the engine has no card system and therefore no unlock path. Colonizer and freighter ride on MSV, which the starting roster excludes, so enforcement forbids every expansion build permanently: measured over 4,000 yr, **3 colonies and 18 vehicles against 1,183 and 4,778**. Pinned as a test. Blocked on cards, not on engine work |
-| 11 | Derive `hull_dry_mass` from mineral cost | R-O57 | open — **coupled to 12**, see below |
-| 13 | Slag as a bank entry | R-O59 | open |
-| 14 | Magazine mass on ordnance families | R-O60/R-XM6 | open |
-| 15 | `on_refit` retrofit realization | R-O47b/R-O55 | open |
+| 10 | Seed roster LSV+LCV; default doctrine 100% LSV Scout | R-O42 | **half done, half blocked.** Seats are seeded with exactly LSV(Meadow) + LCV(Tor) per §7.1, and `SimConfig::enforce_roster` gates production on it — but it **defaults off**, because the engine has no card system and therefore no unlock path. Colonizer and freighter ride on MSV, which the starting roster excludes, so enforcement forbids every expansion build permanently: measured over 4,000 yr, **3 colonies and 18 vehicles against 1,183 and 4,778**. Pinned as a test. Blocked on cards, not on engine work (**T-25**) |
+| 11 | Derive `hull_dry_mass` from mineral cost | R-O57 | **done** — landed with 12; see below |
+| 13 | Slag as a bank entry | R-O59 | open (**T-03**) |
+| 14 | Magazine mass on ordnance families | R-O60/R-XM6 | open (**T-04**) |
+| 15 | `on_refit` retrofit realization | R-O47b/R-O55 | open (**T-08**) |
 
-**Items 11 and 12 are coupled and cannot land independently.** The verification
-§9.2 asks for was run and the prediction **does not hold in this tree**: computed
-from the shipped constants, empty-to-laden spreads are **2.00 : 1.50 : 1.33**
-(Limited : Medium : General) — *narrowing* with hull size, the opposite of the
-1.82 : 2.79 : 4.30 the doc cites. The cause is that neither half of the shell
-model exists yet: `hull_dry_mass` scales with a size *tier* (1/2/3), a
-volume-like proxy rather than surface area, and there is **no per-hull cargo
-capacity at all** — `cargo_unit_size` is one flat constant, so a General hull
-hauls what a Limited one does. A fixed load against rising dry mass is
-necessarily a shrinking penalty.
+**Items 11 and 12 landed together** — they were coupled, and the coupling was
+real: moving either half alone leaves mass unconserved.
 
-So R-O57/R-O58 are a behavioural change, not a re-derivation: both halves must
-move together (dry mass → area, capacity → volume), after which the per-class
-propulsion the laser-vs-missile balance rests on needs re-certifying and
-`tests/balance.rs` goldens re-deriving. That is also the *good* news for the
-§7 flagged placeholder — R-O57 deletes `hull_dry_mass` as an independent number
-rather than reconciling it.
+The shell model is now the engine's, with **one geometric primitive and no new
+tunable**. Radius is *derived* from the cost ladder (cost ∝ surface area ⇒
+`r = sqrt(cost / cost_Limited)`), the Limited hull is the unit radius so it is
+all shell and no hold, and capacity is the usable interior `(r − 1)³`
+normalised to the Medium hull. Dry mass is the mineral cost. Two constants were
+**deleted** (`SimConfig::dry_mass`, `cargo_mass_per_unit`) and none was retuned;
+`cargo_unit_size` keeps its name, default and meaning as the reference hold.
 
-### Also open
+Two faults in the shipped tree are what the change actually fixes, and both are
+worth remembering because neither was visible from the code alone:
 
-- Wire `matching.rs` into `lib.rs` and swap the call sites in `sim.rs`.
-- Refactor three long functions: `sys_production_tick` (~149 lines), `apply_build`
-  (~148), `production_choice` (~137).
-- Recalibrate **`centrality_scale`** — still tuned to an old ~25 ly extent; the galaxy
-  is now hundreds of ly. (`k_high` was the other half of this and is now **resolved**
-  at 3.2 — R-AC17.)
-- **Watch simulation throughput as fleets grow — optimize before it nears 2.5 yr/s.**
-  The confirmed floor is **2.5 simulated-years/real-second**. `galaxy.rs` cites
-  **2,116 yr/s** at the 12-player worst case (an 847× margin) and `Hyades_matching.md`
-  §"Speed today" leans on the same figure — but both date from a galaxy that barely
-  colonized. **Entity count is the first-order cost**, and it is now the thing that
-  moves. Measured release-mode, seed 1, this machine:
+- **A mineral massed 30× more as hull than as cargo.** `dry_mass = 1.0` × a
+  Medium tier of 2 made an MSV mass 2.0 while costing 1/3 of a mineral — 6.0
+  mass per mineral — against `cargo_mass_per_unit = 0.2` for the same mineral in
+  a hold.
+- **Design law #3 was inverted.** Cost per unit hauled was 0.067 (Medium) vs
+  0.100 (General), so *fragmenting* was the cheaper way to move mass. It is now
+  0.067 vs 0.0098.
+
+**Combat needed no re-certification, contrary to the earlier warning here.**
+`Combatant::max_accel` is `hull_base_thrust · factor / hull_dry_mass` and
+`hull_base_thrust` is thrust-to-mass × dry mass, so the mass scale cancels
+exactly. `tests/balance.rs` reproduces its goldens bit-for-bit on all three
+seeds and all five relative velocities; a unit test pins the cancellation.
+
+**What it cost: ~9% of coverage at 4,000 yr** (seed 1 1,183 → 1,044; seed 7
+1,164 → 1,093). Laden ships now pay for their load — a full Medium freighter
+carries 15× its own dry mass and accelerates at 1/16 g against 2/3 g before —
+so logistics is slower. That is conservation being real, and recovering the 9%
+is a job for the coverage objective, not a reason to soften the physics.
+
+**Opened by the landing:** R-O64 (roles §6's 0/1/2 was a *unit count*, not a
+mass ladder — ordinal content kept, magnitudes now geometry) and R-O65
+(`hull_thrust_to_mass` still varies 1.2/1.1/1.0 across Systems sizes, which the
+shell model says should be flat; not flattened, it is MC-tuned).
+
+### Also open — see `docs/hyades_todo.md`
+
+**The full register of outstanding work lives in `docs/hyades_todo.md`**, ordered
+specific → vague with permanent `T-nn` identifiers. Do not maintain a second copy
+of it here; cite the T-code. What stays in this file is only the material that
+changes how you *work*, not what is left to do:
+
+- **Throughput floor: 2.5 simulated-years/real-second** (T-24). `galaxy.rs` cites
+  **2,116 yr/s** at the 12-player worst case and `Hyades_matching.md` §"Speed today"
+  leans on the same figure — **both date from a galaxy that barely colonized, and
+  both are now wrong by orders of magnitude.** Entity count is the first-order cost
+  and it is the thing that moves. Measured release-mode, seed 1, this machine:
 
   | scenario | vehicles | throughput | margin vs floor |
   |---|---|---|---|
@@ -433,57 +482,25 @@ rather than reconciling it.
   | shipped defaults, 12 seats, 8 kyr | — | not yet measured | — |
 
   The first two rows are kept only as the historical baseline: they are the
-  configuration design law #9 says never to benchmark against, and they are why the
+  configuration design law #14 says never to benchmark against, and they are why the
   old 2,116 yr/s figure looked comfortable. Nothing was wrong with that measurement —
   it was taken on a game that stalled at a few dozen colonies.
 
   **Degradation is superlinear in duration, not just in fleet size.** 3 seats over
   8 kyr carries 1.7× the vehicles of the 4 kyr run but costs 5.8× the throughput,
   because the longer run also spends more of its life at the high-vehicle end. Seat
-  count is gentler than that: 12 seats holds 2.6× the vehicles of 3 seats at the same
-  horizon for 3.6× the cost, roughly linear.
+  count is gentler: 12 seats holds 2.6× the vehicles of 3 seats at the same horizon
+  for 3.6× the cost, roughly linear. So the worst case is **long horizons, not wide
+  tables**, and 12 seats × 8 kyr extrapolates to ~20 yr/s — an ~8× margin, not 847×.
 
-  So the worst case is **long horizons, not wide tables** — which matters because
-  full coverage needs ~8 kyr. 12 seats at 8 kyr is the untested corner; extrapolating
-  the 8-kyr penalty onto the 12-seat row puts it near **20 yr/s, an ~8× margin**.
-  Still above the floor, but the 847× headroom `galaxy.rs` advertises is gone.
+  **Treat approaching the floor as the trigger to optimize, not to shrink the
+  scenario.** Throughput is also a *search* problem: the balancer's value scales with
+  runs per hour, so speed lost to entity count is balance coverage not bought.
 
-  Two things to do:
-  1. **`examples/bench_hex_size.rs` does not exist in this tree** despite being cited
-     by `galaxy.rs` (×3), `tests/smoke.rs`, `tests/determinism.rs`, and
-     `Hyades_matching.md`. Restore or rewrite it so the claim is checkable, and make
-     it sweep *entity count*, not just hex size.
-  2. Treat approaching 2.5 yr/s in testing as the trigger to **optimize, not to shrink
-     the scenario**. First suspects are the O(P) scans that now run against 6,725
-     planets rather than the 600 `Hyades_matching.md` assumed — `most_needed_center`
-     per freighter load and the candidate scan per production cycle — which is exactly
-     what wiring `matching.rs` in is meant to fix. Throughput is also a *search*
-     problem: the balancer's value scales with runs per hour, so speed lost to entity
-     count is balance coverage not bought.
-- **Raise coverage inside a fixed 4,000-year run — do not extend the horizon.**
-  The ratified defaults reach ~24% of colonizable worlds by 4,000 yr and need
-  roughly 8,000 for 100%. **4,000 is the run length; the coverage reached within it
-  is the objective to improve.** That reframes the offline search: it is looking for
-  a configuration that compounds *faster*, not for a longer clock. It also keeps the
-  search affordable — doubling the horizon doubles every trial, and §2's 60-second
-  rule already had to absorb the snowball once. The `centrality_scale` recalibration
-  above and R-SIM2 are the two nearest levers.
-- Counter-graph matrix partition (card contract §8.3): define Red-class positions vs.
-  Blue/Green-edge positions so the mineral substitution law has mechanical grip.
-- **R-SIM1 — light survey view.** `Autopilot::choose_survey_target` takes
-  `&[PlanetView]` (88 B/entry) and reads 28 B of it — `id` and `position`. Sizing the
-  view to the query is the largest remaining per-ship win (`view_of` alone was 18% of
-  engine instructions), but it adds a second view type to the fog-of-war contract
-  (`Hyades_simulation_model.md` §1/§2b), so it is a contract decision, not a free
-  optimization. Deliberately not taken yet.
-- **R-SIM4 — departure-traffic confidence.** R-SIM3 settled that occupancy is
-  *inferable at range*: the pop-4 industrial signature is implemented (exact, no
-  new state), but the graded signal — repeated sightings of ships leaving a world
-  raising confidence it is held — needs accumulated light-lagged observations per
-  player per planet, which is exactly the storage §4 warns about at fleet scale.
-- Open R-codes: R-ARENA1–7, R-MX1–6, R-XM5–7, R-SIM2 (survey scan cost), R-SIM4
-  (departure-traffic confidence). Resolved this round: R-AC16, R-AC17, R-SIM1,
-  R-SIM3.
+- **Coverage is measured inside a fixed 4,000-year run — do not extend the horizon**
+  (T-20). Currently ~15.5% of colonizable worlds. 4,000 is the run length; the
+  coverage reached within it is the objective. Doubling the horizon doubles every
+  trial, and §2's 60-second rule already had to absorb the snowball once.
 
 ---
 

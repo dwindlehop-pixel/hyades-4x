@@ -3,7 +3,7 @@
 **Status:** draft, proposed by Claude for Jonathan's ratification, with a
 **tested reference implementation** (`matching.rs`, 6/6 unit tests passing,
 compiled under rustc 1.75, dependency-free, `Entity = u64`). Graduates the
-matching half of `hyades_todo.md` §1 into a spec; the *policy* half of the
+matching half of `hyades_todo.md` **T-29** (formerly §1) into a spec; the *policy* half of the
 bidding system (when a cross-empire offer succeeds) stays in the todo, per
 its "not to be spec'd until articulable" rule — this doc only builds the
 machinery that system will run on.
@@ -51,7 +51,7 @@ some queue; **change nothing if the existing approach is best.**
   (trucks crossing the map past nearer work) and the reason its
   community rebuilt the matcher twice (see §7 refs). Reservation-on-match
   fixes it structurally.
-- **Design need:** todo §1's bidding system ("a pirate co-located can
+- **Design need:** todo **T-29**'s bidding system ("a pirate co-located can
   demand tribute; the other civilization offered my entity a better deal")
   *requires* a common place where unlike offers are compared by one scalar.
   Building the Exchange now means the bidding system later is "post a bid
@@ -118,7 +118,7 @@ BuildTarget it is the planet rank `R(planet)`
 (`Hyades_autopilot_colonization_growth.md` §3). It is **not player-facing
 currency** — no diegetic money enters the warm-hard-SF register — it is
 the matching scalar, exactly the auction algorithm's price variable.
-**R-MX1:** whether the bidding system (todo §1) later *surfaces* pressure
+**R-MX1:** whether the bidding system (todo **T-29**) later *surfaces* pressure
 diegetically as trade value, or keeps it internal.
 
 **D3 — Books are a Resource; posting and matching are Systems.** This does
@@ -216,13 +216,13 @@ machinery is the discipline: deterministic order, id tiebreaks.
 
 ## 7. Ratification points
 
-**R-MX1** does pressure ever surface diegetically (feeds todo §1) ·
+**R-MX1** does pressure ever surface diegetically (feeds todo **T-29**) ·
 **R-MX2** market-tick cadence + per-fill light-lag ·
 **R-MX3** distance-discounted price (λ doctrine knob) vs. pure
 price-then-distance · **R-MX4** mining bid concurrency qty ·
 **R-MX5** one Book per (empire, commodity) now; merge into per-commodity
 *global* books when cross-empire bidding lands (the pirate's tribute demand
-is then just a hostile bid whose distance term enforces todo §1's
+is then just a hostile bid whose distance term enforces todo **T-29**'s
 co-location rule) · **R-MX6** confirm `most_needed_center` is kept
 permanently as the oracle in tests, or deleted after the swap bakes.
 

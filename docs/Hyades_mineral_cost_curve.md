@@ -275,6 +275,27 @@ acceleration formula (`a = thrust/(dry_mass + cargo_mass)`,
 volume) is correct, and pick the actual `V_reference` (what volume equals
 `dry_mass = 1.0`) needed to convert these ratios into concrete numbers.
 
+> **R-MC10 resolved, and the answer is no — dry mass goes on *area*, not
+> volume** (R-O57/R-O58, `Hyades_standing_layer_and_observation.md` §9). The
+> premise "assuming roughly uniform hull density" is what fails: a hull is a
+> **shell**, so the material bought is the skin, and this very document already
+> puts cost on surface area (§2). Once mass is conserved, cost and dry mass are
+> the same number, and a volume-scaled mass against an area-scaled price would
+> mean a General hull massing more than was paid for it.
+>
+> Everything else in this passage stands, including the diagnosis. The flat
+> `SimConfig::dry_mass` was exactly the gap described — the engine could not
+> tell a GSV's mass from a Scout's — and it is now **deleted** rather than
+> replaced by a ladder: `hull_dry_mass = cost_fraction × general_vehicle_cost`.
+> `V_reference` needs no pinning, because there is no free scale left to pin;
+> the mass unit is the mineral. This closes `Hyades_loadout.md`'s R-L5 as a side
+> effect, as predicted, though with the opposite ladder to the one proposed.
+>
+> The volume ratios above keep their job — they are the **capacity** ladder, not
+> the mass ladder. Contents scale with the shell's usable interior, which is
+> where 33.9 : 6.3 : 1-style super-linearity belongs and where it does the work
+> §2 wants from it.
+
 **Cross-role sizing is still genuinely open.** `HullType::cost_fraction`
 currently gives *every* "General" hull — Systems, Contact, Offensive alike
 — the same cost (`1.0 × general_vehicle_cost`), regardless of role. §2.2
@@ -598,9 +619,12 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   between balance-preserving and fiction-faithful size ladders — the Ship
   Testing Arena's measured consolidation/fragmentation boundary (§6.3–6.4)
   is the actual tie-breaker.
-- **R-MC10:** confirm `dry_mass ∝ hull volume` and pin `V_reference` — this
-  resolves `Hyades_loadout.md`'s own open **R-L5** as a side effect (same
-  question, asked from the loadout side first).
+- ~~**R-MC10:** confirm `dry_mass ∝ hull volume` and pin `V_reference`~~
+  **resolved, negatively** — dry mass scales with **surface area**, because a
+  hull is a shell and cost *is* dry mass (R-O57/R-O58). `SimConfig::dry_mass` is
+  deleted, not re-laddered, and there is no `V_reference` left to pin. Closes
+  `Hyades_loadout.md`'s **R-L5** as predicted, with the opposite answer. See §2's
+  amendment block.
 - **R-MC11:** formalize hull shape (`κ`/`λ`) as a function of loadout slot
   composition rather than a fixed per-`HullType` constant.
 - **R-MC12:** resolve cross-role absolute sizing — testable via §6 once

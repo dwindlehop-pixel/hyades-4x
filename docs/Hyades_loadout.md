@@ -260,9 +260,20 @@ call site.
 - **R-L4** — do ELEC steering aids and hull size affect the flight model
   (agility) only in combat geometry, or also cruise acceleration? (Simplest:
   combat-only; flag if cruise should differ.)
-- **R-L5** — is `dry_mass` per hull-type (General heavier than Limited),
+- ~~**R-L5** — is `dry_mass` per hull-type (General heavier than Limited),
   which the size ladder implies, and does that interact with the 1:3:9 cost
-  ratio deliberately (bigger = pricier *and* less nimble laden)?
+  ratio deliberately (bigger = pricier *and* less nimble laden)?~~
+  **Resolved (R-O57/R-O58, `Hyades_standing_layer_and_observation.md` §9).**
+  Yes to per-hull-type, and the interaction with 1:3:9 is not merely deliberate
+  — it is an identity. Cost *is* dry mass, both scaling with surface area, so
+  the cost ratio and the mass ratio are the same ratio and `SimConfig::dry_mass`
+  is deleted rather than laddered.
+  "Bigger = pricier *and* less nimble laden" holds, but only the second half by
+  size: **empty hulls of every size accelerate alike** (thrust and dry mass both
+  ∝ area), and the entire spread is in the load, since capacity scales with the
+  shell's usable interior. So the penalty is a statement about how full a hull
+  is, not about how big it is — which is what makes load state, rather than
+  size, the thing a laden burn leaks.
 
 **Sequencing:** this spec + the `Role`/autopilot refactor
 (`Hyades_vehicle_roles.md` §7/§9) are the two things gating a return to code.

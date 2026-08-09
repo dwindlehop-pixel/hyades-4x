@@ -211,8 +211,8 @@ carries no such information itself.
   `Privateer` / piracy (`command_cards.md` §8). Confirmed this conversation:
   the trigger requires co-location (a distant pirate can't demand tribute).
   Full mechanics — the "bidding system" for role change generally — aren't
-  articulable yet and are deliberately not spec'd here; tracked in
-  `hyades_todo.md`.
+  articulable yet and are deliberately not spec'd here; tracked as
+  `hyades_todo.md` **T-29**.
 
 ### 4.5 Relativistic Kill Vehicle (RKV) strike — Systems → sacrificial Offensive
 
@@ -320,6 +320,31 @@ confirmed this conversation; previously inferred here from "a Limited
 Systems Vehicle needs another ship or infrastructure to hold the
 minerals" — that inference held up).
 
+> **Amended by the shell model (R-O58/R-O64,
+> `Hyades_standing_layer_and_observation.md` §9.2). The ordering stands; the
+> magnitudes are now geometry.** 0 / 1 / 2 was a count of abstract slots, and
+> a slot count is not a mass. Under conservation, contents scale with the
+> hull's usable interior — `(r − t)³` for a shell of thickness `t` — so
+> capacity in kilotons runs on a *cubic* ladder, not a near-linear one: at the
+> 1 : 3 : 9 cost ladder a General hull holds about **20×** a Medium's load,
+> not twice it.
+>
+> What this section confirmed survives intact, and one part of it is now
+> *derived* rather than asserted. **Limited = 0 falls out of the geometry:**
+> the Limited hull is the unit radius, `r = t`, so it is all shell and no
+> hold — precisely the "needs another ship or infrastructure to hold the
+> minerals" reading above, and the floor R-V9's Medium-or-larger Colonizer
+> rests on. The rest is the ordinal claim that each larger hull carries
+> strictly more, which the engine asserts as a test.
+>
+> The two are not interchangeable as *magnitudes*, and the slot reading was
+> the one costing something real: at 0 / 1 / 2 against the 1 : 3 : 9 cost
+> ladder, a General hull cost 9× a Limited and hauled 2 units where a Medium
+> cost 3× and hauled 1 — **0.100 against 0.067 per unit hauled, so
+> fragmenting was cheaper**, inverting the design law that consolidation
+> always wins under geometry alone. Under the shell model it is 0.0098
+> against 0.067.
+
 **1 CMY mineral = 1 fleet**, broken out by size (revising the earlier "3 CMY
 = 3 fleets" anchor to the same ratio in cleaner units):
 
@@ -334,12 +359,16 @@ A clean 1 : 3 : 9 progression (General : Medium : Limited); per-unit cost 1 /
 companion sweep to `experiments.rs` alongside `reinvest_bias`, once both are
 implemented.
 
-**Acceleration falls with cargo mass** (implemented this turn): a laden ship
-accelerates as `a = base · dry_mass / (dry_mass + μ · cargo)`, so a full
-freighter leaves its outpost slower than it returns empty. This is the
-`a = thrust / mass` relation; the per-hull `dry_mass` and thrust it needs are
-supplied by `Hyades_loadout.md`, and the cargo term will grow to include
-pop and embarked-ship mass once those are massed.
+**Acceleration falls with cargo mass**: a laden ship accelerates as
+`a = base · dry_mass / (dry_mass + cargo)`, so a full freighter leaves its
+outpost slower than it returns empty. This is the `a = thrust / mass` relation.
+
+> **Amended (R-O57).** The conversion coefficient `μ` this line used to carry is
+> gone, and so is the flat `dry_mass` constant behind it. Cost and dry mass are
+> one number, so a mineral in the hold masses exactly what it massed as hull and
+> the two terms are already in the same unit. The pair they replace disagreed by
+> 30× about what a mineral weighs. Per-hull dry mass is now the hull's mineral
+> cost; pop cargo is massed (R-O32) and folded into the same term.
 
 ---
 
@@ -452,7 +481,7 @@ Miner, and a contested Colonizer fall on (§4.1, §4.6) · **new (R-V17):** the
 autopilot→components/systems refactor (§9) — ratify the doctrine-as-player-
 component + behavior-as-system shape before implementing.
 
-**Explicitly out of scope, tracked in `hyades_todo.md` instead:**
+**Explicitly out of scope, tracked as `hyades_todo.md` T-29 instead:**
 nonconsensual role change and the "bidding system" that would govern it —
 not yet articulable, so deliberately not spec'd here.
 
@@ -460,7 +489,8 @@ not yet articulable, so deliberately not spec'd here.
 affordable, rather than a competing bias dial) — ready to formalize once §7
 is ratified, since production choice becomes "what does my current Role's
 System say to build," which is a cleaner home for it than the standalone
-`BuildOrder` match written before this conversation. **Partly overtaken by
+`BuildOrder` match written before this conversation (tracked as
+`hyades_todo.md` T-15). **Partly overtaken by
 R-O29:** that match no longer names missions — it is
 `{ Idle, UpgradeInfrastructure, Hull { hull_type, class } }`, and role
 assignment has moved out of it into `Autopilot::assign_role`. The bias dial

@@ -365,17 +365,57 @@ impl Roster {
 }
 
 impl HullType {
-    /// Cargo capacity in abstract units (`Hyades_vehicle_roles.md` §6:
-    /// Limited = 0, Medium = 1, General = 2 — confirmed, not a placeholder).
-    /// Same number for every hull of a given type — a static lookup, not
-    /// per-entity data (the Component/lookup split, §3 of the same doc).
-    fn cargo_capacity(self) -> f64 {
-        use HullType::*;
-        match self {
-            LimitedSystems | LimitedContactVehicle | LimitedContactUnit | LimitedOffensive => 0.0,
-            MediumSystems | RapidOffensive => 1.0,
-            GeneralSystems | GeneralContactVehicle | GeneralContactUnit | GeneralOffensive => 2.0,
+    /// Hull radius, **in units of shell thickness** — the shell model's single
+    /// geometric primitive (R-O58, `Hyades_standing_layer_and_observation.md`
+    /// §9.2), and a *derived* quantity, not a new tunable.
+    ///
+    /// A hull is a shell: dry mass is the material actually bought, so it scales
+    /// with **surface area**, and cost §1 already uses area as the cost basis.
+    /// Under R-O57 cost *is* dry mass, so `cost ∝ r²` and the radius ladder
+    /// falls straight out of the (MC-tunable) cost ladder:
+    ///
+    /// ```text
+    /// r = sqrt(cost / cost_Limited)
+    /// ```
+    ///
+    /// The Limited hull is the unit, `r = 1`, which is the model's other half:
+    /// **a Limited hull is all shell and no hold**, which is what makes
+    /// [`HullType::cargo_capacity`] come out at exactly zero for it rather than
+    /// having to be special-cased. At the shipped 1 : 3 : 9 cost ladder the
+    /// ladder is 1 : √3 : 3.
+    fn hull_radius(self, cfg: &SimConfig) -> f64 {
+        (self.cost_fraction(cfg) / HullType::LimitedSystems.cost_fraction(cfg)).sqrt()
+    }
+
+    /// Cargo capacity **as a mass** (R-O58) — kilotons, the same unit as
+    /// minerals, population, biosphere and the hull itself (L6).
+    ///
+    /// Contents scale with the shell's *usable interior*, `(4/3)π(r−t)³`, against
+    /// a dry mass that scales with area. Working in shell-thickness units and
+    /// normalising to the Medium hull folds the geometric constants into
+    /// [`SimConfig::cargo_unit_size`], leaving
+    ///
+    /// ```text
+    /// capacity = cargo_unit_size · (r − 1)³ / (r_Medium − 1)³
+    /// ```
+    ///
+    /// so the reference load a Medium hull hauls is exactly `cargo_unit_size`,
+    /// unchanged from the flat constant this replaces.
+    ///
+    /// **This supersedes the abstract 0 / 1 / 2 unit count** of
+    /// `Hyades_vehicle_roles.md` §6. That ladder was confirmed, but as a *unit
+    /// count*, and a unit count is not a mass — read as one it puts contents on
+    /// a near-linear ladder while the shell model puts them on a cubic one. What
+    /// survives, and is asserted in the tests, is its ordinal content: Limited
+    /// carries nothing, and each larger hull carries strictly more. The
+    /// magnitudes are now geometry (R-O64).
+    fn cargo_capacity(self, cfg: &SimConfig) -> f64 {
+        let usable = |h: HullType| (h.hull_radius(cfg) - 1.0).max(0.0).powi(3);
+        let reference = usable(HullType::MediumSystems);
+        if reference <= 0.0 {
+            return 0.0;
         }
+        cfg.cargo_unit_size * usable(self) / reference
     }
 
     /// Mineral cost as a fraction of `SimConfig::general_vehicle_cost`, from
@@ -416,32 +456,48 @@ pub fn role_hull_type(role: Role) -> HullType {
     }
 }
 
-/// **Per-hull propulsion — RECONSTRUCTED, FLAGGED (R-MC10 / R-L5 / R-ARENA3).**
-/// `arena`/`combat` need a per-hull acceleration, but the uploaded config only
-/// carries a flat `dry_mass` + `civilian_accel_g`. These three helpers supply
-/// the per-hull propulsion the loadout/mineral-cost specs already call for
-/// (`Hyades_loadout.md` §3.1 `a = thrust/(dry_mass+cargo_mass)`;
-/// `Hyades_mineral_cost_curve.md` R-MC10 `dry_mass ∝ hull volume`). Structure
-/// is deliberate; the *values* are placeholders to be reconciled against the
-/// propulsion numbers a prior pass tuned the laser-vs-missile sweep against.
+/// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
+/// hull's price and its empty mass are one number in one unit (kilotons); there
+/// is nothing left here to tune independently.
 ///
-/// `dry_mass ∝ volume`, proxied by size tier (Limited<Medium<General). Mass is
-/// load-bearing only once cargo is added; with zero cargo it cancels out of the
-/// accel below, so the *empty-hull* accel is set purely by thrust-to-mass.
+/// This resolves the flagged placeholder rather than reconciling it. The former
+/// `hull_dry_mass` was a *reconstruction* — a `SimConfig::dry_mass` constant
+/// times a size tier of 1 / 2 / 3, a volume-like proxy — and CLAUDE.md §7 asked
+/// for it to be checked against git history before anything was built on top.
+/// Conservation makes the check moot: no independent value can be correct,
+/// because any value other than the cost is mass appearing from or vanishing
+/// into the hull.
+///
+/// What the tier proxy was actually costing: with `dry_mass = 1.0` and
+/// `cargo_mass_per_unit = 0.2`, one mineral massed **6.0 units as a hull**
+/// (a Medium hull costing 1/3 of a mineral and massing 2.0) and **0.2 units as
+/// cargo** — a 30× discrepancy depending only on which side of the airlock the
+/// mass was on. That is the contradiction R-O57 exists to remove.
+///
+/// Combat is untouched by the re-basing. `Combatant::max_accel` is
+/// `hull_base_thrust · factor / hull_dry_mass`, and thrust is defined below as
+/// thrust-to-mass × dry mass, so the dry mass cancels exactly — empty-hull
+/// acceleration depends only on [`hull_thrust_to_mass`], as it did before.
 pub fn hull_dry_mass(hull: HullType, cfg: &SimConfig) -> f64 {
-    use HullType::*;
-    let tier = match hull {
-        LimitedSystems | LimitedContactVehicle | LimitedContactUnit | LimitedOffensive => 1.0,
-        MediumSystems | RapidOffensive => 2.0,
-        GeneralSystems | GeneralContactVehicle | GeneralContactUnit | GeneralOffensive => 3.0,
-    };
-    cfg.dry_mass * tier
+    hull.cost_fraction(cfg) * cfg.general_vehicle_cost
 }
 
 /// Empty-hull thrust-to-mass, in units of `civilian_accel_g` — Offensive hulls
 /// out-accelerate haulers, and the Rapid Offensive Unit is the fastest thing in
 /// the game (`Hulls_classes_the_qualitative_counter-graph.md`: "the Culture's
 /// fastest ships"). Placeholder magnitudes, monotone by intent (R-ARENA3).
+///
+/// **R-O65 (new, open): the shell model predicts these should be flat within a
+/// family, and they are not.** Under R-O58 thrust scales with surface area and
+/// so does dry mass, so empty-hull acceleration is *size-independent* — a
+/// Limited and a General Systems hull should accelerate alike when empty, with
+/// the whole per-class spread living in what they can carry. The residual
+/// 1.2 / 1.1 / 1.0 Systems ladder here predates the shell model and says the
+/// opposite. It is deliberately **not** flattened in this change: it is an
+/// MC-tuned combat surface, and CLAUDE.md §6 requires explicit ratification
+/// before those move. Flattening it is a one-line change once ratified, and it
+/// touches nothing in `sim` — civilian motion runs on `civilian_accel_g`, so
+/// only `arena`/`combat` read this.
 fn hull_thrust_to_mass(hull: HullType) -> f64 {
     use HullType::*;
     match hull {
@@ -700,23 +756,16 @@ pub struct SimConfig {
     pub mining_tick_years: f64,
     /// Density below which a body is considered mined out.
     pub density_floor: f64,
-    /// Actual minerals one abstract cargo-capacity unit holds (§6's
-    /// Limited=0/Medium=1/General=2 are abstract slots; this is the
-    /// conversion factor that makes them a real mineral quantity). A
-    /// Freighter (MSV, 1 unit) then carries `1 · cargo_unit_size` per haul —
-    /// default chosen to match the old flat `freighter_capacity` placeholder
-    /// this replaces, so existing balance isn't disrupted by the rename.
+    /// The **reference hold**: what a Medium hull carries, in kilotons — the
+    /// scale factor on [`HullType::cargo_capacity`]'s geometric ladder.
+    ///
+    /// Every other hull's capacity is this times its usable-volume ratio to the
+    /// Medium hull (R-O58), so a Limited hull carries nothing and a General one
+    /// carries far more than twice as much. Keeping the *Medium* hull as the
+    /// reference is what lets the default stay `5.0` through the shell-model
+    /// change: the freighter is an MSV, so its haul per trip is untouched and
+    /// the economy this knob was tuned against does not move.
     pub cargo_unit_size: f64,
-
-    /// Empty (dry) mass of a vehicle, in arbitrary mass units. With
-    /// `cargo_mass_per_unit`, sets how hard cargo drags acceleration down:
-    /// `a = base_accel · dry_mass / (dry_mass + cargo_mass_per_unit · cargo)`.
-    /// A stand-in for the per-hull dry mass the loadout spec will supply
-    /// (`docs/Hyades_loadout.md` — thrust ÷ mass); tunable placeholder.
-    pub dry_mass: f64,
-    /// Mass added per unit of cargo carried (minerals now; pop/embarked ships
-    /// once those are massed). 0 ⇒ cargo is massless (accel independent of load).
-    pub cargo_mass_per_unit: f64,
 
     /// Fraction of a scrapped vehicle's `general_vehicle_cost`-equivalent
     /// value recovered into the nearest friendly colony's stockpile
@@ -753,8 +802,6 @@ impl SimConfig {
             mining_tick_years: 50.0,
             density_floor: 0.01,
             cargo_unit_size: 5.0,
-            dry_mass: 1.0,
-            cargo_mass_per_unit: 0.2,
             scrap_recovery_fraction: 0.5,
             seed,
         }
@@ -1204,7 +1251,12 @@ impl Simulation {
     fn sys_freighter_arrive(&mut self, vehicle: Entity) {
         let sh = *self.world.shuttle.get(vehicle).unwrap();
         let p = self.world.owner.get(vehicle).unwrap().0;
-        let cap = role_hull_type(Role::Freighter).cargo_capacity() * self.config.cargo_unit_size;
+        // Capacity is now the *hull's*, not the role's (R-O58): it is a mass
+        // derived from usable interior volume, so it must be read off the ship
+        // that is actually here rather than off whatever hull the baseline
+        // autopilot happens to pick for Freighters.
+        let hull = *self.world.hull_type.get(vehicle).unwrap_or(&HullType::MediumSystems);
+        let cap = hull.cargo_capacity(&self.config);
 
         if sh.outbound {
             // At the outpost: load ore from its stockpile into cargo.
@@ -1680,12 +1732,24 @@ impl Simulation {
     }
 
     /// Acceleration (ly/yr²) for a vehicle setting out *now*, derated for the
-    /// mass it is currently carrying: `a = base_g·G · dry / (dry + μ·cargo)`.
+    /// mass it is currently carrying: `a = base_g·G · dry / (dry + cargo)`.
     /// This is the `a = thrust / mass` relation with thrust ∝ `base_g` and mass
     /// = dry + laden cargo, so a fully-loaded freighter leaves its outpost
-    /// slower than it returns empty. Cargo mass today is the basic-mineral load
-    /// (`cargo.basic_total()`); pop and embarked-ship mass fold in here once the
-    /// loadout spec adds them.
+    /// slower than it returns empty.
+    ///
+    /// **Every mass here is in one unit, kilotons (R-O57/L6).** There is no
+    /// cargo-mass coefficient any more: a mineral in the hold masses exactly
+    /// what that mineral massed when it was hull, which is the whole content of
+    /// conservation. The two constants this replaces — a flat `dry_mass` and a
+    /// `cargo_mass_per_unit` of 0.2 — disagreed by 30× about what a mineral
+    /// weighs, and the flat dry mass additionally derated a Limited hull exactly
+    /// as hard as a General one.
+    ///
+    /// The consequence is that laden spreads get much wider, which is R-O58's
+    /// point rather than a side effect: a Medium freighter under a full hold
+    /// carries 15× its own dry mass and accelerates at 1/16 g, while an empty
+    /// hull of any size does 1 g. Large hulls broadcast their load state; small
+    /// ones do not (§9.2's non-combat source of small-fleet value).
     fn laden_accel(&self, e: Entity, base_g: f64) -> f64 {
         // **Colony cargo mass ≡ mineral cargo mass** (R-O32,
         // `Hyades_standing_layer_and_observation.md` §6.2). A hold full of
@@ -1696,8 +1760,9 @@ impl Simulation {
         // acceleration is the long-range observable.
         let minerals = self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0);
         let pop = self.world.pop_cargo.get(e).copied().unwrap_or(0.0);
-        let dry = self.config.dry_mass.max(1e-9);
-        let factor = dry / (dry + self.config.cargo_mass_per_unit * (minerals + pop));
+        let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
+        let dry = hull_dry_mass(hull, &self.config).max(1e-9);
+        let factor = dry / (dry + minerals + pop);
         base_g * G * factor
     }
 
@@ -2197,10 +2262,11 @@ mod tests {
 
     #[test]
     fn cargo_derates_acceleration() {
-        // A laden vehicle accelerates more slowly than an empty one, and a
-        // massless-cargo config removes the effect entirely.
+        // A laden vehicle accelerates more slowly than an empty one, and an
+        // empty hull of any size gets the full rate (R-O58: thrust and dry mass
+        // both scale with area, so a_empty is size-independent).
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 1)).unwrap();
-        let sim = Simulation::with_baseline(galaxy, SimConfig::new(1));
+        let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(1));
         let base = sim.config.civilian_accel_g;
 
         // fabricate a throwaway entity id with no cargo component → empty
@@ -2208,28 +2274,89 @@ mod tests {
         let a_empty = sim.laden_accel(empty, base);
         assert!((a_empty - base * G).abs() < 1e-12, "empty ship should get full accel");
 
+        for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
+            let e = sim.world.spawn();
+            sim.world.hull_type.insert(e, hull);
+            let a = sim.laden_accel(e, base);
+            assert!((a - base * G).abs() < 1e-12, "{hull:?} empty should get full accel, got {a}");
+        }
+
         // an entity carrying cargo should accelerate strictly less
         let mut sim2 = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 1)).unwrap(), SimConfig::new(1));
         let laden = sim2.world.spawn();
         let m = Minerals { cyan: 5.0, ..Minerals::default() };
         sim2.world.cargo.insert(laden, m);
+        sim2.world.hull_type.insert(laden, HullType::MediumSystems);
         let a_laden = sim2.laden_accel(laden, base);
         assert!(a_laden < a_empty, "laden accel {a_laden} should be < empty {a_empty}");
 
-        // massless cargo ⇒ no derate
+        // R-O57: one mass unit, so the derate is exactly dry/(dry+cargo) with no
+        // conversion coefficient in between. An MSV costs 1/3 and hauls 5.
+        let dry = hull_dry_mass(HullType::MediumSystems, &sim2.config);
+        assert!((a_laden - base * G * dry / (dry + 5.0)).abs() < 1e-12);
+
+        // The same load on a bigger hull derates *less* — dry mass is in the
+        // denominator, so the spread is a statement about how full the hold is.
+        let big = sim2.world.spawn();
+        sim2.world.cargo.insert(big, m);
+        sim2.world.hull_type.insert(big, HullType::GeneralSystems);
+        assert!(sim2.laden_accel(big, base) > a_laden);
+    }
+
+    #[test]
+    fn shell_model_ladders_are_derived_not_tuned() {
+        // R-O58. The radius ladder falls out of the cost ladder (cost ∝ area),
+        // and capacity falls out of the radius ladder (contents ∝ usable
+        // volume). Neither adds a tunable.
+        let cfg = SimConfig::new(1);
+        let (l, m, g) = (HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems);
+
+        // r = sqrt(cost ratio to Limited): 1 : √3 : 3 at the shipped 1:3:9.
+        assert!((l.hull_radius(&cfg) - 1.0).abs() < 1e-12);
+        assert!((m.hull_radius(&cfg) - 3f64.sqrt()).abs() < 1e-12);
+        assert!((g.hull_radius(&cfg) - 3.0).abs() < 1e-12);
+
+        // R-O57: dry mass *is* the cost, in one unit.
+        for hull in [l, m, g] {
+            let cost = hull.cost_fraction(&cfg) * cfg.general_vehicle_cost;
+            assert!((hull_dry_mass(hull, &cfg) - cost).abs() < 1e-12);
+        }
+
+        // What survives of roles §6's 0/1/2: the *ordinal* content. A Limited
+        // hull is all shell and carries nothing; each larger hull carries
+        // strictly more. The magnitudes are geometry now, not the unit count —
+        // General is ~20× Medium, not 2× (R-O64).
+        assert_eq!(l.cargo_capacity(&cfg), 0.0);
+        assert!((m.cargo_capacity(&cfg) - cfg.cargo_unit_size).abs() < 1e-12);
+        assert!(g.cargo_capacity(&cfg) > m.cargo_capacity(&cfg));
+        let ratio = g.cargo_capacity(&cfg) / m.cargo_capacity(&cfg);
+        assert!((ratio - (2.0 / (3f64.sqrt() - 1.0)).powi(3)).abs() < 1e-9, "G:M capacity ratio {ratio}");
+
+        // Design law #3: consolidation must win under geometry alone. The
+        // pre-shell model failed this — a General hull cost 9× a Limited and
+        // hauled 2 units where a Medium cost 3× and hauled 1, i.e. 0.100 vs
+        // 0.067 cost per unit hauled, so *fragmenting* was cheaper.
+        let per_kt = |h: HullType| h.cost_fraction(&cfg) * cfg.general_vehicle_cost / h.cargo_capacity(&cfg);
+        assert!(per_kt(g) < per_kt(m), "bigger hull must be cheaper per kt hauled");
+    }
+
+    #[test]
+    fn combat_acceleration_is_untouched_by_the_dry_mass_rebasing() {
+        // `Combatant::max_accel` divides thrust by dry mass, and thrust is
+        // defined as thrust-to-mass × dry mass, so the re-basing cancels
+        // exactly. This is why R-O57/R-O58 need no combat re-certification —
+        // pinned so a future change to `hull_base_thrust` cannot quietly break
+        // the laser-vs-missile balance.
         let mut cfg = SimConfig::new(1);
-        cfg.cargo_mass_per_unit = 0.0;
-        let mut sim3 = Simulation::new(
-            Galaxy::generate(GalaxyConfig::new(2, 1)).unwrap(),
-            cfg,
-            vec![
-                Box::new(BaselineAutopilot::default()) as Box<dyn Autopilot>,
-                Box::new(BaselineAutopilot::default()) as Box<dyn Autopilot>,
-            ],
-        );
-        let l3 = sim3.world.spawn();
-        sim3.world.cargo.insert(l3, m);
-        assert!((sim3.laden_accel(l3, base) - base * G).abs() < 1e-12);
+        for hull in
+            [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems, HullType::RapidOffensive]
+        {
+            let a = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg);
+            cfg.general_vehicle_cost = 17.0; // any scale at all
+            let b = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg);
+            cfg.general_vehicle_cost = 1.0;
+            assert!((a - b).abs() < 1e-12, "{hull:?}: empty accel must not depend on the mass scale");
+        }
     }
 
     #[test]
@@ -2611,12 +2738,8 @@ mod tests {
     }
 
     #[test]
-    fn hull_type_cargo_and_cost_match_the_confirmed_1_3_9_model() {
+    fn hull_type_cost_matches_the_placeholder_1_3_9_model() {
         let cfg = SimConfig::new(1);
-        assert_eq!(HullType::LimitedSystems.cargo_capacity(), 0.0);
-        assert_eq!(HullType::MediumSystems.cargo_capacity(), 1.0);
-        assert_eq!(HullType::GeneralSystems.cargo_capacity(), 2.0);
-
         let general = HullType::GeneralSystems.cost_fraction(&cfg) * cfg.general_vehicle_cost;
         let medium = HullType::MediumSystems.cost_fraction(&cfg) * cfg.general_vehicle_cost;
         let limited = HullType::LimitedSystems.cost_fraction(&cfg) * cfg.general_vehicle_cost;

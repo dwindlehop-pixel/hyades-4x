@@ -587,6 +587,16 @@ deletes a placeholder: `hull_dry_mass` no longer needs independent
 reconstruction or reconciliation against the sweep-tuned propulsion values — it
 *is* the mineral cost, in mass units.
 
+> **Engine status: R-O57 resolved.** `sim::hull_dry_mass` is now
+> `cost_fraction(hull) · general_vehicle_cost` and nothing else.
+> `SimConfig::dry_mass` and `SimConfig::cargo_mass_per_unit` are **deleted** —
+> the first because no independent value can be correct, the second because
+> under conservation it is identically 1. Cargo mass in `laden_accel` is now the
+> mineral load plus the pop load, added straight to the hull's own mass with no
+> coefficient between them. CLAUDE.md §7's flagged reconstruction is closed:
+> resolved by deletion, as this section predicted, not by reconciliation against
+> git history.
+
 ### 9.2 The shell model (R-O58)
 
 Conservation exposed a contradiction between two ratified models: cost §1 uses
@@ -600,9 +610,15 @@ with **volume**. Thrust continues to scale with surface area. Then:
 
 | Quantity | Scaling | Consequence |
 |---|---|---|
-| `a_empty = T / (k·S)` | T ∝ S, so **size-independent** | empty hulls of every class accelerate alike |
-| `a_laden = T / (k·S + ρ·V)` | falls as `1/L` | large hulls suffer badly when full |
-| spread `= 1 + (ρ/k)(r/3)` | **linear in radius** | the empty-to-laden range widens with size |
+| `a_empty = T / (σ·S)` | T ∝ S, so **size-independent** | empty hulls of every class accelerate alike |
+| `a_laden = T / (σ·S + ρ·V_int)` | falls as `1/r` | large hulls suffer badly when full |
+| spread `= 1 + (ρ/3σ)·(r−t)³/r²` | **asymptotically linear in radius**, and exactly `1` at `r = t` | the empty-to-laden range widens with size, from a floor of nothing at all |
+
+The interior is the shell's, `V_int = (4/3)π(r−t)³`, not the whole sphere —
+which is what makes the **Limited hull carry nothing** at `r = t` rather than
+needing that zero written in by hand. The earlier form of this row used `V` and
+was linear in `r` throughout; it implied a nonzero Limited capacity and so
+contradicted §6, which is the correction R-O58b turned up.
 
 Everything previously ratified survives: cost stays area-based, capacity stays
 volume-based, so cost §2's isoperimetric super-linear value argument is
@@ -621,27 +637,63 @@ Radius ratios ≈ **1 : 2.2 : 4**. The *shape* is right — the model predicts
 wider ranges for larger hulls, which is what was measured — but the ratios must
 be checked against the sweep-tuned values before this is treated as settled.
 
-> **R-O58b checked against the engine — the prediction does NOT currently hold.**
-> Computed from `sim.rs` as shipped (`hull_dry_mass` tier 1/2/3,
-> `hull_thrust_to_mass` 1.2/1.1/1.0 for Systems hulls, `cargo_mass_per_unit`
-> 0.2, one `cargo_unit_size` hauled), the empty-to-laden spreads are
-> **2.00 : 1.50 : 1.33** for Limited : Medium : General — *narrowing* with hull
-> size, the exact opposite of the 1.82 : 2.79 : 4.30 above.
+> **R-O58b resolved. Both halves have landed, and the radius prediction is now
+> a statement about the cost ladder rather than a claim to verify.**
 >
-> The cause is that the engine implements neither half of the shell model.
-> `hull_dry_mass` scales with a size **tier** (1, 2, 3), a volume-like proxy
-> rather than surface area; and there is **no per-hull cargo capacity at all** —
-> `cargo_unit_size` is a single flat constant, so a General hull hauls the same
-> load as a Limited one. A fixed load against a rising dry mass is necessarily a
-> *shrinking* penalty, which is precisely the inverted ordering measured.
+> *What was measured before the change:* the shipped tree implemented neither
+> half. `hull_dry_mass` scaled with a size **tier** (1, 2, 3), a volume-like
+> proxy rather than surface area, and cargo capacity was `cargo_capacity() ×
+> cargo_unit_size` with the unit count 0/1/2 against a single flat unit size —
+> so a General hull hauled twice a Medium's load, not a volume's worth. Spreads
+> came out **2.00 : 1.50 : 1.33** (Limited : Medium : General), *narrowing* with
+> hull size, the exact opposite of the 1.82 : 2.79 : 4.30 tabled above. A fixed
+> load against a rising dry mass is necessarily a shrinking penalty.
 >
-> So the 1.82/2.79/4.30 figures did not come from this tree, and §9.2 cannot be
-> adopted as a re-derivation of existing numbers. It is a **behavioural change
-> requiring both halves at once** — dry mass onto area, capacity onto volume —
-> after which the per-class propulsion the laser-vs-missile balance rests on has
-> to be re-certified (CLAUDE.md §7's flagged placeholder, and `tests/balance.rs`
-> goldens). Work items 11 and 12 are therefore coupled and are not independently
-> landable.
+> Two harder faults surfaced while fixing it, and they are the real argument for
+> the change:
+>
+> - **A mineral massed 30× more as hull than as cargo.** `dry_mass = 1.0` with a
+>   Medium tier of 2 made an MSV mass 2.0 while costing 1/3 of a mineral — 6.0
+>   mass per mineral — against `cargo_mass_per_unit = 0.2` for the same mineral
+>   in a hold. Conservation was not approximately violated, it was violated by a
+>   factor of thirty, and which factor applied depended only on which side of the
+>   airlock the mass was on.
+> - **Design law #3 was inverted.** Cost per unit hauled was 0.067 for a Medium
+>   hull and 0.100 for a General one, so *fragmenting* was the cheaper way to
+>   move mass and "consolidation always wins under geometry alone" was false in
+>   the shipped economy. Under the shell model it is 0.067 against 0.0098, a
+>   6.8× advantage to the bigger hull.
+>
+> *What landed.* Radius is the single geometric primitive and it is **derived,
+> not tuned**: cost ∝ area gives `r = sqrt(cost / cost_Limited)`, and the Limited
+> hull is the unit, `r = 1`. That second part is the model's other half — **a
+> Limited hull is all shell and no hold**, which makes its zero capacity a
+> consequence of the geometry rather than a special case, and it is exactly the
+> §6 fact that R-V9 leans on. Capacity is then `(r − 1)³` normalised to the
+> Medium hull, so `cargo_unit_size` keeps its name, its default and its meaning
+> as the reference hold. Dry mass is the mineral cost. **No new tunable is
+> introduced and none is retuned; two are deleted** (`dry_mass`,
+> `cargo_mass_per_unit`).
+>
+> *The radius prediction.* At the shipped 1 : 3 : 9 cost ladder the implied
+> radii are **1 : √3 : 3 = 1 : 1.73 : 3**, not 1 : 2.2 : 4. But the cost ladder
+> is the MC-tunable placeholder (design law #6 — 1:3:9 is scaffolding, not a
+> target), so the prediction inverts into a *tuning target expressed in existing
+> knobs*: hitting 1 : 2.2 : 4 asks for `limited_fleet_size = 16` and
+> `medium_fleet_size = 3.31`. That is a question for the offline search, not a
+> blocker here.
+>
+> *Combat needed no re-certification.* `Combatant::max_accel` is
+> `hull_base_thrust · factor / hull_dry_mass` and `hull_base_thrust` is
+> thrust-to-mass × dry mass, so the re-basing cancels exactly. `tests/balance.rs`
+> reproduces its goldens bit-for-bit across all three seeds and all five relative
+> velocities. A test pins the cancellation so it cannot be broken silently.
+>
+> *What it cost.* Laden ships now actually pay for their load, so logistics is
+> slower: a full Medium freighter carries 15× its own dry mass and accelerates at
+> 1/16 g against 2/3 g before. Coverage at 4,000 yr falls **~9%** — seed 1
+> 1,183 → 1,044, seed 7 1,164 → 1,093. That is the price of conservation being
+> real, and it is a tuning problem (the coverage objective), not a defect.
 
 **A non-combat source of small-fleet value.** A laden General hull is
 dramatically slower than an empty one; a laden Limited hull barely differs. In
@@ -786,8 +838,8 @@ is why exotic synthesis is pair production (§9.6).
 | 8 | ~~Rewrite roles §4 eligibility lists as **permissive with competence**~~ **done** — roles §4 now opens with the permissive rule and every per-role list reads "Competent:", with capability-zero (a Limited hull's absent cargo hold) distinguished from a forbidden assignment. `Autopilot::assign_role` matches: it declines on *no viable target*, never on hull type | R-O44 **resolved** |
 | 9 | `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12]` and rejects 18, while galaxy §2 lists 6r (12, 18) as fair and `starting_hex_radius` already carries an `18 => 4.5` branch | R-O12 |
 | 10 | Seed the starting roster: LSV + LCV, one class each; default doctrine 100% LSV Scout | R-O42 |
-| 11 | **Derive `hull_dry_mass` from mineral cost** — delete it as an independent field. Resolves the flagged placeholder rather than reconciling it | R-O57 |
-| 12 | Re-base hull mass on **surface area** (shell), contents on volume; verify the 1 : 2.2 : 4 radius prediction against the sweep-tuned propulsion values before adopting | R-O58 |
+| 11 | ~~**Derive `hull_dry_mass` from mineral cost** — delete it as an independent field~~ **done** — see the §9.1 engine-status block. `SimConfig::dry_mass` and `cargo_mass_per_unit` deleted with it | R-O57 **resolved** |
+| 12 | ~~Re-base hull mass on **surface area** (shell), contents on volume; verify the 1 : 2.2 : 4 radius prediction~~ **done, landed with 11** — see the §9.2 R-O58b block. Radius is derived from the cost ladder, capacity from usable shell interior; the 1 : 2.2 : 4 prediction becomes a cost-ladder tuning target (`limited_fleet_size = 16`, `medium_fleet_size = 3.31`) rather than a claim to check | R-O58 **resolved**, R-O58b **resolved** |
 | 13 | Track **slag** as a bank entry: inert by default, refinable once the tier-1 card is played | R-O59 |
 | 14 | **Magazine mass** on ordnance families only; expended rounds leave the fleet, raising `a` | R-O60 / R-XM6 |
 | 15 | Retrofit realization: add an **`on_refit`** mode — value accrues as hulls reach a friendly port; a mobile foundry may or may not count | R-O47b / R-O55 |
@@ -821,8 +873,21 @@ is why exotic synthesis is pair production (§9.6).
 round 1), R-O4 (siblings exposed — the +1 is per node), R-O29, R-O30, R-O31,
 R-O32, R-O33, R-O37, R-O38, R-O39, R-O40, R-O41, R-O42, R-O43 (LSV unarmed),
 R-O45, R-O47 *(principle ratified; realization is now `on_refit` — see below)*,
-R-O48, R-O49 *(principle ratified; magnitudes open)*, R-O50, R-O57, R-O58
-*(pending the radius check, R-O58b)*, R-O59, R-O60, R-O61, R-O62.
+R-O48, R-O49 *(principle ratified; magnitudes open)*, R-O50, R-O57 *(resolved in
+engine)*, R-O58 and R-O58b *(both resolved; the radius prediction became a
+cost-ladder target)*, R-O59, R-O60, R-O61, R-O62.
+
+**Opened by the shell-model landing:** **R-O64** — roles §6's 0 / 1 / 2 cargo
+ladder is a *unit count*, and the shell model makes capacity a mass on a cubic
+ladder, so the two cannot both be magnitudes. Resolved in the engine by keeping
+the ordinal content (Limited zero, strictly increasing thereafter) and taking
+the magnitudes from geometry; the unit count is retired. Flagged because §6
+calls 0/1/2 *confirmed* and this reinterprets what it confirmed.
+**R-O65** — `hull_thrust_to_mass` still carries a 1.2 / 1.1 / 1.0 ladder across
+Systems sizes, which the shell model says should be flat (thrust and dry mass
+both scale with area). Not flattened here: it is an MC-tuned combat surface and
+needs ratification. It reaches only `arena`/`combat` — civilian motion runs on
+`civilian_accel_g` — so flattening it is a one-line change once ratified.
 
 **Retrofit, ratified separately:** no deep-space retrofit by default; refit at a
 friendly port only; a card enables field refit for minerals. This answers
