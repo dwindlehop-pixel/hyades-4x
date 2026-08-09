@@ -4,6 +4,15 @@ This file is the engine's standing context. Read it before touching anything.
 The authoritative design source is `docs/` — **the specs win over your priors,
 and over this file, on any design question.**
 
+**Start with `docs/Hyades_standing_layer_and_observation.md` (Rev 1).** It is the
+most recent ratification and it *supersedes or amends six other specs*, so a
+claim you find elsewhere in `docs/` may already be retracted — its §12 lists
+exactly which. It sets the standing-layer model (Doctrine and Design as state
+written only by tree cards), the observation model (acceleration is the
+long-range observable, not mass or hull count), the counter-graph as a
+per-player ladder disrupted by cards, and mass conservation. §11 is the engine
+roadmap; see §7 below for what has landed.
+
 ---
 
 ## 1. What Hyades is
@@ -227,7 +236,27 @@ one, stop and flag it.
 8. **LOU role expectation:** chaff in late-game main battle fleets, *not* useful force
    projection — but genuinely useful for Mao-style insurgency (harass, avoid, strike
    the resting/retreating enemy).
-9. **The snowball is the design — simulate it, not the stalled baseline.** An empire
+9. **Legibility is σ read from the other side** — not a separate stat. A card's
+   slant *is* how much it would only be worth playing if you meant it, so the
+   σ→value curve must be **convex** or everyone opens inscrutable and the yomi
+   channel carries nothing (L3/R-O19, Spence's single-crossing condition). The
+   physical cause is that commitment shifts and narrows a fleet's acceleration
+   distribution.
+10. **Acceleration is the observable, not mass and not hull count.**
+   `a = thrust / (dry_mass + cargo_mass)` is one scalar over three latents, so
+   the inverse problem is under-determined at range and concealment is a **combo
+   property, not a card property** — arming a fleet is loud unless you also buy
+   thrust. A ship may fly below peak and never above it, so observed `a` is a
+   *lower bound*, which is where surprise attack comes from (L4, §6.2/§6.4).
+11. **Mass is conserved, and cost and dry mass are one number** (L6/R-O57).
+   Minerals spent become hull; wastage degrades to slag rather than vanishing;
+   expended ordnance leaves the fleet lighter. Population is the sole exclusion.
+   Negative and imaginary mass are *not* exceptions — which is why exotic
+   synthesis is pair production.
+12. **No categorical strategic classification may be co-extensive with a colour
+   domain** (L1/R-O34) — it would lock out exactly the archetype poor in that
+   colour. Continuous classifications expressed as magnitude are exempt.
+13. **The snowball is the design — simulate it, not the stalled baseline.** An empire
    that compounds until it has colonized every colonizable world is the intended
    arc, and the shipped defaults produce it (R-AC16/R-AC17). The configuration that
    plateaued at a few dozen colonies was a *bug surface*, never a reference point:
@@ -294,6 +323,10 @@ The uploaded bundle was internally inconsistent across branches; these were
 **reconstructed** and their *magnitudes are placeholders*:
 
 - `sim::hull_dry_mass`, `sim::hull_base_thrust`, `sim::hull_thrust_multiplier_range`
+  — **R-O57 supersedes the reconciliation**: cost and dry mass are one number, so
+  `hull_dry_mass` should be *derived from mineral cost and deleted* as an
+  independent field rather than reconciled against git history. Coupled to
+  R-O58 (shell model); see the roadmap below for why the two must land together.
 - `math::Vec3::cross`, public `sim::role_hull_type`
 - `examples/combat_arena.rs` referenced `SimConfig::general_fleet_size` (absent here);
   substituted `1.0`, since General is the cost reference.
@@ -322,6 +355,47 @@ Prior numerical probing (to be re-derived in-engine): the GOU-vs-fleet crossover
 scales ~linearly with volume ratio ρ = V_GOU/V_ROU (N\* ≈ ρ/3.3), is nearly independent
 of the cross-section constant, and lands in the 6–45 window for ρ ∈ [20, 150] —
 i.e. supremacy is slot-organic by construction.
+
+### The standing-layer ratification — engine roadmap
+
+`docs/Hyades_standing_layer_and_observation.md` §11 lists 15 engine work items.
+Status, so this is not re-derived each time:
+
+| # | Item | R-code | Status |
+|---|---|---|---|
+| 5 | Colony cargo mass ≡ mineral cargo mass | R-O32 | **done** — `laden_accel` now masses `pop_cargo`; it was massless, so a laden colony ship flew like an empty hull and the burn read out cargo *type*, the one thing §6.2 exists to hide |
+| 12 | Verify the shell model's 1 : 2.2 : 4 radius prediction | R-O58b | **checked — it fails.** See below |
+| 1 | `BuildOrder::Hull { hull_type, class }` + role assigned after production | R-O29 | open — the build order naming the mission is a free doctrine leak |
+| 2 | Design/roster component | **R-O28** | open — *blocks σ_vector for Design entirely* |
+| 3 | Diplomatic fields on `Doctrine` | R-O27/R-A3 | open — no field list specified yet |
+| 4 | Throttle fraction; observe `a` from trajectory not the stat block | R-O40 | open |
+| 6 | `min_time_search` as a reachability-cone query | R-O31 | open — same function, reverse direction |
+| 7 | Route intercept and accept/decline through *believed* `a_max` | R-O41 | open — this is where surprise attack comes from |
+| 8 | Permissive role eligibility with varying competence | R-O44 | open — mostly a roles-§4 doc change plus item 1 |
+| 9 | `FAIR_COUNTS` rejects 18 while galaxy §2 lists it fair | R-O12 | open — **a genuine contradiction in the tree**, confirmed: `galaxy.rs:472` is `[2, 3, 6, 12]` and `starting_hex_radius` carries an `18 => 4.5` branch. Needs a decision, not a guess |
+| 10 | Seed roster LSV+LCV; default doctrine 100% LSV Scout | R-O42 | open — needs item 2 |
+| 11 | Derive `hull_dry_mass` from mineral cost | R-O57 | open — **coupled to 12**, see below |
+| 13 | Slag as a bank entry | R-O59 | open |
+| 14 | Magazine mass on ordnance families | R-O60/R-XM6 | open |
+| 15 | `on_refit` retrofit realization | R-O47b/R-O55 | open |
+
+**Items 11 and 12 are coupled and cannot land independently.** The verification
+§9.2 asks for was run and the prediction **does not hold in this tree**: computed
+from the shipped constants, empty-to-laden spreads are **2.00 : 1.50 : 1.33**
+(Limited : Medium : General) — *narrowing* with hull size, the opposite of the
+1.82 : 2.79 : 4.30 the doc cites. The cause is that neither half of the shell
+model exists yet: `hull_dry_mass` scales with a size *tier* (1/2/3), a
+volume-like proxy rather than surface area, and there is **no per-hull cargo
+capacity at all** — `cargo_unit_size` is one flat constant, so a General hull
+hauls what a Limited one does. A fixed load against rising dry mass is
+necessarily a shrinking penalty.
+
+So R-O57/R-O58 are a behavioural change, not a re-derivation: both halves must
+move together (dry mass → area, capacity → volume), after which the per-class
+propulsion the laser-vs-missile balance rests on needs re-certifying and
+`tests/balance.rs` goldens re-deriving. That is also the *good* news for the
+§7 flagged placeholder — R-O57 deletes `hull_dry_mass` as an independent number
+rather than reconciling it.
 
 ### Also open
 

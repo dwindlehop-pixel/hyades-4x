@@ -120,7 +120,14 @@ carries no such information itself.
 
 ### 4.1 Scout — Contact
 
-- **Eligible:** GCV, GCU, LCV, LCU.
+- **Eligible:** ~~GCV, GCU, LCV, LCU.~~ **Superseded (R-O44,
+  `Hyades_standing_layer_and_observation.md` §7): eligibility is permissive with
+  varying competence — any hull may take any role, badly or well.** A restricted
+  list leaks role from hull, which is exactly what the `BuildOrder::Hull` split
+  (R-O29) exists to prevent: if only Contact hulls can scout, seeing a Contact
+  hull *is* seeing a scout. An LSV scouts poorly — slow, no dedicated sensor fit
+  — but legally. The four hulls above remain the *competent* choices, which is a
+  statement about effectiveness, not permission.
 - **Default:** fly to nearest unscanned world, close-scan it, repeat
   (`Hyades_autopilot_colonization_growth.md` §2).
 - **Contingent — mission exhausted, LCV:** no unknown planets remain →

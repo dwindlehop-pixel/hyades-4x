@@ -1486,9 +1486,17 @@ impl Simulation {
     /// (`cargo.basic_total()`); pop and embarked-ship mass fold in here once the
     /// loadout spec adds them.
     fn laden_accel(&self, e: Entity, base_g: f64) -> f64 {
-        let cargo = self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0);
+        // **Colony cargo mass ≡ mineral cargo mass** (R-O32,
+        // `Hyades_standing_layer_and_observation.md` §6.2). A hold full of
+        // settlers weighs what a hold full of ore weighs, so the burn cannot be
+        // used to tell a colonizer from a freighter. Before this, `pop_cargo`
+        // was massless and a laden colony ship accelerated exactly like an empty
+        // hull — a free read on the one thing §6.2 exists to conceal, since
+        // acceleration is the long-range observable.
+        let minerals = self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0);
+        let pop = self.world.pop_cargo.get(e).copied().unwrap_or(0.0);
         let dry = self.config.dry_mass.max(1e-9);
-        let factor = dry / (dry + self.config.cargo_mass_per_unit * cargo);
+        let factor = dry / (dry + self.config.cargo_mass_per_unit * (minerals + pop));
         base_g * G * factor
     }
 

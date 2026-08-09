@@ -59,7 +59,14 @@ A **battle-royale auto-battler** ([Auto battler](https://en.wikipedia.org/wiki/A
 
 **Routing rule:** peaceful presence is free (co-locate, pass, scout, escort; **trade in minerals/supers is deliberately frictionless**). A **consequential act on another player's hex/assets/population** requires a node **deep enough for that act**, and the act's **method selects the tree** (force → Warfare; settle-into/assimilate → Politics; seize value → Production; raid/steal → a **cross-tree** card on two trees). **Everything manifests immediately** in the theater — no hidden commitment.
 
-**The yomi tell is the cards themselves.** Because every reach commits, there is no risk-free probe to filter out — a shallow reach and the first step of a deep dive are the **same act**. **Deep cards are sharp and committal**, so a rival's play *is* the signal of how far and where they've descended. **Misdirection** is a real, costed shallow commitment into a tree you won't deepen — a believable feint precisely because it isn't free.
+**The yomi tell is the cards themselves.** *(**Amended** by
+`Hyades_standing_layer_and_observation.md` §6.5: the tell is the **fleet and the
+mineral drawdown**, delayed by light-lag and scoped by scanning — not the card
+play, which no rival observes directly. An observer runs a sequential hypothesis
+test, so rounds-to-detection ≈ threshold / KL(your policy ‖ baseline), and
+σ_vector *is* that divergence. "Inscrutable" therefore means **sub-threshold per
+observation**, not hidden. The rest of this paragraph — that every reach commits,
+so a feint costs something — stands.)* Because every reach commits, there is no risk-free probe to filter out — a shallow reach and the first step of a deep dive are the **same act**. **Deep cards are sharp and committal**, so a rival's play *is* the signal of how far and where they've descended. **Misdirection** is a real, costed shallow commitment into a tree you won't deepen — a believable feint precisely because it isn't free.
 
 ---
 

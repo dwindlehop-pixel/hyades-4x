@@ -196,6 +196,16 @@ more in locality than it saved in count (§2b).
 
 ## 5. The counter-graph ("wolverine")
 
+> **Answered (R-O48, `Hyades_standing_layer_and_observation.md` §8): both,
+> sequentially.** The counter-graph is **per-player state with a total-order
+> initial condition** — a strict ladder at turn 0, ordered by hull size and
+> armament — and **cards are the only source of intransitivity**. So it is a DAG
+> early and carries cycles by the mid-game, player-authored rather than designed
+> in. Three consequences: it is per-*matchup* rather than global, which is what
+> makes close-scan investment pay; the early game is pure economy because there
+> is no counter-play yet, recapitulating the *Stars!* arc; and hull-size ordering
+> is fine as a default precisely because it is the substrate to be disrupted.
+
 The weapon / armor / engine / weapon-tech profiles form a **directed counter-graph**. A cheap hull running the exact counter shreds an expensive generalist — *when the spatial setup is right* (it has the range, the flank, the formation). Counters are positional, not merely numeric, which is why the theater has to be legible.
 
 **It is not assumed acyclic.** The original note already hedged — "directed (acyclic?) graphs" — and the hedge stands: deliberate cycles may be the right way to stop any one build from dominating. Whether the finished graph is a DAG or carries intransitive loops is an **open question to settle by experiment**, not an assumption.
