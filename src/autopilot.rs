@@ -32,6 +32,29 @@ pub enum ExpandBias {
     ColoniesFirst,
 }
 
+/// Whether survey craft favor a heading, and for how long (autopilot-doc §2,
+/// R-AC3). All three variants share the same fallback rule when a heading
+/// is biased: prefer the hemisphere, fall back to global nearest-unscanned
+/// once it's exhausted (never strands a vehicle).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SurveyStrategy {
+    /// No heading bias, ever — every survey craft, opening fan-out included,
+    /// always picks the globally nearest unscanned world.
+    GlobalPool,
+    /// The opening fan-out (one craft per cube face) keeps its heading bias
+    /// for its whole hop chain; every later, paid-for Scout pools globally.
+    /// **Default — this is the shipped behavior predating this enum**, kept
+    /// as the baseline so adding the knob changes nothing by itself.
+    OpeningSectors,
+    /// Like `OpeningSectors`, but every later Scout *also* gets a heading
+    /// bias: outward from home through the production center that built it
+    /// (`(center_pos - home_pos).normalized()`), so sector discipline
+    /// persists as the empire scales rather than existing only at bootstrap.
+    /// A center at home itself (bias `ZERO`) degrades to global pool for
+    /// that one craft, which is the correct degenerate case.
+    PersistentSectors,
+}
+
 /// Weights & thresholds for the numeric planet rank (autopilot-doc §3, R-AC5).
 /// `score = w_k·K_potential + w_mineral·mineral_value + w_hub·hub_value`; the
 /// thresholds then assign the [`PlanetClass`].
@@ -135,6 +158,9 @@ pub struct Doctrine {
     /// the shape of a card — one field, standing behavior, flipped when the
     /// right tech or board state is reached (`Hyades_card_contract.md` §5).
     pub survey_avoids_inhabited: bool,
+    /// Whether heading-bias discipline is global, opening-only, or persistent
+    /// (R-AC3). See [`SurveyStrategy`].
+    pub survey_strategy: SurveyStrategy,
 
     // --- Expand (autopilot-doc §4) ---
     pub expand_bias: ExpandBias,
@@ -165,6 +191,7 @@ impl Default for Doctrine {
             survey_reserve: 1024,
             // Off until a card or board state turns it on — see the field doc.
             survey_avoids_inhabited: false,
+            survey_strategy: SurveyStrategy::OpeningSectors,
             expand_bias: ExpandBias::ProductionCentersFirst,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
