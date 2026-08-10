@@ -127,11 +127,32 @@ which were in CI and passing:
 Three contaminated measurements from one coupling is the argument for the guard
 being a panic rather than a lint.
 
+**The corrected sweep confirms a real tension, on both sides of the λ
+ratification.** Over the valid range the objective is *monotone to the upper
+bound* and picks the endpoint every time:
+
+| `medium_fleet_size` | 2.0 | 2.5 | 3.0 (shipped) | 4.0 | 5.0 |
+|---|---|---|---|---|---|
+| mean coverage | 26.3% | 33.8% | 38.7% | 43.8% | **45.3%** |
+
+5.0 is not an optimum — it is the largest value `hull_ladder_fault` permits
+(r_M = 1.342, against the 1.25 floor). **Coverage wants a cheaper Medium hull
+than the shell model's capacity ladder allows**, and the guard is the only thing
+stopping the search from walking off the cliff again. The same shape appeared
+before λ was ratified, so it is a property of the objective, not of the routing
+rule.
+
+That is a design question, not a tuning one, and it is the same question T-19
+asks from the other end: if the coverage objective and the derived ladder
+disagree about hull pricing, one of them is wrong. Candidates — the guard floor
+is too conservative; `limited_fleet_size` should move with
+`medium_fleet_size`; or coverage-in-4,000-years is simply the wrong objective to
+price hulls against, since it has no combat, no cards and no trade in it yet.
+
 What remains: sweep `(medium_fleet_size, limited_fleet_size)` **jointly**, or
 better, sweep the *radius* ladder directly and derive cost from it — radius is
 the primitive under R-O58 and the cost ladder is the derived thing, so the
-search is currently optimising the wrong parameterisation. Pairs with T-19,
-which asks the same question from the other end.
+search is currently optimising the wrong parameterisation.
 
 ---
 
