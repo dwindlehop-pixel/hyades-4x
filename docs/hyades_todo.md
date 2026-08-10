@@ -127,9 +127,33 @@ which were in CI and passing:
 Three contaminated measurements from one coupling is the argument for the guard
 being a panic rather than a lint.
 
-**The corrected sweep confirms a real tension, on both sides of the λ
-ratification.** Over the valid range the objective is *monotone to the upper
-bound* and picks the endpoint every time:
+> **Retracted — this was a fourth artifact of the same root cause, and the
+> escalation that came with it was wrong.** Capacity used to be normalised
+> against the *live* Medium radius, which pinned `cap_Medium` at
+> `cargo_unit_size` for **every** cost ladder. So raising `medium_fleet_size`
+> made colonizers cheaper while the freighter's haul never shrank — a free
+> lunch, and the reason the objective ran monotonically to whatever upper bound
+> it was given. There was no tension between coverage and the shell model;
+> there was a bug in the denominator.
+>
+> | `medium_fleet_size` | 2.0 | 3.0 | 4.0 | 5.0 | 6.0 | 8.0 |
+> |---|---|---|---|---|---|---|
+> | `cap_M`, old (live normaliser) | 5.00 | 5.00 | 5.00 | 5.00 | 5.00 | 5.00 |
+> | `cap_M`, fixed reference | 17.97 | 5.00 | 1.59 | 0.51 | 0.14 | 0.003 |
+>
+> Normalising against a **constant** reference radius (√3, the Medium hull at
+> the reference ladder) fixes it: nothing diverges, narrow ladders are legal and
+> meaningful, and the soft `r_M < 1.25` guard is deleted. Only the *inverted*
+> ladder is still refused, and for a naming reason rather than a physical one —
+> a "Medium" hull cheaper than a "Limited" one is smaller than it.
+>
+> Re-measured under the corrected model, `medium_fleet_size` is still the
+> largest single elasticity (+32.7 ± 3.6 points per ln), so cheaper colonizers
+> genuinely do win — but now they win *against* a shrinking freighter hold,
+> which is a real tradeoff rather than a free one.
+
+**The original (contaminated) sweep, kept for the record.** Over the range then
+considered valid the objective was *monotone to the upper bound* every time:
 
 | `medium_fleet_size` | 2.0 | 2.5 | 3.0 (shipped) | 4.0 | 5.0 |
 |---|---|---|---|---|---|
@@ -140,19 +164,8 @@ the ten-seed run's 45.3% at the same point. Agreement to 0.1 points on this axis
 says the seed trim (commit `ec5ee23`) cost nothing here, which is worth knowing
 before trusting it elsewhere.
 
-5.0 is not an optimum — it is the largest value `hull_ladder_fault` permits
-(r_M = 1.342, against the 1.25 floor). **Coverage wants a cheaper Medium hull
-than the shell model's capacity ladder allows**, and the guard is the only thing
-stopping the search from walking off the cliff again. The same shape appeared
-before λ was ratified, so it is a property of the objective, not of the routing
-rule.
-
-That is a design question, not a tuning one, and it is the same question T-19
-asks from the other end: if the coverage objective and the derived ladder
-disagree about hull pricing, one of them is wrong. Candidates — the guard floor
-is too conservative; `limited_fleet_size` should move with
-`medium_fleet_size`; or coverage-in-4,000-years is simply the wrong objective to
-price hulls against, since it has no combat, no cards and no trade in it yet.
+5.0 was simply the largest value the old guard permitted. The monotonicity was
+the free lunch above, not a statement about hull pricing.
 
 What remains: sweep `(medium_fleet_size, limited_fleet_size)` **jointly**, or
 better, sweep the *radius* ladder directly and derive cost from it — radius is

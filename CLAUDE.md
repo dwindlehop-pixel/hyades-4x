@@ -136,6 +136,60 @@ consecutive `min_time_search` runs were killed at 3, 20 and 7 minutes in. So:
   truncated run still yields the rounds that finished. Coordinate descent has
   this property naturally; keep it.
 
+### How to search — measure gradients, not grids
+
+**The goal is to learn how to tune, not to produce a tuning.** A ratified number
+is worth one parameter; a method that says *which* parameters matter and by how
+much is worth all of them, and survives every change to the objective.
+
+`examples/gradient_probe.rs` is the harness. Four techniques, and the order
+matters because each one makes the next affordable:
+
+1. **Common random numbers.** Evaluate every configuration on the *same* seeds.
+   Seed noise here is enormous — the four-seed bed spans 31.8% to 43.8% at one
+   configuration, a ±2.7 point standard error — so comparing means from
+   different seeds mostly measures seed. Comparing seed-by-seed cancels it. Free,
+   and the highest-leverage line in the file.
+2. **Paired central differences.** `f(x(1+δ)) − f(x(1−δ))` on matched seeds.
+   Central for `O(δ²)` truncation error at the same two evaluations; *paired*
+   because under CRN the difference has far lower variance than either level.
+3. **Elasticity, not slope.** `∂f/∂ln x`. Raw slopes in different units cannot
+   be ranked against each other; the log-derivative can, and **the ranking is
+   the transferable knowledge.**
+4. **A standard error on every number.** Anything inside 2 SE of zero is not a
+   finding. This is the check that would have caught three of this project's
+   four measurement artifacts on the day they were made.
+
+Cost is `2 × params × seeds` — 72 evaluations for nine knobs, against 180 for a
+five-value coordinate sweep that yields no gradient, no error bar and no
+ranking.
+
+**What a gradient cannot do.** It is local: it says which way is uphill *here*,
+not where the summit is, and it points confidently along artifacts when the
+model beneath is wrong. Use it to choose what to investigate, never to conclude.
+
+### The artifact pattern — four of them, one shape
+
+Four measurements in this project were wrong in the same way, and the shape is
+worth recognising because none of them looked wrong:
+
+| What was measured | What it actually was |
+|---|---|
+| `medium_fleet_size = 8` optimal, 12 a "cliff" | the capacity normaliser going to zero |
+| `coverage_trace`: this knob "DID move it" | two of three sample points degenerate |
+| `coverage_time`: cheaper colonizers at 6.0 | a General hull holding ~700× a Medium's |
+| coverage "wants" a cheaper Medium hull | `cap_Medium` pinned by a live normaliser |
+
+Every one produced a plausible number from a broken configuration, and every one
+was invisible in the objective — because the quantity that broke was in a
+*denominator* that the shipped autopilot never exercised. Two habits follow:
+
+- **Assert ratios, not just numerator and denominator.** Design law #3's
+  inversion survived because cost and capacity were each individually ratified.
+- **A parameter that reaches the objective through a derived quantity cannot be
+  swept alone.** Since R-O58 the cost ladder *is* the capacity ladder; sweeping
+  one leg of it in isolation is measuring two things and reporting one.
+
 ### CI gates
 
 `.github/workflows/ci.yml` runs on every push and PR. Before you push, the four
