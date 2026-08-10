@@ -133,18 +133,24 @@ fn main() {
     run_test_bed("Baseline doctrine (current defaults)", SimConfig::new(0));
 
     // A doctrine biased hard toward expansion, since that's the lever most
-    // directly aimed at minimizing time-to-coverage.
+    // directly aimed at minimizing time-to-coverage. **This now demonstrates
+    // the non-monotonicity directly rather than assuming a direction.**
     //
-    // **4.0, not the 6.0 this used to run.** Since R-O58 the cost ladder is also
-    // the *capacity* ladder — hull radius is `sqrt(cost / cost_Limited)` — so
-    // 6.0 against a `limited_fleet_size` of 9 leaves the Medium hull barely
-    // larger than the Limited one and a General hull holding ~700x its load.
-    // `SimConfig::hull_ladder_fault` refuses it, and rightly: the comparison
-    // this makes is "cheaper colonizers", not "break the contents ladder".
+    // The shipped default is 4.45 (T-45's verified gradient step, chasing this
+    // exact knob). 6.0 is a further push the *same* way — nominally cheaper
+    // colonizers still — and legal (`hull_ladder_fault` refuses only an
+    // inverted ladder, `medium_fleet_size >= limited_fleet_size`; the earlier
+    // narrower bound was a normalisation artifact, see that function's doc
+    // comment). But it is worse, not better: coverage drops from 3,348/3,452 at
+    // the default to roughly half that here. This is the cliff the gradient
+    // step deliberately stopped short of (`gradient_step`'s α=1.0 row collapses
+    // to 6.9%) — 6.0 is not past the cliff, but it is past the optimum, which
+    // is the point: past some value a Medium hull's shrinking hold outweighs
+    // its lower price, and "cheaper colonizers" stops being unambiguously good.
     let mut expand_cfg = SimConfig::new(0);
-    expand_cfg.medium_fleet_size = 4.0; // cheaper Colonizers than the 3.0 default
+    expand_cfg.medium_fleet_size = 6.0;
     assert!(expand_cfg.hull_ladder_fault().is_none());
-    run_test_bed("Cheaper Colonizers (medium_fleet_size=4)", expand_cfg);
+    run_test_bed("Past the optimum (medium_fleet_size=6, default is 4.45)", expand_cfg);
 
     println!(
         "\nReading: coverage is what fraction of the galaxy's K_potential>0 worlds\n\

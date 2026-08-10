@@ -444,6 +444,14 @@ differences, 72 evaluations). Coverage `∂/∂ln x` in percentage points:
 | `rank.centrality_scale` | 150 | +4.6 | 3.0 | ~noise |
 | `cargo_unit_size` | 5.0 | +0.0 | 0.0 | **inert** |
 
+**Acted on**: the four significant knobs were moved jointly along the
+normalised gradient, α = 0.5, verified at **+10.99 ± 1.86 points** paired
+(38.26% → 49.25%) and ratified. α = 1.0 collapses to 6.9% — a cliff, because the
+Medium hull's hold vanishes as the cost ladder narrows — so 0.5 is deliberately
+short of the edge rather than at it. Chasing the last points toward a known
+cliff on a four-seed bed is exactly the boundary-hugging that produced this
+project's earlier artifacts.
+
 Four readings worth keeping:
 
 - **Four of nine knobs are inside 2 SE.** More than half of what this project
@@ -497,10 +505,15 @@ answerable by `min_time_search`.
 
 ### T-20. Raise coverage inside a fixed 4,000-year run
 
-**~41%** of colonizable worlds (2,792 of 6,725, seed 1) as of the
-`trade_decay_lambda = 0.01` ratification — up 2.7× from 1,044, and the single
-largest coverage move in the project so far. It came from a *missing term*
-rather than a mis-tuned one: freighter routing had no distance component at all. **4,000 years is
+**~49%** of colonizable worlds (3,348 of 6,725, seed 1) after two ratifications:
+`trade_decay_lambda = 0.01` (a *missing term* — routing had no distance
+component) took it from 14.4% to 38.3%, and a verified gradient step on four
+knobs took it to 49.3%. Neither came from a coordinate sweep.
+
+**The remaining headroom is not obviously in these knobs.** The gradient step
+found a cliff at α = 1.0 (coverage collapses to 6.9% as the Medium hull's hold
+vanishes), so this ray is close to exhausted. Further progress likely needs a
+new *term* rather than a better value — the λ lesson again. **4,000 years is
 the run length; the coverage reached within it is the objective.** Do not extend
 the horizon: doubling it doubles every trial and the 60-second rule already had
 to absorb the snowball once. T-07 and T-21 are the nearest levers.

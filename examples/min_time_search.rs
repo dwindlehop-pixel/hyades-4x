@@ -33,6 +33,19 @@
 //! strongly, but at ~50ms/trial here a full grid is a future refinement,
 //! not a requirement to report *a* result now.
 //!
+//! **Superseded as a method, kept as a record.** This harness has no error
+//! bars, no common-random-numbers pairing, and no significance test, and it
+//! produced this project's first two measurement artifacts — a phantom
+//! optimum at `medium_fleet_size = 8` and a "cliff" at 12 that was a
+//! normalisation bug, not economics (see Round 1's comment below). Every
+//! knob it swept in isolation is now covered better, and *checkably*, by
+//! `examples/gradient_probe.rs` (elasticity + standard error) and
+//! `examples/gradient_step.rs` (a verified line search along the measured
+//! gradient) — see CLAUDE.md §2 "How to search" and `hyades_todo.md` T-45.
+//! Prefer those for any future doctrine work; this file stays for the
+//! diagnosis narrative above, which is still the right account of the
+//! freighter-routing fix.
+//!
 //! Run with:  `cargo run --release --example min_time_search`
 
 use std::collections::{HashMap, HashSet};
@@ -222,25 +235,28 @@ fn main() {
 
     // Round 1: cheaper colonizers.
     //
-    // **The range is bounded above by the shell model, not by taste.** Since
-    // R-O58 the cost ladder *is* the capacity ladder — hull radius is
-    // `sqrt(cost / cost_Limited)` and capacity is `(r − 1)³` normalised to the
-    // Medium hull — so raising `medium_fleet_size` toward `limited_fleet_size`
-    // shrinks the Medium hull toward the Limited one and makes the General
-    // hull's relative hold diverge. At 8.0 against a `limited_fleet_size` of 9
-    // a General hull holds ~36,000× a Medium's; at 12.0 the ladder inverts and
-    // **every hull's capacity is zero.**
+    // **Superseded — kept as the historical record of how this harness's own
+    // limits produced two artifacts, corrected in order.**
     //
-    // The earlier `[3, 4, 6, 8, 12]` sweep walked straight into that and
-    // reported 8.0 as the optimum at 25.1% (against 15.2% at the default),
-    // with 12.0 "collapsing" to 0.3%. The collapse was not an economic finding
-    // — it was the normaliser going to zero. `Simulation::new` now refuses such
-    // a config outright; the sweep stays on the side of it where the derived
-    // ladder still means something.
+    // (1) The `[3, 4, 6, 8, 12]` sweep reported 8.0 optimal at 25.1% (vs 15.2%
+    // default) and read 12.0's collapse to 0.3% as a cliff. Coordinate descent
+    // has no error bars, so nothing caught it. (2) The fix at the time —
+    // `SimConfig::hull_ladder_fault` refusing `r_M < 1.25` — was *itself* an
+    // artifact: capacity was normalised against the live Medium radius, so the
+    // "explosion" was a denominator going to zero, not an economic finding.
+    // Normalising against a fixed reference (see the doc comment on
+    // `hull_ladder_fault`) removed the false bound; only a genuinely inverted
+    // ladder (`medium_fleet_size >= limited_fleet_size`) is refused now.
     //
-    // **This axis cannot be swept alone any more.** The honest version is a
-    // joint sweep of (`medium_fleet_size`, `limited_fleet_size`), or a sweep of
-    // the radius ladder with cost derived from it. Recorded as T-43.
+    // The real gradient (`examples/gradient_probe.rs`) found
+    // `medium_fleet_size` the single largest lever at +32.7 ± 3.6 points/ln, and
+    // a verified line search (`examples/gradient_step.rs`) moved it to **4.45**
+    // jointly with three other knobs for a paired +10.99 ± 1.86 points. That is
+    // the shipped default now — see `hyades_todo.md` T-45. This coordinate
+    // sweep is retained to show what it cost to get the wrong answer twice, not
+    // as a method to repeat: it has no CRN, no pairing, and no significance
+    // test, and every one of this project's four measurement artifacts came
+    // through exactly this kind of sweep.
     sweep_config("medium_fleet_size", &mut cfg, doctrine, &[2.0, 2.5, 3.0, 4.0, 5.0], |c, v| c.medium_fleet_size = v);
 
     // Round 2: how much cargo one freighter haul actually moves — directly

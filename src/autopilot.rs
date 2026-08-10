@@ -91,6 +91,17 @@ pub struct Doctrine {
     /// Compass retunes (autopilot-doc §6, R-AC11).
     pub productivity_step: f64,
     /// Logistic growth rate `r` for population toward `K` per cycle.
+    ///
+    /// **MC-ratified at 0.546** by a verified gradient step (`gradient_probe`
+    /// then `gradient_step`): elasticity +7.3 ± 1.2 points per ln, moved α = 0.5 along
+    /// the normalised gradient and confirmed on the same CRN seeds. The step as
+    /// a whole bought **+10.99 ± 1.86 points** of coverage, 38.26% → 49.25%.
+    /// Not a solo optimum — one component of a joint move, and it should be
+    /// re-derived jointly if any of the other three changes.
+    ///
+    /// Tightest error bar of the four by a wide margin, so the most *reliably*
+    /// measured knob even though its elasticity is mid-pack — the one where a
+    /// small step is most confidently an improvement.
     pub growth_rate: f64,
     /// Multiplier on `SimConfig::biosphere_regen_rate` for this empire's worlds.
     /// The card lever on ecology: Growth-tree cards raise it to make a
@@ -144,7 +155,7 @@ impl Default for Doctrine {
     fn default() -> Self {
         Doctrine {
             productivity_step: 0.20,
-            growth_rate: 0.5,
+            growth_rate: 0.546,
             biosphere_regen_bonus: 1.0,
             survey_vehicles: 6,
             survey_accel_g: 1.0,

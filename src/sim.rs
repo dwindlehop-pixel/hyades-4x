@@ -736,7 +736,18 @@ pub struct SimConfig {
     /// units).
     pub general_vehicle_cost: f64,
     /// How many Medium Systems Vehicles one `general_vehicle_cost` buys —
-    /// "a medium fleet... starting guess: 3" (§6). MC-tunable.
+    /// "a medium fleet... starting guess: 3" (§6) — **superseded, see below.**
+    ///
+    /// **MC-ratified at 4.45** by a verified gradient step (`gradient_probe`
+    /// then `gradient_step`): elasticity +32.7 ± 3.6 points per ln, moved α = 0.5 along
+    /// the normalised gradient and confirmed on the same CRN seeds. The step as
+    /// a whole bought **+10.99 ± 1.86 points** of coverage, 38.26% → 49.25%.
+    /// Not a solo optimum — one component of a joint move, and it should be
+    /// re-derived jointly if any of the other three changes.
+    ///
+    /// This also discharges design law #6 for one leg of the ladder: 1 : 3 : 9
+    /// was explicitly scaffolding to be replaced rather than a target, and it
+    /// has now been replaced by measurement. The ladder is 1 : 4.45 : 9.
     pub medium_fleet_size: f64,
     /// How many Limited Systems Vehicles one `general_vehicle_cost` buys —
     /// "a large fleet... starting guess: 9" (§6). MC-tunable.
@@ -775,6 +786,16 @@ pub struct SimConfig {
     /// recovers roughly a third of a deficit over four cycles.
     pub biosphere_regen_rate: f64,
     /// Fraction of an outpost's density extracted per mining tick.
+    ///
+    /// **MC-ratified at 0.238** by a verified gradient step (`gradient_probe`
+    /// then `gradient_step`): elasticity +14.5 ± 5.8 points per ln, moved α = 0.5 along
+    /// the normalised gradient and confirmed on the same CRN seeds. The step as
+    /// a whole bought **+10.99 ± 1.86 points** of coverage, 38.26% → 49.25%.
+    /// Not a solo optimum — one component of a joint move, and it should be
+    /// re-derived jointly if any of the other three changes.
+    ///
+    /// The weakest of the four: 14.5 against 2 SE of 11.6 clears significance
+    /// but not comfortably. First candidate to re-check on a wider bed.
     pub outpost_mining_fraction: f64,
     pub mining_tick_years: f64,
     /// Density below which a body is considered mined out.
@@ -919,13 +940,13 @@ impl SimConfig {
             medium_min_level: 3,
             limited_min_level: 2,
             general_vehicle_cost: 1.0,
-            medium_fleet_size: 3.0,
+            medium_fleet_size: 4.45,
             limited_fleet_size: 9.0,
             homeworld_start_minerals: 3.0,
             enforce_roster: false,
             center_mining_fraction: 0.15,
-            biosphere_regen_rate: 0.10,
-            outpost_mining_fraction: 0.2,
+            biosphere_regen_rate: 0.127,
+            outpost_mining_fraction: 0.238,
             mining_tick_years: 50.0,
             density_floor: 0.01,
             cargo_unit_size: 5.0,
@@ -2815,7 +2836,14 @@ mod tests {
         // R-O58. The radius ladder falls out of the cost ladder (cost ∝ area),
         // and capacity falls out of the radius ladder (contents ∝ usable
         // volume). Neither adds a tunable.
-        let cfg = SimConfig::new(1);
+        //
+        // Pins the **reference** cost ladder (1:3:9) explicitly rather than
+        // reading `medium_fleet_size` off the shipped defaults — this is a
+        // structural invariant of the shell model, not a statement about
+        // whatever value MC ratification has currently landed on
+        // (`hull_type_cost_derives_from_the_fleet_size_config` covers that).
+        let mut cfg = SimConfig::new(1);
+        cfg.medium_fleet_size = 3.0;
         let (l, m, g) = (HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems);
 
         // r = sqrt(cost ratio to Limited): 1 : √3 : 3 at the shipped 1:3:9.
@@ -3245,17 +3273,28 @@ mod tests {
     }
 
     #[test]
-    fn hull_type_cost_matches_the_placeholder_1_3_9_model() {
-        let cfg = SimConfig::new(1);
-        let general = HullType::GeneralSystems.cost_fraction(&cfg) * cfg.general_vehicle_cost;
-        let medium = HullType::MediumSystems.cost_fraction(&cfg) * cfg.general_vehicle_cost;
-        let limited = HullType::LimitedSystems.cost_fraction(&cfg) * cfg.general_vehicle_cost;
-        assert!((general - 1.0).abs() < 1e-9);
-        assert!((medium - 1.0 / 3.0).abs() < 1e-9);
-        assert!((limited - 1.0 / 9.0).abs() < 1e-9);
-        // 1 mineral buys exactly 3 mediums or 9 limiteds, by construction.
-        assert!((medium * 3.0 - general).abs() < 1e-9);
-        assert!((limited * 9.0 - general).abs() < 1e-9);
+    fn hull_type_cost_derives_from_the_fleet_size_config() {
+        // Design law #6: 1:3:9 was explicit scaffolding, not a target, and it
+        // has since been superseded on one leg by the gradient-step
+        // ratification (medium_fleet_size: 3 -> 4.45). This asserts the
+        // *derivation* — cost_fraction reads straight off the config fields —
+        // rather than pinning a magnitude that MC ratification is expected to
+        // keep moving. Structural invariants belong in
+        // `shell_model_ladders_are_derived_not_tuned`, which uses an explicit
+        // reference config rather than the shipped defaults.
+        let mut cfg = SimConfig::new(1);
+        for mfs in [3.0, 4.45, 6.0] {
+            cfg.medium_fleet_size = mfs;
+            let general = HullType::GeneralSystems.cost_fraction(&cfg) * cfg.general_vehicle_cost;
+            let medium = HullType::MediumSystems.cost_fraction(&cfg) * cfg.general_vehicle_cost;
+            let limited = HullType::LimitedSystems.cost_fraction(&cfg) * cfg.general_vehicle_cost;
+            assert!((general - 1.0).abs() < 1e-9);
+            assert!((medium - 1.0 / mfs).abs() < 1e-9);
+            assert!((limited - 1.0 / cfg.limited_fleet_size).abs() < 1e-9);
+            // 1 mineral buys exactly `mfs` mediums or `limited_fleet_size` limiteds.
+            assert!((medium * mfs - general).abs() < 1e-9);
+            assert!((limited * cfg.limited_fleet_size - general).abs() < 1e-9);
+        }
     }
 
     #[test]
