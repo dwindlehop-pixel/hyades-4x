@@ -106,9 +106,24 @@ stat block. Roadmap item 4; T-10 depends on it.
 
 ### T-10. Route intercept and accept/decline through *believed* `a_max` — R-O41
 
-The other half of T-09: decisions must run on what the observer believes the
-target can do, not on what it can actually do. This is the mechanism that makes
-concealment pay. Roadmap item 7.
+**Half done.** `src/belief.rs` holds the estimator and the decision:
+`BeliefAMax` folds light-lagged observations into the *maximum* acceleration a
+target has ever been caught making — one-sided, because a ship may fly below
+peak and never above it — and `decide_engagement` resolves accept/decline
+against it. Belief is monotone, so masking is **spend-once**; a 4,851-case sweep
+pins that the decision can only err by optimism, which *is* the surprise attack
+rather than a bug to guard.
+
+**What remains is the wiring, and it is blocked on T-30.** There is no
+accept/decline site in the engine: `combat::resolve_engagement` is a pure
+tactical resolver over two fully-specified fleets, and no round/command layer
+exists for a "do I take this fight" decision to live in. Belief is also
+*supplied* by the caller rather than harvested from trajectories, which is
+T-09's half. Neither changes the estimator.
+
+Rule to hold when the wiring lands: the decision reads a `BeliefAMax` and
+**never** the other side's `Combatant::max_accel`. Missile terminal guidance is
+deliberately exempt — §6.2 puts close range as where the degeneracy breaks.
 
 ### T-11. Diplomatic fields on `Doctrine` — R-O27 / R-A3
 

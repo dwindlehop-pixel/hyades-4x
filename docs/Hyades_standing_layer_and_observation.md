@@ -328,6 +328,46 @@ arrived.
 
 ### 6.4 Believed kinematics drive combat (R-O41)
 
+> **Engine status: the estimator and the decision predicate have landed
+> (`src/belief.rs`); the sim-level wiring has not, and cannot yet.**
+>
+> `BeliefAMax` folds light-lagged `Observation`s into a **one-sided** estimate —
+> the maximum acceleration a target has ever been caught making — because a ship
+> may fly below peak and never above it. Three properties are asserted rather
+> than argued:
+>
+> - **Belief is monotone.** A capability once displayed cannot be un-displayed,
+>   so a slower burn never lowers the bound. **Masking is spend-once**: the first
+>   hard burn in view of someone tells them permanently. That is the kinetic form
+>   of §5's asymmetric leak.
+> - **Belief errs in exactly one direction.** Swept over 4,851 (own, true,
+>   observed) triples: a decision can be optimistic — *thinking* it can break off
+>   when it cannot — and can never be the reverse. The surprise attack is
+>   therefore not a special case in the code; it is the only error the type
+>   system permits.
+> - **An unobserved contact is `None`, not zero.** Callers must name an
+>   `Unobserved` policy. Treating a contact you have never seen as immobile is
+>   the mistake the type exists to make impossible, so `Helpless` is a variant
+>   you have to ask for by name.
+>
+> The accept/decline criterion is kinematic: a fleet may break off exactly when
+> it out-accelerates the other side, ties going to `Committed`. `was_surprised`
+> names the gap between the believed decision and the true one, so "they were
+> holding back" is an event the engine can surface rather than an inference the
+> player has to make.
+>
+> **What is not wired, and why.** There is no accept/decline *site* in the
+> engine: `combat::resolve_engagement` is a pure tactical resolver over two
+> fully-specified fleets, and there is no round/command layer for a "do I take
+> this fight" decision to live in (`hyades_todo.md` T-30). When it lands, the
+> rule is that the decision reads a `BeliefAMax` and **never** the other side's
+> `Combatant::max_accel`. Missile terminal guidance stays on true kinematics
+> deliberately — §6.2 puts close range as exactly where the degeneracy breaks.
+>
+> Belief is also currently *supplied* by the caller rather than harvested from
+> trajectories, which is R-O40/T-09's half of the pair. Until that lands the
+> observations are synthetic; the estimator does not care where they came from.
+
 An observer must assume a maximum acceleration for a target, but observation
 only supplies a **lower bound**. A ship that has been masking has a true
 reachable set *larger* than the observed one, so its actual destination can lie
@@ -834,7 +874,7 @@ is why exotic synthesis is pair production (§9.6).
 | 4 | Add a **throttle fraction** to `Doctrine`; derive observed acceleration from trajectory, not the stat block | R-O40 |
 | 5 | Equalise colony cargo mass and mineral cargo mass | R-O32 |
 | 6 | Expose `min_time_search` as a **reachability cone** query (same function, reverse direction); prune candidates via the existing BSP tree | R-O31 |
-| 7 | Route intercept and sim §4 accept/decline through **believed `a_max`** | R-O41 |
+| 7 | ~~Route intercept and sim §4 accept/decline through **believed `a_max`**~~ **half done** — `src/belief.rs` has the one-sided estimator and the accept/decline predicate with the surprise-attack property asserted; the sim-level wiring is blocked on the round layer (T-30), and harvesting `a` from trajectories is item 4 | R-O41 |
 | 8 | ~~Rewrite roles §4 eligibility lists as **permissive with competence**~~ **done** — roles §4 now opens with the permissive rule and every per-role list reads "Competent:", with capability-zero (a Limited hull's absent cargo hold) distinguished from a forbidden assignment. `Autopilot::assign_role` matches: it declines on *no viable target*, never on hull type | R-O44 **resolved** |
 | 9 | `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12]` and rejects 18, while galaxy §2 lists 6r (12, 18) as fair and `starting_hex_radius` already carries an `18 => 4.5` branch | R-O12 |
 | 10 | Seed the starting roster: LSV + LCV, one class each; default doctrine 100% LSV Scout | R-O42 |

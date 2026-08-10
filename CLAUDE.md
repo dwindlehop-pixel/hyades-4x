@@ -58,7 +58,7 @@ cargo run --release --example combat_arena       # kinematic interception harnes
 cargo run --release --example montecarlo         # balance sweeps
 ```
 
-Baseline as of the netcode audit: **99 unit + 4 smoke + 5 determinism tests
+Baseline as of `belief.rs` landing: **106 unit + 4 smoke + 5 determinism tests
 pass**, ~42 s wall for `cargo test --all-targets`.
 The MC sweeps are slow in debug; always use `--release` for them.
 
@@ -145,6 +145,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/resources.rs` | CMY basics, RGB supers, apex, archetypes |
 | `src/galaxy.rs` | galaxy generation → continuous 3D planet field |
 | `src/autopilot.rs` | `Autopilot` trait (swappable per-seat policy) + `Doctrine` knobs |
+| `src/belief.rs` | **believed kinematics** (R-O41) — one-sided `a_max` estimate from light-lagged observations, and the accept/decline predicate that runs on it |
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
 | `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement` |
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |
@@ -448,7 +449,7 @@ T-codes, and item 10 is blocked rather than open:
 | 3 | Diplomatic fields on `Doctrine` | R-O27/R-A3 | open — no field list specified yet (**T-11**) |
 | 4 | Throttle fraction; observe `a` from trajectory not the stat block | R-O40 | open (**T-09**) |
 | 6 | `min_time_search` as a reachability-cone query | R-O31 | open — same function, reverse direction (**T-05**) |
-| 7 | Route intercept and accept/decline through *believed* `a_max` | R-O41 | open — this is where surprise attack comes from (**T-10**) |
+| 7 | Route intercept and accept/decline through *believed* `a_max` | R-O41 | **half done** — `src/belief.rs` holds the one-sided estimator (belief is the *max* ever observed, because a ship never flies above peak) and the kinematic accept/decline. Belief is monotone, so masking is spend-once; a 4,851-case sweep pins that it errs only by optimism, which *is* the surprise attack. **Sim wiring blocked on T-30** — there is no accept/decline site in the engine yet (**T-10**) |
 | 8 | Permissive role eligibility with varying competence | R-O44 | **done** — roles §4 now states the permissive rule once and every per-role list reads "Competent:", separating *competence* (a degree — an LSV scouts badly) from *capability* (a fact — a Limited hull has no cargo hold, so a Limited Colonizer founds nothing). Engine matches: `assign_role` declines on no viable target, never on hull type |
 | 9 | `FAIR_COUNTS` rejects 18 while galaxy §2 lists it fair | R-O12 | **done** — now `[2, 3, 6, 12, 18]`. A radius-`r` hex ring holds `6r` cells, so the family is 6/12/18/24…; 9 and 15 are multiples of 3 but form no ring, so `% 3` would be the wrong predicate. The three ring radii were exactly `N/6 + 1.5`, so the existing `18 => 4.5` branch was the family's third term and the list was one term short — replaced by that closed form. **Balance targets the 2-neighbour configs (3/6/12/18); N=2 is supported but not a balance target**, which also settles R-O9's missing Green as accepted rather than open |
 | 10 | Seed roster LSV+LCV; default doctrine 100% LSV Scout | R-O42 | **half done, half blocked.** Seats are seeded with exactly LSV(Meadow) + LCV(Tor) per §7.1, and `SimConfig::enforce_roster` gates production on it — but it **defaults off**, because the engine has no card system and therefore no unlock path. Colonizer and freighter ride on MSV, which the starting roster excludes, so enforcement forbids every expansion build permanently: measured over 4,000 yr, **3 colonies and 18 vehicles against 1,183 and 4,778**. Pinned as a test. Blocked on cards, not on engine work (**T-25**) |
