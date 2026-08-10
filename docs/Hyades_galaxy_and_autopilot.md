@@ -33,9 +33,9 @@ Cliques cap at 3, rings come in 6s, 4/5/7 have no equal-adjacency arrangement. A
 
 ## 3. Homeworlds — super-aligned, identical in shape, equitable but unequal
 
-Identical in shape (fairness): **`4 / 4 / 1`** (hab/bio/infra) → `K = min = 1`; a **small town** that matures by building **infra 1 → 4** (§5). **Rich in two tier-1 colors, poor in the third** — the two precursors of **one super** — so **mining income is imbalanced** and three rotationally-symmetric archetypes result (reflecting the §7 color swap):
+Identical in shape (fairness): **Band IV / Band IV / Band I** (hab/bio/infra) → `K = min = 1`; a **small town** that matures by building **infra Band I → Band IV** (§5; the Band ladder is defined generally in `Hyades_mineral_cost_curve.md` §2.6). **Rich in two tier-1 colors, poor in the third** — the two precursors of **one super** — so **mining income is imbalanced** and three rotationally-symmetric archetypes result (reflecting the §7 color swap):
 
-| Homeworld | Rich basics | Poor | Native super @ pop-4 | Cheap tree-pairs | Expensive pair |
+| Homeworld | Rich basics | Poor | Native super @ pop Band IV | Cheap tree-pairs | Expensive pair |
 |---|---|---|---|---|---|
 | **Blue-type** | Cyan, Magenta | Yellow | **Blue** (C+M) | Expansion/Growth · Warfare/Technology | Production/Politics |
 | **Red-type** | Magenta, Yellow | Cyan | **Red** (M+Y) | Warfare/Technology · Production/Politics | Expansion/Growth |
@@ -43,7 +43,7 @@ Identical in shape (fairness): **`4 / 4 / 1`** (hab/bio/infra) → `K = min = 1`
 
 Same **2-rich-1-poor shape** rotated → **equal total wealth, color-shifted**. The start is **equitable but unequal**: 4 trees cheap, 2 expensive, your native super fixed. Blue-type is the militarist-expander-technologist (weak economy/diplomacy); Red-type the tall industrial-military-political power (weak at spreading); Green-type the economic-expansionist (weak on the whole war-tech axis). **N=3:** one of each. **N=6:** B-R-G alternating. **R-G3:** placement per table.
 
-**Eventual self-synthesis.** At **pop-4** a homeworld self-synthesizes **exactly one** super — its archetype's — in **modest** quantity, **no supply chain**. The **corrected R-G4:** the homeworld is a **bounded** exception to the habitability↔metallicity anticorrelation (§4.4) — habitable *and* modestly mineralized in two colors, **enough for one modest super, not super-rich**. **R-G4:** modest yield; confirm "exactly one super" is hard.
+**Eventual self-synthesis.** At **pop Band IV** a homeworld self-synthesizes **exactly one** super — its archetype's — in **modest** quantity, **no supply chain**. The **corrected R-G4:** the homeworld is a **bounded** exception to the habitability↔metallicity anticorrelation (§4.4) — habitable *and* modestly mineralized in two colors, **enough for one modest super, not super-rich**. **R-G4:** modest yield; confirm "exactly one super" is hard.
 
 ---
 
@@ -52,8 +52,15 @@ Same **2-rich-1-poor shape** rotated → **equal total wealth, color-shifted**. 
 ### 4.1 Three tiers
 **Tier 1 — basics: Cyan, Magenta, Yellow.** Mined (§4.3). · **Tier 2 — supers: Red, Green, Blue.** Synthesized, never mined (R-M1). · **Apex.** Synthesized from supers; metallic silver-white, *Platinum* a placeholder name (R-M1).
 
-### 4.2 Color algebra + the 3:2:1 ladder
-Fixed two-basic recipes: **Blue ← Cyan + Magenta · Red ← Magenta + Yellow · Green ← Yellow + Cyan.** Ladder **3 basics → 2 supers → 1 apex** with **wastage** (cards reduce it). **No direct substitution.** **R-M2:** ratios + wastage.
+### 4.2 Color algebra + the refining ladder
+Fixed two-basic recipes: **Blue ← Cyan + Magenta · Red ← Magenta + Yellow · Green ← Yellow + Cyan.** Ladder **3 basics → 2 supers → 1 apex** with **wastage** (cards reduce it) — named as yield fractions
+**`Y_super` = 2/3** (mineral-mass → super-mass) and **`Y_apex` = 1/2**
+(super-mass → apex-mass) in `Hyades_mineral_cost_curve.md` §5.0, which also
+distinguishes this literal mass-conserving ratio from the separate
+order-of-magnitude *value* heuristic ("3 CMY = 2 RGB = 1 Platinum," §5.1 of
+that spec) the two used to share notation with. **No direct substitution.**
+**R-M2:** ratios + wastage — this section owns the ratified values;
+`Hyades_mineral_cost_curve.md` §5.0 only names them.
 
 ### 4.3 Tier-1 distribution — 3D field, XY-dominant
 **Gaussian in X & Y** (each hue's hotspot) **× exponential decay in Z from the midplane**. A turtler mines the **Z-column** for a modest baseline, but the mass sits near Z=0 and one hex captures only its XY footprint, so **the lion's share needs X-Y expansion**. **R-M3:** Z scale-height / ratio.
@@ -61,8 +68,8 @@ Fixed two-basic recipes: **Blue ← Cyan + Magenta · Red ← Magenta + Yellow �
 ### 4.4 Habitability ↔ metallicity, negatively correlated
 Rich-mineral hexes tend **low-habitability**; habitable hexes **metal-poor** → expansion forces a **colony-vs-mine** choice. Homeworlds are the bounded exception (§3). **R-M4:** strength.
 
-### 4.5 Synthesis gates — pop-4 + supply chain
-Synthesis **only at pop-4** (§5.2). Each super needs **two** basics from distant hotspots → synthesis **generally demands a supply chain**; a hex where two gaussians overlap richly (synthesize **with no chain**) is **exceptionally high value** — the homeworld is the modest, archetype-locked instance. **R-M5:** supply-chain model.
+### 4.5 Synthesis gates — pop Band IV + supply chain
+Synthesis **only at pop Band IV** (§5.2). Each super needs **two** basics from distant hotspots → synthesis **generally demands a supply chain**; a hex where two gaussians overlap richly (synthesize **with no chain**) is **exceptionally high value** — the homeworld is the modest, archetype-locked instance. **R-M5:** supply-chain model.
 
 ### 4.6 Substitution — native only within a super's own counter-graph aspects
 Each super is native across the **whole lineup — but only for the specific aspects of the counter-graph it brings.** Covering **Blue's** aspects with Red/Green/apex costs **a card each**; Blue does **not** natively cover another super's aspects. Supers are **non-interchangeable specialists**, cheap in their own region, card-expensive outside it. **R-M6:** each super's (and the apex's) aspect-set.
@@ -83,16 +90,35 @@ A homeworld rich in two colors is **cheap in those four trees, expensive in the 
 
 ---
 
-## 5. Population — integer levels, Gibrat meaning, hard gate
+## 5. Population — Bands, Gibrat meaning, hard gate
 
 ### 5.1 Theater vs. command
-Theater grows pop/infra logistically toward K (sim §2). Command reports **integer level 0–4** = which **Weibull-quantile band** the value has crossed; the Weibull shape (`k` near log-normal) makes bands **Gibrat-spaced** — each level a fixed *multiplicative* jump. **Pop 1 ≈ small town; pop 4 ≈ many billions.** **R-P1:** `k` + band edges.
+Theater grows pop/infra logistically toward K (sim §2). Command reports a
+discrete **Band** — `Band 0` through **Band IV** — for which
+**Weibull-quantile band** the value has crossed; the Weibull shape (`k` near
+log-normal) makes bands **Gibrat-spaced** — each Band a fixed
+*multiplicative* jump over the last. **Pop `Band I` ≈ small town; pop
+`Band IV` ≈ many billions.** This is the founding instance of the general
+**Band ladder** now defined once, for every quantity that uses this same
+discrete multiplicative scale — `Hyades_mineral_cost_curve.md` §2.6, which
+also states the constraint this section's band edges must satisfy: the
+`Band I → II` and `Band II → III` step factors are each a rational number in
+`[4, 8]`, shared with infrastructure (§5.3 below), biosphere, radiation,
+gravity, cargo capacity, and hull production cost; `Band III → IV` is a free
+tuning knob. **R-P1:** `k` + band edges, now scoped by that shared
+constraint rather than chosen for population alone.
 
 ### 5.2 Pop is a hard production gate
-Discrete level **gates which designs build**, not speed. Default: **capitals only at pop 4**, **synthesis only at pop 4**. **R-P2:** pop→design table.
+Discrete Band **gates which designs build**, not speed. Default: **capitals
+only at pop `Band IV`**, **synthesis only at pop `Band IV`**. **R-P2:**
+pop→design table.
 
 ### 5.3 Infrastructure is the early binding constraint
-At `4/4/1`, **infra is scarce** (Liebig): K pinned at 1 until built. Early game = **infra 1 → 4** (unlocking pop-4 capitals + synthesis) — the *Stars!* maturation arc (sim §10). Infra is also the softest wartime target. **R-P3:** rate vs. clock.
+At **Band IV/IV/I** (hab/bio/infra), **infra is scarce** (Liebig): K pinned
+at **Band I** until built. Early game = **infra `Band I → Band IV`**
+(unlocking pop-`Band IV` capitals + synthesis) — the *Stars!* maturation arc
+(sim §10). Infra is also the softest wartime target. **R-P3:** rate vs.
+clock, under the same shared step-factor constraint as §5.1.
 
 ---
 
@@ -105,9 +131,9 @@ A card overrides exactly one default (sim §0a). The **command view is omniscien
 | **Explore** | idle **Contact** hulls path to nearest unrevealed hex | **The Long Voyage**; **The Compass** |
 | **Expand** | **Systems** hulls settle nearest *viable* world, weighing **colony-vs-mine** | **The Compass**; **The Long Voyage** |
 | **Exploit** | colonies build **infra toward K**, grow pop, **mine local incl. Z-column** | **The First Hearth**, **First Furrow**, **The Open Hand** |
-| **Synthesize** | at **pop-4**, convert per 3:2:1 + wastage; a matured homeworld self-makes its **one** native super | post-pop-4 (Synthesis) |
+| **Synthesize** | at **pop Band IV**, convert per `Y_super`/`Y_apex` + wastage (`Hyades_mineral_cost_curve.md` §5.0); a matured homeworld self-makes its **one** native super | post-pop-Band-IV (Synthesis) |
 | **Exterminate / defend** | **Offensive** hulls **hold**; engage in-range, **line** formation, deterministic accept/decline | **Those Who Stand**, **The Pattern**, **Open Skies** |
-| **Build** | planetside at docks; capitals/synthesis **pop-4-gated**; mobile dock excepted | **The Compass**, **The First Hearth** |
+| **Build** | planetside at docks; capitals/synthesis **pop-Band-IV-gated**; mobile dock excepted | **The Compass**, **The First Hearth** |
 | **Retreat** (sim §4) | defeated ships flee toward open/friendly space **in 3D**; survival = wreck roll | deep Warfare + positioning |
 | **Fortification** | **none free** (sim §2a) | **The Aegis** |
 
@@ -140,10 +166,10 @@ A card overrides exactly one default (sim §0a). The **command view is omniscien
 
 ## 8. Round-1 opening actions — derived (11 cards)
 
-Turn-1 state: co-located homeworlds at `4/4/1` (pop ~1, **no pop-4 planet**), autopilot per §6, **3 actions** (no free action), six **mouths accessed not unlocked**, **super-aligned** banks. Menu:
+Turn-1 state: co-located homeworlds at **Band IV/IV/I** (pop ~Band I, **no pop-Band-IV planet**), autopilot per §6, **3 actions** (no free action), six **mouths accessed not unlocked**, **super-aligned** banks. Menu:
 
 - **First Principles** — `The Compass`, `The Pattern` (cross-domain → **0 minerals**).
-- **Common Acts** — `The Open Hand`, `Open Skies` (peaceful → **0 minerals**), `The Aegis` (fortification → **Cyan**). **Synthesis stays out of round 1** — pop-4-gated.
+- **Common Acts** — `The Open Hand`, `Open Skies` (peaceful → **0 minerals**), `The Aegis` (fortification → **Cyan**). **Synthesis stays out of round 1** — pop-Band-IV-gated.
 - **Mouth beats** — each a **base + 1-action reach** costed in **its domain color** (§4.8): Those Who Stand · First Light **Magenta** · The Long Voyage · First Furrow **Cyan** · The First Hearth **Yellow** (Production); Hands Across the Dark **Yellow** (Politics).
 
 **Specific-color costs make the start bite** (§3). **No T1_any.** Costs remain **placeholders** (hash churns with them). **R-7/R-9:** standing/peaceful action costs.

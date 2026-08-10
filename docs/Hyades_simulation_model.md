@@ -141,7 +141,7 @@ ownership does not require a visit, it requires evidence:
   remote tier (position, hab, bio) and its close-scan tier (ownership,
   infrastructure, mineral density) — it does not identify *whose* it is.
 - **Departure traffic.** Ships observed leaving a world are evidence of activity,
-  and repeated sightings raise confidence. Unlike pop-4 this is a *graded* signal
+  and repeated sightings raise confidence. Unlike pop-Band-IV this is a *graded* signal
   accumulated over time, so it needs stored light-lagged observations rather than
   a threshold on current state — filed as R-SIM4.
 
@@ -163,7 +163,7 @@ over the course of a game.
 accumulated observations of ship departures, light-lagged, with a confidence
 that rises on repeat sightings and presumably decays — plus a decision about
 where that state lives, since a per-player × per-planet observation table is the
-kind of storage §2b warns about. The pop-4 threshold is deliberately the cheap
+kind of storage §2b warns about. The pop-Band-IV threshold is deliberately the cheap
 half of R-SIM3, taken first because it is exact and needs no new state.
 
 **R-SIM2 (new, open):** the survey scan is still O(planets) per arrival. Position

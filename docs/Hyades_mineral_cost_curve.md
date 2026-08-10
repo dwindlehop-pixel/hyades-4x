@@ -43,23 +43,50 @@ continuum is a per-card/per-node tuning call, not fixed here.
 
 ### 1.2 Super ratio
 
-Each tree has exactly one native super (the R-CG16/Option-B assignment),
-one **domain-sharing foreign** super (shares the tree's own domain mineral),
-and one **zero-sharing foreign** super (shares nothing):
+> **Domain column corrected — this table was carrying the pre-swap colors.**
+> `Hyades_galaxy_and_autopilot.md` §4.8 (Rev 8) ratifies "the color swap":
+> Politics↔Yellow and Expansion↔Cyan, not the Politics↔Cyan/Expansion↔Yellow
+> pairing an earlier draft of this table still had. The swap is a named,
+> motivated, already-ratified decision (R-M8: "Politics↔Yellow, economic
+> leverage... intended") that was never propagated here. It also happens to
+> resolve a standing open problem — see the callout below the table.
+
+Each tree has exactly one native super (the R-CG16/Option-B assignment —
+undocumented in the current tree; if a fuller derivation exists in prior
+conversation history, restore it), one **domain-sharing foreign** super
+(shares the tree's own domain mineral), and one **zero-sharing foreign**
+super (shares nothing):
 
 | Tree | Domain | Native (1st) | Domain-sharing (2nd) | Zero-sharing (3rd) |
 |---|---|---|---|---|
 | Warfare | Magenta | Red | Blue | Green |
 | Technology | Magenta | Blue | Red | Green |
 | Growth | Cyan | Blue | Green | Red |
-| Politics | Cyan | Green | Blue | Red |
-| Expansion | Yellow | Green | Red | Blue |
+| Politics | **Yellow** | Green | **Red** | **Blue** |
+| Expansion | **Cyan** | Green | **Blue** | **Red** |
 | Production | Yellow | Red | Green | Blue |
 
 This ranking isn't chosen — it's forced by the color algebra
 (`resources.rs`): the 2nd-place super is whichever of the two non-native
 supers still contains the tree's own domain mineral, and the 3rd is the one
-that doesn't.
+that doesn't. The **native (1st) column needs no change under the swap** —
+Politics's and Expansion's native super, Green, is `Yellow + Cyan` by
+recipe (§4.2), so it contains *both* colors these two trees trade between,
+and stays valid whichever one is currently "their" domain. Only the 2nd/3rd
+ranks — which are keyed to the domain color itself — swap places for these
+two trees.
+
+> **This closes R-O8.** `Hyades_standing_layer_and_observation.md` design law
+> L1 forbids a categorical classification (like the Latent group, §3 below)
+> from being co-extensive with a color domain, and flagged exactly one
+> violation as open: *"Latent is exactly the Cyan domain."* That was true
+> under the stale pre-swap table (Growth = Cyan, Politics = Cyan) and is
+> **false** under the corrected one (Growth = Cyan, Politics = **Yellow**) —
+> Latent is mixed-domain like the other two groups, so a Red-type homeworld
+> (rich Magenta/Yellow, poor Cyan) is no longer locked out of the whole
+> Latent group: Growth stays expensive for it, but Politics is now one of
+> its *cheap* trees. L1 was never violated by design; it was violated by a
+> stale table. R-O8 is resolved by this correction, not by new work.
 
 Ratio band: **3:2:1 to 4:2:1** (spread 3.00–4.00) — narrower than minerals,
 and its *floor* is minerals' *peak*. Supers never flatten toward the
@@ -381,6 +408,114 @@ engagements actually resolve — which is exactly why R-MC3b needs a
 playtest arena rather than a derivation, and why R-MC9's lane choice
 should follow the arena's results rather than precede them.
 
+### 2.6 The Band ladder — a unified magnitude scale
+
+Every quantity in this design that grows over a game — population,
+infrastructure, biosphere, radiation, gravity-as-tolerance
+(`Hyades_habitability.md` §2.3–2.4), cargo capacity, and hull-class
+production cost — has been described somewhere in the docs with a bare
+digit: "pop 4," "infra 1 → 4," "3 CMY," a "0–4 sub-score." Bare digits read
+as a literal unit count, and for none of these quantities are they one: a
+colony at "pop 2" does not have twice the population of "pop 1," any more
+than a General hull's cargo hold is twice a Medium's (§2.3 above puts the
+real ratio near 6×). **This section names the relationship the digits were
+standing in for, so no doc or field has to reuse a bare integer to mean two
+different things again.**
+
+**Band, not level.** A **Band** — `Band 0`, **Band I**, **Band II**, **Band
+III**, **Band IV** (Roman numerals, deliberately not the glyphs a literal
+count would use) — is a discrete, *multiplicative* magnitude tier. *(Not to
+be confused with `hyades_todo.md`'s unrelated "Band A–E" — that is a
+design-readiness classification for todo entries, lettered rather than
+numbered precisely so it doesn't collide with this one. Same word, unrelated
+concept, different alphabet on purpose.)* Crossing
+from one Band to the next is not "one more unit"; it is a jump of several
+times the previous Band's magnitude. `Band 0` is "below the first
+threshold" (no colony yet, negligible population, an uncolonizable world);
+`Band I` is the first crossed threshold and that quantity's own reference
+scale — a small town, the cost of one General-class hull, a Medium hull's
+reference cargo hold. **Every quantity anchors its own `Band I`
+independently — what has to be shared across quantities is not the
+absolute value at `Band I`, it is the *ratio* between consecutive Bands.**
+This directly renames the existing population/infrastructure system
+(`Hyades_galaxy_and_autopilot.md` §5.1's "integer level 0–4," Gibrat-spaced,
+"each level a fixed multiplicative jump") rather than replacing it — that
+system was always a Band ladder; it just spelled `Band` as a bare digit.
+
+**The anchor.** `Band I` for mineral spend is *defined*, not measured:
+`general_vehicle_cost = 1.0` (`sim.rs`) **is** one unit of minerals, **is**
+the cost of one General-class hull, and **is** an abstract quantity
+standing for many kilotons of real mass — §2.1–§2.3's shell-model geometry
+is what gives that abstraction its physical content.
+`medium_fleet_size`/`limited_fleet_size` (`sim.rs`) are not independent
+knobs against this anchor; they are **`Band I` expressed in smaller
+hulls** — how many Medium- or Limited-class fleets that same one unit of
+mineral spend buys.
+
+**The constraint — law of conservation of mass, via the shell model.** Name
+the `Band I → Band II` step factor **`F₁`** and the `Band II → Band III`
+step factor **`F₂`**. Per this ratification: **`F₁` and `F₂` must each be a
+rational number in `[4, 8]`, and the *same* `F₁`, `F₂` must govern every
+quantity listed above** — population, infrastructure, biosphere, radiation,
+gravity, cargo capacity, and hull production cost. This is not a style
+preference; it is what "the shell model applies uniformly" means in
+practice. A hull one Band bigger has `√F` more radius (cost ∝ area, so
+`r ∝ √cost`) and therefore a specific, non-arbitrary multiple more volume,
+more population capacity, more infrastructure headroom — the same
+geometric relationship every one of these quantities inherits, because they
+are all consequences of the same conserved-mass body. `[4, 8]` is the range
+conservation actually permits here: narrower and a Band step stops reading
+as a real tier jump (indistinguishable from noise against the seed-to-seed
+variance §"How to search" already documents); wider and two Bands stop
+being *adjacent* in any useful sense — a step wider than `8×` should have
+had its own Band in between.
+
+**`Band III → Band IV` is unconstrained**, and does not need to be the same
+factor across quantities. This is a deliberate release valve, not an
+oversight: it is the last Band before a quantity's absolute ceiling
+(population's "many billions," a hull's largest practical class), so it is
+the natural place for a **balance-tuning knob** rather than a
+physically-derived constant. Requiring `[4, 8]` there too would over-constrain
+exactly the place tuning most needs freedom.
+
+**A worked — and still-open — example: does the hull ladder satisfy its own
+constraint?** Reading hull class onto the ladder as `Limited = Band I`,
+`Medium = Band II`, `General = Band III` turns `medium_fleet_size` and
+`limited_fleet_size` into direct claims about `F₁`/`F₂`, since cost is the
+*square* of the radius ratio: `F₂ = medium_fleet_size` (cost, General over
+Medium) and `F₁ = limited_fleet_size / medium_fleet_size` (cost, Medium
+over Limited). Checking every cost ladder this project has used or
+proposed against `[4, 8]`:
+
+| Ladder | `medium_fleet_size` | `limited_fleet_size` | `F₁` | `F₂` | Both in `[4,8]`? |
+|---|---|---|---|---|---|
+| 1:3:9 (design law #6, retired placeholder) | 3.0 | 9.0 | 3.0 | 3.0 | no — uniform, but both 25% under the floor |
+| **1:4.45:9 (shipped, MC-ratified)** | **4.45** | **9.0** | **2.02** | **4.45** | **no — `F₂` clears, `F₁` badly fails** |
+| 1:3.31:16 (shell-model target, T-19) | 3.31 | 16.0 | 4.83 | 3.31 | no — `F₁` clears, `F₂` narrowly fails |
+
+**No ladder this project has ever shipped or proposed satisfies the
+constraint**, and that is a genuine new finding, not a restatement of T-19
+— T-19 asks whether the shell-model radius prediction beats the original
+placeholder; this asks whether *either* candidate, or the shipped value,
+is a self-consistent Band ladder at all. Notably, a **uniform** ladder
+sitting exactly at the floor (`F₁ = F₂ = 4`) would need
+`medium_fleet_size = 4.0`, `limited_fleet_size = 16.0` — which lands on the
+same `limited_fleet_size` the shell-model radius prediction independently
+produced. That convergence is worth investigating, not yet a conclusion:
+the shell-model prediction and "sit exactly at the floor" are different
+reasons to land near the same number, and one data point does not
+distinguish them.
+
+**R-MC15 (open, new):** decide `F₁`/`F₂` (in `[4, 8]`) and re-derive
+`medium_fleet_size`/`limited_fleet_size` from them via the gradient-step
+methodology (`CLAUDE.md` §"How to search"), rather than the two fields
+being chosen independently as they are today — **`medium_fleet_size` is a
+globally MC-tuned parameter (`CLAUDE.md` §6) and is not to be changed
+here** without that re-derivation and explicit re-ratification.
+`hyades_todo.md` T-19 is the concrete offline-search task this folds into.
+
+## 3. The group-level super premium — Kinetic/Potential/Latent
+
 Each A/B/C group's two trees cover exactly two of the three supers between
 them (established this conversation) — meaning each group has exactly one
 **group-missing** super that *no* tree in that group natively touches:
@@ -397,16 +532,32 @@ premium — building a hull with the group-missing super costs *more* than
 family has ever natively invested in that color's infrastructure.
 
 This is a genuinely second layer, not a restatement of §1.2, and it isn't
-uniform across the six trees. Latent is exactly the whole Cyan domain, so
-for both Growth and Politics the group-missing super (Red) *is* their own
-individual zero-sharing super (§1.2) — the two penalties stack on the same
-target. Kinetic and Potential each blend one Magenta-domain and one
-Yellow-domain tree, so only one member of each pair gets that
-double-stacked penalty (Expansion for Kinetic, Technology for Potential);
-the other (Warfare, Production) has a group-penalty that lands on a
-*different* super than its own individual worst one. **R-MC6 (open):** size
-the group-level premium, and decide whether the doubled-penalty cases
-(Growth, Politics) should be capped rather than fully additive.
+uniform across the six trees. A tree is **double-stacked** when its own
+individual zero-sharing (3rd, §1.2) super happens to equal its *group's*
+missing super — the two penalties then land on the same target instead of
+two different ones. **Recomputed under the corrected §1.2 table** (this was
+wrong under the stale one, and materially so — Expansion and Politics were
+previously double-stacked and no longer are):
+
+| Tree | Group | 3rd (§1.2) | Group-missing | Double-stacked? |
+|---|---|---|---|---|
+| Warfare | Kinetic | Green | Blue | no |
+| Expansion | Kinetic | Red | Blue | no |
+| Technology | Potential | Green | Green | **yes** |
+| Production | Potential | Blue | Green | no |
+| Growth | Latent | Red | Red | **yes** |
+| Politics | Latent | Blue | Red | no |
+
+**Two trees double-stacked, not four, and no group carries both of its
+members.** The stale table had Growth and Politics *both* double-stacked
+(the "Latent is exactly Cyan" fact this section shared with R-O8) plus one
+each from Kinetic and Expansion — four of six trees carrying a compounded
+penalty. Under the corrected domains only Technology and Growth do, one per
+group at most, which is a much softer and more even penalty landscape than
+the stale table implied. **R-MC6 (open, re-scoped):** size the group-level
+premium against this corrected map — the sizing question is the same, but
+the stakes (who gets hit twice) have changed, so any prior sizing intuition
+built against the old table should be re-checked rather than carried over.
 
 ---
 
@@ -434,18 +585,77 @@ that table exists.
 
 ## 5. Mineral tier as a second, independent axis
 
-**"3 CMY = 2 RGB = 1 Platinum" is not a cost ratio — it's an
-order-of-magnitude value heuristic, and it lives on a different axis than
-§2's hull size entirely.** Per this conversation: it doesn't mean 3 units of
-base-mineral spend buys a fleet of equal value to 2 units of super spend or
-1 unit of Platinum spend. It means something closer to *three orders of
-magnitude* of base-mineral spend sits alongside *two orders of magnitude*
-of super spend and *one order of magnitude* of Platinum spend — without
-committing to literal powers of ten or any single fixed progression. The
-concrete example given: a negative-mass keel (an exotic, Super-or-higher
-component) should improve force projection so much via better acceleration
-that a fleet an order of magnitude smaller **in mass** matches a
-base-mineral fleet's value.
+**"3 CMY = 2 RGB = 1 Platinum = 3 fleets" was one piece of notation doing
+three jobs, and conflating them is exactly the bare-digit confusion §2.6
+exists to end.** Unpacked into its actual parts:
+
+### 5.0 Unpacking the compressed rule
+
+**"= 3 fleets" is trivial linear scaling, not a ratio worth naming.**
+Spending `N` units of mineral cost buys `N` General-hull fleets (or the
+Medium-/Limited-hull equivalent, §2.6) — this falls straight out of
+`general_vehicle_cost = 1.0` being a flat cost per fleet, and it says
+nothing about supers or apex. "3 minerals → 3 fleets" is `Band I` bought
+three separate times — **addition, not a Band step** (§2.6) — and is not to
+be confused with "`Band III`," a single quantity several times larger in
+one lump. Retiring this clause removes exactly the ambiguity §2.6 flags.
+
+**"3 CMY → 2 RGB → 1 Platinum" is a literal, mass-conserving refining
+ratio, and it already lives in `Hyades_galaxy_and_autopilot.md` §4.2, not
+here:** `3` units of mineral (basics) mass refine to `2` units of super
+mass plus `1` unit of slag; `2` units of super mass refine to `1` unit of
+apex mass plus `1` unit of slag (`§4.2`'s "ladder 3 basics → 2 supers → 1
+apex with wastage"). Two yield fractions, named rather than left as bare
+literals every time this ratio is cited:
+
+- **`Y_super` = mineral-mass → super-mass yield ≈ `2/3`** (3 in, 2 out, 1
+  to slag).
+- **`Y_apex` = super-mass → apex-mass yield = `1/2`** (2 in, 1 out, 1 to
+  slag).
+
+End to end, `Y_super · Y_apex = 1/3`: refining a fixed mineral mass all the
+way to apex keeps a third of it and loses two-thirds to slag — recoverable
+per R-O59 (`Hyades_standing_layer_and_observation.md` §9.3), not destroyed.
+This ratio answers *"how much less mass do I have after refining,"* a
+bookkeeping question settled by conservation. It says nothing yet about
+whether refining was **worth** it — that is §5.1. **R-M2
+(`Hyades_galaxy_and_autopilot.md`) still owns whether `2/3` and `1/2` are
+the ratified values; this section only names them so they stop being typed
+as bare `3:2:1` wherever they're cited.**
+
+### 5.1 The value-equivalence heuristic — a different question, on a different axis
+
+**Stripped of the "3 fleets" clause and disentangled from the literal
+refining yield, what's left is an order-of-magnitude *value* heuristic, and
+it lives on a different axis than §2's hull size and §5.0's refining yield
+entirely.** Per this conversation: it never meant 3 units of base-mineral
+spend buys a fleet of equal *value* to 2 units of super spend or 1 unit of
+Platinum spend — that would just be §5.0's refining ratio read backwards,
+and refining yield is not the same fact as combat value. It means something
+closer to *three orders of magnitude* of base-mineral spend sitting
+alongside *two orders of magnitude* of super spend and *one order of
+magnitude* of Platinum spend — without committing to literal powers of ten
+or any single fixed progression, and without claiming those "orders of
+magnitude" line up with the Band ladder's `[4, 8]` steps (§2.6): §2.6's
+Bands quantize *size within one material*, this heuristic compares *value
+across materials*, and the two need not share a scale factor. The concrete
+example given: a negative-mass keel (an exotic, Super-or-higher component)
+should improve force projection so much via better acceleration that a
+fleet an order of magnitude smaller **in mass** matches a base-mineral
+fleet's value.
+
+**Why less mass can be worth more: `Hyades_standing_layer_and_observation.md`
+§9.5's specific-strength ladder (R-O61) is the mechanical grounding for
+this heuristic, derived independently from the shell model itself.**
+Higher mineral tiers carry more capability per unit mass — since dry mass
+is cost and thrust scales with area, a super-built hull delivers *higher
+acceleration at equal capability* than a basics-built one, purely from
+conservation, no separate "supers are better" rule required. §9.5 calls
+this "a cleaner reading of the '3 CMY = 2 RGB = 1 Platinum' heuristic than
+a conversion ratio" — which is this section's point restated from the mass
+side: the payoff for refining up the tier ladder is real despite losing
+mass to slag (§5.0), because the mass that survives refining does
+disproportionately more per kilogram.
 
 **Size (§2) and tier (this section) are orthogonal.** A hull's shape/size
 class (Limited/Medium/General) sets its `V/SA` efficiency. Its material
@@ -632,6 +842,14 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
 - **R-MC13:** build the Ship Testing Arena as a `montecarlo.rs` sibling —
   same harness pattern, two placed fleets instead of a generated galaxy.
 - **R-MC14:** the actual distance/velocity/`N` sweep ranges for §6.3.
+- **R-MC15 (open, new):** decide the Band-ladder step factors `F₁`
+  (`Band I → II`) and `F₂` (`Band II → III`), each in `[4, 8]` (§2.6), and
+  re-derive `medium_fleet_size`/`limited_fleet_size` from them via the
+  gradient-step methodology rather than choosing the two independently —
+  no cost ladder this project has shipped or proposed currently satisfies
+  the constraint. `medium_fleet_size` is globally MC-tuned
+  (`CLAUDE.md` §6) and is not touched by this spec; `hyades_todo.md` T-19
+  is the concrete offline-search task this folds into.
 - **Blocking prerequisites, not this spec's to resolve, but load-bearing
   for §6:** `Hyades_loadout.md`'s **R-L0** (hull slot tables), **R-L1**
   (shield behavior), **R-L2** (single- vs. repeated-pass engagement).
