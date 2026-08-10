@@ -120,6 +120,22 @@ benchmark, both abandoned as "stalled" while they were in fact running fine behi
 - Long sweeps belong in the background from the start, with output to a file, so
   progress is inspectable without blocking on them.
 
+**In an ephemeral container (Claude Code on the web), a backgrounded job dies
+with the container, and that happens on no schedule you control.** Three
+consecutive `min_time_search` runs were killed at 3, 20 and 7 minutes in. So:
+
+- **Check liveness by file mtime, never by `pgrep -f <pattern>`** — the pattern
+  matches the checking command's own bash line and always false-positives. That
+  produced two confidently wrong "still running" reports before it was caught,
+  and CLAUDE.md had already recorded the same trap once (the `pkill -f` incident
+  above). Compare `ls -l --time-style=+%H:%M:%S` against `date`.
+- **Anything over ~10 minutes should be run locally**, which is what §7 already
+  says about `min_time_search` being a by-hand job. Cutting sample count buys
+  some room but does not fix it — a 45-minute run still lost the race.
+- Prefer harnesses that **flush per row and print a running best**, so a
+  truncated run still yields the rounds that finished. Coordinate descent has
+  this property naturally; keep it.
+
 ### CI gates
 
 `.github/workflows/ci.yml` runs on every push and PR. Before you push, the four

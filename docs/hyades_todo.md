@@ -135,6 +135,11 @@ bound* and picks the endpoint every time:
 |---|---|---|---|---|---|
 | mean coverage | 26.3% | 33.8% | 38.7% | 43.8% | **45.3%** |
 
+**Replicated on the 4-seed bed**: 25.1 / 32.3 / 38.3 / 42.7 / **45.4%**, against
+the ten-seed run's 45.3% at the same point. Agreement to 0.1 points on this axis
+says the seed trim (commit `ec5ee23`) cost nothing here, which is worth knowing
+before trusting it elsewhere.
+
 5.0 is not an optimum — it is the largest value `hull_ladder_fault` permits
 (r_M = 1.342, against the 1.25 floor). **Coverage wants a cheaper Medium hull
 than the shell model's capacity ladder allows**, and the guard is the only thing
