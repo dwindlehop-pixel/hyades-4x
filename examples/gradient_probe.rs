@@ -212,7 +212,13 @@ fn main() {
     println!("\n=== Ranked by |elasticity| — where tuning effort belongs ===");
     println!("{:<24} {:>10} {:>10} {:>8}  verdict", "knob", "value", "d/dln x", "SE");
     for f in &findings {
-        let verdict = if f.elasticity.abs() < 2.0 * f.se {
+        // Exactly-zero-with-zero-variance is the *most* informative outcome and
+        // has to be caught before the significance test: `|e| < 2·se` is false
+        // when both are zero, so it would otherwise fall through to a direction
+        // and read as a weak recommendation instead of a structural finding.
+        let verdict = if f.se == 0.0 && f.elasticity == 0.0 {
+            "INERT — moved no seed at all; the knob does not reach the objective"
+        } else if f.elasticity.abs() < 2.0 * f.se {
             if f.elasticity.abs() < 0.5 {
                 "flat — inert here, consider deleting"
             } else {

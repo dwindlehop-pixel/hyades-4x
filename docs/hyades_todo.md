@@ -427,7 +427,43 @@ Re-run `lambda_routing` over the ten-seed `TEST_BED_SEEDS` and refine between
 0.005 and 0.02. Cheap, offline, and it closes a ratification that currently
 rests on less evidence than the rest of the shipped defaults.
 
+### T-45. Elasticity baseline — what the knobs actually do
+
+First run of `examples/gradient_probe.rs` (3 seats, 4 CRN seeds, ±10% central
+differences, 72 evaluations). Coverage `∂/∂ln x` in percentage points:
+
+| knob | value | d/dln x | SE | verdict |
+|---|---|---|---|---|
+| `medium_fleet_size` | 3.0 | **+32.7** | 3.6 | raise |
+| `biosphere_regen_rate` | 0.10 | **+19.7** | 3.2 | raise |
+| `outpost_mining_fraction` | 0.20 | +14.5 | 5.8 | raise |
+| `center_mining_fraction` | 0.15 | +8.2 | 4.3 | ~noise |
+| `growth_rate` | 0.50 | +7.3 | **1.2** | raise |
+| `survey_reserve` | 1024 | +6.3 | 3.6 | ~noise |
+| `trade_decay_lambda` | 0.010 | +4.8 | 2.8 | ~noise |
+| `rank.centrality_scale` | 150 | +4.6 | 3.0 | ~noise |
+| `cargo_unit_size` | 5.0 | +0.0 | 0.0 | **inert** |
+
+Four readings worth keeping:
+
+- **Four of nine knobs are inside 2 SE.** More than half of what this project
+  has been sweeping cannot be told from noise at a four-seed bed. That is the
+  headline, and it applies to every sweep taken before error bars existed.
+- **`trade_decay_lambda` shows no gradient** — which is what a ratified optimum
+  should look like, and an independent confirmation of the λ = 0.01 ratification
+  arrived at by a completely different method.
+- **`growth_rate` has by far the tightest SE (1.2).** Mid-pack elasticity but
+  the most *reliably* measured knob, so it is where a small change is most
+  confidently an improvement.
+- **`biosphere_regen_rate` is the number-two lever and it is a placeholder**
+  (R-O63/T-16). The dial that decides whether biological warfare is a strategy
+  or a rounding error turns out to be load-bearing for the base economy too.
+
 ### T-16. R-O63 — the biosphere regrowth magnitude
+
+**Now known to be the second-largest lever on coverage** (+19.7 ± 3.2, T-45),
+which raises its priority considerably: it is not only the biological-warfare
+dial, it is a first-order economic parameter that has never been tuned.
 
 `SimConfig::biosphere_regen_rate` defaults to `0.10` of the remaining deficit
 per cycle, a **placeholder**. It decides how long a razed world stays razed, and

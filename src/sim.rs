@@ -783,11 +783,26 @@ pub struct SimConfig {
     /// scale factor on [`HullType::cargo_capacity`]'s geometric ladder.
     ///
     /// Every other hull's capacity is this times its usable-volume ratio to the
-    /// Medium hull (R-O58), so a Limited hull carries nothing and a General one
-    /// carries far more than twice as much. Keeping the *Medium* hull as the
-    /// reference is what lets the default stay `5.0` through the shell-model
-    /// change: the freighter is an MSV, so its haul per trip is untouched and
-    /// the economy this knob was tuned against does not move.
+    /// reference radius (R-O58), so a Limited hull carries nothing and a General
+    /// one carries far more than twice as much.
+    ///
+    /// **This is a floor requirement, not a tuning dial** — measured, not
+    /// assumed (`examples/binding_check.rs`, 4 seeds, 4,000 yr):
+    ///
+    /// | `cargo_unit_size` | 0.05 | 0.2 | 1.0 | 5.0 | 25 | 100 |
+    /// |---|---|---|---|---|---|---|
+    /// | mean coverage | 2.7% | 20.6% | 36.9% | 38.3% | 38.3% | 38.3% |
+    ///
+    /// The results at 5, 25 and 100 are **bit-identical**: past roughly 1–5 the
+    /// hold stops binding, because `load = cap.min(avail)` and an outpost never
+    /// accumulates a full hold between visits. Below that it is a cliff, not a
+    /// slope — at 0.2 the economy loses half its coverage and at 0.05 it dies.
+    ///
+    /// So there is nothing to gain by raising it and a great deal to lose by
+    /// lowering it. `gradient_probe` correctly reports its local elasticity as
+    /// **exactly zero on every seed**; that is a true statement about this
+    /// operating point and not a wiring bug, which is what the wide sweep was
+    /// run to establish.
     pub cargo_unit_size: f64,
 
     /// **Transit discount rate `λ`, per year** — how fast the value of a
