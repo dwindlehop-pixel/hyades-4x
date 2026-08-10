@@ -58,6 +58,7 @@ use crate::autopilot::{
     Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext,
     SurveyView, Tasking,
 };
+use crate::cards::{self, CardEffect, Order, Target};
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
 use crate::math::{self, Vec3, G};
@@ -656,6 +657,14 @@ enum EventKind {
     /// An exhausted Scout reaches a friendly colony and scraps
     /// (`Hyades_vehicle_roles.md` §4.1/§4.6 — confirmed, LCV only).
     ScrapArrive { vehicle: Entity },
+    /// **The round barrier** (`Hyades_netcode.md` §1) — the protocol clock's
+    /// only tick. Cards are played here and nowhere else.
+    ///
+    /// A scheduled event like everything else, because this is a discrete-event
+    /// engine: the barrier is not a tick sweep and not a wall-clock timer
+    /// (net §1.1 forbids the latter outright — a state transition that depends
+    /// on a local clock is the classic lockstep desync).
+    RoundBoundary { round: u32 },
 }
 
 #[derive(Clone, Debug)]
@@ -767,6 +776,19 @@ pub struct SimConfig {
     /// the economy this knob was tuned against does not move.
     pub cargo_unit_size: f64,
 
+    /// **Years before the first round barrier fires** (`Hyades_netcode.md` §1).
+    ///
+    /// The opening is deliberately card-free: seats bootstrap survey and
+    /// colonization from their homeworlds before anyone can play. Default
+    /// **200 yr** — two centuries — proposed for the initial implementation and
+    /// **to be tuned by Monte Carlo and playtesting** (R-P12).
+    pub years_to_first_round: f64,
+    /// **Years between round barriers.** Default **400 yr** — four centuries.
+    /// At the 4,000-year horizon that is ~10 rounds, which is the board-game
+    /// round count the 30–45 minute target implies. Also **MC- and
+    /// playtest-tunable** (R-P12); `0.0` disables the round layer entirely.
+    pub years_per_round: f64,
+
     /// Fraction of a scrapped vehicle's `general_vehicle_cost`-equivalent
     /// value recovered into the nearest friendly colony's stockpile
     /// (`Hyades_vehicle_roles.md` §4.6 — the mineral-recovery reasoning is
@@ -802,6 +824,8 @@ impl SimConfig {
             mining_tick_years: 50.0,
             density_floor: 0.01,
             cargo_unit_size: 5.0,
+            years_to_first_round: 200.0,
+            years_per_round: 400.0,
             scrap_recovery_fraction: 0.5,
             seed,
         }
@@ -867,6 +891,11 @@ pub struct Simulation {
     /// Optional diagnostic event log — off (records nothing) until
     /// [`Simulation::set_log_filter`] enables a category. See [`crate::log`].
     log: SimLog,
+    /// Protocol round index (`Hyades_netcode.md` §1's third clock). Distinct
+    /// from `clock`, which is sim years, and from anything wall-clock.
+    current_round: u32,
+    /// Count of card plays whose effect is not implemented yet.
+    inert_card_plays: u64,
 }
 
 impl Simulation {
@@ -936,6 +965,8 @@ impl Simulation {
             seq: 0,
             events_processed: 0,
             active_mines: BTreeSet::new(),
+            current_round: 0,
+            inert_card_plays: 0,
             log: SimLog::new(),
         };
         sim.bootstrap();
@@ -1048,6 +1079,170 @@ impl Simulation {
                 self.launch_survey(p, home_pos, heading, 0);
             }
         }
+
+        // The round barrier's first tick. Scheduled once here; each boundary
+        // schedules its own successor, so the protocol clock is a chain of
+        // events rather than anything the run loop knows about.
+        if self.config.years_per_round > 0.0 {
+            self.schedule(self.config.years_to_first_round, EventKind::RoundBoundary { round: 0 });
+        }
+    }
+
+    // --- the round layer ---------------------------------------------------
+
+    /// **The round barrier** (`Hyades_netcode.md` §5) — collect this round's
+    /// orders, coerce them, apply them in **seat-index order**, schedule the
+    /// next boundary.
+    ///
+    /// Seat order is not a detail: net §5 P2 requires every client to apply
+    /// orders in the same sequence, and seat index is the only ordering every
+    /// client agrees on before the orders exist.
+    fn sys_round_boundary(&mut self, round: u32) {
+        self.current_round = round;
+
+        // Collect. In a networked match these arrive over the wire; here the
+        // autopilots supply them, which is exactly the dropout path net §5.3
+        // specifies (a disconnected seat is handed to `BaselineAutopilot` and
+        // generates zero traffic).
+        let mut orders: Vec<Order> = Vec::with_capacity(self.player_entity.len());
+        for p in 0..self.player_entity.len() {
+            let pe = self.player_entity[p];
+            let doctrine = *self.world.doctrine.get(pe).unwrap();
+            let seat = PlayerId(p as u32);
+            let proposed = self.autopilots[p].choose_card(&doctrine, seat, round).unwrap_or(Order::pass(seat));
+            orders.push(proposed);
+        }
+
+        self.apply_orders(round, &orders);
+
+        let next = round.saturating_add(1);
+        if self.clock + self.config.years_per_round <= self.config.horizon_years {
+            self.schedule(self.config.years_per_round, EventKind::RoundBoundary { round: next });
+        }
+    }
+
+    /// **The sole inbound channel** (design law #15, net §11).
+    ///
+    /// Everything the outside world can do to the simulation goes through here.
+    /// It is *total*: every input maps to a legal state transition, and an
+    /// illegal order coerces to `pass` rather than being rejected (net §5.1) —
+    /// rejection is how a lockstep system desyncs, because one client's
+    /// rejection is another's acceptance.
+    ///
+    /// Public because the presentation layer must be able to reach it. Nothing
+    /// else may cross the seam inbound.
+    pub fn apply_orders(&mut self, round: u32, orders: &[Order]) {
+        let mut sorted: Vec<Order> = orders.to_vec();
+        sorted.sort_by_key(|o| o.seat.0);
+        for o in sorted {
+            let p = o.seat.0 as usize;
+            if p >= self.player_entity.len() {
+                continue;
+            }
+            let cost = o.card.and_then(cards::card).map(|c| c.cost).unwrap_or(0.0);
+            let affordable = cost <= 0.0 || self.empire_can_afford(p, cost);
+            let Some(id) = o.coerce(affordable).card else { continue };
+            let Some(c) = cards::card(id) else { continue };
+            if c.cost > 0.0 {
+                self.empire_spend(p, c.cost);
+            }
+            self.apply_card_effect(p, c, o.target, round);
+        }
+    }
+
+    /// Total basic minerals across an empire's holdings. Cards are paid from
+    /// the empire, not from one center — design law #7 puts cards at
+    /// empire/macro scale, so a per-center purse would be the wrong grain.
+    fn empire_can_afford(&self, p: usize, cost: f64) -> bool {
+        let me = PlayerId(p as u32);
+        let mut total = 0.0;
+        for &e in &self.planet_entity {
+            if self.world.owner.get(e).copied() == Some(me) {
+                if let Some(s) = self.world.stockpile.get(e) {
+                    total += s.basic_total();
+                    if total >= cost {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Draw `cost` from the empire's holdings, richest planet first so the draw
+    /// is deterministic and does not strand a center that was about to build.
+    fn empire_spend(&mut self, p: usize, cost: f64) {
+        let me = PlayerId(p as u32);
+        let mut holdings: Vec<(Entity, f64)> = self
+            .planet_entity
+            .iter()
+            .filter(|&&e| self.world.owner.get(e).copied() == Some(me))
+            .filter_map(|&e| self.world.stockpile.get(e).map(|s| (e, s.basic_total())))
+            .filter(|&(_, t)| t > 0.0)
+            .collect();
+        // Richest first; entity id breaks ties so the order is total.
+        holdings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal).then(a.0 .0.cmp(&b.0 .0)));
+        let mut remaining = cost;
+        for (e, avail) in holdings {
+            if remaining <= 0.0 {
+                break;
+            }
+            let take = remaining.min(avail);
+            take_basics(self.world.stockpile.get_mut(e).unwrap(), take);
+            remaining -= take;
+        }
+    }
+
+    fn apply_card_effect(&mut self, p: usize, c: &cards::Card, target: Target, round: u32) {
+        match c.effect {
+            CardEffect::WriteDoctrine(w) => {
+                let pe = self.player_entity[p];
+                cards::apply_doctrine_write(self.world.doctrine.get_mut(pe).unwrap(), w);
+            }
+            CardEffect::UnlockDesign(hull, class) => {
+                let pe = self.player_entity[p];
+                self.world.roster.get_mut(pe).unwrap().unlock(hull, class);
+            }
+            CardEffect::DiscloseScans => {
+                // politics §5.2/§5.3. The *subject* is whose scan record is
+                // published — which need not be the player playing the card.
+                // Publishing someone else's holdings is the attack, and it is
+                // not opt-in: no consent is sought anywhere on this path.
+                let subject = match target {
+                    Target::Player(s) => s.0 as usize,
+                    Target::None => p,
+                };
+                if subject >= self.player_entity.len() {
+                    return;
+                }
+                let published: Vec<PlanetId> =
+                    self.world.knowledge.get(self.player_entity[subject]).unwrap().scanned.iter().copied().collect();
+                for q in 0..self.player_entity.len() {
+                    if q == subject {
+                        continue;
+                    }
+                    let k = self.world.knowledge.get_mut(self.player_entity[q]).unwrap();
+                    for &pid in &published {
+                        k.scanned.insert(pid);
+                    }
+                }
+            }
+            CardEffect::NotYetImplemented => {
+                self.inert_card_plays += 1;
+            }
+        }
+        self.log.push(self.clock, LogEvent::CardPlayed { player: p as u32, card: c.id.0, round });
+    }
+
+    /// The protocol round this run has reached. Presentation-readable.
+    pub fn current_round(&self) -> u32 {
+        self.current_round
+    }
+
+    /// How many card plays resolved to [`CardEffect::NotYetImplemented`] — the
+    /// honest measure of how much of the card layer is still scaffolding.
+    pub fn inert_card_plays(&self) -> u64 {
+        self.inert_card_plays
     }
 
     // --- scheduling resource ----------------------------------------------
@@ -1108,6 +1303,7 @@ impl Simulation {
             EventKind::MiningTick { outpost } => self.sys_mining_tick(outpost),
             EventKind::ProductionTick { center } => self.sys_production_tick(center),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
+            EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
         true
     }
@@ -2073,6 +2269,7 @@ fn take_basics(bank: &mut Minerals, amount: f64) -> Minerals {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cards::CardId;
     use crate::galaxy::GalaxyConfig;
 
     /// Unit tests exercise *mechanics*, not the full expansion arc. The shipped
@@ -2085,6 +2282,109 @@ mod tests {
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = 600.0;
         cfg
+    }
+
+    #[test]
+    fn the_round_layer_is_behaviour_neutral_while_everyone_passes() {
+        // The baseline autopilot's `choose_card` returns `None`, so adding the
+        // round layer must move *nothing*. This is what keeps every coverage
+        // number in the tree — and the offline search resting on them — valid
+        // across the card layer landing. Verified at the shipped defaults:
+        // seed 1 / 3 seats / 4 kyr gives 1,044 colonies with and without.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let mut with_rounds = Simulation::with_baseline(galaxy, test_cfg(1));
+        let a = with_rounds.run();
+
+        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let mut cfg = test_cfg(1);
+        cfg.years_per_round = 0.0; // disables the layer entirely
+        let mut without = Simulation::with_baseline(galaxy, cfg);
+        let b = without.run();
+
+        for (pa, pb) in a.players.iter().zip(b.players.iter()) {
+            assert_eq!(pa.colonies, pb.colonies);
+            assert_eq!(pa.planets_owned, pb.planets_owned);
+            assert_eq!(pa.total_population.to_bits(), pb.total_population.to_bits());
+        }
+        assert_eq!(a.planets_scanned_total, b.planets_scanned_total);
+    }
+
+    #[test]
+    fn round_boundaries_fire_on_the_specified_cadence() {
+        // 200 yr to the first, 400 yr between: at a 600 yr test horizon that is
+        // rounds 0 and 1. The barrier is a scheduled event, so this also pins
+        // that it chains itself rather than being swept for.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let mut cfg = test_cfg(1);
+        cfg.years_to_first_round = 200.0;
+        cfg.years_per_round = 400.0;
+        let mut sim = Simulation::with_baseline(galaxy, cfg);
+        sim.run();
+        assert_eq!(sim.current_round(), 1, "600 yr horizon should reach round 1 and stop");
+
+        // And it stops at the horizon rather than running away. Pinned at
+        // 1,400 yr, not the 4,000 default: design law #14 — a full-length run
+        // costs seconds, and this asserts a cadence, not a long-run property.
+        // (1400-200)/400 = 3, so the last barrier is round 3.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let mut cfg = test_cfg(1);
+        cfg.horizon_years = 1400.0;
+        let mut long = Simulation::with_baseline(galaxy, cfg);
+        long.run();
+        assert_eq!(long.current_round(), 3, "(1400-200)/400 = 3, so the last barrier is round 3");
+    }
+
+    #[test]
+    fn apply_orders_is_total_and_an_illegal_order_costs_nothing() {
+        // net §5.1 / design law #15. Every input maps to a legal transition:
+        // a bogus seat, a bogus card and an unaffordable card must all leave
+        // the sim untouched rather than panicking or half-applying.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
+        let before = sim.world.doctrine.get(sim.player_entity[0]).unwrap().growth_rate;
+
+        sim.apply_orders(
+            0,
+            &[
+                Order { seat: PlayerId(99), card: Some(CardId(3)), target: Target::None }, // no such seat
+                Order { seat: PlayerId(0), card: Some(CardId(999)), target: Target::None }, // no such card
+                Order { seat: PlayerId(1), card: None, target: Target::None },             // pass
+            ],
+        );
+
+        assert_eq!(sim.world.doctrine.get(sim.player_entity[0]).unwrap().growth_rate, before);
+    }
+
+    #[test]
+    fn a_politics_card_publishes_a_rivals_scans_without_asking() {
+        // politics §5.3 / §6 — disclosure is the attack, and it is not opt-in.
+        // Player 0 publishes player 1's scan record; player 2, who is not
+        // involved at all, learns everything player 1 knew.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
+        sim.run();
+
+        let scanned_of = |s: &Simulation, p: usize| s.world.knowledge.get(s.player_entity[p]).unwrap().scanned.clone();
+        let victim = scanned_of(&sim, 1);
+        let bystander_before = scanned_of(&sim, 2);
+        assert!(!victim.is_empty(), "the victim must know something worth publishing");
+        assert!(!victim.is_subset(&bystander_before), "and the bystander must not already know it");
+
+        // Fund the attacker so the play is affordable, then publish.
+        let attacker_home = sim
+            .planet_entity
+            .iter()
+            .copied()
+            .find(|&e| sim.world.owner.get(e).copied() == Some(PlayerId(0)) && sim.world.stockpile.contains(e));
+        if let Some(h) = attacker_home {
+            let s = sim.world.stockpile.get_mut(h).unwrap();
+            s.cyan += 100.0;
+        }
+        sim.apply_orders(1, &[Order { seat: PlayerId(0), card: Some(CardId(2)), target: Target::Player(PlayerId(1)) }]);
+
+        let bystander_after = scanned_of(&sim, 2);
+        assert!(victim.is_subset(&bystander_after), "everything the victim knew is now public");
+        assert!(bystander_after.len() > bystander_before.len(), "and the bystander strictly gained");
     }
 
     fn run_default(players: usize, seed: u64) -> (Simulation, SimReport) {

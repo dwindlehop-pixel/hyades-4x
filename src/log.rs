@@ -50,15 +50,18 @@ pub enum LogCategory {
     Population,
     /// Survey scan reports reaching an empire's knowledge (light-lagged).
     Scanning,
+    /// Round barriers and the cards played at them (the protocol clock).
+    Cards,
 }
 
 impl LogCategory {
-    pub const ALL: [LogCategory; 5] = [
+    pub const ALL: [LogCategory; 6] = [
         LogCategory::Production,
         LogCategory::Mining,
         LogCategory::Vehicles,
         LogCategory::Population,
         LogCategory::Scanning,
+        LogCategory::Cards,
     ];
 }
 
@@ -71,6 +74,7 @@ pub struct LogFilter {
     vehicles: bool,
     population: bool,
     scanning: bool,
+    cards: bool,
 }
 
 impl LogFilter {
@@ -83,7 +87,7 @@ impl LogFilter {
     /// Every category enabled — full interrogation, highest overhead. Good for
     /// a single re-run of one seed; not meant for a Monte-Carlo sweep.
     pub fn all() -> Self {
-        LogFilter { production: true, mining: true, vehicles: true, population: true, scanning: true }
+        LogFilter { production: true, mining: true, vehicles: true, population: true, scanning: true, cards: true }
     }
 
     /// Builder-style: `LogFilter::none().with(LogCategory::Production)`.
@@ -99,6 +103,7 @@ impl LogFilter {
             LogCategory::Vehicles => self.vehicles = on,
             LogCategory::Population => self.population = on,
             LogCategory::Scanning => self.scanning = on,
+            LogCategory::Cards => self.cards = on,
         }
     }
 
@@ -110,6 +115,7 @@ impl LogFilter {
             LogCategory::Vehicles => self.vehicles,
             LogCategory::Population => self.population,
             LogCategory::Scanning => self.scanning,
+            LogCategory::Cards => self.cards,
         }
     }
 
@@ -191,6 +197,9 @@ pub enum LogEvent {
     /// A scan result reached an empire's knowledge base (light-delayed from the
     /// contact unit's actual arrival at the world).
     ScanReceived { player: u32, planet: PlanetId },
+    /// A card resolved at a round barrier. `card` is the [`crate::cards::CardId`]
+    /// index; `round` is the protocol clock, not the sim clock.
+    CardPlayed { player: u32, card: u16, round: u32 },
 }
 
 impl LogEvent {
@@ -208,6 +217,7 @@ impl LogEvent {
             | VehicleScrapped { .. } => LogCategory::Vehicles,
             PopulationStep { .. } => LogCategory::Population,
             ScanReceived { .. } => LogCategory::Scanning,
+            CardPlayed { .. } => LogCategory::Cards,
         }
     }
 
@@ -224,7 +234,8 @@ impl LogEvent {
             | ColonyFounded { player, .. }
             | ColonyContested { player, .. }
             | VehicleScrapped { player, .. }
-            | ScanReceived { player, .. } => Some(player),
+            | ScanReceived { player, .. }
+            | CardPlayed { player, .. } => Some(player),
             MineralsExtracted { .. } | MiningExhausted { .. } | PopulationStep { .. } => None,
         }
     }
@@ -242,6 +253,7 @@ impl LogEvent {
             VehicleSpawned { to, .. } => Some(to),
             ContactArrived { planet, .. } => Some(planet),
             ColonyFounded { planet, .. } | ColonyContested { planet, .. } => Some(planet),
+            CardPlayed { .. } => None,
         }
     }
 
@@ -326,6 +338,7 @@ impl fmt::Display for LogEvent {
                 write!(f, "planet#{} population {population:.3} (K={k:.2})", planet.0)
             }
             ScanReceived { player, planet } => write!(f, "P{player} scan of planet#{} received", planet.0),
+            CardPlayed { player, card, round } => write!(f, "P{player} played card#{card} at round {round}"),
         }
     }
 }

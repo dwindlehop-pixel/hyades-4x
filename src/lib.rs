@@ -51,6 +51,7 @@
 pub mod arena;
 pub mod autopilot;
 pub mod belief;
+pub mod cards;
 pub mod combat;
 pub mod galaxy;
 pub mod log;
@@ -64,6 +65,7 @@ pub mod snapshot;
 pub mod prelude {
     pub use crate::autopilot::{Autopilot, BaselineAutopilot, Doctrine, ExpandBias, RankWeights};
     pub use crate::belief::{BeliefAMax, Engagement, Observation, Unobserved};
+    pub use crate::cards::{Card, CardEffect, CardId, Order, Slant, Target, Tree};
     pub use crate::combat::{CombatConfig, Combatant, EngagementOutcome, FleetTrajectory, Winner};
     pub use crate::galaxy::{Galaxy, GalaxyConfig, Planet, PlanetClass, PlanetId, PlayerId};
     pub use crate::log::{LogCategory, LogEvent, LogFilter, LogRecord, SimLog};

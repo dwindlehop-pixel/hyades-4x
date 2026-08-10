@@ -18,6 +18,7 @@
 //! autopilot-doc §1) — never ground truth — so the sim hands it small `Copy`
 //! view structs rather than its internals.
 
+use crate::cards::Order;
 use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
 use crate::resources::MineralField;
@@ -358,6 +359,23 @@ pub trait Autopilot {
     /// weighing infrastructure-deepening against colonizing or mining under the
     /// center's mineral budget and level gates.
     fn production_choice(&self, doctrine: &Doctrine, ctx: &ProductionContext, candidates: &[Candidate]) -> BuildOrder;
+
+    /// **What card to play at this round barrier**, or `None` to pass.
+    ///
+    /// The card layer's policy seam (`Hyades_netcode.md` §5, cards §). Default
+    /// is `None` — **passing every round** — which is deliberate: the baseline
+    /// autopilot's behaviour must not change just because the round layer
+    /// exists, or every coverage number in the tree moves at once and the
+    /// offline search is invalidated. A policy that plays cards is a new
+    /// `Autopilot`, not an edit to this one.
+    ///
+    /// Receives no world state, only doctrine and the round index: card choice
+    /// is subject to the same one-directional seam as every other decision
+    /// (design law #15), so a policy that wants board state must be handed a
+    /// view, never `&Simulation`.
+    fn choose_card(&self, _doctrine: &Doctrine, _seat: PlayerId, _round: u32) -> Option<Order> {
+        None
+    }
 
     /// Task a hull that production has just finished (R-O29). Called *after*
     /// the object exists, with the empire's current candidate list — so the

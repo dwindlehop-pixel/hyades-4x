@@ -19,6 +19,13 @@ work rather than describing game content: it makes bit-reproducibility a
 engine-status block lists the five implementation blockers, audited — and what
 is already clean, which is most of the foundation.
 
+**`docs/Hyades_politics_trade_and_intelligence.md` (Rev 1)** specifies the two
+systems the Politics tree needs and neither of which exists: the Exchange with
+`$`, and granular shared intelligence. Its §0 is the organizing thesis and worth
+reading before touching anything in that tree — *eliminate the value of
+collusion by making the simulation-state effects of collusion available without
+a confederate*. That is why Politics cards are **not opt-in**.
+
 ---
 
 ## 1. What Hyades is
@@ -58,8 +65,8 @@ cargo run --release --example combat_arena       # kinematic interception harnes
 cargo run --release --example montecarlo         # balance sweeps
 ```
 
-Baseline as of `belief.rs` landing: **106 unit + 4 smoke + 5 determinism tests
-pass**, ~42 s wall for `cargo test --all-targets`.
+Baseline as of the card/round layer: **117 unit + 4 smoke + 5 determinism tests
+pass**, ~46 s wall for `cargo test --all-targets`.
 The MC sweeps are slow in debug; always use `--release` for them.
 
 ### The 60-second rule for tests and CI
@@ -69,7 +76,7 @@ only exception and they are offline, never in CI. Current costs:
 
 | step | cost |
 |---|---|
-| `cargo test --all-targets` (unit + determinism + smoke) | ~42 s |
+| `cargo test --all-targets` (unit + determinism + smoke) | ~46 s |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
 | `coverage_trace` | ~19 s |
 | `coverage_time` | ~49 s |
@@ -146,6 +153,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/galaxy.rs` | galaxy generation → continuous 3D planet field |
 | `src/autopilot.rs` | `Autopilot` trait (swappable per-seat policy) + `Doctrine` knobs |
 | `src/belief.rs` | **believed kinematics** (R-O41) — one-sided `a_max` estimate from light-lagged observations, and the accept/decline predicate that runs on it |
+| `src/cards.rs` | the **card layer** — 18 tier-0 placeholders (3 slants × 6 trees), `Order`, and the coerce-never-reject rule |
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
 | `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement` |
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |

@@ -225,13 +225,32 @@ fn main() {
 
     // Round 5: growth_rate — how fast pop climbs toward whatever K is
     // currently achievable.
+    sweep_doctrine("growth_rate", cfg, &mut doctrine, &[0.3, 0.5, 0.7, 1.0, 1.3], |d, v| d.growth_rate = v);
+
+    // Round 6: centrality_scale (T-07). The ranking term is `exp(-dist /
+    // centrality_scale)`, so the scale sets the distance at which a candidate
+    // stops looking "near my holdings". It was tuned against a ~25 ly galaxy
+    // and the galaxy is now hundreds of ly across, which is the standing
+    // suspicion that this term is *saturated* — every candidate scoring the
+    // same centrality means the term contributes nothing and the ranking has
+    // silently lost a dimension. Swept across three orders of magnitude so the
+    // answer is measured rather than asserted: if the best value sits at an
+    // endpoint the range was still too narrow, and if the column is flat the
+    // term is confirmed dead and should be retired rather than retuned.
     let final_score =
-        sweep_doctrine("growth_rate", cfg, &mut doctrine, &[0.3, 0.5, 0.7, 1.0, 1.3], |d, v| d.growth_rate = v);
+        sweep_doctrine("centrality_scale", cfg, &mut doctrine, &[25.0, 75.0, 150.0, 400.0, 1000.0], |d, v| {
+            d.rank.centrality_scale = v
+        });
 
     println!("\n=== Result ===");
     println!(
-        "medium_fleet_size={:.1}  cargo_unit_size={:.1}  outpost_mining_fraction={:.2}  reinvest_bias={:.2}  growth_rate={:.2}",
-        cfg.medium_fleet_size, cfg.cargo_unit_size, cfg.outpost_mining_fraction, doctrine.reinvest_bias, doctrine.growth_rate
+        "medium_fleet_size={:.1}  cargo_unit_size={:.1}  outpost_mining_fraction={:.2}  reinvest_bias={:.2}  growth_rate={:.2}  centrality_scale={:.0}",
+        cfg.medium_fleet_size,
+        cfg.cargo_unit_size,
+        cfg.outpost_mining_fraction,
+        doctrine.reinvest_bias,
+        doctrine.growth_rate,
+        doctrine.rank.centrality_scale
     );
     println!(
         "-> {}/{} seeds fully covered, mean coverage {:.1}%, mean completion time among finishers: {}",

@@ -44,6 +44,11 @@ the thing that proves the Exchange right, not dead code.
 Also the main lever on the O(P) freighter-routing scan, which now runs against
 6,725 planets rather than the 600 `Hyades_matching.md` assumed.
 
+**Reclassified: this is not cleanup, it is the first step of the Politics
+tree.** `Hyades_politics_trade_and_intelligence.md` §1 — the Exchange is the
+substrate the whole trade system is built on, and it is already written,
+deterministic and `HashMap`-free. Wiring it in is the prerequisite for T-38.
+
 ### T-02. Restore `examples/bench_hex_size.rs`, sweeping entity count
 
 Cited by `galaxy.rs` (×3), `tests/smoke.rs`, `tests/determinism.rs` and
@@ -127,8 +132,18 @@ deliberately exempt — §6.2 puts close range as where the degeneracy breaks.
 
 ### T-11. Diplomatic fields on `Doctrine` — R-O27 / R-A3
 
-Trade lanes, partners, pact state. **No field list has been specified**, which
-is the whole of the work. Roadmap item 3.
+**Field list supplied**, which was the whole of the blocker:
+`Hyades_politics_trade_and_intelligence.md` §7 specifies a `Diplomacy` struct —
+per-mineral `demand`, `trade_budget`, `denial_premium`, `escrow_ratio`,
+`excluded`, and the two disclosure willingnesses. What remains is implementing
+it, and it should land with T-38 rather than alone, since every field is a term
+in a pricing formula that does not exist yet.
+
+Note what §7 deliberately **omits**: no `ally`, no `pact`, no `treaty`. A
+bilateral agreement object would be exactly the confederate the anti-collusion
+thesis is trying to make unnecessary, and it would need a consent handshake —
+a second inbound channel across the seam (design law #15). Blocs are emergent,
+not stored.
 
 ### T-12. R-MC9c — layer HP, weapon count, AoE and magazines onto combat
 
@@ -159,29 +174,40 @@ not taken yet** — it is a contract decision, not a free optimization.
 
 ### T-30. The round/command layer — netcode B1
 
-Sim §3's four phases (income → hidden simultaneous command → resolution →
-aftermath) and `Hyades_netcode.md`'s protocol clock `r` have **no engine
-counterpart**. `Simulation::run()` drains a discrete-event queue to a horizon;
-there is no round boundary, no simultaneous order, and no `apply_orders`.
+**Round layer landed; simultaneity has not.** `EventKind::RoundBoundary` is a
+scheduled event that chains its own successor (not a tick sweep, not a wall
+clock — net §1.1), `Simulation::apply_orders` is the **single inbound channel**
+required by design law #15, orders apply in seat-index order (net §5 P2), and
+illegal orders coerce to `pass` rather than being rejected (net §5.1).
+Cadence is `years_to_first_round` (200) and `years_per_round` (400), both
+MC/playtest surfaces (R-P12).
 
-This is the **largest single gap between the engine and the shipped design**,
-and it is simulation work rather than network work. Netcode §5's barrier, §5.1's
-order coercion, §5.2's timeout-as-message and §11's single inbound entry point
-all attach here and nowhere else. Direction is fully specified; the shape inside
-the engine is not.
+**Behaviour-neutral**, which is the property that matters: `choose_card`
+defaults to `None`, so seed 1 / 3 seats / 4 kyr still gives 1,044 colonies and
+every coverage number in the tree — and the offline search resting on them —
+stays valid. Pinned as a test.
 
-When it lands, give the engine **exactly one** inbound entry point
-(`apply_orders`) rather than enforcing the one-directional seam by convention —
-netcode H9/§2.1. Today the seam is trivially safe because there is no inbound
-path at all; that is the property to preserve, not to rediscover.
+**What remains:** the *hidden simultaneous* half. Today orders are collected
+from autopilots at the barrier and applied immediately; there is no commit
+phase, no reveal phase, no salt, and no timeout vote. That is the meso layer —
+the yomi channel the whole competitive frame rests on — and it is carried as
+**T-42**. Also missing: sim §3's income/aftermath phases as distinct beats.
 
 ### T-31. A card system — netcode B2
 
-Cards are the game's entire action layer and the engine has none. Blocks:
-`card_id` in the wire payload (netcode §4.2), roster enforcement (T-25),
-counter-graph disruption (T-13), and every "a card does X" clause across the
-specs. R-C1 (the closed list of legal `target_rule` kinds) is the first thing
-inside it, and R-NET4's field widths are blocked on R-C1 in turn.
+**Placeholder tier-0 layer landed** (`src/cards.rs`): the 18-card grid (3 slants
+× 6 trees, std §1), `CardId` as its own index so the wire protocol's `card_id`
+needs no lookup table, the closed `Target` set, the coercion rule, and three
+effect families that write live engine state — `DiscloseScans`,
+`WriteDoctrine`, `UnlockDesign`. Warfare's three are
+`CardEffect::NotYetImplemented`, *counted* rather than silently inert, because
+`sim` never calls `combat::resolve_engagement`.
+
+**Placeholder means the flavour, the costs, and the slot assignments** — card
+text is the author's own and none is written. See T-41.
+
+Still blocked behind it: R-C1 (the closed list of legal `target_rule` kinds) and
+therefore R-NET4's field widths. Tiers 1+ and the reach economy do not exist.
 
 ### T-32. The state digest — netcode B3
 
@@ -195,6 +221,65 @@ authoritative state and *not* `Snapshot` (a projection lets divergence hide in
 what it drops, and the event queue and RNG cursor especially must be inside),
 and exchange leaf vectors on mismatch so a desync localizes to a subsystem
 rather than to a round number.
+
+### T-42. Hidden simultaneous orders — commit/reveal in the engine
+
+The other half of T-30, and **the meso layer the competitive frame rests on**.
+Today the barrier collects orders and applies them in the same instant; there is
+no commit beat, so there is nothing hidden and no yomi.
+
+Needed: a commit phase holding a salted hash per seat, a reveal phase gated on
+holding every live seat's commit (net §5 — a *log-derived* condition, never a
+timer, which is what makes simultaneity fair regardless of latency), and the
+timeout-vote path. Note net §5.2's finding that at 18 seats a timeout fires in
+~30% of rounds, so it is a routine transition to present well, not an error
+path.
+
+The engine can carry the phases without any network: commit/reveal is a
+*simulation* structure that the protocol then mirrors.
+
+### T-38. The Exchange, `$`, and the trade economy
+
+`Hyades_politics_trade_and_intelligence.md` §§2–4. Cross-empire order books on
+top of `matching.rs` (T-01), `$` as a non-mass claim (R-P1), willingness-to-pay
+derived from Doctrine demand × shortfall × counterparty risk, escrow with
+settlement on delivery, and the **transit burn** that makes the travel-time
+discount and the `$` sink the same mechanism.
+
+The verb set is specified (§4). The magnitudes are not: `λ`, the income rate and
+the Politics depth multiplier are all R-P2, and all three are MC surfaces.
+
+Reputation ships in **both** forms (R-P4, resolved): public consensus by
+default, per-observer for anyone who buys the **Audit** card. That is worth
+building in this order — public first, because per-observer is the same
+per-pair storage T-33 flags as expensive, and making it opt-in is what bounds
+the cost to the players who chose to pay it.
+
+### T-39. Shared intelligence, tiers 1–3
+
+Tier 0 (planetary scan data) has landed as a card effect. Tiers 1–3 — movement,
+Doctrine, Design — need the observation storage T-33 describes, because you
+cannot *sell* an observation the engine does not keep. Ordering is by the
+standing layer's own leak asymmetry: Design never goes stale, so it is the most
+valuable and the most damaging to have published (politics §5.1).
+
+**Disclose (other) is the interesting one** — transparency as an attack, and the
+mechanism that makes "my ally told me their Design" worth nothing.
+
+### T-40. The trade ↔ mobilization counter-graph coupling
+
+`Hyades_politics_trade_and_intelligence.md` §8. Neither direction may be a
+modifier; both must fall out of simulation state:
+
+- **Early trade blunts later mobilization** through the supply chain — mobilizing
+  against your supplier cuts the minerals the mobilization is made of.
+- **Early mobilization blunts later trade** through the risk premium — an armed
+  fleet is visible (std §6.2) and visibly armed players get worse prices.
+
+Both accumulate, which is what makes the counter-graph edge *time-dependent*.
+Needs T-38 for the price side and combat-in-sim for the mobilization side.
+R-P9 asks whether the risk premium is bounded; if it is not, early arming could
+become unplayable.
 
 ### T-15. Production-queue redesign — roles §10, deferred
 
@@ -233,6 +318,18 @@ whether or not the acting player has observed the claim. The survey path makes
 the same kind of call but documents it and defers to R-SIM3; the colonization
 path does neither, and it is the one that matters — it reads a rival's state
 with no observation behind it. Narrower than T-33 and fixable independently.
+
+### T-41. Card flavour, names, and the slant cost ratios — R-P11
+
+The 18 tier-0 slots carry no names, and their costs (0.5 / 0.8 / 1.2) are flat
+placeholders that do **not** implement std §2's ratified cost-ratio spreads
+(Floor 5:4:3, Default 3:2:1, Peak 4:2:1). The ordering is asserted in a test —
+inscrutable < balanced < less-guarded, which design law #9's convexity needs —
+but the ratios are not.
+
+**Flavour text is the author's own** (CLAUDE.md §6), so the names are not
+Claude's to write. The cost ratios are a separate, mechanical job and can land
+without them.
 
 ### T-16. R-O63 — the biosphere regrowth magnitude
 
@@ -340,9 +437,15 @@ Medium hull the starting roster excludes, so enforcement forbids every expansion
 build permanently — 3 colonies and 18 vehicles against 1,183 and 4,778 over
 4,000 years, pinned as a test.
 
-Not an argument against §7.1; an ordering constraint. **Blocked on the card
-layer existing at all**, which is the vague part — no card system is specified
-in engine terms yet.
+Not an argument against §7.1; an ordering constraint.
+
+**The block is now partly lifted.** Technology's three tier-0 cards are
+`UnlockDesign` writes, and card 12 unlocks `MediumSystems` — the hull the
+colonizer and freighter ride on, and the exact thing whose absence made
+enforcement fatal. What is still missing is a *policy* that plays it: the
+baseline autopilot passes every round by design (T-30), so enforcement would
+still halt expansion until some autopilot buys the unlock. That is now a
+policy question, not an architecture one.
 
 ### T-37. Everything in netcode outside the crate
 
