@@ -9,7 +9,7 @@
 - **Simulation is decoupled and continuous.** The simulation has **no hexes and no boundaries**; it runs in continuous 3D space with each **star system abstracted to a single point** ('a planet'), and the autopilot reasons only over those points. **Hexes exist only in the command view.**
 - **Two granularities.** **Cards target hexes** — the player decides **hex by hex**; the **autopilot targets planets** and acts **planet by planet**. A hex-targeted card resolves onto the **planet(s) the hex contains**. The player never micro-targets a planet.
 - **The simulation runs on fog of war.** Autopilot **units act only on what they have scanned**; **stealth** can hide what they have not; and every reaction is **light-lagged** (below). The player can see, sooner than their empire can react — and spends cards to close that gap (still bounded by *c*).
-- **Three scan tiers.** **Remote:** Biosphere and Habitability are known from interstellar distance (spectroscopy). **Close:** ownership, infrastructure and mineral density require a survey craft to visit. **Inferential (R-SIM3):** some facts are *deducible* at range without being directly read — a **pop-4 world radiates the waste heat of billions**, so it is legible as occupied from home even though *whose* it is still needs a visit. Departure traffic is the second such signal, graded by repeat sightings, and is R-SIM4. Acting on the inferential tier is **off by default** and is something a card enables (§2); early game, an empire flies out and finds out.
+- **Three scan tiers.** **Remote:** Biosphere and Habitability are known from interstellar distance (spectroscopy). **Close:** ownership, infrastructure and mineral density require a survey craft to visit. **Inferential (R-SIM3):** some facts are *deducible* at range without being directly read — a **pop-Band-IV world radiates the waste heat of billions**, so it is legible as occupied from home even though *whose* it is still needs a visit. Departure traffic is the second such signal, graded by repeat sightings, and is R-SIM4. Acting on the inferential tier is **off by default** and is something a card enables (§2); early game, an empire flies out and finds out.
 - **Relativistic event-scheduling.** Cards issue **instant global orders**, but consequences propagate at light-speed: a response to an observation **N light-years away is queued N years in the future** (`Hyades_card_contract.md` §2). The scan→decide→build→dispatch loop below is therefore a chain of light-lagged scheduled events, not an instant pipeline.
 
 **R-AC1 (resolved):** omniscient over realized state (planets/structures/fleets); hidden simultaneous orders excepted. **R-AC2 (resolved):** the sim is point/continuous with no hexes, so there is nothing to reconcile — the six cube-face directions are simply six headings in space.
@@ -24,7 +24,7 @@
 - **Survey loop:** a Light Vehicle flies to the nearest unscanned planet, **close-scans** it (resolving ownership, infrastructure if any, and mineral density), then finds **another unscanned planet** and repeats. The scan result must travel home before any production center can act on it (light-lag).
 - **Target selection is fog-limited by construction, and fog is per player.** The candidate list handed to `Autopilot::choose_survey_target` is `SurveyView { id, position, habitability, biosphere, industrial_signature }` — §1's remote tier plus the one inferential signal — so a target can only be chosen on what an empire's instruments justify. Knowledge is a single set on the player, not per craft: a world any of this empire's scouts has been dispatched to is excluded for all of them, and nothing models an individual ship's private ignorance.
 
-  The list is **not** filtered on ownership, which is a close-scan fact. It *is* filtered on the pop-4 industrial signature — but only once `Doctrine::survey_avoids_inhabited` is set, which is off by default (R-SIM3). So the early-game behavior is deliberately naive: scouts fly at the nearest unvisited world even when it is visibly ablaze with industry, and the wasted hop is part of what early expansion costs. Learning to read the sky is something an empire earns.
+  The list is **not** filtered on ownership, which is a close-scan fact. It *is* filtered on the pop-Band-IV industrial signature — but only once `Doctrine::survey_avoids_inhabited` is set, which is off by default (R-SIM3). So the early-game behavior is deliberately naive: scouts fly at the nearest unvisited world even when it is visibly ablaze with industry, and the wasted hop is part of what early expansion costs. Learning to read the sky is something an empire earns.
 
 - **The fan-out is the opening, not the whole survey.** The six bootstrap vehicles are free starting units; every later Light Vehicle is a **paid build from a production center** (§6), charged to that center's stockpile like any other order. Each survey chain ends after `max_survey_hops` worlds and the craft scraps at the nearest friendly colony (`Hyades_vehicle_roles.md` §4.1).
 
@@ -66,7 +66,7 @@ So expansion is **production-centers-first, colonies-next**, always by descendin
 ## 5. Mining-outpost exploitation (the supply chain)
 
 - A mining outpost is **not colonized**. Instead the **nearest production center produces a mining vehicle and a freighter**.
-- The **mining vehicle** extracts at the outpost; the **freighter** hauls the minerals back to the production center. This is the physical realization of the synthesis supply chain (world-model R-M5): basics flow from outposts to pop-4 forges.
+- The **mining vehicle** extracts at the outpost; the **freighter** hauls the minerals back to the production center. This is the physical realization of the synthesis supply chain (world-model R-M5): basics flow from outposts to pop-Band-IV forges.
 
 **R-AC9:** "nearest production center" computed under light-lag (true nearest vs. nearest-known). **R-AC10:** mining rate, freighter capacity/cadence, and whether a freighter round-trip is itself a scheduled light-lagged event.
 
@@ -80,15 +80,17 @@ Each production center runs a repeating cycle:
 2. **Build whatever the civ needs to exploit the highest-ranked unexploited planet** — a colony vehicle (colony / production-center target, §4) or a mining vehicle + freighter (mining outpost, §5).
 3. **Repeat.**
 
-The base step is **+20% productivity** per cycle (a doctrine parameter The Compass can retune): the share of effort ploughed back into productivity vs. spent reaching outward. Production centers that reach **pop-4** unlock capitals and synthesis (world-model §5.2) — but that is the Production/Technology frontier, beyond this doc.
+The base step is **+20% productivity** per cycle (a doctrine parameter The Compass can retune): the share of effort ploughed back into productivity vs. spent reaching outward. Production centers that reach **pop-Band-IV** unlock capitals and synthesis (world-model §5.2) — but that is the Production/Technology frontier, beyond this doc.
 
 ### 6a. Tier gates and the order of preference (as implemented)
 
 A center's development level decides which hull classes it may build at all —
-**2 unlocks limited, 3 unlocks medium, 4 unlocks all**. Both thresholds are
-config (`SimConfig::limited_min_level`, `medium_min_level`). The limited tier
-matters more than it looks: it is what lets a level-2 center contribute survey
-instead of sitting idle, and most centers spend most of the game at level 2.
+**Band II unlocks limited, Band III unlocks medium, Band IV unlocks all**
+(`Hyades_mineral_cost_curve.md` §2.6 for the general Band ladder). Both
+thresholds are config (`SimConfig::limited_min_level`, `medium_min_level`).
+The limited tier matters more than it looks: it is what lets a
+Band-II center contribute survey instead of sitting idle, and most centers
+spend most of the game at Band II.
 
 Within a cycle the preference order is:
 

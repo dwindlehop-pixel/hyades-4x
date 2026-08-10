@@ -56,7 +56,7 @@ Cards set **orders**; the theater **executes** them in real time. Each order fam
 | **Trade** | standing lanes, partners, commodity flow | flow each round once the lane is `standing` |
 | **Research** | which class/aspect the ramp redraws next | counter-graph shifts `over_time` (the slow bomb) |
 | **Combat/posture** | hold↔ready, formation, engagement rule | posture changes `standing`; effects on contact |
-| **Synthesis** | pop-4 conversion targets, wastage handling | output each round once a pop-4 forge exists |
+| **Synthesis** | pop-Band-IV conversion targets, wastage handling | output each round once a pop-Band-IV forge exists |
 | **Fortification** | per-hex hardening | builds up `over_time` |
 
 **R-C5:** the precedence algebra — when two orders touch the same state (e.g., two expansion biases, or a card vs. The Compass), how do they compose (override / sum / most-recent / weighted)? This is load-bearing for determinism.

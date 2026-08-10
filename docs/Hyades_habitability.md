@@ -84,6 +84,25 @@ shape that avoids an obviously wrong tail (negative gravity).
   — two-sided, so "high-g adaptation" and "low-g adaptation" can be separate
   cards too.
 
+**R-H7 (open, new):** `gravity` should not be read as a physical g-value the
+player reasons about directly — the brief only ever needed "in the range of
+human tolerance," never `9.8 m/s²` literalism. **Decision:** the `0–4`
+sub-score this dimension already reduces to (§3) is reframed as a
+**population-health statistic**, not a distance-from-1.0g score — something
+in the shape of a median lethal dose (LD50): each Band boundary is the g-level
+at which some concrete population-health outcome (elevated mortality,
+sustained fertility loss, cardiovascular collapse under prolonged exposure)
+crosses a threshold, rather than an arbitrary tolerance-window edge. The
+raw `gravity: f64` and log-normal generation are unchanged — this only
+reinterprets what the resulting Band *means*, so no code changes with it.
+Renaming `0–4` to **Band 0 – Band IV** here follows
+`Hyades_mineral_cost_curve.md` §2.6, and the same `[4, 8]` step-factor
+constraint applies to the Band I→II/II→III g-thresholds as to every other
+Banded quantity — a further, harder question this R-code does not resolve:
+what population-health statistic scales multiplicatively at all, since LD50
+values don't obviously compound the way mass/cost do. Magnitudes remain
+**R-H1** placeholders; only the reframing is decided here.
+
 ### 2.4 Radiation
 
 `radiation: f64`, abstract units, `0` = none, unbounded above. **Generation:**
@@ -96,12 +115,20 @@ stellar-astrophysics model.
   range (unlike gravity/HZ, more radiation is never *better*, so there's no
   symmetric "too little" failure mode worth modeling).
 
+**R-H8 (open, new):** radiation's `0–4` sub-score (§3) gets the same
+population-health reframing as gravity (R-H7) — its single upper threshold
+already reads naturally as a dosage limit, closer to LD50 in spirit than
+gravity's two-sided tolerance is. Renamed to **Band 0 – Band IV** per
+`Hyades_mineral_cost_curve.md` §2.6; magnitudes stay **R-H1** placeholders.
+
 ---
 
 ## 3. Aggregation — reusing Liebig's law, not inventing a new one
 
-Each continuous dimension maps to a `0–4` suitability sub-score (the same
-scale `habitability`/`biosphere`/`infrastructure` already use), via a smooth
+Each continuous dimension maps to a **Band 0 – Band IV** suitability
+sub-score (the same Band ladder `habitability`/`biosphere`/`infrastructure`
+already use — `Hyades_galaxy_and_autopilot.md` §5,
+`Hyades_mineral_cost_curve.md` §2.6), via a smooth
 falloff from the tolerance band — full marks inside a comfortable core,
 tapering toward `0` as the value exits the tolerated range. **R-H4:** I'd
 default to a smoothstep-style continuous taper (a planet just outside
@@ -223,7 +250,12 @@ signed-HZ-offset (hot/cold as separate axes) reading. **R-H4** smooth taper
 vs. hard cliff at the tolerance boundary. **R-H5** confirm biosphere stays
 a separate factor, not folded into this. **R-H6** confirm player-relative
 `K` (an owned colony's ceiling can grow as its owner's tolerances improve)
-is a wanted feature, not an oversight to close off.
+is a wanted feature, not an oversight to close off. **R-H7** reframe
+gravity's Band sub-score as a population-health (LD50-like) statistic
+rather than a raw g-distance score, and work out whether such a statistic
+can satisfy the shared `[4, 8]` Band step-factor constraint at all
+(§2.3, `Hyades_mineral_cost_curve.md` §2.6). **R-H8** the same reframing
+for radiation's Band sub-score (§2.4).
 
 **Out of scope here:** actual card text/costs for tolerance-widening or
 terraforming effects (Growth/Politics tree content, per `hyades_todo.md` T-29's

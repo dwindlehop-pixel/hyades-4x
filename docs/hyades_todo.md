@@ -19,6 +19,12 @@ important thing in the game. Read the band, then decide.
 | **D** | Direction only | the formulation |
 | **E** | Parking lot | the ability to state the problem |
 
+*(Unrelated to the "Band I–IV" magnitude-tier terminology in
+`Hyades_mineral_cost_curve.md` §2.6 — this is a lettered readiness scale for
+todo entries; that one is a numbered multiplicative-quantity ladder for
+game state. Same word, different concept, kept apart by alphabet on
+purpose.)*
+
 **Identifiers.** Every entry carries a permanent `T-nn`. **IDs are never reused
 and never renumbered** — a new entry takes the next free number wherever it
 lands in the order, and an entry that graduates into a spec is struck through
@@ -503,6 +509,17 @@ radius ladder is *derived* from the cost ladder, so that prediction is now a
 `medium_fleet_size = 3.31` against the shipped 9 and 3. Offline search question,
 answerable by `min_time_search`.
 
+**Sharper since the Band ladder (R-MC15, `Hyades_mineral_cost_curve.md`
+§2.6):** this is no longer only a two-way comparison. Reading Limited/Medium/
+General as `Band I`/`II`/`III`, the Band step factors must each land in
+`[4, 8]` — and **none of 1:3:9, the shipped 1:4.45:9, or this section's own
+1:3.31:16 target satisfies that for both steps at once** (§2.6's table).
+`limited_fleet_size = 16` clears the `Band I → II` step (`F₁ ≈ 4.83`) but its
+own `Band II → III` step (`F₂ = medium_fleet_size = 3.31`) falls just short
+of the floor — so hitting this target does not, by itself, close R-MC15. The
+search should optimize jointly against both the coverage objective and the
+`[4, 8]` constraint, not just the radius prediction.
+
 ### T-20. Raise coverage inside a fixed 4,000-year run
 
 **~49%** of colonizable worlds (3,348 of 6,725, seed 1) after two ratifications:
@@ -594,6 +611,21 @@ baseline autopilot passes every round by design (T-30), so enforcement would
 still halt expansion until some autopilot buys the unlock. That is now a
 policy question, not an architecture one.
 
+### T-46. Habitability's gravity/radiation Bands as population-health statistics — R-H7/R-H8
+
+`Hyades_habitability.md` §2.3–2.4 decides gravity and radiation should each
+reduce to a **Band 0–IV** population-health statistic (LD50-like — a
+mortality/fertility/cardiovascular threshold crossed at each Band edge)
+rather than a raw g-value or dosage number the player reasons about
+directly. The reframing is decided; what it needs is a design pass: (1)
+whether such a statistic actually compounds multiplicatively the way mass
+and cost do, which is what the shared `[4, 8]` Band step-factor constraint
+(`Hyades_mineral_cost_curve.md` §2.6) assumes of every Banded quantity —
+unlike population or hull size, there is no obvious physical reason a
+lethality curve should have that shape; (2) the actual threshold magnitudes
+(R-H1). Blocked on habitability.md's own implementation, which is itself
+still unlanded in code.
+
 ### T-37. Everything in netcode outside the crate
 
 Topology (§3), the 144-byte frame (§4), genesis assembly (§7), relay and
@@ -606,8 +638,8 @@ before it needs a design.
 
 ### T-26. R-SIM4 — departure-traffic confidence
 
-R-SIM3 settled that occupancy is inferable at range, and the pop-4 industrial
-signature is implemented exactly with no new state. The **graded** signal is
+R-SIM3 settled that occupancy is inferable at range, and the pop-Band-IV
+industrial signature is implemented exactly with no new state. The **graded** signal is
 not: repeated sightings of ships leaving a world should raise confidence it is
 held. That needs accumulated light-lagged observations per player per planet,
 which is precisely the storage the simulation model warns about at fleet scale.

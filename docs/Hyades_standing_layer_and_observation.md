@@ -802,7 +802,10 @@ acceleration at equal capability** than a basics-built one.
 **Technology therefore becomes legible through the kinetic channel by physics
 rather than by rule** — which is what the observation model wants, and a
 cleaner reading of the "3 CMY = 2 RGB = 1 Platinum" order-of-magnitude value
-heuristic than a conversion ratio.
+heuristic than a conversion ratio. *That heuristic is now unpacked into its
+separate literal (mass-conserving refining yield) and figurative (this
+section's value-equivalence) halves in `Hyades_mineral_cost_curve.md` §5 —
+this section is the mechanical grounding for the figurative half.*
 
 ### 9.6 Negative and imaginary mass (R-O62)
 
@@ -840,12 +843,24 @@ of a component's mass, not the total.
 **L1 — The co-extension law (R-O34).** *No **categorical** strategic
 classification may be co-extensive with a colour domain.* Archetypes are
 defined by colour pairs, so any categorical classification aligned with the
-colour partition locks out exactly the archetype poor in that colour. Known
-instance: **Latent is exactly the Cyan domain**, so Red-type (Cyan-poor) is
-locked out of a whole tempo group — R-O8 / R-G6, still open. The law binds
-*categorical* classifications only; continuous ones expressed as magnitude
-(such as the Doctrine/Design lean, §5) are exempt, which is why Warfare and
-Technology may both lean Design.
+colour partition locks out exactly the archetype poor in that colour. The
+law binds *categorical* classifications only; continuous ones expressed as
+magnitude (such as the Doctrine/Design lean, §5) are exempt, which is why
+Warfare and Technology may both lean Design.
+
+> **R-O8 / R-G6 — resolved, by a doc fix rather than new design.** The known
+> instance this law flagged — *"Latent is exactly the Cyan domain, so
+> Red-type is locked out of a whole tempo group"* — was true only because
+> `Hyades_mineral_cost_curve.md` §1.2 was carrying a stale, pre-swap domain
+> table. `Hyades_galaxy_and_autopilot.md` §4.8 (Rev 8) had already ratified
+> Politics↔Yellow (R-M8: "economic leverage... intended") without that change
+> reaching the cost-curve doc. Latent is `Growth(Cyan) + Politics(Yellow)` —
+> mixed, like the other two groups — so Red-type (Cyan-poor, Yellow-rich) is
+> **not** locked out of Latent: Growth stays expensive for it, Politics is
+> cheap. L1 was never violated by the design, only by a doc that hadn't
+> caught up with an already-ratified color assignment. See
+> `Hyades_mineral_cost_curve.md` §1.2's amendment block for the corrected
+> table and the R-MC6 double-stack recount this also changes.
 
 **L2 — The conservation rule (R-O33).** Per tree and per tier, both vectors
 must clear a floor; the lean is the ratio of the totals. Individual cards may
@@ -957,7 +972,7 @@ than a power spike.
 |---|---|
 | R-O3 | write the "intra-round ordering is immaterial" assumption into the contract |
 | R-O6 | is a pass observable? (decides weak vs. strict dominance of unspent actions) |
-| R-O8 | Latent is co-extensive with Cyan → Red-type's (2,2,0) profile. **The outstanding instance of L1** |
+| ~~R-O8~~ | ~~Latent is co-extensive with Cyan → Red-type's (2,2,0) profile.~~ **Resolved** — §10's L1 amendment block: the co-extension was a stale pre-swap domain table, not a true design fact |
 | R-O9 | N=2 seats only Blue and Red; Green never appears |
 | R-O11 | where the directed counter-cycle lives; write `f(r)` into contract §5 |
 | R-O12 | `FAIR_COUNTS` rejects 18 |
@@ -982,7 +997,7 @@ than a power spike.
 numbers — now the *sole* throttle on breadth), R-C1, R-C2, R-C5, R-C7,
 R-M8, R-MC1 (deeper tiers), R-MC3b (arena harness), R-MX1 (does exchange
 pressure surface diegetically — it is the mineral leak channel), R-CG28,
-R-G6 (merges with R-O8), R-A3 (merges with R-O27).
+~~R-G6 (merges with R-O8)~~ **resolved with R-O8**, R-A3 (merges with R-O27).
 
 ---
 

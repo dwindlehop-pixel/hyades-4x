@@ -722,13 +722,16 @@ pub struct SimConfig {
     pub max_survey_hops: usize,
 
     /// Minimum development level to build medium vehicles (colony/mining). Per
-    /// the production schedule this is **3** (2 = limited, 3 = medium, 4 = all).
+    /// the production schedule this is **3** (`Band III` — 2/`Band II` = limited,
+    /// 3/`Band III` = medium, 4/`Band IV` = all; `Hyades_mineral_cost_curve.md`
+    /// §2.6 names the general Band ladder these development levels instantiate).
     pub medium_min_level: u8,
     /// Minimum development level to build *limited* vehicles — the Scout/LCV
-    /// survey craft. The same production schedule that puts medium at 3 puts
-    /// limited at **2**; before this field existed the autopilot returned
-    /// `Idle` for everything below `medium_min_level`, so the limited tier was
-    /// unreachable and a level-2 center could do nothing but hoard minerals.
+    /// survey craft. The same production schedule that puts medium at
+    /// `Band III` puts limited at **2** (`Band II`); before this field existed
+    /// the autopilot returned `Idle` for everything below `medium_min_level`,
+    /// so the limited tier was unreachable and a `Band II` center could do
+    /// nothing but hoard minerals.
     pub limited_min_level: u8,
     /// Mineral cost of one General Systems Vehicle — "1 CMY mineral = 1 fleet"
     /// (`Hyades_vehicle_roles.md` §6, confirmed this conversation, revising
@@ -2134,7 +2137,7 @@ impl Simulation {
             // to the craft. Whether the autopilot should instead see realized
             // ownership everywhere (R-AC1's omniscient command view) is R-SIM3.
             let f = self.world.factors.get(e).unwrap();
-            // Inferential tier (R-SIM3): a pop-4 world radiates the waste heat of
+            // Inferential tier (R-SIM3): a pop-Band-IV world radiates the waste heat of
             // billions, which spectrometry reads across interstellar distance.
             // Reported unconditionally; `Doctrine::survey_avoids_inhabited`
             // decides whether the policy acts on it, and defaults to off.

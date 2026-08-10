@@ -3,7 +3,7 @@
 //! Three tiers:
 //! * **Tier 1 — basics: Cyan, Magenta, Yellow** — *mined* from the 3-D field.
 //! * **Tier 2 — supers: Red, Green, Blue** — *synthesized*, never mined, only at
-//!   pop-4, via fixed two-basic recipes (Blue←C+M, Red←M+Y, Green←Y+C).
+//!   pop-Band-IV, via fixed two-basic recipes (Blue←C+M, Red←M+Y, Green←Y+C).
 //! * **Apex** — synthesized from supers; metallic silver-white. *"Platinum"* is a
 //!   placeholder name (R-M1).
 //!
@@ -23,7 +23,7 @@ impl Basic {
     pub const ALL: [Basic; 3] = [Basic::Cyan, Basic::Magenta, Basic::Yellow];
 }
 
-/// Tier-2 super minerals (the RGB primaries). Synthesized at pop-4 only.
+/// Tier-2 super minerals (the RGB primaries). Synthesized at pop-Band-IV only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Super {
     Red,
@@ -64,7 +64,7 @@ pub enum Archetype {
 impl Archetype {
     pub const ALL: [Archetype; 3] = [Archetype::BlueType, Archetype::RedType, Archetype::GreenType];
 
-    /// The native super this archetype self-synthesizes at pop-4 (exactly one).
+    /// The native super this archetype self-synthesizes at pop-Band-IV (exactly one).
     pub fn native_super(self) -> Super {
         match self {
             Archetype::BlueType => Super::Blue,

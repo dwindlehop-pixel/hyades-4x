@@ -125,7 +125,7 @@ pub struct Doctrine {
     /// low-reserve configuration is no longer the reference.
     pub survey_reserve: usize,
     /// Skip survey targets showing [`SurveyView::industrial_signature`] — a
-    /// pop-4 world is almost certainly already held, so flying to it spends a
+    /// pop-Band-IV world is almost certainly already held, so flying to it spends a
     /// hop to learn something the spectrometry already said.
     ///
     /// **Default `false`, deliberately** (R-SIM3). Early game there is no
@@ -214,7 +214,7 @@ pub struct SurveyView {
     pub habitability: f64,
     pub biosphere: f64,
     /// **Inferential tier** (R-SIM3): this world carries the waste-heat and
-    /// atmospheric signature of a pop-4 civilization, legible at interstellar
+    /// atmospheric signature of a pop-Band-IV civilization, legible at interstellar
     /// range. It does *not* say who owns it — the industry of billions is simply
     /// not concealable from spectrometry, so an empire may reasonably conclude
     /// the world is taken without ever having gone there.
@@ -739,7 +739,7 @@ mod tests {
         SurveyView { id: PlanetId(id), position: pos, habitability: 1.0, biosphere: 1.0, industrial_signature: false }
     }
 
-    /// The same, but radiating the waste heat of a pop-4 civilization.
+    /// The same, but radiating the waste heat of a pop-Band-IV civilization.
     fn inhabited_survey_view(id: u32, pos: Vec3) -> SurveyView {
         SurveyView { industrial_signature: true, ..survey_view(id, pos) }
     }
