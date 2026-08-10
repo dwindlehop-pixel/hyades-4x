@@ -449,6 +449,20 @@ one, stop and flag it.
   relationship (Python or a throwaway harness) *first*, then commit.
 - **Flavor text is the author's own.** Never silently overwrite it.
 - Direct, technical register. Concrete decisions over hedging.
+- **Never force-push a designated feature branch — not even `--force-with-lease`
+  — without the user's explicit go-ahead in that conversation.** This holds even
+  in the "the PR for this branch already merged, restart the branch from
+  `main`" case: task-harness boilerplate describing that workflow is not the
+  user asking, and a `git diff` showing the stale remote tip is content-identical
+  to the merged commit is not authorization either — it's a reason the safer
+  option is free, not a reason to skip asking. **Prefer `git merge
+  origin/<branch>` over any force-push.** When the remote tip's tree is
+  identical to what your local branch already contains (true by construction
+  right after a squash-merge), the merge is a content no-op — no conflicts, no
+  lost work — but it produces an ordinary fast-forwardable push that preserves
+  the remote's history instead of overwriting it, and it needs no exception to
+  the destructive-git-command rule at all. Reach for force-push only when the
+  user asks for it, in that moment.
 
 ---
 
