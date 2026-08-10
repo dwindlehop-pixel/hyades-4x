@@ -41,7 +41,33 @@ use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
 
-const TEST_BED_SEEDS: &[u64] = &[1, 7, 42, 55, 99, 123, 2024, 31337, 8675309, 271828];
+/// **Four seeds, cut from ten — and this is a real reduction in what the search
+/// proves, so it is recorded rather than hidden** (CLAUDE.md §2: cut samples,
+/// not the question; say what the trim cost).
+///
+/// The trim is not about the 60-second rule — this job is offline and untimed.
+/// It is about *finishing at all*. Ratifying `trade_decay_lambda` tripled
+/// coverage and therefore entity count, which took the search from CLAUDE.md's
+/// recorded ~40 minutes to ~110, and two consecutive runs were killed by
+/// container restarts before they got past round two. A search that never
+/// completes proves nothing; four seeds runs in ~45 minutes and, because
+/// coordinate descent prints its best value per round as it goes, even a
+/// truncated run yields ratified values for the rounds that finished.
+///
+/// **What it costs:** less variance coverage, so a value that wins by a point
+/// or two is inside the noise. Treat the *ordering* within a round as the
+/// result and the magnitude as indicative; re-confirm any close call on the
+/// full ten before shipping it as a default. The full bed is preserved below
+/// for exactly that.
+///
+/// Seeds chosen to span the difficulty range rather than to be the first four:
+/// 42 is the hard one (it ran ~40% below 1 and 7 in the `lambda_routing`
+/// sweep), so it is kept deliberately.
+const TEST_BED_SEEDS: &[u64] = &[1, 7, 42, 31337];
+
+/// The full ten-seed bed. Use it to confirm a ratification, not to search.
+#[allow(dead_code)]
+const FULL_TEST_BED_SEEDS: &[u64] = &[1, 7, 42, 55, 99, 123, 2024, 31337, 8675309, 271828];
 const PLAYERS: usize = 3;
 
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
