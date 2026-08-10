@@ -90,9 +90,10 @@ This is not a dodge. It is the actual economics: what crosses interstellar
 distance in a trade is *the mineral*, and the mineral is conserved. The `$` is
 the accounting that decided which direction it went.
 
-**R-P1** — ratify that `$` sits outside the mass ledger, and that the state
-digest (net §8.1) therefore needs a `$`-ledger leaf of its own rather than
-folding into `players`.
+**R-P1 — ratified: `$` has zero mass.** It sits outside the mass ledger
+entirely, so design law #11 is untouched and a faucet is legal. The state digest
+(net §8.1) gains a `$`-ledger leaf of its own rather than folding into
+`players`, since a claim is not a property of a planet or a hull.
 
 ### 2.2 Why a numeraire at all, rather than barter
 
@@ -144,15 +145,76 @@ One mechanism, four jobs:
   transit share, so buying purely to deny costs real purchasing power. Denial
   should be available, not cheap.
 
-Faucet: `$_income = base · population · politics_multiplier(depth)`.
+**Faucet: production, not population (R-P3 — ratified against the earlier
+recommendation, and the author's reasoning is better than mine).**
+
+```
+$_income = base · production · politics_multiplier(depth)
+```
+
+I had recommended population on the grounds that production rewards the
+mobilized. The correction: **production is the sum of both halves of an
+economy** — population growth *and* infrastructure deepening both feed it,
+where population alone counts only one. An empire that has invested in infra
+rather than bodies is not poorer, and a pop-only faucet would say it was.
+
+It also removes the double-count I was worried about from the other side: the
+snowball compounds through *colonies*, and production is what those colonies
+actually do, so income tracks the thing being built rather than the headcount
+riding on it.
+
 **Politics depth buys purchasing power, not merely access** — that is what makes
 the tree's late nodes able to outbid a warring rival directly (§4.3).
 
-**R-P2** — ratify `λ`, the base income rate, and the Politics depth multiplier
-curve. All three are Monte-Carlo surfaces; none has a defensible value yet.
-**R-P3** — does `$` income scale with population (M3 component) or with
-*production*? Population double-counts the snowball; production rewards the
-mobilized. Recommend population, flagged.
+**R-P2 — the `λ` decay sink is ratified, conditionally.** The condition is
+that it must also be *the* solution to freighter routing, not merely compatible
+with it.
+
+That is a real claim about the engine, and a strong one. Today a laden freighter
+picks the highest-pressure owned center with **no distance term at all**
+(`most_needed_center`), so it will cross the galaxy for a marginally needier
+destination. If internal haulage is a trade you clear with yourself, the same
+discount should price it:
+
+```
+route to argmax over owned centers of   mineral_pressure(center) · exp(−λ · t_transit)
+```
+
+**`λ = 0` reduces exactly to `most_needed_center`**, which is both the shipped
+default and — pleasingly — the same oracle design law #5 already keeps for
+single-supply matching. One function now checks two independent degeneracies.
+
+**Measured, and the condition is met by a wide margin.**
+`examples/lambda_routing.rs`, 3 seats / 3 seeds / 4,000 yr:
+
+| λ | half-life | mean coverage |
+|---|---|---|
+| 0 (`most_needed_center`) | ∞ | 14.35% |
+| 0.002 | 347 yr | 27.71% |
+| 0.005 | 139 yr | 35.20% |
+| **0.010** | **69 yr** | **39.04%** |
+| 0.020 | 35 yr | 36.88% |
+| 0.050 | 14 yr | 36.74% |
+
+A genuine interior optimum and **2.7× the shipped baseline** — a larger effect
+than the entire five-parameter doctrine search produced. Ratified as
+`SimConfig::trade_decay_lambda = 0.01`.
+
+The scale is physically sensible rather than merely fitted: a laden hop of
+10–30 ly at 1 g takes 20–45 years, so a 69-year half-life discriminates exactly
+at the range real hauls happen. Below that the discount is too sharp and
+freighters stop serving genuinely needy distant centers; above it, need swamps
+distance again and the rule degenerates toward `most_needed_center`.
+
+**What this says about the design, beyond the number.** The Exchange discount
+was proposed as a `$` sink that happened to give the travel-time behaviour the
+brief asked for. It turns out to be the *correct routing rule for the existing
+economy*, independently of trade — which is the strongest kind of evidence for a
+mechanism: it pays for itself before the system it was designed for exists.
+
+Three seeds is thin for a ratified constant. The value is confirmed in direction
+and order of magnitude; the precise optimum wants the ten-seed bed (T-44). The
+base income rate and the Politics depth multiplier remain open MC surfaces.
 
 ---
 
@@ -367,10 +429,39 @@ Two properties make this the right shape:
   private, unpriced, unpoliceable transfer. If the same effect is a card any
   single player can buy, the private version is worth nothing.
 
-**R-P6** — does Disclose (other) publish to *everyone* or to a chosen recipient?
-Everyone is the anti-collusion choice, and it is also self-limiting: you cannot
-weaponize disclosure against one rival without arming the rest of the table.
-Recommend everyone.
+### 5.4 Who receives a disclosure (R-P6 — resolved: it depends on the card)
+
+Not one answer. The recipient rule **bifurcates with depth**, and the direction
+it bifurcates in is the interesting part:
+
+| | Recipient | Where it sits |
+|---|---|---|
+| **Tier 0** | **everyone** | the mouth card; no targeting, no choice to make |
+| **Deep / win-condition branch** | **everyone**, still | broadcast is the win path |
+| **Shallower branch** | **a chosen recipient** | targeted, and worth *less* |
+
+The counterintuitive part is which one is stronger, and it falls straight out of
+§0. **Targeted disclosure is closer to actual collusion** — you pick a
+confederate and hand them something nobody else gets — so it must be worth less,
+or the tree would be paying players to do the thing the design is trying to make
+worthless. **Broadcast is the thesis-aligned act**, so broadcast is where the
+win-object lives.
+
+It is also self-limiting in a way targeting is not: you cannot weaponize a
+broadcast against one rival without arming the whole table, which means a
+disclosure war escalates against its own initiator. Targeting has no such brake,
+which is the other reason to price it as the cash-out rather than the payoff.
+
+**This makes a player argument part of card selection**, not just card
+resolution: a targeted disclose is a different play from an untargeted one and
+must be chosen as such. The engine already carries this —
+`cards::Target::Player` and the `needs_subject` flag — but note the shape it
+implies once both indices exist: a *targeted disclose about a third party* takes
+**two** player arguments, a recipient and a subject. `Target` is currently a
+closed set with room for exactly one referent, and the wire protocol's
+`target_kind`/`target_ref` pair (net §4.2) is sized for one. **R-P15** — does
+the target set need a two-player variant, and does that push `target_ref` wider
+than R-NET4 currently assumes?
 
 ---
 
@@ -415,46 +506,125 @@ of the entire tree and it cannot be set analytically.
 
 ---
 
-## 7. Diplomatic fields on `Doctrine` — closing T-11 / R-O27
+## 7. Relationships — the thing another player *can* write
 
-R-O27 has been open with *no field list*, which was the whole of the blocker.
-This spec supplies one:
+### 7.1 The line: Doctrine is yours, your view of others is not
+
+The rule that makes §6 precise, and it is sharper than "cards are not opt-in":
+
+> **Your Doctrine cannot be written by another player. Your empire's view of
+> another player's empire absolutely can.**
+
+Doctrine is your policy — how hard you grow, how far you survey, how much you
+reinvest. Nobody else writes it. But *who you take that policy to be about* —
+whether this empire over here is a friend, a foe, a mercenary, a trade partner —
+is a separate piece of state, and it is exactly the surface a Politics card
+operates on.
+
+That split is what lets §6's "not opt-in" have teeth without letting an opponent
+pilot your empire. They cannot make you expand faster. They can make you treat
+them as a supplier, or make you treat a third party as a threat.
+
+### 7.2 Stance is granular, and it is per-ordered-pair
+
+**Not a binary flag.** A boolean `at_war` collapses every distinction the tree
+is about — a mercenary is not a friend, a trade partner is not an ally, a rival
+you still sell to is not a foe. The stance set is a small closed enum, and
+**every Doctrine must specify conduct for every stance**, not for "hostile vs
+not":
+
+| Stance | What it means operationally |
+|---|---|
+| `Unknown` | never contacted; no basis for conduct at all |
+| `Neutral` | contacted, no relationship — the default after first contact |
+| `TradePartner` | clears on the Exchange, low escrow, no denial bidding |
+| `Mercenary` | transactional; will deal, will also take a better offer |
+| `Client` / `Patron` | asymmetric: one side underwrites the other (§4.1) |
+| `Rival` | competes for the same worlds; still trades, at a premium |
+| `Foe` | no direct clearing (brokerage only, §4.3); interdiction legal |
+
+Stance is stored **per ordered pair** — `stance[me][them]` — and is *not*
+symmetric. You may see them as a trade partner while they see you as a mark.
+That asymmetry is not an edge case to be normalised away; it is the entire
+content of a successful deception, and it is what a disclosure attack (§5.3)
+collapses when it publishes the truth.
+
+### 7.3 Conduct is a table, not a branch
+
+The consequence for `Doctrine`: it carries a **conduct row per stance**, so
+every interaction resolves by lookup rather than by an `if hostile` branch.
 
 ```rust
-pub struct Diplomacy {
-    /// Per-mineral demand multiplier — the WTP term of §3.2. Doctrine that
-    /// demands a mineral raises the price this empire will pay for it.
-    pub demand: [f64; N_BASIC],
-    /// Fraction of income this empire will commit to the book per round.
-    pub trade_budget: f64,
-    /// Willingness to pay above derived WTP purely to deny (§4.1 Corner).
-    /// Zero for an empire that only buys what it uses.
-    pub denial_premium: f64,
-    /// Escrow demanded of counterparties, as a multiple of contract value.
-    /// The trusting/paranoid axis, and the thing reputation moves.
+pub struct Conduct {
+    /// Multiplier on willingness to pay when this counterparty is the seller.
+    pub trade_appetite: f64,
+    /// Escrow demanded of them, as a multiple of contract value (§3.3).
     pub escrow_ratio: f64,
-    /// Counterparties this empire refuses to clear with directly. Not a
-    /// "pact" — a filter. Brokerage (§4.3) routes around it.
-    pub excluded: Vec<PlayerId>,
-    /// Willingness to publish intelligence: own (a bid for a bloc) and
-    /// others' (an attack). Separate, because they are separate acts.
-    pub disclose_own: f64,
-    pub disclose_other: f64,
+    /// Willingness to pay above derived WTP purely to deny them (§4.1).
+    pub denial_premium: f64,
+    /// Will this empire clear with them directly at all, or only via a broker?
+    pub clears_directly: bool,
+    /// Willingness to publish intelligence *to* them, and *about* them.
+    pub disclose_to: f64,
+    pub disclose_about: f64,
+    /// Kinematic posture when their fleet is in the theater — feeds
+    /// `belief::decide_engagement`'s `Unobserved` policy (`src/belief.rs`).
+    pub engage: EngagePolicy,
+}
+
+pub struct Diplomacy {
+    /// Per-mineral demand multiplier — the WTP term of §3.2.
+    pub demand: [f64; N_BASIC],
+    /// Fraction of income committed to the book per round.
+    pub trade_budget: f64,
+    /// **One row per stance.** Not a list of exceptions.
+    pub conduct: [Conduct; N_STANCE],
 }
 ```
 
-Note what is deliberately **absent**: there is no `ally`, no `pact`, no
-`treaty`. A bilateral agreement object would be exactly the confederate §0 is
-trying to make unnecessary — and it would need a consent handshake, which is a
-second inbound channel across the presentation seam (design law #15). Every
-field above is a *unilateral policy*, and blocs are emergent: two empires with
-compatible `demand` vectors and low `escrow_ratio` toward each other trade
-heavily and look allied, without any object saying so.
+Three things this buys, beyond legibility:
 
-**R-P8** — is `excluded` a legitimate exception to design law #13 (no
-categorical classification co-extensive with a colour domain)? It is a list of
-players, not colours, so it should be fine; flagged because it is the first
-per-player categorical in the design.
+1. **`excluded` disappears, and R-P8 dissolves with it.** The earlier draft
+   carried a `Vec<PlayerId>` of counterparties to refuse, which was a per-player
+   categorical and had to be checked against design law #13. There is no list
+   now — refusal is `conduct[Foe].clears_directly == false`, a policy about a
+   *kind* of relationship rather than about named players.
+2. **It gives the belief layer its missing input.** `belief::decide_engagement`
+   takes an `Unobserved` policy for contacts never seen, and the honest default
+   was `PeerOf`. Stance supplies a better one: what you assume about a fleet you
+   cannot measure should depend on whose it is.
+3. **Imposing a stance is a real attack with a bounded blast radius.** Writing
+   `stance[victim][me] = TradePartner` changes how the victim's autopilot prices
+   and treats you, using *the victim's own* conduct table. You have not taken
+   their policy — you have moved yourself within it. That is precisely the
+   non-aggression effect §0 wants purchasable alone.
+
+### 7.4 The strongest form: writing a stance you are not party to
+
+`stance[me][them]` has two indices, and the Politics attack is available on
+both:
+
+- **`stance[victim][me]`** — make them see *you* differently. Imposed trade,
+  imposed truce, imposed dependence.
+- **`stance[victim][third_party]`** — make them see *someone else* differently.
+
+The second has no counterpart in a two-player negotiation, and it is the
+sharpest expression of §0 in the whole design. *"Get two other players to fight
+each other"* is among the highest-value things a real alliance buys, and it
+normally requires a confederate to arrange. Here it is a card, played alone, in
+the open, at a posted price — which is exactly the trade this spec exists to
+make.
+
+**R-P13** — which stances may be written, by which tier, and on which index.
+Recommend: the near index (`stance[victim][me]`) unlocks first and only toward
+*less* hostile — you can make yourself a trade partner, not make yourself
+trusted — and the far index (`stance[victim][third_party]`) is a deep node,
+since manufacturing a war between two other empires should cost most of a tree.
+
+**R-P14** — does an imposed stance decay? A permanent write is a permanent
+non-aggression pact for one card, which is too strong. Recommend decay on the
+same clock as reputation, so maintaining an imposed relationship costs actions
+rather than being bought once.
 
 ---
 
@@ -531,9 +701,12 @@ effect is not obviously bounded and could make early arming unplayable. Needs MC
 | **R-P3** | `$` income on population or on production? Recommend population | MC |
 | **R-P4** | ~~Reputation decay; public vs per-observer~~ **resolved**: public by default, a card switches the *buyer* to per-observer (§3.3). Decay rate still open | decay: MC |
 | **R-P5** | The event taxonomy admitting solicitation, and `window_years` | round layer |
-| **R-P6** | Does Disclose (other) publish to everyone? Recommend yes | — |
+| **R-P6** | ~~Does Disclose (other) publish to everyone?~~ **resolved**: depends on the card — tier 0 and the win-condition branch broadcast, the shallower branch targets and is worth less (§5.4) | — |
+| **R-P15** | A targeted disclose *about a third party* needs two player arguments. Does `Target` need a two-referent variant, and does it widen `target_ref` past what R-NET4 assumes? | R-NET4, R-C1 |
 | **R-P7** | The per-tree counter list with costs — the tree's whole balance surface | MC, R-P2 |
-| **R-P8** | Is `Diplomacy::excluded` an exception to design law #13? Believed fine | — |
+| **R-P8** | ~~Is `Diplomacy::excluded` an exception to design law #13?~~ **dissolved** — there is no `excluded` list. Refusal is `conduct[Foe].clears_directly`, a policy about a kind of relationship rather than about named players (§7.3) | — |
+| **R-P13** | Which stances may be written, by which tier, and on which index. Recommend near index first and only toward less hostile; far index (making two other empires enemies) a deep node | — |
+| **R-P14** | Does an imposed stance decay? Recommend yes, on the reputation clock — a permanent write is a permanent pact for one card | MC |
 | **R-P9** | Strength of both counter-graph effects; is the risk premium bounded? | MC |
 | **R-P10** | Does the Exchange clear once per round, or continuously on the event queue? Per-round is simpler and matches the barrier; continuous is truer to a discrete-event engine | round layer |
 

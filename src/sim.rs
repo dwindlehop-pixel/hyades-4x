@@ -790,6 +790,43 @@ pub struct SimConfig {
     /// the economy this knob was tuned against does not move.
     pub cargo_unit_size: f64,
 
+    /// **Transit discount rate `λ`, per year** — how fast the value of a
+    /// delivery decays with time in flight
+    /// (`Hyades_politics_trade_and_intelligence.md` §2.3).
+    ///
+    /// One constant with two jobs, which is the whole reason it is a single
+    /// number: on the Exchange it is the travel-time discount *and* the `$`
+    /// sink (the seller receives `E·exp(−λt)` and the remainder is burned); in
+    /// the engine today it is what makes freighter routing trade need against
+    /// distance instead of chasing the neediest center across the galaxy.
+    ///
+    /// **Ratified at `0.01` (half-life 69 yr) — R-P2's condition is met, and
+    /// by a wide margin.** `examples/lambda_routing.rs`, 3 seats, 3 seeds,
+    /// 4,000 yr:
+    ///
+    /// | λ | half-life | mean coverage |
+    /// |---|---|---|
+    /// | 0 (`most_needed_center`) | ∞ | 14.35% |
+    /// | 0.002 | 347 yr | 27.71% |
+    /// | 0.005 | 139 yr | 35.20% |
+    /// | **0.010** | **69 yr** | **39.04%** |
+    /// | 0.020 | 35 yr | 36.88% |
+    /// | 0.050 | 14 yr | 36.74% |
+    ///
+    /// A genuine interior optimum, not an endpoint, and **2.7× the shipped
+    /// baseline** — a larger effect than the entire five-parameter doctrine
+    /// search produced. The scale is physically sensible: a laden hop of
+    /// 10–30 ly at 1 g takes 20–45 yr, so a 69-year half-life discriminates
+    /// exactly at the range real hauls happen.
+    ///
+    /// `λ = 0` still reduces exactly to `most_needed_center`, which remains the
+    /// permanent oracle (design law #5) and is still tested as such.
+    ///
+    /// Three seeds is thin for a ratified constant; the value is confirmed in
+    /// *direction and order of magnitude*, and the precise optimum wants the
+    /// ten-seed bed (T-44).
+    pub trade_decay_lambda: f64,
+
     /// **Years before the first round barrier fires** (`Hyades_netcode.md` §1).
     ///
     /// The opening is deliberately card-free: seats bootstrap survey and
@@ -882,6 +919,7 @@ impl SimConfig {
             mining_tick_years: 50.0,
             density_floor: 0.01,
             cargo_unit_size: 5.0,
+            trade_decay_lambda: 0.01,
             years_to_first_round: 200.0,
             years_per_round: 400.0,
             scrap_recovery_fraction: 0.5,
@@ -1551,15 +1589,17 @@ impl Simulation {
                 self.park(vehicle, here);
                 return;
             }
-            // Route to whichever owned production center currently needs
-            // minerals most (`Simulation::most_needed_center`) — confirmed
-            // this conversation: "autopilot must haul minerals to where
-            // they are needed," not back to one hardcoded partner. Falls
-            // back to the outpost's own paired home center only if, somehow,
-            // this owner holds no production center at all (shouldn't
-            // happen; the homeworld always counts).
+            // Route to whichever owned production center offers the best
+            // *discounted* need — confirmed: "autopilot must haul minerals to
+            // where they are needed," not back to one hardcoded partner, and
+            // (R-P2) not across the galaxy to a marginally needier one either.
+            // At the shipped `trade_decay_lambda = 0` this is exactly
+            // `most_needed_center`. Falls back to the outpost's own paired home
+            // center only if this owner holds no production center at all
+            // (shouldn't happen; the homeworld always counts).
             let home = *self.world.home_center.get(vehicle).unwrap_or(&sh.outpost);
-            let dest = self.most_needed_center(PlayerId(p)).unwrap_or(home);
+            let here = self.position_at(sh.outpost, self.clock).unwrap();
+            let dest = self.best_delivery_center(PlayerId(p), here).unwrap_or(home);
             self.world.shuttle.get_mut(vehicle).unwrap().destination = dest;
 
             let from = self.position_at(sh.outpost, self.clock).unwrap();
@@ -2140,6 +2180,50 @@ impl Simulation {
                     .then(a.cmp(&b))
             },
         )
+    }
+
+    /// **Where a laden freighter should actually take its ore** — need,
+    /// discounted by how long it takes to get there.
+    ///
+    /// `score = mineral_pressure(center) · exp(−λ · t_transit)`
+    ///
+    /// This is the *same* `λ` the Exchange discounts a trade by
+    /// (`Hyades_politics_trade_and_intelligence.md` §2.3), and that is the
+    /// claim R-P2 conditions its ratification on: one constant should price a
+    /// delivery whether the counterparty is your own colony or a rival's.
+    /// Internal haulage is just a trade you clear with yourself, so if the
+    /// discount is right for one it should be right for the other.
+    ///
+    /// **`λ = 0` reduces exactly to [`most_needed_center`]**, which is the
+    /// shipped default and keeps this behaviour-neutral until it is ratified.
+    /// That degeneracy is also why design law #5 keeps `most_needed_center`
+    /// permanently: it was already the oracle for single-supply matching, and
+    /// it is now the oracle for zero-discount routing too — the same function
+    /// checking two different generalisations.
+    fn best_delivery_center(&self, owner: PlayerId, from: Vec3) -> Option<Entity> {
+        let lambda = self.config.trade_decay_lambda;
+        if lambda <= 0.0 {
+            return self.most_needed_center(owner);
+        }
+        let accel = self.config.civilian_accel_g * G;
+        let mut best: Option<(Entity, f64)> = None;
+        for e in self.planet_entity.iter().copied() {
+            if self.world.owner.get(e).copied() != Some(owner) {
+                continue;
+            }
+            let d = from.distance(*self.world.position.get(e).unwrap());
+            let t = math::ship_travel_years(d, accel);
+            let score = self.mineral_pressure_of(e) * (-lambda * t).exp();
+            // Entity id breaks ties so the choice is total and deterministic.
+            let better = match best {
+                None => true,
+                Some((be, bs)) => score > bs || (score == bs && e.0 < be.0),
+            };
+            if better {
+                best = Some((e, score));
+            }
+        }
+        best.map(|(e, _)| e)
     }
 
     /// The nearest planet owned by player `p` to `from` — used to send an

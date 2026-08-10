@@ -65,8 +65,8 @@ cargo run --release --example combat_arena       # kinematic interception harnes
 cargo run --release --example montecarlo         # balance sweeps
 ```
 
-Baseline as of the card/round layer: **117 unit + 4 smoke + 5 determinism tests
-pass**, ~46 s wall for `cargo test --all-targets`.
+Baseline as of the λ ratification: **119 unit + 4 smoke + 5 determinism tests
+pass**, ~48 s wall for `cargo test --all-targets`.
 The MC sweeps are slow in debug; always use `--release` for them.
 
 ### The 60-second rule for tests and CI
@@ -76,7 +76,7 @@ only exception and they are offline, never in CI. Current costs:
 
 | step | cost |
 |---|---|
-| `cargo test --all-targets` (unit + determinism + smoke) | ~46 s |
+| `cargo test --all-targets` (unit + determinism + smoke) | ~48 s |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
 | `coverage_trace` | ~19 s |
 | `coverage_time` | ~49 s |
@@ -544,9 +544,15 @@ changes how you *work*, not what is left to do:
   runs per hour, so speed lost to entity count is balance coverage not bought.
 
 - **Coverage is measured inside a fixed 4,000-year run — do not extend the horizon**
-  (T-20). Currently ~15.5% of colonizable worlds. 4,000 is the run length; the
-  coverage reached within it is the objective. Doubling the horizon doubles every
-  trial, and §2's 60-second rule already had to absorb the snowball once.
+  (T-20). **~41% of colonizable worlds** as of the `trade_decay_lambda`
+  ratification (2,792 / 6,725 on seed 1, up from 1,044). 4,000 is the run length;
+  the coverage reached within it is the objective. Doubling the horizon doubles
+  every trial, and §2's 60-second rule already had to absorb the snowball once.
+
+  The 2.7× came from **one constant**, and the lesson generalises: it was not a
+  doctrine parameter but a *missing term* — freighter routing had no distance
+  term at all, so a hauler would cross the galaxy for a marginally needier
+  center. Before sweeping the knobs harder, check whether a term is absent.
 
 ---
 

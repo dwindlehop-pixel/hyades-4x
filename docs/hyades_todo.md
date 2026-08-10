@@ -376,6 +376,18 @@ but the ratios are not.
 Claude's to write. The cost ratios are a separate, mechanical job and can land
 without them.
 
+### T-44. Confirm `trade_decay_lambda` on the ten-seed bed
+
+Ratified at **0.01** (half-life 69 yr) on 3 seeds — an interior optimum, 39.0%
+against 14.35% at λ=0. Direction and order of magnitude are not in doubt; the
+precise value is, because three seeds is thin for a shipped constant and the
+neighbouring points (0.005 → 35.2%, 0.02 → 36.9%) are close enough that seed
+noise could move the peak.
+
+Re-run `lambda_routing` over the ten-seed `TEST_BED_SEEDS` and refine between
+0.005 and 0.02. Cheap, offline, and it closes a ratification that currently
+rests on less evidence than the rest of the shipped defaults.
+
 ### T-16. R-O63 — the biosphere regrowth magnitude
 
 `SimConfig::biosphere_regen_rate` defaults to `0.10` of the remaining deficit
@@ -410,8 +422,10 @@ answerable by `min_time_search`.
 
 ### T-20. Raise coverage inside a fixed 4,000-year run
 
-Currently **15.5%** of colonizable worlds (1,044 of 6,725, seed 1) — down from
-17.6% when laden ships stopped flying for free (R-O57/R-O58). **4,000 years is
+**~41%** of colonizable worlds (2,792 of 6,725, seed 1) as of the
+`trade_decay_lambda = 0.01` ratification — up 2.7× from 1,044, and the single
+largest coverage move in the project so far. It came from a *missing term*
+rather than a mis-tuned one: freighter routing had no distance component at all. **4,000 years is
 the run length; the coverage reached within it is the objective.** Do not extend
 the horizon: doubling it doubles every trial and the 60-second rule already had
 to absorb the snowball once. T-07 and T-21 are the nearest levers.
