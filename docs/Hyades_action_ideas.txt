@@ -1,0 +1,69 @@
+Expand breadth first
+Expand depth first
+Expand in a direction
+Expand towards a resource
+Expand towards empty space
+Profit off some location
+Profit off some mineral
+Create some mineral in an area
+Reward the owner of an area in the future
+Create some mineral in areas where some other mineral/asset is held (like miners, or converters)
+Global reward based on location of some mineral/asset
+Convert an action to an upgrade
+Convert minerals to upgrades
+Make it extra super hard to dislodge a 4 pop hex
+Prisoner’s dilemma trade with betrayal
+Mandatory trade with ally
+Ally
+Deny movement this turn only
+Supplement an existing force
+Militarize some civilian craft
+Declare non-aggression
+Conditional surrender
+Blockade
+Maginot Line
+Cut retreat off
+Command ships by class
+Exchange improbable quantities at a loss
+Project force that can’t be projected (stargate)
+Unique experimental unit
+Project force really extra far
+Sabotage enemy ships
+Bribe enemy ships into retreating
+Sneak attack/ambush
+Counterintuitive tactics
+Convert enemy ships into friendly
+Hit and run
+Juke stats in one region for this turn
+Global extra movement
+Local extra movement
+Ignore hit results via chaff
+Force enemy retreat, or partial retreat
+Force battle between enemy forces
+Gate from one area to another
+Rebellion locally
+Counter some other action card locally, or for one turn, or globally (for cost)
+Retrofit existing ships
+Drive up the price of a resource on the global market
+Disrupt an existing alliance based on conditions
+Embed your civilization in another ship's fleet
+
+
+Combo card for warfare, intelligence, diplomacy...
+
+
+Link action to another player's / ally's action
+Diplomatic immunity for a fleet or hex
+
+
+Ignore that diplomatic immunity
+
+
+Local mutiny
+Mass mutiny
+Enact Mao-style strategy
+Skim off the top
+Benefit from ship deaths
+Benefit from hex transfer
+Benefit from evacuation
+Build a fleet or infrastructure that generates additional value every turn

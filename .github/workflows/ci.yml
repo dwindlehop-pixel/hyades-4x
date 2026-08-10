@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  # Branch pushes are covered by the pull_request trigger. Listening to both
+  # `push: ["**"]` and `pull_request` ran the whole matrix twice per PR commit
+  # — the concurrency group below cannot dedupe them, because github.ref is
+  # refs/heads/<branch> for one and refs/pull/<n>/merge for the other. Pushes
+  # to main stay, so post-merge breakage still surfaces.
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer commit supersedes an in-flight run and cancels it; the balance sweeps
+# are long enough that stacking them up is wasteful.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # Build + the whole test suite: 79 unit, 4 determinism, 4 smoke.
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version && cargo --version
+      - name: Build
+        run: cargo build --all-targets --verbose
+      - name: Test
+        run: cargo test --all-targets --verbose
+      # --all-targets skips doctests; the module docs carry the spec prose, so
+      # run them separately rather than letting them rot uncompiled.
+      - name: Doctests
+        run: cargo test --doc --verbose
+
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default stable
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # lib.rs states the portability contract: no clock, no filesystem, no network,
+  # no threads, no OS RNG — which is exactly what makes the engine wasm-targetable.
+  # Compiling for wasm32 is the only thing that actually holds that claim honest.
+  wasm:
+    name: wasm32 check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --no-self-update
+          rustup default stable
+      - name: cargo check (wasm32-unknown-unknown)
+        run: cargo check --lib --target wasm32-unknown-unknown --verbose
+
+  # The short drivers, run for real so a panic or a NaN-poisoned sweep fails CI.
+  examples:
+    name: examples (fast)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      - name: Build all examples
+        run: cargo build --release --examples --verbose
+      - name: Run
+        run: |
+          for ex in trace montecarlo combat_arena coverage_time; do
+            echo "::group::$ex"
+            cargo run --release --example "$ex"
+            echo "::endgroup::"
+          done
+
+  # The tuned sweeps. Minutes each, so they get their own job rather than
+  # holding up the fast feedback above.
+  balance:
+    name: balance sweeps (slow)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+      # tests/balance.rs pins the tuned laser-vs-missile outcome: the golden
+      # win table, the per-seed survivor counts, and the design properties
+      # MIGRATION.md states. #[ignore]d so a plain `cargo test` stays fast, and
+      # --nocapture keeps the human-readable sweep in the log — which is what
+      # the laser_vs_missile example used to be here for. It is not run
+      # separately any more; the test covers the same ground and asserts.
+      - name: Tuned balance (tests/balance.rs)
+        run: cargo test --release --test balance -- --ignored --nocapture
+      # Moved here from the fast job: at the ratified snowball defaults this runs
+      # ~28 full-colonization sims and takes minutes, not seconds.
+      - name: coverage_trace
+        run: cargo run --release --example coverage_trace
+      # min_time_search is deliberately NOT run here. It is an offline job: at the
+      # ratified snowball defaults each of its ~270 trials is a full-colonization
+      # sim (~9 s locally), so the search is ~40 min on this hardware and longer on
+      # a runner — it would spend most of an hour to time out at 60 min. Its cost
+      # grew precisely because the economy started working, which is the good
+      # outcome, not a regression to defend against here.
+      #
+      # Run it by hand when tuning:  cargo run --release --example min_time_search
+      #
+      # CI still covers this ground: coverage_trace above exercises the same
+      # engine paths across ~28 sims and fails on a panic, and tests/balance.rs
+      # asserts the combat side. What is missing is a *bounded* economy assertion
+      # — see R-AC17/R-SIM2 — which is a threshold decision, not a timeout to
+      # paper over.
