@@ -134,9 +134,17 @@ fn main() {
 
     // A doctrine biased hard toward expansion, since that's the lever most
     // directly aimed at minimizing time-to-coverage.
+    //
+    // **4.0, not the 6.0 this used to run.** Since R-O58 the cost ladder is also
+    // the *capacity* ladder — hull radius is `sqrt(cost / cost_Limited)` — so
+    // 6.0 against a `limited_fleet_size` of 9 leaves the Medium hull barely
+    // larger than the Limited one and a General hull holding ~700x its load.
+    // `SimConfig::hull_ladder_fault` refuses it, and rightly: the comparison
+    // this makes is "cheaper colonizers", not "break the contents ladder".
     let mut expand_cfg = SimConfig::new(0);
-    expand_cfg.medium_fleet_size = 6.0; // cheaper Colonizers than the 3.0 default
-    run_test_bed("Cheaper Colonizers (medium_fleet_size=6)", expand_cfg);
+    expand_cfg.medium_fleet_size = 4.0; // cheaper Colonizers than the 3.0 default
+    assert!(expand_cfg.hull_ladder_fault().is_none());
+    run_test_bed("Cheaper Colonizers (medium_fleet_size=4)", expand_cfg);
 
     println!(
         "\nReading: coverage is what fraction of the galaxy's K_potential>0 worlds\n\

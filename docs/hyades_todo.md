@@ -113,6 +113,20 @@ trip never moves. **A nonsense ladder that does not perturb the objective is the
 worst kind**, and it is why `SimConfig::hull_ladder_fault` is now a hard check
 that `Simulation::new` panics on rather than a comment.
 
+**The guard immediately found two more contaminated measurements**, both of
+which were in CI and passing:
+
+- `coverage_time`'s "cheaper colonizers" comparison ran `medium_fleet_size = 6.0`
+  (General hull ~700× a Medium's load). Now 4.0, and the comparison it exists to
+  make is unaffected: 1,216 / 1,331 against the baseline's 1,044 / 1,093.
+- `coverage_trace` swept `[3.0, 8.0, 12.0]` and reported this knob as "the one
+  that DID move it" — with two of its three points degenerate and 12.0 zeroing
+  every hull's capacity. Now `[2.5, 3.0, 4.0]`; the *direction* of that verdict
+  survives (106 → 117 → 129 colonies, monotone), the magnitude does not.
+
+Three contaminated measurements from one coupling is the argument for the guard
+being a panic rather than a lint.
+
 What remains: sweep `(medium_fleet_size, limited_fleet_size)` **jointly**, or
 better, sweep the *radius* ladder directly and derive cost from it — radius is
 the primitive under R-O58 and the cost ladder is the derived thing, so the

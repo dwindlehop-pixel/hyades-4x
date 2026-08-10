@@ -351,7 +351,19 @@ fn main() {
     // sum that runs well above 1, so deepening cannot win anywhere in [0, 0.5]
     // — the swept range sits entirely on one side of the switch. Push past it.
     isolate("reinvest_bias (past the range it swept)", &[0.9, 0.97, 1.0], |_, d, v| d.reinvest_bias = v);
-    isolate("medium_fleet_size (the one that DID move it)", &[3.0, 8.0, 12.0], |c, _, v| c.medium_fleet_size = v);
+    // **Range corrected, and the old verdict was partly an artifact.** This
+    // used to sweep [3.0, 8.0, 12.0] and report medium_fleet_size as "the one
+    // that DID move it". Since R-O58 the cost ladder is also the capacity
+    // ladder (radius is `sqrt(cost / cost_Limited)`, capacity is `(r-1)^3`
+    // normalised to the Medium hull), so 8.0 gives a General hull ~36,000x a
+    // Medium's load and 12.0 inverts the ladder and zeroes *every* hull's
+    // capacity. Much of the movement was the normaliser collapsing, not the
+    // economy responding. `SimConfig::hull_ladder_fault` now refuses both.
+    //
+    // It still moves coverage inside the valid range — that part of the old
+    // verdict survives — but the magnitude does not, and it cannot be swept
+    // alone at all (T-43).
+    isolate("medium_fleet_size (moves it, but see T-43)", &[2.5, 3.0, 4.0], |c, _, v| c.medium_fleet_size = v);
 
     println!("\n\n=== Part 2: where the run actually spends its decisions (baseline) ===");
     let o = run(SEED, SimConfig::new(SEED), Doctrine::default());
