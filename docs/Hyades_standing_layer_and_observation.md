@@ -715,6 +715,19 @@ be checked against the sweep-tuned values before this is treated as settled.
 > introduced and none is retuned; two are deleted** (`dry_mass`,
 > `cargo_mass_per_unit`).
 >
+> **A trap the coupling sets, found the hard way.** Because radius is derived
+> from cost, `medium_fleet_size` is no longer only a price — it also sets the
+> capacity ladder. An offline sweep of that one parameter reported 8.0 as
+> optimal and read the collapse at 12.0 as an economic cliff; in fact at 8.0
+> against `limited_fleet_size = 9` a General hull holds ~36,000× a Medium's
+> load, and at 12.0 the Medium hull is *smaller* than the Limited one, so the
+> normaliser is zero and **every hull carries nothing**. It stayed invisible
+> because the freighter is an MSV and the Medium hull *is* the normalisation
+> unit, so the haul per trip never moved. `SimConfig::hull_ladder_fault` now
+> refuses such a configuration outright. **The cost ladder must be swept
+> jointly, or the radius ladder swept directly with cost derived from it**
+> (`hyades_todo.md` T-43).
+>
 > *The radius prediction.* At the shipped 1 : 3 : 9 cost ladder the implied
 > radii are **1 : √3 : 3 = 1 : 1.73 : 3**, not 1 : 2.2 : 4. But the cost ladder
 > is the MC-tunable placeholder (design law #6 — 1:3:9 is scaffolding, not a

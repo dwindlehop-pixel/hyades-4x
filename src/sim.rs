@@ -410,6 +410,13 @@ impl HullType {
     /// survives, and is asserted in the tests, is its ordinal content: Limited
     /// carries nothing, and each larger hull carries strictly more. The
     /// magnitudes are now geometry (R-O64).
+    /// **Degenerate when `medium_fleet_size` approaches `limited_fleet_size`.**
+    /// The reference hull's usable interior is `(r_M − 1)³` and `r_M` is derived
+    /// from the cost ratio, so as the two fleet sizes converge `r_M → 1`, the
+    /// normaliser goes to zero and the General:Medium capacity ratio diverges.
+    /// Past the crossing every hull's capacity is zero and the economy has no
+    /// haulage at all. See [`SimConfig::hull_ladder_fault`], which is what
+    /// callers should check — this returns 0 rather than dividing by zero.
     fn cargo_capacity(self, cfg: &SimConfig) -> f64 {
         let usable = |h: HullType| (h.hull_radius(cfg) - 1.0).max(0.0).powi(3);
         let reference = usable(HullType::MediumSystems);
@@ -456,6 +463,13 @@ pub fn role_hull_type(role: Role) -> HullType {
         Role::Reserve | Role::Scrapped => HullType::LimitedSystems, // inert; value unused
     }
 }
+
+/// Smallest Medium-hull radius (in shell-thickness units) the capacity ladder
+/// stays sane at. At `r_M = 1.25` a General hull holds ~250× a Medium's load,
+/// which is already extreme; below that it runs away fast. Chosen as a
+/// guard-rail, not a tuned value — the real fix is to sweep the two fleet sizes
+/// jointly rather than to find the exact edge of this cliff.
+const MIN_MEDIUM_RADIUS: f64 = 1.25;
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
 /// hull's price and its empty mass are one number in one unit (kilotons); there
@@ -799,6 +813,50 @@ pub struct SimConfig {
 }
 
 impl SimConfig {
+    /// **Is the derived hull ladder usable?** `None` if fine, `Some(reason)` if
+    /// the configuration produces a degenerate one.
+    ///
+    /// Since R-O58 the cost ladder and the *capacity* ladder are the same
+    /// object: radius is `sqrt(cost / cost_Limited)` and capacity is
+    /// `(r − 1)³` normalised to the Medium hull. So `medium_fleet_size` is no
+    /// longer only a price — it sets how much bigger a Medium hull is than a
+    /// Limited one, and therefore the entire contents ladder.
+    ///
+    /// Two failures, and the second is silent and catastrophic:
+    ///
+    /// - **`medium_fleet_size ≥ limited_fleet_size`** — the Medium hull is no
+    ///   larger than the Limited one, `r_M ≤ 1`, the normaliser is zero and
+    ///   **every hull ends up with zero cargo capacity.** Nothing hauls
+    ///   anything; the run looks like an economy and is not one.
+    /// - **`r_M` close to 1** — the ladder does not break but it does explode:
+    ///   at `medium_fleet_size = 8` against `limited_fleet_size = 9`, a General
+    ///   hull holds ~36,000× a Medium's load. Nothing in the shipped autopilot
+    ///   builds a General freighter, so this stays *invisible* in a coverage
+    ///   number while being nonsense.
+    ///
+    /// That invisibility is the reason this is a hard check rather than a
+    /// comment: a sweep over `medium_fleet_size` alone will happily walk into
+    /// it and report a plausible-looking optimum.
+    pub fn hull_ladder_fault(&self) -> Option<&'static str> {
+        let r_m = HullType::MediumSystems.hull_radius(self);
+        if !r_m.is_finite() {
+            return Some("hull radius is not finite — check the fleet-size ratios");
+        }
+        if r_m <= 1.0 {
+            return Some(
+                "medium_fleet_size >= limited_fleet_size: the Medium hull is no larger than the \
+                 Limited one, so every hull has zero cargo capacity (R-O58)",
+            );
+        }
+        if r_m < MIN_MEDIUM_RADIUS {
+            return Some(
+                "medium_fleet_size is too close to limited_fleet_size: the derived capacity \
+                 ladder explodes (R-O58). Move the two apart or sweep them jointly",
+            );
+        }
+        None
+    }
+
     pub fn new(seed: u64) -> Self {
         SimConfig {
             horizon_years: 4000.0,
@@ -901,6 +959,14 @@ pub struct Simulation {
 impl Simulation {
     /// Build a simulation, ingesting a generated [`Galaxy`] into the ECS world.
     pub fn new(galaxy: Galaxy, config: SimConfig, autopilots: Vec<Box<dyn Autopilot>>) -> Self {
+        // Refuse a degenerate hull ladder rather than simulating one. A config
+        // where nothing can carry cargo still *runs* — it produces numbers, and
+        // they look like an economy's — which is exactly why this must be loud.
+        // Design law #14's rule against benchmarking a broken configuration
+        // only helps if the broken configuration is recognisable.
+        if let Some(why) = config.hull_ladder_fault() {
+            panic!("degenerate hull ladder: {why}");
+        }
         let n = galaxy.homeworlds.len();
         assert_eq!(autopilots.len(), n, "need one autopilot per seat");
 
@@ -2282,6 +2348,49 @@ mod tests {
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = 600.0;
         cfg
+    }
+
+    #[test]
+    fn a_degenerate_hull_ladder_is_refused_not_simulated() {
+        // R-O58 coupled the cost ladder to the capacity ladder, so
+        // `medium_fleet_size` is no longer just a price. Past
+        // `limited_fleet_size` the Medium hull is smaller than the Limited one,
+        // the capacity normaliser is zero, and **every hull carries nothing** —
+        // a config that still runs and still emits plausible numbers.
+        //
+        // The offline search walked into exactly this: sweeping
+        // `medium_fleet_size` over [3, 4, 6, 8, 12] reported 8.0 as optimal
+        // (25.1% vs 15.2%) and read 12.0's collapse to 0.3% as an economic
+        // cliff. It was the normaliser going to zero.
+        let mut cfg = SimConfig::new(1);
+
+        cfg.medium_fleet_size = 3.0;
+        assert!(cfg.hull_ladder_fault().is_none(), "the shipped ladder must be valid");
+
+        // Equal — Medium is the same size as Limited, so nothing hauls.
+        cfg.medium_fleet_size = 9.0;
+        assert!(cfg.hull_ladder_fault().is_some());
+        assert_eq!(HullType::GeneralSystems.cargo_capacity(&cfg), 0.0, "the silent failure this guards");
+
+        // Inverted — Medium is *cheaper* than Limited, so it is smaller.
+        cfg.medium_fleet_size = 12.0;
+        assert!(cfg.hull_ladder_fault().is_some());
+
+        // Merely close: no divide-by-zero, but the ladder is nonsense and the
+        // guard must still fire rather than waiting for the hard failure.
+        cfg.medium_fleet_size = 8.0;
+        assert!(cfg.hull_ladder_fault().is_some(), "8.0 vs 9.0 gives General ~36,000x Medium");
+        let ratio = HullType::GeneralSystems.cargo_capacity(&cfg) / HullType::MediumSystems.cargo_capacity(&cfg);
+        assert!(ratio > 10_000.0, "ratio {ratio}");
+    }
+
+    #[test]
+    #[should_panic(expected = "degenerate hull ladder")]
+    fn constructing_a_sim_on_a_degenerate_ladder_panics() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let mut cfg = test_cfg(1);
+        cfg.medium_fleet_size = 12.0;
+        let _ = Simulation::with_baseline(galaxy, cfg);
     }
 
     #[test]

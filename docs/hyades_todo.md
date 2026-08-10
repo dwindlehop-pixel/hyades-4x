@@ -83,10 +83,41 @@ tree. Standing-layer roadmap item 6.
 
 ### T-07. Recalibrate `centrality_scale`
 
-Still tuned to an old ~25 ly galaxy extent; the galaxy is now hundreds of ly, so
-the centrality term is effectively saturated. `k_high` was the other half of
-this pair and is resolved at 3.2 (R-AC17); this one is not. One of the two
-nearest levers on T-19.
+Was believed saturated — "tuned to an old ~25 ly extent, the galaxy is now
+hundreds of ly." **The measurement says otherwise, and in the opposite
+direction.** A partial sweep (before it was aborted for T-43's reason) read
+25 → 36.1%, 75 → 37.4%, against the shipped 150 giving 35.3% at the same
+configuration. So the term is *not* dead, it is an active lever, and the
+optimum is **below** the shipped value rather than above it. Finish the sweep
+and ratify; the premise recorded here was backwards.
+
+### T-43. The cost ladder can no longer be swept one leg at a time
+
+**A search-harness correctness bug, found by the search reporting a result that
+was an artifact.** Since R-O58 the cost ladder *is* the capacity ladder: hull
+radius is `sqrt(cost / cost_Limited)` and capacity is `(r − 1)³` normalised to
+the Medium hull. So `medium_fleet_size` is not a price — it also sets how much
+bigger a Medium hull is than a Limited one, and therefore the whole contents
+ladder.
+
+Sweeping it alone over `[3, 4, 6, 8, 12]` reported **8.0 as optimal (25.1% vs
+15.2% at the default)** and read 12.0's collapse to 0.3% as an economic cliff.
+Neither reading survives: at 8.0 against `limited_fleet_size = 9` a General hull
+holds **~36,000×** a Medium's load, and at 12.0 the Medium hull is *smaller*
+than the Limited one, the normaliser is zero and **every hull carries nothing.**
+The "cliff" was the normaliser, not the economy.
+
+It stayed invisible because the freighter is an MSV and the Medium hull is the
+normalisation unit, so `cap_M` is pinned at `cargo_unit_size` and the haul per
+trip never moves. **A nonsense ladder that does not perturb the objective is the
+worst kind**, and it is why `SimConfig::hull_ladder_fault` is now a hard check
+that `Simulation::new` panics on rather than a comment.
+
+What remains: sweep `(medium_fleet_size, limited_fleet_size)` **jointly**, or
+better, sweep the *radius* ladder directly and derive cost from it — radius is
+the primitive under R-O58 and the cost ladder is the derived thing, so the
+search is currently optimising the wrong parameterisation. Pairs with T-19,
+which asks the same question from the other end.
 
 ---
 

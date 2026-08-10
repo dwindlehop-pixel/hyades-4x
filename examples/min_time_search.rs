@@ -194,10 +194,28 @@ fn main() {
         baseline.1 * 100.0
     );
 
-    // Round 1: cheaper colonizers — same lever fleet_size_tuning.rs explored,
-    // now on top of an economy where mining outposts can actually relieve a
-    // starved colony instead of every colony being permanently stranded.
-    sweep_config("medium_fleet_size", &mut cfg, doctrine, &[3.0, 4.0, 6.0, 8.0, 12.0], |c, v| c.medium_fleet_size = v);
+    // Round 1: cheaper colonizers.
+    //
+    // **The range is bounded above by the shell model, not by taste.** Since
+    // R-O58 the cost ladder *is* the capacity ladder — hull radius is
+    // `sqrt(cost / cost_Limited)` and capacity is `(r − 1)³` normalised to the
+    // Medium hull — so raising `medium_fleet_size` toward `limited_fleet_size`
+    // shrinks the Medium hull toward the Limited one and makes the General
+    // hull's relative hold diverge. At 8.0 against a `limited_fleet_size` of 9
+    // a General hull holds ~36,000× a Medium's; at 12.0 the ladder inverts and
+    // **every hull's capacity is zero.**
+    //
+    // The earlier `[3, 4, 6, 8, 12]` sweep walked straight into that and
+    // reported 8.0 as the optimum at 25.1% (against 15.2% at the default),
+    // with 12.0 "collapsing" to 0.3%. The collapse was not an economic finding
+    // — it was the normaliser going to zero. `Simulation::new` now refuses such
+    // a config outright; the sweep stays on the side of it where the derived
+    // ladder still means something.
+    //
+    // **This axis cannot be swept alone any more.** The honest version is a
+    // joint sweep of (`medium_fleet_size`, `limited_fleet_size`), or a sweep of
+    // the radius ladder with cost derived from it. Recorded as T-43.
+    sweep_config("medium_fleet_size", &mut cfg, doctrine, &[2.0, 2.5, 3.0, 4.0, 5.0], |c, v| c.medium_fleet_size = v);
 
     // Round 2: how much cargo one freighter haul actually moves — directly
     // gates how fast hauling can relieve a starved center's pressure.
