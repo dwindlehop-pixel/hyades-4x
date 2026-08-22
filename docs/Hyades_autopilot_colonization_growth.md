@@ -1,5 +1,5 @@
 # Hyades — Autopilot: Colonization & Growth
-*The autopilot behavior the simulation runs for the **Far Shore** (Expansion) and **The Greening** (Growth) verbs — detailed to the level needed to author those trees' cards and to run the event-scheduled simulation. Production and design (military hulls, the counter-graph) are deliberately **out of scope** here and come next. Companion to `Hyades_simulation_model.md` (sim §), `Hyades_galaxy_and_autopilot.md` (world model), and `Hyades_card_contract.md` (card law). Calls flagged **R-ACn**. **Rev 3:** cards target hexes (player), the autopilot targets planets (execution), a hex resolves onto its contained planets (§1). **Rev 2:** the simulation is **fully decoupled** from the command layer — continuous 3D, each **star system is one point** ('a planet'), **no hexes in the sim**; six cube-face survey directions stand; base productivity step is **20%**. (R-AC1/AC2 resolved; AC3 deferred to the Monte-Carlo phase; AC11 set.)*
+*The autopilot behavior the simulation runs for the **Far Shore** (Expansion) and **The Greening** (Growth) verbs — detailed to the level needed to author those trees' cards and to run the event-scheduled simulation. Production and design (military hulls, the counter-graph) are deliberately **out of scope** here and come next. Companion to `Hyades_simulation_model.md` (sim §), `Hyades_galaxy_and_autopilot.md` (world model), and `Hyades_card_contract.md` (card law). Calls flagged **R-ACn**. **Rev 3:** cards target hexes (player), the autopilot targets planets (execution), a hex resolves onto its contained planets (§1). **Rev 2:** the simulation is **fully decoupled** from the command layer — continuous 3D, each **star system is one point** ('a planet'), **no hexes in the sim**; six cube-face survey directions stand; base productivity step is **20%**. (R-AC1/AC2/AC3 resolved; AC11 set.)*
 
 ---
 
@@ -30,7 +30,92 @@
 
   This is the mechanism that had to exist for expansion to compound, and it was missing. With no replenishment, total exploration is the **fixed product** `players × survey_vehicles × max_survey_hops` — nothing an economy knob can move. Under the pre-ratification settings that product was `3 × 6 × 40 = 720`, and a seed-1 run spent it exactly: 655 distinct worlds of 6,725 (the shortfall being worlds two empires both visited), last scan at t≈2,187 of a 4,000-year horizon. Exploration stopped because the budget was gone, not because time or targets ran out. With paid replenishment and `max_survey_hops = 120`, survey instead scales with the number of production centers, which is what lets the map keep up with the colonies.
 
-**R-AC3 (deferred):** whether the six vehicles own fixed sectors or pool on global nearest-unscanned — revisit once the Monte-Carlo system exists and prioritization can be measured. **R-AC4:** scan dwell-time and any close-scan range. **R-AC16 (resolved):** `Doctrine::survey_reserve`, the frontier size a center tries to keep ahead of itself before spending an otherwise-idle cycle on a scout. **1024**, ratified with the snowball defaults — survey has to scale with the empire or expansion outruns its own map. The knob is deliberately monotone (see §6a) so the offline search can refine it without risk of the collapse an earlier pre-emptive version produced.
+**R-AC3 (resolved — driven by experimental data, not by reasoning about it).**
+Named as three candidates on `Doctrine::survey_strategy`
+([`SurveyStrategy`], `src/autopilot.rs`) — `GlobalPool` (no heading bias,
+ever), `OpeningSectors` (the six bootstrap craft keep a soft cube-face
+preference for their whole hop chain; every later, paid Scout pools
+globally — **this is the shipped behavior**, unchanged by adding the knob),
+and `PersistentSectors` (later Scouts also inherit a heading, outward from
+home through the center that built them). Measured against **years to 10%
+colonized** on a 4-seed common-random-numbers bed, 3 seats
+(`examples/survey_strategy_search.rs`): all three land within 2 standard
+errors of each other (2765–2865 yr mean) — **no significant difference.**
+
+**Why, diagnosed rather than assumed** (`examples/colonization_ramp_trace.rs`,
+"diagnose first, sweep second," CLAUDE.md §2): a homeworld crosses the
+medium-hull gate almost immediately (t≈200 yr, seed 1), and known candidates
+already vastly outnumber what the treasury can afford that cycle (98
+candidates by t=200, 151 by t=400, against a colonizer costing ~0.22 minerals
+out of a ~1.5-mineral stockpile). Survey has never been the binding
+constraint at any point in the run measured — the ramp to 10% (which itself
+takes ~2,800 of 4,000 years, seed 1: 3→7→14→...→720 colonies) is a genuine
+compounding curve gated by **production capacity** (mineral income and how
+many centers can spend it in parallel), not by target discovery. A
+survey-targeting knob has no lever to pull in a regime where the map is
+never the scarce resource.
+
+**Decision: ship `OpeningSectors` (no change from the pre-existing behavior).**
+None of the alternatives measured better, and `OpeningSectors` is what every
+existing coverage number in this tree was already measured against — nothing
+to gain by switching, so nothing switches.
+
+**Opened by this investigation, not resolved by it — see R-AC18 below:**
+retargeting the search at *this* objective (rather than the tree's usual
+coverage-at-4,000-yr) surfaced that the levers on early speed are not the
+ones survey touches — `RankWeights::k_high` (R-AC5) and `medium_fleet_size`
+in particular — and that at least one of them (`medium_fleet_size`) already
+sits at a value **ratified for the opposite effect** on the coverage
+objective.
+
+**R-AC4:** scan dwell-time and any close-scan range. **R-AC16 (resolved):** `Doctrine::survey_reserve`, the frontier size a center tries to keep ahead of itself before spending an otherwise-idle cycle on a scout. **1024**, ratified with the snowball defaults — survey has to scale with the empire or expansion outruns its own map. The knob is deliberately monotone (see §6a) so the offline search can refine it without risk of the collapse an earlier pre-emptive version produced.
+
+**R-AC18 (open, new):** *time-to-10%-colonized* and *coverage-at-4,000-yr*
+are genuinely different objectives, and at least one shipped, MC-ratified
+knob trades off between them. A gradient probe retargeted at years-to-10%
+(`examples/time_to_10pct_probe.rs`, same CRN/paired-difference/elasticity
+methodology as `gradient_probe.rs`, 4 seeds, 3 seats) found, ranked by
+`|elasticity|`:
+
+| Knob | Elasticity (yr/ln) | Verdict for *this* objective | Status against the coverage objective |
+|---|---|---|---|
+| `rank.k_high` | +1128.8 ± 549.0 | lower it — borderline (2.06 SE) | ratified at 3.2 (R-AC17) — raising it *fixed* coverage by unlocking the Mining-outpost class |
+| `growth_rate` | −641.4 ± 122.2 | raise it — clear | already MC-ratified at 0.546 for coverage, **same direction** — a consistency check, not a conflict |
+| `outpost_mining_fraction` | −238.3 ± 69.3 | raise it — clear | MC-ratified at 0.238 for coverage; direction untested there but plausibly compatible |
+| `center_mining_fraction` | −192.7 ± 144.5 | ~noise — needs a bigger bed | shipped at 0.15, untested for coverage |
+| `medium_fleet_size` | +161.5 ± 41.7 | **lower it — clear** | **ratified at 4.45 *because* raising it was coverage's single largest lever (+32.7 pts/ln, `gradient_step`) — the two objectives disagree on sign** |
+
+`medium_fleet_size` is the load-bearing case: cheaper Medium hulls (higher
+`medium_fleet_size`) mean *more* colonizers per unit of mineral spend, which
+is what drives the coverage win — but a cheaper Medium hull is also a
+*smaller* one (shell model, `Hyades_mineral_cost_curve.md` §2.3), while the
+pop-seed cargo a Colonizer must carry to found a colony
+(`colony_seed_pop = 1.0`) is a fixed absolute mass. Shrinking the hull's own
+dry mass while its required cargo stays fixed raises the laden-to-dry mass
+ratio, which lowers laden acceleration (`a = thrust/(dry_mass+cargo_mass)`,
+`Hyades_loadout.md` §3.1) — so each colonizer is slower to reach its target
+even though more of them get built. Plausible mechanism, not yet directly
+traced; the sign and magnitude are measured, the causal story is inference
+from the existing mass/acceleration formulas rather than a dedicated
+confirmatory run.
+
+**Not resolved here, on purpose:** `medium_fleet_size` and `rank.k_high` are
+both globally MC-tuned (`CLAUDE.md` §6 — "never silently change globally
+Monte-Carlo-tuned parameters"), ratified against the coverage-at-horizon
+objective specifically. Whether the shipped defaults should move at all
+depends on a **product decision this spec doesn't get to make alone**: how
+much early-game speed is worth trading against late-game coverage, which is
+a question about what the 30–45-minute match is supposed to feel like, not
+a number a gradient can supply. Candidates, not a recommendation: (a) leave
+shipped defaults exactly as they are — they were never *tuned against*
+early speed, so this isn't a regression, just an uncharted trade; (b) define
+an explicit blended objective (e.g. `α·coverage_at_horizon − β·time_to_10pct`)
+and re-run the gradient-step methodology against it; (c) treat "time to
+first elimination" (cmd §"R-5 · The full clock math," ~10–20 min of a
+30–45-minute game) as the real early-game deadline and check whether either
+objective actually predicts *that* better. `center_mining_fraction`'s noisy
+result also wants the ten-seed bed (`hyades_todo.md` T-44's precedent)
+before it's trusted either way.
 
 ---
 
@@ -151,8 +236,9 @@ With this autopilot defined, the two trees' cards become authorable as **orders 
 ---
 
 ## 10. Ratification points
-- **R-AC1 resolved** (omniscient over realized state; orders excepted) · **R-AC2 resolved** (sim is point/continuous, no hexes) · **R-AC3 deferred** to Monte-Carlo phase · **R-AC4** scan dwell/range
+- **R-AC1 resolved** (omniscient over realized state; orders excepted) · **R-AC2 resolved** (sim is point/continuous, no hexes) · **R-AC3 resolved** (`SurveyStrategy`: no significant effect on time-to-10%-colonized on a 4-seed CRN bed; ship `OpeningSectors` unchanged; §2) · **R-AC4** scan dwell/range
 - **R-AC5** rank formula + thresholds · **R-AC6** provisional remote ranks · **R-AC7** colony-vehicle cost/founding infra · **R-AC8** contested-claim resolution
 - **R-AC9** nearest-center under lag · **R-AC10** mining/freighter rates · **R-AC11 resolved** (base step +20% productivity) · **R-AC12** multi-target output split/cadence
 - **R-AC13** "if pressed" at the colonization layer · **R-AC14** civilian hull stats · **R-AC15** lock enough to author depth-1 Far Shore & Greening beats
 - **R-AC16 resolved** (`survey_reserve` = 1024; §2) · **R-AC17 resolved** (`k_high` = 3.2, ratified — the snowball is the design; §6a). `centrality_scale` remains open from the same obsolete-extent tuning.
+- **R-AC18 (open, new):** time-to-10%-colonized and coverage-at-4,000-yr disagree on the sign of `medium_fleet_size`'s effect (§2) — a product decision about how much early speed to trade against late coverage, not a number a gradient can supply on its own.

@@ -383,6 +383,36 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-47. R-AC18 — time-to-10%-colonized vs. coverage-at-horizon disagree on `medium_fleet_size`
+
+While resolving R-AC3 (survey-sector strategy: no measurable effect on early
+speed — `Hyades_autopilot_colonization_growth.md` §2), a gradient probe
+retargeted at years-to-10%-colonized (`examples/time_to_10pct_probe.rs`)
+found `medium_fleet_size` — the single largest lever for coverage-at-4,000-yr
+(+32.7 ± 3.6 pts/ln, already MC-ratified at 4.45) — has the **opposite**
+sign for time-to-10% (+161.5 ± 41.7 yr/ln: raising it *slows* the early
+game). Plausible mechanism: a cheaper Medium hull is also a smaller one
+(shell model), while the pop-seed cargo a Colonizer must carry
+(`colony_seed_pop = 1.0`) is a fixed mass, so laden acceleration drops as
+the hull shrinks under a fixed load — more colonizers get built, each one
+slower to arrive. Not yet directly traced.
+
+`rank.k_high` (ratified at 3.2 for coverage, R-AC17) shows the same-sign
+tension more weakly (borderline 2.06 SE on the time-to-10% side).
+`growth_rate` and `outpost_mining_fraction` agree in direction across both
+objectives — no tension there.
+
+**The concrete test:** define an explicit blended objective (e.g.
+`α·coverage_at_horizon − β·time_to_10pct`, or "time to first elimination,"
+cmd §"R-5") and re-run the gradient-step methodology against it, rather than
+picking a number without a stated objective. Also: `center_mining_fraction`
+came back `~noise` (1.33 SE) on the 4-seed bed and wants the ten-seed bed
+(T-44's precedent) before trusting either sign.
+
+**Not this file's call:** whether the shipped defaults should move at all is
+a product decision about how much early-game feel is worth trading against
+late-game sprawl — flagged, not resolved, per R-AC18.
+
 ### T-33. `Knowledge` stores membership, not observations — netcode B4
 
 `Knowledge::scanned` is a `BTreeSet<PlanetId>`, so it records *that* a world was
