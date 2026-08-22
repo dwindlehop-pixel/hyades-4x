@@ -109,7 +109,14 @@ fn main() {
     let base_doc = Doctrine::default();
 
     let knobs: Vec<Knob> = vec![
-        Knob { name: "reinvest_bias", value: base_doc.reinvest_bias, set: |_, d, v| d.reinvest_bias = v },
+        // reinvest_bias deliberately excluded from this ±10% central-difference
+        // sweep: it's a known cliff, not a smooth dial (production_choice only
+        // flips deepen-vs-expand near b~0.95; min_time_search's own Round 4
+        // comment documents this against the coverage objective, and a first
+        // attempt here reproduced it against *this* objective too -- 0.0 ± 0.0
+        // exactly, both perturbed values landing on the same "expand" side of
+        // the switch). Worth a *targeted* comparison (0.5 vs ~0.95) separately,
+        // not a wasted ±10% wobble here.
         Knob { name: "growth_rate", value: base_doc.growth_rate, set: |_, d, v| d.growth_rate = v },
         Knob { name: "rank.k_high", value: base_doc.rank.k_high, set: |_, d, v| d.rank.k_high = v },
         Knob {
