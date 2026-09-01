@@ -64,6 +64,18 @@ const PLAYERS: usize = 3;
 /// truncation error stays below the sampling error.
 const DELTA: f64 = 0.10;
 
+/// **Screening horizon** (`--screen`). The proxy is not a different metric —
+/// it is *this same objective function evaluated at a truncated horizon*,
+/// which is why adopting it costs one line. `horizon_years` is purely a
+/// stopping condition, so the run is a faithful prefix.
+///
+/// Calibrated at ρ = 0.923 against true coverage for **31× less cost**
+/// (`examples/proxy_metric_calibration.rs`, CLAUDE.md §2). **Ranking only:**
+/// the elasticities it reports are in points-of-colonized-at-2000 per ln, a
+/// different scale from the real objective's, so compare the *order* of knobs
+/// across modes, never the magnitudes. Screen here, ratify on the objective.
+const SCREEN_HORIZON: f64 = 2000.0;
+
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
     galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
 }
@@ -119,7 +131,15 @@ struct Finding {
 }
 
 fn main() {
-    let base_cfg = SimConfig::new(0);
+    // `--screen` swaps the expensive objective for its calibrated proxy by
+    // truncating the horizon. Same function, same knobs, same CRN seeds —
+    // 31× cheaper, and valid for *ranking* knobs, not for magnitudes.
+    let screen = std::env::args().any(|a| a == "--screen");
+    let mut base_cfg = SimConfig::new(0);
+    if screen {
+        base_cfg.horizon_years = SCREEN_HORIZON;
+    }
+    let base_cfg = base_cfg;
     let base_doc = Doctrine::default();
 
     let knobs: Vec<Knob> = vec![
@@ -166,13 +186,25 @@ fn main() {
     );
     println!("Paired central differences. Budget: {evals} evaluations.");
     println!(
-        "(Coordinate descent over 5 values would be {} for strictly less information.)\n",
+        "(Coordinate descent over 5 values would be {} for strictly less information.)",
         5 * knobs.len() * SEEDS.len()
     );
+    if screen {
+        println!(
+            "**SCREENING MODE** — horizon truncated to {SCREEN_HORIZON:.0} yr (the calibrated\n\
+             colonies@2000 proxy, ρ = 0.923 vs true coverage, ~31× cheaper). Trust the\n\
+             *ranking*; magnitudes are on the proxy's scale. Ratify on the full objective.\n"
+        );
+    } else {
+        println!(
+            "Full objective: coverage at {:.0} yr. Run with --screen for the 31× proxy.\n",
+            base_cfg.horizon_years
+        );
+    }
 
     let here = profile(base_cfg, base_doc);
     println!(
-        "Operating point: {:.2}% ± {:.2} coverage   per-seed {:?}\n",
+        "Operating point: {:.2}% ± {:.2} colonized   per-seed {:?}\n",
         mean(&here) * 100.0,
         stderr(&here) * 100.0,
         here.iter().map(|x| format!("{:.1}%", x * 100.0)).collect::<Vec<_>>()
