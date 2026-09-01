@@ -108,7 +108,51 @@ fn at(alpha: f64) -> (SimConfig, Doctrine) {
     (cfg, doc)
 }
 
+/// **Attribution at the chosen step** (`--attribution`): which component of a
+/// multi-knob step actually earned the gain?
+///
+/// This is not academic here. `biosphere_regen_rate` is a *design* dial, not a
+/// free economic one — it sets whether a razed ecology is a durable wound or a
+/// rounding error (R-O63, standing-layer §9.1). If `growth_rate` earns the
+/// whole gain by itself, the right default change is the one that leaves the
+/// design surface untouched. Same CRN seeds, full objective, paired.
+fn attribution(alpha: f64) {
+    let (stepped_cfg, stepped_doc) = at(alpha);
+    let (base_cfg, base_doc) = at(0.0);
+
+    println!("\n=== Attribution at alpha = {alpha:.2} (full objective, paired on the same seeds) ===");
+    let base = profile(base_cfg, base_doc);
+    println!("  baseline                     {:.2}%", mean(&base) * 100.0);
+    std::io::stdout().flush().ok();
+
+    let cases: [(&str, SimConfig, Doctrine); 3] = [
+        ("growth_rate only", base_cfg, stepped_doc),
+        ("biosphere_regen only", stepped_cfg, base_doc),
+        ("both (the step)", stepped_cfg, stepped_doc),
+    ];
+    for (label, cfg, doc) in cases {
+        let p = profile(cfg, doc);
+        let gains: Vec<f64> = p.iter().zip(base.iter()).map(|(a, b)| a - b).collect();
+        println!(
+            "  {label:<28} {:.2}%   paired {:>+6.2} ± {:.2}",
+            mean(&p) * 100.0,
+            mean(&gains) * 100.0,
+            stderr(&gains) * 100.0
+        );
+        std::io::stdout().flush().ok();
+    }
+    println!(
+        "\nIf `growth_rate only` matches `both` within noise, ratify growth_rate alone and\n\
+         leave biosphere_regen_rate at its R-O63 placeholder for the design owner."
+    );
+}
+
 fn main() {
+    if let Some(pos) = std::env::args().position(|a| a == "--attribution") {
+        let alpha = std::env::args().nth(pos + 1).and_then(|s| s.parse().ok()).unwrap_or(0.5);
+        attribution(alpha);
+        return;
+    }
     println!("Gradient step — line search along the normalised gradient, CRN bed of {} seeds.", SEEDS.len());
     println!("Direction re-measured at the *current* defaults; only knobs outside 2 SE move.");
     for why in EXCLUDED {
