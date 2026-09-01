@@ -24,11 +24,41 @@ use hyades_engine::prelude::*;
 const SEEDS: &[u64] = &[1, 7, 42, 31337];
 const PLAYERS: usize = 3;
 
-/// Significant elasticities from `gradient_probe` (outside 2 SE), points per ln.
-const G_MEDIUM_FLEET: f64 = 32.73;
-const G_BIOSPHERE: f64 = 19.70;
-const G_OUTPOST_MINING: f64 = 14.48;
-const G_GROWTH: f64 = 7.30;
+/// Significant elasticities from `gradient_probe --screen`, **re-measured at
+/// the current shipped defaults** (points per ln of the `colonies@2000`
+/// proxy). Only knobs outside 2 SE appear.
+///
+/// **These replace the pre-ratification constants** (`medium_fleet_size` 32.73,
+/// `biosphere` 19.70, `outpost_mining` 14.48, `growth` 7.30). Those were
+/// measured at the *previous* operating point, and the whole reason this file
+/// exists is that a gradient is local — reusing them after the step that
+/// consumed them would be the "compare gradients across operating points"
+/// error that produced this project's fifth artifact (R-AC18, withdrawn).
+const G_GROWTH: f64 = 2.27;
+const G_BIOSPHERE: f64 = 0.84;
+
+/// **Deliberately excluded, with reasons** — stepping along noise, or along a
+/// direction the objective itself cannot confirm, is how a search wanders:
+///
+/// - `medium_fleet_size`: the screen says `-0.58 ± 0.19` but the full
+///   objective says `+1.93 ± 2.37` — it cannot even resolve the sign. Read
+///   together with the ±25% levels (3.34 → 48.6%, **4.45 → 49.8%**, 5.56 →
+///   42.2%, seed 1), all three measurements agree on one thing: **4.45 is on
+///   the peak, where the gradient vanishes.** A ratified value that measures
+///   flat is doing its job. Left alone.
+/// - `center_mining_fraction` (+0.86 ± 0.48) and `outpost_mining_fraction`
+///   (+0.72 ± 0.37): both inside 2 SE. Candidates for the ten-seed bed
+///   (`hyades_todo.md` T-44), not for a step.
+/// - `cargo_unit_size`, `trade_decay_lambda`, `survey_reserve`,
+///   `rank.centrality_scale`: flat. The first two reading flat is a *proxy
+///   validation* — `cargo_unit_size` is known-saturated and
+///   `trade_decay_lambda` is known to sit at an interior optimum, so flat is
+///   exactly what both should read.
+const EXCLUDED: &[&str] = &[
+    "medium_fleet_size (at peak)",
+    "center/outpost_mining (noise)",
+    "cargo_unit_size, lambda, reserve, centrality (flat)",
+];
 
 fn profile(cfg: SimConfig, doctrine: Doctrine) -> Vec<f64> {
     SEEDS
@@ -61,32 +91,37 @@ fn stderr(v: &[f64]) -> f64 {
 }
 
 /// Configuration `alpha` steps along the normalised gradient, in log space.
+///
+/// The direction is now only two-dimensional, and `growth_rate` is **94% of
+/// it** (`2.27 / √(2.27² + 0.84²)`). That matters because
+/// `biosphere_regen_rate` is not a free economic knob: it is the dial that
+/// decides whether biological warfare is a real strategy or a rounding error
+/// (R-O63, standing-layer §9.1). If design pins it, stepping `growth_rate`
+/// alone still captures almost all of the available gain.
 fn at(alpha: f64) -> (SimConfig, Doctrine) {
-    let norm = (G_MEDIUM_FLEET.powi(2) + G_BIOSPHERE.powi(2) + G_OUTPOST_MINING.powi(2) + G_GROWTH.powi(2)).sqrt();
+    let norm = (G_BIOSPHERE.powi(2) + G_GROWTH.powi(2)).sqrt();
     let step = |g: f64| (alpha * g / norm).exp();
     let mut cfg = SimConfig::new(0);
     let mut doc = Doctrine::default();
-    cfg.medium_fleet_size *= step(G_MEDIUM_FLEET);
     cfg.biosphere_regen_rate *= step(G_BIOSPHERE);
-    // A fraction of local density; clamping is a constraint, not a preference.
-    cfg.outpost_mining_fraction = (cfg.outpost_mining_fraction * step(G_OUTPOST_MINING)).min(0.95);
     doc.growth_rate *= step(G_GROWTH);
     (cfg, doc)
 }
 
 fn main() {
     println!("Gradient step — line search along the normalised gradient, CRN bed of {} seeds.", SEEDS.len());
-    println!("Only the four knobs that cleared 2 SE are moved.\n");
+    println!("Direction re-measured at the *current* defaults; only knobs outside 2 SE move.");
+    for why in EXCLUDED {
+        println!("  excluded: {why}");
+    }
+    println!("Verified on the FULL objective (coverage at 4000 yr) — the screen picks the\ndirection, the objective ratifies the step.\n");
 
     let (base_cfg, base_doc) = at(0.0);
     let base = profile(base_cfg, base_doc);
     println!("alpha=0.00 (baseline)  {:.2}% ± {:.2}\n", mean(&base) * 100.0, stderr(&base) * 100.0);
     std::io::stdout().flush().ok();
 
-    println!(
-        "{:>6} {:>7} {:>7} {:>7} {:>7}   {:>8} {:>18}",
-        "alpha", "mfs", "bio", "outp", "growth", "mean", "paired gain"
-    );
+    println!("{:>6} {:>9} {:>9}   {:>8} {:>18}", "alpha", "bio_regen", "growth", "mean", "paired gain");
     let mut best = (0.0f64, mean(&base));
     for &alpha in &[0.25, 0.5, 1.0, 1.5, 2.0] {
         let (cfg, doc) = at(alpha);
@@ -98,10 +133,8 @@ fn main() {
         // Paired, seed by seed: the only comparison that is not mostly seed.
         let gains: Vec<f64> = p.iter().zip(base.iter()).map(|(a, b)| a - b).collect();
         println!(
-            "{alpha:>6.2} {:>7.3} {:>7.4} {:>7.3} {:>7.3}   {:>7.2}% {:>+11.2} ± {:.2}",
-            cfg.medium_fleet_size,
+            "{alpha:>6.2} {:>9.4} {:>9.3}   {:>7.2}% {:>+11.2} ± {:.2}",
             cfg.biosphere_regen_rate,
-            cfg.outpost_mining_fraction,
             doc.growth_rate,
             mean(&p) * 100.0,
             mean(&gains) * 100.0,
