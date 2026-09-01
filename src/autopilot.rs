@@ -115,16 +115,45 @@ pub struct Doctrine {
     pub productivity_step: f64,
     /// Logistic growth rate `r` for population toward `K` per cycle.
     ///
-    /// **MC-ratified at 0.546** by a verified gradient step (`gradient_probe`
-    /// then `gradient_step`): elasticity +7.3 ± 1.2 points per ln, moved α = 0.5 along
-    /// the normalised gradient and confirmed on the same CRN seeds. The step as
-    /// a whole bought **+10.99 ± 1.86 points** of coverage, 38.26% → 49.25%.
-    /// Not a solo optimum — one component of a joint move, and it should be
-    /// re-derived jointly if any of the other three changes.
+    /// **MC-ratified at 0.873**, re-derived at the operating point the previous
+    /// ratification produced (it had been 0.546, itself one leg of the joint
+    /// step that took coverage 38.26% → 49.25%).
     ///
-    /// Tightest error bar of the four by a wide margin, so the most *reliably*
-    /// measured knob even though its elasticity is mid-pack — the one where a
-    /// small step is most confidently an improvement.
+    /// *How this one was measured, in order:* `gradient_probe --screen`
+    /// re-measured every knob **at the current defaults** — necessary because a
+    /// gradient is local and the old direction had been consumed by the step
+    /// that produced it. `growth_rate` came back the largest surviving lever at
+    /// **+2.27 ± 0.50** (4.5 SE) and the only one clearly outside the noise
+    /// besides `biosphere_regen_rate`. `gradient_step` then line-searched that
+    /// direction **on the full objective**, and `--attribution 0.5` split the
+    /// winning step into its parts on the same CRN seeds:
+    ///
+    /// | config | coverage | paired gain |
+    /// |---|---|---|
+    /// | baseline (0.546) | 49.11% | — |
+    /// | **`growth_rate` alone → 0.873** | **51.42%** | **+2.31 ± 1.05** |
+    /// | `biosphere_regen_rate` alone | 50.57% | +1.46 ± 0.68 |
+    /// | both | 51.62% | +2.51 ± 1.13 |
+    ///
+    /// So this moved **alone**: it earns 92% of the joint gain, and the
+    /// biosphere dial's marginal contribution on top of it is +0.20 points,
+    /// far inside the noise. The two are substitutes rather than additive —
+    /// they relieve the same bottleneck from opposite sides (one raises the
+    /// `K` ceiling, the other the rate of approach to it) — so collecting both
+    /// was never on offer. `SimConfig::biosphere_regen_rate` therefore stays at
+    /// its R-O63 placeholder, which is a *design* dial (whether a razed ecology
+    /// is a durable wound or a rounding error) and not the search's to spend.
+    ///
+    /// **⚠ There is a cliff above this value, and it is close.** The same line
+    /// search: `r = 1.395` still works (50.99%), `r = 2.229` collapses to
+    /// **28.46%** and `r = 3.563` to 19.82%. Population growth consumes
+    /// biosphere 1:1 (L6), so a high enough `r` eats the ecology that caps `K`
+    /// and the economy starves itself. 0.873 is deliberately ~2.5× below the
+    /// cliff rather than at the noisy argmax — the measured optima at α = 0.25 /
+    /// 0.50 / 1.00 (+2.32 / +2.51 / +1.88) are within noise of each other, so
+    /// margin to the cliff is the tiebreaker, not the best mean.
+    ///
+    /// Guarded by `growth_rate_stays_clear_of_the_starvation_cliff`.
     pub growth_rate: f64,
     /// Multiplier on `SimConfig::biosphere_regen_rate` for this empire's worlds.
     /// The card lever on ecology: Growth-tree cards raise it to make a
@@ -181,7 +210,10 @@ impl Default for Doctrine {
     fn default() -> Self {
         Doctrine {
             productivity_step: 0.20,
-            growth_rate: 0.546,
+            // 0.873 — re-ratified at the operating point the previous step
+            // produced; see the field doc for the attribution table and the
+            // starvation cliff above ~1.4 that sets the safe margin.
+            growth_rate: 0.873,
             biosphere_regen_bonus: 1.0,
             survey_vehicles: 6,
             survey_accel_g: 1.0,
@@ -940,6 +972,28 @@ mod tests {
             ap.production_choice(&doctrine, &ctx, &cands),
             BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
         ));
+    }
+
+    /// The ratified `growth_rate` must keep real margin below the starvation
+    /// cliff the line search found. Population growth consumes biosphere 1:1
+    /// (L6), so a high enough `r` eats the ecology that caps `K` and the
+    /// economy starves: measured on the full objective, `r = 1.395` still
+    /// works (50.99% coverage) but `r = 2.229` collapses to 28.46%.
+    ///
+    /// This is a **guard rail, not a tuning assertion** — it does not claim
+    /// 0.873 is optimal (the measured optima at alpha 0.25/0.50/1.00 are within
+    /// noise of each other). It claims only that a future retune cannot drift
+    /// the default up against the cliff without someone deciding to.
+    #[test]
+    fn growth_rate_stays_clear_of_the_starvation_cliff() {
+        let r = Doctrine::default().growth_rate;
+        assert!(r > 0.0, "growth rate must be positive, got {r}");
+        assert!(
+            r <= 1.395,
+            "growth_rate {r} is at or past the last value measured to still work (1.395); \
+             beyond it coverage collapses (2.229 -> 28.46%). Re-run examples/gradient_step.rs \
+             and re-ratify deliberately rather than drifting into the cliff."
+        );
     }
 
     #[test]

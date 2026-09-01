@@ -567,15 +567,31 @@ search should optimize jointly against both the coverage objective and the
 
 ### T-20. Raise coverage inside a fixed 4,000-year run
 
-**~49%** of colonizable worlds (3,348 of 6,725, seed 1) after two ratifications:
+**~51.4%** of colonizable worlds (4-seed CRN mean) after three ratifications:
 `trade_decay_lambda = 0.01` (a *missing term* — routing had no distance
-component) took it from 14.4% to 38.3%, and a verified gradient step on four
-knobs took it to 49.3%. Neither came from a coordinate sweep.
+component) took it from 14.4% to 38.3%; a verified gradient step on four knobs
+took it to 49.3%; and **`growth_rate` 0.546 → 0.873 took it to 51.4%**
+(+2.31 ± 1.05 paired, verified on the full objective). None came from a
+coordinate sweep.
 
-**The remaining headroom is not obviously in these knobs.** The gradient step
-found a cliff at α = 1.0 (coverage collapses to 6.9% as the Medium hull's hold
-vanishes), so this ray is close to exhausted. Further progress likely needs a
-new *term* rather than a better value — the λ lesson again. **4,000 years is
+**The third one is the methodological point:** it came from re-running the
+probe *at the operating point the second step had produced*. The old direction
+had been spent — of nine knobs, four measured flat, two were inside 2 SE, and
+`medium_fleet_size` had gone from the biggest lever (+32.7 pts/ln at its old
+value) to sitting on its peak (`+1.93 ± 2.37`, sign unresolvable). Only
+`growth_rate` and `biosphere_regen_rate` survived, and `--attribution` showed
+`growth_rate` earned 92% of the joint gain by itself, so the R-O63 biosphere
+design dial was left untouched.
+
+**The remaining headroom is not obviously in these knobs, and the returns are
+visibly diminishing** (+23.9, +11.0, +2.3 points). Two cliffs now bound this
+ray: the original one at α = 1.0 of the *old* direction (6.9% as the Medium
+hull's hold vanishes), and a **starvation cliff** on `growth_rate` itself —
+1.395 still works (50.99%) but 2.229 collapses to 28.46%, because population
+consumes biosphere 1:1 (L6) and fast enough growth eats the ecology that caps
+`K`. Guarded by `growth_rate_stays_clear_of_the_starvation_cliff`. Further
+progress likely needs a new *term* rather than a better value — the λ lesson
+again. **4,000 years is
 the run length; the coverage reached within it is the objective.** Do not extend
 the horizon: doubling it doubles every trial and the 60-second rule already had
 to absorb the snowball once. T-07 and T-21 are the nearest levers.

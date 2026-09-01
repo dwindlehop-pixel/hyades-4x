@@ -668,18 +668,29 @@ changes how you *work*, not what is left to do:
   runs per hour, so speed lost to entity count is balance coverage not bought.
 
 - **Coverage is measured inside a fixed 4,000-year run — do not extend the horizon**
-  (T-20). **~49% of colonizable worlds** as of the gradient-step ratification
-  (3,348 / 6,725 on seed 1, up from 1,044 two ratifications ago). 4,000 is the run length;
-  the coverage reached within it is the objective. Doubling the horizon doubles
-  every trial, and §2's 60-second rule already had to absorb the snowball once.
+  (T-20). **~51.4% of colonizable worlds** as of the `growth_rate` re-ratification
+  (mean over the 4-seed CRN bed; was 1,044 / 6,725 on seed 1 three ratifications
+  ago). 4,000 is the run length; the coverage reached within it is the objective.
+  Doubling the horizon doubles every trial, and §2's 60-second rule already had
+  to absorb the snowball once.
 
-  Two ratifications got it there and neither was a sweep. **λ (14.4% → 38.3%)
+  Three ratifications got it there and none was a sweep. **λ (14.4% → 38.3%)
   was a *missing term*** — freighter routing had no distance component at all,
   so a hauler would cross the galaxy for a marginally needier center. **The
   gradient step (38.3% → 49.3%)** moved four knobs at once along a measured
-  direction and verified the result on the same seeds. Before sweeping harder,
-  check whether a term is absent; then measure the gradient rather than the
-  grid.
+  direction and verified the result on the same seeds. **The `growth_rate`
+  re-ratification (49.1% → 51.4%, +2.31 ± 1.05 paired)** came from re-measuring
+  the gradient *at the point the previous step had produced* — the old direction
+  had been consumed, and every knob but one had gone flat or noisy. Before
+  sweeping harder: check whether a term is absent; then measure the gradient
+  rather than the grid; then **re-measure it after you step**, because the
+  direction you just spent is not the direction you are now standing in.
+
+  **Diminishing returns are visible and worth reading.** +23.9, then +11.0,
+  then +2.3 points. The remaining knobs are flat, noisy, or at their peaks
+  (`medium_fleet_size` now measures `+1.93 ± 2.37` — it is *on* the hilltop),
+  so the next real gain almost certainly needs a new *term* or a new
+  *mechanism*, not another step along this ray.
 
 ---
 
