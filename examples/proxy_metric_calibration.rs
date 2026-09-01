@@ -84,6 +84,10 @@ const CHECKPOINTS: &[f64] = &[250.0, 500.0, 750.0, 1000.0, 1500.0, 2000.0];
 const THRESHOLDS: &[usize] = &[25, 50, 100, 200];
 /// Window for the exponential-rate fit.
 const SLOPE_WINDOW: (f64, f64) = (500.0, 1500.0);
+/// True-coverage floor for the "healthy band" — configurations at or above it
+/// are working economies rather than collapses, and telling *those* apart is
+/// the job a search proxy has to do.
+const HEALTHY_COVERAGE: f64 = 0.25;
 
 /// A configuration to rank. `±25%` rather than the probe's `±10%`: this needs
 /// *spread* in the ground truth to have something to correlate against, not a
@@ -221,6 +225,19 @@ fn spearman(a: &[f64], b: &[f64]) -> f64 {
 }
 
 fn main() {
+    // The two phases are independently runnable: the correlation sweep is the
+    // expensive one (full-length runs by construction — it needs the ground
+    // truth), the cost table is cheap. `--cost-only` skips straight to the
+    // second so the price of a truncated run can be re-measured on a new
+    // machine without re-paying for the first.
+    let cost_only = std::env::args().any(|a| a == "--cost-only");
+    if !cost_only {
+        correlation_phase();
+    }
+    cost_phase();
+}
+
+fn correlation_phase() {
     let cfgs = configs();
     println!("Proxy-metric calibration — {PLAYERS} seats, {} seeds, {} configurations (±25%)", SEEDS.len(), cfgs.len());
     println!(
@@ -270,17 +287,39 @@ fn main() {
     let mfs_hi = cfgs.iter().position(|c| c.name == "medium_fleet_size.hi");
 
     println!("=== Rank agreement with coverage, within seed (Spearman ρ, averaged) ===");
-    println!("{:<24} {:>8} {:>8}  {:<18}  measurable by", "proxy", "mean ρ", "min ρ", "mfs sign test");
+    println!(
+        "{:<24} {:>8} {:>8} {:>9}  {:<18}  measurable by",
+        "proxy", "mean ρ", "min ρ", "ρ healthy", "mfs sign test"
+    );
     let mut table = Vec::new();
     for (name, f) in &candidates {
         let mut rhos = Vec::new();
+        let mut healthy_rhos = Vec::new();
         for per_seed in &results {
             let truth: Vec<f64> = per_seed.iter().map(|r| r.coverage).collect();
             let proxy: Vec<f64> = per_seed.iter().map(f).collect();
             rhos.push(spearman(&proxy, &truth));
+
+            // **The mirage check.** The config set includes `k_high`
+            // catastrophes (sub-15% coverage against ~50% for everything
+            // else), and merely detecting "this economy collapsed" would earn
+            // a high ρ without the proxy being able to tell two *working*
+            // configurations apart — which is the discrimination a search
+            // actually needs. So ρ is recomputed over the healthy band alone.
+            let healthy: Vec<usize> = (0..truth.len()).filter(|&i| truth[i] >= HEALTHY_COVERAGE).collect();
+            if healthy.len() >= 3 {
+                let t: Vec<f64> = healthy.iter().map(|&i| truth[i]).collect();
+                let p: Vec<f64> = healthy.iter().map(|&i| proxy[i]).collect();
+                healthy_rhos.push(spearman(&p, &t));
+            }
         }
         let mean_rho = rhos.iter().sum::<f64>() / rhos.len() as f64;
         let min_rho = rhos.iter().cloned().fold(f64::INFINITY, f64::min);
+        let healthy_rho = if healthy_rhos.is_empty() {
+            f64::NAN
+        } else {
+            healthy_rhos.iter().sum::<f64>() / healthy_rhos.len() as f64
+        };
 
         // Does the proxy order medium_fleet_size lo-vs-hi the same way coverage does?
         let sign = match (mfs_lo, mfs_hi) {
@@ -304,16 +343,25 @@ fn main() {
             "when N is hit".into()
         };
 
-        println!("{name:<24} {mean_rho:>8.3} {min_rho:>8.3}  {sign:<18}  horizon {need}");
+        println!("{name:<24} {mean_rho:>8.3} {min_rho:>8.3} {healthy_rho:>9.3}  {sign:<18}  horizon {need}");
         std::io::stdout().flush().ok();
-        table.push((name.clone(), mean_rho, min_rho, sign));
+        table.push((name.clone(), mean_rho, min_rho, healthy_rho, sign));
     }
 
     table.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
     println!("\n=== Ranked by mean ρ ===");
-    for (name, mean_rho, min_rho, sign) in &table {
-        println!("  {name:<24} ρ={mean_rho:>6.3}  (worst seed {min_rho:>6.3})  {sign}");
+    for (name, mean_rho, min_rho, healthy_rho, sign) in &table {
+        println!(
+            "  {name:<24} ρ={mean_rho:>6.3}  (worst seed {min_rho:>6.3}, healthy-only {healthy_rho:>6.3})  {sign}"
+        );
     }
+    println!(
+        "\n`ρ healthy` is the column that decides adoption: ρ over configurations that all\n\
+         actually work (true coverage ≥ {:.0}%). A proxy can score well on the full set just by\n\
+         spotting collapses; only the healthy-band number says whether it can rank two viable\n\
+         configurations, which is what a search spends its time doing.",
+        HEALTHY_COVERAGE * 100.0
+    );
 
     println!(
         "\nReading: ρ is rank agreement *within a seed*, so seed difficulty cannot inflate it.\n\
@@ -323,4 +371,34 @@ fn main() {
          The cheapest proxy clearing all three is the one to search against, confirming\n\
          finalists on the real objective."
     );
+}
+
+/// The other half of "quick to measure": what a truncated run costs.
+///
+/// `horizon_years` is purely a stopping condition, so this is the real price
+/// of every `colonies@T` proxy. Cost is superlinear in duration
+/// (CLAUDE.md §7) because entity count compounds, so the saving is much
+/// larger than the ratio of horizons.
+fn cost_phase() {
+    println!("\n=== Cost of a truncated run (default config, mean over seeds) ===");
+    let base_cfg = SimConfig::new(0);
+    let base_doc = Doctrine::default();
+    let horizons = [500.0, 1000.0, 1500.0, 2000.0, base_cfg.horizon_years];
+    let mut costs = Vec::new();
+    for &h in &horizons {
+        let mut cfg = base_cfg;
+        cfg.horizon_years = h;
+        let t = Instant::now();
+        for &seed in SEEDS {
+            run(seed, cfg, base_doc);
+        }
+        costs.push(t.elapsed().as_secs_f64() / SEEDS.len() as f64);
+    }
+    let full_cost = *costs.last().unwrap();
+    println!("{:<12} {:>10} {:>10}  proxy it buys", "horizon", "mean sec", "speedup");
+    for (&h, &secs) in horizons.iter().zip(&costs) {
+        let buys = if h == base_cfg.horizon_years { "the objective itself" } else { "colonies@this horizon" };
+        println!("{h:<12.0} {secs:>10.2} {:>9.1}x  {buys}", full_cost / secs);
+    }
+    std::io::stdout().flush().ok();
 }
