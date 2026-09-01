@@ -383,7 +383,22 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
-### T-47. R-AC18 — time-to-10%-colonized vs. coverage-at-horizon disagree on `medium_fleet_size`
+### T-47. R-AC18 — ~~time-to-10% vs. coverage disagree on `medium_fleet_size`~~ premise withdrawn; `center_mining_fraction` still open
+
+> **Resolved, and it was an artifact.** The two elasticities were measured at
+> different operating points (coverage's `+32.7 pts/ln` at `medium_fleet_size
+> = 3.0`, before the ratification moved it to 4.45; the time-to-10% number at
+> 4.45). Measured directly at ±25% around the shipped value, coverage is an
+> **interior optimum at 4.45** on all three seeds, so raising it further hurts
+> *both* metrics — they agree. Comparing gradients across operating points is
+> the mistake; "a gradient is local" (CLAUDE.md §2) has now produced a project
+> artifact rather than merely warning about one. **What is still open:**
+> `center_mining_fraction` (`~noise` at 1.33 SE) wants the ten-seed bed.
+> **What the detour actually produced:** the `colonies@2000` screening metric
+> — ρ = 0.923 against true coverage at 31× less cost, now documented in
+> CLAUDE.md §2 and calibrated by `examples/proxy_metric_calibration.rs`.
+
+The original entry, kept for the record:
 
 While resolving R-AC3 (survey-sector strategy: no measurable effect on early
 speed — `Hyades_autopilot_colonization_growth.md` §2), a gradient probe

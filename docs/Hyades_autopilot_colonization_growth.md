@@ -99,23 +99,45 @@ traced; the sign and magnitude are measured, the causal story is inference
 from the existing mass/acceleration formulas rather than a dedicated
 confirmatory run.
 
-**Not resolved here, on purpose:** `medium_fleet_size` and `rank.k_high` are
-both globally MC-tuned (`CLAUDE.md` §6 — "never silently change globally
-Monte-Carlo-tuned parameters"), ratified against the coverage-at-horizon
-objective specifically. Whether the shipped defaults should move at all
-depends on a **product decision this spec doesn't get to make alone**: how
-much early-game speed is worth trading against late-game coverage, which is
-a question about what the 30–45-minute match is supposed to feel like, not
-a number a gradient can supply. Candidates, not a recommendation: (a) leave
-shipped defaults exactly as they are — they were never *tuned against*
-early speed, so this isn't a regression, just an uncharted trade; (b) define
-an explicit blended objective (e.g. `α·coverage_at_horizon − β·time_to_10pct`)
-and re-run the gradient-step methodology against it; (c) treat "time to
-first elimination" (cmd §"R-5 · The full clock math," ~10–20 min of a
-30–45-minute game) as the real early-game deadline and check whether either
-objective actually predicts *that* better. `center_mining_fraction`'s noisy
-result also wants the ten-seed bed (`hyades_todo.md` T-44's precedent)
-before it's trusted either way.
+> **⚠ Corrected — the sign conflict above was a measurement artifact, and the
+> fifth of this file's family of them.** The two elasticities being compared
+> were **measured at different operating points**: coverage's `+32.7 pts/ln`
+> was taken at `medium_fleet_size = 3.0`, *before* `gradient_step` moved the
+> shipped value to **4.45**; the `+161.5 yr/ln` above was taken at 4.45. A
+> gradient is local — CLAUDE.md §2 says exactly this — so the two were never
+> comparable, and "the objectives disagree" did not follow from them.
+>
+> Measured directly at the shipped value (`examples/proxy_metric_calibration.rs`,
+> ±25%, 3 seeds), true coverage is an **interior optimum at 4.45**:
+>
+> | seed | `lo` = 3.34 | **default = 4.45** | `hi` = 5.56 |
+> |---|---|---|---|
+> | 1 | 48.6% | **49.8%** | 42.2% |
+> | 7 | 49.4% | **51.3%** | 49.5% |
+> | 42 | 41.8% | **46.2%** | 35.5% |
+>
+> Raising `medium_fleet_size` past 4.45 **hurts coverage too**, on all three
+> seeds. So both metrics agree at the operating point that actually ships:
+> the ratification landed on a hilltop, and the time-to-10% probe was
+> measuring the far side of it, not a competing objective. **R-AC18's premise
+> is withdrawn** — there is no early-speed-vs-coverage trade to adjudicate on
+> this knob, and no product decision is pending on it. What survives is the
+> methodological lesson: *never compare two gradients taken at different
+> operating points*, which is the same "a gradient is local" caveat that has
+> now produced a project artifact rather than merely warning about one.
+>
+> `rank.k_high` is separately confirmed as a **knife-edge, not a slope**:
+> ±25% collapses coverage in *both* directions (seed 1: 8.0% at 2.4 and 0.6%
+> at 4.0, against 49.8% at 3.2). R-AC17's value is a narrow ridge, so its
+> borderline time-to-10% elasticity is not evidence for moving it either.
+>
+> **Still genuinely open**, and the reason this R-code stays alive:
+> `center_mining_fraction` came back `~noise` (1.33 SE) and wants the
+> ten-seed bed (`hyades_todo.md` T-44's precedent) before either sign is
+> trusted. And the useful thing the whole detour produced is not a doctrine
+> change at all but a **cheap screening metric** — `colonies@2000`, ρ = 0.923
+> against true coverage at **31× less cost** (CLAUDE.md §2, "Screen on a
+> truncated horizon, confirm on the objective").
 
 ---
 
@@ -241,4 +263,4 @@ With this autopilot defined, the two trees' cards become authorable as **orders 
 - **R-AC9** nearest-center under lag · **R-AC10** mining/freighter rates · **R-AC11 resolved** (base step +20% productivity) · **R-AC12** multi-target output split/cadence
 - **R-AC13** "if pressed" at the colonization layer · **R-AC14** civilian hull stats · **R-AC15** lock enough to author depth-1 Far Shore & Greening beats
 - **R-AC16 resolved** (`survey_reserve` = 1024; §2) · **R-AC17 resolved** (`k_high` = 3.2, ratified — the snowball is the design; §6a). `centrality_scale` remains open from the same obsolete-extent tuning.
-- **R-AC18 (open, new):** time-to-10%-colonized and coverage-at-4,000-yr disagree on the sign of `medium_fleet_size`'s effect (§2) — a product decision about how much early speed to trade against late coverage, not a number a gradient can supply on its own.
+- **R-AC18 (premise withdrawn; narrowed):** the claimed time-to-10% vs. coverage sign conflict on `medium_fleet_size` was an artifact of comparing gradients taken at **different operating points** — measured directly, 4.45 is an interior optimum and both metrics agree (§2). What remains open is only `center_mining_fraction` on a wider seed bed. The detour's real yield is the `colonies@2000` screening metric (ρ = 0.923, 31× cheaper — CLAUDE.md §2).

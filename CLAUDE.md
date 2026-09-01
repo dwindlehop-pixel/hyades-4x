@@ -168,6 +168,46 @@ ranking.
 not where the summit is, and it points confidently along artifacts when the
 model beneath is wrong. Use it to choose what to investigate, never to conclude.
 
+### Screen on a truncated horizon, confirm on the objective
+
+The coverage objective costs a **full-length run per evaluation** — 27.3 s at
+the shipped defaults, so the nine-knob probe above is a 40-minute job. But
+`horizon_years` is purely a stopping condition, so a truncated run is a
+faithful *prefix*, and cost is violently superlinear in duration because
+entity count compounds:
+
+| horizon | cost | speedup | rank agreement with the real objective |
+|---|---|---|---|
+| 4,000 (the objective) | 27.3 s | 1× | — |
+| 2,000 | 0.88 s | **31×** | ρ = 0.923 (healthy-band 0.859, worst seed 0.907) |
+| 1,500 | 0.36 s | **76×** | ρ = 0.833 (healthy-band 0.831) |
+| 1,000 | 0.12 s | 232× | ρ = 0.358 — too early, do not use |
+
+**`colonies@2000` is the default screen** (`examples/proxy_metric_calibration.rs`);
+`colonies@1500` is the aggressive option when the search stays among working
+configurations, which is the gradient-probe case. **Screen with it, ratify on
+the real objective** — never ship a value the proxy alone chose.
+
+Three things that measurement got right, and are the reusable part:
+
+- **Rank configurations, not seeds.** ρ is computed *within* each seed and then
+  averaged. Correlating across seeds would only prove both metrics can tell an
+  easy galaxy from a hard one — the same reason CRN pairs by seed.
+- **Score the healthy band separately.** The config set contained `k_high`
+  collapses (0.3–15% coverage against ~50%), and a metric can post a fine
+  overall ρ purely by spotting those while being useless at ranking two
+  *working* configurations — which is what a search actually does all day.
+  `log_slope` was exactly this: ρ = 0.573 overall, **0.215** on the healthy
+  band. A collapse detector wearing a proxy's clothes.
+- **Re-test the knob that burned you.** Every candidate carries a
+  `medium_fleet_size` sign test, because that is the knob whose backwards
+  ranking disqualified years-to-10%-colonized.
+
+**Time-to-threshold metrics are the trap here.** Years-to-10%-colonized fails
+*both* halves of the bar: 10% is not reached until t≈2,800 of 4,000, so reading
+it costs a full run anyway, and it ranked `medium_fleet_size` against coverage.
+A metric you can only read near the horizon is not a shortcut to the horizon.
+
 ### The artifact pattern — four of them, one shape
 
 Four measurements in this project were wrong in the same way, and the shape is

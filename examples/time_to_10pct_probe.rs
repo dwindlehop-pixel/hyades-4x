@@ -26,6 +26,18 @@
 //! `medium_fleet_size` (a Colonizer's cost, hence how many cycles of income
 //! it takes to afford the next one).
 //!
+//! **Superseded — kept as the record of how the objective was chosen wrong,
+//! twice over.** Years-to-10%-colonized failed both halves of the bar it was
+//! picked for (`examples/proxy_metric_calibration.rs`): it is *not quick* —
+//! 10% arrives at t≈2,800 of 4,000, so reading it costs a full-length run
+//! anyway — and it is *not aligned*, ranking `medium_fleet_size` against
+//! coverage. That second failure was itself an artifact: the coverage
+//! elasticity it was compared against was measured at `medium_fleet_size =
+//! 3.0`, before the ratification moved the shipped value to 4.45, and at 4.45
+//! coverage turns out to be an interior optimum, so both metrics actually
+//! agree. **Never compare two gradients taken at different operating points.**
+//! Use `colonies@2000` for screening instead (CLAUDE.md §2).
+//!
 //! Run: `cargo run --release --example time_to_10pct_probe`
 
 use std::collections::HashSet;
