@@ -208,6 +208,43 @@ Three things that measurement got right, and are the reusable part:
 it costs a full run anyway, and it ranked `medium_fleet_size` against coverage.
 A metric you can only read near the horizon is not a shortcut to the horizon.
 
+### Never let the metric's denominator be something the game can play
+
+**The objective is an absolute colony count, not a fraction.** It used to be
+`colonized / |{p : min(hab,bio) > 0.01}|`, and both halves of that were wrong:
+
+- The **divisor** is a per-seed constant, so averaging fractions across seeds
+  weights each seed by `1/denominator`. That is a weighting nobody chose, and
+  it is not neutral — see below.
+- The **membership filter** is derived from habitability, which is *exactly*
+  what a terraforming card changes. Under a fraction, terraforming a world
+  above the threshold **enlarges the denominator and lowers the score for
+  colonizing more**; a bombardment that pushes one below **shrinks it and
+  raises the score for destroying one.** The metric would report the opposite
+  of the play. That is not a tuning inconvenience, it is a metric that can be
+  farmed, and card design is the thing it would mislead.
+
+Nothing in the shipped engine mutates habitability *yet*, so this looked
+cosmetic. It was not — **correcting it reordered the top of the ranking**:
+
+| knob | under the fraction | under colony count |
+|---|---|---|
+| `biosphere_regen_rate` | +0.84 ± 0.24 — third | **+141.2 ± 18.1 — first (7.8 SE)** |
+| `growth_rate` | +2.27 ± 0.50 — first | +73.8 ± 20.3 — second |
+| `survey_reserve` | −0.13 ± 0.23 — **flat** | **−23.8 ± 10.1 — significant** |
+
+A knob the old metric called inert turned out to be a real lever, and the one
+it ranked first is second. The cause is the cross-seed weighting above, and
+`growth_rate` was ratified while the fraction was under-weighting the actual
+top lever.
+
+**The general rule, which is the transferable part:** an objective must be
+invariant to everything the thing being optimized can change. Ask of any
+metric — *what could a card do to move this without moving the world?* If the
+answer is not "nothing", the metric is a target, not a measurement. This joins
+the artifact list below as a fifth shape, and it is the only one that would
+have gotten worse rather than better with time.
+
 ### The artifact pattern — four of them, one shape
 
 Four measurements in this project were wrong in the same way, and the shape is

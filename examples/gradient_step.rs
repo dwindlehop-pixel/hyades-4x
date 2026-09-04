@@ -15,7 +15,6 @@
 //!
 //! Run: `cargo run --release --example gradient_step`
 
-use std::collections::HashSet;
 use std::io::Write;
 
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
@@ -24,23 +23,27 @@ use hyades_engine::prelude::*;
 const SEEDS: &[u64] = &[1, 7, 42, 31337];
 const PLAYERS: usize = 3;
 
-/// Significant elasticities from `gradient_probe --screen` (points per ln of
-/// the `colonies@2000` proxy). Only knobs outside 2 SE appear.
+/// Significant elasticities from `gradient_probe --screen`, in **colonies** per
+/// ln of the `colonies@2000` proxy. Only knobs outside 2 SE appear.
 ///
-/// **⚠ These are CONSUMED — the step they pointed at has been taken and
-/// ratified** (`growth_rate` 0.546 → 0.873). They are kept as the record of
-/// that step, not as a direction to walk again. A gradient is local; reusing
-/// one after the step that spent it is the "compare gradients across operating
-/// points" error that produced this project's fifth artifact (R-AC20,
-/// withdrawn) — and it had already claimed the *previous* set of constants in
-/// this same file (`medium_fleet_size` 32.73, `biosphere` 19.70,
-/// `outpost_mining` 14.48, `growth` 7.30, all measured before the step that
-/// consumed them).
+/// **Re-measured against the corrected objective** (absolute colony count, not
+/// a fraction — see `gradient_probe::trial`). That correction was not cosmetic:
+/// it **reordered the top of the ranking**, because averaging fractions across
+/// seeds weights each seed by `1/denominator` and the denominators differ.
 ///
-/// Twice is a pattern, so [`MEASURED_AT_GROWTH_RATE`] now makes the harness
-/// refuse to run rather than trusting anyone to read this paragraph.
-const G_GROWTH: f64 = 2.27;
-const G_BIOSPHERE: f64 = 0.84;
+/// | knob | under the fraction | under colony count |
+/// |---|---|---|
+/// | `biosphere_regen_rate` | +0.84 ± 0.24 — *third* | **+141.2 ± 18.1 — first, 7.8 SE** |
+/// | `growth_rate` | +2.27 ± 0.50 — first | +73.8 ± 20.3 — second |
+/// | `survey_reserve` | −0.13 ± 0.23 — **flat** | **−23.8 ± 10.1 — significant** |
+///
+/// A knob the old metric called inert is a real lever, and the lever the old
+/// metric ranked first is second. Two prior sets of constants in this file went
+/// stale by being *consumed*; this set was stale because the **objective** was
+/// wrong, which is a failure mode the [`MEASURED_AT_GROWTH_RATE`] guard cannot
+/// catch — it watches the operating point, not the metric.
+const G_GROWTH: f64 = 73.8;
+const G_BIOSPHERE: f64 = 141.2;
 
 /// The operating point the constants above were measured at.
 ///
@@ -50,47 +53,53 @@ const G_BIOSPHERE: f64 = 0.84;
 /// and still nominates a winner — it is just walking a direction that belongs
 /// to a point the engine has left. Comparing this against the live default
 /// turns that into a refusal at startup.
-const MEASURED_AT_GROWTH_RATE: f64 = 0.546;
+const MEASURED_AT_GROWTH_RATE: f64 = 0.873;
 
-/// **Deliberately excluded, with reasons** — stepping along noise, or along a
-/// direction the objective itself cannot confirm, is how a search wanders:
+/// **Deliberately excluded, with reasons** — stepping along noise is how a
+/// search wanders. Verdicts re-derived against the corrected objective; two
+/// of them changed, which is the point:
 ///
-/// - `medium_fleet_size`: the screen says `-0.58 ± 0.19` but the full
-///   objective says `+1.93 ± 2.37` — it cannot even resolve the sign. Read
-///   together with the ±25% levels (3.34 → 48.6%, **4.45 → 49.8%**, 5.56 →
-///   42.2%, seed 1), all three measurements agree on one thing: **4.45 is on
-///   the peak, where the gradient vanishes.** A ratified value that measures
-///   flat is doing its job. Left alone.
-/// - `center_mining_fraction` (+0.86 ± 0.48) and `outpost_mining_fraction`
-///   (+0.72 ± 0.37): both inside 2 SE. Candidates for the ten-seed bed
-///   (`hyades_todo.md` T-44), not for a step.
-/// - `cargo_unit_size`, `trade_decay_lambda`, `survey_reserve`,
-///   `rank.centrality_scale`: flat. The first two reading flat is a *proxy
-///   validation* — `cargo_unit_size` is known-saturated and
-///   `trade_decay_lambda` is known to sit at an interior optimum, so flat is
-///   exactly what both should read.
+/// - `medium_fleet_size` (−62.5 ± 26.3, 2.4 SE): now *marginally* significant
+///   where the fraction metric and the full objective disagreed. Three prior
+///   measurements put 4.45 on its peak (±25% levels: 3.34 → 48.6%, **4.45 →
+///   49.8%**, 5.56 → 42.2%, seed 1), and a 2.4-SE reading against that much
+///   contrary evidence is not enough to move an MC-ratified value. **Re-check
+///   it on the full objective before touching it** — it is the strongest
+///   remaining candidate, not a settled exclusion.
+/// - `survey_reserve` (−23.8 ± 10.1, 2.4 SE): **was flat under the fraction,
+///   is a real lever under colony count.** Excluded from *this* step only
+///   because it is an integer knob whose gradient the log-space line search
+///   handles badly, not because it is inert. Owed its own sweep.
+/// - `rank.centrality_scale` (+31.2 ± 26.7), `outpost_mining_fraction`
+///   (+27.5 ± 18.9), `center_mining_fraction` (+11.2 ± 5.9): inside 2 SE.
+///   Candidates for the wide bed (`SEEDS_WIDE`, `hyades_todo.md` T-44).
+/// - `cargo_unit_size` (−1.2 ± 35.3) and `trade_decay_lambda` (+3.8 ± 22.3):
+///   flat, and *correctly* so — the first is known-saturated and the second
+///   sits at a ratified interior optimum, so flat is what both should read.
+///   That they still read flat after the metric changed is a small validation
+///   of the new objective.
 const EXCLUDED: &[&str] = &[
-    "medium_fleet_size (at peak)",
-    "center/outpost_mining (noise)",
-    "cargo_unit_size, lambda, reserve, centrality (flat)",
+    "medium_fleet_size (2.4 SE, but three prior measurements put it on the peak — re-check first)",
+    "survey_reserve (2.4 SE and newly significant, but integer — owed its own sweep)",
+    "centrality_scale, both mining fractions (inside 2 SE)",
+    "cargo_unit_size, trade_decay_lambda (flat, as expected)",
 ];
-
+/// Colonies held at the horizon — an **absolute count**, matching
+/// `gradient_probe::trial`. See that function for why this is not a fraction:
+/// a habitability-derived denominator would let a terraforming or bombardment
+/// card move the score by changing what is counted rather than what is done.
 fn profile(cfg: SimConfig, doctrine: Doctrine) -> Vec<f64> {
     SEEDS
         .iter()
         .map(|&seed| {
             let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
-            let targets: HashSet<PlanetId> =
-                galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect();
-            let total = targets.len().max(1);
             let autopilots: Vec<Box<dyn Autopilot>> =
                 (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
             let mut cfg = cfg;
             cfg.seed = seed;
             let mut sim = Simulation::new(galaxy, cfg, autopilots);
             sim.run();
-            let snap = sim.snapshot();
-            snap.planets.iter().filter(|p| p.owner.is_some() && targets.contains(&p.id)).count() as f64 / total as f64
+            sim.snapshot().planets.iter().filter(|p| p.owner.is_some()).count() as f64
         })
         .collect()
 }
@@ -107,8 +116,9 @@ fn stderr(v: &[f64]) -> f64 {
 
 /// Configuration `alpha` steps along the normalised gradient, in log space.
 ///
-/// The direction is now only two-dimensional, and `growth_rate` is **94% of
-/// it** (`2.27 / √(2.27² + 0.84²)`). That matters because
+/// The direction is two-dimensional, and under the corrected objective
+/// `biosphere_regen_rate` is now **86% of it** (`141.2 / √(141.2² + 73.8²)`) —
+/// the reverse of the fraction-metric reading. That matters because
 /// `biosphere_regen_rate` is not a free economic knob: it is the dial that
 /// decides whether biological warfare is a real strategy or a rounding error
 /// (R-O63, standing-layer §9.1). If design pins it, stepping `growth_rate`
@@ -137,7 +147,7 @@ fn attribution(alpha: f64) {
 
     println!("\n=== Attribution at alpha = {alpha:.2} (full objective, paired on the same seeds) ===");
     let base = profile(base_cfg, base_doc);
-    println!("  baseline                     {:.2}%", mean(&base) * 100.0);
+    println!("  baseline                     {:.0} colonies", mean(&base));
     std::io::stdout().flush().ok();
 
     let cases: [(&str, SimConfig, Doctrine); 3] = [
@@ -148,12 +158,7 @@ fn attribution(alpha: f64) {
     for (label, cfg, doc) in cases {
         let p = profile(cfg, doc);
         let gains: Vec<f64> = p.iter().zip(base.iter()).map(|(a, b)| a - b).collect();
-        println!(
-            "  {label:<28} {:.2}%   paired {:>+6.2} ± {:.2}",
-            mean(&p) * 100.0,
-            mean(&gains) * 100.0,
-            stderr(&gains) * 100.0
-        );
+        println!("  {label:<28} {:>8.0}   paired {:>+7.1} ± {:.1}", mean(&p), mean(&gains), stderr(&gains));
         std::io::stdout().flush().ok();
     }
     println!(
@@ -203,7 +208,7 @@ fn main() {
 
     let (base_cfg, base_doc) = at(0.0);
     let base = profile(base_cfg, base_doc);
-    println!("alpha=0.00 (baseline)  {:.2}% ± {:.2}\n", mean(&base) * 100.0, stderr(&base) * 100.0);
+    println!("alpha=0.00 (baseline)  {:.0} ± {:.0} colonies\n", mean(&base), stderr(&base));
     std::io::stdout().flush().ok();
 
     println!("{:>6} {:>9} {:>9}   {:>8} {:>18}", "alpha", "bio_regen", "growth", "mean", "paired gain");
@@ -218,12 +223,12 @@ fn main() {
         // Paired, seed by seed: the only comparison that is not mostly seed.
         let gains: Vec<f64> = p.iter().zip(base.iter()).map(|(a, b)| a - b).collect();
         println!(
-            "{alpha:>6.2} {:>9.4} {:>9.3}   {:>7.2}% {:>+11.2} ± {:.2}",
+            "{alpha:>6.2} {:>9.4} {:>9.3}   {:>8.0} {:>+11.1} ± {:.1}",
             cfg.biosphere_regen_rate,
             doc.growth_rate,
-            mean(&p) * 100.0,
-            mean(&gains) * 100.0,
-            stderr(&gains) * 100.0
+            mean(&p),
+            mean(&gains),
+            stderr(&gains)
         );
         std::io::stdout().flush().ok();
         if mean(&p) > best.1 {
@@ -231,7 +236,7 @@ fn main() {
         }
     }
 
-    println!("\nBest verified step: alpha = {:.2} at {:.2}% coverage.", best.0, best.1 * 100.0);
+    println!("\nBest verified step: alpha = {:.2} at {:.0} colonies.", best.0, best.1);
     println!(
         "Ratify only this — the paired gain is the evidence, and a step that does not\n\
          beat the baseline on the same seeds is not an improvement no matter what the\n\
