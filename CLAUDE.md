@@ -227,16 +227,27 @@ A metric you can only read near the horizon is not a shortcut to the horizon.
 Nothing in the shipped engine mutates habitability *yet*, so this looked
 cosmetic. It was not — **correcting it reordered the top of the ranking**:
 
-| knob | under the fraction | under colony count |
-|---|---|---|
-| `biosphere_regen_rate` | +0.84 ± 0.24 — third | **+141.2 ± 18.1 — first (7.8 SE)** |
-| `growth_rate` | +2.27 ± 0.50 — first | +73.8 ± 20.3 — second |
-| `survey_reserve` | −0.13 ± 0.23 — **flat** | **−23.8 ± 10.1 — significant** |
+| knob | under the fraction | under colony count | confirmed? |
+|---|---|---|---|
+| `biosphere_regen_rate` | +0.84 ± 0.24 — third | **+141.2 ± 18.1 — first (7.8 SE)** | yes |
+| `growth_rate` | +2.27 ± 0.50 — first | +73.8 ± 20.3 — second | yes |
+| `survey_reserve` | −0.13 ± 0.23 — flat | −23.8 ± 10.1 — "significant" | **no — false positive** |
 
-A knob the old metric called inert turned out to be a real lever, and the one
-it ranked first is second. The cause is the cross-seed weighting above, and
-`growth_rate` was ratified while the fraction was under-weighting the actual
-top lever.
+The top two genuinely swapped, and `growth_rate` was ratified while the
+fraction under-weighted the actual top lever. But **the third row is a sixth
+artifact, and this one the corrected metric *created*** — a direct sweep of
+`survey_reserve` (`gradient_step --sweep-reserve`) shows the probe had the sign
+backwards: 1024 sits on a plateau (2048 is +3.5 ± 2.6, noise) with a cliff
+*below* it (512 → −21.8, 256 → −96.8, 64 → −840). A ±10% perturbation on a
+plateau read noise and cleared 2 SE by luck.
+
+Two lessons, and the second is the more useful one. **A 2.4-SE reading on four
+seeds is not a finding, it is a coin landing on its edge** — the 2-SE bar is a
+floor for *considering* a knob, not a licence to move it. And **"screen, then
+confirm on the objective" caught this**, which is the entire reason the rule
+exists: the screen proposed a direction, the confirmation refuted it, and no
+default moved. A correction to the metric fixes some readings and can
+manufacture others; both need the same confirmation step.
 
 **The general rule, which is the transferable part:** an objective must be
 invariant to everything the thing being optimized can change. Ask of any

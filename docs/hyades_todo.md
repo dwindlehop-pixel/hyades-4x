@@ -567,6 +567,35 @@ search should optimize jointly against both the coverage objective and the
 
 ### T-20. Raise coverage inside a fixed 4,000-year run
 
+> **The objective is now an absolute colony count** (CLAUDE.md §2). The old
+> fraction let a habitability-derived denominator into the score, which
+> terraforming and bombardment cards would both have moved *against* the play.
+> Shipped defaults measure **3,472 ± 24 colonies** on the 4-seed CRN bed.
+>
+> **Every knob was re-measured against the corrected metric, and the answer is
+> that the defaults stay.** Not for want of looking — three candidates were
+> examined and each was rejected on its own evidence:
+>
+> | candidate | measured | why it was not taken |
+> |---|---|---|
+> | `biosphere_regen_rate` + `growth_rate` together | **+6.2 ± 1.8** (3.4 SE) | real but **+0.18%**, and unobtainable without raising the R-O63 design dial 56% |
+> | `survey_reserve` → lower | probe said −23.8 ± 10.1 | **refuted by direct sweep** — 1024 is a plateau, the cliff is *below* it |
+> | `medium_fleet_size` → lower | −62.5 ± 26.3 (2.4 SE) | three prior measurements put 4.45 on its peak |
+>
+> **The attribution is the interesting part and it reversed under the corrected
+> metric.** `growth_rate` alone is **negative** (−12.0 ± 11.0) and
+> `biosphere_regen_rate` alone is noise (+1.5 ± 1.8), yet together they are
+> +6.2 ± 1.8. They are **complements, not substitutes** — the opposite of what
+> the fraction reported. Population consumes biosphere 1:1 (design law #11), so
+> raising growth without funding the regrowth starves the ecology that caps
+> `K`. That is also the mechanism behind the starvation cliff, now explained
+> rather than merely bounded.
+>
+> **So the honest reading of this objective is that it is finished as a tuning
+> target.** The best available step is 0.18% and costs design surface; the
+> ceiling is `k_high` (R-AC18), not the economy. Further work belongs on the
+> classifier or on a new mechanism, not on these knobs.
+
 **~51.4%** of colonizable worlds (4-seed CRN mean) after **four** ratifications:
 `trade_decay_lambda = 0.01` (a *missing term* — routing had no distance
 component) took it from 14.4% to 38.3%; a verified gradient step on four knobs

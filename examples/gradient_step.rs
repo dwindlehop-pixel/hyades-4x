@@ -35,10 +35,11 @@ const PLAYERS: usize = 3;
 /// |---|---|---|
 /// | `biosphere_regen_rate` | +0.84 ± 0.24 — *third* | **+141.2 ± 18.1 — first, 7.8 SE** |
 /// | `growth_rate` | +2.27 ± 0.50 — first | +73.8 ± 20.3 — second |
-/// | `survey_reserve` | −0.13 ± 0.23 — **flat** | **−23.8 ± 10.1 — significant** |
+/// | `survey_reserve` | −0.13 ± 0.23 — flat | −23.8 ± 10.1 — **false positive** |
 ///
-/// A knob the old metric called inert is a real lever, and the lever the old
-/// metric ranked first is second. Two prior sets of constants in this file went
+/// The top two genuinely swapped. The third did not: `--sweep-reserve` shows
+/// 1024 on a plateau with a cliff *below* it, so the probe had the sign
+/// backwards and the old "flat" verdict was the better one. Two prior sets of constants in this file went
 /// stale by being *consumed*; this set was stale because the **objective** was
 /// wrong, which is a failure mode the [`MEASURED_AT_GROWTH_RATE`] guard cannot
 /// catch — it watches the operating point, not the metric.
@@ -66,10 +67,12 @@ const MEASURED_AT_GROWTH_RATE: f64 = 0.873;
 ///   contrary evidence is not enough to move an MC-ratified value. **Re-check
 ///   it on the full objective before touching it** — it is the strongest
 ///   remaining candidate, not a settled exclusion.
-/// - `survey_reserve` (−23.8 ± 10.1, 2.4 SE): **was flat under the fraction,
-///   is a real lever under colony count.** Excluded from *this* step only
-///   because it is an integer knob whose gradient the log-space line search
-///   handles badly, not because it is inert. Owed its own sweep.
+/// - `survey_reserve` (−23.8 ± 10.1, 2.4 SE): **the probe was wrong here, and
+///   `--sweep-reserve` is what caught it.** 1024 sits on a plateau (2048 is
+///   +3.5 ± 2.6) with a cliff below (512 → −21.8, 256 → −96.8, 64 → −840), so
+///   the local ±10% difference was noise on flat ground that cleared 2 SE by
+///   luck. Keep 1024. A 2.4-SE reading on four seeds is a reason to confirm,
+///   never a reason to move a default.
 /// - `rank.centrality_scale` (+31.2 ± 26.7), `outpost_mining_fraction`
 ///   (+27.5 ± 18.9), `center_mining_fraction` (+11.2 ± 5.9): inside 2 SE.
 ///   Candidates for the wide bed (`SEEDS_WIDE`, `hyades_todo.md` T-44).
