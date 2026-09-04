@@ -189,7 +189,43 @@ fn direction_is_still_live() -> bool {
     false
 }
 
+/// **`survey_reserve` sweep** (`--sweep-reserve`). The corrected objective
+/// promoted this knob from "flat" to a real lever (−23.8 ± 10.1), and unlike
+/// the two in the gradient direction it carries **no design cost** — it is a
+/// pure search-behaviour tunable, already documented as monotone by
+/// construction (survey is a fallback, never a pre-emption). It is excluded
+/// from the log-space line search only because it is an integer.
+///
+/// Negative elasticity means *lower* is better, so the sweep goes down.
+fn sweep_reserve() {
+    let cfg = SimConfig::new(0);
+    let base_doc = Doctrine::default();
+    println!("=== survey_reserve sweep (full objective, paired on the same seeds) ===");
+    let base = profile(cfg, base_doc);
+    println!("  {:>6} (shipped)  {:>8.0} colonies", base_doc.survey_reserve, mean(&base));
+    std::io::stdout().flush().ok();
+    for reserve in [64usize, 128, 256, 512, 2048] {
+        let doc = Doctrine { survey_reserve: reserve, ..base_doc };
+        let p = profile(cfg, doc);
+        let gains: Vec<f64> = p.iter().zip(base.iter()).map(|(a, b)| a - b).collect();
+        let (g, se) = (mean(&gains), stderr(&gains));
+        let verdict = if g.abs() < 2.0 * se {
+            "~noise"
+        } else if g > 0.0 {
+            "BETTER"
+        } else {
+            "worse"
+        };
+        println!("  {reserve:>6}            {:>8.0} colonies   paired {g:>+7.1} ± {se:.1}  [{verdict}]", mean(&p));
+        std::io::stdout().flush().ok();
+    }
+}
+
 fn main() {
+    if std::env::args().any(|a| a == "--sweep-reserve") {
+        sweep_reserve();
+        return;
+    }
     let forced = std::env::args().any(|a| a == "--force");
     if !forced && !direction_is_still_live() {
         std::process::exit(1);
