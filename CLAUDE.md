@@ -610,6 +610,20 @@ changes how you *work*, not what is left to do:
   | **shipped defaults**, 3 seats, 8 kyr | 9,501 | **79 yr/s** | **32×** |
   | **shipped defaults**, 12 seats, 4 kyr | 14,649 | 128 yr/s | 51× |
   | shipped defaults, 12 seats, 8 kyr | — | not yet measured | — |
+  | post-gradient-step defaults, 3 seats, 4 kyr *(other hardware)* | 11,602 | 148.8 yr/s | 60× |
+  | + mining-pair recycling, same run | 10,965 | 142.4 yr/s | 57× |
+
+  **The 456 yr/s row is stale in a way worth naming.** It was taken before the
+  gradient step raised coverage 38% → 49%, and vehicle count is the first-order
+  cost: the same scenario now carries **11,602 vehicles against 5,649**. The last
+  two rows are that scenario re-measured (`examples/mining_probe -- bench`), but
+  on the ephemeral container rather than the machine the rest of the table came
+  from, so they are **not** directly comparable to the rows above and do not
+  isolate how much of the drop is entity count versus hardware. What they are
+  good for is the comparison *within* the pair, which is same-machine and
+  same-run: recycling costs ~4% of throughput and removes ~640 vehicles, so it
+  is not a throughput risk. Re-measuring the whole table on one machine is
+  outstanding.
 
   The first two rows are kept only as the historical baseline: they are the
   configuration design law #14 says never to benchmark against, and they are why the

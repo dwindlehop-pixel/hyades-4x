@@ -372,7 +372,14 @@ fn pct(n: usize, d: usize) -> f64 {
 /// that is either in the model or not — so the honest test is a paired
 /// difference at the operating point, not an elasticity.
 fn compare_recycling() {
-    let off = profile(SimConfig::new(0), Doctrine::default());
+    // **Set both sides explicitly.** Reading either arm off the default is how
+    // this driver once reported +0.00 ± 0.00 on all four seeds: the default had
+    // just been flipped to `true`, so the "off" arm was running the same
+    // configuration as the "on" arm. A bit-identical A/B is a harness bug
+    // before it is a finding.
+    let mut off_cfg = SimConfig::new(0);
+    off_cfg.recycle_mining_pairs = false;
+    let off = profile(off_cfg, Doctrine::default());
     let mut on_cfg = SimConfig::new(0);
     on_cfg.recycle_mining_pairs = true;
     let on = profile(on_cfg, Doctrine::default());
