@@ -909,13 +909,17 @@ pub struct SimConfig {
 /// `examples/mining_probe -- recycle` compares both settings on the same seeds.
 ///
 /// **`true`, ratified on request** ("use the mining outpost strategy that leads
-/// to the greatest amount of colonies"). Paired on the standard 4-seed bed:
-/// **+0.78 ± 0.35 points of colonies**, 49.11% → 49.89%, per-seed
-/// [+0.4, +0.0, +1.5, +1.2] — up on every seed and down on none, and clearing
-/// 2 SE, but only just. It is the *largest* effect available on this surface,
-/// which says more about the surface than about the effect: five of the six
-/// mining knobs cannot be told from noise at all
-/// (`Hyades_autopilot_colonization_growth.md` §5b).
+/// to the greatest amount of colonies"). Paired on the **8-seed** bed:
+/// **+1.69 ± 0.53 points of colonies** (3.2 SE), 47.67% → 49.36%, per-seed
+/// [+0.5, +0.1, +3.0, +1.2, +1.5, +3.7, +0.0, +3.5] — up on every seed, down on
+/// none. The standard four could not resolve it (+1.19 ± 0.64, 1.9 SE) because
+/// seed 42 alone swings +3.0 points.
+///
+/// It is by a wide margin the largest effect available on this surface, which
+/// says more about the surface than about the effect: five of the six mining
+/// *knobs* cannot be told from noise at all
+/// (`Hyades_autopilot_colonization_growth.md` §5b). Tuning was exhausted; this
+/// is a term.
 pub const RECYCLE_MINING_PAIRS_DEFAULT: bool = true;
 
 impl SimConfig {

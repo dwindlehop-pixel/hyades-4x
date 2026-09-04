@@ -77,13 +77,43 @@ A pair is built for **one** rock: `Shuttle { outpost, .. }` fixes the pickup leg
 | outposts opened | 2,188 |
 | outposts mined out | 2,029 (93%) |
 | mean productive life of a rock | 808 yr |
-| outpost-years spent on a **dead** rock | 1,115,236 of 2,843,918 — **39%** |
+| **idle hull-years at the horizon** | **2,769,957** across 5,310 hulls — ~520 yr each |
 
-Two hulls per dead rock, bought and then idle for a mean of ~550 years each.
+Two hulls per dead rock, bought and then idle for a mean of roughly five centuries.
 
-**And the freighter never even noticed.** `sys_mining_tick` stops when the *yield* falls to the floor (`density × outpost_mining_fraction ≤ density_floor`, i.e. metallicity 0.042 at the shipped values), while `sys_freighter_arrive` waited for metallicity `< density_floor` = 0.01. In that band the mine is dead and the hauler is not told, so it flies empty round trips for the rest of the match: measured on seed 1, **not one freighter of 2,655 ever reached its stand-down branch.** Both now use the miner's predicate, which is what the branch was always trying to express. **Resolved by `SimConfig::recycle_mining_pairs`:** an exhausted pair goes to **Reserve** — which is already what roles §4.6 says a standing mission that ends does, as against the *completable* mission of an exhausted Scout, which scraps — and the next center ordering a mining pair takes the reserved hulls **nearest its target** instead of buying new ones. No minerals, no build delay, only the flight from wherever the dead rock left them. Measured paired on the standard 4-seed bed: **+0.76 ± 0.42 points of colonies** (49.11% → 49.87%, per-seed [+0.1, −0.0, +1.7, +1.3]) — positive on three seeds of four but short of 2 SE, so **the flag ships off** until it clears.
+> **The first version of this measurement was of the wrong quantity**, and it is
+> worth recording because it looked entirely reasonable. It reported
+> "outpost-years spent on a dead rock, 39%" — but outpost-years are a property
+> of the **rock**, and recycling cannot change how long a world holds ore. Run
+> against the flag it duly reported 39% → 40% and made the change look inert.
+> Worse, its idle accounting read the Reserve log line, which the *old*
+> behaviour never wrote, so it credited stranding with **zero** idle years. The
+> row above is hull-years, derived from the rock's death rather than from a log
+> line only one arm emits, which is what makes the two arms comparable.
 
-That first measurement was taken with a **pricing fault in the decision**, since corrected: `ProductionContext::mining_pair_cost` still quoted the full price of a new pair, so a center too poor to buy one sat Idle beside hulls it already owned, and reserved pairs were only ever taken by centers rich enough not to need them. The context now quotes `Simulation::mining_pair_price` — the halves that are *not* in Reserve, which is exactly what the build step charges. The re-measurement under the corrected price is the number that decides whether this becomes the default; the +0.76 above stands as the measurement of the weaker version.
+**And the freighter never even noticed.** `sys_mining_tick` stops when the *yield* falls to the floor (`density × outpost_mining_fraction ≤ density_floor`, i.e. metallicity 0.042 at the shipped values), while `sys_freighter_arrive` waited for metallicity `< density_floor` = 0.01. In that band the mine is dead and the hauler is not told, so it flies empty round trips for the rest of the match: measured on seed 1, **not one freighter of 2,655 ever reached its stand-down branch.** Both now use the miner's predicate, which is what the branch was always trying to express. **Resolved by `SimConfig::recycle_mining_pairs`:** an exhausted pair goes to **Reserve** — which is already what roles §4.6 says a standing mission that ends does, as against the *completable* mission of an exhausted Scout, which scraps — and the next center ordering a mining pair takes the reserved hulls **nearest its target** instead of buying new ones. No minerals, no build delay, only the flight from wherever the dead rock left them. Measured paired, and the measurement took three passes to get right:
+
+| bed | measurement | SE | verdict |
+|---|---|---|---|
+| 4 seeds, first cut | +0.76 | 0.42 | 1.8 SE — below the bar |
+| 4 seeds, pricing corrected | +0.78 | 0.35 | 2.2 SE |
+| 4 seeds, predicate corrected | +1.19 | 0.64 | 1.9 SE — the effect grew, and so did the variance |
+| **8 seeds** | **+1.69** | **0.53** | **3.2 SE — adopted** |
+
+Final: **49.11% → 50.30%** on the standard four, **47.67% → 49.36%** over eight, **positive on all eight seeds and negative on none** (+0.5 +0.1 +3.0 +1.2 +1.5 +3.7 +0.0 +3.5). The four-seed bed could not resolve it because seed 42 alone swings +3.0 points; that is what `SEEDS_WIDE` is for, and it is the only call in this project so far that has needed it.
+
+Two corrections were load-bearing and are worth keeping. **The decision was pricing a pair it was not going to buy:** `ProductionContext::mining_pair_cost` quoted the full price even when hulls sat in Reserve, so a center too poor for a new pair sat Idle beside hulls it already owned, and recycled pairs only ever reached centers rich enough not to need them. It now quotes `Simulation::mining_pair_price` — the halves not in Reserve, which is what the build step charges. **And the freighter fix is inert on its own:** with recycling off, the corrected predicate reproduces 49.11% to the digit. It stops empty round trips; what it *buys* is the freighter half of recycling, without which only miners were ever re-tasked.
+
+The census, seed 1, same ~2,620 mining missions either way:
+
+| | recycling off | recycling on |
+|---|---|---|
+| miner hulls built | 2,655 | 1,889 |
+| freighter hulls built | 2,655 | 1,867 |
+| missions flown by a re-used hull | 0 | 1,482 |
+| idle hull-years at the horizon | 2,769,957 | 1,236,512 |
+
+29% fewer hulls bought for the same work, and the minerals go into colonizers instead. Throughput cost is ~4% (148.8 → 142.4 yr/s, seed 1), against fewer vehicles alive — not a T-24 risk.
 
 **R-AC9:** "nearest production center" computed under light-lag (true nearest vs. nearest-known). **R-AC10:** mining rate, freighter capacity/cadence, and whether a freighter round-trip is itself a scheduled light-lagged event.
 
@@ -154,7 +184,7 @@ minerals against a 3-mineral upgrade.
 
 **Now `3.2`**, just above the galaxy's median K (~3.22), so the low-K half of the galaxy classifies as mining and the high-K half as colonies. Probing `k_high` alone took seed 1 from 41 colonies to 537; with `survey_reserve = 1024`, `max_survey_hops = 120` and an 8,000-year horizon it reaches **100% of colonizable worlds on 4 of 4 test-bed seeds** (3,435/3,435 · 3,467/3,467 · 3,471/3,471 · 3,516/3,516).
 
-**"Colonizable" there means *at or above `k_high`*, and that is the whole of T-20's gap.** The denominator in those four fractions is the set this threshold admits — 3,435 of seed 1's 6,725 planets, 51.1% of them — not the coverage objective's `min(hab, bio) > 0.01`, which is effectively every planet in the galaxy. Measured by `examples/reach_limit.rs` on the standard bed at the shipped 4,000-year horizon, the run reaches **90–100% of the above-gate set** (97.5% · 99.6% · 89.6% · 93.0%) while scoring 46–51% of the objective. So the limiter on coverage is this classification, not survey (0–2 worlds above the gate go unscanned) and not the mineral economy. Two consequences worth stating. The threshold is **not quite a fixed set**: population is paid for out of biosphere (L6) and `k_potential = min(hab, bio)`, so 240 / 207 / 286 / 275 worlds per seed end the run below a gate they started above — a settled world can drop out of the class that made it settleable. And lowering the gate to widen the ceiling directly shrinks the Mining-outpost class that funds expansion — the R-AC17 failure, run in the other direction. **R-AC18:** should the Colony class carry a K floor at all, or should `k_high` order *preference* rather than gate *eligibility*? The ceiling curve is in T-20; the two knobs must move together.
+**"Colonizable" there means *at or above `k_high`*, and that is the whole of T-20's gap.** The denominator in those four fractions is the set this threshold admits — 3,435 of seed 1's 6,725 planets, 51.1% of them — not the coverage objective's `min(hab, bio) > 0.01`, which is effectively every planet in the galaxy. Measured by `examples/reach_limit.rs` on the standard bed at the shipped 4,000-year horizon, the run reaches **95–100% of the above-gate set** (98.4% · 99.8% · 95.4% · 95.2%, at the current defaults — 97.5 · 99.6 · 89.6 · 93.0 before R-AC19) while scoring 49–51% of the objective. So the limiter on coverage is this classification, not survey (**no** world above the gate goes unscanned on any bed seed at the current defaults; it was 0–2 before R-AC19) and not the mineral economy. Two consequences worth stating. The threshold is **not quite a fixed set**: population is paid for out of biosphere (L6) and `k_potential = min(hab, bio)`, so 240 / 207 / 286 / 275 worlds per seed end the run below a gate they started above — a settled world can drop out of the class that made it settleable. And lowering the gate to widen the ceiling directly shrinks the Mining-outpost class that funds expansion — the R-AC17 failure, run in the other direction. **R-AC18:** should the Colony class carry a K floor at all, or should `k_high` order *preference* rather than gate *eligibility*? The ceiling curve is in T-20; the two knobs must move together.
 
 **The stalled configuration is no longer the reference.** Treat the snowball as the baseline the engine is tuned and benchmarked against; a run that plateaus at a few dozen colonies is now a regression, not a starting point. `centrality_scale` has *not* been recalibrated and remains open from the same ~25 ly-era tuning.
 

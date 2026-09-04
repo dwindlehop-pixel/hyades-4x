@@ -522,10 +522,12 @@ search should optimize jointly against both the coverage objective and the
 
 ### T-20. Raise coverage inside a fixed 4,000-year run
 
-**~49%** of colonizable worlds (3,348 of 6,725, seed 1) after two ratifications:
+**~50%** of colonizable worlds (3,381 of 6,725, seed 1) after three ratifications:
 `trade_decay_lambda = 0.01` (a *missing term* — routing had no distance
 component) took it from 14.4% to 38.3%, and a verified gradient step on four
-knobs took it to 49.3%. Neither came from a coordinate sweep.
+knobs took it to 49.3%, and R-AC19 (mining-pair recycling) added +1.69 ± 0.53
+on the 8-seed bed. **None of the three came from a coordinate sweep** — a
+missing term, a measured gradient, and a second missing term.
 
 **The remaining headroom is not obviously in these knobs.** The gradient step
 found a cliff at α = 1.0 (coverage collapses to 6.9% as the Medium hull's hold
@@ -543,13 +545,20 @@ binding constraint:
 
 | seed | targets | above `k_high` | colonized | **share of the reachable set** | unscanned above the gate | scanned, still unclaimed |
 |---|---|---|---|---|---|---|
-| 1 | 6,725 | 3,435 (51.1%) | 3,348 | **97.5%** | 1 | 86 |
-| 7 | 6,725 | 3,467 (51.6%) | 3,452 | **99.6%** | 0 | 15 |
-| 42 | 6,725 | 3,471 (51.6%) | 3,110 | **89.6%** | 2 | 359 |
-| 31337 | 6,725 | 3,551 (52.8%) | 3,301 | **93.0%** | 0 | 250 |
+| 1 | 6,725 | 3,435 (51.1%) | 3,381 | **98.4%** | 0 | 54 |
+| 7 | 6,725 | 3,467 (51.6%) | 3,460 | **99.8%** | 0 | 7 |
+| 42 | 6,725 | 3,471 (51.6%) | 3,311 | **95.4%** | 0 | 160 |
+| 31337 | 6,725 | 3,551 (52.8%) | 3,379 | **95.2%** | 0 | 172 |
+
+Measured at the current defaults, i.e. **after** R-AC19 (mining-pair recycling,
+autopilot §5a) — which moved the reachable-set share up from 97.5 / 99.6 / 89.6
+/ 93.0 and closed the last unscanned worlds. It **tightens this conclusion
+rather than changing it**: the +1.69 points landed inside a set that was already
+90–100% taken, so the classification ceiling is now the only thing of any size
+still holding coverage down.
 
 Read the fifth column, not the fourth. The run already takes **90–100% of
-everything the ranking makes takeable**; the ~49% is `rank` classifying the
+everything the ranking makes takeable**; the ~50% is `rank` classifying the
 low-K half of the galaxy as *Mining outpost* or *Barren*, so a colonizer is
 never dispatched there — `production_choice` and `assign_role` both draw only
 from `PlanetClass::Colony` / `ProductionCenter`, and `sim.rs` drops Barren
@@ -580,9 +589,9 @@ an unowned world. It does mean any denominator taken from final state is a
 different set than the one the policy actually chose from.
 
 **Where the headroom actually is.** Counting mining outposts as reach, the bed
-covers **78.5–83.6%** of targets — two thirds of the sub-gate worlds are
+covers **81.0–84.0%** of targets — two thirds of the sub-gate worlds are
 already visited, just not settled. The genuinely untouched remainder is 16–21%
-of targets, and on seed 1 it is 1,189 worlds of which only 86 sit above the
+of targets, and on seed 1 it is 1,139 worlds of which only 54 sit above the
 gate: the rest are low-K *and* too mineral-poor to mine, i.e. Barren to
 everyone, and no amount of economy or horizon reaches them.
 
@@ -602,6 +611,28 @@ economy, so the two must move together or not at all. **R-AC18** puts the
 design question rather than guessing at a value: should the Colony class have a
 K floor at all, or should `k_high` order *preference* rather than gate
 *eligibility*?
+
+### T-47. What is left on the mining surface after R-AC19
+
+Recycling (autopilot §5a) is landed and is worth +1.69 ± 0.53 points of
+colonies. What it leaves open is smaller and specific:
+
+- **`rank.mineral_high` is the one live knob** — +3.92 ± 1.86 on the standard
+  bed, which clears 2 SE by a hair and therefore wants the 8-seed bed before
+  anyone moves it. Raising it mines *fewer, richer* rocks; note that is the
+  opposite direction from R-AC17's failure, so the two ends of this threshold
+  are not symmetric and a step needs its own verification rather than an
+  extrapolation.
+- **Which rock a recycled pair is sent to is the producing center's choice,
+  not the pair's.** The center picks the target by rank and the hulls fly from
+  wherever the dead rock left them, which can be most of a galaxy away. Letting
+  the pair pick the nearest outpost candidate itself would shorten the flights,
+  but it costs a candidate scan per re-tasking — the §4 locality rule, so it
+  needs measuring rather than assuming.
+- **A recycled pair is only taken when a center orders one.** A pool of idle
+  hulls does not itself provoke an outpost; if mining loses the score
+  comparison to a colony target the center saves for the colonizer, and the
+  free pair keeps waiting. Whether that is correct is a doctrine question.
 
 ### T-21. R-SIM2 — survey scan cost
 
