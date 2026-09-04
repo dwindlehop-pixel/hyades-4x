@@ -54,6 +54,12 @@ use hyades_engine::prelude::*;
 /// Common random numbers: the *same* seeds for every configuration — the
 /// standard bed `gradient_probe`, `gradient_step` and `reach_limit` all use.
 const SEEDS: &[u64] = &[1, 7, 42, 31337];
+/// A wider bed, for settling a call the standard four cannot resolve. Not a
+/// replacement for `SEEDS`: every elasticity in §5b is measured on the standard
+/// bed so it sits beside `gradient_probe`'s numbers. This exists because the
+/// recycling A/B landed at 1.86 SE — a real effect the four-seed bed could not
+/// separate from noise, because seed 42 alone swings +3.0 points.
+const SEEDS_WIDE: &[u64] = &[1, 7, 42, 31337, 2, 13, 99, 4242];
 const PLAYERS: usize = 3;
 /// Relative step for the central difference, matching `gradient_probe`.
 const DELTA: f64 = 0.10;
@@ -78,7 +84,11 @@ fn trial(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> f64 {
 
 /// Per-seed vector — the CRN unit. Never collapse to a mean before differencing.
 fn profile(cfg: SimConfig, doctrine: Doctrine) -> Vec<f64> {
-    SEEDS.iter().map(|&s| trial(s, cfg, doctrine)).collect()
+    profile_on(SEEDS, cfg, doctrine)
+}
+
+fn profile_on(seeds: &[u64], cfg: SimConfig, doctrine: Doctrine) -> Vec<f64> {
+    seeds.iter().map(|&s| trial(s, cfg, doctrine)).collect()
 }
 
 fn mean(v: &[f64]) -> f64 {
@@ -371,7 +381,7 @@ fn pct(n: usize, d: usize) -> f64 {
 /// leaving it parked, on the same seeds. This is not a gradient — it is a term
 /// that is either in the model or not — so the honest test is a paired
 /// difference at the operating point, not an elasticity.
-fn compare_recycling() {
+fn compare_recycling(seeds: &[u64]) {
     // **Set both sides explicitly.** Reading either arm off the default is how
     // this driver once reported +0.00 ± 0.00 on all four seeds: the default had
     // just been flipped to `true`, so the "off" arm was running the same
@@ -379,13 +389,14 @@ fn compare_recycling() {
     // before it is a finding.
     let mut off_cfg = SimConfig::new(0);
     off_cfg.recycle_mining_pairs = false;
-    let off = profile(off_cfg, Doctrine::default());
+    let off = profile_on(seeds, off_cfg, Doctrine::default());
     let mut on_cfg = SimConfig::new(0);
     on_cfg.recycle_mining_pairs = true;
-    let on = profile(on_cfg, Doctrine::default());
+    let on = profile_on(seeds, on_cfg, Doctrine::default());
     let diffs: Vec<f64> = on.iter().zip(off.iter()).map(|(a, b)| (a - b) * 100.0).collect();
     println!(
-        "  recycle_mining_pairs  off {:.2}%  ->  on {:.2}%   paired {:+.2} ± {:.2} points   per-seed {:?}",
+        "  recycle_mining_pairs  {} seeds   off {:.2}%  ->  on {:.2}%   paired {:+.2} ± {:.2} points   per-seed {:?}",
+        seeds.len(),
         mean(&off) * 100.0,
         mean(&on) * 100.0,
         mean(&diffs),
@@ -443,7 +454,8 @@ fn main() {
         return;
     }
     if args.iter().any(|a| a == "recycle") {
-        compare_recycling();
+        let seeds = if args.iter().any(|a| a == "wide") { SEEDS_WIDE } else { SEEDS };
+        compare_recycling(seeds);
         return;
     }
     if args.iter().any(|a| a == "census") {
