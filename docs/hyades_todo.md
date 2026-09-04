@@ -575,22 +575,40 @@ took it to 49.3%; **R-AC19 (mining-pair recycling)** added +1.69 ± 0.53 on the
 standard four. **None came from a coordinate sweep** — two missing terms and
 two measured gradients.
 
-> **⚠ The last two gains have never been measured together, and their sum is
-> not established.** They were developed on parallel branches and each was
-> measured *without* the other: recycling's +1.69 against a baseline with
-> `growth_rate = 0.546`, and `growth_rate`'s +2.31 against a baseline with
-> recycling off. Adding them to predict ~53% is exactly the
-> "compare measurements taken at different operating points" error this file
-> has now recorded twice (R-AC20's withdrawn premise; the two stale constant
-> sets in `gradient_step.rs`).
+> **Measured — and they are strongly sub-additive, as the `k_high` finding
+> predicted.** The two gains were developed on parallel branches and each was
+> measured *without* the other: recycling's +1.69 (8 seeds) / +1.19 (standard
+> four) against `growth_rate = 0.546`, and `growth_rate`'s +2.31 against
+> recycling off. On the merged defaults, standard four seeds:
 >
-> There is positive reason to expect them to be **sub-additive** rather than
-> additive. `examples/reach_limit.rs` found the binding constraint on this
-> objective is **`k_high`, not the economy** — the bed already colonizes
-> 90–100% of what the threshold *admits*, and it admits only 51–53% of the
-> galaxy. Both gains are economic, and the economy is not what is short.
-> A joint re-measure on the merged defaults is the first thing to run, and
-> the honest expectation is that most of the second gain has nowhere to go.
+> | configuration | coverage | vs. neither |
+> |---|---|---|
+> | neither | 49.11% | — |
+> | recycling only | 50.30% | +1.19 |
+> | `growth_rate` only | 51.42% | +2.31 |
+> | **both (shipped now)** | **51.64% ± 0.36** | **+2.53** |
+> | *additive prediction* | *52.61%* | *+3.50* |
+>
+> **The sum falls ~1 point short of additive, and recycling's marginal
+> contribution on top of `growth_rate` is +0.22 — not resolvable on this bed.**
+> Symmetrically, `growth_rate` keeps only +1.34 of its +2.31 once recycling is
+> on. They are substitutes competing for the same headroom, the same shape the
+> `growth_rate`/`biosphere_regen_rate` pair showed.
+>
+> **Why, and it is the useful part:** `examples/reach_limit.rs` found the
+> binding constraint here is **`k_high`, not the economy** — the bed already
+> colonizes 90–100% of what the threshold *admits*, and it admits only 51–53%
+> of the galaxy. Both gains are economic, and the economy is not what is short.
+> Adding a third economic improvement should be expected to buy near nothing.
+>
+> **This is not an argument against recycling**, which was ratified on its own
+> 8-seed evidence and buys a real hull economy regardless of coverage (29%
+> fewer hulls for the same work, idle hull-years 2.77 M → 1.24 M). It is an
+> argument that **the coverage objective is now capped by classification, not
+> production** — so the next move is R-AC18 (should the Colony class have a K
+> floor at all), not another economic knob. The marginal figures above sit
+> inside the 4-seed noise; `SEEDS_WIDE` would settle them, but no pending
+> decision turns on it.
 **The third one is the methodological point:** it came from re-running the
 probe *at the operating point the second step had produced*. The old direction
 had been spent — of nine knobs, four measured flat, two were inside 2 SE, and

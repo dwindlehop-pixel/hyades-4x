@@ -700,11 +700,24 @@ changes how you *work*, not what is left to do:
   rather than the grid; then **re-measure it after you step**, because the
   direction you just spent is not the direction you are now standing in.
 
-  **Diminishing returns are visible and worth reading.** +23.9, then +11.0,
-  then +2.3 points. The remaining knobs are flat, noisy, or at their peaks
-  (`medium_fleet_size` now measures `+1.93 ± 2.37` — it is *on* the hilltop),
-  so the next real gain almost certainly needs a new *term* or a new
-  *mechanism*, not another step along this ray.
+  **Diminishing returns are visible, and the cause is now known.** +23.9, then
+  +11.0, then +2.3 points. It is not that the economy ran out of headroom:
+  `examples/reach_limit.rs` shows the binding constraint is **`k_high`, not the
+  economy** — the bed already colonizes 90–100% of what that threshold
+  *admits*, and it admits only 51–53% of the galaxy. The objective's
+  denominator counts every world with `min(hab,bio) > 0.01`; the classifier
+  does not.
+
+  That predicts, correctly, that further economic gains stop adding.
+  `growth_rate` (+2.31 alone) and mining-pair recycling (+1.19 alone on the
+  standard four) combine to **+2.53, not +3.50** — recycling's marginal
+  contribution on top of `growth_rate` is +0.22, inside the noise. Two
+  independent, individually-real improvements, mostly cancelling because they
+  compete for headroom that is not economic. **Before tuning another economic
+  knob, check whether the thing you are optimizing is what is actually
+  scarce** — and note that both gains were measured on parallel branches
+  *without each other*, which is the same operating-point trap in a new
+  costume: concurrent work needs a joint re-measure at merge, not addition.
 
 ---
 
