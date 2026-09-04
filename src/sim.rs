@@ -52,7 +52,7 @@
 //! [`Simulation::log`] to see exactly what each `sys_*` system did and why.
 
 use std::cmp::{Ordering, Reverse};
-use std::collections::{BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use crate::autopilot::{
     Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext,
@@ -788,6 +788,22 @@ pub struct SimConfig {
     /// victim centuries. **Placeholder magnitude** pending MC (R-O63); `0.10`
     /// recovers roughly a third of a deficit over four cycles.
     pub biosphere_regen_rate: f64,
+    /// **Re-task a mining pair when its rock runs dry**, instead of leaving the
+    /// miner and its freighter parked on a dead world for the rest of the match.
+    ///
+    /// A pair is built for one rock: `Shuttle { outpost, .. }` fixes the pickup
+    /// leg at spawn and only the *delivery* leg is need-routed, so exhaustion
+    /// used to end both hulls' working lives. Measured on seed 1 at the shipped
+    /// defaults (`examples/mining_probe -- census`): **2,029 of 2,188 outposts
+    /// mine out**, a rock lasts a mean of **808 years**, and **39% of all
+    /// outpost-years are spent on an exhausted one** — a miner and a freighter
+    /// each, paid for and idle.
+    ///
+    /// With this on, an exhausted pair goes to Reserve (roles §4.6 — standing
+    /// and re-taskable, never auto-scrapped) and the next center that wants a
+    /// mining pair takes the reserved hulls nearest its target instead of
+    /// buying new ones: no mineral cost, no build delay, only the flight.
+    pub recycle_mining_pairs: bool,
     /// Fraction of an outpost's density extracted per mining tick.
     ///
     /// **MC-ratified at 0.238** by a verified gradient step (`gradient_probe`
@@ -888,6 +904,11 @@ pub struct SimConfig {
     pub seed: u64,
 }
 
+/// Default for [`SimConfig::recycle_mining_pairs`]. Kept as a named constant
+/// rather than a literal because it is the switch an A/B measurement flips —
+/// `examples/mining_probe -- recycle` compares both settings on the same seeds.
+pub const RECYCLE_MINING_PAIRS_DEFAULT: bool = false;
+
 impl SimConfig {
     /// **Is the derived hull ladder usable?** `None` if fine, `Some(reason)` if
     /// the configuration produces a degenerate one.
@@ -947,6 +968,7 @@ impl SimConfig {
             limited_fleet_size: 9.0,
             homeworld_start_minerals: 3.0,
             enforce_roster: false,
+            recycle_mining_pairs: RECYCLE_MINING_PAIRS_DEFAULT,
             center_mining_fraction: 0.15,
             biosphere_regen_rate: 0.127,
             outpost_mining_fraction: 0.238,
@@ -1018,6 +1040,15 @@ pub struct Simulation {
     events_processed: u64,
     /// Outpost indices with an active mining tick (dedup).
     active_mines: BTreeSet<u64>,
+    /// Which miner is working which outpost, so exhaustion can find the hull it
+    /// stranded. Keyed by outpost entity index; `BTreeMap` for deterministic
+    /// iteration, like every other collection in here.
+    mine_operator: BTreeMap<u64, Entity>,
+    /// Per-player pools of hulls whose rock ran dry, awaiting re-tasking. Push
+    /// order is event order, so these are deterministic; selection is by
+    /// distance to the new target, not by position in the pool.
+    reserve_miners: Vec<Vec<Entity>>,
+    reserve_freighters: Vec<Vec<Entity>>,
     /// Optional diagnostic event log — off (records nothing) until
     /// [`Simulation::set_log_filter`] enables a category. See [`crate::log`].
     log: SimLog,
@@ -1103,6 +1134,9 @@ impl Simulation {
             seq: 0,
             events_processed: 0,
             active_mines: BTreeSet::new(),
+            mine_operator: BTreeMap::new(),
+            reserve_miners: vec![Vec::new(); n],
+            reserve_freighters: vec![Vec::new(); n],
             current_round: 0,
             inert_card_plays: 0,
             log: SimLog::new(),
@@ -1577,6 +1611,7 @@ impl Simulation {
         self.park(vehicle, here);
         self.world.knowledge.get_mut(self.player_entity[p]).unwrap().exploited.insert(pid);
         self.log.push(self.clock, LogEvent::VehicleParked { player: p as u32, vehicle, role: Role::Miner, at: pid });
+        self.mine_operator.insert(outpost.0, vehicle);
         if self.active_mines.insert(outpost.0) {
             self.schedule(self.config.mining_tick_years, EventKind::MiningTick { outpost });
         }
@@ -1616,11 +1651,15 @@ impl Simulation {
             if load <= 1e-9 && dens < self.config.density_floor {
                 let here = self.position_at(sh.outpost, self.clock).unwrap();
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
-                self.log.push(
-                    self.clock,
-                    LogEvent::VehicleParked { player: p, vehicle, role: Role::Freighter, at: outpost_pid },
-                );
                 self.park(vehicle, here);
+                if self.config.recycle_mining_pairs {
+                    self.release_to_reserve(vehicle, Role::Freighter, outpost_pid);
+                } else {
+                    self.log.push(
+                        self.clock,
+                        LogEvent::VehicleParked { player: p, vehicle, role: Role::Freighter, at: outpost_pid },
+                    );
+                }
                 return;
             }
             // Route to whichever owned production center offers the best
@@ -1738,6 +1777,14 @@ impl Simulation {
         } else {
             self.active_mines.remove(&outpost.0); // mined out
             self.log.push(self.clock, LogEvent::MiningExhausted { planet: pid });
+            // The rock is done, but the hull is not. Roles §4.6: a standing
+            // mission that ends puts the vehicle in Reserve, re-taskable —
+            // only a *completable* mission (an exhausted Scout) scraps.
+            if let Some(miner) = self.mine_operator.remove(&outpost.0) {
+                if self.config.recycle_mining_pairs {
+                    self.release_to_reserve(miner, Role::Miner, pid);
+                }
+            }
         }
     }
 
@@ -1860,7 +1907,14 @@ impl Simulation {
             limited_min_level: self.config.limited_min_level,
             infra_cost: target_level,
             colonizer_cost: role_cost(Role::Colonizer, &self.config),
-            mining_pair_cost: role_cost(Role::Miner, &self.config) + role_cost(Role::Freighter, &self.config),
+            // The *true* price of a pair to this center right now. With
+            // recycling on, a half that comes out of Reserve is not bought, and
+            // the context has to say so or the decision is made on a price the
+            // build step will not charge: a center too poor for a new pair would
+            // sit Idle next to hulls it already owns. `apply_build_with` takes
+            // the nearest reserved hull of each kind, so this matches what it
+            // will actually spend.
+            mining_pair_cost: self.mining_pair_price(p),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: cands.len(),
         };
@@ -1937,11 +1991,26 @@ impl Simulation {
                 // it (roles §5: the nearest center produces both), so the pair is
                 // one economic act even though it is two objects.
                 let paired_freighter = role == Role::Miner;
-                let mut cost = role_cost(role, &self.config);
-                if paired_freighter {
-                    if !self.roster_permits(p, role_hull_type(Role::Freighter)) {
-                        return;
+                if paired_freighter && !self.roster_permits(p, role_hull_type(Role::Freighter)) {
+                    return;
+                }
+
+                // Recycling is checked *before* pricing, because a hull taken
+                // from Reserve is not bought: the pair's cost is only the halves
+                // that still have to be built. A center that could not afford a
+                // new pair can therefore still open an outpost with idle hulls,
+                // which is the whole point — 39% of outpost-years were being
+                // spent on exhausted rocks.
+                let target_entity = target.map(|t| self.planet_entity[t.0 as usize]);
+                let (reused_miner, reused_freighter) = match (self.config.recycle_mining_pairs, role, target_entity) {
+                    (true, Role::Miner, Some(te)) => {
+                        let at = *self.world.position.get(te).unwrap();
+                        (self.take_nearest_reserve(p, true, at), self.take_nearest_reserve(p, false, at))
                     }
+                    _ => (None, None),
+                };
+                let mut cost = if reused_miner.is_some() { 0.0 } else { role_cost(role, &self.config) };
+                if paired_freighter && reused_freighter.is_none() {
                     cost += role_cost(Role::Freighter, &self.config);
                 }
 
@@ -1949,15 +2018,29 @@ impl Simulation {
                     self.mark_targeted(p, t);
                 }
                 if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
+                    // Put anything taken from Reserve back, or the hulls vanish
+                    // on a build that never happened.
+                    if let Some(e) = reused_miner {
+                        self.reserve_miners[p].push(e);
+                    }
+                    if let Some(e) = reused_freighter {
+                        self.reserve_freighters[p].push(e);
+                    }
                     return;
                 }
                 match (role, target) {
                     (Role::Scout, _) => self.launch_survey(p, center_pos, Vec3::ZERO, 0),
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
-                        self.spawn_courier(p, r, center, center_pos, te);
+                        match reused_miner {
+                            Some(e) => self.retask_miner(e, p, center, te),
+                            None => self.spawn_courier(p, r, center, center_pos, te),
+                        }
                         if paired_freighter {
-                            self.spawn_freighter(p, center, center_pos, te);
+                            match reused_freighter {
+                                Some(e) => self.retask_freighter(e, p, center, te),
+                                None => self.spawn_freighter(p, center, center_pos, te),
+                            }
                         }
                     }
                     (_, None) => {}
@@ -1979,6 +2062,95 @@ impl Simulation {
             return true;
         }
         self.world.roster.get(self.player_entity[p]).map(|r| r.has_hull(hull)).unwrap_or(false)
+    }
+
+    /// What a mining pair costs player `p` this cycle: the halves that are not
+    /// already sitting in Reserve. Equals the full price whenever recycling is
+    /// off, which is what keeps the flag a clean A/B.
+    fn mining_pair_price(&self, p: usize) -> f64 {
+        let full_miner = role_cost(Role::Miner, &self.config);
+        let full_freighter = role_cost(Role::Freighter, &self.config);
+        if !self.config.recycle_mining_pairs {
+            return full_miner + full_freighter;
+        }
+        let miner = if self.reserve_miners[p].is_empty() { full_miner } else { 0.0 };
+        let freighter = if self.reserve_freighters[p].is_empty() { full_freighter } else { 0.0 };
+        miner + freighter
+    }
+
+    /// A hull whose mission ended puts itself in Reserve and joins its owner's
+    /// pool (`Hyades_vehicle_roles.md` §4.6). It keeps its position — Reserve is
+    /// a standing state, not a recall — so the flight it will eventually make is
+    /// paid from wherever the rock left it.
+    fn release_to_reserve(&mut self, vehicle: Entity, role: Role, at: PlanetId) {
+        let Some(&owner) = self.world.owner.get(vehicle) else { return };
+        let p = owner.0 as usize;
+        self.world.role.insert(vehicle, Role::Reserve);
+        match role {
+            Role::Miner => self.reserve_miners[p].push(vehicle),
+            _ => self.reserve_freighters[p].push(vehicle),
+        }
+        self.log.push(self.clock, LogEvent::VehicleParked { player: owner.0, vehicle, role: Role::Reserve, at });
+    }
+
+    /// Take the reserved hull **nearest the target** out of `pool`, if any.
+    ///
+    /// Nearest rather than first: these hulls are scattered across every rock
+    /// the empire has ever worked out, so the choice is a real distance and the
+    /// flight is the whole cost of recycling. The scan is `O(idle hulls of one
+    /// kind for one player)` — bounded by the fleet, not by the galaxy, and run
+    /// only when a center actually orders a mining pair (§4's locality rule).
+    fn take_nearest_reserve(&mut self, p: usize, miner: bool, target: Vec3) -> Option<Entity> {
+        let pool = if miner { &self.reserve_miners[p] } else { &self.reserve_freighters[p] };
+        let mut best: Option<(usize, f64)> = None;
+        for (i, &e) in pool.iter().enumerate() {
+            let Some(pos) = self.position_at(e, self.clock) else { continue };
+            let d = pos.distance(target);
+            // Deterministic argmin: distance, tie-broken by pool order.
+            if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+                best = Some((i, d));
+            }
+        }
+        let (i, _) = best?;
+        let pool = if miner { &mut self.reserve_miners[p] } else { &mut self.reserve_freighters[p] };
+        Some(pool.remove(i))
+    }
+
+    /// Send a reserved hull back out on a fresh mining mission. No build delay:
+    /// the ship exists, so only the flight is ahead of it.
+    fn retask_miner(&mut self, e: Entity, p: usize, center: Entity, target: Entity) {
+        let from = self.position_at(e, self.clock).unwrap_or(Vec3::ZERO);
+        let dest = *self.world.position.get(target).unwrap();
+        self.world.role.insert(e, Role::Miner);
+        self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
+        self.world.home_center.insert(e, center);
+        let accel = self.config.civilian_accel_g * G;
+        let arrive = self.set_leg(e, from, dest, accel, 0.0);
+        self.schedule_at(arrive, EventKind::MiningArrive { vehicle: e });
+        let target_pid = *self.world.planet_id.get(target).unwrap();
+        self.log.push(
+            self.clock,
+            LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Miner, from, to: target_pid },
+        );
+    }
+
+    /// Re-bind a reserved freighter to a new outpost. The pickup leg is the
+    /// fixed one (`sys_freighter_arrive`), so re-binding it is exactly what
+    /// recycling means for this hull.
+    fn retask_freighter(&mut self, e: Entity, p: usize, center: Entity, outpost: Entity) {
+        let from = self.position_at(e, self.clock).unwrap_or(Vec3::ZERO);
+        let dest = *self.world.position.get(outpost).unwrap();
+        self.world.role.insert(e, Role::Freighter);
+        self.world.home_center.insert(e, center);
+        self.world.shuttle.insert(e, Shuttle { outpost, destination: center, outbound: true });
+        let accel = self.config.civilian_accel_g * G;
+        let arrive = self.set_leg(e, from, dest, accel, 0.0);
+        self.schedule_at(arrive, EventKind::FreighterArrive { vehicle: e });
+        let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
+        self.log.push(
+            self.clock,
+            LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Freighter, from, to: outpost_pid },
+        );
     }
 
     fn mark_targeted(&mut self, p: usize, target: PlanetId) {
@@ -2453,6 +2625,7 @@ fn take_basics(bank: &mut Minerals, amount: f64) -> Minerals {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::autopilot::Ranked;
     use crate::cards::CardId;
     use crate::galaxy::GalaxyConfig;
 
@@ -3085,6 +3258,113 @@ mod tests {
             .collect();
         assert_eq!(recovered_events.len(), 1);
         assert!(recovered_events[0] > 0.0, "scrap should recover a positive amount");
+    }
+
+    #[test]
+    fn an_exhausted_mining_pair_goes_to_reserve_and_is_re_tasked_not_stranded() {
+        // The strategic content of R-AC19: a rock runs dry after a mean of 808
+        // years (`examples/mining_probe -- census`) and the pair built for it
+        // used to stop working for the rest of the match. Reserve is the roles
+        // §4.6 state for a standing mission that ended, and a later mining
+        // order takes the hull back rather than buying another.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
+        let mut cfg = test_cfg(5);
+        cfg.recycle_mining_pairs = true;
+        let autopilots: Vec<Box<dyn Autopilot>> =
+            (0..2).map(|_| Box::new(BaselineAutopilot::default()) as Box<_>).collect();
+        let mut sim = Simulation::new(galaxy, cfg, autopilots);
+
+        let outpost = sim.planet_entity[11];
+        let next_rock = sim.planet_entity[12];
+        let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+
+        // A miner on station, exactly as `sys_mining_arrive` leaves one.
+        let miner = sim.world.spawn();
+        sim.world.owner.insert(miner, PlayerId(0));
+        sim.world.role.insert(miner, Role::Miner);
+        sim.world.hull_type.insert(miner, HullType::LimitedSystems);
+        sim.world.voyage.insert(miner, Voyage { target: outpost, heading_bias: None, hops: 0 });
+        sim.world.cargo.insert(miner, Minerals::default());
+        sim.world.home_center.insert(miner, center);
+        sim.sys_mining_arrive(miner);
+        assert_eq!(sim.mine_operator.get(&outpost.0), Some(&miner), "the operator must be recorded on station");
+
+        // Mine it out, then tick: the rock is done.
+        *sim.world.density.get_mut(outpost).unwrap() = MineralField::default();
+        sim.sys_mining_tick(outpost);
+
+        assert_eq!(
+            sim.world.role.get(miner),
+            Some(&Role::Reserve),
+            "an exhausted miner stands down, it does not scrap"
+        );
+        assert_eq!(sim.reserve_miners[0], vec![miner], "and it joins its owner's pool");
+        assert!(!sim.mine_operator.contains_key(&outpost.0), "the dead rock has no operator");
+
+        // Now a center orders a mining pair. The reserved hull is taken back at
+        // no mineral cost; only the un-recycled half is paid for.
+        let stock_before = 1000.0;
+        {
+            let st = sim.world.stockpile.get_mut(center).unwrap();
+            st.cyan = stock_before / 3.0;
+            st.magenta = stock_before / 3.0;
+            st.yellow = stock_before / 3.0;
+        }
+        let pid = *sim.world.planet_id.get(next_rock).unwrap();
+        let view = sim.view_of(next_rock);
+        let candidates =
+            vec![Candidate { view, ranked: Ranked { id: pid, score: 9.0, class: PlanetClass::MiningOutpost } }];
+        let center_pos = *sim.world.position.get(center).unwrap();
+        sim.apply_build_with(
+            0,
+            center,
+            center_pos,
+            BuildOrder::Hull { hull_type: HullType::LimitedSystems, class: Class::Meadow },
+            &candidates,
+        );
+
+        assert_eq!(sim.world.role.get(miner), Some(&Role::Miner), "the reserved hull is back on a mining mission");
+        assert!(sim.reserve_miners[0].is_empty(), "and out of the pool");
+        assert_eq!(
+            sim.world.voyage.get(miner).map(|v| v.target),
+            Some(next_rock),
+            "re-tasked to the new rock, flying from where the old one left it"
+        );
+        let spent = stock_before - sim.world.stockpile.get(center).unwrap().basic_total();
+        let freighter_only = role_cost(Role::Freighter, &sim.config);
+        assert!(
+            (spent - freighter_only).abs() < 1e-9,
+            "only the freighter is bought: spent {spent}, freighter costs {freighter_only}"
+        );
+    }
+
+    #[test]
+    fn recycling_off_leaves_the_pair_where_the_rock_died() {
+        // The flag's default has to be honest about what it changes: with it
+        // off, exhaustion strands the hull exactly as before.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
+        let mut cfg = test_cfg(5);
+        cfg.recycle_mining_pairs = false;
+        let autopilots: Vec<Box<dyn Autopilot>> =
+            (0..2).map(|_| Box::new(BaselineAutopilot::default()) as Box<_>).collect();
+        let mut sim = Simulation::new(galaxy, cfg, autopilots);
+
+        let outpost = sim.planet_entity[11];
+        let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let miner = sim.world.spawn();
+        sim.world.owner.insert(miner, PlayerId(0));
+        sim.world.role.insert(miner, Role::Miner);
+        sim.world.hull_type.insert(miner, HullType::LimitedSystems);
+        sim.world.voyage.insert(miner, Voyage { target: outpost, heading_bias: None, hops: 0 });
+        sim.world.cargo.insert(miner, Minerals::default());
+        sim.world.home_center.insert(miner, center);
+        sim.sys_mining_arrive(miner);
+
+        *sim.world.density.get_mut(outpost).unwrap() = MineralField::default();
+        sim.sys_mining_tick(outpost);
+
+        assert_eq!(sim.world.role.get(miner), Some(&Role::Miner), "still nominally mining a dead rock");
+        assert!(sim.reserve_miners[0].is_empty(), "nothing is pooled when recycling is off");
     }
 
     #[test]

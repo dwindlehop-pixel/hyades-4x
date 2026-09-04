@@ -68,7 +68,37 @@ So expansion is **production-centers-first, colonies-next**, always by descendin
 - A mining outpost is **not colonized**. Instead the **nearest production center produces a mining vehicle and a freighter**.
 - The **mining vehicle** extracts at the outpost; the **freighter** hauls the minerals back to the production center. This is the physical realization of the synthesis supply chain (world-model R-M5): basics flow from outposts to pop-Band-IV forges.
 
+### 5a. What happens when the rock runs dry — R-AC19 (resolved)
+
+A pair is built for **one** rock: `Shuttle { outpost, .. }` fixes the pickup leg at spawn and only the *delivery* leg is need-routed. Exhaustion therefore used to end both hulls' working lives. Measured on seed 1 at the shipped defaults (`examples/mining_probe -- census`, 3 seats, 4,000 yr):
+
+| | |
+|---|---|
+| outposts opened | 2,188 |
+| outposts mined out | 2,029 (93%) |
+| mean productive life of a rock | 808 yr |
+| outpost-years spent on a **dead** rock | 1,115,236 of 2,843,918 — **39%** |
+
+Two hulls per dead rock, bought and then idle for a mean of ~550 years each. **Resolved by `SimConfig::recycle_mining_pairs`:** an exhausted pair goes to **Reserve** — which is already what roles §4.6 says a standing mission that ends does, as against the *completable* mission of an exhausted Scout, which scraps — and the next center ordering a mining pair takes the reserved hulls **nearest its target** instead of buying new ones. No minerals, no build delay, only the flight from wherever the dead rock left them. Measured paired on the standard 4-seed bed: **+0.76 ± 0.42 points of colonies** (49.11% → 49.87%, per-seed [+0.1, −0.0, +1.7, +1.3]) — positive on three seeds of four but short of 2 SE, so **the flag ships off** until it clears.
+
+That first measurement was taken with a **pricing fault in the decision**, since corrected: `ProductionContext::mining_pair_cost` still quoted the full price of a new pair, so a center too poor to buy one sat Idle beside hulls it already owned, and reserved pairs were only ever taken by centers rich enough not to need them. The context now quotes `Simulation::mining_pair_price` — the halves that are *not* in Reserve, which is exactly what the build step charges. The re-measurement under the corrected price is the number that decides whether this becomes the default; the +0.76 above stands as the measurement of the weaker version.
+
 **R-AC9:** "nearest production center" computed under light-lag (true nearest vs. nearest-known). **R-AC10:** mining rate, freighter capacity/cadence, and whether a freighter round-trip is itself a scheduled light-lagged event.
+
+### 5b. The mining knobs are measured, and they are nearly all noise
+
+`examples/mining_probe` puts the whole mining policy through the `gradient_probe` method — CRN, paired central differences, elasticity, an SE on every number — on the standard 4-seed bed with **colonies** as the objective (outposts take no ownership, so coverage counts colonies exactly):
+
+| knob | value | d/dln x | SE | verdict |
+|---|---|---|---|---|
+| `rank.mineral_high` | 2.0 | **+3.92** | 1.86 | raise it — the only one clearing 2 SE, and barely |
+| `rank.mineral_pressure_gain` | 1.0 | −3.61 | 1.88 | ~noise |
+| `outpost_mining_fraction` | 0.238 | +3.49 | 2.58 | ~noise |
+| `rank.w_mineral` | 0.8 | +2.34 | 1.33 | ~noise |
+| `mining_tick_years` | 50 | −1.97 | 2.32 | ~noise |
+| `density_floor` | 0.01 | +0.07 | 0.14 | flat — inert here |
+
+Two readings. **`outpost_mining_fraction` has gone quiet**: it measured +14.5 ± 5.8 at 0.20 before the gradient step and +3.49 ± 2.58 at the ratified 0.238, which is what a knob moved onto a local optimum should look like, and an independent confirmation of that step. And **five of six knobs cannot be told from noise**, which is the same verdict T-20 reached for the coverage objective as a whole: this surface is tuned out, and what is left is terms, not values. §5a is one.
 
 ---
 
