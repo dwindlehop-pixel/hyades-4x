@@ -24,18 +24,33 @@ use hyades_engine::prelude::*;
 const SEEDS: &[u64] = &[1, 7, 42, 31337];
 const PLAYERS: usize = 3;
 
-/// Significant elasticities from `gradient_probe --screen`, **re-measured at
-/// the current shipped defaults** (points per ln of the `colonies@2000`
-/// proxy). Only knobs outside 2 SE appear.
+/// Significant elasticities from `gradient_probe --screen` (points per ln of
+/// the `colonies@2000` proxy). Only knobs outside 2 SE appear.
 ///
-/// **These replace the pre-ratification constants** (`medium_fleet_size` 32.73,
-/// `biosphere` 19.70, `outpost_mining` 14.48, `growth` 7.30). Those were
-/// measured at the *previous* operating point, and the whole reason this file
-/// exists is that a gradient is local — reusing them after the step that
-/// consumed them would be the "compare gradients across operating points"
-/// error that produced this project's fifth artifact (R-AC18, withdrawn).
+/// **⚠ These are CONSUMED — the step they pointed at has been taken and
+/// ratified** (`growth_rate` 0.546 → 0.873). They are kept as the record of
+/// that step, not as a direction to walk again. A gradient is local; reusing
+/// one after the step that spent it is the "compare gradients across operating
+/// points" error that produced this project's fifth artifact (R-AC18,
+/// withdrawn) — and it had already claimed the *previous* set of constants in
+/// this same file (`medium_fleet_size` 32.73, `biosphere` 19.70,
+/// `outpost_mining` 14.48, `growth` 7.30, all measured before the step that
+/// consumed them).
+///
+/// Twice is a pattern, so [`MEASURED_AT_GROWTH_RATE`] now makes the harness
+/// refuse to run rather than trusting anyone to read this paragraph.
 const G_GROWTH: f64 = 2.27;
 const G_BIOSPHERE: f64 = 0.84;
+
+/// The operating point the constants above were measured at.
+///
+/// **This is the guard.** Editing a default without re-running
+/// `gradient_probe --screen` silently invalidates the direction, and the
+/// failure is invisible: the line search still runs, still prints a tidy table,
+/// and still nominates a winner — it is just walking a direction that belongs
+/// to a point the engine has left. Comparing this against the live default
+/// turns that into a refusal at startup.
+const MEASURED_AT_GROWTH_RATE: f64 = 0.546;
 
 /// **Deliberately excluded, with reasons** — stepping along noise, or along a
 /// direction the objective itself cannot confirm, is how a search wanders:
@@ -147,7 +162,33 @@ fn attribution(alpha: f64) {
     );
 }
 
+/// Refuse to walk a direction that belongs to an operating point the engine has
+/// left. Returns `true` if the constants still match the live defaults.
+fn direction_is_still_live() -> bool {
+    let live = Doctrine::default().growth_rate;
+    if (live - MEASURED_AT_GROWTH_RATE).abs() < 1e-9 {
+        return true;
+    }
+    eprintln!(
+        "REFUSING TO RUN — the measured direction has been consumed.\n\n\
+         The elasticities in this file were measured at growth_rate = {MEASURED_AT_GROWTH_RATE},\n\
+         but the shipped default is now {live}. That step was taken and ratified, so this\n\
+         direction belongs to a point the engine has left. Walking it anyway is the\n\
+         'compare gradients across operating points' error (R-AC18, withdrawn) — and it\n\
+         would not look like an error: the line search would print a tidy table and\n\
+         nominate a winner regardless.\n\n\
+         Fix: re-run `cargo run --release --example gradient_probe -- --screen` (~68 s),\n\
+         then update G_* and MEASURED_AT_GROWTH_RATE from its output.\n\n\
+         To inspect the consumed step anyway, pass --force."
+    );
+    false
+}
+
 fn main() {
+    let forced = std::env::args().any(|a| a == "--force");
+    if !forced && !direction_is_still_live() {
+        std::process::exit(1);
+    }
     if let Some(pos) = std::env::args().position(|a| a == "--attribution") {
         let alpha = std::env::args().nth(pos + 1).and_then(|s| s.parse().ok()).unwrap_or(0.5);
         attribution(alpha);
