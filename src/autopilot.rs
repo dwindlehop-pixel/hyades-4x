@@ -94,7 +94,13 @@ impl Default for RankWeights {
             // class unreachable and stalled expansion at a few dozen colonies.
             // 3.2 sits just above the median K (~3.22), so the low-K half of the
             // galaxy becomes mining and the high-K half becomes colonies.
-            // Validated 4/4 test-bed seeds to 100% of colonizable worlds.
+            // Validated 4/4 test-bed seeds to 100% of colonizable worlds —
+            // where "colonizable" is *this threshold's own* set, 51-53% of the
+            // galaxy. That is the binding constraint on the T-20 coverage
+            // objective, which counts every world with min(hab,bio) > 0.01:
+            // the bed already colonizes 90-100% of what this admits
+            // (`examples/reach_limit.rs`). R-AC18 asks whether the Colony
+            // class should have a K floor at all.
             k_high: 3.2,
             mineral_high: 2.0,
             hub_high: 0.8,

@@ -60,7 +60,7 @@ None of the alternatives measured better, and `OpeningSectors` is what every
 existing coverage number in this tree was already measured against — nothing
 to gain by switching, so nothing switches.
 
-**Opened by this investigation, not resolved by it — see R-AC18 below:**
+**Opened by this investigation, not resolved by it — see R-AC20 below:**
 retargeting the search at *this* objective (rather than the tree's usual
 coverage-at-4,000-yr) surfaced that the levers on early speed are not the
 ones survey touches — `RankWeights::k_high` (R-AC5) and `medium_fleet_size`
@@ -70,7 +70,17 @@ objective.
 
 **R-AC4:** scan dwell-time and any close-scan range. **R-AC16 (resolved):** `Doctrine::survey_reserve`, the frontier size a center tries to keep ahead of itself before spending an otherwise-idle cycle on a scout. **1024**, ratified with the snowball defaults — survey has to scale with the empire or expansion outruns its own map. The knob is deliberately monotone (see §6a) so the offline search can refine it without risk of the collapse an earlier pre-emptive version produced.
 
-**R-AC18 (open, new):** *time-to-10%-colonized* and *coverage-at-4,000-yr*
+> **Renumbered from R-AC18 — an ID collision, not a revision.** This question
+> and main's R-AC18 (*should the Colony class have a K floor at all*) were
+> opened independently on parallel branches and both took the next free number.
+> They are different questions. Main's is live and referenced from
+> `src/autopilot.rs`, so it keeps R-AC18; this one — whose premise was
+> withdrawn anyway — moved to **R-AC20** (R-AC19 is main's mining-exhaustion
+> call). Recorded rather than silently swapped, because "R-AC18" in commits
+> before this merge may mean either one. IDs are never reused; this one was
+> *concurrently allocated*, which the numbering discipline did not anticipate.
+
+**R-AC20 (open, new):** *time-to-10%-colonized* and *coverage-at-4,000-yr*
 are genuinely different objectives, and at least one shipped, MC-ratified
 knob trades off between them. A gradient probe retargeted at years-to-10%
 (`examples/time_to_10pct_probe.rs`, same CRN/paired-difference/elasticity
@@ -119,7 +129,7 @@ confirmatory run.
 > Raising `medium_fleet_size` past 4.45 **hurts coverage too**, on all three
 > seeds. So both metrics agree at the operating point that actually ships:
 > the ratification landed on a hilltop, and the time-to-10% probe was
-> measuring the far side of it, not a competing objective. **R-AC18's premise
+> measuring the far side of it, not a competing objective. **R-AC20's premise
 > is withdrawn** — there is no early-speed-vs-coverage trade to adjudicate on
 > this knob, and no product decision is pending on it. What survives is the
 > methodological lesson: *never compare two gradients taken at different
@@ -175,7 +185,69 @@ So expansion is **production-centers-first, colonies-next**, always by descendin
 - A mining outpost is **not colonized**. Instead the **nearest production center produces a mining vehicle and a freighter**.
 - The **mining vehicle** extracts at the outpost; the **freighter** hauls the minerals back to the production center. This is the physical realization of the synthesis supply chain (world-model R-M5): basics flow from outposts to pop-Band-IV forges.
 
+### 5a. What happens when the rock runs dry — R-AC19 (resolved)
+
+A pair is built for **one** rock: `Shuttle { outpost, .. }` fixes the pickup leg at spawn and only the *delivery* leg is need-routed. Exhaustion therefore used to end both hulls' working lives. Measured on seed 1 at the shipped defaults (`examples/mining_probe -- census`, 3 seats, 4,000 yr):
+
+| | |
+|---|---|
+| outposts opened | 2,188 |
+| outposts mined out | 2,029 (93%) |
+| mean productive life of a rock | 808 yr |
+| **idle hull-years at the horizon** | **2,769,957** across 5,310 hulls — ~520 yr each |
+
+Two hulls per dead rock, bought and then idle for a mean of roughly five centuries.
+
+> **The first version of this measurement was of the wrong quantity**, and it is
+> worth recording because it looked entirely reasonable. It reported
+> "outpost-years spent on a dead rock, 39%" — but outpost-years are a property
+> of the **rock**, and recycling cannot change how long a world holds ore. Run
+> against the flag it duly reported 39% → 40% and made the change look inert.
+> Worse, its idle accounting read the Reserve log line, which the *old*
+> behaviour never wrote, so it credited stranding with **zero** idle years. The
+> row above is hull-years, derived from the rock's death rather than from a log
+> line only one arm emits, which is what makes the two arms comparable.
+
+**And the freighter never even noticed.** `sys_mining_tick` stops when the *yield* falls to the floor (`density × outpost_mining_fraction ≤ density_floor`, i.e. metallicity 0.042 at the shipped values), while `sys_freighter_arrive` waited for metallicity `< density_floor` = 0.01. In that band the mine is dead and the hauler is not told, so it flies empty round trips for the rest of the match: measured on seed 1, **not one freighter of 2,655 ever reached its stand-down branch.** Both now use the miner's predicate, which is what the branch was always trying to express. **Resolved by `SimConfig::recycle_mining_pairs`:** an exhausted pair goes to **Reserve** — which is already what roles §4.6 says a standing mission that ends does, as against the *completable* mission of an exhausted Scout, which scraps — and the next center ordering a mining pair takes the reserved hulls **nearest its target** instead of buying new ones. No minerals, no build delay, only the flight from wherever the dead rock left them. Measured paired, and the measurement took three passes to get right:
+
+| bed | measurement | SE | verdict |
+|---|---|---|---|
+| 4 seeds, first cut | +0.76 | 0.42 | 1.8 SE — below the bar |
+| 4 seeds, pricing corrected | +0.78 | 0.35 | 2.2 SE |
+| 4 seeds, predicate corrected | +1.19 | 0.64 | 1.9 SE — the effect grew, and so did the variance |
+| **8 seeds** | **+1.69** | **0.53** | **3.2 SE — adopted** |
+
+Final: **49.11% → 50.30%** on the standard four, **47.67% → 49.36%** over eight, **positive on all eight seeds and negative on none** (+0.5 +0.1 +3.0 +1.2 +1.5 +3.7 +0.0 +3.5). The four-seed bed could not resolve it because seed 42 alone swings +3.0 points; that is what `SEEDS_WIDE` is for, and it is the only call in this project so far that has needed it.
+
+Two corrections were load-bearing and are worth keeping. **The decision was pricing a pair it was not going to buy:** `ProductionContext::mining_pair_cost` quoted the full price even when hulls sat in Reserve, so a center too poor for a new pair sat Idle beside hulls it already owned, and recycled pairs only ever reached centers rich enough not to need them. It now quotes `Simulation::mining_pair_price` — the halves not in Reserve, which is what the build step charges. **And the freighter fix is inert on its own:** with recycling off, the corrected predicate reproduces 49.11% to the digit. It stops empty round trips; what it *buys* is the freighter half of recycling, without which only miners were ever re-tasked.
+
+The census, seed 1, same ~2,620 mining missions either way:
+
+| | recycling off | recycling on |
+|---|---|---|
+| miner hulls built | 2,655 | 1,889 |
+| freighter hulls built | 2,655 | 1,867 |
+| missions flown by a re-used hull | 0 | 1,482 |
+| idle hull-years at the horizon | 2,769,957 | 1,236,512 |
+
+29% fewer hulls bought for the same work, and the minerals go into colonizers instead. Throughput cost is ~4% (148.8 → 142.4 yr/s, seed 1), against fewer vehicles alive — not a T-24 risk.
+
 **R-AC9:** "nearest production center" computed under light-lag (true nearest vs. nearest-known). **R-AC10:** mining rate, freighter capacity/cadence, and whether a freighter round-trip is itself a scheduled light-lagged event.
+
+### 5b. The mining knobs are measured, and they are nearly all noise
+
+`examples/mining_probe` puts the whole mining policy through the `gradient_probe` method — CRN, paired central differences, elasticity, an SE on every number — on the standard 4-seed bed with **colonies** as the objective (outposts take no ownership, so coverage counts colonies exactly):
+
+| knob | value | d/dln x | SE | verdict |
+|---|---|---|---|---|
+| `rank.mineral_high` | 2.0 | **+3.92** | 1.86 | raise it — the only one clearing 2 SE, and barely |
+| `rank.mineral_pressure_gain` | 1.0 | −3.61 | 1.88 | ~noise |
+| `outpost_mining_fraction` | 0.238 | +3.49 | 2.58 | ~noise |
+| `rank.w_mineral` | 0.8 | +2.34 | 1.33 | ~noise |
+| `mining_tick_years` | 50 | −1.97 | 2.32 | ~noise |
+| `density_floor` | 0.01 | +0.07 | 0.14 | flat — inert here |
+
+Two readings. **`outpost_mining_fraction` has gone quiet**: it measured +14.5 ± 5.8 at 0.20 before the gradient step and +3.49 ± 2.58 at the ratified 0.238, which is what a knob moved onto a local optimum should look like, and an independent confirmation of that step. And **five of six knobs cannot be told from noise**, which is the same verdict T-20 reached for the coverage objective as a whole: this surface is tuned out, and what is left is terms, not values. §5a is one.
 
 ---
 
@@ -229,6 +301,8 @@ minerals against a 3-mineral upgrade.
 
 **Now `3.2`**, just above the galaxy's median K (~3.22), so the low-K half of the galaxy classifies as mining and the high-K half as colonies. Probing `k_high` alone took seed 1 from 41 colonies to 537; with `survey_reserve = 1024`, `max_survey_hops = 120` and an 8,000-year horizon it reaches **100% of colonizable worlds on 4 of 4 test-bed seeds** (3,435/3,435 · 3,467/3,467 · 3,471/3,471 · 3,516/3,516).
 
+**"Colonizable" there means *at or above `k_high`*, and that is the whole of T-20's gap.** The denominator in those four fractions is the set this threshold admits — 3,435 of seed 1's 6,725 planets, 51.1% of them — not the coverage objective's `min(hab, bio) > 0.01`, which is effectively every planet in the galaxy. Measured by `examples/reach_limit.rs` on the standard bed at the shipped 4,000-year horizon, the run reaches **95–100% of the above-gate set** (98.4% · 99.8% · 95.4% · 95.2%, at the current defaults — 97.5 · 99.6 · 89.6 · 93.0 before R-AC19) while scoring 49–51% of the objective. So the limiter on coverage is this classification, not survey (**no** world above the gate goes unscanned on any bed seed at the current defaults; it was 0–2 before R-AC19) and not the mineral economy. Two consequences worth stating. The threshold is **not quite a fixed set**: population is paid for out of biosphere (L6) and `k_potential = min(hab, bio)`, so 240 / 207 / 286 / 275 worlds per seed end the run below a gate they started above — a settled world can drop out of the class that made it settleable. And lowering the gate to widen the ceiling directly shrinks the Mining-outpost class that funds expansion — the R-AC17 failure, run in the other direction. **R-AC18:** should the Colony class carry a K floor at all, or should `k_high` order *preference* rather than gate *eligibility*? The ceiling curve is in T-20; the two knobs must move together.
+
 **The stalled configuration is no longer the reference.** Treat the snowball as the baseline the engine is tuned and benchmarked against; a run that plateaus at a few dozen colonies is now a regression, not a starting point. `centrality_scale` has *not* been recalibrated and remains open from the same ~25 ly-era tuning.
 
 ---
@@ -263,4 +337,4 @@ With this autopilot defined, the two trees' cards become authorable as **orders 
 - **R-AC9** nearest-center under lag · **R-AC10** mining/freighter rates · **R-AC11 resolved** (base step +20% productivity) · **R-AC12** multi-target output split/cadence
 - **R-AC13** "if pressed" at the colonization layer · **R-AC14** civilian hull stats · **R-AC15** lock enough to author depth-1 Far Shore & Greening beats
 - **R-AC16 resolved** (`survey_reserve` = 1024; §2) · **R-AC17 resolved** (`k_high` = 3.2, ratified — the snowball is the design; §6a). `centrality_scale` remains open from the same obsolete-extent tuning.
-- **R-AC18 (premise withdrawn; narrowed):** the claimed time-to-10% vs. coverage sign conflict on `medium_fleet_size` was an artifact of comparing gradients taken at **different operating points** — measured directly, 4.45 is an interior optimum and both metrics agree (§2). What remains open is only `center_mining_fraction` on a wider seed bed. The detour's real yield is the `colonies@2000` screening metric (ρ = 0.923, 31× cheaper — CLAUDE.md §2).
+- **R-AC20 (premise withdrawn; narrowed):** the claimed time-to-10% vs. coverage sign conflict on `medium_fleet_size` was an artifact of comparing gradients taken at **different operating points** — measured directly, 4.45 is an interior optimum and both metrics agree (§2). What remains open is only `center_mining_fraction` on a wider seed bed. The detour's real yield is the `colonies@2000` screening metric (ρ = 0.923, 31× cheaper — CLAUDE.md §2).
