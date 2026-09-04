@@ -535,6 +535,74 @@ the run length; the coverage reached within it is the objective.** Do not extend
 the horizon: doubling it doubles every trial and the 60-second rule already had
 to absorb the snowball once. T-07 and T-21 are the nearest levers.
 
+**The limiter is now measured, and it is `k_high` — not the economy, not
+survey, not the horizon** (`examples/reach_limit.rs`, standard 4-seed bed,
+3 seats, 4,000 yr). The driver partitions the target set instead of sweeping
+it, so every target lands in exactly one bucket and the biggest bucket is the
+binding constraint:
+
+| seed | targets | above `k_high` | colonized | **share of the reachable set** | unscanned above the gate | scanned, still unclaimed |
+|---|---|---|---|---|---|---|
+| 1 | 6,725 | 3,435 (51.1%) | 3,348 | **97.5%** | 1 | 86 |
+| 7 | 6,725 | 3,467 (51.6%) | 3,452 | **99.6%** | 0 | 15 |
+| 42 | 6,725 | 3,471 (51.6%) | 3,110 | **89.6%** | 2 | 359 |
+| 31337 | 6,725 | 3,551 (52.8%) | 3,301 | **93.0%** | 0 | 250 |
+
+Read the fifth column, not the fourth. The run already takes **90–100% of
+everything the ranking makes takeable**; the ~49% is `rank` classifying the
+low-K half of the galaxy as *Mining outpost* or *Barren*, so a colonizer is
+never dispatched there — `production_choice` and `assign_role` both draw only
+from `PlanetClass::Colony` / `ProductionCenter`, and `sim.rs` drops Barren
+worlds before they reach the candidate list at all. Survey is not the limiter
+(0–2 unscanned worlds above the gate on the whole bed), and neither is the
+mineral economy.
+
+**This also resolves the apparent contradiction with
+`Hyades_autopilot_colonization_growth.md` §6**, which reports **100% of
+colonizable worlds** on the same bed. Both numbers are right and the
+denominators differ: that "colonizable" is the above-gate set (3,435 on seed 1
+— the same count this driver measures), while the coverage objective's is
+`min(hab, bio) > 0.01`, which is effectively every planet in the galaxy. The
+gap between them is not work left undone; it is a class of world the baseline
+policy declines to settle. Three of §6's four counts reproduce here exactly
+(3,435 · 3,467 · 3,471); its fourth reads 3,516 against this driver's 3,551 for
+seed 31337, which is **unexplained and small** — galaxy generation is
+deterministic per seed and neither `max_survey_hops` nor the horizon touches
+it, so the likeliest causes are a different fourth seed or a generator change
+since that run.
+
+**A side finding: the gate is not a fixed set.** 240 / 207 / 286 / 275 above-gate worlds per
+seed (1 / 7 / 42 / 31337) end the run *below* `k_high`, because population is
+paid for out of biosphere (L6) and `k_potential = min(hab, bio)` — a settled
+world can drop out of the class that made it settleable. It does not touch the
+table above, which measures at generation because that is what `rank` sees for
+an unowned world. It does mean any denominator taken from final state is a
+different set than the one the policy actually chose from.
+
+**Where the headroom actually is.** Counting mining outposts as reach, the bed
+covers **78.5–83.6%** of targets — two thirds of the sub-gate worlds are
+already visited, just not settled. The genuinely untouched remainder is 16–21%
+of targets, and on seed 1 it is 1,189 worlds of which only 86 sit above the
+gate: the rest are low-K *and* too mineral-poor to mine, i.e. Barren to
+everyone, and no amount of economy or horizon reaches them.
+
+The ceiling as a function of the threshold (galaxy alone, no run, seed 1):
+
+| `k_high` | 1.5 | 2.0 | 2.5 | 3.0 | **3.2** | 3.5 | 4.0 |
+|---|---|---|---|---|---|---|---|
+| colonizable share | 99.9% | 97.8% | 88.0% | 63.5% | **51.1%** | 31.8% | 7.1% |
+| minable worlds left below the gate | 9 | 106 | 478 | 1,039 | **1,255** | 1,488 | 1,684 |
+
+3.2 sits on the steepest part of that curve — 3.0 alone would raise the ceiling
+12.4 points — and the second row is why it cannot simply be lowered: `k_high`
+*also* defines the Mining-outpost class, and R-AC17 is the record of what
+happens when that class is starved (zero mining pairs, zero freighter legs,
+expansion stalled at 41 colonies). Lowering the gate buys ceiling and sells
+economy, so the two must move together or not at all. **R-AC18** puts the
+design question rather than guessing at a value: should the Colony class have a
+K floor at all, or should `k_high` order *preference* rather than gate
+*eligibility*?
+
 ### T-21. R-SIM2 — survey scan cost
 
 The survey scan is still O(planets) per arrival. The trigger is right (arrival
