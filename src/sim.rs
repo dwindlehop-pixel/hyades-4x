@@ -907,7 +907,16 @@ pub struct SimConfig {
 /// Default for [`SimConfig::recycle_mining_pairs`]. Kept as a named constant
 /// rather than a literal because it is the switch an A/B measurement flips —
 /// `examples/mining_probe -- recycle` compares both settings on the same seeds.
-pub const RECYCLE_MINING_PAIRS_DEFAULT: bool = false;
+///
+/// **`true`, ratified on request** ("use the mining outpost strategy that leads
+/// to the greatest amount of colonies"). Paired on the standard 4-seed bed:
+/// **+0.78 ± 0.35 points of colonies**, 49.11% → 49.89%, per-seed
+/// [+0.4, +0.0, +1.5, +1.2] — up on every seed and down on none, and clearing
+/// 2 SE, but only just. It is the *largest* effect available on this surface,
+/// which says more about the surface than about the effect: five of the six
+/// mining knobs cannot be told from noise at all
+/// (`Hyades_autopilot_colonization_growth.md` §5b).
+pub const RECYCLE_MINING_PAIRS_DEFAULT: bool = true;
 
 impl SimConfig {
     /// **Is the derived hull ladder usable?** `None` if fine, `Some(reason)` if
@@ -1647,8 +1656,18 @@ impl Simulation {
                 );
             }
             // Stop shuttling once the outpost is exhausted and empty.
+            //
+            // **The predicate has to be the miner's, not a stricter one.**
+            // `sys_mining_tick` stops when the *yield* falls to the floor
+            // (`density × outpost_mining_fraction <= density_floor`), so at the
+            // shipped values a rock stops producing at metallicity 0.042 — while
+            // this branch used to wait for 0.01. In that band the mine is dead
+            // and the freighter does not know it, so it shuttles empty round
+            // trips for the rest of the match: measured on seed 1, **not one
+            // freighter of 2,655 ever reached this branch.** Same test, same
+            // verdict, and the hull becomes re-taskable when its rock dies.
             let dens = self.world.density.get(sh.outpost).unwrap().metallicity();
-            if load <= 1e-9 && dens < self.config.density_floor {
+            if load <= 1e-9 && dens * self.config.outpost_mining_fraction <= self.config.density_floor {
                 let here = self.position_at(sh.outpost, self.clock).unwrap();
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
                 self.park(vehicle, here);
@@ -3336,6 +3355,56 @@ mod tests {
             (spent - freighter_only).abs() < 1e-9,
             "only the freighter is bought: spent {spent}, freighter costs {freighter_only}"
         );
+    }
+
+    #[test]
+    fn the_freighter_calls_a_rock_dead_at_the_same_point_the_miner_does() {
+        // The two used to disagree: `sys_mining_tick` stops when the *yield*
+        // hits the floor (metallicity 0.042 at the shipped values) while the
+        // freighter waited for metallicity < 0.01. In that band the mine was
+        // dead and the hauler was not told, so it flew empty round trips for
+        // the rest of the match — measured on seed 1, not one freighter of
+        // 2,655 ever reached its stand-down branch.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
+        let mut cfg = test_cfg(5);
+        cfg.recycle_mining_pairs = true;
+        let autopilots: Vec<Box<dyn Autopilot>> =
+            (0..2).map(|_| Box::new(BaselineAutopilot::default()) as Box<_>).collect();
+        let mut sim = Simulation::new(galaxy, cfg, autopilots);
+
+        let outpost = sim.planet_entity[11];
+        let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+
+        // Metallicity inside the dead band: above `density_floor`, but its
+        // yield is at or below it, which is exactly when mining stops.
+        let dead_band = cfg.density_floor / cfg.outpost_mining_fraction * 0.9;
+        assert!(dead_band > cfg.density_floor, "the test needs a value the old predicate would have called alive");
+        {
+            let d = sim.world.density.get_mut(outpost).unwrap();
+            d.cyan = dead_band / 3.0;
+            d.magenta = dead_band / 3.0;
+            d.yellow = dead_band / 3.0;
+        }
+        *sim.world.stockpile.get_mut(outpost).unwrap() = Minerals::default();
+
+        let freighter = sim.world.spawn();
+        sim.world.owner.insert(freighter, PlayerId(0));
+        sim.world.role.insert(freighter, Role::Freighter);
+        sim.world.hull_type.insert(freighter, HullType::MediumSystems);
+        sim.world.cargo.insert(freighter, Minerals::default());
+        sim.world.home_center.insert(freighter, center);
+        sim.world.shuttle.insert(freighter, Shuttle { outpost, destination: center, outbound: true });
+        let here = *sim.world.position.get(outpost).unwrap();
+        sim.park(freighter, here);
+
+        sim.sys_freighter_arrive(freighter);
+
+        assert_eq!(
+            sim.world.role.get(freighter),
+            Some(&Role::Reserve),
+            "an empty hauler at a rock that has stopped producing stands down"
+        );
+        assert_eq!(sim.reserve_freighters[0], vec![freighter], "and becomes available to re-task");
     }
 
     #[test]

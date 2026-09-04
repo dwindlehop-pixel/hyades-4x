@@ -231,15 +231,18 @@ fn verify_step(alpha: f64) {
     std::io::stdout().flush().ok();
 }
 
-/// **The census the knobs cannot see.** A mining pair is built for one rock:
-/// `Shuttle { outpost, .. }` fixes the pickup leg at spawn and only the
-/// *delivery* leg is need-routed, so when a rock hits `density_floor` the miner
-/// stays parked on it forever and the freighter parks beside it
-/// (`sys_freighter_arrive`'s exhausted branch). Nothing re-tasks either one.
+/// **The census the knobs cannot see.**
 ///
-/// That makes "how long does a rock last" a first-order strategy question and
-/// not a detail: every tick-year after exhaustion is a pair of hulls the empire
-/// paid for and is no longer using. This counts them.
+/// A mining pair is built for one rock: `Shuttle { outpost, .. }` fixes the
+/// pickup leg at spawn and only the *delivery* leg is need-routed, so without
+/// recycling a rock hitting `density_floor` ends both hulls' working lives.
+///
+/// Note what is and is not a hull statistic here. **Rock lifetime is a property
+/// of the rock** — recycling cannot change how long a world holds ore, and the
+/// first block below is identical with the flag either way. What recycling
+/// changes is what happens to the *hulls* afterwards, so the second block
+/// counts missions against distinct hulls, and the third counts the years a
+/// hull spends parked with nothing to do.
 fn census(seed: u64, recycle: bool) {
     let mut cfg = SimConfig::new(seed);
     cfg.recycle_mining_pairs = recycle;
@@ -251,50 +254,108 @@ fn census(seed: u64, recycle: bool) {
     sim.set_log_filter(LogFilter::none().with(LogCategory::Mining).with(LogCategory::Vehicles));
     sim.run();
 
-    let mut opened: std::collections::HashMap<PlanetId, f64> = std::collections::HashMap::new();
+    use std::collections::HashMap;
+    let horizon = cfg.horizon_years;
+    let mut opened: HashMap<PlanetId, f64> = HashMap::new();
     let mut exhausted: Vec<(PlanetId, f64)> = Vec::new();
     let mut extracted_total = 0.0_f64;
+    // Missions launched per hull. A re-tasked hull logs a second `VehicleSpawned`
+    // under the same entity, so `missions - hulls` is exactly the recycling count.
+    let mut miner_missions: HashMap<hyades_engine::sim::Entity, u32> = HashMap::new();
+    let mut freighter_missions: HashMap<hyades_engine::sim::Entity, u32> = HashMap::new();
+    // When a hull last went idle, and whether anything picked it up again.
+    let mut idle_since: HashMap<hyades_engine::sim::Entity, f64> = HashMap::new();
+    let mut last_launch: HashMap<hyades_engine::sim::Entity, f64> = HashMap::new();
+    // Which miner is on which rock — last arrival wins, since a recycled hull
+    // can work several in a run.
+    let mut operator_of: HashMap<PlanetId, hyades_engine::sim::Entity> = HashMap::new();
+
     for rec in sim.log().iter() {
         match rec.event {
-            LogEvent::VehicleParked { role: Role::Miner, at, .. } => {
+            LogEvent::VehicleParked { vehicle, role: Role::Miner, at, .. } => {
                 opened.entry(at).or_insert(rec.time);
+                operator_of.insert(at, vehicle);
             }
             LogEvent::MiningExhausted { planet } => exhausted.push((planet, rec.time)),
             LogEvent::MineralsExtracted { amount, .. } => extracted_total += amount,
+            LogEvent::VehicleSpawned { vehicle, role: Role::Miner, .. } => {
+                *miner_missions.entry(vehicle).or_insert(0) += 1;
+                last_launch.insert(vehicle, rec.time);
+                idle_since.remove(&vehicle);
+            }
+            LogEvent::VehicleSpawned { vehicle, role: Role::Freighter, .. } => {
+                *freighter_missions.entry(vehicle).or_insert(0) += 1;
+                last_launch.insert(vehicle, rec.time);
+                idle_since.remove(&vehicle);
+            }
+            // Freighters: the park-on-a-dead-rock (flag off) and the Reserve
+            // stand-down (flag on) are the same branch of `sys_freighter_arrive`
+            // under two labels, so counting both keeps the comparison about
+            // behaviour rather than about bookkeeping.
+            LogEvent::VehicleParked { vehicle, role: Role::Reserve, .. }
+            | LogEvent::VehicleParked { vehicle, role: Role::Freighter, .. } => {
+                idle_since.insert(vehicle, rec.time);
+            }
             _ => {}
         }
     }
-    let horizon = cfg.horizon_years;
-    let mut dead_years = 0.0;
-    let mut lifetimes = Vec::new();
-    for (pid, t_end) in &exhausted {
-        if let Some(t_open) = opened.get(pid) {
-            lifetimes.push(t_end - t_open);
-            dead_years += horizon - t_end;
+    // Miners are the asymmetric case and have to be handled by hand: with the
+    // flag off a stranded miner logs *nothing at all* when its rock dies, so
+    // reading idleness off the log would credit the old behaviour with zero
+    // idle years. Derive it from the rock's death instead, which is symmetric —
+    // and re-check afterwards whether anything picked the hull up again.
+    let exhausted_at: HashMap<PlanetId, f64> = exhausted.iter().copied().collect();
+    for (rock, t_dead) in &exhausted_at {
+        if let Some(&miner) = operator_of.get(rock) {
+            idle_since.entry(miner).and_modify(|t| *t = t.min(*t_dead)).or_insert(*t_dead);
         }
     }
-    let live_years: f64 = opened.values().map(|t| horizon - t).sum();
+    // A hull re-tasked after its last idle moment is not idle at the horizon.
+    for (e, t_last_launch) in &last_launch {
+        if let Some(t_idle) = idle_since.get(e).copied() {
+            if *t_last_launch > t_idle {
+                idle_since.remove(e);
+            }
+        }
+    }
+
+    let lifetimes: Vec<f64> =
+        exhausted.iter().filter_map(|(pid, t_end)| opened.get(pid).map(|t_open| t_end - t_open)).collect();
+    let miner_hulls = miner_missions.len();
+    let miner_flights: u32 = miner_missions.values().sum();
+    let freighter_hulls = freighter_missions.len();
+    let freighter_flights: u32 = freighter_missions.values().sum();
+    let idle_years: f64 = idle_since.values().map(|t| horizon - t).sum();
+
     println!(
-        "\nMining census — seed {seed}, {PLAYERS} seats, {:.0} yr, recycling {}",
-        horizon,
+        "\nMining census — seed {seed}, {PLAYERS} seats, {horizon:.0} yr, recycling {}",
         if recycle { "ON" } else { "off" }
     );
+    println!("  -- the rocks (recycling cannot change these) --");
     println!("  outposts opened                 : {:>8}", opened.len());
     println!(
-        "  outposts mined out              : {:>8}  ({:.0}% of them)",
+        "  outposts mined out              : {:>8}  ({:.0}%)",
         exhausted.len(),
         pct(exhausted.len(), opened.len())
     );
     if !lifetimes.is_empty() {
-        let mean_life = lifetimes.iter().sum::<f64>() / lifetimes.len() as f64;
-        println!("  mean productive life of a rock  : {mean_life:>8.0} yr");
+        println!(
+            "  mean productive life of a rock  : {:>8.0} yr",
+            lifetimes.iter().sum::<f64>() / lifetimes.len() as f64
+        );
     }
-    println!("  outpost-years owned             : {live_years:>8.0}");
-    println!(
-        "  of those, spent on a dead rock  : {dead_years:>8.0}  ({:.0}%) — a miner and a freighter parked, never re-tasked",
-        if live_years > 0.0 { dead_years / live_years * 100.0 } else { 0.0 }
-    );
+    println!("  dead rocks at the horizon       : {:>8}", exhausted_at.len());
     println!("  total minerals extracted        : {extracted_total:>8.0}");
+    println!("  -- the hulls (what recycling is for) --");
+    println!("  miner hulls built               : {miner_hulls:>8}   mining missions flown {miner_flights:>8}");
+    println!(
+        "  freighter hulls built           : {freighter_hulls:>8}   hauling missions flown {freighter_flights:>8}"
+    );
+    println!(
+        "  missions taken by a re-used hull: {:>8}",
+        (miner_flights as usize - miner_hulls) + (freighter_flights as usize - freighter_hulls)
+    );
+    println!("  idle hull-years at the horizon  : {idle_years:>8.0}");
     std::io::stdout().flush().ok();
 }
 
@@ -327,6 +388,35 @@ fn compare_recycling() {
     std::io::stdout().flush().ok();
 }
 
+/// Throughput both ways, against the confirmed floor of 2.5 simulated-years
+/// per real second (T-24). Recycling trades *builds* for *active mines*, and
+/// entity count is the first-order cost in this engine, so the term has to be
+/// checked against the floor rather than assumed cheap. `Instant` is fine here:
+/// the no-clock invariant binds the engine, not a driver measuring it.
+fn bench() {
+    for recycle in [false, true] {
+        let mut cfg = SimConfig::new(1);
+        cfg.recycle_mining_pairs = recycle;
+        let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, 1)).unwrap();
+        let autopilots: Vec<Box<dyn Autopilot>> =
+            (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::default()) as Box<_>).collect();
+        let mut sim = Simulation::new(galaxy, cfg, autopilots);
+        let t0 = std::time::Instant::now();
+        sim.run();
+        let secs = t0.elapsed().as_secs_f64();
+        let snap = sim.snapshot();
+        println!(
+            "  recycling {:<3}  {:>7.1} yr/s  ({:.1}x the 2.5 floor)   vehicles {:>6}  colonies {:>6}",
+            if recycle { "ON" } else { "off" },
+            cfg.horizon_years / secs,
+            cfg.horizon_years / secs / 2.5,
+            snap.vehicles.len(),
+            snap.planets.iter().filter(|p| p.owner.is_some()).count()
+        );
+        std::io::stdout().flush().ok();
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     println!(
@@ -339,6 +429,10 @@ fn main() {
     if let Some(i) = args.iter().position(|a| a == "step") {
         let alpha: f64 = args.get(i + 1).and_then(|s| s.parse().ok()).unwrap_or(0.5);
         verify_step(alpha);
+        return;
+    }
+    if args.iter().any(|a| a == "bench") {
+        bench();
         return;
     }
     if args.iter().any(|a| a == "recycle") {
