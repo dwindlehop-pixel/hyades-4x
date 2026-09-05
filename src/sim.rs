@@ -108,6 +108,12 @@ impl<T> ComponentStore<T> {
     fn contains(&self, e: Entity) -> bool {
         self.get(e).is_some()
     }
+    /// Clear the component, returning what was there. Vacating a slot is not
+    /// the same as never having filled one — the shipyard-occupancy store
+    /// (R-O69) is *presence-as-state*, so it needs to be able to empty.
+    fn remove(&mut self, e: Entity) -> Option<T> {
+        self.items.get_mut(e.0 as usize).and_then(|o| o.take())
+    }
 }
 
 /// Marker tag for homeworld planet entities.
@@ -595,6 +601,14 @@ struct World {
     planet_id: ComponentStore<PlanetId>,
     homeworld: ComponentStore<Homeworld>,
     archetype: ComponentStore<Archetype>,
+    /// **Shipyard occupancy** — present iff this center has a build under way,
+    /// holding the clock time it finishes (R-O69).
+    ///
+    /// The center is the thing that is busy, not the hull: a build ties up the
+    /// yard for `build_years` and the next decision is taken when it clears.
+    /// Presence is the whole state — the economy tick skips an occupied center,
+    /// and [`EventKind::BuildDecision`] removes it on arrival.
+    building_until: ComponentStore<f64>,
 
     // shared
     owner: ComponentStore<PlayerId>,
@@ -643,6 +657,7 @@ impl World {
             planet_id: ComponentStore::new(),
             homeworld: ComponentStore::new(),
             archetype: ComponentStore::new(),
+            building_until: ComponentStore::new(),
             owner: ComponentStore::new(),
             role: ComponentStore::new(),
             hull_type: ComponentStore::new(),
@@ -696,8 +711,29 @@ enum EventKind {
     ReturnArrive { vehicle: Entity },
     /// A manned outpost extracts ore from its dwindling density.
     MiningTick { outpost: Entity },
-    /// A production center completes a build cycle (mine + grow + build).
+    /// A production center's **economy** step: mine + grow. Cadence-driven, one
+    /// per center per `cycle_years`, because both halves are *rates over an
+    /// interval* and an interval is what they need.
+    ///
+    /// It no longer carries the build decision (R-O69). It still *takes* one
+    /// when the yard is free, because an empty yard has no completion event to
+    /// wake it — mining is what changes a saving center's situation, so the
+    /// mining step is the right place to reconsider.
     ProductionTick { center: Entity },
+    /// **A production center decides what to build** — the event that replaced
+    /// the cadence (R-O69).
+    ///
+    /// Fires when the yard clears: `build_years` after a build was committed.
+    /// The decision is the moment the center's situation actually changed, which
+    /// is the §4 rule the production tick was the last exception to.
+    ///
+    /// The other trigger the design calls for — **a build interrupted by
+    /// hostiles** — has nothing to raise it yet: no combat is wired into the
+    /// simulation loop (`combat::resolve_engagement` is never called from
+    /// `sim.rs`). When it is, interruption is *this* event scheduled at the
+    /// moment of the strike, after clearing `building_until`; the seam is here
+    /// so that is a scheduling call and not a redesign. **T-52.**
+    BuildDecision { center: Entity },
     /// An exhausted Scout reaches a friendly colony and scraps
     /// (`Hyades_vehicle_roles.md` §4.1/§4.6 — confirmed, LCV only).
     ScrapArrive { vehicle: Entity },
@@ -1531,6 +1567,7 @@ impl Simulation {
             EventKind::ReturnArrive { vehicle } => self.sys_return_arrive(vehicle),
             EventKind::MiningTick { outpost } => self.sys_mining_tick(outpost),
             EventKind::ProductionTick { center } => self.sys_production_tick(center),
+            EventKind::BuildDecision { center } => self.sys_build_decision(center),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
             EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
@@ -1994,7 +2031,50 @@ impl Simulation {
             },
         );
 
-        // 3) Build: weigh deepen-vs-expand under the mineral budget & level gate.
+        // 3) Decide, but only if the yard is free.
+        //
+        // **This is the decoupling (R-O69).** The economy above is a rate over
+        // an interval and legitimately wants a cadence; the *decision* is not,
+        // and pinning it to the same 50-year tick capped every center at one
+        // build per cycle however rich it was. Measured before the change
+        // (`examples/cadence_throttle`, seeds 1 and 7): the median funded build
+        // fired at **5.5x the cost of what it bought**, 82% of funded builds
+        // could have been made at least twice that cycle and 55% at least five
+        // times, with a worst case of 112x. That is a serial dependency setting
+        // the expansion-loop time constant, not an economy running dry.
+        //
+        // A center with a build under way is skipped: its decision comes from
+        // [`EventKind::BuildDecision`] when the yard clears. A center with an
+        // empty yard has no such event pending, so the mining step doubles as
+        // its retry — mining is what changes a saving center's situation.
+        if !self.world.building_until.contains(center) {
+            self.sys_build_decision(center);
+        }
+        self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
+    }
+
+    /// A center chooses its next build, and occupies its yard if it commits.
+    ///
+    /// Reached two ways: the economy tick above when the yard is idle, and
+    /// `BuildDecision` when a build finishes. Committing spends the minerals and
+    /// applies the build immediately — `apply_build_with` is unchanged, so a
+    /// vehicle's launch delay and arrival time are exactly what they were — and
+    /// then holds the yard for `build_years` before the next decision. **The
+    /// only behavioural change is the cadence of decisions**, from
+    /// `cycle_years` to `build_years` for a center that keeps finding things to
+    /// buy.
+    fn sys_build_decision(&mut self, center: Entity) {
+        // The yard is free by the time this runs, however it was reached.
+        self.world.building_until.remove(center);
+        let owner = match self.world.owner.get(center).copied() {
+            Some(o) => o,
+            None => return, // lost the world; no yard to run
+        };
+        let p = owner.0 as usize;
+        let pe = self.player_entity[p];
+        let doctrine = *self.world.doctrine.get(pe).unwrap();
+        let center_pid = *self.world.planet_id.get(center).unwrap();
+
         let (infra, k_potential) = {
             let f = self.world.factors.get(center).unwrap();
             (f.infra, f.k_potential())
@@ -2073,9 +2153,18 @@ impl Simulation {
                 chosen: order,
             },
         );
-        self.apply_build_with(p, center, center_pos, order, &cands);
-
-        self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
+        // Committing occupies the yard. Only a build that actually spent counts:
+        // `apply_build_with` declines on an unaffordable price, a roster gate, or
+        // a hull with no job worth doing, and a center that built nothing must
+        // not be held busy for it.
+        if self.apply_build_with(p, center, center_pos, order, &cands) {
+            let done = self.clock + self.config.build_years;
+            self.world.building_until.insert(center, done);
+            self.schedule_at(done, EventKind::BuildDecision { center });
+        }
+        // Otherwise the yard stays free and the next economy tick retries, which
+        // is the right cadence for a center whose situation only changes as it
+        // mines.
     }
 
     // --- build application -------------------------------------------------
@@ -2083,6 +2172,10 @@ impl Simulation {
     /// Apply a production order. `candidates` is the empire's current candidate
     /// list, used to **task** a finished hull — production decides *what object*
     /// to make, role assignment decides *what it is for* (R-O29).
+    /// Apply a chosen build, returning **whether it actually committed** —
+    /// spent minerals and produced something. A decline (unaffordable, gated by
+    /// the roster, or a hull with no job worth doing) returns `false`, and the
+    /// caller must not occupy the yard for a build that never happened.
     fn apply_build_with(
         &mut self,
         p: usize,
@@ -2090,10 +2183,10 @@ impl Simulation {
         center_pos: Vec3,
         order: BuildOrder,
         candidates: &[Candidate],
-    ) {
+    ) -> bool {
         let center_pid = *self.world.planet_id.get(center).unwrap();
         match order {
-            BuildOrder::Idle => {}
+            BuildOrder::Idle => false,
             BuildOrder::UpgradeInfrastructure => {
                 let target = self.world.factors.get(center).unwrap().infra.round().bands() + 1.0;
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
@@ -2109,18 +2202,21 @@ impl Simulation {
                             stockpile_after,
                         },
                     );
+                    true
+                } else {
+                    false
                 }
             }
             BuildOrder::Hull { hull_type, class } => {
                 if !self.roster_permits(p, hull_type) {
-                    return;
+                    return false;
                 }
                 let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
                 // The job is chosen here, after the object exists — not in the
                 // order, which is all a rival could read off the shipyard.
                 let tasking = self.autopilots[p].assign_role(&doctrine, hull_type, class, candidates);
                 let Some(Tasking { role, target }) = tasking else {
-                    return; // nothing worth building this hull for right now
+                    return false; // nothing worth building this hull for right now
                 };
 
                 // A Miner is produced together with the Freighter that hauls for
@@ -2128,7 +2224,7 @@ impl Simulation {
                 // one economic act even though it is two objects.
                 let paired_freighter = role == Role::Miner;
                 if paired_freighter && !self.roster_permits(p, role_hull_type(Role::Freighter)) {
-                    return;
+                    return false;
                 }
 
                 // Recycling is checked *before* pricing, because a hull taken
@@ -2162,7 +2258,7 @@ impl Simulation {
                     if let Some(e) = reused_freighter {
                         self.reserve_freighters[p].push(e);
                     }
-                    return;
+                    return false;
                 }
                 match (role, target) {
                     (Role::Scout, _) => {
@@ -2202,6 +2298,7 @@ impl Simulation {
                     self.clock,
                     LogEvent::BuildApplied { player: p as u32, center: center_pid, order, cost, stockpile_after },
                 );
+                true
             }
         }
     }
@@ -3288,6 +3385,53 @@ mod tests {
         let galaxy2 = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
         let sim2 = Simulation::with_baseline(galaxy2, test_cfg(3));
         assert!(sim2.roster_permits(0, HullType::MediumSystems), "default config must not gate anything");
+    }
+
+    /// **The decision cadence is the build cadence, not the economy's (R-O69).**
+    ///
+    /// A center that commits a build occupies its yard for `build_years` and
+    /// decides again the moment it clears — not at the next `cycle_years`
+    /// economy tick. With the shipped 10 vs 50 that is a 5x ceiling on how fast
+    /// a rich center can spend, and it was the largest single throttle on the
+    /// expansion loop: measured beforehand, the median funded build fired at
+    /// 5.5x the price of what it bought.
+    ///
+    /// This pins the structural property rather than a number, so it survives
+    /// retuning either constant: **a busy yard is skipped by the economy tick,
+    /// and a decision is pending for when it clears.**
+    #[test]
+    fn a_committed_build_occupies_the_yard_and_schedules_its_own_next_decision() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 11)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+
+        // A homeworld with minerals to burn will commit something.
+        sim.world.stockpile.get_mut(home).unwrap().cyan = 500.0;
+        assert!(!sim.world.building_until.contains(home), "yard starts free");
+
+        sim.sys_build_decision(home);
+        let Some(&done) = sim.world.building_until.get(home) else {
+            panic!("a center with 500 minerals and a live frontier must commit something");
+        };
+        assert!(
+            (done - (sim.clock + sim.config.build_years)).abs() < 1e-9,
+            "the yard is held for build_years, got {done} at clock {}",
+            sim.clock
+        );
+
+        // The economy tick must not decide over a busy yard — that would be the
+        // cadence sneaking back in through the other door.
+        let before = sim.world.stockpile.get(home).unwrap().basic_total();
+        sim.sys_production_tick(home);
+        let after = sim.world.stockpile.get(home).unwrap().basic_total();
+        assert!(after >= before, "an occupied yard must not have spent again: {before} -> {after}");
+        assert!(sim.world.building_until.contains(home), "the economy tick must not clear the yard");
+
+        // And the decision that clears it is scheduled, not waited for.
+        assert!(
+            sim.queue.iter().any(|e| matches!(e.0.kind, EventKind::BuildDecision { center } if center == home)),
+            "no BuildDecision pending for the busy center"
+        );
     }
 
     #[test]

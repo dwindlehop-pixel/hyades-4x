@@ -76,9 +76,29 @@ This is planetside economy, not space-combat terrain: it never adds cover or ini
 Entities are **not** stepped by a per-tick sweep. This is a discrete-event
 simulation: a ship re-decides what to do next **when it arrives somewhere**
 (`ContactArrive`, `FreighterArrive`, `ColonyArrive`, `ScrapArrive`) — the only
-moment its situation has actually changed. Production centers are the single
-cadence-driven exception: one tick per center per `cycle_years`, because growth
-is a rate, not an event. Everything else is arrival-driven.
+moment its situation has actually changed.
+
+~~Production centers are the single cadence-driven exception: one tick per
+center per `cycle_years`.~~ **Split by R-O69, because the exception was doing
+two different jobs.** A center's **economy** step — local mining and population
+growth — is still one tick per center per `cycle_years`, and correctly so:
+both halves are *rates over an interval*, and an interval is exactly what a
+rate needs. Its **build decision** is not a rate, and is now an event:
+`BuildDecision`, raised when the shipyard clears `build_years` after a build
+was committed. The design also calls for it on **a build interrupted by
+hostiles**; that trigger has nothing to raise it until combat is wired into the
+loop (T-52).
+
+Conflating the two capped every center at **one build per `cycle_years`,
+however rich it was** — a hard ceiling of `horizon / cycle_years` builds per
+center that no amount of economy could lift. Measured before the split
+(`examples/cadence_throttle`, seeds 1 and 7): the median funded build fired at
+**5.5× the price of what it bought**, 82% of funded builds could have been made
+at least twice that cycle and 55% at least five times, with a worst case of
+112×. Removing it is worth **+165.8 colonies (+5.0%)** on the standard bed and
+returns it to saturation — 99.4% of everything the `k_high` classifier admits.
+
+Everything else is arrival- or completion-driven. Nothing decides on a sweep.
 
 That choice sets the engine's cost model, and both halves of it matter:
 

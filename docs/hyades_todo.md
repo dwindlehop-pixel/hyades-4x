@@ -383,6 +383,52 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-52. R-O69 follow-ups — the hostile-interrupt trigger, and the decision path's O(galaxy) scan
+
+Two things the production decoupling (R-O69) left open, one blocked and one a
+cost it exposed.
+
+**The hostile-interrupt trigger does not exist.** The design calls for a new
+decision when a build is *interrupted by hostiles* as well as when one
+completes. `EventKind::BuildDecision` is the event either would raise, but
+nothing can raise the second: **no combat is wired into the simulation loop** —
+`combat::resolve_engagement` is never called from `sim.rs`. When it is,
+interruption is this event scheduled at the moment of the strike after clearing
+`building_until`, which is a scheduling call rather than a redesign. Blocked on
+combat integration (T-12/T-30), not on engine work here.
+
+**The decoupling exposed a pre-existing `O(galaxy)` cost in the decision path,
+and made it fire twice as often.** Building the candidate list walks every
+entry in `knowledge.scanned` and calls `view_of` + `rank` on each; `scanned`
+grows toward the whole galaxy. That is exactly the violation CLAUDE.md §4 names
+— *per-evaluation cost must be local, `O(what the decision reads)`, not
+`O(galaxy)`* — and it is the same shape as the `survey_candidates` case already
+recorded there as the worked example. Decisions were previously rationed to one
+per center per 50 years, which hid it.
+
+Measured same-container, 3 seats, 4 kyr, standard bed:
+
+| | colonies | vehicles | events | throughput |
+|---|---|---|---|---|
+| before (cadence-driven) | 3,294.0 | ~10,350 | ~237 k | 235–269 yr/s |
+| after (event-driven) | 3,459.8 | ~14,700 | ~421 k | 61–66 yr/s |
+
+**~4.1x slower for +5.0% colonies.** Most of that is entity count doing what
+design law #14 says it does — +42% vehicles, and cost is superlinear in
+entities — but the decision scan is the part that is *ours*. The margin against
+T-24's 2.5 yr/s floor falls from ~108x to ~26x at 3 seats / 4 kyr, and the
+12-seat / 8-kyr corner extrapolates to **~3.2 yr/s, a ~1.3x margin**. That
+corner was already the unmeasured one (T-24) and is now the one that matters.
+
+**The fix is to make the candidate list incremental, not to re-throttle
+decisions.** A per-player ranked frontier maintained on scan and on claim gives
+each decision `O(what it reads)` instead of `O(scanned)`. Note CLAUDE.md §4's
+warning from the last attempt at this: an incrementally-maintained unvisited
+frontier cut the scanned count 39% and came out *slower*, because swap-removal
+traded a sequential walk for random access. **Measure, do not assume** — and
+keep the ordering stable, since a scrambled iteration order is both a locality
+loss and a determinism hazard.
+
 ### T-51. R-O68 — the deepen/expand trade does not exist, and it is what sets the expansion-loop time constant
 
 **Symptom, then mechanism, as CLAUDE.md §2 requires.**

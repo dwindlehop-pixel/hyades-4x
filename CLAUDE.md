@@ -398,8 +398,13 @@ combat logic into the arena or into an example.
   by rescanning the galaxy.** This is a discrete-event engine: a ship decides what to
   do next *when it arrives somewhere* (`ContactArrive`, `FreighterArrive`,
   `ColonyArrive`, `ScrapArrive`), which is the only moment its situation actually
-  changed. Production centers are the one cadence-driven exception, one tick per
-  center per `cycle_years`; everything else is arrival-driven.
+  changed. ~~Production centers are the one cadence-driven exception, one tick per
+  center per `cycle_years`~~ — **closed by R-O69.** A center's *economy* step
+  (mine + grow) is still cadence-driven, and correctly so: both halves are rates
+  over an interval, and an interval is what a rate needs. Its **decision** is
+  not, and is now an event — `BuildDecision`, raised when the yard clears
+  `build_years` after a build was committed. Everything is arrival- or
+  completion-driven; nothing decides on a sweep.
 
   The trigger is only half the rule. **Evaluation count scales with entity count, so
   per-evaluation cost must be local — O(what the decision reads), not O(galaxy).**
@@ -795,11 +800,18 @@ changes how you *work*, not what is left to do:
   runs per hour, so speed lost to entity count is balance coverage not bought.
 
 - **Coverage is measured inside a fixed 4,000-year run — do not extend the horizon**
-  (T-20). **3,294 colonies, mean over the 4-seed CRN bed**, as of the R-O66
-  Band/kiloton separation (~49.0% of the 6,725-world objective set; it was
-  3,472.5 / ~51.4% before). 4,000 is the run length; the coverage reached within
+  (T-20). **3,459.8 colonies, mean over the 4-seed CRN bed**, as of R-O69
+  decoupling the production decision from the economy tick (3,294.0 before it;
+  3,472.5 before R-O66). 4,000 is the run length; the coverage reached within
   it is the objective. Doubling the horizon doubles every trial, and §2's
   60-second rule already had to absorb the snowball once.
+
+  **The bed saturates again, and this time honestly.** 99.4% of everything
+  `k_high` admits (98.4 · 99.9 · 100.0 · 99.2 — seed 42 takes every single
+  reachable world). The pre-R-O66 saturation was partly bought by an artificial
+  cap on deepening; this one is not. `k_high` is once more the only limiter on
+  the total, and the ~5% the unit fix cost has been recovered from the place it
+  actually went.
 
   **The unit fix cost −178.5 ± 26.9 colonies (−5.1%), every seed down, 6.6 SE —
   and the obvious explanation for it was wrong.** "Growth is slower because the
@@ -839,6 +851,27 @@ changes how you *work*, not what is left to do:
   unscanned per seed) and neither is the economy (the biomass draw is slack;
   minerals were ruled out at R-AC17); the residual is 126–216 worlds per seed
   that were **scanned and not reached in time.**
+
+  **Both halves of that time constant are now resolved — the second by fixing
+  it (R-O69).** The decision was pinned to the same 50-year tick as the
+  economy, which capped every center at one build per cycle however rich it
+  was. Measured before the change (`examples/cadence_throttle`): **the median
+  funded build fired at 5.5x the price of what it bought**, 82% of funded
+  builds could have been made at least twice that cycle, 55% at least five
+  times, worst case 112x. Decisions are now events — a build occupies the yard
+  for `build_years` and the next decision comes when it clears — which takes
+  the ceiling from one build per 50 years to one per 10 for a center that keeps
+  finding things to buy. **+165.8 colonies (+5.0%), and the bed saturates.**
+
+  **It cost 4.1x throughput and that is the part to watch** (same container, 3
+  seats, 4 kyr: 235–269 → 61–66 yr/s; vehicles ~10,350 → ~14,700; events ~237k
+  → ~421k). Most of it is entity count doing what design law #14 says it does,
+  but the decision path also walks all of `knowledge.scanned` per decision —
+  the §4 `O(galaxy)` violation, previously hidden by being rationed to once per
+  50 years. Margin against T-24's floor falls ~108x → ~26x here, and the
+  12-seat/8-kyr corner extrapolates to ~1.3x. **The fix is an incremental
+  candidate frontier, not re-throttling decisions** (T-52) — and §4 already
+  records that the last attempt at exactly that came out *slower*, so measure.
 
   **And the time constant now has a proven mechanism, not just a name (R-O68,
   T-51).** `production_choice` prefers depth when `b · deepen_headroom ≥
