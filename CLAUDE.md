@@ -256,6 +256,48 @@ answer is not "nothing", the metric is a target, not a measurement. This joins
 the artifact list below as a fifth shape, and it is the only one that would
 have gotten worse rather than better with time.
 
+### Never leave an identified symptom without a proven mechanism
+
+**A number is a symptom. Stop only when you can name the line of code that
+produced it and show it produces it.** Not a hypothesis that fits the sign, not
+a mechanism that is plausible given the change — a mechanism you have
+*demonstrated*, by ablation, by instrumenting the decision, or by a test that
+fails when the mechanism is removed.
+
+This rule exists because the shortcut is so cheap and so convincing. Every
+artifact in the table below was a real measurement with a plausible story
+attached, and the story was what made it survive. Two from this project,
+back to back:
+
+- **"−178 colonies because the mass draw got bigger."** Mechanistic,
+  right-signed, consistent with the change. Refuted in two one-line ablations —
+  deleting the biomass draw *entirely* reproduced the number bit-for-bit. The
+  real mechanism was a policy reallocation two modules away.
+- **"the expansion loop's time constant is the limiter."** True, and useless as
+  stated: a time constant is not a mechanism, it is the shape of one. Pushed to
+  the code, it resolved to a specific dead branch —
+  `reinvest_bias` comparing a Band against a rank score, so the deepen path
+  cannot fire at the shipped value (R-O68). That is a mechanism: it names a
+  line, it is measured (`examples/score_scale`), and a test fails if it changes.
+
+Three things that count as proof, in rough order of preference:
+
+1. **Ablation.** Remove the suspected cause and show the effect goes. Cheap —
+   both of the above took one line and one run — and it is the only method that
+   can *refute*.
+2. **Instrument the decision.** Count the branch, print the two sides of the
+   comparison, histogram the quantity. `coverage_trace` and `score_scale` exist
+   for this.
+3. **A characterization test.** Pin the mechanism where it lives, so it cannot
+   silently change meaning. This is what stops the finding decaying back into
+   prose the next time the operating point moves.
+
+What does **not** count: a plausible story, a correlation across configurations,
+or a mechanism inferred from the sign of a gradient. And when the symptom is
+"X is slow" or "X is the limiter", the mechanism is never a *rate* — it is the
+gate, branch, or serial dependency that sets the rate. Keep going until you
+reach one.
+
 ### The artifact pattern — four of them, one shape
 
 Four measurements in this project were wrong in the same way, and the shape is
@@ -798,11 +840,29 @@ changes how you *work*, not what is left to do:
   minerals were ruled out at R-AC17); the residual is 126–216 worlds per seed
   that were **scanned and not reached in time.**
 
-  The lever on that time constant is the **deepen-versus-expand split** —
-  `expand_bias` and the `infra < k_potential` guard — because that reallocation
-  is the entire measured content of R-O66. It is policy, it has never been
-  probed against the objective, and the two sides pull against each other by
-  construction, so the optimum is interior: probe the gradient, do not sweep.
+  **And the time constant now has a proven mechanism, not just a name (R-O68,
+  T-51).** `production_choice` prefers depth when `b · deepen_headroom ≥
+  (1 − b) · score`, and those sides are in different units — a Band difference
+  bounded by 4 against `rank`'s unbounded weighted score. Measured
+  (`examples/score_scale`): colony-class scores run p05 4.40 / median 6.17 /
+  max 12.16, and the branch compares against the *max*, so depth wins only at
+  `b ≳ 0.8`. **At the shipped `reinvest_bias = 0.5` the branch cannot fire while
+  any candidate exists** — it is inert below ~0.8 and a hard switch above, a
+  step function wearing a dial's clothes, with no graded region for a search to
+  climb. Same root cause as the `K` unit error one section up: a comparison
+  between incommensurable quantities, with a constant absorbing the mismatch.
+
+  So the loop's time constant is the **unconditional pre-`medium_min_level`
+  staircase** — found at `K = 1` with no headroom, then serially mine
+  `round(infra)+1` minerals, deepen, grow past the level-3 `PopBands` edge,
+  afford `colonizer_cost`, fly — all quantized to `cycle_years = 50`. **Half
+  those gates are discrete** (`medium_min_level` and `limited_min_level` are
+  `u8`; the infra cost ladder is hard-coded, not a parameter), so a
+  central-difference probe has no gradient to read on them. That is why every
+  probe so far has ranked ecology and hull-cost knobs: *the rate limiters are
+  invisible to the instrument.* Sweep the gates discretely, widen the
+  continuous surface to role and hull costs, and fix the comparison's units
+  before touching the policy's shape.
 
   Three ratifications got it there and none was a sweep. **λ (14.4% → 38.3%)
   was a *missing term*** — freighter routing had no distance component at all,

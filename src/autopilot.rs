@@ -686,14 +686,40 @@ impl Autopilot for BaselineAutopilot {
         let outward_cost = outward.map(|(_, _, c)| c).unwrap_or(0.0);
         let can_expand = ctx.stockpile_total + 1e-9 >= outward_cost;
 
-        // Deepen-vs-expand as a genuine convex dial. `reinvest_bias` shifts weight
-        // between deepening this center's own K and reaching outward. Crucially the
-        // *preference* is computed independent of what is affordable this cycle:
-        // when deepening wins but the (pricier) upgrade isn't funded yet, the
-        // center **saves** (Idle) rather than frittering minerals on cheap
-        // vehicles. That is what lets the bias actually trade expansion for depth.
-        // The optimal bias — possibly state-dependent on pop / K / neighbors — is
-        // the expansion-rate MC experiment; this is the tunable baseline.
+        // ~~Deepen-vs-expand as a genuine convex dial.~~ **It is not one, and at
+        // the shipped `reinvest_bias` this branch is unreachable (R-O68).**
+        //
+        // The two sides are not in the same unit. `deepen_headroom` is a *Band*
+        // difference, `k_potential − infra`, bounded by 4 and in practice by
+        // `k_potential − 1`. `score` is `rank`'s weighted sum over a Band, a
+        // mineral density and a hub figure — unbounded and dimensionless-by-
+        // fiat. Measured on seed 1 (`examples/score_scale`), colony-class
+        // candidate scores run p05 = 4.40, median 6.17, max 12.16, and this
+        // branch compares against the **max** because `outward` takes the best
+        // candidate. So depth wins only when `b/(1−b) >= score/headroom ≈ 4`,
+        // i.e. `b >= 0.8`; at the shipped `0.5` it can never fire while any
+        // candidate exists.
+        //
+        // `reinvest_bias` is therefore **not a convex trade — it is inert below
+        // ~0.8 and a hard switch above it**, a step function wearing a dial's
+        // clothes. The same shape as CLAUDE.md §2's artifact list, and the same
+        // root cause as the `K = min(hab, bio, infra)` unit error: a comparison
+        // between incommensurable quantities that typechecks, with a constant
+        // absorbing the mismatch.
+        //
+        // Two live consequences. All real deepening happens through the other
+        // two paths — the unconditional pre-`medium_min_level` staircase above,
+        // and the `outward == None` fallback below — so the expansion-loop time
+        // constant is set by that staircase and not by any tunable trade. And
+        // R-O66's entire measured effect (−178 colonies) reached the objective
+        // through `deepen_possible`, which gates the *staircase*, not through
+        // this dial.
+        //
+        // Not fixed here: making both sides a rate of return in one unit is a
+        // policy redesign (T-51), and the bias is a globally MC-tuned parameter
+        // that needs ratification (§6). Pinned by
+        // `reinvest_bias_is_a_step_function_not_a_dial` so it cannot silently
+        // change meaning.
         let b = doctrine.reinvest_bias;
         let deepen_headroom = (ctx.k_potential - ctx.infra).max(0.0);
         let w_deepen = if deepen_possible { b * deepen_headroom } else { f64::NEG_INFINITY };
@@ -894,6 +920,58 @@ mod tests {
         let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         let ranked = ap.rank(doctrine, &v, &rctx);
         vec![Candidate { view: v, ranked }]
+    }
+
+    /// **`reinvest_bias` is a step function, not a dial (R-O68).**
+    ///
+    /// `production_choice` picks depth when `b · headroom >= (1 − b) · score`,
+    /// and the two sides are not in the same unit: the left is a Band
+    /// difference bounded by 4, the right is `rank`'s unbounded weighted score.
+    /// So the branch has a crossover in `b`, and this pins where it is — far
+    /// above the shipped `0.5`, which means **at the default the branch cannot
+    /// fire while any candidate exists.**
+    ///
+    /// This is a characterization test, not an endorsement. It exists so the
+    /// dead branch cannot quietly come back to life (or get deader) without
+    /// someone reading R-O68 and T-51 first. Fixing it means putting both sides
+    /// in one unit — a rate of return — which is a policy redesign.
+    #[test]
+    fn reinvest_bias_is_a_step_function_not_a_dial() {
+        let ap = BaselineAutopilot::default();
+        let mut doctrine = Doctrine::default();
+        // A mature center with the most deepening headroom the ladder allows
+        // (infra 1 against k_potential 4) and one ordinary colony candidate —
+        // i.e. the case most favourable to depth that can actually occur.
+        let mut ctx = prod_ctx(3, 1.0, 100.0);
+        ctx.k_potential = 4.0;
+        let cands = one_colony_candidate(&ap, &doctrine);
+        let score = cands[0].ranked.score;
+        let headroom = ctx.k_potential - ctx.infra;
+
+        // Where the branch flips, from the inequality itself.
+        let crossover = score / (score + headroom);
+        assert!(
+            crossover > 0.6,
+            "crossover at b = {crossover:.3} (score {score:.2} vs headroom {headroom:.2}) — if this has              dropped near 0.5 the two sides have become commensurable and R-O68 may be resolved"
+        );
+
+        // Below the crossover the dial does nothing: the center expands.
+        doctrine.reinvest_bias = 0.5;
+        assert!(
+            matches!(
+                ap.production_choice(&doctrine, &ctx, &cands),
+                BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }
+            ),
+            "at the shipped bias, a center with maximal headroom still expands"
+        );
+
+        // Above it the dial does everything: same state, opposite decision, with
+        // no graded region in between that a search could climb.
+        doctrine.reinvest_bias = (crossover + 1.0) / 2.0;
+        assert!(
+            matches!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::UpgradeInfrastructure),
+            "above the crossover the same state must flip to depth"
+        );
     }
 
     #[test]

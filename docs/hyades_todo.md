@@ -383,6 +383,92 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-51. R-O68 — the deepen/expand trade does not exist, and it is what sets the expansion-loop time constant
+
+**Symptom, then mechanism, as CLAUDE.md §2 requires.**
+
+*Symptom.* Post-R-O66 the bed no longer saturates: 94.6% of the `k_high` set at
+the horizon against 99.8% before, with the founding rate still near peak in the
+last bucket. "The expansion loop's time constant is binding" — true, and not yet
+a mechanism.
+
+*Mechanism, proven.* `production_choice` chooses depth over expansion when
+`b · deepen_headroom >= (1 − b) · score`. **Those two sides are not in the same
+unit.** `deepen_headroom` is a *Band* difference, `k_potential − infra`, bounded
+by 4 and in practice by `k_potential − 1`. `score` is `rank`'s weighted sum over
+a Band, a mineral density and a hub figure — unbounded, and dimensionless only
+by fiat. Measured (`examples/score_scale`, seed 1), colony-class candidate
+scores run **p05 = 4.40, median 6.17, p95 = 8.97, max 12.16** at zero mineral
+pressure, and the branch compares against the *maximum* because `outward` takes
+the best candidate. Depth therefore wins only when `b >= score/(score+headroom)
+≈ 0.8`.
+
+**At the shipped `reinvest_bias = 0.5` the branch cannot fire while any
+candidate exists.** It is not a convex dial; it is **inert below ~0.8 and a hard
+switch above it** — a step function wearing a dial's clothes, and a search
+cannot climb it because there is no graded region. Pinned by
+`reinvest_bias_is_a_step_function_not_a_dial`.
+
+**So the policy has three deepen paths and only two are live:**
+
+| path | condition | live? |
+|---|---|---|
+| pre-`medium_min_level` staircase | `level < 3 && deepen_possible && can_afford_infra` | **yes — unconditional** |
+| the convex dial | `b · headroom >= (1 − b) · score` | **no, at the shipped bias** |
+| the no-candidate fallback | `outward == None` | yes, but only on an empty frontier |
+
+Which means the expansion-loop time constant is set **entirely by the pre-level-3
+staircase**, with no tunable trade anywhere near it. It also explains R-O66
+exactly: that change moved `deepen_possible`, which gates the *staircase*, not
+the dial — so all −178 colonies came through the one branch that actually runs.
+
+**The staircase, which is the real time constant.** A colony is founded at
+`colony_seed_pop` = Band 1 with `infra = 1`, so `K = min(hab, bio_max, 1) = 1`
+and it starts *at* its ceiling with zero growth headroom. To produce its own
+colonizer it must, serially:
+
+1. mine `round(infra)+1` minerals (2, then 3) at `center_mining_fraction × density`
+   per tick, plus whatever hauling delivers;
+2. deepen 1 → 2 → 3, each step raising `K`;
+3. grow logistically at `growth_rate` past the level-3 `PopBands` edge (~2.675);
+4. accumulate `colonizer_cost` (← `medium_fleet_size`);
+5. fly there at `civilian_accel_g` over the target distance.
+
+Every step is quantized to `cycle_years = 50`.
+
+**Why the current gradient probe cannot see this.** Of its nine knobs, only four
+touch the chain at all (`center_mining_fraction`, `growth_rate`,
+`trade_decay_lambda`, `medium_fleet_size`). Absent entirely: `cycle_years`,
+`medium_min_level`, `limited_min_level`, `colony_seed_pop`, `reinvest_bias`,
+`civilian_accel_g`, `limited_fleet_size`, `PopBands::top_edge`, and the infra
+cost ladder — **which is hard-coded as `round(infra)+1` and is not a parameter
+at all.** Worse, the gates are *discrete*: `medium_min_level` and
+`limited_min_level` are `u8`, `cycle_years` quantizes everything, and a
+central-difference probe has no gradient to read on any of them. So the loop's
+rate limiters are largely invisible to an all-continuous elasticity method,
+which is why every probe so far has ranked ecology and hull-cost knobs.
+
+**Work, in order:**
+
+1. **Widen the probe surface** to the continuous knobs on the chain above
+   (`colony_seed_pop`, `civilian_accel_g`, `limited_fleet_size`,
+   `PopBands::top_edge`, `reinvest_bias`), and add **role/hull cost** knobs
+   rather than only `medium_fleet_size`. Record raw per T-50.
+2. **Sweep the discrete gates separately** — `medium_min_level ∈ {2,3,4}`,
+   `limited_min_level ∈ {1,2,3}`, `cycle_years ∈ {25,50,100}` — because a
+   gradient cannot. Expect the level gates to be the largest single effect on
+   time; they are the staircase.
+3. **Decide what the deepen/expand comparison should be.** Both sides must be a
+   *rate of return in one unit* — plausibly expected colonies per mineral per
+   year, discounted — so that `reinvest_bias` becomes a preference over a real
+   trade rather than a unit-conversion constant with a preference hidden in it.
+   This is a policy redesign and `reinvest_bias` is globally MC-tuned, so it
+   needs ratification (CLAUDE.md §6), not a quiet edit.
+4. Only then ask whether the *structure* wants to change. The policy is already
+   a decision tree; the fault is a dead branch and an incommensurable
+   comparison, not the tree form. Fix the comparison before replacing the
+   shape — otherwise a richer structure inherits the same broken predicate.
+
 ### T-50. Record gradient sensitivity as raw data, not prose — it is card-design input
 
 **The elasticities are being spent and thrown away.** Every gradient probe this
