@@ -125,8 +125,8 @@ fn score(cfg: SimConfig, doctrine: Doctrine) -> (usize, f64, f64) {
     let mut frac_sum = 0.0;
     let mut completions = Vec::new();
     for &seed in TEST_BED_SEEDS {
-        let (covered, total, completion) = trial(seed, cfg, doctrine);
-        frac_sum += covered as f64 / total as f64;
+        let (covered, _total, completion) = trial(seed, cfg, doctrine);
+        frac_sum += covered as f64;
         if let Some(t) = completion {
             full += 1;
             completions.push(t);

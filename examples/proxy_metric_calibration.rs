@@ -84,10 +84,16 @@ const CHECKPOINTS: &[f64] = &[250.0, 500.0, 750.0, 1000.0, 1500.0, 2000.0];
 const THRESHOLDS: &[usize] = &[25, 50, 100, 200];
 /// Window for the exponential-rate fit.
 const SLOPE_WINDOW: (f64, f64) = (500.0, 1500.0);
-/// True-coverage floor for the "healthy band" — configurations at or above it
+/// Colony-count floor for the "healthy band" — configurations at or above it
 /// are working economies rather than collapses, and telling *those* apart is
 /// the job a search proxy has to do.
-const HEALTHY_COVERAGE: f64 = 0.25;
+///
+/// **Was `0.25` when the objective was a fraction.** Left unconverted it would
+/// have put *every* configuration in the band (all counts exceed 0.25), which
+/// would silently delete the discrimination check rather than failing it —
+/// exactly the kind of unit mismatch that survives a compile. 1,700 is the
+/// same ~25% bar against the ~6,725-world beds.
+const HEALTHY_COVERAGE: f64 = 1700.0;
 
 /// A configuration to rank. `±25%` rather than the probe's `±10%`: this needs
 /// *spread* in the ground truth to have something to correlate against, not a
@@ -151,7 +157,6 @@ struct RunResult {
 fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> RunResult {
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
     let targets = coverage_targets(&galaxy);
-    let total = targets.len().max(1);
 
     let autopilots: Vec<Box<dyn Autopilot>> =
         (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
@@ -181,8 +186,7 @@ fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> RunResult {
 
     // Ground truth: coverage at the horizon, straight off the snapshot.
     let snap = sim.snapshot();
-    let coverage =
-        snap.planets.iter().filter(|p| p.owner.is_some() && targets.contains(&p.id)).count() as f64 / total as f64;
+    let coverage = snap.planets.iter().filter(|p| p.owner.is_some()).count() as f64;
 
     RunResult { coverage, colonies_at, neg_time_to, log_slope }
 }

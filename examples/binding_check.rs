@@ -37,7 +37,6 @@ fn main() {
             let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
             let targets: HashSet<PlanetId> =
                 galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect();
-            let total = targets.len().max(1);
             let mut cfg = SimConfig::new(seed);
             cfg.cargo_unit_size = cus;
             let autopilots: Vec<Box<dyn Autopilot>> =
@@ -47,7 +46,7 @@ fn main() {
             let snap = sim.snapshot();
             let c = snap.planets.iter().filter(|p| p.owner.is_some() && targets.contains(&p.id)).count();
             covered.push(c);
-            frac += c as f64 / total as f64;
+            frac += c as f64;
         }
         frac /= SEEDS.len() as f64;
         println!("{cus:>16.2}  {:>28}  {:>7.2}%", format!("{covered:?}"), frac * 100.0);
