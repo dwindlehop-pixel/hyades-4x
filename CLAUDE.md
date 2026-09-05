@@ -168,6 +168,94 @@ ranking.
 not where the summit is, and it points confidently along artifacts when the
 model beneath is wrong. Use it to choose what to investigate, never to conclude.
 
+### Screen on a truncated horizon, confirm on the objective
+
+The coverage objective costs a **full-length run per evaluation** — 27.3 s at
+the shipped defaults, so the nine-knob probe above is a 40-minute job. But
+`horizon_years` is purely a stopping condition, so a truncated run is a
+faithful *prefix*, and cost is violently superlinear in duration because
+entity count compounds:
+
+| horizon | cost | speedup | rank agreement with the real objective |
+|---|---|---|---|
+| 4,000 (the objective) | 27.3 s | 1× | — |
+| 2,000 | 0.88 s | **31×** | ρ = 0.923 (healthy-band 0.859, worst seed 0.907) |
+| 1,500 | 0.36 s | **76×** | ρ = 0.833 (healthy-band 0.831) |
+| 1,000 | 0.12 s | 232× | ρ = 0.358 — too early, do not use |
+
+**`colonies@2000` is the default screen** (`examples/proxy_metric_calibration.rs`);
+`colonies@1500` is the aggressive option when the search stays among working
+configurations, which is the gradient-probe case. **Screen with it, ratify on
+the real objective** — never ship a value the proxy alone chose.
+
+Three things that measurement got right, and are the reusable part:
+
+- **Rank configurations, not seeds.** ρ is computed *within* each seed and then
+  averaged. Correlating across seeds would only prove both metrics can tell an
+  easy galaxy from a hard one — the same reason CRN pairs by seed.
+- **Score the healthy band separately.** The config set contained `k_high`
+  collapses (0.3–15% coverage against ~50%), and a metric can post a fine
+  overall ρ purely by spotting those while being useless at ranking two
+  *working* configurations — which is what a search actually does all day.
+  `log_slope` was exactly this: ρ = 0.573 overall, **0.215** on the healthy
+  band. A collapse detector wearing a proxy's clothes.
+- **Re-test the knob that burned you.** Every candidate carries a
+  `medium_fleet_size` sign test, because that is the knob whose backwards
+  ranking disqualified years-to-10%-colonized.
+
+**Time-to-threshold metrics are the trap here.** Years-to-10%-colonized fails
+*both* halves of the bar: 10% is not reached until t≈2,800 of 4,000, so reading
+it costs a full run anyway, and it ranked `medium_fleet_size` against coverage.
+A metric you can only read near the horizon is not a shortcut to the horizon.
+
+### Never let the metric's denominator be something the game can play
+
+**The objective is an absolute colony count, not a fraction.** It used to be
+`colonized / |{p : min(hab,bio) > 0.01}|`, and both halves of that were wrong:
+
+- The **divisor** is a per-seed constant, so averaging fractions across seeds
+  weights each seed by `1/denominator`. That is a weighting nobody chose, and
+  it is not neutral — see below.
+- The **membership filter** is derived from habitability, which is *exactly*
+  what a terraforming card changes. Under a fraction, terraforming a world
+  above the threshold **enlarges the denominator and lowers the score for
+  colonizing more**; a bombardment that pushes one below **shrinks it and
+  raises the score for destroying one.** The metric would report the opposite
+  of the play. That is not a tuning inconvenience, it is a metric that can be
+  farmed, and card design is the thing it would mislead.
+
+Nothing in the shipped engine mutates habitability *yet*, so this looked
+cosmetic. It was not — **correcting it reordered the top of the ranking**:
+
+| knob | under the fraction | under colony count | confirmed? |
+|---|---|---|---|
+| `biosphere_regen_rate` | +0.84 ± 0.24 — third | **+141.2 ± 18.1 — first (7.8 SE)** | yes |
+| `growth_rate` | +2.27 ± 0.50 — first | +73.8 ± 20.3 — second | yes |
+| `survey_reserve` | −0.13 ± 0.23 — flat | −23.8 ± 10.1 — "significant" | **no — false positive** |
+
+The top two genuinely swapped, and `growth_rate` was ratified while the
+fraction under-weighted the actual top lever. But **the third row is a sixth
+artifact, and this one the corrected metric *created*** — a direct sweep of
+`survey_reserve` (`gradient_step --sweep-reserve`) shows the probe had the sign
+backwards: 1024 sits on a plateau (2048 is +3.5 ± 2.6, noise) with a cliff
+*below* it (512 → −21.8, 256 → −96.8, 64 → −840). A ±10% perturbation on a
+plateau read noise and cleared 2 SE by luck.
+
+Two lessons, and the second is the more useful one. **A 2.4-SE reading on four
+seeds is not a finding, it is a coin landing on its edge** — the 2-SE bar is a
+floor for *considering* a knob, not a licence to move it. And **"screen, then
+confirm on the objective" caught this**, which is the entire reason the rule
+exists: the screen proposed a direction, the confirmation refuted it, and no
+default moved. A correction to the metric fixes some readings and can
+manufacture others; both need the same confirmation step.
+
+**The general rule, which is the transferable part:** an objective must be
+invariant to everything the thing being optimized can change. Ask of any
+metric — *what could a card do to move this without moving the world?* If the
+answer is not "nothing", the metric is a target, not a measurement. This joins
+the artifact list below as a fifth shape, and it is the only one that would
+have gotten worse rather than better with time.
+
 ### The artifact pattern — four of them, one shape
 
 Four measurements in this project were wrong in the same way, and the shape is
@@ -642,18 +730,42 @@ changes how you *work*, not what is left to do:
   runs per hour, so speed lost to entity count is balance coverage not bought.
 
 - **Coverage is measured inside a fixed 4,000-year run — do not extend the horizon**
-  (T-20). **~49% of colonizable worlds** as of the gradient-step ratification
-  (3,348 / 6,725 on seed 1, up from 1,044 two ratifications ago). 4,000 is the run length;
-  the coverage reached within it is the objective. Doubling the horizon doubles
-  every trial, and §2's 60-second rule already had to absorb the snowball once.
+  (T-20). **~51.4% of colonizable worlds** as of the `growth_rate` re-ratification
+  (mean over the 4-seed CRN bed; was 1,044 / 6,725 on seed 1 three ratifications
+  ago). 4,000 is the run length; the coverage reached within it is the objective.
+  Doubling the horizon doubles every trial, and §2's 60-second rule already had
+  to absorb the snowball once.
 
-  Two ratifications got it there and neither was a sweep. **λ (14.4% → 38.3%)
+  Three ratifications got it there and none was a sweep. **λ (14.4% → 38.3%)
   was a *missing term*** — freighter routing had no distance component at all,
   so a hauler would cross the galaxy for a marginally needier center. **The
   gradient step (38.3% → 49.3%)** moved four knobs at once along a measured
-  direction and verified the result on the same seeds. Before sweeping harder,
-  check whether a term is absent; then measure the gradient rather than the
-  grid.
+  direction and verified the result on the same seeds. **The `growth_rate`
+  re-ratification (49.1% → 51.4%, +2.31 ± 1.05 paired)** came from re-measuring
+  the gradient *at the point the previous step had produced* — the old direction
+  had been consumed, and every knob but one had gone flat or noisy. Before
+  sweeping harder: check whether a term is absent; then measure the gradient
+  rather than the grid; then **re-measure it after you step**, because the
+  direction you just spent is not the direction you are now standing in.
+
+  **Diminishing returns are visible, and the cause is now known.** +23.9, then
+  +11.0, then +2.3 points. It is not that the economy ran out of headroom:
+  `examples/reach_limit.rs` shows the binding constraint is **`k_high`, not the
+  economy** — the bed already colonizes 90–100% of what that threshold
+  *admits*, and it admits only 51–53% of the galaxy. The objective's
+  denominator counts every world with `min(hab,bio) > 0.01`; the classifier
+  does not.
+
+  That predicts, correctly, that further economic gains stop adding.
+  `growth_rate` (+2.31 alone) and mining-pair recycling (+1.19 alone on the
+  standard four) combine to **+2.53, not +3.50** — recycling's marginal
+  contribution on top of `growth_rate` is +0.22, inside the noise. Two
+  independent, individually-real improvements, mostly cancelling because they
+  compete for headroom that is not economic. **Before tuning another economic
+  knob, check whether the thing you are optimizing is what is actually
+  scarce** — and note that both gains were measured on parallel branches
+  *without each other*, which is the same operating-point trap in a new
+  costume: concurrent work needs a joint re-measure at merge, not addition.
 
 ---
 

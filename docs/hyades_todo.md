@@ -383,6 +383,79 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-47. R-AC20 — ~~time-to-10% vs. coverage disagree on `medium_fleet_size`~~ premise withdrawn; `center_mining_fraction` still open
+
+> **Resolved, and it was an artifact.** The two elasticities were measured at
+> different operating points (coverage's `+32.7 pts/ln` at `medium_fleet_size
+> = 3.0`, before the ratification moved it to 4.45; the time-to-10% number at
+> 4.45). Measured directly at ±25% around the shipped value, coverage is an
+> **interior optimum at 4.45** on all three seeds, so raising it further hurts
+> *both* metrics — they agree. Comparing gradients across operating points is
+> the mistake; "a gradient is local" (CLAUDE.md §2) has now produced a project
+> artifact rather than merely warning about one. **What is still open:**
+> `center_mining_fraction` (`~noise` at 1.33 SE) wants the ten-seed bed.
+> **What the detour actually produced:** the `colonies@2000` screening metric
+> — ρ = 0.923 against true coverage at 31× less cost, now documented in
+> CLAUDE.md §2 and calibrated by `examples/proxy_metric_calibration.rs`.
+
+The original entry, kept for the record:
+
+While resolving R-AC3 (survey-sector strategy: no measurable effect on early
+speed — `Hyades_autopilot_colonization_growth.md` §2), a gradient probe
+retargeted at years-to-10%-colonized (`examples/time_to_10pct_probe.rs`)
+found `medium_fleet_size` — the single largest lever for coverage-at-4,000-yr
+(+32.7 ± 3.6 pts/ln, already MC-ratified at 4.45) — has the **opposite**
+sign for time-to-10% (+161.5 ± 41.7 yr/ln: raising it *slows* the early
+game). Plausible mechanism: a cheaper Medium hull is also a smaller one
+(shell model), while the pop-seed cargo a Colonizer must carry
+(`colony_seed_pop = 1.0`) is a fixed mass, so laden acceleration drops as
+the hull shrinks under a fixed load — more colonizers get built, each one
+slower to arrive. Not yet directly traced.
+
+`rank.k_high` (ratified at 3.2 for coverage, R-AC17) shows the same-sign
+tension more weakly (borderline 2.06 SE on the time-to-10% side).
+`growth_rate` and `outpost_mining_fraction` agree in direction across both
+objectives — no tension there.
+
+**The concrete test:** define an explicit blended objective (e.g.
+`α·coverage_at_horizon − β·time_to_10pct`, or "time to first elimination,"
+cmd §"R-5") and re-run the gradient-step methodology against it, rather than
+picking a number without a stated objective. Also: `center_mining_fraction`
+came back `~noise` (1.33 SE) on the 4-seed bed and wants the ten-seed bed
+(T-44's precedent) before trusting either sign.
+
+**Not this file's call:** whether the shipped defaults should move at all is
+a product decision about how much early-game feel is worth trading against
+late-game sprawl — flagged, not resolved, per R-AC20.
+
+### T-48. Finish the metric change — five harnesses still divide
+
+The objective is an absolute colony count (CLAUDE.md §2), and
+`gradient_probe`/`gradient_step` — the two that actually set defaults — were
+converted. **Five were not**, and still compute `colonized / |targets|`:
+`binding_check`, `colonization_ramp_trace`, `min_time_search`, `mining_probe`,
+`proxy_metric_calibration`.
+
+None of them is *wrong today* in the way the objective was, because each uses
+its fraction consistently within a single run and nothing yet mutates
+habitability. They become wrong the moment terraforming exists, for exactly
+the reason the main objective did: the denominator is a set a card can move.
+
+Two are worth more than a mechanical edit:
+
+- **`proxy_metric_calibration`** validated `colonies@2000` (ρ = 0.923) against
+  the *fraction* as ground truth. The proxy itself was always an absolute
+  count, so it is now in the same units as the objective — which should if
+  anything improve the correspondence — but **the ρ figure quoted in
+  CLAUDE.md §2 is calibrated against a metric that no longer ships.** Re-run
+  before quoting it as though it still applies.
+- **`mining_probe`** produced the +1.69 ± 0.53 recycling ratification on the
+  8-seed bed. That number is in fractions, so it is not directly comparable to
+  anything measured after this change.
+
+Mechanical for the other three; the two above want a re-run, not a find-and-
+replace.
+
 ### T-33. `Knowledge` stores membership, not observations — netcode B4
 
 `Knowledge::scanned` is a `BTreeSet<PlanetId>`, so it records *that* a world was
@@ -522,17 +595,95 @@ search should optimize jointly against both the coverage objective and the
 
 ### T-20. Raise coverage inside a fixed 4,000-year run
 
-**~50%** of colonizable worlds (3,381 of 6,725, seed 1) after three ratifications:
-`trade_decay_lambda = 0.01` (a *missing term* — routing had no distance
-component) took it from 14.4% to 38.3%, and a verified gradient step on four
-knobs took it to 49.3%, and R-AC19 (mining-pair recycling) added +1.69 ± 0.53
-on the 8-seed bed. **None of the three came from a coordinate sweep** — a
-missing term, a measured gradient, and a second missing term.
+> **The objective is now an absolute colony count** (CLAUDE.md §2). The old
+> fraction let a habitability-derived denominator into the score, which
+> terraforming and bombardment cards would both have moved *against* the play.
+> Shipped defaults measure **3,472 ± 24 colonies** on the 4-seed CRN bed.
+>
+> **Every knob was re-measured against the corrected metric, and the answer is
+> that the defaults stay.** Not for want of looking — three candidates were
+> examined and each was rejected on its own evidence:
+>
+> | candidate | measured | why it was not taken |
+> |---|---|---|
+> | `biosphere_regen_rate` + `growth_rate` together | **+6.2 ± 1.8** (3.4 SE) | real but **+0.18%**, and unobtainable without raising the R-O63 design dial 56% |
+> | `survey_reserve` → lower | probe said −23.8 ± 10.1 | **refuted by direct sweep** — 1024 is a plateau, the cliff is *below* it |
+> | `medium_fleet_size` → lower | −62.5 ± 26.3 (2.4 SE) | three prior measurements put 4.45 on its peak |
+>
+> **The attribution is the interesting part and it reversed under the corrected
+> metric.** `growth_rate` alone is **negative** (−12.0 ± 11.0) and
+> `biosphere_regen_rate` alone is noise (+1.5 ± 1.8), yet together they are
+> +6.2 ± 1.8. They are **complements, not substitutes** — the opposite of what
+> the fraction reported. Population consumes biosphere 1:1 (design law #11), so
+> raising growth without funding the regrowth starves the ecology that caps
+> `K`. That is also the mechanism behind the starvation cliff, now explained
+> rather than merely bounded.
+>
+> **So the honest reading of this objective is that it is finished as a tuning
+> target.** The best available step is 0.18% and costs design surface; the
+> ceiling is `k_high` (R-AC18), not the economy. Further work belongs on the
+> classifier or on a new mechanism, not on these knobs.
 
-**The remaining headroom is not obviously in these knobs.** The gradient step
-found a cliff at α = 1.0 (coverage collapses to 6.9% as the Medium hull's hold
-vanishes), so this ray is close to exhausted. Further progress likely needs a
-new *term* rather than a better value — the λ lesson again. **4,000 years is
+**~51.4%** of colonizable worlds (4-seed CRN mean) after **four** ratifications:
+`trade_decay_lambda = 0.01` (a *missing term* — routing had no distance
+component) took it from 14.4% to 38.3%; a verified gradient step on four knobs
+took it to 49.3%; **R-AC19 (mining-pair recycling)** added +1.69 ± 0.53 on the
+8-seed bed; and **`growth_rate` 0.546 → 0.873** added +2.31 ± 1.05 on the
+standard four. **None came from a coordinate sweep** — two missing terms and
+two measured gradients.
+
+> **Measured — and they are strongly sub-additive, as the `k_high` finding
+> predicted.** The two gains were developed on parallel branches and each was
+> measured *without* the other: recycling's +1.69 (8 seeds) / +1.19 (standard
+> four) against `growth_rate = 0.546`, and `growth_rate`'s +2.31 against
+> recycling off. On the merged defaults, standard four seeds:
+>
+> | configuration | coverage | vs. neither |
+> |---|---|---|
+> | neither | 49.11% | — |
+> | recycling only | 50.30% | +1.19 |
+> | `growth_rate` only | 51.42% | +2.31 |
+> | **both (shipped now)** | **51.64% ± 0.36** | **+2.53** |
+> | *additive prediction* | *52.61%* | *+3.50* |
+>
+> **The sum falls ~1 point short of additive, and recycling's marginal
+> contribution on top of `growth_rate` is +0.22 — not resolvable on this bed.**
+> Symmetrically, `growth_rate` keeps only +1.34 of its +2.31 once recycling is
+> on. They are substitutes competing for the same headroom, the same shape the
+> `growth_rate`/`biosphere_regen_rate` pair showed.
+>
+> **Why, and it is the useful part:** `examples/reach_limit.rs` found the
+> binding constraint here is **`k_high`, not the economy** — the bed already
+> colonizes 90–100% of what the threshold *admits*, and it admits only 51–53%
+> of the galaxy. Both gains are economic, and the economy is not what is short.
+> Adding a third economic improvement should be expected to buy near nothing.
+>
+> **This is not an argument against recycling**, which was ratified on its own
+> 8-seed evidence and buys a real hull economy regardless of coverage (29%
+> fewer hulls for the same work, idle hull-years 2.77 M → 1.24 M). It is an
+> argument that **the coverage objective is now capped by classification, not
+> production** — so the next move is R-AC18 (should the Colony class have a K
+> floor at all), not another economic knob. The marginal figures above sit
+> inside the 4-seed noise; `SEEDS_WIDE` would settle them, but no pending
+> decision turns on it.
+**The third one is the methodological point:** it came from re-running the
+probe *at the operating point the second step had produced*. The old direction
+had been spent — of nine knobs, four measured flat, two were inside 2 SE, and
+`medium_fleet_size` had gone from the biggest lever (+32.7 pts/ln at its old
+value) to sitting on its peak (`+1.93 ± 2.37`, sign unresolvable). Only
+`growth_rate` and `biosphere_regen_rate` survived, and `--attribution` showed
+`growth_rate` earned 92% of the joint gain by itself, so the R-O63 biosphere
+design dial was left untouched.
+
+**The remaining headroom is not obviously in these knobs, and the returns are
+visibly diminishing** (+23.9, +11.0, +2.3 points). Two cliffs now bound this
+ray: the original one at α = 1.0 of the *old* direction (6.9% as the Medium
+hull's hold vanishes), and a **starvation cliff** on `growth_rate` itself —
+1.395 still works (50.99%) but 2.229 collapses to 28.46%, because population
+consumes biosphere 1:1 (L6) and fast enough growth eats the ecology that caps
+`K`. Guarded by `growth_rate_stays_clear_of_the_starvation_cliff`. Further
+progress likely needs a new *term* rather than a better value — the λ lesson
+again. **4,000 years is
 the run length; the coverage reached within it is the objective.** Do not extend
 the horizon: doubling it doubles every trial and the 60-second rule already had
 to absorb the snowball once. T-07 and T-21 are the nearest levers.

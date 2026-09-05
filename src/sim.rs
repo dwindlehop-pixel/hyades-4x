@@ -56,7 +56,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use crate::autopilot::{
     Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext,
-    SurveyView, Tasking,
+    SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
@@ -1256,11 +1256,17 @@ impl Simulation {
             self.schedule(self.config.cycle_years, EventKind::ProductionTick { center: home });
 
             // Opening survey fan-out: contact craft, one per cube-face heading,
-            // built free as starting units (§2).
+            // built free as starting units (§2). Under `SurveyStrategy::GlobalPool`
+            // (R-AC3) even the opener gets no heading — every craft, including
+            // the fan-out, picks the globally nearest unscanned world.
             let home_pos = *self.world.position.get(home).unwrap();
-            let vehicles = self.world.doctrine.get(pe).unwrap().survey_vehicles;
+            let doctrine_here = *self.world.doctrine.get(pe).unwrap();
+            let vehicles = doctrine_here.survey_vehicles;
             for i in 0..vehicles {
-                let heading = Vec3::CUBE_FACES[i % 6];
+                let heading = match doctrine_here.survey_strategy {
+                    SurveyStrategy::GlobalPool => Vec3::ZERO,
+                    SurveyStrategy::OpeningSectors | SurveyStrategy::PersistentSectors => Vec3::CUBE_FACES[i % 6],
+                };
                 self.launch_survey(p, home_pos, heading, 0);
             }
         }
@@ -2052,7 +2058,23 @@ impl Simulation {
                     return;
                 }
                 match (role, target) {
-                    (Role::Scout, _) => self.launch_survey(p, center_pos, Vec3::ZERO, 0),
+                    (Role::Scout, _) => {
+                        // Under `PersistentSectors` (R-AC3), a paid-for replenishment
+                        // Scout inherits an outward heading from home through the
+                        // center that built it, instead of always pooling globally.
+                        // `normalized()` returns `ZERO` for a center at home itself,
+                        // which degrades to global pool for that one craft — the
+                        // correct degenerate case, not a special case to add.
+                        let heading = match doctrine.survey_strategy {
+                            SurveyStrategy::PersistentSectors => {
+                                let home = self.world.player_info.get(self.player_entity[p]).unwrap().home;
+                                let home_pos = *self.world.position.get(home).unwrap();
+                                center_pos.sub(home_pos).normalized()
+                            }
+                            SurveyStrategy::GlobalPool | SurveyStrategy::OpeningSectors => Vec3::ZERO,
+                        };
+                        self.launch_survey(p, center_pos, heading, 0)
+                    }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
                         match reused_miner {

@@ -28,9 +28,16 @@
 //! **3. Elasticity, not slope.** `∂f/∂ln x = x · ∂f/∂x`. Raw slopes are not
 //! comparable across parameters measured in different units — a slope per
 //! `cargo_unit_size` and a slope per `growth_rate` are different currencies.
-//! The log-derivative is unit-free: *"a 1% change in this knob moves coverage
-//! by this many points."* That is what makes a **ranking** meaningful, and the
-//! ranking is the transferable knowledge.
+//! The log-derivative is comparable across knobs: *"a 1% change in this knob
+//! moves the objective by this much."* That is what makes a **ranking**
+//! meaningful, and the ranking is the transferable knowledge.
+//!
+//! ## The objective is an absolute colony count, not a fraction
+//!
+//! See [`trial`]. Briefly: a habitability-derived denominator would let a
+//! terraforming card *lower* the score for colonizing more worlds and a
+//! bombardment *raise* it for destroying one, because both move the set the
+//! metric divides by. Never let the denominator be something the game can play.
 //!
 //! **4. A standard error on every number.** Per-seed differences give a paired
 //! standard error directly. Anything inside `2·SE` of zero is not a finding, and
@@ -50,7 +57,6 @@
 //!
 //! Run: `cargo run --release --example gradient_probe`
 
-use std::collections::HashSet;
 use std::io::Write;
 
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
@@ -64,24 +70,53 @@ const PLAYERS: usize = 3;
 /// truncation error stays below the sampling error.
 const DELTA: f64 = 0.10;
 
-fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
-}
+/// **Screening horizon** (`--screen`). The proxy is not a different metric —
+/// it is *this same objective function evaluated at a truncated horizon*,
+/// which is why adopting it costs one line. `horizon_years` is purely a
+/// stopping condition, so the run is a faithful prefix.
+///
+/// Calibrated at ρ = 0.923 against true coverage for **31× less cost**
+/// (`examples/proxy_metric_calibration.rs`, CLAUDE.md §2). **Ranking only:**
+/// the elasticities it reports are in points-of-colonized-at-2000 per ln, a
+/// different scale from the real objective's, so compare the *order* of knobs
+/// across modes, never the magnitudes. Screen here, ratify on the objective.
+const SCREEN_HORIZON: f64 = 2000.0;
 
-/// Coverage fraction for one seed under one configuration.
+/// **Colonies held at the horizon — an absolute count, never a fraction.**
+///
+/// This objective used to be `colonized / |{p : min(hab,bio) > 0.01}|`. Both
+/// halves of that were wrong, and for the same reason: **the metric must not be
+/// able to move because its own denominator moved.**
+///
+/// - The **divisor** is a property of the galaxy, so averaging fractions across
+///   seeds silently weights each seed by `1/denominator` — a small-galaxy seed
+///   counts for more than a large one, which is not a thing anyone chose.
+/// - The **membership filter** is worse, because it is derived from
+///   habitability, and habitability is *exactly* what a terraforming card
+///   changes. Under a fraction, a card that raised a world above the threshold
+///   would enlarge the denominator and **lower the score for colonizing more
+///   worlds**; a bombardment that pushed one below would shrink the denominator
+///   and **raise the score for destroying one**. The objective would be
+///   reporting the opposite of the play.
+///
+/// Nothing in the shipped engine mutates habitability yet, so today this is
+/// mostly a change of units and of cross-seed weighting. It stops being
+/// cosmetic the moment terraforming exists, and the point of fixing it now is
+/// that every number ratified in between would otherwise have to be re-derived
+/// against a metric nobody could compare to.
+///
+/// Counting owned planets needs no habitability filter at all: mining outposts
+/// take no ownership, so "owned" is "colonies" exactly.
 fn trial(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> f64 {
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
-    let targets = coverage_targets(&galaxy);
-    let total = targets.len().max(1);
     let autopilots: Vec<Box<dyn Autopilot>> =
         (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
     sim.run();
-    let snap = sim.snapshot();
-    snap.planets.iter().filter(|p| p.owner.is_some() && targets.contains(&p.id)).count() as f64 / total as f64
+    sim.snapshot().planets.iter().filter(|p| p.owner.is_some()).count() as f64
 }
 
-/// Per-seed coverage vector — the CRN unit. Never collapse to a mean before
+/// Per-seed colony-count vector — the CRN unit. Never collapse to a mean before
 /// differencing; the whole variance reduction lives in keeping seeds aligned.
 fn profile(cfg: SimConfig, doctrine: Doctrine) -> Vec<f64> {
     SEEDS.iter().map(|&s| trial(s, cfg, doctrine)).collect()
@@ -113,13 +148,21 @@ struct Knob {
 struct Finding {
     name: &'static str,
     value: f64,
-    /// `∂coverage/∂ln x`, in percentage points.
+    /// `∂colonies/∂ln x`, in colonies.
     elasticity: f64,
     se: f64,
 }
 
 fn main() {
-    let base_cfg = SimConfig::new(0);
+    // `--screen` swaps the expensive objective for its calibrated proxy by
+    // truncating the horizon. Same function, same knobs, same CRN seeds —
+    // 31× cheaper, and valid for *ranking* knobs, not for magnitudes.
+    let screen = std::env::args().any(|a| a == "--screen");
+    let mut base_cfg = SimConfig::new(0);
+    if screen {
+        base_cfg.horizon_years = SCREEN_HORIZON;
+    }
+    let base_cfg = base_cfg;
     let base_doc = Doctrine::default();
 
     let knobs: Vec<Knob> = vec![
@@ -166,16 +209,28 @@ fn main() {
     );
     println!("Paired central differences. Budget: {evals} evaluations.");
     println!(
-        "(Coordinate descent over 5 values would be {} for strictly less information.)\n",
+        "(Coordinate descent over 5 values would be {} for strictly less information.)",
         5 * knobs.len() * SEEDS.len()
     );
+    if screen {
+        println!(
+            "**SCREENING MODE** — horizon truncated to {SCREEN_HORIZON:.0} yr (the calibrated\n\
+             colonies@2000 proxy, ρ = 0.923 vs true coverage, ~31× cheaper). Trust the\n\
+             *ranking*; magnitudes are on the proxy's scale. Ratify on the full objective.\n"
+        );
+    } else {
+        println!(
+            "Full objective: coverage at {:.0} yr. Run with --screen for the 31× proxy.\n",
+            base_cfg.horizon_years
+        );
+    }
 
     let here = profile(base_cfg, base_doc);
     println!(
-        "Operating point: {:.2}% ± {:.2} coverage   per-seed {:?}\n",
-        mean(&here) * 100.0,
-        stderr(&here) * 100.0,
-        here.iter().map(|x| format!("{:.1}%", x * 100.0)).collect::<Vec<_>>()
+        "Operating point: {:.0} ± {:.0} colonies   per-seed {:?}\n",
+        mean(&here),
+        stderr(&here),
+        here.iter().map(|x| format!("{x:.0}")).collect::<Vec<_>>()
     );
     std::io::stdout().flush().ok();
 
@@ -199,10 +254,10 @@ fn main() {
         // The paired difference, seed by seed. This is where CRN pays.
         let diffs: Vec<f64> = hi.iter().zip(lo.iter()).map(|(a, b)| a - b).collect();
         // d(coverage)/d(ln x) = delta_f / (2*delta), since x(1±δ) is ±δ in log space to O(δ²).
-        let elasticity = mean(&diffs) / (2.0 * DELTA) * 100.0;
-        let se = stderr(&diffs) / (2.0 * DELTA) * 100.0;
+        let elasticity = mean(&diffs) / (2.0 * DELTA);
+        let se = stderr(&diffs) / (2.0 * DELTA);
 
-        println!("  {:<24} value {:>9.4}   elasticity {:>+8.2} ± {:.2} pts/ln", k.name, k.value, elasticity, se);
+        println!("  {:<24} value {:>9.4}   elasticity {:>+9.1} ± {:.1} colonies/ln", k.name, k.value, elasticity, se);
         std::io::stdout().flush().ok();
         findings.push(Finding { name: k.name, value: k.value, elasticity, se });
     }
@@ -210,7 +265,7 @@ fn main() {
     findings.sort_by(|a, b| b.elasticity.abs().partial_cmp(&a.elasticity.abs()).unwrap());
 
     println!("\n=== Ranked by |elasticity| — where tuning effort belongs ===");
-    println!("{:<24} {:>10} {:>10} {:>8}  verdict", "knob", "value", "d/dln x", "SE");
+    println!("{:<24} {:>10} {:>10} {:>8}  verdict", "knob", "value", "colonies/ln", "SE");
     for f in &findings {
         // Exactly-zero-with-zero-variance is the *most* informative outcome and
         // has to be caught before the significance test: `|e| < 2·se` is false
@@ -219,7 +274,7 @@ fn main() {
         let verdict = if f.se == 0.0 && f.elasticity == 0.0 {
             "INERT — moved no seed at all; the knob does not reach the objective"
         } else if f.elasticity.abs() < 2.0 * f.se {
-            if f.elasticity.abs() < 0.5 {
+            if f.elasticity.abs() < 5.0 {
                 "flat — inert here, consider deleting"
             } else {
                 "~noise — needs a bigger bed"
@@ -229,12 +284,12 @@ fn main() {
         } else {
             "lower it"
         };
-        println!("{:<24} {:>10.4} {:>+10.2} {:>8.2}  {verdict}", f.name, f.value, f.elasticity, f.se);
+        println!("{:<24} {:>10.4} {:>+10.1} {:>8.1}  {verdict}", f.name, f.value, f.elasticity, f.se);
     }
 
     println!(
-        "\nReading: elasticity is coverage percentage points per unit change in ln(knob),\n\
-         so a value of +5 means a 10% increase in that knob buys ~0.5 points. Signs say\n\
+        "\nReading: elasticity is *colonies* per unit change in ln(knob), so +100 means a\n\
+         10% increase in that knob buys ~10 more colonies. Signs say\n\
          which way is uphill *from here* — a gradient is local and cannot see a summit,\n\
          a cliff, or a modelling artifact pointing the wrong way.\n\
          Anything within 2 SE of zero is not a result. Widen the seed bed before\n\
