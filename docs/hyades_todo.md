@@ -383,6 +383,43 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-50. Record gradient sensitivity as raw data, not prose — it is card-design input
+
+**The elasticities are being spent and thrown away.** Every gradient probe this
+project has run has ended up as a sentence in `CLAUDE.md` or a doc — "`+141.2 ±
+18.1`, first" — and then been invalidated by the next step, leaving nothing
+behind. That is the wrong artifact. The *ranking and magnitude* of
+`∂(objective)/∂ln(knob)` is exactly the table card design needs: a card is a
+perturbation of a knob, so **the elasticity is the card's effect size before the
+card exists.** "Terraforming raises `hab`" is not a design until you know what a
+10% move in `hab` is worth relative to a 10% move in `growth_rate`.
+
+**What to keep.** `examples/gradient_probe.rs` already computes everything; it
+just prints it. Persist the *raw* per-knob, per-seed evaluations — not the
+summary — into a checked-in dataset, with:
+
+- knob name, base value, δ, and both perturbed values;
+- the objective at each, **per seed** (CRN pairing is the whole point, and a
+  mean discards it);
+- the operating point: full `SimConfig` + `Doctrine` at the time, plus the
+  engine commit. An elasticity without its operating point is not a
+  measurement, it is a rumour — this file has already recorded that mistake
+  twice (R-AC18/R-AC20, and the post-gradient-step re-measure).
+
+**Why raw and not derived.** Standard errors, elasticities and rankings are all
+recoverable from the raw evaluations; the reverse is not true. It also lets a
+later reader re-analyse under a *different* objective without re-running — which
+matters, because this project has changed its objective twice already (fraction
+→ absolute count, and the operating point moved again at R-O66).
+
+**Format:** a plain CSV or TSV under `data/`, appended to rather than
+overwritten, one row per evaluation. Zero dependencies, diffable, and readable
+by whatever does the card-costing analysis later. The harness gains a
+`--record <path>` flag; nothing else changes.
+
+**Related:** T-45 (elasticity baseline) is the first dataset this should
+capture, and it needs re-running at the post-R-O66 operating point anyway.
+
 ### T-49. R-O67 — population stalls when it runs out of biomass; it never dies back
 
 **Design call, not a bug to patch.** Population responds to two ceilings and the
@@ -672,8 +709,49 @@ search should optimize jointly against both the coverage objective and the
 > target.** The best available step is 0.18% and costs design surface; the
 > ceiling is `k_high` (R-AC18), not the economy. Further work belongs on the
 > classifier or on a new mechanism, not on these knobs.
+>
+> ---
+>
+> **Reopened by R-O66 — the bed no longer saturates, so time is binding again.**
+>
+> That verdict rested on a bed that finished: at the old defaults the run took
+> **99.8%** of everything `k_high` admits (99.7 · 99.9 · 99.7 · 99.7), so the
+> only headroom left really was the classifier. Post-R-O66 it takes **94.6%**
+> (93.9 · 95.9 · 92.6 · 96.0). The missing ~5.4 points is ~190 colonies —
+> essentially all of the 178 the unit fix cost — and it is *reachable* headroom,
+> not classifier headroom.
+>
+> `examples/reach_limit.rs` on the standard bed says what is consuming it:
+>
+> | limiter | evidence | binding? |
+> |---|---|---|
+> | classification (`k_high`) | 47–48% of the galaxy permanently ineligible; the set is now exactly fixed (`gate_erosion = 0`) | **yes, on the total** |
+> | **expansion-loop time constant** | founding rate ×~2 per 500 yr, peaks at 3,000–3,500 yr on all four seeds, turns over only in the last bucket | **yes, on the time** |
+> | survey | 11–41 above-gate worlds unscanned per seed (0.3–1.2%) | no |
+> | biomass economy | deleting the growth draw outright is bit-identical | no |
+> | mineral economy | ruled out at R-AC17 | no |
+>
+> The residual is **126–216 worlds per seed that were scanned and simply not
+> reached in time**, so this is a rate problem, not a discovery or supply
+> problem.
+>
+> **Where to look, and it is not an economic knob.** R-O66's entire measured
+> effect was a *reallocation*: a corrected `k_potential` gives centers real
+> deepening headroom and they take it (mean infra 1.420 → 1.443, mean `K`
+> 1.418 → 1.430). So the time constant is set by the deepen-versus-expand
+> split — `expand_bias` and the `infra < k_potential` guard — which is policy,
+> tunable, and has never been probed against the objective. Note the two knobs
+> pull against each other by construction: deepening buys production that
+> compounds, expansion buys the centers that do the producing, so the optimum is
+> interior and a gradient probe is the right instrument rather than a sweep.
+>
+> **Do not read this as "the unit fix was a regression."** The old 99.8% was
+> partly bought by an artificial cap on deepening; the bed saturated because
+> centers were forbidden from investing. What changed is that the *question*
+> went back to being interesting.
 
-**~51.4%** of colonizable worlds (4-seed CRN mean) after **four** ratifications:
+**3,294 colonies / ~49.0%** of the objective set (4-seed CRN mean) as of R-O66;
+**~51.4%** before it, after **four** ratifications:
 `trade_decay_lambda = 0.01` (a *missing term* — routing had no distance
 component) took it from 14.4% to 38.3%; a verified gradient step on four knobs
 took it to 49.3%; **R-AC19 (mining-pair recycling)** added +1.69 ± 0.53 on the

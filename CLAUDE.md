@@ -785,6 +785,25 @@ changes how you *work*, not what is left to do:
   artifacts in this file, and here it took two disposable one-line variants to
   tell a plausible story from a true one.
 
+  **And it put time back on the critical path.** `reach_limit` on the standard
+  bed: the run used to take **99.8%** of everything `k_high` admits — a
+  saturated bed, where the classifier was the only limiter and the ramp had
+  slack. It now takes **94.6%** (93.9 · 95.9 · 92.6 · 96.0). So there are two
+  limiters and they bind in sequence: **`k_high` sets the total** (47–48% of the
+  galaxy permanently ineligible, and since R-O66 that set is *exactly* fixed),
+  and **the compounding rate of the expansion loop sets the time** — founding
+  rate ×~2 per 500 yr, peaking at 3,000–3,500 yr on all four seeds and turning
+  over only in the final bucket. Survey is not it (11–41 above-gate worlds
+  unscanned per seed) and neither is the economy (the biomass draw is slack;
+  minerals were ruled out at R-AC17); the residual is 126–216 worlds per seed
+  that were **scanned and not reached in time.**
+
+  The lever on that time constant is the **deepen-versus-expand split** —
+  `expand_bias` and the `infra < k_potential` guard — because that reallocation
+  is the entire measured content of R-O66. It is policy, it has never been
+  probed against the objective, and the two sides pull against each other by
+  construction, so the optimum is interior: probe the gradient, do not sweep.
+
   Three ratifications got it there and none was a sweep. **λ (14.4% → 38.3%)
   was a *missing term*** — freighter routing had no distance component at all,
   so a hauler would cross the galaxy for a marginally needier center. **The
