@@ -35,6 +35,13 @@ file tracks how well understood it currently is.
 R-codes are cited where one exists. An entry with no R-code is engine work with
 no open design question attached.
 
+**Two parallel branches once both took `T-47`**, and because they added their
+entries in different parts of the file, git merged them without a conflict — the
+duplicate was invisible in the diff and had to be found by grep. The mining
+entry became `T-49`. When branching, take the next free number *and* check for a
+collision at merge time; a numbering rule that says "never reuse" is not
+self-enforcing across branches.
+
 ---
 
 ## Band A — ready to build
@@ -760,7 +767,7 @@ design question rather than guessing at a value: should the Colony class have a
 K floor at all, or should `k_high` order *preference* rather than gate
 *eligibility*?
 
-### T-47. What is left on the mining surface after R-AC19
+### T-49. What is left on the mining surface after R-AC19
 
 Recycling (autopilot §5a) is landed and is worth +1.69 ± 0.53 points of
 colonies. What it leaves open is smaller and specific:
