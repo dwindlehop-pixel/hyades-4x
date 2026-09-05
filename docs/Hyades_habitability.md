@@ -145,7 +145,7 @@ habitability_for(planet, player) =
 ```
 
 Composition is the gate; the three continuous scores combine by **the same
-`min()` this codebase already uses for `K = min(hab, bio, infra)`**
+`min()` this codebase already uses for `K = min(hab, bio_max, infra)`**
 (`Hyades_simulation_model.md` §2a). No new aggregation rule — the weakest
 dimension caps the world, exactly like Liebig's law already caps carrying
 capacity elsewhere. A world with perfect gravity and radiation but a wildly

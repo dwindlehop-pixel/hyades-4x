@@ -46,6 +46,7 @@ use std::io::Write;
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
+use hyades_engine::units::Band;
 
 const SEEDS: &[u64] = &[1, 7, 42, 31337];
 const PLAYERS: usize = 3;
@@ -53,7 +54,7 @@ const DELTA: f64 = 0.10;
 const TARGET_FRACTION: f64 = 0.10;
 
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
+    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
 /// Years until `TARGET_FRACTION` of colonizable worlds are colonized, or
@@ -130,7 +131,7 @@ fn main() {
         // the switch). Worth a *targeted* comparison (0.5 vs ~0.95) separately,
         // not a wasted ±10% wobble here.
         Knob { name: "growth_rate", value: base_doc.growth_rate, set: |_, d, v| d.growth_rate = v },
-        Knob { name: "rank.k_high", value: base_doc.rank.k_high, set: |_, d, v| d.rank.k_high = v },
+        Knob { name: "rank.k_high", value: base_doc.rank.k_high.bands(), set: |_, d, v| d.rank.k_high = Band::new(v) },
         Knob {
             name: "center_mining_fraction",
             value: base_cfg.center_mining_fraction,

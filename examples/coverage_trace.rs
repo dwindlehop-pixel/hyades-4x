@@ -57,6 +57,7 @@ use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, BuildOrder, Doctrin
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
 use hyades_engine::sim::HullType;
+use hyades_engine::units::Band;
 
 const PLAYERS: usize = 3;
 const SEED: u64 = 1;
@@ -69,7 +70,7 @@ const ISOLATE_HORIZON: f64 = 2000.0;
 
 /// Same definition `min_time_search` and `coverage_time` score against.
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
+    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]

@@ -31,6 +31,7 @@ use std::collections::{HashMap, HashSet};
 
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
+use hyades_engine::units::Band;
 
 const PLAYERS: usize = 3;
 /// The **standard test bed** — the same four seeds `gradient_probe`,
@@ -47,7 +48,7 @@ const K_HIGH_CURVE: [f64; 7] = [1.5, 2.0, 2.5, 3.0, 3.2, 3.5, 4.0];
 /// Same definition `min_time_search`, `coverage_time` and `coverage_trace`
 /// score against.
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
+    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
 struct Reach {
@@ -66,9 +67,21 @@ struct Reach {
     /// Above the gate, scanned by someone, still unowned at the horizon.
     scanned_idle_above_gate: usize,
     /// Targets that were above the gate at generation but sit **below** it in
-    /// the final snapshot, because population drew their biosphere down. The
-    /// gate is therefore not quite a fixed set — measuring the denominator
-    /// after a run gives a smaller number than measuring it before.
+    /// the final snapshot.
+    ///
+    /// **This is now structurally zero, and that is the point of keeping it.**
+    /// It used to be positive: `k_potential` read the *standing* biosphere, so
+    /// a world's classification fell as its own population ate it, and the
+    /// denominator you measured after a run was smaller than the one you
+    /// measured before. Since the units were separated the gate reads
+    /// `bio_max`, which nothing in the shipped engine moves — so the target set
+    /// is fixed, exactly as CLAUDE.md's rule about metric denominators
+    /// requires.
+    ///
+    /// It stays as a **guard**, not as a statistic: the first card that lowers
+    /// a world's pristine biosphere makes this non-zero again, and at that
+    /// point the objective's denominator is once more something the game can
+    /// play, which is the thing that must not go unnoticed.
     gate_erosion: usize,
     /// Distinct planets reached by a colony **or** a mining outpost.
     reached_any: usize,
@@ -86,10 +99,12 @@ fn run(seed: u64) -> Reach {
     let doctrine = Doctrine::default();
     let w = doctrine.rank;
 
-    // k_potential of an *unowned* world never moves: habitability is static and
-    // biosphere is only drawn down by population, which only exists on an owned
-    // one. So the pre-run value is the value the rank saw all run.
-    let k_pot: HashMap<PlanetId, f64> =
+    // k_potential never moves, for owned and unowned worlds alike: habitability
+    // is static and the gate reads the *pristine* biosphere, not the standing
+    // stock a population draws down. So the pre-run value is the value the rank
+    // saw all run — see `gate_erosion`, which exists to catch the day that
+    // stops being true.
+    let k_pot: HashMap<PlanetId, Band> =
         galaxy.planets.iter().map(|p| (p.id, p.habitability.min(p.biosphere))).collect();
     // Approximate: `mineral_value` also carries per-seat scarcity (1 or 2) and
     // live mineral pressure, both of which only *raise* it. Unit scarcity and
@@ -163,7 +178,7 @@ fn run(seed: u64) -> Reach {
             .planets
             .iter()
             .filter(|p| targets.contains(&p.id) && k_pot[&p.id] >= w.k_high)
-            .filter(|p| p.habitability.min(p.biosphere) < w.k_high)
+            .filter(|p| p.habitability.min(p.bio_max) < w.k_high)
             .count(),
         reached_any: covered.union(&mined.intersection(&targets).copied().collect()).count(),
         outposts: mined.len(),
@@ -182,15 +197,16 @@ fn run(seed: u64) -> Reach {
 /// sides of that trade, and needs no simulation to do it.
 fn ceiling_curve(seed: u64) {
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
-    let targets: Vec<&Planet> = galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).collect();
+    let targets: Vec<&Planet> =
+        galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).collect();
     let mineral_high = Doctrine::default().rank.mineral_high;
     println!("\n  ceiling curve (galaxy alone, no run):");
     println!("  {:>8}  {:>12}  {:>8}  {:>12}", "k_high", "colonizable", "share", "minable below");
     for k in K_HIGH_CURVE {
-        let above = targets.iter().filter(|p| p.habitability.min(p.biosphere) >= k).count();
+        let above = targets.iter().filter(|p| p.habitability.min(p.biosphere) >= Band::new(k)).count();
         let minable_below = targets
             .iter()
-            .filter(|p| p.habitability.min(p.biosphere) < k)
+            .filter(|p| p.habitability.min(p.biosphere) < Band::new(k))
             .filter(|p| p.minerals.cyan + p.minerals.magenta + p.minerals.yellow >= mineral_high)
             .count();
         println!("  {:>8.1}  {:>12}  {:>7.1}%  {:>12}", k, above, pct(above, targets.len()), minable_below);
@@ -244,7 +260,15 @@ fn main() {
         );
         println!("  distinct outposts worked              : {:>6}", r.outposts);
         println!("contested colonizations                 : {:>6}", r.contested);
-        println!("above-gate at generation, below it now  : {:>6}  (biosphere drawn down by pop)", r.gate_erosion);
+        println!(
+            "above-gate at generation, below it now  : {:>6}  {}",
+            r.gate_erosion,
+            if r.gate_erosion == 0 {
+                "(expected: the gate reads bio_max, which nothing moves yet)"
+            } else {
+                "<- the target set MOVED during the run; the denominator is playable"
+            }
+        );
         print!("colonies founded per {BUCKET:.0} yr           : ");
         for (i, n) in r.founding_rate.iter().enumerate() {
             print!("{}{}", if i == 0 { "" } else { " " }, n);

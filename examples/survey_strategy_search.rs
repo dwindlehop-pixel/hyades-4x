@@ -45,6 +45,7 @@ use std::io::Write;
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine, SurveyStrategy};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
+use hyades_engine::units::Band;
 
 /// Common random numbers — the same seed bed `gradient_probe` uses, so a
 /// finding here is directly comparable to the rest of the tree's search work.
@@ -55,7 +56,7 @@ const PLAYERS: usize = 3;
 const TARGET_FRACTION: f64 = 0.10;
 
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
+    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
 /// Years until `TARGET_FRACTION` of colonizable worlds are colonized, or

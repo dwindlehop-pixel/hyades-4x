@@ -2,6 +2,7 @@
 //! through its `Simulation`/`SimReport`/`Snapshot` surface — no internals).
 
 use hyades_engine::prelude::*;
+use hyades_engine::units::Measure;
 
 /// Shorter horizon than the default — galaxies are now thousands of planets
 /// at the default 10 ly hex (this conversation, benchmarked in
@@ -36,10 +37,34 @@ fn snapshot_is_consistent_with_report() {
     let owned_from_report: usize = report.players.iter().map(|p| p.planets_owned).sum();
     let owned_from_snapshot = snap.planets.iter().filter(|p| p.owner.is_some()).count();
     assert_eq!(owned_from_report, owned_from_snapshot);
-    // K = min(hab,bio,infra) must hold for every planet snapshot.
+    // K = min(hab, bio_max, infra) must hold for every planet snapshot — a
+    // minimum over **Bands**. The standing biosphere is a mass and is
+    // deliberately not a term; see `hyades_engine::units`.
     for p in &snap.planets {
-        let expected = p.habitability.min(p.biosphere).min(p.infrastructure);
-        assert!((p.k - expected).abs() < 1e-9);
+        let expected = p.habitability.min(p.bio_max).min(p.infrastructure);
+        assert!((p.k.bands() - expected.bands()).abs() < 1e-9);
+        // The standing biosphere never exceeds its own pristine ceiling.
+        //
+        // Note what is *not* asserted: `biomass + KT(pop) <= bio_max`. People
+        // are drawn out of the biosphere but the biosphere regrows toward
+        // `bio_max` regardless of them (design law #11, taken literally), so a
+        // settled world legitimately carries more living mass than its pristine
+        // stock alone. `K` is what caps population; this caps the stock.
+        assert!(
+            p.biomass.kilotons() <= p.bio_max.in_kilotons().kilotons() + 1e-9,
+            "planet {} holds {} of biomass against a {} ceiling",
+            p.id.0,
+            p.biomass,
+            p.bio_max.in_kilotons()
+        );
+        // And population never exceeds the Liebig ceiling it grows toward.
+        assert!(
+            p.population.bands() <= p.k.bands().max(SimConfig::new(6).colony_seed_pop) + 1e-9,
+            "planet {} holds {} against K = {}",
+            p.id.0,
+            p.population,
+            p.k
+        );
     }
 }
 

@@ -65,6 +65,7 @@ use crate::math::{self, Vec3, G};
 use crate::resources::{Archetype, Basic, MineralField, Minerals};
 use crate::rng::Rng;
 use crate::snapshot::{PlanetSnapshot, PlayerSnapshot, Snapshot, VehicleKind, VehicleSnapshot};
+use crate::units::{self, Band, Kilotons, Measure};
 
 // =====================================================================
 // ECS core — a tiny, dependency-free, deterministic world.
@@ -113,35 +114,64 @@ impl<T> ComponentStore<T> {
 #[derive(Clone, Copy, Debug)]
 struct Homeworld;
 
-/// Carrying-capacity factors of a planet (level-units). Liebig `K = min`.
+/// Carrying-capacity factors of a planet. Liebig `K = min`, over **Bands**.
+///
+/// The two ceilings are Band levels and the biosphere is a mass; they are
+/// different types because the engine spent a long time treating them as the
+/// same `f64`. See [`crate::units`] for the defect and the bridge that closes
+/// it.
 #[derive(Clone, Copy, Debug)]
 struct Factors {
-    hab: f64,
-    /// **Standing biological mass, in kilotons** — the same unit as population
-    /// and minerals, which is what makes the exchange between them exact.
+    hab: Band,
+    /// **Standing biological mass, in kilotons** — the same unit as minerals
+    /// and hull dry mass, which is what makes the exchange between them exact.
     ///
     /// Unlike minerals this is a *renewable* stock: it regrows logistically
     /// toward [`Self::bio_max`], and it is the only thing in the engine that
-    /// increases without being built. Population growth **consumes** it 1:1 and
-    /// population decline returns it, which is what closes L6's old exclusion —
+    /// increases without being built. Population growth **consumes** it (L6) —
     /// people are made of biomass, so population mass is conserved rather than
-    /// conjured from an open reservoir.
-    bio: f64,
-    /// Pristine biosphere: the ceiling `bio` regrows toward. Cards raise or
-    /// lower it; a strike that craters a world's ecology lowers this, not just
-    /// the standing stock, which is what makes such damage durable.
-    bio_max: f64,
+    /// conjured from an open reservoir. The draw is the *mass* the step adds,
+    /// `KT(pop_after) − KT(pop_before)`, not the Band increment: a Band is a
+    /// magnitude tier, and one more tier is four times the people, not four
+    /// more of them.
+    biomass: Kilotons,
+    /// Pristine biosphere: the ceiling `biomass` regrows toward, also a mass.
+    /// Cards raise or lower it; a strike that craters a world's ecology lowers
+    /// this, not just the standing stock, which is what makes such damage
+    /// durable.
+    bio_max: Kilotons,
     /// Built infrastructure. Integer-valued; deepened one level at a time.
-    infra: f64,
+    infra: Band,
 }
 impl Factors {
+    /// Liebig's minimum, **over Bands only**.
+    ///
+    /// The standing biomass is deliberately *not* a term here, and that is the
+    /// unit fix. It used to be, which made `K` collapse as population ate the
+    /// biosphere and recover as the biosphere regrew — a feedback loop that
+    /// read as ecology but was arithmetic on mismatched units, a mass compared
+    /// against two levels.
+    ///
+    /// The biosphere still binds population, in two ways that survive the fix:
+    /// its *pristine ceiling* [`Self::bio_max`] enters as a Band (durable
+    /// damage lowers what a world can ever hold), and its *standing stock* is
+    /// the mass growth is paid out of (transient damage makes growth slow, not
+    /// the ceiling low). Splitting those apart is what design law #11's
+    /// "renewable stock" actually asks for.
     #[inline]
-    fn k(&self) -> f64 {
-        self.hab.min(self.bio).min(self.infra)
+    fn k(&self) -> Band {
+        self.k_potential().min(self.infra)
     }
+    /// The ceiling infra — and so population — can be *built* to.
+    ///
+    /// `bio_max` is read in Bands here. That is exact rather than a
+    /// convenience: a population at Band `b` masses `KT(b)` and the pristine
+    /// biosphere masses `KT(bio_max_band)`, so this Band minimum and the mass
+    /// budget bind at precisely the same place (pinned by
+    /// `the_mass_budget_and_the_band_ceiling_bind_together`).
     #[inline]
-    fn k_potential(&self) -> f64 {
-        self.hab.min(self.bio)
+    fn k_potential(&self) -> Band {
+        self.hab.min(self.bio_max.in_bands())
     }
 }
 
@@ -561,7 +591,7 @@ struct World {
     factors: ComponentStore<Factors>,
     density: ComponentStore<MineralField>,
     stockpile: ComponentStore<Minerals>,
-    population: ComponentStore<f64>,
+    population: ComponentStore<Band>,
     planet_id: ComponentStore<PlanetId>,
     homeworld: ComponentStore<Homeworld>,
     archetype: ComponentStore<Archetype>,
@@ -581,7 +611,7 @@ struct World {
     /// the fully generic mineral|pop|embarked-fleet cargo slot the loadout
     /// doc describes is future work (§6 there), this is the minimum that
     /// makes "1 pop as cargo" real.
-    pop_cargo: ComponentStore<f64>,
+    pop_cargo: ComponentStore<Band>,
     home_center: ComponentStore<Entity>,
     shuttle: ComponentStore<Shuttle>,
 
@@ -1003,7 +1033,10 @@ pub struct PlayerReport {
     pub planets_owned: usize,
     pub colonies: usize,
     pub mining_outposts: usize,
-    pub total_population: f64,
+    /// The empire's people, **as a mass** — see
+    /// [`crate::snapshot::PlayerSnapshot::total_population`] for why a sum of
+    /// Bands would not mean anything.
+    pub total_population: Kilotons,
     pub scanned: usize,
 }
 
@@ -1096,9 +1129,14 @@ impl Simulation {
                 e,
                 Factors {
                     hab: pl.habitability,
-                    bio: pl.biosphere,
-                    // A wild world is at its pristine ceiling by definition.
-                    bio_max: pl.biosphere,
+                    // **Every world is at its pristine ceiling at t=0** — one
+                    // generated value, read as a mass, used for both the stock
+                    // and the ceiling. There is no design reason for a world to
+                    // start below its own ceiling, and no generator spread to
+                    // reconcile: `biomass == bio_max` here holds by
+                    // construction rather than by convention.
+                    biomass: pl.biosphere.in_kilotons(),
+                    bio_max: pl.biosphere.in_kilotons(),
                     infra: pl.infrastructure,
                 },
             );
@@ -1584,12 +1622,12 @@ impl Simulation {
             self.world.owner.insert(target, owner);
             {
                 let f = self.world.factors.get_mut(target).unwrap();
-                f.infra = f.infra.max(1.0);
+                f.infra = f.infra.max(Band::new(1.0));
             }
             // Seed population from the pop *carried as cargo*
             // (`Hyades_vehicle_roles.md` §4.2/R-V9 — confirmed, not a flat
             // constant applied on arrival regardless of what was brought).
-            let carried_pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(0.0);
+            let carried_pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(Band::ZERO);
             {
                 let pop = self.world.population.get_mut(target).unwrap();
                 if *pop < carried_pop {
@@ -1842,51 +1880,118 @@ impl Simulation {
             );
         }
 
-        // 2) Grow: population logistic toward K = min(hab, bio, infra), paid for
-        // out of the planet's biological mass.
+        // 2) Grow: population logistic toward `K`, paid for out of the planet's
+        // standing biological mass.
         //
-        // Population is **not** an exception to mass conservation (L6, amended):
-        // a kiloton of people is a kiloton of biosphere that stopped being
-        // biosphere. Growth draws from `bio` 1:1 and is capped by what is
-        // actually standing; decline returns it. Biosphere then regrows
-        // logistically toward `bio_max`, which makes it the only self-replenishing
-        // stock in the engine and puts a *rate* — not just a ceiling — between an
-        // empire and its population.
+        // **Two constraints, two units, and they are not the same constraint.**
+        // The logistic ceiling `K = min(hab, bio_max, infra)` is a Band — a
+        // magnitude tier — and says how large this world's civilization can
+        // ever get. The *payment* is a mass in kilotons drawn from `biomass`,
+        // and says how fast it can get there. Before the units were typed
+        // these were one term: the standing stock sat inside the Liebig
+        // minimum, so a mass was being compared against two levels and a
+        // world's ceiling fell every time its people ate.
         //
-        // Note the feedback this creates: drawing biosphere down lowers
-        // `K = min(hab, bio, infra)`, so a world that grows too fast throttles
-        // itself and then recovers. That is the intended ecology, not a bug.
+        // Population is **not** an exception to mass conservation (L6,
+        // amended): a kiloton of people is a kiloton of biosphere that stopped
+        // being biosphere. But the exchange is a *mass* difference, not a Band
+        // difference — one more Band is `BAND_STEP` times the people, not
+        // `BAND_STEP` more of them — which is why the draw is
+        // `KT(after) − KT(before)` and not `after − before`.
+        //
+        // Biosphere then regrows logistically toward `bio_max`, which makes it
+        // the only self-replenishing stock in the engine and puts a *rate* —
+        // not just a ceiling — between an empire and its population. A world
+        // grown faster than its ecology can regrow stalls until it recovers,
+        // without its ceiling moving.
         let growth = doctrine.growth_rate;
         let regen = self.config.biosphere_regen_rate * doctrine.biosphere_regen_bonus;
         let k = self.world.factors.get(center).unwrap().k();
         {
             let pop_now = *self.world.population.get(center).unwrap();
-            let start = if pop_now < 0.01 { 0.01 } else { pop_now };
-            let mut delta = 0.0;
-            if k > 0.0 {
-                let grown = (start + growth * start * (1.0 - start / k)).clamp(0.0, k);
-                delta = grown - start;
+            // The logistic has a fixed point at zero, so a founding population
+            // needs a floor to grow off. The floor moves the *population*; the
+            // mass baseline below stays at the true prior value, so the bump is
+            // paid for like any other growth rather than conjured.
+            let start = pop_now.max(Band::new(0.01));
+            let mut target = start;
+            if k > Band::ZERO {
+                let (s, kb) = (start.bands(), k.bands());
+                target = Band::new((s + growth * s * (1.0 - s / kb)).clamp(0.0, kb));
             }
+            let mass_before = units::population_mass(pop_now);
             let f = self.world.factors.get_mut(center).unwrap();
-            if delta > 0.0 {
-                // Cannot grow more people than there is biomass to make them of.
-                delta = delta.min(f.bio.max(0.0));
-                f.bio -= delta;
-            } else {
-                // Decline returns mass to the biosphere.
-                f.bio -= delta;
+            let mut draw = units::population_mass(target) - mass_before;
+            if draw > f.biomass {
+                // Cannot make more people than there is biomass to make them
+                // of. Spend the whole standing stock and land wherever that
+                // reaches — the shortfall throttles the *rate*, never `K`.
+                draw = f.biomass.max(Kilotons::ZERO);
+                target = units::population_at_mass(mass_before + draw);
             }
-            *self.world.population.get_mut(center).unwrap() = start + delta;
+            // A shrinking population returns its mass: `draw` is negative here.
+            f.biomass = (f.biomass - draw).max(Kilotons::ZERO);
+            *self.world.population.get_mut(center).unwrap() = target;
 
-            // Logistic regrowth toward the pristine ceiling.
-            if f.bio_max > 0.0 && regen > 0.0 {
-                f.bio += regen * f.bio.max(0.0) * (1.0 - f.bio / f.bio_max);
-                f.bio = f.bio.clamp(0.0, f.bio_max);
+            // Logistic regrowth toward the pristine ceiling, in kilotons — and
+            // the logistic runs on the world's **living mass**, biosphere plus
+            // people, not on the biosphere alone.
+            //
+            // That is design law #11 taken at its word rather than half of it.
+            // If people are made of biomass then they are part of the standing
+            // ecology, and two things follow that the biosphere-only form got
+            // wrong. A world whose population has eaten its biosphere down to
+            // nothing is not sterile — `r·0·(1 − 0)` is zero, so under the old
+            // form such a world could *never* recover, a trap state a
+            // mass-denominated draw can now actually reach. And a world filled
+            // to its ceiling with people has no spare ecological niche, so its
+            // biosphere must not regrow into one: `living == bio_max` is
+            // saturation whether the mass is standing in forests or walking
+            // around in cities.
+            //
+            // The rate stays relative, so `biosphere_regen_rate` keeps its
+            // meaning and its ratified value under the rebasing.
+            if f.bio_max > Kilotons::ZERO && regen > 0.0 {
+                let headroom = 1.0 - f.biomass.kilotons() / f.bio_max.kilotons();
+                if headroom > 0.0 {
+                    // **The multiplier counts the people; the ceiling does
+                    // not.** Both halves are deliberate.
+                    //
+                    // Counting people in the multiplier is what stops a trap
+                    // the mass-denominated draw makes reachable: a population
+                    // can now empty its biosphere *exactly*, and `r·0·(1 − 0)`
+                    // is zero, so a biosphere-only logistic would leave such a
+                    // world permanently sterile. A world with people on it is
+                    // not sterile.
+                    //
+                    // Leaving them out of the ceiling is design law #11 taken
+                    // literally: biosphere "regrows logistically toward
+                    // `bio_max`", full stop. Making the population share that
+                    // ceiling is a *stronger* coupling than the law asks for,
+                    // and it does double duty with `K`, which already caps
+                    // population at `min(hab, bio_max, infra)`. Measured on the
+                    // standard four-seed bed, the two forms are **bit-identical
+                    // in colony count** — the mass budget never binds at the
+                    // shipped defaults — so this is settled on fidelity to the
+                    // spec, not on a number. If a starvation die-back ever
+                    // lands (R-O67), the shared ceiling is the form to revisit.
+                    let seeded = (f.biomass + units::population_mass(target)).max(Kilotons::ZERO);
+                    // The ceiling applies to the *regrowth* only, never to the
+                    // standing stock: a clamp that can push `biomass` downward
+                    // is a silent mass sink, and it would quietly absorb any
+                    // over-ceiling state a card wrote rather than letting the
+                    // conservation checks see it.
+                    f.biomass = (f.biomass + seeded * (regen * headroom)).min(f.bio_max.max(f.biomass));
+                }
             }
         }
         self.log.push(
             self.clock,
-            LogEvent::PopulationStep { planet: center_pid, population: *self.world.population.get(center).unwrap(), k },
+            LogEvent::PopulationStep {
+                planet: center_pid,
+                population: self.world.population.get(center).unwrap().bands(),
+                k: k.bands(),
+            },
         );
 
         // 3) Build: weigh deepen-vs-expand under the mineral budget & level gate.
@@ -1897,7 +2002,9 @@ impl Simulation {
         let level = self.bands.level(*self.world.population.get(center).unwrap());
         let center_pos = *self.world.position.get(center).unwrap();
         let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
-        let target_level = infra.round() + 1.0;
+        // Minerals to buy the next whole level. The ladder rung is a Band; its
+        // *price* is a mineral quantity, so the reading is taken explicitly.
+        let target_level = infra.round().bands() + 1.0;
 
         let info = *self.world.player_info.get(pe).unwrap();
         // Live mineral pressure for this center: 1 when broke for its next infra
@@ -1929,8 +2036,8 @@ impl Simulation {
         let ctx = ProductionContext {
             center_pos,
             level,
-            infra,
-            k_potential,
+            infra: infra.bands(),
+            k_potential: k_potential.bands(),
             stockpile_total: stock_total,
             medium_min_level: self.config.medium_min_level,
             limited_min_level: self.config.limited_min_level,
@@ -1955,8 +2062,8 @@ impl Simulation {
                 player: p as u32,
                 center: center_pid,
                 pop_level: level,
-                infra,
-                k_potential,
+                infra: infra.bands(),
+                k_potential: k_potential.bands(),
                 stockpile: stock_total,
                 infra_cost: target_level,
                 colonizer_cost: ctx.colonizer_cost,
@@ -1988,9 +2095,9 @@ impl Simulation {
         match order {
             BuildOrder::Idle => {}
             BuildOrder::UpgradeInfrastructure => {
-                let target = self.world.factors.get(center).unwrap().infra.round() + 1.0;
+                let target = self.world.factors.get(center).unwrap().infra.round().bands() + 1.0;
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
-                    self.world.factors.get_mut(center).unwrap().infra += 1.0;
+                    self.world.factors.get_mut(center).unwrap().infra += Band::new(1.0);
                     let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
                     self.log.push(
                         self.clock,
@@ -2215,7 +2322,9 @@ impl Simulation {
         // A Colonizer carries its founding population as cargo, consumed on
         // arrival (`Hyades_vehicle_roles.md` §4.2 — confirmed this
         // conversation: "1 pop as cargo").
-        self.world.pop_cargo.insert(e, if role == Role::Colonizer { self.config.colony_seed_pop } else { 0.0 });
+        self.world
+            .pop_cargo
+            .insert(e, if role == Role::Colonizer { Band::new(self.config.colony_seed_pop) } else { Band::ZERO });
         self.world.home_center.insert(e, center);
         let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
         let ev = match role {
@@ -2312,7 +2421,7 @@ impl Simulation {
         // hull — a free read on the one thing §6.2 exists to conceal, since
         // acceleration is the long-range observable.
         let minerals = self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0);
-        let pop = self.world.pop_cargo.get(e).copied().unwrap_or(0.0);
+        let pop = units::population_mass(self.world.pop_cargo.get(e).copied().unwrap_or(Band::ZERO)).kilotons();
         let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
         let dry = hull_dry_mass(hull, &self.config).max(1e-9);
         let factor = dry / (dry + minerals + pop);
@@ -2364,7 +2473,7 @@ impl Simulation {
                 id: pid,
                 position: *self.world.position.get(e).unwrap(),
                 habitability: f.hab,
-                biosphere: f.bio,
+                biosphere: f.bio_max.in_bands(),
                 industrial_signature,
             });
         }
@@ -2376,7 +2485,7 @@ impl Simulation {
             id: *self.world.planet_id.get(e).unwrap(),
             position: *self.world.position.get(e).unwrap(),
             habitability: f.hab,
-            biosphere: f.bio,
+            biosphere: f.bio_max.in_bands(),
             minerals: *self.world.density.get(e).unwrap(),
             owner: self.world.owner.get(e).copied(),
             pop_level: self.bands.level(*self.world.population.get(e).unwrap()),
@@ -2408,7 +2517,7 @@ impl Simulation {
     /// fresh, never stored, which is what lets [`Self::most_needed_center`]
     /// compare need across the whole empire.
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(0.0);
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Band::ZERO).bands();
         let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(0.0);
         let target_level = infra.round() + 1.0;
         (1.0 - stock / target_level.max(1.0)).clamp(0.0, 1.0)
@@ -2525,7 +2634,7 @@ impl Simulation {
                     if !self.world.homeworld.contains(e) {
                         rep.colonies += 1;
                     }
-                    rep.total_population += *self.world.population.get(e).unwrap();
+                    rep.total_population += units::population_mass(*self.world.population.get(e).unwrap());
                 }
             }
             let k = self.world.knowledge.get(self.player_entity[p]).unwrap();
@@ -2553,7 +2662,9 @@ impl Simulation {
                     id: *self.world.planet_id.get(e).unwrap(),
                     position: *self.world.position.get(e).unwrap(),
                     habitability: f.hab,
-                    biosphere: f.bio,
+                    biosphere: f.biomass.in_bands(),
+                    bio_max: f.bio_max.in_bands(),
+                    biomass: f.biomass,
                     infrastructure: f.infra,
                     k: f.k(),
                     population: pop,
@@ -2590,7 +2701,7 @@ impl Simulation {
                 for &e in &self.planet_entity {
                     if self.world.owner.get(e).copied() == Some(me) {
                         snap.planets_owned += 1;
-                        snap.total_population += *self.world.population.get(e).unwrap();
+                        snap.total_population += units::population_mass(*self.world.population.get(e).unwrap());
                         snap.stockpiled_total += self.world.stockpile.get(e).unwrap().basic_total();
                     }
                 }
@@ -2753,7 +2864,7 @@ mod tests {
         for (pa, pb) in a.players.iter().zip(b.players.iter()) {
             assert_eq!(pa.colonies, pb.colonies);
             assert_eq!(pa.planets_owned, pb.planets_owned);
-            assert_eq!(pa.total_population.to_bits(), pb.total_population.to_bits());
+            assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
         }
         assert_eq!(a.planets_scanned_total, b.planets_scanned_total);
     }
@@ -2860,7 +2971,7 @@ mod tests {
     fn population_grows_past_the_starting_towns() {
         let (_sim, report) = run_default(3, 42);
         // 3 homeworlds start at pop 2 each (=6); growth must exceed that.
-        let total_pop: f64 = report.players.iter().map(|p| p.total_population).sum();
+        let total_pop: f64 = report.players.iter().map(|p| p.total_population.kilotons()).sum();
         assert!(total_pop > 6.5, "population did not grow: {total_pop}");
     }
 
@@ -2982,7 +3093,7 @@ mod tests {
             assert_eq!(pq.planets_owned, pl.planets_owned);
             assert_eq!(pq.colonies, pl.colonies);
             assert_eq!(pq.mining_outposts, pl.mining_outposts);
-            assert_eq!(pq.total_population.to_bits(), pl.total_population.to_bits());
+            assert_eq!(pq.total_population.kilotons().to_bits(), pl.total_population.kilotons().to_bits());
         }
         assert!(!loud.log().is_empty());
         assert!(quiet.log().is_empty());
@@ -3183,24 +3294,54 @@ mod tests {
     fn population_growth_is_paid_for_out_of_biosphere() {
         // L6, amended: population is no longer an exception to mass
         // conservation. Every kiloton of people is a kiloton of biosphere that
-        // stopped being biosphere, so pop + bio is invariant across a growth
-        // step once regrowth is switched off.
+        // stopped being biosphere, so **population mass + biomass** is
+        // invariant across a growth step once regrowth is switched off.
+        //
+        // Note what is conserved and what is not: the invariant is over
+        // *masses*, `KT(pop) + biomass`. `pop + biomass` — the old assertion —
+        // is a Band added to a mass and was only ever "conserved" because the
+        // engine drew a Band increment out of a kiloton stock.
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
         let mut cfg = test_cfg(5);
         cfg.biosphere_regen_rate = 0.0; // isolate the exchange from the regrowth
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
-        sim.world.factors.insert(home, Factors { hab: 4.0, bio: 4.0, bio_max: 4.0, infra: 4.0 });
-        *sim.world.population.get_mut(home).unwrap() = 1.0;
+        let bio_max = Band::new(4.0).in_kilotons();
+        let pop0 = Band::new(1.0);
+        let biomass = bio_max;
+        sim.world.factors.insert(home, Factors { hab: Band::new(4.0), biomass, bio_max, infra: Band::new(4.0) });
+        *sim.world.population.get_mut(home).unwrap() = pop0;
 
-        let before = *sim.world.population.get(home).unwrap() + sim.world.factors.get(home).unwrap().bio;
+        let before = units::population_mass(pop0) + sim.world.factors.get(home).unwrap().biomass;
         sim.sys_production_tick(home);
         let f = sim.world.factors.get(home).unwrap();
         let pop = *sim.world.population.get(home).unwrap();
 
-        assert!(pop > 1.0, "population should have grown, got {pop}");
-        assert!(f.bio < 4.0, "biosphere should have been drawn down, got {}", f.bio);
-        assert!((pop + f.bio - before).abs() < 1e-9, "pop+bio not conserved: {before} -> {}", pop + f.bio);
+        assert!(pop > Band::new(1.0), "population should have grown, got {pop:?}");
+        assert!(f.biomass < biomass, "biosphere should have been drawn down, got {}", f.biomass);
+        let after = units::population_mass(pop) + f.biomass;
+        assert!((after.kilotons() - before.kilotons()).abs() < 1e-9, "mass not conserved: {before:?} -> {after:?}");
+    }
+
+    /// The unit fix, stated as behaviour: eating the biosphere must not lower
+    /// the world's ceiling. Under `K = min(hab, bio, infra)` a drawn-down
+    /// standing stock cut `K` directly — a mass compared against two levels —
+    /// and the population it could hold fell with it.
+    #[test]
+    fn drawing_the_biosphere_down_does_not_lower_the_ceiling() {
+        let bio_max = Band::new(4.0).in_kilotons();
+        let full = Factors { hab: Band::new(4.0), biomass: bio_max, bio_max, infra: Band::new(4.0) };
+        let mut razed = full;
+        razed.biomass = bio_max * 0.01; // ecology in ruins, ceiling untouched
+
+        assert_eq!(full.k(), razed.k(), "K must not depend on the standing stock");
+        assert_eq!(full.k(), Band::new(4.0));
+
+        // The *ceiling* moves only when the pristine biosphere does — which is
+        // what makes an ecological strike durable rather than momentary.
+        let mut cratered = full;
+        cratered.bio_max = Band::new(1.5).in_kilotons();
+        assert_eq!(cratered.k(), Band::new(1.5));
     }
 
     #[test]
@@ -3209,17 +3350,25 @@ mod tests {
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(6));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         // A cratered ecology: standing mass far below the pristine ceiling.
-        sim.world.factors.insert(home, Factors { hab: 4.0, bio: 0.5, bio_max: 4.0, infra: 4.0 });
-        *sim.world.population.get_mut(home).unwrap() = 0.01;
+        //
+        // Infrastructure is held at zero so `K == 0` and nothing grows. That
+        // isolates the question the test is asking — *does a razed biosphere
+        // come back* — from the one it is not: with a live `K` the population
+        // simply outruns the regrowth and eats the recovery as it happens,
+        // which is correct behaviour and a different test.
+        let bio_max = Band::new(4.0).in_kilotons();
+        let start = bio_max * 0.125;
+        sim.world.factors.insert(home, Factors { hab: Band::new(4.0), biomass: start, bio_max, infra: Band::ZERO });
+        *sim.world.population.get_mut(home).unwrap() = Band::new(0.01);
 
-        let mut last = 0.5;
+        let mut last = start;
         for _ in 0..40 {
             sim.sys_production_tick(home);
-            let bio = sim.world.factors.get(home).unwrap().bio;
-            assert!(bio <= 4.0 + 1e-9, "biosphere exceeded its ceiling: {bio}");
+            let bio = sim.world.factors.get(home).unwrap().biomass;
+            assert!(bio.kilotons() <= bio_max.kilotons() + 1e-9, "biosphere exceeded its ceiling: {bio:?}");
             last = bio;
         }
-        assert!(last > 0.5, "a razed biosphere should recover over time, got {last}");
+        assert!(last > start, "a razed biosphere should recover over time, got {last:?}");
     }
 
     #[test]
@@ -3231,13 +3380,58 @@ mod tests {
         let pe = sim.player_entity[0];
         sim.world.doctrine.get_mut(pe).unwrap().biosphere_regen_bonus = 0.0;
         let home = sim.world.player_info.get(pe).unwrap().home;
-        sim.world.factors.insert(home, Factors { hab: 4.0, bio: 0.0, bio_max: 4.0, infra: 4.0 });
-        *sim.world.population.get_mut(home).unwrap() = 0.01;
+        sim.world.factors.insert(
+            home,
+            Factors {
+                hab: Band::new(4.0),
+                biomass: Kilotons::ZERO,
+                bio_max: Band::new(4.0).in_kilotons(),
+                infra: Band::new(4.0),
+            },
+        );
+        *sim.world.population.get_mut(home).unwrap() = Band::new(0.01);
 
         for _ in 0..20 {
             sim.sys_production_tick(home);
         }
-        assert_eq!(sim.world.factors.get(home).unwrap().bio, 0.0, "regen_bonus=0 must leave the biosphere dead");
+        assert_eq!(
+            sim.world.factors.get(home).unwrap().biomass,
+            Kilotons::ZERO,
+            "regen_bonus=0 must leave the biosphere dead"
+        );
+    }
+
+    /// A population with no biomass to eat stalls; it does not go negative, and
+    /// it does not conjure people. This is the constraint that used to be
+    /// expressed as `K` collapsing.
+    #[test]
+    fn growth_stalls_when_the_biosphere_cannot_pay_for_it() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 7)).unwrap();
+        let mut cfg = test_cfg(7);
+        cfg.biosphere_regen_rate = 0.0;
+        let mut sim = Simulation::with_baseline(galaxy, cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        sim.world.factors.insert(
+            home,
+            Factors {
+                hab: Band::new(4.0),
+                biomass: Kilotons::ZERO,
+                bio_max: Band::new(4.0).in_kilotons(),
+                infra: Band::new(4.0),
+            },
+        );
+        *sim.world.population.get_mut(home).unwrap() = Band::new(2.0);
+
+        for _ in 0..10 {
+            sim.sys_production_tick(home);
+        }
+        let pop = *sim.world.population.get(home).unwrap();
+        let f = sim.world.factors.get(home).unwrap();
+        assert!(pop <= Band::new(2.0) + Band::new(1e-9), "grew on an empty biosphere: {pop:?}");
+        assert!(f.biomass >= Kilotons::ZERO, "biomass went negative: {:?}", f.biomass);
+        // `K` is untouched by the starvation — the ceiling is a Band, the
+        // shortfall is a rate.
+        assert_eq!(f.k(), Band::new(4.0));
     }
 
     #[test]
@@ -3502,7 +3696,15 @@ mod tests {
         // pressure reads ~0.
         let colony = sim.planet_entity[15];
         sim.world.owner.insert(colony, PlayerId(0));
-        sim.world.factors.insert(colony, Factors { hab: 3.0, bio: 3.0, bio_max: 3.0, infra: 1.0 });
+        sim.world.factors.insert(
+            colony,
+            Factors {
+                hab: Band::new(3.0),
+                biomass: Band::new(3.0).in_kilotons(),
+                bio_max: Band::new(3.0).in_kilotons(),
+                infra: Band::new(1.0),
+            },
+        );
         sim.world.stockpile.insert(colony, Minerals::default());
 
         {
@@ -3530,7 +3732,15 @@ mod tests {
 
         let colony = sim.planet_entity[15];
         sim.world.owner.insert(colony, PlayerId(0));
-        sim.world.factors.insert(colony, Factors { hab: 3.0, bio: 3.0, bio_max: 3.0, infra: 1.0 });
+        sim.world.factors.insert(
+            colony,
+            Factors {
+                hab: Band::new(3.0),
+                biomass: Band::new(3.0).in_kilotons(),
+                bio_max: Band::new(3.0).in_kilotons(),
+                infra: Band::new(1.0),
+            },
+        );
         sim.world.stockpile.insert(colony, Minerals::default());
         {
             let s = sim.world.stockpile.get_mut(home).unwrap();
@@ -3586,7 +3796,7 @@ mod tests {
             sim.world.role.insert(v, Role::Colonizer);
             sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
             sim.world.cargo.insert(v, Minerals::default());
-            sim.world.pop_cargo.insert(v, sim.config.colony_seed_pop);
+            sim.world.pop_cargo.insert(v, Band::new(sim.config.colony_seed_pop));
             sim.world.home_center.insert(v, home);
             v
         };
@@ -3615,12 +3825,12 @@ mod tests {
         sim.world.role.insert(v, Role::Colonizer);
         sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
         sim.world.cargo.insert(v, Minerals::default());
-        sim.world.pop_cargo.insert(v, 1.0);
+        sim.world.pop_cargo.insert(v, Band::new(1.0));
         sim.world.home_center.insert(v, home0);
 
         sim.sys_colony_arrive(v);
         let pop = *sim.world.population.get(target).unwrap();
-        assert!((pop - 1.0).abs() < 1e-9, "colony should be seeded with the carried 1.0 pop, got {pop}");
+        assert!((pop.bands() - 1.0).abs() < 1e-9, "colony should be seeded with the carried 1.0 pop, got {pop}");
     }
 
     #[test]
@@ -3642,7 +3852,7 @@ mod tests {
         sim.world.role.insert(v, Role::Colonizer);
         sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
         sim.world.cargo.insert(v, Minerals::default());
-        sim.world.pop_cargo.insert(v, 1.0);
+        sim.world.pop_cargo.insert(v, Band::new(1.0));
         sim.world.home_center.insert(v, home0);
 
         sim.sys_colony_arrive(v);

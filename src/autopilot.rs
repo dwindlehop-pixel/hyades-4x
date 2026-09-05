@@ -23,6 +23,7 @@ use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
 use crate::resources::MineralField;
 use crate::sim::{Class, HullType, Role};
+use crate::units::Band;
 
 /// Which of the two cheap classes the colony pipeline reaches for first
 /// (autopilot-doc §4; R-AC1 / R-A1). Default is production-centers-first.
@@ -68,11 +69,11 @@ pub struct RankWeights {
     /// threshold gates the entire hauling economy** — set it under the galaxy's
     /// K distribution and no outpost is ever classified, so no freighter ever
     /// flies and colonies cannot fund their way to the expansion tier (R-AC17).
-    pub k_high: f64,
+    pub k_high: Band,
     /// mineral_value at/above which a low-K world is a mining outpost.
     pub mineral_high: f64,
     /// hub_value at/above which a high-K world is a production center.
-    pub hub_high: f64,
+    pub hub_high: Band,
     /// ly scale over which centrality-to-holdings decays (hub value falloff).
     pub centrality_scale: f64,
     /// How strongly live mineral *scarcity* (the empire running short for its
@@ -101,9 +102,9 @@ impl Default for RankWeights {
             // the bed already colonizes 90-100% of what this admits
             // (`examples/reach_limit.rs`). R-AC18 asks whether the Colony
             // class should have a K floor at all.
-            k_high: 3.2,
+            k_high: Band::new(3.2),
             mineral_high: 2.0,
-            hub_high: 0.8,
+            hub_high: Band::new(0.8),
             centrality_scale: 150.0,
             mineral_pressure_gain: 1.0,
         }
@@ -242,8 +243,12 @@ impl Default for Doctrine {
 pub struct PlanetView {
     pub id: PlanetId,
     pub position: Vec3,
-    pub habitability: f64,
-    pub biosphere: f64,
+    pub habitability: Band,
+    /// The **pristine** biosphere ceiling, on the Band ladder — what this world
+    /// can support, not what is standing on it today. The colonization
+    /// decision is about the ceiling; the standing stock only sets how fast a
+    /// colony fills toward it, and is not remotely legible anyway.
+    pub biosphere: Band,
     pub minerals: MineralField,
     pub owner: Option<PlayerId>,
     pub pop_level: u8,
@@ -252,7 +257,7 @@ pub struct PlanetView {
 impl PlanetView {
     /// Ceiling infra can be built to (autopilot-doc §3).
     #[inline]
-    pub fn k_potential(&self) -> f64 {
+    pub fn k_potential(&self) -> Band {
         self.habitability.min(self.biosphere)
     }
 }
@@ -276,8 +281,10 @@ impl PlanetView {
 pub struct SurveyView {
     pub id: PlanetId,
     pub position: Vec3,
-    pub habitability: f64,
-    pub biosphere: f64,
+    pub habitability: Band,
+    /// The **pristine** biosphere ceiling, on the Band ladder (see
+    /// [`PlanetView::biosphere`]).
+    pub biosphere: Band,
     /// **Inferential tier** (R-SIM3): this world carries the waste-heat and
     /// atmospheric signature of a pop-Band-IV civilization, legible at interstellar
     /// range. It does *not* say who owns it — the industry of billions is simply
@@ -295,7 +302,7 @@ pub struct SurveyView {
 impl SurveyView {
     /// Ceiling infra could be built to, from remote spectroscopy alone.
     #[inline]
-    pub fn k_potential(&self) -> f64 {
+    pub fn k_potential(&self) -> Band {
         self.habitability.min(self.biosphere)
     }
 }
@@ -504,7 +511,11 @@ impl Autopilot for BaselineAutopilot {
         let centrality = (-dist / w.centrality_scale).exp();
         let hub_value = k_potential * centrality;
 
-        let score = w.w_k * k_potential + w.w_mineral * mineral_value + w.w_hub * hub_value;
+        // The score is a weighted comparison across incommensurate things —
+        // a Band, a mineral density, a hub figure — so the Band readings are
+        // taken explicitly here rather than the weights pretending to be
+        // dimensionless. Weights carry the units; that is what they are for.
+        let score = w.w_k * k_potential.bands() + w.w_mineral * mineral_value + w.w_hub * hub_value.bands();
 
         // classification (§3): thresholds on the components.
         let class = if k_potential >= w.k_high {
@@ -757,8 +768,8 @@ mod tests {
         PlanetView {
             id: PlanetId(id),
             position: pos,
-            habitability: hab,
-            biosphere: bio,
+            habitability: Band::new(hab),
+            biosphere: Band::new(bio),
             minerals,
             owner: None,
             pop_level: 0,
@@ -801,7 +812,13 @@ mod tests {
 
     /// A remote-tier sighting: position plus K factors, nothing close-scan-only.
     fn survey_view(id: u32, pos: Vec3) -> SurveyView {
-        SurveyView { id: PlanetId(id), position: pos, habitability: 1.0, biosphere: 1.0, industrial_signature: false }
+        SurveyView {
+            id: PlanetId(id),
+            position: pos,
+            habitability: Band::new(1.0),
+            biosphere: Band::new(1.0),
+            industrial_signature: false,
+        }
     }
 
     /// The same, but radiating the waste heat of a pop-Band-IV civilization.

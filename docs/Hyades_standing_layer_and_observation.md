@@ -607,8 +607,21 @@ That turns the reservoir from open to *rate-limited*, which is a better object
 than either an exemption or a hard cap:
 
 - **Ecology becomes a stock with a refill rate**, so a world that grows too fast
-  draws its own `K = min(hab, bio, infra)` down and throttles itself, then
-  recovers. Self-limiting, no clamp required.
+  spends its standing biomass faster than it regrows and stalls until it
+  recovers. Self-limiting, no clamp required. *(At the shipped defaults this
+  brake is measured to be entirely slack — removing the draw changes nothing —
+  so it is a designed affordance for cards to act on, not a live constraint on
+  the baseline economy. See §9.7.)*
+
+  > **Corrected (R-O66).** This bullet used to read "draws its own
+  > `K = min(hab, bio, infra)` down", and the engine implemented exactly that —
+  > which was a **unit error**: `hab` and `infra` are Band levels, `bio` is a
+  > mass in kilotons, and the `min` compared them. The throttle is real but it
+  > acts on the *rate*, not the *ceiling*. `K` is a minimum over Bands,
+  > `min(hab, bio_max, infra)`, and the standing stock is the mass growth is
+  > paid out of. A population that eats its biosphere slows down; it does not
+  > shrink the world it lives on. See `src/units.rs`, and §9.7 for the bridge
+  > between the two readings.
 - **Biological damage becomes durable rather than momentary.** Cards raise or
   lower the regrowth rate (`Doctrine::biosphere_regen_bonus`) and can attack
   `bio_max` itself. Cratering an ecology is worth doing precisely because
@@ -836,7 +849,116 @@ of a component's mass, not the total.
   imaginary parts each conserved — with physical interpretation and magnitudes
   left open.
 
+### 9.7 Bands and kilotons are different units (R-O66)
+
+Two of this model's quantities are **magnitude tiers** and one is an **amount
+of stuff**, and the engine spent a long time storing all three as `f64` and
+taking a `min` across them.
+
+- **Band** — the ladder of `Hyades_mineral_cost_curve.md` §2.6. Habitability,
+  infrastructure, and population *level* live here. A Band is ordinal-with-scale:
+  crossing from one to the next is a multiplicative jump of a factor in `[4, 8]`,
+  not "one more unit".
+- **Kilotons** — biomass, minerals, hull dry mass, cargo. The unit L6 is stated
+  in.
+
+The bridge is therefore exponential, `KT(b) = KT_I · STEP^(b−1)`, and it is
+written once, in `src/units.rs`, as a `Measure` trait with `Band` and `Kilotons`
+newtypes. Nothing in the simulation carries a bare `f64` for these quantities
+any more; a call site asks for the reading it wants by name.
+
+**The consequence that matters is not tidiness.** Under the exponential bridge,
+"there is enough biomass to make these people" and "population ≤ `bio_max`" are
+the *same inequality*, for any step factor — a population at Band `b` masses
+exactly what a pristine biosphere at Band `b` masses. That is why the old
+`min(hab, bio, infra)` produced sensible play while being dimensionally
+meaningless: it was accidentally in the right place. Splitting the units keeps
+the agreement and makes it derivable — the ceiling is a Band minimum, the draw
+is a mass, and they bind together — instead of resting on a coincidence that
+would have broken the first time a card moved either half.
+
+**`BAND_STEP` is not ratified.** §2.6's **R-MC15** is open precisely because no
+shipped cost ladder satisfies the `[4, 8]` constraint on both of its steps; the
+engine uses `4.0`, the floor of the permitted range, flagged as a placeholder
+rather than presented as settled. Ratifying R-MC15 sets this constant.
+
+**Measured cost of the correction: −178.5 ± 26.9 colonies (−5.1%)** on the
+standard four-seed CRN bed at the shipped 4,000-year horizon (3,472.5 → 3,294.0;
+every seed down, 6.6 SE).
+
+**And it is not what it looks like.** The obvious reading — growth got slower
+because the draw is now the real mass, and because the ecology has to refill it
+— is *measurably false*. Two ablations, each on the full bed:
+
+| variant | colonies |
+|---|---|
+| shipped (mass-denominated draw, regrowth on biomass alone) | 3,294.0 |
+| regrowth logistic on **living mass** (biomass + people) instead | 3,294.0 |
+| **the biomass draw removed entirely** — growth free of the mass budget | 3,294.0 |
+
+All three are **bit-identical**. The mass budget never binds at the shipped
+defaults, so neither the size of the draw nor the rate of the refill can be
+carrying the −178.
+
+The cause is the corrected ceiling, acting through **policy**, not physics.
+`k_potential` is the deepening guard (`infra < k_potential`,
+`Hyades_autopilot_colonization_growth.md` §6). Under the old expression it
+eroded as a world's own population ate its biosphere, so centers ran out of
+deepening headroom and spent their minerals on expansion instead. With the
+units separated the headroom is real and they take it: **fewer colonies, deeper
+ones.**
+
+| seed 1 | colonies | mean infra | mean `K` |
+|---|---|---|---|
+| before | 3,426 | 1.420 | 1.418 |
+| after | 3,227 | **1.443** | **1.430** |
+
+So the old coverage number was partly bought by a bug — an artificial cap on
+deepening — and the −178 is a **deepen-versus-expand reallocation** the
+autopilot is now making on correct information. Whether that is the right
+allocation is a policy question owned by `expand_bias` and T-20, not a reason
+to soften the units. The operating point has moved either way, so the gradients
+measured before this landing are consumed; `growth_rate` and
+`biosphere_regen_rate` keep their ratified values until re-measured *here*.
+
+**This is the artifact pattern from `CLAUDE.md` §2, caught by ablation.** The
+first explanation written down was plausible, mechanistic, and consistent with
+the sign — and two one-line ablations refuted it. A real number with a
+confident story attached is exactly the shape all six of this project's prior
+measurement artifacts had.
+
+**R-O67 (new, open): there is no die-back, only a stall.**
+
+Population responds to two different ceilings, and the model only has a
+correction for one of them.
+
+- **Above `K`** — the Band ceiling — the logistic is self-correcting: `1 − s/K`
+  goes negative, population declines, and the decline *returns* its mass to the
+  biosphere. A razed world or one whose `bio_max` a card craters sheds people
+  back down to its new ceiling and the ecology reclaims them. This works today.
+- **Out of biomass** there is no correction at all. The draw is capped at what
+  is standing, so growth simply **stalls** at whatever population it reached;
+  nobody starves. There is no Malthusian overshoot-and-crash, and a world can
+  sit indefinitely with a live `K`, a dead biosphere, and a frozen population.
+
+The reachable case of the second is **immigration**. The invariant
+`biomass + KT(pop) ≤ bio_max` holds under growth (which converts one to the
+other 1:1) and under regrowth (which stops at the ceiling), but a colonizer
+lands `colony_seed_pop` of people whose mass came off a ship, and nothing works
+that overshoot back off — the displaced ecology should die back, and there is
+nowhere to put it until slag exists (R-O59/T-03). Bounded and small today (one
+seed's worth per world, 1 kt against a typical 33 kt ceiling) and pinned by
+`tests/smoke.rs`, which asserts the bound *including* the allowance rather than
+pretending it is not there.
+
+Whether famine should exist is a **design** question, not an oversight to
+patch: a starvation die-back is a real mechanic with real consequences for the
+Greening and Warfare trees (a biosphere strike that kills people rather than
+merely freezing them is a much sharper weapon), and it wants ratifying rather
+than inferring.
 ---
+
+
 
 ## 10. Design laws
 
@@ -884,9 +1006,15 @@ R-O37 this applies to **Design writes only**. Belongs in contract §5.
 hull dry mass; there is no second number. Wastage degrades to slag rather than
 vanishing; ordnance expended leaves the fleet lighter; wrecks retain their mass.
 **Population is not an exception**: biosphere is a mass in kilotons and
-population growth consumes it 1:1, so people are made of something. Biosphere is
-instead the one **renewable** entry — it regrows logistically toward `bio_max`,
-which makes ecology a stock with a refill rate rather than an open reservoir. Negative and
+population growth consumes it, so people are made of something. The exchange is
+a **mass** difference and not a Band one (§9.7): a population at Band `b` masses
+`KT(b)`, so a step from `b` to `b'` costs `KT(b') − KT(b)`, which is
+`BAND_STEP` times the people at one Band up — not `BAND_STEP` more of them.
+Biosphere is instead the one **renewable** entry — it regrows logistically
+toward `bio_max`, and the logistic runs on the world's *living mass*, biosphere
+plus people, because people are biosphere: a world filled to its ceiling with
+citizens has no spare ecological niche to regrow into, and a world whose
+biosphere has been eaten to nothing is not sterile. Negative and
 imaginary masses are **not** an exception — conservation holds for them, which
 is why exotic synthesis is pair production (§9.6).
 

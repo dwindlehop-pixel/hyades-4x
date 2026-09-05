@@ -305,6 +305,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 
 | path | role |
 |---|---|
+| `src/units.rs` | **`Band` / `Kilotons` newtypes and the `Measure` trait** — the one place the two units meet, and the fix for a `min` that compared a mass against two levels (R-O66) |
 | `src/math.rs` | 3-vectors, relativistic 1 g flight, light-lag (`c = 1`, distance in ly, time in years) |
 | `src/rng.rs` | seeded splitmix64; `fork()` per entity for order-independent determinism |
 | `src/resources.rs` | CMY basics, RGB supers, apex, archetypes |
@@ -336,6 +337,16 @@ combat logic into the arena or into an example.
   the filesystem, the network, threads, or the OS RNG.
 - **No hexes in the engine.** The simulation is continuous 3D space; each star system
   is a point. Hexes are a *command-view* concept owned by the presentation layer.
+- **A quantity carries its unit in the type, not in a comment.** `Band` is a
+  magnitude *tier* on the ladder (`Hyades_mineral_cost_curve.md` §2.6);
+  `Kilotons` is an amount of stuff. They are different types because the engine
+  shipped `K = min(hab, bio, infra)` for a long time with `bio` a mass and the
+  other two levels — a `min` across incompatible units that typechecked, read
+  as plausible ecology, and put the largest measured lever on coverage
+  (`biosphere_regen_rate`, +141.2 ± 18.1) on top of it. Nothing about `f64`
+  could have caught it. Do not add a bare `f64` for a quantity that has a unit,
+  and do not add a second conversion between the two — `src/units.rs` owns it.
+
 - **Determinism is a hard requirement.** All randomness flows from a seeded `Rng`;
   all time is the in-sim event clock in years. Iterate collections in deterministic
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`
@@ -441,10 +452,22 @@ one, stop and flag it.
    rather than vanishing; expended ordnance leaves the fleet lighter. Negative
    and imaginary mass are *not* exceptions — which is why exotic synthesis is
    pair production. **Nor is population:** biosphere is a mass in kilotons and
-   population growth consumes it 1:1. Biosphere is the one *renewable* stock,
+   population growth consumes it. Biosphere is the one *renewable* stock,
    regrowing logistically toward `bio_max`, so ecology is a rate rather than an
    exemption — which is what makes biological damage durable and gives Warfare a
    target that is neither hulls nor infrastructure.
+
+   **The exchange is a mass difference, not a level difference (R-O66).** A
+   population at Band `b` masses `KT(b) = KT_I · BAND_STEP^(b−1)`, so a step from
+   `b` to `b'` costs `KT(b') − KT(b)` — one Band up is `BAND_STEP` *times* the
+   people, not `BAND_STEP` more of them. `src/units.rs` is the only place that
+   conversion is written. Two consequences are load-bearing: **`K` is a minimum
+   over Bands** — `min(hab, bio_max, infra)`, with the standing biomass
+   deliberately *not* a term, because it is the mass growth is paid out of and
+   not a ceiling; and **regrowth runs on living mass**, biosphere plus people,
+   since people are biosphere. A world filled with citizens has no spare
+   ecological niche, and one whose biosphere has been eaten to nothing is not
+   sterile.
 12. **No retroactive refits** (R-O47b). A Design write never reaches a hull
    already in the field by fiat; realization is `on_refit`, so a fleet-wide
    change lands staggered by transit time. Retroactive would change every
@@ -730,11 +753,37 @@ changes how you *work*, not what is left to do:
   runs per hour, so speed lost to entity count is balance coverage not bought.
 
 - **Coverage is measured inside a fixed 4,000-year run — do not extend the horizon**
-  (T-20). **~51.4% of colonizable worlds** as of the `growth_rate` re-ratification
-  (mean over the 4-seed CRN bed; was 1,044 / 6,725 on seed 1 three ratifications
-  ago). 4,000 is the run length; the coverage reached within it is the objective.
-  Doubling the horizon doubles every trial, and §2's 60-second rule already had
-  to absorb the snowball once.
+  (T-20). **3,294 colonies, mean over the 4-seed CRN bed**, as of the R-O66
+  Band/kiloton separation (~49.0% of the 6,725-world objective set; it was
+  3,472.5 / ~51.4% before). 4,000 is the run length; the coverage reached within
+  it is the objective. Doubling the horizon doubles every trial, and §2's
+  60-second rule already had to absorb the snowball once.
+
+  **The unit fix cost −178.5 ± 26.9 colonies (−5.1%), every seed down, 6.6 SE —
+  and the obvious explanation for it was wrong.** "Growth is slower because the
+  draw is now the real mass" is plausible, mechanistic, right-signed, and
+  refuted by two one-line ablations: regrowth on living mass instead of biomass,
+  and **the biomass draw deleted outright**, both reproduce 3,294.0
+  *bit-identically*. The mass budget does not bind at the shipped defaults, so
+  it cannot be paying for anything.
+
+  The actual cause is **policy, not physics**. `k_potential` is the deepening
+  guard, and under the old expression it eroded as a world's population ate its
+  own biosphere — so centers ran out of deepening headroom and spent minerals on
+  expansion. Correcting the units gives them real headroom and they take it:
+  fewer colonies, deeper ones (seed 1: 3,426 → 3,227 colonies, mean infra
+  1.420 → 1.443, mean `K` 1.418 → 1.430). Some of the old coverage was bought by
+  an artificial cap on deepening, and the −178 is a deepen-versus-expand
+  reallocation made on correct information — a policy question for `expand_bias`
+  and T-20, not a reason to soften the units.
+
+  **Two things to carry forward.** Every gradient measured before this landing is
+  consumed: the operating point moved, so re-measure rather than stepping along
+  the old direction (`growth_rate` and `biosphere_regen_rate` keep their ratified
+  values until then). And **ablate before you explain** — a real number with a
+  confident mechanism attached is the exact shape of all six prior measurement
+  artifacts in this file, and here it took two disposable one-line variants to
+  tell a plausible story from a true one.
 
   Three ratifications got it there and none was a sweep. **λ (14.4% → 38.3%)
   was a *missing term*** — freighter routing had no distance component at all,

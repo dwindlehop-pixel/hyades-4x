@@ -21,12 +21,13 @@ use std::collections::HashSet;
 use std::io::Write;
 
 use hyades_engine::prelude::*;
+use hyades_engine::units::Band;
 
 const SEEDS: &[u64] = &[1, 7, 42];
 const PLAYERS: usize = 3;
 
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
+    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
 fn run(seed: u64, lambda: f64) -> (usize, usize) {

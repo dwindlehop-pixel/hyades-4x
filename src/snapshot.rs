@@ -16,6 +16,7 @@
 use crate::galaxy::PlanetId;
 use crate::math::Vec3;
 use crate::resources::{MineralField, Minerals};
+use crate::units::{Band, Kilotons};
 
 /// Which civilian role a ship is fulfilling (read-only mirror of the engine's
 /// hull enum, kept here so presentation never depends on `sim`).
@@ -34,12 +35,20 @@ pub enum VehicleKind {
 pub struct PlanetSnapshot {
     pub id: PlanetId,
     pub position: Vec3,
-    pub habitability: f64,
-    pub biosphere: f64,
-    pub infrastructure: f64,
-    /// Liebig carrying capacity `K = min(hab, bio, infra)`.
-    pub k: f64,
-    pub population: f64,
+    pub habitability: Band,
+    /// **Standing** biosphere, read back onto the Band ladder — what is
+    /// growing there now, which falls as population is made out of it.
+    pub biosphere: Band,
+    /// **Pristine** biosphere ceiling, on the Band ladder. This is the term
+    /// that enters `k`; [`Self::biosphere`] is the stock, not the ceiling.
+    pub bio_max: Band,
+    /// The standing biosphere as the mass it actually is. The same quantity as
+    /// [`Self::biosphere`], in the unit conservation is stated in.
+    pub biomass: Kilotons,
+    pub infrastructure: Band,
+    /// Liebig carrying capacity `K = min(hab, bio_max, infra)`, over Bands.
+    pub k: Band,
+    pub population: Band,
     pub pop_level: u8,
     /// In-ground mineral density (depletes as it is mined).
     pub density: MineralField,
@@ -70,7 +79,10 @@ pub struct PlayerSnapshot {
     pub mining_outposts: u32,
     pub planets_scanned: u32,
     pub ships: u32,
-    pub total_population: f64,
+    /// The empire's people, **as a mass**. Population is a Band level and
+    /// Bands are magnitude tiers, so adding them across planets sums
+    /// logarithms and means nothing; adding the masses means what it says.
+    pub total_population: Kilotons,
     /// Convenience roll-up: total minerals stockpiled across this empire's
     /// planets (the empire does not hold these centrally; this is a sum).
     pub stockpiled_total: f64,

@@ -383,6 +383,35 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-49. R-O67 — population stalls when it runs out of biomass; it never dies back
+
+**Design call, not a bug to patch.** Population responds to two ceilings and the
+model corrects for only one.
+
+- **Above `K`** (the Band ceiling) the logistic is self-correcting: `1 − s/K`
+  goes negative, population declines, and the decline *returns* its mass to the
+  biosphere. A razed world sheds people back down to its new ceiling. Works
+  today, pinned by `drawing_the_biosphere_down_does_not_lower_the_ceiling` and
+  the growth tests.
+- **Out of biomass** there is no correction. The draw is capped at what is
+  standing, so growth **stalls** at whatever population it reached and nobody
+  starves. No Malthusian overshoot-and-crash exists; a world can sit
+  indefinitely with a live `K`, a dead biosphere and a frozen population.
+
+The reachable case today is **immigration**: `biomass + KT(pop) ≤ bio_max` holds
+under growth (1:1 conversion) and regrowth (stops at the ceiling), but a
+colonizer lands `colony_seed_pop` of people whose mass came off a ship, and
+nothing works the overshoot back off. Bounded and small — one seed's worth per
+world, 1 kt against a typical 33 kt ceiling — and `tests/smoke.rs` asserts the
+bound *including* that allowance rather than hiding it.
+
+**The question to ratify:** should starvation kill? A die-back is a sharp
+weapon for Warfare and a real stake for Greening — a biosphere strike that
+kills people rather than freezing them is a different card. It also needs
+somewhere for the mass to go, which is slag (R-O59/T-03). Concrete test once
+decided: zero a settled world's biosphere and assert the population curve.
+
+
 ### T-47. R-AC20 — ~~time-to-10% vs. coverage disagree on `medium_fleet_size`~~ premise withdrawn; `center_mining_fraction` still open
 
 > **Resolved, and it was an artifact.** The two elasticities were measured at
@@ -545,14 +574,37 @@ Four readings worth keeping:
 
 ### T-16. R-O63 — the biosphere regrowth magnitude
 
-**Now known to be the second-largest lever on coverage** (+19.7 ± 3.2, T-45),
-which raises its priority considerably: it is not only the biological-warfare
-dial, it is a first-order economic parameter that has never been tuned.
+**Previously measured as the largest single lever on coverage** (+141.2 ± 18.1
+under the absolute-colony-count objective). **Treat that reading as suspect
+until re-measured** — see the ablation below, which finds the biomass economy
+completely slack at the shipped defaults. It remains the biological-warfare
+dial, and it has never been tuned.
 
 `SimConfig::biosphere_regen_rate` defaults to `0.10` of the remaining deficit
 per cycle, a **placeholder**. It decides how long a razed world stays razed, and
 therefore whether biological warfare is a strategy or a rounding error. Testable
-directly: sweep it and measure how long a zeroed biosphere suppresses `K`.
+directly: sweep it and measure how long a zeroed biosphere suppresses growth.
+
+**Re-measure before acting — the operating point moved (R-O66).** Coverage fell
+**−178.5 ± 26.9 colonies (−5.1%)** across the Band/kiloton separation, so every
+gradient measured before that landing is consumed and this knob should be
+re-probed at the new point rather than stepped along the old direction.
+~~"suppresses `K`"~~ — it no longer touches `K` at all; it governs the *rate*.
+
+**But note what that drop was not.** Ablation says **the biomass economy is
+entirely slack at the shipped defaults**: deleting the growth draw outright
+reproduces 3,294.0 colonies bit-identically, as does moving the regrowth
+logistic onto living mass. The −178 came from `k_potential` no longer eroding,
+which freed the deepening guard. So a sweep of this knob is measuring a
+constraint that currently *never binds* — expect a flat gradient, and treat a
+non-flat one as suspicious until ablated. Its value is as a **design** dial
+(how durable is biological damage) and as the thing a Warfare card makes bind,
+not as an economic lever on the baseline.
+
+**Note also that `biosphere_regen_rate` is a design dial, not a free economic
+knob.** It sets how durable biological damage is, which is a Greening/Warfare
+balance question. A coverage-driven step on it trades design surface for
+colonies, and that trade is the design owner's to make.
 
 ### T-17. R-O65 — should `hull_thrust_to_mass` be flat within a family?
 
@@ -719,7 +771,7 @@ mineral economy.
 colonizable worlds** on the same bed. Both numbers are right and the
 denominators differ: that "colonizable" is the above-gate set (3,435 on seed 1
 — the same count this driver measures), while the coverage objective's is
-`min(hab, bio) > 0.01`, which is effectively every planet in the galaxy. The
+`min(hab, bio_max) > 0.01`, which is effectively every planet in the galaxy. The
 gap between them is not work left undone; it is a class of world the baseline
 policy declines to settle. Three of §6's four counts reproduce here exactly
 (3,435 · 3,467 · 3,471); its fourth reads 3,516 against this driver's 3,551 for
@@ -728,13 +780,20 @@ deterministic per seed and neither `max_survey_hops` nor the horizon touches
 it, so the likeliest causes are a different fourth seed or a generator change
 since that run.
 
-**A side finding: the gate is not a fixed set.** 240 / 207 / 286 / 275 above-gate worlds per
-seed (1 / 7 / 42 / 31337) end the run *below* `k_high`, because population is
-paid for out of biosphere (L6) and `k_potential = min(hab, bio)` — a settled
-world can drop out of the class that made it settleable. It does not touch the
-table above, which measures at generation because that is what `rank` sees for
-an unowned world. It does mean any denominator taken from final state is a
-different set than the one the policy actually chose from.
+~~**A side finding: the gate is not a fixed set.** 240 / 207 / 286 / 275
+above-gate worlds per seed (1 / 7 / 42 / 31337) end the run *below* `k_high`,
+because population is paid for out of biosphere (L6) and
+`k_potential = min(hab, bio)` — a settled world can drop out of the class that
+made it settleable.~~
+
+**Withdrawn (R-O66): that was the unit error, not a finding.** `k_potential`
+was taking a minimum of the biosphere's *standing mass in kilotons* against two
+Band levels, so a world's classification fell as its own population ate it.
+With Bands and kilotons separated the gate reads `bio_max`, which nothing in
+the shipped engine moves, and `reach_limit`'s `gate_erosion` counter is
+structurally zero — **the gate is a fixed set.** The counter is kept as a guard
+rather than deleted, because the first card that lowers a world's pristine
+biosphere makes the denominator playable again.
 
 **Where the headroom actually is.** Counting mining outposts as reach, the bed
 covers **81.0–84.0%** of targets — two thirds of the sub-gate worlds are

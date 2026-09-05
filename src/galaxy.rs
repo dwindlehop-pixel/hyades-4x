@@ -63,6 +63,7 @@
 use crate::math::Vec3;
 use crate::resources::{Archetype, Basic, MineralField};
 use crate::rng::Rng;
+use crate::units::Band;
 
 /// `Γ(4/3)`, the mean-scaling constant for a Weibull(k=3) distribution — see
 /// [`GalaxyConfig::derived_planet_count`]. `Γ(4/3) = (1/3)Γ(1/3)`.
@@ -114,21 +115,29 @@ pub enum PlanetClass {
 /// A single star system, abstracted to one point in continuous 3-D space.
 ///
 /// Carrying-capacity factors (`habitability`, `biosphere`, `infrastructure`) and
-/// `population` are all on the **same level-unit scale** (`Hyades_simulation_model.md`
-/// §2a): `0` ≈ empty, `4` ≈ many-billions. `K = min` of the three (Liebig).
+/// `population` are all on the **same ladder** (`Hyades_simulation_model.md`
+/// §2a): [`Band`] `0` ≈ empty, `4` ≈ many-billions. They are typed rather than
+/// bare `f64` because the simulation also holds the biosphere as a *mass* —
+/// see [`crate::units`] for why that distinction was load-bearing and silently
+/// wrong.
+///
+/// `biosphere` is the **pristine** ceiling as generated. Once a galaxy is
+/// loaded into a [`Simulation`](crate::sim::Simulation) the standing stock is
+/// held in kilotons and can be drawn down; this field is the Band it started
+/// at.
 #[derive(Clone, Debug)]
 pub struct Planet {
     pub id: PlanetId,
     pub position: Vec3,
 
-    // --- carrying-capacity factors (level-units) ---
+    // --- carrying-capacity factors, on the Band ladder ---
     /// Hardest to change. The fundamental ceiling.
-    pub habitability: f64,
+    pub habitability: Band,
     /// Easy to destroy, slow to improve.
-    pub biosphere: f64,
+    pub biosphere: Band,
     /// Built capacity. `0` on a wild world; raised by the build cycle. Soft
     /// factor and the early binding constraint (homeworlds start at 1).
-    pub infrastructure: f64,
+    pub infrastructure: Band,
 
     /// Tier-1 mineral density (ground truth; a close scan reveals it).
     pub minerals: MineralField,
@@ -139,22 +148,25 @@ pub struct Planet {
 
     // --- mutable sim state ---
     pub owner: Option<PlayerId>,
-    /// Continuous population (level-units), grows logistically toward `K`.
-    pub population: f64,
+    /// Continuous population on the Band ladder, growing logistically toward `K`.
+    pub population: Band,
 }
 
 impl Planet {
     /// Liebig carrying capacity `K = min(hab, bio, infra)`
     /// (`Hyades_simulation_model.md` §2a). A wild world (`infra = 0`) has `K = 0`.
+    ///
+    /// All three terms are Bands, which is the whole point of the type: the
+    /// engine's copy of this minimum used to include the biosphere's *mass*.
     #[inline]
-    pub fn k(&self) -> f64 {
+    pub fn k(&self) -> Band {
         self.habitability.min(self.biosphere).min(self.infrastructure)
     }
 
     /// The ceiling infrastructure (and thus population) can be *built* to:
     /// `min(hab, bio)` (autopilot-doc §3).
     #[inline]
-    pub fn k_potential(&self) -> f64 {
+    pub fn k_potential(&self) -> Band {
         self.habitability.min(self.biosphere)
     }
 }
@@ -186,7 +198,7 @@ impl Hotspots {
 /// fixed multiplicative jump). R-P1 owns the final `k` and edges.
 #[derive(Clone, Copy, Debug)]
 pub struct PopBands {
-    pub edges: [f64; 4],
+    pub edges: [Band; 4],
 }
 
 impl PopBands {
@@ -197,16 +209,16 @@ impl PopBands {
         // weibull quantile: λ · (−ln(1−p))^(1/k); solve λ so q(0.8) == top_edge.
         let shape = |p: f64| (-(1.0 - p).ln()).powf(1.0 / k);
         let lambda = top_edge / shape(0.8);
-        let mut edges = [0.0; 4];
+        let mut edges = [Band::ZERO; 4];
         for (i, &p) in q.iter().enumerate() {
-            edges[i] = lambda * shape(p);
+            edges[i] = Band::new(lambda * shape(p));
         }
         PopBands { edges }
     }
 
     /// Integer level 0–4 = how many band edges the population value has crossed.
     #[inline]
-    pub fn level(&self, population: f64) -> u8 {
+    pub fn level(&self, population: Band) -> u8 {
         self.edges.iter().filter(|&&e| population >= e).count() as u8
     }
 }
@@ -562,18 +574,19 @@ impl Galaxy {
                 (4.0 * (1.0 - config.anticorrelation * norm_met) + 0.4 * prng.gaussian()).clamp(0.0, 4.0);
             // biosphere tracks habitability with its own spread.
             let biosphere = (habitability * prng.range(0.7, 1.1) + 0.3 * prng.gaussian()).clamp(0.0, 4.0);
+            let (habitability, biosphere) = (Band::new(habitability), Band::new(biosphere));
 
             planets.push(Planet {
                 id: PlanetId(i as u32),
                 position,
                 habitability,
                 biosphere,
-                infrastructure: 0.0, // wild
+                infrastructure: Band::ZERO, // wild
                 minerals,
                 is_homeworld: false,
                 archetype: None,
                 owner: None,
-                population: 0.0,
+                population: Band::ZERO,
             });
         }
 
@@ -599,14 +612,14 @@ impl Galaxy {
             planets.push(Planet {
                 id,
                 position,
-                habitability: 4.0, // identical 4 / 4 / 2 shape (§3, rev: infra 2)
-                biosphere: 4.0,
-                infrastructure: 2.0, // K = min = 2: the new starting development gate
+                habitability: Band::new(4.0), // identical 4 / 4 / 2 shape (§3, rev: infra 2)
+                biosphere: Band::new(4.0),
+                infrastructure: Band::new(2.0), // K = min = 2: the new starting development gate
                 minerals,
                 is_homeworld: true,
                 archetype: Some(archetype),
                 owner: Some(PlayerId(p as u32)),
-                population: 2.0, // filled to its starting K
+                population: Band::new(2.0), // filled to its starting K
             });
             homeworlds.push(id);
         }
@@ -681,10 +694,10 @@ mod tests {
         let g = Galaxy::generate(GalaxyConfig::new(6, 123)).unwrap();
         for &hw in &g.homeworlds {
             let p = g.planet(hw);
-            assert_eq!(p.habitability, 4.0);
-            assert_eq!(p.biosphere, 4.0);
-            assert_eq!(p.infrastructure, 2.0);
-            assert_eq!(p.k(), 2.0); // K = min = 2
+            assert_eq!(p.habitability, Band::new(4.0));
+            assert_eq!(p.biosphere, Band::new(4.0));
+            assert_eq!(p.infrastructure, Band::new(2.0));
+            assert_eq!(p.k(), Band::new(2.0)); // K = min = 2
         }
     }
 
@@ -700,12 +713,12 @@ mod tests {
     #[test]
     fn pop_bands_span_zero_to_four() {
         let b = PopBands::default();
-        assert_eq!(b.level(0.0), 0);
-        assert_eq!(b.level(4.0), 4);
+        assert_eq!(b.level(Band::ZERO), 0);
+        assert_eq!(b.level(Band::new(4.0)), 4);
         // monotone non-decreasing
         let (mut prev, mut x) = (0u8, 0.0);
         while x <= 5.0 {
-            let l = b.level(x);
+            let l = b.level(Band::new(x));
             assert!(l >= prev);
             prev = l;
             x += 0.1;
@@ -732,10 +745,10 @@ mod tests {
         let (mut hi_sum, mut hi_n, mut lo_sum, mut lo_n) = (0.0, 0, 0.0, 0);
         for p in &wild {
             if p.minerals.metallicity() >= median {
-                hi_sum += p.habitability;
+                hi_sum += p.habitability.bands();
                 hi_n += 1;
             } else {
-                lo_sum += p.habitability;
+                lo_sum += p.habitability.bands();
                 lo_n += 1;
             }
         }

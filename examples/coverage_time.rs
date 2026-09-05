@@ -23,6 +23,7 @@ use std::collections::{HashMap, HashSet};
 
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
+use hyades_engine::units::Band;
 
 /// The standard test bed: a fixed seed set, fixed player count. Every
 /// algorithm/parameter variant gets compared against the *same* galaxies, so
@@ -42,7 +43,7 @@ const PLAYERS: usize = 3;
 /// count (`min(habitability, biosphere)`, not the current built `K`, which
 /// is 0 everywhere wild by definition).
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
+    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
 /// Run one trial. Returns (completion_time_years if fully covered within the

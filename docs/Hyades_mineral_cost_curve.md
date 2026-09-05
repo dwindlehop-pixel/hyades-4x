@@ -506,6 +506,18 @@ the shell-model prediction and "sit exactly at the floor" are different
 reasons to land near the same number, and one data point does not
 distinguish them.
 
+**The engine now depends on this number.** `src/units.rs` implements the
+Band↔kiloton bridge as `KT(b) = KT_I · BAND_STEP^(b−1)` — the *only* place
+the two units meet — and population growth pays for itself across it, so
+`BAND_STEP` sets how much biomass a Band of people actually costs. It ships
+at **`4.0`, the floor of the permitted range, explicitly as a placeholder
+pinned to this R-code**, chosen so the value is inside the ratified
+constraint rather than outside it. Two things follow. Ratifying `F₁`
+settles `BAND_STEP`; and any `F₁ ≠ F₂` needs the bridge to become
+piecewise, because a single exponential cannot express two different step
+factors. A test (`a_band_step_is_multiplicative_not_additive`) pins the
+value inside `[4, 8]` so a future edit cannot quietly leave the range.
+
 **R-MC15 (open, new):** decide `F₁`/`F₂` (in `[4, 8]`) and re-derive
 `medium_fleet_size`/`limited_fleet_size` from them via the gradient-step
 methodology (`CLAUDE.md` §"How to search"), rather than the two fields

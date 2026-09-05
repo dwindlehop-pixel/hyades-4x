@@ -60,6 +60,7 @@ pub mod resources;
 pub mod rng;
 pub mod sim;
 pub mod snapshot;
+pub mod units;
 
 /// Common imports for engine consumers.
 pub mod prelude {
@@ -74,4 +75,5 @@ pub mod prelude {
     pub use crate::rng::Rng;
     pub use crate::sim::{Entity, FleetSummary, HullType, Role, SimConfig, SimReport, Simulation};
     pub use crate::snapshot::Snapshot;
+    pub use crate::units::{Band, Kilotons, Measure};
 }
