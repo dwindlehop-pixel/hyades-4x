@@ -256,6 +256,70 @@ answer is not "nothing", the metric is a target, not a measurement. This joins
 the artifact list below as a fifth shape, and it is the only one that would
 have gotten worse rather than better with time.
 
+### Finding broken tradeoffs on purpose, not by accident
+
+Every artifact below was found by a different accident, months apart. There is a
+mechanical detector for most of the family, and it is now in the tree.
+
+**The mechanism.** A tradeoff here is a clamp (`a.min(b)`) or a threshold
+(`x >= k`). Either stops being a tradeoff when one side wins every time, and the
+consequence is exact rather than approximate: **a saturated site has zero
+derivative with respect to the losing side.** So a knob whose only path to the
+objective runs through that side is not weakly coupled or noisy — it is
+invisible. Searching for broken tradeoffs and searching for lost gradient
+sensitivity are therefore the *same search*, and it needs no sweep: count which
+side bound.
+
+`src/census.rs` is those counters and `examples/tradeoff_audit.rs` is the loop
+(`baseline` → `audit` → `isolate` → `confirm`). The census is off by default,
+write-only, and `census_does_not_perturb_the_simulation` pins that enabling it
+changes no result.
+
+**Audit at the merged defaults, seed 1: 2 of 9 sites saturated.**
+
+| site | binding | verdict |
+|---|---|---|
+| `load = cap.min(avail)` | `avail` 98.4% | the hold almost never binds |
+| growth capped by biomass | demand 100.0% | biomass **never** binds |
+| `K = min(hab, bio, infra)` | infra 90.3% / bio 9.6% / hab 0.1% | live |
+| rank classification | Barren 78.9% | live |
+| the other five | — | live |
+
+**Two rules the loop taught, both of which cost a wrong answer first.**
+
+- **A saturated site condemns the path, not the knob.** `biosphere_regen_rate`
+  feeds the biomass clamp that never binds — and it is still the *largest*
+  elasticity in the tree (+141.2), because it reaches the objective through
+  `K` instead. The isolate step therefore sweeps the knob and watches the
+  objective as well as the site: saturated-and-objective-moves means the clamp
+  is redundant with another path, not that the knob is dead. Only
+  saturated-*and*-flat is a real dead path.
+- **A site that un-saturates is a candidate, not a finding.** `cargo_unit_size`
+  un-saturates below 2.5 and the screen showed 199 → 233 colonies from 5 → 50.
+  **The objective refused it: −13.5 ± 14.9 at 5 vs 25, inside 2 SE.** No default
+  moved. This is `survey_reserve` again — screen proposes, objective disposes.
+
+**What `cargo_unit_size` actually is.** Verified against the source: it appears
+in `cargo_capacity` and *nowhere else* — it touches no cost, no radius, no dry
+mass. Since R-O58 tied cost to capacity everywhere else (T-43), it is **the last
+free leg of design law #3's ratio**, a pure multiplier on the denominator of
+cost-per-unit-hauled. That is why it is monotone-to-saturation on the ramp and
+inert at the objective, and it is a reason to pin it as a physical constant
+rather than carry it as a search knob — the probe already says "flat — inert
+here, consider deleting" and each sweep of it spends evaluations to buy noise.
+
+**One candidate fix was tried and refuted, which is worth recording.** If the
+end state is saturated (`reach_limit`: a run takes 95–100% of what `k_high`
+admits well before the horizon), a knob that only makes expansion *faster*
+should score zero at the horizon and non-zero on colony-years,
+`AUC = Σ (horizon − t_founded)` — exact from the founding log, free from the
+same run, and still denominator-free so it keeps the invariance the objective
+was corrected for. Measured on `cargo_unit_size` 5 vs 25: end state t = −0.90,
+**AUC t = +0.05**. AUC is the *weaker* signal here, so the ramp hypothesis is
+wrong for this knob and AUC is not adopted. The harness keeps the mode; the
+hypothesis needs a knob whose effect is genuinely temporal before it is worth
+retrying.
+
 ### The artifact pattern — four of them, one shape
 
 Four measurements in this project were wrong in the same way, and the shape is
@@ -311,6 +375,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/galaxy.rs` | galaxy generation → continuous 3D planet field |
 | `src/autopilot.rs` | `Autopilot` trait (swappable per-seat policy) + `Doctrine` knobs |
 | `src/belief.rs` | **believed kinematics** (R-O41) — one-sided `a_max` estimate from light-lagged observations, and the accept/decline predicate that runs on it |
+| `src/census.rs` | **binding-site census** — write-only counters recording which side of each clamp/threshold bound; the broken-tradeoff detector |
 | `src/cards.rs` | the **card layer** — 18 tier-0 placeholders (3 slants × 6 trees), `Order`, and the coerce-never-reject rule |
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
 | `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement` |

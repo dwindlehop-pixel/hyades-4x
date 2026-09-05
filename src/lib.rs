@@ -52,6 +52,7 @@ pub mod arena;
 pub mod autopilot;
 pub mod belief;
 pub mod cards;
+pub mod census;
 pub mod combat;
 pub mod galaxy;
 pub mod log;

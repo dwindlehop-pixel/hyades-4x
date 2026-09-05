@@ -789,6 +789,31 @@ colonies. What it leaves open is smaller and specific:
   comparison to a colony target the center saves for the colonizer, and the
   free pair keeps waiting. Whether that is correct is a doctrine question.
 
+### T-50. Pin `cargo_unit_size` as a constant, or give it a counter-cost
+
+The binding-site census (`src/census.rs`, `examples/tradeoff_audit.rs`) shows
+`load = cap.min(avail)` binds on `avail` 98.4% of the time, and the source shows
+`cargo_unit_size` occurs in `cargo_capacity` and nowhere else — no cost, no
+radius, no dry mass. Since R-O58 made the cost ladder the capacity ladder
+(T-43), this is the one remaining free multiplier on the denominator of design
+law #3's cost-per-unit-hauled ratio.
+
+Consequences already measured: monotone-to-saturation on the screen (199 → 233
+colonies, seed 1, as it stops binding around 10–50) and **nothing at the
+objective** (−13.5 ± 14.9 at 5 vs 25, 4-seed CRN). So it is not a tuning dial
+with an interior optimum; it is a scale factor whose only sensible value is
+"large enough not to bind".
+
+Two ways to close it, and the choice is a design call rather than a measurement:
+**pin it** as a physical constant (cargo density × usable volume) and drop it
+from the search — the gradient probe already reports it "flat — inert here,
+consider deleting", and every sweep of it spends evaluations to buy noise; or
+**give it a counter-cost** so the ratio is asserted rather than half-free, which
+is what design law #3 asks of every capacity term.
+
+Not urgent — it is inert, so it is not distorting anything today. It is a trap
+for the next person who sweeps it on a ramp-weighted metric and finds a slope.
+
 ### T-21. R-SIM2 — survey scan cost
 
 The survey scan is still O(planets) per arrival. The trigger is right (arrival

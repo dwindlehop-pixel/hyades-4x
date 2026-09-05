@@ -59,6 +59,7 @@ use crate::autopilot::{
     SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
+use crate::census::{BindingCensus, Site};
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
 use crate::math::{self, Vec3, G};
@@ -1070,6 +1071,9 @@ pub struct Simulation {
     current_round: u32,
     /// Count of card plays whose effect is not implemented yet.
     inert_card_plays: u64,
+    /// Write-only tradeoff counters (`crate::census`). Off by default; nothing
+    /// in the simulation reads them back, so they cannot perturb a run.
+    census: BindingCensus,
 }
 
 impl Simulation {
@@ -1152,6 +1156,7 @@ impl Simulation {
             reserve_freighters: vec![Vec::new(); n],
             current_round: 0,
             inert_card_plays: 0,
+            census: BindingCensus::default(),
             log: SimLog::new(),
         };
         sim.bootstrap();
@@ -1192,6 +1197,17 @@ impl Simulation {
 
     /// The diagnostic log collected so far. Empty unless
     /// [`Simulation::set_log_filter`] has enabled at least one category.
+    /// Turn on the binding-site census (`crate::census`). Costs one predictable
+    /// branch per instrumented site and changes no result.
+    pub fn enable_binding_census(&mut self) {
+        self.census.enable();
+    }
+
+    /// The census counters gathered so far.
+    pub fn binding_census(&self) -> &BindingCensus {
+        &self.census
+    }
+
     pub fn log(&self) -> &SimLog {
         &self.log
     }
@@ -1650,6 +1666,9 @@ impl Simulation {
             // At the outpost: load ore from its stockpile into cargo.
             let avail = self.world.stockpile.get(sh.outpost).unwrap().basic_total();
             let load = cap.min(avail);
+            // The canonical saturated site: if `avail` always wins, the hold
+            // size (`cargo_unit_size`) is invisible to the objective.
+            self.census.record_min2(Site::FreighterLoad, cap, avail);
             if load > 0.0 {
                 let moved = take_basics(self.world.stockpile.get_mut(sh.outpost).unwrap(), load);
                 self.world.cargo.get_mut(vehicle).unwrap().add_basics(&moved);
@@ -1860,6 +1879,14 @@ impl Simulation {
         let regen = self.config.biosphere_regen_rate * doctrine.biosphere_regen_bonus;
         let k = self.world.factors.get(center).unwrap().k();
         {
+            // Which of the three Liebig factors is actually the ceiling here?
+            // A factor that never binds is one no card and no knob can trade
+            // against (crate::census).
+            let f = self.world.factors.get(center).unwrap();
+            self.census.record_min3(Site::KLiebig, f.hab, f.bio, f.infra);
+            self.census.record_min2(Site::KPotential, f.hab, f.bio);
+        }
+        {
             let pop_now = *self.world.population.get(center).unwrap();
             let start = if pop_now < 0.01 { 0.01 } else { pop_now };
             let mut delta = 0.0;
@@ -1870,7 +1897,10 @@ impl Simulation {
             let f = self.world.factors.get_mut(center).unwrap();
             if delta > 0.0 {
                 // Cannot grow more people than there is biomass to make them of.
-                delta = delta.min(f.bio.max(0.0));
+                let biomass = f.bio.max(0.0);
+                let demand = delta;
+                delta = delta.min(biomass);
+                self.census.record_min2(Site::GrowthBiomass, demand, biomass);
                 f.bio -= delta;
             } else {
                 // Decline returns mass to the biosphere.
@@ -1904,9 +1934,20 @@ impl Simulation {
         // upgrade, 0 when it can comfortably afford it. Drives the ranking toward
         // mining when the empire is short.
         let mineral_pressure = self.mineral_pressure_of(center);
+        self.census.record(
+            Site::MineralPressure,
+            if mineral_pressure <= 0.0 {
+                0
+            } else if mineral_pressure >= 1.0 {
+                2
+            } else {
+                1
+            },
+        );
         let rctx =
             RankContext { scarcity: info.scarcity, holdings_centroid: self.holdings_centroid(p), mineral_pressure };
         let mut cands: Vec<Candidate> = Vec::new();
+        let mut classified: Vec<PlanetClass> = Vec::new();
         {
             let knowledge = self.world.knowledge.get(pe).unwrap();
             for &pid in &knowledge.scanned {
@@ -1919,9 +1960,21 @@ impl Simulation {
                 }
                 let view = self.view_of(e);
                 let ranked = self.autopilots[p].rank(&doctrine, &view, &rctx);
+                classified.push(ranked.class);
                 if ranked.class != PlanetClass::Barren {
                     cands.push(Candidate { view, ranked });
                 }
+            }
+        }
+        if self.census.is_enabled() {
+            for class in &classified {
+                let side = match class {
+                    PlanetClass::Barren => 0,
+                    PlanetClass::MiningOutpost => 1,
+                    PlanetClass::Colony => 2,
+                    PlanetClass::ProductionCenter => 3,
+                };
+                self.census.record(Site::RankClass, side);
             }
         }
         // Built after `cands`, so the survey decision can see how much frontier
@@ -1947,6 +2000,10 @@ impl Simulation {
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: cands.len(),
         };
+
+        self.census.record(Site::ProductionTier, if ctx.level < ctx.medium_min_level { 0 } else { 1 });
+        self.census.record(Site::DeepenHeadroom, if ctx.infra < ctx.k_potential - 1e-9 { 0 } else { 1 });
+        self.census.record(Site::SurveyReserve, if ctx.candidate_count < doctrine.survey_reserve { 0 } else { 1 });
 
         let order = self.autopilots[p].production_choice(&doctrine, &ctx, &cands);
         self.log.push(
@@ -2956,6 +3013,45 @@ mod tests {
         for p in 0..3u32 {
             assert!(sim.log().by_player(p).count() > 0, "no records for player {p}");
         }
+    }
+
+    #[test]
+    fn census_does_not_perturb_the_simulation() {
+        // The census exists to find places where the objective cannot see a
+        // quantity. It would be self-defeating if switching it on moved the
+        // objective, so the counters are write-only and this pins that.
+        let run = |census: bool| {
+            let galaxy = Galaxy::generate(GalaxyConfig::new(3, 11)).unwrap();
+            let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
+            if census {
+                sim.enable_binding_census();
+            }
+            sim.run();
+            let snap = sim.snapshot();
+            (
+                snap.planets.iter().filter(|p| p.owner.is_some()).count(),
+                snap.vehicles.len(),
+                snap.planets.iter().map(|p| p.population).sum::<f64>().to_bits(),
+            )
+        };
+        assert_eq!(run(false), run(true), "enabling the census changed the run");
+    }
+
+    #[test]
+    fn the_census_records_which_side_of_a_tradeoff_bound() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 11)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
+        sim.enable_binding_census();
+        sim.run();
+        let c = sim.binding_census();
+        // The Liebig site fires on every production tick, so it must have
+        // traffic in any run that grows at all.
+        assert!(c.total(Site::KLiebig) > 0, "the Liebig site never fired");
+        // Shares are a distribution over the sides.
+        let shares: f64 = (0..Site::KLiebig.sides().len()).filter_map(|i| c.share(Site::KLiebig, i)).sum();
+        assert!((shares - 1.0).abs() < 1e-9, "side shares must sum to 1, got {shares}");
+        // And a site that never fires is reported as such rather than as 0%.
+        assert!(c.share(Site::KLiebig, 0).is_some());
     }
 
     #[test]
