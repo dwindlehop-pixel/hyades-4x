@@ -44,7 +44,6 @@
 //! the measured gradient at fraction α and reports the paired improvement on the
 //! same seeds, which is what turns a gradient into a ratifiable change.
 
-use std::collections::HashSet;
 use std::io::Write;
 
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
@@ -64,22 +63,17 @@ const PLAYERS: usize = 3;
 /// Relative step for the central difference, matching `gradient_probe`.
 const DELTA: f64 = 0.10;
 
-fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
-}
-
 /// Colony fraction for one seed under one configuration. Ownership is the
 /// colony test: outposts never set an owner.
 fn trial(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> f64 {
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
-    let targets = coverage_targets(&galaxy);
-    let total = targets.len().max(1);
+
     let autopilots: Vec<Box<dyn Autopilot>> =
         (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
     sim.run();
     let snap = sim.snapshot();
-    snap.planets.iter().filter(|p| p.owner.is_some() && targets.contains(&p.id)).count() as f64 / total as f64
+    snap.planets.iter().filter(|p| p.owner.is_some()).count() as f64
 }
 
 /// Per-seed vector — the CRN unit. Never collapse to a mean before differencing.
