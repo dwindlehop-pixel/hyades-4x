@@ -428,6 +428,34 @@ came back `~noise` (1.33 SE) on the 4-seed bed and wants the ten-seed bed
 a product decision about how much early-game feel is worth trading against
 late-game sprawl — flagged, not resolved, per R-AC20.
 
+### T-48. Finish the metric change — five harnesses still divide
+
+The objective is an absolute colony count (CLAUDE.md §2), and
+`gradient_probe`/`gradient_step` — the two that actually set defaults — were
+converted. **Five were not**, and still compute `colonized / |targets|`:
+`binding_check`, `colonization_ramp_trace`, `min_time_search`, `mining_probe`,
+`proxy_metric_calibration`.
+
+None of them is *wrong today* in the way the objective was, because each uses
+its fraction consistently within a single run and nothing yet mutates
+habitability. They become wrong the moment terraforming exists, for exactly
+the reason the main objective did: the denominator is a set a card can move.
+
+Two are worth more than a mechanical edit:
+
+- **`proxy_metric_calibration`** validated `colonies@2000` (ρ = 0.923) against
+  the *fraction* as ground truth. The proxy itself was always an absolute
+  count, so it is now in the same units as the objective — which should if
+  anything improve the correspondence — but **the ρ figure quoted in
+  CLAUDE.md §2 is calibrated against a metric that no longer ships.** Re-run
+  before quoting it as though it still applies.
+- **`mining_probe`** produced the +1.69 ± 0.53 recycling ratification on the
+  8-seed bed. That number is in fractions, so it is not directly comparable to
+  anything measured after this change.
+
+Mechanical for the other three; the two above want a re-run, not a find-and-
+replace.
+
 ### T-33. `Knowledge` stores membership, not observations — netcode B4
 
 `Knowledge::scanned` is a `BTreeSet<PlanetId>`, so it records *that* a world was
