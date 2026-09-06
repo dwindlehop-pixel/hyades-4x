@@ -13,6 +13,7 @@
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, PlanetView, RankContext};
 use hyades_engine::galaxy::{Galaxy, GalaxyConfig, PlanetClass};
 use hyades_engine::prelude::*;
+use hyades_engine::units::BandTier;
 
 const PLAYERS: usize = 3;
 
@@ -43,7 +44,7 @@ fn main() {
                 biosphere: p.biosphere,
                 minerals: p.minerals,
                 owner: None,
-                pop_level: 0,
+                pop_level: BandTier::Empty,
             };
             let r = ap.rank(&doctrine, &view, &ctx);
             match r.class {

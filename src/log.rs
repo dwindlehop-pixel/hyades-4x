@@ -29,6 +29,7 @@ use crate::autopilot::BuildOrder;
 use crate::galaxy::PlanetId;
 use crate::math::Vec3;
 use crate::sim::{Entity, Role};
+use crate::units::BandTier;
 
 /// Which subsystem a record came from. Independently toggleable in a
 /// [`LogFilter`] so an interrogation can focus on just the part in question
@@ -147,7 +148,7 @@ pub enum LogEvent {
     ProductionDecision {
         player: u32,
         center: PlanetId,
-        pop_level: u8,
+        pop_level: BandTier,
         infra: f64,
         k_potential: f64,
         stockpile: f64,

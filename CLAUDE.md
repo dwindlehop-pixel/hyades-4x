@@ -389,6 +389,16 @@ combat logic into the arena or into an example.
   could have caught it. Do not add a bare `f64` for a quantity that has a unit,
   and do not add a second conversion between the two — `src/units.rs` owns it.
 
+  **A named rung is a name, not a number.** `BandTier` (`Empty, I, II, III, IV,
+  V`) is the discrete ladder; `Band` is a *position* on it and can sit anywhere
+  between rungs. Config constants that mean a rung are typed as the rung —
+  `colony_seed_pop = 1.0` no longer compiles, and a `compile_fail` doctest keeps
+  it that way. `V` is a **comparison ceiling that is unreachable in play**, so a
+  bounds check has a rung one past the end instead of a magic number;
+  `band_v_is_one_past_the_playable_end` pins that it stays unreachable, because
+  a sentinel that quietly becomes attainable leaves every `< V` guard compiling
+  and meaning nothing.
+
 - **Determinism is a hard requirement.** All randomness flows from a seeded `Rng`;
   all time is the in-sim event clock in years. Iterate collections in deterministic
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`

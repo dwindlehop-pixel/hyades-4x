@@ -23,7 +23,7 @@ use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
 use crate::resources::MineralField;
 use crate::sim::{Class, HullType, Role};
-use crate::units::Band;
+use crate::units::{Band, BandTier};
 
 /// Which of the two cheap classes the colony pipeline reaches for first
 /// (autopilot-doc §4; R-AC1 / R-A1). Default is production-centers-first.
@@ -251,7 +251,7 @@ pub struct PlanetView {
     pub biosphere: Band,
     pub minerals: MineralField,
     pub owner: Option<PlayerId>,
-    pub pop_level: u8,
+    pub pop_level: BandTier,
 }
 
 impl PlanetView {
@@ -376,8 +376,8 @@ pub struct Tasking {
 #[derive(Clone, Copy, Debug)]
 pub struct ProductionContext {
     pub center_pos: Vec3,
-    /// Current development level 0–4 of the center.
-    pub level: u8,
+    /// Current development rung of the center.
+    pub level: BandTier,
     /// Current infrastructure value.
     pub infra: f64,
     /// `min(hab, bio)` — the ceiling infrastructure can be built to.
@@ -386,10 +386,10 @@ pub struct ProductionContext {
     pub stockpile_total: f64,
     /// Minimum level required to build "medium" vehicles (colony/mining). Per the
     /// production schedule this is **3** (2 = limited, 3 = medium/rapid, 4 = all).
-    pub medium_min_level: u8,
+    pub medium_min_level: BandTier,
     /// Minimum level required to build "limited" vehicles — the Scout/LCV. The
     /// same schedule puts this at **2**, one tier below expansion.
-    pub limited_min_level: u8,
+    pub limited_min_level: BandTier,
     /// Mineral cost to raise infra by one level (= the target level).
     pub infra_cost: f64,
     /// Mineral cost of a Colonizer (an MSV) — `Hyades_vehicle_roles.md` §6's
@@ -810,7 +810,7 @@ mod tests {
             biosphere: Band::new(bio),
             minerals,
             owner: None,
-            pop_level: 0,
+            pop_level: BandTier::Empty,
         }
     }
 
@@ -875,19 +875,19 @@ mod tests {
     /// A center with a comfortably stocked frontier, so the survey branch stays
     /// out of the way of the deepen/expand cases these tests are about. Use
     /// [`prod_ctx_frontier`] to exercise survey itself.
-    fn prod_ctx(level: u8, infra: f64, stockpile: f64) -> ProductionContext {
+    fn prod_ctx(level: BandTier, infra: f64, stockpile: f64) -> ProductionContext {
         prod_ctx_frontier(level, infra, stockpile, usize::MAX)
     }
 
-    fn prod_ctx_frontier(level: u8, infra: f64, stockpile: f64, candidate_count: usize) -> ProductionContext {
+    fn prod_ctx_frontier(level: BandTier, infra: f64, stockpile: f64, candidate_count: usize) -> ProductionContext {
         ProductionContext {
             center_pos: Vec3::ZERO,
             level,
             infra,
             k_potential: 4.0,
             stockpile_total: stockpile,
-            medium_min_level: 3,
-            limited_min_level: 2,
+            medium_min_level: BandTier::III,
+            limited_min_level: BandTier::II,
             infra_cost: infra + 1.0,
             colonizer_cost: 1.0,
             mining_pair_cost: 1.0,
@@ -901,7 +901,7 @@ mod tests {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
         // level 2, can afford the 3-mineral upgrade, no candidates yet.
-        let order = ap.production_choice(&doctrine, &prod_ctx(2, 2.0, 5.0), &[]);
+        let order = ap.production_choice(&doctrine, &prod_ctx(BandTier::II, 2.0, 5.0), &[]);
         assert_eq!(order, BuildOrder::UpgradeInfrastructure);
     }
 
@@ -909,7 +909,7 @@ mod tests {
     fn below_gate_with_no_minerals_idles() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let order = ap.production_choice(&doctrine, &prod_ctx(2, 2.0, 0.0), &[]);
+        let order = ap.production_choice(&doctrine, &prod_ctx(BandTier::II, 2.0, 0.0), &[]);
         assert_eq!(order, BuildOrder::Idle);
     }
 
@@ -917,7 +917,7 @@ mod tests {
     fn mature_center_expands_to_a_colony_when_affordable() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let ctx = prod_ctx(3, 3.0, 2.0);
+        let ctx = prod_ctx(BandTier::III, 3.0, 2.0);
         let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         let ranked = ap.rank(&doctrine, &v, &rctx);
@@ -954,7 +954,7 @@ mod tests {
         // A mature center with the most deepening headroom the ladder allows
         // (infra 1 against k_potential 4) and one ordinary colony candidate —
         // i.e. the case most favourable to depth that can actually occur.
-        let mut ctx = prod_ctx(3, 1.0, 100.0);
+        let mut ctx = prod_ctx(BandTier::III, 1.0, 100.0);
         ctx.k_potential = 4.0;
         let cands = one_colony_candidate(&ap, &doctrine);
         let score = cands[0].ranked.score;
@@ -1026,7 +1026,7 @@ mod tests {
         // is real headroom. The old `infra + 1 <= k_potential` guard stranded
         // this center at K=2 forever, below the level-3 band edge (~2.675), so
         // it could never build anything and hoarded minerals it could not spend.
-        let mut ctx = prod_ctx(2, 2.0, 5.0);
+        let mut ctx = prod_ctx(BandTier::II, 2.0, 5.0);
         ctx.k_potential = 2.86;
         assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::UpgradeInfrastructure);
     }
@@ -1038,7 +1038,7 @@ mod tests {
         // Level 2 (limited tier), infra already at the ceiling so deepening is
         // impossible, minerals on hand, and a thin frontier. Before the limited
         // tier existed this returned Idle and the stockpile sat dead forever.
-        let mut ctx = prod_ctx_frontier(2, 3.0, 5.0, 0);
+        let mut ctx = prod_ctx_frontier(BandTier::II, 3.0, 5.0, 0);
         ctx.k_potential = 3.0;
         assert!(matches!(
             ap.production_choice(&doctrine, &ctx, &[]),
@@ -1050,7 +1050,7 @@ mod tests {
     fn below_the_limited_tier_never_builds_survey() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let mut ctx = prod_ctx_frontier(1, 3.0, 5.0, 0);
+        let mut ctx = prod_ctx_frontier(BandTier::I, 3.0, 5.0, 0);
         ctx.k_potential = 3.0; // capped, so deepening is off the table too
         assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::Idle);
     }
@@ -1063,7 +1063,7 @@ mod tests {
         // Survey must stay a fallback: an earlier revision gave it priority here,
         // which made `survey_reserve` non-monotonic — a large reserve had every
         // center scouting every cycle and colonies collapsed from 1047 to 3.
-        let ctx = prod_ctx_frontier(3, 3.0, 2.0, 0);
+        let ctx = prod_ctx_frontier(BandTier::III, 3.0, 2.0, 0);
         let cands = one_colony_candidate(&ap, &doctrine);
         assert!(matches!(
             ap.production_choice(&doctrine, &ctx, &cands),
@@ -1078,7 +1078,7 @@ mod tests {
         // Same thin frontier, but too poor for the colony ship and capped so it
         // cannot deepen either — the cycle would otherwise be pure Idle. A scout
         // is cheap enough to afford, so the idle capacity goes to survey.
-        let mut ctx = prod_ctx_frontier(3, 3.0, 0.3, 0);
+        let mut ctx = prod_ctx_frontier(BandTier::III, 3.0, 0.3, 0);
         ctx.k_potential = 3.0;
         let cands = one_colony_candidate(&ap, &doctrine);
         assert!(matches!(
@@ -1113,7 +1113,7 @@ mod tests {
     fn survey_reserve_zero_restores_the_old_never_scout_behaviour() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine { survey_reserve: 0, ..Doctrine::default() };
-        let mut ctx = prod_ctx_frontier(3, 3.0, 0.3, 0);
+        let mut ctx = prod_ctx_frontier(BandTier::III, 3.0, 0.3, 0);
         ctx.k_potential = 3.0;
         let cands = one_colony_candidate(&ap, &doctrine);
         assert_eq!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::Idle);

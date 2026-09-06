@@ -59,7 +59,7 @@ fn snapshot_is_consistent_with_report() {
         );
         // And population never exceeds the Liebig ceiling it grows toward.
         assert!(
-            p.population.bands() <= p.k.bands().max(SimConfig::new(6).colony_seed_pop) + 1e-9,
+            p.population.bands() <= p.k.bands().max(SimConfig::new(6).colony_seed_pop.band().bands()) + 1e-9,
             "planet {} holds {} against K = {}",
             p.id.0,
             p.population,

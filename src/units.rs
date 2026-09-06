@@ -88,6 +88,120 @@ pub const BAND_STEP: f64 = 4.0;
 /// first rung — not a claim that such a mass is zero.
 pub const BAND_FLOOR: f64 = 0.0;
 
+/// **A named rung on the Band ladder** — the discrete tier, as distinct from
+/// [`Band`], which is a *position* and can sit anywhere between rungs.
+///
+/// This type exists so that a Band-valued constant cannot be written as a bare
+/// number. `colony_seed_pop = 1.0` compiled for the entire life of the project
+/// and meant "Band I" only by convention; the same `1.0` could as easily have
+/// been a mass, a mineral count or a multiplier, and R-O66 is what happens when
+/// that convention slips. A rung is now a *name*, and naming it is the only way
+/// to write it.
+///
+/// ```compile_fail
+/// # use hyades_engine::sim::SimConfig;
+/// let mut cfg = SimConfig::new(1);
+/// cfg.colony_seed_pop = 1.0; // a Band level is not a float
+/// ```
+///
+/// ## The rungs
+///
+/// - [`Empty`](Self::Empty) — below the first threshold: no colony, negligible
+///   population, an uncolonizable world, a hull with no hold.
+///   `Hyades_mineral_cost_curve.md` §2.6 calls this `Band 0`; it is named
+///   rather than numbered here because zero is the one rung that is a
+///   *condition* rather than a magnitude.
+/// - [`I`](Self::I) — the first crossed threshold, and **each quantity's own
+///   reference scale**: a small town, the cost of one General-class hull, a
+///   Medium hull's reference hold. §2.6 is explicit that these are anchored
+///   *independently* and only the *ratios* are shared.
+/// - [`II`](Self::II), [`III`](Self::III) — separated by `F₁`, `F₂`, each a
+///   rational in `[4, 8]`.
+/// - [`IV`](Self::IV) — the top of the playable ladder. `F₃` (III→IV) is
+///   deliberately **unconstrained** (§2.6): it is the last step before a
+///   quantity's ceiling and is reserved as a tuning knob.
+/// - [`V`](Self::V) — **the maximum, for comparison and clamping only. It is
+///   not reachable in play**, and `no_quantity_reaches_band_v` pins that. Its
+///   job is to give bounds checks a top end that is a rung rather than a
+///   magic number, the way a half-open range wants one past the end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BandTier {
+    Empty,
+    I,
+    II,
+    III,
+    IV,
+    V,
+}
+
+impl BandTier {
+    /// Every rung, in order — including [`V`](Self::V), which is why callers
+    /// that mean "every rung a world can actually be at" should use
+    /// [`PLAYABLE`](Self::PLAYABLE).
+    pub const ALL: [BandTier; 6] =
+        [BandTier::Empty, BandTier::I, BandTier::II, BandTier::III, BandTier::IV, BandTier::V];
+    /// The rungs a quantity can actually occupy in a game. `V` is excluded by
+    /// construction.
+    pub const PLAYABLE: [BandTier; 5] = [BandTier::Empty, BandTier::I, BandTier::II, BandTier::III, BandTier::IV];
+    /// The highest rung anything in a game may reach.
+    pub const MAX_PLAYABLE: BandTier = BandTier::IV;
+
+    /// This rung's position on the continuous ladder.
+    #[inline]
+    pub const fn band(self) -> Band {
+        Band(self.index() as f64)
+    }
+
+    /// How many rungs above [`Empty`](Self::Empty) — the integer the engine
+    /// used before these were named.
+    #[inline]
+    pub const fn index(self) -> u8 {
+        match self {
+            BandTier::Empty => 0,
+            BandTier::I => 1,
+            BandTier::II => 2,
+            BandTier::III => 3,
+            BandTier::IV => 4,
+            BandTier::V => 5,
+        }
+    }
+
+    /// The rung a continuous position has *reached* — the largest rung at or
+    /// below it. Saturates at [`V`](Self::V).
+    #[inline]
+    pub fn containing(b: Band) -> BandTier {
+        match b.bands() {
+            x if x < 1.0 => BandTier::Empty,
+            x if x < 2.0 => BandTier::I,
+            x if x < 3.0 => BandTier::II,
+            x if x < 4.0 => BandTier::III,
+            x if x < 5.0 => BandTier::IV,
+            _ => BandTier::V,
+        }
+    }
+}
+
+impl From<BandTier> for Band {
+    #[inline]
+    fn from(t: BandTier) -> Band {
+        t.band()
+    }
+}
+
+impl fmt::Display for BandTier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            BandTier::Empty => "Empty",
+            BandTier::I => "Band I",
+            BandTier::II => "Band II",
+            BandTier::III => "Band III",
+            BandTier::IV => "Band IV",
+            BandTier::V => "Band V",
+        };
+        f.write_str(s)
+    }
+}
+
 /// A position on the Band ladder — a magnitude *tier*, not an amount.
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Band(f64);
@@ -301,6 +415,47 @@ mod tests {
         assert!((two / one - BAND_STEP).abs() < 1e-9, "I→II must be a factor of {BAND_STEP}, got {}", two / one);
         assert!((three / two - BAND_STEP).abs() < 1e-9, "II→III must be a factor of {BAND_STEP}, got {}", three / two);
         assert!((4.0..=8.0).contains(&BAND_STEP), "§2.6 requires the step in [4, 8], got {BAND_STEP}");
+    }
+
+    /// **Band V is a comparison ceiling, not a destination.**
+    ///
+    /// It exists so a bounds check has a rung one past the end instead of a
+    /// magic number, and the design is that nothing in a game ever reaches it.
+    /// Pinned here because an unreachable value that quietly becomes reachable
+    /// is the worst kind of sentinel — every `< V` guard would keep compiling
+    /// and stop meaning anything.
+    #[test]
+    fn band_v_is_one_past_the_playable_end() {
+        assert_eq!(BandTier::MAX_PLAYABLE, BandTier::IV);
+        assert!(BandTier::V > BandTier::MAX_PLAYABLE);
+        assert!(!BandTier::PLAYABLE.contains(&BandTier::V), "V must not be in the playable set");
+        assert_eq!(BandTier::PLAYABLE.len() + 1, BandTier::ALL.len());
+
+        // The generator's ceiling is Band IV, so no world can be seeded past it
+        // and `containing` only reports V for a position off the ladder.
+        assert_eq!(BandTier::containing(Band::new(4.0)), BandTier::IV);
+        assert_eq!(BandTier::containing(Band::new(4.999)), BandTier::IV);
+        assert_eq!(BandTier::containing(Band::new(5.0)), BandTier::V);
+    }
+
+    /// The rungs are ordered, and the order is the ladder's.
+    #[test]
+    fn the_rungs_are_ordered_and_indexed_consistently() {
+        for (i, t) in BandTier::ALL.iter().enumerate() {
+            assert_eq!(t.index() as usize, i);
+            assert_eq!(t.band(), Band::new(i as f64));
+        }
+        assert!(BandTier::Empty < BandTier::I && BandTier::I < BandTier::IV);
+    }
+
+    /// `Empty` is the rung that is a *condition*, not a magnitude — no colony,
+    /// no hold, an uncolonizable world — which is why it is named rather than
+    /// numbered. It sits at the ladder's origin.
+    #[test]
+    fn empty_is_the_origin_of_the_ladder() {
+        assert_eq!(BandTier::Empty.band(), Band::ZERO);
+        assert_eq!(BandTier::containing(Band::ZERO), BandTier::Empty);
+        assert_eq!(BandTier::containing(Band::new(0.999)), BandTier::Empty);
     }
 
     #[test]

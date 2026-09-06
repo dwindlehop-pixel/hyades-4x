@@ -65,7 +65,7 @@ use crate::math::{self, Vec3, G};
 use crate::resources::{Archetype, Basic, MineralField, Minerals};
 use crate::rng::Rng;
 use crate::snapshot::{PlanetSnapshot, PlayerSnapshot, Snapshot, VehicleKind, VehicleSnapshot};
-use crate::units::{self, Band, Kilotons, Measure};
+use crate::units::{self, Band, BandTier, Kilotons, Measure};
 
 // =====================================================================
 // ECS core — a tiny, dependency-free, deterministic world.
@@ -898,21 +898,21 @@ pub struct SimConfig {
     pub cycle_years: f64,
     pub build_years: f64,
     pub civilian_accel_g: f64,
-    pub colony_seed_pop: f64,
+    pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
 
     /// Minimum development level to build medium vehicles (colony/mining). Per
     /// the production schedule this is **3** (`Band III` — 2/`Band II` = limited,
     /// 3/`Band III` = medium, 4/`Band IV` = all; `Hyades_mineral_cost_curve.md`
     /// §2.6 names the general Band ladder these development levels instantiate).
-    pub medium_min_level: u8,
+    pub medium_min_level: BandTier,
     /// Minimum development level to build *limited* vehicles — the Scout/LCV
     /// survey craft. The same production schedule that puts medium at
     /// `Band III` puts limited at **2** (`Band II`); before this field existed
     /// the autopilot returned `Idle` for everything below `medium_min_level`,
     /// so the limited tier was unreachable and a `Band II` center could do
     /// nothing but hoard minerals.
-    pub limited_min_level: u8,
+    pub limited_min_level: BandTier,
     /// Mineral cost of one General Systems Vehicle — "1 CMY mineral = 1 fleet"
     /// (`Hyades_vehicle_roles.md` §6, confirmed this conversation, revising
     /// the earlier "3 CMY = 3 fleets" anchor to the same ratio in cleaner
@@ -1166,12 +1166,12 @@ impl SimConfig {
             civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
-            colony_seed_pop: 1.0,
+            colony_seed_pop: BandTier::I,
             // 120 — ratified with the snowball defaults: a 40-hop chain retired
             // scouts while most of the galaxy was still dark.
             max_survey_hops: 120,
-            medium_min_level: 3,
-            limited_min_level: 2,
+            medium_min_level: BandTier::III,
+            limited_min_level: BandTier::II,
             general_vehicle_cost: 1.0,
             medium_fleet_size: 4.45,
             limited_fleet_size: 9.0,
@@ -2588,7 +2588,7 @@ impl Simulation {
         // conversation: "1 pop as cargo").
         self.world
             .pop_cargo
-            .insert(e, if role == Role::Colonizer { Band::new(self.config.colony_seed_pop) } else { Band::ZERO });
+            .insert(e, if role == Role::Colonizer { self.config.colony_seed_pop.band() } else { Band::ZERO });
         self.world.home_center.insert(e, center);
         let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
         let ev = match role {
@@ -2741,7 +2741,7 @@ impl Simulation {
             // Reported unconditionally; `Doctrine::survey_avoids_inhabited`
             // decides whether the policy acts on it, and defaults to off.
             let pop = *self.world.population.get(e).unwrap();
-            let industrial_signature = self.bands.level(pop) >= 4;
+            let industrial_signature = self.bands.level(pop) >= BandTier::IV;
             out.push(SurveyView {
                 id: pid,
                 position: *self.world.position.get(e).unwrap(),
@@ -3564,7 +3564,7 @@ mod tests {
         // the hold of the Medium hull that R-V9 says is the smallest that can
         // carry them. Nothing checks it, because capacity gates mineral loading
         // only.
-        let seed_mass = units::population_mass(Band::new(cfg.colony_seed_pop)).kilotons();
+        let seed_mass = units::population_mass(cfg.colony_seed_pop.band()).kilotons();
         assert!(
             seed_mass > m,
             "if the colony seed ({seed_mass:.3} kt) now fits a Medium hold ({m:.3} kt), the ladders have \
@@ -4190,7 +4190,7 @@ mod tests {
             sim.world.role.insert(v, Role::Colonizer);
             sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
             sim.world.cargo.insert(v, Minerals::default());
-            sim.world.pop_cargo.insert(v, Band::new(sim.config.colony_seed_pop));
+            sim.world.pop_cargo.insert(v, sim.config.colony_seed_pop.band());
             sim.world.home_center.insert(v, home);
             v
         };

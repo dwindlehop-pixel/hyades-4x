@@ -459,12 +459,38 @@ That is a design call and it is upstream of any code. **Nothing in `units.rs`
 should move until it is made**, because the anchor and `F₃` are both determined
 by whichever branch is taken.
 
-**Open sub-question: is there a Band V?** Every spec that names the ladder gives
-it as `Band 0, I, II, III, IV` — five tiers, top is IV (§2.6, galaxy §5.1,
-habitability §3). `PopBands` has four internal edges and `level()` returns 0–4.
-No Band V exists anywhere in `docs/` or the engine. Any enum has to settle
-whether the top tier is IV (matching every spec) or the ladder is being extended.
+**Settled — the ladder is named, and Band V is a ceiling.** `Band 0` is now
+**`BandTier::Empty`**, named rather than numbered because it is the one rung
+that is a *condition* (no colony, no hold, an uncolonizable world) rather than a
+magnitude. **`BandTier::V` is the maximum for comparison and clamping and is not
+achievable in play** — it gives a bounds check a rung one past the end instead
+of a magic number, and `band_v_is_one_past_the_playable_end` pins that it stays
+unreachable. `BandTier::MAX_PLAYABLE` is `IV`, matching every spec.
 
+**Settled — the squeeze resolves by growing the hold.** Of the three
+constraints, the **Medium hold** is the one that gives: it rises to carry a real
+town, and the town description in galaxy §5.1 and R-V9's "1 pop as cargo" both
+stand. Still to be implemented, and it is not a one-line change:
+
+- Since R-O58 the cost ladder **is** the capacity ladder, so this lands on
+  **R-O71** (the 106x M→G step, which growing `cargo_unit_size` uniformly does
+  *not* fix) and **R-MC15** (no shipped ladder satisfies `[4, 8]`) together.
+- **`cargo_unit_size`'s coverage elasticity is already measured as exactly zero**
+  at this operating point — `binding_check` is bit-identical at 5, 25 and 100,
+  because `load = cap.min(avail)` and an outpost never accumulates a full hold
+  between visits. Growing it is therefore free for the *mineral* economy. Do not
+  read that as "no effect anywhere".
+- **The colony seed is where it bites.** `pop_cargo` masses `KT(Band I)` and
+  `laden_accel` is `dry / (dry + cargo)`. A Medium hull is 0.225 kt dry against
+  a 1.0 kt seed today — 18% of base acceleration. At a 50 kt seed that is 0.45%,
+  and travel time goes as roughly `1/√a`, so colony ships get ~6x slower and
+  coverage falls hard. **Growing the hold without growing the hull makes the
+  hold 200x the ship's own structure**, which is not a body the shell model
+  describes.
+- So the honest shape of the work is: raise the anchor *and* re-derive the hull
+  ladder, so the carrier of a Band-I population is a hull that plausibly masses
+  more than its cargo. Measure with `examples/colony_years` — colony *count* at
+  the horizon will not show a slowdown that `∫ colonies dt` will.
 
 ### T-52. R-O69 follow-ups — the hostile-interrupt trigger, and the decision path's O(galaxy) scan
 

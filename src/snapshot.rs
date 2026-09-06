@@ -16,7 +16,7 @@
 use crate::galaxy::PlanetId;
 use crate::math::Vec3;
 use crate::resources::{MineralField, Minerals};
-use crate::units::{Band, Kilotons};
+use crate::units::{Band, BandTier, Kilotons};
 
 /// Which civilian role a ship is fulfilling (read-only mirror of the engine's
 /// hull enum, kept here so presentation never depends on `sim`).
@@ -49,7 +49,7 @@ pub struct PlanetSnapshot {
     /// Liebig carrying capacity `K = min(hab, bio_max, infra)`, over Bands.
     pub k: Band,
     pub population: Band,
-    pub pop_level: u8,
+    pub pop_level: BandTier,
     /// In-ground mineral density (depletes as it is mined).
     pub density: MineralField,
     /// Mined minerals on hand at this planet (spent on builds).

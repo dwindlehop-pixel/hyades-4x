@@ -63,7 +63,7 @@
 use crate::math::Vec3;
 use crate::resources::{Archetype, Basic, MineralField};
 use crate::rng::Rng;
-use crate::units::Band;
+use crate::units::{Band, BandTier};
 
 /// `Γ(4/3)`, the mean-scaling constant for a Weibull(k=3) distribution — see
 /// [`GalaxyConfig::derived_planet_count`]. `Γ(4/3) = (1/3)Γ(1/3)`.
@@ -218,8 +218,11 @@ impl PopBands {
 
     /// Integer level 0–4 = how many band edges the population value has crossed.
     #[inline]
-    pub fn level(&self, population: Band) -> u8 {
-        self.edges.iter().filter(|&&e| population >= e).count() as u8
+    pub fn level(&self, population: Band) -> BandTier {
+        // The edges are the *reached* thresholds, so the count of crossings is
+        // the rung index. `BandTier::ALL` is indexed rather than matched so a
+        // sixth rung cannot silently fall off the end.
+        BandTier::ALL[self.edges.iter().filter(|&&e| population >= e).count()]
     }
 }
 
@@ -521,7 +524,7 @@ impl Galaxy {
 
     /// Integer pop level 0–4 of a planet (§5.1).
     #[inline]
-    pub fn pop_level(&self, id: PlanetId) -> u8 {
+    pub fn pop_level(&self, id: PlanetId) -> BandTier {
         self.bands.level(self.planet(id).population)
     }
 
@@ -706,17 +709,17 @@ mod tests {
         // K = 2, pop ~2 ⇒ the level-2 "limited vehicles" production gate (§5.1).
         let g = Galaxy::generate(GalaxyConfig::new(3, 7)).unwrap();
         for &hw in &g.homeworlds {
-            assert_eq!(g.pop_level(hw), 2, "homeworld should start at level 2");
+            assert_eq!(g.pop_level(hw), BandTier::II, "homeworld should start at Band II");
         }
     }
 
     #[test]
     fn pop_bands_span_zero_to_four() {
         let b = PopBands::default();
-        assert_eq!(b.level(Band::ZERO), 0);
-        assert_eq!(b.level(Band::new(4.0)), 4);
+        assert_eq!(b.level(Band::ZERO), BandTier::Empty);
+        assert_eq!(b.level(Band::new(4.0)), BandTier::IV);
         // monotone non-decreasing
-        let (mut prev, mut x) = (0u8, 0.0);
+        let (mut prev, mut x) = (BandTier::Empty, 0.0);
         while x <= 5.0 {
             let l = b.level(Band::new(x));
             assert!(l >= prev);
