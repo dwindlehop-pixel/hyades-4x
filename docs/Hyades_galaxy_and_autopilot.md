@@ -94,7 +94,7 @@ A homeworld rich in two colors is **cheap in those four trees, expensive in the 
 
 ### 5.1 Theater vs. command
 Theater grows pop/infra logistically toward K (sim §2). Command reports a
-discrete **Band** — `Band 0` through **Band IV** — for which
+discrete **Band** — `Band Empty` through **Band IV** — for which
 **Weibull-quantile band** the value has crossed; the Weibull shape (`k` near
 log-normal) makes bands **Gibrat-spaced** — each Band a fixed
 *multiplicative* jump over the last. **Pop `Band I` ≈ small town; pop

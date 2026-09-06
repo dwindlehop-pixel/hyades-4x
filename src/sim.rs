@@ -536,7 +536,7 @@ impl HullType {
     /// `F ∈ [4, 8]` to govern every Band-laddered quantity and names *cargo
     /// capacity* in the list; this steps Medium → General by **106.35x** at the
     /// shipped defaults (`examples/cargo_units`). Under the Band reading of
-    /// roles §6's 0 / 1 / 2 — Limited at Band 0, Medium at Band I, General at
+    /// roles §6's 0 / 1 / 2 — Limited at Band Empty, Medium at Band I, General at
     /// Band II — the holds would be 0.25 / 1.0 / 4.0 kt, steps of exactly
     /// `BAND_STEP`. Two ratified specs disagree by an order of magnitude and
     /// the resolution is a design call, so nothing is changed here; see T-53.

@@ -609,13 +609,84 @@ with the reasoning in §2.6. Two of those four are globally MC-tuned and none of
 them moves before ratification.
 
 
+#### Stage 1d — R-MC15 **ratified**, and what it superseded
+
+Ratified this conversation, and it changes three things Stage 1c had guessed at.
+
+- **There is no `Band 0`. The bottom rung is `Band Empty`, and `Band Empty > 0`.**
+  Renamed throughout `docs/` and in the `BandTier` rustdoc. The rung is a
+  positive magnitude beneath `Band I`, not an absence — a quantity that is
+  genuinely zero is *off* the ladder, not at its bottom.
+- **The `[4, 8]` window on step factors is superseded and removed**, and with it
+  the "`F₃` is unconstrained" release valve. The constraint is now on how the
+  factors *grow*: `1 < F₍ₙ₊₁₎/Fₙ < 10`, on both ladders.
+- **`F_mass = F_cost^(3/2)` is ratified as an identity**, so the two ladders are
+  one geometry. The mass ladder's growth rule is the binding one, since a cost
+  step-ratio of `x` is a mass step-ratio of `x^1.5` — cost ratios must stay under
+  `10^(2/3) = 4.64`.
+
+**Stage 1c's `limited_fleet_size` argument is withdrawn.** It pinned the value
+by requiring the Limited and Medium hulls to share a shell thickness. That
+requirement is explicitly *not* wanted — thickness should rise
+`Limited < Medium < General` across the arc — so the convergence at 32.31 was
+an artefact of a constraint that does not exist. `limited_fleet_size` is now
+fixed by the ladder instead: it is the `Empty → I` cost step times
+`medium_fleet_size`.
+
+**The ratified default progression** (uniform step-ratio 2, subject to
+Monte-Carlo verification that it creates no colony-years bottleneck):
+
+| step | `F_cost` | `F_mass` | rung | cost | hold (kt) | population |
+|---|---|---|---|---|---|---|
+| — | — | — | `Empty` | 0.02 | 0.086 | 286 |
+| `Empty → I` | 5 | 11.18 | `I` | 0.10 | 0.96 | 3,200 |
+| `I → II` | 10 | 31.62 | `II` | 1.00 | 30.4 | 101,200 |
+| `II → III` | 20 | 89.44 | `III` | 20.0 | 2,715 | 9.05 M |
+| `III → IV` | 40 | 252.98 | `IV` | 800 | 686,900 | **2.29 B** |
+
+⇒ `medium_fleet_size = 10`, `limited_fleet_size = 50`, `cargo_unit_size = 0.96`,
+and `units::BAND_STEP` becomes **piecewise** — the ratified progression has a
+different factor per rung, so `KT(b) = KT_I · BAND_STEP^(b−1)` can no longer be
+a single exponential.
+
+**The best result of the ratification is one nobody asked for.** With cost and
+hold both fixed by the rung, shell thickness stops being a dial and becomes an
+*output* — and it comes out **`Limited (0.0277) < Medium (0.0325) <
+General (0.0339)`**, which is exactly the ordering the design arc wanted. The
+mechanism is `η`: a bigger hull is rounder, gets more interior per unit of skin,
+and spends the surplus on a thicker skin.
+
+**And it runs out, which is where Supers come in.** Once the GSV is a literal
+sphere there is no more shape to spend: a `Band III` General would need
+`τ = 0.0342`, no thicker than the `Band II` hull. Holding a `Band III` hold at a
+`τ` that *did* keep rising costs 1.5× at `τ = 0.05` and **2.94× at `τ = 0.10`**.
+So a mid-game `Band III` General Systems Hull must be a Design requiring
+**Supers**, and a `Band IV` one a Design requiring **apex** — the tier reset on
+absolute thickness is what keeps the hull at its rung's price. This is now a
+geometric consequence rather than a balance decision, and it is the mechanical
+content of "Design level resets thickness."
+
+**Sleeper Service check, re-run.** Dry mass is the mineral cost (L6/R-O57), so a
+`Band III` General holds 2,715 kt against a Medium hull's dry mass of 0.10 —
+**27,150 Medium hulls**, or 135,800 Limited. Still "tens of thousands," and
+still not tuned to.
+
+**R-O71 / T-53 is resolved by this**, in an amended form: capacity keeps a
+ladder, but the *mass* ladder rather than the cost one, and the `3/2` tie is
+what makes that a single geometry rather than two unrelated scales.
+`the_cargo_ladder_is_geometric_not_banded` pins the old disagreement and needs
+replacing in Stage 3 by a test on the ratified tie.
+
+**Stage 2 is unblocked.**
+
+
 #### Staging (each stage independently revertible)
 
 1. **This entry** — analysis, units, candidates. Docs only. Landed in three
    commits: 1 (geometry + first ladder), 1b (`V_reserved`'s second term and the
    role axis), 1c (`V_reserved` per size *and* hull, the cost anchoring, the
-   thrust law, and the R-MC15 candidate). **Stage 2 does not start until
-   R-MC15 is ratified.**
+   thrust law, and the R-MC15 candidate), 1d (the R-MC15 ratification and what
+   it superseded). **R-MC15 is ratified, so stage 2 is unblocked.**
 2. **Typed hull geometry** — `Radius`, `Thickness`, `HoldFraction`, `Area`,
    `Volume` newtypes so a unit mismatch in hull design is a compile error, with
    η and φ as real per-class parameters. Behaviour-preserving: the shipped
@@ -894,7 +965,7 @@ That is a design call and it is upstream of any code. **Nothing in `units.rs`
 should move until it is made**, because the anchor and `F₃` are both determined
 by whichever branch is taken.
 
-**Settled — the ladder is named, and Band V is a ceiling.** `Band 0` is now
+**Settled — the ladder is named, and Band V is a ceiling.** `Band Empty` is now
 **`BandTier::Empty`**, named rather than numbered because it is the one rung
 that is a *condition* (no colony, no hold, an uncolonizable world) rather than a
 magnitude. **`BandTier::V` is the maximum for comparison and clamping and is not
@@ -1026,7 +1097,7 @@ defaults):
 | General | 1.000 | 101.96 kt | **106.35x** |
 
 Against §2.6's `[4, 8]` that is 13–26x outside the permitted range. Under the
-Band reading of roles §6's 0 / 1 / 2 — Limited at Band 0, Medium at Band I,
+Band reading of roles §6's 0 / 1 / 2 — Limited at Band Empty, Medium at Band I,
 General at Band II, which is the "Bands I–III worth of stuff" the design
 intends — the holds would be **0.25 / 1.0 / 4.0 kt**, steps of exactly
 `BAND_STEP`. Note the Medium hull lands at 0.959 kt, within 5% of `KT(Band I)`;
@@ -1779,7 +1850,7 @@ policy question, not an architecture one.
 ### T-46. Habitability's gravity/radiation Bands as population-health statistics — R-H7/R-H8
 
 `Hyades_habitability.md` §2.3–2.4 decides gravity and radiation should each
-reduce to a **Band 0–IV** population-health statistic (LD50-like — a
+reduce to a **Band Empty–IV** population-health statistic (LD50-like — a
 mortality/fertility/cardiovascular threshold crossed at each Band edge)
 rather than a raw g-value or dosage number the player reasons about
 directly. The reframing is decided; what it needs is a design pass: (1)

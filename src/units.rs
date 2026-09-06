@@ -106,20 +106,24 @@ pub const BAND_FLOOR: f64 = 0.0;
 ///
 /// ## The rungs
 ///
-/// - [`Empty`](Self::Empty) — below the first threshold: no colony, negligible
-///   population, an uncolonizable world, a hull with no hold.
-///   `Hyades_mineral_cost_curve.md` §2.6 calls this `Band 0`; it is named
-///   rather than numbered here because zero is the one rung that is a
-///   *condition* rather than a magnitude.
+/// - [`Empty`](Self::Empty) — **a positive magnitude beneath `Band I`'s
+///   threshold**, not zero and not an absence: a hamlet rather than a town, a
+///   Limited hull's token hold. Ratified this way explicitly — there is no
+///   `Band 0`, and `Band Empty > 0`. It is named rather than numbered so it
+///   cannot be read as the integer zero, which is the one value that is *off*
+///   the ladder rather than on its bottom rung.
 /// - [`I`](Self::I) — the first crossed threshold, and **each quantity's own
 ///   reference scale**: a small town, the cost of one General-class hull, a
 ///   Medium hull's reference hold. §2.6 is explicit that these are anchored
 ///   *independently* and only the *ratios* are shared.
-/// - [`II`](Self::II), [`III`](Self::III) — separated by `F₁`, `F₂`, each a
-///   rational in `[4, 8]`.
-/// - [`IV`](Self::IV) — the top of the playable ladder. `F₃` (III→IV) is
-///   deliberately **unconstrained** (§2.6): it is the last step before a
-///   quantity's ceiling and is reserved as a tuning knob.
+/// - [`II`](Self::II), [`III`](Self::III), [`IV`](Self::IV) — separated by
+///   step factors `F₁`, `F₂`, `F₃`. The old `[4, 8]` window on those factors
+///   is **superseded and removed** (R-MC15, ratified). The constraint is now
+///   on how the factors *grow*: `1 < F₍ₙ₊₁₎/Fₙ < 10`, so each step is strictly
+///   larger than the last and by less than a decade. There are two ladders —
+///   **mass** (population, biosphere, cargo) and **mineral cost** — tied by
+///   `F_mass = F_cost^(3/2)`, which is the shell model's own exponent.
+/// - [`IV`](Self::IV) is the top of the playable ladder.
 /// - [`V`](Self::V) — **the maximum, for comparison and clamping only. It is
 ///   not reachable in play**, and `no_quantity_reaches_band_v` pins that. Its
 ///   job is to give bounds checks a top end that is a rung rather than a
