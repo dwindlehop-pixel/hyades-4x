@@ -833,11 +833,19 @@ changes how you *work*, not what is left to do:
   runs per hour, so speed lost to entity count is balance coverage not bought.
 
 - **Coverage is measured inside a fixed 4,000-year run — do not extend the horizon**
-  (T-20). **3,459.8 colonies, mean over the 4-seed CRN bed**, as of R-O69
-  decoupling the production decision from the economy tick (3,294.0 before it;
-  3,472.5 before R-O66). 4,000 is the run length; the coverage reached within
-  it is the objective. Doubling the horizon doubles every trial, and §2's
+  (T-20). **3,481.0 colonies, mean over the 4-seed CRN bed**, as of T-56 stage
+  3b adopting the ratified hull cost ladder (3,459.8 before it, at R-O69's
+  decoupling of the production decision from the economy tick; 3,294.0 before
+  that; 3,472.5 before R-O66). 4,000 is the run length; the coverage reached
+  within it is the objective. Doubling the horizon doubles every trial, and §2's
   60-second rule already had to absorb the snowball once.
+
+  **Colony count is nearly saturated, so read colony-years instead.** The bed
+  takes ~99% of what `k_high` admits, which leaves count almost no room to move:
+  the ladder change is +0.6% on colonies and **+8.6% on colony-years**
+  (8,011,139 → 8,697,322), with the doubling time 284.5 → 265.0 yr. On a
+  saturated bed the informative metrics are *when* the worlds were taken, not
+  how many.
 
   **The bed saturates again, and this time honestly.** 99.4% of everything
   `k_high` admits (98.4 · 99.9 · 100.0 · 99.2 — seed 42 takes every single

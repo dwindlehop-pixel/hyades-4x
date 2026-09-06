@@ -982,21 +982,46 @@ pub struct SimConfig {
     /// units).
     pub general_vehicle_cost: f64,
     /// How many Medium Systems Vehicles one `general_vehicle_cost` buys —
-    /// "a medium fleet... starting guess: 3" (§6) — **superseded, see below.**
+    /// "a medium fleet... starting guess: 3" (§6) — **superseded twice.**
     ///
-    /// **MC-ratified at 4.45** by a verified gradient step (`gradient_probe`
-    /// then `gradient_step`): elasticity +32.7 ± 3.6 points per ln, moved α = 0.5 along
-    /// the normalised gradient and confirmed on the same CRN seeds. The step as
-    /// a whole bought **+10.99 ± 1.86 points** of coverage, 38.26% → 49.25%.
-    /// Not a solo optimum — one component of a joint move, and it should be
-    /// re-derived jointly if any of the other three changes.
+    /// **Ratified at 10 as the `Band I → II` step of the cost ladder**
+    /// (`Hyades_mineral_cost_curve.md` §2.6, R-MC15), replacing the MC-tuned
+    /// 4.45. The ladder is now `1 : 10 : 50`, and it is no longer a free
+    /// parameter: it *is* a Band step, so it is bound by the ratified growth
+    /// rule `1 < F₍ₙ₊₁₎/Fₙ < 10` and by `F_mass = F_cost^(3/2)`.
     ///
-    /// This also discharges design law #6 for one leg of the ladder: 1 : 3 : 9
-    /// was explicitly scaffolding to be replaced rather than a target, and it
-    /// has now been replaced by measurement. The ladder is 1 : 4.45 : 9.
+    /// **Measured before adopting** (`examples/hull_ladder`, the standard
+    /// four-seed CRN bed, 4,000 yr), because T-56's acceptance test is that
+    /// making General hulls *relatively more expensive* must not slow
+    /// colonisation down:
+    ///
+    /// | | colony-years | vs shipped | doubling |
+    /// |---|---|---|---|
+    /// | shipped (4.45 / 9.0) | 8,011,139 | — | 284.5 yr |
+    /// | ratified (10 / 50) | 8,697,322 | **+8.6%** | **265.0 yr** |
+    ///
+    /// Every seed improved (+8.0, +2.9, +13.9, +10.0) and the doubling time
+    /// fell by 19.5 years. **The gain is the price, not the hold** — and that
+    /// needed an ablation, because `hull_radius` is `sqrt(cost ratio)`, so this
+    /// field also moves the Medium hold 0.96 → 24.07 kt. Re-run with
+    /// `cargo_unit_size` rescaled to hold the Medium hull's capacity at its
+    /// shipped 0.959 kt, the ladder still gives **+7.6%** and 269.3 yr. So
+    /// roughly seven of the eight points are the cost change.
+    ///
+    /// The old MC ratification is superseded, not overturned: its +32.7 ± 3.6
+    /// elasticity was measured on the *coverage* objective at a lower operating
+    /// point, and it pointed the same way this ladder went.
+    ///
+    /// This discharges design law #6 for the ladder: 1 : 3 : 9 was scaffolding
+    /// to be replaced rather than a target, and it has been.
     pub medium_fleet_size: f64,
     /// How many Limited Systems Vehicles one `general_vehicle_cost` buys —
-    /// "a large fleet... starting guess: 9" (§6). MC-tunable.
+    /// "a large fleet... starting guess: 9" (§6).
+    ///
+    /// **Ratified at 50** — `5 × medium_fleet_size`, the `Empty → I` step of
+    /// the cost ladder (§2.6, R-MC15). Not independently tunable any more: with
+    /// `medium_fleet_size` it forms the two lowest rungs of a Band ladder, and
+    /// their ratio is what the growth rule constrains.
     pub limited_fleet_size: f64,
     /// Minerals a homeworld starts with, to seed the first infra deepening.
     /// **Homeworld only** — confirmed this conversation: colonies get no
@@ -1071,19 +1096,31 @@ pub struct SimConfig {
     ///
     /// ~~What a Medium hull carries~~ — **it is the hold of a hull at the
     /// reference radius √3, which the Medium hull only has when
-    /// `medium_fleet_size == 3`.** At the ratified `4.45` the Medium radius is
-    /// 1.422, and a Medium hull actually carries **0.959 kt against this
-    /// field's 5.0** — a factor of 5.2. The normaliser is a constant on
-    /// purpose (see [`REFERENCE_MEDIUM_RADIUS`]); it is this doc line that was
-    /// stale.
+    /// `medium_fleet_size == 3`.** The normaliser is a constant on purpose (see
+    /// [`REFERENCE_MEDIUM_RADIUS`]); it is this doc line that was stale.
     ///
-    /// **That matters for the table below, which is why it is corrected here.**
-    /// Its x-axis is this field, not the hold any hull actually has, and since
+    /// **Ratified at 1.0 — `KT(I)`, one kiloton** (§2.6, R-MC15), where the
+    /// spec puts `Band I` for every quantity on the mass ladder. At the
+    /// ratified cost ladder the Medium radius is `√5` and a Medium hull carries
+    /// **4.81 kt**, so this field and the hull's real hold still differ by the
+    /// normaliser; making them the same number needs the per-`(role, size)`
+    /// thickness and `η` of §2.3 (T-56 stage 3c).
+    ///
+    /// **Adopting it was free, and provably so.** On top of the ratified cost
+    /// ladder, moving this 5.0 → 1.0 cuts every hold five-fold — Medium
+    /// 24.07 → 4.81 kt, General 2,852 → 570 kt — and reproduces the four-seed
+    /// bed **bit-identically** (`examples/hull_ladder`). Both values sit above
+    /// the binding threshold the table below already records.
+    ///
+    /// **That matters for the table, which is why it is corrected here.** Its
+    /// x-axis is this field, not the hold any hull actually has, and since
     /// R-O58 the cost ladder *is* the capacity ladder — so `medium_fleet_size`
-    /// silently rescales what every row means. Read "the hold stops binding
-    /// past roughly 1–5" as *past roughly 0.19–0.96 kt of real Medium hold*.
-    /// CLAUDE.md §2: a parameter that reaches the objective through a derived
-    /// quantity cannot be swept alone.
+    /// silently rescales what every row means. The table was taken at
+    /// `medium_fleet_size = 4.45`, where "past roughly 1–5" meant *past roughly
+    /// 0.19–0.96 kt of real Medium hold*. At the ratified ladder this field's
+    /// 1.0 is a 4.81 kt hold, already clear of it. CLAUDE.md §2: a parameter
+    /// that reaches the objective through a derived quantity cannot be swept
+    /// alone.
     ///
     /// **This is a floor requirement, not a tuning dial** — measured, not
     /// assumed (`examples/binding_check.rs`, 4 seeds, 4,000 yr):
@@ -1236,8 +1273,8 @@ impl SimConfig {
             medium_min_level: BandTier::III,
             limited_min_level: BandTier::II,
             general_vehicle_cost: 1.0,
-            medium_fleet_size: 4.45,
-            limited_fleet_size: 9.0,
+            medium_fleet_size: 10.0,
+            limited_fleet_size: 50.0,
             homeworld_start_minerals: 3.0,
             enforce_roster: false,
             recycle_mining_pairs: RECYCLE_MINING_PAIRS_DEFAULT,
@@ -1246,7 +1283,7 @@ impl SimConfig {
             outpost_mining_fraction: 0.238,
             mining_tick_years: 50.0,
             density_floor: 0.01,
-            cargo_unit_size: 5.0,
+            cargo_unit_size: 1.0,
             trade_decay_lambda: 0.01,
             years_to_first_round: 200.0,
             years_per_round: 400.0,
@@ -3191,10 +3228,20 @@ mod tests {
         // absurdity and got a guard (`r_M < 1.25`). It was an artifact of the
         // normaliser. Against a fixed reference nothing diverges and narrow
         // ladders are perfectly meaningful, so the guard is gone.
+        //
+        // **Pins both legs of the ladder**, rather than varying one against
+        // whatever the other currently defaults to. This test asserts a
+        // *structural* property of the shell model, so inheriting a ratified
+        // value makes it a test of that value instead — which is exactly what
+        // happened when T-56 stage 3b moved `limited_fleet_size` 9 → 50 and
+        // three tests failed for reasons that had nothing to do with what they
+        // were checking.
         let mut cfg = SimConfig::new(1);
+        cfg.limited_fleet_size = 9.0;
 
         cfg.medium_fleet_size = 3.0;
-        assert!(cfg.hull_ladder_fault().is_none(), "the shipped ladder must be valid");
+        assert!(cfg.hull_ladder_fault().is_none(), "the reference 1:3:9 ladder must be valid");
+        let g_wide = HullType::GeneralSystems.cargo_capacity(&cfg);
 
         // **Narrow is legal.** The Medium hull is nearly all shell and hauls
         // almost nothing; the General hull is entirely unaffected by that,
@@ -3204,7 +3251,12 @@ mod tests {
         let m = HullType::MediumSystems.cargo_capacity(&cfg);
         let g = HullType::GeneralSystems.cargo_capacity(&cfg);
         assert!(m > Kilotons::ZERO && m < Kilotons::new(0.01), "Medium is nearly all shell: {m}");
-        assert!(g > Kilotons::new(100.0), "General is untouched by the Medium hull shrinking: {g}");
+        // Stated as an invariance rather than a magnitude: the General hull's
+        // hold depends on `limited_fleet_size` alone, so narrowing the ladder
+        // by moving `medium_fleet_size` must leave it *exactly* where it was.
+        // An absolute threshold here would only be a test of `cargo_unit_size`,
+        // which is what it silently became before stage 3b moved that value.
+        assert_eq!(g, g_wide, "General is untouched by the Medium hull shrinking");
 
         // **Inverted is not.** A "Medium" hull cheaper — and therefore smaller
         // — than a "Limited" one is a contradiction in the naming, not a
@@ -3220,6 +3272,9 @@ mod tests {
     fn constructing_a_sim_on_a_degenerate_ladder_panics() {
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut cfg = test_cfg(1);
+        // Both legs pinned: the fault is `medium ≥ limited`, and stating only
+        // one side makes the test depend on the other's ratified value.
+        cfg.limited_fleet_size = 9.0;
         cfg.medium_fleet_size = 12.0;
         let _ = Simulation::with_baseline(galaxy, cfg);
     }
@@ -3556,6 +3611,7 @@ mod tests {
         // (`hull_type_cost_derives_from_the_fleet_size_config` covers that).
         let mut cfg = SimConfig::new(1);
         cfg.medium_fleet_size = 3.0;
+        cfg.limited_fleet_size = 9.0;
         let (l, m, g) = (HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems);
 
         // r = sqrt(cost ratio to Limited): 1 : √3 : 3 at the shipped 1:3:9.
@@ -3625,16 +3681,19 @@ mod tests {
             "the Band ladder steps by its ratified I→II factor by construction"
         );
 
-        // And the concrete inconsistency the mismatch already produces: a
-        // Colonizer carries `colony_seed_pop` of settlers, whose mass exceeds
-        // the hold of the Medium hull that R-V9 says is the smallest that can
-        // carry them. Nothing checks it, because capacity gates mineral loading
-        // only.
+        // **R-V9 is now satisfied by geometry rather than contradicted by it.**
+        // A Colonizer carries `colony_seed_pop` of settlers, and until T-56
+        // stage 3b that mass (1.0 kt) *exceeded* the hold of the Medium hull
+        // that R-V9 names as the smallest able to carry them (0.959 kt) — an
+        // inconsistency nothing caught, because capacity gates mineral loading
+        // only. At the ratified ladder the Medium hold is 4.81 kt and the seed
+        // fits with room to spare, so the rule and the geometry finally agree.
         let seed_mass = units::population_mass(cfg.colony_seed_pop.band()).kilotons();
         assert!(
-            seed_mass > m,
-            "if the colony seed ({seed_mass:.3} kt) now fits a Medium hold ({m:.3} kt), the ladders have \
-             moved and R-O71 wants re-measuring"
+            seed_mass < m,
+            "the colony seed ({seed_mass:.3} kt) must fit a Medium hold ({m:.3} kt) — R-V9 says a Medium \
+             hull is the smallest that can found a colony, and a hold too small to carry the seed makes \
+             that rule unsatisfiable"
         );
     }
 

@@ -803,6 +803,71 @@ continuity to 1e-6 at every rung from both sides and monotonicity across
 `[-0.5, 5.0]`, including the extrapolated ends.
 
 
+#### Stage 3b — the cost ladder adopted, and the acceptance test answered
+
+**`medium_fleet_size` 4.45 → 10, `limited_fleet_size` 9.0 → 50,
+`cargo_unit_size` 5.0 → 1.0.** Measured on the standard four-seed CRN bed at
+4,000 yr with `examples/hull_ladder`, whose baseline leg reproduces the
+recorded bed exactly (3,459.8 colonies) before anything is attributed to a
+change.
+
+| leg | Medium hold | colony-years | vs shipped | doubling |
+|---|---|---|---|---|
+| shipped (4.45 / 9.0 / 5.0) | 0.96 kt | 8,011,139 | — | 284.5 yr |
+| cost ladder (10 / 50) | 24.07 kt | 8,697,322 | **+8.6%** | 265.0 yr |
+| `cargo_unit_size` → 1.0 alone | 0.19 kt | 6,396,459 | −20.2% | 358.3 yr |
+| **both — ratified** | 4.81 kt | 8,697,322 | **+8.6%** | **265.0 yr** |
+| cost ladder, hold pinned at 0.96 kt | 0.96 kt | 8,622,168 | **+7.6%** | 269.3 yr |
+
+**The acceptance test passes.** T-56 asks that making General hulls relatively
+more expensive must not degrade the colony doubling rate or total colony-years.
+Going from `1 : 4.45 : 9` to `1 : 10 : 50` raises the General hull's price from
+4.45 Medium hulls to 10, and colony-years rise 8.6% with every seed up
+(+8.0, +2.9, +13.9, +10.0) while the doubling time falls 19.5 years.
+
+**And the attribution needed an ablation, which refuted the obvious reading.**
+`hull_radius` is `sqrt(cost ratio)`, so `medium_fleet_size` is not a price knob
+— moving it 4.45 → 10 takes the Medium hold 0.96 → 24.07 kt, 25× bigger, in the
+same stroke. The expectation was therefore that the +8.6% was the hold and would
+vanish once capacity was held fixed. It did not: with `cargo_unit_size` rescaled
+to 0.199 so the Medium hull carries exactly what it carried before, the ladder
+still returns **+7.6% and 269.3 yr**. Roughly seven of the eight points are the
+price. The prediction was wrong and the run is what said so.
+
+**Row 4 is bit-identical to row 2**, across four seeds and every digit, despite
+a five-fold cut in every hold. That is not new — `SimConfig::cargo_unit_size`'s
+own doc already records `binding_check`'s finding that 5, 25 and 100 are
+bit-identical because `load = cap.min(avail)` (`sys_freighter_arrive`) and an
+outpost never accumulates a full hold between visits. What row 4 adds is that
+the threshold is still below the ratified operating point, so adopting
+`cargo_unit_size = 1.0` costs nothing. Row 3 is the other side of the same
+curve: at 0.19 kt the hold binds hard and the economy loses a fifth of its
+colony-years.
+
+**Three tests were silently depending on the old defaults**, and all three
+failed for reasons unrelated to what they check —
+`shell_model_ladders_are_derived_not_tuned`,
+`only_an_inverted_hull_ladder_is_refused` and
+`constructing_a_sim_on_a_degenerate_ladder_panics` each set one leg of the
+ladder and inherited the other. They now pin both, and the "General is
+untouched" assertion is stated as an *invariance* (same hull, before and after
+narrowing) rather than an absolute kiloton threshold, which had quietly become
+a test of `cargo_unit_size`.
+
+**One rule stopped being contradicted.** `the_cargo_ladder_is_geometric_not_banded`
+asserted that the colony seed does *not* fit a Medium hold — 1.0 kt of settlers
+against 0.959 kt of hull — which made R-V9 ("a Colonizer must be Medium or
+larger") unsatisfiable in the engine, unnoticed because capacity gates mineral
+loading only. At the ratified ladder the Medium hold is 4.81 kt and the seed
+fits. The assertion is inverted and R-V9 is now a consequence of the geometry.
+
+**Still outstanding for stage 3c:** the spec's `cargo_unit_size = 1.0` is not
+yet the Medium hull's hold in the engine, because capacity is normalised against
+the fixed reference radius `√3`. Making the spec's number the engine's number
+needs §2.3's per-`(role, size)` thickness and `η` — which is also what separates
+cost from capacity so they stop being the same knob.
+
+
 #### Staging (each stage independently revertible)
 
 1. **This entry** — analysis, units, candidates. Docs only. Landed in three
