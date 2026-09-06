@@ -677,23 +677,18 @@ mod tests {
         // Each rung is its ladder factor times the last, and the factors are
         // the ratified ones — not one shared step, which is what R-MC15
         // withdrew.
-        for n in 0..4 {
+        for (n, &step) in MASS_LADDER.iter().enumerate() {
             let lo = Band::new(n as f64).in_kilotons().kilotons();
             let hi = Band::new(n as f64 + 1.0).in_kilotons().kilotons();
             let got = hi / lo;
-            assert!(
-                (got - MASS_LADDER[n]).abs() < 1e-9,
-                "rung {n}→{} must step by {}, got {got}",
-                n + 1,
-                MASS_LADDER[n]
-            );
+            assert!((got - step).abs() < 1e-9, "rung {n}→{} must step by {step}, got {got}", n + 1);
         }
 
         // The ratified constraint is on how the factors *grow*: strictly
         // increasing, and by less than a decade each time.
-        for n in 0..3 {
-            let ratio = MASS_LADDER[n + 1] / MASS_LADDER[n];
-            assert!(ratio > 1.0 && ratio < 10.0, "F{}/F{n} = {ratio}, outside (1, 10)", n + 1);
+        for pair in MASS_LADDER.windows(2) {
+            let ratio = pair[1] / pair[0];
+            assert!(ratio > 1.0 && ratio < 10.0, "{} / {} = {ratio}, outside (1, 10)", pair[1], pair[0]);
         }
 
         // And the tie to the cost ladder is the shell model's exponent: cost
