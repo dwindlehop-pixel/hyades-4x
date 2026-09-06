@@ -383,6 +383,116 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-55. R-O73 — the three F ladders, the quantity survey, and what to ratify
+
+**Ratification candidates for `F_cost`, `F_cargo` and `F_pop`, worked before any
+simulation.** Nothing here is implemented.
+
+#### The closed form that decides it
+
+Shell model with the Limited hull at unit radius (`r_L = 1`, all shell, no
+hold):
+
+```
+cost ∝ r²          F₁_cost = r_M²        F₂_cost = (r_G/r_M)²
+capacity ∝ (r−1)³  F_cargo = ((r_G−1)/(r_M−1))³
+```
+
+Writing `c = F_cargo^(1/3)` so `r_G = 1 + (r_M−1)c`:
+
+```
+F₂_cost = (c + (1−c)/r_M)²   — increasing in r_M, supremum c²
+     ⇒   F₂_cost < F_cargo^(2/3),  always
+```
+
+**So §2.6's own floor `F_cost ≥ 4` forces `F_cargo > 4^1.5 = 8`.** The spec's
+cost constraint rules out a cargo ladder inside `[4, 8]` — an internal
+contradiction that has nothing to do with the population fiction, and an
+independent argument for widening the bands.
+
+#### The admissible window is narrow, and it is a *result*, not a choice
+
+Requiring **both** cost steps in `[4, 8]`:
+
+| `F_cargo` | legal `r_M` | `F₁_cost` | `F₂_cost` | `medium_fleet_size` | `limited_fleet_size` |
+|---|---|---|---|---|---|
+| 9, 12, 16 | — | \multicolumn — **no legal cost ladder** | | | |
+| 27 | 2.000–2.828 | 4.00–8.00 | 4.00–5.26 | 5.26 | 42.04 |
+| 40 | 2.000–2.828 | 4.00–8.00 | 4.88–6.58 | 6.58 | 52.59 |
+| **64** | **2.000–2.561** | **4.00–6.56** | **6.25–8.00** | **7.27–8.00** | **38–52** |
+| 81 | 2.000–2.220 | 4.00–4.93 | 7.09–8.00 | 7.52–8.00 | 33–39 |
+| 100 | 2.000–2.008 | 4.00–4.03 | 7.96–8.00 | 7.96 | 31.83 |
+| 144, 216 | — | **no legal cost ladder** | | | |
+
+**`F_cargo` is pinned to roughly `[27, 100]`** by the cost constraint alone.
+Below it the cost ladder cannot reach `F₂ ≥ 4`; above it `F₂` overshoots 8.
+`F = 64` has the most comfortable interior window; `F = 100` is a razor's edge
+at `r_M = 2`.
+
+#### Band equivalence, in the form that survives distinct ladders
+
+Set **`F_pop = F_cargo`**. Then a hold at cargo-Band `N` carries a population at
+pop-Band `N` — the equivalence that actually matters, because it is the colony
+ship. It also reproduces roles §6's `0 / 1 / 2` exactly as Bands: Limited is
+cargo-`Empty` (all shell), Medium is cargo-`I` (§2.6 already calls the Medium
+hold cargo's own Band I), General is cargo-`II`.
+
+`F_cost` stays a **distinct** ladder — it must, per R-O71's proof — but it is
+*derived* from the same geometry rather than chosen, so the three ladders are
+one system with one free parameter. What is shared is **ordinal**: Band `N` is
+the same tier everywhere, which is what the cross-quantity gates (synthesis at
+pop Band IV, `medium_min_level`, roster unlocks) actually read.
+
+#### Option sets
+
+| # | `F` | town @300 kg/p | Band IV pop | `KT(I)` | hold | colonizer `base_g` | `r_M` | `med_fleet` | `lim_fleet` |
+|---|---|---|---|---|---|---|---|---|---|
+| **1** | 100 | 3,200 | 3.2 B | 0.96 kt | **×1.00** | 1.59 g | 2.00 | 7.96 | 31.83 |
+| **2** | 81 | 5,000 | 2.66 B | 1.50 kt | ×1.56 | 2.25 g | 2.10 | 7.52 | 33.17 |
+| **3** | 64 | 10,000 | 2.62 B | 3.00 kt | ×3.13 | 4.18 g | 2.30 | 7.27 | 38.44 |
+
+All three satisfy "small town → many billions", keep both cost steps in
+`[4, 8]`, and hold Band equivalence. **Today's ladder (4.45 / 9.0) gives
+`F₁ = 2.02`, `F₂ = 4.45` — neither pair legal**, which is R-MC15 restated with a
+resolution now available.
+
+Note `base_g` rises in all three even where the hold does not: the new cost
+ladder makes the Medium hull *lighter* (`dry = 1/medium_fleet_size`, so 0.126 kt
+at `med_fleet = 7.96` against 0.225 today), so keeping laden acceleration at
+today's 0.183 g needs more thrust, not less.
+
+Design law #3 holds throughout — at `F = 100`, cost per kt hauled is 4.00
+(Medium) against 0.318 (General), so consolidation wins by 12.6x.
+
+#### The survey: every quantity, and the ladder it binds to
+
+| ladder | quantities |
+|---|---|
+| **Planetary (`F_pop`)** | `habitability`, `biosphere`/`bio_max`, `infrastructure`, `population`, `k`/`k_potential`, `PopBands` edges, `rank.k_high`, `rank.hub_high`, `colony_seed_pop`, `medium_min_level`, `limited_min_level`, habitability §3's gravity/radiation suitability |
+| **Cost (`F_cost`)** | `general_vehicle_cost` (its Band I anchor), `medium_fleet_size`, `limited_fleet_size`, `hull_dry_mass`, `homeworld_start_minerals`, **the infra upgrade price**, `scrap_recovery_fraction`'s base |
+| **Cargo (`F_cargo`)** | `cargo_unit_size` (its Band I anchor = the Medium hold), `HullType::cargo_capacity` |
+| **Mineral density** | `mineral_peak`, `density_floor`, `rank.mineral_high` — in-ground density, arguably the cost family's Band I before extraction; **unclassified, needs a call** |
+| **On no ladder** (rates, times, fractions, weights, counts) | `horizon_years`, `cycle_years`, `build_years`, `growth_rate`, `biosphere_regen_rate`, `biosphere_regen_bonus`, `trade_decay_lambda`, `productivity_step`, `reinvest_bias`, `w_k`/`w_mineral`/`w_hub`, `centrality_scale`, `mineral_pressure_gain`, `civilian_accel_g`, `survey_accel_g`, `center_mining_fraction`, `outpost_mining_fraction`, `mining_tick_years`, `survey_reserve`, `survey_vehicles`, `max_survey_hops` |
+
+#### What the survey turned up
+
+**The infrastructure upgrade price is linear where the ladder says
+multiplicative.** `apply_build_with` charges `round(infra) + 1` minerals — Band
+I→II costs 2, II→III costs 3, III→IV costs 4. Infrastructure is a *planetary*
+Band and its price is a *cost*-family quantity, so this is the one place the two
+ladders touch, and it currently bridges them with a straight line. Under any
+`F`, deepening one Band should cost `F` times the last one.
+
+**This sits exactly on T-51's critical path.** The expansion-loop time constant
+is the pre-`medium_min_level` staircase: mine `round(infra)+1`, deepen, grow,
+repeat. Making that price multiplicative changes the staircase's shape directly,
+and at `F ∈ [27, 100]` it makes the upper rungs enormously more expensive — 2 /
+3 / 4 minerals today against 1 / `F` / `F²` under the ladder. **This is very
+likely a larger effect on coverage than anything else in this entry, and it is
+not optional if the Band ladder is taken seriously.** Measure it alone, first,
+with `examples/colony_years`.
+
+
 ### T-54. R-O72 — the Band→kiloton bridge is wrong in two structural ways, and the scale is off by 10⁴–10⁵
 
 **No code changed. Calibration first, by instruction.** `units.rs`'s bridge was
