@@ -9,7 +9,10 @@
 //! `∫ colonies dt = Σ (horizon − t_found)`, which falls the moment anything
 //! slows down, plus the doubling rate read straight off the founding times.
 //!
-//! Run: `cargo run --release --example hull_ladder`
+//! Run: `cargo run --release --example hull_ladder` for every leg, or
+//! `... -- <substring>` to run only the legs whose name matches. The baseline
+//! leg always runs, because every delta is against it on the same seeds (common
+//! random numbers, `CLAUDE.md` §"How to search").
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
 use std::io::Write;
@@ -70,8 +73,16 @@ struct Run {
 }
 
 fn main() {
+    let filter = std::env::args().nth(1);
     let mut base: Vec<Run> = Vec::new();
     for leg in LEGS {
+        // The baseline is never skipped: the deltas are paired against it
+        // seed by seed, which is what cancels the enormous seed noise.
+        if let Some(f) = &filter {
+            if leg.name != "shipped" && !leg.name.contains(f.as_str()) {
+                continue;
+            }
+        }
         let mut sum_cy = 0.0;
         let mut sum_col = 0.0;
         let mut sum_dbl = 0.0;
