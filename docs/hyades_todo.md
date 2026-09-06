@@ -383,6 +383,89 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-54. R-O72 — the Band→kiloton bridge is wrong in two structural ways, and the scale is off by 10⁴–10⁵
+
+**No code changed. Calibration first, by instruction.** `units.rs`'s bridge was
+written from `Hyades_mineral_cost_curve.md` §2.6 and it contradicts that section
+twice. Both are structural, not tuning.
+
+**1. `Band III → IV` is unconstrained by design, and the bridge forces it to
+`BAND_STEP`.** §2.6 is explicit: *"`Band III → Band IV` is unconstrained, and
+does not need to be the same factor across quantities. This is a deliberate
+release valve... the last Band before a quantity's absolute ceiling
+(population's 'many billions') ... the natural place for a balance-tuning knob
+rather than a physically-derived constant."* The `[4, 8]` constraint binds `F₁`
+(I→II) and `F₂` (II→III) **only**. `KT(b) = KT_I · BAND_STEP^(b−1)` applies one
+factor to every step, so it silently ratifies `F₃ = 4`. **The bridge has to be
+piecewise.**
+
+**2. Every quantity anchors its own `Band I`; the bridge has one global
+anchor.** §2.6: *"Every quantity anchors its own `Band I` independently — what
+has to be shared across quantities is not the absolute value at `Band I`, it is
+the ratio between consecutive Bands."* It names three separate anchors — *a
+small town* (population), *the cost of one General-class hull* (mineral spend),
+*a Medium hull's reference cargo hold* (cargo). `KILOTONS_AT_BAND_I` is a single
+constant shared by all of them, which forces the three equal.
+
+**How far off the scale is.** `Hyades_galaxy_and_autopilot.md` §5.1: *"Pop `Band
+I` ≈ small town; pop `Band IV` ≈ many billions."* That is the calibration
+target, and it is not close:
+
+| reading | Band I → Band IV ratio required |
+|---|---|
+| small town 5,000 → 2 billion | 400,000x |
+| small town 5,000 → 10 billion | 2,000,000x |
+| large town 20,000 → 2 billion | 100,000x |
+| **what the code gives** | **64x** |
+
+So `F₃` must be **O(10³–10⁶)**: 6,250–1,250,000 if `F₁ = F₂ = 4`, or
+1,562–312,500 if `F₁ = F₂ = 8`. Against the 4 the code uses. **This is exactly
+the freedom §2.6 reserved `F₃` for, and the bridge spent it without noticing.**
+
+**The gigagram, checked against the descriptions.** 1 kiloton = 1,000 t = 10⁶ kg
+= 1 Gg. At `KT(Band I) = 1 kt`, a Band-I population implies:
+
+| "small town" | kg per person |
+|---|---|
+| hamlet, 500 | 2,000 |
+| small town, 5,000 | **200** |
+| large town, 20,000 | 50 |
+
+Reference points: a human body is ~70 kg; Apollo CSM+LM ran ~15 t per crew; the
+ISS is ~70 t per crew of six. **200 kg/person buys the people and roughly their
+clothes** — no habitat, no life support, no common areas, on a flight measured
+in decades.
+
+**And there is a three-way squeeze that pins it, which is the useful part.**
+
+1. Population `Band I` is a small town (galaxy §5.1).
+2. A Colonizer carries `colony_seed_pop` = Band I of settlers (R-V9), in a
+   **Medium** hull — the smallest that can (roles §4.2).
+3. The Medium hold is **0.959 kt** at the shipped ladder (T-53).
+
+(1) and (2) and (3) together force Band I ≲ 1 kt, hence the 200 kg/person. To
+get to a physically comfortable 10–100 t/person you need Band I at 50–500 kt for
+a 5,000-person town — **50–500x the hold of the hull that has to carry it.** One
+of the three has to give:
+
+- **the town shrinks** — "small town" becomes ~10–100 people, a landing party
+  rather than a town, and the flavour text in galaxy §5.1 changes;
+- **the hold grows** — which is the cost ladder, so it lands on T-53/R-O71 and
+  R-MC15 together;
+- **the seed stops being a whole Band** — `colony_seed_pop` becomes a fraction
+  of Band I, and R-V9's "1 pop as cargo" is reinterpreted.
+
+That is a design call and it is upstream of any code. **Nothing in `units.rs`
+should move until it is made**, because the anchor and `F₃` are both determined
+by whichever branch is taken.
+
+**Open sub-question: is there a Band V?** Every spec that names the ladder gives
+it as `Band 0, I, II, III, IV` — five tiers, top is IV (§2.6, galaxy §5.1,
+habitability §3). `PopBands` has four internal edges and `level()` returns 0–4.
+No Band V exists anywhere in `docs/` or the engine. Any enum has to settle
+whether the top tier is IV (matching every spec) or the ladder is being extended.
+
+
 ### T-52. R-O69 follow-ups — the hostile-interrupt trigger, and the decision path's O(galaxy) scan
 
 Two things the production decoupling (R-O69) left open, one blocked and one a
