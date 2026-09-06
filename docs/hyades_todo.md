@@ -680,6 +680,48 @@ replacing in Stage 3 by a test on the ratified tie.
 **Stage 2 is unblocked.**
 
 
+#### Stage 2 — hull geometry carries its units in the type
+
+**Landed. Behaviour-preserving, verified on colony-years:** seeds 1 and 7
+reproduce **7,819,401.0** and **8,480,172.0** bit-for-bit, the same figures
+R-O70 was held to.
+
+`src/units.rs` gains `Length`, `Area` and `Volume` alongside `Band` and
+`Kilotons`, with only the dimensionally sound operations defined —
+`Length::cubed() → Volume`, `Area × Length → Volume`, `Volume ÷ Volume → f64`
+(the one sanctioned exit, and the way a hold becomes a load), and no path at
+all from a `Volume` to a `Kilotons` without a density. Two `compile_fail`
+doctests pin that a length is not a volume and a hold is not a cargo.
+
+`src/sim.rs` grows the three quantities the shell model always had and never
+named:
+
+| new | what it is | today |
+|---|---|---|
+| `HullType::shell_thickness` | **`τ`** — the model's one free geometric input | `1.0` for every hull, which is exactly what `cargo_capacity`'s `(r − 1)` meant |
+| `HullType::hold_radius` | `r − τ`, floored at zero | unchanged arithmetic |
+| `HullType::hold_volume` | `(r − τ)³` — the quantity that sits on a Band rung | unchanged arithmetic |
+| `HullType::shell_volume` | `r³ − (r − τ)³` — the material bought, i.e. cost and dry mass | **not yet on the cost path**; `cost_fraction` is still the fleet-size ratio, and reconciling the two is stage 3 |
+
+`hull_radius` now returns `Length` and `hull_dry_mass` returns `Kilotons`.
+`hull_geometry_is_dimensioned_and_the_shell_closes` pins the identities:
+shell + hold = the whole hull, the Limited hull is all shell *because* `r = τ`
+rather than because a literal cancelled, and the capacity ratio between two
+hulls is their hold-volume ratio — which fails the moment a second conversion
+creeps in.
+
+**One deliberate tripwire.** The test asserts `shell_thickness == 1.0` for
+every hull. §2.3 ratifies `Limited < Medium < General`, so that assertion is
+what stage 3 must knowingly change; it is there so the thickness ladder cannot
+arrive as a silent side effect of some other edit.
+
+**One float-order note, because it nearly went wrong.** `cargo_capacity` keeps
+its expression shape — `k · v / v_ref`, left to right — rather than the more
+natural `k · (v / v_ref)`. Multiplication is not associative in floating point
+and the two differ in the last bits, which is a determinism break and a changed
+golden. The comment says so at the site.
+
+
 #### Staging (each stage independently revertible)
 
 1. **This entry** — analysis, units, candidates. Docs only. Landed in three
@@ -687,10 +729,11 @@ replacing in Stage 3 by a test on the ratified tie.
    role axis), 1c (`V_reserved` per size *and* hull, the cost anchoring, the
    thrust law, and the R-MC15 candidate), 1d (the R-MC15 ratification and what
    it superseded). **R-MC15 is ratified, so stage 2 is unblocked.**
-2. **Typed hull geometry** — `Radius`, `Thickness`, `HoldFraction`, `Area`,
-   `Volume` newtypes so a unit mismatch in hull design is a compile error, with
-   η and φ as real per-class parameters. Behaviour-preserving: the shipped
-   numbers are reproduced through the new types before any value moves.
+2. **Typed hull geometry — done.** `Length`, `Area` and `Volume` newtypes so a
+   unit mismatch in hull design is a compile error, and `shell_thickness` /
+   `hold_radius` / `hold_volume` / `shell_volume` as named quantities.
+   Behaviour-preserving, verified on colony-years. `η` is still not in the
+   engine; it arrives with the values in stage 3.
 3. **Adopt the ratified ladder** — `cost_fraction`, per-class φ and η,
    `cargo_unit_size`, `F`. Behaviour *changes*; measure on colony-years.
 4. **Doctrine: build and deploy heavier hulls when useful** — role→hull becomes

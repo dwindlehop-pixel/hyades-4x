@@ -63,7 +63,7 @@
 //! presented as settled.
 
 use core::fmt;
-use core::ops::{Add, AddAssign, Mul, Sub, SubAssign};
+use core::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 /// Mass of population at **Band I**, in kilotons — the anchor the whole ladder
 /// hangs from. One unit, in the §2.6 sense: an abstract quantity standing for
@@ -213,6 +213,175 @@ pub struct Band(f64);
 /// An amount of stuff, in kilotons. The unit conservation is stated in (L6).
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Kilotons(f64);
+
+/// A length, in **hull units** — the shell model's linear measure
+/// (`Hyades_mineral_cost_curve.md` §2.3).
+///
+/// The convention is normalized radius, `V = r³`: hull units are chosen so that
+/// a hull's displaced volume is the cube of its radius, which is what the
+/// engine's `hull_radius`/`cargo_capacity` pair has always assumed without
+/// saying so. Shell thickness `τ` is a [`Length`] in the same unit, which is
+/// the point of the type — the model's whole content is that `r` and `τ` are
+/// commensurable and `r − τ` is the hold radius.
+///
+/// Typed for the same reason [`Band`] and [`Kilotons`] are: R-O66 shipped a
+/// `min` across incompatible units that typechecked and read as plausible
+/// ecology. Hull geometry has the same shape of hazard — a radius, a thickness,
+/// an area and a volume are all `f64` and only one of the twelve ways to
+/// combine them is right. None of the wrong ones compile now:
+///
+/// ```compile_fail
+/// # use hyades_engine::units::{Length, Volume};
+/// // A length is not a volume, however plausible the arithmetic looks.
+/// let r = Length::new(3.0);
+/// let v: Volume = r - Length::new(1.0);
+/// ```
+///
+/// ```compile_fail
+/// # use hyades_engine::units::{Length, Kilotons};
+/// // A hold is a volume; a cargo is a mass. The conversion is a density, and
+/// // it is not an implicit one.
+/// let hold = Length::new(2.0).cubed();
+/// let m: Kilotons = hold;
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+pub struct Length(f64);
+
+/// An area, in hull units squared — the shell model's **cost basis**
+/// (design law #3: surface area is what is paid for).
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+pub struct Area(f64);
+
+/// A volume, in hull units cubed — the shell model's **value basis**, and the
+/// quantity that sits on a Band rung (§2.3: the rung is the *hold*, and
+/// `V_reserved` is deducted after it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
+pub struct Volume(f64);
+
+impl Length {
+    pub const ZERO: Length = Length(0.0);
+    #[inline]
+    pub const fn new(v: f64) -> Self {
+        Length(v)
+    }
+    /// The scalar, **in hull units**.
+    #[inline]
+    pub const fn hull_units(self) -> f64 {
+        self.0
+    }
+    #[inline]
+    pub const fn squared(self) -> Area {
+        Area(self.0 * self.0)
+    }
+    #[inline]
+    pub const fn cubed(self) -> Volume {
+        Volume(self.0 * self.0 * self.0)
+    }
+    #[inline]
+    pub fn min(self, o: Length) -> Length {
+        Length(self.0.min(o.0))
+    }
+    #[inline]
+    pub fn max(self, o: Length) -> Length {
+        Length(self.0.max(o.0))
+    }
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.0.is_finite()
+    }
+}
+
+impl Area {
+    pub const ZERO: Area = Area(0.0);
+    #[inline]
+    pub const fn new(v: f64) -> Self {
+        Area(v)
+    }
+    /// The scalar, **in hull units squared**.
+    #[inline]
+    pub const fn hull_units_squared(self) -> f64 {
+        self.0
+    }
+    #[inline]
+    pub fn sqrt(self) -> Length {
+        Length(self.0.sqrt())
+    }
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.0.is_finite()
+    }
+}
+
+impl Volume {
+    pub const ZERO: Volume = Volume(0.0);
+    #[inline]
+    pub const fn new(v: f64) -> Self {
+        Volume(v)
+    }
+    /// The scalar, **in hull units cubed**.
+    #[inline]
+    pub const fn hull_units_cubed(self) -> f64 {
+        self.0
+    }
+    #[inline]
+    pub fn cbrt(self) -> Length {
+        Length(self.0.cbrt())
+    }
+    #[inline]
+    pub fn max(self, o: Volume) -> Volume {
+        Volume(self.0.max(o.0))
+    }
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.0.is_finite()
+    }
+}
+
+impl Mul<Length> for Area {
+    type Output = Volume;
+    #[inline]
+    fn mul(self, l: Length) -> Volume {
+        Volume(self.0 * l.0)
+    }
+}
+impl Div<Area> for Volume {
+    type Output = Length;
+    #[inline]
+    fn div(self, a: Area) -> Length {
+        Length(self.0 / a.0)
+    }
+}
+impl Div<Length> for Volume {
+    type Output = Area;
+    #[inline]
+    fn div(self, l: Length) -> Area {
+        Area(self.0 / l.0)
+    }
+}
+/// A ratio of two volumes is a pure number — this is the only sanctioned way
+/// out of the geometric types, and it is how a hold becomes a load: the ratio
+/// against a reference hold, times the mass that reference hold carries.
+impl Div<Volume> for Volume {
+    type Output = f64;
+    #[inline]
+    fn div(self, o: Volume) -> f64 {
+        self.0 / o.0
+    }
+}
+impl Div<Area> for Area {
+    type Output = f64;
+    #[inline]
+    fn div(self, o: Area) -> f64 {
+        self.0 / o.0
+    }
+}
+impl Div<Length> for Length {
+    type Output = f64;
+    #[inline]
+    fn div(self, o: Length) -> f64 {
+        self.0 / o.0
+    }
+}
 
 /// A quantity that can be read in **either** unit.
 ///
@@ -390,12 +559,30 @@ macro_rules! arith {
 }
 arith!(Band);
 arith!(Kilotons);
+arith!(Length);
+arith!(Area);
+arith!(Volume);
 
 /// Printed with its unit, for the same reason it is typed: a bare number in a
 /// log line is the thing this module exists to stop.
 impl fmt::Display for Band {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Band {:.3}", self.0)
+    }
+}
+impl fmt::Display for Length {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.4} hu", self.0)
+    }
+}
+impl fmt::Display for Area {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.4} hu²", self.0)
+    }
+}
+impl fmt::Display for Volume {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.4} hu³", self.0)
     }
 }
 impl fmt::Display for Kilotons {

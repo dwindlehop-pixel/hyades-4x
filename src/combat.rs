@@ -158,7 +158,8 @@ impl Combatant {
     /// R-ARENA3, open: should a Systems Vehicle's cargo count against its
     /// combat mass here? Zero for now, the simpler assumption).
     pub fn max_accel(&self, cfg: &crate::sim::SimConfig) -> f64 {
-        hull_base_thrust(self.hull, cfg) * self.thrust_factor / hull_dry_mass(self.hull, cfg) * crate::math::G
+        hull_base_thrust(self.hull, cfg) * self.thrust_factor / hull_dry_mass(self.hull, cfg).kilotons()
+            * crate::math::G
     }
 
     /// Position at time `t`: fleet drift + station-keeping orbit + any

@@ -22,7 +22,7 @@ fn main() {
     println!("\n{:<9} {:>10} {:>10} {:>12}", "hull", "dry mass", "capacity", "cap/dry");
     let mut caps = Vec::new();
     for (name, h) in hulls {
-        let dry = hyades_engine::sim::hull_dry_mass(h, &cfg);
+        let dry = hyades_engine::sim::hull_dry_mass(h, &cfg).kilotons();
         let cap = h.cargo_capacity(&cfg).kilotons();
         caps.push((name, cap));
         println!("{name:<9} {dry:>10.4} {cap:>10.4} {:>12.2}", cap / dry);

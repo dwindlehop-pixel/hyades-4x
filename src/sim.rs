@@ -65,7 +65,7 @@ use crate::math::{self, Vec3, G};
 use crate::resources::{Archetype, Basic, MineralField, Minerals};
 use crate::rng::Rng;
 use crate::snapshot::{PlanetSnapshot, PlayerSnapshot, Snapshot, VehicleKind, VehicleSnapshot};
-use crate::units::{self, Band, BandTier, Kilotons, Measure};
+use crate::units::{self, Band, BandTier, Kilotons, Length, Measure, Volume};
 
 // =====================================================================
 // ECS core — a tiny, dependency-free, deterministic world.
@@ -504,9 +504,14 @@ impl Roster {
 }
 
 impl HullType {
-    /// Hull radius, **in units of shell thickness** — the shell model's single
+    /// Hull radius as a [`Length`] in hull units — the shell model's single
     /// geometric primitive (R-O58, `Hyades_standing_layer_and_observation.md`
     /// §9.2), and a *derived* quantity, not a new tunable.
+    ///
+    /// It is commensurable with [`shell_thickness`](Self::shell_thickness) by
+    /// construction, which is the whole content of the shell model and the
+    /// reason both are typed: the hold is `(r − τ)³`, and that subtraction has
+    /// to be between two lengths or it means nothing.
     ///
     /// A hull is a shell: dry mass is the material actually bought, so it scales
     /// with **surface area**, and cost §1 already uses area as the cost basis.
@@ -522,8 +527,53 @@ impl HullType {
     /// [`HullType::cargo_capacity`] come out at exactly zero for it rather than
     /// having to be special-cased. At the shipped 1 : 3 : 9 cost ladder the
     /// ladder is 1 : √3 : 3.
-    pub fn hull_radius(self, cfg: &SimConfig) -> f64 {
-        (self.cost_fraction(cfg) / HullType::LimitedSystems.cost_fraction(cfg)).sqrt()
+    pub fn hull_radius(self, cfg: &SimConfig) -> Length {
+        Length::new((self.cost_fraction(cfg) / HullType::LimitedSystems.cost_fraction(cfg)).sqrt())
+    }
+
+    /// **Absolute shell thickness `τ`** — the shell model's one free geometric
+    /// input (`Hyades_mineral_cost_curve.md` §2.3).
+    ///
+    /// It is a [`Length`], commensurable with [`hull_radius`](Self::hull_radius),
+    /// because the entire model is that the hold radius is `r − τ`. Writing it
+    /// as a named quantity is the point of this stage: the engine has always
+    /// had a shell thickness, but it was the literal `1.0` subtracted inside
+    /// `cargo_capacity`, which made "a Limited hull is all shell" a *definition*
+    /// rather than a result and left no place for a per-hull value to live.
+    ///
+    /// **Still one unit for every hull, so behaviour is unchanged.** §2.3
+    /// ratifies a thickness that varies by role and size —
+    /// `Limited (0.0277) < Medium (0.0325) < General (0.0339)` on the Systems
+    /// row, with Contact at 1.8× and Offensive at 3× — and adopting those
+    /// values is a separate, measured step (T-56 stage 3), not a refactor.
+    pub fn shell_thickness(self, _cfg: &SimConfig) -> Length {
+        UNIT_SHELL_THICKNESS
+    }
+
+    /// The hold's radius, `r − τ`, floored at zero.
+    ///
+    /// The floor is not a special case for small hulls — it is the statement
+    /// that a hull whose skin is as thick as it is wide has no interior at all.
+    pub fn hold_radius(self, cfg: &SimConfig) -> Length {
+        (self.hull_radius(cfg) - self.shell_thickness(cfg)).max(Length::ZERO)
+    }
+
+    /// The hold's **volume**, `(r − τ)³` — the geometric quantity that sits on
+    /// a Band rung (§2.3), as distinct from the cargo it can carry, which is
+    /// this minus the role's `V_reserved` and is a mass.
+    pub fn hold_volume(self, cfg: &SimConfig) -> Volume {
+        self.hold_radius(cfg).cubed()
+    }
+
+    /// The **shell's** volume, `r³ − (r − τ)³` — the material actually bought,
+    /// and therefore (L6/R-O57) the hull's cost and its dry mass.
+    ///
+    /// Not yet on the cost path: [`cost_fraction`](Self::cost_fraction) is
+    /// still the direct fleet-size ratio it has always been, and this is the
+    /// quantity §2.3 says that ratio *is*. Reconciling the two is stage 3's
+    /// job; the function exists now so the two readings can be compared.
+    pub fn shell_volume(self, cfg: &SimConfig) -> Volume {
+        self.hull_radius(cfg).cubed() - self.hold_volume(cfg)
     }
 
     /// Cargo capacity **as a mass** (R-O58) — [`Kilotons`], the same unit as
@@ -531,15 +581,15 @@ impl HullType {
     /// than a bare `f64` because it is consumed by an acceleration term, which
     /// needs a mass and nothing else (§4, R-O66).
     ///
-    /// **It is not on the Band ladder, and `Hyades_mineral_cost_curve.md` §2.6
-    /// says it should be (R-O71).** That section requires one step factor
-    /// `F ∈ [4, 8]` to govern every Band-laddered quantity and names *cargo
-    /// capacity* in the list; this steps Medium → General by **106.35x** at the
-    /// shipped defaults (`examples/cargo_units`). Under the Band reading of
-    /// roles §6's 0 / 1 / 2 — Limited at Band Empty, Medium at Band I, General at
-    /// Band II — the holds would be 0.25 / 1.0 / 4.0 kt, steps of exactly
-    /// `BAND_STEP`. Two ratified specs disagree by an order of magnitude and
-    /// the resolution is a design call, so nothing is changed here; see T-53.
+    /// **R-O71 is resolved, and this ladder was the half that was right.**
+    /// §2.6 used to require one step factor `F ∈ [4, 8]` to govern every
+    /// Band-laddered quantity, cargo capacity included, while this steps
+    /// Medium → General by **106.35x** at the shipped defaults
+    /// (`examples/cargo_units`). The `[4, 8]` window is now withdrawn: capacity
+    /// sits on the **mass** ladder rather than the cost one, tied to it by
+    /// `F_mass = F_cost^(3/2)` — which is this geometry, since cost tracks `r²`
+    /// and the hold tracks `r³`. What is still unratified in the code is the
+    /// *progression* (T-56 stage 3), not the shape.
     ///
     /// Contents scale with the shell's *usable interior*, `(4/3)π(r−t)³`, against
     /// a dry mass that scales with area. Working in shell-thickness units and
@@ -565,10 +615,14 @@ impl HullType {
     /// approaching the unit radius approaches zero capacity, smoothly, because
     /// it is approaching being all shell.
     pub fn cargo_capacity(self, cfg: &SimConfig) -> Kilotons {
-        const REF_USABLE: f64 =
-            (REFERENCE_MEDIUM_RADIUS - 1.0) * (REFERENCE_MEDIUM_RADIUS - 1.0) * (REFERENCE_MEDIUM_RADIUS - 1.0);
-        let usable = (self.hull_radius(cfg) - 1.0).max(0.0).powi(3);
-        Kilotons::new(cfg.cargo_unit_size * usable / REF_USABLE)
+        let reference_hold = (REFERENCE_MEDIUM_RADIUS - UNIT_SHELL_THICKNESS).cubed();
+        // Left-to-right, exactly as before the geometry was typed: float
+        // multiplication is not associative, so `k · v / v_ref` and
+        // `k · (v / v_ref)` are different numbers and only one of them
+        // reproduces the shipped goldens.
+        Kilotons::new(
+            cfg.cargo_unit_size * self.hold_volume(cfg).hull_units_cubed() / reference_hold.hull_units_cubed(),
+        )
     }
 
     /// Mineral cost as a fraction of `SimConfig::general_vehicle_cost`, from
@@ -619,7 +673,16 @@ pub fn role_hull_type(role: Role) -> HullType {
 /// cost ladder narrows, the Medium hull's capacity simply *shrinks toward zero*,
 /// which is the physically correct statement — a hull barely larger than the
 /// unit radius is nearly all shell and has nearly no hold.
-const REFERENCE_MEDIUM_RADIUS: f64 = 1.732_050_807_568_877_2; // √3
+const REFERENCE_MEDIUM_RADIUS: Length = Length::new(1.732_050_807_568_877_2); // √3
+
+/// The shell thickness every hull is built to today: **one hull unit**, which
+/// is what `cargo_capacity`'s `(r − 1)` has always meant.
+///
+/// Named rather than written as a literal `1.0` so that the place §2.3's
+/// ratified per-(role, size) thicknesses will go is visible, and so that the
+/// Limited hull's zero hold reads as `r = τ` — a consequence — rather than as
+/// a subtraction that happens to cancel.
+const UNIT_SHELL_THICKNESS: Length = Length::new(1.0);
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
 /// hull's price and its empty mass are one number in one unit (kilotons); there
@@ -643,8 +706,8 @@ const REFERENCE_MEDIUM_RADIUS: f64 = 1.732_050_807_568_877_2; // √3
 /// `hull_base_thrust · factor / hull_dry_mass`, and thrust is defined below as
 /// thrust-to-mass × dry mass, so the dry mass cancels exactly — empty-hull
 /// acceleration depends only on [`hull_thrust_to_mass`], as it did before.
-pub fn hull_dry_mass(hull: HullType, cfg: &SimConfig) -> f64 {
-    hull.cost_fraction(cfg) * cfg.general_vehicle_cost
+pub fn hull_dry_mass(hull: HullType, cfg: &SimConfig) -> Kilotons {
+    Kilotons::new(hull.cost_fraction(cfg) * cfg.general_vehicle_cost)
 }
 
 /// Empty-hull thrust-to-mass, in units of `civilian_accel_g` — Offensive hulls
@@ -683,7 +746,7 @@ fn hull_thrust_to_mass(hull: HullType) -> f64 {
 /// empty-hull accel — so cargo mass (added in the denominator elsewhere) is the
 /// only thing that derates it, matching the loadout acceleration query.
 pub fn hull_base_thrust(hull: HullType, cfg: &SimConfig) -> f64 {
-    hull_thrust_to_mass(hull) * cfg.civilian_accel_g * hull_dry_mass(hull, cfg)
+    hull_thrust_to_mass(hull) * cfg.civilian_accel_g * hull_dry_mass(hull, cfg).kilotons()
 }
 
 /// Per-hull thrust-factor spread (unit-mean-ish jitter a spawner draws within).
@@ -1149,7 +1212,7 @@ impl SimConfig {
         if !r_m.is_finite() {
             return Some("hull radius is not finite — check the fleet-size ratios");
         }
-        if r_m <= 1.0 {
+        if r_m <= UNIT_SHELL_THICKNESS {
             return Some(
                 "medium_fleet_size >= limited_fleet_size: the Medium hull is no larger than the \
                  Limited one, so every hull has zero cargo capacity (R-O58)",
@@ -2696,7 +2759,7 @@ impl Simulation {
         let minerals = Kilotons::new(self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0));
         let pop = units::population_mass(self.world.pop_cargo.get(e).copied().unwrap_or(Band::ZERO));
         let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
-        let dry = Kilotons::new(hull_dry_mass(hull, &self.config).max(1e-9));
+        let dry = hull_dry_mass(hull, &self.config).max(Kilotons::new(1e-9));
         let laden = dry + minerals + pop;
         base_g * G * (dry.kilotons() / laden.kilotons())
     }
@@ -3469,7 +3532,7 @@ mod tests {
 
         // R-O57: one mass unit, so the derate is exactly dry/(dry+cargo) with no
         // conversion coefficient in between. An MSV costs 1/3 and hauls 5.
-        let dry = hull_dry_mass(HullType::MediumSystems, &sim2.config);
+        let dry = hull_dry_mass(HullType::MediumSystems, &sim2.config).kilotons();
         assert!((a_laden - base * G * dry / (dry + 5.0)).abs() < 1e-12);
 
         // The same load on a bigger hull derates *less* — dry mass is in the
@@ -3496,14 +3559,14 @@ mod tests {
         let (l, m, g) = (HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems);
 
         // r = sqrt(cost ratio to Limited): 1 : √3 : 3 at the shipped 1:3:9.
-        assert!((l.hull_radius(&cfg) - 1.0).abs() < 1e-12);
-        assert!((m.hull_radius(&cfg) - 3f64.sqrt()).abs() < 1e-12);
-        assert!((g.hull_radius(&cfg) - 3.0).abs() < 1e-12);
+        assert!((l.hull_radius(&cfg).hull_units() - 1.0).abs() < 1e-12);
+        assert!((m.hull_radius(&cfg).hull_units() - 3f64.sqrt()).abs() < 1e-12);
+        assert!((g.hull_radius(&cfg).hull_units() - 3.0).abs() < 1e-12);
 
         // R-O57: dry mass *is* the cost, in one unit.
         for hull in [l, m, g] {
             let cost = hull.cost_fraction(&cfg) * cfg.general_vehicle_cost;
-            assert!((hull_dry_mass(hull, &cfg) - cost).abs() < 1e-12);
+            assert!((hull_dry_mass(hull, &cfg).kilotons() - cost).abs() < 1e-12);
         }
 
         // What survives of roles §6's 0/1/2: the *ordinal* content. A Limited
@@ -3524,17 +3587,20 @@ mod tests {
         assert!(per_kt(g) < per_kt(m), "bigger hull must be cheaper per kt hauled");
     }
 
-    /// **The cargo ladder is not the Band ladder, and the spec says it should
-    /// be (R-O71 / T-53).**
+    /// **The cargo ladder is geometric, and the shipped progression is not yet
+    /// the ratified one (R-O71 / T-53 / T-56 stage 3).**
     ///
-    /// `Hyades_mineral_cost_curve.md` §2.6 requires a single step factor
-    /// `F ∈ [4, 8]` to govern every Band-laddered quantity and names *cargo
-    /// capacity* explicitly in that list. The shell model (R-O58) instead
-    /// derives capacity from `(r − 1)³`, which at the shipped cost ladder steps
-    /// Medium → General by two orders of magnitude.
+    /// §2.6 used to require a single step factor `F ∈ [4, 8]` to govern every
+    /// Band-laddered quantity, cargo capacity included. That window is now
+    /// **withdrawn** and R-O71 is resolved in the geometry's favour: capacity
+    /// sits on the mass ladder, tied to the cost ladder by
+    /// `F_mass = F_cost^(3/2)`. So the *shape* below is correct and no longer
+    /// a disagreement.
     ///
-    /// A characterization test, not an endorsement: two ratified specs disagree
-    /// and picking between them is a design call, so this pins the disagreement
+    /// What it still pins is that the shipped **values** are pre-ratification:
+    /// at `medium_fleet_size = 4.45` the step is ~106x where the ratified
+    /// progression asks for 31.62. Adopting that is a measured change, so this
+    /// stays a characterization test — it pins the gap
     /// where someone will read it rather than letting it drift quietly. Under
     /// the Band reading of roles §6's 0 / 1 / 2 the holds would be
     /// `KT(0) / KT(I) / KT(II)` — steps of exactly `BAND_STEP`.
@@ -3546,11 +3612,11 @@ mod tests {
         let step = g / m;
 
         assert!(
-            !(4.0..=8.0).contains(&step),
-            "cargo capacity now steps {step:.2}x, inside §2.6's [4, 8] — if this is deliberate, R-O71 is \
-             resolved and this test should be replaced by the constraint it was tracking"
+            step > 100.0,
+            "cargo capacity steps {step:.2}x; the shipped ladder gives ~106x. If this has moved to the \
+             ratified 31.62, T-56 stage 3 has landed and this test should be replaced by a check on \
+             F_mass = F_cost^(3/2)"
         );
-        assert!(step > 100.0, "expected the geometric ladder's ~106x, got {step:.2}x");
 
         // What the Band reading would give instead, for the same three hulls.
         let banded = |b: f64| Band::new(b).in_kilotons().kilotons();
@@ -3572,6 +3638,59 @@ mod tests {
         );
     }
 
+    /// **Stage 2 of T-56: hull geometry carries its units in the type.**
+    ///
+    /// The shell model was always three quantities — a radius, a thickness and
+    /// the volumes they bound — but only one of them had a name and none had a
+    /// type, so `(r − 1)` was a subtraction whose second operand was a literal.
+    /// This pins the identities that make the model a model, all of which are
+    /// now expressible only between compatible types.
+    ///
+    /// Behaviour-preserving by construction: the thickness is still one hull
+    /// unit for every hull, which is what `(r − 1)` meant. `examples/colony_years`
+    /// reproduces 7,819,401.0 and 8,480,172.0 on seeds 1 and 7, bit-for-bit.
+    #[test]
+    fn hull_geometry_is_dimensioned_and_the_shell_closes() {
+        let cfg = SimConfig::new(1);
+        let (l, m, g) = (HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems);
+
+        for hull in [l, m, g] {
+            // One thickness for every hull today. §2.3 ratifies
+            // Limited < Medium < General; adopting it is stage 3, and this
+            // assertion is what will fail when it does — deliberately.
+            assert_eq!(hull.shell_thickness(&cfg), Length::new(1.0), "{hull:?}");
+
+            // The hold is what the skin leaves, and nothing is unaccounted for:
+            // shell + hold is the whole hull. This is the identity that makes
+            // cost (shell) and capacity (hold) two halves of one body rather
+            // than two ladders that happen to share a symbol.
+            let closed = hull.shell_volume(&cfg) + hull.hold_volume(&cfg);
+            let whole = hull.hull_radius(&cfg).cubed();
+            assert!(
+                (closed - whole).hull_units_cubed().abs() < 1e-12,
+                "{hull:?}: shell + hold = {closed} but the hull is {whole}"
+            );
+
+            // r − τ, floored. The floor is a statement, not a guard: a hull
+            // whose skin is as thick as it is wide has no interior.
+            let expect = (hull.hull_radius(&cfg) - hull.shell_thickness(&cfg)).max(Length::ZERO);
+            assert_eq!(hull.hold_radius(&cfg), expect, "{hull:?}");
+        }
+
+        // The Limited hull is all shell — and now as a *consequence* of
+        // `r = τ`, not because a literal 1.0 happened to cancel.
+        assert_eq!(l.hold_radius(&cfg), Length::ZERO);
+        assert_eq!(l.hold_volume(&cfg), Volume::ZERO);
+        assert!((l.shell_volume(&cfg) - l.hull_radius(&cfg).cubed()).hull_units_cubed().abs() < 1e-12);
+
+        // Capacity is the hold, converted by one density. So the capacity
+        // ratio between two hulls *is* their hold-volume ratio — if these ever
+        // diverge, a second conversion has crept in.
+        let cap_ratio = g.cargo_capacity(&cfg).kilotons() / m.cargo_capacity(&cfg).kilotons();
+        let hold_ratio = g.hold_volume(&cfg) / m.hold_volume(&cfg);
+        assert!((cap_ratio - hold_ratio).abs() < 1e-9, "capacity {cap_ratio} vs hold {hold_ratio}");
+    }
+
     #[test]
     fn combat_acceleration_is_untouched_by_the_dry_mass_rebasing() {
         // `Combatant::max_accel` divides thrust by dry mass, and thrust is
@@ -3583,9 +3702,9 @@ mod tests {
         for hull in
             [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems, HullType::RapidOffensive]
         {
-            let a = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg);
+            let a = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg).kilotons();
             cfg.general_vehicle_cost = 17.0; // any scale at all
-            let b = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg);
+            let b = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg).kilotons();
             cfg.general_vehicle_cost = 1.0;
             assert!((a - b).abs() < 1e-12, "{hull:?}: empty accel must not depend on the mass scale");
         }
