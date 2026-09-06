@@ -383,9 +383,9 @@ Systems the least, Contact in between — on both terms, and on shell thickness:
 
 | role | `a_role` (absolute core) | `b_role` (payload share of `V`) | `τ` relative to Systems |
 |---|---|---|---|
-| **Systems** | 0.076 | **0.00** | **1.0×** |
-| **Contact** | 0.127 | 0.15 | 1.8× |
-| **Offensive** | 0.186 | **0.45** | **3.0×** |
+| **Systems** | 0.079 | **0.00** | **1.0×** |
+| **Contact** | 0.132 | 0.15 | 1.8× |
+| **Offensive** | 0.194 | **0.45** | **3.0×** |
 
 `b_Systems = 0` is deliberate: a Systems hull's only non-cargo volume is its
 fixed core, which is what makes its hold ladder purely geometric and makes it
@@ -413,9 +413,17 @@ r = (cost·η + hold)^(1/3)        τ = r − hold^(1/3)
 
 | hull | rung | cost | hold (kt) | **`τ`** |
 |---|---|---|---|---|
-| LSV | `Band Empty` | 0.02 | 0.0859 | **0.0277** |
-| MSV | `Band I` | 0.10 | 0.960 | **0.0325** |
-| GSV | `Band II` | 1.00 | 30.36 | **0.0339** |
+| LSV | `Band Empty` | 0.02 | 0.0894 | **0.0270** |
+| MSV | `Band I` | 0.10 | **1.000** | **0.0317** |
+| GSV | `Band II` | 1.00 | 31.62 | **0.0330** |
+
+**A Medium hull's hold is exactly 1.000 kt**, which is the point of anchoring
+`Band I` at a round kiloton: `cargo_unit_size` — the engine's reference hold —
+becomes **1.0**, and it already agrees with `units::KILOTONS_AT_BAND_I`, which
+has been `1.0` since the type landed. The population anchor absorbs the change
+(a `Band I` town is ~3,333 people at ~300 kg each rather than 3,200), and it is
+the anchor with the loosest tolerance — the requirement on it is an order of
+magnitude wide.
 
 **Shell thickness comes out `Limited < Medium < General`, which is the ordering
 the design arc asks for, and it was not imposed.** The mechanism is `η`: a
@@ -425,17 +433,17 @@ spacing.
 
 **And the mechanism runs out, which is why Supers gate the mid-game General.**
 Once the GSV is a literal sphere there is no more shape to spend, and `τ`
-flattens: a `Band III` General would need `τ = 0.0342` and a `Band IV` General
-`τ = 0.0342` — no thicker than the `Band II` hull. But at a *fixed Design
+flattens: a `Band III` General would need `τ = 0.0333` and a `Band IV` General
+`τ = 0.0333` — no thicker than the `Band II` hull. But at a *fixed Design
 level* thickness must keep rising with size, and at a `Band III` hold the cost
 is very nearly linear in `τ`:
 
-| `τ` at a `Band III` hold (2,715 kt) | cost | vs the `Band III` price |
+| `τ` at a `Band III` hold (2,828 kt) | cost | vs the `Band III` price |
 |---|---|---|
-| 0.0339 (a `Band II` skin) | 19.8 | 0.99× |
-| 0.05 | 29.3 | 1.46× |
-| 0.10 | 58.8 | **2.94×** |
-| 0.20 | 118.5 | 5.92× |
+| 0.0330 (a `Band II` skin) | 19.8 | 0.99× |
+| 0.05 | 30.1 | 1.51× |
+| 0.10 | 60.4 | **3.02×** |
+| 0.20 | 121.7 | 6.09× |
 
 **So a mid-game `Band III` General Systems Hull must be a Design that requires
 Supers, and a late-game `Band IV` one a Design that requires apex** — the
@@ -452,45 +460,45 @@ its role's `τ` multiplier and `V_reserved`:
 
 | hull | cost (min) | `η` | `τ` | `r` | `V` | `t/r` | hold | `V_reserved` | **cargo (kt)** | `E` = cargo/cost |
 |---|---|---|---|---|---|---|---|---|---|---|
-| LSV | 0.02 | 0.86 | 0.0277 | 0.469 | 0.103 | 0.059 | 0.0859 | 0.076 | **0.0099** | 0.49 |
-| MSV | 0.10 | 0.98 | 0.0325 | 1.019 | 1.058 | 0.032 | 0.960 | 0.076 | **0.884** | 8.84 |
-| GSV | 1.00 | 1.00 | 0.0339 | 3.153 | 31.36 | 0.011 | 30.36 | 0.076 | **30.28** | 30.3 |
-| LCV | 0.02 | 0.75 | 0.0498 | 0.341 | 0.040 | 0.146 | 0.0248 | 0.133 | **0** | 0 |
-| GCV | 1.00 | 0.96 | 0.0610 | 2.321 | 12.50 | 0.026 | 11.54 | 2.003 | **9.54** | 9.54 |
-| LOU | 0.02 | 0.64 | 0.0831 | 0.267 | 0.019 | 0.311 | 0.0062 | 0.195 | **0** | 0 |
-| ROU | 0.10 | 0.73 | 0.0975 | 0.548 | 0.164 | 0.178 | 0.0912 | 0.260 | **0** | 0 |
-| GOU | 1.00 | 0.93 | 0.1017 | 1.797 | 5.802 | 0.057 | 4.872 | 2.797 | **2.08** | 2.08 |
+| LSV | 0.02 | 0.86 | 0.0270 | 0.474 | 0.107 | 0.057 | 0.0894 | 0.079 | **0.0104** | 0.52 |
+| MSV | 0.10 | 0.98 | 0.0317 | 1.032 | 1.098 | 0.031 | **1.000** | 0.079 | **0.921** | 9.21 |
+| GSV | 1.00 | 1.00 | 0.0330 | 3.195 | 32.62 | 0.010 | 31.62 | 0.079 | **31.54** | 31.5 |
+| LCV | 0.02 | 0.75 | 0.0486 | 0.345 | 0.041 | 0.141 | 0.0260 | 0.138 | **0** | 0 |
+| GCV | 1.00 | 0.96 | 0.0594 | 2.351 | 13.00 | 0.025 | 12.04 | 2.081 | **9.95** | 9.95 |
+| LOU | 0.02 | 0.64 | 0.0810 | 0.269 | 0.019 | 0.301 | 0.0066 | 0.203 | **0** | 0 |
+| ROU | 0.10 | 0.73 | 0.0950 | 0.553 | 0.169 | 0.172 | 0.0961 | 0.270 | **0** | 0 |
+| GOU | 1.00 | 0.93 | 0.0990 | 1.819 | 6.020 | 0.054 | 5.090 | 2.903 | **2.19** | 2.19 |
 
 Seven things this gets right that the superseded sketch did not, and they are
 the reason to adopt it:
 
-1. **A Limited Systems hull carries 1.0% of `Band I`** — ~0.0099 kt, a scout's
+1. **A Limited Systems hull carries 1.0% of `Band I`** — ~0.0104 kt, a scout's
    sample locker and not a freight capacity. Its *hold* is honestly at
    `Band Empty`; `a_Systems` eats 88% of it.
 2. **LCV, LOU and ROU carry exactly zero**, by `max(0, ·)` reached honestly:
    their reserved volume exceeds their hold. This is the *capability* half of
    roles §4's permissive rule (`CLAUDE.md` §7 item 8) — a Limited hull has no
    cargo hold as a fact, not as a competence penalty.
-3. **A General Offensive Unit still carries 2.08 kt** — troops, ordnance,
+3. **A General Offensive Unit still carries 2.19 kt** — troops, ordnance,
    prize crews — so "Offensive has little to zero cargo" is size-dependent
    rather than a flat zero, which is what the Culture fiction's GOU depicts.
 4. **Contact sits between Systems and Offensive on every axis** — `t/r`,
    `V_reserved`, carry efficiency — because it was derived that way, not fitted.
 5. **Design law #3 holds in every role.** `E` rises monotonically with size:
-   0.49 → 8.84 → 30.3 (Systems), 0 → 9.54 (Contact), 0 → 2.08 (Offensive).
+   0.52 → 9.21 → 31.5 (Systems), 0 → 9.95 (Contact), 0 → 2.19 (Offensive).
    Consolidation wins under geometry alone, and now by a margin that *grows*
    with class rather than inverting as the pre-R-O58 ladder did.
 6. **Shell thickness orders Offensive > Contact > Systems at every size**
-   (`t/r`: 0.311 / 0.146 / 0.059 at Limited; 0.057 / 0.026 / 0.011 at General),
+   (`t/r`: 0.301 / 0.141 / 0.057 at Limited; 0.054 / 0.025 / 0.010 at General),
    which is the armour statement expressed as geometry rather than as a combat
    constant — design law #2 stays intact.
 7. **R-MC12 resolves in lane (a): cost is a function of size alone; role
    changes what you get for the money.** A GOU and a GSV both cost
    `general_vehicle_cost`, but the GOU's lower `η` and 3× thicker skin buy it
-   `r_eq = 1.80` against the GSV's `3.15` — a 1.75× linear gap in the direction
+   `r_eq = 1.82` against the GSV's `3.20` — a 1.76× linear gap in the direction
    the fiction describes (50 km GSV vs 2–3 km GOU), reached without a per-role
    cost table. **R-MC9 resolves the same way:** the Systems `r_eq` ladder comes
-   out `1 : 2.17 : 6.72`, with `r_eq(GSV)/r_eq(MSV) = 3.09` — above lane 1's 1.8
+   out `1 : 2.18 : 6.74`, with `r_eq(GSV)/r_eq(MSV) = 3.10` — above lane 1's 1.8
    and below the fiction's literal 6.6, and *derived* from the ladder rather
    than chosen between two lanes.
 
@@ -503,11 +511,11 @@ common constant, under three candidate laws:
 
 | hull | `thrust ∝ V` | `thrust ∝ V^(2/3)` | `thrust ∝ dry mass` |
 |---|---|---|---|
-| LSV | 5.2 | 11.0 | 1.0 |
-| GSV | 31.4 | 9.9 | 1.0 |
+| LSV | 5.4 | 11.3 | 1.0 |
+| GSV | 32.6 | 10.2 | 1.0 |
 | LOU | 1.0 | 3.6 | 1.0 |
-| ROU | 1.6 | 3.0 | 1.0 |
-| GOU | 5.8 | 3.2 | 1.0 |
+| ROU | 1.7 | 3.1 | 1.0 |
+| GOU | 6.0 | 3.3 | 1.0 |
 
 **Every purely geometric law makes the ROU no faster than the GOU**, which
 contradicts the class's role and its name. No choice of exponent fixes it,
@@ -631,8 +639,8 @@ times the previous Band's magnitude. `Band Empty` is the bottom rung — **a
 positive magnitude below the first threshold, not zero** (ratified: there is
 no `Band 0`, and `Band Empty > 0`); a quantity that is genuinely absent is off
 the ladder rather than at its bottom. `Band I` is the first crossed threshold and that quantity's own reference
-scale — a small town, the cost of one General-class hull, a Medium hull's
-reference cargo hold. **Every quantity anchors its own `Band I`
+scale — a small town of ~3,333 people, a Medium hull's reference cargo hold of
+exactly one kiloton, a tenth of a General hull's price. **Every quantity anchors its own `Band I`
 independently — what has to be shared across quantities is not the
 absolute value at `Band I`, it is the *ratio* between consecutive Bands.**
 This directly renames the existing population/infrastructure system
@@ -708,7 +716,7 @@ proposed against `[4, 8]`:
 withdrawn. Under the ratified rules the shipped 1:4.45:9 satisfies the growth
 rule — its step factors 2.02 then 4.45 are increasing and within a decade —
 and fails elsewhere instead. The shipped `BAND_STEP = 4.0` puts `Pop Band IV`
-at `3,200 × 4³ = 204,800` people, four orders of magnitude short of the
+at `3,333 × 4³ = 213,300` people, four orders of magnitude short of the
 required 1–10 billion.)*
 
 **No ladder this project has ever shipped or proposed satisfies the
@@ -799,9 +807,14 @@ force `F_mass > 8`. The shared-ratio rule therefore binds **within** a ladder:
    be one geometry. Note the consequence: the mass ladder's growth constraint is
    the binding one, since `F_mass` ratios are cost ratios raised to `3/2`, so a
    cost-step ratio must stay under `10^(2/3) = 4.64`.
-3. **There is no `Band 0`.** The bottom rung is **`Band Empty`**, and
-   **`Band Empty > 0`** — a positive magnitude beneath `Band I`'s threshold, not
-   an absence. Zero is off the ladder entirely.
+3. **There is no `Band 0` on the ladder.** The bottom *rung* is
+   **`Band Empty`**, and **`Band Empty > 0`** — a positive magnitude beneath
+   `Band I`'s threshold, not an absence. Zero is off the ladder entirely.
+   **`Band Zero` exists only as a comparison sentinel**, one past the bottom
+   the way `Band V` is one past the top: nothing in a game is ever at it, and
+   its job is to give a "none of this quantity" check a rung to name instead of
+   a bare `0.0`. `BandTier::Zero` sits at ladder position `−1`, outside
+   `BAND_FLOOR`, so adding it moved no position above it.
 
 **The ratified default progression.** A uniform step-ratio of 2 satisfies both
 rules and lands the population anchor where it is required:
@@ -819,19 +832,28 @@ or more" constraint. **This progression is a default, not a measurement**: it is
 subject to Monte-Carlo verification that it does not create a colony-years
 bottleneck (`examples/colony_years`), and that verification is Stage 3's job.
 
-**Where the rungs land.** `Band I` is a small town — 3,200 people at ~300 kg of
-person, possessions and pressurised volume each, so `KT(I) = 0.96 kt` — and the
-opening General hull is `Band II` on both ladders:
+**Where the rungs land.** `Band I` is **one kiloton**, and everything else is
+read off it: a small town of ~3,333 people at ~300 kg of person, possessions and
+pressurised volume each, and a Medium hull's reference hold. The opening General
+hull is `Band II` on both ladders:
 
 | rung | mineral cost | hold (kt) | population | what sits there |
 |---|---|---|---|---|
-| `Band Empty` | 0.02 | 0.086 | 286 | one **Limited** hull |
-| `Band I` | 0.10 | 0.96 | 3,200 | one **Medium** hull |
-| `Band II` | 1.00 | 30.4 | 101,200 | one **General** hull, opening Design |
-| `Band III` | 20.0 | 2,715 | 9.05 M | General, **Supers** Design (mid-game) |
-| `Band IV` | 800 | 686,900 | **2.29 B** | General, **apex** Design (late-game card) |
+| `Band Empty` | 0.02 | 0.089 | 298 | one **Limited** hull |
+| `Band I` | 0.10 | **1.00** | 3,333 | one **Medium** hull |
+| `Band II` | 1.00 | 31.6 | 105,400 | one **General** hull, opening Design |
+| `Band III` | 20.0 | 2,828 | 9.43 M | General, **Supers** Design (mid-game) |
+| `Band IV` | 800 | 715,500 | **2.38 B** | General, **apex** Design (late-game card) |
 
-`Pop Band IV = 2.29 billion` sits inside the required 1–10 billion, and it is a
+**`KT(I) = 1.0` is chosen, not derived, and it is the right thing to choose.**
+Every ratio on both ladders is fixed by the step factors; the only freedom left
+is where `Band I` sits in real kilotons, and putting it at a round one makes the
+engine's reference hold `cargo_unit_size = 1.0` — which is already the value of
+`units::KILOTONS_AT_BAND_I`. The population anchor takes up the slack (3,333
+people rather than 3,200), and it is the anchor that can afford it: its
+requirement is an order of magnitude wide.
+
+`Pop Band IV = 2.38 billion` sits inside the required 1–10 billion, and it is a
 *consequence* of the step-ratio rather than a fitted value. A General hull
 **costs `Band II` and holds `Band II`**; a Medium **holds `Band I` and costs
 `Band I`**; a Limited sits at `Band Empty` on both. The step factors differ
@@ -853,7 +875,7 @@ and keeps the hull at its rung's price.
 |---|---|---|---|
 | `medium_fleet_size` | 4.45 | **10** | the `Band I → II` cost step |
 | `limited_fleet_size` | 9.0 | **50** | `5 × medium_fleet_size`, the `Empty → I` step |
-| `cargo_unit_size` | 5.0 | **0.96** | the `Band I` hold *is* the reference hold, so this becomes `KT(I)` |
+| `cargo_unit_size` | 5.0 | **1.0** | the `Band I` hold *is* the reference hold, so this becomes `KT(I)` — and `units::KILOTONS_AT_BAND_I` is already 1.0 |
 | `units::BAND_STEP` | 4.0 | **31.62** | it bridges Bands to **kilotons**, so it is the mass ladder's `I → II` factor, not the cost ladder's |
 
 Three consequences to carry into the code change rather than discover in it:
@@ -1225,7 +1247,7 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   superseded and removed; the constraint is `1 < F₍ₙ₊₁₎/Fₙ < 10` on both
   ladders, and `F₃` is no longer exempt. Ratified default progression:
   `F_cost` = 5, 10, 20, 40 ⇒ `medium_fleet_size = 10`,
-  `limited_fleet_size = 50`, `cargo_unit_size = 0.96`, and `units::BAND_STEP`
+  `limited_fleet_size = 50`, `cargo_unit_size = 1.0`, and `units::BAND_STEP`
   becomes the piecewise mass ladder starting at 31.62. The progression is a
   default subject to Monte-Carlo verification that it creates no colony-years
   bottleneck; the *rules* are settled.

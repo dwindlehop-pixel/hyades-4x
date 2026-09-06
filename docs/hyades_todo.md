@@ -722,6 +722,47 @@ and the two differ in the last bits, which is a determinism break and a changed
 golden. The comment says so at the site.
 
 
+#### Stage 2b — `Band Zero`, and the anchor moved to a round kiloton
+
+Both from the ratification pass; behaviour-preserving, colony-years unchanged
+at 7,819,401.0 / 8,480,172.0.
+
+**`BandTier::Zero`.** Ratifying `Band Empty > 0` took away the rung that used
+to mean "none of this quantity", so a `> 0` check went back to being a bare
+`0.0` — the exact failure this type exists to close. `Zero` is now the bottom
+sentinel, the mirror of `V` at the top: nothing in a game reaches it, and its
+ladder position is `Band(-1.0)`, deliberately outside `BAND_FLOOR`, **so every
+rung above it kept the index it had.** `index()` is now `i8`.
+
+One real hazard that came with it: `PopBands::level` indexed `BandTier::ALL` by
+a crossing count, and adding a rung at the *bottom* of `ALL` would have shifted
+every world's population level by one, silently. It now indexes `PLAYABLE`,
+whose positions are the ladder's by construction, and the test asserts both
+arrays' indexing conventions separately so the two cannot be confused again.
+
+**`KT(I) = 1.0` kt.** `0.96` was a fallout of the population anchor (3,200
+people × 300 kg), and it made `cargo_unit_size = 0.96`, which is an unfortunate
+number for the engine's reference hold. Every *ratio* on both ladders is fixed
+by the step factors, so the only freedom left is where `Band I` sits in real
+kilotons — and a round kiloton makes the Medium hull's hold exactly 1.000 kt
+and `cargo_unit_size` exactly 1.0, which is already the value of
+`units::KILOTONS_AT_BAND_I`. The population anchor absorbs it at ~3,333 people,
+and it is the anchor that can afford to: its requirement (`Pop IV` in 1–10
+billion) is an order of magnitude wide, and `Pop IV` moves 2.29 B → 2.38 B.
+
+Downstream, `a_role` re-solves to 0.079 / 0.132 / 0.194 and the Systems row
+becomes:
+
+| hull | cost | hold (kt) | `τ` | cargo (kt) | `E` |
+|---|---|---|---|---|---|
+| LSV | 0.02 | 0.0894 | 0.0270 | 0.0104 | 0.52 |
+| MSV | 0.10 | **1.000** | 0.0317 | 0.921 | 9.21 |
+| GSV | 1.00 | 31.62 | 0.0330 | 31.54 | 31.5 |
+
+`τ` still comes out `Limited < Medium < General`, and a `Band III` hold at
+`τ = 0.10` still costs **3.02×** its rung, so the Supers gate is unchanged.
+
+
 #### Staging (each stage independently revertible)
 
 1. **This entry** — analysis, units, candidates. Docs only. Landed in three

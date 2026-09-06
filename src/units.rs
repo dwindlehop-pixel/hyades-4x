@@ -66,17 +66,30 @@ use core::fmt;
 use core::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 /// Mass of population at **Band I**, in kilotons — the anchor the whole ladder
-/// hangs from. One unit, in the §2.6 sense: an abstract quantity standing for
-/// many real kilotons.
+/// hangs from, and now a *ratified* number rather than a convenient one
+/// (`Hyades_mineral_cost_curve.md` §2.6).
+///
+/// Every ratio on both ladders is fixed by the step factors, so the only
+/// freedom left is where `Band I` sits in real kilotons. It is one kiloton: a
+/// small town of ~3,333 people at ~300 kg of person, possessions and
+/// pressurised living volume each, and — the same number seen from the other
+/// side — a Medium hull's reference hold. That coincidence is the anchor's
+/// whole job, and it is why `SimConfig::cargo_unit_size` lands on 1.0 too.
 pub const KILOTONS_AT_BAND_I: f64 = 1.0;
 
-/// Multiplicative factor between adjacent Bands.
+/// Multiplicative factor between adjacent Bands, on the **mass** ladder.
 ///
-/// **Placeholder pinned to the floor of the ratified range, not a ratified
-/// value** (`Hyades_mineral_cost_curve.md` §2.6, R-MC15). The spec requires
-/// each of the `I→II` and `II→III` steps to be a rational in `[4, 8]`; `4.0`
-/// is the smallest legal choice, so adopting it changes the model as little as
-/// the constraint permits while still being *inside* it.
+/// **Still the pre-ratification placeholder.** R-MC15 is now settled
+/// (`Hyades_mineral_cost_curve.md` §2.6) and it does two things this constant
+/// cannot yet express. The factor differs per rung — the ratified mass ladder
+/// is `11.18, 31.62, 89.44, 252.98`, a uniform step-*ratio* of 2.83 rather
+/// than a uniform step — so the bridge `KT(b) = KT_I · BAND_STEP^(b−1)` has to
+/// become piecewise. And the old `[4, 8]` window this value sat at the floor
+/// of is withdrawn; the constraint is now `1 < F₍ₙ₊₁₎/Fₙ < 10`, with the mass
+/// and cost ladders tied by `F_mass = F_cost^(3/2)`.
+///
+/// Adopting the ratified progression moves colonisation behaviour, so it is a
+/// measured change (`hyades_todo.md` T-56 stage 3) and not a constant edit.
 pub const BAND_STEP: f64 = 4.0;
 
 /// The bottom rung the ladder is willing to name.
@@ -106,6 +119,14 @@ pub const BAND_FLOOR: f64 = 0.0;
 ///
 /// ## The rungs
 ///
+/// - [`Zero`](Self::Zero) — **the bottom sentinel, one past the start of the
+///   ladder, and the mirror of [`V`](Self::V) at the other end.** It is not a
+///   small quantity; it is the *absence* of one, and no live quantity is ever
+///   at it — `BAND_FLOOR` puts the smallest representable magnitude at
+///   `Empty`. Its job is to give a `> Zero` guard a rung to compare against
+///   instead of a magic number, now that `Empty > 0` and `Empty` can no longer
+///   do that job. Its ladder position is `Band(-1.0)`, deliberately outside
+///   `[BAND_FLOOR, …]`, so adding it shifts nothing above it.
 /// - [`Empty`](Self::Empty) — **a positive magnitude beneath `Band I`'s
 ///   threshold**, not zero and not an absence: a hamlet rather than a town, a
 ///   Limited hull's token hold. Ratified this way explicitly — there is no
@@ -130,6 +151,7 @@ pub const BAND_FLOOR: f64 = 0.0;
 ///   magic number, the way a half-open range wants one past the end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BandTier {
+    Zero,
     Empty,
     I,
     II,
@@ -139,16 +161,23 @@ pub enum BandTier {
 }
 
 impl BandTier {
-    /// Every rung, in order — including [`V`](Self::V), which is why callers
-    /// that mean "every rung a world can actually be at" should use
-    /// [`PLAYABLE`](Self::PLAYABLE).
-    pub const ALL: [BandTier; 6] =
-        [BandTier::Empty, BandTier::I, BandTier::II, BandTier::III, BandTier::IV, BandTier::V];
-    /// The rungs a quantity can actually occupy in a game. `V` is excluded by
-    /// construction.
+    /// Every rung, in order — including both sentinels, [`Zero`](Self::Zero)
+    /// and [`V`](Self::V), which is why callers that mean "every rung a world
+    /// can actually be at" must use [`PLAYABLE`](Self::PLAYABLE).
+    ///
+    /// **Do not index this by a crossing count.** `PLAYABLE` is the array whose
+    /// positions are the ladder's; this one is offset by the bottom sentinel.
+    pub const ALL: [BandTier; 7] =
+        [BandTier::Zero, BandTier::Empty, BandTier::I, BandTier::II, BandTier::III, BandTier::IV, BandTier::V];
+    /// The rungs a quantity can actually occupy in a game. Both sentinels are
+    /// excluded by construction, and position `i` in this array is the rung a
+    /// quantity has reached after crossing `i` thresholds.
     pub const PLAYABLE: [BandTier; 5] = [BandTier::Empty, BandTier::I, BandTier::II, BandTier::III, BandTier::IV];
     /// The highest rung anything in a game may reach.
     pub const MAX_PLAYABLE: BandTier = BandTier::IV;
+    /// The lowest rung anything in a game may reach. `Zero` is beneath it and
+    /// is not a magnitude.
+    pub const MIN_PLAYABLE: BandTier = BandTier::Empty;
 
     /// This rung's position on the continuous ladder.
     #[inline]
@@ -157,10 +186,13 @@ impl BandTier {
     }
 
     /// How many rungs above [`Empty`](Self::Empty) — the integer the engine
-    /// used before these were named.
+    /// used before these were named. Signed, because [`Zero`](Self::Zero) sits
+    /// one *below* the origin; every other rung keeps the index it had, so
+    /// adding the bottom sentinel moved no ladder position.
     #[inline]
-    pub const fn index(self) -> u8 {
+    pub const fn index(self) -> i8 {
         match self {
+            BandTier::Zero => -1,
             BandTier::Empty => 0,
             BandTier::I => 1,
             BandTier::II => 2,
@@ -175,6 +207,7 @@ impl BandTier {
     #[inline]
     pub fn containing(b: Band) -> BandTier {
         match b.bands() {
+            x if x < 0.0 => BandTier::Zero,
             x if x < 1.0 => BandTier::Empty,
             x if x < 2.0 => BandTier::I,
             x if x < 3.0 => BandTier::II,
@@ -195,6 +228,7 @@ impl From<BandTier> for Band {
 impl fmt::Display for BandTier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            BandTier::Zero => "Band Zero",
             BandTier::Empty => "Empty",
             BandTier::I => "Band I",
             BandTier::II => "Band II",
@@ -620,7 +654,8 @@ mod tests {
         assert_eq!(BandTier::MAX_PLAYABLE, BandTier::IV);
         assert!(BandTier::V > BandTier::MAX_PLAYABLE);
         assert!(!BandTier::PLAYABLE.contains(&BandTier::V), "V must not be in the playable set");
-        assert_eq!(BandTier::PLAYABLE.len() + 1, BandTier::ALL.len());
+        // Two sentinels now bracket the playable set, one at each end.
+        assert_eq!(BandTier::PLAYABLE.len() + 2, BandTier::ALL.len());
 
         // The generator's ceiling is Band IV, so no world can be seeded past it
         // and `containing` only reports V for a position off the ladder.
@@ -633,10 +668,42 @@ mod tests {
     #[test]
     fn the_rungs_are_ordered_and_indexed_consistently() {
         for (i, t) in BandTier::ALL.iter().enumerate() {
-            assert_eq!(t.index() as usize, i);
-            assert_eq!(t.band(), Band::new(i as f64));
+            let rung = i as i8 - 1; // ALL leads with the bottom sentinel
+            assert_eq!(t.index(), rung);
+            assert_eq!(t.band(), Band::new(rung as f64));
         }
+        // PLAYABLE, by contrast, is indexed by crossing count — which is what
+        // `PopBands::level` relies on.
+        for (i, t) in BandTier::PLAYABLE.iter().enumerate() {
+            assert_eq!(t.index() as usize, i);
+        }
+        assert!(BandTier::Zero < BandTier::Empty);
         assert!(BandTier::Empty < BandTier::I && BandTier::I < BandTier::IV);
+    }
+
+    /// **`Zero` is the bottom sentinel and nothing in a game reaches it** — the
+    /// mirror of `band_v_is_one_past_the_playable_end`.
+    ///
+    /// It exists because ratifying `Empty > 0` took away the rung that used to
+    /// mean "none of this quantity". A `> Zero` comparison now has a name to
+    /// make; without one the check goes back to being a bare `0.0`, which is
+    /// the whole failure mode this type exists to close.
+    #[test]
+    fn band_zero_is_one_past_the_bottom_and_unreachable() {
+        assert!(BandTier::Zero < BandTier::MIN_PLAYABLE);
+        assert_eq!(BandTier::Zero.band(), Band::new(-1.0));
+        assert!(!BandTier::PLAYABLE.contains(&BandTier::Zero));
+
+        // BAND_FLOOR is the smallest position the ladder will name, and it is
+        // at `Empty` — so no mass, however small, classifies as `Zero`.
+        assert_eq!(BandTier::containing(Band::new(BAND_FLOOR)), BandTier::Empty);
+        assert_eq!(Kilotons::ZERO.in_bands(), Band::new(BAND_FLOOR));
+        for m in [0.0, 1e-300, 1e-9, 1e-3] {
+            assert!(
+                BandTier::containing(Kilotons::new(m).in_bands()) >= BandTier::MIN_PLAYABLE,
+                "a mass of {m} kt classified beneath the playable floor"
+            );
+        }
     }
 
     /// `Empty` is the rung that is a *condition*, not a magnitude — no colony,

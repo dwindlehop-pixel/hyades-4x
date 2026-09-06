@@ -220,9 +220,9 @@ impl PopBands {
     #[inline]
     pub fn level(&self, population: Band) -> BandTier {
         // The edges are the *reached* thresholds, so the count of crossings is
-        // the rung index. `BandTier::ALL` is indexed rather than matched so a
+        // the rung index. `BandTier::PLAYABLE` is indexed rather than matched so a
         // sixth rung cannot silently fall off the end.
-        BandTier::ALL[self.edges.iter().filter(|&&e| population >= e).count()]
+        BandTier::PLAYABLE[self.edges.iter().filter(|&&e| population >= e).count()]
     }
 }
 
