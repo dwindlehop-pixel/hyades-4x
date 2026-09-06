@@ -383,6 +383,56 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-57. How many miners per mining outpost? — the question the model cannot currently ask
+
+**Extraction does not depend on the miner at all.** `sys_mining_tick` is
+
+```rust
+let amt = density.metallicity() * cfg.outpost_mining_fraction;   // per mining_tick_years
+```
+
+— a property of the *rock*, not of who is standing on it. `mine_operator` is a
+`BTreeMap<u64, Entity>`, so an outpost has exactly one operator by data
+structure, and that operator's only mechanical effect is to keep the tick
+scheduled and to be released to Reserve when the rock dies (R-O67 recycling).
+A second miner on the same body would extract nothing extra; a *better* miner
+would extract nothing extra either.
+
+So "the right number of miners per outpost" is not a value to tune — **there is
+no term in the model for it to tune.** That is the finding, and it is the same
+shape as λ before its ratification (`CLAUDE.md` §7: freighter routing had *no*
+distance component, so no amount of sweeping would have found one). Before
+sweeping, check whether the term is absent.
+
+**What a real answer needs, roughly in order:**
+
+1. **Decide whether extraction is rock-limited or labour-limited.** Today it is
+   purely rock-limited (`density × fraction`). A labour term —
+   `min(rock_rate, miners × per_miner_rate)` — is the smallest change that makes
+   the count matter, and it immediately raises the design question of whether a
+   rich rock should reward concentration. Design law #3 says consolidation wins
+   under geometry; it is not obvious that mining should agree.
+2. **Decide what a miner's hull buys.** `role_hull_type` puts Miner on LSV
+   because "the engine already deposits extraction into the outpost's own
+   stockpile, so a Limited miner needs no cargo" (roles §4.3). If extraction
+   becomes labour-limited, hull size plausibly enters — and then this is not an
+   independent question from T-56's cost ladder, because miners are the most
+   numerous vehicle class in the run.
+3. **Then measure.** The instrument exists: `examples/mining_probe -- census`
+   already reports outposts, mean rock lifetime (808 yr) and the fraction of
+   outpost-years spent on an exhausted rock (39% before recycling). Extend it
+   with a miners-per-outpost sweep once there is something for the sweep to move.
+
+**Why it matters beyond mining.** Miner + freighter pairs dominate vehicle
+count, so this is simultaneously a throughput question (T-24) and an economy
+question. And `outpost_mining_fraction` is MC-ratified at 0.238 with a
++14.5 ± 5.8 elasticity — the weakest of the gradient step's four knobs — so any
+change to what that fraction *means* consumes that ratification and needs a
+joint re-measure, not an addition.
+
+**Do not treat the current one-miner-per-outpost as a ratified answer.** It is
+a data-structure consequence that nobody has measured against an alternative.
+
 ### T-56. R-MC3a / R-MC3b — hull geometry with units, and the ladder that makes General hulls worth building
 
 **Stage 1 of 4: analysis and ratification candidates. No code in this entry.**
