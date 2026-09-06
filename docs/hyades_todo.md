@@ -383,6 +383,115 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+### T-56. R-MC3a / R-MC3b — hull geometry with units, and the ladder that makes General hulls worth building
+
+**Stage 1 of 4: analysis and ratification candidates. No code in this entry.**
+
+#### "What unit?" — the answer, and it is not flattering
+
+`hull_radius(h) = √(cost_fraction(h) / cost_fraction(Limited))`, and
+`cargo_capacity` subtracts **1** from it. That `1` is `r_L`. So the shell
+thickness is **one Limited-hull radius, identical for every class**, and
+"the Limited hull is all shell and no hold" is a *definition* rather than a
+result. There is no thickness parameter, and:
+
+- **η (R-MC3a, shape efficiency) appears nowhere in the engine.** §2.1 builds a
+  whole cylinder→ellipsoid→spheroid argument for super-linear value growth and
+  the code implements none of it.
+- **`r_eq` (R-MC3b) is not a parameter either** — it is back-derived from cost.
+
+Both open R-codes are simply unrepresented, which is why neither could be
+ratified against the code.
+
+#### Corrected geometry — exact, and one dial falls out
+
+Per class: `r` (equal-volume radius), **`φ` = hold fraction = (r−t)/r**, `η`
+(shape, R-MC3a).
+
+```
+V_total = (4/3)πr³      V_hold = (4/3)π(φr)³      V_shell = (4/3)πr³(1−φ³)
+cost = dry mass ∝ V_shell / η          capacity ∝ (φr)³
+        ⇒   cost = capacity · (1−φ³)/(φ³η)          — r cancels entirely
+```
+
+Define **carry efficiency `E(φ,η) = capacity/cost = φ³η/(1−φ³)`**. Then:
+
+- **Design law #3 holds ⟺ `E` rises with class ⟺ `φ` rises with class.** Size
+  does not enter. **`φ` is the entire economic dial**, which is exactly the
+  "hull thickness per class" lever this was asked to find.
+- **R-MC3a (η) and φ set the ladders; R-MC3b (`r_eq`) sets only absolute
+  size.** That separation is new and it makes the two R-codes independently
+  ratifiable — `r_eq` matters for combat cross-section and the arena harness,
+  not for the cost/cargo ladders at all.
+
+#### Candidate ladder
+
+`F_pop = F_cargo = 100`, `F_cost = 8`, town 3,200 at 300 kg/person
+(`KT(I) = 0.96 kt`), **Pop Band IV = 3.2 billion** — inside the 1–10 B target,
+with `F₃ = F = 100`, nowhere near four orders of magnitude.
+
+Each cargo Band up multiplies carry efficiency by `F/F_cost = 12.5`, anchored on
+today's Medium (`E = hold/dry = 4.27`):
+
+| class | cargo Band | cost Band | `E` | `φ` | `t/r` | hold | dry mass |
+|---|---|---|---|---|---|---|---|
+| Limited | Empty | — | 0 | 0 | 1.0 | 0 kt | — |
+| Medium | **I** | I | 4.27 | 0.9412 | 0.0588 | 0.96 kt | 0.225 kt |
+| General (early) | **II** | II | 53.3 | 0.9940 | 0.0060 | 96 kt | 1.80 kt |
+| General (mid) | **III** | III | 667 | 0.9995 | 0.00048 | 9,600 kt | 14.4 kt |
+| General (late, card) | **IV** | IV | 8,332 | 0.99996 | 0.00004 | 960,000 kt | 115 kt |
+
+**The design rule this produces is legible: each Band of hull is roughly an
+order of magnitude thinner-skinned than the last.**
+
+#### The Sleeper Service check
+
+Canon: a GSV carrying tens of thousands of LOU/ROU-class hulls in its hold.
+By dry mass, this ladder gives a General (III) a hold of **42,662 Medium
+hulls** — General (II) holds 427, General (IV) holds 4.3 million. The
+mid-game General lands precisely on "tens of thousands", and it was not tuned
+to; it fell out of `F = 100` with cost tracking cargo Band-for-Band.
+
+#### The binding constraint, stated so it can be argued with
+
+`E` is bounded by `φ < 1`, so **how far cargo can outrun cost per Band is set by
+the thinnest shell you will accept**:
+
+| min `t/r` | max `E` | vs Medium | max `F` at `F_cost = 8` |
+|---|---|---|---|
+| 0.05 | 5.8 | 1.4x | 9.4 |
+| 0.01 | 31.7 | 7.4x | 21.8 |
+| **0.001** | **323** | **75.6x** | **69.6** |
+| 0.0001 | 3,233 | 758x | 220 |
+
+`F = 100` with cost tracking cargo Band-for-Band needs `t/r ≈ 5×10⁻⁴` by Band
+III. That is a very thin skin — and it is what the fiction already asserts about
+a GSV, which is mostly volume and field.
+
+#### Consequences to expect, and the falsification test
+
+Raising General cost while raising its hold much faster should make **General
+colony ships the correct play**, accelerating the colony doubling rate and
+raising total colony-years. **If increasing General hull cost degrades those
+metrics, the ladder is wrong** — that is the stated acceptance test, and
+`examples/colony_years` is the instrument. Note the autopilot will not use
+General hulls at all until Doctrine is taught to (`role_hull_type` pins
+Colonizer to Medium today), so the ladder change and the Doctrine change must
+be measured *separately* or the result is uninterpretable.
+
+#### Staging (each stage independently revertible)
+
+1. **This entry** — analysis, units, candidates. Docs only.
+2. **Typed hull geometry** — `Radius`, `Thickness`, `HoldFraction`, `Area`,
+   `Volume` newtypes so a unit mismatch in hull design is a compile error, with
+   η and φ as real per-class parameters. Behaviour-preserving: the shipped
+   numbers are reproduced through the new types before any value moves.
+3. **Adopt the ratified ladder** — `cost_fraction`, per-class φ and η,
+   `cargo_unit_size`, `F`. Behaviour *changes*; measure on colony-years.
+4. **Doctrine: build and deploy heavier hulls when useful** — role→hull becomes
+   a policy choice rather than a fixed map. Measure separately from stage 3.
+
+
 ### T-55. R-O73 — the three F ladders, the quantity survey, and what to ratify
 
 **Ratification candidates for `F_cost`, `F_cargo` and `F_pop`, worked before any
