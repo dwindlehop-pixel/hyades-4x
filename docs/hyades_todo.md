@@ -388,6 +388,88 @@ become "what does my current Role's System say to build". The dial
 **Ratification candidates for `F_cost`, `F_cargo` and `F_pop`, worked before any
 simulation.** Nothing here is implemented.
 
+#### Glossary — every symbol, its unit, and where it comes from
+
+Nothing below is notation invented for this entry; each row is either read out
+of `src/sim.rs` or derived from those readings.
+
+**Fixed by the engine** (constants, not choices):
+
+| symbol | value | what it is | code |
+|---|---|---|---|
+| `√3` | 1.7320508 | `REFERENCE_MEDIUM_RADIUS` — the *constant* radius the capacity ladder normalises against. Constant on purpose (R-O58b): normalising against the live Medium radius made a quantity that can approach zero into a divisor. | `sim.rs` |
+| `(√3−1)³` | 0.392305 | the normaliser as it actually appears | `cargo_capacity` |
+
+**Read out of the code** (definitions, not assumptions):
+
+| expression | meaning |
+|---|---|
+| `cost_fraction(h)` | General `= 1`, Medium `= 1/medium_fleet_size`, Limited `= 1/limited_fleet_size`. A hull's mineral cost as a fraction of a General's. |
+| `hull_radius(h) = √(cost_fraction(h) / cost_fraction(Limited))` | cost ∝ surface area ⇒ `r ∝ √cost`. Limited is the unit radius, so `r_L = 1` exactly. |
+| `r_G = √(limited_fleet_size)`, `r_M = √(limited_fleet_size / medium_fleet_size)` | the same thing, unfolded |
+| `cargo_capacity(h) = cargo_unit_size · (r_h − 1)³ / (√3 − 1)³` | hold as a **mass in kilotons**; `(r−1)` is the usable interior of a unit-thickness shell |
+| `hull_dry_mass(h) = cost_fraction(h) · general_vehicle_cost` | dry mass **is** the mineral cost — one number, L6/R-O57 |
+| `laden_accel = base_g · G · dry / (dry + cargo)` | `a = thrust/mass`; every term kilotons |
+
+**The four free parameters** — this is the whole of what ratification chooses:
+
+| symbol | meaning | unit |
+|---|---|---|
+| `F` | the shared band width, `F_pop = F_cargo` (Band equivalence) | dimensionless ratio |
+| `N₁` | people at population Band I — "a small town" | people |
+| `kg/person` | mass per colonist at Band I (**300**, ratified this conversation) | kg |
+| `r_M` | the Medium hull's radius, in Limited-radii. The one free *geometric* parameter. | dimensionless |
+
+**Everything else is derived, in this order:**
+
+```
+c                  = F^(1/3)                        # per-Band radius step of the hold
+r_G                = 1 + (r_M − 1)·c                 # forces F_cargo = F exactly
+limited_fleet_size = r_G²
+medium_fleet_size  = (r_G / r_M)²
+F₁_cost            = r_M²  ( = limited_fleet_size / medium_fleet_size )
+F₂_cost            = medium_fleet_size
+KT(I)              = N₁ · kg_per_person / 10⁶        # kilotons at pop Band I
+cargo_unit_size    = KT(I) · (√3 − 1)³ / (r_M − 1)³  # so the Medium hold IS KT(I)
+dry_M              = general_vehicle_cost / medium_fleet_size
+base_g             = 0.18349 · (1 + KT(I)/dry_M)     # holds laden accel at today's
+Band IV population = N₁ · F³
+```
+
+`0.18349` is today's colonizer laden-acceleration factor,
+`dry/(dry+cargo) = (1/4.45)/((1/4.45)+1)`, carried as the thing to preserve.
+
+**Fully worked, and verified back through the code's formulas rather than the
+derivation:**
+
+| opt | `F` | `N₁` | `r_M` | `r_G` | `limited_fleet_size` | `medium_fleet_size` | `F₁_cost` | `F₂_cost` | `KT(I)` | **`cargo_unit_size`** | `dry_M` | `base_g` | Band IV pop |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 100 | 3,200 | 2.000 | 5.642 | 31.828 | 7.957 | 4.00 | 7.96 | 0.960 kt | **0.3766** | 0.1257 | 1.59 g | 3.20 B |
+| 2 | 81 | 5,000 | 2.100 | 5.759 | 33.171 | 7.522 | 4.41 | 7.52 | 1.500 kt | **0.4421** | 0.1329 | 2.25 g | 2.66 B |
+| 3 | 64 | 10,000 | 2.300 | 6.200 | 38.440 | 7.267 | 5.29 | 7.27 | 3.000 kt | **0.5357** | 0.1376 | 4.18 g | 2.62 B |
+
+Checked for all three, through `cargo_capacity` and `laden_accel` as written:
+Medium hold `== KT(I)`; General hold `/` Medium hold `== F` (Band equivalence);
+laden acceleration preserved exactly; both cost steps inside `[4, 8]`.
+Resulting holds — Limited `0.000`, Medium `KT(I)`, General `F · KT(I)`: option 1
+gives 0 / 0.96 / 96 kt, option 3 gives 0 / 3.0 / 192 kt.
+
+#### Correction: "grow the hold" is achieved by *lowering* `cargo_unit_size`
+
+Earlier this entry quoted the hold as growing ×1.00 / ×1.56 / ×3.13. That is
+right as a statement about **the Medium hull's hold in kilotons**, and it is
+**the opposite of what happens to the knob**: `cargo_unit_size` must fall from
+**5.0 to 0.38–0.54**.
+
+The reason is that `cargo_unit_size` is not the hold — it is the hold *at the
+reference radius √3*, and the new cost ladder moves the Medium hull's radius
+from today's 1.422 to 2.0–2.3. The geometric factor `(r_M − 1)³ / (√3 − 1)³`
+goes from 0.192 to 2.55–4.98, a 13–26x swing, so a much smaller
+`cargo_unit_size` yields a larger hold. This is the same trap T-53 recorded —
+the field is named for a hull whose radius it no longer describes — showing up
+a second time, now in the direction of the fix.
+
+#### The closed form that decides it
 #### The closed form that decides it
 
 Shell model with the Limited hull at unit radius (`r_L = 1`, all shell, no
