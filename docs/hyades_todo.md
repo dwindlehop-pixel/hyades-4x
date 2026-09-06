@@ -479,6 +479,91 @@ General hulls at all until Doctrine is taught to (`role_hull_type` pins
 Colonizer to Medium today), so the ladder change and the Doctrine change must
 be measured *separately* or the result is uninterpretable.
 
+#### Stage 1b — `V_reserved`, the role axis, and two corrections to Stage 1
+
+**Correction 1: Stage 1 used superseded `η`.** It took §2.1's *illustrative*
+0.73 / 0.85 / 0.97. §2.2 supersedes those with a **ratified `η(role, size)`
+table**, and the anchor is stronger than the number I used: **a General Systems
+Vehicle is a literal sphere, `η = 1.000` exactly.**
+
+| role | General | Medium/Rapid | Limited |
+|---|---|---|---|
+| Systems | **1.000** | 0.98 | 0.86 |
+| Contact | 0.96 | *(no Medium tier)* | 0.75 |
+| Offensive | 0.93 | 0.73 (Gangster anchor, real data) | 0.64 |
+
+**Correction 2: `φ` needs both axes, not just role.** With `cost = V(1−φ³)/η`
+and `cargo = Vφ³ − V_res`, a `φ` fixed within a role makes both quantities `∝ V`,
+so **the cost ratio is forced to equal the cargo ratio.** Measured on the
+role-only draft: the Systems GSV/MSV cost ratio came out **82.8** against
+`F_cost ≤ 8`. So `φ(role, size)` — the same two-axis shape §2.2 already gives
+`η`. Role sets the *level* (Offensive thick, Systems thin, Contact between);
+size sets the *slope* within it.
+
+**`V_reserved` needs a second term, which §2.3 does not have.** §2.3 defines it
+as "engines, structure, crew — the non-cargo baseline every hull needs
+**regardless of size**", i.e. purely absolute. That is right for the core and
+wrong for the role: a General Offensive amortises a fixed core and comes out
+**cargo-rich — 33.2 against a GSV's 133.4, 25%, not "little to zero"**. The fix
+is that a warship's reserved volume *is* weapons, armour and magazines, and
+those scale with the hull:
+
+```
+V_reserved(role, V) = a_role + b_role · V
+```
+
+| role | `a` (V_LSV) | `b` (of V) | why |
+|---|---|---|---|
+| Systems | 0.25 | **0.00** | cargo *is* the payload |
+| Contact | 0.40 | 0.35 | sensor/probe fit — between |
+| Offensive | 0.55 | **0.92** | weapons + armour + magazines scale with the hull, so cargo stays ~0 at every size |
+
+#### The candidate ladder, all three axes
+
+Systems row solved for `F_cargo = 100`, `F_cost = 8`. Volumes in `V_LSV`;
+`r_eq` (∛V): LSV 1.000, MSV 1.239, **GSV 5.15**.
+
+| hull | role | size | `φ` | `t/r` | `η` | cargo | cost | `E = cargo/cost` |
+|---|---|---|---|---|---|---|---|---|
+| LimitedSystems | Systems | Limited | 0.900 | 0.100 | 0.86 | **0.479** | 0.315 | 1.52 |
+| MediumSystems | Systems | Medium | 0.9412 | 0.059 | 0.98 | 1.334 | 0.322 | 4.14 |
+| GeneralSystems | Systems | General | 0.9937 | 0.0063 | **1.000** | 133.4 | 2.578 | 51.7 |
+| LimitedContactVehicle | Contact | Limited | 0.820 | 0.180 | 0.75 | 0.000 | 0.598 | 0 |
+| GeneralContactVehicle | Contact | General | 0.985 | 0.015 | 0.96 | 82.1 | 6.291 | 13.1 |
+| LimitedOffensive | Offensive | Limited | 0.600 | 0.400 | 0.64 | **0.000** | 1.225 | 0 |
+| RapidOffensive | Offensive | Rapid | 0.620 | 0.380 | 0.73 | **0.000** | 1.982 | 0 |
+| GeneralOffensive | Offensive | General | 0.900 | 0.100 | 0.93 | **0.000** | 39.70 | 0 |
+
+**Offensive cargo is 0.000 at every size by mechanism, not by a floor** — the
+`b` term consumes the interior. That is what "little to zero cargo" asked for,
+and it now falls out rather than being clamped.
+
+**`LimitedSystems` carries 0.479 rather than zero** — the requested "Limited
+costs Band I but you get more per Band-I cost". Note this **may retire R-V9's
+"a Colonizer must be Medium or larger"**, which rested on Limited having
+literally no hold; it now depends on whether 0.479 clears the colony seed.
+
+#### Two independent validations
+
+- **Design law #2's window.** GOU cost 39.70 against ROU 1.982 is **20.0x**, so
+  a cost-parity fleet is 20 ROUs to one GOU — inside the ratified 6–45 target,
+  and not tuned to.
+- **Design law #3.** Systems carry-efficiency rises 1.52 → 4.14 → 51.7 with
+  size, monotonically, so consolidation wins by construction rather than by
+  assertion.
+
+#### What this opens
+
+- **R-MC12 gets an answer shape.** Cross-role sizing is no longer "same size,
+  less efficient" vs "smaller": role now differs in `φ` and `V_reserved` at the
+  *same* `r_eq`, which is a third lane and the one this ladder takes.
+- **The `b` term is new** and extends §2.3 rather than restating it; it needs
+  ratifying alongside `a`.
+- **R-MC11** (shape as a function of loadout, not a per-`HullType` lookup) is
+  the natural successor: `φ` and `b` are exactly "how much of the interior is
+  role payload", which *is* slot composition.
+
+
 #### Staging (each stage independently revertible)
 
 1. **This entry** — analysis, units, candidates. Docs only.
