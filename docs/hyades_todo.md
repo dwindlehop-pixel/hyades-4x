@@ -454,24 +454,84 @@ out *slower*, because swap-removal traded a sequential walk for random access.
 **Measure it, keep the iteration order stable, and hold colony-years fixed** —
 `examples/colony_years` exists for precisely that.
 
-### T-53. Cargo size is a Band count, but acceleration needs a mass
+### T-53. R-O71 — the cargo ladder is geometric where §2.6 says it must be Banded
 
-**Reported, not yet investigated.** `cargo_unit_size` is intended to convey
-"Bands I–III worth of stuff" — a count on the magnitude ladder — while
-`laden_accel` divides thrust by `dry_mass + cargo_mass` and therefore needs
-**kilotons**. If the cargo figure reaches the acceleration term without going
-through `crate::units`, that is the same class of defect as R-O66's
-`K = min(hab, bio, infra)`: a Band standing in for a mass, typechecking because
-both were `f64`.
+**Investigated. The reported units error is real but it is not where it was
+expected, and the dimensional analysis of the acceleration term comes out
+clean.**
 
-Same treatment as R-O66: put the reading in the type, make the conversion go
-through `Measure`, and **measure whether it changes anything** — the biomass
-economy turned out to be entirely slack when ablated, so a units correction here
-may or may not move the objective. Do not assume it is inert and do not assume
-it is large; ablate.
+**What is *not* wrong.** `laden_accel` is `dry / (dry + minerals + pop)` and
+every term is kilotons: `dry` is `hull_dry_mass`, which L6/R-O57 made identical
+to mineral cost; `minerals` is `Minerals::basic_total()`, the same unit by that
+same identity — a mineral in the hold masses exactly what it massed as hull,
+which is why no `cargo_mass_per_unit` coefficient exists any more; and `pop`
+goes through `units::population_mass` (fixed at R-O66). There is no Band
+standing in for a mass in that equation. The readings are now taken explicitly
+through the types anyway, and `cargo_capacity` returns [`Kilotons`], so the
+next reader does not have to redo this analysis.
 
-Touches design law #10 (acceleration is the observable) and R-O32 (colony cargo
-mass ≡ mineral cargo mass), so any correction has to keep those consistent.
+**What is wrong: the ladder.** `Hyades_mineral_cost_curve.md` §2.6 requires one
+step factor `F ∈ [4, 8]` to govern every Band-laddered quantity and **names
+cargo capacity in that list**. Measured (`examples/cargo_units`, shipped
+defaults):
+
+| hull | dry mass | hold | step |
+|---|---|---|---|
+| Limited | 0.111 | 0.000 kt | — |
+| Medium | 0.225 | 0.959 kt | ∞ |
+| General | 1.000 | 101.96 kt | **106.35x** |
+
+Against §2.6's `[4, 8]` that is 13–26x outside the permitted range. Under the
+Band reading of roles §6's 0 / 1 / 2 — Limited at Band 0, Medium at Band I,
+General at Band II, which is the "Bands I–III worth of stuff" the design
+intends — the holds would be **0.25 / 1.0 / 4.0 kt**, steps of exactly
+`BAND_STEP`. Note the Medium hull lands at 0.959 kt, within 5% of `KT(Band I)`;
+it is General that is two orders of magnitude off.
+
+**Two ratified specs disagree by an order of magnitude, so nothing was
+changed.** R-O58's shell model derives capacity from usable interior `(r − 1)³`
+and is ratified; §2.6's Band constraint is ratified. Picking between them is a
+design call and `cargo_unit_size` sits behind an MC-tuned cost ladder, so this
+is flagged, pinned by `the_cargo_ladder_is_geometric_not_banded`, and left for
+ratification. **R-O71.**
+
+**A concrete inconsistency the mismatch already produces.** A Colonizer carries
+`colony_seed_pop = 1.0` Band of settlers, massing `KT(I) = 1.0 kt`, in a Medium
+hull whose hold is **0.959 kt** — R-V9 makes Medium the smallest hull that can
+carry a colony seed, and the seed does not fit. Nothing catches it because
+capacity gates mineral loading only and pop cargo is inserted directly. Asserted
+in the same test so it cannot drift unnoticed.
+
+**Also corrected: a stale doc that was misreading its own sweep.**
+`SimConfig::cargo_unit_size` was documented as "what a Medium hull carries, in
+kilotons". It is the hold of a hull at `REFERENCE_MEDIUM_RADIUS = √3`, which the
+Medium hull has only when `medium_fleet_size == 3`; at the ratified 4.45 the
+Medium hull carries **0.959 kt against the field's 5.0**, a factor of 5.2. The
+constant normaliser is deliberate and correct (R-O58b) — the doc line was
+stale. It matters because the `binding_check` sweep table in that same comment
+has this field as its x-axis, so "the hold stops binding past roughly 1–5"
+means *past roughly 0.19–0.96 kt of real Medium hold*. Since R-O58 the cost
+ladder **is** the capacity ladder, and CLAUDE.md §2 says a parameter that
+reaches the objective through a derived quantity cannot be swept alone.
+
+**Resolution options, for whoever ratifies:**
+
+1. **Band the capacity ladder** — set holds to `KT(0) / KT(I) / KT(II)` and let
+   the shell model keep only its *ordinal* content, the way roles §6's slot
+   count was already demoted at R-O64. Costs the 20x consolidation incentive
+   that design law #3 leans on.
+2. **Exempt cargo capacity from §2.6** and strike it from that list, on the
+   grounds that a hold is a *volume* and the Band ladder governs magnitudes of
+   stuff rather than the containers. Cheapest, and needs §2.6 amended.
+3. **Re-derive `F` from the geometry** so the two agree by construction, which
+   constrains the cost ladder rather than the capacity one — and `F ∈ [4, 8]`
+   with `capacity ∝ (r−1)³` pins `medium_fleet_size` hard. That interacts with
+   R-MC15 and T-19, so it is the one to think about before the others.
+
+Whichever is chosen, **ablate before believing any coverage effect**: the
+biomass economy looked load-bearing and turned out entirely slack, and
+`cargo_unit_size`'s own elasticity is already measured as exactly zero at this
+operating point.
 
 
 ### T-51. R-O68 — the deepen/expand trade does not exist, and it is what sets the expansion-loop time constant

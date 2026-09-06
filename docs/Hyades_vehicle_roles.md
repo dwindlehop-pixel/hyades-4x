@@ -337,6 +337,16 @@ minerals" — that inference held up).
 > rests on. The rest is the ordinal claim that each larger hull carries
 > strictly more, which the engine asserts as a test.
 >
+> **But the geometry disagrees with the Band ladder, and that is now open
+> (R-O71).** `Hyades_mineral_cost_curve.md` §2.6 requires one step factor in
+> `[4, 8]` across every Band-laddered quantity and names cargo capacity among
+> them. Read as Bands, this section's 0 / 1 / 2 *is* that ladder — Limited at
+> Band 0, Medium at Band I, General at Band II — giving holds of 0.25 / 1.0 /
+> 4.0 kt. The shell model gives 0 / 0.959 / 101.96 kt at the shipped defaults, a
+> Medium → General step of **106x**. The Medium hull happens to land within 5%
+> of `KT(Band I)`; it is the General hull that is two orders of magnitude away.
+> Neither spec is being overridden here — see `hyades_todo.md` T-53.
+>
 > The two are not interchangeable as *magnitudes*, and the slot reading was
 > the one costing something real: at 0 / 1 / 2 against the 1 : 3 : 9 cost
 > ladder, a General hull cost 9× a Limited and hauled 2 units where a Medium

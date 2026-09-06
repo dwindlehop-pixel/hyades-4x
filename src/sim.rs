@@ -522,12 +522,24 @@ impl HullType {
     /// [`HullType::cargo_capacity`] come out at exactly zero for it rather than
     /// having to be special-cased. At the shipped 1 : 3 : 9 cost ladder the
     /// ladder is 1 : √3 : 3.
-    fn hull_radius(self, cfg: &SimConfig) -> f64 {
+    pub fn hull_radius(self, cfg: &SimConfig) -> f64 {
         (self.cost_fraction(cfg) / HullType::LimitedSystems.cost_fraction(cfg)).sqrt()
     }
 
-    /// Cargo capacity **as a mass** (R-O58) — kilotons, the same unit as
-    /// minerals, population, biosphere and the hull itself (L6).
+    /// Cargo capacity **as a mass** (R-O58) — [`Kilotons`], the same unit as
+    /// minerals, population, biosphere and the hull itself (L6). Typed rather
+    /// than a bare `f64` because it is consumed by an acceleration term, which
+    /// needs a mass and nothing else (§4, R-O66).
+    ///
+    /// **It is not on the Band ladder, and `Hyades_mineral_cost_curve.md` §2.6
+    /// says it should be (R-O71).** That section requires one step factor
+    /// `F ∈ [4, 8]` to govern every Band-laddered quantity and names *cargo
+    /// capacity* in the list; this steps Medium → General by **106.35x** at the
+    /// shipped defaults (`examples/cargo_units`). Under the Band reading of
+    /// roles §6's 0 / 1 / 2 — Limited at Band 0, Medium at Band I, General at
+    /// Band II — the holds would be 0.25 / 1.0 / 4.0 kt, steps of exactly
+    /// `BAND_STEP`. Two ratified specs disagree by an order of magnitude and
+    /// the resolution is a design call, so nothing is changed here; see T-53.
     ///
     /// Contents scale with the shell's *usable interior*, `(4/3)π(r−t)³`, against
     /// a dry mass that scales with area. Working in shell-thickness units and
@@ -552,11 +564,11 @@ impl HullType {
     /// is well-defined for every cost ladder and nothing diverges. A hull
     /// approaching the unit radius approaches zero capacity, smoothly, because
     /// it is approaching being all shell.
-    fn cargo_capacity(self, cfg: &SimConfig) -> f64 {
+    pub fn cargo_capacity(self, cfg: &SimConfig) -> Kilotons {
         const REF_USABLE: f64 =
             (REFERENCE_MEDIUM_RADIUS - 1.0) * (REFERENCE_MEDIUM_RADIUS - 1.0) * (REFERENCE_MEDIUM_RADIUS - 1.0);
         let usable = (self.hull_radius(cfg) - 1.0).max(0.0).powi(3);
-        cfg.cargo_unit_size * usable / REF_USABLE
+        Kilotons::new(cfg.cargo_unit_size * usable / REF_USABLE)
     }
 
     /// Mineral cost as a fraction of `SimConfig::general_vehicle_cost`, from
@@ -987,12 +999,28 @@ pub struct SimConfig {
     pub mining_tick_years: f64,
     /// Density below which a body is considered mined out.
     pub density_floor: f64,
-    /// The **reference hold**: what a Medium hull carries, in kilotons — the
-    /// scale factor on [`HullType::cargo_capacity`]'s geometric ladder.
+    /// The **reference hold**, in kilotons — the scale factor on
+    /// [`HullType::cargo_capacity`]'s geometric ladder.
     ///
-    /// Every other hull's capacity is this times its usable-volume ratio to the
-    /// reference radius (R-O58), so a Limited hull carries nothing and a General
-    /// one carries far more than twice as much.
+    /// Every other hull's capacity is this times its usable-volume ratio to
+    /// [`REFERENCE_MEDIUM_RADIUS`] (R-O58), so a Limited hull carries nothing
+    /// and a General one carries far more than twice as much.
+    ///
+    /// ~~What a Medium hull carries~~ — **it is the hold of a hull at the
+    /// reference radius √3, which the Medium hull only has when
+    /// `medium_fleet_size == 3`.** At the ratified `4.45` the Medium radius is
+    /// 1.422, and a Medium hull actually carries **0.959 kt against this
+    /// field's 5.0** — a factor of 5.2. The normaliser is a constant on
+    /// purpose (see [`REFERENCE_MEDIUM_RADIUS`]); it is this doc line that was
+    /// stale.
+    ///
+    /// **That matters for the table below, which is why it is corrected here.**
+    /// Its x-axis is this field, not the hold any hull actually has, and since
+    /// R-O58 the cost ladder *is* the capacity ladder — so `medium_fleet_size`
+    /// silently rescales what every row means. Read "the hold stops binding
+    /// past roughly 1–5" as *past roughly 0.19–0.96 kt of real Medium hold*.
+    /// CLAUDE.md §2: a parameter that reaches the objective through a derived
+    /// quantity cannot be swept alone.
     ///
     /// **This is a floor requirement, not a tuning dial** — measured, not
     /// assumed (`examples/binding_check.rs`, 4 seeds, 4,000 yr):
@@ -1832,7 +1860,7 @@ impl Simulation {
         if sh.outbound {
             // At the outpost: load ore from its stockpile into cargo.
             let avail = self.world.stockpile.get(sh.outpost).unwrap().basic_total();
-            let load = cap.min(avail);
+            let load = cap.kilotons().min(avail);
             if load > 0.0 {
                 let moved = take_basics(self.world.stockpile.get_mut(sh.outpost).unwrap(), load);
                 self.world.cargo.get_mut(vehicle).unwrap().add_basics(&moved);
@@ -2656,12 +2684,21 @@ impl Simulation {
         // was massless and a laden colony ship accelerated exactly like an empty
         // hull — a free read on the one thing §6.2 exists to conceal, since
         // acceleration is the long-range observable.
-        let minerals = self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0);
-        let pop = units::population_mass(self.world.pop_cargo.get(e).copied().unwrap_or(Band::ZERO)).kilotons();
+        // **Three masses, and each reading is taken explicitly.** Acceleration
+        // is `thrust / mass`, so every term below has to be kilotons or the
+        // ratio is meaningless — the defect R-O66 found in `K` one module over,
+        // in the one place design law #10 makes observable.
+        //
+        // Minerals convert 1:1 because L6/R-O57 made cost and dry mass one
+        // number: a mineral in the hold masses exactly what it massed as hull.
+        // That is an identity, not a coefficient, which is why there is no
+        // `cargo_mass_per_unit` any more.
+        let minerals = Kilotons::new(self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0));
+        let pop = units::population_mass(self.world.pop_cargo.get(e).copied().unwrap_or(Band::ZERO));
         let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
-        let dry = hull_dry_mass(hull, &self.config).max(1e-9);
-        let factor = dry / (dry + minerals + pop);
-        base_g * G * factor
+        let dry = Kilotons::new(hull_dry_mass(hull, &self.config).max(1e-9));
+        let laden = dry + minerals + pop;
+        base_g * G * (dry.kilotons() / laden.kilotons())
     }
 
     /// Park a vehicle at `pos` (degenerate motion ⇒ fixed position, not in flight).
@@ -3103,8 +3140,8 @@ mod tests {
         assert!(cfg.hull_ladder_fault().is_none(), "a narrow ladder is meaningful, not a fault");
         let m = HullType::MediumSystems.cargo_capacity(&cfg);
         let g = HullType::GeneralSystems.cargo_capacity(&cfg);
-        assert!(m > 0.0 && m < 0.01, "Medium is nearly all shell: {m}");
-        assert!(g > 100.0, "General is untouched by the Medium hull shrinking: {g}");
+        assert!(m > Kilotons::ZERO && m < Kilotons::new(0.01), "Medium is nearly all shell: {m}");
+        assert!(g > Kilotons::new(100.0), "General is untouched by the Medium hull shrinking: {g}");
 
         // **Inverted is not.** A "Medium" hull cheaper — and therefore smaller
         // — than a "Limited" one is a contradiction in the naming, not a
@@ -3473,18 +3510,66 @@ mod tests {
         // hull is all shell and carries nothing; each larger hull carries
         // strictly more. The magnitudes are geometry now, not the unit count —
         // General is ~20× Medium, not 2× (R-O64).
-        assert_eq!(l.cargo_capacity(&cfg), 0.0);
-        assert!((m.cargo_capacity(&cfg) - cfg.cargo_unit_size).abs() < 1e-12);
+        assert_eq!(l.cargo_capacity(&cfg), Kilotons::ZERO);
+        assert!((m.cargo_capacity(&cfg).kilotons() - cfg.cargo_unit_size).abs() < 1e-12);
         assert!(g.cargo_capacity(&cfg) > m.cargo_capacity(&cfg));
-        let ratio = g.cargo_capacity(&cfg) / m.cargo_capacity(&cfg);
+        let ratio = g.cargo_capacity(&cfg).kilotons() / m.cargo_capacity(&cfg).kilotons();
         assert!((ratio - (2.0 / (3f64.sqrt() - 1.0)).powi(3)).abs() < 1e-9, "G:M capacity ratio {ratio}");
 
         // Design law #3: consolidation must win under geometry alone. The
         // pre-shell model failed this — a General hull cost 9× a Limited and
         // hauled 2 units where a Medium cost 3× and hauled 1, i.e. 0.100 vs
         // 0.067 cost per unit hauled, so *fragmenting* was cheaper.
-        let per_kt = |h: HullType| h.cost_fraction(&cfg) * cfg.general_vehicle_cost / h.cargo_capacity(&cfg);
+        let per_kt = |h: HullType| h.cost_fraction(&cfg) * cfg.general_vehicle_cost / h.cargo_capacity(&cfg).kilotons();
         assert!(per_kt(g) < per_kt(m), "bigger hull must be cheaper per kt hauled");
+    }
+
+    /// **The cargo ladder is not the Band ladder, and the spec says it should
+    /// be (R-O71 / T-53).**
+    ///
+    /// `Hyades_mineral_cost_curve.md` §2.6 requires a single step factor
+    /// `F ∈ [4, 8]` to govern every Band-laddered quantity and names *cargo
+    /// capacity* explicitly in that list. The shell model (R-O58) instead
+    /// derives capacity from `(r − 1)³`, which at the shipped cost ladder steps
+    /// Medium → General by two orders of magnitude.
+    ///
+    /// A characterization test, not an endorsement: two ratified specs disagree
+    /// and picking between them is a design call, so this pins the disagreement
+    /// where someone will read it rather than letting it drift quietly. Under
+    /// the Band reading of roles §6's 0 / 1 / 2 the holds would be
+    /// `KT(0) / KT(I) / KT(II)` — steps of exactly `BAND_STEP`.
+    #[test]
+    fn the_cargo_ladder_is_geometric_not_banded() {
+        let cfg = SimConfig::new(1);
+        let m = HullType::MediumSystems.cargo_capacity(&cfg).kilotons();
+        let g = HullType::GeneralSystems.cargo_capacity(&cfg).kilotons();
+        let step = g / m;
+
+        assert!(
+            !(4.0..=8.0).contains(&step),
+            "cargo capacity now steps {step:.2}x, inside §2.6's [4, 8] — if this is deliberate, R-O71 is \
+             resolved and this test should be replaced by the constraint it was tracking"
+        );
+        assert!(step > 100.0, "expected the geometric ladder's ~106x, got {step:.2}x");
+
+        // What the Band reading would give instead, for the same three hulls.
+        let banded = |b: f64| Band::new(b).in_kilotons().kilotons();
+        assert!(
+            (banded(2.0) / banded(1.0) - units::BAND_STEP).abs() < 1e-9,
+            "the Band ladder steps by BAND_STEP by construction"
+        );
+
+        // And the concrete inconsistency the mismatch already produces: a
+        // Colonizer carries `colony_seed_pop` of settlers, whose mass exceeds
+        // the hold of the Medium hull that R-V9 says is the smallest that can
+        // carry them. Nothing checks it, because capacity gates mineral loading
+        // only.
+        let seed_mass = units::population_mass(Band::new(cfg.colony_seed_pop)).kilotons();
+        assert!(
+            seed_mass > m,
+            "if the colony seed ({seed_mass:.3} kt) now fits a Medium hold ({m:.3} kt), the ladders have \
+             moved and R-O71 wants re-measuring"
+        );
     }
 
     #[test]

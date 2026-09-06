@@ -506,6 +506,28 @@ the shell-model prediction and "sit exactly at the floor" are different
 reasons to land near the same number, and one data point does not
 distinguish them.
 
+> **Contradicted by the engine, measured — R-O71 (new, open).** Cargo capacity
+> is named in that list, and the engine does not put it on this ladder at all.
+> `HullType::cargo_capacity` derives the hold from the shell model's usable
+> interior `(r − 1)³` (R-O58), which at the shipped cost ladder steps
+> **Medium → General by 106.35x** (`examples/cargo_units`) against the `[4, 8]`
+> this section requires — 13 to 26 times outside it. Under the Band reading of
+> `Hyades_vehicle_roles.md` §6's 0 / 1 / 2 the holds would be 0.25 / 1.0 / 4.0
+> kt, steps of exactly `F`. Both sides are ratified, so this is recorded rather
+> than resolved: either capacity leaves this list, or the capacity ladder is
+> re-derived from `F`, which would pin `medium_fleet_size` hard and therefore
+> lands on top of R-MC15 and T-19. `hyades_todo.md` T-53 carries the options and
+> `the_cargo_ladder_is_geometric_not_banded` pins the disagreement so it cannot
+> drift silently.
+>
+> Two smaller things fell out of the same measurement and are already fixed in
+> code: `laden_accel`'s terms are all genuinely kilotons (no Band is standing in
+> for a mass there — the suspicion that started this was not borne out), and
+> `SimConfig::cargo_unit_size` was documented as "what a Medium hull carries"
+> when it is the hold at the *reference* radius √3 — at the ratified
+> `medium_fleet_size = 4.45` a Medium hull carries 0.959 kt against the field's
+> 5.0.
+
 **The engine now depends on this number.** `src/units.rs` implements the
 Band↔kiloton bridge as `KT(b) = KT_I · BAND_STEP^(b−1)` — the *only* place
 the two units meet — and population growth pays for itself across it, so
