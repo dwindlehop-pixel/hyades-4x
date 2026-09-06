@@ -397,37 +397,82 @@ interruption is this event scheduled at the moment of the strike after clearing
 `building_until`, which is a scheduling call rather than a redesign. Blocked on
 combat integration (T-12/T-30), not on engine work here.
 
-**The decoupling exposed a pre-existing `O(galaxy)` cost in the decision path,
-and made it fire twice as often.** Building the candidate list walks every
-entry in `knowledge.scanned` and calls `view_of` + `rank` on each; `scanned`
-grows toward the whole galaxy. That is exactly the violation CLAUDE.md §4 names
-— *per-evaluation cost must be local, `O(what the decision reads)`, not
-`O(galaxy)`* — and it is the same shape as the `survey_candidates` case already
-recorded there as the worked example. Decisions were previously rationed to one
-per center per 50 years, which hid it.
+~~**The decoupling exposed a pre-existing `O(galaxy)` cost in the decision path,
+and made it fire twice as often.**~~ **Fixed — R-O70.** The premise was right and
+the diagnosis inside it was wrong, which is the part worth keeping.
 
-Measured same-container, 3 seats, 4 kyr, standard bed:
+**What was actually costing the time.** Instrumented iteration counters, seed 1
+at the shipped horizon — counting loops rather than guessing at them:
 
-| | colonies | vehicles | events | throughput |
-|---|---|---|---|---|
-| before (cadence-driven) | 3,294.0 | ~10,350 | ~237 k | 235–269 yr/s |
-| after (event-driven) | 3,459.8 | ~14,700 | ~421 k | 61–66 yr/s |
+| loop | calls | items scanned | heavy work |
+|---|---|---|---|
+| `holdings_centroid` | 169,211 | **1,138 M** | — |
+| production candidates | 169,211 | **1,033 M** | 328 M `view_of` + `rank` |
+| survey candidates | 26,456 | 178 M | 68 M views |
 
-**~4.1x slower for +5.0% colonies.** Most of that is entity count doing what
-design law #14 says it does — +42% vehicles, and cost is superlinear in
-entities — but the decision scan is the part that is *ours*. The margin against
-T-24's 2.5 yr/s floor falls from ~108x to ~26x at 3 seats / 4 kyr, and the
-12-seat / 8-kyr corner extrapolates to **~3.2 yr/s, a ~1.3x margin**. That
-corner was already the unmeasured one (T-24) and is now the one that matters.
+**Two guesses were made before that table existed and both were wrong.** The
+candidate `Vec` and a cached `ln` in `view_of` were fixed first and produced
+**no speedup at all** — 60 → 58 yr/s, inside noise. Survey was then assumed to
+be the hot path, on the strength of §4's worked example; it is an order of
+magnitude smaller than either of the other two. A slow program is a symptom, and
+CLAUDE.md §2 says a symptom needs a *proven* mechanism. Profiling is what proves
+this one, and it cost one instrumented run.
 
-**The fix is to make the candidate list incremental, not to re-throttle
-decisions.** A per-player ranked frontier maintained on scan and on claim gives
-each decision `O(what it reads)` instead of `O(scanned)`. Note CLAUDE.md §4's
-warning from the last attempt at this: an incrementally-maintained unvisited
-frontier cut the scanned count 39% and came out *slower*, because swap-removal
-traded a sequential walk for random access. **Measure, do not assume** — and
-keep the ordering stable, since a scrambled iteration order is both a locality
-loss and a determinism hazard.
+**The three real fixes, all bit-identical:**
+
+1. **`holdings_centroid` memoised.** A full `planet_entity` walk per decision,
+   for a value that only moves when a colony is founded — ~3,400 changes against
+   169,211 calls. The cache stores the **recomputed** value rather than a running
+   sum, deliberately: an incremental sum accumulates in claim order while the
+   walk accumulates in planet-id order, and float addition is not associative, so
+   the centroid would differ in its last bits and every rank score with it.
+   `claim_planet` is now the only sanctioned way to give a planet an owner, and a
+   `debug_assert` recomputes and compares on every call in test builds — a missed
+   invalidation fails loudly instead of diverging on some seeds.
+2. **`Knowledge::targeted`: `BTreeSet` → bitmap.** Membership-tested **1.03
+   billion times** and never iterated. This is the exact fix already applied to
+   its sibling `visited`, whose doc comment records that one `BTreeSet::contains`
+   was once 63% of all engine instructions — the lesson was learned and never
+   carried across.
+3. **`Knowledge::scanned`: `BTreeSet` → sorted `Vec`.** *Iterated* 1.03 billion
+   times on the hottest path. A B-tree walk is a pointer chase over boxed nodes;
+   a sorted `Vec` is a sequential read, and §4's own finding is that locality
+   beats element count. Identical order, so nothing about determinism moves.
+
+**Result: 3.3x, with the guard held exactly.** Seed 1 60 → 198 yr/s, seed 7
+52 → 185 yr/s, and **colony-years identical to the decimal** (7,819,401.0 and
+8,480,172.0), as are colony counts, foundings and first-founding times. Against
+T-24's 2.5 yr/s floor the margin at 3 seats / 4 kyr goes ~26x → ~79x, and the
+12-seat / 8-kyr corner from ~1.3x to ~3.8x. R-O69's +165.8 colonies now cost
+about a quarter of the throughput rather than four times it.
+
+**Still open on this surface.** The production candidate scan remains
+`O(scanned)` — 1.03 G iterations, 328 M of them building a view and ranking it —
+and is now the largest loop left. An incremental per-player ranked frontier is
+the obvious next step, but §4 records that the last attempt at exactly that came
+out *slower*, because swap-removal traded a sequential walk for random access.
+**Measure it, keep the iteration order stable, and hold colony-years fixed** —
+`examples/colony_years` exists for precisely that.
+
+### T-53. Cargo size is a Band count, but acceleration needs a mass
+
+**Reported, not yet investigated.** `cargo_unit_size` is intended to convey
+"Bands I–III worth of stuff" — a count on the magnitude ladder — while
+`laden_accel` divides thrust by `dry_mass + cargo_mass` and therefore needs
+**kilotons**. If the cargo figure reaches the acceleration term without going
+through `crate::units`, that is the same class of defect as R-O66's
+`K = min(hab, bio, infra)`: a Band standing in for a mass, typechecking because
+both were `f64`.
+
+Same treatment as R-O66: put the reading in the type, make the conversion go
+through `Measure`, and **measure whether it changes anything** — the biomass
+economy turned out to be entirely slack when ablated, so a units correction here
+may or may not move the objective. Do not assume it is inert and do not assume
+it is large; ablate.
+
+Touches design law #10 (acceleration is the observable) and R-O32 (colony cargo
+mass ≡ mineral cargo mass), so any correction has to keep those consistent.
+
 
 ### T-51. R-O68 — the deepen/expand trade does not exist, and it is what sets the expansion-loop time constant
 

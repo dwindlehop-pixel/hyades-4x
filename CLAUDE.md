@@ -435,6 +435,29 @@ combat logic into the arena or into an example.
     at horizon 4,000 (9.67 s vs 8.90 s): swap-removal scrambled the order, trading a
     sequential walk for random access across three component stores. Locality beat
     count. That attempt is reverted; the finding is not.
+  - **Memoise a scan whose answer only changes on an event** — but store the
+    *recomputed* value, not a running total. `holdings_centroid` walked every
+    planet once per production decision (1.14 G iterations on seed 1) for a value
+    that moves ~3,400 times a run. A running sum would have accumulated in claim
+    order where the walk accumulates in planet-id order, and float addition is not
+    associative: the centroid would differ in its last bits, every rank score with
+    it, and the run would diverge. Memoising the walk is bit-identical; only the
+    *number* of walks changes.
+  - **Pick the container for the access pattern, and check the siblings.**
+    `Knowledge::visited` was converted from `BTreeSet` to a bitmap when one
+    `contains` turned out to be 63% of engine instructions — and `targeted`, its
+    sibling with the same contains-only access pattern, was left as a `BTreeSet`
+    and reached **1.03 billion lookups**. `scanned`, which is *iterated* rather
+    than probed, wants a sorted `Vec`: same order, sequential reads instead of a
+    pointer chase over boxed nodes. Together with the memo above, 3.3x (R-O70).
+
+  **Profile before you optimise, every time.** R-O70 began with two confident,
+  plausible fixes to the production candidate scan — they were correct changes and
+  bought **nothing measurable** (60 → 58 yr/s). Survey was then assumed to be the
+  hot path on the strength of the worked example just above, and is an order of
+  magnitude smaller than the two loops that actually mattered. One instrumented
+  run counting loop iterations settled it. A slow program is a symptom; §2's rule
+  about mechanisms applies to performance exactly as it does to behaviour.
 
 ---
 
@@ -863,15 +886,22 @@ changes how you *work*, not what is left to do:
   the ceiling from one build per 50 years to one per 10 for a center that keeps
   finding things to buy. **+165.8 colonies (+5.0%), and the bed saturates.**
 
-  **It cost 4.1x throughput and that is the part to watch** (same container, 3
-  seats, 4 kyr: 235–269 → 61–66 yr/s; vehicles ~10,350 → ~14,700; events ~237k
-  → ~421k). Most of it is entity count doing what design law #14 says it does,
-  but the decision path also walks all of `knowledge.scanned` per decision —
-  the §4 `O(galaxy)` violation, previously hidden by being rationed to once per
-  50 years. Margin against T-24's floor falls ~108x → ~26x here, and the
-  12-seat/8-kyr corner extrapolates to ~1.3x. **The fix is an incremental
-  candidate frontier, not re-throttling decisions** (T-52) — and §4 already
-  records that the last attempt at exactly that came out *slower*, so measure.
+  **It cost 4.1x throughput, and R-O70 gave 3.3x of it back.** The decoupling
+  took the standard bed from 235–269 to 61–66 yr/s (vehicles ~10,350 → ~14,700,
+  events ~237k → ~421k); memoising `holdings_centroid` and fixing two container
+  choices in `Knowledge` brought it to **183–217 yr/s** with **colony-years
+  bit-identical** (7,819,401.0 and 8,480,172.0 on seeds 1 and 7). So R-O69's
+  +165.8 colonies now cost about a quarter of the throughput rather than four
+  times it, and the margin against T-24's floor is ~79x at 3 seats / 4 kyr with
+  the 12-seat / 8-kyr corner extrapolating to ~3.8x rather than ~1.3x. The
+  production candidate scan is still `O(scanned)` and is now the largest loop
+  left (T-52).
+
+  **Colony-years is the guard for work like this** (`examples/colony_years`).
+  Colony *count* at the horizon is a weak invariant for an optimization — a
+  change that founds the same worlds a century later scores identically — while
+  `∫ colonies dt` falls the moment anything slows down. Hold it fixed to the
+  decimal and a performance change is provably behaviour-preserving.
 
   **And the time constant now has a proven mechanism, not just a name (R-O68,
   T-51).** `production_choice` prefers depth when `b · deepen_headroom ≥

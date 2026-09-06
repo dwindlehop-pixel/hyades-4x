@@ -778,11 +778,23 @@ fn hull_order(hull: HullType) -> BuildOrder {
 
 /// Deterministic comparison for `max_by`: higher score wins, ties broken by id.
 fn score_then_id(a: &&Candidate, b: &&Candidate) -> core::cmp::Ordering {
-    a.ranked
-        .score
-        .partial_cmp(&b.ranked.score)
-        .unwrap_or(core::cmp::Ordering::Equal)
-        .then(a.ranked.id.0.cmp(&b.ranked.id.0))
+    Ranked::score_then_id(&a.ranked, &b.ranked)
+}
+
+impl Ranked {
+    /// **The one ordering on candidates**, exposed because the engine reduces
+    /// the candidate list to its per-class maxima before the policy ever sees
+    /// it (R-O70) — and a reduction that used a different comparator than the
+    /// policy would silently pick a different winner.
+    ///
+    /// Higher score wins, ties broken by planet id. Ids are unique, so this is
+    /// a total order and the maximum is unique: taking the max of the per-class
+    /// maxima is exactly taking the max of the whole list, whatever order the
+    /// scan visited them in.
+    #[inline]
+    pub fn score_then_id(a: &Ranked, b: &Ranked) -> core::cmp::Ordering {
+        a.score.partial_cmp(&b.score).unwrap_or(core::cmp::Ordering::Equal).then(a.id.0.cmp(&b.id.0))
+    }
 }
 
 #[cfg(test)]

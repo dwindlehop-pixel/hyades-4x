@@ -55,7 +55,7 @@ use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use crate::autopilot::{
-    Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext,
+    Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext, Ranked,
     SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
@@ -145,11 +145,47 @@ struct Factors {
     /// Cards raise or lower it; a strike that craters a world's ecology lowers
     /// this, not just the standing stock, which is what makes such damage
     /// durable.
+    ///
+    /// **Write it through [`Self::set_bio_max`]**, which keeps
+    /// [`Self::bio_max_band`] in step. The pair is a cache, and a cache with
+    /// two write paths is a bug waiting for a card to find it.
     bio_max: Kilotons,
+    /// [`Self::bio_max`] read back onto the Band ladder — **cached, because it
+    /// is on the hottest path in the engine.**
+    ///
+    /// `Kilotons::in_bands` is a `ln`, `k_potential` needs it, and
+    /// `k_potential` is evaluated once per *scanned planet* per production
+    /// decision. That is a transcendental in a loop that runs tens of millions
+    /// of times a run, for a quantity nothing has changed since galaxy
+    /// generation. Identical value, computed once (R-O70).
+    bio_max_band: Band,
     /// Built infrastructure. Integer-valued; deepened one level at a time.
     infra: Band,
 }
 impl Factors {
+    /// Build a set of factors, deriving the cached Band reading of `bio_max`.
+    #[inline]
+    fn new(hab: Band, biomass: Kilotons, bio_max: Kilotons, infra: Band) -> Factors {
+        Factors { hab, biomass, bio_max, bio_max_band: bio_max.in_bands(), infra }
+    }
+
+    /// The only way to move the pristine ceiling. Keeps the cached Band reading
+    /// consistent — the card that craters an ecology must not leave
+    /// `k_potential` reading the old world.
+    #[inline]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no card mutates bio_max yet; the setter exists so the \
+                                                     first one cannot desynchronise the cache"
+        )
+    )]
+    fn set_bio_max(&mut self, m: Kilotons) {
+        self.bio_max = m;
+        self.bio_max_band = m.in_bands();
+    }
+
     /// Liebig's minimum, **over Bands only**.
     ///
     /// The standing biomass is deliberately *not* a term here, and that is the
@@ -177,7 +213,7 @@ impl Factors {
     /// `the_mass_budget_and_the_band_ceiling_bind_together`).
     #[inline]
     fn k_potential(&self) -> Band {
-        self.hab.min(self.bio_max.in_bands())
+        self.hab.min(self.bio_max_band)
     }
 }
 
@@ -229,7 +265,17 @@ struct PlayerInfo {
 /// Per-player fog-of-war knowledge (autopilot-doc §1).
 #[derive(Clone, Debug, Default)]
 struct Knowledge {
-    scanned: BTreeSet<PlanetId>,
+    /// Worlds this empire has close-scanned.
+    ///
+    /// **A sorted `Vec`, not a `BTreeSet`**, because it is *iterated* on the
+    /// hottest path — every production decision walks the whole thing, 1.03
+    /// billion elements over a run. A B-tree walk is a pointer chase across
+    /// boxed nodes; a sorted `Vec` is a sequential read, and §4's finding is
+    /// that **locality beats element count**. Insertion is a binary search plus
+    /// a memmove, and insertions are four orders of magnitude rarer than
+    /// iterations. Order is identical to the `BTreeSet`'s, so nothing about
+    /// determinism or results moves (R-O70).
+    scanned: ScannedSet,
     /// Worlds a survey craft has been *dispatched to* (marked at launch, so two
     /// scouts never chase the same target). A **bitmap, not a set**: this is
     /// membership-tested once per planet per `survey_candidates` call and never
@@ -237,7 +283,15 @@ struct Knowledge {
     /// the whole engine — 63% of instructions once scouts became plentiful.
     /// O(1) indexed access instead of O(log n) pointer chasing.
     visited: VisitedMask,
-    targeted: BTreeSet<PlanetId>,
+    /// Worlds already claimed by a build order this empire has placed.
+    ///
+    /// **A bitmap, for exactly the reason `visited` is one** — and this one was
+    /// missed when that lesson was learned. It is membership-tested once per
+    /// scanned world per production decision and *never iterated*: profiled at
+    /// **1.03 billion `contains` calls** on seed 1 at the shipped horizon,
+    /// every one of them an `O(log n)` walk down a B-tree of boxed nodes.
+    /// O(1) indexed access instead of pointer chasing (R-O70).
+    targeted: VisitedMask,
     exploited: BTreeSet<PlanetId>,
 }
 
@@ -246,6 +300,54 @@ struct Knowledge {
 #[derive(Clone, Debug, Default)]
 struct VisitedMask {
     bits: Vec<bool>,
+}
+
+/// A sorted, deduplicated set of planet ids, kept in a contiguous `Vec` so
+/// iteration is a sequential read. See [`Knowledge::scanned`] for why.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ScannedSet {
+    ids: Vec<PlanetId>,
+}
+
+impl ScannedSet {
+    #[inline]
+    fn insert(&mut self, pid: PlanetId) -> bool {
+        match self.ids.binary_search_by_key(&pid.0, |p| p.0) {
+            Ok(_) => false,
+            Err(i) => {
+                self.ids.insert(i, pid);
+                true
+            }
+        }
+    }
+    #[inline]
+    fn iter(&self) -> core::slice::Iter<'_, PlanetId> {
+        self.ids.iter()
+    }
+    #[inline]
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+    #[cfg(test)]
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+    /// Both sides are sorted, so this is a linear merge rather than a lookup
+    /// per element. Test-only — the engine never asks this.
+    #[cfg(test)]
+    fn is_subset(&self, other: &ScannedSet) -> bool {
+        let mut it = other.ids.iter();
+        self.ids.iter().all(|want| it.by_ref().any(|have| have == want))
+    }
+}
+
+impl<'a> IntoIterator for &'a ScannedSet {
+    type Item = &'a PlanetId;
+    type IntoIter = core::slice::Iter<'a, PlanetId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.ids.iter()
+    }
 }
 
 impl VisitedMask {
@@ -1110,6 +1212,11 @@ pub struct Simulation {
 
     planet_entity: Vec<Entity>,
     player_entity: Vec<Entity>,
+    /// Memoised holdings centroid per seat; `None` means "recompute".
+    /// Invalidated only by [`Simulation::claim_planet`] — see
+    /// [`Simulation::holdings_centroid`] for why this is a memo and not a
+    /// running sum.
+    centroid_cache: Vec<Option<Vec3>>,
 
     autopilots: Vec<Box<dyn Autopilot>>,
     queue: BinaryHeap<Reverse<Event>>,
@@ -1163,18 +1270,18 @@ impl Simulation {
             world.position.insert(e, pl.position);
             world.factors.insert(
                 e,
-                Factors {
-                    hab: pl.habitability,
+                Factors::new(
+                    pl.habitability,
                     // **Every world is at its pristine ceiling at t=0** — one
                     // generated value, read as a mass, used for both the stock
                     // and the ceiling. There is no design reason for a world to
                     // start below its own ceiling, and no generator spread to
                     // reconcile: `biomass == bio_max` here holds by
                     // construction rather than by convention.
-                    biomass: pl.biosphere.in_kilotons(),
-                    bio_max: pl.biosphere.in_kilotons(),
-                    infra: pl.infrastructure,
-                },
+                    pl.biosphere.in_kilotons(),
+                    pl.biosphere.in_kilotons(),
+                    pl.infrastructure,
+                ),
             );
             world.density.insert(e, pl.minerals);
             world.stockpile.insert(e, Minerals::default());
@@ -1214,6 +1321,7 @@ impl Simulation {
             bands: galaxy.bands,
             planet_entity,
             player_entity,
+            centroid_cache: vec![None; n],
             autopilots,
             queue: BinaryHeap::new(),
             rng: Rng::new(config.seed),
@@ -1656,7 +1764,7 @@ impl Simulation {
 
         if !self.world.owner.contains(target) {
             // Found the colony; recycle the vehicle's hull into level-1 infra.
-            self.world.owner.insert(target, owner);
+            self.claim_planet(target, owner);
             {
                 let f = self.world.factors.get_mut(target).unwrap();
                 f.infra = f.infra.max(Band::new(1.0));
@@ -2093,11 +2201,30 @@ impl Simulation {
         let mineral_pressure = self.mineral_pressure_of(center);
         let rctx =
             RankContext { scarcity: info.scarcity, holdings_centroid: self.holdings_centroid(p), mineral_pressure };
-        let mut cands: Vec<Candidate> = Vec::new();
+        // **Reduce, do not materialize (R-O70).** Both consumers —
+        // `production_choice` and `assign_role` — read exactly four things off
+        // this list: the per-class argmax by `score_then_id` for
+        // ProductionCenter, Colony and MiningOutpost, and the count. They never
+        // iterate it for anything else.
+        //
+        // Building a `Vec` of every non-Barren scanned world to hand over three
+        // winners is §4's "do not materialize a collection you only `max_by`
+        // over", at the engine's hottest scale: thousands of 112-byte pushes
+        // per decision, and decisions now fire on build completion rather than
+        // once per 50 years (R-O69), which is what made the waste visible.
+        //
+        // The reduction is exact, not an approximation. `score_then_id` is a
+        // total order (ids are unique), so the maximum of a class is unique and
+        // the max of the per-class maxima *is* the max of the whole list —
+        // independent of scan order. `candidate_count` still carries the true
+        // count, because `survey_reserve` is a threshold on the size of the
+        // frontier and not on the size of this slice.
+        let mut count = 0usize;
+        let mut best: [Option<Candidate>; 3] = [None, None, None];
         {
             let knowledge = self.world.knowledge.get(pe).unwrap();
             for &pid in &knowledge.scanned {
-                if knowledge.targeted.contains(&pid) {
+                if knowledge.targeted.contains(pid) {
                     continue;
                 }
                 let e = self.planet_entity[pid.0 as usize];
@@ -2106,11 +2233,23 @@ impl Simulation {
                 }
                 let view = self.view_of(e);
                 let ranked = self.autopilots[p].rank(&doctrine, &view, &rctx);
-                if ranked.class != PlanetClass::Barren {
-                    cands.push(Candidate { view, ranked });
+                let slot = match ranked.class {
+                    PlanetClass::ProductionCenter => 0,
+                    PlanetClass::Colony => 1,
+                    PlanetClass::MiningOutpost => 2,
+                    PlanetClass::Barren => continue,
+                };
+                count += 1;
+                let better = match &best[slot] {
+                    None => true,
+                    Some(cur) => Ranked::score_then_id(&ranked, &cur.ranked).is_gt(),
+                };
+                if better {
+                    best[slot] = Some(Candidate { view, ranked });
                 }
             }
         }
+        let cands: Vec<Candidate> = best.into_iter().flatten().collect();
         // Built after `cands`, so the survey decision can see how much frontier
         // this empire has left to aim at.
         let ctx = ProductionContext {
@@ -2132,7 +2271,7 @@ impl Simulation {
             // will actually spend.
             mining_pair_cost: self.mining_pair_price(p),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
-            candidate_count: cands.len(),
+            candidate_count: count,
         };
 
         let order = self.autopilots[p].production_choice(&doctrine, &ctx, &cands);
@@ -2149,7 +2288,7 @@ impl Simulation {
                 colonizer_cost: ctx.colonizer_cost,
                 mining_pair_cost: ctx.mining_pair_cost,
                 mineral_pressure,
-                candidates_seen: cands.len() as u32,
+                candidates_seen: count as u32,
                 chosen: order,
             },
         );
@@ -2589,7 +2728,39 @@ impl Simulation {
         }
     }
 
-    fn holdings_centroid(&self, p: usize) -> Vec3 {
+    /// Centroid of player `p`'s holdings — **memoised, because it only moves
+    /// when a colony is founded** (R-O70).
+    ///
+    /// The computation is a full walk of `planet_entity`, and it ran once per
+    /// production decision: profiled at **1.14 billion iterations** on seed 1
+    /// at the shipped horizon, the largest single scan in the engine. Holdings
+    /// change roughly 3,400 times in that run, so all but ~0.003% of that work
+    /// was recomputing an answer nothing had invalidated.
+    ///
+    /// **The cache stores the recomputed value rather than a running sum**, and
+    /// that is deliberate. An incremental sum would accumulate in *claim* order
+    /// while this walks in *planet-id* order, and floating-point addition is
+    /// not associative — the centroid would differ in the last bits, every
+    /// score with it, and the run would diverge. Recomputing on the same path
+    /// keeps the result bit-identical; only the number of recomputations
+    /// changes.
+    fn holdings_centroid(&mut self, p: usize) -> Vec3 {
+        if let Some(c) = self.centroid_cache[p] {
+            // A stale cache is a silent, seed-dependent divergence, so debug
+            // builds pay for the full recompute and compare. Free in release.
+            debug_assert_eq!(
+                c,
+                self.compute_holdings_centroid(p),
+                "stale holdings centroid for player {p}: planet ownership was written outside `claim_planet`"
+            );
+            return c;
+        }
+        let c = self.compute_holdings_centroid(p);
+        self.centroid_cache[p] = Some(c);
+        c
+    }
+
+    fn compute_holdings_centroid(&self, p: usize) -> Vec3 {
         let me = PlayerId(p as u32);
         let mut sum = Vec3::ZERO;
         let mut n = 0.0;
@@ -2605,6 +2776,18 @@ impl Simulation {
             let home = self.world.player_info.get(self.player_entity[p]).unwrap().home;
             *self.world.position.get(home).unwrap()
         }
+    }
+
+    /// **The only sanctioned way to give a planet an owner.**
+    ///
+    /// Ownership is what moves [`Self::holdings_centroid`], so the cache is
+    /// invalidated here and nowhere else. Writing `world.owner` directly for a
+    /// *planet* leaves every subsequent rank reading a stale centre of mass —
+    /// silently, and only on some seeds. The `debug_assert` in
+    /// `holdings_centroid`'s caller-facing test build catches exactly that.
+    fn claim_planet(&mut self, planet: Entity, owner: PlayerId) {
+        self.world.owner.insert(planet, owner);
+        self.centroid_cache[owner.0 as usize] = None;
     }
 
     /// Live mineral pressure for `center`: `1.0` when broke for its next
@@ -3453,7 +3636,7 @@ mod tests {
         let bio_max = Band::new(4.0).in_kilotons();
         let pop0 = Band::new(1.0);
         let biomass = bio_max;
-        sim.world.factors.insert(home, Factors { hab: Band::new(4.0), biomass, bio_max, infra: Band::new(4.0) });
+        sim.world.factors.insert(home, Factors::new(Band::new(4.0), biomass, bio_max, Band::new(4.0)));
         *sim.world.population.get_mut(home).unwrap() = pop0;
 
         let before = units::population_mass(pop0) + sim.world.factors.get(home).unwrap().biomass;
@@ -3474,7 +3657,7 @@ mod tests {
     #[test]
     fn drawing_the_biosphere_down_does_not_lower_the_ceiling() {
         let bio_max = Band::new(4.0).in_kilotons();
-        let full = Factors { hab: Band::new(4.0), biomass: bio_max, bio_max, infra: Band::new(4.0) };
+        let full = Factors::new(Band::new(4.0), bio_max, bio_max, Band::new(4.0));
         let mut razed = full;
         razed.biomass = bio_max * 0.01; // ecology in ruins, ceiling untouched
 
@@ -3483,8 +3666,12 @@ mod tests {
 
         // The *ceiling* moves only when the pristine biosphere does — which is
         // what makes an ecological strike durable rather than momentary.
+        // Through the setter, which is the only sanctioned write: `k_potential`
+        // reads a cached Band reading of `bio_max` (R-O70), and a card that
+        // craters an ecology by assigning the field directly would leave the
+        // ceiling reading the old world.
         let mut cratered = full;
-        cratered.bio_max = Band::new(1.5).in_kilotons();
+        cratered.set_bio_max(Band::new(1.5).in_kilotons());
         assert_eq!(cratered.k(), Band::new(1.5));
     }
 
@@ -3502,7 +3689,7 @@ mod tests {
         // which is correct behaviour and a different test.
         let bio_max = Band::new(4.0).in_kilotons();
         let start = bio_max * 0.125;
-        sim.world.factors.insert(home, Factors { hab: Band::new(4.0), biomass: start, bio_max, infra: Band::ZERO });
+        sim.world.factors.insert(home, Factors::new(Band::new(4.0), start, bio_max, Band::ZERO));
         *sim.world.population.get_mut(home).unwrap() = Band::new(0.01);
 
         let mut last = start;
@@ -3524,15 +3711,9 @@ mod tests {
         let pe = sim.player_entity[0];
         sim.world.doctrine.get_mut(pe).unwrap().biosphere_regen_bonus = 0.0;
         let home = sim.world.player_info.get(pe).unwrap().home;
-        sim.world.factors.insert(
-            home,
-            Factors {
-                hab: Band::new(4.0),
-                biomass: Kilotons::ZERO,
-                bio_max: Band::new(4.0).in_kilotons(),
-                infra: Band::new(4.0),
-            },
-        );
+        sim.world
+            .factors
+            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
         *sim.world.population.get_mut(home).unwrap() = Band::new(0.01);
 
         for _ in 0..20 {
@@ -3555,15 +3736,9 @@ mod tests {
         cfg.biosphere_regen_rate = 0.0;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
-        sim.world.factors.insert(
-            home,
-            Factors {
-                hab: Band::new(4.0),
-                biomass: Kilotons::ZERO,
-                bio_max: Band::new(4.0).in_kilotons(),
-                infra: Band::new(4.0),
-            },
-        );
+        sim.world
+            .factors
+            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
         *sim.world.population.get_mut(home).unwrap() = Band::new(2.0);
 
         for _ in 0..10 {
@@ -3842,12 +4017,7 @@ mod tests {
         sim.world.owner.insert(colony, PlayerId(0));
         sim.world.factors.insert(
             colony,
-            Factors {
-                hab: Band::new(3.0),
-                biomass: Band::new(3.0).in_kilotons(),
-                bio_max: Band::new(3.0).in_kilotons(),
-                infra: Band::new(1.0),
-            },
+            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Band::new(1.0)),
         );
         sim.world.stockpile.insert(colony, Minerals::default());
 
@@ -3878,12 +4048,7 @@ mod tests {
         sim.world.owner.insert(colony, PlayerId(0));
         sim.world.factors.insert(
             colony,
-            Factors {
-                hab: Band::new(3.0),
-                biomass: Band::new(3.0).in_kilotons(),
-                bio_max: Band::new(3.0).in_kilotons(),
-                infra: Band::new(1.0),
-            },
+            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Band::new(1.0)),
         );
         sim.world.stockpile.insert(colony, Minerals::default());
         {
