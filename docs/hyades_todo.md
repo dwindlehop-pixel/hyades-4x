@@ -918,6 +918,98 @@ needs §2.3's per-`(role, size)` thickness and `η` — which is also what separ
 cost from capacity so they stop being the same knob.
 
 
+#### Stage 3c — the real geometry: cost is the shell, capacity is the hold
+
+**Landed, and it is the change the whole ratification was for.** `hull_radius`
+no longer square-roots the cost ratio; it *solves* the shell model:
+
+```
+cost · η = r³ − (r − τ)³      ⇒      r = τ/2 + sqrt(12·τ·cost·η − 3τ⁴) / (6τ)
+```
+
+`r = sqrt(cost / cost_Limited)` was the **constant-`τ` special case written as
+if it were the law**. With a ratified per-hull thickness it stops being true,
+and that is exactly what unties the two ladders: cost is the shell volume,
+capacity is the hold volume, and `medium_fleet_size` is a price again rather
+than a price *and* a hold. Four of the measurement artifacts in `CLAUDE.md` §2
+had that coupling in common.
+
+`HullType::geometry` carries the ratified table — `η` per §2.2, `τ` per §2.3,
+and the two `V_reserved` terms — written out for all ten hulls so a new variant
+cannot inherit a neighbour's shell. `REFERENCE_MEDIUM_RADIUS` and
+`UNIT_SHELL_THICKNESS` are **deleted**: there is no normaliser left to put a
+derived quantity in a denominator.
+
+**The engine reproduces §2.3 exactly** (`examples/cargo_units`):
+
+| hull | dry mass | `τ` | hold | `V_res` | cargo | cargo/dry |
+|---|---|---|---|---|---|---|
+| Limited | 0.0200 | 0.02700 | 0.0894 | 0.0790 | 0.0104 | 0.52 |
+| Medium | 0.1000 | 0.03165 | **1.0000** | 0.0790 | 0.9210 | 9.21 |
+| General | 1.0000 | 0.03299 | **31.6228** | 0.0790 | 31.5438 | 31.54 |
+
+with the hold steps landing on `F_mass` to **+0.00% and −0.00%**. Usable cargo
+does *not* walk the ladder (88.2× then 34.3×), and `V_reserved` is why — the
+rung is the hold, the reserve is deducted after it, and it bites hardest at the
+bottom where a Limited hull's core eats 88% of a `Band Empty` hold.
+
+**Cost: −0.31%, which is to say free.** Four-seed CRN bed, 4,000 yr:
+
+| | colonies | colony-years | doubling |
+|---|---|---|---|
+| shipped, pre-T-56 | 3,459.8 | 8,011,139 | 284.5 yr |
+| stage 3b (cost ladder only) | 3,481.0 | 8,697,322 | 265.0 yr |
+| **stage 3c (real geometry)** | **3,481.0** | **8,670,020** | **269.4 yr** |
+
+So the physically correct geometry keeps essentially all of the ladder's
+**+8.2%** while cutting the Medium hull's hold from 4.81 kt to 0.92 kt — which
+it can, because §2.6's freight-capacity threshold (`load = cap.min(avail)`) is
+below both. `tests/balance.rs` reproduces its combat goldens: `hull_dry_mass` is
+still `cost_fraction × general_vehicle_cost`, so nothing in `combat.rs` moved.
+
+**The four-decimal `τ` in the spec table is not precise enough to use.** §2.3
+*solves* `τ = (cost·η + hold)^(1/3) − hold^(1/3)` from the ratified cost and the
+ratified hold, so a rounded value misses its rung: at four decimals the Medium
+hull's hold came out 0.9977 kt against a `Band I` of 1.000, 0.2% low — and
+enough to make a Colonizer unable to carry a colony seed defined at exactly that
+rung. The constants are carried at full width, and they reproduce the rungs at
+the **ratified cost ladder**; a config that moves `medium_fleet_size` without
+moving the mass ladder has broken `F_mass = F_cost^(3/2)` and the hold drifts
+off its rung, which is the tie being visible rather than a bug.
+
+**Three tests changed meaning, each deliberately.**
+
+- `the_cargo_ladder_is_geometric_not_banded` → **`the_hold_ladder_is_the_mass_ladder`**.
+  Its own failure message asked for this replacement ("if this has moved to the
+  ratified 31.62… replace by a check on `F_mass = F_cost^(3/2)`"), and it now
+  asserts the tie against the cost ladder that produced it rather than a copied
+  constant. **R-O71 / T-53 closes here.**
+- `only_an_inverted_hull_ladder_is_refused` — "a narrow ladder makes the Medium
+  hull nearly all shell" is **no longer true**. With a real `τ` the hold is set
+  by the price and the hull's own thickness, so a Medium hull priced like a
+  Limited one simply *has* a Limited hull's hold: they converge (1.14×) instead
+  of collapsing toward zero. Same conclusion — narrow is a real economic
+  statement, not a modelling failure — reached by arithmetic with no denominator
+  in it.
+- `shell_model_ladders_are_derived_not_tuned` — the `1 : √3 : 3` radius
+  assertions are replaced by the **inversion**: `shell_volume / η` must return
+  the cost that produced the radius. That holds for every ladder; the three
+  magnitudes only held for one.
+
+**`hull_ladder_fault` gained a second failure**, and it is a different kind from
+the first. `medium_fleet_size ≥ limited_fleet_size` is a naming contradiction; a
+hull priced below its own skin (`4·cost·η < τ³`) is a *geometric impossibility*
+whose radius solve has no real root, and design law #16 makes the resulting NaN
+fatal rather than merely wrong. It is refused at construction so it can never
+reach hashed state. At the ratified ladder the tightest margin is the Limited
+Offensive hull's, 24× clear.
+
+**Still open after 3c:** `role_hull_type` pins Colonizer and Freighter to Medium,
+so nothing in the run ever builds a General hull. Teaching Doctrine to is stage
+4, and it is the change the ladder was built to enable — measured separately, or
+the result is uninterpretable.
+
+
 #### Staging (each stage independently revertible)
 
 1. **This entry** — analysis, units, candidates. Docs only. Landed in three
@@ -930,8 +1022,10 @@ cost from capacity so they stop being the same knob.
    `hold_radius` / `hold_volume` / `shell_volume` as named quantities.
    Behaviour-preserving, verified on colony-years. `η` is still not in the
    engine; it arrives with the values in stage 3.
-3. **Adopt the ratified ladder** — `cost_fraction`, per-class φ and η,
-   `cargo_unit_size`, `F`. Behaviour *changes*; measure on colony-years.
+3. **Adopt the ratified ladder — done**, in three measured steps: 3a the
+   piecewise mass ladder (bit-identical), 3b the cost ladder (+8.6%
+   colony-years), 3c the real geometry with per-hull `τ` and `η` (−0.31% on top
+   of 3b, so the correct physics is free).
 4. **Doctrine: build and deploy heavier hulls when useful** — role→hull becomes
    a policy choice rather than a fixed map. Measure separately from stage 3.
 

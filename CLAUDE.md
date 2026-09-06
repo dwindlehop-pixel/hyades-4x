@@ -842,10 +842,18 @@ changes how you *work*, not what is left to do:
 
   **Colony count is nearly saturated, so read colony-years instead.** The bed
   takes ~99% of what `k_high` admits, which leaves count almost no room to move:
-  the ladder change is +0.6% on colonies and **+8.6% on colony-years**
-  (8,011,139 → 8,697,322), with the doubling time 284.5 → 265.0 yr. On a
+  the T-56 ladder change is +0.6% on colonies and **+8.2% on colony-years**
+  (8,011,139 → 8,670,020), with the doubling time 284.5 → 269.4 yr. On a
   saturated bed the informative metrics are *when* the worlds were taken, not
   how many.
+
+  **And the cost ladder is no longer the capacity ladder** (T-56 stage 3c).
+  `hull_radius` solves `cost·η = r³ − (r − τ)³` instead of square-rooting the
+  cost ratio, so `medium_fleet_size` is a price again rather than a price *and*
+  a hold. That coupling is what four of the artifacts in §2's table have in
+  common, and the `REFERENCE_MEDIUM_RADIUS` normaliser they all ran through is
+  deleted. The correct geometry cost −0.31% against the cost ladder alone, so
+  the artifact surface closed for free.
 
   **The bed saturates again, and this time honestly.** 99.4% of everything
   `k_high` admits (98.4 · 99.9 · 100.0 · 99.2 — seed 42 takes every single
