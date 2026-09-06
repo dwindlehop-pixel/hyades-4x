@@ -564,9 +564,58 @@ literally no hold; it now depends on whether 0.479 clears the colony seed.
   role payload", which *is* slot composition.
 
 
+#### Stage 1c — `V_reserved` per size **and** hull, the cost anchoring, and R-MC15
+
+**`docs/Hyades_mineral_cost_curve.md` §2.3 and §2.6 are now written** (this
+stage is that doc change). Stage 1b's candidate table above is **superseded**
+by it: 1b measured volumes in `V_LSV` and left cost free, which let the Limited
+Systems hull keep a 0.479 hold — 36% of a Medium's, not the "tiny fraction of
+`Band I`" the ladder is supposed to produce. Stage 1c re-anchors on the
+directed rule that hull cost is `general_vehicle_cost` divided by the existing
+fleet-size knobs, which removes the freedom and pins the row.
+
+**What changed from 1b, and why each move was forced:**
+
+| | Stage 1b | Stage 1c | forced by |
+|---|---|---|---|
+| dial | `φ` (hold *fraction*) | **`τ` (absolute shell thickness)**, `φ = 1 − τ/r` | `τ` is what "hull thickness per size/class" names, and it makes `cost ∝ area` the constant-`τ` special case rather than a separate claim |
+| cost | free per hull | `1` / `1/medium_fleet_size` / `1/limited_fleet_size` | directed this conversation — no new cost field |
+| `a_role` | 0.25 / 0.40 / 0.55 (in `V_LSV`) | 0.09 / 0.15 / 0.22 (in `V = r³`) | unit change, then re-solved against the 1%-of-`Band I` target |
+| `b_role` | 0.00 / 0.35 / 0.92 | 0.00 / 0.15 / **0.45** | 0.92 drove Offensive volume negative once cost was pinned; 0.45 still zeroes LOU and ROU |
+| LSV cargo | 0.479 (36% of Medium) | **0.0096 kt (1.0% of `Band I`)** | the stated expectation |
+| `limited_fleet_size` | free | **32** | converged: 32.31 from "share the Medium's thickness" + "carry 1% of `Band I`" |
+
+**The Sleeper Service check survives the re-anchoring.** Dry mass is the
+mineral cost (L6/R-O57), so a mid-game General at cost `Band III` masses 8
+units and holds cargo `Band III` = 9,600 kt against a Medium hull's dry mass of
+0.125 — **76,800 Medium hulls in the hold**, still "tens of thousands", and
+again not tuned to.
+
+**Two things this stage does *not* settle**, both recorded rather than guessed:
+
+- **The absolute scale.** With cost ≡ dry mass, one mineral unit is a mass, and
+  the ladder above makes an LOU mass 0.03125 of it. Whether that is 31 tonnes
+  or 31 megatonnes is R-O72 / T-54 and is untouched here. Every *ratio* in
+  §2.3 is independent of it.
+- **R-V9** ("a Colonizer must be Medium or larger"). Stage 1b thought a 0.479
+  hold might retire it; at 0.0096 kt a Limited Systems hull plainly cannot seed
+  a colony, so R-V9 now looks like a *consequence* of the ladder rather than a
+  separate rule. Confirm in Stage 3 rather than asserting it here.
+
+**R-MC15 is the gate on Stage 2** (directed this conversation). The candidate
+is `F₁ = 4`, `F₂ = 8` on the cost ladder — `medium_fleet_size = 8`,
+`limited_fleet_size = 32`, `cargo_unit_size = 0.96`, `units::BAND_STEP = 100` —
+with the reasoning in §2.6. Two of those four are globally MC-tuned and none of
+them moves before ratification.
+
+
 #### Staging (each stage independently revertible)
 
-1. **This entry** — analysis, units, candidates. Docs only.
+1. **This entry** — analysis, units, candidates. Docs only. Landed in three
+   commits: 1 (geometry + first ladder), 1b (`V_reserved`'s second term and the
+   role axis), 1c (`V_reserved` per size *and* hull, the cost anchoring, the
+   thrust law, and the R-MC15 candidate). **Stage 2 does not start until
+   R-MC15 is ratified.**
 2. **Typed hull geometry** — `Radius`, `Thickness`, `HoldFraction`, `Area`,
    `Volume` newtypes so a unit mismatch in hull design is a compile error, with
    η and φ as real per-class parameters. Behaviour-preserving: the shipped

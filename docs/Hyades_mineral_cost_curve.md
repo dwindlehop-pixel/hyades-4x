@@ -336,6 +336,179 @@ across roles rather than within Systems alone, and it's the piece needed
 before Contact/Offensive hulls get real numbers rather than the illustrative
 η values in §2.2.
 
+#### `V_reserved` per size **and** per role — the model, with numbers
+
+*Added this conversation, and it supersedes the single-lane `V_reserved =
+V_LSV` sketch above.* Setting the reserved volume equal to a whole Limited
+hull made "Limited carries nothing" a **definition**; the engine inherited
+it as the literal `(r − 1)³` with a shell thickness of exactly one Limited
+radius for every class (`hyades_todo.md` T-56). Both are now replaced by a
+model with two role-indexed constants and one per-`(role, size)` dial.
+
+**Geometry.** Work in normalized radius, `V = r³` (the cube-root-of-volume
+convention the engine already uses in `HullType::hull_radius`), with **`τ`
+the absolute shell thickness** and the hold the concentric interior:
+
+```
+V      = r³                       total displaced volume
+hold   = (r − τ)³                 pressurised interior
+shell  = r³ − (r − τ)³            the material actually bought
+cost   = dry mass = shell / η     η = η(role, size), §2.2
+V_reserved(role, V) = a_role + b_role · V
+capacity = max(0, hold − V_reserved)
+```
+
+Two things about this are worth stating plainly because they change what the
+earlier sections claimed:
+
+- **§2's "cost ∝ surface area" is the constant-thickness special case.** The
+  general law is *cost ∝ shell volume* — the material bought is area × thickness
+  — and it reduces to `cost ≈ 3r²τ/η ∝ area` exactly when `τ` is held fixed.
+  Making `τ` a dial is what the request for "hull thickness per hull size/class"
+  asks for, and it is the only free parameter in the block above.
+- **`V_reserved` has two terms, and they do different jobs.** `a_role` is the
+  absolute engine/crew/avionics core every hull of that role needs regardless of
+  size — it is what makes a Limited hull's hold nearly all core and almost no
+  cargo, *as a result rather than a definition*. `b_role` is the role's own
+  volume-proportional payload — weapons, magazines, armour backing, sensor
+  arrays — and it is what keeps an Offensive hull from becoming a freighter
+  simply by being large.
+
+**Ratified constants (this conversation).** Offensive reserves the most,
+Systems the least, Contact in between — on both terms, and on shell thickness:
+
+| role | `a_role` (absolute core) | `b_role` (payload share of `V`) | `τ` relative to Systems |
+|---|---|---|---|
+| **Systems** | 0.09 | **0.00** | **1.0×** |
+| **Contact** | 0.15 | 0.15 | 1.8× |
+| **Offensive** | 0.22 | **0.45** | **3.0×** |
+
+`b_Systems = 0` is deliberate: a Systems hull's only non-cargo volume is its
+fixed core, which is what makes its capacity ladder purely geometric and makes
+it the row the ladder is *solved on*. The other two rows are then derived, not
+independently fitted.
+
+#### The Systems row solves the ladder; the other two rows fall out
+
+Per the anchoring directed this conversation, hull cost is **`general_vehicle_cost`
+divided by the existing fleet-size knobs** rather than a new field:
+
+```
+cost(General) = general_vehicle_cost = 1
+cost(Medium)  = general_vehicle_cost / medium_fleet_size
+cost(Limited) = general_vehicle_cost / limited_fleet_size
+```
+
+With the R-MC15 candidate below (`medium_fleet_size = 8`,
+`limited_fleet_size = 32`) and the cargo Bands `0.01 · Band I` / `Band I` /
+`Band II` at `KT(I) = 0.96 kt`, `F_cargo = 100`, the Systems row has a unique
+solution for `τ` at each size, and every other hull is then read off at the same
+cost, the same `η(role, size)` from §2.2, and its role's `τ` multiplier:
+
+| hull | cost (min) | `η` | `τ` | `r` | `V` | `t/r` | `V_reserved` | **cargo (kt)** | `E` = cargo/cost |
+|---|---|---|---|---|---|---|---|---|---|
+| LSV | 0.03125 | 0.86 | 0.0384 | 0.502 | 0.126 | 0.077 | 0.090 | **0.0096** | 0.31 |
+| MSV | 0.12500 | 0.98 | 0.0381 | 1.054 | 1.173 | 0.036 | 0.090 | **0.960** | 7.68 |
+| GSV | 1.00000 | 1.00 | 0.0158 | 4.596 | 97.09 | 0.0034 | 0.090 | **96.00** | 96.0 |
+| LCV | 0.03125 | 0.75 | 0.0692 | 0.370 | 0.051 | 0.187 | 0.158 | **0** | 0 |
+| GCV | 1.00000 | 0.96 | 0.0285 | 3.365 | 38.10 | 0.0085 | 5.865 | **31.28** | 31.3 |
+| LOU | 0.03125 | 0.64 | 0.1153 | 0.296 | 0.026 | 0.390 | 0.232 | **0** | 0 |
+| ROU | 0.12500 | 0.73 | 0.1143 | 0.572 | 0.187 | 0.200 | 0.304 | **0** | 0 |
+| GOU | 1.00000 | 0.93 | 0.0475 | 2.578 | 17.14 | 0.018 | 7.933 | **8.28** | 8.28 |
+
+Seven things this gets right that the superseded sketch did not, and they are
+the reason to adopt it:
+
+1. **A Limited Systems hull carries 1.0% of `Band I`** — a token hold, ~0.0096 kt,
+   which is a scout's sample locker and not a freight capacity. That is the
+   requested "tiny fraction," and it is produced by `a_Systems` eating 90% of
+   the hold rather than by a special case.
+2. **LCV, LOU and ROU carry exactly zero**, by `max(0, ·)` reached honestly:
+   their reserved volume exceeds their hold. This is the *capability* half of
+   roles §4's permissive rule (`CLAUDE.md` §7 item 8) — a Limited hull has no
+   cargo hold as a fact, not as a competence penalty.
+3. **A General Offensive Unit still carries 8.28 kt** — troops, ordnance,
+   prize crews — so "Offensive has little to zero cargo" is size-dependent
+   rather than a flat zero, which is what the Culture fiction's GOU actually
+   depicts.
+4. **Contact sits between Systems and Offensive on every axis** — `t/r`,
+   `V_reserved`, and carry efficiency — because it was derived that way and
+   not fitted.
+5. **Design law #3 holds in every role.** `E` rises monotonically with size:
+   0.31 → 7.68 → 96.0 (Systems), 0 → 31.3 (Contact), 0 → 8.28 (Offensive).
+   Consolidation wins under geometry alone, as the law requires, and now it
+   wins *by a margin that grows with class* rather than inverting as the
+   pre-R-O58 ladder did.
+6. **Shell thickness orders Offensive > Contact > Systems at every size**
+   (`t/r`: 0.390 / 0.187 / 0.077 at Limited; 0.018 / 0.0085 / 0.0034 at
+   General), which is the armour statement, expressed as geometry rather than
+   as a combat constant — design law #2 stays intact.
+7. **R-MC12 resolves in lane (a): cost is a function of size alone; role
+   changes what you get for the money.** A General Offensive Unit and a
+   General Systems Vehicle both cost `general_vehicle_cost`, but the GOU's
+   lower `η` and thicker skin buy it `r_eq = 2.58` against the GSV's `4.60` —
+   a 1.8× linear gap in the direction the fiction describes (50 km GSV vs
+   2–3 km GOU), reached without a per-role cost table. **R-MC9 resolves the
+   same way and for the same reason:** the Systems `r_eq` ladder comes out
+   `1 : 2.10 : 9.16`, with `r_eq(GSV)/r_eq(MSV) = 4.36` — well above lane 1's
+   1.8 and well below the fiction's literal 6.6, and *derived* from the cargo
+   Bands rather than chosen between two lanes.
+
+**The one thing that is uncomfortable, stated rather than hidden.** `τ` is
+essentially flat across Limited and Medium (0.0384 / 0.0381) and then drops
+2.4× at General (0.0158). A larger pressure vessel wanting a *thinner* skin is
+not what materials science says. It is forced: with cost on shell volume and
+capacity on hold volume, constant thickness gives `F_cargo = F_cost^(3/2)`
+exactly — at `F_cost = 8` that is 22.6, and §2.6's population anchor
+independently pins `F_cargo ≈ 100`. The 2.4× thinning is the whole of that gap.
+Two readings are available and the spec does not need to choose today: either
+the General hull genuinely is a different *structure* (a Culture GSV is a field-
+supported volume, not a pressure hull, which is exactly the fiction's own
+account), or `F_cargo` is too wide and the population anchor should move. It is
+recorded here so a later measurement can settle it rather than inherit it.
+
+#### R-MC16 (new): thrust scales with volume as a *capacity*, not as a stat
+
+Asked directly this conversation: *should thrust be proportional to volume?*
+**Yes — but as the ceiling a hull can mount, not as a derived acceleration.**
+The distinction is load-bearing, and three candidate laws show why. Writing
+`a_empty = thrust / dry mass` with `dry mass = cost` and an arbitrary common
+constant:
+
+| hull | `thrust ∝ V` | `thrust ∝ V^(2/3)` | `thrust ∝ dry mass` |
+|---|---|---|---|
+| LSV | 4.0 | 8.1 | 1.0 |
+| MSV | 9.4 | 8.9 | 1.0 |
+| GSV | 97.1 | 21.1 | 1.0 |
+| LOU | 0.8 | 2.8 | 1.0 |
+| ROU | 1.5 | 2.6 | 1.0 |
+| GOU | 17.1 | 6.7 | 1.0 |
+
+**Every purely geometric law makes the ROU slower than the GOU**, which is a
+direct contradiction of the class's role and its name. No choice of exponent
+fixes it, because the ROU's advantage was never geometric — it is that a Rapid
+Offensive Unit *spends* its reserved volume and its mineral cost on drive where
+a General spends it on hold and armour. So:
+
+- **Thrust capacity ∝ `V`.** A hull's ENG slots scale with its volume
+  (`Hyades_loadout.md` §3.1), so volume sets the maximum drive a hull can mount.
+  This is the affirmative answer to the question as asked.
+- **Realized thrust is a Design quantity, drawn from `b_role · V` and paid for
+  in minerals** — not a per-`HullType` constant. A ship that flies at its
+  volume-proportional ceiling has bought the drive; one that did not is slower,
+  and *that* is the acceleration a distant observer reads.
+- **This is what design law #10 requires.** `a = thrust/(dry + cargo)` is one
+  scalar over three latents, and concealment is a combo property: arming a
+  fleet is loud unless you also buy thrust. If thrust were a fixed function of
+  hull type, the inverse problem would collapse — observed `a` would name the
+  hull class outright and the whole observation model with it.
+- **It also gives R-O65 its resolution, and its timing.** `hull_thrust_to_mass`'s
+  1.2 / 1.1 / 1.0 Systems ladder is a stand-in for a design decision the engine
+  cannot yet express, because no Design write reaches thrust. It should be
+  flattened *when* that write lands (`hyades_todo.md` T-08, `on_refit`), not
+  before — it is MC-tuned combat surface (`CLAUDE.md` §6) and flattening it
+  early would change combat with nothing in place to carry the difference.
+
 ### 2.4 Class modulates the permutation, it doesn't replace it
 
 A hull's mineral cost still runs through the §1 permutation machinery — the
@@ -444,7 +617,10 @@ system was always a Band ladder; it just spelled `Band` as a bare digit.
 
 **The anchor.** `Band I` for mineral spend is *defined*, not measured:
 `general_vehicle_cost = 1.0` (`sim.rs`) **is** one unit of minerals, **is**
-the cost of one General-class hull, and **is** an abstract quantity
+the cost of one General-class hull, *(amended below — the R-MC15 candidate
+moves the General hull up one rung, to cost `Band II`, and puts `Band I` at
+0.25 mineral units; the field keeps its value and its name, only its Band
+label changes)*, and **is** an abstract quantity
 standing for many kilotons of real mass — §2.1–§2.3's shell-model geometry
 is what gives that abstraction its physical content.
 `medium_fleet_size`/`limited_fleet_size` (`sim.rs`) are not independent
@@ -457,7 +633,11 @@ the `Band I → Band II` step factor **`F₁`** and the `Band II → Band III`
 step factor **`F₂`**. Per this ratification: **`F₁` and `F₂` must each be a
 rational number in `[4, 8]`, and the *same* `F₁`, `F₂` must govern every
 quantity listed above** — population, infrastructure, biosphere, radiation,
-gravity, cargo capacity, and hull production cost. This is not a style
+gravity, cargo capacity, and hull production cost. *(Amended by the R-MC15
+block at the end of this section: the second half of that sentence is
+provably impossible — cost and capacity cannot share a step factor — and the
+shared-ratio rule now binds **within** each of two ladders, mass and mineral
+cost, rather than across all quantities.)* This is not a style
 preference; it is what "the shell model applies uniformly" means in
 practice. A hull one Band bigger has `√F` more radius (cost ∝ area, so
 `r ∝ √cost`) and therefore a specific, non-arbitrary multiple more volume,
@@ -547,6 +727,94 @@ being chosen independently as they are today — **`medium_fleet_size` is a
 globally MC-tuned parameter (`CLAUDE.md` §6) and is not to be changed
 here** without that re-derivation and explicit re-ratification.
 `hyades_todo.md` T-19 is the concrete offline-search task this folds into.
+
+#### R-MC15 — the ratification candidate, and the two ladders it forces
+
+*Computed this conversation, from the §2.3 shell model. Presented for
+ratification; nothing here is in the code yet.*
+
+**There are two `F` ladders, not one, and R-O71 is why.** The block above
+requires a single `F₁`/`F₂` to govern population, infrastructure, biosphere,
+radiation, gravity, cargo capacity *and* hull cost. That is provably
+impossible. Cost is shell volume and capacity is hold volume, so at constant
+shell thickness `F_cargo = F_cost^(3/2)` exactly, and thinning the shell only
+pushes `F_cargo` **higher**:
+
+```
+F_cost  <  F_cargo^(2/3)        for any ladder where φ rises with class
+⇒  F_cost ≥ 4  forces  F_cargo > 8
+```
+
+So no ladder can put cost and capacity on the same `[4, 8]` step. The
+requirement is therefore **amended: the shared-ratio rule binds within a
+ladder, not across all quantities**, and there are exactly two:
+
+| ladder | step | quantities on it |
+|---|---|---|
+| **mass** | `F = 100` | population, biosphere, `bio_max`, habitability and infrastructure (they are `min`-ed against a mass in `Factors::k`), cargo capacity |
+| **mineral cost** | `F₁ = 4`, `F₂ = 8` | hull production cost, card cost, anything priced in minerals |
+
+**`F = 100` on the mass ladder is pinned by the population anchor, not
+chosen.** `Band I` population is a small town — 3,200 people at ~300 kg of
+person, possessions and pressurised volume each, so `KT(I) = 0.96 kt` — and
+`Pop Band IV` is required to land at 1–10 billion. That is `F³ ∈ [3.1×10⁵,
+3.1×10⁶]`, i.e. **`F ∈ [68, 146]`**, and 100 is the round number inside it.
+`F₃ = F = 100` is two orders of magnitude, comfortably inside the "not four or
+more" constraint. Note what this rules out: the constant-shell-thickness ladder
+`F_cargo = 8^(3/2) = 22.6` puts `Pop IV` at **37 million**, nearly two orders
+of magnitude short of the target. The population anchor is what forces §2.3's
+uncomfortable thinning of the General hull's skin.
+
+**`F₁ = 4`, `F₂ = 8` on the cost ladder, and the Limited hull is a
+convergence rather than a choice.** Two independent requirements pin
+`limited_fleet_size`: that a Limited Systems hull carry 1% of `Band I` cargo,
+and that it share a shell thickness with the Medium hull (same materials, same
+structural regime — the thing §2.3 says only the General hull departs from).
+Solving both gives `limited_fleet_size = 32.31`, i.e. **4.04 × the
+`medium_fleet_size` of 8**. The `[4, 8]` floor was not used in that derivation
+and it lands on it anyway.
+
+**The two ladders line up on the Band *labels*, which is the equivalence
+asked for:**
+
+| rung | mineral cost | cargo (kt) | what sits there |
+|---|---|---|---|
+| `Band 0` | 0.03125 | 0.0096 | one **Limited** hull |
+| `Band I` | 0.25 | 0.96 | one **Medium** hull carries `Band I`; it costs *half* of `Band I` |
+| `Band II` | 1.00 | 96 | one **General** hull, opening class — costs `Band II`, carries `Band II` |
+| `Band III` | 8.00 | 9,600 | General, mid-game class |
+| `Band IV` | 64.0 | 960,000 | General, late-game card class |
+
+A General hull **costs `Band II` and carries `Band II`**; a Medium **carries
+`Band I` and costs less than it**; a Limited sits at `Band 0` on both. The
+step factors differ (4/8 against 100) and the rungs still correspond, because
+each quantity anchors its own `Band I` — which is what §2.6 said from the
+start, now with the ratios it actually implies.
+
+**R-MC15 candidate, for ratification:**
+
+| field | today | candidate | why |
+|---|---|---|---|
+| `medium_fleet_size` | 4.45 | **8** | the `Band I → II` cost step, at the ceiling of `[4, 8]` |
+| `limited_fleet_size` | 9.0 | **32** | `4 × medium_fleet_size`; converged from thickness + the 1%-of-`Band I` hold |
+| `cargo_unit_size` | 5.0 | **0.96** | the `Band I` hold *is* the reference hold, so this becomes `KT(I)` |
+| `units::BAND_STEP` | 4.0 | **100** | it bridges Bands to **kilotons**, so it is the mass ladder's factor, not the cost ladder's |
+
+Three consequences to carry into the code change rather than discover in it:
+
+- **`medium_fleet_size` and `limited_fleet_size` are globally MC-tuned**
+  (`CLAUDE.md` §6). Moving 4.45 → 8 and 9.0 → 32 is a re-ratification, and it
+  must be measured on **colony-years**, not colony count (§7 of `CLAUDE.md`),
+  because the acceptance test for this whole ladder is whether making General
+  hulls *more expensive* still speeds colonisation up.
+- **`a_band_step_is_multiplicative_not_additive` currently pins `BAND_STEP`
+  inside `[4, 8]`.** That assertion has to move to the cost ladder; the mass
+  ladder's guard becomes `F ∈ [68, 146]`, pinned by the population anchor
+  above rather than by conservation.
+- **The absolute mass of one mineral unit is still unpinned** (R-O72,
+  `hyades_todo.md` T-54). This section fixes every *ratio* on both ladders and
+  none of the absolute scales except population's; `general_vehicle_cost = 1.0`
+  remains an abstract unit until that lands.
 
 ## 3. The group-level super premium — Kinetic/Potential/Latent
 
@@ -838,8 +1106,12 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   (4:2:1 peak → 5:4:3 floor) — a per-card tuning call.
 - **R-MC2:** how much variance "platinum ratio close to 4:2:1 always"
   actually permits.
-- **R-MC3a:** pin actual per-class semi-axis ratios (§2.1's example values
-  are illustrative).
+- **R-MC3a (candidate on the table, §2.3):** pin actual per-class semi-axis
+  ratios (§2.1's example values are illustrative). The `η(role, size)` table
+  in §2.2 is ratified and §2.3 now derives an `r_eq` ladder from it —
+  Systems `1 : 2.10 : 9.16`, and `4.60 / 3.36 / 2.58` across
+  GSV / GCV / GOU at equal cost. What remains is the semi-axis ratios that
+  *produce* those `η`, which is arena work (§6), not geometry.
 - **R-MC3b: resolved as methodology, not a value.** `r_eq` per class is set
   empirically via the Ship Testing Arena (§6), not derived from geometry —
   per this conversation.
@@ -859,10 +1131,13 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   to the consolidation penalty.
 - **R-MC8:** once R-MC7 is settled and a combat model exists, specify what
   stat(s) "effectiveness" reads off.
-- **R-MC9 (reframed, deferred to §6):** no longer a geometry-only pick
-  between balance-preserving and fiction-faithful size ladders — the Ship
-  Testing Arena's measured consolidation/fragmentation boundary (§6.3–6.4)
-  is the actual tie-breaker.
+- **R-MC9: resolved in §2.3, and it picked neither lane.** The size ladder
+  is no longer chosen between "balance-preserving" and "fiction-faithful" —
+  it is *derived* from the cargo Bands and the shell model, landing at
+  `r_eq(GSV)/r_eq(MSV) = 4.36`, above lane 1's 1.8 and below the fiction's
+  literal 6.6. The arena (§6.3–6.4) still measures the
+  consolidation/fragmentation boundary, but it is now a check on a derived
+  ladder rather than the tie-breaker between two guesses.
 - ~~**R-MC10:** confirm `dry_mass ∝ hull volume` and pin `V_reference`~~
   **resolved, negatively** — dry mass scales with **surface area**, because a
   hull is a shell and cost *is* dry mass (R-O57/R-O58). `SimConfig::dry_mass` is
@@ -871,8 +1146,12 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   amendment block.
 - **R-MC11:** formalize hull shape (`κ`/`λ`) as a function of loadout slot
   composition rather than a fixed per-`HullType` constant.
-- **R-MC12:** resolve cross-role absolute sizing — testable via §6 once
-  Contact/Offensive hulls have slot tables (R-L0).
+- **R-MC12: resolved in §2.3 — cost is a function of size alone.** Role
+  changes what the money buys, through `η(role, size)`, the role's shell
+  thickness multiplier, and `V_reserved(role, V)`. At equal cost a GOU comes
+  out at `r_eq = 2.58` against a GSV's `4.60`, which is the fiction's
+  direction without a per-role cost table. Still testable via §6 once
+  Contact/Offensive slot tables exist (R-L0).
 - **R-MC13:** build the Ship Testing Arena as a `montecarlo.rs` sibling —
   same harness pattern, two placed fleets instead of a generated galaxy.
 - **R-MC14:** the actual distance/velocity/`N` sweep ranges for §6.3.
@@ -884,6 +1163,20 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   the constraint. `medium_fleet_size` is globally MC-tuned
   (`CLAUDE.md` §6) and is not touched by this spec; `hyades_todo.md` T-19
   is the concrete offline-search task this folds into.
+  **Candidate on the table (§2.6, awaiting ratification):** `F₁ = 4`,
+  `F₂ = 8` on the *cost* ladder ⇒ `medium_fleet_size = 8`,
+  `limited_fleet_size = 32`, with `cargo_unit_size → 0.96` and
+  `units::BAND_STEP → 100` because `BAND_STEP` bridges Bands to kilotons and
+  therefore belongs to the **mass** ladder, whose factor is pinned at ~100 by
+  the population anchor.
+- **R-MC16 (new, §2.3): thrust scales with volume as a *capacity*, not as a
+  per-`HullType` acceleration.** Volume sets the ENG-slot ceiling a hull can
+  mount; realized thrust is a Design quantity drawn from `b_role · V` and paid
+  for in minerals. Every purely geometric thrust law tested makes the ROU
+  slower than the GOU, which is why the quantity cannot be a hull constant.
+  Gives R-O65 its resolution and its timing: flatten
+  `hull_thrust_to_mass`'s 1.2/1.1/1.0 Systems ladder **when** a Design write
+  reaches thrust (`hyades_todo.md` T-08), not before.
 - **Blocking prerequisites, not this spec's to resolve, but load-bearing
   for §6:** `Hyades_loadout.md`'s **R-L0** (hull slot tables), **R-L1**
   (shield behavior), **R-L2** (single- vs. repeated-pass engagement).
