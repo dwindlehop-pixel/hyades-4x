@@ -763,6 +763,46 @@ becomes:
 `τ = 0.10` still costs **3.02×** its rung, so the Supers gate is unchanged.
 
 
+#### Stage 3a — the piecewise mass ladder, and why it moved nothing
+
+`units::BAND_STEP` is gone. In its place `MASS_LADDER` carries the ratified
+factors — `11.18, 31.62, 89.44, 252.98`, each `F_cost^(3/2)` — and the
+Band↔kiloton bridge is piecewise, interpolating log-linearly inside each
+segment and extrapolating with the edge factor outside the playable ladder
+rather than clamping (a clamp there is mass created or destroyed at the clamp,
+which L6 forbids).
+
+**Colony-years is bit-identical: 7,819,401.0 and 8,480,172.0.** A `Band II`
+population now masses 31.6 kt where it massed 4.0, and a `Band III` one 2,828
+where it massed 64 — a 44× change to the biomass draw that changed nothing at
+all. That is a big enough non-effect to need a mechanism rather than a shrug,
+and there are two, both checkable:
+
+1. **`bio_max` round-trips through the ladder, so `k_potential` never sees
+   it.** `galaxy.rs` generates `biosphere` as a **Band**; `sim.rs` converts it
+   with `.in_kilotons()` into both `biomass` and `bio_max`; `Factors::new`
+   converts it straight back with `.in_bands()`. `k_potential =
+   min(hab, bio_max_band)` therefore reads the *generated Band*, whatever the
+   ladder is. The deepening guard — which R-O66 showed is the lever that
+   actually moves coverage — is structurally immune to this change.
+2. **The biomass draw is slack, and that was ablated, not assumed.**
+   `CLAUDE.md` §7 records deleting the draw outright and reproducing 3,294.0
+   bit-for-bit. A draw that does not bind cannot be made to bind by scaling it
+   when the stock it draws from scales with it.
+
+So the ladder adoption is genuinely free at the shipped operating point, and
+the place it *will* bite is a card that moves `bio_max` directly — which is
+exactly the case R-O66's unit fix was about. Recorded here rather than
+discovered later.
+
+**One hazard closed on the way.** The bridge now has three interior joins, and
+a discontinuity at any of them is mass created or destroyed at a rung boundary,
+since the growth draw is `KT(after) − KT(before)`.
+`the_piecewise_bridge_is_continuous_and_monotone_across_every_join` pins
+continuity to 1e-6 at every rung from both sides and monotonicity across
+`[-0.5, 5.0]`, including the extrapolated ends.
+
+
 #### Staging (each stage independently revertible)
 
 1. **This entry** — analysis, units, candidates. Docs only. Landed in three

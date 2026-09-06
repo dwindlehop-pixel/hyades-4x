@@ -77,20 +77,55 @@ use core::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 /// whole job, and it is why `SimConfig::cargo_unit_size` lands on 1.0 too.
 pub const KILOTONS_AT_BAND_I: f64 = 1.0;
 
-/// Multiplicative factor between adjacent Bands, on the **mass** ladder.
+/// **The ratified mass ladder** (`Hyades_mineral_cost_curve.md` §2.6, R-MC15).
 ///
-/// **Still the pre-ratification placeholder.** R-MC15 is now settled
-/// (`Hyades_mineral_cost_curve.md` §2.6) and it does two things this constant
-/// cannot yet express. The factor differs per rung — the ratified mass ladder
-/// is `11.18, 31.62, 89.44, 252.98`, a uniform step-*ratio* of 2.83 rather
-/// than a uniform step — so the bridge `KT(b) = KT_I · BAND_STEP^(b−1)` has to
-/// become piecewise. And the old `[4, 8]` window this value sat at the floor
-/// of is withdrawn; the constraint is now `1 < F₍ₙ₊₁₎/Fₙ < 10`, with the mass
-/// and cost ladders tied by `F_mass = F_cost^(3/2)`.
+/// `MASS_LADDER[n]` is the factor from rung `n` to rung `n+1`, indexed the way
+/// [`BandTier::index`] indexes: `0 = Empty→I`, `1 = I→II`, `2 = II→III`,
+/// `3 = III→IV`. There is no single "band step" any more, which is the whole
+/// point — the ratified constraint is on how the factors *grow*
+/// (`1 < F₍ₙ₊₁₎/Fₙ < 10`), not on their absolute size, and this ladder grows
+/// at a uniform ratio of `2^1.5 ≈ 2.83`.
 ///
-/// Adopting the ratified progression moves colonisation behaviour, so it is a
-/// measured change (`hyades_todo.md` T-56 stage 3) and not a constant edit.
-pub const BAND_STEP: f64 = 4.0;
+/// Each entry is `F_cost^(3/2)` for the cost ladder's `5, 10, 20, 40` — the
+/// ratified tie between the two ladders, and the shell model's own exponent:
+/// cost tracks `r²` and the hold tracks `r³`.
+pub const MASS_LADDER: [f64; 4] = [
+    11.180_339_887_498_949, // 5^1.5   Empty → I
+    31.622_776_601_683_793, // 10^1.5  I → II
+    89.442_719_099_991_59,  // 20^1.5  II → III
+    252.982_212_813_470_36, // 40^1.5  III → IV
+];
+
+/// The mass at rung `n`, hung off [`KILOTONS_AT_BAND_I`] — `Band I` is the
+/// anchor, so `Empty` is *below* it by the first ladder step and every rung
+/// above is a running product of the rest.
+#[inline]
+pub const fn rung_mass(n: usize) -> f64 {
+    match n {
+        0 => KILOTONS_AT_BAND_I / MASS_LADDER[0],
+        1 => KILOTONS_AT_BAND_I,
+        2 => KILOTONS_AT_BAND_I * MASS_LADDER[1],
+        3 => KILOTONS_AT_BAND_I * MASS_LADDER[1] * MASS_LADDER[2],
+        _ => KILOTONS_AT_BAND_I * MASS_LADDER[1] * MASS_LADDER[2] * MASS_LADDER[3],
+    }
+}
+
+/// Which ladder segment a continuous position falls in, as `(lower rung, its
+/// step factor)`. Positions outside the playable ladder extrapolate with the
+/// nearest segment's factor rather than clamping, because the bridge must stay
+/// continuous *and* invertible: a clamp here is mass created or destroyed at
+/// the clamp, which is the one thing L6 does not permit.
+#[inline]
+fn segment(b: f64) -> (f64, f64) {
+    let n = if b < 0.0 {
+        0.0
+    } else if b >= 3.0 {
+        3.0
+    } else {
+        b.floor()
+    };
+    (n, MASS_LADDER[n as usize])
+}
 
 /// The bottom rung the ladder is willing to name.
 ///
@@ -507,7 +542,8 @@ impl Measure for Band {
     /// vanishing at the clamp.
     #[inline]
     fn in_kilotons(self) -> Kilotons {
-        Kilotons(KILOTONS_AT_BAND_I * BAND_STEP.powf(self.0 - 1.0))
+        let (n, step) = segment(self.0);
+        Kilotons(rung_mass(n as usize) * step.powf(self.0 - n))
     }
 }
 
@@ -517,7 +553,11 @@ impl Measure for Kilotons {
         if self.0 <= 0.0 {
             return Band(BAND_FLOOR);
         }
-        Band((1.0 + (self.0 / KILOTONS_AT_BAND_I).ln() / BAND_STEP.ln()).max(BAND_FLOOR))
+        let mut n = 0usize;
+        while n < 3 && self.0 >= rung_mass(n + 1) {
+            n += 1;
+        }
+        Band((n as f64 + (self.0 / rung_mass(n)).ln() / MASS_LADDER[n].ln()).max(BAND_FLOOR))
     }
     #[inline]
     fn in_kilotons(self) -> Kilotons {
@@ -634,12 +674,61 @@ mod tests {
     /// the same class of error the types exist to prevent.
     #[test]
     fn a_band_step_is_multiplicative_not_additive() {
-        let one = Band::new(1.0).in_kilotons().kilotons();
-        let two = Band::new(2.0).in_kilotons().kilotons();
-        let three = Band::new(3.0).in_kilotons().kilotons();
-        assert!((two / one - BAND_STEP).abs() < 1e-9, "I→II must be a factor of {BAND_STEP}, got {}", two / one);
-        assert!((three / two - BAND_STEP).abs() < 1e-9, "II→III must be a factor of {BAND_STEP}, got {}", three / two);
-        assert!((4.0..=8.0).contains(&BAND_STEP), "§2.6 requires the step in [4, 8], got {BAND_STEP}");
+        // Each rung is its ladder factor times the last, and the factors are
+        // the ratified ones — not one shared step, which is what R-MC15
+        // withdrew.
+        for n in 0..4 {
+            let lo = Band::new(n as f64).in_kilotons().kilotons();
+            let hi = Band::new(n as f64 + 1.0).in_kilotons().kilotons();
+            let got = hi / lo;
+            assert!(
+                (got - MASS_LADDER[n]).abs() < 1e-9,
+                "rung {n}→{} must step by {}, got {got}",
+                n + 1,
+                MASS_LADDER[n]
+            );
+        }
+
+        // The ratified constraint is on how the factors *grow*: strictly
+        // increasing, and by less than a decade each time.
+        for n in 0..3 {
+            let ratio = MASS_LADDER[n + 1] / MASS_LADDER[n];
+            assert!(ratio > 1.0 && ratio < 10.0, "F{}/F{n} = {ratio}, outside (1, 10)", n + 1);
+        }
+
+        // And the tie to the cost ladder is the shell model's exponent: cost
+        // tracks r², the hold tracks r³. A cost ladder of 5, 10, 20, 40.
+        for (n, cost_step) in [5.0_f64, 10.0, 20.0, 40.0].into_iter().enumerate() {
+            assert!((MASS_LADDER[n] - cost_step.powf(1.5)).abs() < 1e-9, "F_mass must be F_cost^(3/2) at rung {n}");
+        }
+    }
+
+    /// The bridge is piecewise now, so it has three interior joins where it
+    /// could silently develop a step. It must not: the growth draw is
+    /// `KT(after) − KT(before)`, and a discontinuity there is mass created or
+    /// destroyed at a rung boundary (L6).
+    #[test]
+    fn the_piecewise_bridge_is_continuous_and_monotone_across_every_join() {
+        for rung in 0..=4 {
+            let b = rung as f64;
+            let below = Band::new(b - 1e-9).in_kilotons().kilotons();
+            let at = Band::new(b).in_kilotons().kilotons();
+            let above = Band::new(b + 1e-9).in_kilotons().kilotons();
+            assert!((below / at - 1.0).abs() < 1e-6, "join at rung {rung} steps from below: {below} vs {at}");
+            assert!((above / at - 1.0).abs() < 1e-6, "join at rung {rung} steps from above: {above} vs {at}");
+            assert!(below <= at && at <= above, "not monotone at rung {rung}");
+        }
+
+        // Monotone everywhere, including the extrapolated ends.
+        let mut prev = f64::NEG_INFINITY;
+        let mut x = -0.5;
+        while x <= 5.0 {
+            let m = Band::new(x).in_kilotons().kilotons();
+            assert!(m > prev, "mass must rise with Band; fell at {x}");
+            assert!(m.is_finite(), "non-finite mass at Band {x}");
+            prev = m;
+            x += 0.01;
+        }
     }
 
     /// **Band V is a comparison ceiling, not a destination.**

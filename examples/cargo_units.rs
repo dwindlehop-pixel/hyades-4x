@@ -6,7 +6,7 @@
 //! from shell geometry, `(r − 1)³`. Those are different ladders; this prints
 //! both so the disagreement is a number rather than an argument.
 use hyades_engine::prelude::*;
-use hyades_engine::units::{Band, Measure, BAND_STEP};
+use hyades_engine::units::{Band, Measure, MASS_LADDER};
 
 fn main() {
     let cfg = SimConfig::new(1);
@@ -34,7 +34,7 @@ fn main() {
         let ok = (4.0..=8.0).contains(&r);
         println!("  {:>7} -> {:<8} = {:>10.2}x   {}", a.0, b.0, r, if ok { "in [4,8]" } else { "**OUTSIDE [4,8]**" });
     }
-    println!("\nwhat the Band ladder would give at BAND_STEP = {BAND_STEP}:");
+    println!("\nwhat the Band ladder would give at F(I→II) = {}:", MASS_LADDER[1]);
     for b in [0.0, 1.0, 2.0] {
         println!("  Band {b:.0} = {:>10.4} kt", Band::new(b).in_kilotons().kilotons());
     }

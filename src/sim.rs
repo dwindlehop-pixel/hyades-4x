@@ -3621,8 +3621,8 @@ mod tests {
         // What the Band reading would give instead, for the same three hulls.
         let banded = |b: f64| Band::new(b).in_kilotons().kilotons();
         assert!(
-            (banded(2.0) / banded(1.0) - units::BAND_STEP).abs() < 1e-9,
-            "the Band ladder steps by BAND_STEP by construction"
+            (banded(2.0) / banded(1.0) - units::MASS_LADDER[1]).abs() < 1e-9,
+            "the Band ladder steps by its ratified I→II factor by construction"
         );
 
         // And the concrete inconsistency the mismatch already produces: a
