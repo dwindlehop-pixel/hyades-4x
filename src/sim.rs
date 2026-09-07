@@ -729,6 +729,18 @@ impl HullType {
         Kilotons::new(usable.max(Volume::ZERO).hull_units_cubed() * cfg.cargo_unit_size)
     }
 
+    /// **The largest founding population this hull could deliver** — the Band
+    /// its hold masses.
+    ///
+    /// A *capacity*, not a load: what actually flies is this capped at the
+    /// target's carrying capacity, because a seed above `K` crashes rather than
+    /// settling (T-56 stage 4). The ladder makes the capacities `Band Empty` /
+    /// `Band I` / `Band II` for Limited / Medium / General.
+    pub fn colony_seed_capacity(self, cfg: &SimConfig) -> Band {
+        let hold = Kilotons::new(self.hold_volume(cfg).hull_units_cubed() * cfg.cargo_unit_size);
+        units::population_at_mass(hold)
+    }
+
     /// Mineral cost as a fraction of `SimConfig::general_vehicle_cost` — the
     /// **anchor** the geometry is solved from, not a consequence of it.
     ///
@@ -775,6 +787,17 @@ pub fn role_hull_type(role: Role) -> HullType {
 // (`HullType::geometry`) and capacity is a volume times a density, so there is
 // no normaliser left to put a derived quantity in a denominator — which is
 // what four of the measurement artifacts in `CLAUDE.md` §2 had in common.
+
+/// The infrastructure a colony has the instant it is founded — the colony
+/// ship's own hull, recycled (`sys_colony_arrive`).
+///
+/// **It does not depend on the hull, and that is why a General colony ship is
+/// never required** (T-56 stage 4). `K = min(hab, bio_max, infra)`, so a new
+/// colony's capacity is one Band whatever founded it, and a Medium hull's hold
+/// already carries a Band's worth of people. Scaling this with the recycled
+/// hull's mass is the change that would make a bigger colony ship worth
+/// building; it is not made here, because it moves the whole expansion economy.
+const FOUNDING_INFRA: Band = Band::new(1.0);
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
 /// hull's price and its empty mass are one number in one unit (kilotons); there
@@ -2015,7 +2038,7 @@ impl Simulation {
             self.claim_planet(target, owner);
             {
                 let f = self.world.factors.get_mut(target).unwrap();
-                f.infra = f.infra.max(Band::new(1.0));
+                f.infra = f.infra.max(FOUNDING_INFRA);
             }
             // Seed population from the pop *carried as cargo*
             // (`Hyades_vehicle_roles.md` §4.2/R-V9 — confirmed, not a flat
@@ -2511,6 +2534,9 @@ impl Simulation {
             infra_cost: target_level,
             colonizer_cost: hull_cost(HullType::MediumSystems, &self.config),
             general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
+            medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
+            general_seed_capacity: HullType::GeneralSystems.colony_seed_capacity(&self.config),
+            founding_capacity_cap: FOUNDING_INFRA,
             // The *true* price of a pair to this center right now. With
             // recycling on, a half that comes out of Reserve is not bought, and
             // the context has to say so or the decision is made on a price the
@@ -2797,8 +2823,21 @@ impl Simulation {
         );
     }
 
+    /// **The carrying capacity a colony will have the moment it is founded.**
+    ///
+    /// `K = min(hab, bio_max, infra)`, and founding sets infra to
+    /// [`FOUNDING_INFRA`] — so however good the world is, a new colony's `K` is
+    /// capped at one Band on arrival. This is the number a colony ship must not
+    /// exceed: population above `K` does not settle back to it, it *crashes*
+    /// below it (`a_colony_seeded_above_its_capacity_crashes_below_it`).
+    fn founding_capacity(&self, target: Entity) -> Band {
+        let f = self.world.factors.get(target).unwrap();
+        f.k_potential().min(f.infra.max(FOUNDING_INFRA))
+    }
+
     /// **The founding population a colony ship of this hull carries** — the
-    /// Band its hold masses (T-56 stage 4b).
+    /// Band its hold masses (T-56 stage 4b), **capped at the target's
+    /// carrying capacity.**
     ///
     /// This is what makes a heavier colonizer worth its price. The hold ladder
     /// is the mass ladder (§2.6, R-MC15), so a General hull's hold is a whole
@@ -2821,9 +2860,8 @@ impl Simulation {
     /// rather than fixed here because drawing the seed from the origin is a
     /// behaviour change that would dominate the measurement stage 4 exists to
     /// take — and mixing the two is exactly the confound this staging avoids.
-    fn colony_seed_for(&self, hull: HullType) -> Option<Band> {
-        let hold = Kilotons::new(hull.hold_volume(&self.config).hull_units_cubed() * self.config.cargo_unit_size);
-        let seed = units::population_at_mass(hold);
+    fn colony_seed_for(&self, hull: HullType, target: Entity) -> Option<Band> {
+        let seed = hull.colony_seed_capacity(&self.config).min(self.founding_capacity(target));
         (seed >= self.config.colony_seed_pop.band()).then_some(seed)
     }
 
@@ -2851,7 +2889,7 @@ impl Simulation {
         // hull's hold masses** (T-56 stage 4b) rather than a flat constant.
         self.world.pop_cargo.insert(
             e,
-            if role == Role::Colonizer { self.colony_seed_for(hull).unwrap_or(Band::ZERO) } else { Band::ZERO },
+            if role == Role::Colonizer { self.colony_seed_for(hull, target).unwrap_or(Band::ZERO) } else { Band::ZERO },
         );
         self.world.home_center.insert(e, center);
         let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
@@ -3993,36 +4031,55 @@ mod tests {
         assert!(hull_cost(HullType::GeneralSystems, &cfg) > hull_cost(HullType::MediumSystems, &cfg) * 5.0);
     }
 
-    /// **T-56 stage 4b: a colony ship's seed is what its hold masses.**
+    /// **T-56 stage 4: carry up to the target's carrying capacity, and no more.**
     ///
-    /// This is the mechanism that makes a heavier colonizer worth its price,
-    /// and it is the ratified hold ladder doing the work: the hold rungs *are*
-    /// the mass rungs, so a General hull seeds a whole Band above a Medium one.
+    /// The hold ladder gives each hull a *capacity* — `Band Empty` / `Band I` /
+    /// `Band II` for Limited / Medium / General — but what flies is that capped
+    /// at the colony's `K`, because population above `K` crashes rather than
+    /// settling (`a_colony_seeded_above_its_capacity_crashes_below_it`).
+    ///
+    /// **The cap is one Band, so a General hull is never required.** A new
+    /// colony's infrastructure is the recycled hull, [`FOUNDING_INFRA`], and `K`
+    /// is a `min` against it — so however good the world, a Medium hold already
+    /// covers what can be delivered. That is asserted here rather than left as
+    /// a remark, because it is the reason the derived hull choice always
+    /// answers "Medium" today, and it stops being true the moment founding
+    /// infra scales with the hull.
     #[test]
-    fn a_colony_ship_seeds_the_band_its_hold_masses() {
+    fn a_colony_ship_carries_up_to_the_targets_capacity_and_no_more() {
         let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
-        sim.config.horizon_years = 1.0;
 
-        // The Medium hull is the anchor: its hold is `Band I`, which is exactly
-        // `colony_seed_pop`, so stage 4b is behaviour-neutral at the hull the
-        // baseline doctrine actually builds.
-        let medium = sim.colony_seed_for(HullType::MediumSystems).expect("a Medium hull can found");
-        assert!(
-            (medium.bands() - sim.config.colony_seed_pop.band().bands()).abs() < 1e-9,
-            "a Medium colonizer must still seed colony_seed_pop, got {medium}"
+        // Capacity is the hold's rung, and the rungs are the mass ladder's.
+        let (m_cap, g_cap) = (
+            HullType::MediumSystems.colony_seed_capacity(&sim.config),
+            HullType::GeneralSystems.colony_seed_capacity(&sim.config),
+        );
+        assert!((m_cap.bands() - 1.0).abs() < 1e-9, "a Medium hold is Band I, got {m_cap}");
+        assert!((g_cap.bands() - 2.0).abs() < 1e-6, "a General hold is Band II, got {g_cap}");
+        assert!(HullType::LimitedSystems.colony_seed_capacity(&sim.config) < sim.config.colony_seed_pop.band());
+
+        // A target far better than any hull could fill: `k_potential` of 4.
+        let target = sim.planet_entity[11];
+        sim.world.factors.insert(
+            target,
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
         );
 
-        // The General hull seeds one whole Band higher — 31.6x the people, for
-        // `medium_fleet_size` times the price.
-        let general = sim.colony_seed_for(HullType::GeneralSystems).expect("a General hull can found");
-        assert!((general.bands() - medium.bands() - 1.0).abs() < 1e-6, "General must seed one Band up, got {general}");
-        let ratio = units::population_mass(general).kilotons() / units::population_mass(medium).kilotons();
-        assert!((ratio - units::MASS_LADDER[1]).abs() < 1e-6, "and that Band is the mass ladder's step: {ratio}");
+        // Founding capacity is the infra cap, not the world's potential.
+        assert_eq!(sim.founding_capacity(target), FOUNDING_INFRA);
 
-        // **R-V9 is physics now, not a hull-type rule.** A Limited hull's hold
-        // sits at `Band Empty`, below the floor, so it cannot found — which is
-        // what "a Colonizer must be Medium or larger" was always asserting.
-        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems), None);
+        // So both hulls deliver the same load, and the General's extra Band of
+        // hold is simply unusable. This is the whole of why the derived hull
+        // choice answers "Medium".
+        let medium = sim.colony_seed_for(HullType::MediumSystems, target).expect("a Medium hull can found");
+        let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
+        assert_eq!(medium, general, "the cap binds first, so the hulls deliver the same seed");
+        assert_eq!(medium, FOUNDING_INFRA);
+
+        // **R-V9 is physics.** A Limited hull's hold sits below the floor, so it
+        // cannot found — the rule is a consequence of the ladder, not a
+        // hull-type special case.
+        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, target), None);
     }
 
     #[test]

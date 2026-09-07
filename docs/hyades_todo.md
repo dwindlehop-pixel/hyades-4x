@@ -1136,6 +1136,48 @@ Recorded here before the numbers landed so the run adjudicates it rather than
 being written up after the fact.
 
 
+#### Stage 4c — carry up to `K`, and take the smallest hull that can
+
+*Directed this conversation, and it replaces stage 4's doctrine enum with a
+derivation.* The rule is now stated where the decision is made:
+
+```rust
+let needed = col.view.k_potential().min(ctx.founding_capacity_cap);
+let (hull, cost) = if needed <= ctx.medium_seed_capacity { Medium } else { General };
+```
+
+and the load that actually flies is `min(hull capacity, founding K)`.
+`Doctrine::colonizer_hull` is **deleted** — the hull is not a preference, it is
+whatever fits the load, and the load is capped by the target rather than by the
+stockpile.
+
+**Two things this fixes at once.** It removes the failure mode stage 4b
+measured — a seed above `K` crashing to a quarter of a Band — by construction
+rather than by choosing not to trigger it. And it makes the colonizer's hull a
+*derived* quantity, so it will start answering "General" the day something makes
+a founding colony's `K` exceed one Band, with no doctrine to remember to change.
+
+**The answer today is always Medium, and the reason is a single constant.**
+`sys_colony_arrive` recycles the colony ship's hull into `FOUNDING_INFRA`
+(`Band I`), and `K = min(hab, bio_max, infra)` — so a new colony's capacity is
+one Band **whatever founded it**, however good the world. Every colonization
+target has `k_potential ≥ k_high = 3.2`, so the binding term is never the world;
+it is always the infra floor. A Medium hold carries exactly `Band I`. There is
+nothing a bigger hull could deliver.
+
+`a_colony_ship_carries_up_to_the_targets_capacity_and_no_more` asserts that
+chain — capacity ladder, the cap, both hulls delivering the same seed, and R-V9
+as a consequence — so the day it stops being true, it fails.
+
+**The change that would make a General colony ship worth building** is therefore
+not in the hold ladder at all: it is **scaling `FOUNDING_INFRA` with the mass of
+the hull that was recycled**. That is mass-conservation-consistent (the hull's
+minerals become infrastructure, which is what founding already claims to do),
+and it is the only lever that raises a founding colony's `K` above one Band. It
+is not made here because it moves the whole expansion economy and needs its own
+measurement — **R-O76 (new, open)**.
+
+
 #### Staging (each stage independently revertible)
 
 1. **This entry** — analysis, units, candidates. Docs only. Landed in three

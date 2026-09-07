@@ -64,9 +64,7 @@ pub mod units;
 
 /// Common imports for engine consumers.
 pub mod prelude {
-    pub use crate::autopilot::{
-        Autopilot, BaselineAutopilot, ColonizerHull, Doctrine, ExpandBias, RankWeights, SurveyStrategy,
-    };
+    pub use crate::autopilot::{Autopilot, BaselineAutopilot, Doctrine, ExpandBias, RankWeights, SurveyStrategy};
     pub use crate::belief::{BeliefAMax, Engagement, Observation, Unobserved};
     pub use crate::cards::{Card, CardEffect, CardId, Order, Slant, Target, Tree};
     pub use crate::combat::{CombatConfig, Combatant, EngagementOutcome, FleetTrajectory, Winner};

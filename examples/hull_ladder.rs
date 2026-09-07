@@ -29,34 +29,24 @@ struct Leg {
     doctrine: fn(&mut Doctrine),
 }
 
-// **Stage 3's legs are retired, not deleted — they measured a config that no
-// longer exists.** `medium_fleet_size` and `cargo_unit_size` are now the
-// ratified defaults, and since stage 3c `hull_radius` solves the shell model
-// rather than square-rooting the cost ratio, so the "hold held fixed" ablation
-// has nothing left to hold fixed: cost and capacity are separate functions of
-// one body. The numbers those legs produced are recorded in `hyades_todo.md`
-// T-56 stage 3b, which is where they belong.
+// **Only the baseline leg remains, and that is the finding.**
 //
-// What is left to measure is stage 4: the ladder is only worth what the
-// doctrine spending it can buy, and until now nothing in a run ever built a
-// General hull.
-const LEGS: &[Leg] = &[
-    // The ratified ladder with the pre-T-56 doctrine: Colonizer pinned to the
-    // Medium hull. This is what stage 3 shipped, and the baseline every other
-    // leg is paired against seed by seed.
-    Leg { name: "Medium colonizers (shipped)", apply: |_| {}, doctrine: |_| {} },
-    // A General colonizer whenever the center can pay for one out of the
-    // stockpile it has *this decision*, else a Medium. Expansion never stalls
-    // waiting for a bigger ship.
-    Leg {
-        name: "General when affordable",
-        apply: |_| {},
-        doctrine: |d| d.colonizer_hull = ColonizerHull::GeneralWhenAffordable,
-    },
-    // Always General, even when it means banking instead of building — the
-    // aggressive end. Fewer foundings, each starting a Band higher.
-    Leg { name: "General always", apply: |_| {}, doctrine: |d| d.colonizer_hull = ColonizerHull::General },
-];
+// Stage 3's legs measured a config that no longer exists — `medium_fleet_size`
+// and `cargo_unit_size` are now the ratified defaults, and since stage 3c
+// `hull_radius` solves the shell model rather than square-rooting the cost
+// ratio, so the "hold held fixed" ablation has nothing left to hold fixed.
+// Their numbers are recorded in `hyades_todo.md` T-56 stage 3b.
+//
+// Stage 4's legs measured a doctrine that no longer exists either. The
+// colonizer's hull is not a preference any more: it is derived from the
+// target's carrying capacity, because a seed above `K` crashes rather than
+// settling. That derivation currently always answers "Medium", since a new
+// colony's `K` is capped at one Band by the infra its recycled hull provides.
+// Those numbers are in T-56 stage 4.
+//
+// What is left is the bed itself, which is still the instrument for the
+// acceptance test and for anything that moves the expansion economy.
+const LEGS: &[Leg] = &[Leg { name: "ratified ladder", apply: |_| {}, doctrine: |_| {} }];
 
 struct Run {
     colonies: usize,
