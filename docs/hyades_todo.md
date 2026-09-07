@@ -384,6 +384,68 @@ become "what does my current Role's System say to build". The dial
 ## Band C — open question with a concrete test
 
 
+### T-60. The founding subsidy is removed (R-O77 closed), and what it broke
+
+**Directed this conversation.** A hull's mass *is* the infrastructure it becomes
+— dry mass is the mineral cost (L6/R-O57), so the conversion is the identity and
+there is no rate left to subsidise:
+
+```
+infra = band_of(hull_cost)
+```
+
+| hull | cost / infra mass | founding infra |
+|---|---|---|
+| Limited | 0.02 kt | `Band 0` — founds nothing |
+| Medium | 0.10 kt | **`Band 0.046`** |
+| General | 1.00 kt | **`Band I`** exactly |
+
+Until now a Medium hull's 0.1 minerals became a whole Band of infrastructure the
+ladder charges 1.0 for: founding conjured **10× the mass spent**, in flat
+contradiction of design law #11.
+
+**A General hull costs exactly one kiloton, which is exactly `KT(I)`** — so it
+founds on the nose at `Band I`, and it is the only hull that reaches it. This is
+the first configuration in which "a Medium hull unless a General is required"
+has ever had a case where a General *is* required, and the `K`-per-mineral rule
+now picks it: 1.00 against a Medium's 0.46.
+
+**Two hand-derivations of this were wrong before the engine settled it**, both
+by re-deriving the ladder outside `units.rs`. The first summed Band numerals
+(`b(b+1)/2` → `Band IV`). The second used a single `F = 31.62` and got
+`Band 0.333` — but **the ladder is piecewise**, and the segment below `Band I`
+steps by 11.18. The test now asserts the identity *against the bridge* rather
+than against a formula, which is the only version that cannot drift.
+
+**What it costs: about half the game.** Seed 1, four-seat bed, 4,000 yr:
+
+| | colonies | colony-years | doubling |
+|---|---|---|---|
+| with the subsidy | 3,435 | 8,795,729 | 284.0 yr |
+| **without** | **1,860** | **4,558,015** | **377.1 yr** |
+
+−46% colonies, −48% colony-years, and 93 years added to the doubling time.
+Colonisation now costs 10× per colony because only the General hull founds
+anything viable, and nothing in the engine yet relieves that.
+
+**This is the intended pressure, not a regression to revert.** The next stage is
+the response to it, in three parts, and they should be measured separately:
+
+1. **Minerals to low-infra colonies.** `most_needed_center` already routes
+   freighters on need with a λ distance discount, so this is a re-weighting
+   toward *infrastructure deficit* rather than new machinery.
+2. **Population freighting — genuinely new.** Move people from colonies near the
+   top of their logistic curve (where growth has stalled against `K`) to
+   colonies with habitability headroom but no infrastructure to hold anyone.
+   The engine already masses `pop_cargo` (R-O32) and consumes it on arrival, so
+   the vehicle side exists; what does not exist is a *source* that debits the
+   sending world — which is also R-O74's conjured settlers, so the two close
+   together.
+3. **The distance term.** Population left behind at the source keeps growing, so
+   a long haul can cost more growth than the destination gains. λ's discount on
+   mineral routing is the precedent: the value of a delivery decays with time in
+   flight, and here the decay rate is the *source's own logistic slope*.
+
 ### T-58. Band arithmetic removed from the type, and the two bugs it was hiding
 
 **`Band` has no `Add`, `Sub`, `AddAssign`, `SubAssign` or `Mul`.** `I + II +

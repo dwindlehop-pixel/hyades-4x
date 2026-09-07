@@ -788,13 +788,12 @@ pub fn role_hull_type(role: Role) -> HullType {
 // no normaliser left to put a derived quantity in a denominator — which is
 // what four of the measurement artifacts in `CLAUDE.md` §2 had in common.
 
-/// The infrastructure a **Medium**-hulled colony has the instant it is founded
-/// — the anchor [`Simulation::founding_infra`] scales from (R-O76).
-///
-/// It is the value the whole engine used for every hull until stage 4d, so
-/// anchoring here keeps the Medium colonizer — the only one the baseline
-/// actually builds — bit-identical.
-const FOUNDING_INFRA_AT_MEDIUM: Band = Band::new(1.0);
+// `FOUNDING_INFRA_AT_MEDIUM` is **deleted (R-O77 closed)**. It was the anchor a
+// subsidised founding rate scaled from: a Medium hull cost 0.1 minerals and
+// became a Band of infrastructure the ladder charges 1.0 for, so founding
+// conjured 10× the mass that was spent. There is no rate any more — a hull's
+// mass *is* the infrastructure it becomes, which is what design law #11 said
+// all along.
 
 /// **What the engine charges to raise infrastructure from `b` to the next
 /// rung — and it is a linear count, not a Band ladder.**
@@ -2943,47 +2942,46 @@ impl Simulation {
     /// what was recycled — which pinned every new colony's `K` at one Band and
     /// made a heavier colony ship pointless by construction.
     ///
-    /// The hull's **mass** now buys infrastructure **mass**, at a rate anchored
-    /// so a Medium hull still yields exactly [`FOUNDING_INFRA_AT_MEDIUM`]:
+    /// **The hull's mass *is* the infrastructure it becomes — no rate, no
+    /// subsidy (R-O77 closed).** Dry mass is the mineral cost (L6/R-O57), so
+    /// the conversion is the identity and the only work here is reading the
+    /// mass back onto the ladder:
     ///
     /// ```text
-    /// rate  = KT(Band I) / medium_hull_cost           kt of infra per kt of hull
-    /// infra = band_of(hull_cost · rate)
+    /// infra = band_of(hull_cost)
     /// ```
     ///
-    /// **The first version of this summed Band numerals** — `b(b+1)/2`, the
-    /// cumulative "1+2+3+4 = 10" of the linear price ladder — and concluded
-    /// that a General hull founds at `Band IV`. That is the R-O66 error made
-    /// again: `I + II + III + IV` is not `X`, because Bands are positions on a
-    /// multiplicative ladder and only their *masses* add. Done in kilotons the
-    /// answer is far smaller, because ten times the hull mass is only
-    /// `log_F(10) = 0.67` of a rung when `F = 31.62`:
+    /// | hull | cost / infra mass | founding infra |
+    /// |---|---|---|
+    /// | Limited | 0.02 kt | `Band 0` — founds nothing |
+    /// | Medium | 0.10 kt | **`Band 0.33`** |
+    /// | General | 1.00 kt | **`Band I`** |
     ///
-    /// | hull | cost | infra mass | founding infra |
-    /// |---|---|---|---|
-    /// | Limited | 0.02 | 0.2 kt | `Band 0.53` |
-    /// | Medium | 0.10 | 1.0 kt | **`Band I`** (the anchor) |
-    /// | General | 1.00 | 10.0 kt | `Band 1.67` |
+    /// **This is what removing the subsidy does, and it is meant to hurt.**
+    /// Until now a Medium hull's 0.1 minerals became a whole Band of
+    /// infrastructure that the ladder charges 1.0 for — founding conjured 10×
+    /// the mass spent, in flat contradiction of design law #11. With the
+    /// conjuring gone a Medium colonizer founds at a *third* of a rung, and a
+    /// General hull is the only one that reaches `Band I`: the first
+    /// configuration in which "a Medium hull unless a General is required"
+    /// has ever had a case where a General is required.
     ///
-    /// So a General colony ship founds two thirds of a rung higher, not three
-    /// rungs — which is the honest reading, and it is why `Band` lost its `Add`
-    /// in the same change. R-V9 still holds, but through the *hold* rather than
-    /// here: a Limited hull's seed capacity is below `colony_seed_pop`, so it
-    /// founds nothing whatever infrastructure it would have left behind.
+    /// A colony founded at `Band 0.33` is a real colony that is badly short of
+    /// everything, which is the intended pressure — it must be supplied rather
+    /// than born adequate.
     ///
-    /// **R-O77 (open): the subsidy this scales was already there.** A Medium
-    /// hull costs 0.1 minerals and becomes 1.0 kt of infrastructure — founding
-    /// conjures 10× the mass that was spent, in flat contradiction of design
-    /// law #11. This preserves that rate rather than introducing it, and it is
-    /// recorded rather than closed because removing it would stop colonisation
-    /// outright at the ratified hull prices.
+    /// **Two earlier versions of this were wrong, both in the same way.** The
+    /// first summed Band numerals (`b(b+1)/2`, the cumulative `1+2+3+4 = 10` of
+    /// the linear price ladder) and put a General hull at `Band IV`. The second
+    /// did the arithmetic in kilotons but kept the subsidised rate, giving
+    /// `Band 1.67`. `I + II + III + IV` is not `X`, and a 10× conjuring is not a
+    /// conversion.
+    ///
+    /// R-V9 needs no special case at either end: a Limited hull's mass reads
+    /// below `Band Empty`, so its colony would have no carrying capacity and
+    /// [`Self::colony_seed_for`] declines.
     fn founding_infra(&self, hull: HullType) -> Band {
-        let unit = hull_cost(HullType::MediumSystems, &self.config);
-        if unit <= 0.0 {
-            return FOUNDING_INFRA_AT_MEDIUM;
-        }
-        let rate = FOUNDING_INFRA_AT_MEDIUM.in_kilotons().kilotons() / unit;
-        let mass = Kilotons::new(hull_cost(hull, &self.config) * rate);
+        let mass = Kilotons::new(hull_cost(hull, &self.config));
         Band::new(mass.in_bands().bands().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
     }
 
@@ -3027,7 +3025,13 @@ impl Simulation {
     /// take — and mixing the two is exactly the confound this staging avoids.
     fn colony_seed_for(&self, hull: HullType, target: Entity) -> Option<Band> {
         let seed = hull.colony_seed_capacity(&self.config).min(self.founding_capacity(hull, target));
-        (seed >= self.config.colony_seed_pop.band()).then_some(seed)
+        // **The floor is a positive seed, not `colony_seed_pop`.** With the
+        // founding subsidy removed a Medium hull founds at `Band 0.33`, and a
+        // colony that starts below `Band I` is the point rather than an error:
+        // it is short of everything and has to be supplied. What is still
+        // refused is a colony with *no* people, which is what a hull too small
+        // to leave any infrastructure behind would produce.
+        (seed > Band::ZERO).then_some(seed)
     }
 
     fn mark_targeted(&mut self, p: usize, target: PlanetId) {
@@ -4219,15 +4223,32 @@ mod tests {
         assert!((g_cap.bands() - 2.0).abs() < 1e-6, "a General hold is Band II, got {g_cap}");
         assert!(HullType::LimitedSystems.colony_seed_capacity(&sim.config) < sim.config.colony_seed_pop.band());
 
-        // **Founding infrastructure is the recycled hull's mass, converted as a
-        // mass.** Ten times the hull buys `log_F(10) = 0.67` of a rung, not
-        // three — the ladder is multiplicative, so `I + II + III + IV` is not
-        // `X` and a General hull does not found at `Band IV`.
-        assert_eq!(sim.founding_infra(HullType::MediumSystems), FOUNDING_INFRA_AT_MEDIUM);
+        // **Founding infrastructure is the recycled hull's mass — full stop.**
+        // Dry mass is the mineral cost (L6), so the conversion is the identity
+        // and the 10× founding subsidy is gone (R-O77). A Medium hull's 0.1
+        // minerals reads as a third of a rung; only a General reaches Band I.
+        let m_infra = sim.founding_infra(HullType::MediumSystems);
         let g_infra = sim.founding_infra(HullType::GeneralSystems);
-        let expected = 1.0 + 10f64.ln() / units::MASS_LADDER[1].ln();
-        assert!((g_infra.bands() - expected).abs() < 1e-9, "a General hull founds at {g_infra}, want {expected}");
-        assert!(g_infra < BandTier::II.band(), "and it does not even reach Band II");
+
+        // The identity, asserted against the bridge rather than against a
+        // hand-written formula — **the ladder is piecewise**, and the segment
+        // below `Band I` steps by 11.18 where the one above steps by 31.62.
+        // Re-deriving it by hand with a single factor is how the previous two
+        // versions of this got the wrong answer.
+        for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
+            let by_mass = Kilotons::new(hull_cost(hull, &sim.config)).in_bands();
+            assert_eq!(sim.founding_infra(hull), Band::new(by_mass.bands().max(0.0)), "{hull:?}");
+        }
+
+        // A General hull costs exactly one kiloton, which is exactly `KT(I)` —
+        // so it founds at `Band I` on the nose, and it is the only hull that
+        // reaches it.
+        assert!((g_infra.bands() - 1.0).abs() < 1e-12, "a General hull founds at Band I, got {g_infra}");
+        assert!(m_infra < BandTier::I.band(), "a Medium hull no longer reaches Band I: {m_infra}");
+        assert!(m_infra > Band::ZERO, "but it does found something: {m_infra}");
+        // A Limited hull's mass reads below the bottom rung, so it leaves no
+        // capacity at all — R-V9 with no special case.
+        assert_eq!(sim.founding_infra(HullType::LimitedSystems), Band::ZERO);
 
         // A target far better than either hull can fill: `k_potential` of 4.
         let target = sim.planet_entity[11];
@@ -4237,20 +4258,16 @@ mod tests {
         );
 
         // Each hull's founding `K` is its own infrastructure, and the load is
-        // capped by it. A Medium still delivers exactly `Band I` — unchanged,
-        // which is what keeps the shipped configuration bit-identical.
-        assert_eq!(sim.founding_capacity(HullType::MediumSystems, target), FOUNDING_INFRA_AT_MEDIUM);
+        // capped by it. **Both hulls are now `K`-limited, not hold-limited** —
+        // neither can deliver what its hold could carry, because neither leaves
+        // enough infrastructure behind to hold the people.
+        assert_eq!(sim.founding_capacity(HullType::MediumSystems, target), m_infra);
         let medium = sim.colony_seed_for(HullType::MediumSystems, target).expect("a Medium hull can found");
-        assert_eq!(medium, FOUNDING_INFRA_AT_MEDIUM);
-
-        // A General delivers more — but it is **`K`-limited, not hold-limited**:
-        // its `Band II` hold is capped by the `Band 1.67` of infrastructure its
-        // own hull left behind. The extra hold is still unusable, for a reason
-        // that is now derived rather than assumed.
         let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
-        assert!(general > medium, "a General hull delivers more: {general} vs {medium}");
-        assert_eq!(general, g_infra, "and it is K-limited: the load is its own founding infrastructure");
-        assert!(general < g_cap, "its hold ({g_cap}) is not the binding term");
+        assert_eq!(medium, m_infra, "a Medium colony starts at the infrastructure its hull left");
+        assert_eq!(general, g_infra, "and so does a General one");
+        assert!(medium < m_cap && general < g_cap, "both are K-limited: the holds are not the binding term");
+        assert!(general > medium, "a General hull founds a materially better colony");
 
         // **R-V9 is physics, through the hold.** A Limited hull's seed capacity
         // is below `colony_seed_pop`, so it founds nothing — whatever
