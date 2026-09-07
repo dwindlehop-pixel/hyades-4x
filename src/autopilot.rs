@@ -33,6 +33,56 @@ pub enum ExpandBias {
     ColoniesFirst,
 }
 
+/// **Which hull an empire lays down for a colony errand** (T-56 stage 4).
+///
+/// Until the ratified ladder landed this was not a choice: `role_hull_type`
+/// pinned Colonizer to the Medium hull, so nothing in a run ever built a
+/// General one and the whole ladder was measured without the play it exists to
+/// enable.
+///
+/// The trade is real in both directions. A General Systems Vehicle costs
+/// `medium_fleet_size` times a Medium one — ten Medium colonizers, ten colonies
+/// — but its hold is a **Band higher**, so the colony it founds starts a Band
+/// further up the population ladder and compounds from there. Whether the head
+/// start beats the count is exactly the question T-56's acceptance test asks,
+/// and it is a *measurement*, which is why this is a doctrine field rather than
+/// a constant.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColonizerHull {
+    /// Always the Medium hull — the pre-T-56 behaviour, and the baseline every
+    /// other variant is measured against.
+    Medium,
+    /// The General hull when the center can pay for it out of the stockpile it
+    /// has *this decision*, else the Medium hull. Expansion never stalls
+    /// waiting for a bigger ship.
+    GeneralWhenAffordable,
+    /// Always the General hull, even when it means saving for it. The
+    /// deliberately aggressive end: a center with a Medium hull's worth of
+    /// minerals builds nothing and banks instead.
+    General,
+}
+
+impl ColonizerHull {
+    /// The hull this doctrine lays down, given what the center can spend.
+    ///
+    /// `stockpile` and the two prices are all in minerals; the epsilon matches
+    /// the affordability tests elsewhere in `production_choice`, so a center
+    /// that can *exactly* afford a General hull builds one.
+    pub fn pick(self, stockpile: f64, medium_cost: f64, general_cost: f64) -> (HullType, f64) {
+        match self {
+            ColonizerHull::Medium => (HullType::MediumSystems, medium_cost),
+            ColonizerHull::General => (HullType::GeneralSystems, general_cost),
+            ColonizerHull::GeneralWhenAffordable => {
+                if stockpile + 1e-9 >= general_cost {
+                    (HullType::GeneralSystems, general_cost)
+                } else {
+                    (HullType::MediumSystems, medium_cost)
+                }
+            }
+        }
+    }
+}
+
 /// Whether survey craft favor a heading, and for how long (autopilot-doc §2,
 /// R-AC3). All three variants share the same fallback rule when a heading
 /// is biased: prefer the hemisphere, fall back to global nearest-unscanned
@@ -201,6 +251,13 @@ pub struct Doctrine {
     // --- Expand (autopilot-doc §4) ---
     pub expand_bias: ExpandBias,
 
+    /// Which hull a colony errand is laid down on (T-56 stage 4).
+    ///
+    /// **Defaults to [`ColonizerHull::Medium`]**, which is the pre-T-56
+    /// behaviour, so the ratified ladder and the doctrine that spends it are
+    /// measured separately — the whole reason stage 4 is its own stage.
+    pub colonizer_hull: ColonizerHull,
+
     /// **Expansion rate knob** (MC experiment): how strongly the production
     /// queue favors *upgrading own infrastructure* (deepening) over *spending
     /// minerals to reach outward* (expanding). `0.0` = always expand when able,
@@ -232,6 +289,7 @@ impl Default for Doctrine {
             survey_avoids_inhabited: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
             expand_bias: ExpandBias::ProductionCentersFirst,
+            colonizer_hull: ColonizerHull::Medium,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
         }
@@ -392,9 +450,14 @@ pub struct ProductionContext {
     pub limited_min_level: BandTier,
     /// Mineral cost to raise infra by one level (= the target level).
     pub infra_cost: f64,
-    /// Mineral cost of a Colonizer (an MSV) — `Hyades_vehicle_roles.md` §6's
-    /// 1 CMY = 1 fleet model, not a flat placeholder anymore.
+    /// Mineral cost of a Colonizer on the **Medium** hull —
+    /// `Hyades_vehicle_roles.md` §6's 1 CMY = 1 fleet model, not a flat
+    /// placeholder anymore.
     pub colonizer_cost: f64,
+    /// Mineral cost of a Colonizer on the **General** hull, so
+    /// [`Doctrine::colonizer_hull`] can weigh the two without the context
+    /// having to know which one it will choose (T-56 stage 4).
+    pub general_colonizer_cost: f64,
     /// Mineral cost of a Miner + its paired Freighter (an LSV + an MSV),
     /// bundled since they're built together (§4.4).
     pub mining_pair_cost: f64,
@@ -585,9 +648,13 @@ impl Autopilot for BaselineAutopilot {
             | HullType::GeneralContactVehicle
             | HullType::GeneralContactUnit => Some(Tasking { role: Role::Scout, target: None }),
 
-            // A Medium hull settles, preferring whichever class doctrine leads
-            // with — the same order `production_choice` weighed.
-            HullType::MediumSystems => {
+            // A Systems hull above the Limited tier settles, preferring
+            // whichever class doctrine leads with — the same order
+            // `production_choice` weighed. The General hull joins the Medium
+            // here because T-56 stage 4 lets doctrine order one; without this
+            // arm a General colonizer would be built and then find no mission,
+            // and `apply_build` would refund nothing.
+            HullType::MediumSystems | HullType::GeneralSystems => {
                 let (a, b) = match doctrine.expand_bias {
                     ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
                     ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
@@ -679,7 +746,15 @@ impl Autopilot for BaselineAutopilot {
             (Some(col), Some(mine)) if mine.ranked.score > col.ranked.score => {
                 Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost))
             }
-            (Some(col), _) => Some((hull_order(HullType::MediumSystems), col.ranked.score, ctx.colonizer_cost)),
+            (Some(col), _) => {
+                // **The hull is a doctrine choice now, not a role lookup**
+                // (T-56 stage 4). A General colonizer costs `medium_fleet_size`
+                // times as much and seeds a colony a whole Band further up the
+                // population ladder; which wins is measured, not assumed.
+                let (hull, cost) =
+                    doctrine.colonizer_hull.pick(ctx.stockpile_total, ctx.colonizer_cost, ctx.general_colonizer_cost);
+                Some((hull_order(hull), col.ranked.score, cost))
+            }
             (None, Some(mine)) => Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost)),
             (None, None) => None,
         };
@@ -890,6 +965,7 @@ mod tests {
             limited_min_level: BandTier::II,
             infra_cost: infra + 1.0,
             colonizer_cost: 1.0,
+            general_colonizer_cost: 10.0,
             mining_pair_cost: 1.0,
             light_vehicle_cost: 0.25,
             candidate_count,

@@ -1010,6 +1010,73 @@ so nothing in the run ever builds a General hull. Teaching Doctrine to is stage
 the result is uninterpretable.
 
 
+#### Stage 4 — Doctrine can spend the ladder
+
+Three parts, landed together because only the first is separable and none of
+the others means anything alone. **The default is unchanged**
+(`ColonizerHull::Medium`), so this commit is behaviour-neutral: it makes the
+choice *possible* and the measurement is what decides the default.
+
+**4a — the ordered hull is the hull that gets built.** R-O29 moved the hull
+choice into `BuildOrder::Hull { hull_type, class }`, but `apply_build` kept
+pricing with `role_cost(role)` and `spawn_courier` kept stamping
+`role_hull_type(role)`. Those agreed **only because the role map happened to
+invert `assign_role`** — nothing asserted the round trip. The first General
+colonizer would have flown a Medium ship on a General ship's bill and nothing
+would have complained. Now priced and spawned from `hull_type`, with
+`hull_cost(hull)` beside `role_cost(role)` (which survives for the Scout and
+the paired Freighter, where the role genuinely still picks the hull).
+Behaviour-neutral, verified: colony-years **8,481,134.1 / 8,717,150.7**,
+bit-identical, and `the_ordered_hull_is_the_hull_that_is_priced_and_flown` pins
+the round trip that used to hold by luck.
+
+**4b — a colony ship's seed is the Band its hold masses.** `Simulation::colony_seed_for`
+replaces the flat `colony_seed_pop` at `spawn_courier`. This is the ratified hold
+ladder doing the work: the hold rungs *are* the mass rungs, so a Medium hull
+seeds `Band I` (exactly `colony_seed_pop` — neutral at the hull the baseline
+builds) and a General hull seeds `Band II`.
+
+Two consequences worth naming:
+
+- **R-V9 becomes physics.** "A Colonizer must be Medium or larger" was a rule
+  about hull types; a Limited hull's hold sits at `Band Empty`, below the floor,
+  so `colony_seed_for` returns `None`. `colony_seed_pop` keeps its ratified value
+  and changes job — from *the* seed to the **floor a hull must clear**.
+- **R-O74 (new, open): the settlers are conjured, and 4b makes it 31× louder.**
+  Nothing debits the founding center's population or biosphere for the people put
+  aboard. That was already a design law #11 violation at `Band I`; at `Band II` it
+  is a bigger one. Not fixed here on purpose: drawing the seed from the origin is a
+  behaviour change that would dominate the measurement stage 4 exists to take.
+
+**4c — `Doctrine::colonizer_hull`**, with `Medium` / `GeneralWhenAffordable` /
+`General`. `ProductionContext` gains `general_colonizer_cost` so the policy can
+weigh the two prices without the context having to know which it will pick, and
+`assign_role` grows a `GeneralSystems` arm (without it a General hull would be
+built and then find no mission).
+
+#### A prediction, recorded before the run finished
+
+**General colonizers should lose, and not because the ladder is bad.**
+`sys_production_tick` grows population as
+
+```rust
+target = Band::new((s + growth * s * (1.0 - s / kb)).clamp(0.0, kb));
+```
+
+— **clamped to `K`**, whose mean on this bed is **1.430** (`CLAUDE.md` §7). A
+`Band II` seed is therefore clamped to ~1.43 on the colony's *first* tick, and
+because `draw` goes negative there, the surplus settlers are handed back to the
+destination's biosphere. So a General hull buys skipping the ramp from 1.0 to
+1.43, at `medium_fleet_size` times a Medium hull's price.
+
+If the run agrees, the conclusion is **not** that T-56's acceptance test fails.
+It is that converting hold into *seed depth* cannot pay while `K ≈ 1.43`, and
+the ladder wants hold converted into **count** — one large ship founding
+several colonies — which is a different engine change and the natural stage 5.
+Recorded here before the numbers landed so the run adjudicates it rather than
+being written up after the fact.
+
+
 #### Staging (each stage independently revertible)
 
 1. **This entry** — analysis, units, candidates. Docs only. Landed in three
@@ -1026,8 +1093,11 @@ the result is uninterpretable.
    piecewise mass ladder (bit-identical), 3b the cost ladder (+8.6%
    colony-years), 3c the real geometry with per-hull `τ` and `η` (−0.31% on top
    of 3b, so the correct physics is free).
-4. **Doctrine: build and deploy heavier hulls when useful** — role→hull becomes
-   a policy choice rather than a fixed map. Measure separately from stage 3.
+4. **Doctrine: build and deploy heavier hulls when useful — landed.**
+   `Doctrine::colonizer_hull` makes role→hull a policy choice, the ordered hull
+   is finally the hull that is priced and flown (4a), and a colony ship's seed
+   is the Band its hold masses (4b). Default unchanged, so the ladder and the
+   doctrine spending it stay measured apart.
 
 
 ### T-55. R-O73 — the three F ladders, the quantity survey, and what to ratify

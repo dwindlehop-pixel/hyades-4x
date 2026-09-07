@@ -20,50 +20,42 @@ use std::io::Write;
 const SEEDS: &[u64] = &[1, 7, 42, 31337];
 const PLAYERS: usize = 3;
 
-/// One leg of the ladder change, so each can be attributed rather than the
-/// whole move being reported as a single number.
+/// One leg of the change, so each can be attributed rather than the whole move
+/// being reported as a single number. A leg may touch the config, the doctrine,
+/// or both — stage 4 is a doctrine change on top of stage 3's config one.
 struct Leg {
     name: &'static str,
     apply: fn(&mut SimConfig),
+    doctrine: fn(&mut Doctrine),
 }
 
+// **Stage 3's legs are retired, not deleted — they measured a config that no
+// longer exists.** `medium_fleet_size` and `cargo_unit_size` are now the
+// ratified defaults, and since stage 3c `hull_radius` solves the shell model
+// rather than square-rooting the cost ratio, so the "hold held fixed" ablation
+// has nothing left to hold fixed: cost and capacity are separate functions of
+// one body. The numbers those legs produced are recorded in `hyades_todo.md`
+// T-56 stage 3b, which is where they belong.
+//
+// What is left to measure is stage 4: the ladder is only worth what the
+// doctrine spending it can buy, and until now nothing in a run ever built a
+// General hull.
 const LEGS: &[Leg] = &[
-    Leg { name: "shipped", apply: |_| {} },
+    // The ratified ladder with the pre-T-56 doctrine: Colonizer pinned to the
+    // Medium hull. This is what stage 3 shipped, and the baseline every other
+    // leg is paired against seed by seed.
+    Leg { name: "Medium colonizers (shipped)", apply: |_| {}, doctrine: |_| {} },
+    // A General colonizer whenever the center can pay for one out of the
+    // stockpile it has *this decision*, else a Medium. Expansion never stalls
+    // waiting for a bigger ship.
     Leg {
-        name: "cost ladder",
-        apply: |c| {
-            c.medium_fleet_size = 10.0;
-            c.limited_fleet_size = 50.0;
-        },
+        name: "General when affordable",
+        apply: |_| {},
+        doctrine: |d| d.colonizer_hull = ColonizerHull::GeneralWhenAffordable,
     },
-    Leg { name: "hold = KT(I)", apply: |c| c.cargo_unit_size = 1.0 },
-    // **The ablation that separates price from hold.** `hull_radius` is
-    // `sqrt(cost ratio)`, so `medium_fleet_size` is not a price knob — it moves
-    // the Medium radius √2.02 → √5 and its hold 0.19 → 4.81 units, 25× bigger,
-    // at the same time as it raises the General hull's relative price. CLAUDE.md
-    // §"the artifact pattern" says exactly this: since R-O58 the cost ladder
-    // *is* the capacity ladder, so sweeping one leg of it measures two things
-    // and reports one.
-    //
-    // This leg applies the cost ladder and then rescales `cargo_unit_size` so
-    // the Medium hold is **unchanged** at its shipped 0.959 kt. Whatever
-    // survives here is the price; whatever disappears was the hold.
-    Leg {
-        name: "cost ladder, hold held fixed",
-        apply: |c| {
-            c.medium_fleet_size = 10.0;
-            c.limited_fleet_size = 50.0;
-            c.cargo_unit_size = 0.199_25;
-        },
-    },
-    Leg {
-        name: "both (ratified)",
-        apply: |c| {
-            c.medium_fleet_size = 10.0;
-            c.limited_fleet_size = 50.0;
-            c.cargo_unit_size = 1.0;
-        },
-    },
+    // Always General, even when it means banking instead of building — the
+    // aggressive end. Fewer foundings, each starting a Band higher.
+    Leg { name: "General always", apply: |_| {}, doctrine: |d| d.colonizer_hull = ColonizerHull::General },
 ];
 
 struct Run {
@@ -78,8 +70,9 @@ fn main() {
     for leg in LEGS {
         // The baseline is never skipped: the deltas are paired against it
         // seed by seed, which is what cancels the enormous seed noise.
+        let is_baseline = base.len() < SEEDS.len();
         if let Some(f) = &filter {
-            if leg.name != "shipped" && !leg.name.contains(f.as_str()) {
+            if !is_baseline && !leg.name.contains(f.as_str()) {
                 continue;
             }
         }
@@ -88,8 +81,8 @@ fn main() {
         let mut sum_dbl = 0.0;
         println!("== {} ==", leg.name);
         for (i, &seed) in SEEDS.iter().enumerate() {
-            let r = run(seed, leg.apply);
-            let (d_cy, d_col) = if leg.name == "shipped" {
+            let r = run(seed, leg.apply, leg.doctrine);
+            let (d_cy, d_col) = if is_baseline {
                 (0.0, 0.0)
             } else {
                 (
@@ -106,7 +99,7 @@ fn main() {
             sum_cy += r.colony_years;
             sum_col += r.colonies as f64;
             sum_dbl += r.doubling;
-            if leg.name == "shipped" {
+            if is_baseline {
                 base.push(r);
             }
         }
@@ -121,10 +114,12 @@ fn main() {
     }
 }
 
-fn run(seed: u64, apply: fn(&mut SimConfig)) -> Run {
+fn run(seed: u64, apply: fn(&mut SimConfig), set_doctrine: fn(&mut Doctrine)) -> Run {
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
+    let mut doctrine = Doctrine::default();
+    set_doctrine(&mut doctrine);
     let autopilots: Vec<Box<dyn Autopilot>> =
-        (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
+        (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
     let mut cfg = SimConfig::new(seed);
     apply(&mut cfg);
     let mut sim = Simulation::new(galaxy, cfg, autopilots);

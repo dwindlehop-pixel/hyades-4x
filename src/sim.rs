@@ -851,8 +851,20 @@ pub fn hull_thrust_multiplier_range(_hull: HullType) -> (f64, f64) {
 /// Mineral cost of building one ship in `role`, under the "1 CMY mineral = 1
 /// fleet" model (`role_hull_type` picks the type, [`HullType::cost_fraction`]
 /// picks the fraction of `general_vehicle_cost`).
+///
+/// **Only for the paths where the role still picks the hull** — the paired
+/// Freighter, and the Scout. A build that names its hull is priced by
+/// [`hull_cost`], because the two stopped agreeing the moment Doctrine could
+/// order a heavier colonizer.
 fn role_cost(role: Role, cfg: &SimConfig) -> f64 {
-    role_hull_type(role).cost_fraction(cfg) * cfg.general_vehicle_cost
+    hull_cost(role_hull_type(role), cfg)
+}
+
+/// Mineral cost of building one hull. Same number as [`hull_dry_mass`] under
+/// L6/R-O57 — cost *is* dry mass — but read at the point of purchase rather
+/// than the point of flight.
+fn hull_cost(hull: HullType, cfg: &SimConfig) -> f64 {
+    hull.cost_fraction(cfg) * cfg.general_vehicle_cost
 }
 
 /// The component world: entity bookkeeping plus every typed store.
@@ -2497,7 +2509,8 @@ impl Simulation {
             medium_min_level: self.config.medium_min_level,
             limited_min_level: self.config.limited_min_level,
             infra_cost: target_level,
-            colonizer_cost: role_cost(Role::Colonizer, &self.config),
+            colonizer_cost: hull_cost(HullType::MediumSystems, &self.config),
+            general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
             // The *true* price of a pair to this center right now. With
             // recycling on, a half that comes out of Reserve is not bought, and
             // the context has to say so or the decision is made on a price the
@@ -2616,7 +2629,14 @@ impl Simulation {
                     }
                     _ => (None, None),
                 };
-                let mut cost = if reused_miner.is_some() { 0.0 } else { role_cost(role, &self.config) };
+                // **Price the hull that was ordered, not the hull the role
+                // implies.** R-O29 moved the hull choice into `BuildOrder`, but
+                // this line kept reading it back off the role — which agreed
+                // only because `role_hull_type` happened to invert
+                // `assign_role`. It stops agreeing the moment Doctrine can pick
+                // a heavier colonizer, and the failure would have been silent:
+                // a General hull bought at a Medium hull's price.
+                let mut cost = if reused_miner.is_some() { 0.0 } else { hull_cost(hull_type, &self.config) };
                 if paired_freighter && reused_freighter.is_none() {
                     cost += role_cost(Role::Freighter, &self.config);
                 }
@@ -2657,7 +2677,7 @@ impl Simulation {
                         let te = self.planet_entity[t.0 as usize];
                         match reused_miner {
                             Some(e) => self.retask_miner(e, p, center, te),
-                            None => self.spawn_courier(p, r, center, center_pos, te),
+                            None => self.spawn_courier(p, r, hull_type, center, center_pos, te),
                         }
                         if paired_freighter {
                             match reused_freighter {
@@ -2777,26 +2797,62 @@ impl Simulation {
         );
     }
 
+    /// **The founding population a colony ship of this hull carries** — the
+    /// Band its hold masses (T-56 stage 4b).
+    ///
+    /// This is what makes a heavier colonizer worth its price. The hold ladder
+    /// is the mass ladder (§2.6, R-MC15), so a General hull's hold is a whole
+    /// Band above a Medium's: the colony it founds *starts* a Band further up
+    /// the population ladder and compounds from there, against a hull that cost
+    /// `medium_fleet_size` times as much. Whether the head start beats the count
+    /// is T-56's acceptance test, and it is measured, not assumed.
+    ///
+    /// **`None` is R-V9 expressed as physics.** "A Colonizer must be Medium or
+    /// larger" used to be a rule about hull types; it is now a consequence — a
+    /// Limited hull's hold sits at `Band Empty`, below `colony_seed_pop`, so it
+    /// cannot carry a viable founding population. `colony_seed_pop` keeps its
+    /// ratified value and changes job: from *the* seed to the **floor** a hull
+    /// must clear to found anything.
+    ///
+    /// **R-O74 (new, open): these settlers are conjured, and stage 4b makes
+    /// that 31× louder.** Nothing debits the founding center's population or
+    /// biosphere for the people put aboard, which was already a design law #11
+    /// violation at `Band I` and is a bigger one at `Band II`. It is recorded
+    /// rather than fixed here because drawing the seed from the origin is a
+    /// behaviour change that would dominate the measurement stage 4 exists to
+    /// take — and mixing the two is exactly the confound this staging avoids.
+    fn colony_seed_for(&self, hull: HullType) -> Option<Band> {
+        let hold = Kilotons::new(hull.hold_volume(&self.config).hull_units_cubed() * self.config.cargo_unit_size);
+        let seed = units::population_at_mass(hold);
+        (seed >= self.config.colony_seed_pop.band()).then_some(seed)
+    }
+
     fn mark_targeted(&mut self, p: usize, target: PlanetId) {
         self.world.knowledge.get_mut(self.player_entity[p]).unwrap().targeted.insert(target);
     }
 
     /// Spawn a colony/mining courier flying `center → target`.
-    fn spawn_courier(&mut self, p: usize, role: Role, center: Entity, from: Vec3, target: Entity) {
+    ///
+    /// Takes the **hull that was ordered**, not `role_hull_type(role)`. The two
+    /// agreed until Doctrine could choose a colonizer's hull; reading the hull
+    /// back off the role would have flown a Medium ship on a General ship's
+    /// bill, and nothing would have complained.
+    fn spawn_courier(&mut self, p: usize, role: Role, hull: HullType, center: Entity, from: Vec3, target: Entity) {
         let dest = *self.world.position.get(target).unwrap();
         let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, role);
-        self.world.hull_type.insert(e, role_hull_type(role));
+        self.world.hull_type.insert(e, hull);
         self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
         self.world.cargo.insert(e, Minerals::default());
         // A Colonizer carries its founding population as cargo, consumed on
-        // arrival (`Hyades_vehicle_roles.md` §4.2 — confirmed this
-        // conversation: "1 pop as cargo").
-        self.world
-            .pop_cargo
-            .insert(e, if role == Role::Colonizer { self.config.colony_seed_pop.band() } else { Band::ZERO });
+        // arrival (`Hyades_vehicle_roles.md` §4.2), and **how much is what the
+        // hull's hold masses** (T-56 stage 4b) rather than a flat constant.
+        self.world.pop_cargo.insert(
+            e,
+            if role == Role::Colonizer { self.colony_seed_for(hull).unwrap_or(Band::ZERO) } else { Band::ZERO },
+        );
         self.world.home_center.insert(e, center);
         let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
         let ev = match role {
@@ -3906,6 +3962,67 @@ mod tests {
         assert!(e(l) < e(m) && e(m) < e(g), "Systems: {} {} {}", e(l), e(m), e(g));
         assert!(e(HullType::LimitedContactVehicle) < e(HullType::GeneralContactVehicle));
         assert!(e(HullType::RapidOffensive) < e(HullType::GeneralOffensive));
+    }
+
+    /// **T-56 stage 4a: the hull that was ordered is the hull that is built.**
+    ///
+    /// R-O29 moved the hull choice into `BuildOrder::Hull`, but `apply_build`
+    /// kept pricing and spawning from `role_hull_type(role)` — which agreed
+    /// only because that map happened to invert `assign_role`. Nothing asserted
+    /// the round trip, so the disagreement would have arrived silently the
+    /// first time Doctrine ordered a hull the role map does not name.
+    #[test]
+    fn the_ordered_hull_is_the_hull_that_is_priced_and_flown() {
+        let cfg = SimConfig::new(1);
+
+        // The round trip that used to hold by luck, asserted: every hull the
+        // baseline autopilot can order must come back to itself through the
+        // role it is assigned.
+        for (hull, role) in [
+            (HullType::MediumSystems, Role::Colonizer),
+            (HullType::LimitedSystems, Role::Miner),
+            (HullType::LimitedContactVehicle, Role::Scout),
+        ] {
+            assert_eq!(role_hull_type(role), hull, "{role:?} still maps back to {hull:?}");
+            assert!((role_cost(role, &cfg) - hull_cost(hull, &cfg)).abs() < 1e-12);
+        }
+
+        // And the thing the round trip was standing in for: a heavier hull
+        // costs more, so pricing off the role rather than the order would have
+        // bought a General hull at a Medium hull's price.
+        assert!(hull_cost(HullType::GeneralSystems, &cfg) > hull_cost(HullType::MediumSystems, &cfg) * 5.0);
+    }
+
+    /// **T-56 stage 4b: a colony ship's seed is what its hold masses.**
+    ///
+    /// This is the mechanism that makes a heavier colonizer worth its price,
+    /// and it is the ratified hold ladder doing the work: the hold rungs *are*
+    /// the mass rungs, so a General hull seeds a whole Band above a Medium one.
+    #[test]
+    fn a_colony_ship_seeds_the_band_its_hold_masses() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        sim.config.horizon_years = 1.0;
+
+        // The Medium hull is the anchor: its hold is `Band I`, which is exactly
+        // `colony_seed_pop`, so stage 4b is behaviour-neutral at the hull the
+        // baseline doctrine actually builds.
+        let medium = sim.colony_seed_for(HullType::MediumSystems).expect("a Medium hull can found");
+        assert!(
+            (medium.bands() - sim.config.colony_seed_pop.band().bands()).abs() < 1e-9,
+            "a Medium colonizer must still seed colony_seed_pop, got {medium}"
+        );
+
+        // The General hull seeds one whole Band higher — 31.6x the people, for
+        // `medium_fleet_size` times the price.
+        let general = sim.colony_seed_for(HullType::GeneralSystems).expect("a General hull can found");
+        assert!((general.bands() - medium.bands() - 1.0).abs() < 1e-6, "General must seed one Band up, got {general}");
+        let ratio = units::population_mass(general).kilotons() / units::population_mass(medium).kilotons();
+        assert!((ratio - units::MASS_LADDER[1]).abs() < 1e-6, "and that Band is the mass ladder's step: {ratio}");
+
+        // **R-V9 is physics now, not a hull-type rule.** A Limited hull's hold
+        // sits at `Band Empty`, below the floor, so it cannot found — which is
+        // what "a Colonizer must be Medium or larger" was always asserting.
+        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems), None);
     }
 
     #[test]
