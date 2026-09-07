@@ -401,7 +401,7 @@ finite stock, so a bigger crew does not raise what a field yields in total — i
 brings that total **forward**, which is what the expansion loop is short of
 (`CLAUDE.md` §7: the residual is worlds scanned and not reached in time).
 
-#### ⚠️ Crew 1 is *not* bit-identical, and the cause is not yet demonstrated
+#### Crew 1 is not bit-identical, and the cause is **demonstrated**
 
 The arithmetic at `crew = 1` is the old expression exactly, so this should have
 reproduced the bed. It does not:
@@ -410,29 +410,42 @@ reproduced the bed. It does not:
 |---|---|---|---|
 | 1 | 8,481,134.1 | 8,485,264.2 | +0.05% |
 | 7 | 8,717,150.7 | 8,761,142.3 | **+0.50%** |
+| 42 | 8,690,707.4 | 8,736,414.2 | +0.53% |
+| 31337 | 8,791,088.4 | 8,809,169.8 | +0.21% |
 
-**The leading hypothesis is that a pre-existing bug is being fixed**, and it is
-a hypothesis, not a finding. `mine_operator.insert(outpost.0, vehicle)`
-*overwrote* — so a second miner reaching an already-worked rock replaced the
-first in the map, and on exhaustion `remove()` returned only the last, leaking
-the earlier hull (still `Role::Miner`, parked, never re-tasked, never scrapped).
-`mine_crew` pushes instead, so both are counted and both are released.
+**A pre-existing bug is being fixed, and `examples/crew_census` counts it rather
+than arguing it.** `mine_operator.insert(outpost.0, vehicle)` *overwrote*, so a
+second miner reaching an already-worked rock replaced the first in the map: its
+extraction stopped being counted, and on exhaustion `remove()` returned only the
+last hull — the earlier one was **leaked**, still `Role::Miner`, parked forever,
+never re-tasked and never scrapped. `mine_crew` pushes, so both count and both
+are released.
 
-Two things make that plausible and neither makes it true: rocks *can* be
-double-worked, because `mine_crew` is keyed by outpost alone while `targeted`
-and `exploited` are per-player, so rival empires can put miners on the same
-rock; and the sign is right, since more counted miners means faster extraction.
+The census says this is not an edge case:
 
-**This is the exact shape of all six measurement artifacts in `CLAUDE.md` §2 —
-a real number with a plausible mechanism attached — so it is not to be written
-up until the crews are counted.** The log already carries
-`VehicleParked { role: Miner, at }`, so the census is a read, not a code change:
-count distinct miners parked per planet id at `crew = 1` and see whether any
-outpost has more than one. If none does, the hypothesis is dead and the real
-cause is elsewhere.
+| seed | outposts worked | with >1 miner | max crew | cross-player |
+|---|---|---|---|---|
+| 1 | 2,205 | **1,185 (53.7%)** | 3 | **1,185 of 1,185** |
+| 7 | 2,188 | **1,132 (51.7%)** | 3 | **1,132 of 1,132** |
 
-**Open until then**, and the sweep over `miners_per_outpost ∈ {1, 2, 3, 5}` must
-be read against the *new* crew-1 baseline, not the old one.
+Over half of all worked rocks had more than one miner on them, and **every
+single one of those is cross-player** — not one is the same empire
+double-working a rock, which is what `targeted` exists to prevent and evidently
+does. Rival empires land on the same rock constantly, because `mine_crew` and
+the outpost's stockpile are keyed by **outpost alone** while `targeted` and
+`exploited` are per **player**.
+
+**R-O79 (new, open): a rock is shared, and T-57 makes that sharing matter
+more.** Two empires' miners now jointly accelerate a stockpile they both draw
+from — `sys_freighter_arrive` loads from `sh.outpost`'s single stockpile,
+whoever arrives. That was already the model; per-miner extraction turns it from
+a curiosity into a rate. Whether extraction and the stockpile should be
+per-player is a design question with a real answer either way (a contested rock
+is a legitimate mechanic), and it is not settled by making the crew a `Vec`.
+
+#### The sweep
+
+Read against the **new** crew-1 baseline (8,697,997.6), not the old one.
 
 #### The original entry, kept because the diagnosis was the useful part
 
