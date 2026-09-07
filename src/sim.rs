@@ -4291,6 +4291,75 @@ mod tests {
         assert_eq!(f.k(), Band::new(4.0));
     }
 
+    /// **T-56 stage 4: a colony seeded above its carrying capacity crashes
+    /// *below* it, and that is why a bigger colony ship does not pay.**
+    ///
+    /// Stage 4b made a colony ship's seed the Band its hold masses, so a
+    /// General hull founds at `Band II` where a Medium founds at `Band I`. On
+    /// the four-seed bed that is **−5.9%** colony-years with the colony *count*
+    /// identical on every seed, and the ablation that isolates it — a `Band II`
+    /// seed at a Medium hull's price — is **−2.6%**. Seed depth is not merely
+    /// worthless; it is harmful even when nearly free, so the General hull's
+    /// price is not what killed it.
+    ///
+    /// The mechanism is here, and it is not the `clamp` that first looked
+    /// guilty. `sys_production_tick` grows population by the **discrete**
+    /// logistic `s + r·s·(1 − s/K)`, whose growth term goes strongly negative
+    /// above `K` — at `r = 0.873` a population at `2K` does not settle back to
+    /// `K`, it overshoots to `0.25K` in one step. The `clamp` bounds the top
+    /// only.
+    ///
+    /// And the `K` that matters is **1.0, not the mature 1.43**: a founding
+    /// colony gets `infra = Band I`, and `K = min(hab, bio_max, infra)`. So
+    /// every Band of seed above the first is not just wasted, it is a
+    /// population crash on the colony's first tick.
+    ///
+    /// **R-O75 (new, open):** whether the discrete logistic should be replaced
+    /// by one that cannot overshoot downward (a saturating step, or the
+    /// closed-form solution over the interval). It is a real modelling artifact
+    /// — nothing in the design says an overfull world should lose three
+    /// quarters of its people in fifty years — but it is on the hottest path in
+    /// the engine and every ratified growth number was measured with it, so it
+    /// is recorded rather than changed here.
+    #[test]
+    fn a_colony_seeded_above_its_capacity_crashes_below_it() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 7)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(7));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+
+        // A freshly founded colony: infra at `Band I`, so `K` is `Band I`
+        // however good the world is. Plenty of biomass, so nothing here is
+        // about the mass budget.
+        let founding = |sim: &mut Simulation, seed: Band| {
+            sim.world.factors.insert(
+                home,
+                Factors::new(
+                    Band::new(4.0),
+                    Band::new(4.0).in_kilotons(),
+                    Band::new(4.0).in_kilotons(),
+                    Band::new(1.0),
+                ),
+            );
+            *sim.world.population.get_mut(home).unwrap() = seed;
+            sim.sys_production_tick(home);
+            *sim.world.population.get(home).unwrap()
+        };
+        let from_band_i = founding(&mut sim, BandTier::I.band());
+        let from_band_ii = founding(&mut sim, BandTier::II.band());
+
+        // A `Band I` seed sits exactly at `K` and stays there.
+        assert!((from_band_i.bands() - 1.0).abs() < 1e-9, "a Band I seed should rest at K = Band I, got {from_band_i}");
+        // A `Band II` seed does not settle back to `K` — it overshoots below.
+        assert!(
+            from_band_ii < from_band_i,
+            "a Band II seed must end up *worse* than a Band I one: {from_band_ii} vs {from_band_i}"
+        );
+        assert!(
+            from_band_ii < Band::new(0.5),
+            "the overshoot is severe, not marginal — expected well under half a Band, got {from_band_ii}"
+        );
+    }
+
     #[test]
     fn exhausted_scouts_scrap_and_recover_minerals() {
         // "An LCV should scrap itself at the nearest friendly colony after

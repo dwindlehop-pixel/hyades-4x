@@ -1054,7 +1054,66 @@ weigh the two prices without the context having to know which it will pick, and
 `assign_role` grows a `GeneralSystems` arm (without it a General hull would be
 built and then find no mission).
 
-#### A prediction, recorded before the run finished
+#### The result: the ladder is fine, the *mechanism* was wrong
+
+| doctrine | colonies | colony-years | vs shipped | doubling |
+|---|---|---|---|---|
+| Medium colonizers (shipped) | 3,481.0 | 8,670,020 | — | 269.4 yr |
+| General when affordable | **3,481.0** | 8,162,619 | **−5.9%** | 281.8 yr |
+| General always | 2,018.0 | 4,518,057 | **−47.9%** | 431.2 yr |
+| *ablation:* `Band II` seed, Medium price | 3,481.0 | 8,445,171 | **−2.6%** | 277.5 yr |
+
+**The middle row is the informative one.** Colony count is *identical on every
+seed* (3435 / 3467 / 3471 / 3551) while colony-years falls 5.9% — the same worlds,
+reached later. The extra minerals bought nothing whatsoever. `General always`
+then shows the price acting alone: ten times the cost per colonizer, roughly a
+tenth the colonies.
+
+**And the ablation refutes the price explanation.** Seed depth at a *Medium
+hull's* price is still **−2.6%, every seed down**. So a `Band II` seed is not
+merely worthless, it is **actively harmful even when nearly free** — the General
+hull's price is not what killed it.
+
+#### The mechanism, and it is not the one predicted
+
+The prediction below named `sys_production_tick`'s `.clamp(0.0, kb)` and mean
+`K = 1.430`. The sign was right and the mechanism was wrong twice over:
+
+1. **The `K` that matters is 1.0, not 1.43.** A founding colony gets
+   `infra = Band I` and `K = min(hab, bio_max, infra)`, so *every* Band of seed
+   above the first is above capacity on arrival, however good the world is. The
+   1.43 figure is the *mature* mean, reached later.
+2. **The clamp is not what does the damage — the discrete logistic is.** Growth
+   is `s + r·s·(1 − s/K)`, whose growth term goes strongly negative above `K`. At
+   the ratified `growth_rate = 0.873`, a population at `2K` does not settle back
+   to `K`; it **overshoots to `0.25K` in a single step**. The clamp bounds the
+   top only. So a colony founded at `Band II` is *worse off after one tick* than
+   one founded at `Band I`, which sits at `K` and stays.
+
+`a_colony_seeded_above_its_capacity_crashes_below_it` pins both halves so the
+finding cannot decay back into prose.
+
+**R-O75 (new, open): the discrete logistic can overshoot downward.** Nothing in
+the design says an overfull world should lose three quarters of its people in
+fifty years; a saturating step, or the closed-form logistic over the interval,
+would not. It is a real modelling artifact — but it is on the hottest path in
+the engine and **every ratified growth number was measured with it**, so it is
+recorded rather than changed. Fixing it consumes `growth_rate`'s ratification.
+
+**What this says about T-56's acceptance test.** The test is that making General
+hulls relatively more expensive must not degrade colony-years, and **it already
+passed at stage 3b: +8.6%, every seed up.** Stage 4 does not overturn that — it
+says the *mechanism* by which a heavier colony ship could pay is the wrong one.
+Converting hold into **seed depth** cannot work while a founding colony's `K` is
+`Band I` by construction. The ladder wants hold converted into **count** — one
+large ship founding several colonies, spending its hold on more `Band I` seeds
+rather than one deeper one. That is a different engine change (multi-leg colony
+voyages) and it is the natural stage 5.
+
+**`ColonizerHull::Medium` stays the default**, now on evidence rather than for
+staging.
+
+#### The prediction as recorded before the run finished
 
 **General colonizers should lose, and not because the ladder is bad.**
 `sys_production_tick` grows population as
