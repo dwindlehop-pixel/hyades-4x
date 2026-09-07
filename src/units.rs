@@ -463,6 +463,21 @@ pub trait Measure: Copy {
     fn in_bands(self) -> Band;
     /// This quantity as an amount of matter.
     fn in_kilotons(self) -> Kilotons;
+
+    /// **How much more stuff `other` is than `self`, as a mass.**
+    ///
+    /// The only sanctioned way to difference two magnitudes, and it returns
+    /// [`Kilotons`] because that is the only unit the answer can be in. A Band
+    /// difference is a ratio of exponents and means nothing on its own:
+    /// stepping from `Band I` to `Band II` is not "one" of anything, it is
+    /// `KT(II) − KT(I)` of stuff.
+    ///
+    /// Negative when `other` is the smaller — a shrinking population returns
+    /// its mass, which is what makes growth conserve (L6).
+    #[inline]
+    fn gap_to(self, other: impl Measure) -> Kilotons {
+        Kilotons::new(other.in_kilotons().kilotons() - self.in_kilotons().kilotons())
+    }
 }
 
 impl Band {
@@ -496,6 +511,17 @@ impl Band {
     #[inline]
     pub fn round(self) -> Band {
         Band(self.0.round())
+    }
+    /// **Move `rungs` along the ladder** — the one sanctioned way to change a
+    /// Band, and deliberately not spelled `+`.
+    ///
+    /// A Band is a *position* on a logarithmic scale, so moving one rung up
+    /// does not add anything: it **multiplies the mass** by that rung's ladder
+    /// factor. `Band::new(1.0).up(1.0)` is `Band II`, which is 31.6× the stuff
+    /// of `Band I`, not one more of it.
+    #[inline]
+    pub fn up(self, rungs: f64) -> Band {
+        Band(self.0 + rungs)
     }
     #[inline]
     pub fn is_finite(self) -> bool {
@@ -631,12 +657,26 @@ macro_rules! arith {
         }
     };
 }
-arith!(Band);
 arith!(Kilotons);
 arith!(Length);
 arith!(Area);
 arith!(Volume);
 
+/// **`Band` has no `Add`, `Sub`, or `Mul` — deliberately, and this is the point
+/// of the type.**
+///
+/// `I + II + III + IV` is not `X`. Band numerals are positions on a
+/// multiplicative ladder, so summing or differencing them produces a number
+/// with no meaning: the "gap" between two Bands is a *mass*, and masses are
+/// what [`Kilotons`] is for. R-O66 was one instance of this (a `min` across a
+/// mass and two levels); an infrastructure ladder priced at `b + 1` minerals
+/// per rung was another, and a colony-ship budget summed as `b(b+1)/2` was a
+/// third, made *after* R-O66 landed and by someone who had read it.
+///
+/// So the arithmetic is gone from the type. To change a Band, move along the
+/// ladder with [`Band::up`]. To ask how much more *stuff* one Band is than
+/// another, take the difference in kilotons — [`Measure::gap_to`] does it in
+/// one call and names the unit in its return type.
 /// Printed with its unit, for the same reason it is typed: a bare number in a
 /// log line is the thing this module exists to stop.
 impl fmt::Display for Band {

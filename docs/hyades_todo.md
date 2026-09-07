@@ -383,6 +383,74 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
+
+### T-58. Band arithmetic removed from the type, and the two bugs it was hiding
+
+**`Band` has no `Add`, `Sub`, `AddAssign`, `SubAssign` or `Mul`.** `I + II +
+III + IV` is not `X`: Band numerals are positions on a multiplicative ladder, so
+summing or differencing them yields a number with no meaning. The gap between
+two Bands is a **mass**, and `Kilotons` is what that is for.
+
+- To move along the ladder: **`Band::up(rungs)`**, documented as *multiplying*
+  the mass rather than adding to it.
+- To ask how much more stuff: **`Measure::gap_to(other) -> Kilotons`**, which
+  names the unit in its return type.
+
+Only four sites in the engine used Band arithmetic, and each was worth the look.
+Two were real bugs; two were *scores* — `hub_value` (a `k_potential` reading
+discounted by distance, compared against another reading) and a `k_high` sweep —
+where scaling a log-scale reading is legitimate but was worth spelling out.
+
+**Bug 1: `founding_infra` summed Band numerals.** R-O76 computed a hull's
+infrastructure budget as `b(b+1)/2` — the cumulative `1+2+3+4 = 10` of the
+linear price ladder — and concluded a General hull founds at `Band IV`. Redone
+in kilotons, ten times the hull mass is `log_F(10) = 0.67` of a rung at
+`F = 31.62`:
+
+| hull | cost | infra mass | founding infra |
+|---|---|---|---|
+| Limited | 0.02 | 0.2 kt | `Band 0.53` |
+| Medium | 0.10 | 1.0 kt | **`Band I`** (the anchor) |
+| General | 1.00 | 10.0 kt | **`Band 1.67`**, not `Band IV` |
+
+A General colonizer is now **`K`-limited rather than hold-limited**: its
+`Band II` hold is capped by the `Band 1.67` of infrastructure its own hull left
+behind. Same conclusion as stage 4c — the extra hold is unusable — reached by
+derivation instead of by a cap. R-V9 still holds, but through the *hold*: a
+Limited hull's seed capacity is below `colony_seed_pop` whatever infrastructure
+it would leave.
+
+**Bug 2, recorded not fixed — R-O80: the infra price is Band-additive.**
+`round(infra) + 1` minerals per rung is a linear count, and it is now named
+(`infra_step_price`) rather than inlined at two call sites, because naming it is
+what makes it visible. Priced correctly as `KT(b+1) − KT(b)` the `I → II` step
+costs **≈31 minerals against the 2 charged today**, and `II → III` about 2,800 —
+an economy in which nothing ever deepens. Either infrastructure anchors its own
+`Band I` far below population's (§2.6 permits exactly that) or it is not a
+Band-laddered quantity at all and `Band` is the wrong type for it. A design call
+with a large measurement attached; the shipped ladder stands until it is made.
+
+### T-59. Mining crews and outpost ore are per player
+
+**Directed this conversation.** `mine_crew` is keyed `(player, outpost)` and ore
+lives in `outpost_stock: BTreeMap<(u32, u64), Minerals>`.
+
+The rock's `stockpile` component was one pile per *planet*, and outposts are
+never claimed — `claim_planet` is for colonies — so two empires working the same
+body filled and drew from the same heap: either could haul away what the other's
+miners dug. `examples/crew_census` found this is not hypothetical, it is the
+norm: **53.7% of worked rocks carried more than one crew on seed 1, and every
+one of the 1,185 was cross-player.**
+
+**The body is shared; the pile is not.** `density` stays per-planet because a
+rock is one physical object and every crew on it depletes the same ore — a
+contested field runs out sooner for everybody, which is the mechanic. What each
+empire *lifts* is its own. Sharing a pile is a **card**, not the default.
+
+Measured on seeds 1 and 7: 8,795,729 and 9,124,999 against 8,762,145 and
+9,131,535 — +0.38% and −0.07%, mixed sign and small, which is what a fairness
+correction with no systematic direction should look like.
+
 ### T-57. How many miners per mining outpost? — **the term now exists**
 
 **Implemented this conversation.** `mine_operator: BTreeMap<u64, Entity>` is now

@@ -133,7 +133,10 @@ fn configs() -> Vec<Config> {
         push(&format!("growth_rate.{tag}"), base_cfg, d);
 
         let mut d = base_doc;
-        d.rank.k_high = base_doc.rank.k_high * mult;
+        // `Band` has no `Mul` since the units fix: a threshold is a position
+        // on the ladder, and scaling one is a sweep over positions, not over a
+        // quantity. Spelled out so the sweep says what it varies.
+        d.rank.k_high = Band::new(base_doc.rank.k_high.bands() * mult);
         push(&format!("rank.k_high.{tag}"), base_cfg, d);
     }
     out

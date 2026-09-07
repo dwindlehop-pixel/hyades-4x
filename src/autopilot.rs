@@ -562,7 +562,14 @@ impl Autopilot for BaselineAutopilot {
         // hub_value: high-K worlds near the empire's centre of mass are hubs.
         let dist = view.position.distance(ctx.holdings_centroid);
         let centrality = (-dist / w.centrality_scale).exp();
-        let hub_value = k_potential * centrality;
+        // `Band` has no `Mul` since the units fix, and rightly: scaling a
+        // position on a log ladder is not scaling a quantity. This is not a
+        // quantity — it is a **classification score**, a `k_potential` reading
+        // discounted by distance and compared against another reading
+        // (`hub_high`). Constructed explicitly so the discount is visibly on
+        // the log-scale *reading*, not on the stuff it stands for. Same number
+        // as before the type change.
+        let hub_value = Band::new(k_potential.bands() * centrality);
 
         // The score is a weighted comparison across incommensurate things —
         // a Band, a mineral density, a hub figure — so the Band readings are
