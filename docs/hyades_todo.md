@@ -428,8 +428,63 @@ than against a formula, which is the only version that cannot drift.
 Colonisation now costs 10× per colony because only the General hull founds
 anything viable, and nothing in the engine yet relieves that.
 
-**This is the intended pressure, not a regression to revert.** The next stage is
-the response to it, in three parts, and they should be measured separately:
+**Full bed:** 1,813 colonies against 3,481 (**−47.9%**), colony-years
+4,502,286 against 8,959,409 (**−49.7%**), doubling 266.5 → 361.4 yr. Every seed
+moves the same way.
+
+#### The freight the pressure was supposed to need — measured before building it
+
+`CLAUDE.md` §2: *before tuning another economic knob, check whether the thing
+you are optimizing is what is actually scarce.* `examples/supply_census` asks
+that of the two proposed freight routes, and the answer is that **neither has
+anything to work on.**
+
+| | seed 1 | seed 7 |
+|---|---|---|
+| colonies | 1,860 | 1,897 |
+| mean infrastructure | **1.778** | **1.751** |
+| infra buckets `[<1, 1–2, 2–3, 3–4, 4+]` | `[0, 924, 496, 368, 72]` | `[0, 958, 528, 336, 75]` |
+| still at founding infra (`< 0.5`) | **0** | **0** |
+| unfilled population headroom | **0 kt** | **0 kt** |
+
+**Not one colony is under-supplied.** Every colony that exists climbed off its
+founding rung, none is below `Band I`, and the empire-wide gap between `K` and
+population is *exactly zero* — every colony sits at its ceiling. Mean
+infrastructure is **1.78 against the 1.443 recorded before the subsidy came
+out**: the survivors are *deeper*, not poorer.
+
+So the −48% is not colonies starving. It is colonies **never founded**. With
+only the General hull able to found anything viable, a colony costs 1.0 mineral
+where it cost 0.1, and a center's mineral flow buys a tenth as many. The ones
+that do get founded start at `Band I` and deepen normally — and with fewer of
+them competing for the same ore, they deepen *further* than before.
+
+**That retires both freight routes as specified.** Minerals to low-infrastructure
+colonies has no low-infrastructure colonies to serve; population to colonies with
+headroom has no headroom to fill. `mineral_pressure_of` already scores a
+brand-new colony at 1.0, the maximum, so existing routing was already preferring
+exactly those destinations maximally — the term was not missing.
+
+**Where the constraint actually is: the founding price.** Options, none yet
+measured:
+
+1. **Let a Medium hull found again** by lowering what a viable colony needs,
+   rather than by restoring the subsidy — e.g. a founding rung below `Band I`
+   that a Medium's 0.1 kt can reach, with the colony genuinely fragile.
+2. **Re-anchor `general_vehicle_cost`** so that one kiloton of hull is not one
+   General hull. The coincidence that `KT(I) = 1.0 kt = general_vehicle_cost` is
+   what makes the General hull exactly the founding threshold, and it was never
+   chosen for that.
+3. **Accept the price and pay it with mining**, which is the one place freight
+   *does* still have slack — T-57 showed crew size moves colony-years, and the
+   bed is no longer saturated (1,813 of a `k_high` set that admits ~3,500), so
+   economic gains have room to matter again for the first time since R-AC17.
+
+The third is the interesting one: **the bed has stopped saturating**, which
+means the diminishing-returns wall `CLAUDE.md` §7 documents has moved. Every
+economic knob measured against a saturated bed is worth re-measuring here.
+
+**The three-part freight programme, kept for when it has a target:**
 
 1. **Minerals to low-infra colonies.** `most_needed_center` already routes
    freighters on need with a λ distance discount, so this is a re-weighting

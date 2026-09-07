@@ -3305,9 +3305,11 @@ impl Simulation {
     /// fresh, never stored, which is what lets [`Self::most_needed_center`]
     /// compare need across the whole empire.
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Band::ZERO).bands();
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Band::ZERO);
         let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(0.0);
-        let target_level = infra.round() + 1.0;
+        // The price of this center's *next* rung — the same function the build
+        // path charges, rather than a second copy of `round(infra) + 1`.
+        let target_level = infra_step_price(infra);
         (1.0 - stock / target_level.max(1.0)).clamp(0.0, 1.0)
     }
 
