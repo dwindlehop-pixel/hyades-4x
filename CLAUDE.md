@@ -847,6 +847,15 @@ changes how you *work*, not what is left to do:
   saturated bed the informative metrics are *when* the worlds were taken, not
   how many.
 
+  **Mineral input is a per-miner rate now, and the default crew is 3** (T-57).
+  `outpost_mining_fraction` was the fraction of remaining density a *rock*
+  yielded per tick — the hull standing on it contributed nothing but the
+  schedule, so "how many miners per outpost" had no term in the model to tune.
+  It is now the fraction **one miner** works. Ratified at 3 on the standard bed:
+  **+2.74% colony-years, doubling 270.3 → 260.7 yr**, every seed positive.
+  Five miners give +3.08% but *lose* 3.5 years of doubling — past three the
+  extra hulls compete for the build slots expansion needs.
+
   **And the cost ladder is no longer the capacity ladder** (T-56 stage 3c).
   `hull_radius` solves `cost·η = r³ − (r − τ)³` instead of square-rooting the
   cost ratio, so `medium_fleet_size` is a price again rather than a price *and*

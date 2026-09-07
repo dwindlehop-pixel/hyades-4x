@@ -211,9 +211,29 @@ pub struct Doctrine {
     /// which is what the expansion loop is starved of (`CLAUDE.md` §7: the
     /// residual is worlds scanned and not reached in time).
     ///
-    /// **Defaults to 1**, which reproduces the pre-T-57 engine exactly: one
-    /// miner working `outpost_mining_fraction` is arithmetically the old
-    /// per-rock expression.
+    /// **Ratified at 3** on the standard four-seed CRN bed, 4,000 yr
+    /// (`examples/hull_ladder`), every seed positive at every crew size:
+    ///
+    /// | crew | colony-years | vs 1 | per extra miner | doubling |
+    /// |---|---|---|---|---|
+    /// | 1 | 8,697,998 | — | — | 270.3 yr |
+    /// | 2 | 8,877,142 | +2.06% | +2.06% | 262.4 yr |
+    /// | **3** | **8,936,603** | **+2.74%** | +1.37% | **260.7 yr** |
+    /// | 5 | 8,965,467 | +3.08% | +0.77% | 264.2 yr |
+    ///
+    /// **3 is the ratification, not 5**, and the doubling column is why: five
+    /// miners buy 0.34 more points of colony-years and give back 3.5 years of
+    /// doubling time, because the extra hulls compete for the same build slots
+    /// the expansion loop needs. The marginal return per miner has already
+    /// halved by 3 and halved again by 5 — a rock is a finite stock, so a crew
+    /// cannot raise what a field yields in total, only bring it forward, and
+    /// there is only so much forward available.
+    ///
+    /// `1` reproduces the pre-T-57 arithmetic exactly (one miner working
+    /// `outpost_mining_fraction` *is* the old per-rock expression), so the
+    /// sweep's baseline is the engine as it was — except for the leaked-hull
+    /// fix `examples/crew_census` demonstrated, which is why the crew-1 figure
+    /// is 8,697,998 and not the pre-T-57 8,670,020.
     pub miners_per_outpost: u8,
 
     /// **Expansion rate knob** (MC experiment): how strongly the production
@@ -247,7 +267,7 @@ impl Default for Doctrine {
             survey_avoids_inhabited: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
             expand_bias: ExpandBias::ProductionCentersFirst,
-            miners_per_outpost: 1,
+            miners_per_outpost: 3,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
         }

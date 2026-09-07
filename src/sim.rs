@@ -4189,6 +4189,43 @@ mod tests {
         assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, target), None);
     }
 
+    /// **T-57: extraction is per miner, not per rock.**
+    ///
+    /// `outpost_mining_fraction` used to be the fraction of remaining density a
+    /// *rock* yielded per tick, with the hull standing on it contributing
+    /// nothing but the schedule — so "how many miners per outpost" was not a
+    /// value anyone could tune, because there was no term for it. A crew of `n`
+    /// now works `n` times as much, capped at the whole remaining field.
+    #[test]
+    fn a_mining_crew_extracts_in_proportion_to_its_size() {
+        let extracted = |crew: usize| {
+            let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
+            let outpost = sim.planet_entity[10];
+            let before = sim.world.density.get(outpost).unwrap().metallicity();
+            // A crew is just entities on the books; what they extract is what
+            // this test is about, so they need no voyage.
+            let hulls: Vec<Entity> = (0..crew).map(|_| sim.world.spawn()).collect();
+            sim.mine_crew.insert(outpost.0, hulls);
+            sim.sys_mining_tick(outpost);
+            before - sim.world.density.get(outpost).unwrap().metallicity()
+        };
+
+        let one = extracted(1);
+        assert!(one > 0.0, "a single miner must extract something");
+        // Two miners take twice as much, three take three times — exactly, up
+        // to the cap, because the fraction is per miner now.
+        assert!((extracted(2) / one - 2.0).abs() < 1e-9, "two miners: {}", extracted(2) / one);
+        assert!((extracted(3) / one - 3.0).abs() < 1e-9, "three miners: {}", extracted(3) / one);
+
+        // And the rock is the ceiling: a crew large enough to want more than the
+        // field holds takes the field, not more. `outpost_mining_fraction` is
+        // 0.238, so five miners would ask for 1.19 of it.
+        let cfg = SimConfig::new(3);
+        let cap = (1.0 / cfg.outpost_mining_fraction).ceil() as usize;
+        assert!(extracted(cap) <= extracted(cap * 2) + 1e-12);
+        assert!((extracted(cap) - extracted(cap * 2)).abs() < 1e-9, "past the cap the rock binds, not the crew");
+    }
+
     #[test]
     fn combat_acceleration_is_untouched_by_the_dry_mass_rebasing() {
         // `Combatant::max_accel` divides thrust by dry mass, and thrust is
@@ -4599,8 +4636,14 @@ mod tests {
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
         let mut cfg = test_cfg(5);
         cfg.recycle_mining_pairs = true;
+        // **A crew of one, pinned.** This test is about recycling, not about
+        // how many miners open an outpost, and the ratified
+        // `miners_per_outpost = 3` would make the mineral assertion below a
+        // test of that value instead — the same way three hull-ladder tests
+        // silently became tests of `limited_fleet_size` at stage 3b.
+        let doctrine = Doctrine { miners_per_outpost: 1, ..Doctrine::default() };
         let autopilots: Vec<Box<dyn Autopilot>> =
-            (0..2).map(|_| Box::new(BaselineAutopilot::default()) as Box<_>).collect();
+            (0..2).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
         let mut sim = Simulation::new(galaxy, cfg, autopilots);
 
         let outpost = sim.planet_entity[11];

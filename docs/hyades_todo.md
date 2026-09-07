@@ -443,9 +443,36 @@ a curiosity into a rate. Whether extraction and the stockpile should be
 per-player is a design question with a real answer either way (a contested rock
 is a legitimate mechanic), and it is not settled by making the crew a `Vec`.
 
-#### The sweep
+#### The sweep — **ratified at 3**
 
-Read against the **new** crew-1 baseline (8,697,997.6), not the old one.
+Standard four-seed CRN bed, 4,000 yr, read against the **new** crew-1 baseline
+(8,697,997.6), not the pre-T-57 figure. Every seed positive at every crew size:
+
+| crew | colony-years | vs 1 | per extra miner | doubling |
+|---|---|---|---|---|
+| 1 | 8,697,998 | — | — | 270.3 yr |
+| 2 | 8,877,142 | +2.06% | +2.06% | 262.4 yr |
+| **3** | **8,936,603** | **+2.74%** | +1.37% | **260.7 yr** |
+| 5 | 8,965,467 | +3.08% | +0.77% | 264.2 yr |
+
+**3, not 5, and the doubling column is the reason.** Five miners buy 0.34 more
+points of colony-years and give back 3.5 years of doubling time: the extra hulls
+compete for the same build slots the expansion loop needs, so past three the
+crew starts costing what it is meant to buy. The marginal return per miner
+halves at 3 and halves again at 5 — a rock is a finite stock, so a crew cannot
+raise what a field yields, only bring it forward, and there is a limited amount
+of forward to be had.
+
+Colony *count* is identical (3,481.0) at every crew size, which is the saturated
+bed doing what `CLAUDE.md` §7 says it does: on a bed taking ~99% of what
+`k_high` admits, *when* is the only thing left to measure.
+
+**Throughput is not measured here, deliberately.** Three miners per outpost adds
+roughly 4,400 hulls on ~2,200 rocks, and vehicle count is T-24's first-order
+cost — but this container returned 218/208 and then 107/98 yr/s for *identical
+code* earlier in the same session, so any A/B taken on it would be measuring
+load, not the change. It needs a same-machine run, which is the same outstanding
+job T-24 already carries for the whole throughput table.
 
 #### The original entry, kept because the diagnosis was the useful part
 
