@@ -201,6 +201,21 @@ pub struct Doctrine {
     // --- Expand (autopilot-doc §4) ---
     pub expand_bias: ExpandBias,
 
+    /// **How many miners an outpost is opened with** (T-57).
+    ///
+    /// Extraction is per-miner since T-57 — `n` miners work `n ×
+    /// outpost_mining_fraction` of the remaining field per tick, capped at all
+    /// of it — so this is the first knob in the engine that trades mineral
+    /// *rate* against hull count. A rock is a finite stock, so a bigger crew
+    /// does not raise the total a field yields; it brings that total forward,
+    /// which is what the expansion loop is starved of (`CLAUDE.md` §7: the
+    /// residual is worlds scanned and not reached in time).
+    ///
+    /// **Defaults to 1**, which reproduces the pre-T-57 engine exactly: one
+    /// miner working `outpost_mining_fraction` is arithmetically the old
+    /// per-rock expression.
+    pub miners_per_outpost: u8,
+
     /// **Expansion rate knob** (MC experiment): how strongly the production
     /// queue favors *upgrading own infrastructure* (deepening) over *spending
     /// minerals to reach outward* (expanding). `0.0` = always expand when able,
@@ -232,6 +247,7 @@ impl Default for Doctrine {
             survey_avoids_inhabited: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
             expand_bias: ExpandBias::ProductionCentersFirst,
+            miners_per_outpost: 1,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
         }
@@ -405,10 +421,13 @@ pub struct ProductionContext {
     pub medium_seed_capacity: Band,
     /// The founding population a **General** hull can deliver — `Band II`.
     pub general_seed_capacity: Band,
-    /// The carrying capacity a colony has the instant it is founded, before any
-    /// deepening: `min(hab, bio_max, founding infra)`. Capped by the infra a
-    /// recycled hull provides, so in practice one Band.
-    pub founding_capacity_cap: Band,
+    /// The infrastructure a **Medium**-hulled colony is founded at — the
+    /// recycled hull, converted at the infra ladder's rate (R-O76). `Band I`.
+    pub medium_founding_infra: Band,
+    /// The infrastructure a **General**-hulled colony is founded at. `Band IV`
+    /// at the ratified ladder: a General hull costs ten Medium hulls and the
+    /// infra ladder charges `1+2+3+4 = 10` to reach the top playable rung.
+    pub general_founding_infra: Band,
     /// Mineral cost of a Miner + its paired Freighter (an LSV + an MSV),
     /// bundled since they're built together (§4.4).
     pub mining_pair_cost: f64,
@@ -699,32 +718,33 @@ impl Autopilot for BaselineAutopilot {
             }
             (Some(col), _) => {
                 // **Carry up to the target's carrying capacity, and no more —
-                // then take the smallest hull that can.**
+                // then take the smallest hull that earns its price.**
                 //
                 // Population above `K` does not settle back to it, it crashes
                 // below it: a `Band II` seed on a `Band I` colony ends its first
                 // tick at 0.25 Bands, and forcing that cost 5.9% of colony-years
-                // with the colony *count* unchanged on every seed. So the load
-                // is `min(hull capacity, K)` and the hull is chosen to fit the
-                // load rather than to spend the stockpile.
+                // with the colony *count* unchanged on every seed. So the load a
+                // ship flies is `min(hull capacity, K)`.
                 //
-                // **A General hull is never required today**, because a new
-                // colony's `K` is capped at one Band by the infrastructure its
-                // recycled hull provides, and a Medium hold already carries
-                // that. This is written as the rule rather than as its current
-                // answer, so it starts firing the day founding infra scales
-                // with the hull that founded the colony.
-                let needed = col.view.k_potential().min(ctx.founding_capacity_cap);
-                debug_assert!(
-                    needed <= ctx.general_seed_capacity,
-                    "no hull can deliver {needed} — the ladder's largest hold is {}",
-                    ctx.general_seed_capacity
-                );
-                let (hull, cost) = if needed <= ctx.medium_seed_capacity {
-                    (HullType::MediumSystems, ctx.colonizer_cost)
-                } else {
-                    (HullType::GeneralSystems, ctx.general_colonizer_cost)
-                };
+                // Since R-O76 the founding `K` depends on the hull — the
+                // recycled hull *is* the colony's first infrastructure, and a
+                // General hull buys `Band IV` of it against a Medium's
+                // `Band I`. So the choice is no longer "the smallest hull that
+                // fits the load"; both fit, and the General one also founds a
+                // far better colony. It is an economic comparison, and the
+                // criterion is **founding `K` per mineral**: `K` is what every
+                // later year of that colony is bounded by, and the price is
+                // what it displaces elsewhere.
+                let k_pot = col.view.k_potential();
+                let per_mineral = |k: Band, cost: f64| if cost > 0.0 { k.bands() / cost } else { f64::INFINITY };
+                let medium_k = k_pot.min(ctx.medium_founding_infra);
+                let general_k = k_pot.min(ctx.general_founding_infra);
+                let (hull, cost) =
+                    if per_mineral(general_k, ctx.general_colonizer_cost) > per_mineral(medium_k, ctx.colonizer_cost) {
+                        (HullType::GeneralSystems, ctx.general_colonizer_cost)
+                    } else {
+                        (HullType::MediumSystems, ctx.colonizer_cost)
+                    };
                 Some((hull_order(hull), col.ranked.score, cost))
             }
             (None, Some(mine)) => Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost)),
@@ -940,7 +960,8 @@ mod tests {
             general_colonizer_cost: 10.0,
             medium_seed_capacity: BandTier::I.band(),
             general_seed_capacity: BandTier::II.band(),
-            founding_capacity_cap: BandTier::I.band(),
+            medium_founding_infra: BandTier::I.band(),
+            general_founding_infra: BandTier::IV.band(),
             mining_pair_cost: 1.0,
             light_vehicle_cost: 0.25,
             candidate_count,

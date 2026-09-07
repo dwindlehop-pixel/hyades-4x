@@ -383,7 +383,58 @@ become "what does my current Role's System say to build". The dial
 
 ## Band C — open question with a concrete test
 
-### T-57. How many miners per mining outpost? — the question the model cannot currently ask
+### T-57. How many miners per mining outpost? — **the term now exists**
+
+**Implemented this conversation.** `mine_operator: BTreeMap<u64, Entity>` is now
+`mine_crew: BTreeMap<u64, Vec<Entity>>`, extraction is **per miner** rather than
+per rock, and `Doctrine::miners_per_outpost` (default 1) is the knob:
+
+```rust
+let crew = self.mine_crew.get(&outpost.0).map_or(1, |c| c.len().max(1));
+let amt = density.metallicity() * (crew as f64 * cfg.outpost_mining_fraction).min(1.0);
+```
+
+`outpost_mining_fraction` changes meaning from "the fraction of remaining
+density a *rock* yields per tick" to "the fraction **one miner** works", capped
+at the whole field because a rock cannot yield more than it holds. A rock is a
+finite stock, so a bigger crew does not raise what a field yields in total — it
+brings that total **forward**, which is what the expansion loop is short of
+(`CLAUDE.md` §7: the residual is worlds scanned and not reached in time).
+
+#### ⚠️ Crew 1 is *not* bit-identical, and the cause is not yet demonstrated
+
+The arithmetic at `crew = 1` is the old expression exactly, so this should have
+reproduced the bed. It does not:
+
+| seed | before | after | |
+|---|---|---|---|
+| 1 | 8,481,134.1 | 8,485,264.2 | +0.05% |
+| 7 | 8,717,150.7 | 8,761,142.3 | **+0.50%** |
+
+**The leading hypothesis is that a pre-existing bug is being fixed**, and it is
+a hypothesis, not a finding. `mine_operator.insert(outpost.0, vehicle)`
+*overwrote* — so a second miner reaching an already-worked rock replaced the
+first in the map, and on exhaustion `remove()` returned only the last, leaking
+the earlier hull (still `Role::Miner`, parked, never re-tasked, never scrapped).
+`mine_crew` pushes instead, so both are counted and both are released.
+
+Two things make that plausible and neither makes it true: rocks *can* be
+double-worked, because `mine_crew` is keyed by outpost alone while `targeted`
+and `exploited` are per-player, so rival empires can put miners on the same
+rock; and the sign is right, since more counted miners means faster extraction.
+
+**This is the exact shape of all six measurement artifacts in `CLAUDE.md` §2 —
+a real number with a plausible mechanism attached — so it is not to be written
+up until the crews are counted.** The log already carries
+`VehicleParked { role: Miner, at }`, so the census is a read, not a code change:
+count distinct miners parked per planet id at `crew = 1` and see whether any
+outpost has more than one. If none does, the hypothesis is dead and the real
+cause is elsewhere.
+
+**Open until then**, and the sweep over `miners_per_outpost ∈ {1, 2, 3, 5}` must
+be read against the *new* crew-1 baseline, not the old one.
+
+#### The original entry, kept because the diagnosis was the useful part
 
 **Extraction does not depend on the miner at all.** `sys_mining_tick` is
 
@@ -1176,6 +1227,69 @@ minerals become infrastructure, which is what founding already claims to do),
 and it is the only lever that raises a founding colony's `K` above one Band. It
 is not made here because it moves the whole expansion economy and needs its own
 measurement — **R-O76 (new, open)**.
+
+
+#### Stage 4d — R-O76: founding infrastructure is the recycled hull, priced at the ladder's own rate
+
+**Directed this conversation.** `sys_colony_arrive` has always said the colony
+ship's hull *becomes* the colony's first infrastructure, and then awarded one
+Band regardless of what was recycled — which pinned every new colony's `K` at
+one Band and made a heavier colony ship pointless by construction (stage 4c).
+
+The hull's price now buys infrastructure at the rate the ladder charges,
+anchored so a Medium hull still yields exactly `Band I`:
+
+```
+budget = hull_cost / medium_hull_cost                (in Medium hulls)
+infra  = max b with b(b+1)/2 <= budget               (the ladder, inverted)
+       = floor((sqrt(8·budget + 1) − 1) / 2)
+```
+
+The ladder charges `round(infra)+1` per level, so reaching Band `b` costs
+`1+2+…+b = b(b+1)/2`. At the ratified cost ladder that gives:
+
+| hull | cost | budget | founding infra |
+|---|---|---|---|
+| Limited | 0.02 | 0.2 | **none** — cannot found |
+| Medium | 0.10 | 1.0 | **`Band I`** (unchanged) |
+| General | 1.00 | 10.0 | **`Band IV`** |
+
+**The General hull landing exactly on the top playable rung is arithmetic, not
+a fit:** `medium_fleet_size = 10` and `1+2+3+4 = 10`. And the Limited hull
+buying a fifth of a Band is R-V9 arriving for the *third* time from a different
+direction — first the hold ladder, then the seed floor, now the infra ladder.
+
+**Behaviour-neutral, verified:** 8,670,020.2 colony-years on the four-seed bed,
+bit-identical on every seed. The baseline still builds Medium colonizers and a
+Medium hull's founding infra did not move.
+
+**The hull choice is now a genuine economic comparison, and the criterion is
+founding `K` per mineral.** Both hulls fit their load; the General also founds a
+far better colony. Measured at a typical target (`k_potential ≈ 3.5`):
+
+| hull | founding `K` | cost | `K` per mineral |
+|---|---|---|---|
+| Medium | 1.00 | 0.10 | **10.00** |
+| General | 3.50 | 1.00 | 3.50 |
+
+so the rule picks Medium, and does so for a reason it can state rather than
+because the alternative was unreachable.
+
+**The criterion is myopic and that is recorded, not hidden.** It scores
+*founding*, and a Medium colony must then spend `2+3+4 = 9` minerals on the
+ladder to reach the `Band IV` a General colony starts at — 9.1 minerals against
+1.0, a 9× arbitrage the founding-only score cannot see. Whether the empire
+*wants* Band IV colonies is `expand_bias`/`reinvest_bias` territory and is a
+measurement, not a derivation. **R-O78 (new, open):** score the hull choice on
+lifetime cost-to-`K` rather than founding `K`, and confirm against the
+objective before changing the rule.
+
+**R-O77 (new, open): the founding subsidy this scales was already there.** A
+Medium hull costs 0.1 minerals and becomes a Band of infrastructure the ladder
+charges 1.0 for — founding conjures 10× the minerals spent. Stage 4d preserves
+that rate rather than introducing it. Same family as R-O74's conjured settlers,
+and recorded rather than closed because removing it would stop colonisation
+outright at the ratified hull prices.
 
 
 #### Staging (each stage independently revertible)

@@ -788,16 +788,24 @@ pub fn role_hull_type(role: Role) -> HullType {
 // no normaliser left to put a derived quantity in a denominator — which is
 // what four of the measurement artifacts in `CLAUDE.md` §2 had in common.
 
-/// The infrastructure a colony has the instant it is founded — the colony
-/// ship's own hull, recycled (`sys_colony_arrive`).
+/// The infrastructure a **Medium**-hulled colony has the instant it is founded
+/// — the anchor [`Simulation::founding_infra`] scales from (R-O76).
 ///
-/// **It does not depend on the hull, and that is why a General colony ship is
-/// never required** (T-56 stage 4). `K = min(hab, bio_max, infra)`, so a new
-/// colony's capacity is one Band whatever founded it, and a Medium hull's hold
-/// already carries a Band's worth of people. Scaling this with the recycled
-/// hull's mass is the change that would make a bigger colony ship worth
-/// building; it is not made here, because it moves the whole expansion economy.
-const FOUNDING_INFRA: Band = Band::new(1.0);
+/// It is the value the whole engine used for every hull until stage 4d, so
+/// anchoring here keeps the Medium colonizer — the only one the baseline
+/// actually builds — bit-identical.
+const FOUNDING_INFRA_AT_MEDIUM: Band = Band::new(1.0);
+
+/// Cumulative minerals the infrastructure ladder charges to reach Band `b` from
+/// nothing.
+///
+/// A level costs `round(infra) + 1` (`sys_production_tick`), so reaching Band
+/// `b` costs `1 + 2 + … + b = b(b+1)/2`. **This ladder is hard-coded, not a
+/// parameter** — `CLAUDE.md` §7 lists it among the discrete gates a
+/// central-difference probe cannot see.
+fn infra_ladder_cost(b: f64) -> f64 {
+    b * (b + 1.0) / 2.0
+}
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
 /// hull's price and its empty mass are one number in one unit (kilotons); there
@@ -1500,10 +1508,17 @@ pub struct Simulation {
     events_processed: u64,
     /// Outpost indices with an active mining tick (dedup).
     active_mines: BTreeSet<u64>,
-    /// Which miner is working which outpost, so exhaustion can find the hull it
-    /// stranded. Keyed by outpost entity index; `BTreeMap` for deterministic
-    /// iteration, like every other collection in here.
-    mine_operator: BTreeMap<u64, Entity>,
+    /// Which miners are working which outpost, so exhaustion can find the hulls
+    /// it stranded — and so extraction knows how many hands are on the rock
+    /// (T-57). Keyed by outpost entity index; `BTreeMap` for deterministic
+    /// iteration, like every other collection in here, and the crew is a `Vec`
+    /// in arrival order for the same reason.
+    ///
+    /// **It was one `Entity` until T-57.** A mining outpost could only ever have
+    /// a single operator *by data structure*, which is why "how many miners per
+    /// outpost" was not a value anyone could tune — there was no term in the
+    /// model for it.
+    mine_crew: BTreeMap<u64, Vec<Entity>>,
     /// Per-player pools of hulls whose rock ran dry, awaiting re-tasking. Push
     /// order is event order, so these are deterministic; selection is by
     /// distance to the new target, not by position in the pool.
@@ -1600,7 +1615,7 @@ impl Simulation {
             seq: 0,
             events_processed: 0,
             active_mines: BTreeSet::new(),
-            mine_operator: BTreeMap::new(),
+            mine_crew: BTreeMap::new(),
             reserve_miners: vec![Vec::new(); n],
             reserve_freighters: vec![Vec::new(); n],
             current_round: 0,
@@ -2037,8 +2052,14 @@ impl Simulation {
             // Found the colony; recycle the vehicle's hull into level-1 infra.
             self.claim_planet(target, owner);
             {
+                // The hull is what is being recycled, so read it off the ship
+                // that actually arrived. Defaulting matches `sys_freighter_arrive`:
+                // a courier constructed without one is a test fixture, not a
+                // build, and the Medium hull is the baseline colonizer.
+                let hull = self.world.hull_type.get(vehicle).copied().unwrap_or(HullType::MediumSystems);
+                let founded_at = self.founding_infra(hull);
                 let f = self.world.factors.get_mut(target).unwrap();
-                f.infra = f.infra.max(FOUNDING_INFRA);
+                f.infra = f.infra.max(founded_at);
             }
             // Seed population from the pop *carried as cargo*
             // (`Hyades_vehicle_roles.md` §4.2/R-V9 — confirmed, not a flat
@@ -2084,7 +2105,7 @@ impl Simulation {
         self.park(vehicle, here);
         self.world.knowledge.get_mut(self.player_entity[p]).unwrap().exploited.insert(pid);
         self.log.push(self.clock, LogEvent::VehicleParked { player: p as u32, vehicle, role: Role::Miner, at: pid });
-        self.mine_operator.insert(outpost.0, vehicle);
+        self.mine_crew.entry(outpost.0).or_default().push(vehicle);
         if self.active_mines.insert(outpost.0) {
             self.schedule(self.config.mining_tick_years, EventKind::MiningTick { outpost });
         }
@@ -2244,9 +2265,21 @@ impl Simulation {
 
     fn sys_mining_tick(&mut self, outpost: Entity) {
         let pid = *self.world.planet_id.get(outpost).unwrap();
+        // **Extraction is per-miner now, not per-rock (T-57).**
+        //
+        // `outpost_mining_fraction` was the fraction of remaining density a
+        // *rock* yielded per tick, with the miner standing on it contributing
+        // nothing but the schedule: a second hull would have extracted no more,
+        // and a better one no more either. It is now the fraction **one miner**
+        // works, and a crew of `n` works `n` times as much — capped at the whole
+        // remaining field, because a rock cannot yield more than it holds.
+        //
+        // A crew of one is arithmetically identical to the old expression,
+        // which is what keeps the shipped configuration bit-identical.
+        let crew = self.mine_crew.get(&outpost.0).map_or(1, |c| c.len().max(1));
         let amt = {
             let d = self.world.density.get(outpost).unwrap();
-            d.metallicity() * self.config.outpost_mining_fraction
+            d.metallicity() * (crew as f64 * self.config.outpost_mining_fraction).min(1.0)
         };
         if amt > self.config.density_floor {
             let extracted = self.world.density.get_mut(outpost).unwrap().extract(amt);
@@ -2263,9 +2296,11 @@ impl Simulation {
             // The rock is done, but the hull is not. Roles §4.6: a standing
             // mission that ends puts the vehicle in Reserve, re-taskable —
             // only a *completable* mission (an exhausted Scout) scraps.
-            if let Some(miner) = self.mine_operator.remove(&outpost.0) {
+            if let Some(crew) = self.mine_crew.remove(&outpost.0) {
                 if self.config.recycle_mining_pairs {
-                    self.release_to_reserve(miner, Role::Miner, pid);
+                    for miner in crew {
+                        self.release_to_reserve(miner, Role::Miner, pid);
+                    }
                 }
             }
         }
@@ -2536,7 +2571,8 @@ impl Simulation {
             general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
             medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
             general_seed_capacity: HullType::GeneralSystems.colony_seed_capacity(&self.config),
-            founding_capacity_cap: FOUNDING_INFRA,
+            medium_founding_infra: self.founding_infra(HullType::MediumSystems),
+            general_founding_infra: self.founding_infra(HullType::GeneralSystems),
             // The *true* price of a pair to this center right now. With
             // recycling on, a half that comes out of Reserve is not bought, and
             // the context has to say so or the decision is made on a price the
@@ -2544,7 +2580,7 @@ impl Simulation {
             // sit Idle next to hulls it already owns. `apply_build_with` takes
             // the nearest reserved hull of each kind, so this matches what it
             // will actually spend.
-            mining_pair_cost: self.mining_pair_price(p),
+            mining_pair_cost: self.mining_pair_price(p, doctrine.miners_per_outpost.max(1) as usize),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
         };
@@ -2647,13 +2683,22 @@ impl Simulation {
                 // new pair can therefore still open an outpost with idle hulls,
                 // which is the whole point — 39% of outpost-years were being
                 // spent on exhausted rocks.
+                let crew = if role == Role::Miner { doctrine.miners_per_outpost.max(1) as usize } else { 1 };
                 let target_entity = target.map(|t| self.planet_entity[t.0 as usize]);
-                let (reused_miner, reused_freighter) = match (self.config.recycle_mining_pairs, role, target_entity) {
+                let (reused_miners, reused_freighter) = match (self.config.recycle_mining_pairs, role, target_entity) {
                     (true, Role::Miner, Some(te)) => {
                         let at = *self.world.position.get(te).unwrap();
-                        (self.take_nearest_reserve(p, true, at), self.take_nearest_reserve(p, false, at))
+                        // One reserved hull per crew slot, nearest first.
+                        let mut taken = Vec::new();
+                        while taken.len() < crew {
+                            match self.take_nearest_reserve(p, true, at) {
+                                Some(e) => taken.push(e),
+                                None => break,
+                            }
+                        }
+                        (taken, self.take_nearest_reserve(p, false, at))
                     }
-                    _ => (None, None),
+                    _ => (Vec::new(), None),
                 };
                 // **Price the hull that was ordered, not the hull the role
                 // implies.** R-O29 moved the hull choice into `BuildOrder`, but
@@ -2662,7 +2707,7 @@ impl Simulation {
                 // `assign_role`. It stops agreeing the moment Doctrine can pick
                 // a heavier colonizer, and the failure would have been silent:
                 // a General hull bought at a Medium hull's price.
-                let mut cost = if reused_miner.is_some() { 0.0 } else { hull_cost(hull_type, &self.config) };
+                let mut cost = (crew - reused_miners.len().min(crew)) as f64 * hull_cost(hull_type, &self.config);
                 if paired_freighter && reused_freighter.is_none() {
                     cost += role_cost(Role::Freighter, &self.config);
                 }
@@ -2673,7 +2718,7 @@ impl Simulation {
                 if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
-                    if let Some(e) = reused_miner {
+                    for e in reused_miners {
                         self.reserve_miners[p].push(e);
                     }
                     if let Some(e) = reused_freighter {
@@ -2701,9 +2746,14 @@ impl Simulation {
                     }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
-                        match reused_miner {
-                            Some(e) => self.retask_miner(e, p, center, te),
-                            None => self.spawn_courier(p, r, hull_type, center, center_pos, te),
+                        // A crew, not an operator (T-57). Reserved hulls first —
+                        // they are already paid for — then newly built ones.
+                        let mut reused = reused_miners.into_iter();
+                        for _ in 0..crew {
+                            match reused.next() {
+                                Some(e) => self.retask_miner(e, p, center, te),
+                                None => self.spawn_courier(p, r, hull_type, center, center_pos, te),
+                            }
                         }
                         if paired_freighter {
                             match reused_freighter {
@@ -2737,15 +2787,18 @@ impl Simulation {
     /// What a mining pair costs player `p` this cycle: the halves that are not
     /// already sitting in Reserve. Equals the full price whenever recycling is
     /// off, which is what keeps the flag a clean A/B.
-    fn mining_pair_price(&self, p: usize) -> f64 {
+    fn mining_pair_price(&self, p: usize, crew: usize) -> f64 {
         let full_miner = role_cost(Role::Miner, &self.config);
         let full_freighter = role_cost(Role::Freighter, &self.config);
         if !self.config.recycle_mining_pairs {
-            return full_miner + full_freighter;
+            return crew as f64 * full_miner + full_freighter;
         }
-        let miner = if self.reserve_miners[p].is_empty() { full_miner } else { 0.0 };
+        // Only the hulls that still have to be *built* are priced; the rest come
+        // out of Reserve. A crew of `n` can draw up to `n` reserved miners.
+        let from_reserve = self.reserve_miners[p].len().min(crew);
+        let miners = (crew - from_reserve) as f64 * full_miner;
         let freighter = if self.reserve_freighters[p].is_empty() { full_freighter } else { 0.0 };
-        miner + freighter
+        miners + freighter
     }
 
     /// A hull whose mission ended puts itself in Reserve and joins its owner's
@@ -2823,16 +2876,62 @@ impl Simulation {
         );
     }
 
+    /// **The infrastructure a colony has the instant it is founded — the
+    /// recycled hull, converted at the infrastructure ladder's own rate**
+    /// (R-O76).
+    ///
+    /// `sys_colony_arrive` has always said the colony ship's hull *becomes* the
+    /// colony's first infrastructure. Until stage 4d it said so and then
+    /// awarded one Band regardless of what was recycled, which pinned every new
+    /// colony's `K` at one Band and made a heavier colony ship pointless by
+    /// construction.
+    ///
+    /// The hull's price now buys infrastructure at the rate the ladder charges
+    /// for it, anchored so a Medium hull still yields exactly
+    /// [`FOUNDING_INFRA_AT_MEDIUM`]:
+    ///
+    /// ```text
+    /// budget  = hull_cost / medium_hull_cost          (in Medium hulls)
+    /// infra   = max b with  b(b+1)/2 <= budget        (the ladder, inverted)
+    ///         = floor( (sqrt(8·budget + 1) − 1) / 2 )
+    /// ```
+    ///
+    /// At the ratified ladder that is **Limited → nothing, Medium → `Band I`,
+    /// General → `Band IV`** — and the General hull landing exactly on the top
+    /// playable rung is arithmetic, not a fit: `medium_fleet_size = 10` and
+    /// `1+2+3+4 = 10`. A Limited hull buys 0.2 of a Band, i.e. no colony at
+    /// all, which is R-V9 arriving for the third time from a different
+    /// direction.
+    ///
+    /// **The subsidy this scales was already there — R-O77 (new, open).** A
+    /// Medium hull costs 0.1 minerals and becomes a Band of infrastructure the
+    /// ladder charges 1.0 for: founding conjures 10× the minerals that were
+    /// spent. Stage 4d preserves that rate rather than introducing it, and a
+    /// General hull conjures the same 10×. It is a design law #11 violation of
+    /// the same family as R-O74's conjured settlers, and it is recorded rather
+    /// than closed because removing it would stop colonisation outright at the
+    /// ratified hull prices.
+    fn founding_infra(&self, hull: HullType) -> Band {
+        let unit = hull_cost(HullType::MediumSystems, &self.config);
+        if unit <= 0.0 {
+            return FOUNDING_INFRA_AT_MEDIUM;
+        }
+        let budget = hull_cost(hull, &self.config) / unit * infra_ladder_cost(FOUNDING_INFRA_AT_MEDIUM.bands());
+        let b = ((8.0 * budget + 1.0).sqrt() - 1.0) / 2.0;
+        Band::new(b.floor().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
+    }
+
     /// **The carrying capacity a colony will have the moment it is founded.**
     ///
-    /// `K = min(hab, bio_max, infra)`, and founding sets infra to
-    /// [`FOUNDING_INFRA`] — so however good the world is, a new colony's `K` is
-    /// capped at one Band on arrival. This is the number a colony ship must not
-    /// exceed: population above `K` does not settle back to it, it *crashes*
-    /// below it (`a_colony_seeded_above_its_capacity_crashes_below_it`).
-    fn founding_capacity(&self, target: Entity) -> Band {
+    /// `K = min(hab, bio_max, infra)`, and founding sets infra to what the
+    /// recycled hull bought ([`Self::founding_infra`]) — so this depends on the
+    /// hull, which is the whole of R-O76. It is the number a colony ship must
+    /// not exceed: population above `K` does not settle back to it, it
+    /// *crashes* below it
+    /// (`a_colony_seeded_above_its_capacity_crashes_below_it`).
+    fn founding_capacity(&self, hull: HullType, target: Entity) -> Band {
         let f = self.world.factors.get(target).unwrap();
-        f.k_potential().min(f.infra.max(FOUNDING_INFRA))
+        f.k_potential().min(f.infra.max(self.founding_infra(hull)))
     }
 
     /// **The founding population a colony ship of this hull carries** — the
@@ -2861,7 +2960,7 @@ impl Simulation {
     /// behaviour change that would dominate the measurement stage 4 exists to
     /// take — and mixing the two is exactly the confound this staging avoids.
     fn colony_seed_for(&self, hull: HullType, target: Entity) -> Option<Band> {
-        let seed = hull.colony_seed_capacity(&self.config).min(self.founding_capacity(target));
+        let seed = hull.colony_seed_capacity(&self.config).min(self.founding_capacity(hull, target));
         (seed >= self.config.colony_seed_pop.band()).then_some(seed)
     }
 
@@ -4031,25 +4130,21 @@ mod tests {
         assert!(hull_cost(HullType::GeneralSystems, &cfg) > hull_cost(HullType::MediumSystems, &cfg) * 5.0);
     }
 
-    /// **T-56 stage 4: carry up to the target's carrying capacity, and no more.**
+    /// **T-56 stage 4: carry up to the target's carrying capacity, and no
+    /// more — and the capacity now depends on the hull that founds it (R-O76).**
     ///
-    /// The hold ladder gives each hull a *capacity* — `Band Empty` / `Band I` /
-    /// `Band II` for Limited / Medium / General — but what flies is that capped
-    /// at the colony's `K`, because population above `K` crashes rather than
-    /// settling (`a_colony_seeded_above_its_capacity_crashes_below_it`).
-    ///
-    /// **The cap is one Band, so a General hull is never required.** A new
-    /// colony's infrastructure is the recycled hull, [`FOUNDING_INFRA`], and `K`
-    /// is a `min` against it — so however good the world, a Medium hold already
-    /// covers what can be delivered. That is asserted here rather than left as
-    /// a remark, because it is the reason the derived hull choice always
-    /// answers "Medium" today, and it stops being true the moment founding
-    /// infra scales with the hull.
+    /// Two ladders meet here. The **hold** ladder gives each hull a colonist
+    /// capacity (`Band Empty` / `I` / `II`), and the **infrastructure** ladder
+    /// converts the recycled hull into the colony's founding `K`. Before R-O76
+    /// only the first varied and the second was a constant, which capped every
+    /// new colony at one Band and made a heavier colony ship pointless by
+    /// construction.
     #[test]
     fn a_colony_ship_carries_up_to_the_targets_capacity_and_no_more() {
         let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
 
-        // Capacity is the hold's rung, and the rungs are the mass ladder's.
+        // Colonist capacity is the hold's rung, and the rungs are the mass
+        // ladder's.
         let (m_cap, g_cap) = (
             HullType::MediumSystems.colony_seed_capacity(&sim.config),
             HullType::GeneralSystems.colony_seed_capacity(&sim.config),
@@ -4058,27 +4153,39 @@ mod tests {
         assert!((g_cap.bands() - 2.0).abs() < 1e-6, "a General hold is Band II, got {g_cap}");
         assert!(HullType::LimitedSystems.colony_seed_capacity(&sim.config) < sim.config.colony_seed_pop.band());
 
-        // A target far better than any hull could fill: `k_potential` of 4.
+        // **Founding infrastructure is the recycled hull at the ladder's own
+        // rate** — and the General hull landing exactly on the top playable
+        // rung is arithmetic, not a fit: it costs ten Medium hulls and the
+        // ladder charges `1+2+3+4 = 10` to reach `Band IV`.
+        assert_eq!(sim.founding_infra(HullType::MediumSystems), FOUNDING_INFRA_AT_MEDIUM);
+        assert_eq!(sim.founding_infra(HullType::GeneralSystems), BandTier::IV.band());
+        // A Limited hull buys a fifth of a Band, which is no colony at all —
+        // R-V9 arriving from a third direction.
+        assert_eq!(sim.founding_infra(HullType::LimitedSystems), Band::ZERO);
+
+        // A target far better than either hull can fill: `k_potential` of 4.
         let target = sim.planet_entity[11];
         sim.world.factors.insert(
             target,
             Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
         );
 
-        // Founding capacity is the infra cap, not the world's potential.
-        assert_eq!(sim.founding_capacity(target), FOUNDING_INFRA);
-
-        // So both hulls deliver the same load, and the General's extra Band of
-        // hold is simply unusable. This is the whole of why the derived hull
-        // choice answers "Medium".
+        // Each hull's founding `K` is its own infrastructure, and the load is
+        // capped by it. A Medium still delivers exactly `Band I` — unchanged,
+        // which is what keeps the shipped configuration bit-identical.
+        assert_eq!(sim.founding_capacity(HullType::MediumSystems, target), FOUNDING_INFRA_AT_MEDIUM);
         let medium = sim.colony_seed_for(HullType::MediumSystems, target).expect("a Medium hull can found");
-        let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
-        assert_eq!(medium, general, "the cap binds first, so the hulls deliver the same seed");
-        assert_eq!(medium, FOUNDING_INFRA);
+        assert_eq!(medium, FOUNDING_INFRA_AT_MEDIUM);
 
-        // **R-V9 is physics.** A Limited hull's hold sits below the floor, so it
-        // cannot found — the rule is a consequence of the ladder, not a
-        // hull-type special case.
+        // A General founds at `Band IV`, so its hold is now the binding term
+        // rather than the infra cap: it delivers its full `Band II`.
+        assert_eq!(sim.founding_capacity(HullType::GeneralSystems, target), BandTier::IV.band());
+        let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
+        assert!(general > medium, "a General hull now delivers more: {general} vs {medium}");
+        assert!((general.bands() - g_cap.bands()).abs() < 1e-9, "and it is hold-limited, not K-limited");
+
+        // **R-V9 is physics.** A Limited hull founds at no infrastructure at
+        // all, so its `K` is zero and it cannot seed anything.
         assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, target), None);
     }
 
@@ -4509,7 +4616,7 @@ mod tests {
         sim.world.cargo.insert(miner, Minerals::default());
         sim.world.home_center.insert(miner, center);
         sim.sys_mining_arrive(miner);
-        assert_eq!(sim.mine_operator.get(&outpost.0), Some(&miner), "the operator must be recorded on station");
+        assert_eq!(sim.mine_crew.get(&outpost.0), Some(&vec![miner]), "the crew must be recorded on station");
 
         // Mine it out, then tick: the rock is done.
         *sim.world.density.get_mut(outpost).unwrap() = MineralField::default();
@@ -4521,7 +4628,7 @@ mod tests {
             "an exhausted miner stands down, it does not scrap"
         );
         assert_eq!(sim.reserve_miners[0], vec![miner], "and it joins its owner's pool");
-        assert!(!sim.mine_operator.contains_key(&outpost.0), "the dead rock has no operator");
+        assert!(!sim.mine_crew.contains_key(&outpost.0), "the dead rock has no crew");
 
         // Now a center orders a mining pair. The reserved hull is taken back at
         // no mineral cost; only the un-recycled half is paid for.

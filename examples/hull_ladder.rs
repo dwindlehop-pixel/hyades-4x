@@ -46,7 +46,17 @@ struct Leg {
 //
 // What is left is the bed itself, which is still the instrument for the
 // acceptance test and for anything that moves the expansion economy.
-const LEGS: &[Leg] = &[Leg { name: "ratified ladder", apply: |_| {}, doctrine: |_| {} }];
+const LEGS: &[Leg] = &[
+    Leg { name: "ratified ladder", apply: |_| {}, doctrine: |_| {} },
+    // **T-57: non-unitary mining colonies.** Extraction is per-miner now, so a
+    // crew of `n` works `n × outpost_mining_fraction` of the remaining field per
+    // tick, capped at all of it. A rock is a finite stock — a bigger crew does
+    // not raise what a field yields in total, it brings that total *forward*,
+    // and forward is what the expansion loop is short of.
+    Leg { name: "2 miners per outpost", apply: |_| {}, doctrine: |d| d.miners_per_outpost = 2 },
+    Leg { name: "3 miners per outpost", apply: |_| {}, doctrine: |d| d.miners_per_outpost = 3 },
+    Leg { name: "5 miners per outpost", apply: |_| {}, doctrine: |d| d.miners_per_outpost = 5 },
+];
 
 struct Run {
     colonies: usize,
