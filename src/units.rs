@@ -64,7 +64,7 @@
 //! anchor under §2.6 — see [`KILOTONS_AT_BAND_EMPTY`].
 
 use core::fmt;
-use core::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
+use core::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
 /// Mass of population at **Band I**, in kilotons — the anchor the whole ladder
 /// hangs from, and now a *ratified* number rather than a convenient one
@@ -135,18 +135,11 @@ pub const MASS_LADDER: [f64; 4] = [
 /// say so in those words.
 pub const KILOTONS_AT_BAND_EMPTY: f64 = 0.001;
 
-/// The mass at rung `n`, hung off [`KILOTONS_AT_BAND_I`] — `Band I` is the
-/// anchor, so `Empty` is *below* it by the first ladder step and every rung
-/// above is a running product of the rest.
+/// The mass at rung `n` — [`Qty::rung`] on the mass ladder, kept as a free
+/// function because the ladder's own tests read more clearly with it.
 #[inline]
-pub const fn rung_mass(n: usize) -> f64 {
-    match n {
-        0 => KILOTONS_AT_BAND_EMPTY,
-        1 => KILOTONS_AT_BAND_I,
-        2 => KILOTONS_AT_BAND_I * MASS_LADDER[1],
-        3 => KILOTONS_AT_BAND_I * MASS_LADDER[1] * MASS_LADDER[2],
-        _ => KILOTONS_AT_BAND_I * MASS_LADDER[1] * MASS_LADDER[2] * MASS_LADDER[3],
-    }
+pub fn rung_mass(n: usize) -> f64 {
+    Kilotons::rung(n)
 }
 
 /// **A Band ladder with its own anchor** — the general form of the bridge.
@@ -217,23 +210,6 @@ impl Ladder {
         };
         self.rungs[n as usize] * self.steps[n as usize].powf(b.0 - n)
     }
-}
-
-/// Which ladder segment a continuous position falls in, as `(lower rung, its
-/// step factor)`. Positions outside the playable ladder extrapolate with the
-/// nearest segment's factor rather than clamping, because the bridge must stay
-/// continuous *and* invertible: a clamp here is mass created or destroyed at
-/// the clamp, which is the one thing L6 does not permit.
-#[inline]
-fn segment(b: f64) -> (f64, f64) {
-    let n = if b < 0.0 {
-        0.0
-    } else if b >= 3.0 {
-        3.0
-    } else {
-        b.floor()
-    };
-    (n, MASS_LADDER[n as usize])
 }
 
 /// The bottom rung the ladder is willing to name.
@@ -388,9 +364,260 @@ impl fmt::Display for BandTier {
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Band(f64);
 
-/// An amount of stuff, in kilotons. The unit conservation is stated in (L6).
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
-pub struct Kilotons(f64);
+/// **Which ladder a quantity's Band reading is taken on.**
+///
+/// There are two, they are both ratified (R-MC15), and their step factors
+/// genuinely differ: `F_mass = F_cost^(3/2)` is the shell model's own exponent,
+/// because cost tracks surface area and the hold tracks volume. A General hull
+/// costs 10x a Medium and holds 31.6x, so its price and its hold cannot both
+/// land on the same rung of one ladder. That is geometry, not an accident of
+/// units, so the ladder has to travel with the value.
+///
+/// It travels as a **type parameter**, which is what keeps the arithmetic free:
+/// [`Qty`] is `#[repr(transparent)]` over one `f64` and the marker is
+/// zero-sized, so `Qty<Mass>` and `Qty<Cost>` have the codegen and the
+/// vectorisation of a bare `f64`. Only the Band *conversion* costs anything,
+/// and it is not on any hot path.
+pub trait Scale: Copy + 'static {
+    /// Step factors between adjacent rungs, indexed the way [`BandTier::index`]
+    /// indexes: `0 = Empty→I`, `1 = I→II`, `2 = II→III`, `3 = III→IV`.
+    const STEPS: [f64; 4];
+    /// Kilotons at this scale's `Band I` — its anchor. §2.6: every quantity
+    /// anchors its own `Band I`; only the ratios are shared.
+    const BAND_I: f64;
+    /// For diagnostics.
+    const NAME: &'static str;
+}
+
+/// The **mass** ladder: population, biosphere, cargo hold, ore in the ground.
+/// `Band I` is one kiloton.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Mass;
+
+/// The **mineral-cost** ladder: hull price, infrastructure steps, card cost.
+/// Its `Band I` is a Medium hull, and its `Band II` — one General hull — is
+/// what `SimConfig::general_vehicle_cost` names.
+///
+/// Costs are masses too (R-O57: a hull's price and its empty mass are one
+/// number in one unit), so a `Qty<Cost>` and a `Qty<Mass>` hold the same kind
+/// of scalar. What differs is only the ladder their Band readings are taken
+/// on, which is why crossing between them is [`Qty::on_scale`] — explicit,
+/// free, and visible at the call site.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Cost;
+
+impl Scale for Mass {
+    const STEPS: [f64; 4] = MASS_LADDER;
+    const BAND_I: f64 = KILOTONS_AT_BAND_I;
+    const NAME: &'static str = "mass";
+}
+
+impl Scale for Cost {
+    const STEPS: [f64; 4] = COST_LADDER;
+    const BAND_I: f64 = MINERALS_AT_BAND_I;
+    const NAME: &'static str = "cost";
+}
+
+/// Minerals at **cost `Band I`** — one Medium Systems hull.
+///
+/// The cost ladder's anchor, and the same statement as
+/// `SimConfig::general_vehicle_cost = 1.0`: a General hull is cost `Band II`,
+/// one step of `COST_LADDER[1] = 10` above this.
+pub const MINERALS_AT_BAND_I: f64 = KILOTONS_AT_BAND_I / COST_LADDER[1];
+
+/// **An amount of stuff, in kilotons, that knows which ladder it reads on.**
+///
+/// One number. Kilotons is the storage and the only thing arithmetic touches;
+/// a Band is a *reading* of that number — the shorthand the game design is
+/// written in, for print and for thresholds, never a second counting system
+/// the simulation steps in. Every logistic, price and conservation check runs
+/// on the mass.
+///
+/// It can be written either way and read either way, and the two commute: a
+/// value written as `Band II` and a value written as its kiloton count are the
+/// same bits, so which end a term came from never shows up in a sum.
+///
+/// ```
+/// # use hyades_engine::units::{Qty, Mass, BandTier};
+/// let a = Qty::<Mass>::at(BandTier::I, 0.0);
+/// let b = Qty::<Mass>::new(1.0);
+/// assert_eq!(a, b);
+/// assert_eq!((a + b).kilotons(), 2.0);
+/// ```
+#[repr(transparent)]
+pub struct Qty<S>(f64, core::marker::PhantomData<S>);
+
+/// An amount of stuff on the **mass** ladder — the unit conservation is stated
+/// in (L6). The engine's default quantity.
+pub type Kilotons = Qty<Mass>;
+
+// Hand-written so the marker never imposes a bound on `S`: a `Qty` is one
+// `f64` and copies like one, whatever it is tagged with.
+impl<S> Clone for Qty<S> {
+    #[inline]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<S> Copy for Qty<S> {}
+impl<S> Default for Qty<S> {
+    #[inline]
+    fn default() -> Self {
+        Qty(0.0, core::marker::PhantomData)
+    }
+}
+impl<S> PartialEq for Qty<S> {
+    #[inline]
+    fn eq(&self, o: &Self) -> bool {
+        self.0 == o.0
+    }
+}
+impl<S> PartialOrd for Qty<S> {
+    #[inline]
+    fn partial_cmp(&self, o: &Self) -> Option<core::cmp::Ordering> {
+        self.0.partial_cmp(&o.0)
+    }
+}
+
+impl<S> Qty<S> {
+    pub const ZERO: Qty<S> = Qty(0.0, core::marker::PhantomData);
+
+    /// Write it as a plain amount.
+    #[inline]
+    pub const fn kilotons(self) -> f64 {
+        self.0
+    }
+
+    /// **Reinterpret the same amount on another ladder.**
+    ///
+    /// A no-op on the bits, because a cost *is* a mass (R-O57) — what changes
+    /// is only which rungs it will be read against. Explicit so that the one
+    /// place the two ladders meet is visible rather than inferred.
+    #[inline]
+    pub const fn on_scale<T>(self) -> Qty<T> {
+        Qty(self.0, core::marker::PhantomData)
+    }
+
+    #[inline]
+    pub fn min(self, o: Self) -> Self {
+        Qty(self.0.min(o.0), core::marker::PhantomData)
+    }
+    #[inline]
+    pub fn max(self, o: Self) -> Self {
+        Qty(self.0.max(o.0), core::marker::PhantomData)
+    }
+    #[inline]
+    pub fn clamp(self, lo: Self, hi: Self) -> Self {
+        Qty(self.0.clamp(lo.0, hi.0), core::marker::PhantomData)
+    }
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.0.is_finite()
+    }
+    #[inline]
+    pub fn abs(self) -> Self {
+        Qty(self.0.abs(), core::marker::PhantomData)
+    }
+}
+
+impl<S: Scale> Qty<S> {
+    /// Write it as a plain amount. `const` so a config constant can be one.
+    #[inline]
+    pub const fn new(v: f64) -> Self {
+        Qty(v, core::marker::PhantomData)
+    }
+
+    /// The magnitude at whole rung `n`, `n` indexed like [`BandTier::index`]
+    /// with `Empty = 0`. Saturates at `IV`.
+    #[inline]
+    pub fn rung(n: usize) -> f64 {
+        match n {
+            0 => S::BAND_I / S::STEPS[0],
+            1 => S::BAND_I,
+            2 => S::BAND_I * S::STEPS[1],
+            3 => S::BAND_I * S::STEPS[1] * S::STEPS[2],
+            _ => S::BAND_I * S::STEPS[1] * S::STEPS[2] * S::STEPS[3],
+        }
+    }
+
+    /// **Write it as a rung plus a fraction of the way to the next** — the
+    /// other half of the "either representation" contract.
+    ///
+    /// `fraction` is the position *within* the rung, in `[0, 1)`; it is a
+    /// position on a log scale, so `0.5` is the geometric midpoint of the
+    /// segment, not its arithmetic one.
+    #[inline]
+    pub fn at(tier: BandTier, fraction: f64) -> Self {
+        Self::at_band(Band(tier.index() as f64 + fraction))
+    }
+
+    /// Write it as a whole rung.
+    #[inline]
+    pub fn at_tier(tier: BandTier) -> Self {
+        Self::at_band(tier.band())
+    }
+
+    /// Write it as a continuous ladder position.
+    ///
+    /// Exact and **unclamped**: the growth step conserves mass across this map,
+    /// so a clamp here is mass appearing or vanishing at the clamp. Positions
+    /// off either end extrapolate with the nearest segment's factor.
+    #[inline]
+    pub fn at_band(b: Band) -> Self {
+        let n = if b.0 < 0.0 {
+            0.0
+        } else if b.0 >= 3.0 {
+            3.0
+        } else {
+            b.0.floor()
+        };
+        Qty(Self::rung(n as usize) * S::STEPS[n as usize].powf(b.0 - n), core::marker::PhantomData)
+    }
+
+    /// **Read it as a ladder position.**
+    ///
+    /// Floors at [`BAND_FLOOR`]: `band(m)` diverges as `m → 0`, and a
+    /// non-finite value in replicated state is a fatal error rather than a
+    /// number (design law #16). That is a statement about the *ladder*, not a
+    /// claim that such an amount is zero — the amount is still there in the
+    /// kilotons, which is why storage is never the reading.
+    #[inline]
+    pub fn band(self) -> Band {
+        if self.0 <= 0.0 {
+            return Band(BAND_FLOOR);
+        }
+        let mut n = 0usize;
+        while n < 3 && self.0 >= Self::rung(n + 1) {
+            n += 1;
+        }
+        Band((n as f64 + (self.0 / Self::rung(n)).ln() / S::STEPS[n].ln()).max(BAND_FLOOR))
+    }
+
+    /// Read it as the rung it has reached.
+    #[inline]
+    pub fn tier(self) -> BandTier {
+        BandTier::containing(self.band())
+    }
+
+    /// Read how far it stands into its rung, in `[0, 1)`.
+    #[inline]
+    pub fn fraction(self) -> f64 {
+        let b = self.band().0;
+        b - b.floor()
+    }
+}
+
+impl<S: Scale> fmt::Display for Qty<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.4} kt ({} +{:.3})", self.0, self.tier(), self.fraction())
+    }
+}
+
+impl<S> fmt::Debug for Qty<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Qty({})", self.0)
+    }
+}
 
 /// A length, in **hull units** — the shell model's linear measure
 /// (`Hyades_mineral_cost_curve.md` §2.3).
@@ -638,35 +865,6 @@ impl Band {
     }
 }
 
-impl Kilotons {
-    pub const ZERO: Kilotons = Kilotons(0.0);
-    #[inline]
-    pub const fn new(v: f64) -> Self {
-        Kilotons(v)
-    }
-    /// The scalar, **in kilotons**.
-    #[inline]
-    pub const fn kilotons(self) -> f64 {
-        self.0
-    }
-    #[inline]
-    pub fn min(self, o: Kilotons) -> Kilotons {
-        Kilotons(self.0.min(o.0))
-    }
-    #[inline]
-    pub fn max(self, o: Kilotons) -> Kilotons {
-        Kilotons(self.0.max(o.0))
-    }
-    #[inline]
-    pub fn clamp(self, lo: Kilotons, hi: Kilotons) -> Kilotons {
-        Kilotons(self.0.clamp(lo.0, hi.0))
-    }
-    #[inline]
-    pub fn is_finite(self) -> bool {
-        self.0.is_finite()
-    }
-}
-
 impl Measure for Band {
     #[inline]
     fn in_bands(self) -> Band {
@@ -677,22 +875,14 @@ impl Measure for Band {
     /// vanishing at the clamp.
     #[inline]
     fn in_kilotons(self) -> Kilotons {
-        let (n, step) = segment(self.0);
-        Kilotons(rung_mass(n as usize) * step.powf(self.0 - n))
+        Kilotons::at_band(self)
     }
 }
 
 impl Measure for Kilotons {
     #[inline]
     fn in_bands(self) -> Band {
-        if self.0 <= 0.0 {
-            return Band(BAND_FLOOR);
-        }
-        let mut n = 0usize;
-        while n < 3 && self.0 >= rung_mass(n + 1) {
-            n += 1;
-        }
-        Band((n as f64 + (self.0 / rung_mass(n)).ln() / MASS_LADDER[n].ln()).max(BAND_FLOOR))
+        self.band()
     }
     #[inline]
     fn in_kilotons(self) -> Kilotons {
@@ -726,6 +916,82 @@ pub fn population_at_mass(mass: Kilotons) -> Band {
         Band::ZERO
     } else {
         mass.in_bands()
+    }
+}
+
+/// **Arithmetic is on the kilotons, always.**
+///
+/// Every logistic, price and conservation check in the engine runs here, on
+/// one `f64`, in one instruction — which is the whole reason storage is the
+/// mass. Nothing in these operators touches a ladder, so nothing here can cost
+/// a `ln` or a `powf`, and two terms written at opposite ends of the contract
+/// (one as kilotons, one as a rung) add exactly as if both had been written
+/// the same way.
+///
+/// The scale rides along on the type, so a mass and a price cannot be summed
+/// by accident. When they genuinely should be — a recycled hull's minerals
+/// becoming a colony's infrastructure — [`Qty::on_scale`] says so out loud.
+impl<S> Add for Qty<S> {
+    type Output = Qty<S>;
+    #[inline]
+    fn add(self, o: Self) -> Self {
+        Qty(self.0 + o.0, core::marker::PhantomData)
+    }
+}
+impl<S> Sub for Qty<S> {
+    type Output = Qty<S>;
+    #[inline]
+    fn sub(self, o: Self) -> Self {
+        Qty(self.0 - o.0, core::marker::PhantomData)
+    }
+}
+impl<S> Neg for Qty<S> {
+    type Output = Qty<S>;
+    #[inline]
+    fn neg(self) -> Self {
+        Qty(-self.0, core::marker::PhantomData)
+    }
+}
+impl<S> AddAssign for Qty<S> {
+    #[inline]
+    fn add_assign(&mut self, o: Self) {
+        self.0 += o.0;
+    }
+}
+impl<S> SubAssign for Qty<S> {
+    #[inline]
+    fn sub_assign(&mut self, o: Self) {
+        self.0 -= o.0;
+    }
+}
+impl<S> Mul<f64> for Qty<S> {
+    type Output = Qty<S>;
+    #[inline]
+    fn mul(self, k: f64) -> Self {
+        Qty(self.0 * k, core::marker::PhantomData)
+    }
+}
+impl<S> Mul<Qty<S>> for f64 {
+    type Output = Qty<S>;
+    #[inline]
+    fn mul(self, q: Qty<S>) -> Qty<S> {
+        Qty(self * q.0, core::marker::PhantomData)
+    }
+}
+impl<S> Div<f64> for Qty<S> {
+    type Output = Qty<S>;
+    #[inline]
+    fn div(self, k: f64) -> Self {
+        Qty(self.0 / k, core::marker::PhantomData)
+    }
+}
+/// A ratio of two amounts on the same ladder is a pure number — how many of
+/// one the other is, which is the only sanctioned way out of the type.
+impl<S> Div<Qty<S>> for Qty<S> {
+    type Output = f64;
+    #[inline]
+    fn div(self, o: Self) -> f64 {
+        self.0 / o.0
     }
 }
 
@@ -766,7 +1032,6 @@ macro_rules! arith {
         }
     };
 }
-arith!(Kilotons);
 arith!(Length);
 arith!(Area);
 arith!(Volume);
@@ -808,15 +1073,237 @@ impl fmt::Display for Volume {
         write!(f, "{:.4} hu³", self.0)
     }
 }
-impl fmt::Display for Kilotons {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.3} kt", self.0)
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **One metric tonne is the contract.** Every assertion in this module
+    /// that compares two amounts uses it, and it is an *absolute* tolerance on
+    /// the kilotons rather than a relative one — a relative bound would be
+    /// vacuously easy at `Band IV`, where one tonne is 1.4e-9 of the value,
+    /// and vacuously hard at the floor.
+    const ONE_TONNE: f64 = 0.001;
+
+    /// A spread of positions covering every segment, both sentinel ends, and
+    /// the joins — the places a piecewise ladder can develop a step.
+    const POSITIONS: [f64; 17] =
+        [-0.5, 0.0, 0.25, 0.5, 0.75, 0.999, 1.0, 1.5, 1.999, 2.0, 2.5, 3.0, 3.5, 3.999, 4.0, 4.5, 5.0];
+
+    fn close(a: f64, b: f64, what: &str) {
+        assert!((a - b).abs() <= ONE_TONNE, "{what}: {a} vs {b} differs by more than a tonne");
+    }
+
+    /// **The two ways of writing an amount are the same amount** — the whole
+    /// contract of the type, and the reason arithmetic never has to ask which
+    /// end a term came from.
+    ///
+    /// Checked on both ladders, because the ladder rides on the type and a
+    /// scale that got its rungs wrong would still round-trip against itself.
+    #[test]
+    fn either_representation_writes_the_same_amount() {
+        fn check<S: Scale>() {
+            for &b in &POSITIONS {
+                let by_band = Qty::<S>::at_band(Band::new(b));
+                let by_kt = Qty::<S>::new(by_band.kilotons());
+                assert_eq!(by_band, by_kt, "{}: writing the kilotons back must be the same bits", S::NAME);
+
+                // ...and the rung-plus-fraction form is the same again, for
+                // every position the ladder actually names.
+                if (0.0..5.0).contains(&b) {
+                    let split = Qty::<S>::at(by_band.tier(), by_band.fraction());
+                    close(split.kilotons(), by_band.kilotons(), S::NAME);
+                }
+            }
+        }
+        check::<Mass>();
+        check::<Cost>();
+    }
+
+    /// The ladder is invertible to within a tonne **at or above its floor**,
+    /// and deliberately not below it — which is the sharper half of the claim.
+    ///
+    /// `band(m)` diverges as `m → 0`, so the reading clamps at [`BAND_FLOOR`]
+    /// (design law #16). An amount beneath the floor therefore reads the floor
+    /// and would *write back larger than it is*. That is exactly why storage is
+    /// the mass and never the reading: the kilotons of such an amount are
+    /// untouched and exact, and only the shorthand runs out of rungs.
+    ///
+    /// This is checked on both ladders because the floors sit at different
+    /// masses — 0.001 kt and 0.02 minerals — and the mass ladder happens to
+    /// squeak inside a tonne at its floor while the cost ladder does not. A
+    /// test that only ran on `Mass` would have called the clamp a round trip.
+    #[test]
+    fn the_ladder_round_trips_above_its_floor_and_clamps_below_it() {
+        fn check<S: Scale>() {
+            for &b in &POSITIONS {
+                let q = Qty::<S>::at_band(Band::new(b));
+                if b >= BAND_FLOOR {
+                    close(Qty::<S>::at_band(q.band()).kilotons(), q.kilotons(), S::NAME);
+                } else {
+                    assert_eq!(q.band(), Band::new(BAND_FLOOR), "{}: below the floor must read the floor", S::NAME);
+                    assert!(q.kilotons() < Qty::<S>::rung(0), "{}: and still hold its true amount", S::NAME);
+                }
+            }
+            // And from the other end: an amount written as kilotons reads a
+            // position that writes the same amount back, once it is on the
+            // ladder at all.
+            let floor = Qty::<S>::rung(0);
+            for k in [1.0, 2.7, 50.0, 316.0, 2_828.0, 100_000.0, 715_541.0] {
+                let m = floor * k;
+                close(Qty::<S>::at_band(Qty::<S>::new(m).band()).kilotons(), m, S::NAME);
+            }
+        }
+        check::<Mass>();
+        check::<Cost>();
+    }
+
+    /// **Every operator agrees with the bare `f64` it is standing in for**, and
+    /// agrees whichever way each operand was written. This is the "commutes
+    /// regardless of representation" requirement made checkable: the left
+    /// operand is written as a rung, the right as kilotons, and the answer must
+    /// match doing it in plain `f64` throughout.
+    #[test]
+    fn operators_match_bare_f64_across_both_representations() {
+        for &ba in &POSITIONS {
+            for &bb in &POSITIONS {
+                let a = Kilotons::at_band(Band::new(ba));
+                let b_kt = Kilotons::at_band(Band::new(bb)).kilotons();
+                let b = Kilotons::new(b_kt);
+                let (x, y) = (a.kilotons(), b_kt);
+
+                close((a + b).kilotons(), x + y, "add");
+                close((b + a).kilotons(), x + y, "add commutes");
+                close((a - b).kilotons(), x - y, "sub");
+                close((-a).kilotons(), -x, "neg");
+                close((a * 3.5).kilotons(), x * 3.5, "scale");
+                close((3.5 * a).kilotons(), x * 3.5, "scale commutes");
+                close((a / 3.5).kilotons(), x / 3.5, "divide by a scalar");
+                close(a.min(b).kilotons(), x.min(y), "min");
+                close(a.max(b).kilotons(), x.max(y), "max");
+                assert_eq!(a > b, x > y, "ordering must be the ordering of the amounts");
+
+                if y != 0.0 {
+                    let ratio = a / b;
+                    assert!((ratio - x / y).abs() <= 1e-9 * (x / y).abs().max(1.0), "ratio: {ratio} vs {}", x / y);
+                }
+
+                let mut acc = a;
+                acc += b;
+                close(acc.kilotons(), x + y, "add-assign");
+                acc -= b;
+                close(acc.kilotons(), x, "sub-assign round trips");
+            }
+        }
+    }
+
+    /// A long accumulation must not drift. Two hundred thousand alternating
+    /// deposits and withdrawals, half written as rungs and half as kilotons,
+    /// must land back within a tonne of where they started — which is the
+    /// conservation claim (L6) stated as an arithmetic one.
+    #[test]
+    fn a_long_mixed_accumulation_does_not_drift() {
+        let mut acc = Kilotons::at_tier(BandTier::II);
+        let start = acc;
+        for i in 0..100_000 {
+            let step = if i % 2 == 0 {
+                Kilotons::at(BandTier::Empty, (i % 997) as f64 / 997.0)
+            } else {
+                Kilotons::new(0.0173 * ((i % 31) as f64))
+            };
+            acc += step;
+            acc -= step;
+        }
+        close(acc.kilotons(), start.kilotons(), "a round trip per iteration must not drift");
+    }
+
+    /// **The wrapper is the `f64`.** Layout parity is the exact form of the
+    /// O(1) claim, and it is worth more than a timing run: `#[repr(transparent)]`
+    /// over one `f64` with a zero-sized marker means a `Qty` is passed in a
+    /// register, stored in a slice with the same stride, and auto-vectorised by
+    /// the same codegen. A timing test can be noisy; this cannot.
+    #[test]
+    fn a_quantity_is_laid_out_exactly_as_the_f64_it_wraps() {
+        use core::mem::{align_of, size_of};
+        assert_eq!(size_of::<Kilotons>(), size_of::<f64>());
+        assert_eq!(align_of::<Kilotons>(), align_of::<f64>());
+        assert_eq!(size_of::<Qty<Cost>>(), size_of::<f64>());
+        // The ladder tag is carried by the type, so it costs no space at all —
+        // which is what makes "the type carries which ladder" affordable.
+        assert_eq!(size_of::<Mass>(), 0);
+        assert_eq!(size_of::<Cost>(), 0);
+        // And a slice of them has the stride of a slice of `f64`, which is what
+        // vectorisation actually needs.
+        assert_eq!(size_of::<[Kilotons; 8]>(), size_of::<[f64; 8]>());
+    }
+
+    /// **Arithmetic runs at bare-`f64` speed**, measured rather than asserted.
+    ///
+    /// Sized to a fraction of a second so it fits the 60-second rule; the
+    /// five-second version is `examples/qty_bench`. The bound is deliberately
+    /// loose — this is a regression guard against something turning an operator
+    /// into a `ln`, not a microbenchmark — and it only *reports* on a run that
+    /// looks like it was descheduled rather than failing the suite for it.
+    #[test]
+    fn arithmetic_costs_what_an_f64_costs() {
+        const N: usize = 4_000_000;
+        let (raw, wrapped) = bench_pair(N);
+        let ratio = wrapped / raw;
+        println!("qty/f64 = {ratio:.3}  (raw {raw:.4}s, wrapped {wrapped:.4}s)");
+        assert!(
+            ratio < 4.0,
+            "wrapping an f64 must not change the cost of arithmetic: {ratio:.2}x \
+             ({raw:.4}s raw vs {wrapped:.4}s wrapped). A ratio this large means an \
+             operator started converting — a `ln` or a `powf` on a path that should \
+             only touch the stored kilotons."
+        );
+    }
+
+    /// The two loops the benchmark times, kept identical line for line so the
+    /// only difference is the type. Returns `(bare f64 seconds, Qty seconds)`.
+    pub(crate) fn bench_pair(n: usize) -> (f64, f64) {
+        use std::time::Instant;
+
+        let t = Instant::now();
+        let mut a = 1.0f64;
+        for i in 0..n {
+            let step = 0.5 + (i % 17) as f64;
+            a = ((a + step) * 0.999 - step * 0.5).clamp(-1e12, 1e12);
+        }
+        let raw = t.elapsed().as_secs_f64();
+
+        let t = Instant::now();
+        let mut b = Kilotons::new(1.0);
+        for i in 0..n {
+            let step = Kilotons::new(0.5 + (i % 17) as f64);
+            b = ((b + step) * 0.999 - step * 0.5).clamp(Kilotons::new(-1e12), Kilotons::new(1e12));
+        }
+        let wrapped = t.elapsed().as_secs_f64();
+
+        // Consume both so neither loop can be optimised away entirely.
+        assert!((a - b.kilotons()).abs() < 1e-6, "the two loops must compute the same thing");
+        (raw, wrapped)
+    }
+
+    /// **The two ladders are genuinely different, and the type is what keeps
+    /// them apart.** This is the incompatibility the scan turned up, pinned so
+    /// it cannot be quietly "simplified" back into one ladder: the same number
+    /// of kilotons reads a different rung depending on which ladder it is on,
+    /// because cost tracks area and the hold tracks volume.
+    #[test]
+    fn the_same_amount_reads_a_different_rung_on_each_ladder() {
+        // One General hull: 1.0 kt of minerals, which is its dry mass too
+        // (R-O57). Cost `Band II` by ratification; mass `Band I` by anchor.
+        let general = 1.0;
+        assert_eq!(Qty::<Cost>::new(general).tier(), BandTier::II);
+        assert_eq!(Kilotons::new(general).tier(), BandTier::I);
+        // A Medium hull, the cost ladder's own anchor.
+        assert_eq!(Qty::<Cost>::new(0.1).tier(), BandTier::I);
+        assert!(Kilotons::new(0.1).band() < BandTier::I.band());
+        // Crossing is explicit and costs nothing — same bits, new rungs.
+        let price = Qty::<Cost>::new(general);
+        assert_eq!(price.on_scale::<Mass>().kilotons(), price.kilotons());
+    }
 
     /// The bridge must be the *ladder*, not a linear rescale — a linear bridge
     /// would silently contradict `Hyades_mineral_cost_curve.md` §2.6, which is
