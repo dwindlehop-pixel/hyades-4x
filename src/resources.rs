@@ -11,6 +11,8 @@
 //! colonization/growth autopilot; supers and apex are carried here so the same
 //! types serve the later production/synthesis autopilots without a rewrite.
 
+use crate::units::{Band, Kilotons, Measure};
+
 /// Tier-1 basic minerals (the CMY primaries). Mined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Basic {
@@ -85,6 +87,22 @@ impl Archetype {
 
 /// Per-planet **density** of each tier-1 basic (the mineable field, §4.3). Not a
 /// stockpile — a rate-determining ground truth a close scan reveals.
+///
+/// **One number per colour: the ore in the ground, in kilotons.** A Band is a
+/// *reading* of that number — a log shorthand for talking about it — never a
+/// second thing to store, and this field stores no Bands. That matters here
+/// because the field **depletes**: hold a Band and write it back after each
+/// extraction and ore vanishes at the bottom of the ladder, since the reading
+/// floors at [`BAND_FLOOR`](crate::units::BAND_FLOOR). Measured on the first
+/// attempt: three miners took 4.20× what one took instead of 3.00×. Mass is
+/// conserved (L6), so the stored quantity is the mass.
+///
+/// **What T-62 changed is the distribution, not the storage.** The concentric
+/// 2-D Gaussian of §4.3 is over the *Band* — that is the design statement, and
+/// it makes the field log-normal in kilotons. A `Band IV` seam holds ~715,000×
+/// a `Band I` one where the old linear reading made it 4×, which is the
+/// concentration the design asks for: a handful of extraordinary worlds sitting
+/// next to each other, not a gentle spread.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct MineralField {
     pub cyan: f64,
@@ -94,16 +112,17 @@ pub struct MineralField {
 
 impl MineralField {
     #[inline]
-    pub fn get(&self, b: Basic) -> f64 {
-        match b {
+    pub fn get(&self, b: Basic) -> Kilotons {
+        Kilotons::new(match b {
             Basic::Cyan => self.cyan,
             Basic::Magenta => self.magenta,
             Basic::Yellow => self.yellow,
-        }
+        })
     }
 
     #[inline]
-    pub fn set(&mut self, b: Basic, v: f64) {
+    pub fn set(&mut self, b: Basic, v: Kilotons) {
+        let v = v.kilotons();
         match b {
             Basic::Cyan => self.cyan = v,
             Basic::Magenta => self.magenta = v,
@@ -111,20 +130,36 @@ impl MineralField {
         }
     }
 
-    /// Total tier-1 abundance — the planet's "metallicity" for the
-    /// habitability↔metallicity anticorrelation (§4.4).
+    /// Total tier-1 ore in the ground, as a **mass**. The sum is meaningful
+    /// precisely because these are kilotons; the same sum over Band positions
+    /// would not be a quantity at all.
     #[inline]
-    pub fn metallicity(&self) -> f64 {
-        self.cyan + self.magenta + self.yellow
+    pub fn total_mass(&self) -> Kilotons {
+        Kilotons::new(self.cyan + self.magenta + self.yellow)
     }
 
-    /// Extract up to `amount` total minerals, **depleting** the field (density
-    /// falls as minerals are mined out). Draws from each colour in proportion to
-    /// its remaining density and returns what was actually extracted as a cargo
-    /// bank. A field mines out toward zero and then yields nothing.
-    pub fn extract(&mut self, amount: f64) -> Minerals {
-        let total = self.metallicity();
-        let take = amount.min(total).max(0.0);
+    /// The field's richness **read back onto the ladder** — a classification of
+    /// how good this world is, on the same `0..4` scale as `habitability` and
+    /// `biosphere`, and therefore the right thing for a threshold to compare
+    /// against.
+    ///
+    /// Every consumer that asks "is this world rich?" wants this; every
+    /// consumer that asks "how much ore comes out?" wants
+    /// [`total_mass`](Self::total_mass). Same number, two readings — but since
+    /// T-62 the readings differ by five orders of magnitude across the field,
+    /// so which one a call site means is no longer a matter of taste.
+    #[inline]
+    pub fn abundance(&self) -> Band {
+        self.total_mass().in_bands()
+    }
+
+    /// Extract up to `amount` of ore, **depleting** the field (density falls as
+    /// minerals are mined out). Draws from each colour in proportion to its
+    /// remaining mass and returns what was actually extracted as a cargo bank.
+    /// A field mines out toward zero and then yields nothing.
+    pub fn extract(&mut self, amount: Kilotons) -> Minerals {
+        let total = self.total_mass().kilotons();
+        let take = amount.kilotons().min(total).max(0.0);
         let mut out = Minerals::default();
         if total <= 0.0 || take <= 0.0 {
             return out;

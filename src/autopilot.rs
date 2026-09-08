@@ -21,9 +21,9 @@
 use crate::cards::Order;
 use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
-use crate::resources::MineralField;
+use crate::resources::{Basic, MineralField};
 use crate::sim::{Class, HullType, Role};
-use crate::units::{Band, BandTier};
+use crate::units::{Band, BandTier, Measure};
 
 /// Which of the two cheap classes the colony pipeline reaches for first
 /// (autopilot-doc §4; R-AC1 / R-A1). Default is production-centers-first.
@@ -556,7 +556,13 @@ impl Autopilot for BaselineAutopilot {
         // mineral_value: scarcity-weighted tier-1 density (§3), inflated by the
         // empire's *live* mineral pressure so mining is valued when we're short.
         let m = &view.minerals;
-        let base_mineral = ctx.scarcity[0] * m.cyan + ctx.scarcity[1] * m.magenta + ctx.scarcity[2] * m.yellow;
+        // A scarcity-weighted **score** over the three Band readings, not a sum
+        // of quantities — the readings are taken explicitly (`.bands()`) for
+        // the same reason `hub_value` does: weights carry the units. Summing
+        // the *masses* would be a different question (how much ore is here),
+        // and `MineralField::total_mass` answers that one.
+        let base_mineral =
+            Basic::ALL.iter().zip(ctx.scarcity.iter()).map(|(&b, w)| w * m.get(b).in_bands().bands()).sum::<f64>();
         let mineral_value = base_mineral * (1.0 + w.mineral_pressure_gain * ctx.mineral_pressure);
 
         // hub_value: high-K worlds near the empire's centre of mass are hubs.
@@ -940,7 +946,11 @@ mod tests {
             Vec3::new(10.0, 0.0, 0.0),
             0.4, // low habitability
             0.4,
-            MineralField { cyan: 3.0, magenta: 0.5, yellow: 0.2 },
+            MineralField {
+                cyan: Band::new(3.0).in_kilotons().kilotons(),
+                magenta: Band::new(0.5).in_kilotons().kilotons(),
+                yellow: Band::new(0.2).in_kilotons().kilotons(),
+            },
         );
         assert_eq!(ap.rank(&doctrine, &v, &ctx).class, PlanetClass::MiningOutpost);
     }

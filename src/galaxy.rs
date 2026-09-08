@@ -63,7 +63,7 @@
 use crate::math::Vec3;
 use crate::resources::{Archetype, Basic, MineralField};
 use crate::rng::Rng;
-use crate::units::{Band, BandTier};
+use crate::units::{Band, BandTier, Measure};
 
 /// `Γ(4/3)`, the mean-scaling constant for a Weibull(k=3) distribution — see
 /// [`GalaxyConfig::derived_planet_count`]. `Γ(4/3) = (1/3)Γ(1/3)`.
@@ -560,19 +560,54 @@ impl Galaxy {
             // same flattened shape as the star field itself.
             let z_decay = (-(position.z.abs()) / z_scale).exp();
             let mut minerals = MineralField::default();
+            let mut band_sum = 0.0;
             for b in Basic::ALL {
                 let h = hotspots.get(b);
                 let dx = position.x - h.x;
                 let dy = position.y - h.y;
                 let r2 = dx * dx + dy * dy;
                 let g = (-r2 / (2.0 * hotspot_sigma * hotspot_sigma)).exp();
-                // light multiplicative noise so the field isn't perfectly smooth
-                let noise = (1.0 + 0.25 * prng.gaussian()).max(0.0);
-                minerals.set(b, config.mineral_peak * g * z_decay * noise);
+                // **The Gaussian is over Bands (T-62).** Density is a position
+                // on the ladder, so the field is log-normal in mass: a
+                // `Band IV` seam holds ~715,000× a `Band I` one, where the old
+                // linear reading made it 4×. That concentration — a handful of
+                // extraordinary worlds sitting next to each other — is the
+                // design requirement the smooth 0..4 spread could not express.
+                //
+                // Noise is **additive on the Band**, which is the natural
+                // wobble for a log-normal field: it is multiplicative in mass.
+                // Multiplying the Band instead would put the noise in the
+                // exponent. The amplitude is now a *Band* amplitude and is
+                // therefore wider than the old `1 + 0.25·N` on density —
+                // 0.25 Bands is a factor of ~2.4 in mass on the I→II segment —
+                // which is the whole of T-62's residual effect on habitability
+                // (§4.4 reads the mean Band, so the representation change
+                // itself is neutral there).
+                let noise = 0.25 * prng.gaussian();
+                let band = (config.mineral_peak * g * z_decay + noise).clamp(0.0, config.mineral_peak);
+                band_sum += band;
+                minerals.set(b, Band::new(band).in_kilotons());
             }
 
-            // §4.4 anticorrelation: normalize metallicity, depress habitability.
-            let norm_met = (minerals.metallicity() / (3.0 * config.mineral_peak)).clamp(0.0, 1.0);
+            // §4.4 anticorrelation: normalize richness, depress habitability.
+            //
+            // **The reading is the mean Band, not the Band of the total mass**
+            // — i.e. the *geometric* mean of the three colours rather than the
+            // arithmetic one. Both are legitimate classifications and they are
+            // wildly different on a log ladder: the total-mass reading is
+            // dominated by whichever colour is richest, so a world at
+            // `(II, I, Empty)` reads ~`II` instead of ~`I`, and at
+            // `anticorrelation = 0.6` that is a whole extra Band of
+            // habitability burned off every such world. Measured: routing
+            // §4.4 through the total cost **−52% colony-years** on seed 1
+            // (10,105,286 → 4,845,144), all of it habitability the galaxy
+            // never had.
+            //
+            // The mean Band is also the reading that *survives* T-62 — it is
+            // the same expression the old linear one computed, over the same
+            // per-colour numbers — so what remains of the habitability shift
+            // is the noise model (below), not the distribution.
+            let norm_met = (band_sum / (3.0 * config.mineral_peak)).clamp(0.0, 1.0);
             let habitability =
                 (4.0 * (1.0 - config.anticorrelation * norm_met) + 0.4 * prng.gaussian()).clamp(0.0, 4.0);
             // biosphere tracks habitability with its own spread.
@@ -607,9 +642,9 @@ impl Galaxy {
             // super-aligned, bounded exception to anticorrelation: habitable AND
             // modestly mineralized in two colors (R-G4).
             let mut minerals = MineralField::default();
-            minerals.set(rich_a, config.homeworld_rich_density);
-            minerals.set(rich_b, config.homeworld_rich_density);
-            minerals.set(poor, config.homeworld_poor_density);
+            minerals.set(rich_a, Band::new(config.homeworld_rich_density).in_kilotons());
+            minerals.set(rich_b, Band::new(config.homeworld_rich_density).in_kilotons());
+            minerals.set(poor, Band::new(config.homeworld_poor_density).in_kilotons());
 
             let id = PlanetId(planets.len() as u32);
             planets.push(Planet {
@@ -742,12 +777,12 @@ mod tests {
         // lower mean habitability than those below (the §4.4 rule).
         let g = Galaxy::generate(GalaxyConfig::new(6, 2024)).unwrap();
         let wild: Vec<&Planet> = g.planets.iter().filter(|p| !p.is_homeworld).collect();
-        let mut mets: Vec<f64> = wild.iter().map(|p| p.minerals.metallicity()).collect();
+        let mut mets: Vec<f64> = wild.iter().map(|p| p.minerals.abundance().bands()).collect();
         mets.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let median = mets[mets.len() / 2];
         let (mut hi_sum, mut hi_n, mut lo_sum, mut lo_n) = (0.0, 0, 0.0, 0);
         for p in &wild {
-            if p.minerals.metallicity() >= median {
+            if p.minerals.abundance().bands() >= median {
                 hi_sum += p.habitability.bands();
                 hi_n += 1;
             } else {

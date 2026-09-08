@@ -2211,7 +2211,7 @@ impl Simulation {
             // trips for the rest of the match: measured on seed 1, **not one
             // freighter of 2,655 ever reached this branch.** Same test, same
             // verdict, and the hull becomes re-taskable when its rock dies.
-            let dens = self.world.density.get(sh.outpost).unwrap().metallicity();
+            let dens = self.world.density.get(sh.outpost).unwrap().total_mass().kilotons();
             if load <= 1e-9 && dens * self.config.outpost_mining_fraction <= self.config.density_floor {
                 let here = self.position_at(sh.outpost, self.clock).unwrap();
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
@@ -2351,15 +2351,17 @@ impl Simulation {
         for (player, crew) in crews {
             let amt = {
                 let d = self.world.density.get(outpost).unwrap();
-                d.metallicity() * (crew.max(1) as f64 * self.config.outpost_mining_fraction).min(1.0)
+                // A fraction of the ore actually present — a **mass**, since
+                // T-62 made the field's colours Bands and only their masses add.
+                d.total_mass().kilotons() * (crew.max(1) as f64 * self.config.outpost_mining_fraction).min(1.0)
             };
             if amt <= self.config.density_floor {
                 continue;
             }
             any = true;
-            let extracted = self.world.density.get_mut(outpost).unwrap().extract(amt);
+            let extracted = self.world.density.get_mut(outpost).unwrap().extract(Kilotons::new(amt));
             self.outpost_stock.entry((player, outpost.0)).or_default().add_basics(&extracted);
-            let density_after = self.world.density.get(outpost).unwrap().metallicity();
+            let density_after = self.world.density.get(outpost).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
                 LogEvent::MineralsExtracted { planet: pid, amount: extracted.basic_total(), density_after },
@@ -2405,12 +2407,12 @@ impl Simulation {
         // 1) Local mining: the center works its own density into its stockpile.
         let amt = {
             let d = self.world.density.get(center).unwrap();
-            d.metallicity() * self.config.center_mining_fraction
+            d.total_mass().kilotons() * self.config.center_mining_fraction
         };
         if amt > 0.0 {
-            let extracted = self.world.density.get_mut(center).unwrap().extract(amt);
+            let extracted = self.world.density.get_mut(center).unwrap().extract(Kilotons::new(amt));
             self.world.stockpile.get_mut(center).unwrap().add_basics(&extracted);
-            let density_after = self.world.density.get(center).unwrap().metallicity();
+            let density_after = self.world.density.get(center).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
                 LogEvent::MineralsExtracted { planet: center_pid, amount: extracted.basic_total(), density_after },
@@ -3849,12 +3851,12 @@ mod tests {
         // must fall over the game.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 11)).unwrap();
         let hw = galaxy.homeworlds[0];
-        let before = galaxy.planet(hw).minerals.metallicity();
+        let before = galaxy.planet(hw).minerals.total_mass().kilotons();
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
         sim.run();
         let after = {
             let e = sim.planet_entity[hw.0 as usize];
-            sim.world.density.get(e).unwrap().metallicity()
+            sim.world.density.get(e).unwrap().total_mass().kilotons()
         };
         assert!(after < before, "density did not deplete: {before} -> {after}");
     }
@@ -4330,13 +4332,13 @@ mod tests {
         let extracted = |crew: usize| {
             let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
             let outpost = sim.planet_entity[10];
-            let before = sim.world.density.get(outpost).unwrap().metallicity();
+            let before = sim.world.density.get(outpost).unwrap().total_mass().kilotons();
             // A crew is just entities on the books; what they extract is what
             // this test is about, so they need no voyage.
             let hulls: Vec<Entity> = (0..crew).map(|_| sim.world.spawn()).collect();
             sim.mine_crew.insert((0, outpost.0), hulls);
             sim.sys_mining_tick(outpost);
-            before - sim.world.density.get(outpost).unwrap().metallicity()
+            before - sim.world.density.get(outpost).unwrap().total_mass().kilotons()
         };
 
         let one = extracted(1);
@@ -4862,10 +4864,13 @@ mod tests {
         let dead_band = cfg.density_floor / cfg.outpost_mining_fraction * 0.9;
         assert!(dead_band > cfg.density_floor, "the test needs a value the old predicate would have called alive");
         {
+            // The field's colours are Bands since T-62, so a target *mass* is
+            // set by reading it back onto the ladder rather than assigned.
+            let each = Kilotons::new(dead_band / 3.0);
             let d = sim.world.density.get_mut(outpost).unwrap();
-            d.cyan = dead_band / 3.0;
-            d.magenta = dead_band / 3.0;
-            d.yellow = dead_band / 3.0;
+            for b in Basic::ALL {
+                d.set(b, each);
+            }
         }
         *sim.world.stockpile.get_mut(outpost).unwrap() = Minerals::default();
 
@@ -5004,9 +5009,9 @@ mod tests {
         let outpost = sim.planet_entity[40];
         {
             let mut field = MineralField::default();
-            field.set(Basic::Cyan, 5.0);
-            field.set(Basic::Magenta, 5.0);
-            field.set(Basic::Yellow, 5.0);
+            for b in Basic::ALL {
+                field.set(b, Band::new(5.0).in_kilotons());
+            }
             sim.world.density.insert(outpost, field);
         }
         sim.world.stockpile.insert(outpost, Minerals::default());

@@ -76,11 +76,21 @@ only exception and they are offline, never in CI. Current costs:
 
 | step | cost |
 |---|---|
-| `cargo test --all-targets` (unit + determinism + smoke) | ~48 s |
+| `cargo test --all-targets` (unit + determinism + smoke) | **~200 s — over budget** |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
 | `coverage_trace` | ~19 s |
 | `coverage_time` | ~49 s |
 | `montecarlo` | ~56 s |
+
+**The unit target is currently over the budget and the cause is the mineral
+scale, not the test bed.** Every unit test already pins a 600-year horizon
+(`test_cfg`), which is the sanctioned fix, and it is still 144 s — up from 97 s
+before T-62 and ~6 s before the snowball. Hauling is the mechanism
+(`examples/haul_census`): the Banded mineral field multiplied ore-per-rock by
+three orders of magnitude, and a freighter's hold is a fixed size, so the round
+trips multiply from the first cycle. **Do not respond by trimming the tests** —
+they are already trimmed. It is the same ratification as T-24's floor breach
+(R-O82).
 
 Ratifying the snowball defaults blew every one of these past the budget at once —
 the unit suite alone went 6 s → 315 s — because a default-config run is now a
@@ -803,6 +813,15 @@ changes how you *work*, not what is left to do:
   | shipped defaults, 12 seats, 8 kyr | — | not yet measured | — |
   | post-gradient-step defaults, 3 seats, 4 kyr *(other hardware)* | 11,602 | 148.8 yr/s | 60× |
   | + mining-pair recycling, same run | 10,965 | 142.4 yr/s | 57× |
+  | pre-T-62 bed, 3 seats, 4 kyr *(container)* | 19,406 | 78.7 yr/s | 31× |
+  | **T-62 (Banded mineral field), same run** | 23,227 | **35.0 yr/s** | **14×** |
+
+  **T-62 halved it, and the mechanism is hauling — not vehicles and not mining**
+  (`examples/haul_census`). Vehicles rose 1.20× and extraction ticks 1.02×, but
+  **freighter transfers rose 6.81×** because the log-normal field made the same
+  rocks hold 2,256× the ore and a freighter's hold is a fixed size. Cost is
+  proportional to ore hauled, not to worlds mined. The 12-seat × 8-kyr corner
+  extrapolates to **~1.7 yr/s — under the floor** (T-62/R-O82, unratified).
 
   **The 456 yr/s row is stale in a way worth naming.** It was taken before the
   gradient step raised coverage 38% → 49%, and vehicle count is the first-order
@@ -1015,3 +1034,14 @@ changes how you *work*, not what is left to do:
 - **K is player-relative by design.**
 - Galaxy distribution: XY Poisson (exponential disk profile); Z exponential with Z-max
   matching the XY parameter.
+- **The mineral field is a Gaussian over *Bands*, stored as mass** (T-62). So it is
+  log-normal in kilotons: a `Band IV` seam holds ~715,000× a `Band I` one, which is
+  the design's "very high value planets located near each other" and not a bug. Two
+  traps follow. **There are no barren worlds** — `Band(0).in_kilotons()` is the
+  `Empty` rung, not zero, so the Gaussian's tail floors at a trace rather than
+  decaying to nothing. And **"is this world rich?" has two readings that now differ by
+  more than a Band**: `MineralField::abundance()` (the Band of the *total* mass,
+  dominated by the richest colour) and the per-colour Band sum that
+  `BaselineAutopilot::rank` compares against `mineral_high`. Routing §4.4's
+  anticorrelation through the wrong one cost **−52% colony-years** before it was
+  caught; the correct reading there is the *mean* Band.

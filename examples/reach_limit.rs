@@ -31,7 +31,7 @@ use std::collections::{HashMap, HashSet};
 
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
-use hyades_engine::units::Band;
+use hyades_engine::units::{Band, Measure};
 
 const PLAYERS: usize = 3;
 /// The **standard test bed** — the same four seeds `gradient_probe`,
@@ -109,12 +109,8 @@ fn run(seed: u64) -> Reach {
     // Approximate: `mineral_value` also carries per-seat scarcity (1 or 2) and
     // live mineral pressure, both of which only *raise* it. Unit scarcity and
     // zero pressure therefore give a lower bound on the minable set.
-    let minable: HashSet<PlanetId> = galaxy
-        .planets
-        .iter()
-        .filter(|p| p.minerals.cyan + p.minerals.magenta + p.minerals.yellow >= w.mineral_high)
-        .map(|p| p.id)
-        .collect();
+    let minable: HashSet<PlanetId> =
+        galaxy.planets.iter().filter(|p| mineral_reading(&p.minerals) >= w.mineral_high).map(|p| p.id).collect();
 
     let autopilots: Vec<Box<dyn Autopilot>> =
         (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
@@ -207,10 +203,19 @@ fn ceiling_curve(seed: u64) {
         let minable_below = targets
             .iter()
             .filter(|p| p.habitability.min(p.biosphere) < Band::new(k))
-            .filter(|p| p.minerals.cyan + p.minerals.magenta + p.minerals.yellow >= mineral_high)
+            .filter(|p| mineral_reading(&p.minerals) >= mineral_high)
             .count();
         println!("  {:>8.1}  {:>12}  {:>7.1}%  {:>12}", k, above, pct(above, targets.len()), minable_below);
     }
+}
+
+/// What `BaselineAutopilot::rank` compares against `mineral_high`, at unit
+/// scarcity and zero pressure: the **sum of the three colours' Band readings**,
+/// not the Band of their total mass. The two differ by more than a Band on a
+/// world that is rich in one colour, and it is the per-colour sum the doctrine
+/// threshold was tuned against.
+fn mineral_reading(m: &MineralField) -> f64 {
+    Basic::ALL.iter().map(|&b| m.get(b).in_bands().bands()).sum()
 }
 
 fn pct(n: usize, d: usize) -> f64 {

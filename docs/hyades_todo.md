@@ -384,6 +384,106 @@ become "what does my current Role's System say to build". The dial
 ## Band C — open question with a concrete test
 
 
+### T-62. Mineral generation is Gaussian over **Bands** (R-O81 closed)
+
+**Directed this conversation:** *"I think galaxy generation predates the cleanup
+of Band math. My intent with galaxy generation is that the distribution of
+minerals is concentric 2D Gaussian with a different gradient in Z. The math only
+makes sense if the Bands are distributed in this manner; in kilotons the
+distribution is not normal because of the ladder. The game design requires very
+very high value planets located near each other."*
+
+`galaxy.rs` set each colour to `mineral_peak · g · z_decay · noise` and stored
+that number directly as the density. Every other magnitude in the engine had
+moved onto the ladder by R-O66; this one had not, so the §4.3 Gaussian was over
+kilotons and the field was *linear*. `Band IV` next to `Band I` meant 4× the ore.
+It now means **~715,000×**, and that concentration is the design requirement, not
+a side effect: a handful of extraordinary worlds sitting near each other, with a
+long tail of rocks not worth the freighter.
+
+**One number, stored as the mass.** A Band is a reading of it. The first attempt
+stored Bands in `MineralField` and it destroyed ore: the field *depletes*, and
+writing a depleted mass back as a Band floors it at `BAND_FLOOR`, so anything
+worn below the `Empty` rung became nothing. Measured — three miners extracted
+**4.20×** what one did instead of 3.00×. `MineralField` therefore carries
+kilotons, `total_mass()` and `abundance()` are the two readings of it, and the
+generator does its Gaussian in Band space and converts once.
+
+**The reading §4.4 takes is the mean Band, and getting that wrong cost half the
+game.** Routing the anticorrelation through `abundance()` — the Band of the
+*total* mass — makes the reading track whichever colour is richest, so a world at
+`(II, I, Empty)` reads ~`II` instead of ~`I` and, at `anticorrelation = 0.6`,
+loses a whole extra Band of habitability. Measured: **−52% colony-years** on seed
+1 (10,105,286 → 4,845,144). The mean Band — the geometric mean of the three
+masses — is the same expression the linear code computed, and restores it.
+
+**Cost, on the standard bed: −0.9% colony-years** (seed 1 10,105,286 →
+10,021,989, seed 7 10,037,745 → 9,941,898; colonies 3,435 → 3,340 and
+3,467 → 3,349). The residual is not the distribution, which §4.4 is now blind
+to — it is the **noise model**, which became additive on the Band (a
+multiplicative wobble in mass, the natural one for a log-normal field) and is
+consequently wider than the old `1 + 0.25·N` on density: 0.25 Bands is a factor
+of ~2.4 in mass on the I→II segment.
+
+**It costs 2.17× the wall clock, and the mechanism is hauling — not vehicles,
+and not mining** (`examples/haul_census`, seed 1, 3 seats). The plausible story
+was "there are more vehicles now"; it is wrong by a factor of five.
+
+| | before | after | ratio |
+|---|---|---|---|
+| events | 540,787 | 870,083 | 1.61× |
+| vehicles | 19,406 | 23,227 | 1.20× |
+| extraction ticks | 210,620 | 213,823 | **1.02×** |
+| **freighter transfers** | **20,968** | **142,729** | **6.81×** |
+| ore hauled (kt) | 8,200 | 18,502,131 | **2,256×** |
+| wall | 51.6 s | 112.2 s | 2.17× |
+
+Each rock is worked the same number of times; each working now yields orders of
+magnitude more ore, and a freighter's hold is a fixed size, so the round trips
+multiply. **Cost is proportional to ore hauled, not to worlds mined.**
+
+**This breaches T-24's throughput floor at the far corner, and that needs
+ratifying.** 3 seats / 4 kyr is 35.0 yr/s — 14× the 2.5 yr/s floor — but
+`CLAUDE.md` §7's own scaling (8 kyr costs 5.8× of 4 kyr, 12 seats 3.6× of 3)
+extrapolates 12 seats / 8 kyr to **~1.7 yr/s, under the floor.** The corner has
+never been measured directly, so that is an extrapolation and not a
+measurement, but it is the wrong side of the line.
+
+**R-O82 — what should `mineral_peak` mean now?** It is `4.0` and predates the
+ladder, where it meant "4 units of ore." It now means **Band IV = 715,500 kt**
+on the mass ladder, against a General hull that costs 1.0 kt. So one peak world
+funds ~715,000 General hulls, the bed hauled **2,256×** the ore it used to, and
+**colony-years did not move** — the surplus buys nothing and the freighters
+carrying it are the 2.17×. Left at 4.0 because the directive is explicit that
+the design wants extreme concentration, and lowering the peak is exactly the
+"shrink the scenario" move `CLAUDE.md` §7 forbids as a response to the floor.
+But the *scale* — how rich the richest world is, relative to what a hull
+costs — is a ratification, and the right fix is more likely on the demand side:
+an outpost that schedules a trip per hold-full of a body it can never exhaust
+is hauling ore the empire has no way to spend.
+
+**It also puts the unit test target over the 60-second rule** — 97 s → 144 s,
+and `cargo test --all-targets` to ~200 s. The tests are *already* horizon-pinned
+at 600 yr (`test_cfg`), so `CLAUDE.md` §2's usual fix is spent; the cost is the
+same hauling, arriving from the homeworld's own density in the first cycles.
+Same ratification, second symptom.
+
+**Two further consequences to watch, neither yet measured:**
+
+- **There are no barren worlds any more.** `Band(0).in_kilotons()` is the
+  `Empty` rung, not zero, so the Gaussian's tail floors at ~0.089 kt per
+  colour rather than decaying to nothing. Every rock in the galaxy now carries a
+  trace. That is consistent with `Empty > 0` — the ladder does not name zero —
+  but it is a free-money floor the linear field did not have, and it is a
+  candidate explanation for anything that later looks like a mining surplus.
+- **`mineral_high` reads the per-colour Band sum**, which is what
+  `BaselineAutopilot::rank` computes at unit scarcity, and is *not*
+  `abundance()`. `examples/reach_limit` was corrected to match; anything else
+  that wants "is this world rich?" must pick a reading deliberately, because the
+  two now differ by more than a Band on a single-colour world.
+
+---
+
 ### T-61. The infrastructure ladder is the mineral ladder (R-O80 closed)
 
 **Directed this conversation: "fix `infra_step_price` so it respects Band math.

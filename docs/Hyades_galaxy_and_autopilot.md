@@ -62,11 +62,39 @@ that spec) the two used to share notation with. **No direct substitution.**
 **R-M2:** ratios + wastage — this section owns the ratified values;
 `Hyades_mineral_cost_curve.md` §5.0 only names them.
 
-### 4.3 Tier-1 distribution — 3D field, XY-dominant
+### 4.3 Tier-1 distribution — 3D field, XY-dominant, **Gaussian over Bands** (T-62)
 **Gaussian in X & Y** (each hue's hotspot) **× exponential decay in Z from the midplane**. A turtler mines the **Z-column** for a modest baseline, but the mass sits near Z=0 and one hex captures only its XY footprint, so **the lion's share needs X-Y expansion**. **R-M3:** Z scale-height / ratio.
+
+**The Gaussian is over the *Band*, not over the mass.** That is the design
+statement, and it is the only reading under which the shape means anything: a
+game whose every other magnitude compounds on the ladder cannot have its ore
+spread linearly. The field is therefore **log-normal in kilotons** — a `Band IV`
+seam holds ~715,000× a `Band I` one, where the old linear reading made it 4× —
+which is the concentration the design requires: *a handful of extraordinary
+worlds sitting next to each other*, and a long tail of worlds not worth the
+freighter. Noise is additive on the Band, which is a proportional wobble in mass.
+
+Storage is the mass. A Band is a **reading** of that number, never a second
+thing to store: the field depletes, and a representation that cannot hold small
+masses destroys ore at the bottom of the ladder (measured: three miners took
+4.20× what one took instead of 3.00×). Mass is conserved without exclusions
+(L6).
 
 ### 4.4 Habitability ↔ metallicity, negatively correlated
 Rich-mineral hexes tend **low-habitability**; habitable hexes **metal-poor** → expansion forces a **colony-vs-mine** choice. Homeworlds are the bounded exception (§3). **R-M4:** strength.
+
+**The reading is the world's *mean* Band across the three colours** — the
+geometric mean of the three masses — not the Band of their total. Both are
+legitimate classifications; on a log ladder they are wildly different, because
+the total is dominated by whichever colour is richest. A world at
+`(II, I, Empty)` reads ~`II` under the total and ~`I` under the mean, and at
+`anticorrelation = 0.6` that difference burns a whole extra Band of
+habitability off every such world. Measured: routing §4.4 through the total
+cost **−52% colony-years** on seed 1 (10,105,286 → 4,845,144), all of it
+habitability the galaxy never had. Under the mean Band, T-62 costs **−0.9%**
+(seed 1 10,105,286 → 10,021,989; seed 7 10,037,745 → 9,941,898) — the residual
+is the noise model, which moved from multiplicative-on-mass to
+additive-on-Band, not the distribution.
 
 ### 4.5 Synthesis gates — pop Band IV + supply chain
 Synthesis **only at pop Band IV** (§5.2). Each super needs **two** basics from distant hotspots → synthesis **generally demands a supply chain**; a hex where two gaussians overlap richly (synthesize **with no chain**) is **exceptionally high value** — the homeworld is the modest, archetype-locked instance. **R-M5:** supply-chain model.
