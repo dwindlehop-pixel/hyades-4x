@@ -220,6 +220,36 @@ base income rate and the Politics depth multiplier remain open MC surfaces.
 
 ## 3. The Exchange
 
+### 3.0 What needs a pact, and what does not (R-IND5, resolved)
+
+**The market is free; everything that bends it is a card.**
+
+| Transaction | Needs | Why |
+|---|---|---|
+| **Balanced exchange** — even trade balance **in value** | nothing | the default, always available to anyone |
+| **Deficit** — giving more value than you receive | a card | a gift is a commitment, and commitments are what the standing layer prices |
+| **Forging a pact** | a card | |
+| **Breaking a pact** | a card | |
+| **Smuggling** — trade evading an embargo or a pact | a card | supported, deliberately |
+
+Two consequences worth stating, because both are load-bearing:
+
+**Balance is in *value*, not in kilotons.** They begin equal — at first a
+kilotonne of Cyan trades for a kilotonne of Yellow — and **diverge as the game
+develops, because value is set by demand and demand is Doctrine.** That is
+§3.2's `doctrine_demand(mineral)` term seen from the other side: it is not a
+pricing detail, it is the mechanism by which the map's mineral geography turns
+into a market. `Hyades_industry.md` §5.2 puts the tallest industrial route in the
+game on a **sole-Yellow** price, which makes every empire pursuing it a standing
+bid that moves the price of Yellow *for everyone* — including for the empires
+that never touch the Production tree.
+
+**A free par market is what makes the deficit cards mean something.** If ordinary
+trade needed a pact, a pact would be a licence to trade and the interesting play
+would be gated behind bookkeeping. Because par trade is always available, playing
+a deficit card is unambiguous: you are choosing to give value away, in public, and
+that is the entanglement move the thesis in §0 is built around.
+
 ### 3.1 Books go cross-empire
 
 Today `matching.rs` runs one `Book` per `(owner, commodity)` — an intra-empire

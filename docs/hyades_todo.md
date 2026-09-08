@@ -103,6 +103,73 @@ two multiplications.
 
 ---
 
+### T-67 … T-76. The industrial layer — `Hyades_industry.md`
+
+**A new spec, `docs/Hyades_industry.md` (Rev 1), covers all ten.** It settles
+three gaps that have been quietly shaping every economic measurement: infrastructure
+is not differentiated in minerals, mining and production rates are not investable
+at all, and a production centre cannot develop a colony it did not just found.
+Read it before picking any of these up — the shape matters more than the
+magnitudes, and every magnitude in it is a flagged placeholder.
+
+**The one ratification it carries: `K = min(hab, bio_max)`.** Infrastructure
+leaves the carrying-capacity minimum. It stays built, razed and soft, but it is an
+**industrial stock** rather than a ceiling on population. The reason is T-64's
+logistic: it goes strongly negative above `K`, so cutting a world's ceiling makes
+its population *overshoot below* the new one (measured `2K → 0.25K` in one step),
+which made every infrastructure strike a population strike with extra steps. The
+crash stays where it is wanted — habitability and biosphere strikes still collapse
+a population, because those are genuinely a world's capacity to hold people.
+
+| # | Item | Blocked on | T-code |
+|---|---|---|---|
+| 1 | `K = min(hab, bio_max)` — drop infra from the minimum | — | **T-67** |
+| 2 | `t_build` from hull mass — replace flat `build_years` | — | **T-68** |
+| 3 | Slips: concurrency linear in fabrication throughput | T-68 | **T-69** |
+| 4 | Infrastructure stored as kilotons; the Band is a reading | T-67 | **T-70** |
+| 5 | Sublinear extraction `n^β` — one law for crews and works | — | **T-71** |
+| 6 | Re-ratify `miners_per_outpost` under the crowding exponent | T-71 | **T-72** |
+| 7 | Works: colour-differentiated infrastructure price | T-70 | **T-73** |
+| 8 | Extraction and fabrication rates from Infra × allocation | T-70 | **T-74** |
+| 9 | `Doctrine` allocation vector + the commutativity property test | T-74 | **T-75** |
+| 10 | Development freight and the balanced-exchange default | T-73 | **T-76** |
+
+**Three of these invalidate a measured result, which is the part to be careful
+about:**
+
+- **T-67 invalidates R-O76.** Founding infrastructure currently sets a new
+  colony's `K` — a Medium founds at `Band I`, a General at `Band II` — and the
+  measured finding that *seed depth does not pay* was taken against that. With
+  infrastructure out of `K`, both hulls seed to the world's own ceiling and the
+  recycled hull is purely industrial stock. **Re-measure; do not carry the old
+  number forward.**
+- **T-71 invalidates T-57.** `miners_per_outpost = 3` was ratified at
+  **+2.74% colony-years** under an extraction law *linear* in crew size. Under
+  the placeholder `β = 1/2` the third miner is worth `√3 − √2 = 0.32` of the
+  first rather than a full unit, so the ratified crew is a number measured
+  against a law that no longer holds. Expect the optimum to fall.
+- **T-68 will move the bed, with a predicted sign.** `build_years = 10.0` is flat
+  today, so a Limited hull and a General hull take the same ten years despite a
+  **50×** cost ratio. Making time track mass makes scouts and colonisers far
+  cheaper in time and General hulls slightly dearer — a direct accelerant on the
+  expansion loop that T-51/R-O68 identified as the binding limiter. Guard is
+  `examples/colony_years`; **the prediction is up, and if it is not, find the
+  mechanism before tuning the value.**
+
+**T-67 first and alone.** It is one deleted `.min()`, it unblocks every card that
+attacks infrastructure, and because it invalidates R-O76 it wants its own
+measurement rather than being folded into a larger change.
+
+**Open in the spec, not here:** R-IND2 (is warding a share or a Design
+coefficient), R-IND3 (the works coefficients — an MC question), R-IND4
+(commutativity as a property test), R-IND6 (supers and apex raising the works
+ceiling, deferred until the ramp is measured), R-IND7 (an addition to the
+economic thesis, recorded incomplete because the source note breaks off
+mid-sentence), and R-IND8 (what an empire inherits when it captures developed
+infrastructure).
+
+---
+
 ### T-01. Wire `matching.rs` into `lib.rs`
 
 The Exchange (order-book matching) is built and tested but not exported, and

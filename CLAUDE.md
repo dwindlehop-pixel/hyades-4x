@@ -19,6 +19,17 @@ work rather than describing game content: it makes bit-reproducibility a
 engine-status block lists the five implementation blockers, audited — and what
 is already clean, which is most of the foundation.
 
+**`docs/Hyades_industry.md` (Rev 1)** is the newest spec and the one that
+**amends the planet model**: `K = min(hab, bio_max)` — infrastructure leaves the
+carrying-capacity minimum and becomes an industrial stock that mines and
+fabricates. Read §1 before touching anything economic, because it invalidates two
+measured results on purpose (R-O76's founding-infrastructure finding and T-57's
+ratified crew size) and says why in each case. It also carries the **layering
+algebra** for how Design and Doctrine writes compose (§6) — products, simplices
+and rotations, with commutativity as the acceptance test. Nothing in it is
+Monte-Carlo ratified except the `K` amendment; every magnitude is a flagged
+placeholder.
+
 **`docs/Hyades_politics_trade_and_intelligence.md` (Rev 1)** specifies the two
 systems the Politics tree needs and neither of which exists: the Exchange with
 `$`, and granular shared intelligence. Its §0 is the organizing thesis and worth
@@ -1104,7 +1115,12 @@ changes how you *work*, not what is left to do:
   hauling are the intended fix.
 - Idle military units do **not** auto-scrap; only exhausted LCVs scrap, others go to
   Reserve ("completable vs. standing mission").
-- **K is player-relative by design.**
+- **K is player-relative by design**, and since `Hyades_industry.md` §1.1 it is
+  `min(hab, bio_max)` — **infrastructure is not a term in it.** Infrastructure is
+  the industrial stock; it mines and fabricates and can be razed, and razing it
+  must not move population. That is the whole reason it left the minimum: T-64's
+  logistic overshoots *below* a cut ceiling rather than settling at it, so while
+  infrastructure sat in `K`, every industrial strike was a population strike.
 - Galaxy distribution: XY Poisson (exponential disk profile); Z exponential with Z-max
   matching the XY parameter.
 - **The mineral field is a Gaussian over *Bands*, stored as mass** (T-62). So it is

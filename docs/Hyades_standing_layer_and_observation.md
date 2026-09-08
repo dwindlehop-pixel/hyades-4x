@@ -234,6 +234,27 @@ trees is a counter-graph commitment that builds nothing and is invisible
 without a scout. Three Doctrine cards is an economic opening, free to read but
 only after trajectories resolve.
 
+**How writes compose — the layering algebra (`Hyades_industry.md` §6).** Once
+more than one card writes the same standing state, the composition rule has to be
+decided or the tree becomes unanalysable. Three write kinds, three algebras, each
+chosen for a property rather than for convenience:
+
+| Write kind | Algebra | Bounded by |
+|---|---|---|
+| **Design — efficiency** | **product** of factors on a named coefficient | nothing intrinsic; priced per tier |
+| **Doctrine — allocation** | **simplex** — shares that renormalise | sums to 1 by construction |
+| **Cost — mix** | **rotation** of the colour vector | total kt preserved |
+
+Products **commute**, so two Design cards give the same result in either order —
+order-dependence in a permanent, tier-gated tree is unanalysable at Monte-Carlo
+scale and unlearnable at the table. Simplices are **bounded without a clamp**,
+which matters because a clamp is exactly what let T-64's broken population
+logistic keep scoring well. Rotations **preserve magnitude**, so a cost card moves
+the mix and never the bill — no card is a discount.
+
+**Commutativity is the acceptance test**, and it belongs in the engine as a
+property test over the card list rather than as a claim here (R-IND4).
+
 **Politics has nothing to write to (R-O27).** The `Doctrine` struct has no
 diplomatic fields — no trade lanes, partners, or pact state. Same gap as
 galaxy §6's R-A3.
