@@ -300,7 +300,26 @@ pub struct GalaxyConfig {
     pub hotspot_ring_frac: f64,
     /// Gaussian width of each hue hotspot, as a fraction of the mean XY radius.
     pub hotspot_sigma_frac: f64,
-    /// Peak tier-1 density at a hotspot center.
+    /// **Peak tier-1 richness at a hotspot centre, as a Band — `Band IV`,
+    /// ratified** (R-O82).
+    ///
+    /// Since T-62 the §4.3 Gaussian is over *Bands*, so this is the top of the
+    /// ladder rather than a linear density, and the field is log-normal in
+    /// kilotons: the richest seams hold **~715,000×** what a `Band I` world
+    /// does, where the old linear reading made it 4×. That is the design
+    /// requirement — *"the game design requires very very high value planets
+    /// located near each other"* — and it is deliberate, not a scale slip.
+    ///
+    /// **What it costs, ratified with eyes open.** One peak world holds ~715,500
+    /// kt against a General hull costing 1.0 kt, the standard bed hauls **2,256×**
+    /// the ore it did before, and none of that surplus bought a colony. The
+    /// hauling is the engine's largest single cost (`examples/haul_census`:
+    /// freighter transfers ×6.81 where vehicles rose ×1.20), and it is what puts
+    /// the 12-seat × 8-kyr corner under T-24's throughput floor. **That is now an
+    /// optimisation problem, not a tuning one** (T-66) — `CLAUDE.md` §7 is
+    /// explicit that approaching the floor is the trigger to optimise rather
+    /// than to shrink the scenario, and the scale is no longer available to
+    /// shrink.
     pub mineral_peak: f64,
 
     /// Strength `∈ [0,1]` of the habitability↔metallicity anticorrelation

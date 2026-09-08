@@ -80,6 +80,16 @@ masses destroys ore at the bottom of the ladder (measured: three miners took
 4.20× what one took instead of 3.00×). Mass is conserved without exclusions
 (L6).
 
+**`mineral_peak = Band IV`, ratified** (R-O82). The peak is the top of the
+ladder, so the richest seams hold ~715,500 kt against a General hull priced at
+1.0 kt. The consequence was measured and accepted rather than discovered later:
+the standard bed hauls **2,256×** the ore it did under the linear field, none of
+that surplus buys a colony, and the freighters moving it are the single largest
+cost in the engine. Because the scale is ratified, that is an engine problem
+(T-66) and not a number to walk back — the hauling loop has no notion of demand,
+so an outpost on a body it can never exhaust schedules a trip per hold-full
+forever.
+
 ### 4.4 Habitability ↔ metallicity, negatively correlated
 Rich-mineral hexes tend **low-habitability**; habitable hexes **metal-poor** → expansion forces a **colony-vs-mine** choice. Homeworlds are the bounded exception (§3). **R-M4:** strength.
 

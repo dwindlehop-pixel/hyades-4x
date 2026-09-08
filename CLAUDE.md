@@ -877,8 +877,14 @@ changes how you *work*, not what is left to do:
   (`examples/haul_census`). Vehicles rose 1.20× and extraction ticks 1.02×, but
   **freighter transfers rose 6.81×** because the log-normal field made the same
   rocks hold 2,256× the ore and a freighter's hold is a fixed size. Cost is
-  proportional to ore hauled, not to worlds mined. The 12-seat × 8-kyr corner
-  extrapolates to **~1.7 yr/s — under the floor** (T-62/R-O82, unratified).
+  proportional to ore hauled, not to worlds mined.
+
+  **`mineral_peak = Band IV` is ratified (R-O82), so this is now the first case
+  where the scenario genuinely cannot be shrunk.** The 12-seat × 8-kyr corner
+  extrapolates to ~2 yr/s, under the floor, and the only remaining move is to
+  make hauling cheaper — the empire is paying full freight for ore it has no way
+  to spend, and colony-years did not move for any of it. That is **T-66**, and
+  its first step is to *measure* the corner rather than extrapolate it.
 
   **The 456 yr/s row is stale in a way worth naming.** It was taken before the
   gradient step raised coverage 38% → 49%, and vehicle count is the first-order
@@ -922,6 +928,16 @@ changes how you *work*, not what is left to do:
   (8,011,139 → 8,670,020), with the doubling time 284.5 → 269.4 yr. On a
   saturated bed the informative metrics are *when* the worlds were taken, not
   how many.
+
+  **`growth_rate` is a step function of itself, and the gradient is recorded**
+  (T-64/R-O84). It reaches the objective only through how many 50-year cycles a
+  centre takes to cross a `PopBands` edge — an integer — so the objective is
+  piecewise constant in it and a coarse grid picks a plateau *edge* by accident.
+  It stays at **0.873**; the measured surface, the `r < 2` bifurcation ceiling,
+  and the six things a future search should not have to rediscover are in the
+  register under T-64. **Do not sweep it without reading that first** — in
+  particular, the objective keeps *rising* past the ceiling because the `clamp`
+  at `K` turns a broken logistic into a high-scoring step function.
 
   **Mineral input is a per-miner rate now, and the default crew is 3** (T-57).
   `outpost_mining_fraction` was the fraction of remaining density a *rock*

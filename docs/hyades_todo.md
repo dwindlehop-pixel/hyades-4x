@@ -55,6 +55,54 @@ sufficient: checking for a collision only works if something makes you check.
 
 ## Band A — ready to build
 
+### T-66. Hauling is the engine's largest cost, and the scale is ratified (R-O82 closed)
+
+**`mineral_peak = Band IV` is ratified**, so the throughput breach it opened can
+no longer be answered by making worlds poorer. This is engine work.
+
+**The mechanism is proven, not inferred** (`examples/haul_census`, seed 1, 3
+seats, measured across the T-62 landing). The plausible story was "there are more
+vehicles now"; it is wrong by a factor of five:
+
+| | before | after | ratio |
+|---|---|---|---|
+| vehicles | 19,406 | 23,227 | 1.20× |
+| extraction ticks | 210,620 | 213,823 | **1.02×** |
+| **freighter transfers** | **20,968** | **142,729** | **6.81×** |
+| ore hauled (kt) | 8,200 | 18,502,131 | 2,256× |
+| events | 540,787 | 870,083 | 1.61× |
+| wall | 51.6 s | 112.2 s | 2.17× |
+
+Each rock is worked the same number of times. Each working now yields orders of
+magnitude more ore, and a freighter's hold is a fixed size, so the round trips
+multiply. **Cost is proportional to ore hauled, not to worlds mined.**
+
+**Why that is a bug and not just a bill.** None of the extra ore bought a colony —
+colony-years were flat across T-62. The empire is paying full freight to move
+minerals it has no way to spend, because the hauling loop has no notion of
+demand: an outpost sitting on a `Band IV` body schedules a trip per hold-full
+forever, and a body that large is never exhausted. So the fix is on the *demand*
+side, and it should be cheap:
+
+- **Haul against what a centre can actually spend**, not against what the rock
+  still holds. `most_needed_center` already ranks by need (design law #5 keeps it
+  as the oracle); what is missing is a stop condition when nothing needs it.
+- **Cap standing outpost stock**, so a rich body is drawn down at the rate the
+  empire consumes rather than as fast as miners can dig.
+- Either way, **measure with `colony_years` held to the decimal** — a
+  behaviour-preserving change must not move it, and that is the guard that makes
+  this checkable rather than hopeful.
+
+**The margin this is against.** 3 seats / 4 kyr sits at 42 yr/s, 17× T-24's
+2.5 yr/s floor. The 12-seat × 8-kyr corner extrapolates through `CLAUDE.md` §7's
+own scaling (8 kyr costs 5.8× of 4 kyr, 12 seats 3.6× of 3) to **~2.0 yr/s —
+under the floor.** That corner has never been measured directly, so it is an
+extrapolation and not a measurement; **measuring it is step one**, because a
+12-seat × 8-kyr run is a few minutes and the whole argument currently rests on
+two multiplications.
+
+---
+
 ### T-01. Wire `matching.rs` into `lib.rs`
 
 The Exchange (order-book matching) is built and tested but not exported, and
@@ -565,6 +613,65 @@ the third is the one that decides it:
 Until then the −8.6% stands and the value is a placeholder against a *changed
 quantity*, which is worse than a placeholder against an unchanged one.
 
+#### The gradient, as raw data (T-50's rule applied to `growth_rate`)
+
+*`growth_rate` stays at 0.873 — confirmed. What follows is the measurement, kept
+as numbers rather than prose so the next search starts from data instead of
+re-deriving it.* All rows are colony-years, CRN over seeds `[1, 7, 42, 31337]`,
+3 seats, `examples/growth_ratify`.
+
+**Objective (4,000 yr) — the ratifiable surface:**
+
+| `r` | seed 1 | seed 7 | seed 42 | seed 31337 | mean | vs 0.873 |
+|---|---|---|---|---|---|---|
+| 0.873 | 9,139,231 | 9,060,095 | 9,006,720 | 9,591,078 | 9,199,281 | — |
+| 1.350 | 9,392,857 | 9,352,621 | 9,282,144 | 9,883,603 | 9,477,806 | **+3.03%** |
+| 1.900 | 9,700,144 | 9,620,855 | 9,584,462 | 10,170,028 | 9,768,872 | **+6.19%** |
+
+**Screen (2,000 yr) — a good ranker, a bad estimator:**
+
+| `r` | mean | vs 0.873 |
+|---|---|---|
+| 0.873 | 2,471,844 | — |
+| 1.100 | 2,748,728 | +11.20% |
+| 1.350 | 2,748,728 | +11.20% *(bit-identical to 1.100)* |
+| 1.600 | 3,038,783 | +22.94% |
+| 1.900 | 3,038,783 | +22.94% *(bit-identical to 1.600)* |
+
+Six things the next search should not have to rediscover:
+
+1. **Monotone increasing to 1.9, every seed, both horizons.** No optimum found
+   inside the tested range; the surface is still climbing where it was cut off.
+2. **The hard ceiling is `r = 2` and it is arithmetic, not empirical.** On mass
+   the step is conjugate to the logistic map with `μ = 1 + r`, so `K`
+   period-doubles there and goes chaotic near 2.57. The usable interval is
+   `(0, 2)` and nothing outside it needs measuring.
+3. **The clamp at `K` makes the ceiling silent.** Past `r ≈ 2` the logistic
+   collapses into a step function that fills a world in one cycle *and scores
+   well doing it*, so the objective will keep rising into the broken region. Any
+   automated search over `r` must carry
+   `the_population_logistic_is_a_rate_and_not_a_step` as a constraint, or it will
+   walk straight through the bifurcation and report a win.
+4. **The old empirical cliff at 1.395 is stale.** It was measured against the
+   Band-space logistic (`r = 2.229` collapsing coverage to 28.46%) and describes
+   a quantity that no longer exists. `growth_rate_stays_clear_of_the_starvation_cliff`
+   still asserts it and should be re-derived, not trusted, before anything moves.
+5. **The screen overstates by ~3.7× and its plateaus are horizon-dependent.**
+   1.35 and 1.9 are bit-identical at 2,000 yr and cleanly separated at 4,000. So
+   the plateau map has to be run at the horizon you intend to ratify on — which
+   is what makes this expensive.
+6. **Colony count is 3,365 at every value tested.** The bed is count-saturated,
+   so `growth_rate` buys *timing* and nothing else; anything measuring it on
+   count will read zero and conclude the knob is dead. That is the same trap
+   design law #14 records for `cargo_unit_size`.
+
+**Cost of finishing it.** ~30 s per trial at the screen horizon, ~100 s at the
+objective. A 24-value map is ~48 minutes screened and several hours confirmed —
+an offline job, in the same category `CLAUDE.md` §2 puts `min_time_search`.
+Sweep `(0.873, 1.95)` at the objective, find the plateau edges, and take a
+plateau's **centre**; do not take a value adjacent to `2`, however well it
+scores, because item 3 means the score stops being informative there.
+
 ---
 
 ### T-63. `Band Empty` is the ladder's floor, one metric tonne wide (R-MC15 amended)
@@ -693,18 +800,24 @@ extrapolates 12 seats / 8 kyr to **~1.7 yr/s, under the floor.** The corner has
 never been measured directly, so that is an extrapolation and not a
 measurement, but it is the wrong side of the line.
 
-**R-O82 — what should `mineral_peak` mean now?** It is `4.0` and predates the
-ladder, where it meant "4 units of ore." It now means **Band IV = 715,500 kt**
-on the mass ladder, against a General hull that costs 1.0 kt. So one peak world
-funds ~715,000 General hulls, the bed hauled **2,256×** the ore it used to, and
-**colony-years did not move** — the surplus buys nothing and the freighters
-carrying it are the 2.17×. Left at 4.0 because the directive is explicit that
-the design wants extreme concentration, and lowering the peak is exactly the
-"shrink the scenario" move `CLAUDE.md` §7 forbids as a response to the floor.
-But the *scale* — how rich the richest world is, relative to what a hull
-costs — is a ratification, and the right fix is more likely on the demand side:
-an outpost that schedules a trip per hold-full of a body it can never exhaust
-is hauling ore the empire has no way to spend.
+**R-O82 — `mineral_peak = 4.0`: `Band IV` is peak. Ratified.**
+
+*"Yes, Band IV is peak. Ratified."* The value predates the ladder, where it meant
+"4 units of ore"; it now means **`Band IV` = 715,500 kt** on the mass ladder,
+against a General hull costing 1.0 kt, and that concentration is the design
+requirement rather than a slip.
+
+**Ratified with the cost stated, because the cost is real.** One peak world holds
+what ~715,000 General hulls are priced at; the bed hauls **2,256×** the ore it
+used to; **colony-years did not move.** The surplus buys nothing and the
+freighters carrying it are the 2.17× wall-clock. What that settles is that the
+scale is no longer available as a tuning lever — so the throughput consequence
+below is an **engine** problem now, not a number to walk back. That is exactly
+what `CLAUDE.md` §7 means by "treat approaching the floor as the trigger to
+optimize, not to shrink the scenario", and it is the first time the rule has had
+teeth: the scenario cannot be shrunk.
+
+Carried forward as **T-66**.
 
 **It also puts the unit test target over the 60-second rule** — 97 s → 144 s,
 and `cargo test --all-targets` to ~200 s. The tests are *already* horizon-pinned
