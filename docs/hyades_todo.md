@@ -103,7 +103,7 @@ two multiplications.
 
 ---
 
-### T-67 … T-76. The industrial layer — `Hyades_industry.md`
+### T-67 … T-77. The industrial layer — `Hyades_industry.md`
 
 **A new spec, `docs/Hyades_industry.md` (Rev 1), covers all ten.** It settles
 three gaps that have been quietly shaping every economic measurement: infrastructure
@@ -127,27 +127,33 @@ a population, because those are genuinely a world's capacity to hold people.
 | 2 | `t_build` from hull mass — replace flat `build_years` | — | **T-68** |
 | 3 | Slips: concurrency linear in fabrication throughput | T-68 | **T-69** |
 | 4 | Infrastructure stored as kilotons; the Band is a reading | T-67 | **T-70** |
-| 5 | Sublinear extraction `n^β` — one law for crews and works | — | **T-71** |
-| 6 | Re-ratify `miners_per_outpost` under the crowding exponent | T-71 | **T-72** |
+| 5 | Extraction law: `N(S)` veins per deposit, `W = N^(1−β)·n^β` — one law for crews and works | — | **T-71** |
+| 6 | `miners_per_outpost` becomes a target *fraction of `N(S)`*, not a hull count | T-71 | **T-72** |
 | 7 | Works: colour-differentiated infrastructure price | T-70 | **T-73** |
 | 8 | Extraction and fabrication rates from Infra × allocation | T-70 | **T-74** |
 | 9 | `Doctrine` allocation vector + the commutativity property test | T-74 | **T-75** |
 | 10 | Development freight and the balanced-exchange default | T-73 | **T-76** |
+| 11 | Exchange settles into a **freight leg**, not a transfer (refined mass traverses real space) | T-01 | **T-77** |
 
 **Three of these invalidate a measured result, which is the part to be careful
 about:**
 
-- **T-67 invalidates R-O76.** Founding infrastructure currently sets a new
-  colony's `K` — a Medium founds at `Band I`, a General at `Band II` — and the
-  measured finding that *seed depth does not pay* was taken against that. With
-  infrastructure out of `K`, both hulls seed to the world's own ceiling and the
-  recycled hull is purely industrial stock. **Re-measure; do not carry the old
-  number forward.**
-- **T-71 invalidates T-57.** `miners_per_outpost = 3` was ratified at
-  **+2.74% colony-years** under an extraction law *linear* in crew size. Under
-  the placeholder `β = 1/2` the third miner is worth `√3 − √2 = 0.32` of the
-  first rather than a full unit, so the ratified crew is a number measured
-  against a law that no longer holds. Expect the optimum to fall.
+- **T-67 invalidates R-O76, and the buff is intended.** Founding infrastructure
+  currently sets a new colony's `K` — a Medium founds at `Band I`, a General at
+  `Band II` — and the measured finding that *seed depth does not pay* was entirely
+  about the mismatch between what a hull carried and what the colony could hold.
+  With infrastructure out of `K`, **hulls seed to the world's own ceiling**
+  (confirmed), so there is no mismatch and the old number describes a mechanism
+  that no longer exists. The hull-choice question becomes purely price and hold
+  size. **Do not carry the old number forward.**
+- **T-71/T-72 retire `miners_per_outpost` as a scalar.** It was ratified at
+  **+2.74% colony-years** under a law with no deposit term at all — linear in
+  crew, identical on every rock. The corrected law makes the vein count scale with
+  the deposit (a decade per Band: 1 vein at `Band I`, 1,000 at `Band IV`), so the
+  right crew is **a property of the rock, not a constant**, and the Doctrine knob
+  becomes a target *fraction of `N(S)`*. The design intent is explicit: hundreds
+  or thousands of miners should be worth stationing at a high-value outpost, which
+  a bare crowding exponent would have forbidden on every rock equally.
 - **T-68 will move the bed, with a predicted sign.** `build_years = 10.0` is flat
   today, so a Limited hull and a General hull take the same ten years despite a
   **50×** cost ratio. Making time track mass makes scouts and colonisers far
@@ -160,13 +166,20 @@ about:**
 attacks infrastructure, and because it invalidates R-O76 it wants its own
 measurement rather than being folded into a larger change.
 
+**The rule that outranks the rest, and it is not about industry:** *refined mass
+traverses real space* (§8.1). Minerals, supers and apex cross the theater on
+hulls, under light-lag, where they can be attacked, diverted, stolen and
+blockaded — so a trade is a **voyage**, not a ledger entry, and the Exchange
+must settle into a freight leg (T-77). Take traversal away and piracy, theft,
+blockade and conquest stop being alternatives to trade and become flavour text.
+
 **Open in the spec, not here:** R-IND2 (is warding a share or a Design
 coefficient), R-IND3 (the works coefficients — an MC question), R-IND4
 (commutativity as a property test), R-IND6 (supers and apex raising the works
-ceiling, deferred until the ramp is measured), R-IND7 (an addition to the
-economic thesis, recorded incomplete because the source note breaks off
-mid-sentence), and R-IND8 (what an empire inherits when it captures developed
-infrastructure).
+ceiling, deferred until the ramp is measured), R-IND8 (what an empire inherits
+when it captures developed infrastructure), R-IND9 (the extraction tail past
+`N(S)`), and R-IND10 (who bears the loss when a contract's carrier is
+destroyed).
 
 ---
 

@@ -250,6 +250,23 @@ would be gated behind bookkeeping. Because par trade is always available, playin
 a deficit card is unambiguous: you are choosing to give value away, in public, and
 that is the entanglement move the thesis in §0 is built around.
 
+### 3.0a Settlement is a voyage, not a transfer (`Hyades_industry.md` §8.1)
+
+**Minerals, supers and apex traverse real space.** Nothing teleports: a matched
+contract is delivered by a freighter, on a leg, under light-lag, and that hull
+can be attacked, diverted, stolen or blockaded.
+
+This is the reason §3.3 needs escrow, settlement, default and theft at all — the
+gap between *agreeing* a trade and *receiving* it is a physical interval, and it
+is where piracy lives. Blockade is not a special rule either; it is the ordinary
+consequence of a fleet sitting on a route that has to be flown.
+
+It also makes scarcity **positional rather than only geological**: an empire can
+sit on all six colours and be unable to use them because the routes run through
+somebody else's reach, while a poor empire astride a corridor has something to
+sell that is not ore. **R-IND10 (open):** who bears the loss when a matched
+contract's carrier is destroyed — buyer, seller, or the escrow.
+
 ### 3.1 Books go cross-empire
 
 Today `matching.rs` runs one `Book` per `(owner, commodity)` — an intra-empire

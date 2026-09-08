@@ -34,6 +34,13 @@ Three gaps, named plainly:
 And it takes the decision that unblocks all three: **Infrastructure leaves the
 carrying-capacity minimum entirely** (§1).
 
+**One rule in here outranks the rest, and it is not about industry at all:
+refined mass traverses real space** (§8.1). Minerals, supers and apex cross the
+theater on hulls, under light-lag, where they can be attacked, diverted, stolen
+and blockaded. Every price gradient in §5 and every market in §7 is downstream of
+it — take traversal away and piracy, theft, blockade and conquest stop being
+alternatives to trade and become flavour text.
+
 ---
 
 ## 1. Infrastructure is capacity, and *only* capacity
@@ -113,13 +120,21 @@ for thresholds, never a second thing to store (T-64, `CLAUDE.md` §4).
 `k()` and `k_potential()` are the same function. Three real consequences, none of
 them cosmetic:
 
-- **`founding_infra` (R-O76) stops capping the founding seed.** A coloniser's
-  recycled hull currently sets the new colony's `K`, so a Medium founds at
-  `Band I` and a General at `Band II`. With Infrastructure out of `K`, founding
-  capacity is `k_potential` alone and both hulls seed to the world's own ceiling.
-  The recycled hull still lands as **industrial stock**, which is now its whole
-  job, and R-O76's measured result — that seed depth does not pay — must be
-  **re-measured**, because the thing it measured no longer exists.
+- **`founding_infra` (R-O76) stops capping the founding seed — confirmed
+  intended.** A coloniser's recycled hull currently sets the new colony's `K`, so
+  a Medium founds at `Band I` and a General at `Band II`. With Infrastructure out
+  of `K`, **hulls seed to the world's own ceiling** and the hull no longer gates
+  the colony's opening population at all. The recycled hull still lands as
+  **industrial stock**, which is now its whole job.
+
+  This is a substantial buff to founding and it deletes the question R-O76 was
+  asked to answer. R-O76 measured that *seed depth does not pay* — a `Band II`
+  seed on a `Band I` colony crashing to `0.25` Bands in its first tick — and that
+  finding was entirely about the mismatch between what a hull carried and what
+  the colony could hold. Both hulls now deliver to the same ceiling, so there is
+  no mismatch and **the old number describes a mechanism that no longer exists.**
+  Do not carry it forward; the hull-choice question is now purely one of price
+  and hold size.
 - **The deepen/expand trade changes meaning.** `deepen_headroom` is
   `k_potential − infra` (R-O68), which under the amendment is not a headroom at
   all. Deepening no longer raises a ceiling; it raises **rates**. The branch was
@@ -217,21 +232,26 @@ hull below `t_lead + m/F_slip`; industry buys *more ships at once*, never
   the price ladder are one ladder, with no second constant to tune and no way for
   them to drift apart.
 
-### 3.3 Placeholder magnitudes
+### 3.3 The starting schedule — approved
 
-**Not measured.** Chosen to land near current behaviour so the first engine
-change reads against a known bed.
+**Approved as the schedule to start from.** Not Monte-Carlo ratified — these are
+the values the first engine change ships with and measures against, not values
+any sweep has confirmed.
 
-| Constant | Placeholder | Meaning |
+| Constant | Value | Meaning |
 |---|---|---|
 | `t_lead` | **2.0 yr** | irreducible per-hull lead time — tooling and crew, the part that does not scale |
-| `F_slip` | **0.1 kt/yr** | one slip's throughput; set so a General hull lands near today's 10 yr |
+| `F_slip` | **0.1 kt/yr** | one slip's throughput |
 
 | Hull | dry mass | `t_build` at one slip | today |
 |---|---|---|---|
 | Limited Systems | 0.02 kt | **2.2 yr** | 10 yr |
 | Medium Systems | 0.10 kt | **3.0 yr** | 10 yr |
 | General Systems | 1.00 kt | **12.0 yr** | 10 yr |
+
+The schedule reads the way the design wants it to: a scout is a season's work, a
+coloniser is quick enough to spam, and a General hull is a **twelve-year
+commitment** that an opponent has time to notice and answer.
 
 **This will move the bed.** Scouts and colonisers get dramatically cheaper in
 time while General hulls get slightly dearer — a direct accelerant on the
@@ -241,56 +261,93 @@ the mechanism before tuning the value (`CLAUDE.md` §2).
 
 ---
 
-## 4. The mining ramp — crowding, and the grade curve
+## 4. The mining ramp — crowding, scaled to the deposit
 
-### 4.1 Mining is sublinear in capacity, and the reason is physical
+### 4.1 Mining is sublinear in crew, and the reason is physical
 
 **Two miners cannot work the same vein.** Capacity beyond the first must open
 another one, and the best veins are opened first — so the marginal miner is
-always working ore poorer than the last. Aggregate output is therefore **not**
-the sum of individual outputs.
+always working ore poorer than the last. Aggregate output is **not** the sum of
+individual outputs.
 
 This is Lanchester's intuition with the sign reversed. Lanchester's square law
 makes concentrated force *superlinear* (`N²`) because fire concentrates;
 extraction is *sublinear* because sites are **exclusive**. Same lesson — an
-aggregate is not `N ×` an individual — opposite direction, different cause.
+aggregate is not `n ×` an individual — opposite direction, different cause.
 
-**The grade curve is the mechanism, and it is empirical.** Lasky's law: in a
-mineralised body, cumulative tonnage rises roughly exponentially as average grade
-falls arithmetically — there is always more poor ore than rich ore, in a regular
-relationship (Lasky 1950). Take the `k`-th best vein to have grade
-`g(k) = g₀ · k^(−α)`. Then `n` units of capacity extract
+### 4.2 The correction that matters: the vein count scales with the deposit
 
-```
-Σ_{k=1..n} g₀·k^(−α)  ≈  g₀ · n^(1−α)/(1−α)        for α < 1
-```
+**A crowding exponent alone is wrong, and wrong in a way that would have killed
+the thing this ramp is for.** Applying a bare `n^β` makes crowding identical on
+every rock: with `β = 1/2` the third miner is worth `√3 − √2 = 0.32` of the
+first whether the body holds one kilotonne or seven hundred thousand. Nobody
+would ever put a large crew anywhere, and **the design wants hundreds or
+thousands of miners working a high-value outpost.**
 
-so output scales as `n^β` with **`β = 1 − α`**, the *crowding exponent*.
+The missing term is that **a bigger deposit has more veins.** Lasky's law is a
+statement about grade *and tonnage* together — cumulative tonnage rises roughly
+exponentially as average grade falls arithmetically (Lasky 1950) — and the
+relation is scale-invariant, so a large body and a small one have the same grade
+*profile* over a different number of workable sites. Crowding is therefore
+relative: `n` miners crowd a small rock and rattle around a large one.
 
-**Placeholder `β = 1/2`** — the square-root law, the exact mirror of Lanchester's
-square. It reads plainly at the table: **doubling your miners gives you ~1.41×
-the ore, not 2×.** It is a placeholder and needs Monte-Carlo ratification like
-everything else here.
-
-### 4.2 One law, two sources of capacity
-
-The law applies to **all** extraction capacity at a site, whatever supplies it:
+**Vein count is a decade per Band**, which is the design's own language for
+"an order of magnitude more of something":
 
 ```
-extraction(kt/yr) = ε · S · (n_crew + u_infra)^β
+N(S) = VEINS_PER_BAND ^ (band(S) − 1)          VEINS_PER_BAND = 10 (placeholder)
 ```
 
-- `S` — remaining ore in the ground, kt. Output scales with the stock, so a body
-  depletes asymptotically rather than cliff-edging.
-- `n_crew` — miner hulls on station (the outpost route).
-- `u_infra` — units of Infrastructure allocated to extraction (the colony route).
+| deposit | mass | workable veins `N` |
+|---|---|---|
+| `Band I` | 1 kt | **1** |
+| `Band II` | 31.6 kt | **10** |
+| `Band III` | 2,828 kt | **100** |
+| `Band IV` | 715,500 kt | **1,000** |
+
+### 4.3 The law
+
+```
+extraction(kt/yr) = ε · S · W(n, S)
+
+W(n, S) = N(S)^(1−β) · n^β          for n ≤ N(S)
+```
+
+- `S` — remaining ore, kt. Output tracks the stock, so a body depletes
+  asymptotically rather than cliff-edging.
+- `n` — extraction capacity at the site: **miner hulls on station plus units of
+  Infrastructure allocated to extraction**, one law for both.
+- `N(S)` — workable veins, §4.2.
+- `β` — the crowding exponent. **Placeholder `1/2`.**
 - `ε` — the per-unit rate constant.
 
-**Outposts and colonies mine by the same physics and differ only in how they buy
-capacity.** Keeping one law for both is deliberate: an asymmetry here — outposts
-flat, colonies improvable — would make "outpost or colony?" a question about
-*rate shape*, when it should be a question about **commitment**. Both routes
-improve; they differ in what the improvement costs you and what it exposes.
+Three properties, and they are the reason this shape was chosen:
+
+- **A full crew pays linearly in the deposit's richness.** `W(N, S) = N`, so
+  working a `Band IV` body with its full thousand miners yields a thousand
+  units of work against a `Band I` body's one. Richness is worth going to, at
+  scale, which is what §4.2 says was missing.
+- **A large crew on a rich rock is rational.** On `Band IV`, one miner does
+  `W = 31.6` and a thousand do `W = 1000` — 31.6× the ore for 1000× the hulls,
+  against a body worth 715,500 kt and hulls costing 0.02 kt each. Twenty
+  kilotonnes of miners to work seven hundred thousand of ore is an easy trade,
+  and it stays easy for hundreds of hulls.
+- **A poor rock saturates immediately.** On `Band I`, `N = 1`: the second miner
+  adds nothing. Sending three hulls to a marginal rock is simply waste, and the
+  autopilot should be able to see that.
+
+**Beyond `N` the marginal miner gets the floor grade, not zero.** There is always
+more poor ore (Lasky again), so the cap is a knee rather than a wall. **R-IND9:**
+the exact tail past `N` — flat, or a shallow linear seam at floor grade. It
+matters only for absurd crews and should be settled by what reads better in a
+log, not by a sweep.
+
+### 4.4 One law, two ways to buy capacity
+
+Outposts and colonies mine by the same physics and differ only in how they buy
+`n`. Keeping one law for both is deliberate: an asymmetry — outposts flat,
+colonies improvable — would make "outpost or colony?" a question about *rate
+shape*, when it should be a question about **commitment**.
 
 | | Outpost | Colony |
 |---|---|---|
@@ -300,23 +357,24 @@ improve; they differ in what the improvement costs you and what it exposes.
 | Vulnerable to | losing hulls | losing Infrastructure |
 | Good for | a rich rock you do not intend to hold | a world you are building on |
 
-### 4.3 What this changes that is already ratified
+### 4.5 What this changes that is already ratified
 
-**T-57 ratified `miners_per_outpost = 3` under a *linear* law** — extraction was
-`crew × outpost_mining_fraction`, measured at **+2.74% colony-years** with every
-seed positive, and five miners were rejected for costing 3.5 years of doubling
-time. Under `β = 1/2` the third miner is worth `√3 − √2 = 0.32` of the first
-rather than a full unit, so **the ratified crew size is a number measured against
-a law that no longer holds and must be re-ratified.** Expect the optimum to fall.
+**T-57 ratified `miners_per_outpost = 3` under a law with no deposit term at
+all** — extraction was `crew × outpost_mining_fraction`, linear in crew and
+identical on every rock, measured at **+2.74% colony-years** with every seed
+positive. Under §4.3 the right crew is **a property of the rock, not a constant**:
+one miner on a `Band I` body, a thousand on a `Band IV`. So `miners_per_outpost`
+does not survive as a scalar — it becomes a *policy* over `N(S)`, and the natural
+Doctrine knob is a **target fraction of the deposit's veins** rather than a hull
+count.
 
-**It also gives T-66 its first real lever.** T-66 records that hauling is the
-engine's largest single cost, because a `Band IV` body is effectively
-inexhaustible and the hauling loop has no notion of demand. Sublinear extraction
-attacks that directly: piling capacity onto one fabulous rock stops paying, so
-the fleet spreads instead of queueing, and the marginal freighter trip stops
-being worth taking.
-
----
+**It also gives T-66 its lever, in the opposite direction to the one I first
+expected.** T-66 records hauling as the engine's largest single cost. Sublinear
+crowding does not spread the fleet thin — it **concentrates** it, because a rich
+body now genuinely rewards a thousand hulls. What that buys is fewer *sites* for
+the same ore, and freight cost scales with sites and distance, not with crew. The
+prediction is fewer, larger, closer outposts; it is a prediction and it must be
+measured, not assumed.
 
 ## 5. Works — buying a rate with minerals, and where the colours bite
 
@@ -515,19 +573,62 @@ forbidding self-sufficiency** — each is a gradient that makes it expensive:
   demand has a supply. Without §7 the colour pressure would be a tax; with it, it
   is a market.
 
-> **R-IND7 — an addition to the thesis, recorded incomplete.** *"An addition to
-> the economic thesis is much of the minerals, supers, and apex…"* — the note
-> this document was given breaks off there, and the rest is not guessable without
-> inventing design. The likely shape, from context, is a claim about how much of
-> an empire's refined mass ends up **locked in standing fleets and works rather
-> than available to spend** — which would sharpen §8 considerably, because it
-> makes the shortage structural rather than geographic. **Not written up until
-> the sentence is finished.**
+### 8.1 Refined mass traverses real space (R-IND7, resolved)
 
-Supers and apex above all of this are **R-IND6**, deliberately deferred: the
-mid- and late-game boosts that raise the works ceiling should not be designed
-until the basic ramp is measured, because their whole job is to bend a curve that
-does not exist yet.
+**Minerals, supers and apex must physically cross the theater, so they can be
+attacked, diverted, stolen and blockaded.** Nothing teleports. This is the
+addition that turns §8 from a set of price gradients into a *military* problem,
+and it is the load-bearing half of the economic thesis.
+
+Everything follows from taking it literally:
+
+- **A trade is a voyage.** §7.1's balanced exchange is not a ledger entry; it is
+  freight, on a leg, under light-lag, with a hull that can be intercepted. The
+  Exchange prices the *contract*; the freighter carries the *goods*, and the gap
+  between the two is where piracy lives.
+- **A supply line is a target, and it is the softest one an empire has.**
+  `Hyades_politics_trade_and_intelligence.md` §3.3 already needs escrow,
+  settlement, default and theft; this is why. Blockade is not a special rule — it
+  is the ordinary consequence of a fleet sitting on a route that must be flown.
+- **Refining has a location.** The `3 basics → 2 supers → 1 apex` ladder
+  (`Hyades_galaxy_and_autopilot.md` §4.2, cost curve §5.0) consumes precursors
+  *somewhere*, so the precursors must be hauled to that somewhere. Concentrating
+  synthesis is efficient and makes one place worth attacking; dispersing it is
+  safe and slow. **That is a real strategic choice and it exists only because
+  mass moves.**
+- **The scarcity becomes positional, not just geological.** An empire can sit on
+  all six colours and still be unable to *use* them, because the routes between
+  the deposits and the forge run through somebody else's reach. Conversely a poor
+  empire astride a corridor has something to sell that is not ore.
+
+**Why this is what makes the thesis work.** §8's three pressures — colour-priced
+works, a sole-coloured tall route, transferable development — establish that
+empires *need* to trade. Traversal is what makes trading *risky*, and therefore
+what makes the alternatives real: piracy, theft, blockade and conquest are all
+just interventions on a route, and they are available precisely because the goods
+are on a ship rather than in a spreadsheet. **Take traversal away and the
+alternatives to trade collapse into flavour text**, because there would be
+nothing physical to interdict.
+
+It also disciplines this document's own proposals. Development freight (§7.3) is
+attackable, so *developing a distant colony is a military exposure* and not only
+a logistical cost. And T-66's hauling bill stops being pure overhead: freight is
+the surface the whole war economy acts on, so the fix there must make hauling
+*cheaper*, never *abstract*.
+
+**Engine consequence:** the Exchange (T-01, `matching.rs`) must settle into a
+**freight leg**, not a transfer. Matching decides *who trades what at what price*;
+delivery is an ordinary voyage that can fail. **R-IND10:** what happens to a
+matched contract whose carrier is destroyed — does the loss fall on buyer,
+seller, or an escrow the politics spec already sketches?
+
+### 8.2 What is deferred
+
+Supers and apex *as a works input* — the mid- and late-game boosts that raise the
+ceiling — are **R-IND6**, deliberately deferred: they should not be designed until
+the basic ramp is measured, because their whole job is to bend a curve that does
+not exist yet. §8.1 is not deferred with them; it is a property of how *all*
+refined mass moves, and it applies from the first freighter.
 
 ---
 
@@ -576,12 +677,13 @@ Dependency order. Each is small; the order matters more than the size.
 | 2 | `t_build` from hull mass — replace flat `build_years` (§3.2) | — | **T-68** |
 | 3 | Slips: concurrency linear in `F` (§3.2) | 2 | **T-69** |
 | 4 | Infrastructure stored as kilotons; the Band is a reading (§1.3) | 1 | **T-70** |
-| 5 | Sublinear extraction, `n^β`, one law for crews and works (§4.2) | — | **T-71** |
-| 6 | Re-ratify `miners_per_outpost` under the crowding exponent (§4.3) | 5 | **T-72** |
+| 5 | Extraction law: `N(S)` veins per deposit, `W = N^(1−β)·n^β`, one law for crews and works (§4.3) | — | **T-71** |
+| 6 | `miners_per_outpost` becomes a target *fraction of `N(S)`*, not a hull count (§4.5) | 5 | **T-72** |
 | 7 | Works: colour-differentiated infrastructure price (§5.1) | 4 | **T-73** |
 | 8 | Extraction and fabrication rates from Infrastructure × allocation (§2) | 4 | **T-74** |
 | 9 | `Doctrine` allocation vector + the commutativity property test (§6) | 8 | **T-75** |
 | 10 | Development freight and the balanced-exchange default (§7) | 7 | **T-76** |
+| 11 | Exchange settles into a **freight leg**, not a transfer — refined mass traverses real space (§8.1) | T-01 | **T-77** |
 
 **Item 1 first, and alone.** It is one deleted `.min()`, it unblocks every card
 that attacks Infrastructure, and it invalidates R-O76's measured result — so it
@@ -603,8 +705,10 @@ artifact in place contaminates every later measurement.
 | **R-IND4** | Commutativity as a property test over the card list, written before the second industrial card. | §6 |
 | ~~R-IND5~~ | ~~May a development route target a rival's world?~~ — **resolved: balanced-value exchange needs no pact; deficits, pacts, pact-breaking and smuggling are cards.** | §7 |
 | **R-IND6** | Supers and apex raising the works ceiling — deferred until the basic ramp is measured. | §8 |
-| **R-IND7** | The economic-thesis addition, recorded incomplete. | §8 |
+| ~~R-IND7~~ | ~~The economic-thesis addition~~ — **resolved: minerals, supers and apex traverse real space**, so they can be attacked, diverted, stolen and blockaded. Nothing teleports; a trade is a voyage. | §8.1 |
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
+| **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
+| **R-IND10** | Who bears the loss when a matched contract's carrier is destroyed — buyer, seller, or escrow? | §8.1 |
 
 ---
 
@@ -614,7 +718,8 @@ artifact in place contaminates every later measurement.
   selection. *PNAS* 103(29):10952–10955. — the narrative thesis §1.2 leans on.
 - Lasky, S. G. (1950). How tonnage and grade relations help predict ore reserves.
   *Engineering and Mining Journal* 151(4):81–85. — the grade-tonnage relation
-  §4.1 derives the crowding exponent from.
+  §4.1 derives the crowding exponent from, and §4.2 the scale-invariance that
+  makes the vein count track the deposit.
 - Lanchester, F. W. (1916). *Aircraft in Warfare: The Dawn of the Fourth Arm.* —
   the square law §4.1 mirrors.
 - May, R. M. (1976). Simple mathematical models with very complicated dynamics.

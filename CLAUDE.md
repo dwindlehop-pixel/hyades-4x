@@ -26,9 +26,16 @@ fabricates. Read §1 before touching anything economic, because it invalidates t
 measured results on purpose (R-O76's founding-infrastructure finding and T-57's
 ratified crew size) and says why in each case. It also carries the **layering
 algebra** for how Design and Doctrine writes compose (§6) — products, simplices
-and rotations, with commutativity as the acceptance test. Nothing in it is
-Monte-Carlo ratified except the `K` amendment; every magnitude is a flagged
-placeholder.
+and rotations, with commutativity as the acceptance test.
+
+**Its §8.1 outranks everything else in it and is not about industry: refined mass
+traverses real space.** Minerals, supers and apex cross the theater on hulls,
+under light-lag, where they can be attacked, diverted, stolen and blockaded — so
+a trade is a *voyage*, not a ledger entry, and the Exchange settles into a
+freight leg. Every price gradient and every market in the design is downstream of
+it; take traversal away and piracy, theft, blockade and conquest become flavour
+text. Nothing else in the document is Monte-Carlo ratified; every magnitude is a
+flagged placeholder.
 
 **`docs/Hyades_politics_trade_and_intelligence.md` (Rev 1)** specifies the two
 systems the Politics tree needs and neither of which exists: the Exchange with
