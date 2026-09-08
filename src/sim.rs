@@ -55,7 +55,7 @@ use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use crate::autopilot::{
-    Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext,
+    Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext, Ranked,
     SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
@@ -65,6 +65,7 @@ use crate::math::{self, Vec3, G};
 use crate::resources::{Archetype, Basic, MineralField, Minerals};
 use crate::rng::Rng;
 use crate::snapshot::{PlanetSnapshot, PlayerSnapshot, Snapshot, VehicleKind, VehicleSnapshot};
+use crate::units::{self, Band, BandTier, Kilotons, Length, Measure, Price, Volume};
 
 // =====================================================================
 // ECS core — a tiny, dependency-free, deterministic world.
@@ -107,41 +108,112 @@ impl<T> ComponentStore<T> {
     fn contains(&self, e: Entity) -> bool {
         self.get(e).is_some()
     }
+    /// Clear the component, returning what was there. Vacating a slot is not
+    /// the same as never having filled one — the shipyard-occupancy store
+    /// (R-O69) is *presence-as-state*, so it needs to be able to empty.
+    fn remove(&mut self, e: Entity) -> Option<T> {
+        self.items.get_mut(e.0 as usize).and_then(|o| o.take())
+    }
 }
 
 /// Marker tag for homeworld planet entities.
 #[derive(Clone, Copy, Debug)]
 struct Homeworld;
 
-/// Carrying-capacity factors of a planet (level-units). Liebig `K = min`.
+/// Carrying-capacity factors of a planet. Liebig `K = min`, over **Bands**.
+///
+/// The two ceilings are Band levels and the biosphere is a mass; they are
+/// different types because the engine spent a long time treating them as the
+/// same `f64`. See [`crate::units`] for the defect and the bridge that closes
+/// it.
 #[derive(Clone, Copy, Debug)]
 struct Factors {
-    hab: f64,
-    /// **Standing biological mass, in kilotons** — the same unit as population
-    /// and minerals, which is what makes the exchange between them exact.
+    hab: Band,
+    /// **Standing biological mass, in kilotons** — the same unit as minerals
+    /// and hull dry mass, which is what makes the exchange between them exact.
     ///
     /// Unlike minerals this is a *renewable* stock: it regrows logistically
     /// toward [`Self::bio_max`], and it is the only thing in the engine that
-    /// increases without being built. Population growth **consumes** it 1:1 and
-    /// population decline returns it, which is what closes L6's old exclusion —
+    /// increases without being built. Population growth **consumes** it (L6) —
     /// people are made of biomass, so population mass is conserved rather than
-    /// conjured from an open reservoir.
-    bio: f64,
-    /// Pristine biosphere: the ceiling `bio` regrows toward. Cards raise or
-    /// lower it; a strike that craters a world's ecology lowers this, not just
-    /// the standing stock, which is what makes such damage durable.
-    bio_max: f64,
+    /// conjured from an open reservoir. The draw is the *mass* the step adds,
+    /// `KT(pop_after) − KT(pop_before)`, not the Band increment: a Band is a
+    /// magnitude tier, and one more tier is four times the people, not four
+    /// more of them.
+    biomass: Kilotons,
+    /// Pristine biosphere: the ceiling `biomass` regrows toward, also a mass.
+    /// Cards raise or lower it; a strike that craters a world's ecology lowers
+    /// this, not just the standing stock, which is what makes such damage
+    /// durable.
+    ///
+    /// **Write it through [`Self::set_bio_max`]**, which keeps
+    /// [`Self::bio_max_band`] in step. The pair is a cache, and a cache with
+    /// two write paths is a bug waiting for a card to find it.
+    bio_max: Kilotons,
+    /// [`Self::bio_max`] read back onto the Band ladder — **cached, because it
+    /// is on the hottest path in the engine.**
+    ///
+    /// `Kilotons::in_bands` is a `ln`, `k_potential` needs it, and
+    /// `k_potential` is evaluated once per *scanned planet* per production
+    /// decision. That is a transcendental in a loop that runs tens of millions
+    /// of times a run, for a quantity nothing has changed since galaxy
+    /// generation. Identical value, computed once (R-O70).
+    bio_max_band: Band,
     /// Built infrastructure. Integer-valued; deepened one level at a time.
-    infra: f64,
+    infra: Band,
 }
 impl Factors {
+    /// Build a set of factors, deriving the cached Band reading of `bio_max`.
     #[inline]
-    fn k(&self) -> f64 {
-        self.hab.min(self.bio).min(self.infra)
+    fn new(hab: Band, biomass: Kilotons, bio_max: Kilotons, infra: Band) -> Factors {
+        Factors { hab, biomass, bio_max, bio_max_band: bio_max.in_bands(), infra }
     }
+
+    /// The only way to move the pristine ceiling. Keeps the cached Band reading
+    /// consistent — the card that craters an ecology must not leave
+    /// `k_potential` reading the old world.
     #[inline]
-    fn k_potential(&self) -> f64 {
-        self.hab.min(self.bio)
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no card mutates bio_max yet; the setter exists so the \
+                                                     first one cannot desynchronise the cache"
+        )
+    )]
+    fn set_bio_max(&mut self, m: Kilotons) {
+        self.bio_max = m;
+        self.bio_max_band = m.in_bands();
+    }
+
+    /// Liebig's minimum, **over Bands only**.
+    ///
+    /// The standing biomass is deliberately *not* a term here, and that is the
+    /// unit fix. It used to be, which made `K` collapse as population ate the
+    /// biosphere and recover as the biosphere regrew — a feedback loop that
+    /// read as ecology but was arithmetic on mismatched units, a mass compared
+    /// against two levels.
+    ///
+    /// The biosphere still binds population, in two ways that survive the fix:
+    /// its *pristine ceiling* [`Self::bio_max`] enters as a Band (durable
+    /// damage lowers what a world can ever hold), and its *standing stock* is
+    /// the mass growth is paid out of (transient damage makes growth slow, not
+    /// the ceiling low). Splitting those apart is what design law #11's
+    /// "renewable stock" actually asks for.
+    #[inline]
+    fn k(&self) -> Band {
+        self.k_potential().min(self.infra)
+    }
+    /// The ceiling infra — and so population — can be *built* to.
+    ///
+    /// `bio_max` is read in Bands here. That is exact rather than a
+    /// convenience: a population at Band `b` masses `KT(b)` and the pristine
+    /// biosphere masses `KT(bio_max_band)`, so this Band minimum and the mass
+    /// budget bind at precisely the same place (pinned by
+    /// `the_mass_budget_and_the_band_ceiling_bind_together`).
+    #[inline]
+    fn k_potential(&self) -> Band {
+        self.hab.min(self.bio_max_band)
     }
 }
 
@@ -193,7 +265,17 @@ struct PlayerInfo {
 /// Per-player fog-of-war knowledge (autopilot-doc §1).
 #[derive(Clone, Debug, Default)]
 struct Knowledge {
-    scanned: BTreeSet<PlanetId>,
+    /// Worlds this empire has close-scanned.
+    ///
+    /// **A sorted `Vec`, not a `BTreeSet`**, because it is *iterated* on the
+    /// hottest path — every production decision walks the whole thing, 1.03
+    /// billion elements over a run. A B-tree walk is a pointer chase across
+    /// boxed nodes; a sorted `Vec` is a sequential read, and §4's finding is
+    /// that **locality beats element count**. Insertion is a binary search plus
+    /// a memmove, and insertions are four orders of magnitude rarer than
+    /// iterations. Order is identical to the `BTreeSet`'s, so nothing about
+    /// determinism or results moves (R-O70).
+    scanned: ScannedSet,
     /// Worlds a survey craft has been *dispatched to* (marked at launch, so two
     /// scouts never chase the same target). A **bitmap, not a set**: this is
     /// membership-tested once per planet per `survey_candidates` call and never
@@ -201,7 +283,15 @@ struct Knowledge {
     /// the whole engine — 63% of instructions once scouts became plentiful.
     /// O(1) indexed access instead of O(log n) pointer chasing.
     visited: VisitedMask,
-    targeted: BTreeSet<PlanetId>,
+    /// Worlds already claimed by a build order this empire has placed.
+    ///
+    /// **A bitmap, for exactly the reason `visited` is one** — and this one was
+    /// missed when that lesson was learned. It is membership-tested once per
+    /// scanned world per production decision and *never iterated*: profiled at
+    /// **1.03 billion `contains` calls** on seed 1 at the shipped horizon,
+    /// every one of them an `O(log n)` walk down a B-tree of boxed nodes.
+    /// O(1) indexed access instead of pointer chasing (R-O70).
+    targeted: VisitedMask,
     exploited: BTreeSet<PlanetId>,
 }
 
@@ -210,6 +300,54 @@ struct Knowledge {
 #[derive(Clone, Debug, Default)]
 struct VisitedMask {
     bits: Vec<bool>,
+}
+
+/// A sorted, deduplicated set of planet ids, kept in a contiguous `Vec` so
+/// iteration is a sequential read. See [`Knowledge::scanned`] for why.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ScannedSet {
+    ids: Vec<PlanetId>,
+}
+
+impl ScannedSet {
+    #[inline]
+    fn insert(&mut self, pid: PlanetId) -> bool {
+        match self.ids.binary_search_by_key(&pid.0, |p| p.0) {
+            Ok(_) => false,
+            Err(i) => {
+                self.ids.insert(i, pid);
+                true
+            }
+        }
+    }
+    #[inline]
+    fn iter(&self) -> core::slice::Iter<'_, PlanetId> {
+        self.ids.iter()
+    }
+    #[inline]
+    fn len(&self) -> usize {
+        self.ids.len()
+    }
+    #[cfg(test)]
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+    /// Both sides are sorted, so this is a linear merge rather than a lookup
+    /// per element. Test-only — the engine never asks this.
+    #[cfg(test)]
+    fn is_subset(&self, other: &ScannedSet) -> bool {
+        let mut it = other.ids.iter();
+        self.ids.iter().all(|want| it.by_ref().any(|have| have == want))
+    }
+}
+
+impl<'a> IntoIterator for &'a ScannedSet {
+    type Item = &'a PlanetId;
+    type IntoIter = core::slice::Iter<'a, PlanetId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.ids.iter()
+    }
 }
 
 impl VisitedMask {
@@ -365,69 +503,253 @@ impl Roster {
     }
 }
 
+/// The ratified per-hull geometry (`Hyades_mineral_cost_curve.md` §2.3) — the
+/// four numbers that turn a mineral price into a ship.
+///
+/// **These are spec-ratified, not MC-tuned.** `η` comes from §2.2's role×size
+/// sphericity table and `τ` from §2.3's thickness solve; the two
+/// `V_reserved` terms are §2.3's ratified role constants. None of them is a
+/// free parameter for a search to move — they are what the Band ladders
+/// *are*, and moving one without re-deriving the rungs breaks the tie
+/// `F_mass = F_cost^(3/2)` that R-MC15 ratified.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HullGeometry {
+    /// **`η`** — shape efficiency, §2.2. A General Systems Vehicle is a literal
+    /// sphere (`1.000`, the anchor the other nine are measured against); every
+    /// other hull needs more skin for the same volume, so its cost buys less
+    /// ship.
+    pub shape_efficiency: f64,
+    /// **`τ`** — absolute shell thickness. Rises `Limited < Medium < General`
+    /// within a role and by role `Systems < Contact < Offensive`, the second
+    /// being the armour statement expressed as geometry rather than as a combat
+    /// constant (design law #2).
+    pub shell_thickness: Length,
+    /// **`a_role`** — the absolute engine/crew/avionics core every hull of this
+    /// role carries regardless of size. It is what makes a Limited hull's hold
+    /// nearly all core and almost no cargo *as a result* rather than as a
+    /// special case.
+    pub reserved_core: Volume,
+    /// **`b_role`** — the role's own volume-proportional payload: weapons,
+    /// magazines, armour backing, sensor arrays. It is what stops an Offensive
+    /// hull becoming a freighter simply by being large.
+    pub reserved_payload_fraction: f64,
+}
+
+// §2.3's thickness ladder, Systems row, and the per-role multipliers on it.
+//
+// **Written to full precision, not to the spec table's four decimals.** These
+// are not free constants: §2.3 *solves* them from the ratified cost and the
+// ratified hold, `τ = (cost·η + hold)^(1/3) − hold^(1/3)`, so a rounded value
+// misses its Band rung. At four decimals the Medium hull's hold came out
+// 0.9977 kt against a `Band I` of 1.000 — 0.2% low, and enough to make a
+// Colonizer unable to carry a colony seed defined at exactly that rung. The
+// rungs are what the numbers are *for*; carry them at full width.
+//
+// They reproduce the rungs at the **ratified cost ladder** (1 : 1/10 : 1/50).
+// A config that moves `medium_fleet_size` without moving the mass ladder has
+// broken `F_mass = F_cost^(3/2)`, and the hold drifts off its rung — which is
+// the tie being visible rather than a bug.
+const TAU_LIMITED: f64 = 0.027_003_351_217_540_383;
+const TAU_MEDIUM: f64 = 0.031_654_111_594_258_35;
+const TAU_GENERAL: f64 = 0.032_988_014_798_952_3;
+const TAU_CONTACT: f64 = 1.8;
+const TAU_OFFENSIVE: f64 = 3.0;
+
 impl HullType {
-    /// Hull radius, **in units of shell thickness** — the shell model's single
-    /// geometric primitive (R-O58, `Hyades_standing_layer_and_observation.md`
-    /// §9.2), and a *derived* quantity, not a new tunable.
-    ///
-    /// A hull is a shell: dry mass is the material actually bought, so it scales
-    /// with **surface area**, and cost §1 already uses area as the cost basis.
-    /// Under R-O57 cost *is* dry mass, so `cost ∝ r²` and the radius ladder
-    /// falls straight out of the (MC-tunable) cost ladder:
-    ///
-    /// ```text
-    /// r = sqrt(cost / cost_Limited)
-    /// ```
-    ///
-    /// The Limited hull is the unit, `r = 1`, which is the model's other half:
-    /// **a Limited hull is all shell and no hold**, which is what makes
-    /// [`HullType::cargo_capacity`] come out at exactly zero for it rather than
-    /// having to be special-cased. At the shipped 1 : 3 : 9 cost ladder the
-    /// ladder is 1 : √3 : 3.
-    fn hull_radius(self, cfg: &SimConfig) -> f64 {
-        (self.cost_fraction(cfg) / HullType::LimitedSystems.cost_fraction(cfg)).sqrt()
+    /// Every hull type, in declaration order. Iterated rather than matched
+    /// wherever a check must cover all ten, so a new variant cannot slip past
+    /// it silently — [`SimConfig::hull_ladder_fault`] is the one that matters,
+    /// because the hull it misses is the one that puts a NaN in hashed state.
+    pub const ALL: [HullType; 10] = [
+        HullType::LimitedSystems,
+        HullType::MediumSystems,
+        HullType::GeneralSystems,
+        HullType::LimitedContactVehicle,
+        HullType::LimitedContactUnit,
+        HullType::GeneralContactVehicle,
+        HullType::GeneralContactUnit,
+        HullType::LimitedOffensive,
+        HullType::RapidOffensive,
+        HullType::GeneralOffensive,
+    ];
+
+    /// This hull's ratified geometry (§2.3). The table is written out rather
+    /// than computed so that every one of the ten hulls is greppable and a new
+    /// variant cannot inherit a neighbour's shell by accident.
+    pub const fn geometry(self) -> HullGeometry {
+        use HullType::*;
+        let (eta, tau, core, payload) = match self {
+            // Systems — roundest, thinnest-skinned, and the only role whose
+            // reserved volume does not scale: cargo *is* its payload, which is
+            // what makes its hold ladder purely geometric and makes it the row
+            // §2.3 solves the ladder on.
+            LimitedSystems => (0.86, TAU_LIMITED, 0.079, 0.00),
+            MediumSystems => (0.98, TAU_MEDIUM, 0.079, 0.00),
+            GeneralSystems => (1.000, TAU_GENERAL, 0.079, 0.00),
+            // Contact — between Systems and Offensive on every axis, because
+            // §2.3 derives it that way rather than fitting it.
+            LimitedContactVehicle | LimitedContactUnit => (0.75, TAU_LIMITED * TAU_CONTACT, 0.132, 0.15),
+            GeneralContactVehicle | GeneralContactUnit => (0.96, TAU_GENERAL * TAU_CONTACT, 0.132, 0.15),
+            // Offensive — least round, thickest-skinned, largest reserve. The
+            // `b` term is what zeroes a warship's hold at every size a warship
+            // is actually built at.
+            LimitedOffensive => (0.64, TAU_LIMITED * TAU_OFFENSIVE, 0.194, 0.45),
+            RapidOffensive => (0.73, TAU_MEDIUM * TAU_OFFENSIVE, 0.194, 0.45),
+            GeneralOffensive => (0.93, TAU_GENERAL * TAU_OFFENSIVE, 0.194, 0.45),
+        };
+        HullGeometry {
+            shape_efficiency: eta,
+            shell_thickness: Length::new(tau),
+            reserved_core: Volume::new(core),
+            reserved_payload_fraction: payload,
+        }
     }
 
-    /// Cargo capacity **as a mass** (R-O58) — kilotons, the same unit as
-    /// minerals, population, biosphere and the hull itself (L6).
+    /// **Absolute shell thickness `τ`** — the shell model's one geometric input
+    /// (§2.3), and the thing that separates cost from capacity.
     ///
-    /// Contents scale with the shell's *usable interior*, `(4/3)π(r−t)³`, against
-    /// a dry mass that scales with area. Working in shell-thickness units and
-    /// normalising to the Medium hull folds the geometric constants into
-    /// [`SimConfig::cargo_unit_size`], leaving
+    /// Before T-56 this was the literal `1.0` subtracted inside
+    /// `cargo_capacity`, which made "a Limited hull is all shell" a
+    /// *definition* and left `medium_fleet_size` doing two jobs: since
+    /// `r = sqrt(cost ratio)`, the price knob was also the hold knob, and
+    /// `CLAUDE.md` §2 lists the measurement artifacts that came of it. With a
+    /// real `τ` the two are independent functions of one body — cost is the
+    /// shell, capacity is the hold.
+    pub const fn shell_thickness(self) -> Length {
+        self.geometry().shell_thickness
+    }
+
+    /// Hull radius, solved from the price rather than square-rooted from it.
+    ///
+    /// §2 puts cost on the material actually bought, which is the **shell
+    /// volume** shape-penalised by `η`:
     ///
     /// ```text
-    /// capacity = cargo_unit_size · (r − 1)³ / (r_Medium − 1)³
+    /// cost · η = r³ − (r − τ)³ = 3τr² − 3τ²r + τ³
     /// ```
     ///
-    /// so the reference load a Medium hull hauls is exactly `cargo_unit_size`,
-    /// unchanged from the flat constant this replaces.
+    /// a quadratic in `r` with the positive root
+    ///
+    /// ```text
+    /// r = τ/2 + sqrt(12·τ·cost·η − 3τ⁴) / (6τ)
+    /// ```
+    ///
+    /// **This supersedes `r = sqrt(cost / cost_Limited)`**, which was the
+    /// constant-`τ` special case written as if it were the law — it reduces to
+    /// `cost ≈ 3r²τ/η ∝ area` exactly when the thickness is held fixed, which
+    /// is no longer true across roles or sizes.
+    ///
+    /// The discriminant goes negative only for a hull too cheap to be built at
+    /// its own thickness (`4·cost·η < τ³`), which
+    /// [`SimConfig::hull_ladder_fault`] rejects at construction — design law
+    /// #16 makes a NaN here a fatal error, not a value. At the ratified ladder
+    /// the tightest margin is the LOU's, at 24× clear.
+    pub fn hull_radius(self, cfg: &SimConfig) -> Length {
+        let g = self.geometry();
+        let tau = g.shell_thickness.hull_units();
+        let material = self.cost_fraction(cfg) * cfg.general_vehicle_cost * g.shape_efficiency;
+        let disc = 12.0 * tau * material - 3.0 * tau * tau * tau * tau;
+        Length::new(tau / 2.0 + disc.max(0.0).sqrt() / (6.0 * tau))
+    }
+
+    /// The hold's radius, `r − τ`, floored at zero.
+    ///
+    /// The floor is not a special case for small hulls — it is the statement
+    /// that a hull whose skin is as thick as it is wide has no interior at all.
+    pub fn hold_radius(self, cfg: &SimConfig) -> Length {
+        (self.hull_radius(cfg) - self.shell_thickness()).max(Length::ZERO)
+    }
+
+    /// The hold's **volume**, `(r − τ)³` — the geometric quantity that sits on a
+    /// Band rung (§2.3), as distinct from the cargo it can carry, which is this
+    /// minus the role's `V_reserved` and is a mass.
+    ///
+    /// At the ratified ladder the Systems row lands on the rungs exactly:
+    /// `Band Empty` 0.089, `Band I` 1.00, `Band II` 31.6.
+    pub fn hold_volume(self, cfg: &SimConfig) -> Volume {
+        self.hold_radius(cfg).cubed()
+    }
+
+    /// The **shell's** volume, `r³ − (r − τ)³` — the material actually bought,
+    /// and therefore (L6/R-O57) the hull's cost and its dry mass.
+    ///
+    /// Now genuinely the inverse of [`hull_radius`](Self::hull_radius): this
+    /// times `1/η` reproduces the cost that produced the radius, and
+    /// `the_shell_model_round_trips_cost_through_geometry` pins it.
+    pub fn shell_volume(self, cfg: &SimConfig) -> Volume {
+        self.hull_radius(cfg).cubed() - self.hold_volume(cfg)
+    }
+
+    /// **Reserved volume** — `a_role + b_role · V` (§2.3): the engine/crew core
+    /// plus the role's own scaling payload, both deducted from the hold before
+    /// anything can be carried.
+    pub fn reserved_volume(self, cfg: &SimConfig) -> Volume {
+        let g = self.geometry();
+        g.reserved_core + self.hull_radius(cfg).cubed() * g.reserved_payload_fraction
+    }
+
+    /// Cargo capacity **as a mass** (R-O58) — [`Kilotons`], the same unit as
+    /// minerals, population, biosphere and the hull itself (L6). Typed rather
+    /// than a bare `f64` because it is consumed by an acceleration term, which
+    /// needs a mass and nothing else (§4, R-O66).
+    ///
+    /// ```text
+    /// capacity = max(0, hold − V_reserved) · cargo_unit_size
+    /// ```
+    ///
+    /// The Band rung is the **hold**; `V_reserved` is the role deduction on top
+    /// of it, and [`SimConfig::cargo_unit_size`] is the one density that turns a
+    /// volume into a mass. Three consequences, all of them §2.3's and none of
+    /// them special-cased here:
+    ///
+    /// - **`max(0, ·)` is reached honestly.** A Limited Contact or Offensive
+    ///   hull, and a Rapid Offensive one, have a reserve larger than their
+    ///   whole hold, so they carry exactly nothing — the *capability* half of
+    ///   roles §4's permissive rule, a fact rather than a competence penalty.
+    /// - **A Limited Systems hull carries a little**, ~0.010 kt: a scout's
+    ///   sample locker, because its core eats 88% of a `Band Empty` hold.
+    /// - **A General Offensive Unit still carries ~2.2 kt** — troops, ordnance,
+    ///   prize crews — so "Offensive has little to zero cargo" is size-dependent
+    ///   rather than a flat zero.
+    ///
+    /// **The normaliser is gone.** Capacity used to be `(r − 1)³` scaled against
+    /// a fixed reference radius `√3`, which made `cargo_unit_size` the hold of a
+    /// hull no ladder actually produced and put a derived quantity in a
+    /// denominator — the shape of four of the measurement artifacts in
+    /// `CLAUDE.md` §2. A hold is now a volume and a density converts it.
     ///
     /// **This supersedes the abstract 0 / 1 / 2 unit count** of
     /// `Hyades_vehicle_roles.md` §6. That ladder was confirmed, but as a *unit
     /// count*, and a unit count is not a mass — read as one it puts contents on
     /// a near-linear ladder while the shell model puts them on a cubic one. What
-    /// survives, and is asserted in the tests, is its ordinal content: Limited
-    /// carries nothing, and each larger hull carries strictly more. The
-    /// magnitudes are now geometry (R-O64).
-    /// Normalised against [`REFERENCE_MEDIUM_RADIUS`], a **constant**, so this
-    /// is well-defined for every cost ladder and nothing diverges. A hull
-    /// approaching the unit radius approaches zero capacity, smoothly, because
-    /// it is approaching being all shell.
-    fn cargo_capacity(self, cfg: &SimConfig) -> f64 {
-        const REF_USABLE: f64 =
-            (REFERENCE_MEDIUM_RADIUS - 1.0) * (REFERENCE_MEDIUM_RADIUS - 1.0) * (REFERENCE_MEDIUM_RADIUS - 1.0);
-        let usable = (self.hull_radius(cfg) - 1.0).max(0.0).powi(3);
-        cfg.cargo_unit_size * usable / REF_USABLE
+    /// survives is its ordinal content: each larger hull carries strictly more.
+    /// The magnitudes are geometry now (R-O64).
+    pub fn cargo_capacity(self, cfg: &SimConfig) -> Kilotons {
+        let usable = self.hold_volume(cfg) - self.reserved_volume(cfg);
+        Kilotons::new(usable.max(Volume::ZERO).hull_units_cubed() * cfg.cargo_unit_size)
     }
 
-    /// Mineral cost as a fraction of `SimConfig::general_vehicle_cost`, from
-    /// the confirmed 1 : 3 : 9 (General : Medium : Limited) progression —
-    /// "1 mineral buys 1 GSV, a medium fleet of MSV (starting guess 3), or a
-    /// large fleet of LSV (starting guess 9)" (`Hyades_vehicle_roles.md` §6).
-    /// The *ratio* (3, 9) is the MC-tunable placeholder, carried on
-    /// `SimConfig` (`medium_fleet_size`/`limited_fleet_size`); this just picks
-    /// which one applies.
+    /// **The largest founding population this hull could deliver** — the people
+    /// its hold holds.
+    ///
+    /// Since T-64 this is the hold mass itself, with no conversion: settlers
+    /// are a mass and a hold is a mass, so the "capacity in Bands" step was
+    /// converting a number into its own logarithm and back.
+    ///
+    /// A *capacity*, not a load: what actually flies is this capped at the
+    /// target's carrying capacity, because a seed above `K` crashes rather than
+    /// settling (T-56 stage 4). The ladder makes the capacities `Band Empty` /
+    /// `Band I` / `Band II` for Limited / Medium / General.
+    pub fn colony_seed_capacity(self, cfg: &SimConfig) -> Kilotons {
+        Kilotons::new(self.hold_volume(cfg).hull_units_cubed() * cfg.cargo_unit_size)
+    }
+
+    /// Mineral cost as a fraction of `SimConfig::general_vehicle_cost` — the
+    /// **anchor** the geometry is solved from, not a consequence of it.
+    ///
+    /// The General hull is the unit; `medium_fleet_size` and
+    /// `limited_fleet_size` are the `Band I → II` and `Band Empty → I` steps of
+    /// the ratified cost ladder (§2.6, R-MC15), so this is `1 : 1/10 : 1/50`.
     fn cost_fraction(self, cfg: &SimConfig) -> f64 {
         use HullType::*;
         match self {
@@ -459,17 +781,73 @@ pub fn role_hull_type(role: Role) -> HullType {
     }
 }
 
-/// The **fixed** reference radius the capacity ladder is normalised against —
-/// the Medium hull's radius at the reference cost ladder, `sqrt(9/3) = √3`.
+// The two constants this block used to hold — `REFERENCE_MEDIUM_RADIUS` (√3)
+// and `UNIT_SHELL_THICKNESS` (1.0) — are **deleted by T-56 stage 3c.** Both
+// were consequences of a geometry that no longer exists: capacity was
+// `(r − 1)³` normalised against a fixed reference radius, so the shell
+// thickness was a literal `1` and `cargo_unit_size` was the hold of a hull no
+// ladder actually produced. Thickness is now a ratified per-hull quantity
+// (`HullType::geometry`) and capacity is a volume times a density, so there is
+// no normaliser left to put a derived quantity in a denominator — which is
+// what four of the measurement artifacts in `CLAUDE.md` §2 had in common.
+
+// `FOUNDING_INFRA_AT_MEDIUM` is **deleted (R-O77 closed)**. It was the anchor a
+// subsidised founding rate scaled from: a Medium hull cost 0.1 minerals and
+// became a Band of infrastructure the ladder charges 1.0 for, so founding
+// conjured 10× the mass that was spent. There is no rate any more — a hull's
+// mass *is* the infrastructure it becomes, which is what design law #11 said
+// all along.
+
+/// **The infrastructure ladder — priced in minerals, on the mineral ladder
+/// (R-O80 closed).**
 ///
-/// A *constant*, deliberately, and that is the whole point. Normalising against
-/// the live `r_M` made the Medium hull a pivot, and pivoting on a quantity that
-/// can approach zero is what produced the apparent explosion in the General :
-/// Medium capacity ratio. Against a fixed reference nothing diverges: as the
-/// cost ladder narrows, the Medium hull's capacity simply *shrinks toward zero*,
-/// which is the physically correct statement — a hull barely larger than the
-/// unit radius is nearly all shell and has nearly no hold.
-const REFERENCE_MEDIUM_RADIUS: f64 = 1.732_050_807_568_877_2; // √3
+/// Infrastructure is bought with minerals, so its rungs are the *cost* ladder's
+/// rungs: **`Infra I` costs `minerals I`**, rung for rung. `general_vehicle_cost`
+/// is cost `Band II` (§2.6), which anchors the rest through the ratified
+/// factors `5, 10, 20, 40`:
+///
+/// | rung | minerals to be at it | step from the rung below |
+/// |---|---|---|
+/// | `Empty` | 0.02 | — |
+/// | `I` | 0.10 | 0.08 |
+/// | `II` | 1.00 | 0.90 |
+/// | `III` | 20.0 | 19.0 |
+/// | `IV` | 800 | 780 |
+///
+/// **This replaces `round(infra) + 1`**, which charged 1 / 2 / 3 / 4 — a linear
+/// count of Band *numerals*, and the last Band-additive quantity in the engine.
+/// It arrived in the initial import with no derivation beyond its doc line
+/// ("infrastructure upgrades cost minerals equal to the target level") and
+/// survived because `Band` still had an `Add`.
+///
+/// The shape of the economy changes with it: the first two rungs get an order
+/// of magnitude cheaper and `Band III` becomes a real investment rather than
+/// three minerals. That is what a multiplicative ladder means — and it is why
+/// the correspondence with hull prices is *exact*. The rungs **are** the hull
+/// costs (`Limited` 0.02, `Medium` 0.10, `General` 1.00), so a recycled hull
+/// buys precisely the infrastructure its minerals would have bought, and
+/// [`Simulation::founding_infra`] needs no separate rate.
+/// The cost ladder's anchor for this configuration: minerals at cost `Band I`,
+/// one step below `general_vehicle_cost` (which §2.6 puts at `Band II`).
+///
+/// This is the one runtime parameter the ladder takes. Everything else about it
+/// is the ratified `COST_LADDER`, carried on the `Qty<Cost>` type itself.
+#[inline]
+fn cost_anchor(cfg: &SimConfig) -> f64 {
+    cfg.general_vehicle_cost / units::COST_LADDER[1]
+}
+
+/// The minerals it takes to *stand at* whole infrastructure rung `n`.
+#[inline]
+fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
+    Price::new(Price::rung_from(n, cost_anchor(cfg)))
+}
+
+/// Minerals to raise infrastructure from `from` to the next whole rung.
+fn infra_step_price(from: Band, cfg: &SimConfig) -> Price {
+    let at = from.round().bands().max(0.0) as usize;
+    infra_rung_price(at + 1, cfg) - infra_rung_price(at, cfg)
+}
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
 /// hull's price and its empty mass are one number in one unit (kilotons); there
@@ -493,8 +871,8 @@ const REFERENCE_MEDIUM_RADIUS: f64 = 1.732_050_807_568_877_2; // √3
 /// `hull_base_thrust · factor / hull_dry_mass`, and thrust is defined below as
 /// thrust-to-mass × dry mass, so the dry mass cancels exactly — empty-hull
 /// acceleration depends only on [`hull_thrust_to_mass`], as it did before.
-pub fn hull_dry_mass(hull: HullType, cfg: &SimConfig) -> f64 {
-    hull.cost_fraction(cfg) * cfg.general_vehicle_cost
+pub fn hull_dry_mass(hull: HullType, cfg: &SimConfig) -> Kilotons {
+    Kilotons::new(hull.cost_fraction(cfg) * cfg.general_vehicle_cost)
 }
 
 /// Empty-hull thrust-to-mass, in units of `civilian_accel_g` — Offensive hulls
@@ -533,7 +911,7 @@ fn hull_thrust_to_mass(hull: HullType) -> f64 {
 /// empty-hull accel — so cargo mass (added in the denominator elsewhere) is the
 /// only thing that derates it, matching the loadout acceleration query.
 pub fn hull_base_thrust(hull: HullType, cfg: &SimConfig) -> f64 {
-    hull_thrust_to_mass(hull) * cfg.civilian_accel_g * hull_dry_mass(hull, cfg)
+    hull_thrust_to_mass(hull) * cfg.civilian_accel_g * hull_dry_mass(hull, cfg).kilotons()
 }
 
 /// Per-hull thrust-factor spread (unit-mean-ish jitter a spawner draws within).
@@ -546,8 +924,20 @@ pub fn hull_thrust_multiplier_range(_hull: HullType) -> (f64, f64) {
 /// Mineral cost of building one ship in `role`, under the "1 CMY mineral = 1
 /// fleet" model (`role_hull_type` picks the type, [`HullType::cost_fraction`]
 /// picks the fraction of `general_vehicle_cost`).
-fn role_cost(role: Role, cfg: &SimConfig) -> f64 {
-    role_hull_type(role).cost_fraction(cfg) * cfg.general_vehicle_cost
+///
+/// **Only for the paths where the role still picks the hull** — the paired
+/// Freighter, and the Scout. A build that names its hull is priced by
+/// [`hull_cost`], because the two stopped agreeing the moment Doctrine could
+/// order a heavier colonizer.
+fn role_cost(role: Role, cfg: &SimConfig) -> Price {
+    hull_cost(role_hull_type(role), cfg)
+}
+
+/// Mineral cost of building one hull. Same number as [`hull_dry_mass`] under
+/// L6/R-O57 — cost *is* dry mass — but read at the point of purchase rather
+/// than the point of flight.
+fn hull_cost(hull: HullType, cfg: &SimConfig) -> Price {
+    Price::new(hull.cost_fraction(cfg) * cfg.general_vehicle_cost)
 }
 
 /// The component world: entity bookkeeping plus every typed store.
@@ -561,10 +951,18 @@ struct World {
     factors: ComponentStore<Factors>,
     density: ComponentStore<MineralField>,
     stockpile: ComponentStore<Minerals>,
-    population: ComponentStore<f64>,
+    population: ComponentStore<Kilotons>,
     planet_id: ComponentStore<PlanetId>,
     homeworld: ComponentStore<Homeworld>,
     archetype: ComponentStore<Archetype>,
+    /// **Shipyard occupancy** — present iff this center has a build under way,
+    /// holding the clock time it finishes (R-O69).
+    ///
+    /// The center is the thing that is busy, not the hull: a build ties up the
+    /// yard for `build_years` and the next decision is taken when it clears.
+    /// Presence is the whole state — the economy tick skips an occupied center,
+    /// and [`EventKind::BuildDecision`] removes it on arrival.
+    building_until: ComponentStore<f64>,
 
     // shared
     owner: ComponentStore<PlayerId>,
@@ -581,7 +979,7 @@ struct World {
     /// the fully generic mineral|pop|embarked-fleet cargo slot the loadout
     /// doc describes is future work (§6 there), this is the minimum that
     /// makes "1 pop as cargo" real.
-    pop_cargo: ComponentStore<f64>,
+    pop_cargo: ComponentStore<Kilotons>,
     home_center: ComponentStore<Entity>,
     shuttle: ComponentStore<Shuttle>,
 
@@ -613,6 +1011,7 @@ impl World {
             planet_id: ComponentStore::new(),
             homeworld: ComponentStore::new(),
             archetype: ComponentStore::new(),
+            building_until: ComponentStore::new(),
             owner: ComponentStore::new(),
             role: ComponentStore::new(),
             hull_type: ComponentStore::new(),
@@ -666,8 +1065,29 @@ enum EventKind {
     ReturnArrive { vehicle: Entity },
     /// A manned outpost extracts ore from its dwindling density.
     MiningTick { outpost: Entity },
-    /// A production center completes a build cycle (mine + grow + build).
+    /// A production center's **economy** step: mine + grow. Cadence-driven, one
+    /// per center per `cycle_years`, because both halves are *rates over an
+    /// interval* and an interval is what they need.
+    ///
+    /// It no longer carries the build decision (R-O69). It still *takes* one
+    /// when the yard is free, because an empty yard has no completion event to
+    /// wake it — mining is what changes a saving center's situation, so the
+    /// mining step is the right place to reconsider.
     ProductionTick { center: Entity },
+    /// **A production center decides what to build** — the event that replaced
+    /// the cadence (R-O69).
+    ///
+    /// Fires when the yard clears: `build_years` after a build was committed.
+    /// The decision is the moment the center's situation actually changed, which
+    /// is the §4 rule the production tick was the last exception to.
+    ///
+    /// The other trigger the design calls for — **a build interrupted by
+    /// hostiles** — has nothing to raise it yet: no combat is wired into the
+    /// simulation loop (`combat::resolve_engagement` is never called from
+    /// `sim.rs`). When it is, interruption is *this* event scheduled at the
+    /// moment of the strike, after clearing `building_until`; the seam is here
+    /// so that is a scheduling call and not a redesign. **T-52.**
+    BuildDecision { center: Entity },
     /// An exhausted Scout reaches a friendly colony and scraps
     /// (`Hyades_vehicle_roles.md` §4.1/§4.6 — confirmed, LCV only).
     ScrapArrive { vehicle: Entity },
@@ -718,42 +1138,81 @@ pub struct SimConfig {
     pub cycle_years: f64,
     pub build_years: f64,
     pub civilian_accel_g: f64,
-    pub colony_seed_pop: f64,
+    pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
 
-    /// Minimum development level to build medium vehicles (colony/mining). Per
-    /// the production schedule this is **3** (`Band III` — 2/`Band II` = limited,
-    /// 3/`Band III` = medium, 4/`Band IV` = all; `Hyades_mineral_cost_curve.md`
-    /// §2.6 names the general Band ladder these development levels instantiate).
-    pub medium_min_level: u8,
+    /// Minimum development level to build medium vehicles (colony/mining).
+    ///
+    /// **Ratified at `Band II`, down from `Band III` (R-O80, T-61).** It had to
+    /// move with the infrastructure ladder. `K = min(hab, bio_max, infra)` caps
+    /// population, so this is really a gate on *infrastructure*, and the
+    /// corrected ladder charges **20 minerals cumulative to reach `Band III`
+    /// against 6 under the old linear one**. An expansion gate cannot sit one
+    /// rung above a step that costs twenty times the last one: at `Band III`
+    /// the standard bed produced **zero colonies in 4,000 years** on both
+    /// seeds, homeworlds stalling at `Band II` and never affording a colonizer.
+    ///
+    /// At `Band II` the same bed gives 10,105,286 and 10,037,745 colony-years
+    /// on seeds 1 and 7 — the best figures this project has recorded, +15% on
+    /// the subsidised best, with the first colony founded at 65 yr against 185.
+    ///
+    /// The production schedule's "2 = limited, 3 = medium, 4 = all" is retired
+    /// with it: that schedule was written against a linear price ladder and
+    /// does not survive the ladder being multiplicative.
+    pub medium_min_level: BandTier,
     /// Minimum development level to build *limited* vehicles — the Scout/LCV
     /// survey craft. The same production schedule that puts medium at
     /// `Band III` puts limited at **2** (`Band II`); before this field existed
     /// the autopilot returned `Idle` for everything below `medium_min_level`,
     /// so the limited tier was unreachable and a `Band II` center could do
     /// nothing but hoard minerals.
-    pub limited_min_level: u8,
+    pub limited_min_level: BandTier,
     /// Mineral cost of one General Systems Vehicle — "1 CMY mineral = 1 fleet"
     /// (`Hyades_vehicle_roles.md` §6, confirmed this conversation, revising
     /// the earlier "3 CMY = 3 fleets" anchor to the same ratio in cleaner
     /// units).
     pub general_vehicle_cost: f64,
     /// How many Medium Systems Vehicles one `general_vehicle_cost` buys —
-    /// "a medium fleet... starting guess: 3" (§6) — **superseded, see below.**
+    /// "a medium fleet... starting guess: 3" (§6) — **superseded twice.**
     ///
-    /// **MC-ratified at 4.45** by a verified gradient step (`gradient_probe`
-    /// then `gradient_step`): elasticity +32.7 ± 3.6 points per ln, moved α = 0.5 along
-    /// the normalised gradient and confirmed on the same CRN seeds. The step as
-    /// a whole bought **+10.99 ± 1.86 points** of coverage, 38.26% → 49.25%.
-    /// Not a solo optimum — one component of a joint move, and it should be
-    /// re-derived jointly if any of the other three changes.
+    /// **Ratified at 10 as the `Band I → II` step of the cost ladder**
+    /// (`Hyades_mineral_cost_curve.md` §2.6, R-MC15), replacing the MC-tuned
+    /// 4.45. The ladder is now `1 : 10 : 50`, and it is no longer a free
+    /// parameter: it *is* a Band step, so it is bound by the ratified growth
+    /// rule `1 < F₍ₙ₊₁₎/Fₙ < 10` and by `F_mass = F_cost^(3/2)`.
     ///
-    /// This also discharges design law #6 for one leg of the ladder: 1 : 3 : 9
-    /// was explicitly scaffolding to be replaced rather than a target, and it
-    /// has now been replaced by measurement. The ladder is 1 : 4.45 : 9.
+    /// **Measured before adopting** (`examples/hull_ladder`, the standard
+    /// four-seed CRN bed, 4,000 yr), because T-56's acceptance test is that
+    /// making General hulls *relatively more expensive* must not slow
+    /// colonisation down:
+    ///
+    /// | | colony-years | vs shipped | doubling |
+    /// |---|---|---|---|
+    /// | shipped (4.45 / 9.0) | 8,011,139 | — | 284.5 yr |
+    /// | ratified (10 / 50) | 8,697,322 | **+8.6%** | **265.0 yr** |
+    ///
+    /// Every seed improved (+8.0, +2.9, +13.9, +10.0) and the doubling time
+    /// fell by 19.5 years. **The gain is the price, not the hold** — and that
+    /// needed an ablation, because `hull_radius` is `sqrt(cost ratio)`, so this
+    /// field also moves the Medium hold 0.96 → 24.07 kt. Re-run with
+    /// `cargo_unit_size` rescaled to hold the Medium hull's capacity at its
+    /// shipped 0.959 kt, the ladder still gives **+7.6%** and 269.3 yr. So
+    /// roughly seven of the eight points are the cost change.
+    ///
+    /// The old MC ratification is superseded, not overturned: its +32.7 ± 3.6
+    /// elasticity was measured on the *coverage* objective at a lower operating
+    /// point, and it pointed the same way this ladder went.
+    ///
+    /// This discharges design law #6 for the ladder: 1 : 3 : 9 was scaffolding
+    /// to be replaced rather than a target, and it has been.
     pub medium_fleet_size: f64,
     /// How many Limited Systems Vehicles one `general_vehicle_cost` buys —
-    /// "a large fleet... starting guess: 9" (§6). MC-tunable.
+    /// "a large fleet... starting guess: 9" (§6).
+    ///
+    /// **Ratified at 50** — `5 × medium_fleet_size`, the `Empty → I` step of
+    /// the cost ladder (§2.6, R-MC15). Not independently tunable any more: with
+    /// `medium_fleet_size` it forms the two lowest rungs of a Band ladder, and
+    /// their ratio is what the growth rule constrains.
     pub limited_fleet_size: f64,
     /// Minerals a homeworld starts with, to seed the first infra deepening.
     /// **Homeworld only** — confirmed this conversation: colonies get no
@@ -819,12 +1278,40 @@ pub struct SimConfig {
     pub mining_tick_years: f64,
     /// Density below which a body is considered mined out.
     pub density_floor: f64,
-    /// The **reference hold**: what a Medium hull carries, in kilotons — the
-    /// scale factor on [`HullType::cargo_capacity`]'s geometric ladder.
+    /// The **reference hold**, in kilotons — the scale factor on
+    /// [`HullType::cargo_capacity`]'s geometric ladder.
     ///
-    /// Every other hull's capacity is this times its usable-volume ratio to the
-    /// reference radius (R-O58), so a Limited hull carries nothing and a General
-    /// one carries far more than twice as much.
+    /// Every other hull's capacity is this times its usable-volume ratio to
+    /// [`REFERENCE_MEDIUM_RADIUS`] (R-O58), so a Limited hull carries nothing
+    /// and a General one carries far more than twice as much.
+    ///
+    /// ~~What a Medium hull carries~~ — **it is the hold of a hull at the
+    /// reference radius √3, which the Medium hull only has when
+    /// `medium_fleet_size == 3`.** The normaliser is a constant on purpose (see
+    /// [`REFERENCE_MEDIUM_RADIUS`]); it is this doc line that was stale.
+    ///
+    /// **Ratified at 1.0 — `KT(I)`, one kiloton** (§2.6, R-MC15), where the
+    /// spec puts `Band I` for every quantity on the mass ladder. At the
+    /// ratified cost ladder the Medium radius is `√5` and a Medium hull carries
+    /// **4.81 kt**, so this field and the hull's real hold still differ by the
+    /// normaliser; making them the same number needs the per-`(role, size)`
+    /// thickness and `η` of §2.3 (T-56 stage 3c).
+    ///
+    /// **Adopting it was free, and provably so.** On top of the ratified cost
+    /// ladder, moving this 5.0 → 1.0 cuts every hold five-fold — Medium
+    /// 24.07 → 4.81 kt, General 2,852 → 570 kt — and reproduces the four-seed
+    /// bed **bit-identically** (`examples/hull_ladder`). Both values sit above
+    /// the binding threshold the table below already records.
+    ///
+    /// **That matters for the table, which is why it is corrected here.** Its
+    /// x-axis is this field, not the hold any hull actually has, and since
+    /// R-O58 the cost ladder *is* the capacity ladder — so `medium_fleet_size`
+    /// silently rescales what every row means. The table was taken at
+    /// `medium_fleet_size = 4.45`, where "past roughly 1–5" meant *past roughly
+    /// 0.19–0.96 kt of real Medium hold*. At the ratified ladder this field's
+    /// 1.0 is a 4.81 kt hold, already clear of it. CLAUDE.md §2: a parameter
+    /// that reaches the objective through a derived quantity cannot be swept
+    /// alone.
     ///
     /// **This is a floor requirement, not a tuning dial** — measured, not
     /// assumed (`examples/binding_check.rs`, 4 seeds, 4,000 yr):
@@ -926,38 +1413,54 @@ impl SimConfig {
     /// **Is the derived hull ladder usable?** `None` if fine, `Some(reason)` if
     /// the configuration produces a degenerate one.
     ///
-    /// Since R-O58 the cost ladder and the *capacity* ladder are the same
-    /// object: radius is `sqrt(cost / cost_Limited)` and capacity is
-    /// `(r − 1)³` normalised to a fixed reference. So `medium_fleet_size` is no
-    /// longer only a price — it sets how much bigger a Medium hull is than a
-    /// Limited one, and therefore the entire contents ladder.
+    /// **T-56 stage 3c untied the two ladders**, and this check changed with
+    /// them. Radius used to be `sqrt(cost / cost_Limited)` with capacity
+    /// `(r − 1)³` against a fixed reference, so `medium_fleet_size` was
+    /// simultaneously the price and the hold. Cost is now the shell volume and
+    /// capacity the hold volume — two functions of one body, separated by a
+    /// ratified per-hull `τ` — so a price change no longer silently rescales
+    /// every cargo bay.
     ///
-    /// **One failure, and it is a naming contradiction rather than a physical
-    /// one.** `medium_fleet_size ≥ limited_fleet_size` makes the Medium hull no
-    /// larger than the Limited one (`r_M ≤ 1`), so a hull the taxonomy calls
-    /// bigger is in fact smaller. The model cannot express that, so it is
-    /// refused.
+    /// **Two failures, and they are different in kind.**
     ///
-    /// **There is no longer a "too close" soft bound**, and the reason is worth
-    /// keeping. The earlier version refused `r_M < 1.25` because the General :
-    /// Medium capacity ratio blew up there — but that divergence was an artifact
-    /// of normalising capacity against the *live* Medium radius, i.e. dividing
-    /// by a quantity that goes to zero. Against a fixed reference
-    /// ([`REFERENCE_MEDIUM_RADIUS`]) nothing diverges: a narrow cost ladder just
-    /// means the Medium hull is nearly all shell and hauls nearly nothing, which
-    /// is a real economic consequence rather than a modelling failure. Narrow
-    /// ladders are now **allowed and meaningful**, so the search may explore
-    /// them.
+    /// - `medium_fleet_size ≥ limited_fleet_size` is a **naming contradiction**:
+    ///   a hull the taxonomy calls bigger would cost no more, and (via the
+    ///   solve) be no larger. Refused.
+    /// - A hull priced below its own skin — `4·cost·η < τ³` — is a **geometric
+    ///   impossibility**: the quadratic in `hull_radius` has no real root, and
+    ///   design law #16 makes the resulting NaN a fatal error rather than a
+    ///   value. Refused here, at construction, so it can never reach hashed
+    ///   state. At the ratified ladder the tightest margin is the Limited
+    ///   Offensive hull's, 24× clear.
+    ///
+    /// **There is no "too close" soft bound**, and the reason is worth keeping.
+    /// An earlier version refused `r_M < 1.25` because the General : Medium
+    /// capacity ratio blew up there — an artifact of normalising capacity
+    /// against the *live* Medium radius, i.e. dividing by a quantity that goes
+    /// to zero. There is no normaliser at all now. A narrow ladder just means
+    /// the Medium hull is nearly all shell and hauls nearly nothing, which is a
+    /// real economic consequence rather than a modelling failure.
     pub fn hull_ladder_fault(&self) -> Option<&'static str> {
-        let r_m = HullType::MediumSystems.hull_radius(self);
-        if !r_m.is_finite() {
-            return Some("hull radius is not finite — check the fleet-size ratios");
-        }
-        if r_m <= 1.0 {
+        if self.medium_fleet_size >= self.limited_fleet_size {
             return Some(
                 "medium_fleet_size >= limited_fleet_size: the Medium hull is no larger than the \
-                 Limited one, so every hull has zero cargo capacity (R-O58)",
+                 Limited one, so a hull the taxonomy calls bigger is in fact smaller",
             );
+        }
+        for hull in HullType::ALL {
+            let g = hull.geometry();
+            let tau = g.shell_thickness.hull_units();
+            let material = hull.cost_fraction(self) * self.general_vehicle_cost * g.shape_efficiency;
+            // The discriminant of the radius solve, checked directly: NaN first,
+            // because a NaN comparison is false either way round and design law
+            // #16 makes it fatal rather than merely wrong.
+            let disc = 12.0 * tau * material - 3.0 * tau * tau * tau * tau;
+            if disc.is_nan() || disc < 0.0 || !hull.hull_radius(self).is_finite() {
+                return Some(
+                    "a hull is priced below its own shell (4·cost·η < τ³): the radius solve has no \
+                     real root, which would put a NaN in replicated state (design law #16)",
+                );
+            }
         }
         None
     }
@@ -970,15 +1473,15 @@ impl SimConfig {
             civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
-            colony_seed_pop: 1.0,
+            colony_seed_pop: BandTier::I,
             // 120 — ratified with the snowball defaults: a 40-hop chain retired
             // scouts while most of the galaxy was still dark.
             max_survey_hops: 120,
-            medium_min_level: 3,
-            limited_min_level: 2,
+            medium_min_level: BandTier::II,
+            limited_min_level: BandTier::II,
             general_vehicle_cost: 1.0,
-            medium_fleet_size: 4.45,
-            limited_fleet_size: 9.0,
+            medium_fleet_size: 10.0,
+            limited_fleet_size: 50.0,
             homeworld_start_minerals: 3.0,
             enforce_roster: false,
             recycle_mining_pairs: RECYCLE_MINING_PAIRS_DEFAULT,
@@ -987,7 +1490,7 @@ impl SimConfig {
             outpost_mining_fraction: 0.238,
             mining_tick_years: 50.0,
             density_floor: 0.01,
-            cargo_unit_size: 5.0,
+            cargo_unit_size: 1.0,
             trade_decay_lambda: 0.01,
             years_to_first_round: 200.0,
             years_per_round: 400.0,
@@ -1003,7 +1506,10 @@ pub struct PlayerReport {
     pub planets_owned: usize,
     pub colonies: usize,
     pub mining_outposts: usize,
-    pub total_population: f64,
+    /// The empire's people, **as a mass** — see
+    /// [`crate::snapshot::PlayerSnapshot::total_population`] for why a sum of
+    /// Bands would not mean anything.
+    pub total_population: Kilotons,
     pub scanned: usize,
 }
 
@@ -1041,6 +1547,11 @@ pub struct Simulation {
 
     planet_entity: Vec<Entity>,
     player_entity: Vec<Entity>,
+    /// Memoised holdings centroid per seat; `None` means "recompute".
+    /// Invalidated only by [`Simulation::claim_planet`] — see
+    /// [`Simulation::holdings_centroid`] for why this is a memo and not a
+    /// running sum.
+    centroid_cache: Vec<Option<Vec3>>,
 
     autopilots: Vec<Box<dyn Autopilot>>,
     queue: BinaryHeap<Reverse<Event>>,
@@ -1053,10 +1564,30 @@ pub struct Simulation {
     events_processed: u64,
     /// Outpost indices with an active mining tick (dedup).
     active_mines: BTreeSet<u64>,
-    /// Which miner is working which outpost, so exhaustion can find the hull it
-    /// stranded. Keyed by outpost entity index; `BTreeMap` for deterministic
-    /// iteration, like every other collection in here.
-    mine_operator: BTreeMap<u64, Entity>,
+    /// Which miners are working which outpost, so exhaustion can find the hulls
+    /// it stranded — and so extraction knows how many hands are on the rock
+    /// (T-57). Keyed by outpost entity index; `BTreeMap` for deterministic
+    /// iteration, like every other collection in here, and the crew is a `Vec`
+    /// in arrival order for the same reason.
+    ///
+    /// **It was one `Entity` until T-57.** A mining outpost could only ever have
+    /// a single operator *by data structure*, which is why "how many miners per
+    /// outpost" was not a value anyone could tune — there was no term in the
+    /// model for it.
+    mine_crew: BTreeMap<(u32, u64), Vec<Entity>>,
+    /// Ore an outpost has extracted **for one player**, awaiting a freighter.
+    ///
+    /// Keyed by `(player, outpost)`, and that is the correction: the rock's
+    /// `stockpile` component is one pile per *planet*, so two empires working
+    /// the same body were filling and drawing from the same heap — either could
+    /// haul away what the other's miners dug. Outposts are never claimed
+    /// (`claim_planet` is for colonies), so nothing stopped it.
+    ///
+    /// **The body is shared; the pile is not.** `density` stays per-planet
+    /// because a rock is one physical object and every crew on it depletes the
+    /// same ore — contesting a field is a real mechanic, and a card that lets
+    /// an empire draw from a rival's pile is a *card*, not the default.
+    outpost_stock: BTreeMap<(u32, u64), Minerals>,
     /// Per-player pools of hulls whose rock ran dry, awaiting re-tasking. Push
     /// order is event order, so these are deterministic; selection is by
     /// distance to the new target, not by position in the pool.
@@ -1094,13 +1625,18 @@ impl Simulation {
             world.position.insert(e, pl.position);
             world.factors.insert(
                 e,
-                Factors {
-                    hab: pl.habitability,
-                    bio: pl.biosphere,
-                    // A wild world is at its pristine ceiling by definition.
-                    bio_max: pl.biosphere,
-                    infra: pl.infrastructure,
-                },
+                Factors::new(
+                    pl.habitability,
+                    // **Every world is at its pristine ceiling at t=0** — one
+                    // generated value, read as a mass, used for both the stock
+                    // and the ceiling. There is no design reason for a world to
+                    // start below its own ceiling, and no generator spread to
+                    // reconcile: `biomass == bio_max` here holds by
+                    // construction rather than by convention.
+                    pl.biosphere.in_kilotons(),
+                    pl.biosphere.in_kilotons(),
+                    pl.infrastructure,
+                ),
             );
             world.density.insert(e, pl.minerals);
             world.stockpile.insert(e, Minerals::default());
@@ -1140,6 +1676,7 @@ impl Simulation {
             bands: galaxy.bands,
             planet_entity,
             player_entity,
+            centroid_cache: vec![None; n],
             autopilots,
             queue: BinaryHeap::new(),
             rng: Rng::new(config.seed),
@@ -1147,7 +1684,8 @@ impl Simulation {
             seq: 0,
             events_processed: 0,
             active_mines: BTreeSet::new(),
-            mine_operator: BTreeMap::new(),
+            mine_crew: BTreeMap::new(),
+            outpost_stock: BTreeMap::new(),
             reserve_miners: vec![Vec::new(); n],
             reserve_freighters: vec![Vec::new(); n],
             current_round: 0,
@@ -1330,12 +1868,12 @@ impl Simulation {
             if p >= self.player_entity.len() {
                 continue;
             }
-            let cost = o.card.and_then(cards::card).map(|c| c.cost).unwrap_or(0.0);
-            let affordable = cost <= 0.0 || self.empire_can_afford(p, cost);
+            let cost = Price::new(o.card.and_then(cards::card).map(|c| c.cost).unwrap_or(0.0));
+            let affordable = cost <= Price::ZERO || self.empire_can_afford(p, cost);
             let Some(id) = o.coerce(affordable).card else { continue };
             let Some(c) = cards::card(id) else { continue };
             if c.cost > 0.0 {
-                self.empire_spend(p, c.cost);
+                self.empire_spend(p, Price::new(c.cost));
             }
             self.apply_card_effect(p, c, o.target, round);
         }
@@ -1344,9 +1882,9 @@ impl Simulation {
     /// Total basic minerals across an empire's holdings. Cards are paid from
     /// the empire, not from one center — design law #7 puts cards at
     /// empire/macro scale, so a per-center purse would be the wrong grain.
-    fn empire_can_afford(&self, p: usize, cost: f64) -> bool {
+    fn empire_can_afford(&self, p: usize, cost: Price) -> bool {
         let me = PlayerId(p as u32);
-        let mut total = 0.0;
+        let mut total = Price::ZERO;
         for &e in &self.planet_entity {
             if self.world.owner.get(e).copied() == Some(me) {
                 if let Some(s) = self.world.stockpile.get(e) {
@@ -1362,20 +1900,20 @@ impl Simulation {
 
     /// Draw `cost` from the empire's holdings, richest planet first so the draw
     /// is deterministic and does not strand a center that was about to build.
-    fn empire_spend(&mut self, p: usize, cost: f64) {
+    fn empire_spend(&mut self, p: usize, cost: Price) {
         let me = PlayerId(p as u32);
-        let mut holdings: Vec<(Entity, f64)> = self
+        let mut holdings: Vec<(Entity, Price)> = self
             .planet_entity
             .iter()
             .filter(|&&e| self.world.owner.get(e).copied() == Some(me))
             .filter_map(|&e| self.world.stockpile.get(e).map(|s| (e, s.basic_total())))
-            .filter(|&(_, t)| t > 0.0)
+            .filter(|&(_, t)| t > Price::ZERO)
             .collect();
         // Richest first; entity id breaks ties so the order is total.
         holdings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal).then(a.0 .0.cmp(&b.0 .0)));
         let mut remaining = cost;
         for (e, avail) in holdings {
-            if remaining <= 0.0 {
+            if remaining <= Price::ZERO {
                 break;
             }
             let take = remaining.min(avail);
@@ -1493,6 +2031,7 @@ impl Simulation {
             EventKind::ReturnArrive { vehicle } => self.sys_return_arrive(vehicle),
             EventKind::MiningTick { outpost } => self.sys_mining_tick(outpost),
             EventKind::ProductionTick { center } => self.sys_production_tick(center),
+            EventKind::BuildDecision { center } => self.sys_build_decision(center),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
             EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
@@ -1581,15 +2120,21 @@ impl Simulation {
 
         if !self.world.owner.contains(target) {
             // Found the colony; recycle the vehicle's hull into level-1 infra.
-            self.world.owner.insert(target, owner);
+            self.claim_planet(target, owner);
             {
+                // The hull is what is being recycled, so read it off the ship
+                // that actually arrived. Defaulting matches `sys_freighter_arrive`:
+                // a courier constructed without one is a test fixture, not a
+                // build, and the Medium hull is the baseline colonizer.
+                let hull = self.world.hull_type.get(vehicle).copied().unwrap_or(HullType::MediumSystems);
+                let founded_at = self.founding_infra(hull);
                 let f = self.world.factors.get_mut(target).unwrap();
-                f.infra = f.infra.max(1.0);
+                f.infra = f.infra.max(founded_at);
             }
             // Seed population from the pop *carried as cargo*
             // (`Hyades_vehicle_roles.md` §4.2/R-V9 — confirmed, not a flat
             // constant applied on arrival regardless of what was brought).
-            let carried_pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(0.0);
+            let carried_pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(Kilotons::ZERO);
             {
                 let pop = self.world.population.get_mut(target).unwrap();
                 if *pop < carried_pop {
@@ -1630,7 +2175,7 @@ impl Simulation {
         self.park(vehicle, here);
         self.world.knowledge.get_mut(self.player_entity[p]).unwrap().exploited.insert(pid);
         self.log.push(self.clock, LogEvent::VehicleParked { player: p as u32, vehicle, role: Role::Miner, at: pid });
-        self.mine_operator.insert(outpost.0, vehicle);
+        self.mine_crew.entry((p as u32, outpost.0)).or_default().push(vehicle);
         if self.active_mines.insert(outpost.0) {
             self.schedule(self.config.mining_tick_years, EventKind::MiningTick { outpost });
         }
@@ -1648,10 +2193,16 @@ impl Simulation {
 
         if sh.outbound {
             // At the outpost: load ore from its stockpile into cargo.
-            let avail = self.world.stockpile.get(sh.outpost).unwrap().basic_total();
-            let load = cap.min(avail);
-            if load > 0.0 {
-                let moved = take_basics(self.world.stockpile.get_mut(sh.outpost).unwrap(), load);
+            // **Its owner's pile, not the rock's.** Outposts are never claimed,
+            // so a per-planet heap let either empire haul away what the other's
+            // miners dug.
+            let stock = self.outpost_stock.entry((p, sh.outpost.0)).or_default();
+            // A hold is a mass and a stockpile is a price; the same kilotons,
+            // two ladders (R-O57). `on_scale` is the crossing, said out loud.
+            let avail = stock.basic_total();
+            let load = cap.on_scale::<units::Cost>().min(avail);
+            if load > Price::ZERO {
+                let moved = take_basics(self.outpost_stock.get_mut(&(p, sh.outpost.0)).unwrap(), load);
                 self.world.cargo.get_mut(vehicle).unwrap().add_basics(&moved);
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
                 self.log.push(
@@ -1660,7 +2211,7 @@ impl Simulation {
                         player: p,
                         vehicle,
                         leg: FreighterLeg::Loaded,
-                        amount: load,
+                        amount: load.kilotons(),
                         at: outpost_pid,
                     },
                 );
@@ -1676,8 +2227,8 @@ impl Simulation {
             // trips for the rest of the match: measured on seed 1, **not one
             // freighter of 2,655 ever reached this branch.** Same test, same
             // verdict, and the hull becomes re-taskable when its rock dies.
-            let dens = self.world.density.get(sh.outpost).unwrap().metallicity();
-            if load <= 1e-9 && dens * self.config.outpost_mining_fraction <= self.config.density_floor {
+            let dens = self.world.density.get(sh.outpost).unwrap().total_mass().kilotons();
+            if load <= Price::new(1e-9) && dens * self.config.outpost_mining_fraction <= self.config.density_floor {
                 let here = self.position_at(sh.outpost, self.clock).unwrap();
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
                 self.park(vehicle, here);
@@ -1721,7 +2272,7 @@ impl Simulation {
                 c.magenta = 0.0;
                 c.yellow = 0.0;
             }
-            if cargo.basic_total() > 0.0 {
+            if cargo.basic_total() > Price::ZERO {
                 let dest_pid = *self.world.planet_id.get(sh.destination).unwrap();
                 self.log.push(
                     self.clock,
@@ -1729,7 +2280,7 @@ impl Simulation {
                         player: p,
                         vehicle,
                         leg: FreighterLeg::Deposited,
-                        amount: cargo.basic_total(),
+                        amount: cargo.basic_total().kilotons(),
                         at: dest_pid,
                     },
                 );
@@ -1776,42 +2327,87 @@ impl Simulation {
 
         if let Some(dest_e) = self.nearest_owned_planet(owner.map(|o| o.0 as usize).unwrap_or(0), here) {
             let recovered = role_cost(Role::Scout, &self.config) * self.config.scrap_recovery_fraction;
-            let colors = recovered / 3.0;
+            let colors = recovered.kilotons() / 3.0;
             let stock = self.world.stockpile.get_mut(dest_e).unwrap();
             stock.cyan += colors;
             stock.magenta += colors;
             stock.yellow += colors;
             if let Some(o) = owner {
                 let pid = *self.world.planet_id.get(dest_e).unwrap();
-                self.log.push(self.clock, LogEvent::VehicleScrapped { player: o.0, vehicle, at: pid, recovered });
+                self.log.push(
+                    self.clock,
+                    LogEvent::VehicleScrapped { player: o.0, vehicle, at: pid, recovered: recovered.kilotons() },
+                );
             }
         }
     }
 
     fn sys_mining_tick(&mut self, outpost: Entity) {
         let pid = *self.world.planet_id.get(outpost).unwrap();
-        let amt = {
-            let d = self.world.density.get(outpost).unwrap();
-            d.metallicity() * self.config.outpost_mining_fraction
-        };
-        if amt > self.config.density_floor {
-            let extracted = self.world.density.get_mut(outpost).unwrap().extract(amt);
-            self.world.stockpile.get_mut(outpost).unwrap().add_basics(&extracted);
-            let density_after = self.world.density.get(outpost).unwrap().metallicity();
+        // **Extraction is per-miner now, not per-rock (T-57).**
+        //
+        // `outpost_mining_fraction` was the fraction of remaining density a
+        // *rock* yielded per tick, with the miner standing on it contributing
+        // nothing but the schedule: a second hull would have extracted no more,
+        // and a better one no more either. It is now the fraction **one miner**
+        // works, and a crew of `n` works `n` times as much — capped at the whole
+        // remaining field, because a rock cannot yield more than it holds.
+        //
+        // A crew of one is arithmetically identical to the old expression,
+        // which is what keeps the shipped configuration bit-identical.
+        //
+        // **Each player's crew works the shared rock into that player's own
+        // pile.** The body is one physical object and every crew on it depletes
+        // the same ore — so a contested field runs out sooner for everybody,
+        // which is the mechanic — but the ore each empire lifts is its own.
+        let crews: Vec<(u32, usize)> = self
+            .mine_crew
+            .range((0u32, outpost.0)..=(u32::MAX, outpost.0))
+            .filter(|((_, o), _)| *o == outpost.0)
+            .map(|((pl, _), c)| (*pl, c.len()))
+            .collect();
+        let mut any = false;
+        for (player, crew) in crews {
+            let amt = {
+                let d = self.world.density.get(outpost).unwrap();
+                // A fraction of the ore actually present — a **mass**, since
+                // T-62 made the field's colours Bands and only their masses add.
+                d.total_mass().kilotons() * (crew.max(1) as f64 * self.config.outpost_mining_fraction).min(1.0)
+            };
+            if amt <= self.config.density_floor {
+                continue;
+            }
+            any = true;
+            let extracted = self.world.density.get_mut(outpost).unwrap().extract(Kilotons::new(amt));
+            self.outpost_stock.entry((player, outpost.0)).or_default().add_basics(&extracted);
+            let density_after = self.world.density.get(outpost).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
-                LogEvent::MineralsExtracted { planet: pid, amount: extracted.basic_total(), density_after },
+                LogEvent::MineralsExtracted { planet: pid, amount: extracted.basic_total().kilotons(), density_after },
             );
+        }
+        if any {
             self.schedule(self.config.mining_tick_years, EventKind::MiningTick { outpost });
         } else {
             self.active_mines.remove(&outpost.0); // mined out
             self.log.push(self.clock, LogEvent::MiningExhausted { planet: pid });
-            // The rock is done, but the hull is not. Roles §4.6: a standing
+            // The rock is done, but the hulls are not. Roles §4.6: a standing
             // mission that ends puts the vehicle in Reserve, re-taskable —
-            // only a *completable* mission (an exhausted Scout) scraps.
-            if let Some(miner) = self.mine_operator.remove(&outpost.0) {
-                if self.config.recycle_mining_pairs {
-                    self.release_to_reserve(miner, Role::Miner, pid);
+            // only a *completable* mission (an exhausted Scout) scraps. Every
+            // player's crew stands down, since the rock is done for all of them.
+            let keys: Vec<(u32, u64)> = self
+                .mine_crew
+                .range((0u32, outpost.0)..=(u32::MAX, outpost.0))
+                .filter(|((_, o), _)| *o == outpost.0)
+                .map(|(k, _)| *k)
+                .collect();
+            for k in keys {
+                if let Some(crew) = self.mine_crew.remove(&k) {
+                    if self.config.recycle_mining_pairs {
+                        for miner in crew {
+                            self.release_to_reserve(miner, Role::Miner, pid);
+                        }
+                    }
                 }
             }
         }
@@ -1830,66 +2426,198 @@ impl Simulation {
         // 1) Local mining: the center works its own density into its stockpile.
         let amt = {
             let d = self.world.density.get(center).unwrap();
-            d.metallicity() * self.config.center_mining_fraction
+            d.total_mass().kilotons() * self.config.center_mining_fraction
         };
         if amt > 0.0 {
-            let extracted = self.world.density.get_mut(center).unwrap().extract(amt);
+            let extracted = self.world.density.get_mut(center).unwrap().extract(Kilotons::new(amt));
             self.world.stockpile.get_mut(center).unwrap().add_basics(&extracted);
-            let density_after = self.world.density.get(center).unwrap().metallicity();
+            let density_after = self.world.density.get(center).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
-                LogEvent::MineralsExtracted { planet: center_pid, amount: extracted.basic_total(), density_after },
+                LogEvent::MineralsExtracted {
+                    planet: center_pid,
+                    amount: extracted.basic_total().kilotons(),
+                    density_after,
+                },
             );
         }
 
-        // 2) Grow: population logistic toward K = min(hab, bio, infra), paid for
-        // out of the planet's biological mass.
+        // 2) Grow: population logistic toward `K`, paid for out of the planet's
+        // standing biological mass.
         //
-        // Population is **not** an exception to mass conservation (L6, amended):
-        // a kiloton of people is a kiloton of biosphere that stopped being
-        // biosphere. Growth draws from `bio` 1:1 and is capped by what is
-        // actually standing; decline returns it. Biosphere then regrows
-        // logistically toward `bio_max`, which makes it the only self-replenishing
-        // stock in the engine and puts a *rate* — not just a ceiling — between an
-        // empire and its population.
+        // **Two constraints, two units, and they are not the same constraint.**
+        // The logistic ceiling `K = min(hab, bio_max, infra)` is a Band — a
+        // magnitude tier — and says how large this world's civilization can
+        // ever get. The *payment* is a mass in kilotons drawn from `biomass`,
+        // and says how fast it can get there. Before the units were typed
+        // these were one term: the standing stock sat inside the Liebig
+        // minimum, so a mass was being compared against two levels and a
+        // world's ceiling fell every time its people ate.
         //
-        // Note the feedback this creates: drawing biosphere down lowers
-        // `K = min(hab, bio, infra)`, so a world that grows too fast throttles
-        // itself and then recovers. That is the intended ecology, not a bug.
+        // Population is **not** an exception to mass conservation (L6,
+        // amended): a kiloton of people is a kiloton of biosphere that stopped
+        // being biosphere. But the exchange is a *mass* difference, not a Band
+        // difference — one more Band is `BAND_STEP` times the people, not
+        // `BAND_STEP` more of them — which is why the draw is
+        // `KT(after) − KT(before)` and not `after − before`.
+        //
+        // Biosphere then regrows logistically toward `bio_max`, which makes it
+        // the only self-replenishing stock in the engine and puts a *rate* —
+        // not just a ceiling — between an empire and its population. A world
+        // grown faster than its ecology can regrow stalls until it recovers,
+        // without its ceiling moving.
         let growth = doctrine.growth_rate;
         let regen = self.config.biosphere_regen_rate * doctrine.biosphere_regen_bonus;
         let k = self.world.factors.get(center).unwrap().k();
         {
             let pop_now = *self.world.population.get(center).unwrap();
-            let start = if pop_now < 0.01 { 0.01 } else { pop_now };
-            let mut delta = 0.0;
-            if k > 0.0 {
-                let grown = (start + growth * start * (1.0 - start / k)).clamp(0.0, k);
-                delta = grown - start;
+            // **The logistic runs on the people, not on their Band** (T-64).
+            //
+            // Directed: *"Growth and construction and cost are denominated by
+            // mass. All logistic functions are applied to real population, not
+            // Bands."* It used to step `s + r·s·(1 − s/K)` with `s` and `K` as
+            // *ladder positions*, then convert both ends to mass to pay the
+            // biomass draw — which is a logistic in log space wearing a
+            // logistic's clothes. A Band difference is not an amount of
+            // anything, so `r` there was a rate of change of an exponent: the
+            // same `growth_rate` meant a different number of people at every
+            // point on the ladder, compounding hardest where the ladder is
+            // widest.
+            //
+            // Now `K`'s mass is the carrying capacity and the step is the
+            // textbook one. `growth_rate` finally means what its name says —
+            // the fraction a small population adds per cycle — and its ratified
+            // value is re-measured rather than carried across (T-64 step 5).
+            let cap = units::population_mass(k);
+            // The logistic has a fixed point at zero, so a founding population
+            // needs a floor to grow off. The floor moves the *population*; the
+            // mass baseline below stays at the true prior value, so the bump is
+            // paid for like any other growth rather than conjured.
+            let start = pop_now.max(units::POPULATION_SEED_FLOOR);
+            let mut target = start;
+            if cap > Kilotons::ZERO {
+                let (s, c) = (start.kilotons(), cap.kilotons());
+                target = Kilotons::new((s + growth * s * (1.0 - s / c)).clamp(0.0, c));
             }
+            let mass_before = pop_now;
             let f = self.world.factors.get_mut(center).unwrap();
-            if delta > 0.0 {
-                // Cannot grow more people than there is biomass to make them of.
-                delta = delta.min(f.bio.max(0.0));
-                f.bio -= delta;
-            } else {
-                // Decline returns mass to the biosphere.
-                f.bio -= delta;
+            let mut draw = target - mass_before;
+            if draw > f.biomass {
+                // Cannot make more people than there is biomass to make them
+                // of. Spend the whole standing stock and land wherever that
+                // reaches — the shortfall throttles the *rate*, never `K`.
+                draw = f.biomass.max(Kilotons::ZERO);
+                target = mass_before + draw;
             }
-            *self.world.population.get_mut(center).unwrap() = start + delta;
+            // A shrinking population returns its mass: `draw` is negative here.
+            f.biomass = (f.biomass - draw).max(Kilotons::ZERO);
+            *self.world.population.get_mut(center).unwrap() = target;
 
-            // Logistic regrowth toward the pristine ceiling.
-            if f.bio_max > 0.0 && regen > 0.0 {
-                f.bio += regen * f.bio.max(0.0) * (1.0 - f.bio / f.bio_max);
-                f.bio = f.bio.clamp(0.0, f.bio_max);
+            // Logistic regrowth toward the pristine ceiling, in kilotons — and
+            // the logistic runs on the world's **living mass**, biosphere plus
+            // people, not on the biosphere alone.
+            //
+            // That is design law #11 taken at its word rather than half of it.
+            // If people are made of biomass then they are part of the standing
+            // ecology, and two things follow that the biosphere-only form got
+            // wrong. A world whose population has eaten its biosphere down to
+            // nothing is not sterile — `r·0·(1 − 0)` is zero, so under the old
+            // form such a world could *never* recover, a trap state a
+            // mass-denominated draw can now actually reach. And a world filled
+            // to its ceiling with people has no spare ecological niche, so its
+            // biosphere must not regrow into one: `living == bio_max` is
+            // saturation whether the mass is standing in forests or walking
+            // around in cities.
+            //
+            // The rate stays relative, so `biosphere_regen_rate` keeps its
+            // meaning and its ratified value under the rebasing.
+            if f.bio_max > Kilotons::ZERO && regen > 0.0 {
+                let headroom = 1.0 - f.biomass.kilotons() / f.bio_max.kilotons();
+                if headroom > 0.0 {
+                    // **The multiplier counts the people; the ceiling does
+                    // not.** Both halves are deliberate.
+                    //
+                    // Counting people in the multiplier is what stops a trap
+                    // the mass-denominated draw makes reachable: a population
+                    // can now empty its biosphere *exactly*, and `r·0·(1 − 0)`
+                    // is zero, so a biosphere-only logistic would leave such a
+                    // world permanently sterile. A world with people on it is
+                    // not sterile.
+                    //
+                    // Leaving them out of the ceiling is design law #11 taken
+                    // literally: biosphere "regrows logistically toward
+                    // `bio_max`", full stop. Making the population share that
+                    // ceiling is a *stronger* coupling than the law asks for,
+                    // and it does double duty with `K`, which already caps
+                    // population at `min(hab, bio_max, infra)`. Measured on the
+                    // standard four-seed bed, the two forms are **bit-identical
+                    // in colony count** — the mass budget never binds at the
+                    // shipped defaults — so this is settled on fidelity to the
+                    // spec, not on a number. If a starvation die-back ever
+                    // lands (R-O67), the shared ceiling is the form to revisit.
+                    let seeded = (f.biomass + target).max(Kilotons::ZERO);
+                    // The ceiling applies to the *regrowth* only, never to the
+                    // standing stock: a clamp that can push `biomass` downward
+                    // is a silent mass sink, and it would quietly absorb any
+                    // over-ceiling state a card wrote rather than letting the
+                    // conservation checks see it.
+                    f.biomass = (f.biomass + seeded * (regen * headroom)).min(f.bio_max.max(f.biomass));
+                }
             }
         }
         self.log.push(
             self.clock,
-            LogEvent::PopulationStep { planet: center_pid, population: *self.world.population.get(center).unwrap(), k },
+            LogEvent::PopulationStep {
+                planet: center_pid,
+                population: self.world.population.get(center).unwrap().kilotons(),
+                k: k.bands(),
+            },
         );
 
-        // 3) Build: weigh deepen-vs-expand under the mineral budget & level gate.
+        // 3) Decide, but only if the yard is free.
+        //
+        // **This is the decoupling (R-O69).** The economy above is a rate over
+        // an interval and legitimately wants a cadence; the *decision* is not,
+        // and pinning it to the same 50-year tick capped every center at one
+        // build per cycle however rich it was. Measured before the change
+        // (`examples/cadence_throttle`, seeds 1 and 7): the median funded build
+        // fired at **5.5x the cost of what it bought**, 82% of funded builds
+        // could have been made at least twice that cycle and 55% at least five
+        // times, with a worst case of 112x. That is a serial dependency setting
+        // the expansion-loop time constant, not an economy running dry.
+        //
+        // A center with a build under way is skipped: its decision comes from
+        // [`EventKind::BuildDecision`] when the yard clears. A center with an
+        // empty yard has no such event pending, so the mining step doubles as
+        // its retry — mining is what changes a saving center's situation.
+        if !self.world.building_until.contains(center) {
+            self.sys_build_decision(center);
+        }
+        self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
+    }
+
+    /// A center chooses its next build, and occupies its yard if it commits.
+    ///
+    /// Reached two ways: the economy tick above when the yard is idle, and
+    /// `BuildDecision` when a build finishes. Committing spends the minerals and
+    /// applies the build immediately — `apply_build_with` is unchanged, so a
+    /// vehicle's launch delay and arrival time are exactly what they were — and
+    /// then holds the yard for `build_years` before the next decision. **The
+    /// only behavioural change is the cadence of decisions**, from
+    /// `cycle_years` to `build_years` for a center that keeps finding things to
+    /// buy.
+    fn sys_build_decision(&mut self, center: Entity) {
+        // The yard is free by the time this runs, however it was reached.
+        self.world.building_until.remove(center);
+        let owner = match self.world.owner.get(center).copied() {
+            Some(o) => o,
+            None => return, // lost the world; no yard to run
+        };
+        let p = owner.0 as usize;
+        let pe = self.player_entity[p];
+        let doctrine = *self.world.doctrine.get(pe).unwrap();
+        let center_pid = *self.world.planet_id.get(center).unwrap();
+
         let (infra, k_potential) = {
             let f = self.world.factors.get(center).unwrap();
             (f.infra, f.k_potential())
@@ -1897,7 +2625,9 @@ impl Simulation {
         let level = self.bands.level(*self.world.population.get(center).unwrap());
         let center_pos = *self.world.position.get(center).unwrap();
         let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
-        let target_level = infra.round() + 1.0;
+        // Minerals to buy the next whole level. The ladder rung is a Band; its
+        // *price* is a mineral quantity, so the reading is taken explicitly.
+        let target_level = infra_step_price(infra, &self.config);
 
         let info = *self.world.player_info.get(pe).unwrap();
         // Live mineral pressure for this center: 1 when broke for its next infra
@@ -1906,11 +2636,30 @@ impl Simulation {
         let mineral_pressure = self.mineral_pressure_of(center);
         let rctx =
             RankContext { scarcity: info.scarcity, holdings_centroid: self.holdings_centroid(p), mineral_pressure };
-        let mut cands: Vec<Candidate> = Vec::new();
+        // **Reduce, do not materialize (R-O70).** Both consumers —
+        // `production_choice` and `assign_role` — read exactly four things off
+        // this list: the per-class argmax by `score_then_id` for
+        // ProductionCenter, Colony and MiningOutpost, and the count. They never
+        // iterate it for anything else.
+        //
+        // Building a `Vec` of every non-Barren scanned world to hand over three
+        // winners is §4's "do not materialize a collection you only `max_by`
+        // over", at the engine's hottest scale: thousands of 112-byte pushes
+        // per decision, and decisions now fire on build completion rather than
+        // once per 50 years (R-O69), which is what made the waste visible.
+        //
+        // The reduction is exact, not an approximation. `score_then_id` is a
+        // total order (ids are unique), so the maximum of a class is unique and
+        // the max of the per-class maxima *is* the max of the whole list —
+        // independent of scan order. `candidate_count` still carries the true
+        // count, because `survey_reserve` is a threshold on the size of the
+        // frontier and not on the size of this slice.
+        let mut count = 0usize;
+        let mut best: [Option<Candidate>; 3] = [None, None, None];
         {
             let knowledge = self.world.knowledge.get(pe).unwrap();
             for &pid in &knowledge.scanned {
-                if knowledge.targeted.contains(&pid) {
+                if knowledge.targeted.contains(pid) {
                     continue;
                 }
                 let e = self.planet_entity[pid.0 as usize];
@@ -1919,23 +2668,40 @@ impl Simulation {
                 }
                 let view = self.view_of(e);
                 let ranked = self.autopilots[p].rank(&doctrine, &view, &rctx);
-                if ranked.class != PlanetClass::Barren {
-                    cands.push(Candidate { view, ranked });
+                let slot = match ranked.class {
+                    PlanetClass::ProductionCenter => 0,
+                    PlanetClass::Colony => 1,
+                    PlanetClass::MiningOutpost => 2,
+                    PlanetClass::Barren => continue,
+                };
+                count += 1;
+                let better = match &best[slot] {
+                    None => true,
+                    Some(cur) => Ranked::score_then_id(&ranked, &cur.ranked).is_gt(),
+                };
+                if better {
+                    best[slot] = Some(Candidate { view, ranked });
                 }
             }
         }
+        let cands: Vec<Candidate> = best.into_iter().flatten().collect();
         // Built after `cands`, so the survey decision can see how much frontier
         // this empire has left to aim at.
         let ctx = ProductionContext {
             center_pos,
             level,
-            infra,
-            k_potential,
+            infra: infra.bands(),
+            k_potential: k_potential.bands(),
             stockpile_total: stock_total,
             medium_min_level: self.config.medium_min_level,
             limited_min_level: self.config.limited_min_level,
             infra_cost: target_level,
-            colonizer_cost: role_cost(Role::Colonizer, &self.config),
+            colonizer_cost: hull_cost(HullType::MediumSystems, &self.config),
+            general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
+            medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
+            general_seed_capacity: HullType::GeneralSystems.colony_seed_capacity(&self.config),
+            medium_founding_infra: self.founding_infra(HullType::MediumSystems),
+            general_founding_infra: self.founding_infra(HullType::GeneralSystems),
             // The *true* price of a pair to this center right now. With
             // recycling on, a half that comes out of Reserve is not bought, and
             // the context has to say so or the decision is made on a price the
@@ -1943,9 +2709,9 @@ impl Simulation {
             // sit Idle next to hulls it already owns. `apply_build_with` takes
             // the nearest reserved hull of each kind, so this matches what it
             // will actually spend.
-            mining_pair_cost: self.mining_pair_price(p),
+            mining_pair_cost: self.mining_pair_price(p, doctrine.miners_per_outpost.max(1) as usize),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
-            candidate_count: cands.len(),
+            candidate_count: count,
         };
 
         let order = self.autopilots[p].production_choice(&doctrine, &ctx, &cands);
@@ -1955,20 +2721,29 @@ impl Simulation {
                 player: p as u32,
                 center: center_pid,
                 pop_level: level,
-                infra,
-                k_potential,
-                stockpile: stock_total,
-                infra_cost: target_level,
-                colonizer_cost: ctx.colonizer_cost,
-                mining_pair_cost: ctx.mining_pair_cost,
+                infra: infra.bands(),
+                k_potential: k_potential.bands(),
+                stockpile: stock_total.kilotons(),
+                infra_cost: target_level.kilotons(),
+                colonizer_cost: ctx.colonizer_cost.kilotons(),
+                mining_pair_cost: ctx.mining_pair_cost.kilotons(),
                 mineral_pressure,
-                candidates_seen: cands.len() as u32,
+                candidates_seen: count as u32,
                 chosen: order,
             },
         );
-        self.apply_build_with(p, center, center_pos, order, &cands);
-
-        self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
+        // Committing occupies the yard. Only a build that actually spent counts:
+        // `apply_build_with` declines on an unaffordable price, a roster gate, or
+        // a hull with no job worth doing, and a center that built nothing must
+        // not be held busy for it.
+        if self.apply_build_with(p, center, center_pos, order, &cands) {
+            let done = self.clock + self.config.build_years;
+            self.world.building_until.insert(center, done);
+            self.schedule_at(done, EventKind::BuildDecision { center });
+        }
+        // Otherwise the yard stays free and the next economy tick retries, which
+        // is the right cadence for a center whose situation only changes as it
+        // mines.
     }
 
     // --- build application -------------------------------------------------
@@ -1976,6 +2751,10 @@ impl Simulation {
     /// Apply a production order. `candidates` is the empire's current candidate
     /// list, used to **task** a finished hull — production decides *what object*
     /// to make, role assignment decides *what it is for* (R-O29).
+    /// Apply a chosen build, returning **whether it actually committed** —
+    /// spent minerals and produced something. A decline (unaffordable, gated by
+    /// the roster, or a hull with no job worth doing) returns `false`, and the
+    /// caller must not occupy the yard for a build that never happened.
     fn apply_build_with(
         &mut self,
         p: usize,
@@ -1983,14 +2762,15 @@ impl Simulation {
         center_pos: Vec3,
         order: BuildOrder,
         candidates: &[Candidate],
-    ) {
+    ) -> bool {
         let center_pid = *self.world.planet_id.get(center).unwrap();
         match order {
-            BuildOrder::Idle => {}
+            BuildOrder::Idle => false,
             BuildOrder::UpgradeInfrastructure => {
-                let target = self.world.factors.get(center).unwrap().infra.round() + 1.0;
+                let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
-                    self.world.factors.get_mut(center).unwrap().infra += 1.0;
+                    let f = self.world.factors.get_mut(center).unwrap();
+                    f.infra = f.infra.up(1.0);
                     let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
                     self.log.push(
                         self.clock,
@@ -1998,22 +2778,25 @@ impl Simulation {
                             player: p as u32,
                             center: center_pid,
                             order,
-                            cost: target,
-                            stockpile_after,
+                            cost: target.kilotons(),
+                            stockpile_after: stockpile_after.kilotons(),
                         },
                     );
+                    true
+                } else {
+                    false
                 }
             }
             BuildOrder::Hull { hull_type, class } => {
                 if !self.roster_permits(p, hull_type) {
-                    return;
+                    return false;
                 }
                 let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
                 // The job is chosen here, after the object exists — not in the
                 // order, which is all a rival could read off the shipyard.
                 let tasking = self.autopilots[p].assign_role(&doctrine, hull_type, class, candidates);
                 let Some(Tasking { role, target }) = tasking else {
-                    return; // nothing worth building this hull for right now
+                    return false; // nothing worth building this hull for right now
                 };
 
                 // A Miner is produced together with the Freighter that hauls for
@@ -2021,7 +2804,7 @@ impl Simulation {
                 // one economic act even though it is two objects.
                 let paired_freighter = role == Role::Miner;
                 if paired_freighter && !self.roster_permits(p, role_hull_type(Role::Freighter)) {
-                    return;
+                    return false;
                 }
 
                 // Recycling is checked *before* pricing, because a hull taken
@@ -2030,15 +2813,31 @@ impl Simulation {
                 // new pair can therefore still open an outpost with idle hulls,
                 // which is the whole point — 39% of outpost-years were being
                 // spent on exhausted rocks.
+                let crew = if role == Role::Miner { doctrine.miners_per_outpost.max(1) as usize } else { 1 };
                 let target_entity = target.map(|t| self.planet_entity[t.0 as usize]);
-                let (reused_miner, reused_freighter) = match (self.config.recycle_mining_pairs, role, target_entity) {
+                let (reused_miners, reused_freighter) = match (self.config.recycle_mining_pairs, role, target_entity) {
                     (true, Role::Miner, Some(te)) => {
                         let at = *self.world.position.get(te).unwrap();
-                        (self.take_nearest_reserve(p, true, at), self.take_nearest_reserve(p, false, at))
+                        // One reserved hull per crew slot, nearest first.
+                        let mut taken = Vec::new();
+                        while taken.len() < crew {
+                            match self.take_nearest_reserve(p, true, at) {
+                                Some(e) => taken.push(e),
+                                None => break,
+                            }
+                        }
+                        (taken, self.take_nearest_reserve(p, false, at))
                     }
-                    _ => (None, None),
+                    _ => (Vec::new(), None),
                 };
-                let mut cost = if reused_miner.is_some() { 0.0 } else { role_cost(role, &self.config) };
+                // **Price the hull that was ordered, not the hull the role
+                // implies.** R-O29 moved the hull choice into `BuildOrder`, but
+                // this line kept reading it back off the role — which agreed
+                // only because `role_hull_type` happened to invert
+                // `assign_role`. It stops agreeing the moment Doctrine can pick
+                // a heavier colonizer, and the failure would have been silent:
+                // a General hull bought at a Medium hull's price.
+                let mut cost = hull_cost(hull_type, &self.config) * (crew - reused_miners.len().min(crew)) as f64;
                 if paired_freighter && reused_freighter.is_none() {
                     cost += role_cost(Role::Freighter, &self.config);
                 }
@@ -2049,13 +2848,13 @@ impl Simulation {
                 if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
-                    if let Some(e) = reused_miner {
+                    for e in reused_miners {
                         self.reserve_miners[p].push(e);
                     }
                     if let Some(e) = reused_freighter {
                         self.reserve_freighters[p].push(e);
                     }
-                    return;
+                    return false;
                 }
                 match (role, target) {
                     (Role::Scout, _) => {
@@ -2077,9 +2876,14 @@ impl Simulation {
                     }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
-                        match reused_miner {
-                            Some(e) => self.retask_miner(e, p, center, te),
-                            None => self.spawn_courier(p, r, center, center_pos, te),
+                        // A crew, not an operator (T-57). Reserved hulls first —
+                        // they are already paid for — then newly built ones.
+                        let mut reused = reused_miners.into_iter();
+                        for _ in 0..crew {
+                            match reused.next() {
+                                Some(e) => self.retask_miner(e, p, center, te),
+                                None => self.spawn_courier(p, r, hull_type, center, center_pos, te),
+                            }
                         }
                         if paired_freighter {
                             match reused_freighter {
@@ -2093,8 +2897,15 @@ impl Simulation {
                 let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
                 self.log.push(
                     self.clock,
-                    LogEvent::BuildApplied { player: p as u32, center: center_pid, order, cost, stockpile_after },
+                    LogEvent::BuildApplied {
+                        player: p as u32,
+                        center: center_pid,
+                        order,
+                        cost: cost.kilotons(),
+                        stockpile_after: stockpile_after.kilotons(),
+                    },
                 );
+                true
             }
         }
     }
@@ -2112,15 +2923,18 @@ impl Simulation {
     /// What a mining pair costs player `p` this cycle: the halves that are not
     /// already sitting in Reserve. Equals the full price whenever recycling is
     /// off, which is what keeps the flag a clean A/B.
-    fn mining_pair_price(&self, p: usize) -> f64 {
+    fn mining_pair_price(&self, p: usize, crew: usize) -> Price {
         let full_miner = role_cost(Role::Miner, &self.config);
         let full_freighter = role_cost(Role::Freighter, &self.config);
         if !self.config.recycle_mining_pairs {
-            return full_miner + full_freighter;
+            return full_miner * crew as f64 + full_freighter;
         }
-        let miner = if self.reserve_miners[p].is_empty() { full_miner } else { 0.0 };
-        let freighter = if self.reserve_freighters[p].is_empty() { full_freighter } else { 0.0 };
-        miner + freighter
+        // Only the hulls that still have to be *built* are priced; the rest come
+        // out of Reserve. A crew of `n` can draw up to `n` reserved miners.
+        let from_reserve = self.reserve_miners[p].len().min(crew);
+        let miners = full_miner * (crew - from_reserve) as f64;
+        let freighter = if self.reserve_freighters[p].is_empty() { full_freighter } else { Price::ZERO };
+        miners + freighter
     }
 
     /// A hull whose mission ended puts itself in Reserve and joins its owner's
@@ -2198,24 +3012,136 @@ impl Simulation {
         );
     }
 
+    /// **The infrastructure a colony has the instant it is founded — the
+    /// recycled hull, converted as a mass** (R-O76).
+    ///
+    /// `sys_colony_arrive` has always said the colony ship's hull *becomes* the
+    /// colony's first infrastructure, and then awarded one Band regardless of
+    /// what was recycled — which pinned every new colony's `K` at one Band and
+    /// made a heavier colony ship pointless by construction.
+    ///
+    /// **The hull's mass *is* the infrastructure it becomes — no rate, no
+    /// subsidy (R-O77 closed).** Dry mass is the mineral cost (L6/R-O57), so
+    /// the conversion is the identity and the only work here is reading the
+    /// mass back onto the ladder:
+    ///
+    /// ```text
+    /// infra = band_of(hull_cost)
+    /// ```
+    ///
+    /// | hull | cost / infra mass | founding infra |
+    /// |---|---|---|
+    /// | Limited | 0.02 kt | `Band 0` — founds nothing |
+    /// | Medium | 0.10 kt | **`Band 0.33`** |
+    /// | General | 1.00 kt | **`Band I`** |
+    ///
+    /// **This is what removing the subsidy does, and it is meant to hurt.**
+    /// Until now a Medium hull's 0.1 minerals became a whole Band of
+    /// infrastructure that the ladder charges 1.0 for — founding conjured 10×
+    /// the mass spent, in flat contradiction of design law #11. With the
+    /// conjuring gone a Medium colonizer founds at a *third* of a rung, and a
+    /// General hull is the only one that reaches `Band I`: the first
+    /// configuration in which "a Medium hull unless a General is required"
+    /// has ever had a case where a General is required.
+    ///
+    /// A colony founded at `Band 0.33` is a real colony that is badly short of
+    /// everything, which is the intended pressure — it must be supplied rather
+    /// than born adequate.
+    ///
+    /// **Two earlier versions of this were wrong, both in the same way.** The
+    /// first summed Band numerals (`b(b+1)/2`, the cumulative `1+2+3+4 = 10` of
+    /// the linear price ladder) and put a General hull at `Band IV`. The second
+    /// did the arithmetic in kilotons but kept the subsidised rate, giving
+    /// `Band 1.67`. `I + II + III + IV` is not `X`, and a 10× conjuring is not a
+    /// conversion.
+    ///
+    /// R-V9 needs no special case at either end: a Limited hull's mass reads
+    /// below `Band Empty`, so its colony would have no carrying capacity and
+    /// [`Self::colony_seed_for`] declines.
+    fn founding_infra(&self, hull: HullType) -> Band {
+        let b = hull_cost(hull, &self.config).band_from(cost_anchor(&self.config));
+        Band::new(b.bands().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
+    }
+
+    /// **The carrying capacity a colony will have the moment it is founded.**
+    ///
+    /// `K = min(hab, bio_max, infra)`, and founding sets infra to what the
+    /// recycled hull bought ([`Self::founding_infra`]) — so this depends on the
+    /// hull, which is the whole of R-O76. It is the number a colony ship must
+    /// not exceed: population above `K` does not settle back to it, it
+    /// *crashes* below it
+    /// (`a_colony_seeded_above_its_capacity_crashes_below_it`).
+    fn founding_capacity(&self, hull: HullType, target: Entity) -> Kilotons {
+        let f = self.world.factors.get(target).unwrap();
+        units::population_mass(f.k_potential().min(f.infra.max(self.founding_infra(hull))))
+    }
+
+    /// **The founding population a colony ship of this hull carries** — the
+    /// Band its hold masses (T-56 stage 4b), **capped at the target's
+    /// carrying capacity.**
+    ///
+    /// This is what makes a heavier colonizer worth its price. The hold ladder
+    /// is the mass ladder (§2.6, R-MC15), so a General hull's hold is a whole
+    /// Band above a Medium's: the colony it founds *starts* a Band further up
+    /// the population ladder and compounds from there, against a hull that cost
+    /// `medium_fleet_size` times as much. Whether the head start beats the count
+    /// is T-56's acceptance test, and it is measured, not assumed.
+    ///
+    /// **`None` is R-V9 expressed as physics.** "A Colonizer must be Medium or
+    /// larger" used to be a rule about hull types; it is now a consequence — a
+    /// Limited hull's hold sits at `Band Empty`, below `colony_seed_pop`, so it
+    /// cannot carry a viable founding population. `colony_seed_pop` keeps its
+    /// ratified value and changes job: from *the* seed to the **floor** a hull
+    /// must clear to found anything.
+    ///
+    /// **R-O74 (new, open): these settlers are conjured, and stage 4b makes
+    /// that 31× louder.** Nothing debits the founding center's population or
+    /// biosphere for the people put aboard, which was already a design law #11
+    /// violation at `Band I` and is a bigger one at `Band II`. It is recorded
+    /// rather than fixed here because drawing the seed from the origin is a
+    /// behaviour change that would dominate the measurement stage 4 exists to
+    /// take — and mixing the two is exactly the confound this staging avoids.
+    fn colony_seed_for(&self, hull: HullType, target: Entity) -> Option<Kilotons> {
+        let seed = hull.colony_seed_capacity(&self.config).min(self.founding_capacity(hull, target));
+        // **The floor is a positive seed, not `colony_seed_pop`.** With the
+        // founding subsidy removed a Medium hull founds at `Band 0.33`, and a
+        // colony that starts below `Band I` is the point rather than an error:
+        // it is short of everything and has to be supplied. What is still
+        // refused is a colony with *no* people, which is what a hull too small
+        // to leave any infrastructure behind would produce.
+        (seed > Kilotons::ZERO).then_some(seed)
+    }
+
     fn mark_targeted(&mut self, p: usize, target: PlanetId) {
         self.world.knowledge.get_mut(self.player_entity[p]).unwrap().targeted.insert(target);
     }
 
     /// Spawn a colony/mining courier flying `center → target`.
-    fn spawn_courier(&mut self, p: usize, role: Role, center: Entity, from: Vec3, target: Entity) {
+    ///
+    /// Takes the **hull that was ordered**, not `role_hull_type(role)`. The two
+    /// agreed until Doctrine could choose a colonizer's hull; reading the hull
+    /// back off the role would have flown a Medium ship on a General ship's
+    /// bill, and nothing would have complained.
+    fn spawn_courier(&mut self, p: usize, role: Role, hull: HullType, center: Entity, from: Vec3, target: Entity) {
         let dest = *self.world.position.get(target).unwrap();
         let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, role);
-        self.world.hull_type.insert(e, role_hull_type(role));
+        self.world.hull_type.insert(e, hull);
         self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
         self.world.cargo.insert(e, Minerals::default());
         // A Colonizer carries its founding population as cargo, consumed on
-        // arrival (`Hyades_vehicle_roles.md` §4.2 — confirmed this
-        // conversation: "1 pop as cargo").
-        self.world.pop_cargo.insert(e, if role == Role::Colonizer { self.config.colony_seed_pop } else { 0.0 });
+        // arrival (`Hyades_vehicle_roles.md` §4.2), and **how much is what the
+        // hull's hold masses** (T-56 stage 4b) rather than a flat constant.
+        self.world.pop_cargo.insert(
+            e,
+            if role == Role::Colonizer {
+                self.colony_seed_for(hull, target).unwrap_or(Kilotons::ZERO)
+            } else {
+                Kilotons::ZERO
+            },
+        );
         self.world.home_center.insert(e, center);
         let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
         let ev = match role {
@@ -2311,12 +3237,23 @@ impl Simulation {
         // was massless and a laden colony ship accelerated exactly like an empty
         // hull — a free read on the one thing §6.2 exists to conceal, since
         // acceleration is the long-range observable.
-        let minerals = self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0);
-        let pop = self.world.pop_cargo.get(e).copied().unwrap_or(0.0);
+        // **Three masses, and each reading is taken explicitly.** Acceleration
+        // is `thrust / mass`, so every term below has to be kilotons or the
+        // ratio is meaningless — the defect R-O66 found in `K` one module over,
+        // in the one place design law #10 makes observable.
+        //
+        // Minerals convert 1:1 because L6/R-O57 made cost and dry mass one
+        // number: a mineral in the hold masses exactly what it massed as hull.
+        // That is an identity, not a coefficient, which is why there is no
+        // `cargo_mass_per_unit` any more.
+        // Cargo in a hold is a mass; the same minerals in a bank are a price.
+        let minerals =
+            self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(Price::ZERO).on_scale::<units::Mass>();
+        let pop = self.world.pop_cargo.get(e).copied().unwrap_or(Kilotons::ZERO);
         let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
-        let dry = hull_dry_mass(hull, &self.config).max(1e-9);
-        let factor = dry / (dry + minerals + pop);
-        base_g * G * factor
+        let dry = hull_dry_mass(hull, &self.config).max(Kilotons::new(1e-9));
+        let laden = dry + minerals + pop;
+        base_g * G * (dry.kilotons() / laden.kilotons())
     }
 
     /// Park a vehicle at `pos` (degenerate motion ⇒ fixed position, not in flight).
@@ -2359,12 +3296,12 @@ impl Simulation {
             // Reported unconditionally; `Doctrine::survey_avoids_inhabited`
             // decides whether the policy acts on it, and defaults to off.
             let pop = *self.world.population.get(e).unwrap();
-            let industrial_signature = self.bands.level(pop) >= 4;
+            let industrial_signature = self.bands.level(pop) >= BandTier::IV;
             out.push(SurveyView {
                 id: pid,
                 position: *self.world.position.get(e).unwrap(),
                 habitability: f.hab,
-                biosphere: f.bio,
+                biosphere: f.bio_max.in_bands(),
                 industrial_signature,
             });
         }
@@ -2376,14 +3313,46 @@ impl Simulation {
             id: *self.world.planet_id.get(e).unwrap(),
             position: *self.world.position.get(e).unwrap(),
             habitability: f.hab,
-            biosphere: f.bio,
+            biosphere: f.bio_max.in_bands(),
             minerals: *self.world.density.get(e).unwrap(),
             owner: self.world.owner.get(e).copied(),
             pop_level: self.bands.level(*self.world.population.get(e).unwrap()),
         }
     }
 
-    fn holdings_centroid(&self, p: usize) -> Vec3 {
+    /// Centroid of player `p`'s holdings — **memoised, because it only moves
+    /// when a colony is founded** (R-O70).
+    ///
+    /// The computation is a full walk of `planet_entity`, and it ran once per
+    /// production decision: profiled at **1.14 billion iterations** on seed 1
+    /// at the shipped horizon, the largest single scan in the engine. Holdings
+    /// change roughly 3,400 times in that run, so all but ~0.003% of that work
+    /// was recomputing an answer nothing had invalidated.
+    ///
+    /// **The cache stores the recomputed value rather than a running sum**, and
+    /// that is deliberate. An incremental sum would accumulate in *claim* order
+    /// while this walks in *planet-id* order, and floating-point addition is
+    /// not associative — the centroid would differ in the last bits, every
+    /// score with it, and the run would diverge. Recomputing on the same path
+    /// keeps the result bit-identical; only the number of recomputations
+    /// changes.
+    fn holdings_centroid(&mut self, p: usize) -> Vec3 {
+        if let Some(c) = self.centroid_cache[p] {
+            // A stale cache is a silent, seed-dependent divergence, so debug
+            // builds pay for the full recompute and compare. Free in release.
+            debug_assert_eq!(
+                c,
+                self.compute_holdings_centroid(p),
+                "stale holdings centroid for player {p}: planet ownership was written outside `claim_planet`"
+            );
+            return c;
+        }
+        let c = self.compute_holdings_centroid(p);
+        self.centroid_cache[p] = Some(c);
+        c
+    }
+
+    fn compute_holdings_centroid(&self, p: usize) -> Vec3 {
         let me = PlayerId(p as u32);
         let mut sum = Vec3::ZERO;
         let mut n = 0.0;
@@ -2401,6 +3370,18 @@ impl Simulation {
         }
     }
 
+    /// **The only sanctioned way to give a planet an owner.**
+    ///
+    /// Ownership is what moves [`Self::holdings_centroid`], so the cache is
+    /// invalidated here and nowhere else. Writing `world.owner` directly for a
+    /// *planet* leaves every subsequent rank reading a stale centre of mass —
+    /// silently, and only on some seeds. The `debug_assert` in
+    /// `holdings_centroid`'s caller-facing test build catches exactly that.
+    fn claim_planet(&mut self, planet: Entity, owner: PlayerId) {
+        self.world.owner.insert(planet, owner);
+        self.centroid_cache[owner.0 as usize] = None;
+    }
+
     /// Live mineral pressure for `center`: `1.0` when broke for its next
     /// infra upgrade, `0.0` when it can comfortably afford it. Callable for
     /// *any* owned production center, not just from within its own
@@ -2408,10 +3389,12 @@ impl Simulation {
     /// fresh, never stored, which is what lets [`Self::most_needed_center`]
     /// compare need across the whole empire.
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(0.0);
-        let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(0.0);
-        let target_level = infra.round() + 1.0;
-        (1.0 - stock / target_level.max(1.0)).clamp(0.0, 1.0)
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Band::ZERO);
+        let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
+        // The price of this center's *next* rung — the same function the build
+        // path charges, rather than a second copy of `round(infra) + 1`.
+        let target_level = infra_step_price(infra, &self.config);
+        (1.0 - stock / target_level.max(Price::new(1e-9))).clamp(0.0, 1.0)
     }
 
     /// The owned production center with the highest live mineral pressure —
@@ -2553,7 +3536,9 @@ impl Simulation {
                     id: *self.world.planet_id.get(e).unwrap(),
                     position: *self.world.position.get(e).unwrap(),
                     habitability: f.hab,
-                    biosphere: f.bio,
+                    biosphere: f.biomass.in_bands(),
+                    bio_max: f.bio_max.in_bands(),
+                    biomass: f.biomass,
                     infrastructure: f.infra,
                     k: f.k(),
                     population: pop,
@@ -2591,7 +3576,7 @@ impl Simulation {
                     if self.world.owner.get(e).copied() == Some(me) {
                         snap.planets_owned += 1;
                         snap.total_population += *self.world.population.get(e).unwrap();
-                        snap.stockpiled_total += self.world.stockpile.get(e).unwrap().basic_total();
+                        snap.stockpiled_total += self.world.stockpile.get(e).unwrap().basic_total().kilotons();
                     }
                 }
                 snap.ships = vehicles.iter().filter(|v| v.owner == p as u32).count() as u32;
@@ -2650,11 +3635,11 @@ fn scarcity_for(archetype: Option<Archetype>) -> [f64; 3] {
 
 /// Remove `amount` total basics from a bank, in proportion to holdings, and
 /// return what was removed (a freighter loading at an outpost).
-fn take_basics(bank: &mut Minerals, amount: f64) -> Minerals {
+fn take_basics(bank: &mut Minerals, amount: Price) -> Minerals {
     let total = bank.basic_total();
-    let take = amount.min(total).max(0.0);
+    let take = amount.min(total).max(Price::ZERO);
     let mut out = Minerals::default();
-    if total <= 0.0 || take <= 0.0 {
+    if total <= Price::ZERO || take <= Price::ZERO {
         return out;
     }
     let f = take / total;
@@ -2700,20 +3685,45 @@ mod tests {
         // absurdity and got a guard (`r_M < 1.25`). It was an artifact of the
         // normaliser. Against a fixed reference nothing diverges and narrow
         // ladders are perfectly meaningful, so the guard is gone.
+        //
+        // **Pins both legs of the ladder**, rather than varying one against
+        // whatever the other currently defaults to. This test asserts a
+        // *structural* property of the shell model, so inheriting a ratified
+        // value makes it a test of that value instead — which is exactly what
+        // happened when T-56 stage 3b moved `limited_fleet_size` 9 → 50 and
+        // three tests failed for reasons that had nothing to do with what they
+        // were checking.
         let mut cfg = SimConfig::new(1);
+        cfg.limited_fleet_size = 9.0;
 
         cfg.medium_fleet_size = 3.0;
-        assert!(cfg.hull_ladder_fault().is_none(), "the shipped ladder must be valid");
+        assert!(cfg.hull_ladder_fault().is_none(), "the reference 1:3:9 ladder must be valid");
+        let g_wide = HullType::GeneralSystems.cargo_capacity(&cfg);
 
-        // **Narrow is legal.** The Medium hull is nearly all shell and hauls
-        // almost nothing; the General hull is entirely unaffected by that,
-        // which is the tell that the old "explosion" was in the denominator.
+        let l_hold = HullType::LimitedSystems.hold_volume(&cfg);
+        let spread_wide = HullType::MediumSystems.hold_volume(&cfg) / l_hold;
+
+        // **Narrow is legal**, and stage 3c changed what "narrow" does. It used
+        // to drive the Medium hull's hold toward *zero*, because capacity was
+        // `(r − 1)³` and `r` was a ratio to the Limited hull. Now the hold is
+        // set by the price and the hull's own thickness, so a Medium hull
+        // priced like a Limited one simply *has a Limited hull's hold*: the two
+        // converge instead of collapsing. Same conclusion — a narrow ladder is
+        // a real economic statement, not a modelling failure — reached by
+        // arithmetic that no longer has a denominator in it.
         cfg.medium_fleet_size = 8.0;
         assert!(cfg.hull_ladder_fault().is_none(), "a narrow ladder is meaningful, not a fault");
-        let m = HullType::MediumSystems.cargo_capacity(&cfg);
-        let g = HullType::GeneralSystems.cargo_capacity(&cfg);
-        assert!(m > 0.0 && m < 0.01, "Medium is nearly all shell: {m}");
-        assert!(g > 100.0, "General is untouched by the Medium hull shrinking: {g}");
+        let spread_narrow = HullType::MediumSystems.hold_volume(&cfg) / l_hold;
+        assert!(
+            spread_narrow < 1.5 && spread_narrow < spread_wide,
+            "a Medium hull priced like a Limited one must hold like one: {spread_narrow} vs {spread_wide}"
+        );
+        // Stated as an invariance rather than a magnitude: the General hull is
+        // priced off `general_vehicle_cost` alone, so moving `medium_fleet_size`
+        // must leave it *exactly* where it was. An absolute threshold here would
+        // only be a test of `cargo_unit_size`, which is what it silently became
+        // before stage 3b moved that value.
+        assert_eq!(HullType::GeneralSystems.cargo_capacity(&cfg), g_wide, "General is untouched");
 
         // **Inverted is not.** A "Medium" hull cheaper — and therefore smaller
         // — than a "Limited" one is a contradiction in the naming, not a
@@ -2729,6 +3739,9 @@ mod tests {
     fn constructing_a_sim_on_a_degenerate_ladder_panics() {
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut cfg = test_cfg(1);
+        // Both legs pinned: the fault is `medium ≥ limited`, and stating only
+        // one side makes the test depend on the other's ratified value.
+        cfg.limited_fleet_size = 9.0;
         cfg.medium_fleet_size = 12.0;
         let _ = Simulation::with_baseline(galaxy, cfg);
     }
@@ -2753,7 +3766,7 @@ mod tests {
         for (pa, pb) in a.players.iter().zip(b.players.iter()) {
             assert_eq!(pa.colonies, pb.colonies);
             assert_eq!(pa.planets_owned, pb.planets_owned);
-            assert_eq!(pa.total_population.to_bits(), pb.total_population.to_bits());
+            assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
         }
         assert_eq!(a.planets_scanned_total, b.planets_scanned_total);
     }
@@ -2860,7 +3873,7 @@ mod tests {
     fn population_grows_past_the_starting_towns() {
         let (_sim, report) = run_default(3, 42);
         // 3 homeworlds start at pop 2 each (=6); growth must exceed that.
-        let total_pop: f64 = report.players.iter().map(|p| p.total_population).sum();
+        let total_pop: f64 = report.players.iter().map(|p| p.total_population.kilotons()).sum();
         assert!(total_pop > 6.5, "population did not grow: {total_pop}");
     }
 
@@ -2891,12 +3904,12 @@ mod tests {
         // must fall over the game.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 11)).unwrap();
         let hw = galaxy.homeworlds[0];
-        let before = galaxy.planet(hw).minerals.metallicity();
+        let before = galaxy.planet(hw).minerals.total_mass().kilotons();
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
         sim.run();
         let after = {
             let e = sim.planet_entity[hw.0 as usize];
-            sim.world.density.get(e).unwrap().metallicity()
+            sim.world.density.get(e).unwrap().total_mass().kilotons()
         };
         assert!(after < before, "density did not deplete: {before} -> {after}");
     }
@@ -2982,7 +3995,7 @@ mod tests {
             assert_eq!(pq.planets_owned, pl.planets_owned);
             assert_eq!(pq.colonies, pl.colonies);
             assert_eq!(pq.mining_outposts, pl.mining_outposts);
-            assert_eq!(pq.total_population.to_bits(), pl.total_population.to_bits());
+            assert_eq!(pq.total_population.kilotons().to_bits(), pl.total_population.kilotons().to_bits());
         }
         assert!(!loud.log().is_empty());
         assert!(quiet.log().is_empty());
@@ -3041,7 +4054,7 @@ mod tests {
 
         // R-O57: one mass unit, so the derate is exactly dry/(dry+cargo) with no
         // conversion coefficient in between. An MSV costs 1/3 and hauls 5.
-        let dry = hull_dry_mass(HullType::MediumSystems, &sim2.config);
+        let dry = hull_dry_mass(HullType::MediumSystems, &sim2.config).kilotons();
         assert!((a_laden - base * G * dry / (dry + 5.0)).abs() < 1e-12);
 
         // The same load on a bigger hull derates *less* — dry mass is in the
@@ -3065,35 +4078,368 @@ mod tests {
         // (`hull_type_cost_derives_from_the_fleet_size_config` covers that).
         let mut cfg = SimConfig::new(1);
         cfg.medium_fleet_size = 3.0;
+        cfg.limited_fleet_size = 9.0;
         let (l, m, g) = (HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems);
 
-        // r = sqrt(cost ratio to Limited): 1 : √3 : 3 at the shipped 1:3:9.
-        assert!((l.hull_radius(&cfg) - 1.0).abs() < 1e-12);
-        assert!((m.hull_radius(&cfg) - 3f64.sqrt()).abs() < 1e-12);
-        assert!((g.hull_radius(&cfg) - 3.0).abs() < 1e-12);
+        // **Radius is solved from the price, not square-rooted from it.**
+        // `r = sqrt(cost / cost_Limited)` was the constant-`τ` special case
+        // (T-56 stage 3c); the law is `cost·η = r³ − (r − τ)³`. Assert the
+        // inversion, which holds for every ladder, rather than the three
+        // magnitudes one ladder happens to produce.
+        for hull in [l, m, g] {
+            let recovered = hull.shell_volume(&cfg).hull_units_cubed() / hull.geometry().shape_efficiency;
+            let paid = hull.cost_fraction(&cfg) * cfg.general_vehicle_cost;
+            assert!((recovered - paid).abs() < 1e-9, "{hull:?}: shell/η = {recovered}, paid {paid}");
+        }
+        assert!(l.hull_radius(&cfg) < m.hull_radius(&cfg));
+        assert!(m.hull_radius(&cfg) < g.hull_radius(&cfg));
 
         // R-O57: dry mass *is* the cost, in one unit.
         for hull in [l, m, g] {
             let cost = hull.cost_fraction(&cfg) * cfg.general_vehicle_cost;
-            assert!((hull_dry_mass(hull, &cfg) - cost).abs() < 1e-12);
+            assert!((hull_dry_mass(hull, &cfg).kilotons() - cost).abs() < 1e-12);
         }
 
-        // What survives of roles §6's 0/1/2: the *ordinal* content. A Limited
-        // hull is all shell and carries nothing; each larger hull carries
-        // strictly more. The magnitudes are geometry now, not the unit count —
-        // General is ~20× Medium, not 2× (R-O64).
-        assert_eq!(l.cargo_capacity(&cfg), 0.0);
-        assert!((m.cargo_capacity(&cfg) - cfg.cargo_unit_size).abs() < 1e-12);
-        assert!(g.cargo_capacity(&cfg) > m.cargo_capacity(&cfg));
-        let ratio = g.cargo_capacity(&cfg) / m.cargo_capacity(&cfg);
-        assert!((ratio - (2.0 / (3f64.sqrt() - 1.0)).powi(3)).abs() < 1e-9, "G:M capacity ratio {ratio}");
+        // What survives of roles §6's 0/1/2: the *ordinal* content. Each larger
+        // hull carries strictly more, and the magnitudes are geometry rather
+        // than a unit count (R-O64). The Limited hull's hold is no longer
+        // identically zero — §2.3 gives a Limited *Systems* hull a token load
+        // and reserves the zero for the roles whose payload fills the hull.
+        assert!(l.cargo_capacity(&cfg) < m.cargo_capacity(&cfg));
+        assert!(m.cargo_capacity(&cfg) < g.cargo_capacity(&cfg));
+        assert_eq!(HullType::LimitedOffensive.cargo_capacity(&cfg), Kilotons::ZERO);
 
         // Design law #3: consolidation must win under geometry alone. The
         // pre-shell model failed this — a General hull cost 9× a Limited and
         // hauled 2 units where a Medium cost 3× and hauled 1, i.e. 0.100 vs
         // 0.067 cost per unit hauled, so *fragmenting* was cheaper.
-        let per_kt = |h: HullType| h.cost_fraction(&cfg) * cfg.general_vehicle_cost / h.cargo_capacity(&cfg);
+        let per_kt = |h: HullType| h.cost_fraction(&cfg) * cfg.general_vehicle_cost / h.cargo_capacity(&cfg).kilotons();
         assert!(per_kt(g) < per_kt(m), "bigger hull must be cheaper per kt hauled");
+    }
+
+    /// **R-O71 closed: the hold ladder *is* the mass ladder, tied to the cost
+    /// ladder by `F_mass = F_cost^(3/2)`.**
+    ///
+    /// This test replaces `the_cargo_ladder_is_geometric_not_banded`, which
+    /// pinned a disagreement between two ratified specs — §2.6 demanded one
+    /// step factor in `[4, 8]` for every Band-laddered quantity, cargo capacity
+    /// named among them, while the shell model stepped Medium → General by
+    /// ~106×. R-MC15 resolved it in the geometry's favour: the `[4, 8]` window
+    /// is withdrawn, capacity sits on the **mass** ladder rather than the cost
+    /// one, and the `3/2` exponent is what makes those one geometry instead of
+    /// two scales. The old test's failure message asked for exactly this
+    /// replacement, and T-56 stage 3c is what triggered it.
+    ///
+    /// The rung is the **hold**, not the usable cargo: `V_reserved` is a role
+    /// deduction applied after the ladder, so cargo steps a little wide of the
+    /// factor (34.3 against 31.6) while the hold hits it.
+    #[test]
+    fn the_hold_ladder_is_the_mass_ladder() {
+        let cfg = SimConfig::new(1);
+        let (l, m, g) = (HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems);
+
+        // The `3/2` tie, asserted against the cost ladder that produced it
+        // rather than against a copied constant. **The steps are the hull cost
+        // steps, not `MASS_LADDER` entries** — those two agreed at the top of
+        // the ladder and used to agree at the bottom as well, and the bottom
+        // agreement was a coincidence of where the ladder's floor sat. Widening
+        // `Band Empty` to one tonne (`units::KILOTONS_AT_BAND_EMPTY`) ended it:
+        // `MASS_LADDER[0]` is the floor's width, 1000, while the Limited →
+        // Medium hull step is and remains `5^1.5`. Asserting the geometry
+        // against the geometry is the claim that was always meant.
+        for (cost_step, hold_step) in [
+            (cfg.limited_fleet_size / cfg.medium_fleet_size, m.hold_volume(&cfg) / l.hold_volume(&cfg)),
+            (cfg.medium_fleet_size, g.hold_volume(&cfg) / m.hold_volume(&cfg)),
+        ] {
+            // Tolerances are loose because `η` varies across the three sizes by
+            // design (§2.2) — the steps are hit to within a couple of percent,
+            // not to the bit.
+            let want = cost_step.powf(1.5);
+            assert!((hold_step / want - 1.0).abs() < 0.05, "hold step {hold_step} vs {cost_step}^1.5 = {want}");
+        }
+
+        // **Medium and General holds still land on `Band I` and `Band II`.**
+        // That is the part of the T-56 story the floor change does *not* touch,
+        // because both rungs are above it. What it does touch is the Limited
+        // hull, whose 0.089 kt hold used to sit exactly on `Band Empty` and now
+        // reads ~`Band 0.65` — recorded here rather than asserted, because it
+        // is a consequence of the floor and not a property of the geometry.
+        for (hull, rung) in [(m, 1.0), (g, 2.0)] {
+            let hold = Kilotons::new(hull.hold_volume(&cfg).hull_units_cubed() * cfg.cargo_unit_size);
+            assert!((hold.in_bands().bands() - rung).abs() < 0.05, "{hull:?} hold reads {:?}", hold.in_bands());
+        }
+
+        // **R-V9 is satisfied by geometry rather than contradicted by it.** A
+        // Colonizer carries `colony_seed_pop` of settlers, and before T-56 that
+        // mass (1.0 kt) *exceeded* the hold of the Medium hull R-V9 names as the
+        // smallest able to carry them (0.959 kt) — an inconsistency nothing
+        // caught, because capacity gates mineral loading only. The Medium hull's
+        // hold is now `Band I` by construction, which is the rung the colony
+        // seed is defined at, so the rule and the geometry finally agree.
+        let seed_mass = units::population_mass(cfg.colony_seed_pop.band()).kilotons();
+        let hold = m.hold_volume(&cfg).hull_units_cubed() * cfg.cargo_unit_size;
+        assert!(
+            seed_mass <= hold,
+            "the colony seed ({seed_mass:.3} kt) must fit a Medium hold ({hold:.3} kt) — R-V9 says a \
+             Medium hull is the smallest that can found a colony, and a hold too small to carry the \
+             seed makes that rule unsatisfiable"
+        );
+    }
+
+    /// **T-56: hull geometry carries its units in the type, and the ladder is
+    /// the ratified one.**
+    ///
+    /// The shell model was always three quantities — a radius, a thickness and
+    /// the volumes they bound — but only one of them had a name and none had a
+    /// type, so `(r − 1)` was a subtraction whose second operand was a literal.
+    /// Stage 2 named and typed them; stage 3c gave `τ` its ratified per-hull
+    /// values, which is what finally separates cost from capacity.
+    #[test]
+    fn hull_geometry_is_dimensioned_and_the_shell_closes() {
+        let cfg = SimConfig::new(1);
+        let (l, m, g) = (HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems);
+
+        for hull in HullType::ALL {
+            // Shell + hold is the whole hull, with nothing unaccounted for.
+            // This is the identity that makes cost and capacity two halves of
+            // one body rather than two ladders that happen to share a symbol.
+            let closed = hull.shell_volume(&cfg) + hull.hold_volume(&cfg);
+            let whole = hull.hull_radius(&cfg).cubed();
+            assert!(
+                (closed - whole).hull_units_cubed().abs() < 1e-12,
+                "{hull:?}: shell + hold = {closed} but the hull is {whole}"
+            );
+
+            // r − τ, floored. The floor is a statement, not a guard: a hull
+            // whose skin is as thick as it is wide has no interior.
+            let expect = (hull.hull_radius(&cfg) - hull.shell_thickness()).max(Length::ZERO);
+            assert_eq!(hull.hold_radius(&cfg), expect, "{hull:?}");
+
+            // **The radius solve inverts the price.** `hull_radius` solves
+            // `cost·η = r³ − (r − τ)³`, so running it backwards must return the
+            // cost that went in. If these ever drift apart, the shell has
+            // stopped being what is bought.
+            let recovered = hull.shell_volume(&cfg).hull_units_cubed() / hull.geometry().shape_efficiency;
+            let paid = hull.cost_fraction(&cfg) * cfg.general_vehicle_cost;
+            assert!((recovered - paid).abs() < 1e-9, "{hull:?}: shell/η = {recovered} but it cost {paid}");
+        }
+
+        // **Shell thickness rises with size**, which is the design arc's
+        // requirement, and it is *derived* — §2.3 solves it from the cost and
+        // hold the Band rungs fix, and `η` rising toward the sphere is what
+        // pays for it. This is also the tripwire stage 2 left behind: it used
+        // to assert one unit for every hull.
+        assert!(l.shell_thickness() < m.shell_thickness());
+        assert!(m.shell_thickness() < g.shell_thickness());
+
+        // **And with armour**, at every size: Offensive > Contact > Systems.
+        // The armour statement as geometry rather than as a combat constant,
+        // which is what keeps design law #2 intact.
+        assert!(l.shell_thickness() < HullType::LimitedContactVehicle.shell_thickness());
+        assert!(HullType::LimitedContactVehicle.shell_thickness() < HullType::LimitedOffensive.shell_thickness());
+        assert!(g.shell_thickness() < HullType::GeneralContactVehicle.shell_thickness());
+        assert!(HullType::GeneralContactVehicle.shell_thickness() < HullType::GeneralOffensive.shell_thickness());
+
+        // **The Systems row lands on the Band rungs**, which is the whole point
+        // of the ratified ladder: the hold is the quantity that sits on a rung,
+        // and its steps are the mass ladder's own factors.
+        // The factors are the *cost* ladder's, raised to `3/2` — see
+        // `the_hold_ladder_is_the_mass_ladder` for why that is no longer the
+        // same thing as `MASS_LADDER` at the bottom rung.
+        let step_lo = m.hold_volume(&cfg) / l.hold_volume(&cfg);
+        let step_hi = g.hold_volume(&cfg) / m.hold_volume(&cfg);
+        assert!(
+            (step_lo - (cfg.limited_fleet_size / cfg.medium_fleet_size).powf(1.5)).abs() < 0.2,
+            "Limited→Medium hold step {step_lo}"
+        );
+        assert!((step_hi - cfg.medium_fleet_size.powf(1.5)).abs() < 0.5, "Medium→General hold step {step_hi}");
+
+        // **Capability, not competence** (roles §4, R-O44). A Limited Contact
+        // or Offensive hull and a Rapid Offensive one reserve more than their
+        // whole hold, so they carry exactly nothing — reached through
+        // `max(0, ·)`, not clamped. A Limited *Systems* hull carries a scout's
+        // sample locker, and a General Offensive one carries real tonnage.
+        for hull in [HullType::LimitedContactVehicle, HullType::LimitedOffensive, HullType::RapidOffensive] {
+            assert_eq!(hull.cargo_capacity(&cfg), Kilotons::ZERO, "{hull:?} must have no hold");
+        }
+        let lsv = l.cargo_capacity(&cfg).kilotons();
+        assert!((0.001..0.1).contains(&lsv), "a Limited Systems hull carries a token load, got {lsv}");
+        assert!(HullType::GeneralOffensive.cargo_capacity(&cfg) > Kilotons::new(1.0));
+
+        // Design law #3, in every role: carry efficiency must rise with size,
+        // so consolidation wins under geometry alone.
+        let e = |h: HullType| h.cargo_capacity(&cfg).kilotons() / (h.cost_fraction(&cfg) * cfg.general_vehicle_cost);
+        assert!(e(l) < e(m) && e(m) < e(g), "Systems: {} {} {}", e(l), e(m), e(g));
+        assert!(e(HullType::LimitedContactVehicle) < e(HullType::GeneralContactVehicle));
+        assert!(e(HullType::RapidOffensive) < e(HullType::GeneralOffensive));
+    }
+
+    /// **T-56 stage 4a: the hull that was ordered is the hull that is built.**
+    ///
+    /// R-O29 moved the hull choice into `BuildOrder::Hull`, but `apply_build`
+    /// kept pricing and spawning from `role_hull_type(role)` — which agreed
+    /// only because that map happened to invert `assign_role`. Nothing asserted
+    /// the round trip, so the disagreement would have arrived silently the
+    /// first time Doctrine ordered a hull the role map does not name.
+    #[test]
+    fn the_ordered_hull_is_the_hull_that_is_priced_and_flown() {
+        let cfg = SimConfig::new(1);
+
+        // The round trip that used to hold by luck, asserted: every hull the
+        // baseline autopilot can order must come back to itself through the
+        // role it is assigned.
+        for (hull, role) in [
+            (HullType::MediumSystems, Role::Colonizer),
+            (HullType::LimitedSystems, Role::Miner),
+            (HullType::LimitedContactVehicle, Role::Scout),
+        ] {
+            assert_eq!(role_hull_type(role), hull, "{role:?} still maps back to {hull:?}");
+            assert!((role_cost(role, &cfg) - hull_cost(hull, &cfg)).abs() < Price::new(1e-12));
+        }
+
+        // And the thing the round trip was standing in for: a heavier hull
+        // costs more, so pricing off the role rather than the order would have
+        // bought a General hull at a Medium hull's price.
+        assert!(hull_cost(HullType::GeneralSystems, &cfg) > hull_cost(HullType::MediumSystems, &cfg) * 5.0);
+    }
+
+    /// **T-56 stage 4: carry up to the target's carrying capacity, and no
+    /// more — and the capacity now depends on the hull that founds it (R-O76).**
+    ///
+    /// Two ladders meet here. The **hold** ladder gives each hull a colonist
+    /// capacity (`Band Empty` / `I` / `II`), and the **infrastructure** ladder
+    /// converts the recycled hull into the colony's founding `K`. Before R-O76
+    /// only the first varied and the second was a constant, which capped every
+    /// new colony at one Band and made a heavier colony ship pointless by
+    /// construction.
+    #[test]
+    fn a_colony_ship_carries_up_to_the_targets_capacity_and_no_more() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+
+        // Colonist capacity is the hold's rung, and the rungs are the mass
+        // ladder's.
+        let (m_cap, g_cap) = (
+            HullType::MediumSystems.colony_seed_capacity(&sim.config),
+            HullType::GeneralSystems.colony_seed_capacity(&sim.config),
+        );
+        assert!((m_cap.band().bands() - 1.0).abs() < 1e-9, "a Medium hold is Band I, got {m_cap}");
+        assert!((g_cap.band().bands() - 2.0).abs() < 1e-6, "a General hold is Band II, got {g_cap}");
+        assert!(
+            HullType::LimitedSystems.colony_seed_capacity(&sim.config)
+                < units::population_mass(sim.config.colony_seed_pop.band())
+        );
+
+        // **Founding infrastructure is the recycled hull's minerals, read on
+        // the infrastructure ladder — which is the mineral ladder (R-O80).**
+        // The rungs *are* the hull costs, so a recycled hull buys exactly the
+        // infrastructure its minerals would have bought, and every anchor lands
+        // on a whole rung with no rate and no subsidy in between.
+        // (to a tolerance: `band_of` is a log round trip, so a whole rung comes
+        // back as 2.0 minus a couple of ulps)
+        for (hull, rung) in [
+            (HullType::LimitedSystems, BandTier::Empty),
+            (HullType::MediumSystems, BandTier::I),
+            (HullType::GeneralSystems, BandTier::II),
+        ] {
+            let got = sim.founding_infra(hull);
+            assert!((got.bands() - rung.band().bands()).abs() < 1e-9, "{hull:?} founds at {got}, want {rung}");
+        }
+        let m_infra = sim.founding_infra(HullType::MediumSystems);
+        let g_infra = sim.founding_infra(HullType::GeneralSystems);
+
+        // And the prices those rungs correspond to: `Infra I costs minerals I`.
+        for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
+            let rung = sim.founding_infra(hull).round().bands() as usize;
+            let priced = infra_rung_price(rung, &sim.config);
+            assert!(
+                (priced - hull_cost(hull, &sim.config)).abs() < Price::new(1e-12),
+                "{hull:?}: rung {rung} prices at {priced} but the hull costs {}",
+                hull_cost(hull, &sim.config)
+            );
+        }
+
+        // A target far better than either hull can fill: `k_potential` of 4.
+        let target = sim.planet_entity[11];
+        sim.world.factors.insert(
+            target,
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+        );
+
+        // Each hull's founding `K` is its own infrastructure, and the load is
+        // capped by it. **Both hulls are now `K`-limited, not hold-limited** —
+        // neither can deliver what its hold could carry, because neither leaves
+        // enough infrastructure behind to hold the people.
+        assert_eq!(sim.founding_capacity(HullType::MediumSystems, target), units::population_mass(m_infra));
+        let medium = sim.colony_seed_for(HullType::MediumSystems, target).expect("a Medium hull can found");
+        let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
+        let close = |a: Kilotons, b: Kilotons| (a.band().bands() - b.band().bands()).abs() < 1e-9;
+        assert!(close(medium, units::population_mass(m_infra)), "a Medium colony starts at what its hull left");
+        assert!(close(general, units::population_mass(g_infra)), "and so does a General one");
+        assert!(general > medium, "a General hull founds a materially better colony");
+
+        // **The two ladders now agree rung for rung, and that is not a
+        // coincidence — it is the same hull cost read twice.** A hull's hold
+        // carries exactly the population the infrastructure that same hull
+        // leaves behind can hold: `Band I` and `Band I` for a Medium, `Band II`
+        // and `Band II` for a General. Neither side binds, so nothing is
+        // wasted at either end — no hold flying empty for want of somewhere to
+        // put people, no infrastructure standing idle for want of people.
+        assert!(close(medium, m_cap), "Medium: hold {m_cap} vs founding K {medium}");
+        assert!(close(general, g_cap), "General: hold {g_cap} vs founding K {general}");
+
+        // **R-V9 is physics, through the hold.** A Limited hull's seed capacity
+        // is below `colony_seed_pop`, so it founds nothing — whatever
+        // infrastructure its hull would have left behind.
+        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, target), None);
+    }
+
+    /// **T-57: extraction is per miner, not per rock.**
+    ///
+    /// `outpost_mining_fraction` used to be the fraction of remaining density a
+    /// *rock* yielded per tick, with the hull standing on it contributing
+    /// nothing but the schedule — so "how many miners per outpost" was not a
+    /// value anyone could tune, because there was no term for it. A crew of `n`
+    /// now works `n` times as much, capped at the whole remaining field.
+    #[test]
+    fn a_mining_crew_extracts_in_proportion_to_its_size() {
+        let extracted = |crew: usize| {
+            let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
+            let outpost = sim.planet_entity[10];
+            // **Pin the ore rather than inherit it.** This test is about the
+            // *proportionality* of the crew, so which rock the generator put at
+            // index 10 is a confound: T-62's log-normal field plus a widened
+            // `Band Empty` floor made that particular world barren, and the test
+            // failed on "a single miner must extract something" — a true
+            // statement about a dead rock and nothing at all about crews.
+            {
+                let d = sim.world.density.get_mut(outpost).unwrap();
+                for b in Basic::ALL {
+                    d.set(b, Kilotons::new(1.0));
+                }
+            }
+            let before = sim.world.density.get(outpost).unwrap().total_mass().kilotons();
+            // A crew is just entities on the books; what they extract is what
+            // this test is about, so they need no voyage.
+            let hulls: Vec<Entity> = (0..crew).map(|_| sim.world.spawn()).collect();
+            sim.mine_crew.insert((0, outpost.0), hulls);
+            sim.sys_mining_tick(outpost);
+            before - sim.world.density.get(outpost).unwrap().total_mass().kilotons()
+        };
+
+        let one = extracted(1);
+        assert!(one > 0.0, "a single miner must extract something");
+        // Two miners take twice as much, three take three times — exactly, up
+        // to the cap, because the fraction is per miner now.
+        assert!((extracted(2) / one - 2.0).abs() < 1e-9, "two miners: {}", extracted(2) / one);
+        assert!((extracted(3) / one - 3.0).abs() < 1e-9, "three miners: {}", extracted(3) / one);
+
+        // And the rock is the ceiling: a crew large enough to want more than the
+        // field holds takes the field, not more. `outpost_mining_fraction` is
+        // 0.238, so five miners would ask for 1.19 of it.
+        let cfg = SimConfig::new(3);
+        let cap = (1.0 / cfg.outpost_mining_fraction).ceil() as usize;
+        assert!(extracted(cap) <= extracted(cap * 2) + 1e-12);
+        assert!((extracted(cap) - extracted(cap * 2)).abs() < 1e-9, "past the cap the rock binds, not the crew");
     }
 
     #[test]
@@ -3107,9 +4453,9 @@ mod tests {
         for hull in
             [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems, HullType::RapidOffensive]
         {
-            let a = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg);
+            let a = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg).kilotons();
             cfg.general_vehicle_cost = 17.0; // any scale at all
-            let b = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg);
+            let b = hull_base_thrust(hull, &cfg) / hull_dry_mass(hull, &cfg).kilotons();
             cfg.general_vehicle_cost = 1.0;
             assert!((a - b).abs() < 1e-12, "{hull:?}: empty accel must not depend on the mass scale");
         }
@@ -3179,28 +4525,109 @@ mod tests {
         assert!(sim2.roster_permits(0, HullType::MediumSystems), "default config must not gate anything");
     }
 
+    /// **The decision cadence is the build cadence, not the economy's (R-O69).**
+    ///
+    /// A center that commits a build occupies its yard for `build_years` and
+    /// decides again the moment it clears — not at the next `cycle_years`
+    /// economy tick. With the shipped 10 vs 50 that is a 5x ceiling on how fast
+    /// a rich center can spend, and it was the largest single throttle on the
+    /// expansion loop: measured beforehand, the median funded build fired at
+    /// 5.5x the price of what it bought.
+    ///
+    /// This pins the structural property rather than a number, so it survives
+    /// retuning either constant: **a busy yard is skipped by the economy tick,
+    /// and a decision is pending for when it clears.**
+    #[test]
+    fn a_committed_build_occupies_the_yard_and_schedules_its_own_next_decision() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 11)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+
+        // A homeworld with minerals to burn will commit something.
+        sim.world.stockpile.get_mut(home).unwrap().cyan = 500.0;
+        assert!(!sim.world.building_until.contains(home), "yard starts free");
+
+        sim.sys_build_decision(home);
+        let Some(&done) = sim.world.building_until.get(home) else {
+            panic!("a center with 500 minerals and a live frontier must commit something");
+        };
+        assert!(
+            (done - (sim.clock + sim.config.build_years)).abs() < 1e-9,
+            "the yard is held for build_years, got {done} at clock {}",
+            sim.clock
+        );
+
+        // The economy tick must not decide over a busy yard — that would be the
+        // cadence sneaking back in through the other door.
+        let before = sim.world.stockpile.get(home).unwrap().basic_total();
+        sim.sys_production_tick(home);
+        let after = sim.world.stockpile.get(home).unwrap().basic_total();
+        assert!(after >= before, "an occupied yard must not have spent again: {before} -> {after}");
+        assert!(sim.world.building_until.contains(home), "the economy tick must not clear the yard");
+
+        // And the decision that clears it is scheduled, not waited for.
+        assert!(
+            sim.queue.iter().any(|e| matches!(e.0.kind, EventKind::BuildDecision { center } if center == home)),
+            "no BuildDecision pending for the busy center"
+        );
+    }
+
     #[test]
     fn population_growth_is_paid_for_out_of_biosphere() {
         // L6, amended: population is no longer an exception to mass
         // conservation. Every kiloton of people is a kiloton of biosphere that
-        // stopped being biosphere, so pop + bio is invariant across a growth
-        // step once regrowth is switched off.
+        // stopped being biosphere, so **population mass + biomass** is
+        // invariant across a growth step once regrowth is switched off.
+        //
+        // Note what is conserved and what is not: the invariant is over
+        // *masses*, `KT(pop) + biomass`. `pop + biomass` — the old assertion —
+        // is a Band added to a mass and was only ever "conserved" because the
+        // engine drew a Band increment out of a kiloton stock.
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
         let mut cfg = test_cfg(5);
         cfg.biosphere_regen_rate = 0.0; // isolate the exchange from the regrowth
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
-        sim.world.factors.insert(home, Factors { hab: 4.0, bio: 4.0, bio_max: 4.0, infra: 4.0 });
-        *sim.world.population.get_mut(home).unwrap() = 1.0;
+        let bio_max = Band::new(4.0).in_kilotons();
+        let pop0 = Kilotons::at_band(Band::new(1.0));
+        let biomass = bio_max;
+        sim.world.factors.insert(home, Factors::new(Band::new(4.0), biomass, bio_max, Band::new(4.0)));
+        *sim.world.population.get_mut(home).unwrap() = pop0;
 
-        let before = *sim.world.population.get(home).unwrap() + sim.world.factors.get(home).unwrap().bio;
+        let before = pop0 + sim.world.factors.get(home).unwrap().biomass;
         sim.sys_production_tick(home);
         let f = sim.world.factors.get(home).unwrap();
         let pop = *sim.world.population.get(home).unwrap();
 
-        assert!(pop > 1.0, "population should have grown, got {pop}");
-        assert!(f.bio < 4.0, "biosphere should have been drawn down, got {}", f.bio);
-        assert!((pop + f.bio - before).abs() < 1e-9, "pop+bio not conserved: {before} -> {}", pop + f.bio);
+        assert!(pop > pop0, "population should have grown, got {pop:?}");
+        assert!(f.biomass < biomass, "biosphere should have been drawn down, got {}", f.biomass);
+        let after = pop + f.biomass;
+        assert!((after.kilotons() - before.kilotons()).abs() < 1e-9, "mass not conserved: {before:?} -> {after:?}");
+    }
+
+    /// The unit fix, stated as behaviour: eating the biosphere must not lower
+    /// the world's ceiling. Under `K = min(hab, bio, infra)` a drawn-down
+    /// standing stock cut `K` directly — a mass compared against two levels —
+    /// and the population it could hold fell with it.
+    #[test]
+    fn drawing_the_biosphere_down_does_not_lower_the_ceiling() {
+        let bio_max = Band::new(4.0).in_kilotons();
+        let full = Factors::new(Band::new(4.0), bio_max, bio_max, Band::new(4.0));
+        let mut razed = full;
+        razed.biomass = bio_max * 0.01; // ecology in ruins, ceiling untouched
+
+        assert_eq!(full.k(), razed.k(), "K must not depend on the standing stock");
+        assert_eq!(full.k(), Band::new(4.0));
+
+        // The *ceiling* moves only when the pristine biosphere does — which is
+        // what makes an ecological strike durable rather than momentary.
+        // Through the setter, which is the only sanctioned write: `k_potential`
+        // reads a cached Band reading of `bio_max` (R-O70), and a card that
+        // craters an ecology by assigning the field directly would leave the
+        // ceiling reading the old world.
+        let mut cratered = full;
+        cratered.set_bio_max(Band::new(1.5).in_kilotons());
+        assert_eq!(cratered.k(), Band::new(1.5));
     }
 
     #[test]
@@ -3209,17 +4636,25 @@ mod tests {
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(6));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         // A cratered ecology: standing mass far below the pristine ceiling.
-        sim.world.factors.insert(home, Factors { hab: 4.0, bio: 0.5, bio_max: 4.0, infra: 4.0 });
-        *sim.world.population.get_mut(home).unwrap() = 0.01;
+        //
+        // Infrastructure is held at zero so `K == 0` and nothing grows. That
+        // isolates the question the test is asking — *does a razed biosphere
+        // come back* — from the one it is not: with a live `K` the population
+        // simply outruns the regrowth and eats the recovery as it happens,
+        // which is correct behaviour and a different test.
+        let bio_max = Band::new(4.0).in_kilotons();
+        let start = bio_max * 0.125;
+        sim.world.factors.insert(home, Factors::new(Band::new(4.0), start, bio_max, Band::ZERO));
+        *sim.world.population.get_mut(home).unwrap() = units::POPULATION_SEED_FLOOR;
 
-        let mut last = 0.5;
+        let mut last = start;
         for _ in 0..40 {
             sim.sys_production_tick(home);
-            let bio = sim.world.factors.get(home).unwrap().bio;
-            assert!(bio <= 4.0 + 1e-9, "biosphere exceeded its ceiling: {bio}");
+            let bio = sim.world.factors.get(home).unwrap().biomass;
+            assert!(bio.kilotons() <= bio_max.kilotons() + 1e-9, "biosphere exceeded its ceiling: {bio:?}");
             last = bio;
         }
-        assert!(last > 0.5, "a razed biosphere should recover over time, got {last}");
+        assert!(last > start, "a razed biosphere should recover over time, got {last:?}");
     }
 
     #[test]
@@ -3231,13 +4666,118 @@ mod tests {
         let pe = sim.player_entity[0];
         sim.world.doctrine.get_mut(pe).unwrap().biosphere_regen_bonus = 0.0;
         let home = sim.world.player_info.get(pe).unwrap().home;
-        sim.world.factors.insert(home, Factors { hab: 4.0, bio: 0.0, bio_max: 4.0, infra: 4.0 });
-        *sim.world.population.get_mut(home).unwrap() = 0.01;
+        sim.world
+            .factors
+            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
+        *sim.world.population.get_mut(home).unwrap() = units::POPULATION_SEED_FLOOR;
 
         for _ in 0..20 {
             sim.sys_production_tick(home);
         }
-        assert_eq!(sim.world.factors.get(home).unwrap().bio, 0.0, "regen_bonus=0 must leave the biosphere dead");
+        assert_eq!(
+            sim.world.factors.get(home).unwrap().biomass,
+            Kilotons::ZERO,
+            "regen_bonus=0 must leave the biosphere dead"
+        );
+    }
+
+    /// A population with no biomass to eat stalls; it does not go negative, and
+    /// it does not conjure people. This is the constraint that used to be
+    /// expressed as `K` collapsing.
+    #[test]
+    fn growth_stalls_when_the_biosphere_cannot_pay_for_it() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 7)).unwrap();
+        let mut cfg = test_cfg(7);
+        cfg.biosphere_regen_rate = 0.0;
+        let mut sim = Simulation::with_baseline(galaxy, cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        sim.world
+            .factors
+            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
+        *sim.world.population.get_mut(home).unwrap() = Kilotons::at_band(Band::new(2.0));
+
+        for _ in 0..10 {
+            sim.sys_production_tick(home);
+        }
+        let pop = *sim.world.population.get(home).unwrap();
+        let f = sim.world.factors.get(home).unwrap();
+        assert!(pop.band().bands() <= 2.0 + 1e-9, "grew on an empty biosphere: {pop:?}");
+        assert!(f.biomass >= Kilotons::ZERO, "biomass went negative: {:?}", f.biomass);
+        // `K` is untouched by the starvation — the ceiling is a Band, the
+        // shortfall is a rate.
+        assert_eq!(f.k(), Band::new(4.0));
+    }
+
+    /// **T-56 stage 4: a colony seeded above its carrying capacity crashes
+    /// *below* it, and that is why a bigger colony ship does not pay.**
+    ///
+    /// Stage 4b made a colony ship's seed the Band its hold masses, so a
+    /// General hull founds at `Band II` where a Medium founds at `Band I`. On
+    /// the four-seed bed that is **−5.9%** colony-years with the colony *count*
+    /// identical on every seed, and the ablation that isolates it — a `Band II`
+    /// seed at a Medium hull's price — is **−2.6%**. Seed depth is not merely
+    /// worthless; it is harmful even when nearly free, so the General hull's
+    /// price is not what killed it.
+    ///
+    /// The mechanism is here, and it is not the `clamp` that first looked
+    /// guilty. `sys_production_tick` grows population by the **discrete**
+    /// logistic `s + r·s·(1 − s/K)`, whose growth term goes strongly negative
+    /// above `K` — at `r = 0.873` a population at `2K` does not settle back to
+    /// `K`, it overshoots to `0.25K` in one step. The `clamp` bounds the top
+    /// only.
+    ///
+    /// And the `K` that matters is **1.0, not the mature 1.43**: a founding
+    /// colony gets `infra = Band I`, and `K = min(hab, bio_max, infra)`. So
+    /// every Band of seed above the first is not just wasted, it is a
+    /// population crash on the colony's first tick.
+    ///
+    /// **R-O75 (new, open):** whether the discrete logistic should be replaced
+    /// by one that cannot overshoot downward (a saturating step, or the
+    /// closed-form solution over the interval). It is a real modelling artifact
+    /// — nothing in the design says an overfull world should lose three
+    /// quarters of its people in fifty years — but it is on the hottest path in
+    /// the engine and every ratified growth number was measured with it, so it
+    /// is recorded rather than changed here.
+    #[test]
+    fn a_colony_seeded_above_its_capacity_crashes_below_it() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 7)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(7));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+
+        // A freshly founded colony: infra at `Band I`, so `K` is `Band I`
+        // however good the world is. Plenty of biomass, so nothing here is
+        // about the mass budget.
+        let founding = |sim: &mut Simulation, seed: Kilotons| {
+            sim.world.factors.insert(
+                home,
+                Factors::new(
+                    Band::new(4.0),
+                    Band::new(4.0).in_kilotons(),
+                    Band::new(4.0).in_kilotons(),
+                    Band::new(1.0),
+                ),
+            );
+            *sim.world.population.get_mut(home).unwrap() = seed;
+            sim.sys_production_tick(home);
+            *sim.world.population.get(home).unwrap()
+        };
+        let from_band_i = founding(&mut sim, Kilotons::at_tier(BandTier::I));
+        let from_band_ii = founding(&mut sim, Kilotons::at_tier(BandTier::II));
+
+        // A `Band I` seed sits exactly at `K` and stays there.
+        assert!(
+            (from_band_i.band().bands() - 1.0).abs() < 1e-9,
+            "a Band I seed should rest at K = Band I, got {from_band_i}"
+        );
+        // A `Band II` seed does not settle back to `K` — it overshoots below.
+        assert!(
+            from_band_ii < from_band_i,
+            "a Band II seed must end up *worse* than a Band I one: {from_band_ii} vs {from_band_i}"
+        );
+        assert!(
+            from_band_ii < Kilotons::at_band(Band::new(0.5)),
+            "the overshoot is severe, not marginal — expected well under half a Band, got {from_band_ii}"
+        );
     }
 
     #[test]
@@ -3315,8 +4855,14 @@ mod tests {
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
         let mut cfg = test_cfg(5);
         cfg.recycle_mining_pairs = true;
+        // **A crew of one, pinned.** This test is about recycling, not about
+        // how many miners open an outpost, and the ratified
+        // `miners_per_outpost = 3` would make the mineral assertion below a
+        // test of that value instead — the same way three hull-ladder tests
+        // silently became tests of `limited_fleet_size` at stage 3b.
+        let doctrine = Doctrine { miners_per_outpost: 1, ..Doctrine::default() };
         let autopilots: Vec<Box<dyn Autopilot>> =
-            (0..2).map(|_| Box::new(BaselineAutopilot::default()) as Box<_>).collect();
+            (0..2).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
         let mut sim = Simulation::new(galaxy, cfg, autopilots);
 
         let outpost = sim.planet_entity[11];
@@ -3332,7 +4878,7 @@ mod tests {
         sim.world.cargo.insert(miner, Minerals::default());
         sim.world.home_center.insert(miner, center);
         sim.sys_mining_arrive(miner);
-        assert_eq!(sim.mine_operator.get(&outpost.0), Some(&miner), "the operator must be recorded on station");
+        assert_eq!(sim.mine_crew.get(&(0, outpost.0)), Some(&vec![miner]), "the crew must be recorded on station");
 
         // Mine it out, then tick: the rock is done.
         *sim.world.density.get_mut(outpost).unwrap() = MineralField::default();
@@ -3344,16 +4890,17 @@ mod tests {
             "an exhausted miner stands down, it does not scrap"
         );
         assert_eq!(sim.reserve_miners[0], vec![miner], "and it joins its owner's pool");
-        assert!(!sim.mine_operator.contains_key(&outpost.0), "the dead rock has no operator");
+        assert!(!sim.mine_crew.contains_key(&(0, outpost.0)), "the dead rock has no crew");
 
         // Now a center orders a mining pair. The reserved hull is taken back at
         // no mineral cost; only the un-recycled half is paid for.
-        let stock_before = 1000.0;
+        let stock_before = Price::new(1000.0);
         {
             let st = sim.world.stockpile.get_mut(center).unwrap();
-            st.cyan = stock_before / 3.0;
-            st.magenta = stock_before / 3.0;
-            st.yellow = stock_before / 3.0;
+            let each = stock_before.kilotons() / 3.0;
+            st.cyan = each;
+            st.magenta = each;
+            st.yellow = each;
         }
         let pid = *sim.world.planet_id.get(next_rock).unwrap();
         let view = sim.view_of(next_rock);
@@ -3378,7 +4925,7 @@ mod tests {
         let spent = stock_before - sim.world.stockpile.get(center).unwrap().basic_total();
         let freighter_only = role_cost(Role::Freighter, &sim.config);
         assert!(
-            (spent - freighter_only).abs() < 1e-9,
+            (spent - freighter_only).abs() < Price::new(1e-9),
             "only the freighter is bought: spent {spent}, freighter costs {freighter_only}"
         );
     }
@@ -3406,10 +4953,13 @@ mod tests {
         let dead_band = cfg.density_floor / cfg.outpost_mining_fraction * 0.9;
         assert!(dead_band > cfg.density_floor, "the test needs a value the old predicate would have called alive");
         {
+            // The field's colours are Bands since T-62, so a target *mass* is
+            // set by reading it back onto the ladder rather than assigned.
+            let each = Kilotons::new(dead_band / 3.0);
             let d = sim.world.density.get_mut(outpost).unwrap();
-            d.cyan = dead_band / 3.0;
-            d.magenta = dead_band / 3.0;
-            d.yellow = dead_band / 3.0;
+            for b in Basic::ALL {
+                d.set(b, each);
+            }
         }
         *sim.world.stockpile.get_mut(outpost).unwrap() = Minerals::default();
 
@@ -3502,7 +5052,10 @@ mod tests {
         // pressure reads ~0.
         let colony = sim.planet_entity[15];
         sim.world.owner.insert(colony, PlayerId(0));
-        sim.world.factors.insert(colony, Factors { hab: 3.0, bio: 3.0, bio_max: 3.0, infra: 1.0 });
+        sim.world.factors.insert(
+            colony,
+            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Band::new(1.0)),
+        );
         sim.world.stockpile.insert(colony, Minerals::default());
 
         {
@@ -3530,7 +5083,10 @@ mod tests {
 
         let colony = sim.planet_entity[15];
         sim.world.owner.insert(colony, PlayerId(0));
-        sim.world.factors.insert(colony, Factors { hab: 3.0, bio: 3.0, bio_max: 3.0, infra: 1.0 });
+        sim.world.factors.insert(
+            colony,
+            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Band::new(1.0)),
+        );
         sim.world.stockpile.insert(colony, Minerals::default());
         {
             let s = sim.world.stockpile.get_mut(home).unwrap();
@@ -3542,9 +5098,9 @@ mod tests {
         let outpost = sim.planet_entity[40];
         {
             let mut field = MineralField::default();
-            field.set(Basic::Cyan, 5.0);
-            field.set(Basic::Magenta, 5.0);
-            field.set(Basic::Yellow, 5.0);
+            for b in Basic::ALL {
+                field.set(b, Band::new(5.0).in_kilotons());
+            }
             sim.world.density.insert(outpost, field);
         }
         sim.world.stockpile.insert(outpost, Minerals::default());
@@ -3586,7 +5142,7 @@ mod tests {
             sim.world.role.insert(v, Role::Colonizer);
             sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
             sim.world.cargo.insert(v, Minerals::default());
-            sim.world.pop_cargo.insert(v, sim.config.colony_seed_pop);
+            sim.world.pop_cargo.insert(v, units::population_mass(sim.config.colony_seed_pop.band()));
             sim.world.home_center.insert(v, home);
             v
         };
@@ -3615,12 +5171,12 @@ mod tests {
         sim.world.role.insert(v, Role::Colonizer);
         sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
         sim.world.cargo.insert(v, Minerals::default());
-        sim.world.pop_cargo.insert(v, 1.0);
+        sim.world.pop_cargo.insert(v, Kilotons::at_band(Band::new(1.0)));
         sim.world.home_center.insert(v, home0);
 
         sim.sys_colony_arrive(v);
         let pop = *sim.world.population.get(target).unwrap();
-        assert!((pop - 1.0).abs() < 1e-9, "colony should be seeded with the carried 1.0 pop, got {pop}");
+        assert!((pop.band().bands() - 1.0).abs() < 1e-9, "colony should be seeded with the carried 1.0 pop, got {pop}");
     }
 
     #[test]
@@ -3642,12 +5198,12 @@ mod tests {
         sim.world.role.insert(v, Role::Colonizer);
         sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
         sim.world.cargo.insert(v, Minerals::default());
-        sim.world.pop_cargo.insert(v, 1.0);
+        sim.world.pop_cargo.insert(v, Kilotons::at_band(Band::new(1.0)));
         sim.world.home_center.insert(v, home0);
 
         sim.sys_colony_arrive(v);
         let stock = sim.world.stockpile.get(target).unwrap().basic_total();
-        assert!(stock.abs() < 1e-9, "colony should start with zero minerals, got {stock}");
+        assert!(stock.abs() < Price::new(1e-9), "colony should start with zero minerals, got {stock}");
     }
 
     #[test]

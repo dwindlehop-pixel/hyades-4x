@@ -21,6 +21,7 @@ use std::io::Write;
 
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
 use hyades_engine::prelude::*;
+use hyades_engine::units::Band;
 
 const SEEDS: &[u64] = &[1, 7, 42, 31337];
 const PLAYERS: usize = 3;
@@ -35,8 +36,12 @@ fn main() {
         let mut frac = 0.0;
         for &seed in SEEDS {
             let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
-            let targets: HashSet<PlanetId> =
-                galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect();
+            let targets: HashSet<PlanetId> = galaxy
+                .planets
+                .iter()
+                .filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01))
+                .map(|p| p.id)
+                .collect();
             let mut cfg = SimConfig::new(seed);
             cfg.cargo_unit_size = cus;
             let autopilots: Vec<Box<dyn Autopilot>> =

@@ -57,6 +57,7 @@ use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, BuildOrder, Doctrin
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
 use hyades_engine::sim::HullType;
+use hyades_engine::units::{Band, BandTier};
 
 const PLAYERS: usize = 3;
 const SEED: u64 = 1;
@@ -69,7 +70,7 @@ const ISOLATE_HORIZON: f64 = 2000.0;
 
 /// Same definition `min_time_search` and `coverage_time` score against.
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
+    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,7 +157,7 @@ fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
     let (mut idle_total, mut at_gate, mut gate_deepen_possible) = (0u64, 0u64, 0u64);
     let (mut freighter_legs, mut extractions) = (0u64, 0u64);
     let (mut gated_stockpile_sum, mut gated_cost_sum) = (0.0f64, 0.0f64);
-    let mut centers: HashMap<(u32, PlanetId), u8> = HashMap::new();
+    let mut centers: HashMap<(u32, PlanetId), BandTier> = HashMap::new();
     let mut known: HashSet<(u32, PlanetId)> = HashSet::new();
     let mut founded: HashSet<PlanetId> = HashSet::new();
     let mut last_colony_time = 0.0_f64;
@@ -183,7 +184,7 @@ fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
                 ..
             } => {
                 fp.decisions += 1;
-                let e = centers.entry((player, center)).or_insert(0);
+                let e = centers.entry((player, center)).or_insert(BandTier::Empty);
                 *e = (*e).max(pop_level);
 
                 let gated = pop_level < cfg.medium_min_level;

@@ -63,6 +63,7 @@
 use crate::math::Vec3;
 use crate::resources::{Archetype, Basic, MineralField};
 use crate::rng::Rng;
+use crate::units::{Band, BandTier, Kilotons, Measure};
 
 /// `Γ(4/3)`, the mean-scaling constant for a Weibull(k=3) distribution — see
 /// [`GalaxyConfig::derived_planet_count`]. `Γ(4/3) = (1/3)Γ(1/3)`.
@@ -114,21 +115,29 @@ pub enum PlanetClass {
 /// A single star system, abstracted to one point in continuous 3-D space.
 ///
 /// Carrying-capacity factors (`habitability`, `biosphere`, `infrastructure`) and
-/// `population` are all on the **same level-unit scale** (`Hyades_simulation_model.md`
-/// §2a): `0` ≈ empty, `4` ≈ many-billions. `K = min` of the three (Liebig).
+/// `population` are all on the **same ladder** (`Hyades_simulation_model.md`
+/// §2a): [`Band`] `0` ≈ empty, `4` ≈ many-billions. They are typed rather than
+/// bare `f64` because the simulation also holds the biosphere as a *mass* —
+/// see [`crate::units`] for why that distinction was load-bearing and silently
+/// wrong.
+///
+/// `biosphere` is the **pristine** ceiling as generated. Once a galaxy is
+/// loaded into a [`Simulation`](crate::sim::Simulation) the standing stock is
+/// held in kilotons and can be drawn down; this field is the Band it started
+/// at.
 #[derive(Clone, Debug)]
 pub struct Planet {
     pub id: PlanetId,
     pub position: Vec3,
 
-    // --- carrying-capacity factors (level-units) ---
+    // --- carrying-capacity factors, on the Band ladder ---
     /// Hardest to change. The fundamental ceiling.
-    pub habitability: f64,
+    pub habitability: Band,
     /// Easy to destroy, slow to improve.
-    pub biosphere: f64,
+    pub biosphere: Band,
     /// Built capacity. `0` on a wild world; raised by the build cycle. Soft
     /// factor and the early binding constraint (homeworlds start at 1).
-    pub infrastructure: f64,
+    pub infrastructure: Band,
 
     /// Tier-1 mineral density (ground truth; a close scan reveals it).
     pub minerals: MineralField,
@@ -139,22 +148,29 @@ pub struct Planet {
 
     // --- mutable sim state ---
     pub owner: Option<PlayerId>,
-    /// Continuous population (level-units), grows logistically toward `K`.
-    pub population: f64,
+    /// **The people living here, as a mass in kilotons.**
+    ///
+    /// Growth is logistic *in this number* — the ladder is a reading of it, for
+    /// design and for print, never a second counting system the simulation
+    /// steps in (T-64). `PopBands::level` is that reading.
+    pub population: Kilotons,
 }
 
 impl Planet {
     /// Liebig carrying capacity `K = min(hab, bio, infra)`
     /// (`Hyades_simulation_model.md` §2a). A wild world (`infra = 0`) has `K = 0`.
+    ///
+    /// All three terms are Bands, which is the whole point of the type: the
+    /// engine's copy of this minimum used to include the biosphere's *mass*.
     #[inline]
-    pub fn k(&self) -> f64 {
+    pub fn k(&self) -> Band {
         self.habitability.min(self.biosphere).min(self.infrastructure)
     }
 
     /// The ceiling infrastructure (and thus population) can be *built* to:
     /// `min(hab, bio)` (autopilot-doc §3).
     #[inline]
-    pub fn k_potential(&self) -> f64 {
+    pub fn k_potential(&self) -> Band {
         self.habitability.min(self.biosphere)
     }
 }
@@ -186,7 +202,12 @@ impl Hotspots {
 /// fixed multiplicative jump). R-P1 owns the final `k` and edges.
 #[derive(Clone, Copy, Debug)]
 pub struct PopBands {
-    pub edges: [f64; 4],
+    /// The four internal edges, **as masses**. They are *generated* as ladder
+    /// positions — the Weibull quantiles are Gibrat-spaced, which is a
+    /// statement about rungs — and stored as the population each edge stands
+    /// for, so the comparison in [`PopBands::level`] is a comparison of people
+    /// against people (T-64).
+    pub edges: [Kilotons; 4],
 }
 
 impl PopBands {
@@ -197,17 +218,24 @@ impl PopBands {
         // weibull quantile: λ · (−ln(1−p))^(1/k); solve λ so q(0.8) == top_edge.
         let shape = |p: f64| (-(1.0 - p).ln()).powf(1.0 / k);
         let lambda = top_edge / shape(0.8);
-        let mut edges = [0.0; 4];
+        let mut edges = [Kilotons::ZERO; 4];
         for (i, &p) in q.iter().enumerate() {
-            edges[i] = lambda * shape(p);
+            edges[i] = Kilotons::at_band(Band::new(lambda * shape(p)));
         }
         PopBands { edges }
     }
 
-    /// Integer level 0–4 = how many band edges the population value has crossed.
+    /// Integer level 0–4 = how many band edges the population has crossed.
+    ///
+    /// Takes the **people**, because that is what the edges are now. The Band
+    /// ladder is what generated them; it is not a second quantity to compare
+    /// against.
     #[inline]
-    pub fn level(&self, population: f64) -> u8 {
-        self.edges.iter().filter(|&&e| population >= e).count() as u8
+    pub fn level(&self, population: Kilotons) -> BandTier {
+        // The edges are the *reached* thresholds, so the count of crossings is
+        // the rung index. `BandTier::PLAYABLE` is indexed rather than matched so a
+        // sixth rung cannot silently fall off the end.
+        BandTier::PLAYABLE[self.edges.iter().filter(|&&e| population >= e).count()]
     }
 }
 
@@ -272,7 +300,26 @@ pub struct GalaxyConfig {
     pub hotspot_ring_frac: f64,
     /// Gaussian width of each hue hotspot, as a fraction of the mean XY radius.
     pub hotspot_sigma_frac: f64,
-    /// Peak tier-1 density at a hotspot center.
+    /// **Peak tier-1 richness at a hotspot centre, as a Band — `Band IV`,
+    /// ratified** (R-O82).
+    ///
+    /// Since T-62 the §4.3 Gaussian is over *Bands*, so this is the top of the
+    /// ladder rather than a linear density, and the field is log-normal in
+    /// kilotons: the richest seams hold **~715,000×** what a `Band I` world
+    /// does, where the old linear reading made it 4×. That is the design
+    /// requirement — *"the game design requires very very high value planets
+    /// located near each other"* — and it is deliberate, not a scale slip.
+    ///
+    /// **What it costs, ratified with eyes open.** One peak world holds ~715,500
+    /// kt against a General hull costing 1.0 kt, the standard bed hauls **2,256×**
+    /// the ore it did before, and none of that surplus bought a colony. The
+    /// hauling is the engine's largest single cost (`examples/haul_census`:
+    /// freighter transfers ×6.81 where vehicles rose ×1.20), and it is what puts
+    /// the 12-seat × 8-kyr corner under T-24's throughput floor. **That is now an
+    /// optimisation problem, not a tuning one** (T-66) — `CLAUDE.md` §7 is
+    /// explicit that approaching the floor is the trigger to optimise rather
+    /// than to shrink the scenario, and the scale is no longer available to
+    /// shrink.
     pub mineral_peak: f64,
 
     /// Strength `∈ [0,1]` of the habitability↔metallicity anticorrelation
@@ -509,7 +556,7 @@ impl Galaxy {
 
     /// Integer pop level 0–4 of a planet (§5.1).
     #[inline]
-    pub fn pop_level(&self, id: PlanetId) -> u8 {
+    pub fn pop_level(&self, id: PlanetId) -> BandTier {
         self.bands.level(self.planet(id).population)
     }
 
@@ -545,35 +592,71 @@ impl Galaxy {
             // same flattened shape as the star field itself.
             let z_decay = (-(position.z.abs()) / z_scale).exp();
             let mut minerals = MineralField::default();
+            let mut band_sum = 0.0;
             for b in Basic::ALL {
                 let h = hotspots.get(b);
                 let dx = position.x - h.x;
                 let dy = position.y - h.y;
                 let r2 = dx * dx + dy * dy;
                 let g = (-r2 / (2.0 * hotspot_sigma * hotspot_sigma)).exp();
-                // light multiplicative noise so the field isn't perfectly smooth
-                let noise = (1.0 + 0.25 * prng.gaussian()).max(0.0);
-                minerals.set(b, config.mineral_peak * g * z_decay * noise);
+                // **The Gaussian is over Bands (T-62).** Density is a position
+                // on the ladder, so the field is log-normal in mass: a
+                // `Band IV` seam holds ~715,000× a `Band I` one, where the old
+                // linear reading made it 4×. That concentration — a handful of
+                // extraordinary worlds sitting next to each other — is the
+                // design requirement the smooth 0..4 spread could not express.
+                //
+                // Noise is **additive on the Band**, which is the natural
+                // wobble for a log-normal field: it is multiplicative in mass.
+                // Multiplying the Band instead would put the noise in the
+                // exponent. The amplitude is now a *Band* amplitude and is
+                // therefore wider than the old `1 + 0.25·N` on density —
+                // 0.25 Bands is a factor of ~2.4 in mass on the I→II segment —
+                // which is the whole of T-62's residual effect on habitability
+                // (§4.4 reads the mean Band, so the representation change
+                // itself is neutral there).
+                let noise = 0.25 * prng.gaussian();
+                let band = (config.mineral_peak * g * z_decay + noise).clamp(0.0, config.mineral_peak);
+                band_sum += band;
+                minerals.set(b, Band::new(band).in_kilotons());
             }
 
-            // §4.4 anticorrelation: normalize metallicity, depress habitability.
-            let norm_met = (minerals.metallicity() / (3.0 * config.mineral_peak)).clamp(0.0, 1.0);
+            // §4.4 anticorrelation: normalize richness, depress habitability.
+            //
+            // **The reading is the mean Band, not the Band of the total mass**
+            // — i.e. the *geometric* mean of the three colours rather than the
+            // arithmetic one. Both are legitimate classifications and they are
+            // wildly different on a log ladder: the total-mass reading is
+            // dominated by whichever colour is richest, so a world at
+            // `(II, I, Empty)` reads ~`II` instead of ~`I`, and at
+            // `anticorrelation = 0.6` that is a whole extra Band of
+            // habitability burned off every such world. Measured: routing
+            // §4.4 through the total cost **−52% colony-years** on seed 1
+            // (10,105,286 → 4,845,144), all of it habitability the galaxy
+            // never had.
+            //
+            // The mean Band is also the reading that *survives* T-62 — it is
+            // the same expression the old linear one computed, over the same
+            // per-colour numbers — so what remains of the habitability shift
+            // is the noise model (below), not the distribution.
+            let norm_met = (band_sum / (3.0 * config.mineral_peak)).clamp(0.0, 1.0);
             let habitability =
                 (4.0 * (1.0 - config.anticorrelation * norm_met) + 0.4 * prng.gaussian()).clamp(0.0, 4.0);
             // biosphere tracks habitability with its own spread.
             let biosphere = (habitability * prng.range(0.7, 1.1) + 0.3 * prng.gaussian()).clamp(0.0, 4.0);
+            let (habitability, biosphere) = (Band::new(habitability), Band::new(biosphere));
 
             planets.push(Planet {
                 id: PlanetId(i as u32),
                 position,
                 habitability,
                 biosphere,
-                infrastructure: 0.0, // wild
+                infrastructure: Band::ZERO, // wild
                 minerals,
                 is_homeworld: false,
                 archetype: None,
                 owner: None,
-                population: 0.0,
+                population: Kilotons::ZERO,
             });
         }
 
@@ -591,22 +674,22 @@ impl Galaxy {
             // super-aligned, bounded exception to anticorrelation: habitable AND
             // modestly mineralized in two colors (R-G4).
             let mut minerals = MineralField::default();
-            minerals.set(rich_a, config.homeworld_rich_density);
-            minerals.set(rich_b, config.homeworld_rich_density);
-            minerals.set(poor, config.homeworld_poor_density);
+            minerals.set(rich_a, Band::new(config.homeworld_rich_density).in_kilotons());
+            minerals.set(rich_b, Band::new(config.homeworld_rich_density).in_kilotons());
+            minerals.set(poor, Band::new(config.homeworld_poor_density).in_kilotons());
 
             let id = PlanetId(planets.len() as u32);
             planets.push(Planet {
                 id,
                 position,
-                habitability: 4.0, // identical 4 / 4 / 2 shape (§3, rev: infra 2)
-                biosphere: 4.0,
-                infrastructure: 2.0, // K = min = 2: the new starting development gate
+                habitability: Band::new(4.0), // identical 4 / 4 / 2 shape (§3, rev: infra 2)
+                biosphere: Band::new(4.0),
+                infrastructure: Band::new(2.0), // K = min = 2: the new starting development gate
                 minerals,
                 is_homeworld: true,
                 archetype: Some(archetype),
                 owner: Some(PlayerId(p as u32)),
-                population: 2.0, // filled to its starting K
+                population: Kilotons::at_band(Band::new(2.0)), // filled to its starting K
             });
             homeworlds.push(id);
         }
@@ -681,10 +764,10 @@ mod tests {
         let g = Galaxy::generate(GalaxyConfig::new(6, 123)).unwrap();
         for &hw in &g.homeworlds {
             let p = g.planet(hw);
-            assert_eq!(p.habitability, 4.0);
-            assert_eq!(p.biosphere, 4.0);
-            assert_eq!(p.infrastructure, 2.0);
-            assert_eq!(p.k(), 2.0); // K = min = 2
+            assert_eq!(p.habitability, Band::new(4.0));
+            assert_eq!(p.biosphere, Band::new(4.0));
+            assert_eq!(p.infrastructure, Band::new(2.0));
+            assert_eq!(p.k(), Band::new(2.0)); // K = min = 2
         }
     }
 
@@ -693,19 +776,19 @@ mod tests {
         // K = 2, pop ~2 ⇒ the level-2 "limited vehicles" production gate (§5.1).
         let g = Galaxy::generate(GalaxyConfig::new(3, 7)).unwrap();
         for &hw in &g.homeworlds {
-            assert_eq!(g.pop_level(hw), 2, "homeworld should start at level 2");
+            assert_eq!(g.pop_level(hw), BandTier::II, "homeworld should start at Band II");
         }
     }
 
     #[test]
     fn pop_bands_span_zero_to_four() {
         let b = PopBands::default();
-        assert_eq!(b.level(0.0), 0);
-        assert_eq!(b.level(4.0), 4);
+        assert_eq!(b.level(Kilotons::ZERO), BandTier::Empty);
+        assert_eq!(b.level(Kilotons::at_band(Band::new(4.0))), BandTier::IV);
         // monotone non-decreasing
-        let (mut prev, mut x) = (0u8, 0.0);
+        let (mut prev, mut x) = (BandTier::Empty, 0.0);
         while x <= 5.0 {
-            let l = b.level(x);
+            let l = b.level(Kilotons::at_band(Band::new(x)));
             assert!(l >= prev);
             prev = l;
             x += 0.1;
@@ -726,16 +809,16 @@ mod tests {
         // lower mean habitability than those below (the §4.4 rule).
         let g = Galaxy::generate(GalaxyConfig::new(6, 2024)).unwrap();
         let wild: Vec<&Planet> = g.planets.iter().filter(|p| !p.is_homeworld).collect();
-        let mut mets: Vec<f64> = wild.iter().map(|p| p.minerals.metallicity()).collect();
+        let mut mets: Vec<f64> = wild.iter().map(|p| p.minerals.abundance().bands()).collect();
         mets.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let median = mets[mets.len() / 2];
         let (mut hi_sum, mut hi_n, mut lo_sum, mut lo_n) = (0.0, 0, 0.0, 0);
         for p in &wild {
-            if p.minerals.metallicity() >= median {
-                hi_sum += p.habitability;
+            if p.minerals.abundance().bands() >= median {
+                hi_sum += p.habitability.bands();
                 hi_n += 1;
             } else {
-                lo_sum += p.habitability;
+                lo_sum += p.habitability.bands();
                 lo_n += 1;
             }
         }

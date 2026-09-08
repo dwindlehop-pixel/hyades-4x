@@ -72,6 +72,7 @@ use std::time::Instant;
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
+use hyades_engine::units::Band;
 
 const SEEDS: &[u64] = &[1, 7, 42];
 const PLAYERS: usize = 3;
@@ -132,14 +133,17 @@ fn configs() -> Vec<Config> {
         push(&format!("growth_rate.{tag}"), base_cfg, d);
 
         let mut d = base_doc;
-        d.rank.k_high = base_doc.rank.k_high * mult;
+        // `Band` has no `Mul` since the units fix: a threshold is a position
+        // on the ladder, and scaling one is a sweep over positions, not over a
+        // quantity. Spelled out so the sweep says what it varies.
+        d.rank.k_high = Band::new(base_doc.rank.k_high.bands() * mult);
         push(&format!("rank.k_high.{tag}"), base_cfg, d);
     }
     out
 }
 
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
+    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
 /// A named proxy: how to read one candidate metric off a completed run.

@@ -76,11 +76,21 @@ only exception and they are offline, never in CI. Current costs:
 
 | step | cost |
 |---|---|
-| `cargo test --all-targets` (unit + determinism + smoke) | ~48 s |
+| `cargo test --all-targets` (unit + determinism + smoke) | ~112 s (unit target 59.5 s) |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
 | `coverage_trace` | ~19 s |
 | `coverage_time` | ~49 s |
 | `montecarlo` | ~56 s |
+
+**The unit target went 97 s → 144 s at T-62 and back to 59.5 s at T-64**, and
+neither move was about the tests — they have pinned a 600-year horizon
+(`test_cfg`) throughout. T-62's cost was hauling (`examples/haul_census`): the
+Banded mineral field multiplied ore-per-rock by three orders of magnitude
+against a fixed freighter hold, so the round trips multiplied from the first
+cycle. T-64 gave it back by taking the `ln`/`powf` out of the growth step. The
+lesson both times: **when a test target moves, look at what the simulation
+started doing, not at what the tests are asking.** The remaining ratification is
+T-24's floor breach (R-O82).
 
 Ratifying the snowball defaults blew every one of these past the budget at once —
 the unit suite alone went 6 s → 315 s — because a default-config run is now a
@@ -188,6 +198,18 @@ entity count compounds:
 configurations, which is the gradient-probe case. **Screen with it, ratify on
 the real objective** — never ship a value the proxy alone chose.
 
+**How wrong the screen can be, measured** (T-64's `growth_rate`,
+`examples/growth_ratify`): the 2,000-year screen put `r = 1.35` at +11.20% and
+`r = 1.90` at +22.94%; the 4,000-year objective put them at **+3.03% and
++6.19%** — an overstatement of ~3.7x, with the *ranking* preserved. So a truncated
+horizon is a fine ranker and a bad estimator, and a "+23%" read off one is not a
+result. Worse, the screen showed `r` as a **step function of itself** — 1.10 and
+1.35 scored bit-identically, as did 1.60 and 1.90, because growth reaches the
+objective only through how many 50-year cycles a centre takes to cross a
+`PopBands` edge — and **those plateaus were gone at the objective.** Step
+structure is horizon-dependent, so a plateau map has to be run at the horizon
+you intend to ratify on.
+
 Three things that measurement got right, and are the reusable part:
 
 - **Rank configurations, not seeds.** ρ is computed *within* each seed and then
@@ -256,6 +278,48 @@ answer is not "nothing", the metric is a target, not a measurement. This joins
 the artifact list below as a fifth shape, and it is the only one that would
 have gotten worse rather than better with time.
 
+### Never leave an identified symptom without a proven mechanism
+
+**A number is a symptom. Stop only when you can name the line of code that
+produced it and show it produces it.** Not a hypothesis that fits the sign, not
+a mechanism that is plausible given the change — a mechanism you have
+*demonstrated*, by ablation, by instrumenting the decision, or by a test that
+fails when the mechanism is removed.
+
+This rule exists because the shortcut is so cheap and so convincing. Every
+artifact in the table below was a real measurement with a plausible story
+attached, and the story was what made it survive. Two from this project,
+back to back:
+
+- **"−178 colonies because the mass draw got bigger."** Mechanistic,
+  right-signed, consistent with the change. Refuted in two one-line ablations —
+  deleting the biomass draw *entirely* reproduced the number bit-for-bit. The
+  real mechanism was a policy reallocation two modules away.
+- **"the expansion loop's time constant is the limiter."** True, and useless as
+  stated: a time constant is not a mechanism, it is the shape of one. Pushed to
+  the code, it resolved to a specific dead branch —
+  `reinvest_bias` comparing a Band against a rank score, so the deepen path
+  cannot fire at the shipped value (R-O68). That is a mechanism: it names a
+  line, it is measured (`examples/score_scale`), and a test fails if it changes.
+
+Three things that count as proof, in rough order of preference:
+
+1. **Ablation.** Remove the suspected cause and show the effect goes. Cheap —
+   both of the above took one line and one run — and it is the only method that
+   can *refute*.
+2. **Instrument the decision.** Count the branch, print the two sides of the
+   comparison, histogram the quantity. `coverage_trace` and `score_scale` exist
+   for this.
+3. **A characterization test.** Pin the mechanism where it lives, so it cannot
+   silently change meaning. This is what stops the finding decaying back into
+   prose the next time the operating point moves.
+
+What does **not** count: a plausible story, a correlation across configurations,
+or a mechanism inferred from the sign of a gradient. And when the symptom is
+"X is slow" or "X is the limiter", the mechanism is never a *rate* — it is the
+gate, branch, or serial dependency that sets the rate. Keep going until you
+reach one.
+
 ### The artifact pattern — four of them, one shape
 
 Four measurements in this project were wrong in the same way, and the shape is
@@ -305,6 +369,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 
 | path | role |
 |---|---|
+| `src/units.rs` | **`Band` / `Kilotons` newtypes and the `Measure` trait** — the one place the two units meet, and the fix for a `min` that compared a mass against two levels (R-O66) |
 | `src/math.rs` | 3-vectors, relativistic 1 g flight, light-lag (`c = 1`, distance in ly, time in years) |
 | `src/rng.rs` | seeded splitmix64; `fork()` per entity for order-independent determinism |
 | `src/resources.rs` | CMY basics, RGB supers, apex, archetypes |
@@ -336,6 +401,50 @@ combat logic into the arena or into an example.
   the filesystem, the network, threads, or the OS RNG.
 - **No hexes in the engine.** The simulation is continuous 3D space; each star system
   is a point. Hexes are a *command-view* concept owned by the presentation layer.
+- **A quantity carries its unit in the type, not in a comment.** `Band` is a
+  magnitude *tier* on the ladder (`Hyades_mineral_cost_curve.md` §2.6);
+  `Kilotons` is an amount of stuff. **A Band is a *reading*, not a second thing
+  to store** — directed: *"everything is just counting. Growth and construction
+  and cost are denominated by mass. Bands are a tool for game design, nothing
+  more. All logistic functions are applied to real population, not Bands."*
+
+  **The type is `Qty<S>`** (T-64): one `f64` of kilotons, `repr(transparent)`,
+  with a zero-sized `Scale` marker saying which ladder its Band *reading* is
+  taken on. `Kilotons` is `Qty<Mass>`. Two rules follow and both are measured,
+  not asserted:
+
+  - **Arithmetic is free; conversion is not.** `examples/qty_bench`: a `Qty`
+    add/mul/min loop runs at **1.000x** bare `f64`, while `band()` is 2.2x an
+    arithmetic op and `at_band()` 3.8x. So convert at the *edges* — never inside
+    a loop over entities. `Factors::bio_max_band` exists only because a `ln` got
+    onto the hot path (R-O70); denominating the ceilings in mass deletes it.
+  - **There are two ladders and the type is what keeps them apart.** R-MC15
+    ratified `F_mass = F_cost^(3/2)` because cost tracks surface area and the
+    hold tracks volume, so a General hull costs 10x a Medium while holding
+    31.6x. `general_vehicle_cost = 1.0` is kilotons (R-O57) and reads **`Band I`
+    as a mass and `Band II` as a cost.** That is geometry, not a units bug;
+    crossing is `Qty::on_scale`, free and explicit. Do not "simplify" the two
+    ladders into one — `the_same_amount_reads_a_different_rung_on_each_ladder`
+    is there to stop it.
+
+  They are different types because the engine
+  shipped `K = min(hab, bio, infra)` for a long time with `bio` a mass and the
+  other two levels — a `min` across incompatible units that typechecked, read
+  as plausible ecology, and put the largest measured lever on coverage
+  (`biosphere_regen_rate`, +141.2 ± 18.1) on top of it. Nothing about `f64`
+  could have caught it. Do not add a bare `f64` for a quantity that has a unit,
+  and do not add a second conversion between the two — `src/units.rs` owns it.
+
+  **A named rung is a name, not a number.** `BandTier` (`Empty, I, II, III, IV,
+  V`) is the discrete ladder; `Band` is a *position* on it and can sit anywhere
+  between rungs. Config constants that mean a rung are typed as the rung —
+  `colony_seed_pop = 1.0` no longer compiles, and a `compile_fail` doctest keeps
+  it that way. `V` is a **comparison ceiling that is unreachable in play**, so a
+  bounds check has a rung one past the end instead of a magic number;
+  `band_v_is_one_past_the_playable_end` pins that it stays unreachable, because
+  a sentinel that quietly becomes attainable leaves every `< V` guard compiling
+  and meaning nothing.
+
 - **Determinism is a hard requirement.** All randomness flows from a seeded `Rng`;
   all time is the in-sim event clock in years. Iterate collections in deterministic
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`
@@ -345,8 +454,13 @@ combat logic into the arena or into an example.
   by rescanning the galaxy.** This is a discrete-event engine: a ship decides what to
   do next *when it arrives somewhere* (`ContactArrive`, `FreighterArrive`,
   `ColonyArrive`, `ScrapArrive`), which is the only moment its situation actually
-  changed. Production centers are the one cadence-driven exception, one tick per
-  center per `cycle_years`; everything else is arrival-driven.
+  changed. ~~Production centers are the one cadence-driven exception, one tick per
+  center per `cycle_years`~~ — **closed by R-O69.** A center's *economy* step
+  (mine + grow) is still cadence-driven, and correctly so: both halves are rates
+  over an interval, and an interval is what a rate needs. Its **decision** is
+  not, and is now an event — `BuildDecision`, raised when the yard clears
+  `build_years` after a build was committed. Everything is arrival- or
+  completion-driven; nothing decides on a sweep.
 
   The trigger is only half the rule. **Evaluation count scales with entity count, so
   per-evaluation cost must be local — O(what the decision reads), not O(galaxy).**
@@ -377,6 +491,29 @@ combat logic into the arena or into an example.
     at horizon 4,000 (9.67 s vs 8.90 s): swap-removal scrambled the order, trading a
     sequential walk for random access across three component stores. Locality beat
     count. That attempt is reverted; the finding is not.
+  - **Memoise a scan whose answer only changes on an event** — but store the
+    *recomputed* value, not a running total. `holdings_centroid` walked every
+    planet once per production decision (1.14 G iterations on seed 1) for a value
+    that moves ~3,400 times a run. A running sum would have accumulated in claim
+    order where the walk accumulates in planet-id order, and float addition is not
+    associative: the centroid would differ in its last bits, every rank score with
+    it, and the run would diverge. Memoising the walk is bit-identical; only the
+    *number* of walks changes.
+  - **Pick the container for the access pattern, and check the siblings.**
+    `Knowledge::visited` was converted from `BTreeSet` to a bitmap when one
+    `contains` turned out to be 63% of engine instructions — and `targeted`, its
+    sibling with the same contains-only access pattern, was left as a `BTreeSet`
+    and reached **1.03 billion lookups**. `scanned`, which is *iterated* rather
+    than probed, wants a sorted `Vec`: same order, sequential reads instead of a
+    pointer chase over boxed nodes. Together with the memo above, 3.3x (R-O70).
+
+  **Profile before you optimise, every time.** R-O70 began with two confident,
+  plausible fixes to the production candidate scan — they were correct changes and
+  bought **nothing measurable** (60 → 58 yr/s). Survey was then assumed to be the
+  hot path on the strength of the worked example just above, and is an order of
+  magnitude smaller than the two loops that actually mattered. One instrumented
+  run counting loop iterations settled it. A slow program is a symptom; §2's rule
+  about mechanisms applies to performance exactly as it does to behaviour.
 
 ---
 
@@ -441,10 +578,42 @@ one, stop and flag it.
    rather than vanishing; expended ordnance leaves the fleet lighter. Negative
    and imaginary mass are *not* exceptions — which is why exotic synthesis is
    pair production. **Nor is population:** biosphere is a mass in kilotons and
-   population growth consumes it 1:1. Biosphere is the one *renewable* stock,
+   population growth consumes it. Biosphere is the one *renewable* stock,
    regrowing logistically toward `bio_max`, so ecology is a rate rather than an
    exemption — which is what makes biological damage durable and gives Warfare a
    target that is neither hulls nor infrastructure.
+
+   **`Band Empty` is the mass ladder's *floor*, one metric tonne, and its width
+   is set on its own** (T-63) — `KILOTONS_AT_BAND_EMPTY`, not `KT(I)/F₀`. R-MC15's
+   growth rule and the `F_mass = F_cost^(3/2)` tie are claims about the playable
+   rungs `I → II → III → IV`; the floor is a per-quantity anchor and the cost
+   ladder's floor (5, the Limited hull's price) is untouched. Consequence to
+   remember: a Limited hull's hold no longer sits on `Band Empty` — hull holds
+   are geometry (`5^1.5`) and that coincided with the old floor width.
+
+   **Every logistic runs on the mass, not on the reading (T-64).** Population
+   growth steps `x + r·x·(1 − x/K)` on *people*, with `K`'s mass as the
+   carrying capacity. It used to step on Band positions, which made `r` a rate
+   of change of an *exponent* — the same `growth_rate` meaning a different
+   number of people at every point on the ladder. Two consequences: `r` now has
+   a hard arithmetic ceiling at **2** (the step is conjugate to the logistic map
+   with `μ = 1 + r`, so it period-doubles there), and **the engine's `clamp` at
+   `K` hides that from below** — a too-large `r` does not visibly oscillate, it
+   collapses the logistic into a step function that fills a world in one cycle
+   and *scores well* while doing it. `the_population_logistic_is_a_rate_and_not_a_step`
+   is the guard.
+
+   **The exchange is a mass difference, not a level difference (R-O66).** A
+   population at Band `b` masses `KT(b) = KT_I · BAND_STEP^(b−1)`, so a step from
+   `b` to `b'` costs `KT(b') − KT(b)` — one Band up is `BAND_STEP` *times* the
+   people, not `BAND_STEP` more of them. `src/units.rs` is the only place that
+   conversion is written. Two consequences are load-bearing: **`K` is a minimum
+   over Bands** — `min(hab, bio_max, infra)`, with the standing biomass
+   deliberately *not* a term, because it is the mass growth is paid out of and
+   not a ceiling; and **regrowth runs on living mass**, biosphere plus people,
+   since people are biosphere. A world filled with citizens has no spare
+   ecological niche, and one whose biosphere has been eaten to nothing is not
+   sterile.
 12. **No retroactive refits** (R-O47b). A Design write never reaches a hull
    already in the field by fiat; realization is `on_refit`, so a fleet-wide
    change lands staggered by transit time. Retroactive would change every
@@ -700,6 +869,22 @@ changes how you *work*, not what is left to do:
   | shipped defaults, 12 seats, 8 kyr | — | not yet measured | — |
   | post-gradient-step defaults, 3 seats, 4 kyr *(other hardware)* | 11,602 | 148.8 yr/s | 60× |
   | + mining-pair recycling, same run | 10,965 | 142.4 yr/s | 57× |
+  | pre-T-62 bed, 3 seats, 4 kyr *(container)* | 19,406 | 78.7 yr/s | 31× |
+  | **T-62 (Banded mineral field), same run** | 23,227 | **35.0 yr/s** | **14×** |
+  | + T-64 (logistic on mass, no conversion in the step) | 23,227 | 42 yr/s | 17× |
+
+  **T-62 halved it, and the mechanism is hauling — not vehicles and not mining**
+  (`examples/haul_census`). Vehicles rose 1.20× and extraction ticks 1.02×, but
+  **freighter transfers rose 6.81×** because the log-normal field made the same
+  rocks hold 2,256× the ore and a freighter's hold is a fixed size. Cost is
+  proportional to ore hauled, not to worlds mined.
+
+  **`mineral_peak = Band IV` is ratified (R-O82), so this is now the first case
+  where the scenario genuinely cannot be shrunk.** The 12-seat × 8-kyr corner
+  extrapolates to ~2 yr/s, under the floor, and the only remaining move is to
+  make hauling cheaper — the empire is paying full freight for ore it has no way
+  to spend, and colony-years did not move for any of it. That is **T-66**, and
+  its first step is to *measure* the corner rather than extrapolate it.
 
   **The 456 yr/s row is stale in a way worth naming.** It was taken before the
   gradient step raised coverage 38% → 49%, and vehicle count is the first-order
@@ -730,11 +915,144 @@ changes how you *work*, not what is left to do:
   runs per hour, so speed lost to entity count is balance coverage not bought.
 
 - **Coverage is measured inside a fixed 4,000-year run — do not extend the horizon**
-  (T-20). **~51.4% of colonizable worlds** as of the `growth_rate` re-ratification
-  (mean over the 4-seed CRN bed; was 1,044 / 6,725 on seed 1 three ratifications
-  ago). 4,000 is the run length; the coverage reached within it is the objective.
-  Doubling the horizon doubles every trial, and §2's 60-second rule already had
-  to absorb the snowball once.
+  (T-20). **3,481.0 colonies, mean over the 4-seed CRN bed**, as of T-56 stage
+  3b adopting the ratified hull cost ladder (3,459.8 before it, at R-O69's
+  decoupling of the production decision from the economy tick; 3,294.0 before
+  that; 3,472.5 before R-O66). 4,000 is the run length; the coverage reached
+  within it is the objective. Doubling the horizon doubles every trial, and §2's
+  60-second rule already had to absorb the snowball once.
+
+  **Colony count is nearly saturated, so read colony-years instead.** The bed
+  takes ~99% of what `k_high` admits, which leaves count almost no room to move:
+  the T-56 ladder change is +0.6% on colonies and **+8.2% on colony-years**
+  (8,011,139 → 8,670,020), with the doubling time 284.5 → 269.4 yr. On a
+  saturated bed the informative metrics are *when* the worlds were taken, not
+  how many.
+
+  **`growth_rate` is a step function of itself, and the gradient is recorded**
+  (T-64/R-O84). It reaches the objective only through how many 50-year cycles a
+  centre takes to cross a `PopBands` edge — an integer — so the objective is
+  piecewise constant in it and a coarse grid picks a plateau *edge* by accident.
+  It stays at **0.873**; the measured surface, the `r < 2` bifurcation ceiling,
+  and the six things a future search should not have to rediscover are in the
+  register under T-64. **Do not sweep it without reading that first** — in
+  particular, the objective keeps *rising* past the ceiling because the `clamp`
+  at `K` turns a broken logistic into a high-scoring step function.
+
+  **Mineral input is a per-miner rate now, and the default crew is 3** (T-57).
+  `outpost_mining_fraction` was the fraction of remaining density a *rock*
+  yielded per tick — the hull standing on it contributed nothing but the
+  schedule, so "how many miners per outpost" had no term in the model to tune.
+  It is now the fraction **one miner** works. Ratified at 3 on the standard bed:
+  **+2.74% colony-years, doubling 270.3 → 260.7 yr**, every seed positive.
+  Five miners give +3.08% but *lose* 3.5 years of doubling — past three the
+  extra hulls compete for the build slots expansion needs.
+
+  **And the cost ladder is no longer the capacity ladder** (T-56 stage 3c).
+  `hull_radius` solves `cost·η = r³ − (r − τ)³` instead of square-rooting the
+  cost ratio, so `medium_fleet_size` is a price again rather than a price *and*
+  a hold. That coupling is what four of the artifacts in §2's table have in
+  common, and the `REFERENCE_MEDIUM_RADIUS` normaliser they all ran through is
+  deleted. The correct geometry cost −0.31% against the cost ladder alone, so
+  the artifact surface closed for free.
+
+  **The bed saturates again, and this time honestly.** 99.4% of everything
+  `k_high` admits (98.4 · 99.9 · 100.0 · 99.2 — seed 42 takes every single
+  reachable world). The pre-R-O66 saturation was partly bought by an artificial
+  cap on deepening; this one is not. `k_high` is once more the only limiter on
+  the total, and the ~5% the unit fix cost has been recovered from the place it
+  actually went.
+
+  **The unit fix cost −178.5 ± 26.9 colonies (−5.1%), every seed down, 6.6 SE —
+  and the obvious explanation for it was wrong.** "Growth is slower because the
+  draw is now the real mass" is plausible, mechanistic, right-signed, and
+  refuted by two one-line ablations: regrowth on living mass instead of biomass,
+  and **the biomass draw deleted outright**, both reproduce 3,294.0
+  *bit-identically*. The mass budget does not bind at the shipped defaults, so
+  it cannot be paying for anything.
+
+  The actual cause is **policy, not physics**. `k_potential` is the deepening
+  guard, and under the old expression it eroded as a world's population ate its
+  own biosphere — so centers ran out of deepening headroom and spent minerals on
+  expansion. Correcting the units gives them real headroom and they take it:
+  fewer colonies, deeper ones (seed 1: 3,426 → 3,227 colonies, mean infra
+  1.420 → 1.443, mean `K` 1.418 → 1.430). Some of the old coverage was bought by
+  an artificial cap on deepening, and the −178 is a deepen-versus-expand
+  reallocation made on correct information — a policy question for `expand_bias`
+  and T-20, not a reason to soften the units.
+
+  **Two things to carry forward.** Every gradient measured before this landing is
+  consumed: the operating point moved, so re-measure rather than stepping along
+  the old direction (`growth_rate` and `biosphere_regen_rate` keep their ratified
+  values until then). And **ablate before you explain** — a real number with a
+  confident mechanism attached is the exact shape of all six prior measurement
+  artifacts in this file, and here it took two disposable one-line variants to
+  tell a plausible story from a true one.
+
+  **And it put time back on the critical path.** `reach_limit` on the standard
+  bed: the run used to take **99.8%** of everything `k_high` admits — a
+  saturated bed, where the classifier was the only limiter and the ramp had
+  slack. It now takes **94.6%** (93.9 · 95.9 · 92.6 · 96.0). So there are two
+  limiters and they bind in sequence: **`k_high` sets the total** (47–48% of the
+  galaxy permanently ineligible, and since R-O66 that set is *exactly* fixed),
+  and **the compounding rate of the expansion loop sets the time** — founding
+  rate ×~2 per 500 yr, peaking at 3,000–3,500 yr on all four seeds and turning
+  over only in the final bucket. Survey is not it (11–41 above-gate worlds
+  unscanned per seed) and neither is the economy (the biomass draw is slack;
+  minerals were ruled out at R-AC17); the residual is 126–216 worlds per seed
+  that were **scanned and not reached in time.**
+
+  **Both halves of that time constant are now resolved — the second by fixing
+  it (R-O69).** The decision was pinned to the same 50-year tick as the
+  economy, which capped every center at one build per cycle however rich it
+  was. Measured before the change (`examples/cadence_throttle`): **the median
+  funded build fired at 5.5x the price of what it bought**, 82% of funded
+  builds could have been made at least twice that cycle, 55% at least five
+  times, worst case 112x. Decisions are now events — a build occupies the yard
+  for `build_years` and the next decision comes when it clears — which takes
+  the ceiling from one build per 50 years to one per 10 for a center that keeps
+  finding things to buy. **+165.8 colonies (+5.0%), and the bed saturates.**
+
+  **It cost 4.1x throughput, and R-O70 gave 3.3x of it back.** The decoupling
+  took the standard bed from 235–269 to 61–66 yr/s (vehicles ~10,350 → ~14,700,
+  events ~237k → ~421k); memoising `holdings_centroid` and fixing two container
+  choices in `Knowledge` brought it to **183–217 yr/s** with **colony-years
+  bit-identical** (7,819,401.0 and 8,480,172.0 on seeds 1 and 7). So R-O69's
+  +165.8 colonies now cost about a quarter of the throughput rather than four
+  times it, and the margin against T-24's floor is ~79x at 3 seats / 4 kyr with
+  the 12-seat / 8-kyr corner extrapolating to ~3.8x rather than ~1.3x. The
+  production candidate scan is still `O(scanned)` and is now the largest loop
+  left (T-52).
+
+  **Colony-years is the guard for work like this** (`examples/colony_years`).
+  Colony *count* at the horizon is a weak invariant for an optimization — a
+  change that founds the same worlds a century later scores identically — while
+  `∫ colonies dt` falls the moment anything slows down. Hold it fixed to the
+  decimal and a performance change is provably behaviour-preserving.
+
+  **And the time constant now has a proven mechanism, not just a name (R-O68,
+  T-51).** `production_choice` prefers depth when `b · deepen_headroom ≥
+  (1 − b) · score`, and those sides are in different units — a Band difference
+  bounded by 4 against `rank`'s unbounded weighted score. Measured
+  (`examples/score_scale`): colony-class scores run p05 4.40 / median 6.17 /
+  max 12.16, and the branch compares against the *max*, so depth wins only at
+  `b ≳ 0.8`. **At the shipped `reinvest_bias = 0.5` the branch cannot fire while
+  any candidate exists** — it is inert below ~0.8 and a hard switch above, a
+  step function wearing a dial's clothes, with no graded region for a search to
+  climb. Same root cause as the `K` unit error one section up: a comparison
+  between incommensurable quantities, with a constant absorbing the mismatch.
+
+  So the loop's time constant is the **unconditional pre-`medium_min_level`
+  staircase** — found at `K = 1` with no headroom, then serially mine
+  `round(infra)+1` minerals, deepen, grow past the level-3 `PopBands` edge,
+  afford `colonizer_cost`, fly — all quantized to `cycle_years = 50`. **Half
+  those gates are discrete** (`medium_min_level` and `limited_min_level` are
+  `u8`; the infra cost ladder is hard-coded, not a parameter), so a
+  central-difference probe has no gradient to read on them. That is why every
+  probe so far has ranked ecology and hull-cost knobs: *the rate limiters are
+  invisible to the instrument.* Sweep the gates discretely, widen the
+  continuous surface to role and hull costs, and fix the comparison's units
+  before touching the policy's shape.
 
   Three ratifications got it there and none was a sweep. **λ (14.4% → 38.3%)
   was a *missing term*** — freighter routing had no distance component at all,
@@ -789,3 +1107,14 @@ changes how you *work*, not what is left to do:
 - **K is player-relative by design.**
 - Galaxy distribution: XY Poisson (exponential disk profile); Z exponential with Z-max
   matching the XY parameter.
+- **The mineral field is a Gaussian over *Bands*, stored as mass** (T-62). So it is
+  log-normal in kilotons: a `Band IV` seam holds ~715,000× a `Band I` one, which is
+  the design's "very high value planets located near each other" and not a bug. Two
+  traps follow. **There are no barren worlds** — `Band(0).in_kilotons()` is the
+  `Empty` rung, not zero, so the Gaussian's tail floors at a trace rather than
+  decaying to nothing. And **"is this world rich?" has two readings that now differ by
+  more than a Band**: `MineralField::abundance()` (the Band of the *total* mass,
+  dominated by the richest colour) and the per-colour Band sum that
+  `BaselineAutopilot::rank` compares against `mineral_high`. Routing §4.4's
+  anticorrelation through the wrong one cost **−52% colony-years** before it was
+  caught; the correct reading there is the *mean* Band.

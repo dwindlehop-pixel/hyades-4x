@@ -38,7 +38,7 @@ fn full_run_reports_are_bit_identical() {
             assert_eq!(pa.planets_owned, pb.planets_owned);
             assert_eq!(pa.colonies, pb.colonies);
             assert_eq!(pa.mining_outposts, pb.mining_outposts);
-            assert_eq!(pa.total_population.to_bits(), pb.total_population.to_bits());
+            assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
         }
     }
 }
@@ -114,7 +114,7 @@ fn stepping_in_any_granularity_reaches_the_same_state() {
     assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
     for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
         assert_eq!(pa.planets_owned, pb.planets_owned);
-        assert_eq!(pa.total_population.to_bits(), pb.total_population.to_bits());
+        assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
     }
 }
 
@@ -143,13 +143,13 @@ fn no_nan_or_infinity_reaches_replicated_state() {
     let finite = |v: f64, what: &str| assert!(v.is_finite(), "{what} is not finite: {v}");
 
     for (i, p) in report.players.iter().enumerate() {
-        finite(p.total_population, &format!("report.players[{i}].total_population"));
+        finite(p.total_population.kilotons(), &format!("report.players[{i}].total_population"));
     }
 
     let snap = sim.snapshot();
     finite(snap.time_years, "snapshot.time_years");
     for (i, p) in snap.players.iter().enumerate() {
-        finite(p.total_population, &format!("players[{i}].total_population"));
+        finite(p.total_population.kilotons(), &format!("players[{i}].total_population"));
         finite(p.stockpiled_total, &format!("players[{i}].stockpiled_total"));
     }
     for pl in &snap.planets {
@@ -158,12 +158,14 @@ fn no_nan_or_infinity_reaches_replicated_state() {
             (pl.position.x, "position.x"),
             (pl.position.y, "position.y"),
             (pl.position.z, "position.z"),
-            (pl.habitability, "habitability"),
-            (pl.biosphere, "biosphere"),
-            (pl.infrastructure, "infrastructure"),
-            (pl.k, "k"),
-            (pl.population, "population"),
-            (pl.stockpile.basic_total(), "stockpile"),
+            (pl.habitability.bands(), "habitability"),
+            (pl.biosphere.bands(), "biosphere"),
+            (pl.bio_max.bands(), "bio_max"),
+            (pl.biomass.kilotons(), "biomass"),
+            (pl.infrastructure.bands(), "infrastructure"),
+            (pl.k.bands(), "k"),
+            (pl.population.kilotons(), "population"),
+            (pl.stockpile.basic_total().kilotons(), "stockpile"),
         ] {
             finite(v, &format!("planet {id} {what}"));
         }
@@ -173,7 +175,7 @@ fn no_nan_or_infinity_reaches_replicated_state() {
             (v.position.x, "position.x"),
             (v.position.y, "position.y"),
             (v.position.z, "position.z"),
-            (v.cargo.basic_total(), "cargo"),
+            (v.cargo.basic_total().kilotons(), "cargo"),
         ] {
             finite(val, &format!("vehicle {i} {what}"));
         }

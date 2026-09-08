@@ -21,8 +21,9 @@
 use crate::cards::Order;
 use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
-use crate::resources::MineralField;
+use crate::resources::{Basic, MineralField};
 use crate::sim::{Class, HullType, Role};
+use crate::units::{Band, BandTier, Kilotons, Measure, Price};
 
 /// Which of the two cheap classes the colony pipeline reaches for first
 /// (autopilot-doc §4; R-AC1 / R-A1). Default is production-centers-first.
@@ -68,11 +69,11 @@ pub struct RankWeights {
     /// threshold gates the entire hauling economy** — set it under the galaxy's
     /// K distribution and no outpost is ever classified, so no freighter ever
     /// flies and colonies cannot fund their way to the expansion tier (R-AC17).
-    pub k_high: f64,
+    pub k_high: Band,
     /// mineral_value at/above which a low-K world is a mining outpost.
     pub mineral_high: f64,
     /// hub_value at/above which a high-K world is a production center.
-    pub hub_high: f64,
+    pub hub_high: Band,
     /// ly scale over which centrality-to-holdings decays (hub value falloff).
     pub centrality_scale: f64,
     /// How strongly live mineral *scarcity* (the empire running short for its
@@ -101,9 +102,9 @@ impl Default for RankWeights {
             // the bed already colonizes 90-100% of what this admits
             // (`examples/reach_limit.rs`). R-AC18 asks whether the Colony
             // class should have a K floor at all.
-            k_high: 3.2,
+            k_high: Band::new(3.2),
             mineral_high: 2.0,
-            hub_high: 0.8,
+            hub_high: Band::new(0.8),
             centrality_scale: 150.0,
             mineral_pressure_gain: 1.0,
         }
@@ -200,6 +201,41 @@ pub struct Doctrine {
     // --- Expand (autopilot-doc §4) ---
     pub expand_bias: ExpandBias,
 
+    /// **How many miners an outpost is opened with** (T-57).
+    ///
+    /// Extraction is per-miner since T-57 — `n` miners work `n ×
+    /// outpost_mining_fraction` of the remaining field per tick, capped at all
+    /// of it — so this is the first knob in the engine that trades mineral
+    /// *rate* against hull count. A rock is a finite stock, so a bigger crew
+    /// does not raise the total a field yields; it brings that total forward,
+    /// which is what the expansion loop is starved of (`CLAUDE.md` §7: the
+    /// residual is worlds scanned and not reached in time).
+    ///
+    /// **Ratified at 3** on the standard four-seed CRN bed, 4,000 yr
+    /// (`examples/hull_ladder`), every seed positive at every crew size:
+    ///
+    /// | crew | colony-years | vs 1 | per extra miner | doubling |
+    /// |---|---|---|---|---|
+    /// | 1 | 8,697,998 | — | — | 270.3 yr |
+    /// | 2 | 8,877,142 | +2.06% | +2.06% | 262.4 yr |
+    /// | **3** | **8,936,603** | **+2.74%** | +1.37% | **260.7 yr** |
+    /// | 5 | 8,965,467 | +3.08% | +0.77% | 264.2 yr |
+    ///
+    /// **3 is the ratification, not 5**, and the doubling column is why: five
+    /// miners buy 0.34 more points of colony-years and give back 3.5 years of
+    /// doubling time, because the extra hulls compete for the same build slots
+    /// the expansion loop needs. The marginal return per miner has already
+    /// halved by 3 and halved again by 5 — a rock is a finite stock, so a crew
+    /// cannot raise what a field yields in total, only bring it forward, and
+    /// there is only so much forward available.
+    ///
+    /// `1` reproduces the pre-T-57 arithmetic exactly (one miner working
+    /// `outpost_mining_fraction` *is* the old per-rock expression), so the
+    /// sweep's baseline is the engine as it was — except for the leaked-hull
+    /// fix `examples/crew_census` demonstrated, which is why the crew-1 figure
+    /// is 8,697,998 and not the pre-T-57 8,670,020.
+    pub miners_per_outpost: u8,
+
     /// **Expansion rate knob** (MC experiment): how strongly the production
     /// queue favors *upgrading own infrastructure* (deepening) over *spending
     /// minerals to reach outward* (expanding). `0.0` = always expand when able,
@@ -231,6 +267,7 @@ impl Default for Doctrine {
             survey_avoids_inhabited: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
             expand_bias: ExpandBias::ProductionCentersFirst,
+            miners_per_outpost: 3,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
         }
@@ -242,17 +279,21 @@ impl Default for Doctrine {
 pub struct PlanetView {
     pub id: PlanetId,
     pub position: Vec3,
-    pub habitability: f64,
-    pub biosphere: f64,
+    pub habitability: Band,
+    /// The **pristine** biosphere ceiling, on the Band ladder — what this world
+    /// can support, not what is standing on it today. The colonization
+    /// decision is about the ceiling; the standing stock only sets how fast a
+    /// colony fills toward it, and is not remotely legible anyway.
+    pub biosphere: Band,
     pub minerals: MineralField,
     pub owner: Option<PlayerId>,
-    pub pop_level: u8,
+    pub pop_level: BandTier,
 }
 
 impl PlanetView {
     /// Ceiling infra can be built to (autopilot-doc §3).
     #[inline]
-    pub fn k_potential(&self) -> f64 {
+    pub fn k_potential(&self) -> Band {
         self.habitability.min(self.biosphere)
     }
 }
@@ -276,8 +317,10 @@ impl PlanetView {
 pub struct SurveyView {
     pub id: PlanetId,
     pub position: Vec3,
-    pub habitability: f64,
-    pub biosphere: f64,
+    pub habitability: Band,
+    /// The **pristine** biosphere ceiling, on the Band ladder (see
+    /// [`PlanetView::biosphere`]).
+    pub biosphere: Band,
     /// **Inferential tier** (R-SIM3): this world carries the waste-heat and
     /// atmospheric signature of a pop-Band-IV civilization, legible at interstellar
     /// range. It does *not* say who owns it — the industry of billions is simply
@@ -295,7 +338,7 @@ pub struct SurveyView {
 impl SurveyView {
     /// Ceiling infra could be built to, from remote spectroscopy alone.
     #[inline]
-    pub fn k_potential(&self) -> f64 {
+    pub fn k_potential(&self) -> Band {
         self.habitability.min(self.biosphere)
     }
 }
@@ -369,33 +412,50 @@ pub struct Tasking {
 #[derive(Clone, Copy, Debug)]
 pub struct ProductionContext {
     pub center_pos: Vec3,
-    /// Current development level 0–4 of the center.
-    pub level: u8,
+    /// Current development rung of the center.
+    pub level: BandTier,
     /// Current infrastructure value.
     pub infra: f64,
     /// `min(hab, bio)` — the ceiling infrastructure can be built to.
     pub k_potential: f64,
     /// Minerals on hand at this center (the spendable pool).
-    pub stockpile_total: f64,
+    pub stockpile_total: Price,
     /// Minimum level required to build "medium" vehicles (colony/mining). Per the
     /// production schedule this is **3** (2 = limited, 3 = medium/rapid, 4 = all).
-    pub medium_min_level: u8,
+    pub medium_min_level: BandTier,
     /// Minimum level required to build "limited" vehicles — the Scout/LCV. The
     /// same schedule puts this at **2**, one tier below expansion.
-    pub limited_min_level: u8,
+    pub limited_min_level: BandTier,
     /// Mineral cost to raise infra by one level (= the target level).
-    pub infra_cost: f64,
-    /// Mineral cost of a Colonizer (an MSV) — `Hyades_vehicle_roles.md` §6's
-    /// 1 CMY = 1 fleet model, not a flat placeholder anymore.
-    pub colonizer_cost: f64,
+    pub infra_cost: Price,
+    /// Mineral cost of a Colonizer on the **Medium** hull —
+    /// `Hyades_vehicle_roles.md` §6's 1 CMY = 1 fleet model, not a flat
+    /// placeholder anymore.
+    pub colonizer_cost: Price,
+    /// Mineral cost of a Colonizer on the **General** hull, for the errands a
+    /// Medium hull's hold cannot cover (T-56 stage 4).
+    pub general_colonizer_cost: Price,
+    /// The founding population a **Medium** hull can deliver — `Band I` at the
+    /// ratified ladder. A colony errand takes the Medium hull unless the target
+    /// needs more than this.
+    pub medium_seed_capacity: Kilotons,
+    /// The founding population a **General** hull can deliver — `Band II`.
+    pub general_seed_capacity: Kilotons,
+    /// The infrastructure a **Medium**-hulled colony is founded at — the
+    /// recycled hull, converted at the infra ladder's rate (R-O76). `Band I`.
+    pub medium_founding_infra: Band,
+    /// The infrastructure a **General**-hulled colony is founded at. `Band IV`
+    /// at the ratified ladder: a General hull costs ten Medium hulls and the
+    /// infra ladder charges `1+2+3+4 = 10` to reach the top playable rung.
+    pub general_founding_infra: Band,
     /// Mineral cost of a Miner + its paired Freighter (an LSV + an MSV),
     /// bundled since they're built together (§4.4).
-    pub mining_pair_cost: f64,
+    pub mining_pair_cost: Price,
     /// Mineral cost of one Scout (an LCV) — the survey craft the limited tier
     /// unlocks. Bootstrap hands each seat `survey_vehicles` of these free
     /// (autopilot-doc §2); every later one is paid for out of a center's
     /// stockpile like any other build.
-    pub light_vehicle_cost: f64,
+    pub light_vehicle_cost: Price,
     /// Known, unclaimed, non-Barren worlds this empire could still expand to.
     /// The autopilot builds survey craft to keep this above
     /// [`Doctrine::survey_reserve`] — expansion consumes candidates, so without
@@ -496,15 +556,32 @@ impl Autopilot for BaselineAutopilot {
         // mineral_value: scarcity-weighted tier-1 density (§3), inflated by the
         // empire's *live* mineral pressure so mining is valued when we're short.
         let m = &view.minerals;
-        let base_mineral = ctx.scarcity[0] * m.cyan + ctx.scarcity[1] * m.magenta + ctx.scarcity[2] * m.yellow;
+        // A scarcity-weighted **score** over the three Band readings, not a sum
+        // of quantities — the readings are taken explicitly (`.bands()`) for
+        // the same reason `hub_value` does: weights carry the units. Summing
+        // the *masses* would be a different question (how much ore is here),
+        // and `MineralField::total_mass` answers that one.
+        let base_mineral =
+            Basic::ALL.iter().zip(ctx.scarcity.iter()).map(|(&b, w)| w * m.get(b).in_bands().bands()).sum::<f64>();
         let mineral_value = base_mineral * (1.0 + w.mineral_pressure_gain * ctx.mineral_pressure);
 
         // hub_value: high-K worlds near the empire's centre of mass are hubs.
         let dist = view.position.distance(ctx.holdings_centroid);
         let centrality = (-dist / w.centrality_scale).exp();
-        let hub_value = k_potential * centrality;
+        // `Band` has no `Mul` since the units fix, and rightly: scaling a
+        // position on a log ladder is not scaling a quantity. This is not a
+        // quantity — it is a **classification score**, a `k_potential` reading
+        // discounted by distance and compared against another reading
+        // (`hub_high`). Constructed explicitly so the discount is visibly on
+        // the log-scale *reading*, not on the stuff it stands for. Same number
+        // as before the type change.
+        let hub_value = Band::new(k_potential.bands() * centrality);
 
-        let score = w.w_k * k_potential + w.w_mineral * mineral_value + w.w_hub * hub_value;
+        // The score is a weighted comparison across incommensurate things —
+        // a Band, a mineral density, a hub figure — so the Band readings are
+        // taken explicitly here rather than the weights pretending to be
+        // dimensionless. Weights carry the units; that is what they are for.
+        let score = w.w_k * k_potential.bands() + w.w_mineral * mineral_value + w.w_hub * hub_value.bands();
 
         // classification (§3): thresholds on the components.
         let class = if k_potential >= w.k_high {
@@ -574,9 +651,13 @@ impl Autopilot for BaselineAutopilot {
             | HullType::GeneralContactVehicle
             | HullType::GeneralContactUnit => Some(Tasking { role: Role::Scout, target: None }),
 
-            // A Medium hull settles, preferring whichever class doctrine leads
-            // with — the same order `production_choice` weighed.
-            HullType::MediumSystems => {
+            // A Systems hull above the Limited tier settles, preferring
+            // whichever class doctrine leads with — the same order
+            // `production_choice` weighed. The General hull joins the Medium
+            // here because T-56 stage 4 lets doctrine order one; without this
+            // arm a General colonizer would be built and then find no mission,
+            // and `apply_build` would refund nothing.
+            HullType::MediumSystems | HullType::GeneralSystems => {
                 let (a, b) = match doctrine.expand_bias {
                     ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
                     ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
@@ -607,7 +688,9 @@ impl Autopilot for BaselineAutopilot {
         // of 2435 Idle decisions were centers in exactly that state, several
         // holding 3.5–4.7 minerals against a 3-mineral upgrade.
         let deepen_possible = ctx.infra < ctx.k_potential - 1e-9;
-        let can_afford_infra = ctx.stockpile_total + 1e-9 >= ctx.infra_cost;
+        // The epsilon is a price too — the whole comparison is on one ladder.
+        let eps = Price::new(1e-9);
+        let can_afford_infra = ctx.stockpile_total + eps >= ctx.infra_cost;
 
         // Below even the limited tier there is nothing to build; deepen or save.
         if ctx.level < ctx.limited_min_level {
@@ -623,7 +706,7 @@ impl Autopilot for BaselineAutopilot {
         // so an empire that never scouts again exhausts its candidate list and
         // stops, however rich it gets.
         let wants_survey = ctx.candidate_count < doctrine.survey_reserve;
-        let can_afford_light = ctx.stockpile_total + 1e-9 >= ctx.light_vehicle_cost;
+        let can_afford_light = ctx.stockpile_total + Price::new(1e-9) >= ctx.light_vehicle_cost;
 
         // Between the limited and medium tiers, survey is the only outward move.
         if ctx.level < ctx.medium_min_level {
@@ -668,21 +751,100 @@ impl Autopilot for BaselineAutopilot {
             (Some(col), Some(mine)) if mine.ranked.score > col.ranked.score => {
                 Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost))
             }
-            (Some(col), _) => Some((hull_order(HullType::MediumSystems), col.ranked.score, ctx.colonizer_cost)),
+            (Some(col), _) => {
+                // **Carry up to the target's carrying capacity, and no more —
+                // then take the smallest hull that earns its price.**
+                //
+                // Population above `K` does not settle back to it, it crashes
+                // below it: a `Band II` seed on a `Band I` colony ends its first
+                // tick at 0.25 Bands, and forcing that cost 5.9% of colony-years
+                // with the colony *count* unchanged on every seed. So the load a
+                // ship flies is `min(hull capacity, K)`.
+                //
+                // Since R-O76 the founding `K` depends on the hull — the
+                // recycled hull *is* the colony's first infrastructure, and a
+                // General hull buys `Band IV` of it against a Medium's
+                // `Band I`. So the choice is no longer "the smallest hull that
+                // fits the load"; both fit, and the General one also founds a
+                // far better colony. It is an economic comparison, and the
+                // criterion is **founding `K` per mineral**: `K` is what every
+                // later year of that colony is bounded by, and the price is
+                // what it displaces elsewhere.
+                let k_pot = col.view.k_potential();
+                let per_mineral =
+                    |k: Band, cost: Price| if cost > Price::ZERO { k.bands() / cost.kilotons() } else { f64::INFINITY };
+                let options = [
+                    (HullType::MediumSystems, ctx.colonizer_cost, k_pot.min(ctx.medium_founding_infra)),
+                    (HullType::GeneralSystems, ctx.general_colonizer_cost, k_pot.min(ctx.general_founding_infra)),
+                ];
+                // **Only hulls this centre can pay for today.** The score picks
+                // between real options; it does not pick an option and then
+                // discover it is unaffordable.
+                //
+                // That was the bug: the best `K` per mineral was chosen against
+                // the whole ladder, and `can_expand` below then refused it — so
+                // a young colony that could afford a Medium colonizer *now*
+                // picked a General it could not afford and built **nothing**,
+                // banking indefinitely. `ColonizerHull::GeneralWhenAffordable`
+                // used to carry this rule explicitly; deriving the hull dropped
+                // it, and nothing noticed because the shipped ladder happened
+                // to make Medium the answer anyway.
+                let affordable = |c: Price| ctx.stockpile_total + Price::new(1e-9) >= c;
+                let best = options
+                    .iter()
+                    .filter(|(_, cost, k)| affordable(*cost) && *k > Band::ZERO)
+                    .max_by(|a, b| {
+                        per_mineral(a.2, a.1)
+                            .partial_cmp(&per_mineral(b.2, b.1))
+                            .unwrap_or(core::cmp::Ordering::Equal)
+                            .then(a.0.cmp(&b.0))
+                    })
+                    // Nothing affordable: name the cheapest that could found at
+                    // all, so `can_expand` refuses it and the centre saves
+                    // toward something real rather than toward nothing.
+                    .or_else(|| options.iter().find(|(_, _, k)| *k > Band::ZERO));
+                best.map(|&(hull, cost, _)| (hull_order(hull), col.ranked.score, cost))
+            }
             (None, Some(mine)) => Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost)),
             (None, None) => None,
         };
-        let outward_cost = outward.map(|(_, _, c)| c).unwrap_or(0.0);
-        let can_expand = ctx.stockpile_total + 1e-9 >= outward_cost;
+        let outward_cost = outward.map(|(_, _, c)| c).unwrap_or(Price::ZERO);
+        let can_expand = ctx.stockpile_total + Price::new(1e-9) >= outward_cost;
 
-        // Deepen-vs-expand as a genuine convex dial. `reinvest_bias` shifts weight
-        // between deepening this center's own K and reaching outward. Crucially the
-        // *preference* is computed independent of what is affordable this cycle:
-        // when deepening wins but the (pricier) upgrade isn't funded yet, the
-        // center **saves** (Idle) rather than frittering minerals on cheap
-        // vehicles. That is what lets the bias actually trade expansion for depth.
-        // The optimal bias — possibly state-dependent on pop / K / neighbors — is
-        // the expansion-rate MC experiment; this is the tunable baseline.
+        // ~~Deepen-vs-expand as a genuine convex dial.~~ **It is not one, and at
+        // the shipped `reinvest_bias` this branch is unreachable (R-O68).**
+        //
+        // The two sides are not in the same unit. `deepen_headroom` is a *Band*
+        // difference, `k_potential − infra`, bounded by 4 and in practice by
+        // `k_potential − 1`. `score` is `rank`'s weighted sum over a Band, a
+        // mineral density and a hub figure — unbounded and dimensionless-by-
+        // fiat. Measured on seed 1 (`examples/score_scale`), colony-class
+        // candidate scores run p05 = 4.40, median 6.17, max 12.16, and this
+        // branch compares against the **max** because `outward` takes the best
+        // candidate. So depth wins only when `b/(1−b) >= score/headroom ≈ 4`,
+        // i.e. `b >= 0.8`; at the shipped `0.5` it can never fire while any
+        // candidate exists.
+        //
+        // `reinvest_bias` is therefore **not a convex trade — it is inert below
+        // ~0.8 and a hard switch above it**, a step function wearing a dial's
+        // clothes. The same shape as CLAUDE.md §2's artifact list, and the same
+        // root cause as the `K = min(hab, bio, infra)` unit error: a comparison
+        // between incommensurable quantities that typechecks, with a constant
+        // absorbing the mismatch.
+        //
+        // Two live consequences. All real deepening happens through the other
+        // two paths — the unconditional pre-`medium_min_level` staircase above,
+        // and the `outward == None` fallback below — so the expansion-loop time
+        // constant is set by that staircase and not by any tunable trade. And
+        // R-O66's entire measured effect (−178 colonies) reached the objective
+        // through `deepen_possible`, which gates the *staircase*, not through
+        // this dial.
+        //
+        // Not fixed here: making both sides a rate of return in one unit is a
+        // policy redesign (T-51), and the bias is a globally MC-tuned parameter
+        // that needs ratification (§6). Pinned by
+        // `reinvest_bias_is_a_step_function_not_a_dial` so it cannot silently
+        // change meaning.
         let b = doctrine.reinvest_bias;
         let deepen_headroom = (ctx.k_potential - ctx.infra).max(0.0);
         let w_deepen = if deepen_possible { b * deepen_headroom } else { f64::NEG_INFINITY };
@@ -741,11 +903,23 @@ fn hull_order(hull: HullType) -> BuildOrder {
 
 /// Deterministic comparison for `max_by`: higher score wins, ties broken by id.
 fn score_then_id(a: &&Candidate, b: &&Candidate) -> core::cmp::Ordering {
-    a.ranked
-        .score
-        .partial_cmp(&b.ranked.score)
-        .unwrap_or(core::cmp::Ordering::Equal)
-        .then(a.ranked.id.0.cmp(&b.ranked.id.0))
+    Ranked::score_then_id(&a.ranked, &b.ranked)
+}
+
+impl Ranked {
+    /// **The one ordering on candidates**, exposed because the engine reduces
+    /// the candidate list to its per-class maxima before the policy ever sees
+    /// it (R-O70) — and a reduction that used a different comparator than the
+    /// policy would silently pick a different winner.
+    ///
+    /// Higher score wins, ties broken by planet id. Ids are unique, so this is
+    /// a total order and the maximum is unique: taking the max of the per-class
+    /// maxima is exactly taking the max of the whole list, whatever order the
+    /// scan visited them in.
+    #[inline]
+    pub fn score_then_id(a: &Ranked, b: &Ranked) -> core::cmp::Ordering {
+        a.score.partial_cmp(&b.score).unwrap_or(core::cmp::Ordering::Equal).then(a.id.0.cmp(&b.id.0))
+    }
 }
 
 #[cfg(test)]
@@ -757,11 +931,11 @@ mod tests {
         PlanetView {
             id: PlanetId(id),
             position: pos,
-            habitability: hab,
-            biosphere: bio,
+            habitability: Band::new(hab),
+            biosphere: Band::new(bio),
             minerals,
             owner: None,
-            pop_level: 0,
+            pop_level: BandTier::Empty,
         }
     }
 
@@ -775,7 +949,11 @@ mod tests {
             Vec3::new(10.0, 0.0, 0.0),
             0.4, // low habitability
             0.4,
-            MineralField { cyan: 3.0, magenta: 0.5, yellow: 0.2 },
+            MineralField {
+                cyan: Band::new(3.0).in_kilotons().kilotons(),
+                magenta: Band::new(0.5).in_kilotons().kilotons(),
+                yellow: Band::new(0.2).in_kilotons().kilotons(),
+            },
         );
         assert_eq!(ap.rank(&doctrine, &v, &ctx).class, PlanetClass::MiningOutpost);
     }
@@ -801,7 +979,13 @@ mod tests {
 
     /// A remote-tier sighting: position plus K factors, nothing close-scan-only.
     fn survey_view(id: u32, pos: Vec3) -> SurveyView {
-        SurveyView { id: PlanetId(id), position: pos, habitability: 1.0, biosphere: 1.0, industrial_signature: false }
+        SurveyView {
+            id: PlanetId(id),
+            position: pos,
+            habitability: Band::new(1.0),
+            biosphere: Band::new(1.0),
+            industrial_signature: false,
+        }
     }
 
     /// The same, but radiating the waste heat of a pop-Band-IV civilization.
@@ -820,23 +1004,28 @@ mod tests {
     /// A center with a comfortably stocked frontier, so the survey branch stays
     /// out of the way of the deepen/expand cases these tests are about. Use
     /// [`prod_ctx_frontier`] to exercise survey itself.
-    fn prod_ctx(level: u8, infra: f64, stockpile: f64) -> ProductionContext {
+    fn prod_ctx(level: BandTier, infra: f64, stockpile: f64) -> ProductionContext {
         prod_ctx_frontier(level, infra, stockpile, usize::MAX)
     }
 
-    fn prod_ctx_frontier(level: u8, infra: f64, stockpile: f64, candidate_count: usize) -> ProductionContext {
+    fn prod_ctx_frontier(level: BandTier, infra: f64, stockpile: f64, candidate_count: usize) -> ProductionContext {
         ProductionContext {
             center_pos: Vec3::ZERO,
             level,
             infra,
             k_potential: 4.0,
-            stockpile_total: stockpile,
-            medium_min_level: 3,
-            limited_min_level: 2,
-            infra_cost: infra + 1.0,
-            colonizer_cost: 1.0,
-            mining_pair_cost: 1.0,
-            light_vehicle_cost: 0.25,
+            stockpile_total: Price::new(stockpile),
+            medium_min_level: BandTier::III,
+            limited_min_level: BandTier::II,
+            infra_cost: Price::new(infra + 1.0),
+            colonizer_cost: Price::new(1.0),
+            general_colonizer_cost: Price::new(10.0),
+            medium_seed_capacity: Kilotons::at_tier(BandTier::I),
+            general_seed_capacity: Kilotons::at_tier(BandTier::II),
+            medium_founding_infra: BandTier::I.band(),
+            general_founding_infra: BandTier::IV.band(),
+            mining_pair_cost: Price::new(1.0),
+            light_vehicle_cost: Price::new(0.25),
             candidate_count,
         }
     }
@@ -846,7 +1035,7 @@ mod tests {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
         // level 2, can afford the 3-mineral upgrade, no candidates yet.
-        let order = ap.production_choice(&doctrine, &prod_ctx(2, 2.0, 5.0), &[]);
+        let order = ap.production_choice(&doctrine, &prod_ctx(BandTier::II, 2.0, 5.0), &[]);
         assert_eq!(order, BuildOrder::UpgradeInfrastructure);
     }
 
@@ -854,7 +1043,7 @@ mod tests {
     fn below_gate_with_no_minerals_idles() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let order = ap.production_choice(&doctrine, &prod_ctx(2, 2.0, 0.0), &[]);
+        let order = ap.production_choice(&doctrine, &prod_ctx(BandTier::II, 2.0, 0.0), &[]);
         assert_eq!(order, BuildOrder::Idle);
     }
 
@@ -862,7 +1051,7 @@ mod tests {
     fn mature_center_expands_to_a_colony_when_affordable() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let ctx = prod_ctx(3, 3.0, 2.0);
+        let ctx = prod_ctx(BandTier::III, 3.0, 2.0);
         let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         let ranked = ap.rank(&doctrine, &v, &rctx);
@@ -877,6 +1066,58 @@ mod tests {
         let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         let ranked = ap.rank(doctrine, &v, &rctx);
         vec![Candidate { view: v, ranked }]
+    }
+
+    /// **`reinvest_bias` is a step function, not a dial (R-O68).**
+    ///
+    /// `production_choice` picks depth when `b · headroom >= (1 − b) · score`,
+    /// and the two sides are not in the same unit: the left is a Band
+    /// difference bounded by 4, the right is `rank`'s unbounded weighted score.
+    /// So the branch has a crossover in `b`, and this pins where it is — far
+    /// above the shipped `0.5`, which means **at the default the branch cannot
+    /// fire while any candidate exists.**
+    ///
+    /// This is a characterization test, not an endorsement. It exists so the
+    /// dead branch cannot quietly come back to life (or get deader) without
+    /// someone reading R-O68 and T-51 first. Fixing it means putting both sides
+    /// in one unit — a rate of return — which is a policy redesign.
+    #[test]
+    fn reinvest_bias_is_a_step_function_not_a_dial() {
+        let ap = BaselineAutopilot::default();
+        let mut doctrine = Doctrine::default();
+        // A mature center with the most deepening headroom the ladder allows
+        // (infra 1 against k_potential 4) and one ordinary colony candidate —
+        // i.e. the case most favourable to depth that can actually occur.
+        let mut ctx = prod_ctx(BandTier::III, 1.0, 100.0);
+        ctx.k_potential = 4.0;
+        let cands = one_colony_candidate(&ap, &doctrine);
+        let score = cands[0].ranked.score;
+        let headroom = ctx.k_potential - ctx.infra;
+
+        // Where the branch flips, from the inequality itself.
+        let crossover = score / (score + headroom);
+        assert!(
+            crossover > 0.6,
+            "crossover at b = {crossover:.3} (score {score:.2} vs headroom {headroom:.2}) — if this has              dropped near 0.5 the two sides have become commensurable and R-O68 may be resolved"
+        );
+
+        // Below the crossover the dial does nothing: the center expands.
+        doctrine.reinvest_bias = 0.5;
+        assert!(
+            matches!(
+                ap.production_choice(&doctrine, &ctx, &cands),
+                BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }
+            ),
+            "at the shipped bias, a center with maximal headroom still expands"
+        );
+
+        // Above it the dial does everything: same state, opposite decision, with
+        // no graded region in between that a search could climb.
+        doctrine.reinvest_bias = (crossover + 1.0) / 2.0;
+        assert!(
+            matches!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::UpgradeInfrastructure),
+            "above the crossover the same state must flip to depth"
+        );
     }
 
     #[test]
@@ -919,7 +1160,7 @@ mod tests {
         // is real headroom. The old `infra + 1 <= k_potential` guard stranded
         // this center at K=2 forever, below the level-3 band edge (~2.675), so
         // it could never build anything and hoarded minerals it could not spend.
-        let mut ctx = prod_ctx(2, 2.0, 5.0);
+        let mut ctx = prod_ctx(BandTier::II, 2.0, 5.0);
         ctx.k_potential = 2.86;
         assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::UpgradeInfrastructure);
     }
@@ -931,7 +1172,7 @@ mod tests {
         // Level 2 (limited tier), infra already at the ceiling so deepening is
         // impossible, minerals on hand, and a thin frontier. Before the limited
         // tier existed this returned Idle and the stockpile sat dead forever.
-        let mut ctx = prod_ctx_frontier(2, 3.0, 5.0, 0);
+        let mut ctx = prod_ctx_frontier(BandTier::II, 3.0, 5.0, 0);
         ctx.k_potential = 3.0;
         assert!(matches!(
             ap.production_choice(&doctrine, &ctx, &[]),
@@ -943,7 +1184,7 @@ mod tests {
     fn below_the_limited_tier_never_builds_survey() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let mut ctx = prod_ctx_frontier(1, 3.0, 5.0, 0);
+        let mut ctx = prod_ctx_frontier(BandTier::I, 3.0, 5.0, 0);
         ctx.k_potential = 3.0; // capped, so deepening is off the table too
         assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::Idle);
     }
@@ -956,7 +1197,7 @@ mod tests {
         // Survey must stay a fallback: an earlier revision gave it priority here,
         // which made `survey_reserve` non-monotonic — a large reserve had every
         // center scouting every cycle and colonies collapsed from 1047 to 3.
-        let ctx = prod_ctx_frontier(3, 3.0, 2.0, 0);
+        let ctx = prod_ctx_frontier(BandTier::III, 3.0, 2.0, 0);
         let cands = one_colony_candidate(&ap, &doctrine);
         assert!(matches!(
             ap.production_choice(&doctrine, &ctx, &cands),
@@ -971,7 +1212,7 @@ mod tests {
         // Same thin frontier, but too poor for the colony ship and capped so it
         // cannot deepen either — the cycle would otherwise be pure Idle. A scout
         // is cheap enough to afford, so the idle capacity goes to survey.
-        let mut ctx = prod_ctx_frontier(3, 3.0, 0.3, 0);
+        let mut ctx = prod_ctx_frontier(BandTier::III, 3.0, 0.3, 0);
         ctx.k_potential = 3.0;
         let cands = one_colony_candidate(&ap, &doctrine);
         assert!(matches!(
@@ -1002,11 +1243,70 @@ mod tests {
         );
     }
 
+    /// **Two ceilings on `growth_rate`, and since T-64 one of them is
+    /// arithmetic rather than a measurement.**
+    ///
+    /// The step is now `x' = x + r·x·(1 − x/K)` on *people*. Substituting
+    /// `v = (r/(1+r))·(x/K)` turns it into the logistic map `v' = μ·v·(1 − v)`
+    /// with `μ = 1 + r` exactly, so the standard bifurcation picture applies:
+    /// the fixed point at `K` is stable only for `μ < 3`, i.e. **`r < 2`**, and
+    /// period-doubles above it (May, *Nature* 261:459–467, 1976).
+    ///
+    /// **The engine's `clamp` hides that from above, and that is the trap.** A
+    /// population climbing from below overshoots `K`, gets clamped exactly to
+    /// it, and the growth term is then zero — so a too-large `r` does not
+    /// oscillate visibly, it *jumps*: the whole logistic collapses into a step
+    /// function that reaches `K` in one cycle. A sweep would score that
+    /// beautifully. It is still wrong, because growth is supposed to be a rate,
+    /// and because a population arriving from *above* `K` — which is what a
+    /// colony ship seeding over capacity does — gets the unclamped dynamics
+    /// and the full crash (`a_colony_seeded_above_its_capacity_crashes_below_it`).
+    ///
+    /// So this asserts the thing the clamp cannot fake: the approach to `K`
+    /// takes several cycles.
+    #[test]
+    fn the_population_logistic_is_a_rate_and_not_a_step() {
+        // The engine's expression, verbatim.
+        let steps_to_capacity = |r: f64| {
+            let k = 100.0f64;
+            let mut x = 1.0f64;
+            for n in 1..1000 {
+                x = (x + r * x * (1.0 - x / k)).clamp(0.0, k);
+                if x >= 0.99 * k {
+                    return n;
+                }
+            }
+            1000
+        };
+        let r = Doctrine::default().growth_rate;
+        let n = steps_to_capacity(r);
+        assert!(n >= 4, "growth_rate {r} fills a world in {n} cycles — that is a step, not a rate");
+        assert!(n <= 60, "growth_rate {r} takes {n} cycles to fill a world; the economy would never start");
+
+        // And the bare map, which is where the ceiling actually lives. Started
+        // just below `K` so the trajectory stays in the basin: a hard crash to
+        // zero is also a fixed point, and "settled at extinction" is not the
+        // question being asked.
+        let settles_near_capacity = |r: f64| {
+            let k = 100.0f64;
+            let mut x = 0.9 * k;
+            for _ in 0..500 {
+                x += r * x * (1.0 - x / k);
+            }
+            let a = x + r * x * (1.0 - x / k);
+            (a - x).abs() < 1e-6
+        };
+        assert!(settles_near_capacity(r), "the shipped rate must settle at K, not orbit it");
+        assert!(settles_near_capacity(1.9), "just under the bifurcation, still settles");
+        assert!(!settles_near_capacity(2.1), "past r = 2 it must be seen to period-double");
+        assert!(r < 2.0, "growth_rate must stay under the period-doubling bifurcation at r = 2");
+    }
+
     #[test]
     fn survey_reserve_zero_restores_the_old_never_scout_behaviour() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine { survey_reserve: 0, ..Doctrine::default() };
-        let mut ctx = prod_ctx_frontier(3, 3.0, 0.3, 0);
+        let mut ctx = prod_ctx_frontier(BandTier::III, 3.0, 0.3, 0);
         ctx.k_potential = 3.0;
         let cands = one_colony_candidate(&ap, &doctrine);
         assert_eq!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::Idle);

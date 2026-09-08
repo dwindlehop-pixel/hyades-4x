@@ -95,7 +95,7 @@ sustained fertility loss, cardiovascular collapse under prolonged exposure)
 crosses a threshold, rather than an arbitrary tolerance-window edge. The
 raw `gravity: f64` and log-normal generation are unchanged — this only
 reinterprets what the resulting Band *means*, so no code changes with it.
-Renaming `0–4` to **Band 0 – Band IV** here follows
+Renaming `0–4` to **Band Empty – Band IV** here follows
 `Hyades_mineral_cost_curve.md` §2.6, and the same `[4, 8]` step-factor
 constraint applies to the Band I→II/II→III g-thresholds as to every other
 Banded quantity — a further, harder question this R-code does not resolve:
@@ -118,14 +118,14 @@ stellar-astrophysics model.
 **R-H8 (open, new):** radiation's `0–4` sub-score (§3) gets the same
 population-health reframing as gravity (R-H7) — its single upper threshold
 already reads naturally as a dosage limit, closer to LD50 in spirit than
-gravity's two-sided tolerance is. Renamed to **Band 0 – Band IV** per
+gravity's two-sided tolerance is. Renamed to **Band Empty – Band IV** per
 `Hyades_mineral_cost_curve.md` §2.6; magnitudes stay **R-H1** placeholders.
 
 ---
 
 ## 3. Aggregation — reusing Liebig's law, not inventing a new one
 
-Each continuous dimension maps to a **Band 0 – Band IV** suitability
+Each continuous dimension maps to a **Band Empty – Band IV** suitability
 sub-score (the same Band ladder `habitability`/`biosphere`/`infrastructure`
 already use — `Hyades_galaxy_and_autopilot.md` §5,
 `Hyades_mineral_cost_curve.md` §2.6), via a smooth
@@ -145,7 +145,7 @@ habitability_for(planet, player) =
 ```
 
 Composition is the gate; the three continuous scores combine by **the same
-`min()` this codebase already uses for `K = min(hab, bio, infra)`**
+`min()` this codebase already uses for `K = min(hab, bio_max, infra)`**
 (`Hyades_simulation_model.md` §2a). No new aggregation rule — the weakest
 dimension caps the world, exactly like Liebig's law already caps carrying
 capacity elsewhere. A world with perfect gravity and radiation but a wildly

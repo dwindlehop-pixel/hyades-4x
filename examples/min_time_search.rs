@@ -53,6 +53,7 @@ use std::collections::{HashMap, HashSet};
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
+use hyades_engine::units::Band;
 
 /// **Four seeds, cut from ten — and this is a real reduction in what the search
 /// proves, so it is recorded rather than hidden** (CLAUDE.md §2: cut samples,
@@ -84,7 +85,7 @@ const FULL_TEST_BED_SEEDS: &[u64] = &[1, 7, 42, 55, 99, 123, 2024, 31337, 867530
 const PLAYERS: usize = 3;
 
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
-    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > 0.01).map(|p| p.id).collect()
+    galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
 /// One trial: (covered, total, completion_time_if_full).

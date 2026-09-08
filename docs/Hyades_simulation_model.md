@@ -58,7 +58,13 @@ Borrowed in spirit from *Stars!* (Mare Crisium), which gates population on gravi
 
 Two rules bind the model:
 
-- **Carrying capacity `K = min(habitability, biosphere, infrastructure)`.** Liebig's law of the minimum: the scarcest factor caps the planet, so pop grows logistically toward that minimum and locks there. "Lock at carrying capacity" is now per-planet and can sit well below a planet's potential.
+- **Carrying capacity `K = min(habitability, bio_max, infrastructure)`.** Liebig's law of the minimum: the scarcest factor caps the planet, so pop grows logistically toward that minimum and locks there. "Lock at carrying capacity" is now per-planet and can sit well below a planet's potential.
+
+  **The logistic runs on people, not on `K`'s Band (T-64).** `K` is a *classification* — a magnitude tier, which is what makes habitability, biosphere and infrastructure comparable at all — but the growth step is `x + r·x·(1 − x/K)` on the **mass** `K` stands for. Stepping the Band instead made `r` a rate of change of an exponent, so one `growth_rate` meant a different number of people at every point on the ladder. Two consequences worth carrying:
+  - **`growth_rate < 2` is arithmetic, not a tuning.** The step is conjugate to the logistic map with `μ = 1 + r`, so the fixed point at `K` period-doubles at `r = 2` and goes chaotic near 2.57 (May, *Nature* 261:459–467, 1976).
+  - **The clamp at `K` hides that from below.** A population climbing toward `K` overshoots, clamps exactly to it, and the growth term is then zero — so a too-large `r` does not oscillate visibly, it collapses the logistic into a step function that fills a world in one cycle *and scores well while doing it*. A parameter sweep cannot see this; only the shape of the approach can.
+
+  **All three terms are Bands** (`Hyades_mineral_cost_curve.md` §2.6) — the minimum is over magnitude *tiers*, and the biosphere enters as its **pristine ceiling** `bio_max`, not as its standing stock. The standing biosphere is a **mass in kilotons** and is what growth is *paid out of*; it is deliberately not a term in this minimum. Stated as `min(hab, bio, infra)` over three bare `f64`s — which is how the engine implemented it until R-O66 — the expression takes a minimum of a mass and two levels, and a world's ceiling falls every time its own people eat. See `Hyades_standing_layer_and_observation.md` §9.7 and `src/units.rs`.
 - **Growth rate is shaped by all three factors together.** Even though only the minimum sets the ceiling, the *speed* of filling depends on habitability, biosphere, and infrastructure jointly — so two planets with the same K can fill at very different rates.
 
 **Why the model exists — warfare and trade choices:**
@@ -74,9 +80,29 @@ This is planetside economy, not space-combat terrain: it never adds cover or ini
 Entities are **not** stepped by a per-tick sweep. This is a discrete-event
 simulation: a ship re-decides what to do next **when it arrives somewhere**
 (`ContactArrive`, `FreighterArrive`, `ColonyArrive`, `ScrapArrive`) — the only
-moment its situation has actually changed. Production centers are the single
-cadence-driven exception: one tick per center per `cycle_years`, because growth
-is a rate, not an event. Everything else is arrival-driven.
+moment its situation has actually changed.
+
+~~Production centers are the single cadence-driven exception: one tick per
+center per `cycle_years`.~~ **Split by R-O69, because the exception was doing
+two different jobs.** A center's **economy** step — local mining and population
+growth — is still one tick per center per `cycle_years`, and correctly so:
+both halves are *rates over an interval*, and an interval is exactly what a
+rate needs. Its **build decision** is not a rate, and is now an event:
+`BuildDecision`, raised when the shipyard clears `build_years` after a build
+was committed. The design also calls for it on **a build interrupted by
+hostiles**; that trigger has nothing to raise it until combat is wired into the
+loop (T-52).
+
+Conflating the two capped every center at **one build per `cycle_years`,
+however rich it was** — a hard ceiling of `horizon / cycle_years` builds per
+center that no amount of economy could lift. Measured before the split
+(`examples/cadence_throttle`, seeds 1 and 7): the median funded build fired at
+**5.5× the price of what it bought**, 82% of funded builds could have been made
+at least twice that cycle and 55% at least five times, with a worst case of
+112×. Removing it is worth **+165.8 colonies (+5.0%)** on the standard bed and
+returns it to saturation — 99.4% of everything the `k_high` classifier admits.
+
+Everything else is arrival- or completion-driven. Nothing decides on a sweep.
 
 That choice sets the engine's cost model, and both halves of it matter:
 
@@ -255,4 +281,4 @@ Every card ultimately compiles into one or more of these visible behaviors. Auth
 
 ---
 
-*Reference models for tuning the sim: special relativity for motion (a hard *c* cap and relativistic velocity addition); logistic / carrying-capacity growth for pop; **Liebig's law of the minimum** for `K = min(habitability, biosphere, infrastructure)`; the *Stars!* gravity/radiation/temperature scheme as the ancestor of the habitability triplet; Lanchester's laws for deterministic attrition; a directed counter-graph for builds — acyclicity is an open question, with intransitive ("nontransitive") balance explicitly on the table ([intransitivity](https://en.wikipedia.org/wiki/Intransitivity)); a 2-D gaussian for mineral distribution; the Penrose process as the flavor anchor for rift-energy extraction; a logistic/sigmoid curve in the open interval (0, 1) for P(wreck) vs. incoming damage — the same logistic form used for pop growth, which keeps the game's curved quantities mathematically consistent; and, as a flagged future experiment, general relativity for orbital-vs-deep-space combat.*
+*Reference models for tuning the sim: special relativity for motion (a hard *c* cap and relativistic velocity addition); logistic / carrying-capacity growth for pop; **Liebig's law of the minimum** for `K = min(habitability, bio_max, infrastructure)` (a comparison over Bands; R-O66 — but the growth it caps is logistic in *people*, T-64); the *Stars!* gravity/radiation/temperature scheme as the ancestor of the habitability triplet; Lanchester's laws for deterministic attrition; a directed counter-graph for builds — acyclicity is an open question, with intransitive ("nontransitive") balance explicitly on the table ([intransitivity](https://en.wikipedia.org/wiki/Intransitivity)); a 2-D gaussian for mineral distribution; the Penrose process as the flavor anchor for rift-energy extraction; a logistic/sigmoid curve in the open interval (0, 1) for P(wreck) vs. incoming damage — the same logistic form used for pop growth, which keeps the game's curved quantities mathematically consistent; and, as a flagged future experiment, general relativity for orbital-vs-deep-space combat.*

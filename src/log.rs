@@ -29,6 +29,7 @@ use crate::autopilot::BuildOrder;
 use crate::galaxy::PlanetId;
 use crate::math::Vec3;
 use crate::sim::{Entity, Role};
+use crate::units::BandTier;
 
 /// Which subsystem a record came from. Independently toggleable in a
 /// [`LogFilter`] so an interrogation can focus on just the part in question
@@ -147,7 +148,7 @@ pub enum LogEvent {
     ProductionDecision {
         player: u32,
         center: PlanetId,
-        pop_level: u8,
+        pop_level: BandTier,
         infra: f64,
         k_potential: f64,
         stockpile: f64,
@@ -192,6 +193,12 @@ pub enum LogEvent {
     VehicleScrapped { player: u32, vehicle: Entity, at: PlanetId, recovered: f64 },
 
     /// A planet's population advanced one production cycle's logistic step.
+    ///
+    /// `population` is **kilotons of people** and `k` is the ceiling as a Band
+    /// — the two units the pair genuinely are since T-64, rather than two
+    /// readings of one ladder. The logistic runs on the mass; `k` is a
+    /// classification, and reading it as a rung is what makes it comparable to
+    /// habitability and infrastructure.
     PopulationStep { planet: PlanetId, population: f64, k: f64 },
 
     /// A scan result reached an empire's knowledge base (light-delayed from the

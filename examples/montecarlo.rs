@@ -21,7 +21,7 @@ fn main() {
 
         let colonies: usize = report.players.iter().map(|p| p.colonies).sum();
         let outposts: usize = report.players.iter().map(|p| p.mining_outposts).sum();
-        let pop: f64 = report.players.iter().map(|p| p.total_population).sum();
+        let pop: f64 = report.players.iter().map(|p| p.total_population.kilotons()).sum();
 
         println!(
             "{:>5}  {:>7}  {:>9}  {:>10}  {:>10}  {:>9.2}",
