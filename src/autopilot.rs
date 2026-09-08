@@ -23,7 +23,7 @@ use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
 use crate::resources::{Basic, MineralField};
 use crate::sim::{Class, HullType, Role};
-use crate::units::{Band, BandTier, Kilotons, Measure};
+use crate::units::{Band, BandTier, Kilotons, Measure, Price};
 
 /// Which of the two cheap classes the colony pipeline reaches for first
 /// (autopilot-doc §4; R-AC1 / R-A1). Default is production-centers-first.
@@ -419,7 +419,7 @@ pub struct ProductionContext {
     /// `min(hab, bio)` — the ceiling infrastructure can be built to.
     pub k_potential: f64,
     /// Minerals on hand at this center (the spendable pool).
-    pub stockpile_total: f64,
+    pub stockpile_total: Price,
     /// Minimum level required to build "medium" vehicles (colony/mining). Per the
     /// production schedule this is **3** (2 = limited, 3 = medium/rapid, 4 = all).
     pub medium_min_level: BandTier,
@@ -427,14 +427,14 @@ pub struct ProductionContext {
     /// same schedule puts this at **2**, one tier below expansion.
     pub limited_min_level: BandTier,
     /// Mineral cost to raise infra by one level (= the target level).
-    pub infra_cost: f64,
+    pub infra_cost: Price,
     /// Mineral cost of a Colonizer on the **Medium** hull —
     /// `Hyades_vehicle_roles.md` §6's 1 CMY = 1 fleet model, not a flat
     /// placeholder anymore.
-    pub colonizer_cost: f64,
+    pub colonizer_cost: Price,
     /// Mineral cost of a Colonizer on the **General** hull, for the errands a
     /// Medium hull's hold cannot cover (T-56 stage 4).
-    pub general_colonizer_cost: f64,
+    pub general_colonizer_cost: Price,
     /// The founding population a **Medium** hull can deliver — `Band I` at the
     /// ratified ladder. A colony errand takes the Medium hull unless the target
     /// needs more than this.
@@ -450,12 +450,12 @@ pub struct ProductionContext {
     pub general_founding_infra: Band,
     /// Mineral cost of a Miner + its paired Freighter (an LSV + an MSV),
     /// bundled since they're built together (§4.4).
-    pub mining_pair_cost: f64,
+    pub mining_pair_cost: Price,
     /// Mineral cost of one Scout (an LCV) — the survey craft the limited tier
     /// unlocks. Bootstrap hands each seat `survey_vehicles` of these free
     /// (autopilot-doc §2); every later one is paid for out of a center's
     /// stockpile like any other build.
-    pub light_vehicle_cost: f64,
+    pub light_vehicle_cost: Price,
     /// Known, unclaimed, non-Barren worlds this empire could still expand to.
     /// The autopilot builds survey craft to keep this above
     /// [`Doctrine::survey_reserve`] — expansion consumes candidates, so without
@@ -688,7 +688,9 @@ impl Autopilot for BaselineAutopilot {
         // of 2435 Idle decisions were centers in exactly that state, several
         // holding 3.5–4.7 minerals against a 3-mineral upgrade.
         let deepen_possible = ctx.infra < ctx.k_potential - 1e-9;
-        let can_afford_infra = ctx.stockpile_total + 1e-9 >= ctx.infra_cost;
+        // The epsilon is a price too — the whole comparison is on one ladder.
+        let eps = Price::new(1e-9);
+        let can_afford_infra = ctx.stockpile_total + eps >= ctx.infra_cost;
 
         // Below even the limited tier there is nothing to build; deepen or save.
         if ctx.level < ctx.limited_min_level {
@@ -704,7 +706,7 @@ impl Autopilot for BaselineAutopilot {
         // so an empire that never scouts again exhausts its candidate list and
         // stops, however rich it gets.
         let wants_survey = ctx.candidate_count < doctrine.survey_reserve;
-        let can_afford_light = ctx.stockpile_total + 1e-9 >= ctx.light_vehicle_cost;
+        let can_afford_light = ctx.stockpile_total + Price::new(1e-9) >= ctx.light_vehicle_cost;
 
         // Between the limited and medium tiers, survey is the only outward move.
         if ctx.level < ctx.medium_min_level {
@@ -769,7 +771,8 @@ impl Autopilot for BaselineAutopilot {
                 // later year of that colony is bounded by, and the price is
                 // what it displaces elsewhere.
                 let k_pot = col.view.k_potential();
-                let per_mineral = |k: Band, cost: f64| if cost > 0.0 { k.bands() / cost } else { f64::INFINITY };
+                let per_mineral =
+                    |k: Band, cost: Price| if cost > Price::ZERO { k.bands() / cost.kilotons() } else { f64::INFINITY };
                 let options = [
                     (HullType::MediumSystems, ctx.colonizer_cost, k_pot.min(ctx.medium_founding_infra)),
                     (HullType::GeneralSystems, ctx.general_colonizer_cost, k_pot.min(ctx.general_founding_infra)),
@@ -786,7 +789,7 @@ impl Autopilot for BaselineAutopilot {
                 // used to carry this rule explicitly; deriving the hull dropped
                 // it, and nothing noticed because the shipped ladder happened
                 // to make Medium the answer anyway.
-                let affordable = |c: f64| ctx.stockpile_total + 1e-9 >= c;
+                let affordable = |c: Price| ctx.stockpile_total + Price::new(1e-9) >= c;
                 let best = options
                     .iter()
                     .filter(|(_, cost, k)| affordable(*cost) && *k > Band::ZERO)
@@ -805,8 +808,8 @@ impl Autopilot for BaselineAutopilot {
             (None, Some(mine)) => Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost)),
             (None, None) => None,
         };
-        let outward_cost = outward.map(|(_, _, c)| c).unwrap_or(0.0);
-        let can_expand = ctx.stockpile_total + 1e-9 >= outward_cost;
+        let outward_cost = outward.map(|(_, _, c)| c).unwrap_or(Price::ZERO);
+        let can_expand = ctx.stockpile_total + Price::new(1e-9) >= outward_cost;
 
         // ~~Deepen-vs-expand as a genuine convex dial.~~ **It is not one, and at
         // the shipped `reinvest_bias` this branch is unreachable (R-O68).**
@@ -1011,18 +1014,18 @@ mod tests {
             level,
             infra,
             k_potential: 4.0,
-            stockpile_total: stockpile,
+            stockpile_total: Price::new(stockpile),
             medium_min_level: BandTier::III,
             limited_min_level: BandTier::II,
-            infra_cost: infra + 1.0,
-            colonizer_cost: 1.0,
-            general_colonizer_cost: 10.0,
+            infra_cost: Price::new(infra + 1.0),
+            colonizer_cost: Price::new(1.0),
+            general_colonizer_cost: Price::new(10.0),
             medium_seed_capacity: Kilotons::at_tier(BandTier::I),
             general_seed_capacity: Kilotons::at_tier(BandTier::II),
             medium_founding_infra: BandTier::I.band(),
             general_founding_infra: BandTier::IV.band(),
-            mining_pair_cost: 1.0,
-            light_vehicle_cost: 0.25,
+            mining_pair_cost: Price::new(1.0),
+            light_vehicle_cost: Price::new(0.25),
             candidate_count,
         }
     }

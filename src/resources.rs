@@ -11,7 +11,7 @@
 //! colonization/growth autopilot; supers and apex are carried here so the same
 //! types serve the later production/synthesis autopilots without a rewrite.
 
-use crate::units::{Band, Kilotons, Measure};
+use crate::units::{Band, Kilotons, Measure, Price};
 
 /// Tier-1 basic minerals (the CMY primaries). Mined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -209,9 +209,17 @@ impl Minerals {
     }
 
     /// Total tier-1 (basic) minerals on hand — the spendable pool for builds.
+    ///
+    /// **On the cost ladder** (`Qty<Cost>`), which is where the mass→price
+    /// crossing lives: ore in the ground is a mass and reads on the mass
+    /// ladder, and the same ore in a bank is what a hull is priced in and reads
+    /// on the cost one. Same kilotons (R-O57); different rungs. Everything
+    /// downstream of here — `hull_cost`, `infra_step_price`, the stockpile
+    /// comparisons — is typed so a price cannot be compared against a mass
+    /// reading by accident.
     #[inline]
-    pub fn basic_total(&self) -> f64 {
-        self.cyan + self.magenta + self.yellow
+    pub fn basic_total(&self) -> Price {
+        Price::new(self.cyan + self.magenta + self.yellow)
     }
 
     /// Fold another bank's basics into this one (cargo deposited at a center).
@@ -225,12 +233,12 @@ impl Minerals {
     /// Try to spend `amount` total basic minerals, drawing from each color in
     /// proportion to how much is held. Returns `false` (and spends nothing) if
     /// the pool is short. Vehicle/infra costs flow through here.
-    pub fn try_spend_total(&mut self, amount: f64) -> bool {
-        if amount <= 0.0 {
+    pub fn try_spend_total(&mut self, amount: Price) -> bool {
+        if amount <= Price::ZERO {
             return true;
         }
         let total = self.basic_total();
-        if total + 1e-9 < amount {
+        if total + Price::new(1e-9) < amount {
             return false;
         }
         let f = amount / total;

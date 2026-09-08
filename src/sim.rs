@@ -65,7 +65,7 @@ use crate::math::{self, Vec3, G};
 use crate::resources::{Archetype, Basic, MineralField, Minerals};
 use crate::rng::Rng;
 use crate::snapshot::{PlanetSnapshot, PlayerSnapshot, Snapshot, VehicleKind, VehicleSnapshot};
-use crate::units::{self, Band, BandTier, Kilotons, Length, Measure, Volume};
+use crate::units::{self, Band, BandTier, Kilotons, Length, Measure, Price, Volume};
 
 // =====================================================================
 // ECS core — a tiny, dependency-free, deterministic world.
@@ -827,15 +827,26 @@ pub fn role_hull_type(role: Role) -> HullType {
 /// costs (`Limited` 0.02, `Medium` 0.10, `General` 1.00), so a recycled hull
 /// buys precisely the infrastructure its minerals would have bought, and
 /// [`Simulation::founding_infra`] needs no separate rate.
-fn infra_ladder(cfg: &SimConfig) -> units::Ladder {
-    units::Ladder::anchored_at(BandTier::II.index() as usize, cfg.general_vehicle_cost, units::COST_LADDER)
+/// The cost ladder's anchor for this configuration: minerals at cost `Band I`,
+/// one step below `general_vehicle_cost` (which §2.6 puts at `Band II`).
+///
+/// This is the one runtime parameter the ladder takes. Everything else about it
+/// is the ratified `COST_LADDER`, carried on the `Qty<Cost>` type itself.
+#[inline]
+fn cost_anchor(cfg: &SimConfig) -> f64 {
+    cfg.general_vehicle_cost / units::COST_LADDER[1]
+}
+
+/// The minerals it takes to *stand at* whole infrastructure rung `n`.
+#[inline]
+fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
+    Price::new(Price::rung_from(n, cost_anchor(cfg)))
 }
 
 /// Minerals to raise infrastructure from `from` to the next whole rung.
-fn infra_step_price(from: Band, cfg: &SimConfig) -> f64 {
-    let ladder = infra_ladder(cfg);
+fn infra_step_price(from: Band, cfg: &SimConfig) -> Price {
     let at = from.round().bands().max(0.0) as usize;
-    ladder.rung(at + 1) - ladder.rung(at)
+    infra_rung_price(at + 1, cfg) - infra_rung_price(at, cfg)
 }
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
@@ -918,15 +929,15 @@ pub fn hull_thrust_multiplier_range(_hull: HullType) -> (f64, f64) {
 /// Freighter, and the Scout. A build that names its hull is priced by
 /// [`hull_cost`], because the two stopped agreeing the moment Doctrine could
 /// order a heavier colonizer.
-fn role_cost(role: Role, cfg: &SimConfig) -> f64 {
+fn role_cost(role: Role, cfg: &SimConfig) -> Price {
     hull_cost(role_hull_type(role), cfg)
 }
 
 /// Mineral cost of building one hull. Same number as [`hull_dry_mass`] under
 /// L6/R-O57 — cost *is* dry mass — but read at the point of purchase rather
 /// than the point of flight.
-fn hull_cost(hull: HullType, cfg: &SimConfig) -> f64 {
-    hull.cost_fraction(cfg) * cfg.general_vehicle_cost
+fn hull_cost(hull: HullType, cfg: &SimConfig) -> Price {
+    Price::new(hull.cost_fraction(cfg) * cfg.general_vehicle_cost)
 }
 
 /// The component world: entity bookkeeping plus every typed store.
@@ -1857,12 +1868,12 @@ impl Simulation {
             if p >= self.player_entity.len() {
                 continue;
             }
-            let cost = o.card.and_then(cards::card).map(|c| c.cost).unwrap_or(0.0);
-            let affordable = cost <= 0.0 || self.empire_can_afford(p, cost);
+            let cost = Price::new(o.card.and_then(cards::card).map(|c| c.cost).unwrap_or(0.0));
+            let affordable = cost <= Price::ZERO || self.empire_can_afford(p, cost);
             let Some(id) = o.coerce(affordable).card else { continue };
             let Some(c) = cards::card(id) else { continue };
             if c.cost > 0.0 {
-                self.empire_spend(p, c.cost);
+                self.empire_spend(p, Price::new(c.cost));
             }
             self.apply_card_effect(p, c, o.target, round);
         }
@@ -1871,9 +1882,9 @@ impl Simulation {
     /// Total basic minerals across an empire's holdings. Cards are paid from
     /// the empire, not from one center — design law #7 puts cards at
     /// empire/macro scale, so a per-center purse would be the wrong grain.
-    fn empire_can_afford(&self, p: usize, cost: f64) -> bool {
+    fn empire_can_afford(&self, p: usize, cost: Price) -> bool {
         let me = PlayerId(p as u32);
-        let mut total = 0.0;
+        let mut total = Price::ZERO;
         for &e in &self.planet_entity {
             if self.world.owner.get(e).copied() == Some(me) {
                 if let Some(s) = self.world.stockpile.get(e) {
@@ -1889,20 +1900,20 @@ impl Simulation {
 
     /// Draw `cost` from the empire's holdings, richest planet first so the draw
     /// is deterministic and does not strand a center that was about to build.
-    fn empire_spend(&mut self, p: usize, cost: f64) {
+    fn empire_spend(&mut self, p: usize, cost: Price) {
         let me = PlayerId(p as u32);
-        let mut holdings: Vec<(Entity, f64)> = self
+        let mut holdings: Vec<(Entity, Price)> = self
             .planet_entity
             .iter()
             .filter(|&&e| self.world.owner.get(e).copied() == Some(me))
             .filter_map(|&e| self.world.stockpile.get(e).map(|s| (e, s.basic_total())))
-            .filter(|&(_, t)| t > 0.0)
+            .filter(|&(_, t)| t > Price::ZERO)
             .collect();
         // Richest first; entity id breaks ties so the order is total.
         holdings.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal).then(a.0 .0.cmp(&b.0 .0)));
         let mut remaining = cost;
         for (e, avail) in holdings {
-            if remaining <= 0.0 {
+            if remaining <= Price::ZERO {
                 break;
             }
             let take = remaining.min(avail);
@@ -2186,9 +2197,11 @@ impl Simulation {
             // so a per-planet heap let either empire haul away what the other's
             // miners dug.
             let stock = self.outpost_stock.entry((p, sh.outpost.0)).or_default();
+            // A hold is a mass and a stockpile is a price; the same kilotons,
+            // two ladders (R-O57). `on_scale` is the crossing, said out loud.
             let avail = stock.basic_total();
-            let load = cap.kilotons().min(avail);
-            if load > 0.0 {
+            let load = cap.on_scale::<units::Cost>().min(avail);
+            if load > Price::ZERO {
                 let moved = take_basics(self.outpost_stock.get_mut(&(p, sh.outpost.0)).unwrap(), load);
                 self.world.cargo.get_mut(vehicle).unwrap().add_basics(&moved);
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
@@ -2198,7 +2211,7 @@ impl Simulation {
                         player: p,
                         vehicle,
                         leg: FreighterLeg::Loaded,
-                        amount: load,
+                        amount: load.kilotons(),
                         at: outpost_pid,
                     },
                 );
@@ -2215,7 +2228,7 @@ impl Simulation {
             // freighter of 2,655 ever reached this branch.** Same test, same
             // verdict, and the hull becomes re-taskable when its rock dies.
             let dens = self.world.density.get(sh.outpost).unwrap().total_mass().kilotons();
-            if load <= 1e-9 && dens * self.config.outpost_mining_fraction <= self.config.density_floor {
+            if load <= Price::new(1e-9) && dens * self.config.outpost_mining_fraction <= self.config.density_floor {
                 let here = self.position_at(sh.outpost, self.clock).unwrap();
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
                 self.park(vehicle, here);
@@ -2259,7 +2272,7 @@ impl Simulation {
                 c.magenta = 0.0;
                 c.yellow = 0.0;
             }
-            if cargo.basic_total() > 0.0 {
+            if cargo.basic_total() > Price::ZERO {
                 let dest_pid = *self.world.planet_id.get(sh.destination).unwrap();
                 self.log.push(
                     self.clock,
@@ -2267,7 +2280,7 @@ impl Simulation {
                         player: p,
                         vehicle,
                         leg: FreighterLeg::Deposited,
-                        amount: cargo.basic_total(),
+                        amount: cargo.basic_total().kilotons(),
                         at: dest_pid,
                     },
                 );
@@ -2314,14 +2327,17 @@ impl Simulation {
 
         if let Some(dest_e) = self.nearest_owned_planet(owner.map(|o| o.0 as usize).unwrap_or(0), here) {
             let recovered = role_cost(Role::Scout, &self.config) * self.config.scrap_recovery_fraction;
-            let colors = recovered / 3.0;
+            let colors = recovered.kilotons() / 3.0;
             let stock = self.world.stockpile.get_mut(dest_e).unwrap();
             stock.cyan += colors;
             stock.magenta += colors;
             stock.yellow += colors;
             if let Some(o) = owner {
                 let pid = *self.world.planet_id.get(dest_e).unwrap();
-                self.log.push(self.clock, LogEvent::VehicleScrapped { player: o.0, vehicle, at: pid, recovered });
+                self.log.push(
+                    self.clock,
+                    LogEvent::VehicleScrapped { player: o.0, vehicle, at: pid, recovered: recovered.kilotons() },
+                );
             }
         }
     }
@@ -2367,7 +2383,7 @@ impl Simulation {
             let density_after = self.world.density.get(outpost).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
-                LogEvent::MineralsExtracted { planet: pid, amount: extracted.basic_total(), density_after },
+                LogEvent::MineralsExtracted { planet: pid, amount: extracted.basic_total().kilotons(), density_after },
             );
         }
         if any {
@@ -2418,7 +2434,11 @@ impl Simulation {
             let density_after = self.world.density.get(center).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
-                LogEvent::MineralsExtracted { planet: center_pid, amount: extracted.basic_total(), density_after },
+                LogEvent::MineralsExtracted {
+                    planet: center_pid,
+                    amount: extracted.basic_total().kilotons(),
+                    density_after,
+                },
             );
         }
 
@@ -2703,10 +2723,10 @@ impl Simulation {
                 pop_level: level,
                 infra: infra.bands(),
                 k_potential: k_potential.bands(),
-                stockpile: stock_total,
-                infra_cost: target_level,
-                colonizer_cost: ctx.colonizer_cost,
-                mining_pair_cost: ctx.mining_pair_cost,
+                stockpile: stock_total.kilotons(),
+                infra_cost: target_level.kilotons(),
+                colonizer_cost: ctx.colonizer_cost.kilotons(),
+                mining_pair_cost: ctx.mining_pair_cost.kilotons(),
                 mineral_pressure,
                 candidates_seen: count as u32,
                 chosen: order,
@@ -2758,8 +2778,8 @@ impl Simulation {
                             player: p as u32,
                             center: center_pid,
                             order,
-                            cost: target,
-                            stockpile_after,
+                            cost: target.kilotons(),
+                            stockpile_after: stockpile_after.kilotons(),
                         },
                     );
                     true
@@ -2817,7 +2837,7 @@ impl Simulation {
                 // `assign_role`. It stops agreeing the moment Doctrine can pick
                 // a heavier colonizer, and the failure would have been silent:
                 // a General hull bought at a Medium hull's price.
-                let mut cost = (crew - reused_miners.len().min(crew)) as f64 * hull_cost(hull_type, &self.config);
+                let mut cost = hull_cost(hull_type, &self.config) * (crew - reused_miners.len().min(crew)) as f64;
                 if paired_freighter && reused_freighter.is_none() {
                     cost += role_cost(Role::Freighter, &self.config);
                 }
@@ -2877,7 +2897,13 @@ impl Simulation {
                 let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
                 self.log.push(
                     self.clock,
-                    LogEvent::BuildApplied { player: p as u32, center: center_pid, order, cost, stockpile_after },
+                    LogEvent::BuildApplied {
+                        player: p as u32,
+                        center: center_pid,
+                        order,
+                        cost: cost.kilotons(),
+                        stockpile_after: stockpile_after.kilotons(),
+                    },
                 );
                 true
             }
@@ -2897,17 +2923,17 @@ impl Simulation {
     /// What a mining pair costs player `p` this cycle: the halves that are not
     /// already sitting in Reserve. Equals the full price whenever recycling is
     /// off, which is what keeps the flag a clean A/B.
-    fn mining_pair_price(&self, p: usize, crew: usize) -> f64 {
+    fn mining_pair_price(&self, p: usize, crew: usize) -> Price {
         let full_miner = role_cost(Role::Miner, &self.config);
         let full_freighter = role_cost(Role::Freighter, &self.config);
         if !self.config.recycle_mining_pairs {
-            return crew as f64 * full_miner + full_freighter;
+            return full_miner * crew as f64 + full_freighter;
         }
         // Only the hulls that still have to be *built* are priced; the rest come
         // out of Reserve. A crew of `n` can draw up to `n` reserved miners.
         let from_reserve = self.reserve_miners[p].len().min(crew);
-        let miners = (crew - from_reserve) as f64 * full_miner;
-        let freighter = if self.reserve_freighters[p].is_empty() { full_freighter } else { 0.0 };
+        let miners = full_miner * (crew - from_reserve) as f64;
+        let freighter = if self.reserve_freighters[p].is_empty() { full_freighter } else { Price::ZERO };
         miners + freighter
     }
 
@@ -3033,7 +3059,7 @@ impl Simulation {
     /// below `Band Empty`, so its colony would have no carrying capacity and
     /// [`Self::colony_seed_for`] declines.
     fn founding_infra(&self, hull: HullType) -> Band {
-        let b = infra_ladder(&self.config).band_of(hull_cost(hull, &self.config));
+        let b = hull_cost(hull, &self.config).band_from(cost_anchor(&self.config));
         Band::new(b.bands().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
     }
 
@@ -3220,7 +3246,9 @@ impl Simulation {
         // number: a mineral in the hold masses exactly what it massed as hull.
         // That is an identity, not a coefficient, which is why there is no
         // `cargo_mass_per_unit` any more.
-        let minerals = Kilotons::new(self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0));
+        // Cargo in a hold is a mass; the same minerals in a bank are a price.
+        let minerals =
+            self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(Price::ZERO).on_scale::<units::Mass>();
         let pop = self.world.pop_cargo.get(e).copied().unwrap_or(Kilotons::ZERO);
         let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
         let dry = hull_dry_mass(hull, &self.config).max(Kilotons::new(1e-9));
@@ -3362,11 +3390,11 @@ impl Simulation {
     /// compare need across the whole empire.
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
         let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Band::ZERO);
-        let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(0.0);
+        let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
         // The price of this center's *next* rung — the same function the build
         // path charges, rather than a second copy of `round(infra) + 1`.
         let target_level = infra_step_price(infra, &self.config);
-        (1.0 - stock / target_level.max(1e-9)).clamp(0.0, 1.0)
+        (1.0 - stock / target_level.max(Price::new(1e-9))).clamp(0.0, 1.0)
     }
 
     /// The owned production center with the highest live mineral pressure —
@@ -3548,7 +3576,7 @@ impl Simulation {
                     if self.world.owner.get(e).copied() == Some(me) {
                         snap.planets_owned += 1;
                         snap.total_population += *self.world.population.get(e).unwrap();
-                        snap.stockpiled_total += self.world.stockpile.get(e).unwrap().basic_total();
+                        snap.stockpiled_total += self.world.stockpile.get(e).unwrap().basic_total().kilotons();
                     }
                 }
                 snap.ships = vehicles.iter().filter(|v| v.owner == p as u32).count() as u32;
@@ -3607,11 +3635,11 @@ fn scarcity_for(archetype: Option<Archetype>) -> [f64; 3] {
 
 /// Remove `amount` total basics from a bank, in proportion to holdings, and
 /// return what was removed (a freighter loading at an outpost).
-fn take_basics(bank: &mut Minerals, amount: f64) -> Minerals {
+fn take_basics(bank: &mut Minerals, amount: Price) -> Minerals {
     let total = bank.basic_total();
-    let take = amount.min(total).max(0.0);
+    let take = amount.min(total).max(Price::ZERO);
     let mut out = Minerals::default();
-    if total <= 0.0 || take <= 0.0 {
+    if total <= Price::ZERO || take <= Price::ZERO {
         return out;
     }
     let f = take / total;
@@ -4266,7 +4294,7 @@ mod tests {
             (HullType::LimitedContactVehicle, Role::Scout),
         ] {
             assert_eq!(role_hull_type(role), hull, "{role:?} still maps back to {hull:?}");
-            assert!((role_cost(role, &cfg) - hull_cost(hull, &cfg)).abs() < 1e-12);
+            assert!((role_cost(role, &cfg) - hull_cost(hull, &cfg)).abs() < Price::new(1e-12));
         }
 
         // And the thing the round trip was standing in for: a heavier hull
@@ -4320,13 +4348,12 @@ mod tests {
         let g_infra = sim.founding_infra(HullType::GeneralSystems);
 
         // And the prices those rungs correspond to: `Infra I costs minerals I`.
-        let ladder = infra_ladder(&sim.config);
         for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
             let rung = sim.founding_infra(hull).round().bands() as usize;
+            let priced = infra_rung_price(rung, &sim.config);
             assert!(
-                (ladder.rung(rung) - hull_cost(hull, &sim.config)).abs() < 1e-12,
-                "{hull:?}: rung {rung} prices at {} but the hull costs {}",
-                ladder.rung(rung),
+                (priced - hull_cost(hull, &sim.config)).abs() < Price::new(1e-12),
+                "{hull:?}: rung {rung} prices at {priced} but the hull costs {}",
                 hull_cost(hull, &sim.config)
             );
         }
@@ -4867,12 +4894,13 @@ mod tests {
 
         // Now a center orders a mining pair. The reserved hull is taken back at
         // no mineral cost; only the un-recycled half is paid for.
-        let stock_before = 1000.0;
+        let stock_before = Price::new(1000.0);
         {
             let st = sim.world.stockpile.get_mut(center).unwrap();
-            st.cyan = stock_before / 3.0;
-            st.magenta = stock_before / 3.0;
-            st.yellow = stock_before / 3.0;
+            let each = stock_before.kilotons() / 3.0;
+            st.cyan = each;
+            st.magenta = each;
+            st.yellow = each;
         }
         let pid = *sim.world.planet_id.get(next_rock).unwrap();
         let view = sim.view_of(next_rock);
@@ -4897,7 +4925,7 @@ mod tests {
         let spent = stock_before - sim.world.stockpile.get(center).unwrap().basic_total();
         let freighter_only = role_cost(Role::Freighter, &sim.config);
         assert!(
-            (spent - freighter_only).abs() < 1e-9,
+            (spent - freighter_only).abs() < Price::new(1e-9),
             "only the freighter is bought: spent {spent}, freighter costs {freighter_only}"
         );
     }
@@ -5175,7 +5203,7 @@ mod tests {
 
         sim.sys_colony_arrive(v);
         let stock = sim.world.stockpile.get(target).unwrap().basic_total();
-        assert!(stock.abs() < 1e-9, "colony should start with zero minerals, got {stock}");
+        assert!(stock.abs() < Price::new(1e-9), "colony should start with zero minerals, got {stock}");
     }
 
     #[test]

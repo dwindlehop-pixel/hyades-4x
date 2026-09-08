@@ -142,76 +142,6 @@ pub fn rung_mass(n: usize) -> f64 {
     Kilotons::rung(n)
 }
 
-/// **A Band ladder with its own anchor** — the general form of the bridge.
-///
-/// §2.6 is explicit that *every quantity anchors its own `Band I`
-/// independently; what has to be shared is the ratio, not the absolute value*.
-/// [`Measure`] hard-wires the **mass** ladder (`Band I` = one kiloton, a small
-/// town), which is right for population, biosphere and cargo and wrong for
-/// anything priced in minerals. This is how a second quantity gets a ladder
-/// without a second copy of the arithmetic.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Ladder {
-    rungs: [f64; 5],
-    steps: [f64; 4],
-}
-
-impl Ladder {
-    /// Build a ladder from one known rung and the step factors between them.
-    ///
-    /// `anchor_rung` is indexed like [`BandTier::index`]: `0` is `Empty`, `1`
-    /// is `Band I`, and so on.
-    pub fn anchored_at(anchor_rung: usize, value: f64, steps: [f64; 4]) -> Ladder {
-        let mut rungs = [0.0f64; 5];
-        rungs[anchor_rung] = value;
-        let mut i = anchor_rung;
-        while i > 0 {
-            rungs[i - 1] = rungs[i] / steps[i - 1];
-            i -= 1;
-        }
-        let mut i = anchor_rung;
-        while i < 4 {
-            rungs[i + 1] = rungs[i] * steps[i];
-            i += 1;
-        }
-        Ladder { rungs, steps }
-    }
-
-    /// The magnitude at whole rung `n`.
-    #[inline]
-    pub fn rung(&self, n: usize) -> f64 {
-        self.rungs[n.min(4)]
-    }
-
-    /// Where a magnitude sits on this ladder, interpolated log-linearly inside
-    /// its segment and extrapolated with the edge factor outside — the same
-    /// shape as [`Measure::in_bands`], and floored at [`BAND_FLOOR`] for the
-    /// same reason (design law #16: `band(0)` is `−∞`).
-    pub fn band_of(&self, v: f64) -> Band {
-        if v <= 0.0 {
-            return Band(BAND_FLOOR);
-        }
-        let mut n = 0usize;
-        while n < 3 && v >= self.rungs[n + 1] {
-            n += 1;
-        }
-        Band((n as f64 + (v / self.rungs[n]).ln() / self.steps[n].ln()).max(BAND_FLOOR))
-    }
-
-    /// The magnitude at a continuous position — the inverse of
-    /// [`band_of`](Self::band_of).
-    pub fn value_of(&self, b: Band) -> f64 {
-        let n = if b.0 < 0.0 {
-            0.0
-        } else if b.0 >= 3.0 {
-            3.0
-        } else {
-            b.0.floor()
-        };
-        self.rungs[n as usize] * self.steps[n as usize].powf(b.0 - n)
-    }
-}
-
 /// The bottom rung the ladder is willing to name.
 ///
 /// `band(m)` diverges as `m → 0`, and design law #16 makes a non-finite value
@@ -451,6 +381,13 @@ pub struct Qty<S>(f64, core::marker::PhantomData<S>);
 /// in (L6). The engine's default quantity.
 pub type Kilotons = Qty<Mass>;
 
+/// The same kilotons read on the **cost** ladder — a hull's price, an
+/// infrastructure step, a stockpile that can be spent. `Price` and [`Kilotons`]
+/// hold the same scalar (R-O57: a hull's price *is* its dry mass); they differ
+/// only in which rungs they are read against, and crossing is
+/// [`Qty::on_scale`].
+pub type Price = Qty<Cost>;
+
 // Hand-written so the marker never imposes a bound on `S`: a `Qty` is one
 // `f64` and copies like one, whatever it is tagged with.
 impl<S> Clone for Qty<S> {
@@ -572,6 +509,31 @@ impl<S: Scale> Qty<S> {
             b.0.floor()
         };
         Qty(Self::rung(n as usize) * S::STEPS[n as usize].powf(b.0 - n), core::marker::PhantomData)
+    }
+
+    /// The magnitude at whole rung `n` on a ladder whose `Band I` sits at
+    /// `band_i` rather than at [`Scale::BAND_I`].
+    ///
+    /// §2.6 fixes the *ratios* and leaves the anchor per-quantity, and the cost
+    /// ladder's anchor is a config value (`SimConfig::general_vehicle_cost`) so
+    /// that the whole economy can be re-scaled in one place. These three
+    /// `_from` methods are that freedom, and they are the only place the ladder
+    /// takes a runtime parameter.
+    #[inline]
+    pub fn rung_from(n: usize, band_i: f64) -> f64 {
+        Self::rung(n) * (band_i / S::BAND_I)
+    }
+
+    /// [`Self::at_band`] against a runtime anchor.
+    #[inline]
+    pub fn at_band_from(b: Band, band_i: f64) -> Self {
+        Self::at_band(b) * (band_i / S::BAND_I)
+    }
+
+    /// [`Self::band`] against a runtime anchor.
+    #[inline]
+    pub fn band_from(self, band_i: f64) -> Band {
+        (self * (S::BAND_I / band_i)).band()
     }
 
     /// **Read it as a ladder position.**
@@ -1293,6 +1255,33 @@ mod tests {
         // Consume both so neither loop can be optimised away entirely.
         assert!((a - b.kilotons()).abs() < 1e-6, "the two loops must compute the same thing");
         (raw, wrapped)
+    }
+
+    /// The runtime-anchored ladder must agree with the compile-time one when
+    /// handed the compile-time anchor, and must scale exactly when handed
+    /// anything else — this is the cost ladder's only degree of freedom
+    /// (`SimConfig::general_vehicle_cost`) and it has to be a pure rescale, or
+    /// re-pricing the economy would silently re-shape it.
+    #[test]
+    fn a_runtime_anchor_rescales_the_ladder_and_nothing_else() {
+        for n in 0..=4 {
+            close(Qty::<Cost>::rung_from(n, Cost::BAND_I), Qty::<Cost>::rung(n), "the default anchor is the default");
+        }
+        for &k in &[0.5, 1.0, 17.0] {
+            let anchor = Cost::BAND_I * k;
+            for n in 0..=4 {
+                close(Qty::<Cost>::rung_from(n, anchor), Qty::<Cost>::rung(n) * k, "rungs scale with the anchor");
+            }
+            // And the two directions still invert each other under the anchor.
+            for &b in &[0.0, 0.5, 1.0, 2.0, 3.5, 4.0] {
+                let q = Qty::<Cost>::at_band_from(Band::new(b), anchor);
+                assert!(
+                    (q.band_from(anchor).bands() - b).abs() < 1e-9,
+                    "anchored round trip at {b}: got {}",
+                    q.band_from(anchor).bands()
+                );
+            }
+        }
     }
 
     /// **The two ladders are genuinely different, and the type is what keeps

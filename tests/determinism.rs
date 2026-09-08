@@ -165,7 +165,7 @@ fn no_nan_or_infinity_reaches_replicated_state() {
             (pl.infrastructure.bands(), "infrastructure"),
             (pl.k.bands(), "k"),
             (pl.population.kilotons(), "population"),
-            (pl.stockpile.basic_total(), "stockpile"),
+            (pl.stockpile.basic_total().kilotons(), "stockpile"),
         ] {
             finite(v, &format!("planet {id} {what}"));
         }
@@ -175,7 +175,7 @@ fn no_nan_or_infinity_reaches_replicated_state() {
             (v.position.x, "position.x"),
             (v.position.y, "position.y"),
             (v.position.z, "position.z"),
-            (v.cargo.basic_total(), "cargo"),
+            (v.cargo.basic_total().kilotons(), "cargo"),
         ] {
             finite(val, &format!("vehicle {i} {what}"));
         }
