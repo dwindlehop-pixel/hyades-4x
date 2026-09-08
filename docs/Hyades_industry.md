@@ -115,6 +115,16 @@ for thresholds, never a second thing to store (T-64, `CLAUDE.md` §4).
 
 ### 1.4 What the amendment costs, in engine terms
 
+> **Landed (T-67).** Measured on the standard bed: **+4.4% / +4.7% colony-years**
+> (seed 1 9,139,231 → 9,542,958; seed 7 9,060,095 → 9,483,962) with the colony
+> **count identical** on both seeds. The same worlds, taken earlier — colonies
+> now grow to `min(hab, bio_max)` instead of being pinned at whatever
+> infrastructure their founding hull happened to leave, so they cross the
+> `PopBands` production gates sooner and the expansion loop compounds faster.
+>
+> **It also cost a rule, and finding out how was the useful part — see §1.5.**
+
+
 `Factors::k()` is `k_potential().min(infra)` and `k_potential()` is
 `hab.min(bio_max_band)`, so the change is **deleting one `.min()`** — after which
 `k()` and `k_potential()` are the same function. Three real consequences, none of
@@ -142,6 +152,35 @@ them cosmetic:
   chance to rebuild it rather than repair it.
 - **`medium_min_level` and the production gates are untouched** — they read
   population level, not infrastructure.
+
+### 1.5 R-V9 was being enforced by accident, and the amendment exposed it
+
+**"A Colonizer must be Medium or larger" was not implemented anywhere.** It fell
+out of two unrelated rules meeting: `founding_capacity` was
+`k_potential.min(infra.max(founding_infra(hull)))`, a Limited hull's
+`founding_infra` is `Band Empty`, and `population_mass` maps `Band Empty` to
+**exactly zero** — so a Limited hull's seed was zero and the hull was refused.
+
+Nothing named that. Take infrastructure out of `K` and the coincidence
+dissolves: a Limited hull founds a colony of 0.089 kt, quietly, in a build
+nobody changed on purpose. It was caught by a test that asserted the *outcome*
+(`colony_seed_for(Limited, …) == None`) rather than the mechanism — which is
+the argument for writing tests at that level, since a test of the mechanism
+would have been deleted along with it.
+
+**The rule is now stated where roles §4 says it lives** — as *capability, not
+competence*: a hull founds nothing unless its **hold** can carry a full
+`colony_seed_pop`. A Medium hull's hold is `Band I` exactly and a Limited hull's
+is `Band Empty`, so the ratified rule and the geometry agree without either
+propping up the other.
+
+**The general lesson, which is not about colonisation.** An invariant that holds
+because two unrelated expressions happen to intersect is not an invariant, it is
+a coincidence with good luck. This one survived a units migration, a ladder
+ratification and a cost-model rewrite before the amendment finally broke it.
+Where a design document states a rule, the engine should contain that rule —
+searchable by the words the document uses — and not a derivation that produces
+the same answer for now.
 
 ---
 
@@ -899,6 +938,7 @@ artifact in place contaminates every later measurement.
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
 | **R-IND10** | Who bears the loss when a matched contract's carrier is destroyed — buyer, seller, or escrow? | §8.1 |
+| **R-IND11** | Is a General coloniser ever worth it, now that the hold is the only thing separating the hulls? Reopened by T-67, which deleted the mechanism R-O76 measured. `Doctrine::colonizer_policy` + `examples/colonizer_policy`. | §1.4 |
 
 ---
 

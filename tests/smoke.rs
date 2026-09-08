@@ -37,11 +37,14 @@ fn snapshot_is_consistent_with_report() {
     let owned_from_report: usize = report.players.iter().map(|p| p.planets_owned).sum();
     let owned_from_snapshot = snap.planets.iter().filter(|p| p.owner.is_some()).count();
     assert_eq!(owned_from_report, owned_from_snapshot);
-    // K = min(hab, bio_max, infra) must hold for every planet snapshot — a
-    // minimum over **Bands**. The standing biosphere is a mass and is
-    // deliberately not a term; see `hyades_engine::units`.
+    // `K = min(hab, bio_max)` must hold for every planet snapshot — a minimum
+    // over **Bands**, and since T-67 (`Hyades_industry.md` §1.1) **without an
+    // infrastructure term**. Infrastructure is the industrial stock: it mines
+    // and fabricates and can be razed, and razing it must not move population.
+    // The standing biosphere is a mass and is deliberately not a term either;
+    // see `hyades_engine::units`.
     for p in &snap.planets {
-        let expected = p.habitability.min(p.bio_max).min(p.infrastructure);
+        let expected = p.habitability.min(p.bio_max);
         assert!((p.k.bands() - expected.bands()).abs() < 1e-9);
         // The standing biosphere never exceeds its own pristine ceiling.
         //

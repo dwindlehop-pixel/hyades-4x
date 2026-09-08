@@ -139,6 +139,33 @@ a population, because those are genuinely a world's capacity to hold people.
 **Three of these invalidate a measured result, which is the part to be careful
 about:**
 
+**T-67 is LANDED.** `K = min(hab, bio_max)`; `Factors::k()` no longer takes a
+minimum against infrastructure. Measured on the standard bed: **+4.4% / +4.7%
+colony-years** (seed 1 9,139,231 → 9,542,958; seed 7 9,060,095 → 9,483,962) with
+the colony **count identical** on both seeds. The same worlds, taken earlier —
+colonies grow to `min(hab, bio_max)` instead of being pinned at whatever
+infrastructure their founding hull left, so they cross the `PopBands` production
+gates sooner.
+
+**It exposed that R-V9 was never implemented.** "A Colonizer must be Medium or
+larger" fell out of two unrelated expressions meeting: `founding_capacity` was
+`k_potential.min(infra.max(founding_infra(hull)))`, a Limited hull's
+`founding_infra` is `Band Empty`, and `population_mass` maps `Band Empty` to
+exactly zero — so the seed was zero and the hull was refused. Remove
+infrastructure from `K` and a Limited hull quietly founds a 0.089 kt colony. It
+was caught by a test asserting the *outcome* rather than the mechanism, which is
+an argument for writing them at that level. The rule now lives on the **hold**,
+where roles §4 says it belongs. **An invariant that holds because two unrelated
+expressions intersect is a coincidence with good luck, not an invariant.**
+
+**It also reopened the hull choice as R-IND11.** The old criterion scored
+`k_pot.min(founding_infra)` per mineral, and that term stopped describing
+anything the engine does. Left in place it would have been the exact defect this
+repo keeps recording — a score whose inputs no longer mean what the score says.
+`Doctrine::colonizer_policy` now carries the two candidate answers and
+`examples/colonizer_policy` measures them on colony **count** with colony-years
+as the guard.
+
 - **T-67 invalidates R-O76, and the buff is intended.** Founding infrastructure
   currently sets a new colony's `K` — a Medium founds at `Band I`, a General at
   `Band II` — and the measured finding that *seed depth does not pay* was entirely

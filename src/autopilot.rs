@@ -111,11 +111,41 @@ impl Default for RankWeights {
     }
 }
 
+/// **How a centre picks the hull for a coloniser (R-IND11).**
+///
+/// This was `Doctrine::colonizer_hull` until T-56 stage 4c derived the hull
+/// instead, and T-67 reopened the question by taking infrastructure out of `K`:
+/// both viable hulls now seed to the *world's* own ceiling, so the hold is the
+/// only thing separating them and R-O76's measured answer no longer describes a
+/// mechanism the engine has.
+///
+/// It is Doctrine rather than a constant because it is exactly what Doctrine is
+/// for — policy over the roster — and because the answer is a Monte-Carlo
+/// question. `examples/colonizer_policy` measures it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColonizerPolicy {
+    /// **The cheapest hull that can found at all.** A deeper seed does not found
+    /// another world: ten Mediums make ten colonies, each with its own `K` and
+    /// its own growth curve, where one General makes one colony that starts
+    /// further up a curve it would have climbed anyway.
+    CheapestViable,
+    /// **The best settlers-delivered per mineral.** A General hull costs 10x a
+    /// Medium and its hold is 31.6x, so where the world can absorb the load it
+    /// lands three times the people per mineral spent. The case for it is not
+    /// the seed itself but what the seed *becomes*: a colony that reaches
+    /// production levels sooner is a forward base sooner, which shortens every
+    /// subsequent colonising transit.
+    SettlersPerMineral,
+}
+
 /// The standing behavior the sim executes "unasked" — every field a default a
 /// card can override (sim §0a). Defaults are the round-1 baseline values
 /// (six-vehicle survey, 1 g, +20% productivity step).
 #[derive(Clone, Copy, Debug)]
 pub struct Doctrine {
+    /// Which hull a centre lays down for a coloniser (R-IND11, open).
+    pub colonizer_policy: ColonizerPolicy,
+
     // --- Exploit / Growth (the build cycle, autopilot-doc §6) ---
     /// Base productivity step per build cycle. `0.20` is the doctrine value The
     /// Compass retunes (autopilot-doc §6, R-AC11).
@@ -251,6 +281,10 @@ pub struct Doctrine {
 impl Default for Doctrine {
     fn default() -> Self {
         Doctrine {
+            // Unmeasured as of T-67; `CheapestViable` is the *incumbent*
+            // behaviour, not a ratified answer. R-IND11 is the open question and
+            // `examples/colonizer_policy` is the harness.
+            colonizer_policy: ColonizerPolicy::CheapestViable,
             productivity_step: 0.20,
             // 0.873 — re-ratified at the operating point the previous step
             // produced; see the field doc for the attribution table and the
@@ -761,21 +795,47 @@ impl Autopilot for BaselineAutopilot {
                 // with the colony *count* unchanged on every seed. So the load a
                 // ship flies is `min(hull capacity, K)`.
                 //
-                // Since R-O76 the founding `K` depends on the hull — the
-                // recycled hull *is* the colony's first infrastructure, and a
-                // General hull buys `Band IV` of it against a Medium's
-                // `Band I`. So the choice is no longer "the smallest hull that
-                // fits the load"; both fit, and the General one also founds a
-                // far better colony. It is an economic comparison, and the
-                // criterion is **founding `K` per mineral**: `K` is what every
-                // later year of that colony is bounded by, and the price is
-                // what it displaces elsewhere.
-                let k_pot = col.view.k_potential();
-                let per_mineral =
-                    |k: Band, cost: Price| if cost > Price::ZERO { k.bands() / cost.kilotons() } else { f64::INFINITY };
+                // **Since T-67 the founding `K` does not depend on the hull at
+                // all.** Infrastructure left the carrying-capacity minimum
+                // (`Hyades_industry.md` §1.1), so a colony seeds to the
+                // *world's* ceiling whoever founded it. R-O76's criterion —
+                // "founding `K` per mineral" — was reading
+                // `k_pot.min(founding_infra)`, and that term no longer
+                // describes anything the engine does. Left in place it would be
+                // the exact defect this project keeps recording: a score whose
+                // inputs stopped meaning what the score says they mean.
+                //
+                // **The replacement is the cheapest hull that can found at
+                // all**, and the reason is the objective rather than the
+                // physics. "Settlers delivered per mineral" is the tempting
+                // reading — a General hull costs 10x a Medium and its hold is
+                // 31.6x, so per mineral it lands three times the people — and
+                // it is the wrong question: **a deeper seed does not found
+                // another world.** Ten Mediums make ten colonies, each with its
+                // own `K` and its own growth curve; one General makes one
+                // colony that starts further up a curve it would have climbed
+                // anyway. Against a colony-count objective the cheap hull wins,
+                // which is R-O76's *finding* surviving even though R-O76's
+                // mechanism did not.
+                //
+                // **R-IND11 (open):** whether a General coloniser is ever worth
+                // it now that the hold is the only thing distinguishing the
+                // hulls. It cannot be answered yet — it turns on the industrial
+                // ramp (`Hyades_industry.md` §3), where a General hull is a
+                // twelve-year yard commitment against a Medium's three, and on
+                // whether a deep seed reaches a rate threshold sooner. Both are
+                // stages that have not landed.
+                let cap = crate::units::population_mass(col.view.k_potential());
+                let per_mineral = |delivered: Kilotons, cost: Price| {
+                    if cost > Price::ZERO {
+                        delivered.kilotons() / cost.kilotons()
+                    } else {
+                        f64::INFINITY
+                    }
+                };
                 let options = [
-                    (HullType::MediumSystems, ctx.colonizer_cost, k_pot.min(ctx.medium_founding_infra)),
-                    (HullType::GeneralSystems, ctx.general_colonizer_cost, k_pot.min(ctx.general_founding_infra)),
+                    (HullType::MediumSystems, ctx.colonizer_cost, ctx.medium_seed_capacity.min(cap)),
+                    (HullType::GeneralSystems, ctx.general_colonizer_cost, ctx.general_seed_capacity.min(cap)),
                 ];
                 // **Only hulls this centre can pay for today.** The score picks
                 // between real options; it does not pick an option and then
@@ -792,17 +852,21 @@ impl Autopilot for BaselineAutopilot {
                 let affordable = |c: Price| ctx.stockpile_total + Price::new(1e-9) >= c;
                 let best = options
                     .iter()
-                    .filter(|(_, cost, k)| affordable(*cost) && *k > Band::ZERO)
+                    .filter(|(_, cost, delivered)| affordable(*cost) && *delivered > Kilotons::ZERO)
                     .max_by(|a, b| {
-                        per_mineral(a.2, a.1)
-                            .partial_cmp(&per_mineral(b.2, b.1))
-                            .unwrap_or(core::cmp::Ordering::Equal)
-                            .then(a.0.cmp(&b.0))
+                        // Cheapest-wins is the negated price, so both policies
+                        // are a `max` over one key and the comparator stays one
+                        // expression.
+                        let key = |o: &&(HullType, Price, Kilotons)| match doctrine.colonizer_policy {
+                            ColonizerPolicy::CheapestViable => -o.1.kilotons(),
+                            ColonizerPolicy::SettlersPerMineral => per_mineral(o.2, o.1),
+                        };
+                        key(a).partial_cmp(&key(b)).unwrap_or(core::cmp::Ordering::Equal).then(a.0.cmp(&b.0))
                     })
                     // Nothing affordable: name the cheapest that could found at
                     // all, so `can_expand` refuses it and the centre saves
                     // toward something real rather than toward nothing.
-                    .or_else(|| options.iter().find(|(_, _, k)| *k > Band::ZERO));
+                    .or_else(|| options.iter().find(|(_, _, delivered)| *delivered > Kilotons::ZERO));
                 best.map(|&(hull, cost, _)| (hull_order(hull), col.ranked.score, cost))
             }
             (None, Some(mine)) => Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost)),

@@ -200,11 +200,35 @@ impl Factors {
     /// the mass growth is paid out of (transient damage makes growth slow, not
     /// the ceiling low). Splitting those apart is what design law #11's
     /// "renewable stock" actually asks for.
+    /// **Infrastructure is not a term** (`Hyades_industry.md` §1.1, T-67).
+    ///
+    /// It was, and while it was, infrastructure could not be attacked without
+    /// attacking population: T-64's discrete logistic goes strongly negative
+    /// above `K`, so cutting a world's ceiling makes its population *overshoot
+    /// below* the new one rather than settle at it — `2K → 0.25K` in a single
+    /// step, pinned by
+    /// `a_colony_seeded_above_its_capacity_crashes_below_it`. Every industrial
+    /// strike was a population strike with extra steps, and infrastructure is
+    /// precisely the war target the design wants to be survivable.
+    ///
+    /// Removing the term beats softening the logistic: the crash **stays**
+    /// where it is wanted — a habitability or biosphere strike still collapses
+    /// a population, because those genuinely are a world's capacity to hold
+    /// people — and nothing has to be tuned. No decline rate, no second time
+    /// constant, and **no clamp**, which matters because a clamp is exactly
+    /// what let T-64's broken logistic keep scoring well.
     #[inline]
     fn k(&self) -> Band {
-        self.k_potential().min(self.infra)
+        self.hab.min(self.bio_max_band)
     }
-    /// The ceiling infra — and so population — can be *built* to.
+    /// The ceiling infrastructure is built *toward*.
+    ///
+    /// **Identical to [`Self::k`] since T-67**, and kept as a separate name
+    /// because the autopilot's deepening staircase means something different by
+    /// it: `k` is what population may reach, `k_potential` is what a centre is
+    /// still allowed to build. They coincide today; they are not the same
+    /// question, and the industrial ramp (`Hyades_industry.md` §6) will give
+    /// the second one its own answer.
     ///
     /// `bio_max` is read in Bands here. That is exact rather than a
     /// convenience: a population at Band `b` masses `KT(b)` and the pristine
@@ -213,7 +237,7 @@ impl Factors {
     /// `the_mass_budget_and_the_band_ceiling_bind_together`).
     #[inline]
     fn k_potential(&self) -> Band {
-        self.hab.min(self.bio_max_band)
+        self.k()
     }
 }
 
@@ -3063,17 +3087,30 @@ impl Simulation {
         Band::new(b.bands().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
     }
 
-    /// **The carrying capacity a colony will have the moment it is founded.**
+    /// **The carrying capacity a colony will have the moment it is founded** —
+    /// the world's own, and nothing to do with the hull that got there (T-67).
     ///
-    /// `K = min(hab, bio_max, infra)`, and founding sets infra to what the
-    /// recycled hull bought ([`Self::founding_infra`]) — so this depends on the
-    /// hull, which is the whole of R-O76. It is the number a colony ship must
-    /// not exceed: population above `K` does not settle back to it, it
-    /// *crashes* below it
-    /// (`a_colony_seeded_above_its_capacity_crashes_below_it`).
-    fn founding_capacity(&self, hull: HullType, target: Entity) -> Kilotons {
+    /// It used to take the hull, because `K` included infrastructure and
+    /// founding set infrastructure to what the recycled hull bought
+    /// ([`Self::founding_infra`]) — that dependence was the whole of R-O76.
+    /// With infrastructure out of `K` there is no such dependence, and the
+    /// parameter went with it.
+    ///
+    /// It is still the number a colony ship must not exceed: a population above
+    /// `K` does not settle back to it, it *crashes* below it
+    /// (`a_colony_seeded_above_its_capacity_crashes_below_it`). What changed is
+    /// that the engine can no longer *cause* that by founding — the seed is
+    /// capped here — so the crash is reachable only by an attack on
+    /// habitability or biosphere, which is exactly the design intent.
+    fn founding_capacity(&self, target: Entity) -> Kilotons {
         let f = self.world.factors.get(target).unwrap();
-        units::population_mass(f.k_potential().min(f.infra.max(self.founding_infra(hull))))
+        // **The hull no longer caps this** (T-67). Infrastructure left `K`, so a
+        // colony seeds to the *world's* own ceiling whatever hull founded it;
+        // the recycled hull still lands as industrial stock, which is now its
+        // whole job. R-O76's "seed depth does not pay" measured the mismatch
+        // between what a hull carried and what the colony could hold, and there
+        // is no mismatch left to measure.
+        units::population_mass(f.k_potential())
     }
 
     /// **The founding population a colony ship of this hull carries** — the
@@ -3094,6 +3131,13 @@ impl Simulation {
     /// ratified value and changes job: from *the* seed to the **floor** a hull
     /// must clear to found anything.
     ///
+    /// **Since T-67 the hull no longer sets the colony's `K`.** Infrastructure
+    /// left the carrying-capacity minimum, so both viable hulls seed to the
+    /// *world's* ceiling and the hold is the only thing that distinguishes
+    /// them. R-O76's measured "seed depth does not pay" was about the mismatch
+    /// between hold and ceiling; there is no mismatch left, and the hull-choice
+    /// question is reopened as R-IND11.
+    ///
     /// **R-O74 (new, open): these settlers are conjured, and stage 4b makes
     /// that 31× louder.** Nothing debits the founding center's population or
     /// biosphere for the people put aboard, which was already a design law #11
@@ -3102,14 +3146,29 @@ impl Simulation {
     /// behaviour change that would dominate the measurement stage 4 exists to
     /// take — and mixing the two is exactly the confound this staging avoids.
     fn colony_seed_for(&self, hull: HullType, target: Entity) -> Option<Kilotons> {
-        let seed = hull.colony_seed_capacity(&self.config).min(self.founding_capacity(hull, target));
-        // **The floor is a positive seed, not `colony_seed_pop`.** With the
-        // founding subsidy removed a Medium hull founds at `Band 0.33`, and a
-        // colony that starts below `Band I` is the point rather than an error:
-        // it is short of everything and has to be supplied. What is still
-        // refused is a colony with *no* people, which is what a hull too small
-        // to leave any infrastructure behind would produce.
-        (seed > Kilotons::ZERO).then_some(seed)
+        // **R-V9 is enforced on the hold, and since T-67 it has to be.**
+        //
+        // It used to fall out of the infrastructure coupling: `founding_capacity`
+        // was `k_potential.min(infra.max(founding_infra(hull)))`, a Limited
+        // hull's `founding_infra` is `Band Empty`, and `population_mass` maps
+        // that to *zero* — so the seed was zero and the hull was refused. That
+        // was a coincidence of two unrelated rules, and removing infrastructure
+        // from `K` dissolved it: a Limited hull would now found a colony of
+        // 0.089 kt, quietly, in a build nobody changed on purpose.
+        //
+        // So the rule is stated where roles §4 says it lives — as **capability,
+        // not competence**: a hull founds nothing unless its *hold* can carry a
+        // full `colony_seed_pop`. A Medium hull's hold is `Band I` exactly and a
+        // Limited hull's is `Band Empty`, so the ratified rule and the geometry
+        // now agree without either propping the other up.
+        let floor = units::population_mass(self.config.colony_seed_pop.band());
+        let hold = hull.colony_seed_capacity(&self.config);
+        if hold < floor * (1.0 - 1e-9) {
+            return None;
+        }
+        // What actually flies is capped by the world, not by the hull that
+        // brought it — a seed above `K` would crash rather than settle.
+        Some(hold.min(self.founding_capacity(target)))
     }
 
     fn mark_targeted(&mut self, p: usize, target: PlanetId) {
@@ -4365,32 +4424,45 @@ mod tests {
             Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
         );
 
-        // Each hull's founding `K` is its own infrastructure, and the load is
-        // capped by it. **Both hulls are now `K`-limited, not hold-limited** —
-        // neither can deliver what its hold could carry, because neither leaves
-        // enough infrastructure behind to hold the people.
-        assert_eq!(sim.founding_capacity(HullType::MediumSystems, target), units::population_mass(m_infra));
+        // **The founding capacity is the world's, and the hull has nothing to
+        // do with it** (T-67). Infrastructure left `K`, so this is
+        // `population_mass(k_potential)` — a `Band IV` ceiling on this target —
+        // for every hull alike. `founding_infra` still lands as industrial
+        // stock; it just no longer gates who may live there.
+        assert_eq!(sim.founding_capacity(target), units::population_mass(Band::new(4.0)));
         let medium = sim.colony_seed_for(HullType::MediumSystems, target).expect("a Medium hull can found");
         let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
         let close = |a: Kilotons, b: Kilotons| (a.band().bands() - b.band().bands()).abs() < 1e-9;
-        assert!(close(medium, units::population_mass(m_infra)), "a Medium colony starts at what its hull left");
-        assert!(close(general, units::population_mass(g_infra)), "and so does a General one");
-        assert!(general > medium, "a General hull founds a materially better colony");
 
-        // **The two ladders now agree rung for rung, and that is not a
-        // coincidence — it is the same hull cost read twice.** A hull's hold
-        // carries exactly the population the infrastructure that same hull
-        // leaves behind can hold: `Band I` and `Band I` for a Medium, `Band II`
-        // and `Band II` for a General. Neither side binds, so nothing is
-        // wasted at either end — no hold flying empty for want of somewhere to
-        // put people, no infrastructure standing idle for want of people.
-        assert!(close(medium, m_cap), "Medium: hold {m_cap} vs founding K {medium}");
-        assert!(close(general, g_cap), "General: hold {g_cap} vs founding K {general}");
+        // **Both hulls are hold-limited now, not `K`-limited** — the exact
+        // reverse of the pre-T-67 case. On a world this good neither hull can
+        // fill the ceiling, so each lands precisely what it carried.
+        assert!(close(medium, m_cap), "a Medium lands its hold: {m_cap} vs {medium}");
+        assert!(close(general, g_cap), "and a General lands its: {g_cap} vs {general}");
+        assert!(general > medium, "the hold is the only thing separating them now");
 
-        // **R-V9 is physics, through the hold.** A Limited hull's seed capacity
-        // is below `colony_seed_pop`, so it founds nothing — whatever
-        // infrastructure its hull would have left behind.
+        // And the cap still binds the other way round: on a poor world the
+        // *world* is the limit, and a General hull cannot force more people
+        // onto it than it can hold. This is what stops founding from being able
+        // to trigger the overshoot at all.
+        let poor = sim.planet_entity[12];
+        sim.world.factors.insert(
+            poor,
+            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+        );
+        let capped = sim.colony_seed_for(HullType::GeneralSystems, poor).expect("a General hull can found");
+        assert!(
+            close(capped, units::population_mass(Band::new(1.0))),
+            "a General hull on a Band I world lands Band I, not its hold: {capped}"
+        );
+
+        // **R-V9 is physics, through the hold** — and since T-67 it is enforced
+        // there rather than falling out of the infrastructure coupling. A
+        // Limited hull's hold is below `colony_seed_pop`, so it founds nothing
+        // however good the world is.
         assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, target), None);
+        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, poor), None);
+        let _ = (m_infra, g_infra);
     }
 
     /// **T-57: extraction is per miner, not per rock.**
@@ -4605,6 +4677,31 @@ mod tests {
         assert!((after.kilotons() - before.kilotons()).abs() < 1e-9, "mass not conserved: {before:?} -> {after:?}");
     }
 
+    /// **T-67: razing infrastructure must not move `K`.** This is what the
+    /// amendment bought, so it is asserted rather than assumed — and it is the
+    /// precondition for every card that attacks industry, because while
+    /// infrastructure sat inside `K` an industrial strike drove the population
+    /// below its ceiling and T-64's logistic answered with a crash.
+    #[test]
+    fn razing_infrastructure_does_not_move_the_ceiling() {
+        let bio_max = Band::new(3.0).in_kilotons();
+        let developed = Factors::new(Band::new(4.0), bio_max, bio_max, Band::new(4.0));
+        let mut razed = developed;
+        razed.infra = Band::ZERO;
+
+        assert_eq!(developed.k(), razed.k(), "K must not depend on infrastructure");
+        assert_eq!(developed.k(), Band::new(3.0), "and it is min(hab, bio_max) — here the biosphere");
+
+        // The ceiling still moves for the two factors that *are* a world's
+        // capacity to hold people, which is where the crash is wanted.
+        let mut cratered = developed;
+        cratered.set_bio_max(Band::new(1.0).in_kilotons());
+        assert_eq!(cratered.k(), Band::new(1.0), "a biosphere strike still lowers K");
+        let mut poisoned = developed;
+        poisoned.hab = Band::new(0.5);
+        assert_eq!(poisoned.k(), Band::new(0.5), "and so does a habitability strike");
+    }
+
     /// The unit fix, stated as behaviour: eating the biosphere must not lower
     /// the world's ceiling. Under `K = min(hab, bio, infra)` a drawn-down
     /// standing stock cut `K` directly — a mass compared against two levels —
@@ -4744,17 +4841,24 @@ mod tests {
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(7));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
-        // A freshly founded colony: infra at `Band I`, so `K` is `Band I`
-        // however good the world is. Plenty of biomass, so nothing here is
-        // about the mass budget.
+        // A world whose *habitability* is `Band I` — so `K` is `Band I`
+        // however much biomass it carries. **Set through habitability, not
+        // infrastructure** (T-67): infrastructure left `K`, so the engine can
+        // no longer put a population above its ceiling by founding, and the
+        // overshoot is reachable only the way the design intends — by an attack
+        // on habitability or biosphere. That is the whole point of the
+        // amendment, and pinning the crash on a hab-limited world is what keeps
+        // this test measuring the logistic rather than the old coupling.
+        //
+        // Plenty of biomass, so nothing here is about the mass budget.
         let founding = |sim: &mut Simulation, seed: Kilotons| {
             sim.world.factors.insert(
                 home,
                 Factors::new(
-                    Band::new(4.0),
-                    Band::new(4.0).in_kilotons(),
-                    Band::new(4.0).in_kilotons(),
                     Band::new(1.0),
+                    Band::new(4.0).in_kilotons(),
+                    Band::new(4.0).in_kilotons(),
+                    Band::new(4.0),
                 ),
             );
             *sim.world.population.get_mut(home).unwrap() = seed;
