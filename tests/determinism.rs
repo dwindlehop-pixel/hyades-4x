@@ -164,7 +164,7 @@ fn no_nan_or_infinity_reaches_replicated_state() {
             (pl.biomass.kilotons(), "biomass"),
             (pl.infrastructure.bands(), "infrastructure"),
             (pl.k.bands(), "k"),
-            (pl.population.bands(), "population"),
+            (pl.population.kilotons(), "population"),
             (pl.stockpile.basic_total(), "stockpile"),
         ] {
             finite(v, &format!("planet {id} {what}"));

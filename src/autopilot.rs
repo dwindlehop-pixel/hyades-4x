@@ -23,7 +23,7 @@ use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
 use crate::resources::{Basic, MineralField};
 use crate::sim::{Class, HullType, Role};
-use crate::units::{Band, BandTier, Measure};
+use crate::units::{Band, BandTier, Kilotons, Measure};
 
 /// Which of the two cheap classes the colony pipeline reaches for first
 /// (autopilot-doc §4; R-AC1 / R-A1). Default is production-centers-first.
@@ -438,9 +438,9 @@ pub struct ProductionContext {
     /// The founding population a **Medium** hull can deliver — `Band I` at the
     /// ratified ladder. A colony errand takes the Medium hull unless the target
     /// needs more than this.
-    pub medium_seed_capacity: Band,
+    pub medium_seed_capacity: Kilotons,
     /// The founding population a **General** hull can deliver — `Band II`.
-    pub general_seed_capacity: Band,
+    pub general_seed_capacity: Kilotons,
     /// The infrastructure a **Medium**-hulled colony is founded at — the
     /// recycled hull, converted at the infra ladder's rate (R-O76). `Band I`.
     pub medium_founding_infra: Band,
@@ -1017,8 +1017,8 @@ mod tests {
             infra_cost: infra + 1.0,
             colonizer_cost: 1.0,
             general_colonizer_cost: 10.0,
-            medium_seed_capacity: BandTier::I.band(),
-            general_seed_capacity: BandTier::II.band(),
+            medium_seed_capacity: Kilotons::at_tier(BandTier::I),
+            general_seed_capacity: Kilotons::at_tier(BandTier::II),
             medium_founding_infra: BandTier::I.band(),
             general_founding_infra: BandTier::IV.band(),
             mining_pair_cost: 1.0,
@@ -1238,6 +1238,65 @@ mod tests {
              beyond it coverage collapses (2.229 -> 28.46%). Re-run examples/gradient_step.rs \
              and re-ratify deliberately rather than drifting into the cliff."
         );
+    }
+
+    /// **Two ceilings on `growth_rate`, and since T-64 one of them is
+    /// arithmetic rather than a measurement.**
+    ///
+    /// The step is now `x' = x + r·x·(1 − x/K)` on *people*. Substituting
+    /// `v = (r/(1+r))·(x/K)` turns it into the logistic map `v' = μ·v·(1 − v)`
+    /// with `μ = 1 + r` exactly, so the standard bifurcation picture applies:
+    /// the fixed point at `K` is stable only for `μ < 3`, i.e. **`r < 2`**, and
+    /// period-doubles above it (May, *Nature* 261:459–467, 1976).
+    ///
+    /// **The engine's `clamp` hides that from above, and that is the trap.** A
+    /// population climbing from below overshoots `K`, gets clamped exactly to
+    /// it, and the growth term is then zero — so a too-large `r` does not
+    /// oscillate visibly, it *jumps*: the whole logistic collapses into a step
+    /// function that reaches `K` in one cycle. A sweep would score that
+    /// beautifully. It is still wrong, because growth is supposed to be a rate,
+    /// and because a population arriving from *above* `K` — which is what a
+    /// colony ship seeding over capacity does — gets the unclamped dynamics
+    /// and the full crash (`a_colony_seeded_above_its_capacity_crashes_below_it`).
+    ///
+    /// So this asserts the thing the clamp cannot fake: the approach to `K`
+    /// takes several cycles.
+    #[test]
+    fn the_population_logistic_is_a_rate_and_not_a_step() {
+        // The engine's expression, verbatim.
+        let steps_to_capacity = |r: f64| {
+            let k = 100.0f64;
+            let mut x = 1.0f64;
+            for n in 1..1000 {
+                x = (x + r * x * (1.0 - x / k)).clamp(0.0, k);
+                if x >= 0.99 * k {
+                    return n;
+                }
+            }
+            1000
+        };
+        let r = Doctrine::default().growth_rate;
+        let n = steps_to_capacity(r);
+        assert!(n >= 4, "growth_rate {r} fills a world in {n} cycles — that is a step, not a rate");
+        assert!(n <= 60, "growth_rate {r} takes {n} cycles to fill a world; the economy would never start");
+
+        // And the bare map, which is where the ceiling actually lives. Started
+        // just below `K` so the trajectory stays in the basin: a hard crash to
+        // zero is also a fixed point, and "settled at extinction" is not the
+        // question being asked.
+        let settles_near_capacity = |r: f64| {
+            let k = 100.0f64;
+            let mut x = 0.9 * k;
+            for _ in 0..500 {
+                x += r * x * (1.0 - x / k);
+            }
+            let a = x + r * x * (1.0 - x / k);
+            (a - x).abs() < 1e-6
+        };
+        assert!(settles_near_capacity(r), "the shipped rate must settle at K, not orbit it");
+        assert!(settles_near_capacity(1.9), "just under the bifurcation, still settles");
+        assert!(!settles_near_capacity(2.1), "past r = 2 it must be seen to period-double");
+        assert!(r < 2.0, "growth_rate must stay under the period-doubling bifurcation at r = 2");
     }
 
     #[test]

@@ -729,16 +729,19 @@ impl HullType {
         Kilotons::new(usable.max(Volume::ZERO).hull_units_cubed() * cfg.cargo_unit_size)
     }
 
-    /// **The largest founding population this hull could deliver** — the Band
-    /// its hold masses.
+    /// **The largest founding population this hull could deliver** — the people
+    /// its hold holds.
+    ///
+    /// Since T-64 this is the hold mass itself, with no conversion: settlers
+    /// are a mass and a hold is a mass, so the "capacity in Bands" step was
+    /// converting a number into its own logarithm and back.
     ///
     /// A *capacity*, not a load: what actually flies is this capped at the
     /// target's carrying capacity, because a seed above `K` crashes rather than
     /// settling (T-56 stage 4). The ladder makes the capacities `Band Empty` /
     /// `Band I` / `Band II` for Limited / Medium / General.
-    pub fn colony_seed_capacity(self, cfg: &SimConfig) -> Band {
-        let hold = Kilotons::new(self.hold_volume(cfg).hull_units_cubed() * cfg.cargo_unit_size);
-        units::population_at_mass(hold)
+    pub fn colony_seed_capacity(self, cfg: &SimConfig) -> Kilotons {
+        Kilotons::new(self.hold_volume(cfg).hull_units_cubed() * cfg.cargo_unit_size)
     }
 
     /// Mineral cost as a fraction of `SimConfig::general_vehicle_cost` — the
@@ -937,7 +940,7 @@ struct World {
     factors: ComponentStore<Factors>,
     density: ComponentStore<MineralField>,
     stockpile: ComponentStore<Minerals>,
-    population: ComponentStore<Band>,
+    population: ComponentStore<Kilotons>,
     planet_id: ComponentStore<PlanetId>,
     homeworld: ComponentStore<Homeworld>,
     archetype: ComponentStore<Archetype>,
@@ -965,7 +968,7 @@ struct World {
     /// the fully generic mineral|pop|embarked-fleet cargo slot the loadout
     /// doc describes is future work (§6 there), this is the minimum that
     /// makes "1 pop as cargo" real.
-    pop_cargo: ComponentStore<Band>,
+    pop_cargo: ComponentStore<Kilotons>,
     home_center: ComponentStore<Entity>,
     shuttle: ComponentStore<Shuttle>,
 
@@ -2120,7 +2123,7 @@ impl Simulation {
             // Seed population from the pop *carried as cargo*
             // (`Hyades_vehicle_roles.md` §4.2/R-V9 — confirmed, not a flat
             // constant applied on arrival regardless of what was brought).
-            let carried_pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(Band::ZERO);
+            let carried_pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(Kilotons::ZERO);
             {
                 let pop = self.world.population.get_mut(target).unwrap();
                 if *pop < carried_pop {
@@ -2448,25 +2451,43 @@ impl Simulation {
         let k = self.world.factors.get(center).unwrap().k();
         {
             let pop_now = *self.world.population.get(center).unwrap();
+            // **The logistic runs on the people, not on their Band** (T-64).
+            //
+            // Directed: *"Growth and construction and cost are denominated by
+            // mass. All logistic functions are applied to real population, not
+            // Bands."* It used to step `s + r·s·(1 − s/K)` with `s` and `K` as
+            // *ladder positions*, then convert both ends to mass to pay the
+            // biomass draw — which is a logistic in log space wearing a
+            // logistic's clothes. A Band difference is not an amount of
+            // anything, so `r` there was a rate of change of an exponent: the
+            // same `growth_rate` meant a different number of people at every
+            // point on the ladder, compounding hardest where the ladder is
+            // widest.
+            //
+            // Now `K`'s mass is the carrying capacity and the step is the
+            // textbook one. `growth_rate` finally means what its name says —
+            // the fraction a small population adds per cycle — and its ratified
+            // value is re-measured rather than carried across (T-64 step 5).
+            let cap = units::population_mass(k);
             // The logistic has a fixed point at zero, so a founding population
             // needs a floor to grow off. The floor moves the *population*; the
             // mass baseline below stays at the true prior value, so the bump is
             // paid for like any other growth rather than conjured.
-            let start = pop_now.max(Band::new(0.01));
+            let start = pop_now.max(units::POPULATION_SEED_FLOOR);
             let mut target = start;
-            if k > Band::ZERO {
-                let (s, kb) = (start.bands(), k.bands());
-                target = Band::new((s + growth * s * (1.0 - s / kb)).clamp(0.0, kb));
+            if cap > Kilotons::ZERO {
+                let (s, c) = (start.kilotons(), cap.kilotons());
+                target = Kilotons::new((s + growth * s * (1.0 - s / c)).clamp(0.0, c));
             }
-            let mass_before = units::population_mass(pop_now);
+            let mass_before = pop_now;
             let f = self.world.factors.get_mut(center).unwrap();
-            let mut draw = units::population_mass(target) - mass_before;
+            let mut draw = target - mass_before;
             if draw > f.biomass {
                 // Cannot make more people than there is biomass to make them
                 // of. Spend the whole standing stock and land wherever that
                 // reaches — the shortfall throttles the *rate*, never `K`.
                 draw = f.biomass.max(Kilotons::ZERO);
-                target = units::population_at_mass(mass_before + draw);
+                target = mass_before + draw;
             }
             // A shrinking population returns its mass: `draw` is negative here.
             f.biomass = (f.biomass - draw).max(Kilotons::ZERO);
@@ -2514,7 +2535,7 @@ impl Simulation {
                     // shipped defaults — so this is settled on fidelity to the
                     // spec, not on a number. If a starvation die-back ever
                     // lands (R-O67), the shared ceiling is the form to revisit.
-                    let seeded = (f.biomass + units::population_mass(target)).max(Kilotons::ZERO);
+                    let seeded = (f.biomass + target).max(Kilotons::ZERO);
                     // The ceiling applies to the *regrowth* only, never to the
                     // standing stock: a clamp that can push `biomass` downward
                     // is a silent mass sink, and it would quietly absorb any
@@ -2528,7 +2549,7 @@ impl Simulation {
             self.clock,
             LogEvent::PopulationStep {
                 planet: center_pid,
-                population: self.world.population.get(center).unwrap().bands(),
+                population: self.world.population.get(center).unwrap().kilotons(),
                 k: k.bands(),
             },
         );
@@ -3024,9 +3045,9 @@ impl Simulation {
     /// not exceed: population above `K` does not settle back to it, it
     /// *crashes* below it
     /// (`a_colony_seeded_above_its_capacity_crashes_below_it`).
-    fn founding_capacity(&self, hull: HullType, target: Entity) -> Band {
+    fn founding_capacity(&self, hull: HullType, target: Entity) -> Kilotons {
         let f = self.world.factors.get(target).unwrap();
-        f.k_potential().min(f.infra.max(self.founding_infra(hull)))
+        units::population_mass(f.k_potential().min(f.infra.max(self.founding_infra(hull))))
     }
 
     /// **The founding population a colony ship of this hull carries** — the
@@ -3054,7 +3075,7 @@ impl Simulation {
     /// rather than fixed here because drawing the seed from the origin is a
     /// behaviour change that would dominate the measurement stage 4 exists to
     /// take — and mixing the two is exactly the confound this staging avoids.
-    fn colony_seed_for(&self, hull: HullType, target: Entity) -> Option<Band> {
+    fn colony_seed_for(&self, hull: HullType, target: Entity) -> Option<Kilotons> {
         let seed = hull.colony_seed_capacity(&self.config).min(self.founding_capacity(hull, target));
         // **The floor is a positive seed, not `colony_seed_pop`.** With the
         // founding subsidy removed a Medium hull founds at `Band 0.33`, and a
@@ -3062,7 +3083,7 @@ impl Simulation {
         // it is short of everything and has to be supplied. What is still
         // refused is a colony with *no* people, which is what a hull too small
         // to leave any infrastructure behind would produce.
-        (seed > Band::ZERO).then_some(seed)
+        (seed > Kilotons::ZERO).then_some(seed)
     }
 
     fn mark_targeted(&mut self, p: usize, target: PlanetId) {
@@ -3089,7 +3110,11 @@ impl Simulation {
         // hull's hold masses** (T-56 stage 4b) rather than a flat constant.
         self.world.pop_cargo.insert(
             e,
-            if role == Role::Colonizer { self.colony_seed_for(hull, target).unwrap_or(Band::ZERO) } else { Band::ZERO },
+            if role == Role::Colonizer {
+                self.colony_seed_for(hull, target).unwrap_or(Kilotons::ZERO)
+            } else {
+                Kilotons::ZERO
+            },
         );
         self.world.home_center.insert(e, center);
         let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
@@ -3196,7 +3221,7 @@ impl Simulation {
         // That is an identity, not a coefficient, which is why there is no
         // `cargo_mass_per_unit` any more.
         let minerals = Kilotons::new(self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(0.0));
-        let pop = units::population_mass(self.world.pop_cargo.get(e).copied().unwrap_or(Band::ZERO));
+        let pop = self.world.pop_cargo.get(e).copied().unwrap_or(Kilotons::ZERO);
         let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
         let dry = hull_dry_mass(hull, &self.config).max(Kilotons::new(1e-9));
         let laden = dry + minerals + pop;
@@ -3455,7 +3480,7 @@ impl Simulation {
                     if !self.world.homeworld.contains(e) {
                         rep.colonies += 1;
                     }
-                    rep.total_population += units::population_mass(*self.world.population.get(e).unwrap());
+                    rep.total_population += *self.world.population.get(e).unwrap();
                 }
             }
             let k = self.world.knowledge.get(self.player_entity[p]).unwrap();
@@ -3522,7 +3547,7 @@ impl Simulation {
                 for &e in &self.planet_entity {
                     if self.world.owner.get(e).copied() == Some(me) {
                         snap.planets_owned += 1;
-                        snap.total_population += units::population_mass(*self.world.population.get(e).unwrap());
+                        snap.total_population += *self.world.population.get(e).unwrap();
                         snap.stockpiled_total += self.world.stockpile.get(e).unwrap().basic_total();
                     }
                 }
@@ -4269,9 +4294,12 @@ mod tests {
             HullType::MediumSystems.colony_seed_capacity(&sim.config),
             HullType::GeneralSystems.colony_seed_capacity(&sim.config),
         );
-        assert!((m_cap.bands() - 1.0).abs() < 1e-9, "a Medium hold is Band I, got {m_cap}");
-        assert!((g_cap.bands() - 2.0).abs() < 1e-6, "a General hold is Band II, got {g_cap}");
-        assert!(HullType::LimitedSystems.colony_seed_capacity(&sim.config) < sim.config.colony_seed_pop.band());
+        assert!((m_cap.band().bands() - 1.0).abs() < 1e-9, "a Medium hold is Band I, got {m_cap}");
+        assert!((g_cap.band().bands() - 2.0).abs() < 1e-6, "a General hold is Band II, got {g_cap}");
+        assert!(
+            HullType::LimitedSystems.colony_seed_capacity(&sim.config)
+                < units::population_mass(sim.config.colony_seed_pop.band())
+        );
 
         // **Founding infrastructure is the recycled hull's minerals, read on
         // the infrastructure ladder — which is the mineral ladder (R-O80).**
@@ -4314,11 +4342,12 @@ mod tests {
         // capped by it. **Both hulls are now `K`-limited, not hold-limited** —
         // neither can deliver what its hold could carry, because neither leaves
         // enough infrastructure behind to hold the people.
-        assert_eq!(sim.founding_capacity(HullType::MediumSystems, target), m_infra);
+        assert_eq!(sim.founding_capacity(HullType::MediumSystems, target), units::population_mass(m_infra));
         let medium = sim.colony_seed_for(HullType::MediumSystems, target).expect("a Medium hull can found");
         let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
-        assert!((medium.bands() - m_infra.bands()).abs() < 1e-9, "a Medium colony starts at what its hull left");
-        assert!((general.bands() - g_infra.bands()).abs() < 1e-9, "and so does a General one");
+        let close = |a: Kilotons, b: Kilotons| (a.band().bands() - b.band().bands()).abs() < 1e-9;
+        assert!(close(medium, units::population_mass(m_infra)), "a Medium colony starts at what its hull left");
+        assert!(close(general, units::population_mass(g_infra)), "and so does a General one");
         assert!(general > medium, "a General hull founds a materially better colony");
 
         // **The two ladders now agree rung for rung, and that is not a
@@ -4328,8 +4357,8 @@ mod tests {
         // and `Band II` for a General. Neither side binds, so nothing is
         // wasted at either end — no hold flying empty for want of somewhere to
         // put people, no infrastructure standing idle for want of people.
-        assert!((medium.bands() - m_cap.bands()).abs() < 1e-9, "Medium: hold {m_cap} vs founding K {medium}");
-        assert!((general.bands() - g_cap.bands()).abs() < 1e-9, "General: hold {g_cap} vs founding K {general}");
+        assert!(close(medium, m_cap), "Medium: hold {m_cap} vs founding K {medium}");
+        assert!(close(general, g_cap), "General: hold {g_cap} vs founding K {general}");
 
         // **R-V9 is physics, through the hold.** A Limited hull's seed capacity
         // is below `colony_seed_pop`, so it founds nothing — whatever
@@ -4533,19 +4562,19 @@ mod tests {
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let bio_max = Band::new(4.0).in_kilotons();
-        let pop0 = Band::new(1.0);
+        let pop0 = Kilotons::at_band(Band::new(1.0));
         let biomass = bio_max;
         sim.world.factors.insert(home, Factors::new(Band::new(4.0), biomass, bio_max, Band::new(4.0)));
         *sim.world.population.get_mut(home).unwrap() = pop0;
 
-        let before = units::population_mass(pop0) + sim.world.factors.get(home).unwrap().biomass;
+        let before = pop0 + sim.world.factors.get(home).unwrap().biomass;
         sim.sys_production_tick(home);
         let f = sim.world.factors.get(home).unwrap();
         let pop = *sim.world.population.get(home).unwrap();
 
-        assert!(pop > Band::new(1.0), "population should have grown, got {pop:?}");
+        assert!(pop > pop0, "population should have grown, got {pop:?}");
         assert!(f.biomass < biomass, "biosphere should have been drawn down, got {}", f.biomass);
-        let after = units::population_mass(pop) + f.biomass;
+        let after = pop + f.biomass;
         assert!((after.kilotons() - before.kilotons()).abs() < 1e-9, "mass not conserved: {before:?} -> {after:?}");
     }
 
@@ -4589,7 +4618,7 @@ mod tests {
         let bio_max = Band::new(4.0).in_kilotons();
         let start = bio_max * 0.125;
         sim.world.factors.insert(home, Factors::new(Band::new(4.0), start, bio_max, Band::ZERO));
-        *sim.world.population.get_mut(home).unwrap() = Band::new(0.01);
+        *sim.world.population.get_mut(home).unwrap() = units::POPULATION_SEED_FLOOR;
 
         let mut last = start;
         for _ in 0..40 {
@@ -4613,7 +4642,7 @@ mod tests {
         sim.world
             .factors
             .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
-        *sim.world.population.get_mut(home).unwrap() = Band::new(0.01);
+        *sim.world.population.get_mut(home).unwrap() = units::POPULATION_SEED_FLOOR;
 
         for _ in 0..20 {
             sim.sys_production_tick(home);
@@ -4638,14 +4667,14 @@ mod tests {
         sim.world
             .factors
             .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
-        *sim.world.population.get_mut(home).unwrap() = Band::new(2.0);
+        *sim.world.population.get_mut(home).unwrap() = Kilotons::at_band(Band::new(2.0));
 
         for _ in 0..10 {
             sim.sys_production_tick(home);
         }
         let pop = *sim.world.population.get(home).unwrap();
         let f = sim.world.factors.get(home).unwrap();
-        assert!(pop.bands() <= 2.0 + 1e-9, "grew on an empty biosphere: {pop:?}");
+        assert!(pop.band().bands() <= 2.0 + 1e-9, "grew on an empty biosphere: {pop:?}");
         assert!(f.biomass >= Kilotons::ZERO, "biomass went negative: {:?}", f.biomass);
         // `K` is untouched by the starvation — the ceiling is a Band, the
         // shortfall is a rate.
@@ -4691,7 +4720,7 @@ mod tests {
         // A freshly founded colony: infra at `Band I`, so `K` is `Band I`
         // however good the world is. Plenty of biomass, so nothing here is
         // about the mass budget.
-        let founding = |sim: &mut Simulation, seed: Band| {
+        let founding = |sim: &mut Simulation, seed: Kilotons| {
             sim.world.factors.insert(
                 home,
                 Factors::new(
@@ -4705,18 +4734,21 @@ mod tests {
             sim.sys_production_tick(home);
             *sim.world.population.get(home).unwrap()
         };
-        let from_band_i = founding(&mut sim, BandTier::I.band());
-        let from_band_ii = founding(&mut sim, BandTier::II.band());
+        let from_band_i = founding(&mut sim, Kilotons::at_tier(BandTier::I));
+        let from_band_ii = founding(&mut sim, Kilotons::at_tier(BandTier::II));
 
         // A `Band I` seed sits exactly at `K` and stays there.
-        assert!((from_band_i.bands() - 1.0).abs() < 1e-9, "a Band I seed should rest at K = Band I, got {from_band_i}");
+        assert!(
+            (from_band_i.band().bands() - 1.0).abs() < 1e-9,
+            "a Band I seed should rest at K = Band I, got {from_band_i}"
+        );
         // A `Band II` seed does not settle back to `K` — it overshoots below.
         assert!(
             from_band_ii < from_band_i,
             "a Band II seed must end up *worse* than a Band I one: {from_band_ii} vs {from_band_i}"
         );
         assert!(
-            from_band_ii < Band::new(0.5),
+            from_band_ii < Kilotons::at_band(Band::new(0.5)),
             "the overshoot is severe, not marginal — expected well under half a Band, got {from_band_ii}"
         );
     }
@@ -5082,7 +5114,7 @@ mod tests {
             sim.world.role.insert(v, Role::Colonizer);
             sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
             sim.world.cargo.insert(v, Minerals::default());
-            sim.world.pop_cargo.insert(v, sim.config.colony_seed_pop.band());
+            sim.world.pop_cargo.insert(v, units::population_mass(sim.config.colony_seed_pop.band()));
             sim.world.home_center.insert(v, home);
             v
         };
@@ -5111,12 +5143,12 @@ mod tests {
         sim.world.role.insert(v, Role::Colonizer);
         sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
         sim.world.cargo.insert(v, Minerals::default());
-        sim.world.pop_cargo.insert(v, Band::new(1.0));
+        sim.world.pop_cargo.insert(v, Kilotons::at_band(Band::new(1.0)));
         sim.world.home_center.insert(v, home0);
 
         sim.sys_colony_arrive(v);
         let pop = *sim.world.population.get(target).unwrap();
-        assert!((pop.bands() - 1.0).abs() < 1e-9, "colony should be seeded with the carried 1.0 pop, got {pop}");
+        assert!((pop.band().bands() - 1.0).abs() < 1e-9, "colony should be seeded with the carried 1.0 pop, got {pop}");
     }
 
     #[test]
@@ -5138,7 +5170,7 @@ mod tests {
         sim.world.role.insert(v, Role::Colonizer);
         sim.world.voyage.insert(v, Voyage { target, heading_bias: None, hops: 0 });
         sim.world.cargo.insert(v, Minerals::default());
-        sim.world.pop_cargo.insert(v, Band::new(1.0));
+        sim.world.pop_cargo.insert(v, Kilotons::at_band(Band::new(1.0)));
         sim.world.home_center.insert(v, home0);
 
         sim.sys_colony_arrive(v);

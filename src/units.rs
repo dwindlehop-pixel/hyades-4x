@@ -908,6 +908,16 @@ pub fn population_mass(pop: Band) -> Kilotons {
     }
 }
 
+/// **The floor a founding population grows off.**
+///
+/// The logistic has a fixed point at zero, so a colony seeded at nothing stays
+/// at nothing however habitable its world. One tonne is the mass ladder's own
+/// bottom rung (`Band Empty`), which makes this the smallest population the
+/// design names rather than an arbitrary epsilon — and it is the amount the
+/// biosphere is actually charged for, so the bump is paid for like any other
+/// growth rather than conjured.
+pub const POPULATION_SEED_FLOOR: Kilotons = Kilotons::new(KILOTONS_AT_BAND_EMPTY);
+
 /// The population a world can stand at, given `mass` of biomass committed to
 /// people — the inverse of [`population_mass`].
 #[inline]

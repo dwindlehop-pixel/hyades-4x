@@ -63,7 +63,7 @@
 use crate::math::Vec3;
 use crate::resources::{Archetype, Basic, MineralField};
 use crate::rng::Rng;
-use crate::units::{Band, BandTier, Measure};
+use crate::units::{Band, BandTier, Kilotons, Measure};
 
 /// `Γ(4/3)`, the mean-scaling constant for a Weibull(k=3) distribution — see
 /// [`GalaxyConfig::derived_planet_count`]. `Γ(4/3) = (1/3)Γ(1/3)`.
@@ -148,8 +148,12 @@ pub struct Planet {
 
     // --- mutable sim state ---
     pub owner: Option<PlayerId>,
-    /// Continuous population on the Band ladder, growing logistically toward `K`.
-    pub population: Band,
+    /// **The people living here, as a mass in kilotons.**
+    ///
+    /// Growth is logistic *in this number* — the ladder is a reading of it, for
+    /// design and for print, never a second counting system the simulation
+    /// steps in (T-64). `PopBands::level` is that reading.
+    pub population: Kilotons,
 }
 
 impl Planet {
@@ -198,7 +202,12 @@ impl Hotspots {
 /// fixed multiplicative jump). R-P1 owns the final `k` and edges.
 #[derive(Clone, Copy, Debug)]
 pub struct PopBands {
-    pub edges: [Band; 4],
+    /// The four internal edges, **as masses**. They are *generated* as ladder
+    /// positions — the Weibull quantiles are Gibrat-spaced, which is a
+    /// statement about rungs — and stored as the population each edge stands
+    /// for, so the comparison in [`PopBands::level`] is a comparison of people
+    /// against people (T-64).
+    pub edges: [Kilotons; 4],
 }
 
 impl PopBands {
@@ -209,16 +218,20 @@ impl PopBands {
         // weibull quantile: λ · (−ln(1−p))^(1/k); solve λ so q(0.8) == top_edge.
         let shape = |p: f64| (-(1.0 - p).ln()).powf(1.0 / k);
         let lambda = top_edge / shape(0.8);
-        let mut edges = [Band::ZERO; 4];
+        let mut edges = [Kilotons::ZERO; 4];
         for (i, &p) in q.iter().enumerate() {
-            edges[i] = Band::new(lambda * shape(p));
+            edges[i] = Kilotons::at_band(Band::new(lambda * shape(p)));
         }
         PopBands { edges }
     }
 
-    /// Integer level 0–4 = how many band edges the population value has crossed.
+    /// Integer level 0–4 = how many band edges the population has crossed.
+    ///
+    /// Takes the **people**, because that is what the edges are now. The Band
+    /// ladder is what generated them; it is not a second quantity to compare
+    /// against.
     #[inline]
-    pub fn level(&self, population: Band) -> BandTier {
+    pub fn level(&self, population: Kilotons) -> BandTier {
         // The edges are the *reached* thresholds, so the count of crossings is
         // the rung index. `BandTier::PLAYABLE` is indexed rather than matched so a
         // sixth rung cannot silently fall off the end.
@@ -624,7 +637,7 @@ impl Galaxy {
                 is_homeworld: false,
                 archetype: None,
                 owner: None,
-                population: Band::ZERO,
+                population: Kilotons::ZERO,
             });
         }
 
@@ -657,7 +670,7 @@ impl Galaxy {
                 is_homeworld: true,
                 archetype: Some(archetype),
                 owner: Some(PlayerId(p as u32)),
-                population: Band::new(2.0), // filled to its starting K
+                population: Kilotons::at_band(Band::new(2.0)), // filled to its starting K
             });
             homeworlds.push(id);
         }
@@ -751,12 +764,12 @@ mod tests {
     #[test]
     fn pop_bands_span_zero_to_four() {
         let b = PopBands::default();
-        assert_eq!(b.level(Band::ZERO), BandTier::Empty);
-        assert_eq!(b.level(Band::new(4.0)), BandTier::IV);
+        assert_eq!(b.level(Kilotons::ZERO), BandTier::Empty);
+        assert_eq!(b.level(Kilotons::at_band(Band::new(4.0))), BandTier::IV);
         // monotone non-decreasing
         let (mut prev, mut x) = (BandTier::Empty, 0.0);
         while x <= 5.0 {
-            let l = b.level(Band::new(x));
+            let l = b.level(Kilotons::at_band(Band::new(x)));
             assert!(l >= prev);
             prev = l;
             x += 0.1;

@@ -782,6 +782,18 @@ here** without that re-derivation and explicit re-ratification.
 *Ratified this conversation. It supersedes the `[4, 8]` window above, which is
 withdrawn — see the amendment note at the head of this section.*
 
+> **T-64 note — the two ladders now ride on the type.** `units::Qty<S>` is one
+> `f64` of kilotons with a zero-sized `Scale` marker (`Mass`, `Cost`) saying
+> which of the ladders below its Band *reading* is taken on. This is the
+> engine's expression of "the shared-ratio rule binds **within** a ladder": the
+> same amount reads a different rung on each, and the shipped defaults make that
+> concrete — `general_vehicle_cost = 1.0` is kilotons under R-O57 and reads
+> `Band I` as a mass, `Band II` as a cost. Crossing is `Qty::on_scale`, a no-op
+> on the bits and explicit at the call site, because a cost *is* a mass. Pinned
+> by `units::tests::the_same_amount_reads_a_different_rung_on_each_ladder`, so
+> the two cannot be collapsed back into one by anyone who has not read this
+> paragraph.
+
 **There are two `F` ladders, not one, and R-O71 is why.** The block above
 required a single `F₁`/`F₂` to govern population, infrastructure, biosphere,
 radiation, gravity, cargo capacity *and* hull cost. That is provably

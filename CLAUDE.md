@@ -76,21 +76,21 @@ only exception and they are offline, never in CI. Current costs:
 
 | step | cost |
 |---|---|
-| `cargo test --all-targets` (unit + determinism + smoke) | **~200 s — over budget** |
+| `cargo test --all-targets` (unit + determinism + smoke) | ~112 s (unit target 59.5 s) |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
 | `coverage_trace` | ~19 s |
 | `coverage_time` | ~49 s |
 | `montecarlo` | ~56 s |
 
-**The unit target is currently over the budget and the cause is the mineral
-scale, not the test bed.** Every unit test already pins a 600-year horizon
-(`test_cfg`), which is the sanctioned fix, and it is still 144 s — up from 97 s
-before T-62 and ~6 s before the snowball. Hauling is the mechanism
-(`examples/haul_census`): the Banded mineral field multiplied ore-per-rock by
-three orders of magnitude, and a freighter's hold is a fixed size, so the round
-trips multiply from the first cycle. **Do not respond by trimming the tests** —
-they are already trimmed. It is the same ratification as T-24's floor breach
-(R-O82).
+**The unit target went 97 s → 144 s at T-62 and back to 59.5 s at T-64**, and
+neither move was about the tests — they have pinned a 600-year horizon
+(`test_cfg`) throughout. T-62's cost was hauling (`examples/haul_census`): the
+Banded mineral field multiplied ore-per-rock by three orders of magnitude
+against a fixed freighter hold, so the round trips multiplied from the first
+cycle. T-64 gave it back by taking the `ln`/`powf` out of the growth step. The
+lesson both times: **when a test target moves, look at what the simulation
+started doing, not at what the tests are asking.** The remaining ratification is
+T-24's floor breach (R-O82).
 
 Ratifying the snowball defaults blew every one of these past the budget at once —
 the unit suite alone went 6 s → 315 s — because a default-config run is now a
@@ -392,13 +392,30 @@ combat logic into the arena or into an example.
 - **A quantity carries its unit in the type, not in a comment.** `Band` is a
   magnitude *tier* on the ladder (`Hyades_mineral_cost_curve.md` §2.6);
   `Kilotons` is an amount of stuff. **A Band is a *reading*, not a second thing
-  to store** — directed: *"the code must not allow any distinction between Bands
-  and mass… the storage is not distinguished between them. Bands are only for
-  printing and a useful shorthand for the exponential growth of a 4x game."*
-  Store the quantity; read a Band off it where a magnitude tier is what the
-  comparison wants. `MineralField` complies (T-62); `World::population` and
-  `World::pop_cargo` do **not** yet, and the growth logistic still runs in Band
-  space (T-63, open). They are different types because the engine
+  to store** — directed: *"everything is just counting. Growth and construction
+  and cost are denominated by mass. Bands are a tool for game design, nothing
+  more. All logistic functions are applied to real population, not Bands."*
+
+  **The type is `Qty<S>`** (T-64): one `f64` of kilotons, `repr(transparent)`,
+  with a zero-sized `Scale` marker saying which ladder its Band *reading* is
+  taken on. `Kilotons` is `Qty<Mass>`. Two rules follow and both are measured,
+  not asserted:
+
+  - **Arithmetic is free; conversion is not.** `examples/qty_bench`: a `Qty`
+    add/mul/min loop runs at **1.000x** bare `f64`, while `band()` is 2.2x an
+    arithmetic op and `at_band()` 3.8x. So convert at the *edges* — never inside
+    a loop over entities. `Factors::bio_max_band` exists only because a `ln` got
+    onto the hot path (R-O70); denominating the ceilings in mass deletes it.
+  - **There are two ladders and the type is what keeps them apart.** R-MC15
+    ratified `F_mass = F_cost^(3/2)` because cost tracks surface area and the
+    hold tracks volume, so a General hull costs 10x a Medium while holding
+    31.6x. `general_vehicle_cost = 1.0` is kilotons (R-O57) and reads **`Band I`
+    as a mass and `Band II` as a cost.** That is geometry, not a units bug;
+    crossing is `Qty::on_scale`, free and explicit. Do not "simplify" the two
+    ladders into one — `the_same_amount_reads_a_different_rung_on_each_ladder`
+    is there to stop it.
+
+  They are different types because the engine
   shipped `K = min(hab, bio, infra)` for a long time with `bio` a mass and the
   other two levels — a `min` across incompatible units that typechecked, read
   as plausible ecology, and put the largest measured lever on coverage
@@ -561,6 +578,18 @@ one, stop and flag it.
    ladder's floor (5, the Limited hull's price) is untouched. Consequence to
    remember: a Limited hull's hold no longer sits on `Band Empty` — hull holds
    are geometry (`5^1.5`) and that coincided with the old floor width.
+
+   **Every logistic runs on the mass, not on the reading (T-64).** Population
+   growth steps `x + r·x·(1 − x/K)` on *people*, with `K`'s mass as the
+   carrying capacity. It used to step on Band positions, which made `r` a rate
+   of change of an *exponent* — the same `growth_rate` meaning a different
+   number of people at every point on the ladder. Two consequences: `r` now has
+   a hard arithmetic ceiling at **2** (the step is conjugate to the logistic map
+   with `μ = 1 + r`, so it period-doubles there), and **the engine's `clamp` at
+   `K` hides that from below** — a too-large `r` does not visibly oscillate, it
+   collapses the logistic into a step function that fills a world in one cycle
+   and *scores well* while doing it. `the_population_logistic_is_a_rate_and_not_a_step`
+   is the guard.
 
    **The exchange is a mass difference, not a level difference (R-O66).** A
    population at Band `b` masses `KT(b) = KT_I · BAND_STEP^(b−1)`, so a step from
@@ -830,6 +859,7 @@ changes how you *work*, not what is left to do:
   | + mining-pair recycling, same run | 10,965 | 142.4 yr/s | 57× |
   | pre-T-62 bed, 3 seats, 4 kyr *(container)* | 19,406 | 78.7 yr/s | 31× |
   | **T-62 (Banded mineral field), same run** | 23,227 | **35.0 yr/s** | **14×** |
+  | + T-64 (logistic on mass, no conversion in the step) | 23,227 | 42 yr/s | 17× |
 
   **T-62 halved it, and the mechanism is hauling — not vehicles and not mining**
   (`examples/haul_census`). Vehicles rose 1.20× and extraction ticks 1.02×, but

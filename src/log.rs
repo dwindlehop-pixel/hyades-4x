@@ -193,6 +193,12 @@ pub enum LogEvent {
     VehicleScrapped { player: u32, vehicle: Entity, at: PlanetId, recovered: f64 },
 
     /// A planet's population advanced one production cycle's logistic step.
+    ///
+    /// `population` is **kilotons of people** and `k` is the ceiling as a Band
+    /// — the two units the pair genuinely are since T-64, rather than two
+    /// readings of one ladder. The logistic runs on the mass; `k` is a
+    /// classification, and reading it as a rung is what makes it comparable to
+    /// habitability and infrastructure.
     PopulationStep { planet: PlanetId, population: f64, k: f64 },
 
     /// A scan result reached an empire's knowledge base (light-delayed from the

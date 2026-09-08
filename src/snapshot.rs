@@ -48,7 +48,7 @@ pub struct PlanetSnapshot {
     pub infrastructure: Band,
     /// Liebig carrying capacity `K = min(hab, bio_max, infra)`, over Bands.
     pub k: Band,
-    pub population: Band,
+    pub population: Kilotons,
     pub pop_level: BandTier,
     /// In-ground mineral density (depletes as it is mined).
     pub density: MineralField,

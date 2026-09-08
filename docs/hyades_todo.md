@@ -384,6 +384,147 @@ become "what does my current Role's System say to build". The dial
 ## Band C — open question with a concrete test
 
 
+### T-64. One quantity type; the logistic runs on people (R-O83 closed)
+
+**Directed this conversation, in two parts.** First: *"The code must not allow
+any distinction between Bands and mass. These are different counting systems.
+The storage is not distinguished between them; there's no distinction in the
+data structure. Bands are only for printing and a useful shorthand for the
+exponential growth of a 4x game."* Then, on the follow-up: *"No, everything is
+just counting. Growth and construction and cost are denominated by mass. Bands
+are a tool for game design, nothing more. All logistic functions are applied to
+real population, not Bands."*
+
+#### The scan, and the one incompatibility
+
+Every quantity in the engine reduces to kilotons. `biomass`, `bio_max`,
+`MineralField`, `hull_dry_mass`, `cargo_capacity` and `total_population` already
+did; `population`, `pop_cargo`, `habitability`, `infra`, `PopBands::edges` and
+`k_high` were Band-typed and are all "the population mass this permits". The
+*scores* — `hub_value`, `rank`'s weighted sum, `per_mineral`, `mineral_high` —
+are not quantities at all and go on reading `.bands()` explicitly, with the
+weights carrying the units.
+
+**One thing genuinely resists, and the obstruction is geometric.** R-MC15
+ratified *two* ladders whose step factors differ, because
+`F_mass = F_cost^(3/2)` is the shell model's own exponent: cost tracks surface
+area, the hold tracks volume. Proven on the shipped defaults —
+`general_vehicle_cost = 1.0`, which is kilotons (R-O57), reads **`Band I`** on
+the mass ladder and **`Band II`** on the cost ladder; a Medium hull's `0.1`
+reads `Band 0.667` and `Band I`. A single Band reading cannot serve both, and a
+General hull costing 10x a Medium while holding 31.6x is geometry, not an
+accident of units.
+
+**Resolved as directed: the ladder rides on the value, as a type parameter.**
+`Qty<S>` is `#[repr(transparent)]` over one `f64` of kilotons with a zero-sized
+`Scale` marker (`Mass`, `Cost`); `Kilotons` is now an alias for `Qty<Mass>`.
+Crossing ladders is `Qty::on_scale` — explicit, free, and a no-op on the bits,
+because a cost *is* a mass and only the rungs it reads against change.
+
+#### It costs nothing to wrap an f64
+
+`examples/qty_bench`, release, five seconds per loop:
+
+| | ns/op | vs bare f64 |
+|---|---|---|
+| bare `f64` — mul/add/min/max | 6.127 | — |
+| `Qty<Mass>`, the same loop | 6.126 | **1.000x** |
+| `Qty<Cost>`, the same loop | 6.179 | 1.008x |
+| `band()` — a `ln` | 13.518 | 2.2x an arithmetic op |
+| `at_band()` — a `powf` | 23.365 | 3.8x |
+
+Arithmetic is free; **conversion is not**, and that is the argument for
+mass-as-storage stated as a measurement. Layout parity is asserted exactly
+(size, alignment and slice stride all equal `f64`'s, both markers zero-sized),
+which is worth more than any timing run.
+
+#### The numeric contract, and the test that earned its keep immediately
+
+Accuracy is pinned at **one metric tonne, absolute**, on both ladders: either
+representation writes the same amount, rung-plus-fraction round trips, every
+operator matches the bare `f64` with operands written at opposite ends of the
+contract, and 200,000 mixed deposits and withdrawals do not drift.
+
+The round-trip test failed on its first run, and it was right to. **The ladder
+does not round trip below `BAND_FLOOR`** — the reading clamps there (design law
+#16) while the kilotons stay exact — and the *mass* ladder squeaked inside a
+tonne at its floor by accident of scale while the cost ladder missed by 11x. A
+test that ran only on `Mass` would have called the clamp a round trip. It now
+asserts the clamp *as* a clamp, on both ladders, with the amount pinned exact
+underneath it.
+
+#### The logistic, and the −8.6% it cost
+
+`sys_production_tick` stepped `s + r·s·(1 − s/K)` with `s` and `K` as **ladder
+positions**, then converted both ends to mass to pay the biomass draw. A Band
+difference is not an amount of anything, so `r` there was a rate of change of an
+*exponent*: the same `growth_rate` meant a different number of people at every
+point on the ladder, and compounded hardest where the ladder is widest. It now
+steps on people, with `K`'s mass as the carrying capacity.
+
+**Ablated, not argued.** Restoring only that one expression — Band-space step,
+everything else migrated — reproduces the pre-T-64 objective **bit-identically**
+(10,004,297.0 and 9,930,181.6 on seeds 1 and 7). So the rest of the migration is
+provably behaviour-neutral, and the whole of the change is one line. On mass:
+
+| | seed 1 | seed 7 | colonies |
+|---|---|---|---|
+| before | 10,004,297 | 9,930,182 | 3340 / 3349 |
+| after | 9,139,231 | 9,060,095 | **3340 / 3349** |
+| | −8.6% | −8.8% | unchanged |
+
+**The same worlds, taken later.** `reach_limit`'s founding histogram shifts right
+by about half a bucket on every seed (seed 31337: `151 1764 1436 93 …` becomes
+`69 774 1978 604 …`), with the last colony founded at essentially the same year.
+That is `growth_rate = 0.873` being a number tuned against a different quantity,
+not a defect in the model — and it needs re-ratifying rather than reverting.
+
+**Two things it bought.** The unit test target went **144 s → 59.5 s**, back
+inside the 60-second rule for the first time since the snowball, and full-run
+throughput rose ~20% (35 → 42 yr/s on the standard bed) — both because the
+growth step no longer converts.
+
+#### `growth_rate` has a hard ceiling now, and it is arithmetic
+
+On mass the step is conjugate to the logistic map with `μ = 1 + r`, so the fixed
+point at `K` is stable only for **`r < 2`** and period-doubles above it (May,
+*Nature* 261:459–467, 1976). **The engine's `clamp` hides this from below**: a
+population climbing toward `K` overshoots, is clamped exactly to `K`, and the
+growth term is then zero — so a too-large `r` does not visibly oscillate, it
+*jumps*, collapsing the logistic into a step function that fills a world in one
+cycle. A sweep would score that beautifully. `the_population_logistic_is_a_rate_and_not_a_step`
+is what rules it out, by asserting the thing the clamp cannot fake (the approach
+to `K` takes several cycles) and by checking the bare map's bifurcation directly.
+
+#### Open: `growth_rate` is a step function of itself (R-O84)
+
+The 2,000-year screen is unambiguous and was not what anyone expected:
+
+| `r` | mean colony-years @2000 | vs 0.873 |
+|---|---|---|
+| 0.873 | 2,471,844 | — |
+| 1.100 | 2,748,728 | +11.20% |
+| 1.350 | 2,748,728 | **+11.20% — bit-identical to 1.100** |
+| 1.600 | 3,038,783 | +22.94% |
+| 1.900 | 3,038,783 | **+22.94% — bit-identical to 1.600** |
+
+Growth reaches the objective only through *how many 50-year cycles* a centre
+takes to cross a `PopBands` edge, and that is an integer. So `r` is a **selector
+over cycle counts, not a dial**, and the objective is piecewise constant in it.
+Ratifying off a coarse grid would have picked a plateau *edge* by accident,
+which is the degenerate-sample trap from `coverage_trace` in a new costume — and
+it is the same root cause as R-O68: the gate downstream is discrete.
+
+**Outstanding:** map the plateau boundaries and ratify a value at a plateau's
+*centre* rather than its edge. The fine screen (24 values x 4 seeds at 2,000 yr)
+is a ~48-minute job and belongs on a real machine, not this container — the same
+verdict CLAUDE.md §2 already records for `min_time_search`. Until then
+`growth_rate` keeps 0.873 and the −8.6% stands; the value is a placeholder
+against a *changed quantity*, which is worse than a placeholder against an
+unchanged one, so this should not wait long.
+
+---
+
 ### T-63. `Band Empty` is the ladder's floor, one metric tonne wide (R-MC15 amended)
 
 **Directed this conversation:** *"The math is right, but the setting of

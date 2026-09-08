@@ -41,7 +41,7 @@ fn main() {
         for p in &owned {
             let infra = p.infrastructure.bands();
             sum_infra += infra;
-            sum_pop += p.population.bands();
+            sum_pop += p.population.band().bands();
             buckets[(infra.floor() as usize).min(4)] += 1;
             // A colony still at what its own hull left behind has never been
             // supplied at all.
