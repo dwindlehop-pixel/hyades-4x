@@ -241,16 +241,22 @@ chosen for a property rather than for convenience:
 
 | Write kind | Algebra | Bounded by |
 |---|---|---|
-| **Design — efficiency** | **product** of factors on a named coefficient | nothing intrinsic; priced per tier |
-| **Doctrine — allocation** | **simplex** — shares that renormalise | sums to 1 by construction |
-| **Cost — mix** | **rotation** of the colour vector | total kt preserved |
+| **Scalar coefficient** (Design efficiency, ceilings, knees) | `x = x_base · Π f_i` — **multiplicative** | nothing intrinsic; priced per tier |
+| **Simplex quantity** (Doctrine allocation, cost mix) | `share_j = w_j / Σ w` — **additive weights, normalised** | normalisation, with no clamp |
 
-Products **commute**, so two Design cards give the same result in either order —
+**Two algebras, not three**, and the third was a defect worth recording: an
+earlier draft made the cost mix a *rotation* of the colour vector, and rotations
+in three dimensions do not commute — which falsifies the very property this
+section exists to guarantee. A mix is not an orientation, it is a **share
+vector**, and it composes exactly as the allocation does.
+
+Products and sums both **commute**, so cards give the same result in any order —
 order-dependence in a permanent, tier-gated tree is unanalysable at Monte-Carlo
-scale and unlearnable at the table. Simplices are **bounded without a clamp**,
+scale and unlearnable at the table. Normalisation is **a bound without a clamp**,
 which matters because a clamp is exactly what let T-64's broken population
-logistic keep scoring well. Rotations **preserve magnitude**, so a cost card moves
-the mix and never the bill — no card is a discount.
+logistic keep scoring well. And because a mix is a share of a total set
+elsewhere, a mix card moves the composition and never the bill — no card is a
+discount.
 
 **Commutativity is the acceptance test**, and it belongs in the engine as a
 property test over the card list rather than as a claim here (R-IND4).

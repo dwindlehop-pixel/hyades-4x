@@ -131,7 +131,8 @@ a population, because those are genuinely a world's capacity to hold people.
 | 6 | `miners_per_outpost` becomes a target *fraction of `N(S)`*, not a hull count | T-71 | **T-72** |
 | 7 | Works: colour-differentiated infrastructure price | T-70 | **T-73** |
 | 8 | Extraction and fabrication rates from Infra × allocation | T-70 | **T-74** |
-| 9 | `Doctrine` allocation vector + the commutativity property test | T-74 | **T-75** |
+| 9a | `Works` struct + CardId-ordered fold + commutativity property test | T-74 | **T-75a** |
+| 9b | `Doctrine` allocation vector wired to the fold | T-75a | **T-75b** |
 | 10 | Development freight and the balanced-exchange default | T-73 | **T-76** |
 | 11 | Exchange settles into a **freight leg**, not a transfer (refined mass traverses real space) | T-01 | **T-77** |
 
@@ -165,6 +166,21 @@ about:**
 **T-67 first and alone.** It is one deleted `.min()`, it unblocks every card that
 attacks infrastructure, and because it invalidates R-O76 it wants its own
 measurement rather than being folded into a larger change.
+
+**Follow `Hyades_industry.md` §6.7, not this table, for order.** It sequences the
+same work so the layering lands **inert**: the `Works` state exists, the fold
+runs, the price and rate pipelines read it — and with no cards played every
+coefficient is `1.0` and every weight vector is `(1,1,1)`, so colony-years comes
+out bit-identical. A layering system that lands neutral can be verified against a
+known bed before anything switches on, and stages 3–5 are built to do that.
+
+**Its trap is one this repo has already paid for once.** The fold must recompute
+from the played-card multiset **in `CardId` order**, never accumulate a running
+product at play time: float multiplication is not associative, so play-order
+accumulation makes "A then B" differ from "B then A" in the last bits — a desync
+the moment two clients disagree about the order two simultaneous cards resolved
+in. Same lesson as `holdings_centroid` (`CLAUDE.md` §4), and the property test
+(R-IND4) that catches it is written *before* the first industrial card, not after.
 
 **The rule that outranks the rest, and it is not about industry:** *refined mass
 traverses real space* (§8.1). Minerals, supers and apex cross the theater on

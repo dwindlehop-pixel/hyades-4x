@@ -453,43 +453,226 @@ much lower its ceiling, and where the crossovers sit. A Monte-Carlo question wit
 
 ### 5.4 The rule that keeps costs honest
 
-**A cost-modifying card rotates the colour mix. It never lowers the total.**
+**A cost-modifying card moves the colour mix. It never lowers the total.**
 
-Efficiency — more rate per kilotonne — is a *Design* write on a named coefficient
-(§6). Mix is a *rotation* that preserves magnitude. Keeping the two separate is
-what stops the card list becoming a discount race, and it is what makes "shift
-the mix away from pure Yellow" a real strategic move rather than a worse version
-of "make it cheaper".
+Efficiency — more Infrastructure per kilotonne — is a *Design* write on a named
+coefficient (§6.2). The mix is a **share vector**: a card adds weight to a
+colour, and the split is the normalised weights, so it cannot change what the
+bill sums to. Keeping the two orthogonal is what stops the card list becoming a
+discount race, and it is what makes "shift the mix away from pure Yellow" a real
+strategic move rather than a worse version of "make it cheaper".
 
 ---
 
-## 6. The layering algebra — how Design and Doctrine writes compose
+## 6. The layering algebra — how work improvements compose
 
-**Three write kinds, three algebras, one acceptance test.**
+Cards accumulate all game. This section says exactly what a planet reads when an
+empire has played a dozen of them, and it is written to be implementable rather
+than evocative.
 
-| Write kind | Written by | Algebra | Bounded by |
+### 6.1 The correction: there are two algebras, not three, and "rotation" was wrong
+
+An earlier draft of this section listed three: products for Design, a simplex for
+Doctrine, and **rotation** for the colour mix. **The third is a defect, and it
+falsifies the very property the section claims.** Rotations in three dimensions
+do not commute — `R_x R_y ≠ R_y R_x` — so two mix cards played in opposite orders
+would have produced different prices, in a document whose acceptance test is that
+order does not matter.
+
+The fix is that a colour mix is not an orientation, it is a **share vector**, and
+it composes exactly the way the allocation does:
+
+> **Both simplex-valued quantities — the employment allocation and the colour
+> mix — are stored as non-negative *weights* and read as normalised shares.**
+> Cards add weight. Addition commutes; normalisation bounds. Magnitude is
+> preserved because a share is a share of a total set elsewhere.
+
+So the whole layer is **two** algebras:
+
+| Algebra | Applies to | Composition | Bounded by |
 |---|---|---|---|
-| **Design — efficiency** | permanent tree cards | **product** of factors on a named coefficient | nothing intrinsic; priced per tier |
-| **Doctrine — allocation** | revisable tree cards | **simplex** — shares that renormalise | sums to 1 by construction |
-| **Works — mix** | either | **rotation** of the colour vector | total kt preserved (§5.4) |
+| **Multiplicative** | scalar coefficients — `η_works`, `F_cap`, `M_cap`, `u_half`, `ε` | `x = x_base · Π f_i` | nothing intrinsic; priced per tier |
+| **Additive-weight** | simplex quantities — employment allocation, colour mix | `share_j = w_j / Σ w` | normalisation, with no clamp |
 
-Each algebra is chosen for a property, not for convenience:
+Both commute, which is the point. And the second has a property worth naming:
+**there is no clamp anywhere in it.** Normalisation *is* the bound. That matters
+because a clamp is exactly what let T-64's broken population logistic keep
+scoring well — a bound that hides a fault rather than preventing one.
 
-- **Products commute.** Two Design cards in either order give the same
-  coefficient. Order-dependence in a permanent, tier-gated tree is unanalysable
-  at Monte-Carlo scale and unlearnable at the table.
-- **Simplices are bounded.** No combination of Doctrine cards exceeds the stock.
-  Renormalisation *is* the bound — there is no clamp to tune and none to hide
-  behind, which is precisely the failure T-64 records for the population
-  logistic, where a clamp turned a broken model into a high-scoring one.
-- **Rotations preserve magnitude.** No card is a discount; the mix moves, the
-  bill does not.
+### 6.2 The state, and where it lives
 
-**The acceptance test is commutativity, and it belongs in the engine rather than
-in this document:** for any set of cards and any two orderings, the resulting
-`(coefficients, allocation, mix)` must be identical. **R-IND4:** write it as a
-property test over the tier-0 card list *before* the second industrial card
-exists, not after.
+Per **empire**, written only by tree cards (`Hyades_standing_layer_and_observation.md` §5):
+
+| Field | Kind | Written by | Meaning |
+|---|---|---|---|
+| `eta_works` | multiplicative | Design | Infrastructure gained per kilotonne spent — *acquisition* efficiency |
+| `cap_fab`, `cap_ext` | multiplicative | Design | per-planet **rate ceilings** — the asymptote |
+| `half_fab`, `half_ext` | multiplicative | Design | Infrastructure at half the ceiling — the *knee* |
+| `alloc_w[3]` | additive-weight | Doctrine | employment weights → `(w_ext, w_fab, w_ward)` |
+| `mix_w[3]` | additive-weight | either | colour weights → the works price split |
+
+Per **planet**: one number, `infra` in kilotonnes (§1.3). Everything else is
+derived. That is deliberate — per-planet standing state is per-planet
+serialisation, per-planet desync surface and per-planet card scope, and none of
+those is wanted yet.
+
+### 6.3 The pipeline — base to price, base to rate
+
+**Buying a work:**
+
+```
+price_kt   = infra_rung_step(current_rung)      // cost ladder, T-61
+           / eta_works                          // Design, multiplicative
+price[c]   = price_kt · mix_w[c] / Σ mix_w      // colour split, additive-weight
+```
+
+**Running the stock:**
+
+```
+u_e        = infra · alloc_w[e] / Σ alloc_w     // employment share of the stock
+rate_e     = cap_e · u_e / (u_e + half_e)       // saturating, per planet
+```
+
+The rate curve is a Michaelis–Menten hyperbola, chosen because **its two
+parameters are exactly the two axes the trees are meant to differ on**:
+
+- `cap_e` is the **asymptote** — the highest rate this planet can ever reach.
+  **Production raises it.** That is "the highest peak per planet".
+- `half_e` is the **knee** — the investment at which you are halfway there, so
+  the initial slope is `cap_e / half_e`. **Growth and Expansion lower it.** That
+  is "better efficiency per kilotonne invested".
+
+One curve, two knobs, and the tall/wide axis falls out rather than being imposed.
+A Production world climbs slowly toward a distant ceiling; an Expansion world
+reaches most of a nearer ceiling almost at once.
+
+**The ceiling is per *planet*, and the empire total is not capped.** An empire
+scales by holding more worlds, which is why Expansion's cheap, low-ceiling works
+are a strategy and not a handicap — and why `slips` (§3.2) growing linearly in
+`F` does not contradict a bounded `F`: the bound is per yard, and an empire has
+many yards.
+
+### 6.4 Why a card cannot be a discount
+
+`eta_works` is multiplicative on the **total**; `mix_w` is a **share** of that
+total. So a mix card moves which colours the bill lands in and cannot change what
+it sums to, and an efficiency card changes the bill without touching its
+composition. **The two are orthogonal by construction rather than by discipline**,
+which is what makes §5.4's rule ("move the mix, never lower the total")
+enforceable in a type rather than in review.
+
+### 6.5 The acceptance test
+
+**Commutativity, as a property test in the engine, not a claim in this document.**
+For any set of cards and any permutation of it, the resulting
+`(eta_works, cap_*, half_*, alloc_w, mix_w)` must be **bit-identical** — not
+approximately equal. Floating-point multiplication and addition are *not*
+associative, so this is a real constraint on implementation and not a formality:
+
+- **accumulate weights and factors in a canonical order** — by `CardId`, not by
+  play order — so the arithmetic itself is order-independent, not merely the
+  algebra;
+- which means the state is a **multiset of played cards folded in card order**,
+  and never a running product mutated at play time.
+
+That is the same lesson as `holdings_centroid` (`CLAUDE.md` §4): a running total
+accumulates in event order, a recomputed fold accumulates in a canonical order,
+and only the second is reproducible. **R-IND4** is this test; it is cheap, and it
+must exist before the second industrial card does.
+
+### 6.6 Worked example — three cards, six orders, one answer
+
+An empire plays a Production Design card (`cap_fab ×2`, `mix_w` +3 Yellow), a
+Growth Design card (`half_fab ×0.5`, `mix_w` +2 Cyan), and a Doctrine card
+(`alloc_w` +4 fabrication). Base `cap_fab = 1.0 kt/yr`, `half_fab = 2.0 kt`,
+`mix_w = (1,1,1)`, `alloc_w = (1,1,1)`.
+
+Folded in `CardId` order, whatever order they were *played*:
+
+```
+cap_fab   = 1.0 × 2      = 2.0 kt/yr
+half_fab  = 2.0 × 0.5    = 1.0 kt
+mix_w     = (1+2, 1, 1+3) = (3, 1, 4)  → C 37.5%, M 12.5%, Y 50%
+alloc_w   = (1, 1+4, 1)   = (1, 5, 1)  → ext 14.3%, fab 71.4%, ward 14.3%
+```
+
+A planet holding `infra = 3.0 kt` fabricates at
+`u_fab = 3.0 × 0.714 = 2.14 kt`, so `rate = 2.0 × 2.14/(2.14+1.0) = 1.36 kt/yr` —
+enough for **14 slips** at `F_slip = 0.1`, and a General hull in
+`2.0 + 1.0/(1.36/14) = 12.3 yr`. Note the last number: fourteen berths and the
+big hull is *still* a twelve-year commitment (§3.2). Industry bought width, not
+speed, exactly as intended.
+
+### 6.7 The build order — a plan for landing the layering
+
+Seven stages. **Each one is measurable on its own**, and the order is chosen so
+that every stage before the last is either behaviour-neutral or has a predicted
+sign with a known guard. The guard throughout is `examples/colony_years`, held to
+the decimal where a stage claims to be neutral.
+
+| # | Stage | Behaviour | Guard | T-code |
+|---|---|---|---|---|
+| 1 | **`K` loses its infra term** | changes; hulls seed to the world's ceiling | measure, do not predict | T-67 |
+| 2 | **`t_build` tracks hull mass** | changes; predicted **up** | colony-years | T-68 |
+| 3 | **Infrastructure stored as kilotonnes** | **neutral** — a representation change | bit-identical | T-70 |
+| 4 | **`Works` struct + the fold** | **neutral** — nothing reads it yet | bit-identical | T-75a |
+| 5 | **Price reads `eta_works` and `mix_w`** | neutral at identity coefficients | bit-identical at base | T-73 |
+| 6 | **Rates read the allocation and the curve** | changes; the ramp switches on | colony-years | T-71, T-74 |
+| 7 | **Slips** | changes; predicted **up** | colony-years | T-69 |
+
+Stages 3–5 are the layering proper, and they are deliberately **inert**: the
+`Works` state exists, the fold runs, the pipeline reads it — and with no cards
+played the coefficients are `1.0` and the weights are `(1,1,1)`, so every number
+comes out where it was. **That is the whole trick.** A layering system that lands
+neutral can be verified against a bit-identical bed, and only then switched on.
+
+**Stage 4 in detail, because it is the one with a trap.**
+
+```rust
+/// Folded from the played-card multiset in *CardId* order — never mutated at
+/// play time. Float multiplication is not associative, so a running product
+/// accumulated in play order is a desync waiting for two clients to differ on
+/// the order two simultaneous cards resolved in.
+struct Works {
+    eta_works: f64,          // multiplicative, base 1.0
+    cap: [f64; 3],           // per employment, multiplicative, base 1.0
+    half: [f64; 3],          // per employment, multiplicative, base 1.0
+    alloc_w: [f64; 3],       // additive weights, base (1,1,1)
+    mix_w: [f64; 3],         // additive weights, base (1,1,1)
+}
+```
+
+The trap is the one `holdings_centroid` already taught (`CLAUDE.md` §4): **a
+running total accumulates in event order and a recomputed fold accumulates in a
+canonical order, and only the second is reproducible.** Playing cards A then B
+must give bit-identical state to B then A, which for floats means the fold has to
+*sort* — it cannot simply apply each card as it resolves. Recomputing on each
+card play is `O(cards played)` on a list that reaches maybe a few dozen entries
+per empire per game, and it runs on a round barrier rather than in an entity
+loop, so the cost is irrelevant and the reproducibility is not.
+
+**What to test, in the order the stages land:**
+
+1. `works_fold_is_order_independent` — the R-IND4 property test. Every
+   permutation of a card multiset gives **bit-identical** `Works`. This is the
+   acceptance test for the whole section and it is written at stage 4, before any
+   card exists that would make it fail.
+2. `identity_works_reproduces_the_bed` — with no cards played, colony-years is
+   unchanged to the decimal. Guards stages 3–5.
+3. `a_mix_card_cannot_change_the_total` — for any `mix_w`, `Σ price[c]` equals
+   `price_kt`. This is §6.4 as an assertion rather than a promise.
+4. `the_rate_curve_saturates_and_is_monotone` — `rate(u)` rises with `u`, never
+   exceeds `cap`, and reaches `cap/2` at `u = half`. Cheap, and it pins the two
+   knobs to their stated meanings so a later retune cannot quietly swap them.
+5. `an_allocation_cannot_exceed_the_stock` — `Σ u_e == infra` for every weight
+   vector, including degenerate ones. Normalisation is the bound (§6.1); this is
+   what proves no clamp crept in.
+
+**Two things deliberately *not* in the plan.** No card content — the stages build
+the surface cards will write to, and the first industrial card comes after the
+property test, not before. And no coefficient tuning: **R-IND3's numbers are a
+Monte-Carlo question and every value in §6.2 ships at identity**, so stage 6 is
+measuring whether the *shape* behaves before anyone argues about magnitudes.
 
 ---
 
@@ -681,13 +864,20 @@ Dependency order. Each is small; the order matters more than the size.
 | 6 | `miners_per_outpost` becomes a target *fraction of `N(S)`*, not a hull count (§4.5) | 5 | **T-72** |
 | 7 | Works: colour-differentiated infrastructure price (§5.1) | 4 | **T-73** |
 | 8 | Extraction and fabrication rates from Infrastructure × allocation (§2) | 4 | **T-74** |
-| 9 | `Doctrine` allocation vector + the commutativity property test (§6) | 8 | **T-75** |
+| 9a | `Works` struct + the CardId-ordered fold + the commutativity property test (§6.7) | 4 | **T-75a** |
+| 9b | `Doctrine` allocation vector wired to the fold (§6.2) | 9a | **T-75b** |
 | 10 | Development freight and the balanced-exchange default (§7) | 7 | **T-76** |
 | 11 | Exchange settles into a **freight leg**, not a transfer — refined mass traverses real space (§8.1) | T-01 | **T-77** |
 
 **Item 1 first, and alone.** It is one deleted `.min()`, it unblocks every card
 that attacks Infrastructure, and it invalidates R-O76's measured result — so it
 wants its own measurement rather than being folded into a larger change.
+
+**§6.7 is the sequenced version of this table and takes precedence over it.** It
+orders the same work so the layering lands **inert** — the state exists, the fold
+runs, the pipeline reads it, and with no cards played every coefficient is `1.0`
+and every weight vector is `(1,1,1)`, so the bed is bit-identical. Only then does
+anything switch on.
 
 **Item 2 is the other one worth doing early**, because it is a behaviour change
 with a known guard and a predicted sign, and because leaving the flat-time
