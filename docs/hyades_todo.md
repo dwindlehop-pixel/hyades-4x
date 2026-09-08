@@ -384,6 +384,78 @@ become "what does my current Role's System say to build". The dial
 ## Band C — open question with a concrete test
 
 
+### T-61. The infrastructure ladder is the mineral ladder (R-O80 closed)
+
+**Directed this conversation: "fix `infra_step_price` so it respects Band math.
+Infra I costs minerals I."**
+
+`round(infra) + 1` charged **1 / 2 / 3 / 4** — a linear count of Band *numerals*,
+and the last Band-additive quantity in the engine. It arrived in the initial
+import (`dc8e334`) with no derivation beyond its doc line, *"infrastructure
+upgrades cost minerals equal to the target level"*, and survived every review
+because `Band` still had an `Add`.
+
+Infrastructure is bought with minerals, so its rungs are the **cost ladder's**
+rungs, anchored at `general_vehicle_cost` = cost `Band II` (§2.6) through the
+ratified factors `5, 10, 20, 40`:
+
+| rung | minerals to be at it | step | old price |
+|---|---|---|---|
+| `Empty` | 0.02 | — | — |
+| `I` | 0.10 | 0.08 | 1 |
+| `II` | 1.00 | 0.90 | 2 |
+| `III` | 20.0 | **19.0** | 3 |
+| `IV` | 800 | 780 | 4 |
+
+**The rungs are exactly the hull costs** (`Limited` 0.02, `Medium` 0.10,
+`General` 1.00), so `founding_infra` needs no rate at all: a recycled hull buys
+precisely the infrastructure its minerals would have bought, landing on
+`Band Empty` / `Band I` / `Band II` on the nose. R-O77's subsidy is gone and
+nothing replaced it.
+
+**And the two ladders now agree rung for rung**, which is the same hull cost
+read twice: a Medium carries `Band I` and leaves `Band I`, a General carries
+`Band II` and leaves `Band II`. Nothing is wasted at either end — no hold flying
+empty for want of somewhere to put people, no infrastructure idle for want of
+people. Asserted in `a_colony_ship_carries_up_to_the_targets_capacity_and_no_more`.
+
+#### It killed the game, and the gate was the reason
+
+At `medium_min_level = Band III` the corrected ladder produced **zero colonies
+in 4,000 years** on both seeds. The mechanism is exact and was measured, not
+guessed: every colonizer is gated on population `Band III`, population is capped
+by `K = min(hab, bio_max, infra)`, and `Band III` now costs 20 minerals
+cumulative against 6. Homeworlds reach `Band II`, stall, and never build
+anything.
+
+**An expansion gate cannot sit one rung above a step that costs 20× the last
+one.** `medium_min_level` is ratified down to `Band II`, and the schedule's
+"2 = limited, 3 = medium/rapid, 4 = all" is retired with it — that schedule was
+written against a linear price ladder.
+
+#### The result, and it is the best this project has recorded
+
+| configuration | seed 1 | seed 7 |
+|---|---|---|
+| before the subsidy removal | 8,795,729 | 9,124,999 |
+| subsidy removed, old ladder | 4,558,015 | 5,010,605 |
+| **corrected ladder, gate at `Band II`** | **10,105,286** | **10,037,745** |
+
+**+15% on colony-years over the subsidised best**, colony counts back to
+3,435 / 3,467, and the first colony founded at **65 yr against 185**. All of it
+with no conjured mass anywhere: the subsidy is gone, the ladder is
+multiplicative, and the economy is better for it.
+
+#### The affordability fallback, restored as a consequence rather than a doctrine
+
+`production_choice` picked the best `K`-per-mineral hull against the whole
+ladder and *then* tested `can_expand`. A young colony that could afford a Medium
+colonizer now picked a General it could not afford and built **nothing**,
+banking indefinitely. `ColonizerHull::GeneralWhenAffordable` used to carry that
+rule explicitly; deriving the hull dropped it, and nothing noticed because the
+shipped ladder happened to make Medium the answer anyway. The score now ranks
+only hulls the centre can pay for today.
+
 ### T-60. The founding subsidy is removed (R-O77 closed), and what it broke
 
 **Directed this conversation.** A hull's mass *is* the infrastructure it becomes

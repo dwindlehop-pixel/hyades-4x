@@ -89,6 +89,14 @@ pub const KILOTONS_AT_BAND_I: f64 = 1.0;
 /// Each entry is `F_cost^(3/2)` for the cost ladder's `5, 10, 20, 40` — the
 /// ratified tie between the two ladders, and the shell model's own exponent:
 /// cost tracks `r²` and the hold tracks `r³`.
+/// **The ratified cost ladder** (`Hyades_mineral_cost_curve.md` §2.6, R-MC15) —
+/// the step factors between adjacent Bands of *mineral spend*.
+///
+/// This is the primitive; [`MASS_LADDER`] is these raised to `3/2`, which is
+/// the ratified tie between the two ladders and the shell model's own exponent
+/// (cost tracks `r²`, the hold tracks `r³`).
+pub const COST_LADDER: [f64; 4] = [5.0, 10.0, 20.0, 40.0];
+
 pub const MASS_LADDER: [f64; 4] = [
     11.180_339_887_498_949, // 5^1.5   Empty → I
     31.622_776_601_683_793, // 10^1.5  I → II
@@ -107,6 +115,76 @@ pub const fn rung_mass(n: usize) -> f64 {
         2 => KILOTONS_AT_BAND_I * MASS_LADDER[1],
         3 => KILOTONS_AT_BAND_I * MASS_LADDER[1] * MASS_LADDER[2],
         _ => KILOTONS_AT_BAND_I * MASS_LADDER[1] * MASS_LADDER[2] * MASS_LADDER[3],
+    }
+}
+
+/// **A Band ladder with its own anchor** — the general form of the bridge.
+///
+/// §2.6 is explicit that *every quantity anchors its own `Band I`
+/// independently; what has to be shared is the ratio, not the absolute value*.
+/// [`Measure`] hard-wires the **mass** ladder (`Band I` = one kiloton, a small
+/// town), which is right for population, biosphere and cargo and wrong for
+/// anything priced in minerals. This is how a second quantity gets a ladder
+/// without a second copy of the arithmetic.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ladder {
+    rungs: [f64; 5],
+    steps: [f64; 4],
+}
+
+impl Ladder {
+    /// Build a ladder from one known rung and the step factors between them.
+    ///
+    /// `anchor_rung` is indexed like [`BandTier::index`]: `0` is `Empty`, `1`
+    /// is `Band I`, and so on.
+    pub fn anchored_at(anchor_rung: usize, value: f64, steps: [f64; 4]) -> Ladder {
+        let mut rungs = [0.0f64; 5];
+        rungs[anchor_rung] = value;
+        let mut i = anchor_rung;
+        while i > 0 {
+            rungs[i - 1] = rungs[i] / steps[i - 1];
+            i -= 1;
+        }
+        let mut i = anchor_rung;
+        while i < 4 {
+            rungs[i + 1] = rungs[i] * steps[i];
+            i += 1;
+        }
+        Ladder { rungs, steps }
+    }
+
+    /// The magnitude at whole rung `n`.
+    #[inline]
+    pub fn rung(&self, n: usize) -> f64 {
+        self.rungs[n.min(4)]
+    }
+
+    /// Where a magnitude sits on this ladder, interpolated log-linearly inside
+    /// its segment and extrapolated with the edge factor outside — the same
+    /// shape as [`Measure::in_bands`], and floored at [`BAND_FLOOR`] for the
+    /// same reason (design law #16: `band(0)` is `−∞`).
+    pub fn band_of(&self, v: f64) -> Band {
+        if v <= 0.0 {
+            return Band(BAND_FLOOR);
+        }
+        let mut n = 0usize;
+        while n < 3 && v >= self.rungs[n + 1] {
+            n += 1;
+        }
+        Band((n as f64 + (v / self.rungs[n]).ln() / self.steps[n].ln()).max(BAND_FLOOR))
+    }
+
+    /// The magnitude at a continuous position — the inverse of
+    /// [`band_of`](Self::band_of).
+    pub fn value_of(&self, b: Band) -> f64 {
+        let n = if b.0 < 0.0 {
+            0.0
+        } else if b.0 >= 3.0 {
+            3.0
+        } else {
+            b.0.floor()
+        };
+        self.rungs[n as usize] * self.steps[n as usize].powf(b.0 - n)
     }
 }
 

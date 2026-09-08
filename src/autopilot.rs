@@ -764,15 +764,37 @@ impl Autopilot for BaselineAutopilot {
                 // what it displaces elsewhere.
                 let k_pot = col.view.k_potential();
                 let per_mineral = |k: Band, cost: f64| if cost > 0.0 { k.bands() / cost } else { f64::INFINITY };
-                let medium_k = k_pot.min(ctx.medium_founding_infra);
-                let general_k = k_pot.min(ctx.general_founding_infra);
-                let (hull, cost) =
-                    if per_mineral(general_k, ctx.general_colonizer_cost) > per_mineral(medium_k, ctx.colonizer_cost) {
-                        (HullType::GeneralSystems, ctx.general_colonizer_cost)
-                    } else {
-                        (HullType::MediumSystems, ctx.colonizer_cost)
-                    };
-                Some((hull_order(hull), col.ranked.score, cost))
+                let options = [
+                    (HullType::MediumSystems, ctx.colonizer_cost, k_pot.min(ctx.medium_founding_infra)),
+                    (HullType::GeneralSystems, ctx.general_colonizer_cost, k_pot.min(ctx.general_founding_infra)),
+                ];
+                // **Only hulls this centre can pay for today.** The score picks
+                // between real options; it does not pick an option and then
+                // discover it is unaffordable.
+                //
+                // That was the bug: the best `K` per mineral was chosen against
+                // the whole ladder, and `can_expand` below then refused it — so
+                // a young colony that could afford a Medium colonizer *now*
+                // picked a General it could not afford and built **nothing**,
+                // banking indefinitely. `ColonizerHull::GeneralWhenAffordable`
+                // used to carry this rule explicitly; deriving the hull dropped
+                // it, and nothing noticed because the shipped ladder happened
+                // to make Medium the answer anyway.
+                let affordable = |c: f64| ctx.stockpile_total + 1e-9 >= c;
+                let best = options
+                    .iter()
+                    .filter(|(_, cost, k)| affordable(*cost) && *k > Band::ZERO)
+                    .max_by(|a, b| {
+                        per_mineral(a.2, a.1)
+                            .partial_cmp(&per_mineral(b.2, b.1))
+                            .unwrap_or(core::cmp::Ordering::Equal)
+                            .then(a.0.cmp(&b.0))
+                    })
+                    // Nothing affordable: name the cheapest that could found at
+                    // all, so `can_expand` refuses it and the centre saves
+                    // toward something real rather than toward nothing.
+                    .or_else(|| options.iter().find(|(_, _, k)| *k > Band::ZERO));
+                best.map(|&(hull, cost, _)| (hull_order(hull), col.ranked.score, cost))
             }
             (None, Some(mine)) => Some((hull_order(HullType::LimitedSystems), mine.ranked.score, ctx.mining_pair_cost)),
             (None, None) => None,

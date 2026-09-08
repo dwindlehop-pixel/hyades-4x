@@ -795,29 +795,44 @@ pub fn role_hull_type(role: Role) -> HullType {
 // mass *is* the infrastructure it becomes, which is what design law #11 said
 // all along.
 
-/// **What the engine charges to raise infrastructure from `b` to the next
-/// rung — and it is a linear count, not a Band ladder.**
+/// **The infrastructure ladder — priced in minerals, on the mineral ladder
+/// (R-O80 closed).**
 ///
-/// `round(infra) + 1` minerals, which is what the engine has always charged and
-/// what every ratified economic number was measured against. It is named here
-/// rather than left as a `+ 1.0` at two call sites because **it is the last
-/// Band-additive quantity in the engine**, and naming it is what makes that
-/// visible.
+/// Infrastructure is bought with minerals, so its rungs are the *cost* ladder's
+/// rungs: **`Infra I` costs `minerals I`**, rung for rung. `general_vehicle_cost`
+/// is cost `Band II` (§2.6), which anchors the rest through the ratified
+/// factors `5, 10, 20, 40`:
 ///
-/// **R-O80 (new, open): this pricing is dimensionally wrong, and correcting it
-/// would end colonisation at the shipped hull prices.** A Band is a position on
-/// a multiplicative ladder, so the stuff between rung `b` and rung `b+1` is
-/// `KT(b+1) − KT(b)`, not `b + 1`. At the ratified mass ladder that makes the
-/// `I → II` step cost **≈31 minerals against the 2 charged today**, and
-/// `II → III` about 2,800 — an economy in which no colony ever deepens. Either
-/// infrastructure anchors its own `Band I` far below population's (§2.6 permits
-/// exactly that: every quantity anchors independently, only the *ratios* are
-/// shared), or infrastructure is not a Band-laddered quantity at all and its
-/// `Band` type is the wrong one. That is a design call with a large
-/// measurement attached, so the shipped ladder stands and the contradiction is
-/// recorded where it is priced.
-fn infra_step_price(from: Band) -> f64 {
-    from.round().bands() + 1.0
+/// | rung | minerals to be at it | step from the rung below |
+/// |---|---|---|
+/// | `Empty` | 0.02 | — |
+/// | `I` | 0.10 | 0.08 |
+/// | `II` | 1.00 | 0.90 |
+/// | `III` | 20.0 | 19.0 |
+/// | `IV` | 800 | 780 |
+///
+/// **This replaces `round(infra) + 1`**, which charged 1 / 2 / 3 / 4 — a linear
+/// count of Band *numerals*, and the last Band-additive quantity in the engine.
+/// It arrived in the initial import with no derivation beyond its doc line
+/// ("infrastructure upgrades cost minerals equal to the target level") and
+/// survived because `Band` still had an `Add`.
+///
+/// The shape of the economy changes with it: the first two rungs get an order
+/// of magnitude cheaper and `Band III` becomes a real investment rather than
+/// three minerals. That is what a multiplicative ladder means — and it is why
+/// the correspondence with hull prices is *exact*. The rungs **are** the hull
+/// costs (`Limited` 0.02, `Medium` 0.10, `General` 1.00), so a recycled hull
+/// buys precisely the infrastructure its minerals would have bought, and
+/// [`Simulation::founding_infra`] needs no separate rate.
+fn infra_ladder(cfg: &SimConfig) -> units::Ladder {
+    units::Ladder::anchored_at(BandTier::II.index() as usize, cfg.general_vehicle_cost, units::COST_LADDER)
+}
+
+/// Minerals to raise infrastructure from `from` to the next whole rung.
+fn infra_step_price(from: Band, cfg: &SimConfig) -> f64 {
+    let ladder = infra_ladder(cfg);
+    let at = from.round().bands().max(0.0) as usize;
+    ladder.rung(at + 1) - ladder.rung(at)
 }
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
@@ -1112,10 +1127,24 @@ pub struct SimConfig {
     pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
 
-    /// Minimum development level to build medium vehicles (colony/mining). Per
-    /// the production schedule this is **3** (`Band III` — 2/`Band II` = limited,
-    /// 3/`Band III` = medium, 4/`Band IV` = all; `Hyades_mineral_cost_curve.md`
-    /// §2.6 names the general Band ladder these development levels instantiate).
+    /// Minimum development level to build medium vehicles (colony/mining).
+    ///
+    /// **Ratified at `Band II`, down from `Band III` (R-O80, T-61).** It had to
+    /// move with the infrastructure ladder. `K = min(hab, bio_max, infra)` caps
+    /// population, so this is really a gate on *infrastructure*, and the
+    /// corrected ladder charges **20 minerals cumulative to reach `Band III`
+    /// against 6 under the old linear one**. An expansion gate cannot sit one
+    /// rung above a step that costs twenty times the last one: at `Band III`
+    /// the standard bed produced **zero colonies in 4,000 years** on both
+    /// seeds, homeworlds stalling at `Band II` and never affording a colonizer.
+    ///
+    /// At `Band II` the same bed gives 10,105,286 and 10,037,745 colony-years
+    /// on seeds 1 and 7 — the best figures this project has recorded, +15% on
+    /// the subsidised best, with the first colony founded at 65 yr against 185.
+    ///
+    /// The production schedule's "2 = limited, 3 = medium, 4 = all" is retired
+    /// with it: that schedule was written against a linear price ladder and
+    /// does not survive the ladder being multiplicative.
     pub medium_min_level: BandTier,
     /// Minimum development level to build *limited* vehicles — the Scout/LCV
     /// survey craft. The same production schedule that puts medium at
@@ -1434,7 +1463,7 @@ impl SimConfig {
             // 120 — ratified with the snowball defaults: a 40-hop chain retired
             // scouts while most of the galaxy was still dark.
             max_survey_hops: 120,
-            medium_min_level: BandTier::III,
+            medium_min_level: BandTier::II,
             limited_min_level: BandTier::II,
             general_vehicle_cost: 1.0,
             medium_fleet_size: 10.0,
@@ -2555,7 +2584,7 @@ impl Simulation {
         let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
         // Minerals to buy the next whole level. The ladder rung is a Band; its
         // *price* is a mineral quantity, so the reading is taken explicitly.
-        let target_level = infra_step_price(infra);
+        let target_level = infra_step_price(infra, &self.config);
 
         let info = *self.world.player_info.get(pe).unwrap();
         // Live mineral pressure for this center: 1 when broke for its next infra
@@ -2695,7 +2724,7 @@ impl Simulation {
         match order {
             BuildOrder::Idle => false,
             BuildOrder::UpgradeInfrastructure => {
-                let target = infra_step_price(self.world.factors.get(center).unwrap().infra);
+                let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
                     let f = self.world.factors.get_mut(center).unwrap();
                     f.infra = f.infra.up(1.0);
@@ -2981,8 +3010,8 @@ impl Simulation {
     /// below `Band Empty`, so its colony would have no carrying capacity and
     /// [`Self::colony_seed_for`] declines.
     fn founding_infra(&self, hull: HullType) -> Band {
-        let mass = Kilotons::new(hull_cost(hull, &self.config));
-        Band::new(mass.in_bands().bands().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
+        let b = infra_ladder(&self.config).band_of(hull_cost(hull, &self.config));
+        Band::new(b.bands().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
     }
 
     /// **The carrying capacity a colony will have the moment it is founded.**
@@ -3309,8 +3338,8 @@ impl Simulation {
         let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(0.0);
         // The price of this center's *next* rung — the same function the build
         // path charges, rather than a second copy of `round(infra) + 1`.
-        let target_level = infra_step_price(infra);
-        (1.0 - stock / target_level.max(1.0)).clamp(0.0, 1.0)
+        let target_level = infra_step_price(infra, &self.config);
+        (1.0 - stock / target_level.max(1e-9)).clamp(0.0, 1.0)
     }
 
     /// The owned production center with the highest live mineral pressure —
@@ -4225,32 +4254,35 @@ mod tests {
         assert!((g_cap.bands() - 2.0).abs() < 1e-6, "a General hold is Band II, got {g_cap}");
         assert!(HullType::LimitedSystems.colony_seed_capacity(&sim.config) < sim.config.colony_seed_pop.band());
 
-        // **Founding infrastructure is the recycled hull's mass — full stop.**
-        // Dry mass is the mineral cost (L6), so the conversion is the identity
-        // and the 10× founding subsidy is gone (R-O77). A Medium hull's 0.1
-        // minerals reads as a third of a rung; only a General reaches Band I.
+        // **Founding infrastructure is the recycled hull's minerals, read on
+        // the infrastructure ladder — which is the mineral ladder (R-O80).**
+        // The rungs *are* the hull costs, so a recycled hull buys exactly the
+        // infrastructure its minerals would have bought, and every anchor lands
+        // on a whole rung with no rate and no subsidy in between.
+        // (to a tolerance: `band_of` is a log round trip, so a whole rung comes
+        // back as 2.0 minus a couple of ulps)
+        for (hull, rung) in [
+            (HullType::LimitedSystems, BandTier::Empty),
+            (HullType::MediumSystems, BandTier::I),
+            (HullType::GeneralSystems, BandTier::II),
+        ] {
+            let got = sim.founding_infra(hull);
+            assert!((got.bands() - rung.band().bands()).abs() < 1e-9, "{hull:?} founds at {got}, want {rung}");
+        }
         let m_infra = sim.founding_infra(HullType::MediumSystems);
         let g_infra = sim.founding_infra(HullType::GeneralSystems);
 
-        // The identity, asserted against the bridge rather than against a
-        // hand-written formula — **the ladder is piecewise**, and the segment
-        // below `Band I` steps by 11.18 where the one above steps by 31.62.
-        // Re-deriving it by hand with a single factor is how the previous two
-        // versions of this got the wrong answer.
+        // And the prices those rungs correspond to: `Infra I costs minerals I`.
+        let ladder = infra_ladder(&sim.config);
         for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
-            let by_mass = Kilotons::new(hull_cost(hull, &sim.config)).in_bands();
-            assert_eq!(sim.founding_infra(hull), Band::new(by_mass.bands().max(0.0)), "{hull:?}");
+            let rung = sim.founding_infra(hull).round().bands() as usize;
+            assert!(
+                (ladder.rung(rung) - hull_cost(hull, &sim.config)).abs() < 1e-12,
+                "{hull:?}: rung {rung} prices at {} but the hull costs {}",
+                ladder.rung(rung),
+                hull_cost(hull, &sim.config)
+            );
         }
-
-        // A General hull costs exactly one kiloton, which is exactly `KT(I)` —
-        // so it founds at `Band I` on the nose, and it is the only hull that
-        // reaches it.
-        assert!((g_infra.bands() - 1.0).abs() < 1e-12, "a General hull founds at Band I, got {g_infra}");
-        assert!(m_infra < BandTier::I.band(), "a Medium hull no longer reaches Band I: {m_infra}");
-        assert!(m_infra > Band::ZERO, "but it does found something: {m_infra}");
-        // A Limited hull's mass reads below the bottom rung, so it leaves no
-        // capacity at all — R-V9 with no special case.
-        assert_eq!(sim.founding_infra(HullType::LimitedSystems), Band::ZERO);
 
         // A target far better than either hull can fill: `k_potential` of 4.
         let target = sim.planet_entity[11];
@@ -4266,10 +4298,19 @@ mod tests {
         assert_eq!(sim.founding_capacity(HullType::MediumSystems, target), m_infra);
         let medium = sim.colony_seed_for(HullType::MediumSystems, target).expect("a Medium hull can found");
         let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
-        assert_eq!(medium, m_infra, "a Medium colony starts at the infrastructure its hull left");
-        assert_eq!(general, g_infra, "and so does a General one");
-        assert!(medium < m_cap && general < g_cap, "both are K-limited: the holds are not the binding term");
+        assert!((medium.bands() - m_infra.bands()).abs() < 1e-9, "a Medium colony starts at what its hull left");
+        assert!((general.bands() - g_infra.bands()).abs() < 1e-9, "and so does a General one");
         assert!(general > medium, "a General hull founds a materially better colony");
+
+        // **The two ladders now agree rung for rung, and that is not a
+        // coincidence — it is the same hull cost read twice.** A hull's hold
+        // carries exactly the population the infrastructure that same hull
+        // leaves behind can hold: `Band I` and `Band I` for a Medium, `Band II`
+        // and `Band II` for a General. Neither side binds, so nothing is
+        // wasted at either end — no hold flying empty for want of somewhere to
+        // put people, no infrastructure standing idle for want of people.
+        assert!((medium.bands() - m_cap.bands()).abs() < 1e-9, "Medium: hold {m_cap} vs founding K {medium}");
+        assert!((general.bands() - g_cap.bands()).abs() < 1e-9, "General: hold {g_cap} vs founding K {general}");
 
         // **R-V9 is physics, through the hold.** A Limited hull's seed capacity
         // is below `colony_seed_pop`, so it founds nothing — whatever
