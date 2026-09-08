@@ -198,6 +198,18 @@ entity count compounds:
 configurations, which is the gradient-probe case. **Screen with it, ratify on
 the real objective** — never ship a value the proxy alone chose.
 
+**How wrong the screen can be, measured** (T-64's `growth_rate`,
+`examples/growth_ratify`): the 2,000-year screen put `r = 1.35` at +11.20% and
+`r = 1.90` at +22.94%; the 4,000-year objective put them at **+3.03% and
++6.19%** — an overstatement of ~3.7x, with the *ranking* preserved. So a truncated
+horizon is a fine ranker and a bad estimator, and a "+23%" read off one is not a
+result. Worse, the screen showed `r` as a **step function of itself** — 1.10 and
+1.35 scored bit-identically, as did 1.60 and 1.90, because growth reaches the
+objective only through how many 50-year cycles a centre takes to cross a
+`PopBands` edge — and **those plateaus were gone at the objective.** Step
+structure is horizon-dependent, so a plateau map has to be run at the horizon
+you intend to ratify on.
+
 Three things that measurement got right, and are the reusable part:
 
 - **Rank configurations, not seeds.** ρ is computed *within* each seed and then

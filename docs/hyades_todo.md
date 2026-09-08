@@ -515,13 +515,39 @@ Ratifying off a coarse grid would have picked a plateau *edge* by accident,
 which is the degenerate-sample trap from `coverage_trace` in a new costume — and
 it is the same root cause as R-O68: the gate downstream is discrete.
 
-**Outstanding:** map the plateau boundaries and ratify a value at a plateau's
-*centre* rather than its edge. The fine screen (24 values x 4 seeds at 2,000 yr)
-is a ~48-minute job and belongs on a real machine, not this container — the same
-verdict CLAUDE.md §2 already records for `min_time_search`. Until then
-`growth_rate` keeps 0.873 and the −8.6% stands; the value is a placeholder
-against a *changed quantity*, which is worse than a placeholder against an
-unchanged one, so this should not wait long.
+**Confirmed on the real objective, and the screen was wrong by ~3.7x** — which
+is the entire reason "screen, then confirm" is a rule (`--confirm`, 4,000 yr,
+same four seeds):
+
+| `r` | mean colony-years @4000 | vs 0.873 | screen said |
+|---|---|---|---|
+| 0.873 | 9,199,281 | — | — |
+| 1.350 | 9,477,806 | **+3.03%** | +11.20% |
+| 1.900 | 9,768,872 | **+6.19%** | +22.94% |
+
+Every seed improves at both, and the colony count is 3,365 throughout — the bed
+is count-saturated, so all of this is *when*, none of it is *how many*. The
+plateaus visible at 2,000 yr are gone at 4,000: 1.35 and 1.9 are cleanly
+separated, so the step structure is horizon-dependent and the fine map has to be
+run at the objective, not at the screen.
+
+**No value is ratified, and `growth_rate` stays at 0.873.** Three reasons, and
+the third is the one that decides it:
+
+1. **There is no measured plateau on the objective**, so 1.9 could be an edge —
+   the trap this whole entry is about.
+2. **1.9 has 5% of margin to the `r = 2` bifurcation.** That is not margin for a
+   shipped default, and the `clamp` means the failure past it is silent.
+3. **Even 1.9 does not recover the loss** — 9,700,144 and 9,620,855 against
+   10,004,297 and 9,930,182 before T-64, still −3.0% and −3.1%. So this is not
+   "put the number back"; the operating point genuinely moved and wants a proper
+   search, in the interval `(0.873, 2.0)`, run on a machine that can afford it.
+   `examples/growth_ratify --fine` is the harness; at ~30 s per trial it is a
+   ~48-minute job at the screen horizon and several hours at the objective,
+   which is the same verdict CLAUDE.md §2 already records for `min_time_search`.
+
+Until then the −8.6% stands and the value is a placeholder against a *changed
+quantity*, which is worse than a placeholder against an unchanged one.
 
 ---
 

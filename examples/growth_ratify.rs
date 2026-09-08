@@ -14,7 +14,26 @@
 //! the bed is saturated, so count has almost no room to move and the whole
 //! question is *when* the worlds were taken.
 //!
-//! Run: `cargo run --release --example growth_ratify`
+//! **What it found, and the part worth keeping.** The 2,000-year screen showed
+//! `r` behaving as a *step function of itself* — 1.10 and 1.35 scored
+//! bit-identically, and so did 1.60 and 1.90 — because growth reaches the
+//! objective only through how many 50-year cycles a centre takes to cross a
+//! `PopBands` edge, and that is an integer. Same root cause as R-O68: the gate
+//! downstream is discrete.
+//!
+//! Then the confirmation at 4,000 yr disagreed with the screen by **~3.7x**:
+//!
+//! | `r` | @4000 vs 0.873 | the screen said |
+//! |---|---|---|
+//! | 1.350 | +3.03% | +11.20% |
+//! | 1.900 | +6.19% | +22.94% |
+//!
+//! and the plateaus were gone — 1.35 and 1.9 separate cleanly at the real
+//! horizon. So the screen is a fine *ranker* and a bad *estimator*, and the
+//! step structure is horizon-dependent. Nothing was ratified off it; see T-64.
+//!
+//! Run: `cargo run --release --example growth_ratify`  (add `--fine` for the
+//! plateau map, `--confirm` for the objective)
 use hyades_engine::prelude::*;
 use std::io::Write;
 
