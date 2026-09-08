@@ -384,6 +384,67 @@ become "what does my current Role's System say to build". The dial
 ## Band C — open question with a concrete test
 
 
+### T-63. `Band Empty` is the ladder's floor, one metric tonne wide (R-MC15 amended)
+
+**Directed this conversation:** *"The math is right, but the setting of
+`Band Empty` is way too high. Let's set `Band Empty` to 1 metric ton, which
+should boost Medium Colony Infra."* — and, on the first reading of it: *"I don't
+understand why changing `Band Empty` changes the definition of `Band I`. I want
+to change the **width** of `Band Empty`, not reset the ladder from there."*
+
+`KT(Empty)` was `KT(I) / F_mass(Empty→I)` = `1/11.18` = 0.089 kt, so the whole
+sub-`Band I` region was 11× wide. **Everything small is read on that one
+segment**, and it flattened them all against the floor: a 0.1 kt quantity read
+as `Band 0.046`. At one tonne it reads `Band 0.667`.
+
+The implementation is `units::KILOTONS_AT_BAND_EMPTY = 0.001`, with
+`MASS_LADDER[0]` derived from it. **`Band I` and every rung above it are
+untouched** — pinned by `widening_band_empty_does_not_move_band_i`, whose whole
+job is to catch a re-anchoring that would silently rescale every mass in the
+engine.
+
+**It amends R-MC15, and the amendment is in the spec (§2.6).** `Band Empty` is
+not a rung of the ratified ladder; it is where the ladder stops naming
+magnitudes. The two ratified rules — `1 < F₍ₙ₊₁₎/Fₙ < 10` and
+`F_mass = F_cost^(3/2)` — are about how the ladder *grows* and now read across
+`I → II → III → IV`. `1000` is neither `5^1.5` nor within a decade of `31.6`,
+and the tests say so in those words. The **cost** ladder's floor is untouched at
+5: that step is the Limited hull's price, a real rung, and §2.6 already says the
+two ladders share ratios rather than anchors.
+
+**The cost is real and worth a ratification of its own: a Limited hull's hold no
+longer sits on `Band Empty`.** Hull holds are geometry — Limited → Medium steps
+by `5^1.5 = 11.18` because that is the cost ratio raised to the shell exponent —
+and that step *coincided* with the old floor width. It no longer does, so a
+Limited hold reads `Band 0.65`. Medium and General still land exactly on `Band I`
+and `Band II`. Two tests that had been asserting the geometry against
+`MASS_LADDER` were retargeted to assert it against the cost ladder it actually
+comes from, which is the claim that was always meant.
+
+**Behaviourally it is inert on the standard bed:** 10,021,989 → 10,004,297
+colony-years on seed 1, 9,941,898 → 9,930,182 on seed 7 (−0.2%, −0.1%), colony
+counts identical. That is the complaint restated as a measurement — almost
+nothing in the live economy operates below `Band I`. What it does change is that
+poor worlds are now genuinely **barren**: a trace field falls under
+`density_floor` instead of hovering above it, which partly answers T-62's "there
+are no barren worlds any more".
+
+**Open — the directive this does not yet satisfy.** *"The code must not allow any
+distinction between Bands and mass. These are different counting systems. The
+storage is not distinguished between them; there's no distinction in the data
+structure. Bands are only for printing and a useful shorthand for the
+exponential growth of a 4x game."* `MineralField` complies since T-62. The
+engine does not: `World::population` and `World::pop_cargo` are
+`ComponentStore<Band>`, and the growth logistic runs **in Band space**
+(`s + growth·s·(1 − s/kb)`) before converting to mass to pay the biomass draw.
+Logistic growth is a mass process; running it on the log reading is the same
+class of error as R-O66. Storing the mass and reading Bands off it is the fix,
+and it is a behaviour change large enough to want its own stage and its own
+measurement. `habitability` and `infrastructure` are *levels*, not masses, and
+are a separate question.
+
+---
+
 ### T-62. Mineral generation is Gaussian over **Bands** (R-O81 closed)
 
 **Directed this conversation:** *"I think galaxy generation predates the cleanup

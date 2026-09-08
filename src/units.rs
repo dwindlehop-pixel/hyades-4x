@@ -24,12 +24,13 @@
 //!
 //! §2.6 defines a Band step as a *multiplicative* jump — "crossing from one
 //! Band to the next is not 'one more unit'; it is a jump of several times the
-//! previous Band's magnitude" — with the `I→II` and `II→III` factors each a
-//! rational in `[4, 8]`. So the conversion is exponential:
+//! previous Band's magnitude". R-MC15 withdrew the idea of one shared step and
+//! ratified a **ladder** of them ([`MASS_LADDER`]), so the conversion is
+//! exponential *piecewise*, one segment per rung:
 //!
 //! ```text
-//! kilotons(b) = KILOTONS_AT_BAND_I · BAND_STEP^(b − 1)
-//! band(m)     = 1 + log(m / KILOTONS_AT_BAND_I) / log(BAND_STEP)
+//! kilotons(b) = rung_mass(n) · MASS_LADDER[n]^(b − n)      n = segment of b
+//! band(m)     = n + log(m / rung_mass(n)) / log(MASS_LADDER[n])
 //! ```
 //!
 //! The map is exact and unclamped in the Band→mass direction, because the
@@ -45,7 +46,7 @@
 //! A world's pristine biosphere `bio_max` is generated as a Band value and
 //! stored as its mass `KT(bio_max)`. A population at Band `p` masses `KT(p)`.
 //! So "there is enough biomass to make these people" and "`p ≤ bio_max`" are
-//! the *same* inequality, for any [`BAND_STEP`] — which is why the old
+//! the *same* inequality, for any ladder at all — which is why the old
 //! `min(hab, bio, infra)` produced sensible play despite comparing a mass
 //! against two levels. The fix keeps that agreement and makes it derivable
 //! rather than coincidental: the ceiling is a Band minimum, the draw is a
@@ -53,14 +54,14 @@
 //!
 //! A *linear* bridge would have been the easy choice and would have quietly
 //! contradicted the ladder spec — Band II would have been twice Band I instead
-//! of four to eight times it. Getting this wrong is the same class of error as
-//! the one the types exist to prevent, one level up.
+//! of thirty-odd times it. Getting this wrong is the same class of error as the
+//! one the types exist to prevent, one level up.
 //!
-//! **[`BAND_STEP`] is not ratified.** §2.6's R-MC15 is open precisely because
-//! no cost ladder this project has shipped satisfies the `[4, 8]` constraint on
-//! both steps. `4.0` is the floor of the permitted range, chosen so the value
-//! is inside the spec rather than outside it, and flagged rather than
-//! presented as settled.
+//! **The ladder is ratified; the ladder's *floor* is set separately.** R-MC15
+//! fixes the step factors across `I → II → III → IV` and ties them to
+//! [`COST_LADDER`] by the shell model's `3/2`. It says nothing about how far
+//! below `Band I` the ladder keeps naming magnitudes, which is a per-quantity
+//! anchor under §2.6 — see [`KILOTONS_AT_BAND_EMPTY`].
 
 use core::fmt;
 use core::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
@@ -98,11 +99,41 @@ pub const KILOTONS_AT_BAND_I: f64 = 1.0;
 pub const COST_LADDER: [f64; 4] = [5.0, 10.0, 20.0, 40.0];
 
 pub const MASS_LADDER: [f64; 4] = [
-    11.180_339_887_498_949, // 5^1.5   Empty → I
-    31.622_776_601_683_793, // 10^1.5  I → II
-    89.442_719_099_991_59,  // 20^1.5  II → III
-    252.982_212_813_470_36, // 40^1.5  III → IV
+    KILOTONS_AT_BAND_I / KILOTONS_AT_BAND_EMPTY, // 1000  Empty → I — the *floor*, set below
+    31.622_776_601_683_793,                      // 10^1.5  I → II
+    89.442_719_099_991_59,                       // 20^1.5  II → III
+    252.982_212_813_470_36,                      // 40^1.5  III → IV
 ];
+
+/// **Where the mass ladder bottoms out — one metric tonne.** Directed: *"the
+/// setting of `Band Empty` is way too high. Let's set `Band Empty` to 1 metric
+/// ton… I want to change the *width* of `Band Empty`, not reset the ladder from
+/// there."*
+///
+/// `Band Empty` is not a rung of the ratified ladder; it is the ladder's
+/// **floor**, and its width is the one degree of freedom R-MC15 does not fix.
+/// R-MC15 ratified the step factors and the `F_mass = F_cost^(3/2)` tie between
+/// the two ladders; both statements are about how the ladder *grows*, and they
+/// hold across `I → II → III → IV`, whose factors grow at a uniform 2.83. What
+/// sits *below* `Band I` is a different question — "how small a positive
+/// magnitude will the ladder still name?" — and §2.6 already answers it
+/// per-quantity: every quantity anchors its own scale and only the ratios are
+/// shared. So the two ladders' Empty widths are **not** tied to each other, and
+/// [`COST_LADDER`]`[0] = 5` is untouched by this: it is the Limited hull's
+/// price, which is a real rung on a real ladder.
+///
+/// **What it buys.** Everything sub-`Band I` is read on this segment, and at
+/// the old `1/11.18 ≈ 0.089 kt` floor the segment was far too narrow to
+/// resolve anything: a Medium hull's ~0.1 kt hold read as **`Band 0.046`**, a
+/// rounding error away from founding nothing at all. At one tonne the same
+/// hold reads **`Band 0.67`**. The colony a Medium colonizer founds is the
+/// thing this number sets.
+///
+/// **What it costs, stated rather than hidden:** the two invariants above are
+/// now claims about the playable ladder, not about `MASS_LADDER` as an array.
+/// `1000 / 31.6` is not in `(1, 10)` and `1000` is not `5^1.5`, and the tests
+/// say so in those words.
+pub const KILOTONS_AT_BAND_EMPTY: f64 = 0.001;
 
 /// The mass at rung `n`, hung off [`KILOTONS_AT_BAND_I`] — `Band I` is the
 /// anchor, so `Empty` is *below* it by the first ladder step and every rung
@@ -110,7 +141,7 @@ pub const MASS_LADDER: [f64; 4] = [
 #[inline]
 pub const fn rung_mass(n: usize) -> f64 {
     match n {
-        0 => KILOTONS_AT_BAND_I / MASS_LADDER[0],
+        0 => KILOTONS_AT_BAND_EMPTY,
         1 => KILOTONS_AT_BAND_I,
         2 => KILOTONS_AT_BAND_I * MASS_LADDER[1],
         3 => KILOTONS_AT_BAND_I * MASS_LADDER[1] * MASS_LADDER[2],
@@ -804,15 +835,47 @@ mod tests {
 
         // The ratified constraint is on how the factors *grow*: strictly
         // increasing, and by less than a decade each time.
-        for pair in MASS_LADDER.windows(2) {
+        //
+        // **It is a claim about the playable ladder, `I → II → III → IV`.**
+        // `MASS_LADDER[0]` is not a rung factor at all — it is the width of
+        // `Band Empty`, the ladder's floor, which R-MC15 does not fix and which
+        // is set independently per quantity (§2.6). See
+        // `KILOTONS_AT_BAND_EMPTY`.
+        for pair in MASS_LADDER[1..].windows(2) {
             let ratio = pair[1] / pair[0];
             assert!(ratio > 1.0 && ratio < 10.0, "{} / {} = {ratio}, outside (1, 10)", pair[1], pair[0]);
         }
 
         // And the tie to the cost ladder is the shell model's exponent: cost
-        // tracks r², the hold tracks r³. A cost ladder of 5, 10, 20, 40.
-        for (n, cost_step) in [5.0_f64, 10.0, 20.0, 40.0].into_iter().enumerate() {
-            assert!((MASS_LADDER[n] - cost_step.powf(1.5)).abs() < 1e-9, "F_mass must be F_cost^(3/2) at rung {n}");
+        // tracks r², the hold tracks r³. A cost ladder of 10, 20, 40 across the
+        // playable rungs — the floor is excluded for the same reason.
+        for (n, cost_step) in [10.0_f64, 20.0, 40.0].into_iter().enumerate() {
+            assert!(
+                (MASS_LADDER[n + 1] - cost_step.powf(1.5)).abs() < 1e-9,
+                "F_mass must be F_cost^(3/2) at rung {}",
+                n + 1
+            );
+        }
+    }
+
+    /// `Band Empty` is the ladder's floor and its width is set on its own
+    /// (`KILOTONS_AT_BAND_EMPTY`), so pin both halves of that: where the floor
+    /// is, and that widening it left `Band I` exactly where it was. The failure
+    /// this guards against is re-anchoring — moving the bottom of the ladder and
+    /// dragging every rung above it along, which would silently rescale every
+    /// mass in the engine.
+    #[test]
+    fn widening_band_empty_does_not_move_band_i() {
+        assert_eq!(rung_mass(0), 0.001, "Band Empty is one metric tonne");
+        assert_eq!(rung_mass(1), KILOTONS_AT_BAND_I, "Band I must not move when the floor widens");
+        for n in 1..=4 {
+            let expect = match n {
+                1 => 1.0,
+                2 => 31.622_776_601_683_793,
+                3 => 31.622_776_601_683_793 * 89.442_719_099_991_59,
+                _ => 31.622_776_601_683_793 * 89.442_719_099_991_59 * 252.982_212_813_470_36,
+            };
+            assert!((rung_mass(n) - expect).abs() < 1e-9 * expect.max(1.0), "rung {n} moved: {}", rung_mass(n));
         }
     }
 

@@ -821,13 +821,60 @@ rules and lands the population anchor where it is required:
 
 | step | `F_cost` | `F_mass` |
 |---|---|---|
-| `Empty → I` | 5 | 11.18 |
+| `Empty → I` | 5 | **1000** *(amended — the floor, see below)* |
 | `I → II` | 10 | 31.62 |
 | `II → III` | 20 | 89.44 |
 | `III → IV` | 40 | 252.98 |
 
 Ratios are 2 on the cost ladder and 2.83 on the mass ladder — inside `(1, 10)`
-on both. `F₃ = 253` is 2.4 orders of magnitude, comfortably inside the "not four
+on both, **across `I → II → III → IV`**.
+
+##### Amendment — `Band Empty` is the ladder's *floor*, and its width is set per quantity (T-63)
+
+*Directed: "the setting of `Band Empty` is way too high. Let's set `Band Empty`
+to 1 metric ton… I want to change the **width** of `Band Empty`, not reset the
+ladder from there."*
+
+`Band Empty` is not a rung of the ratified ladder — it is where the ladder stops
+naming magnitudes. Rules 1 and 2 above are statements about how the ladder
+*grows*, and they hold across the playable rungs `I → II → III → IV`; how far
+below `Band I` the ladder keeps counting is a different question, and §2.6
+already answers it per-quantity ("every quantity anchors its own `Band I`; what
+is shared is the ratio"). So:
+
+- **The mass ladder's floor is one metric tonne** — `KT(Empty) = 0.001 kt`,
+  `F_mass(Empty→I) = 1000`. `Band I` does not move, and neither does any rung
+  above it.
+- **The cost ladder's floor is untouched** at `F_cost(Empty→I) = 5`. That step
+  is the Limited hull's price, a real rung on a real ladder, and the two floors
+  are not tied to each other.
+- Consequently `F_mass = F_cost^(3/2)` and `1 < F₍ₙ₊₁₎/Fₙ < 10` are claims about
+  `I → II → III → IV`. `1000` is neither `5^1.5` nor within a decade of `31.6`,
+  and the tests say so in those words
+  (`units::tests::a_band_step_is_multiplicative_not_additive`).
+
+**Why.** Everything below `Band I` is read on this one segment, and at the old
+`1/11.18 ≈ 0.089 kt` floor the segment was far too narrow to resolve anything:
+a 0.1 kt quantity read as **`Band 0.046`**, a rounding error from nothing. At
+one tonne the same quantity reads **`Band 0.667`**. Sub-`Band I` colonies,
+holds and ore fields are the whole population of that segment, and they were
+being flattened against the floor.
+
+**What it costs, and it is a real cost.** *A Limited hull's hold no longer sits
+on `Band Empty`.* Hull holds are geometry — the Limited → Medium step is
+`5^1.5 = 11.18` because that is the cost ratio raised to the shell exponent —
+and that step used to coincide with the mass ladder's floor width. It no longer
+does, so a Limited hull's 0.089 kt hold reads **`Band 0.65`**. The Medium and
+General holds still land exactly on `Band I` and `Band II`; only the bottom leg
+of the "a Limited sits at `Band Empty` on both ladders" claim below is retracted.
+
+**What it does not cost:** the standard bed is unmoved — 10,021,989 →
+10,004,297 colony-years on seed 1 and 9,941,898 → 9,930,182 on seed 7 (−0.2% and
+−0.1%), with colony counts identical. Almost nothing in the live economy
+operates below `Band I`, which is precisely the complaint the change answers. It
+does make genuinely poor worlds *barren* — a trace field now falls under
+`density_floor` instead of hovering just above it — which is a partial answer to
+T-62's "there are no barren worlds any more". `F₃ = 253` is 2.4 orders of magnitude, comfortably inside the "not four
 or more" constraint. **This progression is a default, not a measurement**: it is
 subject to Monte-Carlo verification that it does not create a colony-years
 bottleneck (`examples/colony_years`), and that verification is Stage 3's job.
@@ -839,7 +886,7 @@ hull is `Band II` on both ladders:
 
 | rung | mineral cost | hold (kt) | population | what sits there |
 |---|---|---|---|---|
-| `Band Empty` | 0.02 | 0.089 | 298 | one **Limited** hull |
+| `Band Empty` | 0.02 | 0.001 | 3.3 | the ladder's **floor** (T-63); a Limited hull *costs* this rung |
 | `Band I` | 0.10 | **1.00** | 3,333 | one **Medium** hull |
 | `Band II` | 1.00 | 31.6 | 105,400 | one **General** hull, opening Design |
 | `Band III` | 20.0 | 2,828 | 9.43 M | General, **Supers** Design (mid-game) |
@@ -856,7 +903,9 @@ requirement is an order of magnitude wide.
 `Pop Band IV = 2.38 billion` sits inside the required 1–10 billion, and it is a
 *consequence* of the step-ratio rather than a fitted value. A General hull
 **costs `Band II` and holds `Band II`**; a Medium **holds `Band I` and costs
-`Band I`**; a Limited sits at `Band Empty` on both. The step factors differ
+`Band I`**; a Limited ~~sits at `Band Empty` on both~~ **costs `Band Empty` and
+holds `Band 0.65`** — the hold leg is retracted by the T-63 amendment above,
+which widened the mass ladder's floor without moving the cost ladder's. The step factors differ
 (5/10/20/40 against 11/32/89/253) and the rungs still correspond, because each
 quantity anchors its own `Band I` — which is what this section said from the
 start, now with the ratios it actually implies.

@@ -391,7 +391,14 @@ combat logic into the arena or into an example.
   is a point. Hexes are a *command-view* concept owned by the presentation layer.
 - **A quantity carries its unit in the type, not in a comment.** `Band` is a
   magnitude *tier* on the ladder (`Hyades_mineral_cost_curve.md` §2.6);
-  `Kilotons` is an amount of stuff. They are different types because the engine
+  `Kilotons` is an amount of stuff. **A Band is a *reading*, not a second thing
+  to store** — directed: *"the code must not allow any distinction between Bands
+  and mass… the storage is not distinguished between them. Bands are only for
+  printing and a useful shorthand for the exponential growth of a 4x game."*
+  Store the quantity; read a Band off it where a magnitude tier is what the
+  comparison wants. `MineralField` complies (T-62); `World::population` and
+  `World::pop_cargo` do **not** yet, and the growth logistic still runs in Band
+  space (T-63, open). They are different types because the engine
   shipped `K = min(hab, bio, infra)` for a long time with `bio` a mass and the
   other two levels — a `min` across incompatible units that typechecked, read
   as plausible ecology, and put the largest measured lever on coverage
@@ -546,6 +553,14 @@ one, stop and flag it.
    regrowing logistically toward `bio_max`, so ecology is a rate rather than an
    exemption — which is what makes biological damage durable and gives Warfare a
    target that is neither hulls nor infrastructure.
+
+   **`Band Empty` is the mass ladder's *floor*, one metric tonne, and its width
+   is set on its own** (T-63) — `KILOTONS_AT_BAND_EMPTY`, not `KT(I)/F₀`. R-MC15's
+   growth rule and the `F_mass = F_cost^(3/2)` tie are claims about the playable
+   rungs `I → II → III → IV`; the floor is a per-quantity anchor and the cost
+   ladder's floor (5, the Limited hull's price) is untouched. Consequence to
+   remember: a Limited hull's hold no longer sits on `Band Empty` — hull holds
+   are geometry (`5^1.5`) and that coincided with the old floor width.
 
    **The exchange is a mass difference, not a level difference (R-O66).** A
    population at Band `b` masses `KT(b) = KT_I · BAND_STEP^(b−1)`, so a step from

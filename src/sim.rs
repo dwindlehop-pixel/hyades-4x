@@ -4086,24 +4086,35 @@ mod tests {
         let (l, m, g) = (HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems);
 
         // The `3/2` tie, asserted against the cost ladder that produced it
-        // rather than against a copied constant.
-        for (cost_step, mass_step) in [
-            (cfg.limited_fleet_size / cfg.medium_fleet_size, units::MASS_LADDER[0]),
-            (cfg.medium_fleet_size, units::MASS_LADDER[1]),
+        // rather than against a copied constant. **The steps are the hull cost
+        // steps, not `MASS_LADDER` entries** — those two agreed at the top of
+        // the ladder and used to agree at the bottom as well, and the bottom
+        // agreement was a coincidence of where the ladder's floor sat. Widening
+        // `Band Empty` to one tonne (`units::KILOTONS_AT_BAND_EMPTY`) ended it:
+        // `MASS_LADDER[0]` is the floor's width, 1000, while the Limited →
+        // Medium hull step is and remains `5^1.5`. Asserting the geometry
+        // against the geometry is the claim that was always meant.
+        for (cost_step, hold_step) in [
+            (cfg.limited_fleet_size / cfg.medium_fleet_size, m.hold_volume(&cfg) / l.hold_volume(&cfg)),
+            (cfg.medium_fleet_size, g.hold_volume(&cfg) / m.hold_volume(&cfg)),
         ] {
-            assert!(
-                (mass_step - cost_step.powf(1.5)).abs() < 1e-9,
-                "F_mass must be F_cost^(3/2): {mass_step} vs {cost_step}^1.5"
-            );
+            // Tolerances are loose because `η` varies across the three sizes by
+            // design (§2.2) — the steps are hit to within a couple of percent,
+            // not to the bit.
+            let want = cost_step.powf(1.5);
+            assert!((hold_step / want - 1.0).abs() < 0.05, "hold step {hold_step} vs {cost_step}^1.5 = {want}");
         }
 
-        // And the holds walk that ladder. Tolerances are loose because `η`
-        // varies across the three sizes by design (§2.2) — the rungs are hit to
-        // within a couple of percent, not to the bit.
-        let lo = m.hold_volume(&cfg) / l.hold_volume(&cfg);
-        let hi = g.hold_volume(&cfg) / m.hold_volume(&cfg);
-        assert!((lo / units::MASS_LADDER[0] - 1.0).abs() < 0.05, "Empty→I hold step {lo}");
-        assert!((hi / units::MASS_LADDER[1] - 1.0).abs() < 0.05, "I→II hold step {hi}");
+        // **Medium and General holds still land on `Band I` and `Band II`.**
+        // That is the part of the T-56 story the floor change does *not* touch,
+        // because both rungs are above it. What it does touch is the Limited
+        // hull, whose 0.089 kt hold used to sit exactly on `Band Empty` and now
+        // reads ~`Band 0.65` — recorded here rather than asserted, because it
+        // is a consequence of the floor and not a property of the geometry.
+        for (hull, rung) in [(m, 1.0), (g, 2.0)] {
+            let hold = Kilotons::new(hull.hold_volume(&cfg).hull_units_cubed() * cfg.cargo_unit_size);
+            assert!((hold.in_bands().bands() - rung).abs() < 0.05, "{hull:?} hold reads {:?}", hold.in_bands());
+        }
 
         // **R-V9 is satisfied by geometry rather than contradicted by it.** A
         // Colonizer carries `colony_seed_pop` of settlers, and before T-56 that
@@ -4179,10 +4190,16 @@ mod tests {
         // **The Systems row lands on the Band rungs**, which is the whole point
         // of the ratified ladder: the hold is the quantity that sits on a rung,
         // and its steps are the mass ladder's own factors.
+        // The factors are the *cost* ladder's, raised to `3/2` — see
+        // `the_hold_ladder_is_the_mass_ladder` for why that is no longer the
+        // same thing as `MASS_LADDER` at the bottom rung.
         let step_lo = m.hold_volume(&cfg) / l.hold_volume(&cfg);
         let step_hi = g.hold_volume(&cfg) / m.hold_volume(&cfg);
-        assert!((step_lo - units::MASS_LADDER[0]).abs() < 0.2, "Empty→I hold step {step_lo}");
-        assert!((step_hi - units::MASS_LADDER[1]).abs() < 0.5, "I→II hold step {step_hi}");
+        assert!(
+            (step_lo - (cfg.limited_fleet_size / cfg.medium_fleet_size).powf(1.5)).abs() < 0.2,
+            "Limited→Medium hold step {step_lo}"
+        );
+        assert!((step_hi - cfg.medium_fleet_size.powf(1.5)).abs() < 0.5, "Medium→General hold step {step_hi}");
 
         // **Capability, not competence** (roles §4, R-O44). A Limited Contact
         // or Offensive hull and a Rapid Offensive one reserve more than their
@@ -4332,6 +4349,18 @@ mod tests {
         let extracted = |crew: usize| {
             let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
             let outpost = sim.planet_entity[10];
+            // **Pin the ore rather than inherit it.** This test is about the
+            // *proportionality* of the crew, so which rock the generator put at
+            // index 10 is a confound: T-62's log-normal field plus a widened
+            // `Band Empty` floor made that particular world barren, and the test
+            // failed on "a single miner must extract something" — a true
+            // statement about a dead rock and nothing at all about crews.
+            {
+                let d = sim.world.density.get_mut(outpost).unwrap();
+                for b in Basic::ALL {
+                    d.set(b, Kilotons::new(1.0));
+                }
+            }
             let before = sim.world.density.get(outpost).unwrap().total_mass().kilotons();
             // A crew is just entities on the books; what they extract is what
             // this test is about, so they need no voyage.
