@@ -42,6 +42,15 @@ entry became `T-49`. When branching, take the next free number *and* check for a
 collision at merge time; a numbering rule that says "never reuse" is not
 self-enforcing across branches.
 
+**It happened again on the very next merge, which is the useful part.** The
+rename above landed on `main` at 07:21; a branch that had not fetched it took
+`T-49` for R-O67 fourteen hours later, and the T-62/63/64 merge brought the two
+together — again with no conflict, again invisible in the diff, and again found
+only by `grep -oE '^### T-[0-9]+' | sort | uniq -d`. R-O67 became `T-65`; the
+mining entry keeps `T-49`, since it was assigned first. **Run that grep as part
+of every merge**, because the advice in the paragraph above is necessary and not
+sufficient: checking for a collision only works if something makes you check.
+
 ---
 
 ## Band A — ready to build
@@ -2522,7 +2531,7 @@ by whatever does the card-costing analysis later. The harness gains a
 **Related:** T-45 (elasticity baseline) is the first dataset this should
 capture, and it needs re-running at the post-R-O66 operating point anyway.
 
-### T-49. R-O67 — population stalls when it runs out of biomass; it never dies back
+### T-65. R-O67 — population stalls when it runs out of biomass; it never dies back
 
 **Design call, not a bug to patch.** Population responds to two ceilings and the
 model corrects for only one.
