@@ -369,7 +369,7 @@ policy that founds colonies **399 years earlier**, which read as a clean
 refutation of the mechanism it was built to test. Split by what that first build
 was, **both components had fallen** (72.4 → 66.3 and 401.4 → 342.9). A weighted
 mean can only rise while both group means fall if the weights move, and they had:
-the hull-first share went 55% → 97%.
+the hull-first share went **55.0% → 97.4%**, on every seed.
 
 So the measurement was correct, the population it averaged over was not the same
 population, and the sign it reported was the opposite of the mechanism.

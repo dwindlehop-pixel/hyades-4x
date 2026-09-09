@@ -230,11 +230,13 @@ colony's founding to its own first applied build *rose* 253.5 → 335.8 yr under
 the faster policy. Decomposed by what that first build was, **both components
 fell**: infrastructure-first 72.4 → 66.3 yr, hull-first 401.4 → 342.9 yr. A
 weighted mean can only rise while both group means fall if the weights move, and
-they do. Solving the two-group mean for the weight puts the hull-first share at
-**~55% → ~97%** (the harness now reports it directly as `hull1st`). Deep-seeded
-colonies **skip the pre-`medium_min_level` staircase** and go straight for a hull
-they must save for. That is the pathway from seed mass to earlier founding, and
-the aggregate was hiding it.
+they do: the hull-first share is **55.0% → 97.4%**, measured (`hull1st`), and
+per-seed monotone — 54.2/54.1/55.0/56.6 against 96.9/98.3/97.5/97.0. Solving the
+two-group mean for the weight independently gives 55.05% and 97.43%, so the
+decomposition accounts for the aggregate exactly rather than approximately.
+Deep-seeded colonies **skip the pre-`medium_min_level` staircase** and go
+straight for a hull they must save for. That is the pathway from seed mass to
+earlier founding, and the aggregate was hiding it.
 
 > **A new artifact shape for `CLAUDE.md` §2's table: an aggregate that moves
 > against every one of its parts.** Nothing was wrong with the dwell
