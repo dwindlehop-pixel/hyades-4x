@@ -17,6 +17,20 @@
 //! methodology (a fixed standard test bed, completion time as the metric)
 //! carries over unchanged.
 //!
+//! **Offline only since T-68 — it is no longer in CI, and the reason is not
+//! the clock.** Its second bed contrasts the default `medium_fleet_size`
+//! against a "past the optimum" 6.0, and that comparison **went vacuous**:
+//! T-56 stage 3c decoupled the cost ladder from the capacity ladder, so the
+//! knob is now a *price* and not also a hold, and R-IND11's ablation B measured
+//! that coloniser hull price is worth −0.08% — so both beds print identical
+//! coverage (3,336 / 3,349 on seeds 1 / 7). It also grew to ~8 minutes. A check
+//! that spends eight minutes printing a tautology is not a check.
+//!
+//! It is kept because the *first* bed still reports something real — coverage
+//! against the K>0 target set — and because the completion column is an honest
+//! statement of a structural fact (see the closing note). Give it a live second
+//! bed, or a knob that still discriminates, before putting it back in CI.
+//!
 //! Run with:  `cargo run --release --example coverage_time`
 
 use std::collections::{HashMap, HashSet};
@@ -46,9 +60,29 @@ fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
     galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
 }
 
+/// **The horizon this driver runs at, and why it is not the objective's.**
+///
+/// 2,000 yr — `CLAUDE.md` §2's calibrated screen (rank agreement ρ = 0.923 with
+/// the 4,000-year objective, ~31x cheaper). This harness exists for the
+/// **doctrine comparison** between the two beds in `main`, and those two differ
+/// by roughly a factor of two in coverage; a screen that ranks working
+/// configurations at ρ = 0.923 settles a 2x gulf with room to spare.
+///
+/// **What the trim costs**, stated rather than left to look free: the absolute
+/// coverage figures printed here are no longer comparable to the 4,000-year
+/// numbers quoted in `CLAUDE.md` §7, and a *narrow* doctrine difference could
+/// hide inside the screen's disagreement with the objective. Anything that
+/// close belongs in the offline search, which is not time-boxed.
+///
+/// It moved because T-68 made `t_build` track hull mass and cost ~19x of
+/// throughput, which took this driver from ~49 s to over 25 minutes — it was
+/// **cancelled in CI**, which is how the cost was noticed.
+const SCREEN_HORIZON_YEARS: f64 = 2000.0;
+
 /// Run one trial. Returns (completion_time_years if fully covered within the
 /// horizon else None, planets covered, total targets, horizon).
-fn trial(seed: u64, cfg: SimConfig) -> (Option<f64>, usize, usize, f64) {
+fn trial(seed: u64, mut cfg: SimConfig) -> (Option<f64>, usize, usize, f64) {
+    cfg.horizon_years = SCREEN_HORIZON_YEARS;
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
     let targets = coverage_targets(&galaxy);
     let total = targets.len();
@@ -119,7 +153,7 @@ fn run_test_bed(label: &str, cfg: SimConfig) {
     println!(
         "\n{full_coverage_count}/{} seeds reached 100% K>0 coverage within the {} yr horizon.",
         TEST_BED_SEEDS.len(),
-        cfg.horizon_years
+        SCREEN_HORIZON_YEARS
     );
     if !completions.is_empty() {
         let mean = completions.iter().sum::<f64>() / completions.len() as f64;
@@ -155,10 +189,17 @@ fn main() {
 
     println!(
         "\nReading: coverage is what fraction of the galaxy's K_potential>0 worlds\n\
-         anyone has colonized by the horizon. Under the ratified snowball defaults\n\
-         (R-AC16/R-AC17) expansion compounds instead of stalling, so the interesting\n\
-         question is no longer *whether* it moves but how far it gets in 4,000 years —\n\
-         full coverage currently needs closer to 8,000. Run `min_time_search` offline\n\
-         for the coordinate-descent search over the remaining parameters."
+         anyone has colonized by the {SCREEN_HORIZON_YEARS:.0} yr screen horizon, and the\n\
+         comparison between the two beds above is what this driver is for.\n\
+         \n\
+         **The completion column will not fire, and that is structural.** The target\n\
+         set is every world with min(hab,bio) > 0.01, but the autopilot's `k_high`\n\
+         classifier admits only 51-53% of the galaxy (`examples/reach_limit`), so\n\
+         '100% of K>0 colonized' is unreachable at any horizon — the bed already takes\n\
+         ~99% of what `k_high` allows. The column is kept because it is the honest\n\
+         report of that: it says >horizon, every time, on purpose. Widening the\n\
+         classifier is the question (R-AC18), not lengthening the run.\n\
+         \n\
+         Run `min_time_search` offline for the coordinate-descent search."
     );
 }

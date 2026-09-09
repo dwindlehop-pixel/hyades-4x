@@ -94,11 +94,22 @@ only exception and they are offline, never in CI. Current costs:
 
 | step | cost |
 |---|---|
-| `cargo test --all-targets` (unit + determinism + smoke) | ~112 s (unit target 59.5 s) |
+| `cargo test --all-targets` (unit + determinism + smoke) | ~85 s (unit target ~35 s) |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
-| `coverage_trace` | ~19 s |
-| `coverage_time` | ~49 s |
-| `montecarlo` | ~56 s |
+| `coverage_trace` | in the slow job; ~30 min for the whole `balance` job post-T-68 |
+| ~~`coverage_time`~~ | **out of CI** — ~8 min, *and* its doctrine comparison is now vacuous (below) |
+| `montecarlo` | 48 s — pinned to a 1,000-yr horizon at T-68; it was 6 full 4,000-yr runs and blew a 25-minute job budget |
+
+**T-68 broke the `examples (fast)` job, and the fix was not uniform.**
+`montecarlo` was six full-horizon runs to answer "does the engine run without
+panicking", which needs seed breadth and not horizon — pinned to 1,000 yr and
+the duplicated seed-42 run reused, 61 s → 48 s. `coverage_time` was **removed**
+rather than trimmed, because trimming it would have preserved a comparison that
+no longer compares anything: its second bed moves `medium_fleet_size`, which
+T-56 stage 3c turned back into a pure price, and R-IND11's ablation B measured
+coloniser hull price at −0.08%. Both beds now print identical coverage.
+**Distinguish a check that got expensive from a check that stopped asking
+anything** — the first wants fewer samples, the second wants deleting.
 
 **The unit target went 97 s → 144 s at T-62, back to 59.5 s at T-64, then
 87 s → 507 s → ≈55 s at T-68**, and no move was about the tests. T-62's cost was
@@ -232,6 +243,29 @@ entity count compounds:
 | 2,000 | 0.88 s | **31×** | ρ = 0.923 (healthy-band 0.859, worst seed 0.907) |
 | 1,500 | 0.36 s | **76×** | ρ = 0.833 (healthy-band 0.831) |
 | 1,000 | 0.12 s | 232× | ρ = 0.358 — too early, do not use |
+
+**Those costs are from three landings ago and are now wrong by two orders of
+magnitude.** Re-measured after T-68 (`examples/horizon_cost`, seed 1, 3 seats):
+
+| horizon | cost | colonies | % of the 4,000-yr total |
+|---|---|---|---|
+| 500 | 0.6 s | 261 | 7.8% |
+| 1,000 | 11.4 s | 2,510 | 75.2% |
+| 1,500 | 64.3 s | 3,269 | 97.9% |
+| 2,000 | 123.2 s | 3,333 | 99.9% |
+| 4,000 | ~400 s | 3,337 | 100% |
+
+The ρ column above is **not** re-measured and should not be assumed to carry
+across — it was calibrated on a bed whose expansion loop ran at a fraction of
+this speed.
+
+**Read the last column before choosing a horizon.** T-68 accelerated the
+expansion loop enough that **colony count saturates by ~1,500 years**: the back
+half of a 4,000-year run simulates a full galaxy at peak entity count to add
+four colonies. Count stops discriminating there; colony-*years* keep accruing,
+so the guard still wants the full run, but any search whose objective is count
+is paying 3.3x for 0.1%. `horizon_cost` is the tool, it is not in CI, and it
+should be re-run after anything that moves the expansion loop.
 
 **`colonies@2000` is the default screen** (`examples/proxy_metric_calibration.rs`);
 `colonies@1500` is the aggressive option when the search stays among working
