@@ -2158,17 +2158,32 @@ impl Simulation {
             // Seed population from the pop *carried as cargo*
             // (`Hyades_vehicle_roles.md` §4.2/R-V9 — confirmed, not a flat
             // constant applied on arrival regardless of what was brought).
+            //
+            // **Credited, not assigned** (R-O74). These people were debited from
+            // the founding centre at launch, so they are *added* to whatever the
+            // world holds rather than `max`'d into place. An unowned world holds
+            // zero (`galaxy.rs`), so the two agreed until settlers had to come
+            // from somewhere — at which point `max` would have destroyed the
+            // difference silently.
             let carried_pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(Kilotons::ZERO);
             {
                 let pop = self.world.population.get_mut(target).unwrap();
-                if *pop < carried_pop {
-                    *pop = carried_pop;
-                }
+                *pop += carried_pop;
             }
-            // No mineral seed here — confirmed this conversation: "mineral
-            // seed is only for homeworld." A colony starts with whatever its
-            // own local density and (once built) mining-outpost hauling
-            // bring it; see `most_needed_center` / `sys_freighter_arrive`.
+            self.world.pop_cargo.insert(vehicle, Kilotons::ZERO);
+            // **And the rest of the hold lands with them.** The old rule here
+            // was "no mineral seed for colonies, homeworlds only" — superseded:
+            // a hold may carry any mix of settlers and minerals, and the
+            // minerals jumpstart production (`Hyades_industry.md` §1.7). This
+            // is not a new grant, it is the endowment the founding centre
+            // already paid for out of its own bank at launch.
+            let endowment = self.world.cargo.get(vehicle).copied().unwrap_or_default();
+            if endowment.basic_total() > Price::ZERO {
+                if let Some(bank) = self.world.stockpile.get_mut(target) {
+                    bank.add_basics(&endowment);
+                }
+                self.world.cargo.insert(vehicle, Minerals::default());
+            }
             let pid = *self.world.planet_id.get(target).unwrap();
             self.world.knowledge.get_mut(self.player_entity[p]).unwrap().scanned.insert(pid);
             self.schedule(self.config.cycle_years, EventKind::ProductionTick { center: target });
@@ -2328,6 +2343,24 @@ impl Simulation {
         // Scrapping is confirmed only for an exhausted Scout (§4.1), handled
         // separately in `sys_contact_arrive`.
         self.world.role.insert(vehicle, Role::Reserve);
+        // **Unload before parking** (R-O74). A bounced Colonizer is carrying
+        // people and minerals that were debited from its home centre, and this
+        // is where "nothing is lost" stops being a comment and becomes an
+        // entry: park it still laden and the endowment sits in a hold forever,
+        // which is a slow leak rather than an obvious one.
+        if let Some(&home) = self.world.home_center.get(vehicle) {
+            let pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(Kilotons::ZERO);
+            if pop > Kilotons::ZERO && self.world.population.contains(home) {
+                let at_home = self.world.population.get_mut(home).unwrap();
+                *at_home += pop;
+                self.world.pop_cargo.insert(vehicle, Kilotons::ZERO);
+            }
+            let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
+            if cargo.basic_total() > Price::ZERO && self.world.stockpile.contains(home) {
+                self.world.stockpile.get_mut(home).unwrap().add_basics(&cargo);
+                self.world.cargo.insert(vehicle, Minerals::default());
+            }
+        }
         if let (Some(&owner), Some(&role), Some(&home)) =
             (self.world.owner.get(vehicle), self.world.role.get(vehicle), self.world.home_center.get(vehicle))
         {
@@ -2724,6 +2757,7 @@ impl Simulation {
             general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
             medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
             general_seed_capacity: HullType::GeneralSystems.colony_seed_capacity(&self.config),
+            settler_budget: self.settler_budget(center),
             medium_founding_infra: self.founding_infra(HullType::MediumSystems),
             general_founding_infra: self.founding_infra(HullType::GeneralSystems),
             // The *true* price of a pair to this center right now. With
@@ -3145,7 +3179,7 @@ impl Simulation {
     /// rather than fixed here because drawing the seed from the origin is a
     /// behaviour change that would dominate the measurement stage 4 exists to
     /// take — and mixing the two is exactly the confound this staging avoids.
-    fn colony_seed_for(&self, hull: HullType, target: Entity) -> Option<Kilotons> {
+    fn colony_seed_for(&self, hull: HullType, origin: Entity, target: Entity) -> Option<Kilotons> {
         // **R-V9 is enforced on the hold, and since T-67 it has to be.**
         //
         // It used to fall out of the infrastructure coupling: `founding_capacity`
@@ -3166,9 +3200,70 @@ impl Simulation {
         if hold < floor * (1.0 - 1e-9) {
             return None;
         }
-        // What actually flies is capped by the world, not by the hull that
-        // brought it — a seed above `K` would crash rather than settle.
-        Some(hold.min(self.founding_capacity(target)))
+        // What actually flies is capped by three things, and the third is the
+        // one R-O74 was missing. The **world** caps it, because a seed above `K`
+        // would crash rather than settle. The **hold** caps it, because that is
+        // capability. And the **origin** caps it, because settlers are people
+        // who were somewhere else first.
+        Some(hold.min(self.founding_capacity(target)).min(self.settler_budget(origin)))
+    }
+
+    /// **The settlers a centre is willing and able to put aboard** — design law
+    /// #11 applied to people (R-O74, `Hyades_industry.md` §1.7).
+    ///
+    /// Until this existed the founding population was conjured: `spawn_courier`
+    /// wrote `pop_cargo` and debited nothing, so every coloniser launched was a
+    /// net creation of mass. It measured as a large, real, reproducible gain —
+    /// +13.97% colony-years for the policy that shipped the biggest seed — and
+    /// what it was measuring was the size of the violation, since the score
+    /// scaled with the hold precisely because the hold set how much was invented
+    /// (§1.6).
+    ///
+    /// The share is [`Doctrine::endowment_fraction`]; the floor is absolute. A
+    /// centre never emigrates below [`units::POPULATION_SEED_FLOOR`], because a
+    /// world with no people has no logistic to regrow on — `x + r·x·(1 − x/K)`
+    /// is zero at `x = 0` — so shipping the last of them would not be a cost,
+    /// it would be a deletion.
+    fn settler_budget(&self, center: Entity) -> Kilotons {
+        let pop = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
+        let spare = (pop - units::POPULATION_SEED_FLOOR).max(Kilotons::ZERO);
+        let f = self
+            .world
+            .owner
+            .get(center)
+            .and_then(|o| self.world.doctrine.get(self.player_entity[o.0 as usize]))
+            .map(|d| d.endowment_fraction)
+            .unwrap_or(0.0);
+        spare * f.clamp(0.0, 1.0)
+    }
+
+    /// **The minerals a centre sends with the settlers** — whatever hold the
+    /// people did not fill, up to the same share of the bank.
+    ///
+    /// A hold is a volume, not a passenger list, and the user's ruling is that
+    /// it may carry a mix: *"the cargo hold needn't be filled with space or pop.
+    /// It can hold a combination of pop and minerals to jumpstart production."*
+    /// This is what makes the seed decision interesting rather than monotone —
+    /// a world with a low ceiling takes few settlers and therefore leaves with a
+    /// mineral-heavy endowment, founded to be worked rather than to be lived on.
+    ///
+    /// Both halves mass the same (R-O32/design law #10), so the hold is a single
+    /// kiloton budget and the mix is invisible from outside. That is the point:
+    /// acceleration must not read out cargo *type*.
+    fn endowment_minerals(&self, center: Entity, hull: HullType, settlers: Kilotons) -> Price {
+        let spare = (hull.colony_seed_capacity(&self.config) - settlers).max(Kilotons::ZERO);
+        let bank = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
+        let f = self
+            .world
+            .owner
+            .get(center)
+            .and_then(|o| self.world.doctrine.get(self.player_entity[o.0 as usize]))
+            .map(|d| d.endowment_fraction)
+            .unwrap_or(0.0);
+        // A hold is a mass and a bank is a price; the same kilotons read on two
+        // ladders (`units::Qty::on_scale`), crossed explicitly rather than by
+        // arithmetic that happens to typecheck.
+        spare.on_scale::<units::Cost>().min(bank * f.clamp(0.0, 1.0)).max(Price::ZERO)
     }
 
     fn mark_targeted(&mut self, p: usize, target: PlanetId) {
@@ -3189,18 +3284,30 @@ impl Simulation {
         self.world.role.insert(e, role);
         self.world.hull_type.insert(e, hull);
         self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
-        self.world.cargo.insert(e, Minerals::default());
         // A Colonizer carries its founding population as cargo, consumed on
         // arrival (`Hyades_vehicle_roles.md` §4.2), and **how much is what the
         // hull's hold masses** (T-56 stage 4b) rather than a flat constant.
-        self.world.pop_cargo.insert(
-            e,
-            if role == Role::Colonizer {
-                self.colony_seed_for(hull, target).unwrap_or(Kilotons::ZERO)
-            } else {
-                Kilotons::ZERO
-            },
-        );
+        //
+        // **Both halves of the hold are loaded out of the origin** (R-O74
+        // closed): the settlers are debited from `center`'s population and the
+        // minerals from its stockpile, so a launch moves mass rather than
+        // creating it. Load before the ship exists as far as the books are
+        // concerned — the debit and the credit are the same statement.
+        let (settlers, endowment) = if role == Role::Colonizer {
+            let settlers = self.colony_seed_for(hull, center, target).unwrap_or(Kilotons::ZERO);
+            let minerals = self.endowment_minerals(center, hull, settlers);
+            if settlers > Kilotons::ZERO {
+                let pop = self.world.population.get_mut(center).unwrap();
+                *pop = (*pop - settlers).max(Kilotons::ZERO);
+            }
+            let loaded =
+                self.world.stockpile.get_mut(center).map(|bank| take_basics(bank, minerals)).unwrap_or_default();
+            (settlers, loaded)
+        } else {
+            (Kilotons::ZERO, Minerals::default())
+        };
+        self.world.cargo.insert(e, endowment);
+        self.world.pop_cargo.insert(e, settlers);
         self.world.home_center.insert(e, center);
         let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
         let ev = match role {
@@ -4374,6 +4481,12 @@ mod tests {
     #[test]
     fn a_colony_ship_carries_up_to_the_targets_capacity_and_no_more() {
         let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        // **A third cap joined the two this test is about** (R-O74): settlers
+        // come out of the origin's population. Give this centre people to
+        // spare so the hold-vs-world question stays readable;
+        // `settlers_are_drawn_from_a_real_population` pins the origin case.
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        sim.world.population.insert(home, Kilotons::at_tier(BandTier::IV));
 
         // Colonist capacity is the hold's rung, and the rungs are the mass
         // ladder's.
@@ -4430,8 +4543,8 @@ mod tests {
         // for every hull alike. `founding_infra` still lands as industrial
         // stock; it just no longer gates who may live there.
         assert_eq!(sim.founding_capacity(target), units::population_mass(Band::new(4.0)));
-        let medium = sim.colony_seed_for(HullType::MediumSystems, target).expect("a Medium hull can found");
-        let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
+        let medium = sim.colony_seed_for(HullType::MediumSystems, home, target).expect("a Medium hull can found");
+        let general = sim.colony_seed_for(HullType::GeneralSystems, home, target).expect("a General hull can found");
         let close = |a: Kilotons, b: Kilotons| (a.band().bands() - b.band().bands()).abs() < 1e-9;
 
         // **Both hulls are hold-limited now, not `K`-limited** — the exact
@@ -4450,7 +4563,7 @@ mod tests {
             poor,
             Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
         );
-        let capped = sim.colony_seed_for(HullType::GeneralSystems, poor).expect("a General hull can found");
+        let capped = sim.colony_seed_for(HullType::GeneralSystems, home, poor).expect("a General hull can found");
         assert!(
             close(capped, units::population_mass(Band::new(1.0))),
             "a General hull on a Band I world lands Band I, not its hold: {capped}"
@@ -4460,8 +4573,8 @@ mod tests {
         // there rather than falling out of the infrastructure coupling. A
         // Limited hull's hold is below `colony_seed_pop`, so it founds nothing
         // however good the world is.
-        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, target), None);
-        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, poor), None);
+        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, home, target), None);
+        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, home, poor), None);
         let _ = (m_infra, g_infra);
     }
 
@@ -5227,6 +5340,130 @@ mod tests {
         let sh = *sim.world.shuttle.get(freighter).unwrap();
         assert_eq!(sh.destination, colony, "freighter should re-route to the needier colony");
         assert_ne!(sh.destination, home, "not back to its original pairing, which is well-funded");
+    }
+
+    /// **R-O74: settlers are people who were somewhere else first, and the
+    /// rest of the hold is minerals that were in someone's bank.**
+    ///
+    /// This is design law #11 reaching the one quantity that was exempt from
+    /// it. `spawn_courier` used to write `pop_cargo` and debit nothing, so
+    /// every coloniser launched created mass — and it was not a rounding
+    /// error: the policy that shipped the biggest seed measured **+13.97%
+    /// colony-years** on an identical colony count, which was a measurement of
+    /// the violation rather than of the policy (`Hyades_industry.md` §1.6).
+    ///
+    /// Asserted as a **balance**, not as two magnitudes. The founding centre
+    /// loses exactly what the ship carries, the new world gains exactly what
+    /// the ship carried, and the ship lands empty — which is the only form of
+    /// the claim that a later change cannot half-satisfy.
+    #[test]
+    fn settlers_are_drawn_from_a_real_population() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        // **A modest world and a big hull**, which is the case the mixed hold
+        // exists for: the ceiling caps the settlers well below the hold, so the
+        // rest of the volume goes as minerals. A General hull to a `Band IV`
+        // world would carry people the whole way and leave no room, which is
+        // correct and would test only half the rule.
+        let target = sim.planet_entity[11];
+        sim.world.factors.insert(
+            target,
+            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+        );
+        sim.world.population.insert(home, Kilotons::at_tier(BandTier::III));
+        {
+            let s = sim.world.stockpile.get_mut(home).unwrap();
+            s.cyan = 30.0;
+            s.magenta = 30.0;
+            s.yellow = 30.0;
+        }
+
+        let pop_before = *sim.world.population.get(home).unwrap();
+        let bank_before = sim.world.stockpile.get(home).unwrap().basic_total();
+        let there_before = *sim.world.population.get(target).unwrap();
+        let from = *sim.world.position.get(home).unwrap();
+
+        sim.spawn_courier(0, Role::Colonizer, HullType::GeneralSystems, home, from, target);
+        let ship = Entity(sim.world.entity_count() as u64 - 1);
+
+        let settlers = *sim.world.pop_cargo.get(ship).unwrap();
+        let endowment = sim.world.cargo.get(ship).unwrap().basic_total();
+        assert!(settlers > Kilotons::ZERO, "a General hull should have crewed this");
+        assert!(endowment > Price::ZERO, "and filled the rest of its hold out of the bank");
+
+        // **The hold is one budget.** Settlers and minerals mass the same
+        // (R-O32), so what left the centre is exactly what the hull can hold —
+        // no more, and not two independent allowances.
+        let hold = HullType::GeneralSystems.colony_seed_capacity(&sim.config);
+        let carried = settlers + endowment.on_scale::<units::Mass>();
+        assert!(carried <= hold + Kilotons::new(1e-9), "carried {carried} in a {hold} hold");
+
+        // The debit, both halves.
+        let pop_after = *sim.world.population.get(home).unwrap();
+        let bank_after = sim.world.stockpile.get(home).unwrap().basic_total();
+        assert!(
+            ((pop_before - pop_after) - settlers).kilotons().abs() < 1e-9,
+            "the centre lost {} people for a seed of {settlers}",
+            pop_before - pop_after
+        );
+        assert!(
+            ((bank_before - bank_after) - endowment).kilotons().abs() < 1e-9,
+            "the centre lost {} minerals for an endowment of {endowment}",
+            bank_before - bank_after
+        );
+
+        // And the credit, on arrival — the ship lands empty.
+        sim.sys_colony_arrive(ship);
+        let there_after = *sim.world.population.get(target).unwrap();
+        assert!(
+            ((there_after - there_before) - settlers).kilotons().abs() < 1e-9,
+            "the world gained {} people from a seed of {settlers}",
+            there_after - there_before
+        );
+        assert!(
+            (sim.world.stockpile.get(target).unwrap().basic_total() - endowment).kilotons().abs() < 1e-9,
+            "the new colony should start on the endowment it was sent with"
+        );
+        assert_eq!(*sim.world.pop_cargo.get(ship).unwrap(), Kilotons::ZERO);
+        assert_eq!(sim.world.cargo.get(ship).unwrap().basic_total(), Price::ZERO);
+    }
+
+    /// **A centre cannot crew a hull it has no people for.**
+    ///
+    /// The budget is [`Doctrine::endowment_fraction`] of the population above
+    /// the floor, so the same General hull delivers a full hold from a big
+    /// centre and a fraction of one from a small centre. This is what makes the
+    /// hull choice a real question again: before conservation a hold was a
+    /// promise, and "settlers per mineral" could always be paid.
+    #[test]
+    fn a_hold_is_an_upper_bound_not_a_promise() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let target = sim.planet_entity[11];
+        sim.world.factors.insert(
+            target,
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+        );
+        let hold = HullType::GeneralSystems.colony_seed_capacity(&sim.config);
+
+        // Rich enough: the hold binds.
+        sim.world.population.insert(home, Kilotons::at_tier(BandTier::IV));
+        let full = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();
+        assert!((full - hold).kilotons().abs() < 1e-9, "a rich centre fills the hold: {full} vs {hold}");
+
+        // Poor: the origin binds, and by exactly the doctrine share.
+        let small = hold * 2.0;
+        sim.world.population.insert(home, small);
+        let f = sim.world.doctrine.get(sim.player_entity[0]).unwrap().endowment_fraction;
+        let got = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();
+        let want = (small - units::POPULATION_SEED_FLOOR) * f;
+        assert!(got < hold, "a small centre cannot fill a General hold: {got} vs {hold}");
+        assert!((got - want).kilotons().abs() < 1e-9, "budget is the doctrine share: {got} vs {want}");
+
+        // **The floor is absolute.** A centre with nothing to spare ships
+        // nobody — a world emptied of people has no logistic left to regrow on.
+        sim.world.population.insert(home, units::POPULATION_SEED_FLOOR);
+        assert_eq!(sim.colony_seed_for(HullType::GeneralSystems, home, target), Some(Kilotons::ZERO));
     }
 
     #[test]

@@ -257,9 +257,14 @@ hold because the hold sets how much is created from nothing. Ratifying
 not resolved by this measurement; it is **reframed and blocked on R-O74** — the
 hull-choice question is unanswerable while founding mass is free, because any
 policy that delivers more free mass wins by precisely the amount it conjures.
-Draw the seed from the origin first, then re-run this harness; the two ablations
-above are the check that the fix worked, since under conservation A should lose
-its gain.
+Draw the seed from the origin first, then re-run this harness.
+
+> **R-O74 is now closed (§1.7), so every number in this section is a record of
+> an engine that no longer exists.** They are kept because the *method* is what
+> the section is for — two ablations refuting two plausible mechanisms — and
+> because the +13.97% is the best available measurement of how large the
+> violation was. Do not carry the magnitudes forward; the post-conservation
+> re-measurement is the live one.
 
 **And it puts a question on T-67's own number.** The amendment let hulls seed to
 the world's ceiling instead of to `founding_infra`, which is the same channel —
@@ -272,6 +277,81 @@ run.
 twelve-year yard commitment against a Medium's three (§3.3), which would blunt a
 General coloniser — but the hull is not what is producing the effect, so the
 schedule change cannot decide R-IND11 either.
+
+---
+
+### 1.7 Settlers are drawn from a real population, and the hold carries a mix (R-O74, resolved)
+
+**Ruled by the author, and it closes the block §1.6 opened:** *"Do not conjure
+settlers from nothing. They must be taken from the population of some other
+world. The cargo hold needn't be filled with space or pop. It can hold a
+combination of pop and minerals to jumpstart production."*
+
+#### What was wrong
+
+`spawn_courier` wrote `pop_cargo` and debited nothing. A coloniser's founding
+population was created at launch, so **design law #11 had exactly one
+exemption and it was the one the expansion loop runs on.** The size of it was
+measured before it was fixed, which is the useful part: the policy that shipped
+the biggest seed scored **+13.97% colony-years** on a bit-identical colony
+count, and two ablations put the whole effect on the seed mass rather than on
+the hull, the price or transit (§1.6). It scaled with the hold because the hold
+set how much was invented.
+
+#### The rule
+
+A coloniser is **loaded out of its origin**, and the load is one kiloton budget
+because both halves mass the same (R-O32):
+
+```
+settlers  = min( hold , population_mass(K_target) , endowment_budget(origin) )
+minerals  = min( hold − settlers , bank(origin) × endowment_fraction )
+```
+
+with `endowment_budget = (population(origin) − POPULATION_SEED_FLOOR) ×
+endowment_fraction`. The population is debited at launch and credited at
+founding; the minerals leave the origin's stockpile and land in the new
+colony's. A **contested** coloniser unloads both halves back into its home
+centre when it bounces — §4.2's "nothing is lost" was a reassurance and is now
+an entry, because a hull parked while laden would hold that mass out of the
+economy permanently.
+
+Three consequences worth stating, because none of them is a tuning detail:
+
+- **A hold is an upper bound, not a promise.** A General hull holds 31.6× a
+  Medium's, so at `endowment_fraction = f` a centre needs roughly `31.6/f`
+  people to fill one. That is the honest version of R-IND11: the General
+  coloniser is not merely expensive in minerals, it is expensive in *citizens*,
+  and a young centre cannot crew one at any price. The autopilot sees this —
+  `ProductionContext::settler_budget` — or "settlers per mineral" would buy a
+  hull for people the centre does not have.
+- **A poor world is founded to be worked, not to be lived on.** The target's
+  ceiling caps the settlers, so a low-`K` world takes few people and therefore
+  leaves with a **mineral-heavy** endowment. The mix falls out of the two caps
+  rather than being a second decision.
+- **Emigration is a real cost, and the logistic makes it non-obvious.**
+  `x + r·x·(1 − x/K)` is fastest at `K/2`, so stripping a centre toward the
+  floor does not merely delay it — it moves it onto a slower part of its own
+  growth curve. Whether that is worth a faster-starting colony is a
+  Monte-Carlo question, not an argument, which is why the share is a knob.
+
+#### The knob — `Doctrine::endowment_fraction` (R-IND12, placeholder)
+
+How much of itself a centre commits to a child, applied to **both** its people
+and its bank. It is Doctrine because it is policy over the roster, and because
+cards in Growth and Expansion are the obvious things to move it.
+
+Default **0.25**, a **flagged placeholder**. `examples/endowment` sweeps it on
+the standard four-seed CRN bed against colony count with colony-years as the
+guard.
+
+**What this invalidates on purpose.** Every colony-years figure taken before it
+— including §1.6's own +13.97% and §1.4's +4.4%/+4.7% for T-67 — was measured
+on an economy that created population. They are not wrong as records of what
+that engine did; they are not comparable to anything measured after. §1.6's
+open question about how much of T-67's gain ran through the conjured-mass
+channel is answered by re-measuring rather than by ablation now, since the
+channel is closed.
 
 ---
 
@@ -1030,7 +1110,8 @@ artifact in place contaminates every later measurement.
 | ~~R-IND7~~ | ~~The economic-thesis addition~~ — **resolved: minerals, supers and apex traverse real space**, so they can be attacked, diverted, stolen and blockaded. Nothing teleports; a trade is a voyage. | §8.1 |
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
-| **R-O74** | Founding settlers are conjured — nothing debits the origin's population or biosphere (design law #11). Now load-bearing: it blocks R-IND11, and it puts a question on T-67's measured buff. | §1.6 |
+| ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |
+| **R-IND12** | `Doctrine::endowment_fraction` — the share of its people and its bank a centre commits to a colony. Default 0.25, **placeholder**; `examples/endowment` sweeps it. | §1.7 |
 | **R-IND10** | Who bears the loss when a matched contract's carrier is destroyed — buyer, seller, or escrow? | §8.1 |
 | **R-IND11** | Is a General coloniser ever worth it, now that the hold is the only thing separating the hulls? **Measured and reframed — blocked on R-O74.** `SettlersPerMineral` scores +13.97% colony-years on identical colony counts, but two ablations put the whole effect on the *seed mass* rather than the hull, and founding settlers are conjured. Unanswerable until the seed is drawn from the origin. Default stays `CheapestViable`. | §1.6 |
 

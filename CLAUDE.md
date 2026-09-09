@@ -648,6 +648,17 @@ one, stop and flag it.
    and *scores well* while doing it. `the_population_logistic_is_a_rate_and_not_a_step`
    is the guard.
 
+   **And population is conserved across space, not only across the biosphere
+   (R-O74, `Hyades_industry.md` §1.7).** Growth draws people out of biomass;
+   *founding* moves people that already exist. Until this landed, a coloniser's
+   settlers were written into its hold with nothing debited anywhere — one
+   exemption from this law, on the exact path the expansion loop runs on. It was
+   not small: the coloniser policy that shipped the biggest seed measured
+   **+13.97% colony-years on an identical colony count**, and two ablations put
+   the entire effect on the seed mass rather than on the hull, its price or
+   transit. **An exemption from conservation is not a modelling shortcut, it is
+   a free resource, and a search will find it and call it a strategy.**
+
    **The exchange is a mass difference, not a level difference (R-O66).** A
    population at Band `b` masses `KT(b) = KT_I · BAND_STEP^(b−1)`, so a step from
    `b` to `b'` costs `KT(b') − KT(b)` — one Band up is `BAND_STEP` *times* the
@@ -1145,8 +1156,14 @@ changes how you *work*, not what is left to do:
   time is decoupled from simulation tick duration.
 - The **Lanchester aggregate model** is reserved for imperial-scale resolution; the
   individual-missile arena exists only to calibrate its parameters.
-- **No mineral seed for colonies** (homeworlds only) — mining outposts with need-based
-  hauling are the intended fix.
+- ~~**No mineral seed for colonies** (homeworlds only)~~ — **superseded
+  (R-O74/`Hyades_industry.md` §1.7).** A coloniser's hold is one kiloton budget
+  carrying any mix of settlers and minerals: whatever volume the people do not
+  fill leaves with minerals **out of the founding centre's own bank** and lands
+  in the new colony's stockpile. That is not a grant, it is a transfer a parent
+  paid for — which is the distinction the old rule was protecting. Mining
+  outposts with need-based hauling are still how a colony feeds itself
+  thereafter.
 - Idle military units do **not** auto-scrap; only exhausted LCVs scrap, others go to
   Reserve ("completable vs. standing mission").
 - **K is player-relative by design**, and since `Hyades_industry.md` §1.1 it is

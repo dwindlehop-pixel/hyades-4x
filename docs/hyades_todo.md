@@ -172,19 +172,27 @@ the **Medium's** hold and `SettlersPerMineral` still buys General hulls for 91.9
 of its colonisers at 10x the price and lands back at baseline (-0.08%). The cause
 is **the seed mass alone** — not the hull, not its price, not transit.
 
-Which is why it is blocked and not ratified: **R-O74**, founding settlers are
-conjured, so the number measures how much free mass a policy can pull out of an
-open design-law-#11 violation. Default stays `CheapestViable`. **Draw the seed
-from the origin, then re-run the harness** — under conservation ablation A should
-lose its gain, and that is the check.
+Which is why it was blocked and not ratified: **R-O74**, founding settlers were
+conjured, so the number measured how much free mass a policy could pull out of an
+open design-law-#11 violation. Default stays `CheapestViable`.
 
-Two things it also flags. Ablation B is a controlled 10x overpayment per
-coloniser hull that costs **-0.08%**, which is `examples/reach_limit`'s "the
-economy is not the binding constraint" arriving from an unrelated direction. And
-some part of **T-67's own +4.4%/+4.7% may run through the same conjured-mass
-channel** — the amendment let hulls seed to the world's ceiling instead of to
-`founding_infra` — which is a hypothesis with a named test (ablation A against
-the pre-T-67 seed rule) and has not been run.
+**R-O74 is now closed** (`Hyades_industry.md` §1.7, author's ruling). Settlers are
+debited from the founding centre's population; whatever hold the people do not
+fill leaves with minerals out of that centre's own bank and lands in the new
+colony's stockpile; a contested coloniser unloads both halves back home. The
+share a centre will part with is `Doctrine::endowment_fraction` (**R-IND12**,
+default 0.25, placeholder, swept by `examples/endowment`).
+
+**Every colony-years figure taken before that landing was measured on an economy
+that created population.** They are records of what that engine did, not baselines
+for what this one does — including the +13.97% above and T-67's +4.4%/+4.7%.
+
+One thing it also flags and that survives the fix: ablation B is a controlled 10x
+overpayment per coloniser hull that costs **-0.08%**, which is
+`examples/reach_limit`'s "the economy is not the binding constraint" arriving from
+an unrelated direction. (The other flag — that some of T-67's gain ran through the
+conjured-mass channel — is now answered by re-measuring rather than by ablation,
+since the channel is closed.)
 
 - **T-67 invalidates R-O76, and the buff is intended.** Founding infrastructure
   currently sets a new colony's `K` — a Medium founds at `Band I`, a General at
