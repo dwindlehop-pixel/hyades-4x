@@ -203,6 +203,17 @@ consecutive `min_time_search` runs were killed at 3, 20 and 7 minutes in. So:
   produced two confidently wrong "still running" reports before it was caught,
   and CLAUDE.md had already recorded the same trap once (the `pkill -f` incident
   above). Compare `ls -l --time-style=+%H:%M:%S` against `date`.
+- **But mtime only works if the harness has written something**, and a
+  zero-byte file's mtime is its creation time. `colony_years` runs **two** full
+  sims per seed and printed nothing until a seed finished — ~12 minutes at
+  post-T-68 speeds — so it looked dead and was diagnosed as dead while running
+  at 99.9% CPU. **`ps -C <name>` does not rescue you either:** these binaries
+  are copied to a scratch name before being backgrounded, so the process is
+  called `cy_t70` and `ps -C colony_years` matches nothing. Two habits follow,
+  and the first is the one that generalises: **make every long harness print a
+  flushed line before it starts work and after each expensive stage**, so mtime
+  is a real signal; and when checking by process, match on `ps -eo comm` for the
+  name you actually launched.
 - **Anything over ~10 minutes should be run locally**, which is what §7 already
   says about `min_time_search` being a by-hand job. Cutting sample count buys
   some room but does not fix it — a 45-minute run still lost the race.
