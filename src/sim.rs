@@ -5139,6 +5139,94 @@ mod tests {
         );
     }
 
+    /// **Why T-70 came out bit-identical, which was not the prediction.**
+    ///
+    /// `Hyades_industry.md` §6.7 predicted stage 3 would be neutral; §6.8 then
+    /// argued it could not be, because storing the stock moves the rounding out
+    /// of exact Band-space addition (`infra.up(1.0)`) and into a `ln` round trip
+    /// (`band_from(rung_price(n))`), and those differ in the last bits. The
+    /// arithmetic half of that is true. The conclusion was wrong, and the guard
+    /// run said so: colony-years came back **identical to the decimal** on both
+    /// seeds.
+    ///
+    /// The mechanism is that **infrastructure reaches every live decision
+    /// through an integer**, so a difference of ~1e-12 in the Band reading is
+    /// washed out before it can change anything:
+    ///
+    /// - `infra_rung_of` **rounds**, and it is what `infra_step_price` and
+    ///   `mineral_pressure_of` are built on — every pricing path.
+    /// - `BaselineAutopilot::rank` does not read infrastructure at all. It
+    ///   scores `k_potential`, minerals and position.
+    /// - The one continuous reader is `deepen_headroom = k_potential − infra`,
+    ///   and **R-O68 measured that branch as dead at the shipped
+    ///   `reinvest_bias = 0.5`** — it cannot fire while any candidate exists.
+    ///
+    /// So this test pins the actual invariant rather than the lucky number: the
+    /// two representations disagree in the Band, agree in the rung, and
+    /// therefore agree in the price. If a future change makes a *continuous*
+    /// reader of infrastructure live — which is exactly what fixing R-O68 would
+    /// do — this stops being true, and the failure will point at the reason.
+    #[test]
+    fn infrastructure_reaches_every_decision_through_an_integer() {
+        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let cfg = &sim.config;
+
+        for hull in [HullType::MediumSystems, HullType::GeneralSystems] {
+            // What the old code stored after founding: the Band of the hull's
+            // minerals. What the new code stores: those minerals.
+            let old_band = hull_cost(hull, cfg).band_from(cost_anchor(cfg));
+            let new_stock = sim.founding_infra(hull);
+            let new_band = new_stock.band_from(cost_anchor(cfg));
+            assert_eq!(old_band.bands().to_bits(), new_band.bands().to_bits(), "founding reads identically");
+
+            // Now climb. The old code added 1.0 in Band space; the new code
+            // buys the next rung. These are *not* the same f64 …
+            let top = BandTier::MAX_PLAYABLE.band().bands() as usize;
+            let mut old = old_band;
+            let mut stock = new_stock;
+            while infra_rung_of(stock, cfg) < top {
+                old = old.up(1.0);
+                stock = infra_rung_price(infra_rung_of(stock, cfg) + 1, cfg);
+                let new = stock.band_from(cost_anchor(cfg));
+
+                // … and the rung they round to is, which is the only thing any
+                // live path reads.
+                assert_eq!(
+                    old.round().bands() as usize,
+                    infra_rung_of(stock, cfg),
+                    "{hull:?}: the rung must agree even when the Band does not (old {old}, new {new})"
+                );
+                assert_eq!(
+                    infra_step_price(stock, cfg).kilotons().to_bits(),
+                    (infra_rung_price(infra_rung_of(stock, cfg) + 1, cfg)
+                        - infra_rung_price(infra_rung_of(stock, cfg), cfg))
+                    .kilotons()
+                    .to_bits(),
+                    "and the price follows the rung, not the Band"
+                );
+            }
+
+            // **The one place the two representations genuinely differ, stated
+            // rather than glossed.** The old Band climbed without limit — an
+            // `up(1.0)` on a position has no ceiling — while the stock
+            // saturates at the top playable rung, because the ladder does. It
+            // is invisible in play, and for a reason that is checked rather
+            // than assumed: deepening is gated on `infra < k_potential`, and
+            // `k_potential = min(hab, bio_max)` cannot exceed the top rung. So
+            // nothing in a shipped run ever reaches the difference.
+            //
+            // This is the better behaviour of the two — an unbounded
+            // infrastructure Band was a quantity with no meaning past `Band IV`
+            // — but it is a change, and it is the reason to keep the gate.
+            let over = infra_rung_price(top + 3, cfg);
+            assert_eq!(infra_rung_of(over, cfg), top, "the stock saturates at the top playable rung");
+            // The old Band had no such ceiling — `up(1.0)` on a position climbs
+            // forever — which is the difference this comment exists to record.
+            // It is not asserted, because an assertion about deleted code would
+            // be an assertion that cannot fail.
+        }
+    }
+
     /// **T-68: build time tracks mass, and the two ladders are one ladder.**
     ///
     /// `build_years` was flat at 10.0, so a Limited hull and a General hull took

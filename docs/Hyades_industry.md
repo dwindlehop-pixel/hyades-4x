@@ -1013,7 +1013,7 @@ the decimal where a stage claims to be neutral.
 |---|---|---|---|---|
 | 1 | **`K` loses its infra term** | changes; hulls seed to the world's ceiling | measure, do not predict | T-67 |
 | 2 | **`t_build` tracks hull mass** | changes; predicted **up** | colony-years | T-68 |
-| 3 | **Infrastructure stored as kilotonnes** | ~~neutral~~ — see §6.8 | colony-years | T-70 |
+| 3 | **Infrastructure stored as kilotonnes** | **neutral — measured, bit-identical** (§6.8) | colony-years | T-70 |
 | 4 | **`Works` struct + the fold** | **neutral** — nothing reads it yet | bit-identical | T-75a |
 | 5 | **Price reads `eta_works` and `mix_w`** | ~~neutral at identity~~ — see §6.8 | colony-years | T-73 |
 | 6 | **Rates read the allocation and the curve** | changes; the ramp switches on | colony-years | T-71, T-74 |
@@ -1079,16 +1079,42 @@ measuring whether the *shape* behaves before anyone argues about magnitudes.
 Reading the engine before building on that prediction says otherwise, in both
 cases for a reason that is structural rather than a bug to be fixed.
 
-**Stage 3 (T-70) moves where the rounding happens.** Infrastructure was a `Band`
-and an upgrade was `infra.up(1.0)` — exact addition in Band space. Stored as the
-minerals standing in it, an upgrade becomes `infra = infra_rung_price(n + 1)` and
-the rung is recovered by a `ln`. `band_of(hull_cost) + 1.0` and
-`band_of(rung_price(2))` agree to about `1e-12` and **not to the bit**, and
-`BaselineAutopilot::rank` reads infrastructure — so the difference propagates
-into a score, then into which world is chosen, then into the run. The change is
-still right: `CLAUDE.md` §4's rule is that a Band is a *reading*, never a second
-thing to store, and §1.3 states it for this quantity specifically. What was wrong
-was the guard, not the change. **Guard is colony-years, not bit-identity.**
+**Stage 3 (T-70) was predicted non-neutral, and it came out bit-identical. The
+prediction was wrong and the reason is worth more than the number.**
+
+The arithmetic half of the argument was right: infrastructure was a `Band` and an
+upgrade was `infra.up(1.0)`, exact addition in Band space; stored as the minerals
+standing in it, an upgrade becomes `infra = infra_rung_price(n + 1)` and the rung
+comes back through a `ln`. Those two really do disagree in the last bits.
+
+The conclusion did not follow, because it assumed `BaselineAutopilot::rank` reads
+infrastructure. **It does not** — `rank` scores `k_potential`, minerals and
+position. Checking that took one grep and was skipped.
+
+**Infrastructure reaches every live decision through an integer**, so a `1e-12`
+difference is washed out before it can move anything:
+
+- `infra_rung_of` **rounds**, and every pricing path is built on it —
+  `infra_step_price`, `mineral_pressure_of`.
+- The one continuous reader is `deepen_headroom = k_potential − infra`, and
+  **R-O68 measured that branch dead at the shipped `reinvest_bias = 0.5`**: it
+  cannot fire while any candidate exists.
+
+Measured on the guard (`examples/colony_years`, 3 seats, 4,000 yr): seed 1
+**10,558,680.0 → 10,558,680.0** and seed 7 **10,474,864.5 → 10,474,864.5**,
+colonies and first-founding identical. Pinned by
+`infrastructure_reaches_every_decision_through_an_integer`, which asserts the two
+representations disagree in the Band and agree in the rung — so if a future
+change makes a *continuous* reader of infrastructure live, which is exactly what
+fixing R-O68 would do, the test fails and points at the reason.
+
+**One real difference, found by that test rather than by reasoning.** Past the
+top playable rung the old Band climbed without limit — `up(1.0)` on a position
+has no ceiling — while the stock saturates, because the ladder does. It is
+invisible in play because deepening is gated on `infra < k_potential` and
+`k_potential = min(hab, bio_max)` cannot exceed the top rung. It is also the
+better behaviour: an infrastructure Band above `Band IV` was a number with no
+meaning.
 
 **Stage 5 (T-73) changes a mechanic at identity, and that mechanic is the
 point.** `Minerals::try_spend_total` debits an empire's bank **proportional to
