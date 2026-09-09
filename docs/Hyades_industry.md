@@ -1220,6 +1220,64 @@ every colour of its next bill scores `0`, and if every centre can, the choice
 falls to the entity-id tie-break. That is what the pressure formula already did
 when nothing was short, so it is not new behaviour.
 
+#### T-81 measured — it does not work, and it is counterproductive
+
+| | infrastructure builds | banks skewed |
+|---|---|---|
+| pre-T-73 | 1,032 | — |
+| T-73 | 57 | 1,494 / 1,515 |
+| **T-73 + T-81 + `3:2:1`** | **31** | **1,533 / 1,551** |
+
+Bank composition did not move, and deepening fell further. **Two mechanisms,
+both measured.**
+
+**The supply is single-coloured.** `examples/bank_mix` measures every mineral
+source: **6,725 sources, mean dominant-colour share 0.789**, with **38% of
+sources ≥95% one colour** and 57% ≥80%.
+
+| dominant share | sources |
+|---|---|
+| <40% | 427 |
+| 40–60% | 1,160 |
+| 60–80% | 1,315 |
+| 80–95% | 1,267 |
+| **≥95%** | **2,556** |
+
+That is T-62 being taken seriously — each colour is an independent Gaussian over
+Bands, so in kilotons one dominates a rock by orders of magnitude — and
+`MineralField::extract` takes proportionally, so a **freighter's cargo inherits
+the skew**. No routing rule over single-coloured cargoes can assemble a
+three-coloured bank.
+
+**And routing by colour-need anti-concentrates, which is why it made things
+worse.** Paying a three-colour bill requires ore to **converge** on one centre.
+`relief` sends each colour to wherever *that colour* is scarcest — by
+construction a different centre for each colour. Before T-81 every hauler went to
+the neediest centre by total, so ore accumulated somewhere it could eventually
+hold all three. Scattering it by colour is the opposite of what the bill needs.
+
+**The corrected formulation, and why it is a different question.** Score the
+*completion of the bill*, not the relief of one colour:
+
+```text
+short_before = Σ_c max(0, bill[c] − bank[c])
+short_after  = Σ_c max(0, bill[c] − bank[c] − cargo[c])
+score        = (short_before − short_after) / Σ_c bill[c]   · exp(−λ·t)
+```
+
+This is still a fraction and still multiplies the discount, but it rewards the
+delivery that brings a centre **closest to actually paying**, so a centre holding
+two colours and missing the third attracts the third strongly — and ore
+concentrates instead of dispersing. **R-IND17**, and it is the live proposal
+rather than a ratified change.
+
+**What this does not fix, and should not be asked to.** Even perfect internal
+routing cannot give an empire a colour its own ground does not hold. That is
+`§8.1`'s subject and the Exchange's job (T-77), and design law #1's counter-graph
+— Red as the general key — is the other half. **T-81's premise was that freight
+could answer the colour constraint on its own; that premise is now measured
+false.**
+
 ---
 
 **Stage 5 (T-73) changes a mechanic at identity, and that mechanic is the
@@ -1474,6 +1532,7 @@ artifact in place contaminates every later measurement.
 | **R-IND12** | How much a coloniser carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |
 | **R-IND13** | The works-value rung `I*`. Placeholder is the Band midpoint of capacity and abundance, i.e. the geometric mean of the two masses — the cheapest form with the required positive cross partial. The real function is §5's and needs T-73/T-74. | §1.7, §5 |
 | ~~**R-IND15**~~ | ~~The identity works mix~~ — **resolved.** `3:2:1` Yellow : Cyan : Magenta, the §5.1 *Default* point, Yellow-primary because Production is Yellow. The `(1,1,1)` first shipped was a placeholder and contradicted §5.1's "never a true 1:1:1". | §6.10 |
+| **R-IND17** | Score freight by *completion of the bill* rather than relief of one colour — `(short_before − short_after) / Σ bill`. T-81's relief term anti-concentrates and was measured counterproductive. | §6.11 |
 | **R-IND16** | How much colour weight one deep Production card adds — and therefore how many layers "deep" is, given that Sole is an asymptote approached at `(3+k)/(6+k)`. | §6.10 |
 | **R-IND14** | Whether the travel discount should be hyperbolic (`1/(1+n)`, current, no new constant) or exponential (needs a time constant). | §1.7 |
 | **R-IND10** | Who bears the loss when a matched contract's carrier is destroyed — buyer, seller, or escrow? | §8.1 |

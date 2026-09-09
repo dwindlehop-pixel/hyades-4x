@@ -103,7 +103,7 @@ two multiplications.
 
 ---
 
-### T-81. Freight has no colour term, and T-73 just made that binding — **LANDED, measuring**
+### T-81. Freight has no colour term — **LANDED AND MEASURED FALSE**
 
 **A missing term, not a tuning question** — the same shape as λ, the largest
 single ratification in this project's history (freighter routing had no *distance*
@@ -130,9 +130,22 @@ fraction of the cargo aboard that lands on a colour the destination cannot
 otherwise buy; it *replaces* `mineral_pressure_of` in the score rather than
 multiplying it, since the two are the same question at different resolutions.
 
-Guard is `examples/colony_years`; `examples/bank_mix` is the instrument that
-found it, and the real test is whether it shows banks **mixing** — the
-before picture was 1,494 of 1,515 skewed.
+**It does not work and it is counterproductive** (`Hyades_industry.md` §6.11).
+Banks did not mix (1,533 of 1,551 still skewed) and infrastructure builds fell
+further, **57 → 31**. Two measured mechanisms: the **supply is single-coloured**
+(6,725 sources, mean dominant-colour share **0.789**, 38% at ≥95%), so a
+freighter's cargo inherits the skew; and **relief routing anti-concentrates** —
+paying a three-colour bill needs ore to converge on one centre, and sending each
+colour to wherever that colour is scarcest scatters it by construction.
+
+Live proposal is **R-IND17**: score the *completion of the bill*
+(`(short_before − short_after) / Σ bill`) rather than the relief of one colour, so
+a centre holding two colours and missing the third attracts the third and ore
+concentrates. Not ratified.
+
+**And the premise was too strong.** No internal routing can give an empire a
+colour its own ground does not hold — that is §8.1 and the Exchange (T-77), with
+design law #1's counter-graph as the other half.
 
 ---
 
