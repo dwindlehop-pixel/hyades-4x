@@ -16,7 +16,7 @@
 use crate::galaxy::PlanetId;
 use crate::math::Vec3;
 use crate::resources::{MineralField, Minerals};
-use crate::units::{Band, BandTier, Kilotons};
+use crate::units::{Band, BandTier, Kilotons, Price};
 
 /// Which civilian role a ship is fulfilling (read-only mirror of the engine's
 /// hull enum, kept here so presentation never depends on `sim`).
@@ -45,7 +45,22 @@ pub struct PlanetSnapshot {
     /// The standing biosphere as the mass it actually is. The same quantity as
     /// [`Self::biosphere`], in the unit conservation is stated in.
     pub biomass: Kilotons,
+    /// Built infrastructure, read back onto the **Cost** ladder as a rung.
     pub infrastructure: Band,
+    /// **The same infrastructure as the mass it actually is** — the minerals
+    /// standing in it, in kilotons (T-70, `Hyades_industry.md` §1.3).
+    ///
+    /// Carried alongside the Band for the same reason `biomass` is carried
+    /// alongside `biosphere`: a Band is a *reading* and the stock is the thing
+    /// (`CLAUDE.md` §4). It is a `Price` because the infrastructure ladder is
+    /// the mineral ladder (R-O80), so this is kilotons on the Cost scale — the
+    /// two ladders are `^1.5` apart and reading it on the wrong one would move
+    /// every threshold at once.
+    ///
+    /// This is the stock **Growth's work-years objective integrates**
+    /// (`Hyades_trees_and_card_value.md` §2.3.3), and it is why that objective
+    /// is measurable now rather than waiting on works.
+    pub works: Price,
     /// Liebig carrying capacity `K = min(hab, bio_max, infra)`, over Bands.
     pub k: Band,
     pub population: Kilotons,

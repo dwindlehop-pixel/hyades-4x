@@ -886,6 +886,62 @@ fn cost_anchor(cfg: &SimConfig) -> f64 {
     cfg.general_vehicle_cost / units::COST_LADDER[1]
 }
 
+/// **The knee of the rate curve: one infrastructure rung's worth of works, as
+/// one employment's share of it** (T-74).
+///
+/// `infra_rung_price(1)` is what standing at rung I costs — the same number a
+/// Medium hull costs (R-O80) — and a default allocation splits the stock three
+/// ways. So a rung-I centre with no works cards played has `u = half` in every
+/// employment, sits exactly at half its ceiling, and reproduces the flat
+/// constants T-68 and the mining model shipped.
+///
+/// **That is the anchor and it is the whole calibration.** No number here was
+/// fitted to a run; the curve pivots about the configuration that was already
+/// ratified, so what T-74 changes is the *shape* around that point rather than
+/// the point itself.
+fn works_knee(cfg: &SimConfig) -> f64 {
+    infra_rung_price(1, cfg).kilotons() / 3.0
+}
+
+/// **A planet's rate for one employment, from its infrastructure** (T-74,
+/// `Hyades_industry.md` §6.3).
+///
+/// ```text
+/// u_e    = infra · alloc_w[e] / Σ alloc_w      // this employment's share of the stock
+/// rate_e = cap_e · u_e / (u_e + half_e)        // saturating, per planet
+/// ```
+///
+/// **A Michaelis–Menten hyperbola, chosen because its two parameters are exactly
+/// the two axes the trees are meant to differ on** — which is why one curve can
+/// carry the tall/wide distinction instead of it being imposed:
+///
+/// - `cap_e` is the **asymptote**, the highest rate this planet can ever reach.
+///   **Production raises it** — §5.2's "the highest peak per planet".
+/// - `half_e` is the **knee**, the stock at which you are halfway there, so the
+///   initial slope is `cap_e / half_e`. **Growth and Expansion lower it** —
+///   "better efficiency per kilotonne invested".
+///
+/// A Production world climbs slowly toward a distant ceiling; an Expansion world
+/// reaches most of a nearer one almost at once. Neither is a special case.
+///
+/// **The ceiling is per planet and the empire total is not capped**, which is
+/// why Expansion's cheap low-ceiling works are a strategy rather than a
+/// handicap, and why slips growing linearly in `F` (§3.2) does not contradict a
+/// bounded `F`: the bound is per yard, and an empire has many yards.
+///
+/// `cap` and `half` from [`cards::Works`] are **multipliers on the base
+/// constants**, base `1.0`, so an empire that has played no works card sits
+/// exactly on the shipped curve.
+fn employment_rate(infra: Price, works: &cards::Works, e: cards::Employment, base_cap: f64, base_half: f64) -> f64 {
+    let u = infra.kilotons() * works.alloc_share(e);
+    if u <= 0.0 {
+        return 0.0;
+    }
+    let cap = base_cap * works.cap[e.index()];
+    let half = (base_half * works.half[e.index()]).max(1e-12);
+    cap * u / (u + half)
+}
+
 /// **The works bill for a centre's next rung, split by colour** (T-73,
 /// `Hyades_industry.md` §5.1/§6.3).
 ///
@@ -1274,6 +1330,24 @@ pub struct SimConfig {
     ///
     /// **Approved starting value, not MC-ratified** (§3.3).
     pub slip_throughput: f64,
+    /// **Fabrication ceiling, kt/yr** — the asymptote `cap_fab` a single planet
+    /// can ever reach (T-74, `Hyades_industry.md` §6.3). Production raises it.
+    ///
+    /// **Anchored, not fitted.** The knee sits at one infrastructure rung
+    /// ([`works_knee`]), so a rung-I centre under default doctrine runs at
+    /// exactly *half* its ceiling — and this is `2 × slip_throughput`, which
+    /// makes that centre's rate identical to the flat constant T-68 shipped.
+    /// Below a rung it is slower, above it faster: the ramp, switched on,
+    /// pivoting about the configuration that was already ratified.
+    ///
+    /// **Placeholder magnitude** (R-IND3), like every coefficient in §5.
+    pub fab_cap: f64,
+    /// **Extraction ceiling** — the asymptote `cap_ext` on the fraction of a
+    /// centre's own remaining density it works per cycle. Same anchor:
+    /// `2 × center_mining_fraction`, so a rung-I centre is unchanged.
+    ///
+    /// **Placeholder magnitude** (R-IND3).
+    pub ext_cap: f64,
     pub civilian_accel_g: f64,
     pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
@@ -1608,6 +1682,8 @@ impl SimConfig {
             cycle_years: 50.0,
             build_lead_years: 2.0,
             slip_throughput: 0.1,
+            fab_cap: 0.2,
+            ext_cap: 0.30,
             civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
@@ -2606,7 +2682,7 @@ impl Simulation {
         // 1) Local mining: the center works its own density into its stockpile.
         let amt = {
             let d = self.world.density.get(center).unwrap();
-            d.total_mass().kilotons() * self.config.center_mining_fraction
+            d.total_mass().kilotons() * self.extraction_rate(center).min(1.0)
         };
         if amt > 0.0 {
             let extracted = self.world.density.get_mut(center).unwrap().extract(Kilotons::new(amt));
@@ -2937,7 +3013,7 @@ impl Simulation {
         // a hull with no job worth doing, and a center that built nothing must
         // not be held busy for it.
         if let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) {
-            let done = self.clock + self.build_time(committed);
+            let done = self.clock + self.build_time(center, committed);
             self.world.building_until.insert(center, done);
             self.schedule_at(done, EventKind::BuildDecision { center });
         }
@@ -2965,9 +3041,42 @@ impl Simulation {
     /// floor are T-69; this is deliberately the `slips = 1` specialisation of
     /// the same formula, so landing concurrency changes the divisor rather than
     /// the model.
-    fn build_time(&self, mass: Price) -> f64 {
-        let f = self.config.slip_throughput.max(1e-12);
+    fn build_time(&self, center: Entity, mass: Price) -> f64 {
+        let f = self.fabrication_rate(center).max(1e-12);
         self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / f
+    }
+
+    /// **This centre's fabrication throughput, kt/yr** (T-74). It was the flat
+    /// `slip_throughput`; it is now what that centre's *works* produce, so
+    /// deepening buys build rate and razing takes it away.
+    fn fabrication_rate(&self, center: Entity) -> f64 {
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        let works = self
+            .world
+            .owner
+            .get(center)
+            .and_then(|o| self.world.works.get(self.player_entity[o.0 as usize]))
+            .copied()
+            .unwrap_or_default();
+        employment_rate(infra, &works, cards::Employment::Fabrication, self.config.fab_cap, works_knee(&self.config))
+    }
+
+    /// **This centre's extraction rate** — the fraction of its own remaining
+    /// density it works per cycle (T-74). Was the flat `center_mining_fraction`.
+    ///
+    /// Crews on an *outpost* are a different law — `Hyades_industry.md` §4's
+    /// crowding, scaled to the deposit (T-71/T-72) — because that is about how
+    /// many hulls stand on one rock, not about what a world's industry can lift.
+    fn extraction_rate(&self, center: Entity) -> f64 {
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        let works = self
+            .world
+            .owner
+            .get(center)
+            .and_then(|o| self.world.works.get(self.player_entity[o.0 as usize]))
+            .copied()
+            .unwrap_or_default();
+        employment_rate(infra, &works, cards::Employment::Extraction, self.config.ext_cap, works_knee(&self.config))
     }
 
     /// Apply a production order. `candidates` is the empire's current candidate
@@ -3096,7 +3205,7 @@ impl Simulation {
                 // caller holds the yard — one number, computed once, rather than
                 // a per-ship time that could drift from the occupancy. Hulls
                 // taken from Reserve are already built and leave at once.
-                let launch_delay = self.build_time(cost);
+                let launch_delay = self.build_time(center, cost);
                 if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
@@ -4194,6 +4303,7 @@ impl Simulation {
                     bio_max: f.bio_max.in_bands(),
                     biomass: f.biomass,
                     infrastructure: f.infra_band(&self.config),
+                    works: f.infra,
                     k: f.k(),
                     population: pop,
                     pop_level: self.bands.level(pop),
@@ -5239,6 +5349,61 @@ mod tests {
         assert!(sim2.roster_permits(0, HullType::MediumSystems), "default config must not gate anything");
     }
 
+    /// **T-74: the rate curve saturates, is monotone, and its two knobs mean
+    /// what §6.3 says they mean.**
+    ///
+    /// `Hyades_industry.md` §6.7's test 4. Cheap, and it pins the two
+    /// parameters to their stated roles so a later retune cannot quietly swap
+    /// them — which matters because the tall/wide axis *is* those two knobs:
+    /// Production raises `cap`, Growth and Expansion lower `half`.
+    #[test]
+    fn the_rate_curve_saturates_and_is_monotone() {
+        let cfg = SimConfig::new(1);
+        let w = cards::Works::default();
+        let e = cards::Employment::Fabrication;
+        let (cap, half) = (cfg.fab_cap, works_knee(&cfg));
+        let rate = |infra_kt: f64| employment_rate(Price::new(infra_kt), &w, e, cap, half);
+
+        // Zero stock, zero rate — the curve passes through the origin, so a
+        // razed world fabricates nothing rather than falling back to a floor.
+        assert_eq!(rate(0.0), 0.0);
+
+        // Monotone increasing, and never past the ceiling.
+        let mut prev = 0.0;
+        for i in 1..400 {
+            let r = rate(i as f64 * 0.01);
+            assert!(r > prev, "rate must rise with the stock at {i}");
+            assert!(r < cap, "rate must never reach the ceiling: {r} vs {cap}");
+            prev = r;
+        }
+
+        // **`half` is the knee**: `u = half` gives exactly `cap/2`. `u` is the
+        // employment's *share*, so at even allocation that is three knees of
+        // total stock.
+        let at_knee = rate(half * 3.0);
+        assert!((at_knee - cap / 2.0).abs() < 1e-12, "u = half must give cap/2, got {at_knee}");
+
+        // **Production raises the ceiling; Growth lowers the knee.** Both make a
+        // planet faster, and they do it differently — which is the whole reason
+        // one curve carries the tall/wide distinction.
+        let tall = cards::Works { cap: [1.0, 3.0, 1.0], ..cards::Works::default() };
+        let wide = cards::Works { half: [1.0, 0.25, 1.0], ..cards::Works::default() };
+        let stock = Price::new(half * 3.0);
+        let base = employment_rate(stock, &w, e, cap, half);
+        let t = employment_rate(stock, &tall, e, cap, half);
+        let d = employment_rate(stock, &wide, e, cap, half);
+        assert!(t > base && d > base, "both routes must beat the base at the knee");
+
+        // And they diverge where the design says: far up the stock the tall
+        // route wins outright, because it moved the asymptote and the wide one
+        // only got there sooner.
+        let far = Price::new(half * 300.0);
+        assert!(
+            employment_rate(far, &tall, e, cap, half) > employment_rate(far, &wide, e, cap, half),
+            "a raised ceiling must beat a lowered knee once the stock is large"
+        );
+    }
+
     /// **T-70: infrastructure is a stock of minerals; the rung is a reading.**
     ///
     /// It was a `Band` — a position on a ladder, stored — which is the thing
@@ -5494,11 +5659,28 @@ mod tests {
     /// values, **not MC-ratified**; the name says placeholder and so does §3.3.
     #[test]
     fn build_time_is_lead_plus_mass_over_throughput() {
-        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        // **T-74 made `t_build` a property of the yard, so the schedule needs a
+        // yard to be read at — and the one it holds at is the anchor.** A centre
+        // standing at rung I with default doctrine sits exactly on the knee of
+        // the rate curve, where fabrication is `fab_cap/2 = slip_throughput`.
+        // So §3.3's approved schedule is not merely preserved by T-74, it is
+        // *what pins the calibration*: if this passes, the curve pivots about
+        // the configuration that was already ratified.
+        let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        {
+            let f = sim.world.factors.get_mut(yard).unwrap();
+            f.infra = infra_rung_price(1, &sim.config);
+        }
+        assert!(
+            (sim.fabrication_rate(yard) - sim.config.slip_throughput).abs() < 1e-12,
+            "a rung-I centre must fabricate at exactly the old flat rate, got {}",
+            sim.fabrication_rate(yard)
+        );
         for (hull, want) in
             [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
         {
-            let got = sim.build_time(hull_cost(hull, &sim.config));
+            let got = sim.build_time(yard, hull_cost(hull, &sim.config));
             assert!((got - want).abs() < 1e-9, "{hull:?} builds in {got} yr, schedule says {want}");
         }
 
@@ -5507,11 +5689,11 @@ mod tests {
         // ratification of either constant cannot quietly invert the ordering the
         // observation model leans on — a big hull must stay a long, visible
         // commitment (§3.2).
-        assert!((sim.build_time(Price::ZERO) - sim.config.build_lead_years).abs() < 1e-12);
+        assert!((sim.build_time(yard, Price::ZERO) - sim.config.build_lead_years).abs() < 1e-12);
         let (l, m, g) = (
-            sim.build_time(hull_cost(HullType::LimitedSystems, &sim.config)),
-            sim.build_time(hull_cost(HullType::MediumSystems, &sim.config)),
-            sim.build_time(hull_cost(HullType::GeneralSystems, &sim.config)),
+            sim.build_time(yard, hull_cost(HullType::LimitedSystems, &sim.config)),
+            sim.build_time(yard, hull_cost(HullType::MediumSystems, &sim.config)),
+            sim.build_time(yard, hull_cost(HullType::GeneralSystems, &sim.config)),
         );
         assert!(l < m && m < g, "time must order like mass: {l} {m} {g}");
 
@@ -5520,7 +5702,7 @@ mod tests {
         // build time by the same rule. `Infra I` is priced as a Medium hull
         // (R-O80), so it takes a Medium hull's time.
         assert!(
-            (sim.build_time(infra_rung_price(1, &sim.config)) - m).abs() < 1e-9,
+            (sim.build_time(yard, infra_rung_price(1, &sim.config)) - m).abs() < 1e-9,
             "a rung priced like a Medium hull takes a Medium hull's time"
         );
     }
@@ -5571,7 +5753,7 @@ mod tests {
             .last()
             .expect("a committed build logs what it spent");
         assert!(
-            (done - (sim.clock + sim.build_time(committed))).abs() < 1e-9,
+            (done - (sim.clock + sim.build_time(home, committed))).abs() < 1e-9,
             "the yard is held for t_build({committed}), got {done} at clock {}",
             sim.clock
         );
