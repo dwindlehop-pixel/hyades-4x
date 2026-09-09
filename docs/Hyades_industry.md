@@ -1296,6 +1296,38 @@ property directly).
 > later through a build-mix census. The six-objective work is not only for card
 > balance — it is what engine changes should be guarded against too.
 
+#### R-IND17 measured — real, partial, and it settles the design question
+
+| | infrastructure builds | banks skewed |
+|---|---|---|
+| pre-T-73 | **1,032** | — |
+| T-73 | 57 | 1,494 / 1,515 (98.6%) |
+| T-73 + T-81 (relief) | 31 | 1,533 / 1,551 (98.8%) |
+| T-73 + **R-IND17** (completion) | **66** | 1,366 / 1,391 (98.2%) |
+
+**The concentration argument is validated directionally**: 31 → 66 against T-81's
+relief term, and 57 → 66 against no colour routing at all. Scoring the delivery
+that *finishes* a bill really does assemble more payable bills than scoring the
+delivery that relieves the scarcest colour.
+
+**And it recovers about 6% of what T-73 cost.** 66 against 1,032. Bank
+composition barely moved — 98.8% → 98.2% skewed — which is the expected shape:
+R-IND17 routes the same single-coloured cargoes *better*, it does not make them
+diverse. The supply constraint dominates and no routing rule can lift it.
+
+**So the design question is settled by measurement rather than argument: a
+colour-payable works bill cannot be made to work by freight alone on this
+field.** It needs the relief valves the spec already names and the engine does
+not have — the **Exchange** (§8.1, T-77) for buying colours from empires that
+have them, and design law #1's **counter-graph**, where Red is the general key,
+for substituting. Until one exists, T-73 is a constraint with no answer, and
+§6.7's plan for stages 3–5 to land **inert** is not being met by stage 5.
+
+**Recommendation, not yet actioned:** gate the colour bill behind a `SimConfig`
+flag defaulting **off**, so the works layer lands inert as §6.7 intended and
+switches on with T-77. The mechanism, its tests and this measurement all stay;
+only the default changes.
+
 **What this does not fix, and should not be asked to.** Even perfect internal
 routing cannot give an empire a colour its own ground does not hold. That is
 `§8.1`'s subject and the Exchange's job (T-77), and design law #1's counter-graph
