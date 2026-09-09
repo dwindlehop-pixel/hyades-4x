@@ -103,6 +103,31 @@ two multiplications.
 
 ---
 
+### T-81. Freight has no colour term, and T-73 just made that binding
+
+**A missing term, not a tuning question** — the same shape as λ, the largest
+single ratification in this project's history (freighter routing had no *distance*
+component; adding it took coverage 14.4% → 38.3%).
+
+T-73 made a works bill payable **in named colours**. T-62 made the mineral field
+log-normal **per colour**. Together, a centre's bank is dominated by one colour
+with traces of the others — 1,494 of 1,515 non-empty banks measured skewed at
+t=800, one holding `C 477.2 / M 0.0095 / Y 1.04` — so a bill naming all three is
+unpayable there. Measured effect: **infrastructure builds fell 1,032 → 57**, a
+94.5% cut, with the minerals going to hulls instead.
+
+`most_needed_center` routes ore by mineral **pressure** — how broke a centre is
+overall — and carries **no colour term at all**. Route by what a centre's *bill*
+needs and the constraint gets the answer §5.3 promises and design law #13
+requires. Note that all four of §5.1's ratio points (`1:0:0`, `4:2:1`, `3:2:1`,
+`5:4:3`) demand every colour except the first, so the alternative routes do **not**
+supply that answer on their own; freight does, which is §8.1's subject.
+
+Guard is `examples/colony_years`; `examples/bank_mix` is the instrument that
+found it and should show banks mixing.
+
+---
+
 ### T-78 … T-80. The trees: tone, six objectives, card value — `Hyades_trees_and_card_value.md`
 
 **A new spec, `docs/Hyades_trees_and_card_value.md` (Rev 1).** It settles the

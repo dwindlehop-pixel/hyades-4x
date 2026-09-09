@@ -1015,7 +1015,7 @@ the decimal where a stage claims to be neutral.
 | 2 | **`t_build` tracks hull mass** | changes; predicted **up** | colony-years | T-68 |
 | 3 | **Infrastructure stored as kilotonnes** | **neutral — measured, bit-identical** (§6.8) | colony-years | T-70 |
 | 4 | **`Works` struct + the fold** | **neutral** — nothing reads it yet | bit-identical | T-75a |
-| 5 | **Price reads `eta_works` and `mix_w`** | ~~neutral at identity~~ — see §6.8 | colony-years | T-73 |
+| 5 | **Price reads `eta_works` and `mix_w`** | **changes — deepening −94.5%** (§6.9) | colony-years | T-73 |
 | 6 | **Rates read the allocation and the curve** | changes; the ramp switches on | colony-years | T-71, T-74 |
 | 7 | **Slips** | changes; predicted **up** | colony-years | T-69 |
 
@@ -1115,6 +1115,57 @@ invisible in play because deepening is gated on `infra < k_potential` and
 `k_potential = min(hab, bio_max)` cannot exceed the top rung. It is also the
 better behaviour: an infrastructure Band above `Band IV` was a number with no
 meaning.
+
+### 6.9 T-73 measured — the constraint landed before its relief valve
+
+**Colony-years went up** — seed 1 `10,558,680 → 10,606,309` (+0.451%), seed 7
+`10,474,864.5 → 10,583,150.3` (+1.034%), colonies and first-founding identical.
+A new *constraint* improving the bed is not a result to bank, so it was ablated.
+
+**Keeping the per-colour gate and restoring proportional payment reproduces the
+whole run bit-identically**, on both seeds. So the payment scheme contributes
+nothing, and the entire effect is the **gate**. Instrumented (`examples/bank_mix`,
+seed 1, 800 yr):
+
+| | infrastructure builds | hull builds |
+|---|---|---|
+| pre-T-73 | 1,032 | 13,639 |
+| T-73 | **57** | **21,098** |
+
+**Deepening fell 94.5%.** The +1% is not colour billing paying off; it is a
+deepen→expand reallocation on a bed where `k_high` binds the total, so minerals
+denied to infrastructure buy hulls and worlds are taken earlier.
+
+**The mechanism is the field, not the bill.** T-62 made the mineral field
+log-normal **per colour**, so a centre's bank is dominated by one colour with
+traces of the others — measured at t=800, **1,494 of 1,515 non-empty banks are
+skewed**, one holding `C 477.2 / M 0.0095 / Y 1.04`. A bill that names all three
+colours is unpayable there whatever the ratio: `1:1:1`, Floor `5:4:3` and Peak
+`4:2:1` all demand every colour, and only a Sole `1:0:0` work matching the
+dominant colour is affordable.
+
+**So the constraint is right and it arrived before the thing that answers it.**
+§5.3 promises every archetype an alternative route, and design law #13 requires
+one — but *all four* ratio points in §5.1 need all three colours, so on this
+field the promise is not kept by the ratios. What keeps it is **getting the
+colours you lack**, and that is §8.1's whole subject: refined mass traverses real
+space, on hulls. The engine has freight — `most_needed_center` routes ore by
+mineral *pressure* — and **no colour term at all**.
+
+That is the same shape as λ, the largest single ratification in this project's
+history: freighter routing had no distance component, and adding the missing term
+took coverage 14.4% → 38.3%. **Before tuning R-IND3's coefficients, add the
+missing term** (**T-81**): route freight by what a centre's *bill* needs, not by
+how broke it is overall.
+
+**Until then T-73's identity mix is also wrong on its own terms.** `mix_w =
+(1,1,1)` normalises to an even split, and §5.1's table has no `1:1:1` — it says a
+works ratio is "never a true 1:1:1". The identity should be the Floor `5:4:3`,
+which is the flattest *ratified* point. Left as `(1,1,1)` for now because
+changing it moves the measurement, and the measurement above is the one that
+matters (**R-IND15**).
+
+---
 
 **Stage 5 (T-73) changes a mechanic at identity, and that mechanic is the
 point.** `Minerals::try_spend_total` debits an empire's bank **proportional to
