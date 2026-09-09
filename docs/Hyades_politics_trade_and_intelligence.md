@@ -886,15 +886,15 @@ same shape, and should be expected to move the bed rather than assumed not to.
 **Measured on the works branch: colony-years is inverted for anything that
 changes how minerals are spent.** Seed 1, across four landings:
 
-| | infrastructure builds | colony-years |
-|---|---|---|
-| pre-works | 1,032 | 10,558,680 |
-| T-73 | 57 | 10,606,309 |
-| T-81 | 31 | 10,633,441 |
-| R-IND17 | 66 | 10,582,211 |
+| | infra builds | colony-years, seed 1 | colony-years, seed 7 |
+|---|---|---|---|
+| pre-works | 1,032 | 10,558,680 | 10,474,865 |
+| T-73 | 57 | 10,606,309 | 10,583,150 |
+| T-81 | 31 | **10,633,441** | **10,599,130** |
+| R-IND17 | 66 | 10,582,211 | 10,546,759 |
 
-Monotone inverse: colony-years *rises* as development collapses and *falls* as it
-recovers, because minerals denied to infrastructure buy hulls and a `k_high`-bound
+Monotone inverse **on both seeds**: colony-years *rises* as development collapses
+and *falls* as it recovers, because minerals denied to infrastructure buy hulls and a `k_high`-bound
 bed takes worlds earlier. Four industry changes were guarded on it and it rewarded
 the breakage every time.
 

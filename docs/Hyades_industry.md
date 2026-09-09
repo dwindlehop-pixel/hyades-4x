@@ -1284,8 +1284,19 @@ ore concentrates where it can actually be spent. **R-IND17** (landed;
 property directly).
 
 > **A note on the guard, which is about method rather than industry.**
-> Colony-years rose at every step of this sequence — T-73 `+0.45%/+1.03%`, then
-> T-81 a further `+0.26%` on seed 1 — **while deepening fell 1,032 → 57 → 31.**
+> Colony-years tracks deepening **inversely, on both seeds**, across four
+> landings:
+>
+> | | infra builds | seed 1 | seed 7 |
+> |---|---|---|---|
+> | pre-works | 1,032 | 10,558,680 | 10,474,865 |
+> | T-73 | 57 | 10,606,309 | 10,583,150 |
+> | T-81 | 31 | **10,633,441** | **10,599,130** |
+> | R-IND17 | 66 | 10,582,211 | 10,546,759 |
+>
+> It peaks exactly where development is most broken, and **falls when R-IND17
+> restores some** — which was predicted before the run and is what makes this an
+> account rather than a pattern.
 > It rose *because* development was being switched off: minerals denied to
 > infrastructure buy hulls, and on a `k_high`-bound bed that takes worlds
 > earlier. **The guard was rewarding the breakage.**
