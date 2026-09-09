@@ -46,7 +46,66 @@ fn run(seed: u64) -> (usize, f64, f64) {
     (colonies, colony_years, if colonies > 0 { sum_t / colonies as f64 } else { 0.0 })
 }
 
+/// **Which of the three caps actually binds** — the mechanism behind the result.
+///
+/// `settler_target` is the least of the hull's hold, the destination's capacity
+/// and what the origin will part with. Bit-identical colony-years against the
+/// model this replaced is a *symptom*; the mechanism is which cap was binding,
+/// and if it is the hold on essentially every launch then "fill the hold" is the
+/// answer both models give and the identity is arithmetic rather than luck
+/// (`CLAUDE.md` §2 — never leave a symptom without a proven mechanism).
+///
+/// Run on a truncated horizon on purpose: this is a question about the *shape*
+/// of launches, not about the objective, and the shape is established long
+/// before 4,000 yr.
+fn census(seed: u64, horizon: f64) {
+    let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
+    let autopilots: Vec<Box<dyn Autopilot>> =
+        (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
+    let mut cfg = SimConfig::new(seed);
+    cfg.horizon_years = horizon;
+    let medium = HullType::MediumSystems.colony_seed_capacity(&cfg);
+    let general = HullType::GeneralSystems.colony_seed_capacity(&cfg);
+    let mut sim = Simulation::new(galaxy, cfg, autopilots);
+    sim.set_log_filter(LogFilter::none().with(LogCategory::Vehicles));
+    sim.run();
+
+    let (mut n, mut full_hold, mut all_settlers, mut carried_minerals) = (0usize, 0usize, 0usize, 0usize);
+    let (mut sum_s, mut sum_e) = (0.0, 0.0);
+    for r in sim.log().iter() {
+        if let LogEvent::VehicleSpawned { role: Role::Colonizer, settlers, endowment, .. } = r.event {
+            n += 1;
+            sum_s += settlers;
+            sum_e += endowment;
+            // Which hull flew is not in the record, so test against both holds.
+            let hold = if (settlers + endowment) > medium.kilotons() * 1.5 { general } else { medium };
+            if (settlers + endowment - hold.kilotons()).abs() < 1e-9 {
+                full_hold += 1;
+            }
+            if (settlers - hold.kilotons()).abs() < 1e-9 {
+                all_settlers += 1;
+            }
+            if endowment > 1e-12 {
+                carried_minerals += 1;
+            }
+        }
+    }
+    let pct = |k: usize| if n > 0 { 100.0 * k as f64 / n as f64 } else { 0.0 };
+    println!("census — seed {seed}, {horizon:.0} yr, {n} colonisers launched");
+    println!("  hold filled to capacity : {full_hold:>7}  ({:.1}%)", pct(full_hold));
+    println!("  hold all settlers, no ore: {all_settlers:>7}  ({:.1}%)", pct(all_settlers));
+    println!("  carried any minerals     : {carried_minerals:>7}  ({:.1}%)", pct(carried_minerals));
+    println!("  mean settlers {:.4} kt, mean endowment {:.4} kt", sum_s / n.max(1) as f64, sum_e / n.max(1) as f64);
+    println!("  Medium hold {:.4} kt, General hold {:.4} kt", medium.kilotons(), general.kilotons());
+}
+
 fn main() {
+    if std::env::args().any(|a| a == "--census") {
+        for seed in SEEDS {
+            census(seed, 2000.0);
+        }
+        return;
+    }
     println!("R-IND12 — demand-driven endowment, CRN over {SEEDS:?}, {PLAYERS} seats, {HORIZON:.0} yr");
     println!("objective = colony COUNT; colony-years is the guard");
     // **No baseline is hardcoded here on purpose.** A constant copied into a

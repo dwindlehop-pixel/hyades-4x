@@ -3115,7 +3115,15 @@ impl Simulation {
         let target_pid = *self.world.planet_id.get(target).unwrap();
         self.log.push(
             self.clock,
-            LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Miner, from, to: target_pid },
+            LogEvent::VehicleSpawned {
+                player: p as u32,
+                vehicle: e,
+                role: Role::Miner,
+                from,
+                to: target_pid,
+                settlers: 0.0,
+                endowment: 0.0,
+            },
         );
     }
 
@@ -3134,7 +3142,15 @@ impl Simulation {
         let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
         self.log.push(
             self.clock,
-            LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Freighter, from, to: outpost_pid },
+            LogEvent::VehicleSpawned {
+                player: p as u32,
+                vehicle: e,
+                role: Role::Freighter,
+                from,
+                to: outpost_pid,
+                settlers: 0.0,
+                endowment: 0.0,
+            },
         );
     }
 
@@ -3552,8 +3568,18 @@ impl Simulation {
         };
         self.schedule_at(arrive, ev);
         let target_pid = *self.world.planet_id.get(target).unwrap();
-        self.log
-            .push(self.clock, LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role, from, to: target_pid });
+        self.log.push(
+            self.clock,
+            LogEvent::VehicleSpawned {
+                player: p as u32,
+                vehicle: e,
+                role,
+                from,
+                to: target_pid,
+                settlers: settlers.kilotons(),
+                endowment: endowment.basic_total().kilotons(),
+            },
+        );
     }
 
     fn spawn_freighter(&mut self, p: usize, center: Entity, from: Vec3, outpost: Entity, launch_delay: f64) {
@@ -3571,7 +3597,15 @@ impl Simulation {
         let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
         self.log.push(
             self.clock,
-            LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Freighter, from, to: outpost_pid },
+            LogEvent::VehicleSpawned {
+                player: p as u32,
+                vehicle: e,
+                role: Role::Freighter,
+                from,
+                to: outpost_pid,
+                settlers: 0.0,
+                endowment: 0.0,
+            },
         );
     }
 
@@ -3597,7 +3631,15 @@ impl Simulation {
             self.schedule_at(arrive, EventKind::ContactArrive { vehicle: e });
             self.log.push(
                 self.clock,
-                LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Scout, from, to: target_pid },
+                LogEvent::VehicleSpawned {
+                    player: p as u32,
+                    vehicle: e,
+                    role: Role::Scout,
+                    from,
+                    to: target_pid,
+                    settlers: 0.0,
+                    endowment: 0.0,
+                },
             );
         }
     }

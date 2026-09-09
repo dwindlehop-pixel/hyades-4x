@@ -171,7 +171,15 @@ pub enum LogEvent {
     FreighterTransfer { player: u32, vehicle: Entity, leg: FreighterLeg, amount: f64, at: PlanetId },
 
     /// A vehicle was built and launched toward a target.
-    VehicleSpawned { player: u32, vehicle: Entity, role: Role, from: Vec3, to: PlanetId },
+    ///
+    /// `settlers` and `endowment` are the two halves of a Colonizer's hold in
+    /// kilotons, both zero for every other role. They are here because since
+    /// R-O74 a hold is *loaded out of the origin* and R-IND12 decides how much
+    /// per destination, so "what did this ship actually carry" stopped being
+    /// derivable from the hull — and that split is the only way to tell which of
+    /// the three caps was binding (hull, destination, or origin) without
+    /// reaching into engine internals. `examples/endowment` reads it.
+    VehicleSpawned { player: u32, vehicle: Entity, role: Role, from: Vec3, to: PlanetId, settlers: f64, endowment: f64 },
     /// A vehicle reached its destination and is holding station / idle there —
     /// the resting state for every non-contact role (autopilot-doc post-arrival
     /// behavior: systems vehicles return, offensive units hold station).

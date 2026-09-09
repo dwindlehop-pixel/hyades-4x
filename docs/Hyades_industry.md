@@ -444,6 +444,46 @@ endowment — founded to be worked rather than to be lived on. Both halves mass
 the same, so the split is invisible from outside, which is the point:
 acceleration must not read out cargo *type* (design law #10).
 
+#### Measured — and the model is inert at the shipped coloniser policy
+
+**Colony-years is bit-identical to the supply-side model it replaces**, on both
+seeds where a like-for-like baseline exists: seed 1 **10,558,680** and seed 7
+**10,474,865**, against 10,558,680 and 10,474,864.5 before. Seeds 42 and 31337
+have no pre-R-IND12 baseline at that operating point; their absolutes are
+10,555,813 and 11,113,014, mean 10,675,593 over the four.
+
+**That is a symptom, and the mechanism is measured rather than inferred**
+(`examples/endowment --census`, all four seeds, 2,000 yr, **20,622 coloniser
+launches**):
+
+| seed | launches | hold filled to capacity | settlers only, no ore | carried minerals |
+|---|---|---|---|---|
+| 1 | 5,187 | **100.0%** | 99.7% | 0.3% |
+| 7 | 5,000 | **100.0%** | 99.9% | 0.1% |
+| 42 | 5,124 | **100.0%** | 99.8% | 0.2% |
+| 31337 | 5,311 | **100.0%** | 99.9% | 0.1% |
+
+Mean settlers **0.998–0.999 kt against a Medium hold of exactly 1.0000 kt**, and
+**not one General hull flies.** So of the three caps, the **hold** binds on
+essentially every launch: `hi = min(H, K_c, spare)` is `H`, the objective is
+still climbing at the top of the feasible range, and the model returns *fill the
+hold*. That is the same answer the retired fraction gave, so the identity is
+arithmetic rather than luck.
+
+Three things follow, and the third is the one that matters:
+
+- **The mixed hold is implemented and exercised, just rare** — 0.1–0.3% of
+  launches carry minerals, which are exactly the destinations whose `K_c` sits
+  below a Medium hull's hold. The mechanism is live, not dormant code.
+- **Conservation is still free.** R-O74 cost nothing at the shipped policy for
+  the same reason (§1.6): a 1.0 kt hold against a centre that needs ≈14.2 kt of
+  people before it may build one.
+- **R-IND12 and R-IND11 are one question from two sides, and neither is
+  ratifiable alone.** The endowment model only has a gradient where the hold is
+  large enough for `K_c` or the origin to bind first, and that is the General
+  hull — which is precisely what R-IND11 is about. A sweep of either while the
+  other sits at its default is measuring a plateau.
+
 **What this invalidates on purpose.** Every colony-years figure taken before it
 — including §1.6's own +13.97% and §1.4's +4.4%/+4.7% for T-67 — was measured
 on an economy that created population. They are not wrong as records of what
