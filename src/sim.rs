@@ -159,13 +159,25 @@ struct Factors {
     /// of times a run, for a quantity nothing has changed since galaxy
     /// generation. Identical value, computed once (R-O70).
     bio_max_band: Band,
-    /// Built infrastructure. Integer-valued; deepened one level at a time.
-    infra: Band,
+    /// **Built infrastructure, stored as the minerals standing in it**
+    /// (`Hyades_industry.md` §1.3, T-70).
+    ///
+    /// It is a `Price` rather than a `Band` because a **Band is a reading, not a
+    /// second thing to store** (`CLAUDE.md` §4) — and because the infrastructure
+    /// ladder *is* the mineral ladder (R-O80), so the reading has to be taken on
+    /// the **Cost** scale. `Price` is kilotons carrying that scale marker, which
+    /// is what satisfies §1.3's "stored as a mass in kilotons" without silently
+    /// moving every infrastructure threshold onto the mass ladder, where the
+    /// rungs are `^1.5` apart and every gate would mean something different.
+    ///
+    /// Read the rung with [`Factors::infra_band`]; never `in_bands()`, which
+    /// would take it on the wrong ladder.
+    infra: Price,
 }
 impl Factors {
     /// Build a set of factors, deriving the cached Band reading of `bio_max`.
     #[inline]
-    fn new(hab: Band, biomass: Kilotons, bio_max: Kilotons, infra: Band) -> Factors {
+    fn new(hab: Band, biomass: Kilotons, bio_max: Kilotons, infra: Price) -> Factors {
         Factors { hab, biomass, bio_max, bio_max_band: bio_max.in_bands(), infra }
     }
 
@@ -238,6 +250,19 @@ impl Factors {
     #[inline]
     fn k_potential(&self) -> Band {
         self.k()
+    }
+
+    /// **The infrastructure rung, read off the stock** — the one place the
+    /// Cost-ladder reading is taken (T-70).
+    ///
+    /// `infra` is stored as the minerals standing in it, so the rung is a `ln`
+    /// away. That is a conversion and conversions are not free (`CLAUDE.md` §4:
+    /// `band()` is 2.2x an arithmetic op), so call it at the **edges** — a
+    /// production decision, a log line, a view — and never inside a loop over
+    /// entities.
+    #[inline]
+    fn infra_band(&self, cfg: &SimConfig) -> Band {
+        self.infra.band_from(cost_anchor(cfg))
     }
 }
 
@@ -867,10 +892,20 @@ fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
     Price::new(Price::rung_from(n, cost_anchor(cfg)))
 }
 
-/// Minerals to raise infrastructure from `from` to the next whole rung.
-fn infra_step_price(from: Band, cfg: &SimConfig) -> Price {
-    let at = from.round().bands().max(0.0) as usize;
+/// Minerals to raise infrastructure from the stock `from` to the next whole rung.
+///
+/// Takes the **stock** rather than a Band since T-70, so the rung is derived
+/// here rather than at every call site — one reading, one place it can be taken
+/// on the wrong ladder.
+fn infra_step_price(from: Price, cfg: &SimConfig) -> Price {
+    let at = infra_rung_of(from, cfg);
     infra_rung_price(at + 1, cfg) - infra_rung_price(at, cfg)
+}
+
+/// The whole rung an infrastructure stock stands at.
+#[inline]
+fn infra_rung_of(stock: Price, cfg: &SimConfig) -> usize {
+    stock.band_from(cost_anchor(cfg)).round().bands().max(0.0) as usize
 }
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
@@ -1682,7 +1717,9 @@ impl Simulation {
                     // construction rather than by convention.
                     pl.biosphere.in_kilotons(),
                     pl.biosphere.in_kilotons(),
-                    pl.infrastructure,
+                    // Galaxy generation states the starting rung; the engine stores
+                    // the stock that rung costs (T-70).
+                    infra_rung_price(pl.infrastructure.round().bands().max(0.0) as usize, &config),
                 ),
             );
             world.density.insert(e, pl.minerals);
@@ -2700,15 +2737,16 @@ impl Simulation {
         let doctrine = *self.world.doctrine.get(pe).unwrap();
         let center_pid = *self.world.planet_id.get(center).unwrap();
 
-        let (infra, k_potential) = {
+        let (infra, infra_band, k_potential) = {
             let f = self.world.factors.get(center).unwrap();
-            (f.infra, f.k_potential())
+            // One reading, taken at the edge — the decision and the log line
+            // both want the rung, and `band_from` is a `ln` (`CLAUDE.md` §4).
+            (f.infra, f.infra_band(&self.config), f.k_potential())
         };
         let level = self.bands.level(*self.world.population.get(center).unwrap());
         let center_pos = *self.world.position.get(center).unwrap();
         let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
-        // Minerals to buy the next whole level. The ladder rung is a Band; its
-        // *price* is a mineral quantity, so the reading is taken explicitly.
+        // Minerals to buy the next whole level, from the stock standing there.
         let target_level = infra_step_price(infra, &self.config);
 
         let info = *self.world.player_info.get(pe).unwrap();
@@ -2779,7 +2817,7 @@ impl Simulation {
         let ctx = ProductionContext {
             center_pos,
             level,
-            infra: infra.bands(),
+            infra: infra_band.bands(),
             k_potential: k_potential.bands(),
             stockpile_total: stock_total,
             medium_min_level: self.config.medium_min_level,
@@ -2789,8 +2827,8 @@ impl Simulation {
             general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
             medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
             general_seed_capacity: HullType::GeneralSystems.colony_seed_capacity(&self.config),
-            medium_founding_infra: self.founding_infra(HullType::MediumSystems),
-            general_founding_infra: self.founding_infra(HullType::GeneralSystems),
+            medium_founding_infra: self.founding_infra_band(HullType::MediumSystems),
+            general_founding_infra: self.founding_infra_band(HullType::GeneralSystems),
             // The *true* price of a pair to this center right now. With
             // recycling on, a half that comes out of Reserve is not bought, and
             // the context has to say so or the decision is made on a price the
@@ -2810,7 +2848,7 @@ impl Simulation {
                 player: p as u32,
                 center: center_pid,
                 pop_level: level,
-                infra: infra.bands(),
+                infra: infra_band.bands(),
                 k_potential: k_potential.bands(),
                 stockpile: stock_total.kilotons(),
                 infra_cost: target_level.kilotons(),
@@ -2889,7 +2927,11 @@ impl Simulation {
                 let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
                     let f = self.world.factors.get_mut(center).unwrap();
-                    f.infra = f.infra.up(1.0);
+                    // **A rung is bought, not incremented.** The stock moves to
+                    // exactly what standing at the next rung costs, so the
+                    // ladder stays the single source of the number (T-70).
+                    let next = infra_rung_of(f.infra, &self.config) + 1;
+                    f.infra = infra_rung_price(next, &self.config);
                     let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
                     self.log.push(
                         self.clock,
@@ -3200,9 +3242,21 @@ impl Simulation {
     /// R-V9 needs no special case at either end: a Limited hull's mass reads
     /// below `Band Empty`, so its colony would have no carrying capacity and
     /// [`Self::colony_seed_for`] declines.
-    fn founding_infra(&self, hull: HullType) -> Band {
-        let b = hull_cost(hull, &self.config).band_from(cost_anchor(&self.config));
-        Band::new(b.bands().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
+    fn founding_infra(&self, hull: HullType) -> Price {
+        // **The recycled hull's minerals *are* the stock** (T-70), so this is a
+        // price and no longer a Band — the clamp is to what the top playable
+        // rung costs rather than to the rung's index. Same content, one ladder
+        // reading fewer, and it lands on the ladder's own value rather than on
+        // a Band that has to be converted back the moment it is spent against.
+        let ceiling = infra_rung_price(BandTier::MAX_PLAYABLE.band().bands() as usize, &self.config);
+        hull_cost(hull, &self.config).min(ceiling).max(Price::ZERO)
+    }
+
+    /// [`Self::founding_infra`] as a rung, for the surfaces that want the
+    /// reading rather than the stock.
+    #[inline]
+    fn founding_infra_band(&self, hull: HullType) -> Band {
+        self.founding_infra(hull).band_from(cost_anchor(&self.config))
     }
 
     /// **The carrying capacity a colony will have the moment it is founded** —
@@ -3498,7 +3552,7 @@ impl Simulation {
         // The works rung: geometric mean of capacity and abundance, which on the
         // Band ladder is their midpoint (R-IND13, placeholder).
         let i_star = Band::new((f.k().bands() + density.bands()) * 0.5);
-        let from = self.founding_infra(hull).round().bands().max(0.0) as usize;
+        let from = infra_rung_of(self.founding_infra(hull), &self.config);
         let to = i_star.round().bands().max(0.0) as usize;
         let mut total = Price::ZERO;
         for rung in (from + 1)..=to {
@@ -3833,7 +3887,7 @@ impl Simulation {
     /// fresh, never stored, which is what lets [`Self::most_needed_center`]
     /// compare need across the whole empire.
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Band::ZERO);
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
         let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
         // The price of this center's *next* rung — the same function the build
         // path charges, rather than a second copy of `round(infra) + 1`.
@@ -3983,7 +4037,7 @@ impl Simulation {
                     biosphere: f.biomass.in_bands(),
                     bio_max: f.bio_max.in_bands(),
                     biomass: f.biomass,
-                    infrastructure: f.infra,
+                    infrastructure: f.infra_band(&self.config),
                     k: f.k(),
                     population: pop,
                     pop_level: self.bands.level(pop),
@@ -4829,14 +4883,18 @@ mod tests {
             (HullType::GeneralSystems, BandTier::II),
         ] {
             let got = sim.founding_infra(hull);
-            assert!((got.bands() - rung.band().bands()).abs() < 1e-9, "{hull:?} founds at {got}, want {rung}");
+            let got_band = sim.founding_infra_band(hull);
+            assert!(
+                (got_band.bands() - rung.band().bands()).abs() < 1e-9,
+                "{hull:?} founds at {got_band} ({got}), want {rung}"
+            );
         }
         let m_infra = sim.founding_infra(HullType::MediumSystems);
         let g_infra = sim.founding_infra(HullType::GeneralSystems);
 
         // And the prices those rungs correspond to: `Infra I costs minerals I`.
         for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
-            let rung = sim.founding_infra(hull).round().bands() as usize;
+            let rung = infra_rung_of(sim.founding_infra(hull), &sim.config);
             let priced = infra_rung_price(rung, &sim.config);
             assert!(
                 (priced - hull_cost(hull, &sim.config)).abs() < Price::new(1e-12),
@@ -4849,7 +4907,7 @@ mod tests {
         let target = sim.planet_entity[11];
         sim.world.factors.insert(
             target,
-            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
 
         // **The founding capacity is the world's, and the hull has nothing to
@@ -4876,7 +4934,7 @@ mod tests {
         let poor = sim.planet_entity[12];
         sim.world.factors.insert(
             poor,
-            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
         let capped = sim.colony_seed_for(HullType::GeneralSystems, home, poor).expect("a General hull can found");
         assert!(
@@ -5025,6 +5083,62 @@ mod tests {
         assert!(sim2.roster_permits(0, HullType::MediumSystems), "default config must not gate anything");
     }
 
+    /// **T-70: infrastructure is a stock of minerals; the rung is a reading.**
+    ///
+    /// It was a `Band` — a position on a ladder, stored — which is the thing
+    /// `CLAUDE.md` §4 says never to do: *a Band is a reading, not a second thing
+    /// to store*. `Hyades_industry.md` §1.3 states the same rule for this
+    /// quantity specifically, because infrastructure is **built out of
+    /// minerals** and minerals are masses (L6/R-O57).
+    ///
+    /// Three things are pinned, and the third is the one that would have been a
+    /// silent disaster:
+    ///
+    /// 1. standing at rung `n` means holding exactly what rung `n` costs;
+    /// 2. buying a rung moves the stock by exactly `infra_step_price`, so the
+    ///    ladder is the single source of the number rather than an increment
+    ///    that happens to agree with it;
+    /// 3. **the reading is taken on the *Cost* ladder, not the mass ladder.**
+    ///    `Price` is kilotons, so `in_bands()` compiles and returns a completely
+    ///    different rung — the two ladders are `^1.5` apart (R-MC15). Reading
+    ///    infrastructure on the wrong one would move every development gate at
+    ///    once and typecheck while doing it, which is precisely the shape of the
+    ///    `K = min(hab, bio, infra)` unit error this project already paid for.
+    #[test]
+    fn infrastructure_is_a_stock_and_the_rung_is_a_reading() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+
+        for rung in 1..=4usize {
+            let stock = infra_rung_price(rung, &sim.config);
+            let f = sim.world.factors.get_mut(home).unwrap();
+            f.infra = stock;
+            assert_eq!(infra_rung_of(stock, &sim.config), rung, "standing at rung {rung} must read back as {rung}");
+
+            // Buying the next rung moves the stock by exactly the step price.
+            let step = infra_step_price(stock, &sim.config);
+            let next = infra_rung_price(rung + 1, &sim.config);
+            assert!(
+                ((stock + step) - next).kilotons().abs() < 1e-12,
+                "rung {rung} + step must land on rung {}: {} vs {next}",
+                rung + 1,
+                stock + step
+            );
+        }
+
+        // **The two ladders are different, and the type is what keeps them
+        // apart.** This is an assertion that the wrong reading is *available*
+        // and wrong — the compile-time guard is the `Scale` marker, and this is
+        // the runtime evidence that it is load-bearing rather than decorative.
+        let stock = infra_rung_price(2, &sim.config);
+        let on_cost = stock.band_from(cost_anchor(&sim.config));
+        let on_mass = stock.on_scale::<units::Mass>().in_bands();
+        assert!(
+            (on_cost.bands() - on_mass.bands()).abs() > 0.1,
+            "the same kilotons must read a different rung on each ladder: {on_cost} vs {on_mass}"
+        );
+    }
+
     /// **T-68: build time tracks mass, and the two ladders are one ladder.**
     ///
     /// `build_years` was flat at 10.0, so a Limited hull and a General hull took
@@ -5158,7 +5272,9 @@ mod tests {
         let bio_max = Band::new(4.0).in_kilotons();
         let pop0 = Kilotons::at_band(Band::new(1.0));
         let biomass = bio_max;
-        sim.world.factors.insert(home, Factors::new(Band::new(4.0), biomass, bio_max, Band::new(4.0)));
+        sim.world
+            .factors
+            .insert(home, Factors::new(Band::new(4.0), biomass, bio_max, infra_rung_price(4, &sim.config)));
         *sim.world.population.get_mut(home).unwrap() = pop0;
 
         let before = pop0 + sim.world.factors.get(home).unwrap().biomass;
@@ -5180,9 +5296,9 @@ mod tests {
     #[test]
     fn razing_infrastructure_does_not_move_the_ceiling() {
         let bio_max = Band::new(3.0).in_kilotons();
-        let developed = Factors::new(Band::new(4.0), bio_max, bio_max, Band::new(4.0));
+        let developed = Factors::new(Band::new(4.0), bio_max, bio_max, Price::new(10.0));
         let mut razed = developed;
-        razed.infra = Band::ZERO;
+        razed.infra = Price::ZERO;
 
         assert_eq!(developed.k(), razed.k(), "K must not depend on infrastructure");
         assert_eq!(developed.k(), Band::new(3.0), "and it is min(hab, bio_max) — here the biosphere");
@@ -5204,7 +5320,7 @@ mod tests {
     #[test]
     fn drawing_the_biosphere_down_does_not_lower_the_ceiling() {
         let bio_max = Band::new(4.0).in_kilotons();
-        let full = Factors::new(Band::new(4.0), bio_max, bio_max, Band::new(4.0));
+        let full = Factors::new(Band::new(4.0), bio_max, bio_max, Price::new(10.0));
         let mut razed = full;
         razed.biomass = bio_max * 0.01; // ecology in ruins, ceiling untouched
 
@@ -5236,7 +5352,7 @@ mod tests {
         // which is correct behaviour and a different test.
         let bio_max = Band::new(4.0).in_kilotons();
         let start = bio_max * 0.125;
-        sim.world.factors.insert(home, Factors::new(Band::new(4.0), start, bio_max, Band::ZERO));
+        sim.world.factors.insert(home, Factors::new(Band::new(4.0), start, bio_max, Price::ZERO));
         *sim.world.population.get_mut(home).unwrap() = units::POPULATION_SEED_FLOOR;
 
         let mut last = start;
@@ -5260,7 +5376,7 @@ mod tests {
         let home = sim.world.player_info.get(pe).unwrap().home;
         sim.world
             .factors
-            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
+            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Price::new(10.0)));
         *sim.world.population.get_mut(home).unwrap() = units::POPULATION_SEED_FLOOR;
 
         for _ in 0..20 {
@@ -5285,7 +5401,7 @@ mod tests {
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         sim.world
             .factors
-            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
+            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Price::new(10.0)));
         *sim.world.population.get_mut(home).unwrap() = Kilotons::at_band(Band::new(2.0));
 
         for _ in 0..10 {
@@ -5353,7 +5469,7 @@ mod tests {
                     Band::new(1.0),
                     Band::new(4.0).in_kilotons(),
                     Band::new(4.0).in_kilotons(),
-                    Band::new(4.0),
+                    Price::new(10.0),
                 ),
             );
             *sim.world.population.get_mut(home).unwrap() = seed;
@@ -5656,7 +5772,7 @@ mod tests {
         sim.world.owner.insert(colony, PlayerId(0));
         sim.world.factors.insert(
             colony,
-            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Band::new(1.0)),
+            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Price::new(1.0)),
         );
         sim.world.stockpile.insert(colony, Minerals::default());
 
@@ -5687,7 +5803,7 @@ mod tests {
         sim.world.owner.insert(colony, PlayerId(0));
         sim.world.factors.insert(
             colony,
-            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Band::new(1.0)),
+            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Price::new(1.0)),
         );
         sim.world.stockpile.insert(colony, Minerals::default());
         {
@@ -5753,7 +5869,7 @@ mod tests {
         let target = sim.planet_entity[11];
         sim.world.factors.insert(
             target,
-            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
         sim.world.population.insert(home, Kilotons::at_tier(BandTier::III));
         {
@@ -5833,7 +5949,7 @@ mod tests {
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let target = sim.planet_entity[11];
         let cap = Band::new(3.0);
-        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Band::ZERO);
+        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Price::ZERO);
         sim.world.factors.insert(home, factors(cap));
         sim.world.factors.insert(target, factors(cap));
         let here = *sim.world.position.get(home).unwrap();
@@ -5884,7 +6000,7 @@ mod tests {
         let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let here = *sim.world.position.get(home).unwrap();
-        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Band::ZERO);
+        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Price::ZERO);
         let hulls = [HullType::MediumSystems, HullType::GeneralSystems];
 
         for kp in [1.0, 2.5, 4.0] {
@@ -5926,7 +6042,7 @@ mod tests {
         let target = sim.planet_entity[11];
         sim.world.factors.insert(
             target,
-            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
         let hold = HullType::GeneralSystems.colony_seed_capacity(&sim.config);
 
@@ -5934,7 +6050,7 @@ mod tests {
         // hold binds, and the hull lands full.
         sim.world.factors.insert(
             home,
-            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
         sim.world.population.insert(home, units::population_mass(Band::new(4.0)));
         let full = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();

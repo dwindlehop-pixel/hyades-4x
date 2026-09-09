@@ -1013,9 +1013,9 @@ the decimal where a stage claims to be neutral.
 |---|---|---|---|---|
 | 1 | **`K` loses its infra term** | changes; hulls seed to the world's ceiling | measure, do not predict | T-67 |
 | 2 | **`t_build` tracks hull mass** | changes; predicted **up** | colony-years | T-68 |
-| 3 | **Infrastructure stored as kilotonnes** | **neutral** — a representation change | bit-identical | T-70 |
+| 3 | **Infrastructure stored as kilotonnes** | ~~neutral~~ — see §6.8 | colony-years | T-70 |
 | 4 | **`Works` struct + the fold** | **neutral** — nothing reads it yet | bit-identical | T-75a |
-| 5 | **Price reads `eta_works` and `mix_w`** | neutral at identity coefficients | bit-identical at base | T-73 |
+| 5 | **Price reads `eta_works` and `mix_w`** | ~~neutral at identity~~ — see §6.8 | colony-years | T-73 |
 | 6 | **Rates read the allocation and the curve** | changes; the ramp switches on | colony-years | T-71, T-74 |
 | 7 | **Slips** | changes; predicted **up** | colony-years | T-69 |
 
@@ -1072,6 +1072,47 @@ the surface cards will write to, and the first industrial card comes after the
 property test, not before. And no coefficient tuning: **R-IND3's numbers are a
 Monte-Carlo question and every value in §6.2 ships at identity**, so stage 6 is
 measuring whether the *shape* behaves before anyone argues about magnitudes.
+
+### 6.8 Two of the three "inert" stages are not inert, and the reason is in the code
+
+§6.7 predicted stages 3 and 5 would be **bit-identical** against the shipped bed.
+Reading the engine before building on that prediction says otherwise, in both
+cases for a reason that is structural rather than a bug to be fixed.
+
+**Stage 3 (T-70) moves where the rounding happens.** Infrastructure was a `Band`
+and an upgrade was `infra.up(1.0)` — exact addition in Band space. Stored as the
+minerals standing in it, an upgrade becomes `infra = infra_rung_price(n + 1)` and
+the rung is recovered by a `ln`. `band_of(hull_cost) + 1.0` and
+`band_of(rung_price(2))` agree to about `1e-12` and **not to the bit**, and
+`BaselineAutopilot::rank` reads infrastructure — so the difference propagates
+into a score, then into which world is chosen, then into the run. The change is
+still right: `CLAUDE.md` §4's rule is that a Band is a *reading*, never a second
+thing to store, and §1.3 states it for this quantity specifically. What was wrong
+was the guard, not the change. **Guard is colony-years, not bit-identity.**
+
+**Stage 5 (T-73) changes a mechanic at identity, and that mechanic is the
+point.** `Minerals::try_spend_total` debits an empire's bank **proportional to
+holdings**. A works bill split by `mix_w` demands *specific colours*, and at
+identity `(1,1,1)` that is equal thirds — which is not proportional-to-holdings
+for any bank that is not already even. So there is no coefficient setting at
+which the colour split reproduces the current behaviour, because the current
+behaviour has no colour split at all.
+
+That is not a defect in the plan; it is §5.1 arriving. *"This is the mechanism
+that makes the galaxy's mineral distribution bite on development"* — the bite is
+precisely the difference between "spend from the bank in proportion to what is
+in it" and "pay this bill in these colours". A Yellow-poor empire noticing that
+it cannot afford the Production route **is the feature**, and it cannot be
+delivered by a change that leaves spending untouched.
+
+**What to carry forward, and it is not about works.** A stage plan that labels
+work "neutral" is making a claim about code, and the claim is checkable *before*
+the work starts. Two of three were wrong here, and both were visible in ten
+minutes of reading — one in an arithmetic identity, one in a single function.
+**Check a neutrality claim against the code that would have to be neutral, not
+against the description of the change.**
+
+---
 
 ---
 
