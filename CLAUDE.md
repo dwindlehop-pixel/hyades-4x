@@ -360,6 +360,33 @@ was invisible in the objective — because the quantity that broke was in a
   swept alone.** Since R-O58 the cost ladder *is* the capacity ladder; sweeping
   one leg of it in isolation is measuring two things and reporting one.
 
+### A seventh shape: an aggregate that moves against every one of its parts
+
+R-IND11 (`Hyades_industry.md` §1.6) added one the table above does not cover,
+and it is the only one where **nothing was broken.** A dwell metric — time from
+a colony's founding to its own first build — *rose* 253.5 → 335.8 yr under the
+policy that founds colonies **399 years earlier**, which read as a clean
+refutation of the mechanism it was built to test. Split by what that first build
+was, **both components had fallen** (72.4 → 66.3 and 401.4 → 342.9). A weighted
+mean can only rise while both group means fall if the weights move, and they had:
+the hull-first share went 55% → 97%.
+
+So the measurement was correct, the population it averaged over was not the same
+population, and the sign it reported was the opposite of the mechanism.
+
+**The rule: any metric averaged over a set the intervention re-selects must
+report its mix beside it.** This is the artifact list's invariance rule (§"never
+let the metric's denominator be something the game can play") applied one level
+down — there the denominator was farmable, here the *composition* is. Ask of an
+aggregate: *does the treatment change who is in this average?* If yes, the
+aggregate alone can say anything, and a decomposition is not optional polish.
+
+**And it is why the ablation went first.** Both candidate mechanisms had been
+refuted by their own signatures before either was believed, and the two one-line
+ablations named the cause anyway — seed mass, not hull, not price, not transit.
+`CLAUDE.md`'s ordering held: ablation refutes, instrumentation explains, and a
+metric that disagrees with an ablation is the metric's problem to answer for.
+
 ### CI gates
 
 `.github/workflows/ci.yml` runs on every push and PR. Before you push, the four

@@ -158,13 +158,33 @@ an argument for writing them at that level. The rule now lives on the **hold**,
 where roles §4 says it belongs. **An invariant that holds because two unrelated
 expressions intersect is a coincidence with good luck, not an invariant.**
 
-**It also reopened the hull choice as R-IND11.** The old criterion scored
-`k_pot.min(founding_infra)` per mineral, and that term stopped describing
-anything the engine does. Left in place it would have been the exact defect this
-repo keeps recording — a score whose inputs no longer mean what the score says.
-`Doctrine::colonizer_policy` now carries the two candidate answers and
-`examples/colonizer_policy` measures them on colony **count** with colony-years
-as the guard.
+**It also reopened the hull choice as R-IND11 — now measured, and blocked
+rather than answered** (`Hyades_industry.md` §1.6). `SettlersPerMineral` scores
+**+13.97% colony-years on a bit-identical colony count**, with foundings ~399 yr
+earlier. The transit story that motivated it is **refuted**: mean coloniser
+flight time is 107.6-116.7 yr in every arm and moves 4.0 yr, against a 398.8 yr
+shift in founding.
+
+Two one-line ablations on `colony_seed_for` close the mechanism from both sides.
+Force every seed to the **General's** hold and `CheapestViable` reproduces the
+whole gain (+14.35%) **while building zero General hulls**; force every seed to
+the **Medium's** hold and `SettlersPerMineral` still buys General hulls for 91.9%
+of its colonisers at 10x the price and lands back at baseline (-0.08%). The cause
+is **the seed mass alone** — not the hull, not its price, not transit.
+
+Which is why it is blocked and not ratified: **R-O74**, founding settlers are
+conjured, so the number measures how much free mass a policy can pull out of an
+open design-law-#11 violation. Default stays `CheapestViable`. **Draw the seed
+from the origin, then re-run the harness** — under conservation ablation A should
+lose its gain, and that is the check.
+
+Two things it also flags. Ablation B is a controlled 10x overpayment per
+coloniser hull that costs **-0.08%**, which is `examples/reach_limit`'s "the
+economy is not the binding constraint" arriving from an unrelated direction. And
+some part of **T-67's own +4.4%/+4.7% may run through the same conjured-mass
+channel** — the amendment let hulls seed to the world's ceiling instead of to
+`founding_infra` — which is a hypothesis with a named test (ablation A against
+the pre-T-67 seed rule) and has not been run.
 
 - **T-67 invalidates R-O76, and the buff is intended.** Founding infrastructure
   currently sets a new colony's `K` — a Medium founds at `Band I`, a General at
@@ -182,6 +202,10 @@ as the guard.
   becomes a target *fraction of `N(S)`*. The design intent is explicit: hundreds
   or thousands of miners should be worth stationing at a high-value outpost, which
   a bare crowding exponent would have forbidden on every rock equally.
+- **T-68 cannot decide R-IND11, though it was expected to.** The twelve-year
+  General yard commitment against a Medium's three would blunt a General
+  coloniser — but the hull is not what produces the effect, so the schedule
+  change is second-order to that question. It still moves the bed:
 - **T-68 will move the bed, with a predicted sign.** `build_years = 10.0` is flat
   today, so a Limited hull and a General hull take the same ten years despite a
   **50×** cost ratio. Making time track mass makes scouts and colonisers far

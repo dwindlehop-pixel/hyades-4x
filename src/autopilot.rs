@@ -121,7 +121,9 @@ impl Default for RankWeights {
 ///
 /// It is Doctrine rather than a constant because it is exactly what Doctrine is
 /// for — policy over the roster — and because the answer is a Monte-Carlo
-/// question. `examples/colonizer_policy` measures it.
+/// question. `examples/colonizer_policy` measures it — and has: see
+/// [`ColonizerPolicy::SettlersPerMineral`] for why the answer it returns is not
+/// yet a ratification.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ColonizerPolicy {
     /// **The cheapest hull that can found at all.** A deeper seed does not found
@@ -131,10 +133,26 @@ pub enum ColonizerPolicy {
     CheapestViable,
     /// **The best settlers-delivered per mineral.** A General hull costs 10x a
     /// Medium and its hold is 31.6x, so where the world can absorb the load it
-    /// lands three times the people per mineral spent. The case for it is not
-    /// the seed itself but what the seed *becomes*: a colony that reaches
-    /// production levels sooner is a forward base sooner, which shortens every
-    /// subsequent colonising transit.
+    /// lands three times the people per mineral spent.
+    ///
+    /// **Measured, and do not ship it (`Hyades_industry.md` §1.6).** It scores
+    /// **+13.97% colony-years on a bit-identical colony count** — the objective
+    /// itself does not move — and the case made for it here was *transit*: a
+    /// deep seed becomes a forward base sooner and shortens later voyages. That
+    /// is refuted. Mean flight time is 107.6-116.7 yr in every measured arm and
+    /// moves 4.0 yr, against a 398.8 yr shift in mean founding.
+    ///
+    /// Two ablations put the effect on **the seed mass alone**: force every
+    /// seed to the General's hold and `CheapestViable` reproduces the entire
+    /// gain **while building zero General hulls** (+14.35%); force every seed
+    /// to the Medium's hold and this policy still buys General hulls for 91.9%
+    /// of its colonisers, pays 10x each, and lands back at baseline (-0.08%).
+    ///
+    /// Which makes it an exploit rather than a strategy: **R-O74** — the
+    /// settlers are conjured, with nothing debited from the founding centre —
+    /// so what this measures is how much free mass a policy can extract from an
+    /// open design-law-#11 violation. R-IND11 is blocked on that, not on the
+    /// industrial ramp.
     SettlersPerMineral,
 }
 

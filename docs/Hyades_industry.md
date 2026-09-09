@@ -182,6 +182,97 @@ Where a design document states a rule, the engine should contain that rule —
 searchable by the words the document uses — and not a derivation that produces
 the same answer for now.
 
+### 1.6 R-IND11 measured — the gain is the seed, not the hull, and it is conjured
+
+**The measurement.** `examples/colonizer_policy`, CRN over seeds
+`[1, 7, 42, 31337]`, 3 seats, 4,000 yr. `SettlersPerMineral` against
+`CheapestViable`:
+
+| | colonies | colony-years | mean founding | mean flight | General share |
+|---|---|---|---|---|---|
+| `CheapestViable` | 3,365.5 | 9,609,694 | 1,145.0 yr | 113.5 yr | 0.0% |
+| `SettlersPerMineral` | 3,365.5 | **10,951,730 (+13.97%)** | **746.2 yr (−398.8)** | 109.5 yr (−4.0) | 90.4% |
+
+Colony **count is bit-identical on every seed** — 3,337 / 3,346 / 3,333 / 3,446
+in both arms — so on the stated objective the policy is worth nothing. The whole
+effect is in the guard: the same worlds, taken ~400 years earlier.
+
+**The proposed mechanism was transit, and it is refuted.** The case for a
+General coloniser was that a deep seed becomes a forward base sooner and so
+shortens every later colonising voyage. Mean flight time (coloniser spawn →
+founding) is **107.6–116.7 yr in all twenty-four measured rows** and moves −4.0
+yr between the arms. A −4 yr change in flight cannot produce a −399 yr change in
+founding. Forward bases are not what is happening.
+
+**Two ablations name the cause, and they close from both sides.** Each is a
+one-line change to `colony_seed_for`, run on the same bed:
+
+| ablation | `CheapestViable` | `SettlersPerMineral` | gap |
+|---|---|---|---|
+| — (shipped) | 9,609,694 | 10,951,730 | +13.97% |
+| **A**: every seed forced to the *General's* hold, prices untouched | **10,988,611 (+14.35%)** | 10,958,812 | −0.27% |
+| **B**: every seed forced to the *Medium's* hold, prices untouched | 9,609,694 | **9,601,637** | −0.08% |
+
+Under **A** the entire gain reproduces on a policy that **never builds a single
+General hull** — cheap Medium hulls, General-sized seeds. Under **B** the policy
+still buys General hulls for 91.9% of its colonisers, pays 10× each, and lands
+back at the baseline. So the cause is **the seed mass alone**: not the hull, not
+its price, not transit.
+
+**A side result worth keeping.** Ablation B is a controlled 10× overpayment on
+every coloniser hull for no benefit whatsoever, and it costs **−0.08%**. Minerals
+are not the binding constraint at the shipped defaults — which is
+`examples/reach_limit`'s finding (`k_high` binds, not the economy) arriving from
+an unrelated direction.
+
+**The dwell metric moved the wrong way, and the reason is a mix.** Time from a
+colony's founding to its own first applied build *rose* 253.5 → 335.8 yr under
+the faster policy. Decomposed by what that first build was, **both components
+fell**: infrastructure-first 72.4 → 66.3 yr, hull-first 401.4 → 342.9 yr. A
+weighted mean can only rise while both group means fall if the weights move, and
+they do. Solving the two-group mean for the weight puts the hull-first share at
+**~55% → ~97%** (the harness now reports it directly as `hull1st`). Deep-seeded
+colonies **skip the pre-`medium_min_level` staircase** and go straight for a hull
+they must save for. That is the pathway from seed mass to earlier founding, and
+the aggregate was hiding it.
+
+> **A new artifact shape for `CLAUDE.md` §2's table: an aggregate that moves
+> against every one of its parts.** Nothing was wrong with the dwell
+> measurement; it was a correct mean over a population whose composition the
+> treatment changes. Any metric averaged over a set the intervention re-selects
+> needs its mix reported beside it, or it will report the opposite of the
+> mechanism — which is exactly what it did here.
+
+**Why this does not ratify anything: the settlers are conjured (R-O74).**
+Nothing debits the founding centre's population or biosphere for the people put
+aboard a coloniser. So "deliver a bigger seed" is not a strategy the economy
+pays for — it is **free mass**, and the +13.97% is a measurement of how much a
+policy can extract from an open design-law-#11 violation. It scales with the
+hold because the hold sets how much is created from nothing. Ratifying
+`SettlersPerMineral` on this number would be ratifying the exploit.
+
+**Decision.** `Doctrine::colonizer_policy` stays **`CheapestViable`**. R-IND11 is
+not resolved by this measurement; it is **reframed and blocked on R-O74** — the
+hull-choice question is unanswerable while founding mass is free, because any
+policy that delivers more free mass wins by precisely the amount it conjures.
+Draw the seed from the origin first, then re-run this harness; the two ablations
+above are the check that the fix worked, since under conservation A should lose
+its gain.
+
+**And it puts a question on T-67's own number.** The amendment let hulls seed to
+the world's ceiling instead of to `founding_infra`, which is the same channel —
+so some part of T-67's +4.4%/+4.7% may be the same conjured mass rather than the
+faster gate-crossing §1.4 attributes it to. That is a hypothesis, not a finding:
+the test is ablation A run against the pre-T-67 seed rule, and it has not been
+run.
+
+**T-68 is second-order here.** The approved schedule makes a General hull a
+twelve-year yard commitment against a Medium's three (§3.3), which would blunt a
+General coloniser — but the hull is not what is producing the effect, so the
+schedule change cannot decide R-IND11 either.
+
+---
+
 ---
 
 ## 2. The three employments, and where the allocation lives
@@ -937,8 +1028,9 @@ artifact in place contaminates every later measurement.
 | ~~R-IND7~~ | ~~The economic-thesis addition~~ — **resolved: minerals, supers and apex traverse real space**, so they can be attacked, diverted, stolen and blockaded. Nothing teleports; a trade is a voyage. | §8.1 |
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
+| **R-O74** | Founding settlers are conjured — nothing debits the origin's population or biosphere (design law #11). Now load-bearing: it blocks R-IND11, and it puts a question on T-67's measured buff. | §1.6 |
 | **R-IND10** | Who bears the loss when a matched contract's carrier is destroyed — buyer, seller, or escrow? | §8.1 |
-| **R-IND11** | Is a General coloniser ever worth it, now that the hold is the only thing separating the hulls? Reopened by T-67, which deleted the mechanism R-O76 measured. `Doctrine::colonizer_policy` + `examples/colonizer_policy`. | §1.4 |
+| **R-IND11** | Is a General coloniser ever worth it, now that the hold is the only thing separating the hulls? **Measured and reframed — blocked on R-O74.** `SettlersPerMineral` scores +13.97% colony-years on identical colony counts, but two ablations put the whole effect on the *seed mass* rather than the hull, and founding settlers are conjured. Unanswerable until the seed is drawn from the origin. Default stays `CheapestViable`. | §1.6 |
 
 ---
 

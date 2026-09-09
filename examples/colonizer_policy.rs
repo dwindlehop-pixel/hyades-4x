@@ -63,6 +63,12 @@ struct Run {
     /// dwell moves the wrong way for the right reason.
     mean_dwell_infra: f64,
     mean_dwell_hull: f64,
+    /// Share of colonies whose **first** applied build was a hull rather than an
+    /// infrastructure upgrade — i.e. that skipped the pre-`medium_min_level`
+    /// staircase entirely. This is the mix behind the aggregate dwell, and
+    /// without it the aggregate is uninterpretable: both components can fall
+    /// while the mean rises.
+    hull_first_share: f64,
     /// Share of coloniser builds that were General hulls. Mining pairs are
     /// `LimitedSystems`, so the coloniser population is exactly the
     /// Medium/General Systems builds.
@@ -155,6 +161,7 @@ fn run(seed: u64, policy: ColonizerPolicy) -> Run {
         mean_dwell: mean(sum_dwell, n_dwell),
         mean_dwell_infra: mean(sum_infra, n_infra),
         mean_dwell_hull: mean(sum_hull, n_hull),
+        hull_first_share: if n_dwell > 0 { n_hull as f64 / n_dwell as f64 } else { 0.0 },
         general_share: if colonisers > 0 { general as f64 / colonisers as f64 } else { 0.0 },
     }
 }
@@ -163,19 +170,29 @@ fn main() {
     println!("R-IND11 — coloniser hull policy, CRN over {SEEDS:?}, {PLAYERS} seats, {HORIZON:.0} yr");
     println!("objective = colony COUNT; colony-years is the guard\n");
     println!(
-        "{:<26}{:>10}{:>14}{:>9}{:>12}{:>10}{:>9}{:>9}{:>9}{:>8}",
-        "policy / seed", "colonies", "colony-yr", "first", "mean found", "flight", "dwell", "d:infra", "d:hull", "gen%"
+        "{:<26}{:>10}{:>14}{:>9}{:>12}{:>10}{:>9}{:>9}{:>9}{:>9}{:>8}",
+        "policy / seed",
+        "colonies",
+        "colony-yr",
+        "first",
+        "mean found",
+        "flight",
+        "dwell",
+        "d:infra",
+        "d:hull",
+        "hull1st",
+        "gen%"
     );
     std::io::stdout().flush().ok();
 
     let mut totals = Vec::new();
     for policy in [ColonizerPolicy::CheapestViable, ColonizerPolicy::SettlersPerMineral] {
         let (mut c, mut y, mut m, mut fl, mut dw, mut gs) = (0usize, 0.0, 0.0, 0.0, 0.0, 0.0);
-        let (mut di, mut dh) = (0.0, 0.0);
+        let (mut di, mut dh, mut hf) = (0.0, 0.0, 0.0);
         for seed in SEEDS {
             let r = run(seed, policy);
             println!(
-                "{:<26}{:>10}{:>14.0}{:>9.1}{:>12.1}{:>10.1}{:>9.1}{:>9.1}{:>9.1}{:>7.1}%",
+                "{:<26}{:>10}{:>14.0}{:>9.1}{:>12.1}{:>10.1}{:>9.1}{:>9.1}{:>9.1}{:>8.1}%{:>7.1}%",
                 format!("{policy:?} s{seed}"),
                 r.colonies,
                 r.colony_years,
@@ -185,6 +202,7 @@ fn main() {
                 r.mean_dwell,
                 r.mean_dwell_infra,
                 r.mean_dwell_hull,
+                100.0 * r.hull_first_share,
                 100.0 * r.general_share
             );
             std::io::stdout().flush().ok();
@@ -195,11 +213,12 @@ fn main() {
             dw += r.mean_dwell;
             di += r.mean_dwell_infra;
             dh += r.mean_dwell_hull;
+            hf += r.hull_first_share;
             gs += r.general_share;
         }
         let n = SEEDS.len() as f64;
         println!(
-            "{:<26}{:>10.1}{:>14.0}{:>9}{:>12.1}{:>10.1}{:>9.1}{:>9.1}{:>9.1}{:>7.1}%\n",
+            "{:<26}{:>10.1}{:>14.0}{:>9}{:>12.1}{:>10.1}{:>9.1}{:>9.1}{:>9.1}{:>8.1}%{:>7.1}%\n",
             format!("{policy:?} MEAN"),
             c as f64 / n,
             y / n,
@@ -209,6 +228,7 @@ fn main() {
             dw / n,
             di / n,
             dh / n,
+            100.0 * hf / n,
             100.0 * gs / n
         );
         std::io::stdout().flush().ok();
