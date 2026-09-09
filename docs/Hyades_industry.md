@@ -1158,12 +1158,67 @@ took coverage 14.4% → 38.3%. **Before tuning R-IND3's coefficients, add the
 missing term** (**T-81**): route freight by what a centre's *bill* needs, not by
 how broke it is overall.
 
-**Until then T-73's identity mix is also wrong on its own terms.** `mix_w =
-(1,1,1)` normalises to an even split, and §5.1's table has no `1:1:1` — it says a
-works ratio is "never a true 1:1:1". The identity should be the Floor `5:4:3`,
-which is the flattest *ratified* point. Left as `(1,1,1)` for now because
-changing it moves the measurement, and the measurement above is the one that
-matters (**R-IND15**).
+### 6.10 The default mix is `3:2:1` Y:C:M, and Sole is an asymptote (R-IND15 resolved)
+
+**Ratified by the author.** The works default is the §5.1 *Default* point
+`3:2:1`, assigned **Yellow : Cyan : Magenta** — `WORKS_MIX_DEFAULT`, stored in
+`Basic` order as `[2, 1, 3]`, normalising to `C 0.333 / M 0.167 / Y 0.500`.
+
+Yellow-primary because **Production is Yellow** (`Hyades_galaxy_and_autopilot.md`
+§4.8), so the ordinary cost of developing any world already leans toward the
+colour one tree is about, and every empire feels the pull of a colour it may not
+hold. The `(1,1,1)` the first implementation shipped was a placeholder and was
+wrong on the spec's own terms: §5.1 says a works ratio is *"never a true
+1:1:1"*.
+
+**`1:0:0` is reachable only by deep Production cards, and that needs no
+mechanism.** The author's ruling is that Sole sits several layers into the
+Production tree — and it falls straight out of `mix_w` being an **additive
+weight**. A card adding `k` to Yellow moves the share to `(3 + k) / (6 + k)`:
+
+| added Yellow weight | Yellow share |
+|---|---|
+| 0 (default) | 0.500 |
+| +3 | 0.667 |
+| +9 | 0.800 |
+| +24 | 0.900 |
+| +54 | 0.950 |
+
+Diminishing returns are steep and the limit is never attained. **So "Sole" is
+the deep end of a ladder rather than a discrete state**, which is exactly the
+behaviour the ruling asks for, with no gate, no special case and nothing to
+enforce. How much weight one deep Production card adds — and therefore how many
+layers "deep" means — is **R-IND16**, open.
+
+### 6.11 T-81 — freight routes by colour
+
+`most_needed_center` scored need on a **total**: how far a centre was from
+affording its next rung, with no colour term at all. §6.9 measured what that
+cost once bills became colour-payable. The routing score is now
+
+```text
+deficit[c] = max(0, works_bill[c] − bank[c])
+relief     = Σ_c min(cargo[c], deficit[c]) / Σ_c cargo[c]
+score      = relief · exp(−λ · t_transit)
+```
+
+so a hauler carrying Yellow goes where Yellow is what is missing.
+
+**It replaces `mineral_pressure_of` in the score rather than multiplying it.**
+The two ask the same question at different resolutions — *how far is this centre
+from affording its next rung*, on a total versus per colour — and multiplying
+would double-count. `mineral_pressure_of` survives for the deepen/expand
+decision, where a total is what a centre weighs.
+
+Both terms are dimensionless fractions in `[0, 1]`, deliberately: R-O68 is this
+project's standing lesson on what a mixed-unit comparison does to a branch — a
+Band difference against an unbounded score, a constant absorbing the mismatch,
+and a path that could never fire.
+
+**Degenerate case, stated rather than discovered:** a centre that can already pay
+every colour of its next bill scores `0`, and if every centre can, the choice
+falls to the entity-id tie-break. That is what the pressure formula already did
+when nothing was short, so it is not new behaviour.
 
 ---
 
@@ -1418,6 +1473,8 @@ artifact in place contaminates every later measurement.
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |
 | **R-IND12** | How much a coloniser carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |
 | **R-IND13** | The works-value rung `I*`. Placeholder is the Band midpoint of capacity and abundance, i.e. the geometric mean of the two masses — the cheapest form with the required positive cross partial. The real function is §5's and needs T-73/T-74. | §1.7, §5 |
+| ~~**R-IND15**~~ | ~~The identity works mix~~ — **resolved.** `3:2:1` Yellow : Cyan : Magenta, the §5.1 *Default* point, Yellow-primary because Production is Yellow. The `(1,1,1)` first shipped was a placeholder and contradicted §5.1's "never a true 1:1:1". | §6.10 |
+| **R-IND16** | How much colour weight one deep Production card adds — and therefore how many layers "deep" is, given that Sole is an asymptote approached at `(3+k)/(6+k)`. | §6.10 |
 | **R-IND14** | Whether the travel discount should be hyperbolic (`1/(1+n)`, current, no new constant) or exponential (needs a time constant). | §1.7 |
 | **R-IND10** | Who bears the loss when a matched contract's carrier is destroyed — buyer, seller, or escrow? | §8.1 |
 | **R-IND11** | Is a General coloniser ever worth it, now that the hold is the only thing separating the hulls? **Measured and reframed — blocked on R-O74.** `SettlersPerMineral` scores +13.97% colony-years on identical colony counts, but two ablations put the whole effect on the *seed mass* rather than the hull, and founding settlers are conjured. Unanswerable until the seed is drawn from the origin. Default stays `CheapestViable`. | §1.6 |

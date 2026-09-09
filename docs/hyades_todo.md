@@ -103,7 +103,7 @@ two multiplications.
 
 ---
 
-### T-81. Freight has no colour term, and T-73 just made that binding
+### T-81. Freight has no colour term, and T-73 just made that binding — **LANDED, measuring**
 
 **A missing term, not a tuning question** — the same shape as λ, the largest
 single ratification in this project's history (freighter routing had no *distance*
@@ -123,8 +123,16 @@ requires. Note that all four of §5.1's ratio points (`1:0:0`, `4:2:1`, `3:2:1`,
 `5:4:3`) demand every colour except the first, so the alternative routes do **not**
 supply that answer on their own; freight does, which is §8.1's subject.
 
+**Landed with the ratified `3:2:1` Y:C:M default mix** (R-IND15 resolved,
+`Hyades_industry.md` §6.10) as two separate commits so the two effects can be
+attributed apart. Routing now scores `relief · exp(−λ·t)` where `relief` is the
+fraction of the cargo aboard that lands on a colour the destination cannot
+otherwise buy; it *replaces* `mineral_pressure_of` in the score rather than
+multiplying it, since the two are the same question at different resolutions.
+
 Guard is `examples/colony_years`; `examples/bank_mix` is the instrument that
-found it and should show banks mixing.
+found it, and the real test is whether it shows banks **mixing** — the
+before picture was 1,494 of 1,515 skewed.
 
 ---
 

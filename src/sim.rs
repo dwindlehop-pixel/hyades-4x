@@ -2404,13 +2404,17 @@ impl Simulation {
             // *discounted* need — confirmed: "autopilot must haul minerals to
             // where they are needed," not back to one hardcoded partner, and
             // (R-P2) not across the galaxy to a marginally needier one either.
-            // At the shipped `trade_decay_lambda = 0` this is exactly
-            // `most_needed_center`. Falls back to the outpost's own paired home
-            // center only if this owner holds no production center at all
+            // At `trade_decay_lambda = 0` this reduces exactly to
+            // `most_needed_center`; the shipped value is 0.01, so the discounted
+            // path is live. Since T-81 the need term is **per colour** and reads
+            // the cargo actually aboard, so a hauler carrying Yellow goes where
+            // Yellow is what is missing. Falls back to the outpost's own paired
+            // home center only if this owner holds no production center at all
             // (shouldn't happen; the homeworld always counts).
             let home = *self.world.home_center.get(vehicle).unwrap_or(&sh.outpost);
             let here = self.position_at(sh.outpost, self.clock).unwrap();
-            let dest = self.best_delivery_center(PlayerId(p), here).unwrap_or(home);
+            let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
+            let dest = self.best_delivery_center(PlayerId(p), here, &cargo).unwrap_or(home);
             self.world.shuttle.get_mut(vehicle).unwrap().destination = dest;
 
             let from = self.position_at(sh.outpost, self.clock).unwrap();
@@ -4012,12 +4016,13 @@ impl Simulation {
     /// permanently: it was already the oracle for single-supply matching, and
     /// it is now the oracle for zero-discount routing too — the same function
     /// checking two different generalisations.
-    fn best_delivery_center(&self, owner: PlayerId, from: Vec3) -> Option<Entity> {
+    fn best_delivery_center(&self, owner: PlayerId, from: Vec3, cargo: &Minerals) -> Option<Entity> {
         let lambda = self.config.trade_decay_lambda;
         if lambda <= 0.0 {
             return self.most_needed_center(owner);
         }
         let accel = self.config.civilian_accel_g * G;
+        let carried = cargo.basic_total();
         let mut best: Option<(Entity, f64)> = None;
         for e in self.planet_entity.iter().copied() {
             if self.world.owner.get(e).copied() != Some(owner) {
@@ -4025,7 +4030,7 @@ impl Simulation {
             }
             let d = from.distance(*self.world.position.get(e).unwrap());
             let t = math::ship_travel_years(d, accel);
-            let score = self.mineral_pressure_of(e) * (-lambda * t).exp();
+            let score = self.colour_relief(e, owner, cargo, carried) * (-lambda * t).exp();
             // Entity id breaks ties so the choice is total and deterministic.
             let better = match best {
                 None => true,
@@ -4036,6 +4041,69 @@ impl Simulation {
             }
         }
         best.map(|(e, _)| e)
+    }
+
+    /// **What fraction of this cargo lands on a colour the destination cannot
+    /// otherwise buy** (T-81, `Hyades_industry.md` §6.10).
+    ///
+    /// ```text
+    /// deficit[c] = max(0, works_bill[c] − bank[c])
+    /// relief     = Σ_c min(cargo[c], deficit[c]) / Σ_c cargo[c]
+    /// ```
+    ///
+    /// **This is a missing term, not a tuning knob**, and it is the same shape
+    /// as λ itself: freighter routing had no *distance* component at all until
+    /// R-P2, and adding it took coverage 14.4% → 38.3%. Routing had no *colour*
+    /// component either, and T-73 is what made that bind — a works bill is
+    /// payable in named colours, T-62 made the field log-normal per colour, and
+    /// the two together left 1,494 of 1,515 measured banks holding one colour
+    /// and traces of the others. Deepening fell 94.5%.
+    ///
+    /// It replaces `mineral_pressure_of` in the routing score rather than
+    /// multiplying it, because the two ask the same question at different
+    /// resolutions: pressure is *"how far is this centre from affording its next
+    /// rung"* measured on a total, and this is the same distance measured per
+    /// colour. Multiplying them would double-count. `mineral_pressure_of`
+    /// survives for the deepen/expand decision, where the total is what a
+    /// centre weighs.
+    ///
+    /// Both are dimensionless fractions in `[0, 1]`, which is deliberate: the
+    /// discount `exp(−λ·t)` multiplies it, and R-O68 is this repo's standing
+    /// lesson about what happens when a comparison mixes units — a Band
+    /// difference against an unbounded score, with a constant absorbing the
+    /// mismatch and a branch that could never fire.
+    ///
+    /// **Degenerate case, stated:** a centre that can already pay every colour
+    /// of its next bill scores `0`, and if *every* centre can, the choice falls
+    /// to the entity-id tie-break. That is exactly what the pressure formula
+    /// already did when no centre was short, so it is not a new behaviour.
+    fn colour_relief(&self, center: Entity, owner: PlayerId, cargo: &Minerals, carried: Price) -> f64 {
+        if carried <= Price::ZERO {
+            return 0.0;
+        }
+        let deficit = self.colour_deficit(center, owner);
+        let mut relieved = Price::ZERO;
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            relieved += Price::new(cargo.get_basic(c)).min(deficit[i]);
+        }
+        relieved / carried
+    }
+
+    /// A centre's per-colour shortfall against its **next works bill** — the
+    /// quantity T-73 made meaningful and nothing was measuring.
+    fn colour_deficit(&self, center: Entity, owner: PlayerId) -> [Price; 3] {
+        let Some(f) = self.world.factors.get(center) else {
+            return [Price::ZERO; 3];
+        };
+        let step = infra_step_price(f.infra, &self.config);
+        let works = self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default();
+        let bill = works_bill(step, &works);
+        let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
+        let mut out = [Price::ZERO; 3];
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            out[i] = (bill[i] - Price::new(bank.get_basic(c))).max(Price::ZERO);
+        }
+        out
     }
 
     /// The nearest planet owned by player `p` to `from` — used to send an
@@ -5339,14 +5407,19 @@ mod tests {
 
         // And efficiency is the *other* axis: `eta_works` moves the total and
         // leaves the split alone.
+        let base = works_bill(step, &cards::Works::default());
         let eff = cards::Works { eta_works: 2.0, ..cards::Works::default() };
         let bill = works_bill(step, &eff);
         let total: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
         assert!((total - step * 0.5).kilotons().abs() < 1e-12, "eta_works must halve the bill, got {total}");
-        assert!(
-            (bill[0] - bill[1]).kilotons().abs() < 1e-12 && (bill[1] - bill[2]).kilotons().abs() < 1e-12,
-            "an efficiency card must not move the mix"
-        );
+        // **The split is unchanged** — asserted as *shares*, not as three equal
+        // numbers. The identity mix is `3:2:1` Y:C:M and never was even, so an
+        // equality test here would have been checking the old placeholder
+        // rather than the invariant.
+        for i in 0..3 {
+            let (a, b) = (bill[i] / total, base[i] / (base.iter().fold(Price::ZERO, |a, &b| a + b)));
+            assert!((a - b).abs() < 1e-12, "an efficiency card must not move the mix: share {i} went {b} -> {a}");
+        }
     }
 
     /// **T-73: a colour-poor centre cannot buy the rung, however rich it is.**
@@ -5373,7 +5446,14 @@ mod tests {
         let hoard = Minerals { cyan: 900.0, ..Default::default() };
         assert!(!can_pay_bill(&hoard, &bill), "a pure-Cyan hoard must not buy a bill that names Magenta and Yellow");
 
-        let mut spread = Minerals { cyan: 3.0, magenta: 3.0, yellow: 3.0, ..Default::default() };
+        // Exactly the bill, in the proportions the bill actually names — which
+        // is `3:2:1` Y:C:M since the default mix was ratified, not even thirds.
+        let mut spread = Minerals {
+            cyan: bill[0].kilotons(),
+            magenta: bill[1].kilotons(),
+            yellow: bill[2].kilotons(),
+            ..Default::default()
+        };
         assert!(can_pay_bill(&spread, &bill), "exactly the bill, in the right colours, must pay");
         assert!(spread.basic_total() < hoard.basic_total(), "and it is the *poorer* bank that can afford it");
 
@@ -6040,6 +6120,82 @@ mod tests {
 
         let picked = sim.most_needed_center(PlayerId(0));
         assert_eq!(picked, Some(colony), "should route to the needier colony, not the funded homeworld");
+    }
+
+    /// **T-81: a hauler goes where its cargo is what is missing.**
+    ///
+    /// Routing scored need on a *total* — how broke a centre was overall — and
+    /// carried no colour term at all. T-73 made that binding: a works bill is
+    /// payable in named colours, T-62 made the field log-normal per colour, and
+    /// together they left banks holding one colour and traces of the others,
+    /// with deepening down 94.5%.
+    ///
+    /// Two centres, equally broke, needing opposite colours. A Yellow-laden
+    /// hauler must pick the Yellow-short one — and the same hauler carrying
+    /// Magenta must pick the other. Asserting *both* directions is the point: a
+    /// routing rule that always picked the same centre would pass a one-sided
+    /// test whatever it was keying on.
+    #[test]
+    fn a_hauler_routes_to_the_colour_that_is_missing() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(3));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let here = *sim.world.position.get(home).unwrap();
+
+        // Two colonies, co-located with home so the λ discount cannot decide
+        // this — the colour term has to.
+        let (a, b) = (sim.planet_entity[15], sim.planet_entity[16]);
+        for &e in &[a, b] {
+            sim.world.owner.insert(e, PlayerId(0));
+            sim.world.factors.insert(
+                e,
+                Factors::new(
+                    Band::new(3.0),
+                    Band::new(3.0).in_kilotons(),
+                    Band::new(3.0).in_kilotons(),
+                    infra_rung_price(1, &sim.config),
+                ),
+            );
+            sim.world.position.insert(e, here);
+        }
+        // Home can pay for everything, so it is never the needy one.
+        sim.world.stockpile.insert(home, Minerals { cyan: 1e6, magenta: 1e6, yellow: 1e6, ..Default::default() });
+
+        let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
+        let bill = works_bill(step, &cards::Works::default());
+        // `a` has everything except Yellow; `b` has everything except Magenta.
+        sim.world.stockpile.insert(
+            a,
+            Minerals { cyan: bill[0].kilotons(), magenta: bill[1].kilotons(), yellow: 0.0, ..Default::default() },
+        );
+        sim.world.stockpile.insert(
+            b,
+            Minerals { cyan: bill[0].kilotons(), magenta: 0.0, yellow: bill[2].kilotons(), ..Default::default() },
+        );
+
+        let yellow = Minerals { yellow: 10.0, ..Default::default() };
+        let magenta = Minerals { magenta: 10.0, ..Default::default() };
+        assert_eq!(
+            sim.best_delivery_center(PlayerId(0), here, &yellow),
+            Some(a),
+            "a Yellow-laden hauler must go to the Yellow-short centre"
+        );
+        assert_eq!(
+            sim.best_delivery_center(PlayerId(0), here, &magenta),
+            Some(b),
+            "and the same route with Magenta aboard must go the other way"
+        );
+
+        // The relief fraction is what drives it, and it is a fraction: a cargo
+        // far larger than the deficit is only credited for the part that lands.
+        let carried = yellow.basic_total();
+        let r = sim.colour_relief(a, PlayerId(0), &yellow, carried);
+        assert!(r > 0.0 && r <= 1.0, "relief must be a fraction, got {r}");
+        assert_eq!(
+            sim.colour_relief(a, PlayerId(0), &magenta, magenta.basic_total()),
+            0.0,
+            "wrong colour relieves nothing"
+        );
     }
 
     #[test]

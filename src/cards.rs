@@ -327,13 +327,48 @@ pub struct Works {
     pub half: [f64; 3],
     /// Employment weights → `(w_ext, w_fab, w_ward)` — additive, base `(1,1,1)`.
     pub alloc_w: [f64; 3],
-    /// Colour weights → the works price split — additive, base `(1,1,1)`.
+    /// Colour weights → the works price split, in `Basic` order
+    /// (Cyan, Magenta, Yellow) — additive, base [`WORKS_MIX_DEFAULT`].
     pub mix_w: [f64; 3],
 }
 
+/// **The default works mix: `3:2:1` in Yellow : Cyan : Magenta** (ratified by
+/// the author; `Hyades_industry.md` §5.1's *Default* point).
+///
+/// Stored in `Basic` order — Cyan, Magenta, Yellow — so the ratio reads
+/// `[2, 1, 3]` here and normalises to `C 0.333 / M 0.167 / Y 0.500`.
+///
+/// **Yellow-primary because Production is Yellow** (`Hyades_galaxy_and_autopilot.md`
+/// §4.8), so the ordinary cost of developing a world already leans toward the
+/// colour Production's tree is about, and every empire feels the pull of a
+/// colour it may not have. It is deliberately **not** `1:1:1`: §5.1 says a works
+/// ratio is "never a true 1:1:1", and an even split was the placeholder the
+/// first implementation shipped rather than a ratified point.
+///
+/// **Why `1:0:0` cannot be a starting point, and why it needs no mechanism to
+/// prevent.** The author's ruling is that Sole is reachable only through deep
+/// Production cards, several layers in — and that falls straight out of `mix_w`
+/// being an **additive weight**. A card that adds `k` to Yellow moves the share
+/// to `(3 + k) / (6 + k)`, so Sole is an **asymptote**:
+///
+/// | added Yellow weight | Yellow share |
+/// |---|---|
+/// | 0 (default) | 0.500 |
+/// | +3 | 0.667 |
+/// | +9 | 0.800 |
+/// | +24 | 0.900 |
+/// | +54 | 0.950 |
+///
+/// Diminishing returns are steep and `1:0:0` is never exactly reached. **So
+/// "Sole" is the deep end of a ladder rather than a discrete state**, which is
+/// the behaviour the ruling asks for without a special case anywhere. How much
+/// weight a deep Production card adds — and therefore how many layers "deep"
+/// is — is **R-IND16**, open.
+pub const WORKS_MIX_DEFAULT: [f64; 3] = [2.0, 1.0, 3.0];
+
 impl Default for Works {
     fn default() -> Self {
-        Works { eta_works: 1.0, cap: [1.0; 3], half: [1.0; 3], alloc_w: [1.0; 3], mix_w: [1.0; 3] }
+        Works { eta_works: 1.0, cap: [1.0; 3], half: [1.0; 3], alloc_w: [1.0; 3], mix_w: WORKS_MIX_DEFAULT }
     }
 }
 
@@ -500,11 +535,34 @@ mod tests {
         for e in Employment::ALL {
             assert_eq!(w.cap[e.index()], 1.0);
             assert_eq!(w.half[e.index()], 1.0);
-            // Three equal weights ⇒ an even split, and the shares sum to one.
+            // Employment allocation *is* even by default — three equal weights.
             assert!((w.alloc_share(e) - 1.0 / 3.0).abs() < 1e-15);
         }
+        // The colour mix is **not**: `3:2:1` Y:C:M, because §5.1 says a works
+        // ratio is never a true 1:1:1 and Production is Yellow.
         let total: f64 = Basic::ALL.iter().map(|&c| w.mix_share(c)).sum();
         assert!((total - 1.0).abs() < 1e-15, "colour shares must sum to one, got {total}");
+        assert!((w.mix_share(Basic::Yellow) - 0.5).abs() < 1e-15, "Yellow is the 3 of 3:2:1");
+        assert!((w.mix_share(Basic::Cyan) - 1.0 / 3.0).abs() < 1e-15, "Cyan is the 2");
+        assert!((w.mix_share(Basic::Magenta) - 1.0 / 6.0).abs() < 1e-15, "Magenta is the 1");
+        assert!(
+            w.mix_share(Basic::Yellow) > w.mix_share(Basic::Cyan)
+                && w.mix_share(Basic::Cyan) > w.mix_share(Basic::Magenta),
+            "the ordering is the ratio, and it must not be permuted silently"
+        );
+
+        // **Sole is an asymptote, not a state.** Stacking Yellow weight — deep
+        // Production cards — approaches `1:0:0` and never reaches it, which is
+        // what makes the author's "only by multiple layers" ruling structural
+        // rather than a rule someone has to enforce.
+        let stacked = |k: f64| {
+            let mut w = Works::default();
+            w.mix_w[Basic::Yellow as usize] += k;
+            w.mix_share(Basic::Yellow)
+        };
+        assert!((stacked(9.0) - 0.8).abs() < 1e-12, "+9 weight is 80% Yellow");
+        assert!((stacked(54.0) - 0.95).abs() < 1e-12, "+54 weight is 95% Yellow");
+        assert!(stacked(1e6) < 1.0, "and Sole is never exactly reached");
     }
 
     /// **An allocation cannot exceed the stock** (§6.7's test 5): normalisation
