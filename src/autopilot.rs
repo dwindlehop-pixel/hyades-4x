@@ -493,8 +493,21 @@ pub struct ProductionContext {
     /// Minimum level required to build "limited" vehicles — the Scout/LCV. The
     /// same schedule puts this at **2**, one tier below expansion.
     pub limited_min_level: BandTier,
-    /// Mineral cost to raise infra by one level (= the target level).
+    /// Mineral cost to raise infra by one level (= the target level). The
+    /// **total**, kept for magnitude comparisons; affordability is per colour.
     pub infra_cost: Price,
+    /// **The works bill for the next rung, split by colour** — Cyan, Magenta,
+    /// Yellow (T-73, `Hyades_industry.md` §5.1).
+    ///
+    /// A work is payable *in named colours*, not out of a total, which is how
+    /// the galaxy's mineral distribution finally bites on development rather
+    /// than only on card costs. So the deepen branch cannot ask
+    /// `stockpile_total >= infra_cost` any more: a centre with plenty of ore and
+    /// none of the colour the bill names cannot buy the rung.
+    pub infra_bill: [Price; 3],
+    /// This centre's bank, by colour, in the same order — the other half of that
+    /// comparison.
+    pub stockpile_by_colour: [Price; 3],
     /// Mineral cost of a Colonizer on the **Medium** hull —
     /// `Hyades_vehicle_roles.md` §6's 1 CMY = 1 fleet model, not a flat
     /// placeholder anymore.
@@ -757,7 +770,12 @@ impl Autopilot for BaselineAutopilot {
         let deepen_possible = ctx.infra < ctx.k_potential - 1e-9;
         // The epsilon is a price too — the whole comparison is on one ladder.
         let eps = Price::new(1e-9);
-        let can_afford_infra = ctx.stockpile_total + eps >= ctx.infra_cost;
+        // **Every colour, not the total** (T-73). `works_bill` in `sim` produces
+        // both sides of this and the build spends against the same function, so
+        // the decision and the purchase cannot drift — the failure
+        // `mining_pair_cost` carries a comment about and `settlers_by_hull` was
+        // written to end.
+        let can_afford_infra = (0..3).all(|i| ctx.stockpile_by_colour[i] + eps >= ctx.infra_bill[i]);
 
         // Below even the limited tier there is nothing to build; deepen or save.
         if ctx.level < ctx.limited_min_level {
@@ -1127,6 +1145,12 @@ mod tests {
             medium_min_level: BandTier::III,
             limited_min_level: BandTier::II,
             infra_cost: Price::new(infra + 1.0),
+            // Even thirds against a bank of even thirds: these cases are about
+            // the deepen/expand branch, not about colour scarcity, and
+            // `a_colour_poor_centre_cannot_buy_the_rung` covers that
+            // deliberately.
+            infra_bill: [Price::new((infra + 1.0) / 3.0); 3],
+            stockpile_by_colour: [Price::new(stockpile / 3.0); 3],
             colonizer_cost: Price::new(1.0),
             general_colonizer_cost: Price::new(10.0),
             medium_seed_capacity: Kilotons::at_tier(BandTier::I),

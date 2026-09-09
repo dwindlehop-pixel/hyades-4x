@@ -886,6 +886,55 @@ fn cost_anchor(cfg: &SimConfig) -> f64 {
     cfg.general_vehicle_cost / units::COST_LADDER[1]
 }
 
+/// **The works bill for a centre's next rung, split by colour** (T-73,
+/// `Hyades_industry.md` §5.1/§6.3).
+///
+/// ```text
+/// total   = infra_step_price(stock) / eta_works      // Design, multiplicative
+/// bill[c] = total · mix_w[c] / Σ mix_w               // additive-weight share
+/// ```
+///
+/// **This is the mechanism that makes the galaxy's mineral distribution bite on
+/// development.** Until now the field bit only on card costs, and T-62 made it
+/// log-normal — so which colours a homeworld sits near was an enormous, almost
+/// unexpressed fact about a game. A works bill is payable *in named colours*, so
+/// a Yellow-poor empire genuinely cannot take the Yellow route however rich it
+/// is in total.
+///
+/// **A mix card can never lower the total** (§5.4/§6.4): `mix_w` is a *share* of
+/// a bill only `eta_works` sets, so moving weight between colours moves where
+/// the bill lands and nothing else. The orthogonality is structural — not a rule
+/// anyone has to remember in review — and `a_mix_card_cannot_change_the_total`
+/// asserts it.
+///
+/// One function, read by both the decision and the build, because the two
+/// disagreeing is this repo's recurring failure: `mining_pair_cost` carries a
+/// comment begging them to agree, and `settlers_by_hull` exists because they
+/// once did not.
+fn works_bill(step: Price, works: &cards::Works) -> [Price; 3] {
+    let total = step / works.eta_works.max(1e-12);
+    let mut bill = [Price::ZERO; 3];
+    for (i, &c) in Basic::ALL.iter().enumerate() {
+        bill[i] = total * works.mix_share(c);
+    }
+    bill
+}
+
+/// Can this bank pay a colour-split bill? **Every colour, not the total** —
+/// which is the whole content of T-73.
+fn can_pay_bill(bank: &Minerals, bill: &[Price; 3]) -> bool {
+    Basic::ALL.iter().enumerate().all(|(i, &c)| Price::new(bank.get_basic(c)) + Price::new(1e-9) >= bill[i])
+}
+
+/// Pay a colour-split bill. Assumes [`can_pay_bill`]; clamps at zero so a
+/// rounding crumb cannot drive a colour negative.
+fn pay_bill(bank: &mut Minerals, bill: &[Price; 3]) {
+    for (i, &c) in Basic::ALL.iter().enumerate() {
+        let have = bank.get_basic(c);
+        bank.add_basic(c, -(bill[i].kilotons().min(have)));
+    }
+}
+
 /// The minerals it takes to *stand at* whole infrastructure rung `n`.
 #[inline]
 fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
@@ -1056,6 +1105,12 @@ struct World {
     /// Per-player **Design**: the roster of unlocked `(hull, class)` designs
     /// (R-O28). Written only by tree cards; permanent once written.
     roster: ComponentStore<Roster>,
+    /// **The folded works layer, per empire** (`Hyades_industry.md` §6.2, T-73).
+    ///
+    /// Recomputed from the played multiset in `CardId` order, never accumulated
+    /// at play time — see [`cards::Works::fold`] for why that is a desync and
+    /// not merely untidy. Identity until a works card exists.
+    works: ComponentStore<cards::Works>,
 }
 
 impl World {
@@ -1084,6 +1139,7 @@ impl World {
             knowledge: ComponentStore::new(),
             doctrine: ComponentStore::new(),
             roster: ComponentStore::new(),
+            works: ComponentStore::new(),
         }
     }
 
@@ -1867,6 +1923,7 @@ impl Simulation {
             roster.unlock(HullType::LimitedSystems, Class::Meadow);
             roster.unlock(HullType::LimitedContactVehicle, Class::Tor);
             self.world.roster.insert(pe, roster);
+            self.world.works.insert(pe, cards::Works::default());
 
             // Seed the homeworld's stockpile so it can begin deepening infra.
             let seed = self.config.homeworld_start_minerals / 3.0;
@@ -2746,8 +2803,18 @@ impl Simulation {
         let level = self.bands.level(*self.world.population.get(center).unwrap());
         let center_pos = *self.world.position.get(center).unwrap();
         let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
-        // Minerals to buy the next whole level, from the stock standing there.
+        // Minerals to buy the next whole level, from the stock standing there —
+        // and since T-73 the bill is payable *in colours*, so the split and the
+        // bank both go into the context.
         let target_level = infra_step_price(infra, &self.config);
+        let works = self.world.works.get(pe).copied().unwrap_or_default();
+        let infra_bill = works_bill(target_level, &works);
+        let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
+        let stockpile_by_colour = [
+            Price::new(bank.get_basic(Basic::Cyan)),
+            Price::new(bank.get_basic(Basic::Magenta)),
+            Price::new(bank.get_basic(Basic::Yellow)),
+        ];
 
         let info = *self.world.player_info.get(pe).unwrap();
         // Live mineral pressure for this center: 1 when broke for its next infra
@@ -2823,6 +2890,8 @@ impl Simulation {
             medium_min_level: self.config.medium_min_level,
             limited_min_level: self.config.limited_min_level,
             infra_cost: target_level,
+            infra_bill,
+            stockpile_by_colour,
             colonizer_cost: hull_cost(HullType::MediumSystems, &self.config),
             general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
             medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
@@ -2925,7 +2994,18 @@ impl Simulation {
             BuildOrder::Idle => None,
             BuildOrder::UpgradeInfrastructure => {
                 let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
-                if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
+                // **Pay the colour bill, not the total** (T-73). Same
+                // `works_bill` the decision was made against.
+                let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
+                let bill = works_bill(target, &works);
+                let payable = self.world.stockpile.get(center).map(|b| can_pay_bill(b, &bill)).unwrap_or(false);
+                // What was actually committed is the bill, not the ladder step:
+                // `eta_works` divides the total, so an efficiency card makes the
+                // rung genuinely cheaper — and the yard is held for what was
+                // built (T-68), which has to be the same number.
+                let billed: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
+                if payable {
+                    pay_bill(self.world.stockpile.get_mut(center).unwrap(), &bill);
                     let f = self.world.factors.get_mut(center).unwrap();
                     // **A rung is bought, not incremented.** The stock moves to
                     // exactly what standing at the next rung costs, so the
@@ -2939,11 +3019,11 @@ impl Simulation {
                             player: p as u32,
                             center: center_pid,
                             order,
-                            cost: target.kilotons(),
+                            cost: billed.kilotons(),
                             stockpile_after: stockpile_after.kilotons(),
                         },
                     );
-                    Some(target)
+                    Some(billed)
                 } else {
                     None
                 }
@@ -5225,6 +5305,89 @@ mod tests {
             // It is not asserted, because an assertion about deleted code would
             // be an assertion that cannot fail.
         }
+    }
+
+    /// **T-73/§6.4: a mix card moves the colour mix and never lowers the total.**
+    ///
+    /// `eta_works` is multiplicative on the total; `mix_w` is a *share* of that
+    /// total. So the two are orthogonal **by construction**, which is what makes
+    /// §5.4's rule — *move the mix, never lower the total* — enforceable in a
+    /// type rather than in review. Without it the card list becomes a discount
+    /// race and "shift the mix away from pure Yellow" degrades into a worse way
+    /// of saying "make it cheaper".
+    #[test]
+    fn a_mix_card_cannot_change_the_total() {
+        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
+
+        // Every mix a card could reach, including the sole-colour `1:0:0` that
+        // §5.1 allows works and forbids card costs, and degenerate weights.
+        let mixes: [[f64; 3]; 6] =
+            [[1.0, 1.0, 1.0], [4.0, 2.0, 1.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [5.0, 4.0, 3.0], [1e-6, 1.0, 1e6]];
+        for m in mixes {
+            let w = cards::Works { mix_w: m, ..cards::Works::default() };
+            let bill = works_bill(step, &w);
+            let total: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
+            assert!(
+                (total - step).kilotons().abs() < 1e-12,
+                "mix {m:?} changed the bill: {total} against a step of {step}"
+            );
+            for b in bill {
+                assert!(b >= Price::ZERO, "mix {m:?} produced a negative colour share");
+            }
+        }
+
+        // And efficiency is the *other* axis: `eta_works` moves the total and
+        // leaves the split alone.
+        let eff = cards::Works { eta_works: 2.0, ..cards::Works::default() };
+        let bill = works_bill(step, &eff);
+        let total: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
+        assert!((total - step * 0.5).kilotons().abs() < 1e-12, "eta_works must halve the bill, got {total}");
+        assert!(
+            (bill[0] - bill[1]).kilotons().abs() < 1e-12 && (bill[1] - bill[2]).kilotons().abs() < 1e-12,
+            "an efficiency card must not move the mix"
+        );
+    }
+
+    /// **T-73: a colour-poor centre cannot buy the rung, however rich it is.**
+    ///
+    /// This is the whole point of the stage, and the thing no total-based
+    /// affordability test can express. `Minerals::try_spend_total` debits
+    /// *proportional to holdings*, so before this a bank of pure Cyan could buy
+    /// anything; now a bill naming Yellow needs Yellow. That is §5.1's *"the
+    /// mechanism that makes the galaxy's mineral distribution bite on
+    /// development"* — and T-62 made the field log-normal, so which colours a
+    /// homeworld sits near is an enormous fact that until now went almost
+    /// entirely unexpressed.
+    ///
+    /// Both halves are asserted, because only the pair is meaningful: the poor
+    /// centre is refused, and a centre with the *same total* spread across the
+    /// colours the bill names is not.
+    #[test]
+    fn a_colour_poor_centre_cannot_buy_the_rung() {
+        let step = Price::new(9.0);
+        let works = cards::Works::default(); // even thirds: 3.0 of each
+        let bill = works_bill(step, &works);
+
+        // A hundred times the bill, and all the wrong colour.
+        let hoard = Minerals { cyan: 900.0, ..Default::default() };
+        assert!(!can_pay_bill(&hoard, &bill), "a pure-Cyan hoard must not buy a bill that names Magenta and Yellow");
+
+        let mut spread = Minerals { cyan: 3.0, magenta: 3.0, yellow: 3.0, ..Default::default() };
+        assert!(can_pay_bill(&spread, &bill), "exactly the bill, in the right colours, must pay");
+        assert!(spread.basic_total() < hoard.basic_total(), "and it is the *poorer* bank that can afford it");
+
+        // Paying takes each colour's share and nothing else.
+        pay_bill(&mut spread, &bill);
+        assert!(spread.basic_total().kilotons().abs() < 1e-9, "the bill should have emptied it exactly");
+
+        // A sole-colour work — `1:0:0`, which §5.1 allows works and forbids card
+        // costs — is payable only by an empire that has that colour.
+        let yellow_only = cards::Works { mix_w: [0.0, 0.0, 1.0], ..cards::Works::default() };
+        let y_bill = works_bill(step, &yellow_only);
+        assert!(!can_pay_bill(&hoard, &y_bill), "Production's route is closed to a Yellow-poor empire");
+        let yellow = Minerals { yellow: 9.0, ..Default::default() };
+        assert!(can_pay_bill(&yellow, &y_bill), "and open to one that has Yellow");
     }
 
     /// **T-68: build time tracks mass, and the two ladders are one ladder.**
