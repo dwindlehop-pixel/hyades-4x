@@ -200,11 +200,35 @@ impl Factors {
     /// the mass growth is paid out of (transient damage makes growth slow, not
     /// the ceiling low). Splitting those apart is what design law #11's
     /// "renewable stock" actually asks for.
+    /// **Infrastructure is not a term** (`Hyades_industry.md` §1.1, T-67).
+    ///
+    /// It was, and while it was, infrastructure could not be attacked without
+    /// attacking population: T-64's discrete logistic goes strongly negative
+    /// above `K`, so cutting a world's ceiling makes its population *overshoot
+    /// below* the new one rather than settle at it — `2K → 0.25K` in a single
+    /// step, pinned by
+    /// `a_colony_seeded_above_its_capacity_crashes_below_it`. Every industrial
+    /// strike was a population strike with extra steps, and infrastructure is
+    /// precisely the war target the design wants to be survivable.
+    ///
+    /// Removing the term beats softening the logistic: the crash **stays**
+    /// where it is wanted — a habitability or biosphere strike still collapses
+    /// a population, because those genuinely are a world's capacity to hold
+    /// people — and nothing has to be tuned. No decline rate, no second time
+    /// constant, and **no clamp**, which matters because a clamp is exactly
+    /// what let T-64's broken logistic keep scoring well.
     #[inline]
     fn k(&self) -> Band {
-        self.k_potential().min(self.infra)
+        self.hab.min(self.bio_max_band)
     }
-    /// The ceiling infra — and so population — can be *built* to.
+    /// The ceiling infrastructure is built *toward*.
+    ///
+    /// **Identical to [`Self::k`] since T-67**, and kept as a separate name
+    /// because the autopilot's deepening staircase means something different by
+    /// it: `k` is what population may reach, `k_potential` is what a centre is
+    /// still allowed to build. They coincide today; they are not the same
+    /// question, and the industrial ramp (`Hyades_industry.md` §6) will give
+    /// the second one its own answer.
     ///
     /// `bio_max` is read in Bands here. That is exact rather than a
     /// convenience: a population at Band `b` masses `KT(b)` and the pristine
@@ -213,7 +237,7 @@ impl Factors {
     /// `the_mass_budget_and_the_band_ceiling_bind_together`).
     #[inline]
     fn k_potential(&self) -> Band {
-        self.hab.min(self.bio_max_band)
+        self.k()
     }
 }
 
@@ -1136,7 +1160,29 @@ impl Ord for Event {
 pub struct SimConfig {
     pub horizon_years: f64,
     pub cycle_years: f64,
-    pub build_years: f64,
+    /// **Irreducible per-hull lead time, `t_lead`** (`Hyades_industry.md` §3.2,
+    /// T-68) — tooling and crew, the part of a build that does not scale with
+    /// industry.
+    ///
+    /// This replaced a flat `build_years = 10.0`, under which a Limited hull and
+    /// a General hull took the same ten years despite a **50x** mass ratio. Time
+    /// now tracks mass, and because dry mass *is* mineral cost (R-O57) the time
+    /// ladder and the price ladder are **one ladder** with no second constant to
+    /// tune and no way for them to drift apart.
+    ///
+    /// **Approved starting value, not MC-ratified** (§3.3).
+    pub build_lead_years: f64,
+    /// **One slip's fabrication throughput, `F_slip`, in kt/yr** (§3.2, T-68).
+    ///
+    /// Stage 2 is the single-slip case, so this is simply the rate at which a
+    /// yard turns mass into hull: `t_build = t_lead + m / F_slip`. Concurrency
+    /// — `slips(F) = 1 + floor(F / F_slip)`, and with it the *soft floor* that
+    /// makes this an asymptote rather than a divisor — is stage 3 (T-69). The
+    /// constant is introduced now with the meaning it will keep, so that landing
+    /// slips changes what divides by it and not what it means.
+    ///
+    /// **Approved starting value, not MC-ratified** (§3.3).
+    pub slip_throughput: f64,
     pub civilian_accel_g: f64,
     pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
@@ -1469,7 +1515,8 @@ impl SimConfig {
         SimConfig {
             horizon_years: 4000.0,
             cycle_years: 50.0,
-            build_years: 10.0,
+            build_lead_years: 2.0,
+            slip_throughput: 0.1,
             civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
@@ -1805,7 +1852,9 @@ impl Simulation {
                     SurveyStrategy::GlobalPool => Vec3::ZERO,
                     SurveyStrategy::OpeningSectors | SurveyStrategy::PersistentSectors => Vec3::CUBE_FACES[i % 6],
                 };
-                self.launch_survey(p, home_pos, heading, 0);
+                // Bootstrap craft are *seeded*, not built — no yard made them,
+                // so they leave at once (autopilot-doc §2).
+                self.launch_survey(p, home_pos, heading, 0, 0.0);
             }
         }
 
@@ -2134,17 +2183,32 @@ impl Simulation {
             // Seed population from the pop *carried as cargo*
             // (`Hyades_vehicle_roles.md` §4.2/R-V9 — confirmed, not a flat
             // constant applied on arrival regardless of what was brought).
+            //
+            // **Credited, not assigned** (R-O74). These people were debited from
+            // the founding centre at launch, so they are *added* to whatever the
+            // world holds rather than `max`'d into place. An unowned world holds
+            // zero (`galaxy.rs`), so the two agreed until settlers had to come
+            // from somewhere — at which point `max` would have destroyed the
+            // difference silently.
             let carried_pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(Kilotons::ZERO);
             {
                 let pop = self.world.population.get_mut(target).unwrap();
-                if *pop < carried_pop {
-                    *pop = carried_pop;
-                }
+                *pop += carried_pop;
             }
-            // No mineral seed here — confirmed this conversation: "mineral
-            // seed is only for homeworld." A colony starts with whatever its
-            // own local density and (once built) mining-outpost hauling
-            // bring it; see `most_needed_center` / `sys_freighter_arrive`.
+            self.world.pop_cargo.insert(vehicle, Kilotons::ZERO);
+            // **And the rest of the hold lands with them.** The old rule here
+            // was "no mineral seed for colonies, homeworlds only" — superseded:
+            // a hold may carry any mix of settlers and minerals, and the
+            // minerals jumpstart production (`Hyades_industry.md` §1.7). This
+            // is not a new grant, it is the endowment the founding centre
+            // already paid for out of its own bank at launch.
+            let endowment = self.world.cargo.get(vehicle).copied().unwrap_or_default();
+            if endowment.basic_total() > Price::ZERO {
+                if let Some(bank) = self.world.stockpile.get_mut(target) {
+                    bank.add_basics(&endowment);
+                }
+                self.world.cargo.insert(vehicle, Minerals::default());
+            }
             let pid = *self.world.planet_id.get(target).unwrap();
             self.world.knowledge.get_mut(self.player_entity[p]).unwrap().scanned.insert(pid);
             self.schedule(self.config.cycle_years, EventKind::ProductionTick { center: target });
@@ -2304,6 +2368,24 @@ impl Simulation {
         // Scrapping is confirmed only for an exhausted Scout (§4.1), handled
         // separately in `sys_contact_arrive`.
         self.world.role.insert(vehicle, Role::Reserve);
+        // **Unload before parking** (R-O74). A bounced Colonizer is carrying
+        // people and minerals that were debited from its home centre, and this
+        // is where "nothing is lost" stops being a comment and becomes an
+        // entry: park it still laden and the endowment sits in a hold forever,
+        // which is a slow leak rather than an obvious one.
+        if let Some(&home) = self.world.home_center.get(vehicle) {
+            let pop = self.world.pop_cargo.get(vehicle).copied().unwrap_or(Kilotons::ZERO);
+            if pop > Kilotons::ZERO && self.world.population.contains(home) {
+                let at_home = self.world.population.get_mut(home).unwrap();
+                *at_home += pop;
+                self.world.pop_cargo.insert(vehicle, Kilotons::ZERO);
+            }
+            let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
+            if cargo.basic_total() > Price::ZERO && self.world.stockpile.contains(home) {
+                self.world.stockpile.get_mut(home).unwrap().add_basics(&cargo);
+                self.world.cargo.insert(vehicle, Minerals::default());
+            }
+        }
         if let (Some(&owner), Some(&role), Some(&home)) =
             (self.world.owner.get(vehicle), self.world.role.get(vehicle), self.world.home_center.get(vehicle))
         {
@@ -2680,7 +2762,14 @@ impl Simulation {
                     Some(cur) => Ranked::score_then_id(&ranked, &cur.ranked).is_gt(),
                 };
                 if better {
-                    best[slot] = Some(Candidate { view, ranked });
+                    // The per-hull settler figure is computed for the three
+                    // reduced winners only, not for every scanned world — the
+                    // reduction is exactly what makes that affordable (R-O70).
+                    let settlers_by_hull = [
+                        self.settler_target(center, e, HullType::MediumSystems.colony_seed_capacity(&self.config)),
+                        self.settler_target(center, e, HullType::GeneralSystems.colony_seed_capacity(&self.config)),
+                    ];
+                    best[slot] = Some(Candidate { view, ranked, settlers_by_hull });
                 }
             }
         }
@@ -2736,8 +2825,8 @@ impl Simulation {
         // `apply_build_with` declines on an unaffordable price, a roster gate, or
         // a hull with no job worth doing, and a center that built nothing must
         // not be held busy for it.
-        if self.apply_build_with(p, center, center_pos, order, &cands) {
-            let done = self.clock + self.config.build_years;
+        if let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) {
+            let done = self.clock + self.build_time(committed);
             self.world.building_until.insert(center, done);
             self.schedule_at(done, EventKind::BuildDecision { center });
         }
@@ -2748,13 +2837,43 @@ impl Simulation {
 
     // --- build application -------------------------------------------------
 
+    /// **How long a yard is occupied making `mass`** — `t_build = t_lead + m /
+    /// F_slip` (`Hyades_industry.md` §3.2, T-68).
+    ///
+    /// Takes the **mass actually committed**, which is what makes one expression
+    /// cover every order the engine has: a hull, an infrastructure rung, or a
+    /// whole mining pair. Under R-O57 dry mass and mineral cost are the same
+    /// number, so "what this build costs" and "how much stuff it is" are not two
+    /// quantities — and a mining pair drawn partly from Reserve is cheaper *and*
+    /// quicker, because there is genuinely less to fabricate.
+    ///
+    /// It is a `Price` on the way in and kilotons on the way out: the same
+    /// amount, read on the ladder each side wants (`units::Qty::on_scale`).
+    ///
+    /// **Stage 2 is the single-slip case.** `slips(F)` and the emergent soft
+    /// floor are T-69; this is deliberately the `slips = 1` specialisation of
+    /// the same formula, so landing concurrency changes the divisor rather than
+    /// the model.
+    fn build_time(&self, mass: Price) -> f64 {
+        let f = self.config.slip_throughput.max(1e-12);
+        self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / f
+    }
+
     /// Apply a production order. `candidates` is the empire's current candidate
     /// list, used to **task** a finished hull — production decides *what object*
     /// to make, role assignment decides *what it is for* (R-O29).
-    /// Apply a chosen build, returning **whether it actually committed** —
-    /// spent minerals and produced something. A decline (unaffordable, gated by
-    /// the roster, or a hull with no job worth doing) returns `false`, and the
-    /// caller must not occupy the yard for a build that never happened.
+    /// Apply a chosen build, returning **the mass it actually committed** —
+    /// `None` for a decline (unaffordable, gated by the roster, or a hull with
+    /// no job worth doing), in which case the caller must not occupy the yard
+    /// for a build that never happened.
+    ///
+    /// It returns the *committed* price rather than a bare `bool` because since
+    /// T-68 the yard is held for `build_time(mass)`, and the mass is only known
+    /// here: recycling means a mining pair's real price depends on what was
+    /// sitting in Reserve when the order was placed. Returning `true` and
+    /// re-deriving the cost outside would have been a second copy of that rule,
+    /// which is how `mining_pair_cost` came to need a comment explaining that it
+    /// must match what `apply_build_with` will spend.
     fn apply_build_with(
         &mut self,
         p: usize,
@@ -2762,10 +2881,10 @@ impl Simulation {
         center_pos: Vec3,
         order: BuildOrder,
         candidates: &[Candidate],
-    ) -> bool {
+    ) -> Option<Price> {
         let center_pid = *self.world.planet_id.get(center).unwrap();
         match order {
-            BuildOrder::Idle => false,
+            BuildOrder::Idle => None,
             BuildOrder::UpgradeInfrastructure => {
                 let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
@@ -2782,21 +2901,21 @@ impl Simulation {
                             stockpile_after: stockpile_after.kilotons(),
                         },
                     );
-                    true
+                    Some(target)
                 } else {
-                    false
+                    None
                 }
             }
             BuildOrder::Hull { hull_type, class } => {
                 if !self.roster_permits(p, hull_type) {
-                    return false;
+                    return None;
                 }
                 let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
                 // The job is chosen here, after the object exists — not in the
                 // order, which is all a rival could read off the shipyard.
                 let tasking = self.autopilots[p].assign_role(&doctrine, hull_type, class, candidates);
                 let Some(Tasking { role, target }) = tasking else {
-                    return false; // nothing worth building this hull for right now
+                    return None; // nothing worth building this hull for right now
                 };
 
                 // A Miner is produced together with the Freighter that hauls for
@@ -2804,7 +2923,7 @@ impl Simulation {
                 // one economic act even though it is two objects.
                 let paired_freighter = role == Role::Miner;
                 if paired_freighter && !self.roster_permits(p, role_hull_type(Role::Freighter)) {
-                    return false;
+                    return None;
                 }
 
                 // Recycling is checked *before* pricing, because a hull taken
@@ -2845,6 +2964,13 @@ impl Simulation {
                 if let Some(t) = target {
                     self.mark_targeted(p, t);
                 }
+                // **The whole order occupies one yard, so it launches as one
+                // unit** (T-68). The delay every hull in this order waits out is
+                // the order's own `t_build`, which is also exactly how long the
+                // caller holds the yard — one number, computed once, rather than
+                // a per-ship time that could drift from the occupancy. Hulls
+                // taken from Reserve are already built and leave at once.
+                let launch_delay = self.build_time(cost);
                 if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
@@ -2854,7 +2980,7 @@ impl Simulation {
                     if let Some(e) = reused_freighter {
                         self.reserve_freighters[p].push(e);
                     }
-                    return false;
+                    return None;
                 }
                 match (role, target) {
                     (Role::Scout, _) => {
@@ -2872,7 +2998,7 @@ impl Simulation {
                             }
                             SurveyStrategy::GlobalPool | SurveyStrategy::OpeningSectors => Vec3::ZERO,
                         };
-                        self.launch_survey(p, center_pos, heading, 0)
+                        self.launch_survey(p, center_pos, heading, 0, launch_delay)
                     }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
@@ -2882,13 +3008,13 @@ impl Simulation {
                         for _ in 0..crew {
                             match reused.next() {
                                 Some(e) => self.retask_miner(e, p, center, te),
-                                None => self.spawn_courier(p, r, hull_type, center, center_pos, te),
+                                None => self.spawn_courier(p, r, hull_type, center, te, launch_delay),
                             }
                         }
                         if paired_freighter {
                             match reused_freighter {
                                 Some(e) => self.retask_freighter(e, p, center, te),
-                                None => self.spawn_freighter(p, center, center_pos, te),
+                                None => self.spawn_freighter(p, center, center_pos, te, launch_delay),
                             }
                         }
                     }
@@ -2905,7 +3031,7 @@ impl Simulation {
                         stockpile_after: stockpile_after.kilotons(),
                     },
                 );
-                true
+                Some(cost)
             }
         }
     }
@@ -2989,7 +3115,15 @@ impl Simulation {
         let target_pid = *self.world.planet_id.get(target).unwrap();
         self.log.push(
             self.clock,
-            LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Miner, from, to: target_pid },
+            LogEvent::VehicleSpawned {
+                player: p as u32,
+                vehicle: e,
+                role: Role::Miner,
+                from,
+                to: target_pid,
+                settlers: 0.0,
+                endowment: 0.0,
+            },
         );
     }
 
@@ -3008,7 +3142,15 @@ impl Simulation {
         let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
         self.log.push(
             self.clock,
-            LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Freighter, from, to: outpost_pid },
+            LogEvent::VehicleSpawned {
+                player: p as u32,
+                vehicle: e,
+                role: Role::Freighter,
+                from,
+                to: outpost_pid,
+                settlers: 0.0,
+                endowment: 0.0,
+            },
         );
     }
 
@@ -3063,17 +3205,30 @@ impl Simulation {
         Band::new(b.bands().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
     }
 
-    /// **The carrying capacity a colony will have the moment it is founded.**
+    /// **The carrying capacity a colony will have the moment it is founded** —
+    /// the world's own, and nothing to do with the hull that got there (T-67).
     ///
-    /// `K = min(hab, bio_max, infra)`, and founding sets infra to what the
-    /// recycled hull bought ([`Self::founding_infra`]) — so this depends on the
-    /// hull, which is the whole of R-O76. It is the number a colony ship must
-    /// not exceed: population above `K` does not settle back to it, it
-    /// *crashes* below it
-    /// (`a_colony_seeded_above_its_capacity_crashes_below_it`).
-    fn founding_capacity(&self, hull: HullType, target: Entity) -> Kilotons {
+    /// It used to take the hull, because `K` included infrastructure and
+    /// founding set infrastructure to what the recycled hull bought
+    /// ([`Self::founding_infra`]) — that dependence was the whole of R-O76.
+    /// With infrastructure out of `K` there is no such dependence, and the
+    /// parameter went with it.
+    ///
+    /// It is still the number a colony ship must not exceed: a population above
+    /// `K` does not settle back to it, it *crashes* below it
+    /// (`a_colony_seeded_above_its_capacity_crashes_below_it`). What changed is
+    /// that the engine can no longer *cause* that by founding — the seed is
+    /// capped here — so the crash is reachable only by an attack on
+    /// habitability or biosphere, which is exactly the design intent.
+    fn founding_capacity(&self, target: Entity) -> Kilotons {
         let f = self.world.factors.get(target).unwrap();
-        units::population_mass(f.k_potential().min(f.infra.max(self.founding_infra(hull))))
+        // **The hull no longer caps this** (T-67). Infrastructure left `K`, so a
+        // colony seeds to the *world's* own ceiling whatever hull founded it;
+        // the recycled hull still lands as industrial stock, which is now its
+        // whole job. R-O76's "seed depth does not pay" measured the mismatch
+        // between what a hull carried and what the colony could hold, and there
+        // is no mismatch left to measure.
+        units::population_mass(f.k_potential())
     }
 
     /// **The founding population a colony ship of this hull carries** — the
@@ -3094,6 +3249,13 @@ impl Simulation {
     /// ratified value and changes job: from *the* seed to the **floor** a hull
     /// must clear to found anything.
     ///
+    /// **Since T-67 the hull no longer sets the colony's `K`.** Infrastructure
+    /// left the carrying-capacity minimum, so both viable hulls seed to the
+    /// *world's* ceiling and the hold is the only thing that distinguishes
+    /// them. R-O76's measured "seed depth does not pay" was about the mismatch
+    /// between hold and ceiling; there is no mismatch left, and the hull-choice
+    /// question is reopened as R-IND11.
+    ///
     /// **R-O74 (new, open): these settlers are conjured, and stage 4b makes
     /// that 31× louder.** Nothing debits the founding center's population or
     /// biosphere for the people put aboard, which was already a design law #11
@@ -3101,15 +3263,248 @@ impl Simulation {
     /// rather than fixed here because drawing the seed from the origin is a
     /// behaviour change that would dominate the measurement stage 4 exists to
     /// take — and mixing the two is exactly the confound this staging avoids.
-    fn colony_seed_for(&self, hull: HullType, target: Entity) -> Option<Kilotons> {
-        let seed = hull.colony_seed_capacity(&self.config).min(self.founding_capacity(hull, target));
-        // **The floor is a positive seed, not `colony_seed_pop`.** With the
-        // founding subsidy removed a Medium hull founds at `Band 0.33`, and a
-        // colony that starts below `Band I` is the point rather than an error:
-        // it is short of everything and has to be supplied. What is still
-        // refused is a colony with *no* people, which is what a hull too small
-        // to leave any infrastructure behind would produce.
-        (seed > Kilotons::ZERO).then_some(seed)
+    fn colony_seed_for(&self, hull: HullType, origin: Entity, target: Entity) -> Option<Kilotons> {
+        // **R-V9 is enforced on the hold, and since T-67 it has to be.**
+        //
+        // It used to fall out of the infrastructure coupling: `founding_capacity`
+        // was `k_potential.min(infra.max(founding_infra(hull)))`, a Limited
+        // hull's `founding_infra` is `Band Empty`, and `population_mass` maps
+        // that to *zero* — so the seed was zero and the hull was refused. That
+        // was a coincidence of two unrelated rules, and removing infrastructure
+        // from `K` dissolved it: a Limited hull would now found a colony of
+        // 0.089 kt, quietly, in a build nobody changed on purpose.
+        //
+        // So the rule is stated where roles §4 says it lives — as **capability,
+        // not competence**: a hull founds nothing unless its *hold* can carry a
+        // full `colony_seed_pop`. A Medium hull's hold is `Band I` exactly and a
+        // Limited hull's is `Band Empty`, so the ratified rule and the geometry
+        // now agree without either propping the other up.
+        let floor = units::population_mass(self.config.colony_seed_pop.band());
+        let hold = hull.colony_seed_capacity(&self.config);
+        if hold < floor * (1.0 - 1e-9) {
+            return None;
+        }
+        // What actually flies is the least of three things, and the third is the
+        // one R-O74 was missing. The **world** caps it, because a seed above `K`
+        // would crash rather than settle. The **hold** caps it, because that is
+        // capability. And the **origin** decides it — not as a share of what it
+        // has, but as the split that maximises the growth of the combined
+        // origin-plus-colony system under a travel discount (R-IND12; see
+        // `settler_target`, which also defines every symbol it uses).
+        Some(hold.min(self.founding_capacity(target)).min(self.settler_target(origin, target, hold)))
+    }
+
+    /// **How many settlers a centre sends, and where the number comes from
+    /// (R-IND12).**
+    ///
+    /// Every symbol, before any of them is used:
+    ///
+    /// | symbol | meaning | unit |
+    /// |---|---|---|
+    /// | `x_p` | the origin's current population | kt |
+    /// | `K_p` | the origin's carrying capacity, `population_mass(k())` | kt |
+    /// | `K_c` | the target's carrying capacity, same function | kt |
+    /// | `x_0` | the floor a colony would otherwise start from, [`units::POPULATION_SEED_FLOOR`] | kt |
+    /// | `r` | logistic growth rate per cycle, `Doctrine::growth_rate` | 1/cycle |
+    /// | `tau` | one-way transit, origin → target, at civilian accel | yr |
+    /// | `delta` | discount on a gain that arrives `tau` late | — |
+    /// | `S` | settlers put aboard | kt |
+    /// | `g(x, K)` | the logistic rate `r·x·(1 − x/K)` — the engine's own step | kt/cycle |
+    ///
+    /// **The sizing is demand-side, not supply-side.** An earlier version shipped
+    /// a *fraction of the parent* and the author's ruling retired it: a fraction
+    /// is irrelevant. What decides the amount is `K` against the hold, the
+    /// build-out the destination will pay for (see [`Self::endowment_minerals`]),
+    /// and the growth of the **combined** origin-plus-colony system under a
+    /// travel discount.
+    ///
+    /// **Total growth is not what varies — timing is.** Both worlds reach their
+    /// own ceiling eventually whatever is shipped, so "the total growth of the
+    /// combined system" is a statement about *when*, which is exactly what the
+    /// colony-years guard measures. So price the seed in time:
+    ///
+    /// ```text
+    /// value(S) = T_c(S) = ln[ (S / (K_c − S)) · ((K_c − x_0) / x_0) ] / r
+    ///            -- the time the seed saves the child, floor -> S
+    /// cost(S)  = T_p(S) = S / g(x_p − S, K_p)
+    ///            -- the time the origin needs to regrow what it gave away
+    /// maximise   delta · T_c(S) − T_p(S)
+    /// ```
+    ///
+    /// **`r` cancels.** Both terms carry `1/r`, so the split is independent of
+    /// `growth_rate` — which matters, because that knob is separately ratified
+    /// (R-O84) and a policy that moved with it would couple two things that were
+    /// measured apart.
+    ///
+    /// **Two rival formulations were tried and rejected on measurement**, which
+    /// is the reason this one is written out rather than asserted:
+    ///
+    /// - *Marginal next-cycle rate*, `g(x_p − S) + delta·g(S)`: closed form, and
+    ///   it ships **nothing at all** whenever the origin is below `K_p/2` and the
+    ///   target is far. That is precisely the early game, when colonising matters
+    ///   most, so it would have stalled expansion by construction.
+    /// - *Sum of fill times*: strips a full origin to 99% of itself at zero
+    ///   distance, and ships nothing from one at its ceiling when the target is
+    ///   far — wrong in both directions at the same operating point.
+    ///
+    /// **The optimum is found on a fixed grid, not by root-finding**, because
+    /// the objective is **not unimodal**: sampled over 4,000 random
+    /// configurations it has more than one turning point in ~4.6% of them. A
+    /// bisection or golden-section search would silently return a local optimum
+    /// in those, and it would do it deterministically, which is the worst kind of
+    /// wrong — reproducible and invisible. [`Self::ENDOWMENT_GRID`] evaluations
+    /// per launch is a few thousand per run, against a growth step that runs per
+    /// planet per cycle; this is not a hot path.
+    ///
+    /// **The discount is `delta = 1 / (1 + tau / cycle_years)`** — a gain landing
+    /// `n` production cycles late is worth `1/(1+n)` of one landing now.
+    /// Hyperbolic rather than exponential, and chosen because it needs **no new
+    /// constant**: `cycle_years` already exists and is the natural clock for a
+    /// quantity denominated per cycle. Whether the form should be exponential is
+    /// **R-IND14**, open.
+    fn settler_target(&self, center: Entity, target: Entity, hold: Kilotons) -> Kilotons {
+        let x_p = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
+        let k_p = self.capacity_of(center);
+        let k_c = self.capacity_of(target);
+        let x_0 = units::POPULATION_SEED_FLOOR;
+        let hi = hold.min(k_c).min((x_p - x_0).max(Kilotons::ZERO));
+        if hi <= Kilotons::ZERO || k_p <= Kilotons::ZERO || k_c <= x_0 {
+            return Kilotons::ZERO;
+        }
+        // **A destination-limited seed fills the world, and that is the model
+        // rather than an exception to it.** `T_c(S)` is `ln(S/(K_c − S) · …)`,
+        // which diverges as `S` approaches `K_c`: a colony landed at its own
+        // ceiling has no growth left to wait through, so the time it saves is
+        // unbounded. The grid below cannot represent its own endpoint — the
+        // top point would be an infinity — so the case is taken here, where it
+        // is legible, instead of being lost as a 1/32 shortfall nobody notices.
+        if hi >= k_c * (1.0 - 1e-12) {
+            return hi.min(k_c);
+        }
+        let delta = self.travel_discount(center, target);
+        let (xp, kp, kc, x0) = (x_p.kilotons(), k_p.kilotons(), k_c.kilotons(), x_0.kilotons());
+        let head = (kc - x0) / x0;
+
+        let mut best = (f64::NEG_INFINITY, 0.0);
+        for i in 1..=Self::ENDOWMENT_GRID {
+            let s = hi.kilotons() * (i as f64) / (Self::ENDOWMENT_GRID as f64);
+            if s >= kc || s >= xp {
+                break;
+            }
+            // Time the seed saves the child: floor -> S on its own logistic.
+            let t_c = ((s / (kc - s)) * head).ln();
+            // Time the origin needs to regrow it. An origin already at or over
+            // its ceiling has no headroom to regrow *into*, and its people are
+            // surplus rather than growth — so the gift costs it nothing.
+            let left = xp - s;
+            let rate = left * (1.0 - left / kp);
+            let t_p = if rate > 1e-15 { s / rate } else { 0.0 };
+            let score = delta * t_c - t_p;
+            if score > best.0 {
+                best = (score, s);
+            }
+        }
+        Kilotons::new(best.1).min(hi)
+    }
+
+    /// Grid resolution for [`Self::settler_target`]. Stated as a constant
+    /// because it is part of the answer: the objective is not unimodal, so the
+    /// split is the best of this many candidates rather than a solved optimum,
+    /// and changing it changes results.
+    const ENDOWMENT_GRID: usize = 32;
+
+    /// A planet's carrying capacity as a **mass** — `population_mass(k())`,
+    /// which since T-67 is `min(hab, bio_max)` and has no infrastructure term.
+    fn capacity_of(&self, planet: Entity) -> Kilotons {
+        self.world.factors.get(planet).map(|f| units::population_mass(f.k())).unwrap_or(Kilotons::ZERO)
+    }
+
+    /// `delta = 1 / (1 + tau / cycle_years)` — see [`Self::settler_target`] for
+    /// what the symbols are and why the form is hyperbolic.
+    fn travel_discount(&self, center: Entity, target: Entity) -> f64 {
+        let (a, b) = (self.world.position.get(center), self.world.position.get(target));
+        let tau = match (a, b) {
+            (Some(&from), Some(&to)) => {
+                let d = from.distance(to);
+                if d > 0.0 {
+                    math::ship_travel_years(d, self.config.civilian_accel_g * G)
+                } else {
+                    0.0
+                }
+            }
+            _ => 0.0,
+        };
+        1.0 / (1.0 + tau / self.config.cycle_years.max(1e-9))
+    }
+
+    /// **The minerals a centre sends with the settlers — sized by what the
+    /// destination will build, not by what the origin happens to hold.**
+    ///
+    /// Terms:
+    ///
+    /// | symbol | meaning | unit |
+    /// |---|---|---|
+    /// | `H` | the hull's hold capacity | kt |
+    /// | `S` | settlers already loaded | kt |
+    /// | `I_0` | founding infrastructure, the recycled hull | Band |
+    /// | `I_star` | the build-out the site is worth developing to | Band |
+    /// | `C(I_0 → I_star)` | cumulative rung price over that range | kt (as `Price`) |
+    /// | `K_c` | the target's carrying capacity | Band |
+    /// | `D` | the target's mineral abundance | Band |
+    ///
+    /// A hold is a volume, not a passenger list, and the author's ruling is that
+    /// it may carry a mix: *"the cargo hold needn't be filled with space or pop.
+    /// It can hold a combination of pop and minerals to jumpstart production."*
+    /// The settlers are capped by `K_c`, so the leftover volume is real and the
+    /// question is only what it is worth filling with.
+    ///
+    /// **The demand is the intended build-out**, `E = min(H − S, C(I_0 →
+    /// I_star), bank)`. Sending more than the destination will spend is freight
+    /// for ore that then sits in a stockpile; sending less means it waits on a
+    /// freighter for something the coloniser had room for.
+    ///
+    /// **`I_star` is where works value enters, and works are superadditive in
+    /// `K` and `D`** (§5, author's ruling: *"Works have higher value on high K
+    /// world and high mineral density worlds, and the highest on the
+    /// combination"*). A product has exactly that property — a positive cross
+    /// partial — and a product of masses is a **sum on the Band ladder**, so the
+    /// placeholder is the midpoint `I_star = (K_c + D) / 2`, i.e. the geometric
+    /// mean of the two masses.
+    ///
+    /// **Placeholder, and flagged as one: R-IND13.** The real works-value
+    /// function is §5's and needs T-73/T-74; this is the cheapest form with the
+    /// right cross partial, not a claim about magnitudes.
+    fn endowment_minerals(&self, center: Entity, hull: HullType, settlers: Kilotons) -> Price {
+        let spare = (hull.colony_seed_capacity(&self.config) - settlers).max(Kilotons::ZERO);
+        if spare <= Kilotons::ZERO {
+            return Price::ZERO;
+        }
+        let bank = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
+        let demand = self.build_out_price(center, hull);
+        // A hold is a mass and a bank is a price; the same kilotons read on two
+        // ladders (`units::Qty::on_scale`), crossed explicitly rather than by
+        // arithmetic that happens to typecheck.
+        spare.on_scale::<units::Cost>().min(demand).min(bank).max(Price::ZERO)
+    }
+
+    /// `C(I_0 → I_star)` — what the destination's intended build-out costs, as
+    /// the sum of the infrastructure rungs between the recycled hull's rung and
+    /// the works-value rung. See [`Self::endowment_minerals`] for the symbols.
+    fn build_out_price(&self, target: Entity, hull: HullType) -> Price {
+        let Some(f) = self.world.factors.get(target) else {
+            return Price::ZERO;
+        };
+        let density = self.world.density.get(target).map(|d| d.abundance()).unwrap_or(Band::ZERO);
+        // The works rung: geometric mean of capacity and abundance, which on the
+        // Band ladder is their midpoint (R-IND13, placeholder).
+        let i_star = Band::new((f.k().bands() + density.bands()) * 0.5);
+        let from = self.founding_infra(hull).round().bands().max(0.0) as usize;
+        let to = i_star.round().bands().max(0.0) as usize;
+        let mut total = Price::ZERO;
+        for rung in (from + 1)..=to {
+            total += infra_rung_price(rung, &self.config);
+        }
+        total
     }
 
     fn mark_targeted(&mut self, p: usize, target: PlanetId) {
@@ -3122,7 +3517,18 @@ impl Simulation {
     /// agreed until Doctrine could choose a colonizer's hull; reading the hull
     /// back off the role would have flown a Medium ship on a General ship's
     /// bill, and nothing would have complained.
-    fn spawn_courier(&mut self, p: usize, role: Role, hull: HullType, center: Entity, from: Vec3, target: Entity) {
+    fn spawn_courier(
+        &mut self,
+        p: usize,
+        role: Role,
+        hull: HullType,
+        center: Entity,
+        target: Entity,
+        launch_delay: f64,
+    ) {
+        // The launch point *is* the centre — it was passed in alongside it until
+        // T-68 needed a seventh argument, and the two were always the same read.
+        let from = *self.world.position.get(center).unwrap();
         let dest = *self.world.position.get(target).unwrap();
         let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
@@ -3130,31 +3536,53 @@ impl Simulation {
         self.world.role.insert(e, role);
         self.world.hull_type.insert(e, hull);
         self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
-        self.world.cargo.insert(e, Minerals::default());
         // A Colonizer carries its founding population as cargo, consumed on
         // arrival (`Hyades_vehicle_roles.md` §4.2), and **how much is what the
         // hull's hold masses** (T-56 stage 4b) rather than a flat constant.
-        self.world.pop_cargo.insert(
-            e,
-            if role == Role::Colonizer {
-                self.colony_seed_for(hull, target).unwrap_or(Kilotons::ZERO)
-            } else {
-                Kilotons::ZERO
-            },
-        );
+        //
+        // **Both halves of the hold are loaded out of the origin** (R-O74
+        // closed): the settlers are debited from `center`'s population and the
+        // minerals from its stockpile, so a launch moves mass rather than
+        // creating it. Load before the ship exists as far as the books are
+        // concerned — the debit and the credit are the same statement.
+        let (settlers, endowment) = if role == Role::Colonizer {
+            let settlers = self.colony_seed_for(hull, center, target).unwrap_or(Kilotons::ZERO);
+            let minerals = self.endowment_minerals(center, hull, settlers);
+            if settlers > Kilotons::ZERO {
+                let pop = self.world.population.get_mut(center).unwrap();
+                *pop = (*pop - settlers).max(Kilotons::ZERO);
+            }
+            let loaded =
+                self.world.stockpile.get_mut(center).map(|bank| take_basics(bank, minerals)).unwrap_or_default();
+            (settlers, loaded)
+        } else {
+            (Kilotons::ZERO, Minerals::default())
+        };
+        self.world.cargo.insert(e, endowment);
+        self.world.pop_cargo.insert(e, settlers);
         self.world.home_center.insert(e, center);
-        let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
+        let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         let ev = match role {
             Role::Colonizer => EventKind::ColonyArrive { vehicle: e },
             _ => EventKind::MiningArrive { vehicle: e },
         };
         self.schedule_at(arrive, ev);
         let target_pid = *self.world.planet_id.get(target).unwrap();
-        self.log
-            .push(self.clock, LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role, from, to: target_pid });
+        self.log.push(
+            self.clock,
+            LogEvent::VehicleSpawned {
+                player: p as u32,
+                vehicle: e,
+                role,
+                from,
+                to: target_pid,
+                settlers: settlers.kilotons(),
+                endowment: endowment.basic_total().kilotons(),
+            },
+        );
     }
 
-    fn spawn_freighter(&mut self, p: usize, center: Entity, from: Vec3, outpost: Entity) {
+    fn spawn_freighter(&mut self, p: usize, center: Entity, from: Vec3, outpost: Entity, launch_delay: f64) {
         let dest = *self.world.position.get(outpost).unwrap();
         let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
@@ -3164,16 +3592,24 @@ impl Simulation {
         self.world.cargo.insert(e, Minerals::default());
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { outpost, destination: center, outbound: true });
-        let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
+        let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         self.schedule_at(arrive, EventKind::FreighterArrive { vehicle: e });
         let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
         self.log.push(
             self.clock,
-            LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Freighter, from, to: outpost_pid },
+            LogEvent::VehicleSpawned {
+                player: p as u32,
+                vehicle: e,
+                role: Role::Freighter,
+                from,
+                to: outpost_pid,
+                settlers: 0.0,
+                endowment: 0.0,
+            },
         );
     }
 
-    fn launch_survey(&mut self, p: usize, from: Vec3, heading: Vec3, hops: usize) {
+    fn launch_survey(&mut self, p: usize, from: Vec3, heading: Vec3, hops: usize, launch_delay: f64) {
         let mut cands = core::mem::take(&mut self.survey_scratch);
         self.fill_survey_candidates(p, &mut cands);
         let bias = if heading == Vec3::ZERO { None } else { Some(heading) };
@@ -3191,11 +3627,19 @@ impl Simulation {
             self.world.hull_type.insert(e, role_hull_type(Role::Scout));
             self.world.voyage.insert(e, Voyage { target, heading_bias: bias, hops });
             self.world.cargo.insert(e, Minerals::default());
-            let arrive = self.set_leg(e, from, dest, accel, 0.0);
+            let arrive = self.set_leg(e, from, dest, accel, launch_delay);
             self.schedule_at(arrive, EventKind::ContactArrive { vehicle: e });
             self.log.push(
                 self.clock,
-                LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role: Role::Scout, from, to: target_pid },
+                LogEvent::VehicleSpawned {
+                    player: p as u32,
+                    vehicle: e,
+                    role: Role::Scout,
+                    from,
+                    to: target_pid,
+                    settlers: 0.0,
+                    endowment: 0.0,
+                },
             );
         }
     }
@@ -3671,6 +4115,25 @@ mod tests {
         cfg
     }
 
+    /// For tests that run the sim **twice and compare the two bit-for-bit**.
+    ///
+    /// Those assert an *arithmetic identity* — logging is a side channel, the
+    /// round layer is inert while everyone passes — and `CLAUDE.md` §2 already
+    /// settled what that costs: "determinism is a property of the arithmetic,
+    /// not of how long you accumulate it." Two runs is two horizons, so these
+    /// pay double for a horizon that buys them nothing.
+    ///
+    /// **Pinned at 250 yr, and the reason it had to move is T-68.** Making
+    /// `t_build` track mass took a Medium hull from 10 yr to 3.0, so a centre
+    /// decides three times as often, the entity count follows, and the same 600
+    /// yr does several times the work it used to. The identity is unchanged;
+    /// only the bill was.
+    fn paired_cfg(seed: u64) -> SimConfig {
+        let mut cfg = SimConfig::new(seed);
+        cfg.horizon_years = 250.0;
+        cfg
+    }
+
     #[test]
     fn only_an_inverted_hull_ladder_is_refused() {
         // The fault is now **one** condition, not two, and the story of how it
@@ -3754,11 +4217,11 @@ mod tests {
         // across the card layer landing. Verified at the shipped defaults:
         // seed 1 / 3 seats / 4 kyr gives 1,044 colonies with and without.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
-        let mut with_rounds = Simulation::with_baseline(galaxy, test_cfg(1));
+        let mut with_rounds = Simulation::with_baseline(galaxy, paired_cfg(1));
         let a = with_rounds.run();
 
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
-        let mut cfg = test_cfg(1);
+        let mut cfg = paired_cfg(1);
         cfg.years_per_round = 0.0; // disables the layer entirely
         let mut without = Simulation::with_baseline(galaxy, cfg);
         let b = without.run();
@@ -3773,27 +4236,33 @@ mod tests {
 
     #[test]
     fn round_boundaries_fire_on_the_specified_cadence() {
-        // 200 yr to the first, 400 yr between: at a 600 yr test horizon that is
+        // 100 yr to the first, 100 yr between: at a 250 yr horizon that is
         // rounds 0 and 1. The barrier is a scheduled event, so this also pins
         // that it chains itself rather than being swept for.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
-        let mut cfg = test_cfg(1);
-        cfg.years_to_first_round = 200.0;
-        cfg.years_per_round = 400.0;
+        let mut cfg = paired_cfg(1);
+        cfg.years_to_first_round = 100.0;
+        cfg.years_per_round = 100.0;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         sim.run();
-        assert_eq!(sim.current_round(), 1, "600 yr horizon should reach round 1 and stop");
+        assert_eq!(sim.current_round(), 1, "(250-100)/100 = 1, so the last barrier is round 1");
 
-        // And it stops at the horizon rather than running away. Pinned at
-        // 1,400 yr, not the 4,000 default: design law #14 — a full-length run
-        // costs seconds, and this asserts a cadence, not a long-run property.
-        // (1400-200)/400 = 3, so the last barrier is round 3.
+        // And it chains rather than firing once, and stops at the horizon rather
+        // than running away. **Shortened the cadence, not the horizon**
+        // (`CLAUDE.md` §2 — cut samples, not the question): this used to buy its
+        // extra barriers with a 1,400 yr run, which cost **437 s of a 507 s unit
+        // target** once T-68 made hulls 3-4x quicker to build and the entity
+        // count followed. A 25 yr cadence at 250 yr exercises **ten** barriers
+        // where the long run exercised four, and the property under test — the
+        // barrier reschedules itself and the last one lands below the horizon —
+        // is exactly the same property, now better covered for 6% of the cost.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
-        let mut cfg = test_cfg(1);
-        cfg.horizon_years = 1400.0;
-        let mut long = Simulation::with_baseline(galaxy, cfg);
-        long.run();
-        assert_eq!(long.current_round(), 3, "(1400-200)/400 = 3, so the last barrier is round 3");
+        let mut cfg = paired_cfg(1);
+        cfg.years_to_first_round = 25.0;
+        cfg.years_per_round = 25.0;
+        let mut chained = Simulation::with_baseline(galaxy, cfg);
+        chained.run();
+        assert_eq!(chained.current_round(), 9, "(250-25)/25 = 9, so the last barrier is round 9");
     }
 
     #[test]
@@ -3879,8 +4348,20 @@ mod tests {
 
     #[test]
     fn deterministic_same_seed_same_outcome() {
-        let (_a, ra) = run_default(6, 7);
-        let (_b, rb) = run_default(6, 7);
+        // **The third paired-run test, and the most expensive of them** — six
+        // seats, run twice. `paired_cfg` for the same reason as the other two:
+        // determinism is a property of the arithmetic, not of how long you
+        // accumulate it (`CLAUDE.md` §2), and after T-68 this one run was 65 s
+        // of a 68 s unit target on its own. `tests/determinism.rs` is the
+        // full-scale guard; this is the in-module smoke version of it.
+        let mk = |seed: u64| {
+            let galaxy = Galaxy::generate(GalaxyConfig::new(6, seed)).unwrap();
+            let mut sim = Simulation::with_baseline(galaxy, paired_cfg(seed));
+            let report = sim.run();
+            (sim, report)
+        };
+        let (_a, ra) = mk(7);
+        let (_b, rb) = mk(7);
         assert_eq!(ra.events_processed, rb.events_processed);
         assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
         let pa: Vec<usize> = ra.players.iter().map(|p| p.planets_owned).collect();
@@ -3978,7 +4459,7 @@ mod tests {
         // simulation's deterministic results.
         let mk = |logging: bool| {
             let g = Galaxy::generate(GalaxyConfig::new(6, 2024)).unwrap();
-            let mut s = Simulation::with_baseline(g, test_cfg(2024));
+            let mut s = Simulation::with_baseline(g, paired_cfg(2024));
             if logging {
                 s.set_log_filter(crate::log::LogFilter::all());
             }
@@ -4315,6 +4796,12 @@ mod tests {
     #[test]
     fn a_colony_ship_carries_up_to_the_targets_capacity_and_no_more() {
         let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        // **A third cap joined the two this test is about** (R-O74): settlers
+        // come out of the origin's population. Give this centre people to
+        // spare so the hold-vs-world question stays readable;
+        // `settlers_are_drawn_from_a_real_population` pins the origin case.
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        sim.world.population.insert(home, Kilotons::at_tier(BandTier::IV));
 
         // Colonist capacity is the hold's rung, and the rungs are the mass
         // ladder's.
@@ -4365,32 +4852,45 @@ mod tests {
             Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
         );
 
-        // Each hull's founding `K` is its own infrastructure, and the load is
-        // capped by it. **Both hulls are now `K`-limited, not hold-limited** —
-        // neither can deliver what its hold could carry, because neither leaves
-        // enough infrastructure behind to hold the people.
-        assert_eq!(sim.founding_capacity(HullType::MediumSystems, target), units::population_mass(m_infra));
-        let medium = sim.colony_seed_for(HullType::MediumSystems, target).expect("a Medium hull can found");
-        let general = sim.colony_seed_for(HullType::GeneralSystems, target).expect("a General hull can found");
+        // **The founding capacity is the world's, and the hull has nothing to
+        // do with it** (T-67). Infrastructure left `K`, so this is
+        // `population_mass(k_potential)` — a `Band IV` ceiling on this target —
+        // for every hull alike. `founding_infra` still lands as industrial
+        // stock; it just no longer gates who may live there.
+        assert_eq!(sim.founding_capacity(target), units::population_mass(Band::new(4.0)));
+        let medium = sim.colony_seed_for(HullType::MediumSystems, home, target).expect("a Medium hull can found");
+        let general = sim.colony_seed_for(HullType::GeneralSystems, home, target).expect("a General hull can found");
         let close = |a: Kilotons, b: Kilotons| (a.band().bands() - b.band().bands()).abs() < 1e-9;
-        assert!(close(medium, units::population_mass(m_infra)), "a Medium colony starts at what its hull left");
-        assert!(close(general, units::population_mass(g_infra)), "and so does a General one");
-        assert!(general > medium, "a General hull founds a materially better colony");
 
-        // **The two ladders now agree rung for rung, and that is not a
-        // coincidence — it is the same hull cost read twice.** A hull's hold
-        // carries exactly the population the infrastructure that same hull
-        // leaves behind can hold: `Band I` and `Band I` for a Medium, `Band II`
-        // and `Band II` for a General. Neither side binds, so nothing is
-        // wasted at either end — no hold flying empty for want of somewhere to
-        // put people, no infrastructure standing idle for want of people.
-        assert!(close(medium, m_cap), "Medium: hold {m_cap} vs founding K {medium}");
-        assert!(close(general, g_cap), "General: hold {g_cap} vs founding K {general}");
+        // **Both hulls are hold-limited now, not `K`-limited** — the exact
+        // reverse of the pre-T-67 case. On a world this good neither hull can
+        // fill the ceiling, so each lands precisely what it carried.
+        assert!(close(medium, m_cap), "a Medium lands its hold: {m_cap} vs {medium}");
+        assert!(close(general, g_cap), "and a General lands its: {g_cap} vs {general}");
+        assert!(general > medium, "the hold is the only thing separating them now");
 
-        // **R-V9 is physics, through the hold.** A Limited hull's seed capacity
-        // is below `colony_seed_pop`, so it founds nothing — whatever
-        // infrastructure its hull would have left behind.
-        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, target), None);
+        // And the cap still binds the other way round: on a poor world the
+        // *world* is the limit, and a General hull cannot force more people
+        // onto it than it can hold. This is what stops founding from being able
+        // to trigger the overshoot at all.
+        let poor = sim.planet_entity[12];
+        sim.world.factors.insert(
+            poor,
+            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+        );
+        let capped = sim.colony_seed_for(HullType::GeneralSystems, home, poor).expect("a General hull can found");
+        assert!(
+            close(capped, units::population_mass(Band::new(1.0))),
+            "a General hull on a Band I world lands Band I, not its hold: {capped}"
+        );
+
+        // **R-V9 is physics, through the hold** — and since T-67 it is enforced
+        // there rather than falling out of the infrastructure coupling. A
+        // Limited hull's hold is below `colony_seed_pop`, so it founds nothing
+        // however good the world is.
+        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, home, target), None);
+        assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, home, poor), None);
+        let _ = (m_infra, g_infra);
     }
 
     /// **T-57: extraction is per miner, not per rock.**
@@ -4525,14 +5025,65 @@ mod tests {
         assert!(sim2.roster_permits(0, HullType::MediumSystems), "default config must not gate anything");
     }
 
+    /// **T-68: build time tracks mass, and the two ladders are one ladder.**
+    ///
+    /// `build_years` was flat at 10.0, so a Limited hull and a General hull took
+    /// the same ten years across a **50x** mass ratio — which made the yard
+    /// blind to what it was making and gave a General hull no temporal cost at
+    /// all. `t_build = t_lead + m / F_slip` (`Hyades_industry.md` §3.2), and
+    /// because dry mass *is* mineral cost (R-O57) there is no second ladder to
+    /// keep in step.
+    ///
+    /// Pins the **approved starting schedule** of §3.3 — 2.2 / 3.0 / 12.0 yr —
+    /// which is where the design wants it: a scout is a season's work, a
+    /// coloniser is quick enough to spam, and a General hull is a twelve-year
+    /// commitment an opponent has time to notice and answer. These are approved
+    /// values, **not MC-ratified**; the name says placeholder and so does §3.3.
+    #[test]
+    fn build_time_is_lead_plus_mass_over_throughput() {
+        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        for (hull, want) in
+            [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
+        {
+            let got = sim.build_time(hull_cost(hull, &sim.config));
+            assert!((got - want).abs() < 1e-9, "{hull:?} builds in {got} yr, schedule says {want}");
+        }
+
+        // **The lead time is a floor and the mass term is strictly monotone.**
+        // Asserted as properties rather than as three more numbers, so a
+        // ratification of either constant cannot quietly invert the ordering the
+        // observation model leans on — a big hull must stay a long, visible
+        // commitment (§3.2).
+        assert!((sim.build_time(Price::ZERO) - sim.config.build_lead_years).abs() < 1e-12);
+        let (l, m, g) = (
+            sim.build_time(hull_cost(HullType::LimitedSystems, &sim.config)),
+            sim.build_time(hull_cost(HullType::MediumSystems, &sim.config)),
+            sim.build_time(hull_cost(HullType::GeneralSystems, &sim.config)),
+        );
+        assert!(l < m && m < g, "time must order like mass: {l} {m} {g}");
+
+        // And it is one expression over every order, not a hull table: an
+        // infrastructure rung costs minerals, minerals are mass, so a rung has a
+        // build time by the same rule. `Infra I` is priced as a Medium hull
+        // (R-O80), so it takes a Medium hull's time.
+        assert!(
+            (sim.build_time(infra_rung_price(1, &sim.config)) - m).abs() < 1e-9,
+            "a rung priced like a Medium hull takes a Medium hull's time"
+        );
+    }
+
     /// **The decision cadence is the build cadence, not the economy's (R-O69).**
     ///
-    /// A center that commits a build occupies its yard for `build_years` and
-    /// decides again the moment it clears — not at the next `cycle_years`
-    /// economy tick. With the shipped 10 vs 50 that is a 5x ceiling on how fast
-    /// a rich center can spend, and it was the largest single throttle on the
+    /// A center that commits a build occupies its yard for the **order's own**
+    /// `t_build` and decides again the moment it clears — not at the next
+    /// `cycle_years` economy tick. That was the largest single throttle on the
     /// expansion loop: measured beforehand, the median funded build fired at
     /// 5.5x the price of what it bought.
+    ///
+    /// Since T-68 the occupancy is `t_lead + m / F_slip` rather than a flat
+    /// constant, so this asserts the **relation** — the yard is held for
+    /// exactly as long as the mass that was committed takes — which is what
+    /// keeps it honest when the two constants are eventually ratified.
     ///
     /// This pins the structural property rather than a number, so it survives
     /// retuning either constant: **a busy yard is skipped by the economy tick,
@@ -4543,7 +5094,10 @@ mod tests {
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
-        // A homeworld with minerals to burn will commit something.
+        // A homeworld with minerals to burn will commit something. The log is
+        // on so the assertion can read *what it spent* rather than assume which
+        // order a rich homeworld picks (`logging_does_not_affect_outcomes`).
+        sim.set_log_filter(LogFilter::none().with(crate::log::LogCategory::Production));
         sim.world.stockpile.get_mut(home).unwrap().cyan = 500.0;
         assert!(!sim.world.building_until.contains(home), "yard starts free");
 
@@ -4551,11 +5105,24 @@ mod tests {
         let Some(&done) = sim.world.building_until.get(home) else {
             panic!("a center with 500 minerals and a live frontier must commit something");
         };
+        // Whatever it chose, the yard is held for that order's build time — and
+        // the mass is readable from the log rather than assumed, so this does
+        // not quietly re-encode which order a rich homeworld picks.
+        let committed = sim
+            .log()
+            .iter()
+            .filter_map(|r| match r.event {
+                LogEvent::BuildApplied { cost, .. } => Some(Price::new(cost)),
+                _ => None,
+            })
+            .last()
+            .expect("a committed build logs what it spent");
         assert!(
-            (done - (sim.clock + sim.config.build_years)).abs() < 1e-9,
-            "the yard is held for build_years, got {done} at clock {}",
+            (done - (sim.clock + sim.build_time(committed))).abs() < 1e-9,
+            "the yard is held for t_build({committed}), got {done} at clock {}",
             sim.clock
         );
+        assert!(done > sim.clock + sim.config.build_lead_years, "and never less than the lead time");
 
         // The economy tick must not decide over a busy yard — that would be the
         // cadence sneaking back in through the other door.
@@ -4603,6 +5170,31 @@ mod tests {
         assert!(f.biomass < biomass, "biosphere should have been drawn down, got {}", f.biomass);
         let after = pop + f.biomass;
         assert!((after.kilotons() - before.kilotons()).abs() < 1e-9, "mass not conserved: {before:?} -> {after:?}");
+    }
+
+    /// **T-67: razing infrastructure must not move `K`.** This is what the
+    /// amendment bought, so it is asserted rather than assumed — and it is the
+    /// precondition for every card that attacks industry, because while
+    /// infrastructure sat inside `K` an industrial strike drove the population
+    /// below its ceiling and T-64's logistic answered with a crash.
+    #[test]
+    fn razing_infrastructure_does_not_move_the_ceiling() {
+        let bio_max = Band::new(3.0).in_kilotons();
+        let developed = Factors::new(Band::new(4.0), bio_max, bio_max, Band::new(4.0));
+        let mut razed = developed;
+        razed.infra = Band::ZERO;
+
+        assert_eq!(developed.k(), razed.k(), "K must not depend on infrastructure");
+        assert_eq!(developed.k(), Band::new(3.0), "and it is min(hab, bio_max) — here the biosphere");
+
+        // The ceiling still moves for the two factors that *are* a world's
+        // capacity to hold people, which is where the crash is wanted.
+        let mut cratered = developed;
+        cratered.set_bio_max(Band::new(1.0).in_kilotons());
+        assert_eq!(cratered.k(), Band::new(1.0), "a biosphere strike still lowers K");
+        let mut poisoned = developed;
+        poisoned.hab = Band::new(0.5);
+        assert_eq!(poisoned.k(), Band::new(0.5), "and so does a habitability strike");
     }
 
     /// The unit fix, stated as behaviour: eating the biosphere must not lower
@@ -4744,17 +5336,24 @@ mod tests {
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(7));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
-        // A freshly founded colony: infra at `Band I`, so `K` is `Band I`
-        // however good the world is. Plenty of biomass, so nothing here is
-        // about the mass budget.
+        // A world whose *habitability* is `Band I` — so `K` is `Band I`
+        // however much biomass it carries. **Set through habitability, not
+        // infrastructure** (T-67): infrastructure left `K`, so the engine can
+        // no longer put a population above its ceiling by founding, and the
+        // overshoot is reachable only the way the design intends — by an attack
+        // on habitability or biosphere. That is the whole point of the
+        // amendment, and pinning the crash on a hab-limited world is what keeps
+        // this test measuring the logistic rather than the old coupling.
+        //
+        // Plenty of biomass, so nothing here is about the mass budget.
         let founding = |sim: &mut Simulation, seed: Kilotons| {
             sim.world.factors.insert(
                 home,
                 Factors::new(
-                    Band::new(4.0),
-                    Band::new(4.0).in_kilotons(),
-                    Band::new(4.0).in_kilotons(),
                     Band::new(1.0),
+                    Band::new(4.0).in_kilotons(),
+                    Band::new(4.0).in_kilotons(),
+                    Band::new(4.0),
                 ),
             );
             *sim.world.population.get_mut(home).unwrap() = seed;
@@ -4904,8 +5503,11 @@ mod tests {
         }
         let pid = *sim.world.planet_id.get(next_rock).unwrap();
         let view = sim.view_of(next_rock);
-        let candidates =
-            vec![Candidate { view, ranked: Ranked { id: pid, score: 9.0, class: PlanetClass::MiningOutpost } }];
+        let candidates = vec![Candidate {
+            view,
+            ranked: Ranked { id: pid, score: 9.0, class: PlanetClass::MiningOutpost },
+            settlers_by_hull: [Kilotons::ZERO; 2],
+        }];
         let center_pos = *sim.world.position.get(center).unwrap();
         sim.apply_build_with(
             0,
@@ -5108,7 +5710,7 @@ mod tests {
         // Build a freighter "paired" with the homeworld (its home_center),
         // as apply_build would, but the homeworld is the *less* needy side.
         let from = *sim.world.position.get(home).unwrap();
-        sim.spawn_freighter(0, home, from, outpost);
+        sim.spawn_freighter(0, home, from, outpost, 0.0);
         let freighter = Entity(sim.world.entity_count() as u64 - 1);
 
         // Give the outpost stockpile something to load, then run the load leg.
@@ -5123,6 +5725,230 @@ mod tests {
         let sh = *sim.world.shuttle.get(freighter).unwrap();
         assert_eq!(sh.destination, colony, "freighter should re-route to the needier colony");
         assert_ne!(sh.destination, home, "not back to its original pairing, which is well-funded");
+    }
+
+    /// **R-O74: settlers are people who were somewhere else first, and the
+    /// rest of the hold is minerals that were in someone's bank.**
+    ///
+    /// This is design law #11 reaching the one quantity that was exempt from
+    /// it. `spawn_courier` used to write `pop_cargo` and debit nothing, so
+    /// every coloniser launched created mass — and it was not a rounding
+    /// error: the policy that shipped the biggest seed measured **+13.97%
+    /// colony-years** on an identical colony count, which was a measurement of
+    /// the violation rather than of the policy (`Hyades_industry.md` §1.6).
+    ///
+    /// Asserted as a **balance**, not as two magnitudes. The founding centre
+    /// loses exactly what the ship carries, the new world gains exactly what
+    /// the ship carried, and the ship lands empty — which is the only form of
+    /// the claim that a later change cannot half-satisfy.
+    #[test]
+    fn settlers_are_drawn_from_a_real_population() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        // **A modest world and a big hull**, which is the case the mixed hold
+        // exists for: the ceiling caps the settlers well below the hold, so the
+        // rest of the volume goes as minerals. A General hull to a `Band IV`
+        // world would carry people the whole way and leave no room, which is
+        // correct and would test only half the rule.
+        let target = sim.planet_entity[11];
+        sim.world.factors.insert(
+            target,
+            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+        );
+        sim.world.population.insert(home, Kilotons::at_tier(BandTier::III));
+        {
+            let s = sim.world.stockpile.get_mut(home).unwrap();
+            s.cyan = 30.0;
+            s.magenta = 30.0;
+            s.yellow = 30.0;
+        }
+
+        let pop_before = *sim.world.population.get(home).unwrap();
+        let bank_before = sim.world.stockpile.get(home).unwrap().basic_total();
+        let there_before = *sim.world.population.get(target).unwrap();
+
+        sim.spawn_courier(0, Role::Colonizer, HullType::GeneralSystems, home, target, 0.0);
+        let ship = Entity(sim.world.entity_count() as u64 - 1);
+
+        let settlers = *sim.world.pop_cargo.get(ship).unwrap();
+        let endowment = sim.world.cargo.get(ship).unwrap().basic_total();
+        assert!(settlers > Kilotons::ZERO, "a General hull should have crewed this");
+        assert!(endowment > Price::ZERO, "and filled the rest of its hold out of the bank");
+
+        // **The hold is one budget.** Settlers and minerals mass the same
+        // (R-O32), so what left the centre is exactly what the hull can hold —
+        // no more, and not two independent allowances.
+        let hold = HullType::GeneralSystems.colony_seed_capacity(&sim.config);
+        let carried = settlers + endowment.on_scale::<units::Mass>();
+        assert!(carried <= hold + Kilotons::new(1e-9), "carried {carried} in a {hold} hold");
+
+        // The debit, both halves.
+        let pop_after = *sim.world.population.get(home).unwrap();
+        let bank_after = sim.world.stockpile.get(home).unwrap().basic_total();
+        assert!(
+            ((pop_before - pop_after) - settlers).kilotons().abs() < 1e-9,
+            "the centre lost {} people for a seed of {settlers}",
+            pop_before - pop_after
+        );
+        assert!(
+            ((bank_before - bank_after) - endowment).kilotons().abs() < 1e-9,
+            "the centre lost {} minerals for an endowment of {endowment}",
+            bank_before - bank_after
+        );
+
+        // And the credit, on arrival — the ship lands empty.
+        sim.sys_colony_arrive(ship);
+        let there_after = *sim.world.population.get(target).unwrap();
+        assert!(
+            ((there_after - there_before) - settlers).kilotons().abs() < 1e-9,
+            "the world gained {} people from a seed of {settlers}",
+            there_after - there_before
+        );
+        assert!(
+            (sim.world.stockpile.get(target).unwrap().basic_total() - endowment).kilotons().abs() < 1e-9,
+            "the new colony should start on the endowment it was sent with"
+        );
+        assert_eq!(*sim.world.pop_cargo.get(ship).unwrap(), Kilotons::ZERO);
+        assert_eq!(sim.world.cargo.get(ship).unwrap().basic_total(), Price::ZERO);
+    }
+
+    /// **R-IND12: the seed is priced in time — what it saves the child against
+    /// what it costs the origin to replace.**
+    ///
+    /// Not a fraction of anything. `sim::settler_target` carries the objective,
+    /// the symbol table, the two rival formulations that were measured and
+    /// rejected, and why the optimum is gridded rather than solved. This pins
+    /// the properties a retuning must not break, because the two rejected
+    /// formulations each failed exactly one of them:
+    ///
+    /// - **something always ships** — the rate formulation sent nothing from an
+    ///   origin below `K_p/2` to a distant world, i.e. nothing in the early game;
+    /// - **distance reduces it** — that is the whole content of the discount;
+    /// - **a small origin is not stripped** — the fill-time formulation took 99%;
+    /// - **a poorer destination takes less**, since the seed is capped by what
+    ///   that world can hold.
+    #[test]
+    fn the_seed_is_priced_in_time_not_as_a_share() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let target = sim.planet_entity[11];
+        let cap = Band::new(3.0);
+        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Band::ZERO);
+        sim.world.factors.insert(home, factors(cap));
+        sim.world.factors.insert(target, factors(cap));
+        let here = *sim.world.position.get(home).unwrap();
+        sim.world.position.insert(target, here);
+        let k = units::population_mass(cap);
+        let hold = Kilotons::new(f64::MAX / 4.0); // ask the policy, not the hull
+
+        // **Something always ships**, at every fill level — including the one
+        // that broke the marginal-rate formulation, an origin well below its own
+        // growth peak.
+        for fill in [0.05, 0.2, 0.5, 0.9, 1.0] {
+            sim.world.population.insert(home, k * fill);
+            let got = sim.settler_target(home, target, hold);
+            assert!(got > Kilotons::ZERO, "an origin at {fill} of its ceiling must still colonise, got {got}");
+            assert!(got <= k * fill * 0.5 + Kilotons::new(1e-9), "and must not be stripped: {got} of {}", k * fill);
+        }
+
+        // **Distance reduces it.** Same origin, same destination, further away.
+        sim.world.population.insert(home, k);
+        let near = sim.settler_target(home, target, hold);
+        sim.world.position.insert(target, Vec3::new(here.x + 3000.0, here.y, here.z));
+        let far = sim.settler_target(home, target, hold);
+        assert!(sim.travel_discount(home, target) < 0.05, "3,000 ly should be heavily discounted");
+        assert!(far < near, "a distant world is worth less to seed: {far} vs {near}");
+
+        // **A poorer destination takes less**, because the seed cannot exceed
+        // what that world can hold.
+        sim.world.position.insert(target, here);
+        sim.world.factors.insert(target, factors(Band::new(1.0)));
+        let poor = sim.settler_target(home, target, hold);
+        assert!(poor <= units::population_mass(Band::new(1.0)), "capped by the destination: {poor}");
+        assert!(poor < near, "and it is less than a rich destination takes: {poor} vs {near}");
+    }
+
+    /// **The hull is chosen against what will actually be loaded.**
+    ///
+    /// The coloniser hull decision reads `Candidate::settlers_by_hull`; the
+    /// launch reads `colony_seed_for`. Those are two call sites of one rule, and
+    /// this asserts they agree for every hull and every candidate — because the
+    /// failure mode if they drift is silent and expensive: a General hull bought
+    /// on settlers that never board.
+    ///
+    /// This repo has the scar. `mining_pair_cost` carries a comment explaining
+    /// that it must match what `apply_build_with` will spend, and it must,
+    /// because nothing checks it. This one is checked.
+    #[test]
+    fn the_hull_choice_sees_what_the_launch_will_load() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let here = *sim.world.position.get(home).unwrap();
+        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Band::ZERO);
+        let hulls = [HullType::MediumSystems, HullType::GeneralSystems];
+
+        for kp in [1.0, 2.5, 4.0] {
+            for kc in [0.5, 1.0, 2.5, 4.0] {
+                for fill in [0.05, 0.5, 1.0] {
+                    for dist in [0.0, 20.0, 400.0] {
+                        let target = sim.planet_entity[11];
+                        sim.world.factors.insert(home, factors(Band::new(kp)));
+                        sim.world.factors.insert(target, factors(Band::new(kc)));
+                        sim.world.position.insert(target, Vec3::new(here.x + dist, here.y, here.z));
+                        sim.world.population.insert(home, units::population_mass(Band::new(kp)) * fill);
+                        for (i, hull) in hulls.iter().enumerate() {
+                            let hold = hull.colony_seed_capacity(&sim.config);
+                            let advertised = sim.settler_target(home, target, hold);
+                            let loaded = sim.colony_seed_for(*hull, home, target).unwrap_or(Kilotons::ZERO);
+                            assert!(
+                                (advertised - loaded).kilotons().abs() < 1e-12,
+                                "hull {i} K_p={kp} K_c={kc} fill={fill} d={dist}: \
+                                 the decision saw {advertised}, the launch loaded {loaded}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// **A centre cannot crew a hull it has no people for.**    /// **A centre cannot crew a hull it has no people for.**    /// **A centre cannot crew a hull it has no people for.**
+    ///
+    /// Whatever the policy says is worth sending, the hold is still a ceiling and
+    /// the origin is still a floor — so the same General hull delivers a full
+    /// hold from a big centre and a fraction of one from a small centre. This is
+    /// what makes the hull choice a real question again: before conservation a
+    /// hold was a promise, and "settlers per mineral" could always be paid.
+    #[test]
+    fn a_hold_is_an_upper_bound_not_a_promise() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let target = sim.planet_entity[11];
+        sim.world.factors.insert(
+            target,
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+        );
+        let hold = HullType::GeneralSystems.colony_seed_capacity(&sim.config);
+
+        // Rich enough that the policy would happily send more than fits: the
+        // hold binds, and the hull lands full.
+        sim.world.factors.insert(
+            home,
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+        );
+        sim.world.population.insert(home, units::population_mass(Band::new(4.0)));
+        let full = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();
+        assert!((full - hold).kilotons().abs() < 1e-9, "a rich centre fills the hold: {full} vs {hold}");
+
+        // Poor: the origin binds, and the hull flies part-laden.
+        sim.world.population.insert(home, hold * 2.0);
+        let got = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();
+        assert!(got < hold, "a small centre cannot fill a General hold: {got} vs {hold}");
+
+        // **The floor is absolute.** A centre with nothing to spare ships
+        // nobody — a world emptied of people has no logistic left to regrow on.
+        sim.world.population.insert(home, units::POPULATION_SEED_FLOOR);
+        assert_eq!(sim.colony_seed_for(HullType::GeneralSystems, home, target), Some(Kilotons::ZERO));
     }
 
     #[test]

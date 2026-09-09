@@ -46,7 +46,29 @@ There is not much to the physics, by design:
 - **Structures** are spatial: docks (a planetside build footprint), defenses (interdiction templates / PDS), gate endpoints. Some are mobile.
 - **Minerals** — three basics (Cyan / Magenta / Yellow), three supers (Red / Green / Blue), and **Platinum**, the apex ultra-resource. The two color triads are deliberately the CMY and RGB primaries; Platinum is named and rendered as a metallic silver-white so the top tier reads instantly distinct from the six saturated hues. Minerals fund cards and builds.
 
-## 2a. The planet model — three-factor carrying capacity
+## 2a. The planet model — ~~three-factor~~ **two-factor** carrying capacity, plus an industrial stock
+
+> **Amended by `Hyades_industry.md` §1.1 (Rev 1): infrastructure is removed from
+> the carrying-capacity minimum.** `K = min(habitability, bio_max)`. Infrastructure
+> is still built, still razed, and still the softest of the three — but it is an
+> **industrial stock** that mines and fabricates, not a ceiling on population.
+>
+> **Why:** infrastructure is the thing the design wants attackable *without*
+> killing people, and while it sat inside `K` it could not be. T-64's discrete
+> logistic goes strongly negative above `K`, so cutting a world's ceiling makes
+> its population **overshoot below** the new one rather than settle at it —
+> measured at `2K → 0.25K` in one step. An infrastructure strike deep enough to
+> matter was a population strike with extra steps. Removing the term keeps the
+> crash exactly where it is wanted: a habitability or biosphere strike still
+> collapses a population, because those genuinely are a world's capacity to hold
+> people.
+>
+> The rest of this section stands as written, with "infrastructure" read as the
+> industrial stock rather than as a `K` term. See `Hyades_industry.md` §1 for the
+> full statement and §1.4 for what the change costs in engine terms — chiefly that
+> R-O76's founding-infrastructure result no longer measures anything.
+
+
 
 Borrowed in spirit from *Stars!* (Mare Crisium), which gates population on gravity / radiation / temperature. Hyades keeps the three-factor idea but chooses factors with different *malleability*, all abstracted onto the **same scale as population**:
 
@@ -58,13 +80,13 @@ Borrowed in spirit from *Stars!* (Mare Crisium), which gates population on gravi
 
 Two rules bind the model:
 
-- **Carrying capacity `K = min(habitability, bio_max, infrastructure)`.** Liebig's law of the minimum: the scarcest factor caps the planet, so pop grows logistically toward that minimum and locks there. "Lock at carrying capacity" is now per-planet and can sit well below a planet's potential.
+- **Carrying capacity `K = min(habitability, bio_max)`** *(amended — infrastructure removed, see the note at the head of this section)*. Liebig's law of the minimum: the scarcer of the two factors caps the planet, so pop grows logistically toward that minimum and locks there. "Lock at carrying capacity" is per-planet and can sit well below a planet's potential.
 
   **The logistic runs on people, not on `K`'s Band (T-64).** `K` is a *classification* — a magnitude tier, which is what makes habitability, biosphere and infrastructure comparable at all — but the growth step is `x + r·x·(1 − x/K)` on the **mass** `K` stands for. Stepping the Band instead made `r` a rate of change of an exponent, so one `growth_rate` meant a different number of people at every point on the ladder. Two consequences worth carrying:
   - **`growth_rate < 2` is arithmetic, not a tuning.** The step is conjugate to the logistic map with `μ = 1 + r`, so the fixed point at `K` period-doubles at `r = 2` and goes chaotic near 2.57 (May, *Nature* 261:459–467, 1976).
   - **The clamp at `K` hides that from below.** A population climbing toward `K` overshoots, clamps exactly to it, and the growth term is then zero — so a too-large `r` does not oscillate visibly, it collapses the logistic into a step function that fills a world in one cycle *and scores well while doing it*. A parameter sweep cannot see this; only the shape of the approach can.
 
-  **All three terms are Bands** (`Hyades_mineral_cost_curve.md` §2.6) — the minimum is over magnitude *tiers*, and the biosphere enters as its **pristine ceiling** `bio_max`, not as its standing stock. The standing biosphere is a **mass in kilotons** and is what growth is *paid out of*; it is deliberately not a term in this minimum. Stated as `min(hab, bio, infra)` over three bare `f64`s — which is how the engine implemented it until R-O66 — the expression takes a minimum of a mass and two levels, and a world's ceiling falls every time its own people eat. See `Hyades_standing_layer_and_observation.md` §9.7 and `src/units.rs`.
+  **Both terms are Bands** (`Hyades_mineral_cost_curve.md` §2.6) — the minimum is over magnitude *tiers*, and the biosphere enters as its **pristine ceiling** `bio_max`, not as its standing stock. The standing biosphere is a **mass in kilotons** and is what growth is *paid out of*; it is deliberately not a term in this minimum. Stated as `min(hab, bio, infra)` over three bare `f64`s — which is how the engine implemented it until R-O66 — the expression takes a minimum of a mass and two levels, and a world's ceiling falls every time its own people eat. See `Hyades_standing_layer_and_observation.md` §9.7 and `src/units.rs`.
 - **Growth rate is shaped by all three factors together.** Even though only the minimum sets the ceiling, the *speed* of filling depends on habitability, biosphere, and infrastructure jointly — so two planets with the same K can fill at very different rates.
 
 **Why the model exists — warfare and trade choices:**

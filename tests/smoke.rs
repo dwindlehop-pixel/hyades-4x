@@ -9,6 +9,13 @@ use hyades_engine::units::Measure;
 /// `examples/bench_hex_size.rs`); release-mode throughput comfortably
 /// clears the confirmed 2.5-simulated-years/real-second target, but these
 /// tests don't need the full default horizon to prove what they're checking.
+///
+/// **500 → 300 yr at T-68**, for the reason `CLAUDE.md` §2 gives for watching
+/// test *targets* rather than test *asks*: `t_build` now tracks hull mass, so a
+/// Medium hull takes 3.0 yr instead of 10, centres decide three times as often,
+/// and the entity count follows. Nothing here asks a long-run question — every
+/// assertion is an invariant that holds at any horizon where expansion has
+/// started — so the horizon is the part that was safe to cut.
 fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimReport) {
     let galaxy = Galaxy::generate(GalaxyConfig::new(players, seed)).unwrap();
     let mut cfg = SimConfig::new(seed);
@@ -21,7 +28,7 @@ fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimR
 #[test]
 fn all_fair_counts_run_and_expand() {
     for &n in &[2usize, 3, 6, 12] {
-        let (_sim, report) = run_short(n, 100 + n as u64, 500.0);
+        let (_sim, report) = run_short(n, 100 + n as u64, 300.0);
         assert_eq!(report.players.len(), n);
         assert!(report.planets_scanned_total >= n, "no scanning for {n} seats");
         let colonies: usize = report.players.iter().map(|p| p.colonies).sum();
@@ -31,17 +38,20 @@ fn all_fair_counts_run_and_expand() {
 
 #[test]
 fn snapshot_is_consistent_with_report() {
-    let (sim, report) = run_short(6, 314, 500.0);
+    let (sim, report) = run_short(6, 314, 300.0);
     let snap = sim.snapshot();
     // Owned-planet totals computed two different ways must agree.
     let owned_from_report: usize = report.players.iter().map(|p| p.planets_owned).sum();
     let owned_from_snapshot = snap.planets.iter().filter(|p| p.owner.is_some()).count();
     assert_eq!(owned_from_report, owned_from_snapshot);
-    // K = min(hab, bio_max, infra) must hold for every planet snapshot — a
-    // minimum over **Bands**. The standing biosphere is a mass and is
-    // deliberately not a term; see `hyades_engine::units`.
+    // `K = min(hab, bio_max)` must hold for every planet snapshot — a minimum
+    // over **Bands**, and since T-67 (`Hyades_industry.md` §1.1) **without an
+    // infrastructure term**. Infrastructure is the industrial stock: it mines
+    // and fabricates and can be razed, and razing it must not move population.
+    // The standing biosphere is a mass and is deliberately not a term either;
+    // see `hyades_engine::units`.
     for p in &snap.planets {
-        let expected = p.habitability.min(p.bio_max).min(p.infrastructure);
+        let expected = p.habitability.min(p.bio_max);
         assert!((p.k.bands() - expected.bands()).abs() < 1e-9);
         // The standing biosphere never exceeds its own pristine ceiling.
         //
@@ -70,8 +80,8 @@ fn snapshot_is_consistent_with_report() {
 
 #[test]
 fn determinism_across_full_runs() {
-    let (_a, ra) = run_short(6, 77, 500.0);
-    let (_b, rb) = run_short(6, 77, 500.0);
+    let (_a, ra) = run_short(6, 77, 300.0);
+    let (_b, rb) = run_short(6, 77, 300.0);
     assert_eq!(ra.events_processed, rb.events_processed);
     assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
 }
@@ -81,12 +91,12 @@ fn stepping_matches_running() {
     // Driving the event loop by hand must reach the same place as run().
     let galaxy = Galaxy::generate(GalaxyConfig::new(3, 9)).unwrap();
     let mut cfg = SimConfig::new(9);
-    cfg.horizon_years = 500.0;
+    cfg.horizon_years = 300.0;
     let mut a = Simulation::with_baseline(galaxy, cfg);
     while a.step() {}
     let ra = a.report();
 
-    let (_b, rb) = run_short(3, 9, 500.0);
+    let (_b, rb) = run_short(3, 9, 300.0);
     assert_eq!(ra.events_processed, rb.events_processed);
     assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
 }

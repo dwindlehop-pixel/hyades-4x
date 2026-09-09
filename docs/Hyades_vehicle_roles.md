@@ -169,6 +169,22 @@ carries no such information itself.
   capability zero rather than a forbidden assignment (§4 preamble). The pop is expended
   on founding — it becomes the colony's seed population, the same way the hull
   itself becomes the colony's level-1 infrastructure.
+- **The settlers come from a real world (R-O74, resolved —
+  `Hyades_industry.md` §1.7).** They are debited from the founding centre's
+  population at launch, not created at it. Until this landed the engine
+  conjured them, and the size of the violation was measurable: the coloniser
+  policy that shipped the biggest seed scored **+13.97% colony-years** on an
+  identical colony count, which was a measurement of the free mass rather than
+  of the policy (§1.6). **How many is a demand-side question**, not a share of
+  the parent: the seed is priced in time — what it saves the destination against
+  what it costs the origin to regrow — discounted by the voyage (R-IND12).
+- **A hold may carry any mix of settlers and minerals.** Whatever volume the
+  people do not fill leaves with minerals out of the founding centre's own
+  bank, and lands in the new colony's stockpile to jumpstart production. Both
+  halves mass the same (R-O32), so the mix is invisible from outside — which is
+  the point, since acceleration must not read out cargo *type* (design law
+  #10). This **supersedes "no mineral seed for colonies, homeworlds only"**: a
+  colony is not granted minerals, it is *sent* them by a parent that paid.
 - **Default:** target highest-rank ProductionCenter-class world, else
   highest-rank Colony-class (`autopilot_colonization_growth.md` §4).
 - **Arrival — uncontested:** founds the colony; the ship **recycles into
@@ -181,7 +197,10 @@ carries no such information itself.
 - **Contingent — contested** (R-AC8): target already claimed → returns
   toward home, then goes to Reserve (§4.6) like any entity with no further
   task. Because it still carries its pop, that pop returns with it (available
-  to re-task at another target) rather than being lost.
+  to re-task at another target) rather than being lost. **Under conservation
+  that sentence became an entry rather than a reassurance:** the ship unloads
+  settlers and endowment back into its home centre on arrival, because a hull
+  parked while still laden would hold that mass out of the economy for good.
 
 ### 4.3 Miner — Systems
 

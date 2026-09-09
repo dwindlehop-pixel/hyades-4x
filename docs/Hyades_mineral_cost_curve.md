@@ -33,6 +33,14 @@ continuum:
 `primary = round(T·a/(a+b+c))`, `secondary = round(T·b/(a+b+c))`,
 `tertiary = round(T·c/(a+b+c))`.
 
+> **Works have their own, wider ratio system** (`Hyades_industry.md` §5.1).
+> Infrastructure purchases may go all the way to **`1:0:0` — a single colour** —
+> which card costs may not, because a card is a choice made once and a
+> colour-locked card is *unavailable* to an archetype poor in that colour (design
+> law #13). A work is a repeated purchase **with alternatives**, so a sole-colour
+> route is a specialisation rather than a lock. That is the mechanism which makes
+> the galaxy's mineral distribution bite on *development* and not only on cards.
+
 **Design guidance (R-MC1, open):** peak ratio for signature, single-tree
 cards — they should feel expensive off-domain and cheap in it. Floor ratio
 for cross-tree combo cards, since the combo-backbone law (`Hyades_command_

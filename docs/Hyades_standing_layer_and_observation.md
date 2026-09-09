@@ -234,6 +234,33 @@ trees is a counter-graph commitment that builds nothing and is invisible
 without a scout. Three Doctrine cards is an economic opening, free to read but
 only after trajectories resolve.
 
+**How writes compose — the layering algebra (`Hyades_industry.md` §6).** Once
+more than one card writes the same standing state, the composition rule has to be
+decided or the tree becomes unanalysable. Three write kinds, three algebras, each
+chosen for a property rather than for convenience:
+
+| Write kind | Algebra | Bounded by |
+|---|---|---|
+| **Scalar coefficient** (Design efficiency, ceilings, knees) | `x = x_base · Π f_i` — **multiplicative** | nothing intrinsic; priced per tier |
+| **Simplex quantity** (Doctrine allocation, cost mix) | `share_j = w_j / Σ w` — **additive weights, normalised** | normalisation, with no clamp |
+
+**Two algebras, not three**, and the third was a defect worth recording: an
+earlier draft made the cost mix a *rotation* of the colour vector, and rotations
+in three dimensions do not commute — which falsifies the very property this
+section exists to guarantee. A mix is not an orientation, it is a **share
+vector**, and it composes exactly as the allocation does.
+
+Products and sums both **commute**, so cards give the same result in any order —
+order-dependence in a permanent, tier-gated tree is unanalysable at Monte-Carlo
+scale and unlearnable at the table. Normalisation is **a bound without a clamp**,
+which matters because a clamp is exactly what let T-64's broken population
+logistic keep scoring well. And because a mix is a share of a total set
+elsewhere, a mix card moves the composition and never the bill — no card is a
+discount.
+
+**Commutativity is the acceptance test**, and it belongs in the engine as a
+property test over the card list rather than as a claim here (R-IND4).
+
 **Politics has nothing to write to (R-O27).** The `Doctrine` struct has no
 diplomatic fields — no trade lanes, partners, or pact state. Same gap as
 galaxy §6's R-A3.

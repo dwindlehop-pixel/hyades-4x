@@ -19,6 +19,37 @@ work rather than describing game content: it makes bit-reproducibility a
 engine-status block lists the five implementation blockers, audited — and what
 is already clean, which is most of the foundation.
 
+**`docs/Hyades_industry.md` (Rev 1)** is the newest spec and the one that
+**amends the planet model**: `K = min(hab, bio_max)` — infrastructure leaves the
+carrying-capacity minimum and becomes an industrial stock that mines and
+fabricates. Read §1 before touching anything economic, because it invalidates two
+measured results on purpose (R-O76's founding-infrastructure finding and T-57's
+ratified crew size) and says why in each case. It also carries the **layering
+algebra** for how Design and Doctrine writes compose (§6) — products, simplices
+and rotations, with commutativity as the acceptance test.
+
+**Its §8.1 outranks everything else in it and is not about industry: refined mass
+traverses real space.** Minerals, supers and apex cross the theater on hulls,
+under light-lag, where they can be attacked, diverted, stolen and blockaded — so
+a trade is a *voyage*, not a ledger entry, and the Exchange settles into a
+freight leg. Every price gradient and every market in the design is downstream of
+it; take traversal away and piracy, theft, blockade and conquest become flavour
+text. Nothing else in the document is Monte-Carlo ratified; every magnitude is a
+flagged placeholder.
+
+**`docs/Hyades_trees_and_card_value.md` (Rev 1)** is what to read before
+touching a card, a tree, or a balance measurement. Two things in it change how
+you work. **The tone is satire** — every winning game is the winner's own story
+about how love won, told sincerely, with the player registering the gap; §1 names
+the target and forbids winking, and it *amends* `Hyades_galaxy_and_autopilot.md`
+§7's deliberate ambiguity about the Beloved Republic. And **there are six
+objectives, not one**: the single global colony-count objective every
+ratification so far has used is correct for Expansion and actively misleading for
+the other five trees, four of which had a live metric farm in their obvious
+formulation (§2.5). Card value is the **fractional reduction in the doubling time
+of its own tree's stock**, measured at earliest legal play, designed to the 92nd
+percentile.
+
 **`docs/Hyades_politics_trade_and_intelligence.md` (Rev 1)** specifies the two
 systems the Politics tree needs and neither of which exists: the Exchange with
 `$`, and granular shared intelligence. Its §0 is the organizing thesis and worth
@@ -76,21 +107,54 @@ only exception and they are offline, never in CI. Current costs:
 
 | step | cost |
 |---|---|
-| `cargo test --all-targets` (unit + determinism + smoke) | ~112 s (unit target 59.5 s) |
+| `cargo test --all-targets` (unit + determinism + smoke) | ~85 s (unit target ~35 s) |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
-| `coverage_trace` | ~19 s |
-| `coverage_time` | ~49 s |
-| `montecarlo` | ~56 s |
+| `coverage_trace` | in the slow job; ~30 min for the whole `balance` job post-T-68 |
+| ~~`coverage_time`~~ | **out of CI** — ~8 min, *and* its doctrine comparison is now vacuous (below) |
+| `montecarlo` | 48 s — pinned to a 1,000-yr horizon at T-68; it was 6 full 4,000-yr runs and blew a 25-minute job budget |
 
-**The unit target went 97 s → 144 s at T-62 and back to 59.5 s at T-64**, and
-neither move was about the tests — they have pinned a 600-year horizon
-(`test_cfg`) throughout. T-62's cost was hauling (`examples/haul_census`): the
-Banded mineral field multiplied ore-per-rock by three orders of magnitude
-against a fixed freighter hold, so the round trips multiplied from the first
-cycle. T-64 gave it back by taking the `ln`/`powf` out of the growth step. The
-lesson both times: **when a test target moves, look at what the simulation
-started doing, not at what the tests are asking.** The remaining ratification is
-T-24's floor breach (R-O82).
+**T-68 broke the `examples (fast)` job, and the fix was not uniform.**
+`montecarlo` was six full-horizon runs to answer "does the engine run without
+panicking", which needs seed breadth and not horizon — pinned to 1,000 yr and
+the duplicated seed-42 run reused, 61 s → 48 s. `coverage_time` was **removed**
+rather than trimmed, because trimming it would have preserved a comparison that
+no longer compares anything: its second bed moves `medium_fleet_size`, which
+T-56 stage 3c turned back into a pure price, and R-IND11's ablation B measured
+coloniser hull price at −0.08%. Both beds now print identical coverage.
+**Distinguish a check that got expensive from a check that stopped asking
+anything** — the first wants fewer samples, the second wants deleting.
+
+**The unit target went 97 s → 144 s at T-62, back to 59.5 s at T-64, then
+87 s → 507 s → ≈55 s at T-68**, and no move was about the tests. T-62's cost was
+hauling (`examples/haul_census`): the Banded mineral field multiplied ore-per-rock
+by three orders of magnitude against a fixed freighter hold, so the round trips
+multiplied from the first cycle. T-64 gave it back by taking the `ln`/`powf` out
+of the growth step. **T-68 made `t_build` track hull mass** — a Medium hull went
+from 10 yr to 3.0 — so centres decide three times as often and the entity count
+follows. The lesson every time: **when a test target moves, look at what the
+simulation started doing, not at what the tests are asking.** The remaining
+ratification is T-24's floor breach (R-O82).
+
+**T-68's 507 s was four tests paying in horizon for questions horizon does not
+answer**, and finding that out took one measurement rather than a guess — timing
+each suspect individually, after `--report-time` turned out to be nightly-only:
+
+- **One cadence test was 437 s of the 507 on its own.** It bought extra round
+  barriers with a 1,400-year run. Shortening the *cadence* instead of the horizon
+  gives it **ten** barriers where it had four, for 6% of the cost — "cut samples,
+  not the question", and here the sample was the wrong axis entirely.
+- **Three paired-run tests assert an arithmetic identity** (logging is a side
+  channel; the round layer is inert while everyone passes; same seed, same
+  outcome) and pay *double* horizon for it. They now share `paired_cfg` at 250 yr,
+  which is the same argument this file already makes for `tests/determinism.rs`.
+- **Smoke went 500 → 300 yr** (87 s → 17 s). Every assertion in it is an
+  invariant that holds at any horizon where expansion has started.
+
+The general form, worth having separately from the instances: **a test's horizon
+is a cost, not a strength.** Ask what the assertion actually needs — an identity
+needs none, a cadence needs periods rather than years, an invariant needs the
+mechanism to have fired once. A horizon inherited from when runs were cheap is
+the first thing to check when a target moves, and the last thing to defend.
 
 Ratifying the snowball defaults blew every one of these past the budget at once —
 the unit suite alone went 6 s → 315 s — because a default-config run is now a
@@ -192,6 +256,29 @@ entity count compounds:
 | 2,000 | 0.88 s | **31×** | ρ = 0.923 (healthy-band 0.859, worst seed 0.907) |
 | 1,500 | 0.36 s | **76×** | ρ = 0.833 (healthy-band 0.831) |
 | 1,000 | 0.12 s | 232× | ρ = 0.358 — too early, do not use |
+
+**Those costs are from three landings ago and are now wrong by two orders of
+magnitude.** Re-measured after T-68 (`examples/horizon_cost`, seed 1, 3 seats):
+
+| horizon | cost | colonies | % of the 4,000-yr total |
+|---|---|---|---|
+| 500 | 0.6 s | 261 | 7.8% |
+| 1,000 | 11.4 s | 2,510 | 75.2% |
+| 1,500 | 64.3 s | 3,269 | 97.9% |
+| 2,000 | 123.2 s | 3,333 | 99.9% |
+| 4,000 | ~400 s | 3,337 | 100% |
+
+The ρ column above is **not** re-measured and should not be assumed to carry
+across — it was calibrated on a bed whose expansion loop ran at a fraction of
+this speed.
+
+**Read the last column before choosing a horizon.** T-68 accelerated the
+expansion loop enough that **colony count saturates by ~1,500 years**: the back
+half of a 4,000-year run simulates a full galaxy at peak entity count to add
+four colonies. Count stops discriminating there; colony-*years* keep accruing,
+so the guard still wants the full run, but any search whose objective is count
+is paying 3.3x for 0.1%. `horizon_cost` is the tool, it is not in CI, and it
+should be re-run after anything that moves the expansion loop.
 
 **`colonies@2000` is the default screen** (`examples/proxy_metric_calibration.rs`);
 `colonies@1500` is the aggressive option when the search stays among working
@@ -341,6 +428,33 @@ was invisible in the objective — because the quantity that broke was in a
 - **A parameter that reaches the objective through a derived quantity cannot be
   swept alone.** Since R-O58 the cost ladder *is* the capacity ladder; sweeping
   one leg of it in isolation is measuring two things and reporting one.
+
+### A seventh shape: an aggregate that moves against every one of its parts
+
+R-IND11 (`Hyades_industry.md` §1.6) added one the table above does not cover,
+and it is the only one where **nothing was broken.** A dwell metric — time from
+a colony's founding to its own first build — *rose* 253.5 → 335.8 yr under the
+policy that founds colonies **399 years earlier**, which read as a clean
+refutation of the mechanism it was built to test. Split by what that first build
+was, **both components had fallen** (72.4 → 66.3 and 401.4 → 342.9). A weighted
+mean can only rise while both group means fall if the weights move, and they had:
+the hull-first share went **55.0% → 97.4%**, on every seed.
+
+So the measurement was correct, the population it averaged over was not the same
+population, and the sign it reported was the opposite of the mechanism.
+
+**The rule: any metric averaged over a set the intervention re-selects must
+report its mix beside it.** This is the artifact list's invariance rule (§"never
+let the metric's denominator be something the game can play") applied one level
+down — there the denominator was farmable, here the *composition* is. Ask of an
+aggregate: *does the treatment change who is in this average?* If yes, the
+aggregate alone can say anything, and a decomposition is not optional polish.
+
+**And it is why the ablation went first.** Both candidate mechanisms had been
+refuted by their own signatures before either was believed, and the two one-line
+ablations named the cause anyway — seed mass, not hull, not price, not transit.
+`CLAUDE.md`'s ordering held: ablation refutes, instrumentation explains, and a
+metric that disagrees with an ablation is the metric's problem to answer for.
 
 ### CI gates
 
@@ -603,6 +717,17 @@ one, stop and flag it.
    and *scores well* while doing it. `the_population_logistic_is_a_rate_and_not_a_step`
    is the guard.
 
+   **And population is conserved across space, not only across the biosphere
+   (R-O74, `Hyades_industry.md` §1.7).** Growth draws people out of biomass;
+   *founding* moves people that already exist. Until this landed, a coloniser's
+   settlers were written into its hold with nothing debited anywhere — one
+   exemption from this law, on the exact path the expansion loop runs on. It was
+   not small: the coloniser policy that shipped the biggest seed measured
+   **+13.97% colony-years on an identical colony count**, and two ablations put
+   the entire effect on the seed mass rather than on the hull, its price or
+   transit. **An exemption from conservation is not a modelling shortcut, it is
+   a free resource, and a search will find it and call it a strategy.**
+
    **The exchange is a mass difference, not a level difference (R-O66).** A
    population at Band `b` masses `KT(b) = KT_I · BAND_STEP^(b−1)`, so a step from
    `b` to `b'` costs `KT(b') − KT(b)` — one Band up is `BAND_STEP` *times* the
@@ -704,6 +829,25 @@ one, stop and flag it.
   No hand-waved numbers presented as derived.
 - **Validate numerically before committing to a design.** Probe the scaling
   relationship (Python or a throwaway harness) *first*, then commit.
+- **Define every term and variable before you use it.** A symbol that appears in
+  a formula, a table, a comment or a commit message without a stated meaning is a
+  defect, not a shorthand — the reader cannot check the claim, and neither can
+  the next measurement. This bit R-IND12: `§1.7` introduced `endowment_fraction`
+  in prose, then wrote `× f` in one place and `31.6/f` in another with **`f`
+  never defined anywhere**, so the one line carrying the design's actual
+  consequence was unreadable.
+
+  Concretely, and in this order:
+  - **Name it in full at first use**, then bind the symbol explicitly —
+    "…the endowment fraction `f`…" — not the symbol alone.
+  - **A spec section with more than two symbols gets a table**: symbol, name,
+    unit, and where it is set. `Hyades_industry.md` §3.2 does this and is
+    readable years later; §1.7 did not and was not.
+  - **Units are part of the definition.** `Band`, `Kilotons` and `Price` are
+    different things (§4), and a formula that does not say which one a symbol is
+    has already lost the argument the type system exists to win.
+  - **Single letters are for quantities with a stated definition nearby**, never
+    for a concept. If it takes a sentence to say what it is, it gets a name.
 - **Flavor text is the author's own.** Never silently overwrite it.
 - Direct, technical register. Concrete decisions over hedging.
 - **Never force-push a designated feature branch — not even `--force-with-lease`
@@ -872,12 +1016,25 @@ changes how you *work*, not what is left to do:
   | pre-T-62 bed, 3 seats, 4 kyr *(container)* | 19,406 | 78.7 yr/s | 31× |
   | **T-62 (Banded mineral field), same run** | 23,227 | **35.0 yr/s** | **14×** |
   | + T-64 (logistic on mass, no conversion in the step) | 23,227 | 42 yr/s | 17× |
+  | post-R-O70 bed, 3 seats, 4 kyr | ~14,700 | 183–217 yr/s | ~79× |
+  | **T-68 (`t_build` tracks hull mass), same bed** | — | **10–11 yr/s** | **~4×** |
 
   **T-62 halved it, and the mechanism is hauling — not vehicles and not mining**
   (`examples/haul_census`). Vehicles rose 1.20× and extraction ticks 1.02×, but
   **freighter transfers rose 6.81×** because the log-normal field made the same
   rocks hold 2,256× the ore and a freighter's hold is a fixed size. Cost is
   proportional to ore hauled, not to worlds mined.
+
+  **T-68 took ~19x of it in one change, and that is the live problem.** Making
+  `t_build` track hull mass dropped a Medium hull from 10 yr to 3.0, so yards
+  decide three to four times as often and entity count follows. It bought
+  **+10.5% colony-years on both measured seeds** with colony count unmoved, so
+  the change is right and is not being reverted — but at **10–11 yr/s** the
+  margin at 3 seats / 4 kyr is ~4x, and since degradation is superlinear in
+  duration (below), the 12-seat / 8-kyr corner is now **under the floor** rather
+  than near it. That corner has still never been measured; extrapolating it
+  again would be the third time this table has been wrong about a number nobody
+  ran. **Measure it (T-66), then optimise.**
 
   **`mineral_peak = Band IV` is ratified (R-O82), so this is now the first case
   where the scenario genuinely cannot be shrunk.** The 12-seat × 8-kyr corner
@@ -1100,11 +1257,22 @@ changes how you *work*, not what is left to do:
   time is decoupled from simulation tick duration.
 - The **Lanchester aggregate model** is reserved for imperial-scale resolution; the
   individual-missile arena exists only to calibrate its parameters.
-- **No mineral seed for colonies** (homeworlds only) — mining outposts with need-based
-  hauling are the intended fix.
+- ~~**No mineral seed for colonies** (homeworlds only)~~ — **superseded
+  (R-O74/`Hyades_industry.md` §1.7).** A coloniser's hold is one kiloton budget
+  carrying any mix of settlers and minerals: whatever volume the people do not
+  fill leaves with minerals **out of the founding centre's own bank** and lands
+  in the new colony's stockpile. That is not a grant, it is a transfer a parent
+  paid for — which is the distinction the old rule was protecting. Mining
+  outposts with need-based hauling are still how a colony feeds itself
+  thereafter.
 - Idle military units do **not** auto-scrap; only exhausted LCVs scrap, others go to
   Reserve ("completable vs. standing mission").
-- **K is player-relative by design.**
+- **K is player-relative by design**, and since `Hyades_industry.md` §1.1 it is
+  `min(hab, bio_max)` — **infrastructure is not a term in it.** Infrastructure is
+  the industrial stock; it mines and fabricates and can be razed, and razing it
+  must not move population. That is the whole reason it left the minimum: T-64's
+  logistic overshoots *below* a cut ceiling rather than settling at it, so while
+  infrastructure sat in `K`, every industrial strike was a population strike.
 - Galaxy distribution: XY Poisson (exponential disk profile); Z exponential with Z-max
   matching the XY parameter.
 - **The mineral field is a Gaussian over *Bands*, stored as mass** (T-62). So it is

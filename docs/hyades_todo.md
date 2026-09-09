@@ -103,6 +103,223 @@ two multiplications.
 
 ---
 
+### T-78 … T-80. The trees: tone, six objectives, card value — `Hyades_trees_and_card_value.md`
+
+**A new spec, `docs/Hyades_trees_and_card_value.md` (Rev 1).** It settles the
+satirical register (§1 — and *amends* `Hyades_galaxy_and_autopilot.md` §7's
+deliberate ambiguity about the Beloved Republic), defines **one objective per
+tree, per player** (§2), and defines card value as the **fractional reduction in
+the doubling time of its own tree's stock**, measured at earliest legal play and
+designed to the **92nd percentile** (§4).
+
+**The headline for anyone about to measure anything:** every ratification in this
+project so far has run against a single global colony-count objective. That is
+correct for Expansion and misleading for the other five trees — a Warfare card
+that ends a neighbour's colony *lowers* it, and a Production card does not move
+it at all. **Four of the six objectives had a live metric farm in their obvious
+formulation** (§2.5); the fixes are Warfare's neighbour weight frozen at setup,
+Production counted in mass rather than hull count, Technology aggregated by power
+mean rather than sum, and Politics' partner share grounded in *delivered freight*
+rather than in the existence of a pact.
+
+| # | Item | Blocked on | T-code |
+|---|---|---|---|
+| 1 | **Per-metric saturation study** — one 8-kyr run per seed, all six stocks against time | — | **T-78** |
+| 2 | Per-player, per-tree stock sampling on a fixed cadence | T-78 | **T-79** |
+| 3 | Card-value harness: CRN counterfactual, log-regression gradient, P92/median/P98 | T-79 | **T-80** |
+
+**T-78 first, and it is cheap.** It answers, per tree, where the stock leaves the
+exponential regime (which sets the regression window the value measure is fitted
+over), where it saturates, and whether it saturates inside 8 kyr at all. A
+handful of runs that can cut the horizon for four or five of the six trees.
+
+**The blocker to name out loud: this programme is not affordable at today's
+throughput.** One 8-kyr seed is ~35–40 minutes post-T-68, a stable 92nd
+percentile needs dozens of samples, and six trees × the card set × tiers ×
+timings puts the full sweep in the range of *years* of single-machine compute.
+**T-66 (throughput) is therefore a prerequisite for the card programme, not a
+parallel nicety** — and that is now a bigger reason to do it than the T-24 floor
+it was opened for.
+
+**Two of the six objectives cannot be measured yet.** Growth wants work-years and
+works do not exist (T-73/T-74); the interim stock is infrastructure in kilotons
+once T-70 lands. Technology wants capability-years and the metric is a *proposal*
+in §2.3.5 — a power mean over projection, defence and acquisition, with the
+exponent `ρ` (how Liebig capability is) as the thing to ratify. Expansion,
+Production and Politics' freight flows are measurable today.
+
+**Open in the spec, not here:** R-TREE1 (the end-of-game chronicle), R-TREE2
+(Warfare's length scale), R-TREE3 (Growth's interim stock), R-TREE4 (the
+capability definition), R-TREE5 (Politics' coupling), R-TREE6 (dispersion measure
+for the tier-1 constraint), R-TREE7 (which trees actually need 8 kyr).
+
+---
+
+### T-67 … T-77. The industrial layer — `Hyades_industry.md`
+
+**A new spec, `docs/Hyades_industry.md` (Rev 1), covers all ten.** It settles
+three gaps that have been quietly shaping every economic measurement: infrastructure
+is not differentiated in minerals, mining and production rates are not investable
+at all, and a production centre cannot develop a colony it did not just found.
+Read it before picking any of these up — the shape matters more than the
+magnitudes, and every magnitude in it is a flagged placeholder.
+
+**The one ratification it carries: `K = min(hab, bio_max)`.** Infrastructure
+leaves the carrying-capacity minimum. It stays built, razed and soft, but it is an
+**industrial stock** rather than a ceiling on population. The reason is T-64's
+logistic: it goes strongly negative above `K`, so cutting a world's ceiling makes
+its population *overshoot below* the new one (measured `2K → 0.25K` in one step),
+which made every infrastructure strike a population strike with extra steps. The
+crash stays where it is wanted — habitability and biosphere strikes still collapse
+a population, because those are genuinely a world's capacity to hold people.
+
+| # | Item | Blocked on | T-code |
+|---|---|---|---|
+| 1 | `K = min(hab, bio_max)` — drop infra from the minimum | — | **T-67** |
+| 2 | `t_build` from hull mass — replace flat `build_years` | — | **T-68** |
+| 3 | Slips: concurrency linear in fabrication throughput | T-68 | **T-69** |
+| 4 | Infrastructure stored as kilotons; the Band is a reading | T-67 | **T-70** |
+| 5 | Extraction law: `N(S)` veins per deposit, `W = N^(1−β)·n^β` — one law for crews and works | — | **T-71** |
+| 6 | `miners_per_outpost` becomes a target *fraction of `N(S)`*, not a hull count | T-71 | **T-72** |
+| 7 | Works: colour-differentiated infrastructure price | T-70 | **T-73** |
+| 8 | Extraction and fabrication rates from Infra × allocation | T-70 | **T-74** |
+| 9a | `Works` struct + CardId-ordered fold + commutativity property test | T-74 | **T-75a** |
+| 9b | `Doctrine` allocation vector wired to the fold | T-75a | **T-75b** |
+| 10 | Development freight and the balanced-exchange default | T-73 | **T-76** |
+| 11 | Exchange settles into a **freight leg**, not a transfer (refined mass traverses real space) | T-01 | **T-77** |
+
+**Three of these invalidate a measured result, which is the part to be careful
+about:**
+
+**T-67 is LANDED.** `K = min(hab, bio_max)`; `Factors::k()` no longer takes a
+minimum against infrastructure. Measured on the standard bed: **+4.4% / +4.7%
+colony-years** (seed 1 9,139,231 → 9,542,958; seed 7 9,060,095 → 9,483,962) with
+the colony **count identical** on both seeds. The same worlds, taken earlier —
+colonies grow to `min(hab, bio_max)` instead of being pinned at whatever
+infrastructure their founding hull left, so they cross the `PopBands` production
+gates sooner.
+
+**It exposed that R-V9 was never implemented.** "A Colonizer must be Medium or
+larger" fell out of two unrelated expressions meeting: `founding_capacity` was
+`k_potential.min(infra.max(founding_infra(hull)))`, a Limited hull's
+`founding_infra` is `Band Empty`, and `population_mass` maps `Band Empty` to
+exactly zero — so the seed was zero and the hull was refused. Remove
+infrastructure from `K` and a Limited hull quietly founds a 0.089 kt colony. It
+was caught by a test asserting the *outcome* rather than the mechanism, which is
+an argument for writing them at that level. The rule now lives on the **hold**,
+where roles §4 says it belongs. **An invariant that holds because two unrelated
+expressions intersect is a coincidence with good luck, not an invariant.**
+
+**It also reopened the hull choice as R-IND11 — now measured, and blocked
+rather than answered** (`Hyades_industry.md` §1.6). `SettlersPerMineral` scores
+**+13.97% colony-years on a bit-identical colony count**, with foundings ~399 yr
+earlier. The transit story that motivated it is **refuted**: mean coloniser
+flight time is 107.6-116.7 yr in every arm and moves 4.0 yr, against a 398.8 yr
+shift in founding.
+
+Two one-line ablations on `colony_seed_for` close the mechanism from both sides.
+Force every seed to the **General's** hold and `CheapestViable` reproduces the
+whole gain (+14.35%) **while building zero General hulls**; force every seed to
+the **Medium's** hold and `SettlersPerMineral` still buys General hulls for 91.9%
+of its colonisers at 10x the price and lands back at baseline (-0.08%). The cause
+is **the seed mass alone** — not the hull, not its price, not transit.
+
+Which is why it was blocked and not ratified: **R-O74**, founding settlers were
+conjured, so the number measured how much free mass a policy could pull out of an
+open design-law-#11 violation. Default stays `CheapestViable`.
+
+**R-O74 is now closed** (`Hyades_industry.md` §1.7, author's ruling). Settlers are
+debited from the founding centre's population; whatever hold the people do not
+fill leaves with minerals out of that centre's own bank and lands in the new
+colony's stockpile; a contested coloniser unloads both halves back home. The
+amount is a **demand-side** question (**R-IND12**): settlers priced in time —
+what the seed saves the destination against what it costs the origin to regrow,
+discounted by the voyage — and minerals sized by the destination's intended
+build-out, whose rung comes from works value and is superadditive in capacity and
+mineral density (**R-IND13**, placeholder). The supply-side `endowment_fraction`
+is retired: *a fraction of hold is irrelevant.*
+
+**Every colony-years figure taken before that landing was measured on an economy
+that created population.** They are records of what that engine did, not baselines
+for what this one does — including the +13.97% above and T-67's +4.4%/+4.7%.
+
+One thing it also flags and that survives the fix: ablation B is a controlled 10x
+overpayment per coloniser hull that costs **-0.08%**, which is
+`examples/reach_limit`'s "the economy is not the binding constraint" arriving from
+an unrelated direction. (The other flag — that some of T-67's gain ran through the
+conjured-mass channel — is now answered by re-measuring rather than by ablation,
+since the channel is closed.)
+
+- **T-67 invalidates R-O76, and the buff is intended.** Founding infrastructure
+  currently sets a new colony's `K` — a Medium founds at `Band I`, a General at
+  `Band II` — and the measured finding that *seed depth does not pay* was entirely
+  about the mismatch between what a hull carried and what the colony could hold.
+  With infrastructure out of `K`, **hulls seed to the world's own ceiling**
+  (confirmed), so there is no mismatch and the old number describes a mechanism
+  that no longer exists. The hull-choice question becomes purely price and hold
+  size. **Do not carry the old number forward.**
+- **T-71/T-72 retire `miners_per_outpost` as a scalar.** It was ratified at
+  **+2.74% colony-years** under a law with no deposit term at all — linear in
+  crew, identical on every rock. The corrected law makes the vein count scale with
+  the deposit (a decade per Band: 1 vein at `Band I`, 1,000 at `Band IV`), so the
+  right crew is **a property of the rock, not a constant**, and the Doctrine knob
+  becomes a target *fraction of `N(S)`*. The design intent is explicit: hundreds
+  or thousands of miners should be worth stationing at a high-value outpost, which
+  a bare crowding exponent would have forbidden on every rock equally.
+- **T-68 is LANDED** (`Hyades_industry.md` §3.3). `build_years = 10.0` was flat
+  across a **50×** mass ratio; `t_build = t_lead + m / F_slip` now gives the
+  approved schedule — Limited **2.2 yr**, Medium **3.0**, General **12.0**. It
+  takes the *committed mass*, so one expression covers a hull, an infrastructure
+  rung and a whole mining pair, and `apply_build_with` returns the committed
+  `Price` rather than a `bool` because recycling means the real price is only
+  known inside it. Guard is `examples/colony_years`; the prediction was up.
+- **It cost 6x the unit-test time before any of it was about the tests** — 87 s
+  → 507 s, back to ≈55 s. One cadence test was 437 s of that on its own, buying
+  round barriers with a 1,400-year run; shortening the *cadence* gives it ten
+  barriers where it had four. See `CLAUDE.md` §2, which now carries the general
+  form: **a test's horizon is a cost, not a strength.**
+- **And T-68 is once again relevant to R-IND11, having been ruled out of it.**
+  Before conservation the hull was not the mechanism, so the twelve-year General
+  commitment could not decide the question. Under conservation a General *hold*
+  is what makes a large population transfer possible at all, so the ramp is back
+  in the causal path — re-run `examples/colonizer_policy` after T-69.
+
+**T-67 first and alone.** It is one deleted `.min()`, it unblocks every card that
+attacks infrastructure, and because it invalidates R-O76 it wants its own
+measurement rather than being folded into a larger change.
+
+**Follow `Hyades_industry.md` §6.7, not this table, for order.** It sequences the
+same work so the layering lands **inert**: the `Works` state exists, the fold
+runs, the price and rate pipelines read it — and with no cards played every
+coefficient is `1.0` and every weight vector is `(1,1,1)`, so colony-years comes
+out bit-identical. A layering system that lands neutral can be verified against a
+known bed before anything switches on, and stages 3–5 are built to do that.
+
+**Its trap is one this repo has already paid for once.** The fold must recompute
+from the played-card multiset **in `CardId` order**, never accumulate a running
+product at play time: float multiplication is not associative, so play-order
+accumulation makes "A then B" differ from "B then A" in the last bits — a desync
+the moment two clients disagree about the order two simultaneous cards resolved
+in. Same lesson as `holdings_centroid` (`CLAUDE.md` §4), and the property test
+(R-IND4) that catches it is written *before* the first industrial card, not after.
+
+**The rule that outranks the rest, and it is not about industry:** *refined mass
+traverses real space* (§8.1). Minerals, supers and apex cross the theater on
+hulls, under light-lag, where they can be attacked, diverted, stolen and
+blockaded — so a trade is a **voyage**, not a ledger entry, and the Exchange
+must settle into a freight leg (T-77). Take traversal away and piracy, theft,
+blockade and conquest stop being alternatives to trade and become flavour text.
+
+**Open in the spec, not here:** R-IND2 (is warding a share or a Design
+coefficient), R-IND3 (the works coefficients — an MC question), R-IND4
+(commutativity as a property test), R-IND6 (supers and apex raising the works
+ceiling, deferred until the ramp is measured), R-IND8 (what an empire inherits
+when it captures developed infrastructure), R-IND9 (the extraction tail past
+`N(S)`), and R-IND10 (who bears the loss when a contract's carrier is
+destroyed).
+
+---
+
 ### T-01. Wire `matching.rs` into `lib.rs`
 
 The Exchange (order-book matching) is built and tested but not exported, and
