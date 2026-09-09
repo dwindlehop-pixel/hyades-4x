@@ -259,12 +259,41 @@ hull-choice question is unanswerable while founding mass is free, because any
 policy that delivers more free mass wins by precisely the amount it conjures.
 Draw the seed from the origin first, then re-run this harness.
 
-> **R-O74 is now closed (§1.7), so every number in this section is a record of
-> an engine that no longer exists.** They are kept because the *method* is what
-> the section is for — two ablations refuting two plausible mechanisms — and
-> because the +13.97% is the best available measurement of how large the
-> violation was. Do not carry the magnitudes forward; the post-conservation
-> re-measurement is the live one.
+> **R-O74 is now closed (§1.7), and the re-measurement is below.** The numbers
+> above are kept because the *method* is what the section is for — two ablations
+> refuting two plausible mechanisms — and because the +13.97% is the best
+> available measurement of how large the violation was.
+
+#### Re-measured under conservation — about 30% of it was the conjuring
+
+Same harness, same CRN bed, settlers now drawn from the origin:
+
+| | conjured | conserved |
+|---|---|---|
+| colony count | +0.00% | +0.00% |
+| colony-years | +13.97% | **+9.79%** |
+| mean founding | −398.8 yr | −279.8 yr |
+| General share of colonisers | 90.4% | **63.3%** |
+| mean flight (transit) | −4.0 yr | −0.9 yr |
+| mean dwell | **+82.3 yr** | **−67.2 yr** |
+| hull-first share | 55.0% → 97.4% | 55.0% → 79.4% |
+
+Three things to take from it. **Transit stays refuted** — flight is flat in every
+arm measured, conjured or not, so the forward-base story was never the mechanism.
+**Seven tenths of the effect is real**: moving people from a mature centre sitting
+at its `K` to a new world far below one is worth something on its own, because
+`x + r·x·(1 − x/K)` is near zero at the top and fastest at `K/2`. Population
+wants to be on the frontier, and that is a genuine strategy rather than an
+exploit. And **the dwell metric stopped inverting**: with the mix shift smaller
+(55% → 79% rather than → 97%) gate-skipping now shows in the aggregate as well
+as in the decomposition, which is the §1.6 artifact box arriving at its own
+prediction from the other side.
+
+**Still not ratified.** T-68 makes a General hull a twelve-year yard commitment
+against a Medium's three (§3.3), and unlike before, the hull *is* now part of the
+mechanism — a General hold is what makes a large transfer possible at all. So
+this is the measurement to repeat after the ramp lands, not a default to move
+before it.
 
 **And it puts a question on T-67's own number.** The amendment let hulls seed to
 the world's ceiling instead of to `founding_infra`, which is the same channel —
@@ -344,6 +373,30 @@ cards in Growth and Expansion are the obvious things to move it.
 Default **0.25**, a **flagged placeholder**. `examples/endowment` sweeps it on
 the standard four-seed CRN bed against colony count with colony-years as the
 guard.
+
+**Measured, and the result is that it is inert at the shipped coloniser policy.**
+`0.15`, `0.25`, `0.50` and `0.90` give **bit-identical** colony-years
+(9,609,694); only `0.05` differs, and by +0.031%. The mechanism is arithmetic,
+not luck:
+
+- A Medium hull's hold is `Band I` = **1.0 kt**, and a centre cannot build one
+  until its population reaches `medium_min_level`, whose edge is **≈14.2 kt**.
+  So the budget `0.25 × 14.2 = 3.55 kt` never binds; below `f ≈ 0.07` it starts
+  to, which is exactly where the sweep first moves.
+- Bit-identity against the pre-conservation baseline says something further, and
+  it is not an inference from the sign: **no coloniser ever loaded minerals
+  either.** Any mineral debit would have perturbed a stockpile and diverged the
+  run. So every world this bed colonises has `K ≥ Band I`, and a Medium hold is
+  always filled with people.
+- The population debit is real and happens on every founding; it reaches the
+  objective only through the **integer** `PopBands` gate, which taking 1.0 kt off
+  a ≥14.2 kt centre never crosses.
+
+So conservation costs the shipped configuration **exactly nothing**, and the
+constraint binds where the design wants it to: on the General hull, whose 31.6 kt
+hold needs roughly `31.6/f` citizens behind it. **R-IND12 cannot be ratified
+before R-IND11** — the knob has no gradient to measure until a policy buys hulls
+big enough to feel it.
 
 **What this invalidates on purpose.** Every colony-years figure taken before it
 — including §1.6's own +13.97% and §1.4's +4.4%/+4.7% for T-67 — was measured
@@ -470,6 +523,37 @@ time while General hulls get slightly dearer — a direct accelerant on the
 expansion loop whose time constant T-51/R-O68 identified as the binding limiter.
 Guard is `examples/colony_years`; the prediction is *up*, and if it is not, find
 the mechanism before tuning the value (`CLAUDE.md` §2).
+
+> **Landed (T-68, stage 2).** `SimConfig::build_years = 10.0` is gone, replaced
+> by `build_lead_years` and `slip_throughput`; `Simulation::build_time(mass)` is
+> the single expression, and it reproduces the table above exactly.
+>
+> **It takes the mass actually committed, not a hull table**, which is what lets
+> one expression cover a hull, an infrastructure rung and a whole mining pair.
+> Under R-O57 dry mass *is* mineral cost, so "what this build spent" and "how
+> much stuff it is" are one number — and a mining pair drawn partly from Reserve
+> is cheaper *and* quicker, because there is genuinely less to fabricate. To get
+> that, `apply_build_with` now returns the committed `Price` rather than a
+> `bool`: the real price is only known inside it, and re-deriving it outside
+> would have been a second copy of the recycling rule.
+>
+> **The whole order launches as one unit.** The delay every hull in an order
+> waits out is the order's own `t_build`, which is also exactly how long the yard
+> is held — one number, computed once, rather than a per-ship time that could
+> drift from the occupancy. Hulls taken from Reserve are already built and leave
+> at once, and bootstrap survey craft are *seeded* rather than built, so they
+> still launch instantly.
+>
+> **What it cost in test time, and why that is a finding rather than a chore.**
+> The unit target went **87 s → 507 s**, and `CLAUDE.md` §2's rule applied
+> exactly as written: *when a test target moves, look at what the simulation
+> started doing, not at what the tests are asking.* A Medium hull dropped from 10
+> yr to 3.0, so centres decide three times as often and the entity count follows.
+> Four tests were paying for that in horizon they did not need — one cadence test
+> was **437 s of the 507 on its own**, buying extra round barriers with a 1,400
+> yr run. Shortening the *cadence* instead of the horizon gives it ten barriers
+> where it had four, and the target is back to **≈55 s**. Nothing that was proven
+> stopped being proven.
 
 ---
 

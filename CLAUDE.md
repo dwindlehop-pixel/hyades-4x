@@ -100,15 +100,37 @@ only exception and they are offline, never in CI. Current costs:
 | `coverage_time` | ~49 s |
 | `montecarlo` | ~56 s |
 
-**The unit target went 97 s → 144 s at T-62 and back to 59.5 s at T-64**, and
-neither move was about the tests — they have pinned a 600-year horizon
-(`test_cfg`) throughout. T-62's cost was hauling (`examples/haul_census`): the
-Banded mineral field multiplied ore-per-rock by three orders of magnitude
-against a fixed freighter hold, so the round trips multiplied from the first
-cycle. T-64 gave it back by taking the `ln`/`powf` out of the growth step. The
-lesson both times: **when a test target moves, look at what the simulation
-started doing, not at what the tests are asking.** The remaining ratification is
-T-24's floor breach (R-O82).
+**The unit target went 97 s → 144 s at T-62, back to 59.5 s at T-64, then
+87 s → 507 s → ≈55 s at T-68**, and no move was about the tests. T-62's cost was
+hauling (`examples/haul_census`): the Banded mineral field multiplied ore-per-rock
+by three orders of magnitude against a fixed freighter hold, so the round trips
+multiplied from the first cycle. T-64 gave it back by taking the `ln`/`powf` out
+of the growth step. **T-68 made `t_build` track hull mass** — a Medium hull went
+from 10 yr to 3.0 — so centres decide three times as often and the entity count
+follows. The lesson every time: **when a test target moves, look at what the
+simulation started doing, not at what the tests are asking.** The remaining
+ratification is T-24's floor breach (R-O82).
+
+**T-68's 507 s was four tests paying in horizon for questions horizon does not
+answer**, and finding that out took one measurement rather than a guess — timing
+each suspect individually, after `--report-time` turned out to be nightly-only:
+
+- **One cadence test was 437 s of the 507 on its own.** It bought extra round
+  barriers with a 1,400-year run. Shortening the *cadence* instead of the horizon
+  gives it **ten** barriers where it had four, for 6% of the cost — "cut samples,
+  not the question", and here the sample was the wrong axis entirely.
+- **Three paired-run tests assert an arithmetic identity** (logging is a side
+  channel; the round layer is inert while everyone passes; same seed, same
+  outcome) and pay *double* horizon for it. They now share `paired_cfg` at 250 yr,
+  which is the same argument this file already makes for `tests/determinism.rs`.
+- **Smoke went 500 → 300 yr** (87 s → 17 s). Every assertion in it is an
+  invariant that holds at any horizon where expansion has started.
+
+The general form, worth having separately from the instances: **a test's horizon
+is a cost, not a strength.** Ask what the assertion actually needs — an identity
+needs none, a cadence needs periods rather than years, an invariant needs the
+mechanism to have fired once. A horizon inherited from when runs were cheap is
+the first thing to check when a target moves, and the last thing to defend.
 
 Ratifying the snowball defaults blew every one of these past the budget at once —
 the unit suite alone went 6 s → 315 s — because a default-config run is now a

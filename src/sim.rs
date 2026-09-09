@@ -1160,7 +1160,29 @@ impl Ord for Event {
 pub struct SimConfig {
     pub horizon_years: f64,
     pub cycle_years: f64,
-    pub build_years: f64,
+    /// **Irreducible per-hull lead time, `t_lead`** (`Hyades_industry.md` §3.2,
+    /// T-68) — tooling and crew, the part of a build that does not scale with
+    /// industry.
+    ///
+    /// This replaced a flat `build_years = 10.0`, under which a Limited hull and
+    /// a General hull took the same ten years despite a **50x** mass ratio. Time
+    /// now tracks mass, and because dry mass *is* mineral cost (R-O57) the time
+    /// ladder and the price ladder are **one ladder** with no second constant to
+    /// tune and no way for them to drift apart.
+    ///
+    /// **Approved starting value, not MC-ratified** (§3.3).
+    pub build_lead_years: f64,
+    /// **One slip's fabrication throughput, `F_slip`, in kt/yr** (§3.2, T-68).
+    ///
+    /// Stage 2 is the single-slip case, so this is simply the rate at which a
+    /// yard turns mass into hull: `t_build = t_lead + m / F_slip`. Concurrency
+    /// — `slips(F) = 1 + floor(F / F_slip)`, and with it the *soft floor* that
+    /// makes this an asymptote rather than a divisor — is stage 3 (T-69). The
+    /// constant is introduced now with the meaning it will keep, so that landing
+    /// slips changes what divides by it and not what it means.
+    ///
+    /// **Approved starting value, not MC-ratified** (§3.3).
+    pub slip_throughput: f64,
     pub civilian_accel_g: f64,
     pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
@@ -1493,7 +1515,8 @@ impl SimConfig {
         SimConfig {
             horizon_years: 4000.0,
             cycle_years: 50.0,
-            build_years: 10.0,
+            build_lead_years: 2.0,
+            slip_throughput: 0.1,
             civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
@@ -1829,7 +1852,9 @@ impl Simulation {
                     SurveyStrategy::GlobalPool => Vec3::ZERO,
                     SurveyStrategy::OpeningSectors | SurveyStrategy::PersistentSectors => Vec3::CUBE_FACES[i % 6],
                 };
-                self.launch_survey(p, home_pos, heading, 0);
+                // Bootstrap craft are *seeded*, not built — no yard made them,
+                // so they leave at once (autopilot-doc §2).
+                self.launch_survey(p, home_pos, heading, 0, 0.0);
             }
         }
 
@@ -2794,8 +2819,8 @@ impl Simulation {
         // `apply_build_with` declines on an unaffordable price, a roster gate, or
         // a hull with no job worth doing, and a center that built nothing must
         // not be held busy for it.
-        if self.apply_build_with(p, center, center_pos, order, &cands) {
-            let done = self.clock + self.config.build_years;
+        if let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) {
+            let done = self.clock + self.build_time(committed);
             self.world.building_until.insert(center, done);
             self.schedule_at(done, EventKind::BuildDecision { center });
         }
@@ -2806,13 +2831,43 @@ impl Simulation {
 
     // --- build application -------------------------------------------------
 
+    /// **How long a yard is occupied making `mass`** — `t_build = t_lead + m /
+    /// F_slip` (`Hyades_industry.md` §3.2, T-68).
+    ///
+    /// Takes the **mass actually committed**, which is what makes one expression
+    /// cover every order the engine has: a hull, an infrastructure rung, or a
+    /// whole mining pair. Under R-O57 dry mass and mineral cost are the same
+    /// number, so "what this build costs" and "how much stuff it is" are not two
+    /// quantities — and a mining pair drawn partly from Reserve is cheaper *and*
+    /// quicker, because there is genuinely less to fabricate.
+    ///
+    /// It is a `Price` on the way in and kilotons on the way out: the same
+    /// amount, read on the ladder each side wants (`units::Qty::on_scale`).
+    ///
+    /// **Stage 2 is the single-slip case.** `slips(F)` and the emergent soft
+    /// floor are T-69; this is deliberately the `slips = 1` specialisation of
+    /// the same formula, so landing concurrency changes the divisor rather than
+    /// the model.
+    fn build_time(&self, mass: Price) -> f64 {
+        let f = self.config.slip_throughput.max(1e-12);
+        self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / f
+    }
+
     /// Apply a production order. `candidates` is the empire's current candidate
     /// list, used to **task** a finished hull — production decides *what object*
     /// to make, role assignment decides *what it is for* (R-O29).
-    /// Apply a chosen build, returning **whether it actually committed** —
-    /// spent minerals and produced something. A decline (unaffordable, gated by
-    /// the roster, or a hull with no job worth doing) returns `false`, and the
-    /// caller must not occupy the yard for a build that never happened.
+    /// Apply a chosen build, returning **the mass it actually committed** —
+    /// `None` for a decline (unaffordable, gated by the roster, or a hull with
+    /// no job worth doing), in which case the caller must not occupy the yard
+    /// for a build that never happened.
+    ///
+    /// It returns the *committed* price rather than a bare `bool` because since
+    /// T-68 the yard is held for `build_time(mass)`, and the mass is only known
+    /// here: recycling means a mining pair's real price depends on what was
+    /// sitting in Reserve when the order was placed. Returning `true` and
+    /// re-deriving the cost outside would have been a second copy of that rule,
+    /// which is how `mining_pair_cost` came to need a comment explaining that it
+    /// must match what `apply_build_with` will spend.
     fn apply_build_with(
         &mut self,
         p: usize,
@@ -2820,10 +2875,10 @@ impl Simulation {
         center_pos: Vec3,
         order: BuildOrder,
         candidates: &[Candidate],
-    ) -> bool {
+    ) -> Option<Price> {
         let center_pid = *self.world.planet_id.get(center).unwrap();
         match order {
-            BuildOrder::Idle => false,
+            BuildOrder::Idle => None,
             BuildOrder::UpgradeInfrastructure => {
                 let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
                 if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
@@ -2840,21 +2895,21 @@ impl Simulation {
                             stockpile_after: stockpile_after.kilotons(),
                         },
                     );
-                    true
+                    Some(target)
                 } else {
-                    false
+                    None
                 }
             }
             BuildOrder::Hull { hull_type, class } => {
                 if !self.roster_permits(p, hull_type) {
-                    return false;
+                    return None;
                 }
                 let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
                 // The job is chosen here, after the object exists — not in the
                 // order, which is all a rival could read off the shipyard.
                 let tasking = self.autopilots[p].assign_role(&doctrine, hull_type, class, candidates);
                 let Some(Tasking { role, target }) = tasking else {
-                    return false; // nothing worth building this hull for right now
+                    return None; // nothing worth building this hull for right now
                 };
 
                 // A Miner is produced together with the Freighter that hauls for
@@ -2862,7 +2917,7 @@ impl Simulation {
                 // one economic act even though it is two objects.
                 let paired_freighter = role == Role::Miner;
                 if paired_freighter && !self.roster_permits(p, role_hull_type(Role::Freighter)) {
-                    return false;
+                    return None;
                 }
 
                 // Recycling is checked *before* pricing, because a hull taken
@@ -2903,6 +2958,13 @@ impl Simulation {
                 if let Some(t) = target {
                     self.mark_targeted(p, t);
                 }
+                // **The whole order occupies one yard, so it launches as one
+                // unit** (T-68). The delay every hull in this order waits out is
+                // the order's own `t_build`, which is also exactly how long the
+                // caller holds the yard — one number, computed once, rather than
+                // a per-ship time that could drift from the occupancy. Hulls
+                // taken from Reserve are already built and leave at once.
+                let launch_delay = self.build_time(cost);
                 if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
@@ -2912,7 +2974,7 @@ impl Simulation {
                     if let Some(e) = reused_freighter {
                         self.reserve_freighters[p].push(e);
                     }
-                    return false;
+                    return None;
                 }
                 match (role, target) {
                     (Role::Scout, _) => {
@@ -2930,7 +2992,7 @@ impl Simulation {
                             }
                             SurveyStrategy::GlobalPool | SurveyStrategy::OpeningSectors => Vec3::ZERO,
                         };
-                        self.launch_survey(p, center_pos, heading, 0)
+                        self.launch_survey(p, center_pos, heading, 0, launch_delay)
                     }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
@@ -2940,13 +3002,13 @@ impl Simulation {
                         for _ in 0..crew {
                             match reused.next() {
                                 Some(e) => self.retask_miner(e, p, center, te),
-                                None => self.spawn_courier(p, r, hull_type, center, center_pos, te),
+                                None => self.spawn_courier(p, r, hull_type, center, te, launch_delay),
                             }
                         }
                         if paired_freighter {
                             match reused_freighter {
                                 Some(e) => self.retask_freighter(e, p, center, te),
-                                None => self.spawn_freighter(p, center, center_pos, te),
+                                None => self.spawn_freighter(p, center, center_pos, te, launch_delay),
                             }
                         }
                     }
@@ -2963,7 +3025,7 @@ impl Simulation {
                         stockpile_after: stockpile_after.kilotons(),
                     },
                 );
-                true
+                Some(cost)
             }
         }
     }
@@ -3276,7 +3338,18 @@ impl Simulation {
     /// agreed until Doctrine could choose a colonizer's hull; reading the hull
     /// back off the role would have flown a Medium ship on a General ship's
     /// bill, and nothing would have complained.
-    fn spawn_courier(&mut self, p: usize, role: Role, hull: HullType, center: Entity, from: Vec3, target: Entity) {
+    fn spawn_courier(
+        &mut self,
+        p: usize,
+        role: Role,
+        hull: HullType,
+        center: Entity,
+        target: Entity,
+        launch_delay: f64,
+    ) {
+        // The launch point *is* the centre — it was passed in alongside it until
+        // T-68 needed a seventh argument, and the two were always the same read.
+        let from = *self.world.position.get(center).unwrap();
         let dest = *self.world.position.get(target).unwrap();
         let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
@@ -3309,7 +3382,7 @@ impl Simulation {
         self.world.cargo.insert(e, endowment);
         self.world.pop_cargo.insert(e, settlers);
         self.world.home_center.insert(e, center);
-        let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
+        let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         let ev = match role {
             Role::Colonizer => EventKind::ColonyArrive { vehicle: e },
             _ => EventKind::MiningArrive { vehicle: e },
@@ -3320,7 +3393,7 @@ impl Simulation {
             .push(self.clock, LogEvent::VehicleSpawned { player: p as u32, vehicle: e, role, from, to: target_pid });
     }
 
-    fn spawn_freighter(&mut self, p: usize, center: Entity, from: Vec3, outpost: Entity) {
+    fn spawn_freighter(&mut self, p: usize, center: Entity, from: Vec3, outpost: Entity, launch_delay: f64) {
         let dest = *self.world.position.get(outpost).unwrap();
         let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
@@ -3330,7 +3403,7 @@ impl Simulation {
         self.world.cargo.insert(e, Minerals::default());
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { outpost, destination: center, outbound: true });
-        let arrive = self.set_leg(e, from, dest, accel, self.config.build_years);
+        let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         self.schedule_at(arrive, EventKind::FreighterArrive { vehicle: e });
         let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
         self.log.push(
@@ -3339,7 +3412,7 @@ impl Simulation {
         );
     }
 
-    fn launch_survey(&mut self, p: usize, from: Vec3, heading: Vec3, hops: usize) {
+    fn launch_survey(&mut self, p: usize, from: Vec3, heading: Vec3, hops: usize, launch_delay: f64) {
         let mut cands = core::mem::take(&mut self.survey_scratch);
         self.fill_survey_candidates(p, &mut cands);
         let bias = if heading == Vec3::ZERO { None } else { Some(heading) };
@@ -3357,7 +3430,7 @@ impl Simulation {
             self.world.hull_type.insert(e, role_hull_type(Role::Scout));
             self.world.voyage.insert(e, Voyage { target, heading_bias: bias, hops });
             self.world.cargo.insert(e, Minerals::default());
-            let arrive = self.set_leg(e, from, dest, accel, 0.0);
+            let arrive = self.set_leg(e, from, dest, accel, launch_delay);
             self.schedule_at(arrive, EventKind::ContactArrive { vehicle: e });
             self.log.push(
                 self.clock,
@@ -3837,6 +3910,25 @@ mod tests {
         cfg
     }
 
+    /// For tests that run the sim **twice and compare the two bit-for-bit**.
+    ///
+    /// Those assert an *arithmetic identity* — logging is a side channel, the
+    /// round layer is inert while everyone passes — and `CLAUDE.md` §2 already
+    /// settled what that costs: "determinism is a property of the arithmetic,
+    /// not of how long you accumulate it." Two runs is two horizons, so these
+    /// pay double for a horizon that buys them nothing.
+    ///
+    /// **Pinned at 250 yr, and the reason it had to move is T-68.** Making
+    /// `t_build` track mass took a Medium hull from 10 yr to 3.0, so a centre
+    /// decides three times as often, the entity count follows, and the same 600
+    /// yr does several times the work it used to. The identity is unchanged;
+    /// only the bill was.
+    fn paired_cfg(seed: u64) -> SimConfig {
+        let mut cfg = SimConfig::new(seed);
+        cfg.horizon_years = 250.0;
+        cfg
+    }
+
     #[test]
     fn only_an_inverted_hull_ladder_is_refused() {
         // The fault is now **one** condition, not two, and the story of how it
@@ -3920,11 +4012,11 @@ mod tests {
         // across the card layer landing. Verified at the shipped defaults:
         // seed 1 / 3 seats / 4 kyr gives 1,044 colonies with and without.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
-        let mut with_rounds = Simulation::with_baseline(galaxy, test_cfg(1));
+        let mut with_rounds = Simulation::with_baseline(galaxy, paired_cfg(1));
         let a = with_rounds.run();
 
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
-        let mut cfg = test_cfg(1);
+        let mut cfg = paired_cfg(1);
         cfg.years_per_round = 0.0; // disables the layer entirely
         let mut without = Simulation::with_baseline(galaxy, cfg);
         let b = without.run();
@@ -3939,27 +4031,33 @@ mod tests {
 
     #[test]
     fn round_boundaries_fire_on_the_specified_cadence() {
-        // 200 yr to the first, 400 yr between: at a 600 yr test horizon that is
+        // 100 yr to the first, 100 yr between: at a 250 yr horizon that is
         // rounds 0 and 1. The barrier is a scheduled event, so this also pins
         // that it chains itself rather than being swept for.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
-        let mut cfg = test_cfg(1);
-        cfg.years_to_first_round = 200.0;
-        cfg.years_per_round = 400.0;
+        let mut cfg = paired_cfg(1);
+        cfg.years_to_first_round = 100.0;
+        cfg.years_per_round = 100.0;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         sim.run();
-        assert_eq!(sim.current_round(), 1, "600 yr horizon should reach round 1 and stop");
+        assert_eq!(sim.current_round(), 1, "(250-100)/100 = 1, so the last barrier is round 1");
 
-        // And it stops at the horizon rather than running away. Pinned at
-        // 1,400 yr, not the 4,000 default: design law #14 — a full-length run
-        // costs seconds, and this asserts a cadence, not a long-run property.
-        // (1400-200)/400 = 3, so the last barrier is round 3.
+        // And it chains rather than firing once, and stops at the horizon rather
+        // than running away. **Shortened the cadence, not the horizon**
+        // (`CLAUDE.md` §2 — cut samples, not the question): this used to buy its
+        // extra barriers with a 1,400 yr run, which cost **437 s of a 507 s unit
+        // target** once T-68 made hulls 3-4x quicker to build and the entity
+        // count followed. A 25 yr cadence at 250 yr exercises **ten** barriers
+        // where the long run exercised four, and the property under test — the
+        // barrier reschedules itself and the last one lands below the horizon —
+        // is exactly the same property, now better covered for 6% of the cost.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
-        let mut cfg = test_cfg(1);
-        cfg.horizon_years = 1400.0;
-        let mut long = Simulation::with_baseline(galaxy, cfg);
-        long.run();
-        assert_eq!(long.current_round(), 3, "(1400-200)/400 = 3, so the last barrier is round 3");
+        let mut cfg = paired_cfg(1);
+        cfg.years_to_first_round = 25.0;
+        cfg.years_per_round = 25.0;
+        let mut chained = Simulation::with_baseline(galaxy, cfg);
+        chained.run();
+        assert_eq!(chained.current_round(), 9, "(250-25)/25 = 9, so the last barrier is round 9");
     }
 
     #[test]
@@ -4045,8 +4143,20 @@ mod tests {
 
     #[test]
     fn deterministic_same_seed_same_outcome() {
-        let (_a, ra) = run_default(6, 7);
-        let (_b, rb) = run_default(6, 7);
+        // **The third paired-run test, and the most expensive of them** — six
+        // seats, run twice. `paired_cfg` for the same reason as the other two:
+        // determinism is a property of the arithmetic, not of how long you
+        // accumulate it (`CLAUDE.md` §2), and after T-68 this one run was 65 s
+        // of a 68 s unit target on its own. `tests/determinism.rs` is the
+        // full-scale guard; this is the in-module smoke version of it.
+        let mk = |seed: u64| {
+            let galaxy = Galaxy::generate(GalaxyConfig::new(6, seed)).unwrap();
+            let mut sim = Simulation::with_baseline(galaxy, paired_cfg(seed));
+            let report = sim.run();
+            (sim, report)
+        };
+        let (_a, ra) = mk(7);
+        let (_b, rb) = mk(7);
         assert_eq!(ra.events_processed, rb.events_processed);
         assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
         let pa: Vec<usize> = ra.players.iter().map(|p| p.planets_owned).collect();
@@ -4144,7 +4254,7 @@ mod tests {
         // simulation's deterministic results.
         let mk = |logging: bool| {
             let g = Galaxy::generate(GalaxyConfig::new(6, 2024)).unwrap();
-            let mut s = Simulation::with_baseline(g, test_cfg(2024));
+            let mut s = Simulation::with_baseline(g, paired_cfg(2024));
             if logging {
                 s.set_log_filter(crate::log::LogFilter::all());
             }
@@ -4710,14 +4820,65 @@ mod tests {
         assert!(sim2.roster_permits(0, HullType::MediumSystems), "default config must not gate anything");
     }
 
+    /// **T-68: build time tracks mass, and the two ladders are one ladder.**
+    ///
+    /// `build_years` was flat at 10.0, so a Limited hull and a General hull took
+    /// the same ten years across a **50x** mass ratio — which made the yard
+    /// blind to what it was making and gave a General hull no temporal cost at
+    /// all. `t_build = t_lead + m / F_slip` (`Hyades_industry.md` §3.2), and
+    /// because dry mass *is* mineral cost (R-O57) there is no second ladder to
+    /// keep in step.
+    ///
+    /// Pins the **approved starting schedule** of §3.3 — 2.2 / 3.0 / 12.0 yr —
+    /// which is where the design wants it: a scout is a season's work, a
+    /// coloniser is quick enough to spam, and a General hull is a twelve-year
+    /// commitment an opponent has time to notice and answer. These are approved
+    /// values, **not MC-ratified**; the name says placeholder and so does §3.3.
+    #[test]
+    fn build_time_is_lead_plus_mass_over_throughput() {
+        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        for (hull, want) in
+            [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
+        {
+            let got = sim.build_time(hull_cost(hull, &sim.config));
+            assert!((got - want).abs() < 1e-9, "{hull:?} builds in {got} yr, schedule says {want}");
+        }
+
+        // **The lead time is a floor and the mass term is strictly monotone.**
+        // Asserted as properties rather than as three more numbers, so a
+        // ratification of either constant cannot quietly invert the ordering the
+        // observation model leans on — a big hull must stay a long, visible
+        // commitment (§3.2).
+        assert!((sim.build_time(Price::ZERO) - sim.config.build_lead_years).abs() < 1e-12);
+        let (l, m, g) = (
+            sim.build_time(hull_cost(HullType::LimitedSystems, &sim.config)),
+            sim.build_time(hull_cost(HullType::MediumSystems, &sim.config)),
+            sim.build_time(hull_cost(HullType::GeneralSystems, &sim.config)),
+        );
+        assert!(l < m && m < g, "time must order like mass: {l} {m} {g}");
+
+        // And it is one expression over every order, not a hull table: an
+        // infrastructure rung costs minerals, minerals are mass, so a rung has a
+        // build time by the same rule. `Infra I` is priced as a Medium hull
+        // (R-O80), so it takes a Medium hull's time.
+        assert!(
+            (sim.build_time(infra_rung_price(1, &sim.config)) - m).abs() < 1e-9,
+            "a rung priced like a Medium hull takes a Medium hull's time"
+        );
+    }
+
     /// **The decision cadence is the build cadence, not the economy's (R-O69).**
     ///
-    /// A center that commits a build occupies its yard for `build_years` and
-    /// decides again the moment it clears — not at the next `cycle_years`
-    /// economy tick. With the shipped 10 vs 50 that is a 5x ceiling on how fast
-    /// a rich center can spend, and it was the largest single throttle on the
+    /// A center that commits a build occupies its yard for the **order's own**
+    /// `t_build` and decides again the moment it clears — not at the next
+    /// `cycle_years` economy tick. That was the largest single throttle on the
     /// expansion loop: measured beforehand, the median funded build fired at
     /// 5.5x the price of what it bought.
+    ///
+    /// Since T-68 the occupancy is `t_lead + m / F_slip` rather than a flat
+    /// constant, so this asserts the **relation** — the yard is held for
+    /// exactly as long as the mass that was committed takes — which is what
+    /// keeps it honest when the two constants are eventually ratified.
     ///
     /// This pins the structural property rather than a number, so it survives
     /// retuning either constant: **a busy yard is skipped by the economy tick,
@@ -4728,7 +4889,10 @@ mod tests {
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
-        // A homeworld with minerals to burn will commit something.
+        // A homeworld with minerals to burn will commit something. The log is
+        // on so the assertion can read *what it spent* rather than assume which
+        // order a rich homeworld picks (`logging_does_not_affect_outcomes`).
+        sim.set_log_filter(LogFilter::none().with(crate::log::LogCategory::Production));
         sim.world.stockpile.get_mut(home).unwrap().cyan = 500.0;
         assert!(!sim.world.building_until.contains(home), "yard starts free");
 
@@ -4736,11 +4900,24 @@ mod tests {
         let Some(&done) = sim.world.building_until.get(home) else {
             panic!("a center with 500 minerals and a live frontier must commit something");
         };
+        // Whatever it chose, the yard is held for that order's build time — and
+        // the mass is readable from the log rather than assumed, so this does
+        // not quietly re-encode which order a rich homeworld picks.
+        let committed = sim
+            .log()
+            .iter()
+            .filter_map(|r| match r.event {
+                LogEvent::BuildApplied { cost, .. } => Some(Price::new(cost)),
+                _ => None,
+            })
+            .last()
+            .expect("a committed build logs what it spent");
         assert!(
-            (done - (sim.clock + sim.config.build_years)).abs() < 1e-9,
-            "the yard is held for build_years, got {done} at clock {}",
+            (done - (sim.clock + sim.build_time(committed))).abs() < 1e-9,
+            "the yard is held for t_build({committed}), got {done} at clock {}",
             sim.clock
         );
+        assert!(done > sim.clock + sim.config.build_lead_years, "and never less than the lead time");
 
         // The economy tick must not decide over a busy yard — that would be the
         // cadence sneaking back in through the other door.
@@ -5325,7 +5502,7 @@ mod tests {
         // Build a freighter "paired" with the homeworld (its home_center),
         // as apply_build would, but the homeworld is the *less* needy side.
         let from = *sim.world.position.get(home).unwrap();
-        sim.spawn_freighter(0, home, from, outpost);
+        sim.spawn_freighter(0, home, from, outpost, 0.0);
         let freighter = Entity(sim.world.entity_count() as u64 - 1);
 
         // Give the outpost stockpile something to load, then run the load leg.
@@ -5381,9 +5558,8 @@ mod tests {
         let pop_before = *sim.world.population.get(home).unwrap();
         let bank_before = sim.world.stockpile.get(home).unwrap().basic_total();
         let there_before = *sim.world.population.get(target).unwrap();
-        let from = *sim.world.position.get(home).unwrap();
 
-        sim.spawn_courier(0, Role::Colonizer, HullType::GeneralSystems, home, from, target);
+        sim.spawn_courier(0, Role::Colonizer, HullType::GeneralSystems, home, target, 0.0);
         let ship = Entity(sim.world.entity_count() as u64 - 1);
 
         let settlers = *sim.world.pop_cargo.get(ship).unwrap();

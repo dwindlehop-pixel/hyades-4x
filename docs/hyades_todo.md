@@ -210,17 +210,23 @@ since the channel is closed.)
   becomes a target *fraction of `N(S)`*. The design intent is explicit: hundreds
   or thousands of miners should be worth stationing at a high-value outpost, which
   a bare crowding exponent would have forbidden on every rock equally.
-- **T-68 cannot decide R-IND11, though it was expected to.** The twelve-year
-  General yard commitment against a Medium's three would blunt a General
-  coloniser — but the hull is not what produces the effect, so the schedule
-  change is second-order to that question. It still moves the bed:
-- **T-68 will move the bed, with a predicted sign.** `build_years = 10.0` is flat
-  today, so a Limited hull and a General hull take the same ten years despite a
-  **50×** cost ratio. Making time track mass makes scouts and colonisers far
-  cheaper in time and General hulls slightly dearer — a direct accelerant on the
-  expansion loop that T-51/R-O68 identified as the binding limiter. Guard is
-  `examples/colony_years`; **the prediction is up, and if it is not, find the
-  mechanism before tuning the value.**
+- **T-68 is LANDED** (`Hyades_industry.md` §3.3). `build_years = 10.0` was flat
+  across a **50×** mass ratio; `t_build = t_lead + m / F_slip` now gives the
+  approved schedule — Limited **2.2 yr**, Medium **3.0**, General **12.0**. It
+  takes the *committed mass*, so one expression covers a hull, an infrastructure
+  rung and a whole mining pair, and `apply_build_with` returns the committed
+  `Price` rather than a `bool` because recycling means the real price is only
+  known inside it. Guard is `examples/colony_years`; the prediction was up.
+- **It cost 6x the unit-test time before any of it was about the tests** — 87 s
+  → 507 s, back to ≈55 s. One cadence test was 437 s of that on its own, buying
+  round barriers with a 1,400-year run; shortening the *cadence* gives it ten
+  barriers where it had four. See `CLAUDE.md` §2, which now carries the general
+  form: **a test's horizon is a cost, not a strength.**
+- **And T-68 is once again relevant to R-IND11, having been ruled out of it.**
+  Before conservation the hull was not the mechanism, so the twelve-year General
+  commitment could not decide the question. Under conservation a General *hold*
+  is what makes a large population transfer possible at all, so the ramp is back
+  in the causal path — re-run `examples/colonizer_policy` after T-69.
 
 **T-67 first and alone.** It is one deleted `.min()`, it unblocks every card that
 attacks infrastructure, and because it invalidates R-O76 it wants its own
