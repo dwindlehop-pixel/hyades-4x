@@ -37,6 +37,19 @@ it; take traversal away and piracy, theft, blockade and conquest become flavour
 text. Nothing else in the document is Monte-Carlo ratified; every magnitude is a
 flagged placeholder.
 
+**`docs/Hyades_trees_and_card_value.md` (Rev 1)** is what to read before
+touching a card, a tree, or a balance measurement. Two things in it change how
+you work. **The tone is satire** — every winning game is the winner's own story
+about how love won, told sincerely, with the player registering the gap; §1 names
+the target and forbids winking, and it *amends* `Hyades_galaxy_and_autopilot.md`
+§7's deliberate ambiguity about the Beloved Republic. And **there are six
+objectives, not one**: the single global colony-count objective every
+ratification so far has used is correct for Expansion and actively misleading for
+the other five trees, four of which had a live metric farm in their obvious
+formulation (§2.5). Card value is the **fractional reduction in the doubling time
+of its own tree's stock**, measured at earliest legal play, designed to the 92nd
+percentile.
+
 **`docs/Hyades_politics_trade_and_intelligence.md` (Rev 1)** specifies the two
 systems the Politics tree needs and neither of which exists: the Exchange with
 `$`, and granular shared intelligence. Its §0 is the organizing thesis and worth

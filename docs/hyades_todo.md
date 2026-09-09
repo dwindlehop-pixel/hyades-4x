@@ -103,6 +103,58 @@ two multiplications.
 
 ---
 
+### T-78 … T-80. The trees: tone, six objectives, card value — `Hyades_trees_and_card_value.md`
+
+**A new spec, `docs/Hyades_trees_and_card_value.md` (Rev 1).** It settles the
+satirical register (§1 — and *amends* `Hyades_galaxy_and_autopilot.md` §7's
+deliberate ambiguity about the Beloved Republic), defines **one objective per
+tree, per player** (§2), and defines card value as the **fractional reduction in
+the doubling time of its own tree's stock**, measured at earliest legal play and
+designed to the **92nd percentile** (§4).
+
+**The headline for anyone about to measure anything:** every ratification in this
+project so far has run against a single global colony-count objective. That is
+correct for Expansion and misleading for the other five trees — a Warfare card
+that ends a neighbour's colony *lowers* it, and a Production card does not move
+it at all. **Four of the six objectives had a live metric farm in their obvious
+formulation** (§2.5); the fixes are Warfare's neighbour weight frozen at setup,
+Production counted in mass rather than hull count, Technology aggregated by power
+mean rather than sum, and Politics' partner share grounded in *delivered freight*
+rather than in the existence of a pact.
+
+| # | Item | Blocked on | T-code |
+|---|---|---|---|
+| 1 | **Per-metric saturation study** — one 8-kyr run per seed, all six stocks against time | — | **T-78** |
+| 2 | Per-player, per-tree stock sampling on a fixed cadence | T-78 | **T-79** |
+| 3 | Card-value harness: CRN counterfactual, log-regression gradient, P92/median/P98 | T-79 | **T-80** |
+
+**T-78 first, and it is cheap.** It answers, per tree, where the stock leaves the
+exponential regime (which sets the regression window the value measure is fitted
+over), where it saturates, and whether it saturates inside 8 kyr at all. A
+handful of runs that can cut the horizon for four or five of the six trees.
+
+**The blocker to name out loud: this programme is not affordable at today's
+throughput.** One 8-kyr seed is ~35–40 minutes post-T-68, a stable 92nd
+percentile needs dozens of samples, and six trees × the card set × tiers ×
+timings puts the full sweep in the range of *years* of single-machine compute.
+**T-66 (throughput) is therefore a prerequisite for the card programme, not a
+parallel nicety** — and that is now a bigger reason to do it than the T-24 floor
+it was opened for.
+
+**Two of the six objectives cannot be measured yet.** Growth wants work-years and
+works do not exist (T-73/T-74); the interim stock is infrastructure in kilotons
+once T-70 lands. Technology wants capability-years and the metric is a *proposal*
+in §2.3.5 — a power mean over projection, defence and acquisition, with the
+exponent `ρ` (how Liebig capability is) as the thing to ratify. Expansion,
+Production and Politics' freight flows are measurable today.
+
+**Open in the spec, not here:** R-TREE1 (the end-of-game chronicle), R-TREE2
+(Warfare's length scale), R-TREE3 (Growth's interim stock), R-TREE4 (the
+capability definition), R-TREE5 (Politics' coupling), R-TREE6 (dispersion measure
+for the tier-1 constraint), R-TREE7 (which trees actually need 8 kyr).
+
+---
+
 ### T-67 … T-77. The industrial layer — `Hyades_industry.md`
 
 **A new spec, `docs/Hyades_industry.md` (Rev 1), covers all ten.** It settles
