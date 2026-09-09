@@ -1256,20 +1256,45 @@ construction a different centre for each colour. Before T-81 every hauler went t
 the neediest centre by total, so ore accumulated somewhere it could eventually
 hold all three. Scattering it by colour is the opposite of what the bill needs.
 
-**The corrected formulation, and why it is a different question.** Score the
+**The corrected formulation, and the denominator is the whole of it.** Score the
 *completion of the bill*, not the relief of one colour:
 
 ```text
 short_before = Σ_c max(0, bill[c] − bank[c])
-short_after  = Σ_c max(0, bill[c] − bank[c] − cargo[c])
-score        = (short_before − short_after) / Σ_c bill[c]   · exp(−λ·t)
+short_after  = Σ_c max(0, short_before[c] − cargo[c])
+completion   = (short_before − short_after) / short_before   · exp(−λ·t)
 ```
 
-This is still a fraction and still multiplies the discount, but it rewards the
-delivery that brings a centre **closest to actually paying**, so a centre holding
-two colours and missing the third attracts the third strongly — and ore
-concentrates instead of dispersing. **R-IND17**, and it is the live proposal
-rather than a ratified change.
+**Divide by what is left to find, not by the bill.** The first written form of
+R-IND17 used `Σ bill` and it does not concentrate — worked on paper before
+implementing, per `CLAUDE.md`'s rule about probing a scaling relationship first:
+
+| destination, given a Yellow cargo | `÷ Σ bill` | `÷ short_before` |
+|---|---|---|
+| needs only Yellow | 0.500 | **1.000** |
+| needs Yellow and Magenta | 0.500 | 0.750 |
+| needs everything | 0.500 | 0.500 |
+| needs only Magenta | 0.000 | 0.000 |
+
+`÷ Σ bill` ties the nearly-payable centre with the empty one — both absorb the
+same absolute shortfall — so it reproduces exactly the scattering it was written
+to fix. `÷ short_before` puts the centre that this cargo *finishes* at `1.0`, so
+ore concentrates where it can actually be spent. **R-IND17** (landed;
+`a_hauler_routes_to_the_colour_that_is_missing` asserts the concentration
+property directly).
+
+> **A note on the guard, which is about method rather than industry.**
+> Colony-years rose at every step of this sequence — T-73 `+0.45%/+1.03%`, then
+> T-81 a further `+0.26%` on seed 1 — **while deepening fell 1,032 → 57 → 31.**
+> It rose *because* development was being switched off: minerals denied to
+> infrastructure buy hulls, and on a `k_high`-bound bed that takes worlds
+> earlier. **The guard was rewarding the breakage.**
+>
+> `Hyades_trees_and_card_value.md` §2 says why: colony-years is **Expansion's**
+> objective. The objective for an industry change is Growth's **work-years**,
+> which would have flagged T-73 on the day it landed instead of three commits
+> later through a build-mix census. The six-objective work is not only for card
+> balance — it is what engine changes should be guarded against too.
 
 **What this does not fix, and should not be asked to.** Even perfect internal
 routing cannot give an empire a colour its own ground does not hold. That is

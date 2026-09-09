@@ -4022,7 +4022,6 @@ impl Simulation {
             return self.most_needed_center(owner);
         }
         let accel = self.config.civilian_accel_g * G;
-        let carried = cargo.basic_total();
         let mut best: Option<(Entity, f64)> = None;
         for e in self.planet_entity.iter().copied() {
             if self.world.owner.get(e).copied() != Some(owner) {
@@ -4030,7 +4029,7 @@ impl Simulation {
             }
             let d = from.distance(*self.world.position.get(e).unwrap());
             let t = math::ship_travel_years(d, accel);
-            let score = self.colour_relief(e, owner, cargo, carried) * (-lambda * t).exp();
+            let score = self.bill_completion(e, owner, cargo) * (-lambda * t).exp();
             // Entity id breaks ties so the choice is total and deterministic.
             let better = match best {
                 None => true,
@@ -4043,50 +4042,59 @@ impl Simulation {
         best.map(|(e, _)| e)
     }
 
-    /// **What fraction of this cargo lands on a colour the destination cannot
-    /// otherwise buy** (T-81, `Hyades_industry.md` §6.10).
+    /// **How much of this destination's remaining shortfall the cargo closes**
+    /// (R-IND17, `Hyades_industry.md` §6.11).
     ///
     /// ```text
-    /// deficit[c] = max(0, works_bill[c] − bank[c])
-    /// relief     = Σ_c min(cargo[c], deficit[c]) / Σ_c cargo[c]
+    /// short_before = Σ_c deficit[c]
+    /// short_after  = Σ_c max(0, deficit[c] − cargo[c])
+    /// completion   = (short_before − short_after) / short_before
     /// ```
     ///
-    /// **This is a missing term, not a tuning knob**, and it is the same shape
-    /// as λ itself: freighter routing had no *distance* component at all until
-    /// R-P2, and adding it took coverage 14.4% → 38.3%. Routing had no *colour*
-    /// component either, and T-73 is what made that bind — a works bill is
-    /// payable in named colours, T-62 made the field log-normal per colour, and
-    /// the two together left 1,494 of 1,515 measured banks holding one colour
-    /// and traces of the others. Deepening fell 94.5%.
+    /// **This replaces T-81's `relief`, which was measured counterproductive.**
+    /// That version scored the fraction of the *cargo* that landed on a
+    /// deficit, which sends each colour to wherever that colour is scarcest —
+    /// by construction a different centre per colour. Paying a three-colour
+    /// bill needs ore to **converge**, so scattering it by colour is the
+    /// opposite of what the bill wants: measured, infrastructure builds fell
+    /// 57 → 31 and bank composition did not move at all.
     ///
-    /// It replaces `mineral_pressure_of` in the routing score rather than
-    /// multiplying it, because the two ask the same question at different
-    /// resolutions: pressure is *"how far is this centre from affording its next
-    /// rung"* measured on a total, and this is the same distance measured per
-    /// colour. Multiplying them would double-count. `mineral_pressure_of`
-    /// survives for the deepen/expand decision, where the total is what a
-    /// centre weighs.
+    /// **The denominator is the centre's remaining shortfall, not the bill.**
+    /// That distinction is the whole mechanism and it is easy to get wrong — the
+    /// first written form of R-IND17 divided by `Σ bill`, and worked out on
+    /// paper that ties a centre needing only Yellow against one needing
+    /// everything, both scoring `0.5` for the same Yellow delivery. No
+    /// concentration at all. Dividing by what is left to find instead:
     ///
-    /// Both are dimensionless fractions in `[0, 1]`, which is deliberate: the
-    /// discount `exp(−λ·t)` multiplies it, and R-O68 is this repo's standing
-    /// lesson about what happens when a comparison mixes units — a Band
-    /// difference against an unbounded score, with a constant absorbing the
-    /// mismatch and a branch that could never fire.
+    /// | destination, given a Yellow cargo | `÷ Σ bill` | `÷ short_before` |
+    /// |---|---|---|
+    /// | needs only Yellow | 0.500 | **1.000** |
+    /// | needs Yellow and Magenta | 0.500 | 0.750 |
+    /// | needs everything | 0.500 | 0.500 |
+    /// | needs only Magenta | 0.000 | 0.000 |
     ///
-    /// **Degenerate case, stated:** a centre that can already pay every colour
-    /// of its next bill scores `0`, and if *every* centre can, the choice falls
-    /// to the entity-id tie-break. That is exactly what the pressure formula
-    /// already did when no centre was short, so it is not a new behaviour.
-    fn colour_relief(&self, center: Entity, owner: PlayerId, cargo: &Minerals, carried: Price) -> f64 {
-        if carried <= Price::ZERO {
+    /// So a centre holding two colours and missing the third pulls the third
+    /// hardest, and ore concentrates where it can actually be spent.
+    ///
+    /// Still a dimensionless fraction in `[0, 1]`, because `exp(−λ·t)`
+    /// multiplies it — R-O68 is the standing lesson on mixed-unit comparisons.
+    ///
+    /// **What it cannot do.** No routing rule can give an empire a colour its
+    /// own ground does not hold, and the supply is single-coloured: 6,725
+    /// sources measured at a mean dominant-colour share of **0.789**, 38% of
+    /// them ≥95% one colour. That is §8.1's subject and the Exchange's job
+    /// (T-77), with design law #1's counter-graph as the other half.
+    fn bill_completion(&self, center: Entity, owner: PlayerId, cargo: &Minerals) -> f64 {
+        let deficit = self.colour_deficit(center, owner);
+        let short_before = deficit.iter().fold(Price::ZERO, |a, &b| a + b);
+        if short_before <= Price::ZERO {
             return 0.0;
         }
-        let deficit = self.colour_deficit(center, owner);
-        let mut relieved = Price::ZERO;
+        let mut short_after = Price::ZERO;
         for (i, &c) in Basic::ALL.iter().enumerate() {
-            relieved += Price::new(cargo.get_basic(c)).min(deficit[i]);
+            short_after += (deficit[i] - Price::new(cargo.get_basic(c))).max(Price::ZERO);
         }
-        relieved / carried
+        (short_before - short_after) / short_before
     }
 
     /// A centre's per-colour shortfall against its **next works bill** — the
@@ -6186,15 +6194,34 @@ mod tests {
             "and the same route with Magenta aboard must go the other way"
         );
 
-        // The relief fraction is what drives it, and it is a fraction: a cargo
-        // far larger than the deficit is only credited for the part that lands.
-        let carried = yellow.basic_total();
-        let r = sim.colour_relief(a, PlayerId(0), &yellow, carried);
-        assert!(r > 0.0 && r <= 1.0, "relief must be a fraction, got {r}");
+        // **And it concentrates** (R-IND17), which is the property T-81's relief
+        // term did not have. A third centre needing *everything* must score
+        // strictly lower on the same Yellow cargo than one needing only Yellow,
+        // or ore scatters by colour and a three-colour bill is never assembled
+        // anywhere.
+        let empty = sim.planet_entity[17];
+        sim.world.owner.insert(empty, PlayerId(0));
+        sim.world.factors.insert(
+            empty,
+            Factors::new(
+                Band::new(3.0),
+                Band::new(3.0).in_kilotons(),
+                Band::new(3.0).in_kilotons(),
+                infra_rung_price(1, &sim.config),
+            ),
+        );
+        sim.world.position.insert(empty, here);
+        sim.world.stockpile.insert(empty, Minerals::default());
+
+        let near = sim.bill_completion(a, PlayerId(0), &yellow);
+        let far = sim.bill_completion(empty, PlayerId(0), &yellow);
+        assert!((near - 1.0).abs() < 1e-12, "a centre missing only Yellow is completed by Yellow: {near}");
+        assert!(far > 0.0 && far < near, "and one missing everything scores strictly less: {far} vs {near}");
+        assert_eq!(sim.bill_completion(a, PlayerId(0), &magenta), 0.0, "the wrong colour completes nothing");
         assert_eq!(
-            sim.colour_relief(a, PlayerId(0), &magenta, magenta.basic_total()),
-            0.0,
-            "wrong colour relieves nothing"
+            sim.best_delivery_center(PlayerId(0), here, &yellow),
+            Some(a),
+            "so the hauler goes to the centre it can finish, not the emptiest"
         );
     }
 
