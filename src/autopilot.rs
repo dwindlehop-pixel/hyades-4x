@@ -284,29 +284,6 @@ pub struct Doctrine {
     /// is 8,697,998 and not the pre-T-57 8,670,020.
     pub miners_per_outpost: u8,
 
-    /// **How much of itself a production centre commits to founding a colony**
-    /// — the share of its *population* and of its *stockpile* it will put
-    /// aboard a coloniser (R-IND12, placeholder).
-    ///
-    /// This knob exists because settlers stopped being free. Until R-O74 was
-    /// closed the founding population was **conjured**: nothing was debited
-    /// anywhere, so "how many settlers" was bounded only by the hull's hold and
-    /// the target's ceiling, and any policy that shipped a bigger seed scored
-    /// better by exactly the mass it invented (`Hyades_industry.md` §1.6). With
-    /// the seed drawn from the origin there has to be a rule for how much a
-    /// parent will spend on a child, and that rule is policy — which is what
-    /// Doctrine is.
-    ///
-    /// It governs both halves of the hold because they are the same decision:
-    /// the coloniser carries settlers up to this share of the centre's people,
-    /// and fills whatever hold is left with minerals up to this share of the
-    /// centre's bank (§1.7). A world whose ceiling is low takes few settlers and
-    /// so leaves with a mineral-heavy endowment, which is the intended shape —
-    /// a poor world is founded to be worked, not to be lived on.
-    ///
-    /// **Placeholder, not ratified.** `examples/endowment` sweeps it.
-    pub endowment_fraction: f64,
-
     /// **Expansion rate knob** (MC experiment): how strongly the production
     /// queue favors *upgrading own infrastructure* (deepening) over *spending
     /// minerals to reach outward* (expanding). `0.0` = always expand when able,
@@ -343,7 +320,6 @@ impl Default for Doctrine {
             survey_strategy: SurveyStrategy::OpeningSectors,
             expand_bias: ExpandBias::ProductionCentersFirst,
             miners_per_outpost: 3,
-            endowment_fraction: 0.25,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
         }
@@ -445,6 +421,21 @@ pub struct Ranked {
 pub struct Candidate {
     pub view: PlanetView,
     pub ranked: Ranked,
+    /// **What a coloniser would actually land here, per hull** — Medium first,
+    /// then General, in kilotons of settlers (R-IND12).
+    ///
+    /// Since R-O74 was closed a hold is not a promise: settlers come out of the
+    /// origin, and how many is a *policy* question answered per destination — it
+    /// depends on that world's carrying capacity and on how long the voyage is,
+    /// not on the hull alone. `sim::settler_target` is the one implementation of
+    /// that rule, and this field is how its answer reaches the hull choice.
+    ///
+    /// It is precomputed per candidate rather than recomputed here on purpose.
+    /// Deriving it a second time in the autopilot is how `mining_pair_cost` came
+    /// to need a comment explaining that it must agree with what
+    /// `apply_build_with` will spend — two copies of a rule that must not
+    /// disagree, with nothing checking that they don't.
+    pub settlers_by_hull: [Kilotons; 2],
 }
 
 /// What a production center decides to build this cycle (autopilot-doc §§4–6).
@@ -517,18 +508,6 @@ pub struct ProductionContext {
     pub medium_seed_capacity: Kilotons,
     /// The founding population a **General** hull can deliver — `Band II`.
     pub general_seed_capacity: Kilotons,
-    /// **The settlers this centre can actually put aboard**, right now — its own
-    /// population times [`Doctrine::endowment_fraction`], never below the
-    /// population floor.
-    ///
-    /// It is in the context because since R-O74 was closed a hold is not a
-    /// promise: settlers come out of the origin, so a hull's capacity is an
-    /// upper bound the centre may be unable to fill. Scoring "settlers per
-    /// mineral" against the hold rather than against this would buy a General
-    /// hull to carry a Medium hull's worth of people — the same shape as
-    /// pricing a hull by its role instead of by the order (see
-    /// `sim::apply_build_with`), and just as silent.
-    pub settler_budget: Kilotons,
     /// The infrastructure a **Medium**-hulled colony is founded at — the
     /// recycled hull, converted at the infra ladder's rate (R-O76). `Band I`.
     pub medium_founding_infra: Band,
@@ -885,7 +864,13 @@ impl Autopilot for BaselineAutopilot {
                 // hold used to be a promise because the settlers were conjured
                 // — and leaving it out would price a General hull for people
                 // the centre does not have.
-                let cap = crate::units::population_mass(col.view.k_potential()).min(ctx.settler_budget);
+                // **What a hull delivers is decided per destination, not per
+                // hull** (R-IND12). `settlers_by_hull` is `sim::settler_target`
+                // evaluated for this candidate — the world's own ceiling, this
+                // centre's population, and the transit discount, already folded
+                // in. There is nothing left to `min` against here, and doing so
+                // would be the second copy of a rule this repo has been bitten
+                // by before.
                 let per_mineral = |delivered: Kilotons, cost: Price| {
                     if cost > Price::ZERO {
                         delivered.kilotons() / cost.kilotons()
@@ -894,8 +879,8 @@ impl Autopilot for BaselineAutopilot {
                     }
                 };
                 let options = [
-                    (HullType::MediumSystems, ctx.colonizer_cost, ctx.medium_seed_capacity.min(cap)),
-                    (HullType::GeneralSystems, ctx.general_colonizer_cost, ctx.general_seed_capacity.min(cap)),
+                    (HullType::MediumSystems, ctx.colonizer_cost, col.settlers_by_hull[0]),
+                    (HullType::GeneralSystems, ctx.general_colonizer_cost, col.settlers_by_hull[1]),
                 ];
                 // **Only hulls this centre can pay for today.** The score picks
                 // between real options; it does not pick an option and then
@@ -1146,10 +1131,6 @@ mod tests {
             general_colonizer_cost: Price::new(10.0),
             medium_seed_capacity: Kilotons::at_tier(BandTier::I),
             general_seed_capacity: Kilotons::at_tier(BandTier::II),
-            // Ample: these cases are about the deepen/expand branch, not about
-            // whether the centre can crew the ship. `colonizer_hull_cases`
-            // covers the budget-limited side deliberately.
-            settler_budget: Kilotons::at_tier(BandTier::IV),
             medium_founding_infra: BandTier::I.band(),
             general_founding_infra: BandTier::IV.band(),
             mining_pair_cost: Price::new(1.0),
@@ -1183,7 +1164,11 @@ mod tests {
         let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         let ranked = ap.rank(&doctrine, &v, &rctx);
-        let cands = vec![Candidate { view: v, ranked }];
+        let cands = vec![Candidate {
+            view: v,
+            ranked,
+            settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
+        }];
         let order = ap.production_choice(&doctrine, &ctx, &cands);
         assert!(matches!(order, BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }));
     }
@@ -1193,7 +1178,11 @@ mod tests {
         let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         let ranked = ap.rank(doctrine, &v, &rctx);
-        vec![Candidate { view: v, ranked }]
+        vec![Candidate {
+            view: v,
+            ranked,
+            settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
+        }]
     }
 
     /// **`reinvest_bias` is a step function, not a dial (R-O68).**

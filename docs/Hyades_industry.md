@@ -327,76 +327,122 @@ count, and two ablations put the whole effect on the seed mass rather than on
 the hull, the price or transit (§1.6). It scaled with the hold because the hold
 set how much was invented.
 
+#### Terms
+
+Defined before use, because the previous revision of this section did not and
+one of its two load-bearing lines was unreadable as a result (`CLAUDE.md` §6):
+
+| symbol | name | unit | where it comes from |
+|---|---|---|---|
+| `x_p` | origin's current population | kt | `World::population` |
+| `K_p` | origin's carrying capacity | kt | `population_mass(k())`, and `k = min(hab, bio_max)` since T-67 |
+| `K_c` | destination's carrying capacity | kt | same function, at the target |
+| `x_0` | floor a colony starts from | kt | `units::POPULATION_SEED_FLOOR`, one tonne |
+| `H` | the hull's hold | kt | geometry, `HullType::colony_seed_capacity` |
+| `S` | settlers put aboard | kt | derived below |
+| `E` | mineral endowment put aboard | kt (as `Price`) | derived below |
+| `tau` | one-way transit, origin → destination | yr | `math::ship_travel_years` at civilian accel |
+| `delta` | discount on a gain arriving `tau` late | — | `1 / (1 + tau / cycle_years)` |
+| `r` | logistic growth rate per cycle | 1/cycle | `Doctrine::growth_rate` |
+| `g(x, K)` | logistic rate, `r·x·(1 − x/K)` | kt/cycle | the engine's own growth step |
+| `I_0` | founding infrastructure (the recycled hull) | Band | `founding_infra(hull)` |
+| `I*` | build-out the site is worth developing to | Band | §5 works value; placeholder below |
+| `D` | destination's mineral abundance | Band | `MineralField::abundance()` |
+
 #### The rule
 
 A coloniser is **loaded out of its origin**, and the load is one kiloton budget
-because both halves mass the same (R-O32):
-
-```
-settlers  = min( hold , population_mass(K_target) , endowment_budget(origin) )
-minerals  = min( hold − settlers , bank(origin) × endowment_fraction )
-```
-
-with `endowment_budget = (population(origin) − POPULATION_SEED_FLOOR) ×
-endowment_fraction`. The population is debited at launch and credited at
-founding; the minerals leave the origin's stockpile and land in the new
-colony's. A **contested** coloniser unloads both halves back into its home
+because both halves mass the same (R-O32). Population is debited at launch and
+credited at founding; the minerals leave the origin's stockpile and land in the
+new colony's. A **contested** coloniser unloads both halves back into its home
 centre when it bounces — §4.2's "nothing is lost" was a reassurance and is now
 an entry, because a hull parked while laden would hold that mass out of the
 economy permanently.
 
-Three consequences worth stating, because none of them is a tuning detail:
+**The sizing is demand-side.** An earlier revision shipped a *fraction of the
+parent* and the author's ruling retired it: *a fraction of hold is irrelevant.*
+What decides the amount is `K` against the hold, the build-out the destination
+will actually pay for, and the growth of the **combined** origin-plus-colony
+system under a travel discount.
 
-- **A hold is an upper bound, not a promise.** A General hull holds 31.6× a
-  Medium's, so at `endowment_fraction = f` a centre needs roughly `31.6/f`
-  people to fill one. That is the honest version of R-IND11: the General
-  coloniser is not merely expensive in minerals, it is expensive in *citizens*,
-  and a young centre cannot crew one at any price. The autopilot sees this —
-  `ProductionContext::settler_budget` — or "settlers per mineral" would buy a
-  hull for people the centre does not have.
-- **A poor world is founded to be worked, not to be lived on.** The target's
-  ceiling caps the settlers, so a low-`K` world takes few people and therefore
-  leaves with a **mineral-heavy** endowment. The mix falls out of the two caps
-  rather than being a second decision.
-- **Emigration is a real cost, and the logistic makes it non-obvious.**
-  `x + r·x·(1 − x/K)` is fastest at `K/2`, so stripping a centre toward the
-  floor does not merely delay it — it moves it onto a slower part of its own
-  growth curve. Whether that is worth a faster-starting colony is a
-  Monte-Carlo question, not an argument, which is why the share is a knob.
+##### Settlers — priced in time
 
-#### The knob — `Doctrine::endowment_fraction` (R-IND12, placeholder)
+**Total growth is not what varies; timing is.** Both worlds reach their own
+ceiling eventually whatever is shipped, so "the total growth of the combined
+system" is a statement about *when* — which is exactly what the colony-years
+guard measures. So the seed is priced in time:
 
-How much of itself a centre commits to a child, applied to **both** its people
-and its bank. It is Doctrine because it is policy over the roster, and because
-cards in Growth and Expansion are the obvious things to move it.
+```text
+value(S) = T_c(S) = ln[ (S / (K_c − S)) · ((K_c − x_0) / x_0) ] / r
+           the time the seed saves the destination, floor -> S
 
-Default **0.25**, a **flagged placeholder**. `examples/endowment` sweeps it on
-the standard four-seed CRN bed against colony count with colony-years as the
-guard.
+cost(S)  = T_p(S) = S / g(x_p − S, K_p)
+           the time the origin needs to regrow what it gave away
 
-**Measured, and the result is that it is inert at the shipped coloniser policy.**
-`0.15`, `0.25`, `0.50` and `0.90` give **bit-identical** colony-years
-(9,609,694); only `0.05` differs, and by +0.031%. The mechanism is arithmetic,
-not luck:
+choose S maximising   delta · T_c(S) − T_p(S)
+```
 
-- A Medium hull's hold is `Band I` = **1.0 kt**, and a centre cannot build one
-  until its population reaches `medium_min_level`, whose edge is **≈14.2 kt**.
-  So the budget `0.25 × 14.2 = 3.55 kt` never binds; below `f ≈ 0.07` it starts
-  to, which is exactly where the sweep first moves.
-- Bit-identity against the pre-conservation baseline says something further, and
-  it is not an inference from the sign: **no coloniser ever loaded minerals
-  either.** Any mineral debit would have perturbed a stockpile and diverged the
-  run. So every world this bed colonises has `K ≥ Band I`, and a Medium hold is
-  always filled with people.
-- The population debit is real and happens on every founding; it reaches the
-  objective only through the **integer** `PopBands` gate, which taking 1.0 kt off
-  a ≥14.2 kt centre never crosses.
+**`r` cancels** — both terms carry `1/r` — so the split does not move when
+`growth_rate` is retuned. That matters: `growth_rate` is separately ratified
+(R-O84), and a policy coupled to it would tie together two things that were
+measured apart.
 
-So conservation costs the shipped configuration **exactly nothing**, and the
-constraint binds where the design wants it to: on the General hull, whose 31.6 kt
-hold needs roughly `31.6/f` citizens behind it. **R-IND12 cannot be ratified
-before R-IND11** — the knob has no gradient to measure until a policy buys hulls
-big enough to feel it.
+**Two rival formulations were tried and rejected on measurement**, which is why
+this one is written out rather than asserted:
+
+| formulation | closed form? | why it was rejected |
+|---|---|---|
+| marginal next-cycle rate, `g(x_p − S) + delta·g(S)` | yes | ships **nothing** whenever the origin is below `K_p/2` and the destination is far — i.e. nothing in the early game, when colonising matters most |
+| sum of fill times | no | strips a full origin to **99%** of itself at zero distance, *and* ships nothing from one at its ceiling when the destination is far — wrong in both directions at one operating point |
+
+**The optimum is gridded, not solved.** Sampled over 4,000 random
+configurations the objective has more than one turning point in **~4.6%** of
+them, so it is not unimodal and a bisection or golden-section search would
+return a local optimum in those — deterministically and invisibly, which is the
+worst kind of wrong. `ENDOWMENT_GRID = 32` evaluations per launch is a few
+thousand per run against a growth step that runs per planet per cycle.
+
+**A destination-limited seed fills the world**, taken as an explicit case rather
+than left to the grid: `T_c` diverges as `S → K_c`, because a colony landed at
+its own ceiling has no growth left to wait through.
+
+**The discount is `delta = 1 / (1 + tau / cycle_years)`** — a gain landing `n`
+production cycles late is worth `1/(1+n)` of one landing now. Hyperbolic rather
+than exponential, and chosen because it needs **no new constant**: `cycle_years`
+already exists and is the natural clock for a per-cycle quantity. Whether the
+form should be exponential is **R-IND14**, open.
+
+##### Minerals — sized by the build-out, and this is where works value enters
+
+```text
+E = min( H − S , C(I_0 → I*) , bank(origin) )
+```
+
+where `C(I_0 → I*)` is the cumulative infrastructure rung price over that range.
+Sending more than the destination will spend is freight for ore that then sits
+in a stockpile; sending less means it waits on a freighter for something the
+coloniser had room for.
+
+**`I*` is where works value enters, and works are superadditive in `K` and `D`**
+— the author's ruling: *works have higher value on a high-`K` world and on a
+high mineral-density world, and the highest on the combination.* "Highest on the
+combination" is a positive cross partial, and the simplest function with one is
+a **product**. A product of masses is a **sum on the Band ladder**, so the
+placeholder is the midpoint
+
+```text
+I* = (K_c + D) / 2          (Bands — i.e. the geometric mean of the two masses)
+```
+
+**Placeholder, flagged: R-IND13.** The real works-value function is §5's and
+needs T-73/T-74. This is the cheapest form with the right cross partial, not a
+claim about magnitudes.
+
+**The mix is not a second decision.** The settlers are capped by `K_c`, so a
+low-ceiling world takes few people and therefore leaves with a mineral-heavy
+endowment — founded to be worked rather than to be lived on. Both halves mass
+the same, so the split is invisible from outside, which is the point:
+acceleration must not read out cargo *type* (design law #10).
 
 **What this invalidates on purpose.** Every colony-years figure taken before it
 — including §1.6's own +13.97% and §1.4's +4.4%/+4.7% for T-67 — was measured
@@ -543,6 +589,23 @@ the mechanism before tuning the value (`CLAUDE.md` §2).
 > drift from the occupancy. Hulls taken from Reserve are already built and leave
 > at once, and bootstrap survey craft are *seeded* rather than built, so they
 > still launch instantly.
+>
+> **Measured on the guard, and the prediction held.** `examples/colony_years`,
+> 3 seats, 4,000 yr: seed 1 **9,542,958 → 10,558,680 (+10.64%)**, seed 7
+> **9,483,962 → 10,474,864 (+10.45%)**, with colony **count identical** on both
+> (3,337 and 3,346). The same worlds, taken sooner — which is what a saturated
+> bed has left to give (T-20).
+>
+> **And it cost an order of magnitude of throughput, which is the real result.**
+> The same runs came in at **11 and 10 simulated-years per real second**, against
+> the 183–217 yr/s the bed did after R-O70. T-24's floor is 2.5 yr/s, so the
+> margin at 3 seats / 4 kyr is **~4x**, down from ~79x — and T-24 already records
+> that degradation is *superlinear in duration*, so the 12-seat / 8-kyr corner is
+> now under the floor rather than near it. The mechanism is not mysterious and
+> should not be assumed either: a Medium hull went 10 yr → 3.0, so yards decide
+> three to four times as often and entity count follows. **Measure the corner
+> before optimising it** — that is T-66's first step and it now has a second
+> reason to happen.
 >
 > **What it cost in test time, and why that is a finding rather than a chore.**
 > The unit target went **87 s → 507 s**, and `CLAUDE.md` §2's rule applied
@@ -1195,7 +1258,9 @@ artifact in place contaminates every later measurement.
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |
-| **R-IND12** | `Doctrine::endowment_fraction` — the share of its people and its bank a centre commits to a colony. Default 0.25, **placeholder**; `examples/endowment` sweeps it. | §1.7 |
+| **R-IND12** | How much a coloniser carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |
+| **R-IND13** | The works-value rung `I*`. Placeholder is the Band midpoint of capacity and abundance, i.e. the geometric mean of the two masses — the cheapest form with the required positive cross partial. The real function is §5's and needs T-73/T-74. | §1.7, §5 |
+| **R-IND14** | Whether the travel discount should be hyperbolic (`1/(1+n)`, current, no new constant) or exponential (needs a time constant). | §1.7 |
 | **R-IND10** | Who bears the loss when a matched contract's carrier is destroyed — buyer, seller, or escrow? | §8.1 |
 | **R-IND11** | Is a General coloniser ever worth it, now that the hold is the only thing separating the hulls? **Measured and reframed — blocked on R-O74.** `SettlersPerMineral` scores +13.97% colony-years on identical colony counts, but two ablations put the whole effect on the *seed mass* rather than the hull, and founding settlers are conjured. Unanswerable until the seed is drawn from the origin. Default stays `CheapestViable`. | §1.6 |
 

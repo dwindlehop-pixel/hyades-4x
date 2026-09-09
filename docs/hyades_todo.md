@@ -180,8 +180,12 @@ open design-law-#11 violation. Default stays `CheapestViable`.
 debited from the founding centre's population; whatever hold the people do not
 fill leaves with minerals out of that centre's own bank and lands in the new
 colony's stockpile; a contested coloniser unloads both halves back home. The
-share a centre will part with is `Doctrine::endowment_fraction` (**R-IND12**,
-default 0.25, placeholder, swept by `examples/endowment`).
+amount is a **demand-side** question (**R-IND12**): settlers priced in time —
+what the seed saves the destination against what it costs the origin to regrow,
+discounted by the voyage — and minerals sized by the destination's intended
+build-out, whose rung comes from works value and is superadditive in capacity and
+mineral density (**R-IND13**, placeholder). The supply-side `endowment_fraction`
+is retired: *a fraction of hold is irrelevant.*
 
 **Every colony-years figure taken before that landing was measured on an economy
 that created population.** They are records of what that engine did, not baselines

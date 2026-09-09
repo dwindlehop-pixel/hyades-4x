@@ -175,8 +175,9 @@ carries no such information itself.
   conjured them, and the size of the violation was measurable: the coloniser
   policy that shipped the biggest seed scored **+13.97% colony-years** on an
   identical colony count, which was a measurement of the free mass rather than
-  of the policy (§1.6). How many a centre will part with is Doctrine —
-  `endowment_fraction`.
+  of the policy (§1.6). **How many is a demand-side question**, not a share of
+  the parent: the seed is priced in time — what it saves the destination against
+  what it costs the origin to regrow — discounted by the voyage (R-IND12).
 - **A hold may carry any mix of settlers and minerals.** Whatever volume the
   people do not fill leaves with minerals out of the founding centre's own
   bank, and lands in the new colony's stockpile to jumpstart production. Both

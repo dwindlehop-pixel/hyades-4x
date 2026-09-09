@@ -782,6 +782,25 @@ one, stop and flag it.
   No hand-waved numbers presented as derived.
 - **Validate numerically before committing to a design.** Probe the scaling
   relationship (Python or a throwaway harness) *first*, then commit.
+- **Define every term and variable before you use it.** A symbol that appears in
+  a formula, a table, a comment or a commit message without a stated meaning is a
+  defect, not a shorthand — the reader cannot check the claim, and neither can
+  the next measurement. This bit R-IND12: `§1.7` introduced `endowment_fraction`
+  in prose, then wrote `× f` in one place and `31.6/f` in another with **`f`
+  never defined anywhere**, so the one line carrying the design's actual
+  consequence was unreadable.
+
+  Concretely, and in this order:
+  - **Name it in full at first use**, then bind the symbol explicitly —
+    "…the endowment fraction `f`…" — not the symbol alone.
+  - **A spec section with more than two symbols gets a table**: symbol, name,
+    unit, and where it is set. `Hyades_industry.md` §3.2 does this and is
+    readable years later; §1.7 did not and was not.
+  - **Units are part of the definition.** `Band`, `Kilotons` and `Price` are
+    different things (§4), and a formula that does not say which one a symbol is
+    has already lost the argument the type system exists to win.
+  - **Single letters are for quantities with a stated definition nearby**, never
+    for a concept. If it takes a sentence to say what it is, it gets a name.
 - **Flavor text is the author's own.** Never silently overwrite it.
 - Direct, technical register. Concrete decisions over hedging.
 - **Never force-push a designated feature branch — not even `--force-with-lease`
@@ -950,12 +969,25 @@ changes how you *work*, not what is left to do:
   | pre-T-62 bed, 3 seats, 4 kyr *(container)* | 19,406 | 78.7 yr/s | 31× |
   | **T-62 (Banded mineral field), same run** | 23,227 | **35.0 yr/s** | **14×** |
   | + T-64 (logistic on mass, no conversion in the step) | 23,227 | 42 yr/s | 17× |
+  | post-R-O70 bed, 3 seats, 4 kyr | ~14,700 | 183–217 yr/s | ~79× |
+  | **T-68 (`t_build` tracks hull mass), same bed** | — | **10–11 yr/s** | **~4×** |
 
   **T-62 halved it, and the mechanism is hauling — not vehicles and not mining**
   (`examples/haul_census`). Vehicles rose 1.20× and extraction ticks 1.02×, but
   **freighter transfers rose 6.81×** because the log-normal field made the same
   rocks hold 2,256× the ore and a freighter's hold is a fixed size. Cost is
   proportional to ore hauled, not to worlds mined.
+
+  **T-68 took ~19x of it in one change, and that is the live problem.** Making
+  `t_build` track hull mass dropped a Medium hull from 10 yr to 3.0, so yards
+  decide three to four times as often and entity count follows. It bought
+  **+10.5% colony-years on both measured seeds** with colony count unmoved, so
+  the change is right and is not being reverted — but at **10–11 yr/s** the
+  margin at 3 seats / 4 kyr is ~4x, and since degradation is superlinear in
+  duration (below), the 12-seat / 8-kyr corner is now **under the floor** rather
+  than near it. That corner has still never been measured; extrapolating it
+  again would be the third time this table has been wrong about a number nobody
+  ran. **Measure it (T-66), then optimise.**
 
   **`mineral_peak = Band IV` is ratified (R-O82), so this is now the first case
   where the scenario genuinely cannot be shrunk.** The 12-seat × 8-kyr corner
