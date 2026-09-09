@@ -67,6 +67,40 @@ fn main() {
         }
     }
     println!("  {n} non-empty banks: {even} exactly even, {skewed} skewed");
+
+    // **Where the ore comes from.** A freighter carries one outpost's ore, so
+    // if a *source* is single-coloured then no routing rule over single-coloured
+    // cargoes can assemble a three-coloured bank. Measure the sources.
+    let (mut src, mut src_dom) = (0usize, 0.0f64);
+    let mut dom_hist = [0usize; 5]; // <40, <60, <80, <95, >=95 % dominant
+    for p in snap.planets.iter() {
+        let d = &p.density;
+        let t: f64 = Basic::ALL.iter().map(|&c| d.get(c).kilotons()).sum();
+        if t <= 1e-9 {
+            continue;
+        }
+        src += 1;
+        let dom = Basic::ALL.iter().map(|&c| d.get(c).kilotons() / t).fold(0.0f64, f64::max);
+        src_dom += dom;
+        let b = if dom < 0.40 {
+            0
+        } else if dom < 0.60 {
+            1
+        } else if dom < 0.80 {
+            2
+        } else if dom < 0.95 {
+            3
+        } else {
+            4
+        };
+        dom_hist[b] += 1;
+    }
+    println!("  {src} mineral sources, mean dominant-colour share {:.3}", src_dom / src.max(1) as f64);
+    println!(
+        "    <40%: {}  40-60%: {}  60-80%: {}  80-95%: {}  >=95%: {}",
+        dom_hist[0], dom_hist[1], dom_hist[2], dom_hist[3], dom_hist[4]
+    );
+    std::io::stdout().flush().ok();
     println!("  worst deviation from an even third: {:.6} (planet {})", worst.0, worst.1);
     // Show a few so the shape is visible rather than summarised away.
     for p in snap.planets.iter().filter(|p| p.owner.is_some()).take(60) {
