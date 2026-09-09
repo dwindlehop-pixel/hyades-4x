@@ -103,6 +103,54 @@ two multiplications.
 
 ---
 
+### T-82 … T-86. The Exchange — `Hyades_politics_trade_and_intelligence.md` §10
+
+**The design was already written** (§§2–8: `$`, the M4 transit-burn faucet/sink,
+what needs a pact, settlement as a voyage, escrow, reputation, the counter-graph).
+**§10 is new and is the implementation contract** — what exists, what is missing,
+the decisions building it forces, and a staged order where every stage is
+measurable alone.
+
+**`src/matching.rs` is built, good, and is not this.** It is an *intra-empire
+haulage* matcher: books per `(owner, commodity)`, `Commodity::Minerals` with no
+colour axis, `Offer` with no owner, price as `mineral_pressure ∈ [0,1]` rather
+than `$`, and it is **not wired into `lib.rs`**. Its matching core is worth
+keeping wholesale — highest price first, nearest within price, partial fills,
+matched quantity reserved, ties by entity id, no `HashMap`. What changes is what
+it is a book *of*.
+
+| # | Stage | Behaviour | T-code |
+|---|---|---|---|
+| 1 | `$` ledger + faucet; nothing spends it | neutral | **T-82** |
+| 2 | `Commodity` gains the colour axis; `Offer` gains an owner | neutral | **T-83** |
+| 3 | Cross-empire book; centres post `wtp` bids | neutral | **T-84** |
+| 4 | Clearing at the round barrier → contracts + escrow | changes | **T-85** |
+| 5 | The freight leg; escrow settles on arrival | changes | **T-77** |
+| 6 | Default, interdiction, reputation | changes | **T-86** |
+
+**Three things resolved by writing it**, all of which were open only because
+nobody had tried to build it:
+
+- **R-P10 — clearing is per round, at the barrier.** A continuous book makes
+  price a function of event ordering, and two clients that break a tie
+  differently clear at different prices. That is a desync, and design law #16
+  says an unreproducible one.
+- **R-IND10 was already answered and the register was stale.** Politics §3.3:
+  escrow returns to the buyer minus the burn, so the buyer loses the burn and the
+  seller loses the cargo. Shared, which is what makes escorting worth paying for.
+- **T-11/R-O27's diplomatic Doctrine fields finally have a list** — `base_value`,
+  `doctrine_demand`, `risk_aversion` — because §3.2's price formula needs them.
+
+**Two dependencies to respect.** The faucet wants `production`, which is works
+fabrication (T-74) and does not exist; it ships against infrastructure stock as a
+flagged placeholder (**R-P16**). And **do not guard this with colony-years** —
+the works branch measured it inverted for anything that changes how minerals are
+spent (builds 1,032 → 57 → 31 → 66 against colony-years 10.559 → 10.606 → 10.633
+→ 10.582 M). The right guard is Growth's work-years, which also needs T-74, so
+the interim guard is the build-mix census in `examples/bank_mix`.
+
+---
+
 ### T-81. Freight has no colour term — **LANDED AND MEASURED FALSE**
 
 **A missing term, not a tuning question** — the same shape as λ, the largest

@@ -1592,7 +1592,7 @@ artifact in place contaminates every later measurement.
 | **R-IND17** | Score freight by *completion of the bill* rather than relief of one colour — `(short_before − short_after) / Σ bill`. T-81's relief term anti-concentrates and was measured counterproductive. | §6.11 |
 | **R-IND16** | How much colour weight one deep Production card adds — and therefore how many layers "deep" is, given that Sole is an asymptote approached at `(3+k)/(6+k)`. | §6.10 |
 | **R-IND14** | Whether the travel discount should be hyperbolic (`1/(1+n)`, current, no new constant) or exponential (needs a time constant). | §1.7 |
-| **R-IND10** | Who bears the loss when a matched contract's carrier is destroyed — buyer, seller, or escrow? | §8.1 |
+| ~~**R-IND10**~~ | ~~Who bears the loss when a carrier is destroyed?~~ **resolved — the register was stale, `Hyades_politics_trade_and_intelligence.md` §3.3 already answered it.** Escrow returns to the buyer minus the burn: the buyer loses the burn, the seller loses the cargo, the loss is shared. That is what makes escorting worth paying for. | §8.1, politics §3.3 |
 | **R-IND11** | Is a General coloniser ever worth it, now that the hold is the only thing separating the hulls? **Measured and reframed — blocked on R-O74.** `SettlersPerMineral` scores +13.97% colony-years on identical colony counts, but two ablations put the whole effect on the *seed mass* rather than the hull, and founding settlers are conjured. Unanswerable until the seed is drawn from the origin. Default stays `CheapestViable`. | §1.6 |
 
 ---
