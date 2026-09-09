@@ -56,6 +56,13 @@ struct Run {
     /// Mean **dwell**: founding of a colony to that colony's own first applied
     /// build — the gate-skipping hypothesis made measurable.
     mean_dwell: f64,
+    /// Dwell decomposed by what the first build *was*. A colony that seeds
+    /// shallow starts on the cheap infrastructure staircase, so its first build
+    /// lands early and is an upgrade; one that seeds past the gates goes
+    /// straight for a hull it has to save for. Without this split the headline
+    /// dwell moves the wrong way for the right reason.
+    mean_dwell_infra: f64,
+    mean_dwell_hull: f64,
     /// Share of coloniser builds that were General hulls. Mining pairs are
     /// `LimitedSystems`, so the coloniser population is exactly the
     /// Medium/General Systems builds.
@@ -76,7 +83,8 @@ fn run(seed: u64, policy: ColonizerPolicy) -> Run {
     // Pass 1 — voyages, foundings, and each centre's first build.
     let mut spawn: HashMap<u64, f64> = HashMap::new();
     let mut founded_at: HashMap<u32, f64> = HashMap::new();
-    let mut first_build: HashMap<u32, f64> = HashMap::new();
+    // planet -> (time of first applied build, was it a hull rather than an upgrade)
+    let mut first_build: HashMap<u32, (f64, bool)> = HashMap::new();
 
     let (mut colonies, mut colony_years, mut sum_t, mut first) = (0usize, 0.0, 0.0, f64::INFINITY);
     let (mut sum_flight, mut n_flight) = (0.0, 0usize);
@@ -99,7 +107,7 @@ fn run(seed: u64, policy: ColonizerPolicy) -> Run {
                 }
             }
             LogEvent::BuildApplied { center, order: BuildOrder::Hull { hull_type, .. }, .. } => {
-                first_build.entry(center.0).or_insert(r.time);
+                first_build.entry(center.0).or_insert((r.time, true));
                 match hull_type {
                     HullType::MediumSystems => colonisers += 1,
                     HullType::GeneralSystems => {
@@ -110,19 +118,29 @@ fn run(seed: u64, policy: ColonizerPolicy) -> Run {
                 }
             }
             LogEvent::BuildApplied { center, .. } => {
-                first_build.entry(center.0).or_insert(r.time);
+                first_build.entry(center.0).or_insert((r.time, false));
             }
             _ => {}
         }
     }
 
-    // Pass 2 — dwell, over the colonies that ever built anything at all.
+    // Pass 2 — dwell, over the colonies that ever built anything at all, and
+    // the same quantity split by what the first build was.
     let (mut sum_dwell, mut n_dwell) = (0.0, 0usize);
+    let (mut sum_infra, mut n_infra) = (0.0, 0usize);
+    let (mut sum_hull, mut n_hull) = (0.0, 0usize);
     for (planet, t_found) in &founded_at {
-        if let Some(t_build) = first_build.get(planet) {
-            if t_build >= t_found {
+        if let Some(&(t_build, was_hull)) = first_build.get(planet) {
+            if t_build >= *t_found {
                 sum_dwell += t_build - t_found;
                 n_dwell += 1;
+                if was_hull {
+                    sum_hull += t_build - t_found;
+                    n_hull += 1;
+                } else {
+                    sum_infra += t_build - t_found;
+                    n_infra += 1;
+                }
             }
         }
     }
@@ -135,6 +153,8 @@ fn run(seed: u64, policy: ColonizerPolicy) -> Run {
         mean_founding: mean(sum_t, colonies),
         mean_flight: mean(sum_flight, n_flight),
         mean_dwell: mean(sum_dwell, n_dwell),
+        mean_dwell_infra: mean(sum_infra, n_infra),
+        mean_dwell_hull: mean(sum_hull, n_hull),
         general_share: if colonisers > 0 { general as f64 / colonisers as f64 } else { 0.0 },
     }
 }
@@ -143,18 +163,19 @@ fn main() {
     println!("R-IND11 — coloniser hull policy, CRN over {SEEDS:?}, {PLAYERS} seats, {HORIZON:.0} yr");
     println!("objective = colony COUNT; colony-years is the guard\n");
     println!(
-        "{:<26}{:>10}{:>14}{:>9}{:>12}{:>10}{:>9}{:>9}",
-        "policy / seed", "colonies", "colony-yr", "first", "mean found", "flight", "dwell", "gen%"
+        "{:<26}{:>10}{:>14}{:>9}{:>12}{:>10}{:>9}{:>9}{:>9}{:>8}",
+        "policy / seed", "colonies", "colony-yr", "first", "mean found", "flight", "dwell", "d:infra", "d:hull", "gen%"
     );
     std::io::stdout().flush().ok();
 
     let mut totals = Vec::new();
     for policy in [ColonizerPolicy::CheapestViable, ColonizerPolicy::SettlersPerMineral] {
         let (mut c, mut y, mut m, mut fl, mut dw, mut gs) = (0usize, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let (mut di, mut dh) = (0.0, 0.0);
         for seed in SEEDS {
             let r = run(seed, policy);
             println!(
-                "{:<26}{:>10}{:>14.0}{:>9.1}{:>12.1}{:>10.1}{:>9.1}{:>8.1}%",
+                "{:<26}{:>10}{:>14.0}{:>9.1}{:>12.1}{:>10.1}{:>9.1}{:>9.1}{:>9.1}{:>7.1}%",
                 format!("{policy:?} s{seed}"),
                 r.colonies,
                 r.colony_years,
@@ -162,6 +183,8 @@ fn main() {
                 r.mean_founding,
                 r.mean_flight,
                 r.mean_dwell,
+                r.mean_dwell_infra,
+                r.mean_dwell_hull,
                 100.0 * r.general_share
             );
             std::io::stdout().flush().ok();
@@ -170,11 +193,13 @@ fn main() {
             m += r.mean_founding;
             fl += r.mean_flight;
             dw += r.mean_dwell;
+            di += r.mean_dwell_infra;
+            dh += r.mean_dwell_hull;
             gs += r.general_share;
         }
         let n = SEEDS.len() as f64;
         println!(
-            "{:<26}{:>10.1}{:>14.0}{:>9}{:>12.1}{:>10.1}{:>9.1}{:>8.1}%\n",
+            "{:<26}{:>10.1}{:>14.0}{:>9}{:>12.1}{:>10.1}{:>9.1}{:>9.1}{:>9.1}{:>7.1}%\n",
             format!("{policy:?} MEAN"),
             c as f64 / n,
             y / n,
@@ -182,6 +207,8 @@ fn main() {
             m / n,
             fl / n,
             dw / n,
+            di / n,
+            dh / n,
             100.0 * gs / n
         );
         std::io::stdout().flush().ok();
