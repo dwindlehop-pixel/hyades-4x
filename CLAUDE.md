@@ -639,7 +639,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
 | `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement` |
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |
-| `src/matching.rs` | the Exchange (order-book matching) — **built, not yet wired into `lib.rs`** |
+| `src/matching.rs` | the Exchange (order-book matching) — wired in at T-01; **it was never in the module list, so it did not compile as part of the crate and its tests never ran in CI** |
 | `src/log.rs` | optional diagnostic event log (the interrogation seam) |
 | `src/snapshot.rs` | read-only views for the presentation layer |
 
@@ -961,6 +961,43 @@ one, stop and flag it.
 
   If a change genuinely touches no spec, say so explicitly in the PR body. Silence
   reads as an oversight, because usually it is one.
+- **Every PR accounts for its T-codes and for every ratified decision it touches.**
+  Two lists in the body, and the second is the one that matters:
+
+  1. **Tasks.** Which `T-nn` this **closed**, which it **advanced** without
+     closing, and which it **opened**. A staged plan (`Hyades_industry.md` §6.7,
+     politics §10.7) is only navigable if each landing says where in it you now
+     are — and a T-code claimed as done that is only half done is worse than an
+     open one, because nobody re-reads it.
+  2. **Ratified decisions implemented or contradicted.** Every R-code, design
+     law and ratified magnitude the change **satisfies**, and every one it
+     **contradicts or invalidates** — named, with the resolution.
+
+  **The contradiction half is the whole point.** `docs/` is authoritative only
+  for as long as nothing lands that quietly disagrees with it; one unannounced
+  contradiction and the next reader cannot tell which of the two to believe, so
+  they must re-derive everything or trust nothing. Both are worse than a
+  sentence in a PR body.
+
+  Contradiction is **not** a reason to stop — this project has landed several on
+  purpose, and they were the good changes:
+
+  | Kind | Example | What the PR had to say |
+  |---|---|---|
+  | A ratified value stops meaning anything | `miners_per_outpost = 3` (+2.74% colony-years, every seed positive) retired at T-72, and its replacement retired at T-87 | *why* the measurement no longer applies — it was taken under a law with no deposit term at all |
+  | A prediction in a spec is measured false | §4.5's "fewer, larger, closer" — larger and closer held, **fewer did not** | which half failed, and that site count is `rank`'s decision and not this section's to make |
+  | A stated dependency has since landed | R-P16 shipped the `$` faucet against an infrastructure placeholder *because* T-74 had not landed | that it **resolves** rather than ships — the placeholder was never wanted, only unavoidable |
+  | A spec formula is arithmetically wrong | §4.3's `ε·S·W` double-counts the deposit, so output goes as richness squared | the corrected form, and that every *ratio* the section asserts survives it (R-IND19) |
+  | A ratified default is knowingly moved against the metric | `miner_vein_fraction`, then its deletion | the measured cost, and that it is a design call the objective cannot price |
+
+  **Landing one silently is the defect.** Say which decision, why it no longer
+  holds, and what replaces it — then mark it resolved where it is listed, which
+  the bullet above already requires. A contradiction that is argued is a
+  ratification; one that is not is a divergence nobody knows about yet.
+
+  It also catches bookkeeping faults cheaply: T-83 was used for two different
+  things in one session because no landing had been asked to enumerate its
+  codes, and the collision surfaced only when the second one was read back.
 - **Make concrete decisions; flag open questions as R-codes.** A decision plus a
   flagged R-code beats an open-ended clarifying question. Existing families:
   `R-MC*` (mineral cost / combat), `R-L*` (loadout), `R-ARENA*`, `R-MX*` (matching),
