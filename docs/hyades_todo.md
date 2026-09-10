@@ -269,15 +269,15 @@ a population, because those are genuinely a world's capacity to hold people.
 
 | # | Item | Blocked on | T-code |
 |---|---|---|---|
-| 1 | `K = min(hab, bio_max)` — drop infra from the minimum | — | **T-67** |
-| 2 | `t_build` from hull mass — replace flat `build_years` | — | **T-68** |
+| 1 | `K = min(hab, bio_max)` — drop infra from the minimum | — | ~~**T-67**~~ — **LANDED** |
+| 2 | `t_build` from hull mass — replace flat `build_years` | — | ~~**T-68**~~ — **LANDED** |
 | 3 | Slips: concurrency linear in fabrication throughput | T-68 | ~~**T-69**~~ — **LANDED** |
-| 4 | Infrastructure stored as kilotons; the Band is a reading | T-67 | **T-70** |
+| 4 | Infrastructure stored as kilotons; the Band is a reading | T-67 | ~~**T-70**~~ — **LANDED** |
 | 5 | Extraction law: `N(S)` veins per deposit, `W = N^(1−β)·n^β` — one law for crews and works | — | ~~**T-71**~~ — **LANDED** |
 | 6 | `miners_per_outpost` becomes a target *fraction of `N(S)`*, not a hull count | T-71 | ~~**T-72**~~ — **LANDED** |
-| 7 | Works: colour-differentiated infrastructure price | T-70 | **T-73** |
+| 7 | Works: colour-differentiated infrastructure price | T-70 | ~~**T-73**~~ — **LANDED** |
 | 8 | Extraction and fabrication rates from Infra × allocation | T-70 | ~~**T-74**~~ — **LANDED** |
-| 9a | `Works` struct + CardId-ordered fold + commutativity property test | T-74 | **T-75a** |
+| 9a | `Works` struct + CardId-ordered fold + commutativity property test | T-74 | ~~**T-75a**~~ — **LANDED** |
 | 9b | `Doctrine` allocation vector wired to the fold | T-75a | ~~**T-75b**~~ — **LANDED** |
 | 10 | Development freight and the balanced-exchange default | T-73 | **T-76** |
 | 11 | Exchange settles into a **freight leg**, not a transfer (refined mass traverses real space) | T-01 | **T-77** |
