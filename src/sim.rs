@@ -896,6 +896,126 @@ fn cost_anchor(cfg: &SimConfig) -> f64 {
     cfg.general_vehicle_cost / units::COST_LADDER[1]
 }
 
+/// **Workable veins in a deposit** — `N(S) = veins_per_band^(band(S) − 1)`
+/// (`Hyades_industry.md` §4.2, T-71).
+///
+/// Two miners cannot work the same vein, so capacity beyond the first must open
+/// another one and the best veins go first. That makes extraction *sublinear* in
+/// crew — Lanchester's lesson with the sign reversed, because sites are
+/// exclusive where fire concentrates. But **crowding is relative to the body**:
+/// a bigger deposit has more veins, so `n` miners crowd a pebble and rattle
+/// around a seam.
+///
+/// | deposit | mass | `N` |
+/// |---|---|---|
+/// | `Band I` | 1 kt | 1 |
+/// | `Band II` | 31.6 kt | 10 |
+/// | `Band III` | 2,828 kt | 100 |
+/// | `Band IV` | 715,500 kt | 1,000 |
+///
+/// Floored at one: a body always has somewhere to put the first miner, and the
+/// `Band Empty` floor (design law #11) means `band()` never returns a magnitude
+/// that would drive this to zero.
+fn veins(deposit: Kilotons, cfg: &SimConfig) -> f64 {
+    let band = deposit.in_bands().bands();
+    // `veins_per_band` below 1 would make `powf` of a negative exponent diverge
+    // and put an infinity into a quantity the simulation divides by — design
+    // law #16 says an infinity is a fatal value, not a small one, because it
+    // becomes a NaN in one subtraction. Clamped at the edge rather than checked
+    // at every call site.
+    let per_band = cfg.veins_per_band.max(1.0);
+    per_band.powf(band - 1.0).clamp(1.0, MAX_VEINS)
+}
+
+/// Ceiling on the vein count, and therefore on any crew derived from it.
+///
+/// Not a design constant — `Hyades_industry.md` §4.2's ladder tops out at 1,000
+/// for `Band IV`, four orders below this. It exists so that a mis-set
+/// `veins_per_band` produces an absurd number rather than an unbounded one: a
+/// crew is allocated as hulls, so an unclamped `N` is an allocation loop, not a
+/// wrong answer.
+const MAX_VEINS: f64 = 1.0e7;
+
+/// **Work performed at a site** — `W(n, S) = N(S)^(1−β) · n^β` for `n ≤ N(S)`
+/// (`Hyades_industry.md` §4.3, T-71).
+///
+/// `n` is **extraction capacity in miner-equivalents**: hulls on station for an
+/// outpost, infrastructure allocated to extraction for a colony, and the whole
+/// point of the shape is that it is *one law for both*. §4.4 is explicit that an
+/// asymmetry here would make "outpost or colony?" a question about rate shape
+/// when it should be a question about commitment.
+///
+/// Three properties, and they are why this shape rather than a bare `n^β`:
+///
+/// - **A full crew pays linearly in richness.** `W(N, S) = N`, so a `Band IV`
+///   body worked by its thousand miners yields a thousand times a `Band I`
+///   body's one.
+/// - **A large crew on a rich rock is rational.** On `Band IV` one miner does
+///   `W = 31.6` and a thousand do `W = 1000`.
+/// - **A poor rock saturates at once.** On `Band I`, `N = 1` and the second
+///   miner adds nothing.
+///
+/// **Past `N` this is flat, and that is a placeholder** (R-IND9). §4.3 says the
+/// marginal miner beyond `N` gets the *floor grade* rather than zero — there is
+/// always more poor ore — so the cap should be a knee and not a wall. Flat is
+/// the cheaper of the two candidates §4.3 lists and it matters only for absurd
+/// crews; R-IND9 is open and says to settle it by what reads better in a log.
+fn extraction_work(capacity: f64, deposit: Kilotons, cfg: &SimConfig) -> f64 {
+    let n_veins = veins(deposit, cfg);
+    let n = capacity.clamp(0.0, n_veins);
+    if n <= 0.0 {
+        return 0.0;
+    }
+    let beta = cfg.crowding_beta;
+    n_veins.powf(1.0 - beta) * n.powf(beta)
+}
+
+/// **The share of a deposit's veins a crew effectively works** — `W(n,S)/N(S)`,
+/// which reduces to `(n/N)^β` (T-71, R-IND19).
+///
+/// This is the form the engine multiplies the stock by, and it is **not** what
+/// §4.3 writes. §4.3 gives `extraction = ε · S · W`, and that double-counts the
+/// deposit: `W` rises with `N` and `N` rises with `S`, so output would go as
+/// richness *squared*. Concretely, at `ε = outpost_mining_fraction` a full crew
+/// on a `Band III` body would lift **307% of everything present** in one tick —
+/// the opposite of §4.3's own "output tracks the stock, so a body depletes
+/// asymptotically rather than cliff-edging".
+///
+/// **Every ratio §4.3 asserts survives the normalisation**, because dividing by
+/// `N` is a change of scale that `ε` absorbs, and §4.3's claims are all about
+/// ratios:
+///
+/// - *"one miner does `W = 31.6` and a thousand do `W = 1000` — 31.6x the ore
+///   for 1000x the hulls"* on `Band IV`: here `(1/1000)^½ = 0.0316` against
+///   `(1000/1000)^½ = 1`. **The same 31.6x.**
+/// - *"a full crew pays linearly in the deposit's richness"*: a full crew takes
+///   `ε·S` on every body, and `S` is the richness. Linear, once.
+/// - *"a poor rock saturates immediately"*: on `Band I`, `N = 1`, so the second
+///   miner is clamped away and adds nothing.
+///
+/// So the disagreement is confined to the absolute scale, which was never
+/// measured either way (R-IND18), and the engine takes the reading that keeps a
+/// body finite. **R-IND19** carries the spec correction.
+fn crowding_factor(capacity: f64, deposit: Kilotons, cfg: &SimConfig) -> f64 {
+    extraction_work(capacity, deposit, cfg) / veins(deposit, cfg)
+}
+
+/// **One miner-equivalent of extraction capacity, in kilotons** (T-71).
+///
+/// §4.3 says `n` counts "miner hulls on station **plus** units of
+/// Infrastructure allocated to extraction", which only type-checks if the two
+/// are commensurable — and under R-O57 they already are, because dry mass *is*
+/// mineral cost. So the unit is **a miner hull's own mass**: the baseline
+/// autopilot mines with `LimitedSystems`, one hull is one unit by construction,
+/// and a colony's infrastructure converts at the same rate rather than at a
+/// second constant nobody could calibrate.
+///
+/// Defining it this way is what makes §4.4's "one law, two ways to buy
+/// capacity" literally one law instead of two laws that resemble each other.
+fn miner_equivalent(cfg: &SimConfig) -> f64 {
+    hull_cost(HullType::LimitedSystems, cfg).kilotons().max(1e-12)
+}
+
 /// **How many builds a yard runs at once** — `slips(F) = 1 + floor(F / F_slip)`
 /// (T-69, `Hyades_industry.md` §3.2).
 ///
@@ -1411,12 +1531,6 @@ pub struct SimConfig {
     ///
     /// **Placeholder magnitude** (R-IND3), like every coefficient in §5.
     pub fab_cap: f64,
-    /// **Extraction ceiling** — the asymptote `cap_ext` on the fraction of a
-    /// centre's own remaining density it works per cycle. Same anchor:
-    /// `2 × center_mining_fraction`, so a rung-I centre is unchanged.
-    ///
-    /// **Placeholder magnitude** (R-IND3).
-    pub ext_cap: f64,
     pub civilian_accel_g: f64,
     pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
@@ -1555,6 +1669,22 @@ pub struct SimConfig {
     /// The weakest of the four: 14.5 against 2 SE of 11.6 clears significance
     /// but not comfortably. First candidate to re-check on a wider bed.
     pub outpost_mining_fraction: f64,
+    /// **The crowding exponent β** (`Hyades_industry.md` §4.3, T-71).
+    ///
+    /// Work at a site is `W(n, S) = N(S)^(1−β) · n^β`, so β = 1 is no crowding
+    /// at all and β = 0 makes every extra unit of capacity worthless.
+    /// **Placeholder `1/2`** — §4.3's own value, never measured (R-IND18).
+    pub crowding_beta: f64,
+    /// **Workable veins per Band of deposit mass** (`Hyades_industry.md` §4.2,
+    /// T-71) — `N(S) = veins_per_band^(band(S) − 1)`.
+    ///
+    /// This is the term whose absence would have killed the mining ramp. A bare
+    /// `n^β` crowds a `Band I` pebble and a `Band IV` seam identically, so
+    /// nobody would ever put a large crew anywhere; the design wants hundreds or
+    /// thousands of miners on a high-value outpost. **Placeholder `10`** — "a
+    /// decade per Band", the design's own language for an order of magnitude
+    /// (R-IND18).
+    pub veins_per_band: f64,
     pub mining_tick_years: f64,
     /// Density below which a body is considered mined out.
     pub density_floor: f64,
@@ -1752,7 +1882,6 @@ impl SimConfig {
             build_lead_years: 2.0,
             slip_throughput: 0.1,
             fab_cap: 0.2,
-            ext_cap: 0.30,
             civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
@@ -1771,6 +1900,8 @@ impl SimConfig {
             center_mining_fraction: 0.15,
             biosphere_regen_rate: 0.127,
             outpost_mining_fraction: 0.238,
+            crowding_beta: 0.5,
+            veins_per_band: 10.0,
             mining_tick_years: 50.0,
             density_floor: 0.01,
             cargo_unit_size: 1.0,
@@ -2709,7 +2840,17 @@ impl Simulation {
                 let d = self.world.density.get(outpost).unwrap();
                 // A fraction of the ore actually present — a **mass**, since
                 // T-62 made the field's colours Bands and only their masses add.
-                d.total_mass().kilotons() * (crew.max(1) as f64 * self.config.outpost_mining_fraction).min(1.0)
+                //
+                // **Crowding, scaled to the deposit** (§4.3, T-71). Extraction is
+                // `ε · S · W(n, S)` with `n` the crew in miner-equivalents — one
+                // Limited hull, one unit. `ε` is `outpost_mining_fraction`
+                // unchanged, which is what pins the calibration: on a `Band I`
+                // body `N = 1`, so `W(1, S) = 1` and a lone miner extracts
+                // exactly what it did before T-71.
+                let stock = d.total_mass();
+                let n = crew.max(1) as f64;
+                let work = crowding_factor(n, stock, &self.config);
+                stock.kilotons() * (self.config.outpost_mining_fraction * work).min(1.0)
             };
             if amt <= self.config.density_floor {
                 continue;
@@ -2763,7 +2904,12 @@ impl Simulation {
         // 1) Local mining: the center works its own density into its stockpile.
         let amt = {
             let d = self.world.density.get(center).unwrap();
-            d.total_mass().kilotons() * self.extraction_rate(center).min(1.0)
+            let stock = d.total_mass();
+            // **Same law as an outpost's crew, different way of buying `n`**
+            // (§4.4, T-71). `extraction_rate` returns the centre's capacity in
+            // miner-equivalents; the deposit decides what that capacity is worth.
+            let work = crowding_factor(self.extraction_rate(center), stock, &self.config);
+            stock.kilotons() * (self.config.outpost_mining_fraction * work).min(1.0)
         };
         if amt > 0.0 {
             let extracted = self.world.density.get_mut(center).unwrap().extract(Kilotons::new(amt));
@@ -3063,7 +3209,8 @@ impl Simulation {
                         self.settler_target(center, e, HullType::MediumSystems.colony_seed_capacity(&self.config)),
                         self.settler_target(center, e, HullType::GeneralSystems.colony_seed_capacity(&self.config)),
                     ];
-                    best[slot] = Some(Candidate { view, ranked, settlers_by_hull });
+                    let mining_crew = self.mining_crew_for(e, &doctrine);
+                    best[slot] = Some(Candidate { view, ranked, settlers_by_hull, mining_crew });
                 }
             }
         }
@@ -3094,7 +3241,17 @@ impl Simulation {
             // sit Idle next to hulls it already owns. `apply_build_with` takes
             // the nearest reserved hull of each kind, so this matches what it
             // will actually spend.
-            mining_pair_cost: self.mining_pair_price(p, doctrine.miners_per_outpost.max(1) as usize),
+            // **Priced for the crew the chosen rock would get** (T-72). The
+            // autopilot only ever spends this on `best_mining`, and since T-71
+            // the crew is a property of the deposit — so pricing it from a flat
+            // doctrine count would put a number in front of the decision that
+            // the build step will not charge, which is the exact defect the
+            // comment above is about. `Candidate::mining_crew` is the one
+            // computation of the rule; this reads it rather than repeating it.
+            mining_pair_cost: self.mining_pair_price(
+                p,
+                cands.iter().find(|c| c.ranked.class == PlanetClass::MiningOutpost).map_or(1, |c| c.mining_crew),
+            ),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
         };
@@ -3191,12 +3348,25 @@ impl Simulation {
         total.saturating_sub(busy)
     }
 
-    /// **This centre's extraction rate** — the fraction of its own remaining
-    /// density it works per cycle (T-74). Was the flat `center_mining_fraction`.
+    /// **This centre's extraction capacity, in miner-equivalents** (T-71).
     ///
-    /// Crews on an *outpost* are a different law — `Hyades_industry.md` §4's
-    /// crowding, scaled to the deposit (T-71/T-72) — because that is about how
-    /// many hulls stand on one rock, not about what a world's industry can lift.
+    /// ~~The fraction of its own density it works per cycle~~ — T-74 shipped that
+    /// as a Michaelis–Menten curve on infrastructure, and §4.3a retired the form:
+    /// MM has **no deposit term**, so it would make crowding identical on a
+    /// `Band I` pebble and a `Band IV` seam, which is the exact fault §4.2 exists
+    /// to correct. Extraction saturates once, through §4.3's crowding law; §6.3's
+    /// curve stays where it belongs, on fabrication.
+    ///
+    /// So this returns `n`, and [`crowding_factor`] turns `n` into a rate
+    /// against the body being worked — the **same law an outpost's crew runs
+    /// on** (§4.4). The two differ only in how capacity is bought: hulls for an
+    /// outpost, infrastructure for a colony.
+    ///
+    /// The works coefficients keep their tree meanings on §4.3's parameters
+    /// (§4.3a): `cap[Extraction]` scales the capacity a given stock buys —
+    /// Production's asymptote — and `half[Extraction]` divides it, so lowering
+    /// the knee buys more work per kilotonne, which is Growth and Expansion's
+    /// signature.
     fn extraction_rate(&self, center: Entity) -> f64 {
         let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
         let works = self
@@ -3206,7 +3376,13 @@ impl Simulation {
             .and_then(|o| self.world.works.get(self.player_entity[o.0 as usize]))
             .copied()
             .unwrap_or_default();
-        employment_rate(infra, &works, cards::Employment::Extraction, self.config.ext_cap, works_knee(&self.config))
+        let e = cards::Employment::Extraction;
+        let stock = infra.kilotons() * works.alloc_share(e);
+        if stock <= 0.0 {
+            return 0.0;
+        }
+        let scale = works.cap[e.index()] / works.half[e.index()].max(1e-12);
+        stock * scale / miner_equivalent(&self.config)
     }
 
     /// Apply a production order. `candidates` is the empire's current candidate
@@ -3297,7 +3473,21 @@ impl Simulation {
                 // new pair can therefore still open an outpost with idle hulls,
                 // which is the whole point — 39% of outpost-years were being
                 // spent on exhausted rocks.
-                let crew = if role == Role::Miner { doctrine.miners_per_outpost.max(1) as usize } else { 1 };
+                // **The crew is the target's, not the doctrine's** (T-72). Read
+                // from the candidate list so it is bit-identical to what
+                // `mining_pair_cost` quoted; falling back to the deposit only if
+                // the target is not among the candidates.
+                let crew = if role == Role::Miner {
+                    match target.map(|t| self.planet_entity[t.0 as usize]) {
+                        Some(te) => candidates
+                            .iter()
+                            .find(|c| self.planet_entity[c.view.id.0 as usize] == te)
+                            .map_or_else(|| self.mining_crew_for(te, &doctrine), |c| c.mining_crew),
+                        None => 1,
+                    }
+                } else {
+                    1
+                };
                 let target_entity = target.map(|t| self.planet_entity[t.0 as usize]);
                 let (reused_miners, reused_freighter) = match (self.config.recycle_mining_pairs, role, target_entity) {
                     (true, Role::Miner, Some(te)) => {
@@ -3414,6 +3604,29 @@ impl Simulation {
     /// What a mining pair costs player `p` this cycle: the halves that are not
     /// already sitting in Reserve. Equals the full price whenever recycling is
     /// off, which is what keeps the flag a clean A/B.
+    /// **How many miners to put on this body** — `max(1, round(f · N(S)))`
+    /// (`Hyades_industry.md` §4.5, T-72).
+    ///
+    /// The crew is a property of the *rock*. T-57 ratified a flat 3, but that
+    /// was measured under a law with no deposit term at all: three miners were
+    /// three miners everywhere. Under T-71's crowding a flat count means
+    /// something different on every body — a full crew on a `Band I` pebble and
+    /// 17% of one on a `Band III` seam — so the constant does not survive as a
+    /// constant. What survives is the *policy* it stood for, and §4.5 names the
+    /// replacement: a target share of the deposit's veins.
+    ///
+    /// Floored at one, because a crew of zero is not a decision anyone wants to
+    /// express and `veins` already floors at one vein.
+    fn mining_crew_for(&self, planet: Entity, doctrine: &Doctrine) -> usize {
+        let stock = self.world.density.get(planet).map(|d| d.total_mass()).unwrap_or(Kilotons::ZERO);
+        let want = doctrine.miner_vein_fraction.max(0.0) * veins(stock, &self.config);
+        // `as usize` saturates rather than wrapping, so this cannot be unsound —
+        // but a crew is spawned as hulls, so an absurd count is a hang and not a
+        // wrong number. Bounded by the vein ceiling for the same reason it
+        // exists.
+        (want.round().clamp(1.0, MAX_VEINS) as usize).max(1)
+    }
+
     fn mining_pair_price(&self, p: usize, crew: usize) -> Price {
         let full_miner = role_cost(Role::Miner, &self.config);
         let full_freighter = role_cost(Role::Freighter, &self.config);
@@ -5432,13 +5645,68 @@ mod tests {
         let _ = (m_infra, g_infra);
     }
 
-    /// **T-57: extraction is per miner, not per rock.**
+    /// **§4.2's vein table and §4.3's worked ratios, pinned** (T-71).
     ///
-    /// `outpost_mining_fraction` used to be the fraction of remaining density a
-    /// *rock* yielded per tick, with the hull standing on it contributing
-    /// nothing but the schedule — so "how many miners per outpost" was not a
-    /// value anyone could tune, because there was no term for it. A crew of `n`
-    /// now works `n` times as much, capped at the whole remaining field.
+    /// The design's numbers, not the implementation's: a decade of veins per
+    /// Band, and on `Band IV` a thousand miners lift **31.6x** what one does.
+    /// That second figure is the one §4.3 uses to argue a large crew on a rich
+    /// rock is rational, and it is the figure `crowding_factor`'s normalisation
+    /// had to preserve (R-IND19) — so it is asserted through the normalised
+    /// form, which is what the engine actually multiplies by.
+    #[test]
+    fn veins_are_a_decade_per_band_and_crowding_pays_at_scale() {
+        let cfg = SimConfig::new(1);
+        for (rung, want) in [(1.0, 1.0), (2.0, 10.0), (3.0, 100.0), (4.0, 1000.0)] {
+            let mass = units::Kilotons::at_band(Band::new(rung));
+            let got = veins(mass, &cfg);
+            assert!(
+                (got / want - 1.0).abs() < 1e-6,
+                "Band {rung} holds {mass:?} and should have {want} veins, got {got}"
+            );
+        }
+
+        // §4.3, verbatim: "on `Band IV`, one miner does `W = 31.6` and a
+        // thousand do `W = 1000` — 31.6x the ore for 1000x the hulls".
+        let rich = units::Kilotons::at_band(Band::new(4.0));
+        let lone = crowding_factor(1.0, rich, &cfg);
+        let full = crowding_factor(1000.0, rich, &cfg);
+        assert!((full / lone - 31.6).abs() < 0.1, "1000 miners should lift 31.6x one, got {}", full / lone);
+
+        // **Richness is worth going to.** A lone miner on `Band IV` works a
+        // smaller *share* of the body than one on `Band I` — that is crowding —
+        // and lifts vastly more ore, because the body is vastly larger. Both
+        // halves are the design; only the second makes an outpost worth siting.
+        let poor = units::Kilotons::at_band(Band::new(1.0));
+        assert!(crowding_factor(1.0, rich, &cfg) < crowding_factor(1.0, poor, &cfg), "share must fall with richness");
+        assert!(
+            crowding_factor(1.0, rich, &cfg) * rich.kilotons() > crowding_factor(1.0, poor, &cfg) * poor.kilotons(),
+            "absolute yield must rise with richness"
+        );
+
+        // A full crew takes the same share of any body, which is the
+        // normalisation that stops output going as richness squared.
+        for rung in [1.0, 2.0, 3.0, 4.0] {
+            let mass = units::Kilotons::at_band(Band::new(rung));
+            let n = veins(mass, &cfg);
+            assert!((crowding_factor(n, mass, &cfg) - 1.0).abs() < 1e-9, "a full crew works the whole body at {rung}");
+        }
+    }
+
+    /// **T-71: extraction is per miner and sublinear, and the deposit sets where
+    /// the crowding bites.**
+    ///
+    /// Two prior laws, both superseded, and the shape of the correction is the
+    /// interesting part. Before T-57 `outpost_mining_fraction` was the fraction
+    /// a *rock* yielded per tick, with the hull standing on it contributing
+    /// nothing but the schedule — so "how many miners per outpost" had no term
+    /// to tune. T-57 made it linear in crew, which gave it one. T-71 makes it
+    /// **sublinear and relative to the body**: `(n/N(S))^β`.
+    ///
+    /// **This test used to assert exact linearity and §4.5 says that does not
+    /// survive** — T-57's ratified `miners_per_outpost = 3` was measured under a
+    /// law with no deposit term at all, and the right crew is now a property of
+    /// the rock rather than a constant. It asserts the new law's *properties*
+    /// rather than three numbers: sublinear, monotone, saturating at `N`.
     #[test]
     fn a_mining_crew_extracts_in_proportion_to_its_size() {
         let extracted = |crew: usize| {
@@ -5465,20 +5733,59 @@ mod tests {
             before - sim.world.density.get(outpost).unwrap().total_mass().kilotons()
         };
 
+        let cfg = SimConfig::new(3);
         let one = extracted(1);
         assert!(one > 0.0, "a single miner must extract something");
-        // Two miners take twice as much, three take three times — exactly, up
-        // to the cap, because the fraction is per miner now.
-        assert!((extracted(2) / one - 2.0).abs() < 1e-9, "two miners: {}", extracted(2) / one);
-        assert!((extracted(3) / one - 3.0).abs() < 1e-9, "three miners: {}", extracted(3) / one);
 
-        // And the rock is the ceiling: a crew large enough to want more than the
-        // field holds takes the field, not more. `outpost_mining_fraction` is
-        // 0.238, so five miners would ask for 1.19 of it.
-        let cfg = SimConfig::new(3);
-        let cap = (1.0 / cfg.outpost_mining_fraction).ceil() as usize;
-        assert!(extracted(cap) <= extracted(cap * 2) + 1e-12);
-        assert!((extracted(cap) - extracted(cap * 2)).abs() < 1e-9, "past the cap the rock binds, not the crew");
+        // **More crew is more ore, and each one is worth less than the last.**
+        // Both halves matter: monotone is what makes a crew worth sending,
+        // sublinear is what stops the answer being "always send more".
+        let (two, three) = (extracted(2), extracted(3));
+        assert!(two > one && three > two, "crew must be monotone: {one} {two} {three}");
+        assert!(two < 2.0 * one, "two miners must be worth less than twice one: {}", two / one);
+        assert!(three - two < two - one, "the marginal miner must be worth less than the last");
+
+        // The exponent is exactly what β says, on a body with veins to spare.
+        // 3 kt of ore reads well above `Band I`, so `N` is not the binding
+        // constraint at these crew sizes and the pure `n^β` shows through.
+        let want = 2f64.powf(cfg.crowding_beta);
+        assert!((two / one - want).abs() < 1e-9, "two miners: {} want {want}", two / one);
+
+        // **And a body saturates at its own vein count, not at a crew size.**
+        // That is the whole of §4.2: a bare `n^β` would crowd every rock
+        // identically and nobody would ever put a large crew anywhere.
+        let deposit = Kilotons::new(3.0);
+        let n_veins = veins(deposit, &cfg);
+        let full = n_veins.ceil() as usize;
+        assert!(
+            (extracted(full) - extracted(full * 4)).abs() < 1e-9,
+            "past `N` the rock binds, not the crew: {} vs {}",
+            extracted(full),
+            extracted(full * 4)
+        );
+        // **A degenerate config must produce an absurd number, not a divergent
+        // one** (design law #16). `veins_per_band < 1` makes `powf` of a
+        // negative exponent blow up, and the result is divided by — so an
+        // infinity here is a NaN one subtraction later, in replicated state,
+        // with no reproducer.
+        let mut bad = SimConfig::new(3);
+        bad.veins_per_band = 0.0;
+        for rung in [0.0, 1.0, 4.0] {
+            let mass = units::Kilotons::at_band(Band::new(rung));
+            let n = veins(mass, &bad);
+            assert!(n.is_finite() && n >= 1.0, "degenerate veins_per_band gave {n} at Band {rung}");
+            assert!(crowding_factor(3.0, mass, &bad).is_finite(), "crowding diverged at Band {rung}");
+        }
+
+        // A full crew takes exactly `ε` of the body — the normalisation that
+        // keeps a rich seam finite (`crowding_factor`, R-IND19).
+        // Three colours at 1 kt each — the same body `deposit` names above.
+        let before = deposit.kilotons();
+        assert!(
+            (extracted(full) / before - cfg.outpost_mining_fraction).abs() < 1e-9,
+            "a full crew must take ε of the body, took {}",
+            extracted(full) / before
+        );
     }
 
     #[test]
@@ -6423,11 +6730,15 @@ mod tests {
         let mut cfg = test_cfg(5);
         cfg.recycle_mining_pairs = true;
         // **A crew of one, pinned.** This test is about recycling, not about
-        // how many miners open an outpost, and the ratified
-        // `miners_per_outpost = 3` would make the mineral assertion below a
-        // test of that value instead — the same way three hull-ladder tests
-        // silently became tests of `limited_fleet_size` at stage 3b.
-        let doctrine = Doctrine { miners_per_outpost: 1, ..Doctrine::default() };
+        // how many miners open an outpost, and any larger crew would make the
+        // mineral assertion below a test of *that* value instead — the same way
+        // three hull-ladder tests silently became tests of `limited_fleet_size`
+        // at stage 3b.
+        //
+        // Since T-72 the crew is `round(f · N(S))` floored at one, so `f = 0`
+        // is the way to say "one miner" — the deposit can no longer be assumed
+        // away by naming a count.
+        let doctrine = Doctrine { miner_vein_fraction: 0.0, ..Doctrine::default() };
         let autopilots: Vec<Box<dyn Autopilot>> =
             (0..2).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
         let mut sim = Simulation::new(galaxy, cfg, autopilots);
@@ -6475,6 +6786,7 @@ mod tests {
             view,
             ranked: Ranked { id: pid, score: 9.0, class: PlanetClass::MiningOutpost },
             settlers_by_hull: [Kilotons::ZERO; 2],
+            mining_crew: 1,
         }];
         let center_pos = *sim.world.position.get(center).unwrap();
         sim.apply_build_with(

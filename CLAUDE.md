@@ -162,6 +162,16 @@ answer was not where it looked:
   the run is not. **When you cut a horizon, assert that the mechanism still
   fires.**
 
+**T-71/T-72 did it a third time in one session** — smoke 36 s → 68 s — and the
+answer was the same shape: `all_fair_counts_run_and_expand` was **65.8 s of the
+68** on its own, four seat counts at a 300-yr horizon inherited from when a
+simulated year was cheap. Every assertion in the file is an invariant or a
+paired identity, so **the whole target went to 150 yr and cost 17 s**. Three
+targets, three sessions, one constant each time. The habit worth forming: **when
+a change raises entity count, check the test horizons in the same commit** — the
+cost lands there before it lands anywhere a user would notice, and the fix is
+almost never in the assertions.
+
 **T-68's 507 s was four tests paying in horizon for questions horizon does not
 answer**, and finding that out took one measurement rather than a guess — timing
 each suspect individually, after `--report-time` turned out to be nightly-only:
@@ -1056,12 +1066,24 @@ changes how you *work*, not what is left to do:
   | + T-64 (logistic on mass, no conversion in the step) | 23,227 | 42 yr/s | 17× |
   | post-R-O70 bed, 3 seats, 4 kyr | ~14,700 | 183–217 yr/s | ~79× |
   | **T-68 (`t_build` tracks hull mass), same bed** | — | **10–11 yr/s** | **~4×** |
+  | T-70/73/74 bed (`slips ≡ 1` ablation), 3 seats, 4 kyr | 24,470–25,984 | 9.0–9.7 yr/s | 3.6–3.9× |
+  | **T-69 (yards fill every berth), same bed** | 25,200–25,523 | **6.6–7.3 yr/s** | **2.6–2.9×** |
 
   **T-62 halved it, and the mechanism is hauling — not vehicles and not mining**
   (`examples/haul_census`). Vehicles rose 1.20× and extraction ticks 1.02×, but
   **freighter transfers rose 6.81×** because the log-normal field made the same
   rocks hold 2,256× the ore and a freighter's hold is a fixed size. Cost is
   proportional to ore hauled, not to worlds mined.
+
+  **T-69 is the first row where throughput moved and entity count did not.**
+  Seed 7 carries *fewer* vehicles under T-69 (25,200 against 25,984) and runs
+  27% slower. The cost is **decision count**: every commit schedules its own
+  `BuildDecision`, so a yard with `k` berths raises `k` events where it raised
+  one, and the fill loop re-runs the candidate scan per berth. Worth having as a
+  second shape — the table's standing lesson is "entity count is the
+  first-order cost", and that is still true as a default and was false here.
+  **Check it rather than assuming it**, the same way §2 says to check a
+  neutrality claim against the code.
 
   **T-68 took ~19x of it in one change, and that is the live problem.** Making
   `t_build` track hull mass dropped a Medium hull from 10 yr to 3.0, so yards

@@ -249,40 +249,58 @@ pub struct Doctrine {
     // --- Expand (autopilot-doc §4) ---
     pub expand_bias: ExpandBias,
 
-    /// **How many miners an outpost is opened with** (T-57).
+    /// ~~**How many miner hulls open one outpost**~~ — **retired at T-72**,
+    /// replaced by [`Doctrine::miner_vein_fraction`].
     ///
-    /// Extraction is per-miner since T-57 — `n` miners work `n ×
-    /// outpost_mining_fraction` of the remaining field per tick, capped at all
-    /// of it — so this is the first knob in the engine that trades mineral
-    /// *rate* against hull count. A rock is a finite stock, so a bigger crew
-    /// does not raise the total a field yields; it brings that total forward,
-    /// which is what the expansion loop is starved of (`CLAUDE.md` §7: the
-    /// residual is worlds scanned and not reached in time).
+    /// It was ratified at **3** on the standard four-seed CRN bed
+    /// (+2.74% colony-years, doubling 270.3 → 260.7 yr, every seed positive),
+    /// and `Hyades_industry.md` §4.5 says in as many words that the value does
+    /// not survive T-71: it was measured under a law with **no deposit term at
+    /// all**, where three miners were three miners on every rock. Under
+    /// crowding the same constant is a full crew on a `Band I` pebble and 17% of
+    /// one on a `Band III` seam, so it no longer names a policy.
     ///
-    /// **Ratified at 3** on the standard four-seed CRN bed, 4,000 yr
-    /// (`examples/hull_ladder`), every seed positive at every crew size:
+    /// **Removed rather than left at its ratified value**, because a knob
+    /// nothing reads is worse than no knob: a sweep moves it, measures nothing,
+    /// and reports a flat gradient — which is exactly how `cargo_unit_size` and
+    /// `outpost_mining_fraction` came to look inert (design law #14). The
+    /// measurement is not lost; it is the record above and the reason
+    /// `miner_vein_fraction`'s default has to be re-ratified rather than
+    /// inherited.
     ///
-    /// | crew | colony-years | vs 1 | per extra miner | doubling |
-    /// |---|---|---|---|---|
-    /// | 1 | 8,697,998 | — | — | 270.3 yr |
-    /// | 2 | 8,877,142 | +2.06% | +2.06% | 262.4 yr |
-    /// | **3** | **8,936,603** | **+2.74%** | +1.37% | **260.7 yr** |
-    /// | 5 | 8,965,467 | +3.08% | +0.77% | 264.2 yr |
+    /// **What share of a deposit's veins to crew** (`Hyades_industry.md` §4.5,
+    /// T-72) — the knob that replaces `miners_per_outpost` as the thing a policy
+    /// actually chooses.
     ///
-    /// **3 is the ratification, not 5**, and the doubling column is why: five
-    /// miners buy 0.34 more points of colony-years and give back 3.5 years of
-    /// doubling time, because the extra hulls compete for the same build slots
-    /// the expansion loop needs. The marginal return per miner has already
-    /// halved by 3 and halved again by 5 — a rock is a finite stock, so a crew
-    /// cannot raise what a field yields in total, only bring it forward, and
-    /// there is only so much forward available.
+    /// Crew is `max(1, round(miner_vein_fraction · N(S)))`, so it is **a
+    /// property of the rock**: one hull on a `Band I` pebble, hundreds on a
+    /// `Band IV` seam. §4.5 is explicit that a hull *count* does not survive
+    /// T-71 — T-57 ratified `3` under a law with no deposit term at all, where
+    /// three miners were three miners on every body. Under crowding, three
+    /// miners on a `Band III` body work `(3/100)^½ = 17%` of a full crew's
+    /// share, so the same constant means something different on every rock and
+    /// nothing in particular on any of them.
     ///
-    /// `1` reproduces the pre-T-57 arithmetic exactly (one miner working
-    /// `outpost_mining_fraction` *is* the old per-rock expression), so the
-    /// sweep's baseline is the engine as it was — except for the leaked-hull
-    /// fix `examples/crew_census` demonstrated, which is why the crew-1 figure
-    /// is 8,697,998 and not the pre-T-57 8,670,020.
-    pub miners_per_outpost: u8,
+    /// **`0.07` is a design call made *against* the metric, and §6.15 is why.**
+    /// The measured sweep is monotone — every crew size tested scores worse than
+    /// the one below it, on both seeds and both objectives — so the objective's
+    /// preferred crew is **one hull on every rock**. That is not a finding about
+    /// crews. A deposit is a finite stock, so a crew can only bring its yield
+    /// *forward*, and `examples/reach_limit` established that the binding
+    /// constraint on the standard bed is `k_high` and not the economy. Bringing
+    /// ore forward is worth something only where minerals are what you run out
+    /// of, and here they are not: **the bed cannot price mining at all.**
+    ///
+    /// So this ships at the value that delivers the mechanism at the smallest
+    /// measured cost: a `Band IV` seam gets **204 miners where it had 9**, for
+    /// −3.6% work-years and −1.6% colony-years. `0.3` gives the design's literal
+    /// "hundreds or thousands" and costs 10–23%, which is a larger bill than
+    /// should be paid on evidence this weak.
+    ///
+    /// **Placeholder. R-IND18 is narrowed to "which bed", not "how many
+    /// seeds"** — a mineral-scarce galaxy, or the 8-kyr multi-metric bed where
+    /// Production's fleet-years objective prices hulls directly.
+    pub miner_vein_fraction: f64,
 
     /// **Expansion rate knob** (MC experiment): how strongly the production
     /// queue favors *upgrading own infrastructure* (deepening) over *spending
@@ -319,7 +337,7 @@ impl Default for Doctrine {
             survey_avoids_inhabited: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
             expand_bias: ExpandBias::ProductionCentersFirst,
-            miners_per_outpost: 3,
+            miner_vein_fraction: 0.07,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
         }
@@ -436,6 +454,15 @@ pub struct Candidate {
     /// `apply_build_with` will spend — two copies of a rule that must not
     /// disagree, with nothing checking that they don't.
     pub settlers_by_hull: [Kilotons; 2],
+    /// **How many miners this body would be crewed with** (T-72).
+    ///
+    /// `max(1, round(miner_vein_fraction · N(S)))` — a property of the rock,
+    /// not a constant, because crowding is relative to the deposit
+    /// (`Hyades_industry.md` §4.5). It is precomputed here for the same reason
+    /// `settlers_by_hull` is: the crew sets the pair's *price*, and a price the
+    /// decision reads that differs from the price the build charges is how a
+    /// centre ends up sitting Idle next to hulls it can afford.
+    pub mining_crew: usize,
 }
 
 /// What a production center decides to build this cycle (autopilot-doc §§4–6).
@@ -1192,6 +1219,7 @@ mod tests {
             view: v,
             ranked,
             settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
+            mining_crew: 1,
         }];
         let order = ap.production_choice(&doctrine, &ctx, &cands);
         assert!(matches!(order, BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }));
@@ -1206,6 +1234,7 @@ mod tests {
             view: v,
             ranked,
             settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
+            mining_crew: 1,
         }]
     }
 

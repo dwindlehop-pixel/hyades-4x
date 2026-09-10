@@ -808,6 +808,38 @@ Growth's work-years with colony-years alongside (§6.12), and the prediction is
 **concentration** — fewer, larger, closer outposts (§4.5) — which is a claim about
 site count and must be read from a census, not inferred from the objective.
 
+### 4.3b The law is normalised by `N`, because §4.3 double-counts the deposit (R-IND19)
+
+§4.3 writes `extraction = ε · S · W(n, S)`. **`W` rises with `N`, `N` rises with
+`S`, and `S` is already there — so output goes as richness squared**, and the
+section's own guarantee that "output tracks the stock, so a body depletes
+asymptotically rather than cliff-edging" fails. It is not a marginal effect: at
+`ε = 0.238` a full crew on a `Band III` body computes **307% of everything
+present** in one tick, and only a clamp stops it.
+
+**The engine multiplies the stock by `W(n,S) / N(S)`, which reduces to
+`(n/N)^β`** — the share of the body's veins a crew effectively works.
+
+**Every claim §4.3 makes survives**, because dividing by `N` is a change of
+scale and `ε` absorbs it, while §4.3's assertions are all ratios:
+
+| §4.3 says | under `ε·S·W` | under `ε·S·(n/N)^β` |
+|---|---|---|
+| 1000 miners on `Band IV` lift **31.6x** what one does | 1000 / 31.6 = 31.6x | 1 / 0.0316 = **31.6x** |
+| a full crew pays **linearly** in richness | `ε·S·N` — quadratic | `ε·S` — **linear** |
+| a poor rock **saturates immediately** | `N = 1`, yes | `N = 1`, **yes** |
+| richness is worth going to | yes | **yes** — a lone miner works a smaller *share* of a rich body and lifts far more ore |
+
+So the disagreement is confined to the **absolute scale**, which no measurement
+has ever fixed either way (R-IND18), and the engine takes the reading that keeps
+a body finite. `ε` is `outpost_mining_fraction = 0.238` unchanged, which anchors
+the change: **a lone miner on a `Band I` body extracts exactly what it did
+before T-71**, since `N = 1` there and the factor is 1.
+
+`veins_are_a_decade_per_band_and_crowding_pays_at_scale` asserts the table and
+the 31.6x through the normalised form, so the design's numbers are pinned to the
+thing the engine multiplies by rather than to an intermediate.
+
 ### 4.4 One law, two ways to buy capacity
 
 Outposts and colonies mine by the same physics and differ only in how they buy
@@ -833,6 +865,32 @@ one miner on a `Band I` body, a thousand on a `Band IV`. So `miners_per_outpost`
 does not survive as a scalar — it becomes a *policy* over `N(S)`, and the natural
 Doctrine knob is a **target fraction of the deposit's veins** rather than a hull
 count.
+
+> **Landed (T-71 + T-72), and they had to land together.** `miners_per_outpost`
+> is **removed**, not retained at its ratified value:
+> `Doctrine::miner_vein_fraction` replaces it and the crew is
+> `max(1, round(f · N(S)))`. A knob nothing reads is worse than no knob — a
+> sweep moves it, measures nothing and reports a flat gradient, which is exactly
+> how `cargo_unit_size` came to look inert (design law #14). The ratified figures
+> survive as the record in the retired field's doc comment, and as the reason
+> `f`'s default has to be re-ratified rather than inherited.
+>
+> **Measuring T-71 without T-72 measures a half-built mechanism.** With crowding
+> in and crews still a flat 3, every crew is under-sized against a vein count
+> spanning 1 to 1,000 — three miners on a `Band III` body work 17% of a full
+> crew's share where they used to work three times one miner's. The engine's
+> response is to open *more sites*, which is the exact opposite of this
+> section's prediction and is entirely an artifact of the missing half. The
+> measured signature of that half-built state is in §6.14.
+>
+> `f` ships at **0.3** — a `Band I` pebble gets one hull, a `Band II` body three
+> (T-57's ratified crew, at the rung where it was a sensible number), a `Band
+> IV` seam three hundred. It is a **placeholder**: the economics argue for
+> `1.0`, because the marginal miner's yield falls as `n^{-½}` while a deposit's
+> worth rises faster than `N`, so the optimum clamps at `N` for any body worth
+> visiting. It is not shipped there because entity count is this engine's
+> first-order cost and T-24's floor has ~2.6x of margin. **Raising `f` is a joint
+> question with throughput, not a free win** (R-IND18).
 
 **It also gives T-66 its lever, in the opposite direction to the one I first
 expected.** T-66 records hauling as the engine's largest single cost. Sublinear
@@ -1529,6 +1587,39 @@ colony-years are for on a saturated bed.
 Two seeds is still not a ratification. What is solid here is the direction and
 the mechanism, both of which were stated before the run.
 
+**The delta is slips and nothing else, by ablation.** Forcing `slips ≡ 1` with
+everything else in the commit in place reproduces the pre-T-69 numbers
+**bit-for-bit** — 1,385,302.5 and 1,446,100.0 work-years, 10,717,850 and
+10,688,675 colony-years — so the berth bookkeeping, the `Vec` of completion
+times and the fill loop are all inert at one berth, and the gain is not some
+other line in the change. `CLAUDE.md` §2 puts ablation first among the three
+kinds of proof; this is the cheap version of it, and it also rules out the
+awkward possibility that a refactor moved the bed by accident.
+
+**It costs ~25% of throughput, and for once that is not entity count.**
+
+| | vehicles | yr/s | margin vs T-24's floor |
+|---|---|---|---|
+| `slips ≡ 1`, seed 1 | 24,470 | 9.7 | 3.9x |
+| T-69, seed 1 | 25,523 | **7.3** | 2.9x |
+| `slips ≡ 1`, seed 7 | 25,984 | 9.0 | 3.6x |
+| T-69, seed 7 | **25,200** | **6.6** | 2.6x |
+
+Seed 7 carries **fewer** vehicles under T-69 and is 27% slower, which forecloses
+the usual explanation. Entity count is the first-order cost in this engine and
+it did not move; what moved is **decision count** — every commit now schedules
+its own `BuildDecision`, so a yard running `k` berths raises `k` events where it
+raised one, and the fill loop re-runs the candidate scan per berth. That the
+vehicle count *fell* while work-years rose is the same trade the table above
+shows from the other side: a yard with spare berths buys the infrastructure it
+could not previously fit in.
+
+At 3 seats / 4 kyr the margin is **2.6x**, and T-24's degradation is superlinear
+in duration, so the 12-seat x 8-kyr corner is now firmly under the floor on any
+extrapolation. That corner has still never been measured and extrapolating it
+again would be the fourth time that table was wrong about a number nobody ran:
+**T-66 is the next engine job**, and its first step is the measurement.
+
 **Where the gain actually comes from is `t_lead`, not `F`.** Aggregate
 throughput is unchanged by construction — `slips · (F/slips) = F` — so if the
 mass term were the whole story, slips would be exactly neutral. It is not,
@@ -1546,6 +1637,129 @@ than paid serially. That is the mechanism, it is arithmetic rather than a
 hypothesis, and it predicts the effect vanishes for large hulls — where the mass
 term dominates the lead time — which is the design's "a General hull stays a
 twelve-year commitment" (§3.2) arriving for free.
+
+### 6.14 T-71 + T-72 measured — two of §4.5's three predictions, and the third was never crowding's to keep
+
+§4.5 predicted **fewer, larger, closer** outposts. `examples/crew_census`,
+3 seats, 4,000 yr, three configurations — the middle one is T-71 with crews
+still a flat 3, i.e. the half-built state, kept deliberately because it is what
+separates the law from the policy:
+
+| seed 1 | sites worked | mean crew | max crew | ore/site | mean distance |
+|---|---|---|---|---|---|
+| T-69 (no crowding) | 2,494 | 5.97 | 9 | 6,491.4 kt | 66.74 ly |
+| T-71 only (flat crews) | 2,494 | 8.03 | 9 | 6,424.5 kt | 71.75 ly |
+| **T-71 + T-72** | **2,494** | **26.22** | **900** | **6,491.4 kt** | **59.95 ly** |
+
+| seed 7 | sites worked | mean crew | max crew | ore/site | mean distance |
+|---|---|---|---|---|---|
+| T-69 (no crowding) | 2,516 | 5.50 | 9 | 4,680.5 kt | 61.12 ly |
+| T-71 only (flat crews) | 2,516 | 7.73 | 9 | 4,646.2 kt | 69.28 ly |
+| **T-71 + T-72** | **2,516** | **24.00** | **851** | **4,680.5 kt** | **58.38 ly** |
+
+**Larger: yes.** Mean crew 4.4x, and the maximum goes 9 → 900 — the design's
+"hundreds or thousands of miners at a high-value mining outpost", arriving for
+the first time. The share of sites with more than one miner falls from 100% to
+~89%, which is the *other* half of §4.3 showing up: a `Band I` pebble has one
+vein, so it now correctly gets one hull.
+
+**Closer: yes.** Mean distance from the working empire's homeworld falls 10.2%
+and 4.5%. Concentration is what §4.5 said would give T-66 its lever.
+
+**Fewer: no, and the reason is that it was never crowding's to deliver.** Site
+count is **identical to the digit** in all three configurations, on both seeds.
+Which rocks get worked is decided by `rank`, and neither the crowding law nor
+the crew policy is an input to it — so §4.5's first prediction was about a
+function neither change touches. **Amend §4.5 to "larger and closer"**; making
+it *fewer* is a ranking change and belongs with T-66 rather than here.
+
+**And ore per site returns to the baseline exactly** — 6,491.4 and 4,680.5 kt,
+the same digits as T-69. That is not a coincidence and it is the best available
+check on the whole change: a rock is a **finite stock** mined to
+`density_floor`, so the total it yields cannot depend on how it was crewed.
+§4.5 says this in words — "a bigger crew does not raise what a field yields in
+total, it brings that total forward" — and the census confirms the arithmetic
+held through both changes. Mass conservation (design law #11) has no exception
+for mining.
+
+**What T-71 alone bought was nothing, and it is worth keeping the row.** With
+the law in and crews still flat, site count and ore/site are unmoved while mean
+crew rises 35% and cross-player contention rises 33% (1,671 → 2,214 on seed 1).
+Every crew is under-sized against a vein count spanning 1 to 1,000, so each one
+works its rock more slowly, rocks stay unexhausted longer, and more hulls pile
+onto the same sites for longer. **A pure cost with no compensating gain**, which
+is exactly what §6.7's stage order predicts for a stage measured without its
+successor — and why the two landed as one change. The first hypothesis for that
+row was "the empire compensates by opening more sites"; the census refuted it in
+one column, which is what a census is for.
+
+### 6.15 The crew fraction cannot be ratified on this bed, and that is the finding
+
+`miner_vein_fraction` shipped first at **0.3** — the value that gives a `Band II`
+body T-57's ratified crew of three and a `Band IV` seam three hundred, i.e. the
+design's "hundreds or thousands of miners at a high-value mining outpost". It
+loses, decisively, on both objectives:
+
+| | work-years | colony-years | vehicles |
+|---|---|---|---|
+| seed 1, T-69 | 1,450,642.5 | 10,921,700 | 25,523 |
+| seed 1, `f = 0.3` | 1,295,800.0 (**−10.67%**) | 10,569,400 (−3.23%) | **83,826** (×3.28) |
+| seed 7, T-69 | 1,620,105.0 | 10,925,525 | 25,200 |
+| seed 7, `f = 0.3` | 1,250,405.0 (**−22.82%**) | 10,319,975 (−5.54%) | **74,998** (×2.98) |
+
+**Both seeds, both metrics, and the mechanism is not in doubt** — §6.14's census
+shows ore per site returning to the baseline *exactly*. A deposit is a finite
+stock mined to `density_floor`, so a crew cannot raise what it yields; it can
+only bring that yield **forward**. Crew is therefore bought at a cost linear in
+hulls to buy a benefit that is purely a time shift, and crowding makes the trade
+strictly worse than the law T-57 ratified under: three miners on a `Band III`
+body now return `(3/100)^½ / (1/100)^½ = 1.73x` one miner's share, where the old
+linear law returned `3x`.
+
+**So the honest reading is not "mining is overpriced", it is "this bed cannot
+value mining at all."** `examples/reach_limit` established that the binding
+constraint on the standard bed is **`k_high`**, not the economy, and R-AC17
+ruled minerals out specifically. Bringing ore forward is worth something only
+where minerals are what you run out of. On a bed where they are not, the
+objective-optimal crew is **one hull everywhere**, and ratifying `f` here would
+ratify *"do not mine"* — a statement about the test bed, not about the design.
+`CLAUDE.md` §7 already says this in general form: **before tuning another
+economic knob, check whether the thing being optimised is what is actually
+scarce.**
+
+**The sweep is monotone**, which is what settles it — every crew size tested is
+worse than the one below, on both seeds and both metrics:
+
+| `f` | max crew | vehicles (s1) | work-years s1 | work-years s7 | colony-years s1 | colony-years s7 |
+|---|---|---|---|---|---|---|
+| — (flat 3, T-69) | 9 | 25,523 | — | — | — | — |
+| **0.07 (shipped)** | **204** | 37,706 | −1.00% | −6.26% | −0.97% | −2.30% |
+| 0.3 | 900 | 83,826 | −10.67% | −22.82% | −3.23% | −5.54% |
+
+There is no interior optimum to find: the objective's preferred crew is **one
+hull on every rock**, because on this bed a crew buys only a time shift of a
+resource the empire is not short of.
+
+**Decision: `f = 0.07`, and it is a design call made against the metric, not
+with it.** It gives a `Band IV` seam **204 miners where it had 9** — the
+order-of-magnitude, richness-scaled crew this stage exists to make possible — at
+a measured mean cost of **−3.6% work-years and −1.6% colony-years** on a bed that
+provably cannot price the benefit. `f = 0.3` delivers the literal "hundreds or
+thousands" and costs 10–23%; that is a larger bill than should be paid on
+evidence this weak, and it is a decision for the author rather than for a
+measurement that cannot see the other side of the ledger.
+
+What is *not* a judgement call, and is the reason shipping anything here is
+defensible: **ore per site is invariant to the digit** across the whole sweep
+(§6.14). The crew redistributes when ore arrives; it cannot change how much
+there is. So the worst case for a wrong `f` is a fleet sized wrong, not an
+economy sized wrong.
+
+**R-IND18 is narrowed, not answered.** What it needs is not more seeds but a
+**different bed**: one where minerals bind. Two candidates, neither built — a
+mineral-scarce galaxy configuration, or the 8-kyr multi-metric bed of
+`Hyades_trees_and_card_value.md` §3, where Production's fleet-years objective
+values hulls directly and would price a crew the way colony-years cannot.
 
 ### 6.13 T-75b — the write path, and why it lands before any card uses it
 
@@ -1768,12 +1982,12 @@ Dependency order. Each is small; the order matters more than the size.
 |---|---|---|---|
 | 1 | `K = min(hab, bio_max)` — drop infrastructure from the minimum (§1.1) | — | **T-67** |
 | 2 | `t_build` from hull mass — replace flat `build_years` (§3.2) | — | **T-68** |
-| 3 | Slips: concurrency linear in `F` (§3.2) | 2 | **T-69** |
+| 3 | Slips: concurrency linear in `F` (§3.2) | 2 | ~~**T-69**~~ — **done**, §6.12a |
 | 4 | Infrastructure stored as kilotons; the Band is a reading (§1.3) | 1 | **T-70** |
-| 5 | Extraction law: `N(S)` veins per deposit, `W = N^(1−β)·n^β`, one law for crews and works (§4.3) | — | **T-71** |
-| 6 | `miners_per_outpost` becomes a target *fraction of `N(S)`*, not a hull count (§4.5) | 5 | **T-72** |
+| 5 | Extraction law: `N(S)` veins per deposit, `W = N^(1−β)·n^β`, one law for crews and works (§4.3) | — | ~~**T-71**~~ — **done**, normalised per §4.3b |
+| 6 | `miners_per_outpost` becomes a target *fraction of `N(S)`*, not a hull count (§4.5) | 5 | ~~**T-72**~~ — **done**; the old knob is removed, not retained |
 | 7 | Works: colour-differentiated infrastructure price (§5.1) | 4 | **T-73** |
-| 8 | Extraction and fabrication rates from Infrastructure × allocation (§2) | 4 | **T-74** |
+| 8 | Extraction and fabrication rates from Infrastructure × allocation (§2) | 4 | ~~**T-74**~~ — **done**, §6.12; extraction's half superseded by §4.3a |
 | 9a | `Works` struct + the CardId-ordered fold + the commutativity property test (§6.7) | 4 | **T-75a** |
 | 9b | `Doctrine` allocation vector wired to the fold (§6.2) | 9a | ~~**T-75b**~~ — **done**, §6.13 |
 | 10 | Development freight and the balanced-exchange default (§7) | 7 | **T-76** |
@@ -1808,6 +2022,7 @@ artifact in place contaminates every later measurement.
 | ~~R-IND7~~ | ~~The economic-thesis addition~~ — **resolved: minerals, supers and apex traverse real space**, so they can be attacked, diverted, stolen and blockaded. Nothing teleports; a trade is a voyage. | §8.1 |
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
+| **R-IND19** | §4.3's `ε·S·W` double-counts the deposit — output goes as richness squared and a rich body is stripped in one tick. **Decided: the engine uses `W/N`, i.e. `(n/N)^β`,** which preserves every ratio §4.3 asserts and differs only in an absolute scale `ε` absorbs. Open only in whether the spec's own formula should be rewritten or annotated. | §4.3b |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |
 | **R-IND12** | How much a coloniser carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |

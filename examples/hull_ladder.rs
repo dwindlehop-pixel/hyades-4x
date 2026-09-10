@@ -48,14 +48,21 @@ struct Leg {
 // acceptance test and for anything that moves the expansion economy.
 const LEGS: &[Leg] = &[
     Leg { name: "ratified ladder", apply: |_| {}, doctrine: |_| {} },
-    // **T-57: non-unitary mining colonies.** Extraction is per-miner now, so a
-    // crew of `n` works `n × outpost_mining_fraction` of the remaining field per
-    // tick, capped at all of it. A rock is a finite stock — a bigger crew does
-    // not raise what a field yields in total, it brings that total *forward*,
-    // and forward is what the expansion loop is short of.
-    Leg { name: "2 miners per outpost", apply: |_| {}, doctrine: |d| d.miners_per_outpost = 2 },
-    Leg { name: "3 miners per outpost", apply: |_| {}, doctrine: |d| d.miners_per_outpost = 3 },
-    Leg { name: "5 miners per outpost", apply: |_| {}, doctrine: |d| d.miners_per_outpost = 5 },
+    // **T-71/T-72: the crew is a share of the deposit's veins, not a count.**
+    // ~~2/3/5 miners per outpost~~ — `miners_per_outpost` is retired, because
+    // under crowding a flat count is a full crew on a `Band I` pebble and 17% of
+    // one on a `Band III` seam (`Hyades_industry.md` §4.5). The sweep is over
+    // `miner_vein_fraction` instead, which is the same policy question asked in
+    // a unit that means the same thing on every rock.
+    //
+    // A rock is still a finite stock — a bigger crew does not raise what a field
+    // yields in total, it brings that total *forward*, and forward is what the
+    // expansion loop is short of. What T-71 changes is that "bigger" is now
+    // relative to the body, so the legs span the range the shipped default sits
+    // in the middle of rather than three counts that mean different things.
+    Leg { name: "vein fraction 0.1", apply: |_| {}, doctrine: |d| d.miner_vein_fraction = 0.1 },
+    Leg { name: "vein fraction 0.3 (shipped)", apply: |_| {}, doctrine: |d| d.miner_vein_fraction = 0.3 },
+    Leg { name: "vein fraction 0.6", apply: |_| {}, doctrine: |d| d.miner_vein_fraction = 0.6 },
 ];
 
 struct Run {
