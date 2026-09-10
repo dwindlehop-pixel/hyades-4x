@@ -251,7 +251,7 @@ pub struct Doctrine {
 
     /// ~~**How many miner hulls open one outpost**~~ (`miners_per_outpost`,
     /// T-57) and ~~**what share of a deposit's veins to crew**~~
-    /// (`miner_vein_fraction`, T-72) — **both retired at T-83. Crew size is not
+    /// (`miner_vein_fraction`, T-72) — **both retired at T-87. Crew size is not
     /// a policy any more; it falls out of mineral demand.**
     ///
     /// The two retired knobs were the same mistake twice: a number someone had
@@ -421,7 +421,7 @@ pub struct Candidate {
     /// `apply_build_with` will spend — two copies of a rule that must not
     /// disagree, with nothing checking that they don't.
     pub settlers_by_hull: [Kilotons; 2],
-    /// **How many miners this body would be crewed with** (T-83).
+    /// **How many miners this body would be crewed with** (T-87).
     ///
     /// Derived, not chosen: §4.3's extraction law inverted against what the
     /// founding centre can consume and cannot currently get

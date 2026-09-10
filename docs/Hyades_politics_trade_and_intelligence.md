@@ -845,18 +845,56 @@ Three reasons, and the third is the one that settles it:
   desync — and by design law #16 an unreproducible one. Per-round clearing makes
   the book's contents a *set*, and a set has a canonical order.
 
-### 10.6 The freight leg — T-77
+### 10.6 The freight leg — T-77. **Settlement is at a shared outpost, not at the buyer's world.**
 
-A cleared match is a contract, and a contract is a voyage (§3.0a). Mechanically
-it is a `Role::Freighter` hull with a cross-empire destination — the engine
-already has laden hulls, light-lag, acceleration signatures and interdiction, so
-**this needs no new physics.** What it needs is:
+**Author's ruling, and it replaces the cross-empire delivery this section
+originally specified:** trade moves through **outposts** — caravan trade, goods
+changing hands at a waypoint. *"Having an outsider's freighter (or even more
+frightening hull) near your colony is a step left to cards."*
 
-- a vehicle whose `home_center` is one empire's and whose destination is
-  another's, which nothing currently constructs;
-- escrow released on `FreighterArrive` at the buyer, discounted and burned by
-  `exp(−λ·t)`;
-- and the loss case.
+That is a better mechanism than the one it replaces, and the reason is that
+**the engine already has the venue.** An outpost is a worked rock and it is
+**unowned** — no `owner` component is ever set on it — while `outpost_stock` is
+keyed `(player, rock)`, so **each empire holds its own pile at the same body**.
+§4.3's shared-rock rule is explicit that "each player's crew works the shared
+rock into that player's own pile". Measured on the standard bed, **2,226 of
+2,494 worked sites are cross-player**: two empires' hulls are already standing
+on the same rock, with separate stockpiles, most of the time.
+
+So a settlement is a transfer between two `outpost_stock` entries at the same
+body. Concretely:
+
+- **No cross-empire vehicle is constructed.** The thing §10.6 originally needed
+  and nothing built — a hull whose home is one empire and whose destination is
+  another's colony — is not needed at all.
+- **The buyer's own freighter carries it home**, on the need-based route it was
+  already flying. That leg exists, is laden, is light-lagged, and is
+  interdictable.
+- **`Hyades_industry.md` §8.1 is satisfied and not weakened.** Refined mass still
+  traverses real space and can still be attacked, diverted, stolen and
+  blockaded — the voyage is simply the *existing* haulage leg rather than a new
+  one. A trade is still not a ledger entry: the goods sit on a rock in the dark
+  until somebody comes for them.
+
+**Geography becomes the trade constraint, which is the point.** An empire can
+only settle with a counterparty it **shares an outpost with**, so the map decides
+who can trade with whom, and a contested rock is now valuable for a second
+reason. That is what makes this move Yellow from Yellow-rich empires to
+Yellow-poor ones along routes that exist rather than by fiat.
+
+**What is left to cards** is everything this default forbids: delivery straight
+to a colony, an outsider's hull in your home system at all, and the threat that
+implies. The default keeps foreign hulls out in the dark where the rocks are.
+
+What the stage still needs:
+
+- escrow released on settlement at the shared body, discounted and burned by
+  `exp(−λ·t)` over the *seller's* leg to the venue;
+- the loss case;
+- and a **venue choice** when buyer and seller share more than one outpost —
+  **R-P17**, open. The obvious candidate is the one minimising the sum of both
+  parties' transit, which is the same discounted-distance form `best_delivery_center`
+  already uses.
 
 **R-IND10 is already answered by §3.3 and the register is stale.** On
 non-delivery "escrow returns to the buyer minus the burn" — so the buyer loses
@@ -923,6 +961,7 @@ never as the verdict.
 | **R-P13** | Which stances may be written, by which tier, and on which index. Recommend near index first and only toward less hostile; far index (making two other empires enemies) a deep node | — |
 | **R-P14** | Does an imposed stance decay? Recommend yes, on the reputation clock — a permanent write is a permanent pact for one card | MC |
 | **R-P9** | Strength of both counter-graph effects; is the risk premium bounded? | MC |
+| **R-P17** | Venue choice when buyer and seller share more than one outpost. Candidate: minimise both parties' summed discounted transit, the form `best_delivery_center` already uses. | §10.6 |
 | ~~**R-P10**~~ | ~~Clear per round or continuously?~~ **resolved: per round, at the barrier** (§10.5). A continuous book makes price a function of event ordering, which is a desync by design law #16 | — |
 | **R-P16** | The `$` faucet ships against infrastructure stock because `production` (works fabrication, T-74) does not exist yet. Revisit at T-74 (§10.3) | T-74 |
 

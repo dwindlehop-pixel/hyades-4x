@@ -866,9 +866,9 @@ does not survive as a scalar — it becomes a *policy* over `N(S)`, and the natu
 Doctrine knob is a **target fraction of the deposit's veins** rather than a hull
 count.
 
-> **Landed (T-71 + T-72, then superseded by T-83).** `miners_per_outpost` is
+> **Landed (T-71 + T-72, then superseded by T-87).** `miners_per_outpost` is
 > **removed**, not retained at its ratified value; `Doctrine::miner_vein_fraction`
-> replaced it with `max(1, round(f · N(S)))` and was itself removed at T-83, when
+> replaced it with `max(1, round(f · N(S)))` and was itself removed at T-87, when
 > crew stopped being a policy at all (§6.16). A knob nothing reads is worse than no knob — a
 > sweep moves it, measures nothing and reports a flat gradient, which is exactly
 > how `cargo_unit_size` came to look inert (design law #14). The ratified figures
@@ -883,7 +883,7 @@ count.
 > section's prediction and is entirely an artifact of the missing half. The
 > measured signature of that half-built state is in §6.14.
 >
-> **`f` is gone too (T-83).** It shipped at 0.07 and was replaced within the
+> **`f` is gone too (T-87).** It shipped at 0.07 and was replaced within the
 > session by a model rather than a value: crew is derived from the founding
 > centre's unmet mineral demand, §4.3's law inverted, with **no parameter at
 > all**. The sign inverts with it — a richer rock wants a *smaller* crew,
@@ -1760,7 +1760,7 @@ mineral-scarce galaxy configuration, or the 8-kyr multi-metric bed of
 `Hyades_trees_and_card_value.md` §3, where Production's fleet-years objective
 values hulls directly and would price a crew the way colony-years cannot.
 
-### 6.16 T-83 — crew stops being a parameter, and the sign inverts
+### 6.16 T-87 — crew stops being a parameter, and the sign inverts
 
 **Author's ruling: "miner crew count should not be a parameter but should fall
 out of mineral demand. As the simulation shows, building mining outposts without
@@ -1799,7 +1799,7 @@ body gets richer — a rich rock meets the same demand with fewer hands. Under a
 flat count the crew was richness-blind; under a vein fraction it *rose* with
 richness. Both were backwards, and §6.15's monotone loss is what that costs.
 
-**Measured** (3 seats, 4,000 yr), against the value T-83 replaces and against
+**Measured** (3 seats, 4,000 yr), against the value T-87 replaces and against
 the flat-3 bed before crowding landed:
 
 | | work-years s1 | work-years s7 | colony-years s1 | colony-years s7 | vehicles s1 |
@@ -1807,7 +1807,7 @@ the flat-3 bed before crowding landed:
 | T-69, flat crew of 3 | 1,450,642.5 | 1,620,105.0 | 10,921,700 | 10,925,525 | 25,523 |
 | `f = 0.07` (T-72, shipped) | 1,436,087.5 | 1,518,692.5 | 10,816,000 | 10,673,925 | 37,706 |
 | `f = 0.3` | 1,295,800.0 | 1,250,405.0 | 10,569,400 | 10,319,975 | 83,826 |
-| **T-83, demand-derived** | **1,495,212.5** | **1,540,712.5** | **10,888,100** | **10,983,925** | **24,801** |
+| **T-87, demand-derived** | **1,495,212.5** | **1,540,712.5** | **10,888,100** | **10,983,925** | **24,801** |
 
 **It beats the value it replaces on every metric and every seed** — +4.12% and
 +1.45% work-years, +0.67% and +2.90% colony-years — while carrying **34% fewer
@@ -1823,7 +1823,7 @@ a retuning.
 |---|---|---|---|---|---|
 | T-69, flat 3 | 2,494 | 5.97 | 9 | 6,491.4 kt | 66.74 ly |
 | `f = 0.07` | 2,494 | 7.46 | 204 | 6,491.4 kt | 63.20 ly |
-| **T-83** | 2,494 | **2.95** | **12** | **5,818.9 kt** | 70.78 ly |
+| **T-87** | 2,494 | **2.95** | **12** | **5,818.9 kt** | 70.78 ly |
 
 Mean crew is now **below the flat 3 it replaced**, and the maximum is 12 rather
 than 204: demand-driven sizing says almost every rock wants one or two hulls,
@@ -1926,6 +1926,14 @@ from two ends.
 The shape: **the market is free, and everything that bends it is a card.** A
 player may always trade at par with anyone; running a deliberate deficit — the
 classic entanglement move — is a play, not a transaction.
+
+> **Amended: inter-empire settlement happens at a shared outpost**
+> (`Hyades_politics_trade_and_intelligence.md` §10.6, author's ruling). Goods
+> change hands at a worked rock both parties already call at — caravan trade —
+> and the buyer's own freighter carries them home on the leg it was already
+> flying. **A foreign hull near a colony is a card, not the default.** §8.1 is
+> untouched: the mass still crosses real space and is still attackable; the
+> voyage is the existing haulage leg rather than a new cross-empire one.
 
 ### 7.3 Development freight
 

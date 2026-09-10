@@ -1355,6 +1355,19 @@ struct World {
     /// in `CardId` order after the fact, because the order it *was* accumulated
     /// in is already baked into its low bits (§6.5).
     works_writes: ComponentStore<Vec<(cards::CardId, cards::WorksWrite)>>,
+    /// **The `$` ledger, per empire** (`Hyades_politics_trade_and_intelligence.md`
+    /// §2, T-82).
+    ///
+    /// `$` is a **claim, not a substance** (R-P1, ratified): it has no mass,
+    /// occupies no hold, cannot be mined and cannot be shot down. That is what
+    /// makes a faucet legal at all — design law #11 conserves mass with no
+    /// exclusions, so a `$` that *were* a commodity would make minting illegal
+    /// and the economy a closed barter system.
+    ///
+    /// It is **replicated state**, so design law #16 applies with no softening:
+    /// a NaN here is an unreproducible desync. `credit` is the only writer and
+    /// it refuses non-finite deltas.
+    purse: ComponentStore<f64>,
 }
 
 impl World {
@@ -1385,6 +1398,7 @@ impl World {
             roster: ComponentStore::new(),
             works: ComponentStore::new(),
             works_writes: ComponentStore::new(),
+            purse: ComponentStore::new(),
         }
     }
 
@@ -1778,6 +1792,22 @@ pub struct SimConfig {
     /// *direction and order of magnitude*, and the precise optimum wants the
     /// ten-seed bed (T-44).
     pub trade_decay_lambda: f64,
+    /// **The `$` faucet rate** — `$` minted per kilotonne of fabrication capacity
+    /// per year (`Hyades_politics_trade_and_intelligence.md` §2.3, T-82).
+    ///
+    /// `$_income = base · production`, with **production the works fabrication
+    /// rate**, which is what R-P3 ratified: income tracks what an empire can
+    /// *make*, not how many people it has, so the biggest empire does not also
+    /// automatically hold the deepest purse.
+    ///
+    /// **R-P16 is resolved rather than shipped.** §10.3 decided to ship this
+    /// against infrastructure stock as an explicit placeholder *because T-74 had
+    /// not landed and there was no fabrication rate to read*. T-74 has landed,
+    /// so the faucet reads the real quantity and the placeholder is not needed.
+    ///
+    /// **Placeholder magnitude** (R-P2) — nothing spends `$` yet, so no
+    /// measurement can price it.
+    pub dollar_per_fabrication: f64,
 
     /// **Years before the first round barrier fires** (`Hyades_netcode.md` §1).
     ///
@@ -1906,6 +1936,7 @@ impl SimConfig {
             density_floor: 0.01,
             cargo_unit_size: 1.0,
             trade_decay_lambda: 0.01,
+            dollar_per_fabrication: 1.0,
             years_to_first_round: 200.0,
             years_per_round: 400.0,
             scrap_recovery_fraction: 0.5,
@@ -2201,6 +2232,7 @@ impl Simulation {
             self.world.roster.insert(pe, roster);
             self.world.works.insert(pe, cards::Works::default());
             self.world.works_writes.insert(pe, Vec::new());
+            self.world.purse.insert(pe, 0.0);
 
             // Seed the homeworld's stockpile so it can begin deepening infra.
             let seed = self.config.homeworld_start_minerals / 3.0;
@@ -2901,6 +2933,18 @@ impl Simulation {
         let center_pid = *self.world.planet_id.get(center).unwrap();
         let doctrine = *self.world.doctrine.get(pe).unwrap();
 
+        // 0) **The `$` faucet** (§2.3, T-82). Income accrues where production
+        // happens, on the cadence a rate needs — the economy tick is an
+        // interval, and `$_income = base · production · dt` is a rate over one.
+        // No new cadence and no per-player sweep: summing over centres *is* the
+        // empire's production.
+        //
+        // **Nothing reads the purse yet**, which is the point of this stage: the
+        // ledger and the faucet land inert and the bed stays bit-identical, so
+        // the first thing that spends `$` is measured against a known baseline
+        // (§10.7 stages 1–3).
+        self.credit(pe, self.config.dollar_per_fabrication * self.fabrication_rate(center) * self.config.cycle_years);
+
         // 1) Local mining: the center works its own density into its stockpile.
         let amt = {
             let d = self.world.density.get(center).unwrap();
@@ -3073,6 +3117,15 @@ impl Simulation {
         // [`EventKind::BuildDecision`] when the yard clears. A center with an
         // empty yard has no such event pending, so the mining step doubles as
         // its retry — mining is what changes a saving center's situation.
+        //
+        // **T-88 will sever this call.** `cycle_years` is doing two unrelated
+        // jobs — the economic integration step (mine, grow, mint, all rates over
+        // an interval, which want a *small* step for fidelity) and the retry
+        // cadence for a saving centre (which should not be a cadence at all).
+        // Dropping the tick to 1/yr for granularity would multiply decisions
+        // 50x along with it, and the decision half is what costs throughput.
+        // The retry belongs on the events that actually change a saving
+        // centre's situation — minerals arriving — not on a clock.
         if self.free_berths(center) > 0 {
             self.sys_build_decision(center);
         }
@@ -3605,7 +3658,7 @@ impl Simulation {
     /// already sitting in Reserve. Equals the full price whenever recycling is
     /// off, which is what keeps the flag a clean A/B.
     /// **How many miners to put on this body — the crew that meets the buyer's
-    /// unmet demand, and no more** (`Hyades_industry.md` §4.5, T-83).
+    /// unmet demand, and no more** (`Hyades_industry.md` §4.5, T-87).
     ///
     /// **Crew is not a parameter.** It was `miners_per_outpost` (T-57, a flat
     /// hull count) and then `miner_vein_fraction` (T-72, a share of the rock),
@@ -4461,6 +4514,36 @@ impl Simulation {
     fn claim_planet(&mut self, planet: Entity, owner: PlayerId) {
         self.world.owner.insert(planet, owner);
         self.centroid_cache[owner.0 as usize] = None;
+    }
+
+    /// **Add to an empire's `$` ledger** — the only writer (T-82).
+    ///
+    /// Refuses a non-finite delta rather than propagating it. Design law #16 is
+    /// explicit that a NaN in replicated state is a *fatal value*, not a small
+    /// one: core WASM picks NaN payloads nondeterministically, so a NaN that
+    /// reaches the hashed state is an intermittent desync with no reproducer.
+    /// The purse is replicated, so the guard belongs at the write and not at
+    /// the digest.
+    ///
+    /// A negative balance is *not* refused — debt is a legitimate state for a
+    /// claim, and §2.1 is explicit that `$` is an obligation rather than a
+    /// substance. What is refused is a value that is not a number.
+    fn credit(&mut self, player: Entity, delta: f64) {
+        if !delta.is_finite() {
+            return;
+        }
+        if let Some(p) = self.world.purse.get_mut(player) {
+            let next = *p + delta;
+            if next.is_finite() {
+                *p = next;
+            }
+        }
+    }
+
+    /// An empire's `$` balance. Presentation-readable; the simulation reads it
+    /// only through the Exchange.
+    pub fn purse_of(&self, player: PlayerId) -> f64 {
+        self.player_entity.get(player.0 as usize).and_then(|&e| self.world.purse.get(e)).copied().unwrap_or(0.0)
     }
 
     /// Live mineral pressure for `center`: `1.0` when broke for its next
@@ -5692,8 +5775,93 @@ mod tests {
         let _ = (m_infra, g_infra);
     }
 
+    /// **T-82: the `$` ledger fills and nothing reads it.**
+    ///
+    /// §10.7 stages 1–3 land the Exchange **inert**, for the reason
+    /// `Hyades_industry.md` §6.7's stages 3–5 did: a system that lands neutral
+    /// can be verified against a bit-identical bed before anything switches on,
+    /// so the first stage that *does* change behaviour is measured against a
+    /// known baseline instead of against a moving one. That plan was not met at
+    /// industry stage 5, and the stage that broke it was the one that changed
+    /// what a purchase costs — which is stage 4 here.
+    ///
+    /// Two claims, and the second is the one that can rot silently:
+    ///
+    /// - **The faucet runs.** An empire that fabricates accrues `$`, so the
+    ///   ledger is not merely present and empty.
+    /// - **Nothing spends it.** The purse is write-only until T-85, so a run
+    ///   with the faucet must be bit-identical to one without — asserted by
+    ///   zeroing the rate, which is the ablation form of "nothing reads this".
+    #[test]
+    fn the_dollar_ledger_fills_and_changes_nothing() {
+        let run = |rate: f64| {
+            let mut gcfg = GalaxyConfig::new(3, 21);
+            gcfg.planet_count = 300;
+            let galaxy = Galaxy::generate(gcfg).unwrap();
+            let mut cfg = test_cfg(21);
+            cfg.dollar_per_fabrication = rate;
+            let mut sim = Simulation::with_baseline(galaxy, cfg);
+            let report = sim.run();
+            let purses: Vec<u64> = (0..3).map(|p| sim.purse_of(PlayerId(p)).to_bits()).collect();
+            let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();
+            (report.events_processed, report.planets_scanned_total, pops, purses)
+        };
+
+        let (ev_off, scan_off, pop_off, purse_off) = run(0.0);
+        let (ev_on, scan_on, pop_on, purse_on) = run(1.0);
+
+        // The faucet is doing something — otherwise everything below is
+        // vacuously true and the test would still pass with `credit` deleted.
+        assert!(purse_off.iter().all(|&b| f64::from_bits(b) == 0.0), "a zero rate must mint nothing");
+        assert!(
+            purse_on.iter().all(|&b| f64::from_bits(b) > 0.0),
+            "every empire fabricates, so every purse must fill: {:?}",
+            purse_on.iter().map(|&b| f64::from_bits(b)).collect::<Vec<_>>()
+        );
+
+        // And it is reading *production*, not merely counting ticks: an empire
+        // that has built more infrastructure fabricates faster and must be
+        // richer. Sorting the two orderings together is what makes this a claim
+        // about the faucet's input rather than about a constant.
+        assert!(
+            purse_on.iter().map(|&b| f64::from_bits(b)).any(|v| v != f64::from_bits(purse_on[0])),
+            "three empires with different industry must not hold identical purses"
+        );
+
+        // **Nothing reads it.** Same seed, same run, to the bit.
+        assert_eq!(ev_off, ev_on, "the faucet moved the event count");
+        assert_eq!(scan_off, scan_on, "the faucet moved survey");
+        assert_eq!(pop_off, pop_on, "the faucet moved population");
+    }
+
+    /// **A non-finite credit is refused at the write** (T-82, design law #16).
+    ///
+    /// The purse is replicated state, and §6 H3 is explicit that core WASM picks
+    /// NaN payloads nondeterministically — so a NaN reaching the hashed state is
+    /// an intermittent desync with no reproducer to hand a bug report. Guarding
+    /// at the single writer is cheaper than guarding at the digest and cannot be
+    /// bypassed by a new call site.
+    #[test]
+    fn a_non_finite_credit_never_reaches_the_ledger() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 9)).unwrap(), test_cfg(9));
+        let pe = sim.player_entity[0];
+        sim.credit(pe, 10.0);
+        assert_eq!(sim.purse_of(PlayerId(0)), 10.0);
+
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            sim.credit(pe, bad);
+            assert!(sim.purse_of(PlayerId(0)).is_finite(), "{bad} reached the ledger");
+            assert_eq!(sim.purse_of(PlayerId(0)), 10.0, "{bad} moved the balance");
+        }
+
+        // Debt is legal — `$` is a claim, and an obligation can be negative.
+        // Only *not a number* is refused.
+        sim.credit(pe, -25.0);
+        assert_eq!(sim.purse_of(PlayerId(0)), -15.0, "a negative balance is a legal claim");
+    }
+
     /// **Crew falls out of demand, and the sign is inverted from both retired
-    /// policies** (T-83).
+    /// policies** (T-87).
     ///
     /// The properties, not the numbers — the numbers are `ε`, `β` and
     /// `veins_per_band`, all placeholders (R-IND18). What has to hold whatever
@@ -6879,7 +7047,7 @@ mod tests {
         // test of *that* instead — the same way three hull-ladder tests silently
         // became tests of `limited_fleet_size` at stage 3b.
         //
-        // Since T-83 there is no crew knob to pin: the crew is derived from the
+        // Since T-87 there is no crew knob to pin: the crew is derived from the
         // founding centre's unmet demand, and a fresh homeworld with a full
         // starting bank has none, so it opens an outpost with one hull. The
         // assertion below states that rather than assuming it.

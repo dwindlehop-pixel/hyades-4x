@@ -1157,9 +1157,9 @@ changes how you *work*, not what is left to do:
   | T-70/73/74 bed (`slips ≡ 1` ablation), 3 seats, 4 kyr | 24,470–25,984 | 9.0–9.7 yr/s | 3.6–3.9× |
   | **T-69 (yards fill every berth), same bed** | 25,200–25,523 | **6.6–7.3 yr/s** | **2.6–2.9×** |
   | T-71/T-72 (crowding, `f = 0.07` crews) | 37,269–37,706 | 9.8–9.9 yr/s | 3.9–4.0× |
-  | **T-83 (crew from demand)** | **23,258–24,801** | **8.5–9.0 yr/s** | **3.4–3.6×** |
+  | **T-87 (crew from demand)** | **23,258–24,801** | **8.5–9.0 yr/s** | **3.4–3.6×** |
 
-  **T-83's row is the first with `ns/event` beside it, and it is the number to
+  **T-87's row is the first with `ns/event` beside it, and it is the number to
   look at**: 173,886 and 176,747 ns/event on seeds 1 and 7. **174 microseconds
   per event** is the real story that `yr/s` was hiding — the engine is not slow
   because it processes many events, it is slow because each one is expensive.

@@ -216,6 +216,50 @@ Production counted in mass rather than hull count, Technology aggregated by powe
 mean rather than sum, and Politics' partner share grounded in *delivered freight*
 rather than in the existence of a pact.
 
+## T-88 — decouple economic *granularity* from decision *rate*
+
+**Author's directive: "move all decision making to trigger off an event so the
+economy tick can be made 1/year without adversely affecting years/second. I want
+to improve the granularity of the economic simulation, not the rate of decision
+making."**
+
+`cycle_years = 50` is doing two unrelated jobs and they want opposite values:
+
+| job | wants | why |
+|---|---|---|
+| **Economic integration step** — mine, grow, mint `$` | **small** (1 yr) | every one is a *rate over an interval*, and a 50-year step is a coarse Euler step on a logistic. Fidelity is the whole reason to shrink it. |
+| **Decision retry cadence** — a saving centre re-checks whether it can afford anything | large, or better, **not a cadence at all** | a decision is triggered by a *change in situation*, and `CLAUDE.md` §4 says so: entities evaluate on their own arrival events, never on a sweep. |
+
+Dropping `cycle_years` to 1 today multiplies **both**, and the decision half is
+what costs throughput. R-O69 already moved the production decision *off* the
+tick for a centre with a build under way — but `sys_production_tick` still calls
+`sys_build_decision` directly when the yard is free (`src/sim.rs`, "the mining
+step doubles as its retry"). That call is the remaining coupling.
+
+**The work:** make the retry event-driven too. A saving centre's situation
+changes when *minerals arrive* — `FreighterArrive`, the local extraction that
+crosses an affordability threshold, or a `Reserve` hull becoming available — not
+when a fixed clock ticks. Raise `BuildDecision` from those, and the economy tick
+becomes purely economic: mine, grow, mint, reschedule.
+
+**Then `cycle_years` is free to fall to 1.0**, and what it buys is real: T-64's
+logistic is conjugate to the logistic map, so step size is not a cosmetic choice
+— a 50-year step is why `growth_rate` is a *step function of itself* (T-64/R-O84,
+the objective is piecewise constant in `r` because what matters is how many
+50-year cycles a centre takes to cross a `PopBands` edge). **A 1-year step would
+give that surface a gradient a probe can actually read**, which is worth more
+than the value it would find.
+
+**Guard: `ns/event` beside `yr/s`** (`CLAUDE.md` §2). This is exactly the change
+that decomposition exists for — the *right* outcome is `yr/s` down and
+`ns/event` flat or better, which is "the simulation is doing more, each unit
+costs the same". Reading the aggregate alone would call a fidelity improvement a
+regression. Colony-years and work-years are the behaviour guards; a 50x finer
+integration step **will** move them and that is not a bug, so expect to
+re-ratify `growth_rate` after it rather than treating the shift as a defect.
+
+---
+
 | # | Item | Blocked on | T-code |
 |---|---|---|---|
 | 1 | **Per-metric saturation study** — one **3-kyr** run per seed, all six stocks against time | — | **T-78** |

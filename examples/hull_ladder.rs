@@ -49,7 +49,7 @@ struct Leg {
 const LEGS: &[Leg] = &[
     Leg { name: "ratified ladder", apply: |_| {}, doctrine: |_| {} },
     // ~~2/3/5 miners per outpost~~, ~~vein fraction 0.1/0.3/0.6~~ — **there is no
-    // crew leg any more (T-83).** Crew size stopped being a policy: it is
+    // crew leg any more (T-87).** Crew size stopped being a policy: it is
     // derived from the founding centre's unmet mineral demand
     // (`Hyades_industry.md` §4.5), so there is no value here to sweep.
     //
