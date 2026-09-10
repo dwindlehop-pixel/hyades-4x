@@ -61,6 +61,7 @@ use crate::autopilot::{
 use crate::cards::{self, CardEffect, Order, Target};
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
+use crate::matching;
 use crate::math::{self, Vec3, G};
 use crate::resources::{Archetype, Basic, MineralField, Minerals};
 use crate::rng::Rng;
@@ -1370,6 +1371,19 @@ struct World {
     purse: ComponentStore<f64>,
 }
 
+/// **The cross-empire Exchange — one book per basic colour**
+/// (`Hyades_politics_trade_and_intelligence.md` §3.1, T-84).
+///
+/// A `Resource` in the ECS sense, like the event queue: the Exchange never
+/// mutates world state, it produces `Fill`s and the caller turns those into
+/// events (§10.0). Indexed in `Basic::ALL` order so the set has a canonical
+/// order — which §10.5 needs, because per-round clearing over a *set* is what
+/// keeps price from being a function of event ordering.
+#[derive(Default)]
+struct Exchange {
+    books: [matching::Book; 3],
+}
+
 impl World {
     fn new() -> Self {
         World {
@@ -2033,6 +2047,17 @@ pub struct Simulation {
     /// same ore — contesting a field is a real mechanic, and a card that lets
     /// an empire draw from a rival's pile is a *card*, not the default.
     outpost_stock: BTreeMap<(u32, u64), Minerals>,
+    /// **The cross-empire Exchange** (T-84). Rebuilt and cleared at the round
+    /// barrier (§10.5), never continuously — a continuous book makes price a
+    /// function of event ordering, and two clients that tie-break a match
+    /// differently clear at different prices, which is an unreproducible desync.
+    exchange: Exchange,
+    /// Whether the round barrier posts to the Exchange at all (T-84).
+    ///
+    /// Exists for the inertness ablation and nothing else: `CLAUDE.md` §2 puts
+    /// ablation first among the three kinds of proof, and "posting changes
+    /// nothing" is only checkable against a run that did not post.
+    exchange_posting: bool,
     /// Per-player pools of hulls whose rock ran dry, awaiting re-tasking. Push
     /// order is event order, so these are deterministic; selection is by
     /// distance to the new target, not by position in the pool.
@@ -2133,6 +2158,8 @@ impl Simulation {
             active_mines: BTreeSet::new(),
             mine_crew: BTreeMap::new(),
             outpost_stock: BTreeMap::new(),
+            exchange: Exchange::default(),
+            exchange_posting: true,
             reserve_miners: vec![Vec::new(); n],
             reserve_freighters: vec![Vec::new(); n],
             current_round: 0,
@@ -2295,6 +2322,15 @@ impl Simulation {
         }
 
         self.apply_orders(round, &orders);
+
+        // **The Exchange clears at the barrier, not continuously** (§10.5).
+        // Cards have just resolved and the `Works` fold has been recomputed, so
+        // this is the moment the standing layer is coherent — and a round is a
+        // *set*, which is what gives the book a canonical order. Posting is
+        // inert until T-85 wires clearing.
+        if self.exchange_posting {
+            self.post_exchange_offers();
+        }
 
         let next = round.saturating_add(1);
         if self.clock + self.config.years_per_round <= self.config.horizon_years {
@@ -4516,6 +4552,102 @@ impl Simulation {
         self.centroid_cache[owner.0 as usize] = None;
     }
 
+    /// **What a centre will pay for one kilotonne of a colour, in `$`/kt**
+    /// (politics §3.2, T-84).
+    ///
+    /// ```text
+    /// wtp = base_value[c] · doctrine_demand[c] · mineral_pressure(centre)
+    /// ```
+    ///
+    /// The fourth term §3.2 names — `risk_discount(counterparty)` — is not here
+    /// because it is a property of *whom you are trading with*, not of what you
+    /// want, so it belongs at match time and needs reputation (T-86).
+    ///
+    /// Every term is already ratified or already exists: `mineral_pressure_of`
+    /// is the engine's, and the two Doctrine fields default to the works mix
+    /// (`Hyades_industry.md` §6.10) rather than to a second independent
+    /// statement of what an empire wants.
+    fn willingness_to_pay(&self, center: Entity, colour: Basic, doctrine: &Doctrine) -> f64 {
+        let i = colour as usize;
+        doctrine.base_value[i] * doctrine.doctrine_demand[i] * self.mineral_pressure_of(center)
+    }
+
+    /// **Post every empire's bids and asks to the cross-empire books** (T-84).
+    ///
+    /// Runs at the round barrier and rebuilds the books from scratch, because
+    /// §10.5 clears a **set** rather than a stream: a book carried across rounds
+    /// would make a stale offer's position in it depend on when it was posted,
+    /// which is the event-ordering dependence per-round clearing exists to
+    /// avoid.
+    ///
+    /// **A centre bids for what it is short of and asks with what it is long
+    /// of**, both read off the same place — its own bank against its own next
+    /// works bill. That is what makes this move Yellow from the Yellow-rich to
+    /// the Yellow-poor rather than shuffling mass at random: T-73 measured
+    /// 1,494 of 1,515 banks single-coloured, so nearly every centre is
+    /// simultaneously long one colour and short the other two.
+    ///
+    /// **Nothing clears yet.** This stage is inert by construction (§10.7
+    /// stages 1–3) and the guard is a bit-identical bed.
+    fn post_exchange_offers(&mut self) {
+        for b in self.exchange.books.iter_mut() {
+            *b = matching::Book::new();
+        }
+        let players = self.player_entity.len();
+        for p in 0..players {
+            let pe = self.player_entity[p];
+            let doctrine = *self.world.doctrine.get(pe).unwrap();
+            let owner = PlayerId(p as u32);
+            // Planet-id order, which is the engine's canonical iteration order
+            // and the only one every client agrees on before the round exists.
+            for &e in &self.planet_entity {
+                if self.world.owner.get(e).copied() != Some(owner) {
+                    continue;
+                }
+                let deficit = self.colour_deficit(e, owner);
+                let bank = self.world.stockpile.get(e).copied().unwrap_or_default();
+                let pos = *self.world.position.get(e).unwrap();
+                let at = [pos.x, pos.y, pos.z];
+                for (i, &c) in Basic::ALL.iter().enumerate() {
+                    let short = deficit[i].kilotons();
+                    if short > 1e-9 {
+                        let price = self.willingness_to_pay(e, c, &doctrine);
+                        if price > 0.0 {
+                            self.exchange.books[i].post_bid(matching::Offer {
+                                entity: e.0,
+                                price,
+                                qty: short,
+                                pos: at,
+                                owner,
+                            });
+                        }
+                    } else {
+                        // Long: whatever this bill does not claim is sellable.
+                        // A centre with no bill to pay is long everything it
+                        // holds, which is exactly the Yellow-rich empire the
+                        // Yellow-poor one needs to reach.
+                        let spare = bank.get_basic(c);
+                        if spare > 1e-9 {
+                            self.exchange.books[i].post_ask(matching::Offer {
+                                entity: e.0,
+                                price: self.willingness_to_pay(e, c, &doctrine),
+                                qty: spare,
+                                pos: at,
+                                owner,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// How many offers stand on each colour's book. Diagnostic — the interim
+    /// guard for Exchange work is a census, not colony-years (§10.8).
+    pub fn exchange_depth(&self) -> [(usize, usize); 3] {
+        [self.exchange.books[0].len(), self.exchange.books[1].len(), self.exchange.books[2].len()]
+    }
+
     /// **Add to an empire's `$` ledger** — the only writer (T-82).
     ///
     /// Refuses a non-finite delta rather than propagating it. Design law #16 is
@@ -5773,6 +5905,56 @@ mod tests {
         assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, home, target), None);
         assert_eq!(sim.colony_seed_for(HullType::LimitedSystems, home, poor), None);
         let _ = (m_infra, g_infra);
+    }
+
+    /// **T-84: the books fill with real two-sided depth, and nothing clears.**
+    ///
+    /// The third and last inert stage. Two claims, and the first is what stops
+    /// the second being vacuous — an Exchange with empty books would also be
+    /// bit-identical.
+    ///
+    /// The interesting assertion is **two-sidedness**. §10.8 says the guard for
+    /// Exchange work is a census rather than colony-years, and this is that
+    /// census at its smallest: if every empire were short the same colours, the
+    /// books would be all bids and no asks and there would be no trade to make.
+    /// T-73 measured why they are not — 1,494 of 1,515 banks are
+    /// single-coloured, so nearly every centre is simultaneously **long one
+    /// colour and short the other two**, which is precisely the condition that
+    /// makes a colour market worth having.
+    #[test]
+    fn the_exchange_books_fill_on_both_sides_and_clear_nothing() {
+        let run = |post: bool| {
+            let mut gcfg = GalaxyConfig::new(3, 33);
+            gcfg.planet_count = 400;
+            let galaxy = Galaxy::generate(gcfg).unwrap();
+            let mut cfg = test_cfg(33);
+            cfg.horizon_years = 900.0; // two round barriers at the default cadence
+            let mut sim = Simulation::with_baseline(galaxy, cfg);
+            sim.exchange_posting = post;
+            let report = sim.run();
+            let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();
+            (report.events_processed, report.planets_scanned_total, pops, sim.exchange_depth())
+        };
+
+        let (ev_off, scan_off, pop_off, depth_off) = run(false);
+        let (ev_on, scan_on, pop_on, depth_on) = run(true);
+
+        assert_eq!(depth_off, [(0, 0); 3], "posting disabled must leave the books empty");
+
+        // **Both sides, on at least one colour.** A one-sided book is a market
+        // with nothing to match.
+        let (bids, asks): (usize, usize) = depth_on.iter().fold((0, 0), |(b, a), &(x, y)| (b + x, a + y));
+        assert!(bids > 0, "no centre bid for anything it was short of: {depth_on:?}");
+        assert!(asks > 0, "no centre offered anything it was long of: {depth_on:?}");
+        assert!(
+            depth_on.iter().any(|&(b, a)| b > 0 && a > 0),
+            "no single colour has both sides, so nothing could ever match: {depth_on:?}"
+        );
+
+        // **Nothing clears.** Same seed, same run, to the bit.
+        assert_eq!(ev_off, ev_on, "posting moved the event count");
+        assert_eq!(scan_off, scan_on, "posting moved survey");
+        assert_eq!(pop_off, pop_on, "posting moved population");
     }
 
     /// **T-82: the `$` ledger fills and nothing reads it.**

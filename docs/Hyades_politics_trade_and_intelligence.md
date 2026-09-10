@@ -910,7 +910,7 @@ escorting worth paying for. Marked resolved below.
 |---|---|---|---|---|
 | 1 | `$` ledger + faucet; nothing spends it | **neutral** — nothing reads it | bit-identical | ~~**T-82**~~ — **done** |
 | 2 | `Commodity` gains the colour axis; `Offer` gains an owner | **neutral** — matcher now wired, nothing calls it | bit-identical | ~~**T-83**~~ — **done, with T-01** |
-| 3 | Cross-empire book; centres post `wtp` bids | **neutral** — nothing clears yet | bit-identical | **T-84** |
+| 3 | Cross-empire book; centres post `wtp` bids | **neutral** — nothing clears yet | bit-identical | ~~**T-84**~~ — **done** |
 | 4 | Clearing at the round barrier → contracts + escrow | changes | §10.8 | **T-85** |
 | 5 | The freight leg; escrow settles on arrival | changes | §10.8 | **T-77** |
 | 6 | Default, interdiction, reputation | changes | §10.8 | **T-86** |

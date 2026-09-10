@@ -258,9 +258,18 @@ entity-count one. Years of this table have been read the other way.
 and ablation in this project reads a run with log categories enabled and
 compares it against one that did not. `tests/telemetry.rs` bounds that at 5%;
 measured across a 10x range of event counts the true cost is **below the
-machine's own run-to-run variance** (ratios 0.995 / 0.974 / 1.020 at 15.6k /
+machine's own run-to-run variance** (ratios 1.001 / 0.974 / 1.020 at 15.6k /
 59.2k / 148.6k events). Two of three land under 1.0, which is the honest signal
 that this is a *bound* rather than an estimate.
+
+**It flaked once, at five repeats, and the fix was samples and not the
+threshold.** An unloaded machine ran the bed twice as fast, the per-pair ratios
+spread **0.948 to 1.067**, and because the two arms are minimised
+*independently* a small sample can pair a lucky bare run against an unlucky
+logged one — reporting 1.069 for a cost that is actually zero. Nine repeats give
+1.001 on the same bed. **A threshold widened to cover measurement noise stops
+bounding anything**, which is the whole point of the test; if a timing guard is
+flaky, buy more samples.
 
 Read them together:
 

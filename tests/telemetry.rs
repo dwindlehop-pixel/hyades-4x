@@ -41,7 +41,17 @@ use std::time::Instant;
 const PLANETS: usize = 800;
 const PLAYERS: usize = 3;
 const HORIZON: f64 = 600.0;
-const REPEATS: usize = 5;
+/// **Nine, and five was measured to be too few.** At five this test flaked at
+/// **1.069** on an unloaded machine. The per-pair ratios span **0.948 to
+/// 1.067** — a +/-6% spread on a sub-second run — and the two arms are minimised
+/// *independently*, so a small sample can pair a lucky bare run against an
+/// unlucky logged one and manufacture an overhead that is not there. At nine the
+/// same bed reports **1.001**.
+///
+/// The fix for a flaky timing test is more samples, never a looser budget: the
+/// threshold is what the test is *for*, and a threshold widened to cover
+/// measurement noise no longer bounds anything.
+const REPEATS: usize = 9;
 
 /// The budget. Telemetry costing more than this makes every instrumented
 /// measurement in the project a measurement of a different system.
@@ -51,7 +61,7 @@ const REPEATS: usize = 5;
 ///
 /// | planets x horizon | events | ratio |
 /// |---|---|---|
-/// | 800 x 600 (shipped) | 15,602 | **0.995** |
+/// | 800 x 600 (shipped) | 15,602 | **1.001** (min of 9; per-pair 0.948–1.067) |
 /// | 1,500 x 800 | 59,197 | **0.974** |
 /// | 2,500 x 1,000 | 148,622 | **1.020** |
 ///

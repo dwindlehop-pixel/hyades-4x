@@ -270,6 +270,41 @@ pub struct Doctrine {
     /// centre can consume and cannot currently get — §4.3's extraction law
     /// inverted. See `Hyades_industry.md` §4.5. There is nothing here to tune.
 
+    /// **Floor price per basic colour, `$`/kt** (politics §3.2, §10.4, T-84).
+    ///
+    /// The first term of `wtp`. Colours start equal — at first a kilotonne of
+    /// Cyan is worth a kilotonne of Yellow — and diverge as the game develops,
+    /// because **value is set by demand and demand is Doctrine**
+    /// (`Hyades_industry.md` §7.1). This is the floor they diverge *from*.
+    ///
+    /// **Placeholder magnitudes** (R-P2). Nothing clears yet, so nothing can
+    /// price them.
+    pub base_value: [f64; 3],
+
+    /// **How much this empire's policy wants each colour** (politics §3.2,
+    /// §10.4, T-84) — the term that turns the map's mineral geography into a
+    /// market.
+    ///
+    /// This is where the works mix enters the Exchange. An empire deep in
+    /// Production is bidding on a Yellow-heavy works bill
+    /// (`Hyades_industry.md` §6.10 — the default mix is already `3:2:1` Y:C:M),
+    /// so its demand for Yellow is a **standing bid that moves the price of
+    /// Yellow for everyone**, including empires that never touch the Production
+    /// tree. §3.0's "value diverges from kilotons because demand is Doctrine",
+    /// made mechanical.
+    ///
+    /// **Defaults to the works mix**, which is not arbitrary: the colours an
+    /// empire wants to buy are the colours its bills are denominated in, and
+    /// having two independent statements of that would be two copies of a rule
+    /// that must agree with nothing checking that they do.
+    pub doctrine_demand: [f64; 3],
+
+    /// **Discount applied to a counterparty by reputation** (politics §3.5,
+    /// §10.4). The fourth term of `wtp`. Inert until T-86 ships reputation.
+    ///
+    /// **Placeholder magnitude** (R-P2).
+    pub risk_aversion: f64,
+
     /// **Expansion rate knob** (MC experiment): how strongly the production
     /// queue favors *upgrading own infrastructure* (deepening) over *spending
     /// minerals to reach outward* (expanding). `0.0` = always expand when able,
@@ -304,6 +339,12 @@ impl Default for Doctrine {
             // Off until a card or board state turns it on — see the field doc.
             survey_avoids_inhabited: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
+            base_value: [1.0; 3],
+            // The works mix, normalised — an empire wants to buy the colours its
+            // bills are denominated in. `WORKS_MIX_DEFAULT` is in `Basic` order
+            // and is `3:2:1` Yellow : Cyan : Magenta (`Hyades_industry.md` §6.10).
+            doctrine_demand: crate::cards::WORKS_MIX_DEFAULT,
+            risk_aversion: 0.0,
             expand_bias: ExpandBias::ProductionCentersFirst,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
