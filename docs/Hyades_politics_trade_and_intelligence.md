@@ -748,8 +748,11 @@ is measurable on its own. It mirrors `Hyades_industry.md` §6.7, which worked.*
 
 ### 10.0 What is already built, audited
 
-`src/matching.rs` — 280 lines, deterministic, dependency-free, **and not wired
-into `lib.rs`.** It is not the Exchange this spec describes; it is an
+`src/matching.rs` — 280 lines, deterministic, dependency-free, and ~~not wired
+into `lib.rs`~~ **now wired (T-01, landed with T-83)**. It was never in the
+module list at all, which meant it did not compile as part of the crate and its
+tests never ran in CI — worth naming, because "built and audited" and "compiled"
+are different claims and this file was only the first. It is not the Exchange this spec describes; it is an
 *intra-empire haulage* matcher, and the distance between the two is the work:
 
 | | built | this spec needs |
@@ -905,8 +908,8 @@ escorting worth paying for. Marked resolved below.
 
 | # | Stage | Behaviour | Guard | T-code |
 |---|---|---|---|---|
-| 1 | `$` ledger + faucet; nothing spends it | **neutral** — nothing reads it | bit-identical | **T-82** |
-| 2 | `Commodity` gains the colour axis; `Offer` gains an owner | **neutral** — matcher still unwired | bit-identical | **T-83** |
+| 1 | `$` ledger + faucet; nothing spends it | **neutral** — nothing reads it | bit-identical | ~~**T-82**~~ — **done** |
+| 2 | `Commodity` gains the colour axis; `Offer` gains an owner | **neutral** — matcher now wired, nothing calls it | bit-identical | ~~**T-83**~~ — **done, with T-01** |
 | 3 | Cross-empire book; centres post `wtp` bids | **neutral** — nothing clears yet | bit-identical | **T-84** |
 | 4 | Clearing at the round barrier → contracts + escrow | changes | §10.8 | **T-85** |
 | 5 | The freight leg; escrow settles on arrival | changes | §10.8 | **T-77** |

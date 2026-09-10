@@ -121,8 +121,8 @@ it is a book *of*.
 
 | # | Stage | Behaviour | T-code |
 |---|---|---|---|
-| 1 | `$` ledger + faucet; nothing spends it | neutral | **T-82** |
-| 2 | `Commodity` gains the colour axis; `Offer` gains an owner | neutral | **T-83** |
+| 1 | `$` ledger + faucet; nothing spends it | neutral | ~~**T-82**~~ — **LANDED**, bit-identical |
+| 2 | `Commodity` gains the colour axis; `Offer` gains an owner | neutral | ~~**T-83**~~ — **LANDED** with T-01 (the module was never in `lib.rs`) |
 | 3 | Cross-empire book; centres post `wtp` bids | neutral | **T-84** |
 | 4 | Clearing at the round barrier → contracts + escrow | changes | **T-85** |
 | 5 | The freight leg; escrow settles on arrival | changes | **T-77** |

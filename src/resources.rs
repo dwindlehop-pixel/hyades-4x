@@ -14,7 +14,11 @@
 use crate::units::{Band, Kilotons, Measure, Price};
 
 /// Tier-1 basic minerals (the CMY primaries). Mined.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+// `Ord` so `Basic` can key a deterministic ordering — `matching::Commodity`
+// carries one (T-83) and `Commodity` must be `Ord` for the Exchange's books to
+// have a canonical order. The variant order is the `Basic::ALL` order and is
+// what every colour-indexed array in the engine already assumes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Basic {
     Cyan,
     Magenta,
