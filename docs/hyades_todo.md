@@ -51,6 +51,89 @@ mining entry keeps `T-49`, since it was assigned first. **Run that grep as part
 of every merge**, because the advice in the paragraph above is necessary and not
 sufficient: checking for a collision only works if something makes you check.
 
+**A third one, and it needed no branches at all.** `T-83` was the Exchange's
+stage 2 in politics §10.7 *and* got used for the crew-from-demand change, in the
+same session, by the same author. The two prior instances were blamed on
+concurrent branches; this one shows that was never the cause. The register lists
+open work, and a T-code assigned inside a spec's own build-order table
+(`Hyades_industry.md` §6.7, politics §10.7) is not in the register at all, so the
+`### T-nn` grep above cannot see it. The crew change became `T-87`.
+
+**There is no working grep for this, and two were tried before saying so.**
+`grep -rohE '\*\*T-[0-9]+\*\*' docs/ | sort | uniq -d` flags **19 of the
+codes in use** — a code is legitimately *mentioned* in many places, and bold is
+not a definition. Trying to compare definitions instead (register headings plus
+build-order rows, matched on normalised description) still flags eight, because
+a measurement table row and an assignment row are not distinguishable by shape:
+both are a `|`-row containing exactly one T-code. **Mention and definition are
+not separable by regex in prose tables**, so a checker here is a research
+project, not a one-liner.
+
+Two things that *do* work, in order of cost:
+
+- **When you assign a new code, take `max + 1` across the whole repo, not the
+  next gap in the register.** That is the register's own rule already, and it is
+  exactly what this incident violated: `T-86` was in the tree and the new work
+  took `T-83`. One `grep -rohE 'T-[0-9]+' | sort -t- -k2 -n | tail -1` before
+  assigning, and it cannot happen.
+- **Enumerate the codes in the landing.** This one surfaced only because a later
+  landing was required to list what it moved (`CLAUDE.md` §6), which is doing
+  collision detection as a side effect. It is the cheapest of the three
+  mechanisms tried and the only one that has actually caught anything.
+
+---
+
+## The landing ledger
+
+**`CLAUDE.md` §6 requires every PR to account for the `T-nn` it moved and every
+ratified decision it implemented or contradicted.** That rule landed part-way
+through the `claude/works` branch, so **this section is it applied retroactively
+to the 21 commits that predate it** — the point of a rule like this is a
+continuous record, and a record with a hole at its start is one nobody can trust
+the rest of.
+
+Grouped by landing rather than by commit, because a landing is the unit a PR
+describes.
+
+| Landing | Closed | Advanced | Opened | Ratified decisions **implemented** | Ratified decisions **contradicted** |
+|---|---|---|---|---|---|
+| **Works 3–4** — infra as a stock, CardId-ordered fold | **T-70**, **T-75a** | T-73 | — | R-O80 (the infra ladder *is* the mineral ladder); design law #16 (fold refuses non-finite); R-IND4 at the algebra level | — |
+| **T-70 measured** | — | T-70 | — | — | **My own prediction, not a spec's** — I asserted `rank` reads infrastructure and that bit-identity was therefore impossible. It does not; one grep would have shown it. Infrastructure reaches every live decision through an integer |
+| **Works 5 (T-73)** — colour-payable bills | **T-73** | T-81 | R-IND15 | §5.1 ("never a true 1:1:1"); design law #13 | — |
+| **T-73 measured** | — | — | — | — | **§6.7's neutrality claim for stage 5.** The stage was planned inert and was not: it changes *what a purchase costs*. Deepening fell 94.5% |
+| **T-81 + 3:2:1 default** | — | T-81 | R-IND16 | **R-IND15 resolved** — `3:2:1` Y:C:M, Yellow-primary because Production is Yellow | The placeholder `(1,1,1)`, which contradicted §5.1 on the spec's own terms |
+| **T-81 measured false** | **T-81** (kept as the record, not reverted) | — | R-IND17 | design law #1 (substitution is the counter-graph's, not the ladder's) | **T-81's own premise.** Relief routing *anti-concentrates*: builds fell 57 → 31. A three-colour bill needs colours arriving together, and relief scatters them |
+| **R-IND17** — bill-completion routing | **R-IND17** | T-77 | — | — | **The spec's own formula.** §6.11 divided by `Σ bill`, which ties a centre needing one colour with one needing everything. Corrected to `short_before` before implementing |
+| **Politics §10 spec** | — | T-82, T-86 | R-P16, R-P10 resolved | **R-P10 decided** (clear per round: a continuous book makes price a function of event ordering) | R-IND10 marked resolved — **the register was stale**, §3.3 had already answered it |
+| **T-74** — MM rate curve | **T-74** | — | — | §6.3's two-parameter curve, anchored so a rung-I centre reproduces the flat constants | — |
+| **T-69** — slips | **T-69**, **T-75b** | — | R-IND18 | §3.2's soft floor; **R-IND4 resolved** at both levels | **§3.2's prose.** "`F/slips → F_slip` from above" is the reciprocal of what `slips` does; the `1 +` is load-bearing and dropping it inverts the design property. Also **§3.3's schedule** becomes an asymptote rather than a reading |
+| **T-71 + T-72** — crowding | **T-71**, **T-72** | — | R-IND19, R-IND20 | §4.2's vein ladder; §4.3's ratios; design law #16 (vein clamp) | Three: **§4.3's `ε·S·W`** double-counts the deposit (R-IND19); **§6.3 vs §4.3** both claimed extraction (§4.3a); **T-57's ratified crew of 3** does not survive a law with a deposit term |
+| **T-87** — crew from demand | **T-87** | T-52 | R-IND20, **T-88** | Author's ruling: crew is not a parameter | **`miner_vein_fraction` itself**, shipped one landing earlier. And **§4.5's "fewer"** — site count is identical to the digit; that half was never crowding's to deliver |
+| **Exchange 1 (T-82)** | **T-82** | T-85 | R-P17 | R-P1 (`$` is a claim, zero mass); design law #16 at the single writer; **the §10.6 outpost amendment** | **R-P16's placeholder.** §10.3 shipped the faucet against infra *because* T-74 had not landed. It had. Resolved, not shipped |
+| **Exchange 2 (T-83)** | **T-83**, **T-01** | — | — | §3.1's cross-empire book shape; §10.5's canonical order (why `Basic: Ord`) | **§10.0's audit.** It called `matching.rs` "built, not wired" — it was never in `lib.rs`'s module list, so it did not compile and its tests never ran in CI |
+| **Exchange 3 (T-84)** | **T-84** | T-85, T-86 | — | §3.2's `wtp`; **§10.4's field list** — which is what T-11/R-O27 was holding open | — |
+
+**Two things this retrospective surfaced that no individual commit had said out
+loud.**
+
+**Ten contradictions in twenty-one commits, and every one was load-bearing.**
+Four were spec formulas or prose that were simply wrong (§3.2's reciprocal,
+§4.3's double-count, §6.11's divisor, §10.0's audit); three were ratified values
+that stopped meaning anything under a changed model; two were stage-neutrality
+claims that did not hold; one was a stale register entry. **None of them was a
+reason to stop, and all of them would have been invisible a month later.** That
+ratio is the argument for the rule: contradiction is the normal case in a
+project that measures things, so the cost of announcing one has to be near zero
+or it will not happen.
+
+**The neutrality claims failed twice, the same way, and the tell was available
+both times.** §6.7 planned works stages 3–5 inert and stage 5 was not; §10.7 plans
+Exchange stages 1–3 inert and they were, because §10.7 was written *after* that
+lesson and says so. The distinguishing property is stated in both places now: a
+stage that changes **what a purchase costs** is never neutral. Check a
+neutrality claim against the code that would have to be neutral, not against the
+description of the change.
+
 ---
 
 ## Band A — ready to build
