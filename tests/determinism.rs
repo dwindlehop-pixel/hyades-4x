@@ -84,18 +84,44 @@ fn continuous_positions_are_bit_identical_across_the_timeline() {
 fn positions_never_exceed_lightspeed() {
     // Sample displacement over small windows the whole way to the horizon; no
     // entity may move faster than c (= 1 ly/yr).
-    let mut sim = fresh_short(3, 808, 800.0);
+    //
+    // **Horizon 800 -> 300 at T-69**, and the reason is worth stating because the
+    // sampling loop looks like the expensive part and is not. The stride is 7 yr
+    // over a 0.25 yr window, so this walks the timeline about a hundred times
+    // whatever the horizon; the cost is `sim.run()`, and T-69's berth filling
+    // roughly doubled what a simulated year costs. On its own this test was
+    // **97 s of a 102 s target**.
+    //
+    // What the assertion needs is ships *in flight* over a stretch of timeline,
+    // which is a property of `math::position_along` and holds at any horizon
+    // where the expansion loop has started. `CLAUDE.md` s2: a test's horizon is
+    // a cost, not a strength. The trim is guarded from below by `moving` --
+    // shortening a run until nothing is flying would leave every assertion
+    // vacuously true and the test still green.
+    const HORIZON: f64 = 300.0;
+    let mut sim = fresh_short(3, 808, HORIZON);
     sim.run();
     let dt = 0.25;
     let mut t = 0.0;
-    while t < 800.0 {
+    let mut moving = 0u64;
+    while t < HORIZON {
         let p0 = sim.positions_at(t);
         let p1 = sim.positions_at(t + dt);
         for (u, v) in p0.iter().zip(p1.iter()) {
-            assert!(u.distance(*v) <= dt + 1e-6, "superluminal motion near t={t}");
+            let d = u.distance(*v);
+            assert!(d <= dt + 1e-6, "superluminal motion near t={t}");
+            if d > 1e-9 {
+                moving += 1;
+            }
         }
-        t += 7.0; // stride across the timeline
+        // **Stride 7 -> 2 alongside the horizon cut.** Sampling is O(entities)
+        // and the run is what costs; taking three times as many windows of a
+        // shorter timeline keeps the in-flight sample count up for almost
+        // nothing. The first attempt at this trim kept the stride and tripped
+        // `moving` at 479 -- which is exactly what that assertion is for.
+        t += 2.0;
     }
+    assert!(moving > 1_000, "nothing was in flight: the bound was never exercised ({moving})");
 }
 
 #[test]

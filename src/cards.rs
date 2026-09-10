@@ -105,6 +105,18 @@ pub enum CardEffect {
     /// Design is permanent and strictly earlier-is-better, so this leaks
     /// spatially and never goes stale (std §5).
     UnlockDesign(HullType, Class),
+    /// Write one field of the empire's **works** state — the industrial half of
+    /// the standing layer (`Hyades_industry.md` §6.2, T-75b).
+    ///
+    /// **The write is recorded, not applied.** The engine stores the
+    /// `(CardId, WorksWrite)` pair and re-derives [`Works`] with
+    /// [`Works::fold`], which accumulates in `CardId` order. Applying the
+    /// factor to a running product at play time would accumulate in *play*
+    /// order, and float multiplication is not associative — two players who
+    /// played the same cards in different orders would hold state differing in
+    /// its last bits, which is a desync (§6.5, and the same lesson as
+    /// `holdings_centroid`).
+    WriteWorks(WorksWrite),
     /// The effect needs a system the engine does not have yet — combat, the
     /// Exchange, `$`, the counter-graph. Counted rather than hidden, so a run
     /// can report how much of the card layer is still scaffolding.
@@ -681,5 +693,19 @@ mod tests {
         let inert: Vec<_> = TIER0.iter().filter(|c| c.effect == CardEffect::NotYetImplemented).collect();
         assert_eq!(inert.len(), 3);
         assert!(inert.iter().all(|c| c.tree == Tree::Warfare));
+    }
+
+    /// **The works write path exists and no tier-0 card uses it yet** (T-75b).
+    ///
+    /// Stated as a test rather than left implicit, because "unused variant" and
+    /// "variant a card was supposed to carry" look identical in the source. The
+    /// tier-0 eighteen are the *balance* scaffolding — reassigning one to a
+    /// works effect changes what every measurement so far was measuring — so
+    /// the write path lands first and the card that uses it is a separate,
+    /// deliberate change that has to edit this number.
+    #[test]
+    fn no_tier0_card_writes_works_yet_and_that_is_on_purpose() {
+        let works_cards = TIER0.iter().filter(|c| matches!(c.effect, CardEffect::WriteWorks(_))).count();
+        assert_eq!(works_cards, 0, "a tier-0 card gained a works effect — re-measure the bed before landing it");
     }
 }

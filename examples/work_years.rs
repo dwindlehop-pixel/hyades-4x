@@ -45,6 +45,12 @@ struct Run {
     colony_years: f64,
     final_works: f64,
     final_colonies: usize,
+    /// Simulated years per real second, against T-24's floor of 2.5. Free to
+    /// collect here and the only way this harness notices that a change bought
+    /// its work-years with entity count — which is the engine's first-order
+    /// cost and the thing that has moved the throughput table every time.
+    yr_per_s: f64,
+    vehicles: usize,
 }
 
 fn run(seed: u64) -> Run {
@@ -52,6 +58,7 @@ fn run(seed: u64) -> Run {
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = HORIZON;
     let mut sim = Simulation::with_baseline(galaxy, cfg);
+    let t0 = std::time::Instant::now();
 
     let (mut work_years, mut colony_years) = (0.0f64, 0.0f64);
     let (mut prev_t, mut prev_works, mut prev_col) = (0.0f64, 0.0f64, 0.0f64);
@@ -81,6 +88,7 @@ fn run(seed: u64) -> Run {
         next += SAMPLE_YEARS;
     }
 
+    let secs = t0.elapsed().as_secs_f64().max(1e-9);
     let snap = sim.snapshot();
     let owned: Vec<_> = snap.planets.iter().filter(|p| p.owner.is_some()).collect();
     Run {
@@ -88,21 +96,26 @@ fn run(seed: u64) -> Run {
         colony_years,
         final_works: owned.iter().map(|p| p.works.kilotons()).sum(),
         final_colonies: owned.len(),
+        yr_per_s: HORIZON / secs,
+        vehicles: snap.vehicles.len(),
     }
 }
 
 fn main() {
     println!("work-years — Growth's objective, {PLAYERS} seats, {HORIZON:.0} yr, sampled every {SAMPLE_YEARS:.0} yr");
     println!("colony-years is carried alongside as a *side-effect* read, never the verdict\n");
-    println!("{:>6}{:>16}{:>16}{:>13}{:>11}", "seed", "work-years", "colony-years", "final works", "colonies");
+    println!(
+        "{:>6}{:>16}{:>16}{:>13}{:>11}{:>10}{:>10}",
+        "seed", "work-years", "colony-years", "final works", "colonies", "vehicles", "yr/s"
+    );
     std::io::stdout().flush().ok();
 
     let (mut w, mut c) = (0.0, 0.0);
     for seed in SEEDS {
         let r = run(seed);
         println!(
-            "{seed:>6}{:>16.1}{:>16.1}{:>13.2}{:>11}",
-            r.work_years, r.colony_years, r.final_works, r.final_colonies
+            "{seed:>6}{:>16.1}{:>16.1}{:>13.2}{:>11}{:>10}{:>10.1}",
+            r.work_years, r.colony_years, r.final_works, r.final_colonies, r.vehicles, r.yr_per_s
         );
         std::io::stdout().flush().ok();
         w += r.work_years;

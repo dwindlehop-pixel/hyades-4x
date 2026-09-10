@@ -565,11 +565,25 @@ of the first.** Throughput divides among the active slips, so a hull of dry mass
 t_build(m, F) = t_lead + m / (F / slips(F))
 ```
 
-As `F` grows, `slips` grows with it, `F / slips → F_slip` from above, and
+As `F` grows, `slips` grows with it, `F / slips → F_slip` **from below**, and so
 
 ```
-t_build → t_lead + m / F_slip        (approached, never reached)
+t_build → t_lead + m / F_slip        (approached from above, never reached)
 ```
+
+> **Corrected at T-69.** This paragraph previously read "`F / slips → F_slip`
+> from above", which is the reciprocal of what the `1 +` in `slips` actually
+> does and the opposite of the floor claim in the next paragraph. Per-berth
+> throughput is `F / (1 + floor(F/F_slip))`, which is *strictly less* than
+> `F_slip` for every finite `F`; time is its reciprocal, so `t_build` sits
+> strictly **above** the floor and descends toward it. The `1 +` is therefore
+> load-bearing, not a boundary convenience: **dropping it inverts the design
+> property.** Measured while implementing T-69 — with `slips = max(1, floor(·))`
+> a rung-II centre turns a Medium hull around in **2.55 yr against a 3.0 yr
+> floor**, so a rich empire buys faster single hulls, which §3.2 exists to
+> forbid. `industry_buys_concurrency_and_never_undercuts_the_turnaround_floor`
+> pins the inequality rather than any number, because a number-by-number
+> schedule test passes under both forms.
 
 **The soft limit is emergent, not imposed.** No amount of industry rushes one
 hull below `t_lead + m/F_slip`; industry buys *more ships at once*, never
@@ -594,11 +608,20 @@ any sweep has confirmed.
 | `t_lead` | **2.0 yr** | irreducible per-hull lead time — tooling and crew, the part that does not scale |
 | `F_slip` | **0.1 kt/yr** | one slip's throughput |
 
-| Hull | dry mass | `t_build` at one slip | today |
+| Hull | dry mass | `t_build` floor = `t_lead + m/F_slip` | before T-68 |
 |---|---|---|---|
 | Limited Systems | 0.02 kt | **2.2 yr** | 10 yr |
 | Medium Systems | 0.10 kt | **3.0 yr** | 10 yr |
 | General Systems | 1.00 kt | **12.0 yr** | 10 yr |
+
+> **What this column means changed at T-69.** T-68 shipped `t_build = t_lead +
+> m/F` with no slips, and a rung-I centre hit these three numbers exactly. Once
+> slips divide the throughput they become the **asymptote** — the limit an
+> arbitrarily industrialised yard descends toward and never reaches (§3.2). At
+> the T-74 anchor a rung-I centre sits at `F = F_slip` with two berths, so it
+> turns a Limited hull around in 2.4 yr rather than 2.2, and buys a second
+> concurrent build for the difference. The schedule is still the design target;
+> it is now a floor rather than a reading.
 
 The schedule reads the way the design wants it to: a scout is a season's work, a
 coloniser is quick enough to spam, and a General hull is a **twelve-year
@@ -740,6 +763,50 @@ more poor ore (Lasky again), so the cap is a knee rather than a wall. **R-IND9:*
 the exact tail past `N` — flat, or a shallow linear seam at floor grade. It
 matters only for absurd crews and should be settled by what reads better in a
 log, not by a sweep.
+
+### 4.3a Extraction saturates once — here, not in §6.3 (R-IND18, decided)
+
+**§4.3 and §6.3 both claim to set the extraction rate, and applying both would
+be wrong.** §6.3's Michaelis–Menten curve `rate_e = cap_e · u_e/(u_e + half_e)`
+saturates in capacity; §4.3's `W(n, S) = N(S)^(1−β) · n^β` also saturates in
+capacity. Composing them saturates twice.
+
+**Decision: extraction saturates through §4.3, and §6.3's curve governs
+fabrication and warding.** Two reasons, and the first is the one that matters:
+
+- **MM has no deposit term.** `half_ext` is a per-planet constant, so an MM
+  extraction curve makes the crowding knee identical on a `Band I` rock and a
+  `Band IV` seam — which is *precisely* the fault §4.2 exists to correct, and it
+  would kill the "hundreds or thousands of miners at a high-value outpost" the
+  ramp is for. `N(S)` is not an optional refinement of the shape; it is the
+  shape.
+- **Double saturation makes a Production card inert.** Under both curves,
+  `cap_ext` is a ceiling above a function that already cannot reach it, so
+  raising it moves nothing measurable — the same dead-branch shape R-O68 found
+  in `reinvest_bias`, arrived at from a different direction.
+
+**Both knobs survive with their tree meanings intact**, mapped onto §4.3's two
+parameters instead of MM's:
+
+| §6.2 field | Where it lands in §4.3 | Tree meaning, unchanged |
+|---|---|---|
+| `cap[Extraction]` | scales `ε`, the per-unit rate constant | Production's **asymptote** — more ore per vein-year, the highest peak |
+| `half[Extraction]` | divides `n`, the effective capacity on station | Growth/Expansion's **knee** — more work per kilotonne invested |
+
+So `extraction = ε · cap_ext · S · W(n / half_ext, S)`, and the tall/wide axis
+reads the same as it does for fabrication.
+
+**§6.3's text is amended by this section**, and the amendment is narrow: `rate_e`
+is the rate law for **fabrication and warding**; extraction's is here. The two
+employments are not obliged to share a functional form — fabrication works a
+stock the empire built and can always add to, extraction works a body that is
+finite, heterogeneous and shared with rivals.
+
+**R-IND18** is what remains open: `ε`, `β` and `VEINS_PER_BAND` are all
+placeholders, and the composite above has never been measured. The guard is
+Growth's work-years with colony-years alongside (§6.12), and the prediction is
+**concentration** — fewer, larger, closer outposts (§4.5) — which is a claim about
+site count and must be read from a census, not inferred from the objective.
 
 ### 4.4 One law, two ways to buy capacity
 
@@ -944,6 +1011,13 @@ parameters are exactly the two axes the trees are meant to differ on**:
 One curve, two knobs, and the tall/wide axis falls out rather than being imposed.
 A Production world climbs slowly toward a distant ceiling; an Expansion world
 reaches most of a nearer ceiling almost at once.
+
+> **Amended by §4.3a: `rate_e` here is fabrication and warding.** Extraction
+> saturates through §4.3's crowding law instead, because that law carries the
+> deposit term `N(S)` and this one does not — an MM extraction curve would make
+> crowding identical on every rock, which is the fault §4.2 exists to correct.
+> `cap_ext` and `half_ext` keep their tree meanings; §4.3a says where they land.
+> The engine ships the MM form for extraction today (T-74) and §4.3a is T-71.
 
 **The ceiling is per *planet*, and the empire total is not capped.** An empire
 scales by holding more worlds, which is why Expansion's cheap, low-ceiling works
@@ -1370,6 +1444,144 @@ minutes of reading — one in an arithmetic identity, one in a single function.
 **Check a neutrality claim against the code that would have to be neutral, not
 against the description of the change.**
 
+### 6.12 T-74 measured — the curve landed, and the two seeds disagree
+
+`fabrication_rate` and `extraction_rate` now read the infrastructure stock
+through §2's Michaelis–Menten curve instead of a flat constant:
+
+```
+rate(u) = cap · u / (u + half),     u = infra · alloc_share(employment)
+```
+
+with `cap` the asymptote a Production card raises and `half` the knee a
+Growth or Expansion card lowers. **The anchor is what makes it a pivot rather
+than a retune**: `fab_cap` and `ext_cap` are set to exactly twice the flat
+constants they replace, and `works_knee` is one rung's price split three ways,
+so a **rung-I centre under default doctrine sits exactly on the knee and
+fabricates and mines at precisely the rates that shipped**. Nothing below or
+above rung I did before; everything does now.
+
+Measured on `examples/work_years`, 3 seats, 4,000 yr, against the immediately
+preceding commit:
+
+| | work-years | colony-years | final works | colonies |
+|---|---|---|---|---|
+| seed 1, before | 1,366,140.0 | 10,593,850 | 426.80 | 3,340 |
+| seed 1, after | **1,385,302.5** (+1.40%) | 10,717,850 (+1.17%) | 429.50 | 3,340 |
+| seed 7, before | 1,596,222.5 | 10,558,625 | 502.70 | 3,349 |
+| seed 7, after | **1,446,100.0** (−9.41%) | 10,688,675 (+1.23%) | 449.40 | 3,349 |
+
+**The seeds disagree on Growth's objective and agree on everybody else's**, and
+that is the finding rather than the mean of the two. Colony count is identical
+on both seeds — the bed is `k_high`-bound, so it would be — and colony-years
+rises ~1.2% on both. Work-years is the only metric that splits, and it splits
+hard.
+
+**This is not ratified and no number here should be quoted as a result.** Two
+seeds cannot separate a −9.41% treatment effect from seed noise on a bed whose
+four-seed spread is routinely wider than that (`CLAUDE.md` §2), and the standard
+CRN bed is four seeds for exactly this reason. What the pair does establish is
+the *sign structure*: the change is a **reallocation, not a gain** — the same
+deepen-versus-expand trade R-O66 and §6.9 both landed on, now visible as one
+metric falling while the other rises on the same run. `final works` moving
+502.7 → 449.4 on seed 7 with colony-years up says the industry that was not
+built became colonies.
+
+**Open, and it is T-78's job**: run the four-seed bed and decide whether the
+curve costs Growth anything real. Until then `fab_cap = 0.2` and
+`ext_cap = 0.30` are **placeholders anchored to the flat constants**, not tuned
+values — the anchor is the ratified part, the asymptote is not.
+
+### 6.12a T-69 — concurrency has to be *spent*, not merely bought
+
+`slips(F)` gives a yard more berths as its fabrication throughput rises, and
+`build_time` divides that throughput among them. The first implementation did
+exactly that and **committed one build per decision anyway.**
+
+That combination is strictly worse than having no slips at all, and the way it
+is worse is instructive: the extra berths sat idle while the one in use ran at
+`F/slips` instead of `F`. All of concurrency's cost, none of its benefit. It
+would have measured as a clean regression, on the correct guard, with a
+completely wrong mechanism available to explain it — "slips slow a yard down"
+is true of that code and false of the design.
+
+`sys_build_decision` now **fills every free berth** before returning, and
+`a_rich_yard_fills_every_berth_it_has_in_one_decision` pins it against `slips`
+rather than against the number two, so the assertion survives a ratification of
+`fab_cap` or `slip_throughput`.
+
+**Measured** (`examples/work_years`, 3 seats, 4,000 yr, against T-74):
+
+| | work-years | colony-years | final works | colonies |
+|---|---|---|---|---|
+| seed 1, before | 1,385,302.5 | 10,717,850 | 429.50 | 3,340 |
+| seed 1, after | **1,450,642.5** (+4.72%) | 10,921,700 (+1.90%) | 441.30 | 3,340 |
+| seed 7, before | 1,446,100.0 | 10,688,675 | 449.40 | 3,349 |
+| seed 7, after | **1,620,105.0** (+12.03%) | 10,925,525 (+2.21%) | 494.60 | 3,349 |
+
+**Both seeds up on both metrics**, which is what §6.7 stage 7 predicted, and the
+two metrics agreeing is the part worth noting — §6.12's T-74 pair disagreed, and
+the guard-inversion §6.9 documented is precisely a case of one rising while the
+other falls. Colony *count* is identical on both seeds because the bed is
+`k_high`-bound; the gain is entirely in *when*, which is what work-years and
+colony-years are for on a saturated bed.
+
+Two seeds is still not a ratification. What is solid here is the direction and
+the mechanism, both of which were stated before the run.
+
+**Where the gain actually comes from is `t_lead`, not `F`.** Aggregate
+throughput is unchanged by construction — `slips · (F/slips) = F` — so if the
+mass term were the whole story, slips would be exactly neutral. It is not,
+because the **lead time is per-build and is not divided**. At the T-74 anchor a
+rung-I yard runs two berths at `F_slip/2`:
+
+| | one build at a time | two berths |
+|---|---|---|
+| `t_build`, Limited hull | 2.2 yr | 2.4 yr |
+| hulls per year | 0.455 | **0.833** |
+
+So a yard turns each hull around *slightly slower* and produces them **1.8x
+faster**, and the whole of that is `t_lead` being amortised across berths rather
+than paid serially. That is the mechanism, it is arithmetic rather than a
+hypothesis, and it predicts the effect vanishes for large hulls — where the mass
+term dominates the lead time — which is the design's "a General hull stays a
+twelve-year commitment" (§3.2) arriving for free.
+
+### 6.13 T-75b — the write path, and why it lands before any card uses it
+
+`CardEffect::WriteWorks(WorksWrite)` is the card layer's entry into §6.2's state.
+Two components per empire:
+
+| Component | What it holds |
+|---|---|
+| `works_writes` | the multiset — every `(CardId, WorksWrite)` this empire has played |
+| `works` | the **fold** of that multiset, in `CardId` order |
+
+A play appends to the first and re-derives the second. It never multiplies a
+coefficient into the live state, and the reason is §6.5's: a running product
+accumulates in **play** order, and float multiplication is not associative, so
+two empires holding the same cards would hold state differing in its last bits.
+That is a desync, not a rounding difference — and it is invisible to a test of
+the fold alone, because a broken `apply_card_effect` can bypass the fold
+entirely while every fold test still passes. So the property is asserted on the
+state *the simulation reads*:
+`playing_works_cards_in_any_order_leaves_the_same_empire_state` plays six cards
+in five permutations and compares `to_bits()`.
+
+**No tier-0 card carries the effect yet, deliberately.** The eighteen tier-0
+cards are the balance scaffolding every measurement so far has run against;
+reassigning one to a works effect changes what those measurements measured.
+`no_tier0_card_writes_works_yet_and_that_is_on_purpose` pins the count at zero,
+so the first works card is a change that has to edit a number rather than one
+that slips in. That also keeps the layering **inert** in §6.7's sense: the state
+exists, the fold runs, the pipeline reads it, and with nothing played every
+coefficient is `1.0`.
+
+**R-IND4 is now satisfied at both levels** — `cards::works_fold_is_order_independent`
+on the algebra, and the engine test above on the state — and §6.5's requirement
+that it exist *before the second industrial card* is met with room to spare,
+since the first one does not exist either.
+
 ---
 
 ---
@@ -1563,7 +1775,7 @@ Dependency order. Each is small; the order matters more than the size.
 | 7 | Works: colour-differentiated infrastructure price (§5.1) | 4 | **T-73** |
 | 8 | Extraction and fabrication rates from Infrastructure × allocation (§2) | 4 | **T-74** |
 | 9a | `Works` struct + the CardId-ordered fold + the commutativity property test (§6.7) | 4 | **T-75a** |
-| 9b | `Doctrine` allocation vector wired to the fold (§6.2) | 9a | **T-75b** |
+| 9b | `Doctrine` allocation vector wired to the fold (§6.2) | 9a | ~~**T-75b**~~ — **done**, §6.13 |
 | 10 | Development freight and the balanced-exchange default (§7) | 7 | **T-76** |
 | 11 | Exchange settles into a **freight leg**, not a transfer — refined mass traverses real space (§8.1) | T-01 | **T-77** |
 
@@ -1590,12 +1802,13 @@ artifact in place contaminates every later measurement.
 | ~~R-IND1~~ | ~~Population above `K` must decline rather than crash~~ — **resolved: infrastructure leaves `K` entirely**, so the crash cannot be triggered by an industrial strike. Habitability and biosphere strikes still crash population, intentionally. | §1.1 |
 | **R-IND2** | Is warding a third allocation share, or a Design hardness coefficient? | §2 |
 | **R-IND3** | Works coefficients — Expansion's per-kt advantage, Production's ceiling, the crossovers. MC question. | §5.3 |
-| **R-IND4** | Commutativity as a property test over the card list, written before the second industrial card. | §6 |
+| ~~**R-IND4**~~ | ~~Commutativity as a property test over the card list~~ — **resolved (T-75a/T-75b).** Two tests: the fold's algebra (`cards`) and the empire state the simulation reads (`sim`). The second is the load-bearing one — a broken `apply_card_effect` passes every test of the first. | §6, §6.13 |
 | ~~R-IND5~~ | ~~May a development route target a rival's world?~~ — **resolved: balanced-value exchange needs no pact; deficits, pacts, pact-breaking and smuggling are cards.** | §7 |
 | **R-IND6** | Supers and apex raising the works ceiling — deferred until the basic ramp is measured. | §8 |
 | ~~R-IND7~~ | ~~The economic-thesis addition~~ — **resolved: minerals, supers and apex traverse real space**, so they can be attacked, diverted, stolen and blockaded. Nothing teleports; a trade is a voyage. | §8.1 |
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
+| **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |
 | **R-IND12** | How much a coloniser carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |
 | **R-IND13** | The works-value rung `I*`. Placeholder is the Band midpoint of capacity and abundance, i.e. the geometric mean of the two masses — the cheapest form with the required positive cross partial. The real function is §5's and needs T-73/T-74. | §1.7, §5 |

@@ -131,9 +131,36 @@ by three orders of magnitude against a fixed freighter hold, so the round trips
 multiplied from the first cycle. T-64 gave it back by taking the `ln`/`powf` out
 of the growth step. **T-68 made `t_build` track hull mass** — a Medium hull went
 from 10 yr to 3.0 — so centres decide three times as often and the entity count
-follows. The lesson every time: **when a test target moves, look at what the
-simulation started doing, not at what the tests are asking.** The remaining
-ratification is T-24's floor breach (R-O82).
+follows. **T-69 did it again** — filling every berth amortises `t_lead` across
+slips, so a yard produces ~1.8x the hulls — taking unit 79 s → 168 s and
+determinism 67 s → 102 s at once. The lesson every time: **when a test target
+moves, look at what the simulation started doing, not at what the tests are
+asking.** The remaining ratification is T-24's floor breach (R-O82).
+
+**T-69's fix was one constant and one stride, and both were found by measuring
+rather than reading.** `--report-time` is still nightly-only, so the tool is a
+shell loop timing each test by name into a file — worth keeping, because the
+answer was not where it looked:
+
+- **`test_cfg`'s horizon was the whole unit target.** One constant, inherited by
+  dozens of tests, at 600 yr. At **300** all 172 still pass and the target is
+  **20.7 s** — and at 200 they *also* all pass in 17.6 s, which is how the trim
+  is known to be safe rather than lucky. 300 ships: ~50% headroom above the
+  point where anything binds, for 3 s. **Probe past the value you intend to ship
+  and report where it actually breaks** — that number, not the one you chose, is
+  what tells the next reader how much room is left.
+- **`positions_never_exceed_lightspeed` was 97 s of a 102 s target**, and the
+  sampling loop that *looks* expensive was not it: the stride is 7 yr, so it
+  walks ~100 windows whatever the horizon, and `sim.run()` at 800 yr was the
+  bill. 800 → 300 took it to **3.0 s** — a 32x saving for a 2.7x cut, which is
+  T-24's superlinear degradation seen from the other side.
+- **The trim guard is the reusable part.** Shortening a run until nothing is in
+  flight leaves every assertion in that test vacuously true and the suite green.
+  It now counts moving entities and fails below a floor — which **fired on the
+  first attempt** (479 samples), and the answer was to sample the shorter
+  timeline three times as densely rather than to lengthen it. Sampling is cheap;
+  the run is not. **When you cut a horizon, assert that the mechanism still
+  fires.**
 
 **T-68's 507 s was four tests paying in horizon for questions horizon does not
 answer**, and finding that out took one measurement rather than a guess — timing

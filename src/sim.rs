@@ -114,6 +114,16 @@ impl<T> ComponentStore<T> {
     fn remove(&mut self, e: Entity) -> Option<T> {
         self.items.get_mut(e.0 as usize).and_then(|o| o.take())
     }
+
+    /// Get the component, creating it from `f` if absent. Added for T-69's
+    /// berth list, which is grown one entry at a time rather than written whole.
+    fn entry_or_insert_with(&mut self, e: Entity, f: impl FnOnce() -> T) -> &mut T {
+        let slot = self.slot(e.0 as usize);
+        if slot.is_none() {
+            *slot = Some(f());
+        }
+        slot.as_mut().unwrap()
+    }
 }
 
 /// Marker tag for homeworld planet entities.
@@ -886,6 +896,47 @@ fn cost_anchor(cfg: &SimConfig) -> f64 {
     cfg.general_vehicle_cost / units::COST_LADDER[1]
 }
 
+/// **How many builds a yard runs at once** — `slips(F) = 1 + floor(F / F_slip)`
+/// (T-69, `Hyades_industry.md` §3.2).
+///
+/// Every `F_slip` of fabrication throughput buys another berth, and a centre
+/// always has at least one. **This is the "build wide" axis and it scales
+/// without limit**, which is what the design asks for — and it is why the
+/// *turnaround* floor below is not a second tuned curve but a consequence of
+/// this one.
+///
+/// Throughput divides among the active slips, so a hull of mass `m` occupies a
+/// berth for `t_lead + m / (F / slips(F))`. As `F` grows, `slips` grows with it,
+/// `F / slips → F_slip` **from above**, and
+///
+/// ```text
+/// t_build → t_lead + m / F_slip        (approached from above, never reached)
+/// ```
+///
+/// **The soft limit is emergent, not imposed.** No amount of industry rushes one
+/// hull below that floor; industry buys *more ships at once*, never *faster
+/// ships*. Two consequences the design wants on purpose: a General hull stays a
+/// long, visible commitment that a rich empire cannot buy its way out of
+/// telegraphing (which is what the observation model trades in), and `m` is dry
+/// mass, which under R-O57 *is* mineral cost — so the time ladder and the price
+/// ladder are one ladder with no second constant to drift.
+///
+/// **The `1 +` is load-bearing and reads backwards until you take the
+/// reciprocal.** It makes per-berth throughput `F/(1 + floor(F/F_slip))`, which
+/// is *strictly below* `F_slip` for every finite `F` and rises toward it. Time
+/// is the reciprocal, so `t_build` sits strictly **above** the floor and falls
+/// toward it — which is the guarantee §3.2 is about. Dropping the `1 +` to
+/// "fix" the boundary inverts it: per-berth throughput would then *exceed*
+/// `F_slip` and a rich yard would build a single hull faster than the floor,
+/// deleting the design property outright. `§3.2`'s prose says `F/slips → F_slip`
+/// *from above*, which is the one line in it that is wrong; the operative
+/// sentence beside it — "no amount of industry rushes one hull below that
+/// floor" — is the claim, and this form is what satisfies it.
+fn slips(fabrication_rate: f64, cfg: &SimConfig) -> usize {
+    let per_slip = cfg.slip_throughput.max(1e-12);
+    1 + (fabrication_rate / per_slip).floor().max(0.0) as usize
+}
+
 /// **The knee of the rate curve: one infrastructure rung's worth of works, as
 /// one employment's share of it** (T-74).
 ///
@@ -1126,7 +1177,16 @@ struct World {
     /// yard for `build_years` and the next decision is taken when it clears.
     /// Presence is the whole state — the economy tick skips an occupied center,
     /// and [`EventKind::BuildDecision`] removes it on arrival.
-    building_until: ComponentStore<f64>,
+    /// **Occupied berths at a centre — completion times, ascending** (T-69,
+    /// `Hyades_industry.md` §3.2).
+    ///
+    /// Was one `f64`: a yard held exactly one build. Slips make concurrency
+    /// linear in fabrication throughput, so a rich centre runs several builds
+    /// at once and this is the list of when each clears.
+    ///
+    /// It stays presence-as-state — an empty list means an idle yard — for the
+    /// same reason R-O69 needed a store that can vacate.
+    berths: ComponentStore<Vec<f64>>,
 
     // shared
     owner: ComponentStore<PlayerId>,
@@ -1167,6 +1227,14 @@ struct World {
     /// at play time — see [`cards::Works::fold`] for why that is a desync and
     /// not merely untidy. Identity until a works card exists.
     works: ComponentStore<cards::Works>,
+    /// **The multiset the `works` fold is taken over** (T-75b).
+    ///
+    /// A card play appends `(CardId, WorksWrite)` here and `works` is then
+    /// re-derived from the whole list. Keeping the list is what makes the
+    /// derivation possible at all: a running product cannot be re-accumulated
+    /// in `CardId` order after the fact, because the order it *was* accumulated
+    /// in is already baked into its low bits (§6.5).
+    works_writes: ComponentStore<Vec<(cards::CardId, cards::WorksWrite)>>,
 }
 
 impl World {
@@ -1181,7 +1249,7 @@ impl World {
             planet_id: ComponentStore::new(),
             homeworld: ComponentStore::new(),
             archetype: ComponentStore::new(),
-            building_until: ComponentStore::new(),
+            berths: ComponentStore::new(),
             owner: ComponentStore::new(),
             role: ComponentStore::new(),
             hull_type: ComponentStore::new(),
@@ -1196,6 +1264,7 @@ impl World {
             doctrine: ComponentStore::new(),
             roster: ComponentStore::new(),
             works: ComponentStore::new(),
+            works_writes: ComponentStore::new(),
         }
     }
 
@@ -2000,6 +2069,7 @@ impl Simulation {
             roster.unlock(HullType::LimitedContactVehicle, Class::Tor);
             self.world.roster.insert(pe, roster);
             self.world.works.insert(pe, cards::Works::default());
+            self.world.works_writes.insert(pe, Vec::new());
 
             // Seed the homeworld's stockpile so it can begin deepening infra.
             let seed = self.config.homeworld_start_minerals / 3.0;
@@ -2174,6 +2244,17 @@ impl Simulation {
                         k.scanned.insert(pid);
                     }
                 }
+            }
+            CardEffect::WriteWorks(w) => {
+                // **Record, then re-derive** (T-75b, §6.5). The list is the
+                // state; `Works` is a cache of the fold over it. Doing it the
+                // other way — multiplying the coefficient in place — would make
+                // the result depend on play order in its last bits, which is a
+                // desync and not a rounding difference.
+                let pe = self.player_entity[p];
+                self.world.works_writes.get_mut(pe).unwrap().push((c.id, w));
+                let folded = cards::Works::fold(self.world.works_writes.get(pe).unwrap());
+                *self.world.works.get_mut(pe).unwrap() = folded;
             }
             CardEffect::NotYetImplemented => {
                 self.inert_card_plays += 1;
@@ -2846,7 +2927,7 @@ impl Simulation {
         // [`EventKind::BuildDecision`] when the yard clears. A center with an
         // empty yard has no such event pending, so the mining step doubles as
         // its retry — mining is what changes a saving center's situation.
-        if !self.world.building_until.contains(center) {
+        if self.free_berths(center) > 0 {
             self.sys_build_decision(center);
         }
         self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
@@ -2863,11 +2944,39 @@ impl Simulation {
     /// `cycle_years` to `build_years` for a center that keeps finding things to
     /// buy.
     fn sys_build_decision(&mut self, center: Entity) {
-        // The yard is free by the time this runs, however it was reached.
-        self.world.building_until.remove(center);
+        // **Retire the berths that have cleared, not the whole yard** (T-69).
+        // Reached two ways — the economy tick with a berth free, and a
+        // `BuildDecision` scheduled when one clears — and in both cases the
+        // question is how many are still occupied, not whether any are.
+        if let Some(b) = self.world.berths.get_mut(center) {
+            let now = self.clock;
+            b.retain(|&t| t > now + 1e-12);
+            if b.is_empty() {
+                self.world.berths.remove(center);
+            }
+        }
+        // **Fill every free berth, not one** (T-69). Committing a single build
+        // per decision would leave the extra slips permanently idle while still
+        // dividing the yard's throughput among them — all of concurrency's cost
+        // and none of its benefit, which would measure as a regression for a
+        // reason that has nothing to do with the mechanism. The loop terminates
+        // because each commit takes a berth and `commit_one_build` returns
+        // `false` the moment the centre cannot or will not buy anything more.
+        while self.free_berths(center) > 0 {
+            if !self.commit_one_build(center) {
+                break;
+            }
+        }
+    }
+
+    /// One pass of the production decision: pick an order, commit it if it is
+    /// affordable and worth doing, and occupy a berth for its build time.
+    /// Returns whether anything was committed — which is what stops
+    /// [`Self::sys_build_decision`]'s loop.
+    fn commit_one_build(&mut self, center: Entity) -> bool {
         let owner = match self.world.owner.get(center).copied() {
             Some(o) => o,
-            None => return, // lost the world; no yard to run
+            None => return false, // lost the world; no yard to run
         };
         let p = owner.0 as usize;
         let pe = self.player_entity[p];
@@ -3012,14 +3121,21 @@ impl Simulation {
         // `apply_build_with` declines on an unaffordable price, a roster gate, or
         // a hull with no job worth doing, and a center that built nothing must
         // not be held busy for it.
-        if let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) {
-            let done = self.clock + self.build_time(center, committed);
-            self.world.building_until.insert(center, done);
-            self.schedule_at(done, EventKind::BuildDecision { center });
-        }
-        // Otherwise the yard stays free and the next economy tick retries, which
-        // is the right cadence for a center whose situation only changes as it
-        // mines.
+        let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) else {
+            // The yard stays free and the next economy tick retries, which is
+            // the right cadence for a center whose situation only changes as it
+            // mines. Returning `false` also ends the fill loop — a centre that
+            // declined this order will decline it again at the same instant.
+            return false;
+        };
+        let done = self.clock + self.build_time(center, committed);
+        let b = self.world.berths.entry_or_insert_with(center, Vec::new);
+        b.push(done);
+        // Ascending, so the list reads as "when does the next one clear" and
+        // stays deterministic however completions interleave.
+        b.sort_by(|x, y| x.partial_cmp(y).unwrap_or(core::cmp::Ordering::Equal));
+        self.schedule_at(done, EventKind::BuildDecision { center });
+        true
     }
 
     // --- build application -------------------------------------------------
@@ -3042,8 +3158,14 @@ impl Simulation {
     /// the same formula, so landing concurrency changes the divisor rather than
     /// the model.
     fn build_time(&self, center: Entity, mass: Price) -> f64 {
-        let f = self.fabrication_rate(center).max(1e-12);
-        self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / f
+        // **Throughput divides among the slips** (T-69). That is what makes the
+        // turnaround floor emergent rather than imposed: as `F` grows, `slips`
+        // grows with it and `F / slips` approaches `F_slip` from above, so one
+        // hull never builds faster than `t_lead + m / F_slip` however rich the
+        // empire is. Industry buys more ships at once, never faster ships.
+        let f = self.fabrication_rate(center);
+        let per_berth = (f / slips(f, &self.config) as f64).max(1e-12);
+        self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / per_berth
     }
 
     /// **This centre's fabrication throughput, kt/yr** (T-74). It was the flat
@@ -3059,6 +3181,14 @@ impl Simulation {
             .copied()
             .unwrap_or_default();
         employment_rate(infra, &works, cards::Employment::Fabrication, self.config.fab_cap, works_knee(&self.config))
+    }
+
+    /// **How many berths this centre has spare** (T-69). Zero means every slip
+    /// is busy and the yard cannot commit again until one clears.
+    fn free_berths(&self, center: Entity) -> usize {
+        let total = slips(self.fabrication_rate(center), &self.config);
+        let busy = self.world.berths.get(center).map(|b| b.len()).unwrap_or(0);
+        total.saturating_sub(busy)
     }
 
     /// **This centre's extraction rate** — the fraction of its own remaining
@@ -4431,7 +4561,7 @@ mod tests {
     /// search, not here.
     fn test_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
-        cfg.horizon_years = 600.0;
+        cfg.horizon_years = 300.0;
         cfg
     }
 
@@ -4527,6 +4657,91 @@ mod tests {
         cfg.limited_fleet_size = 9.0;
         cfg.medium_fleet_size = 12.0;
         let _ = Simulation::with_baseline(galaxy, cfg);
+    }
+
+    /// **T-75b: a works card play is recorded and the state re-derived, so the
+    /// empire's works are independent of the order its cards were played in.**
+    ///
+    /// `cards::works_fold_is_order_independent` already pins [`cards::Works::fold`]
+    /// itself. This pins the *engine's* half, which is the half that can go
+    /// wrong in a way the fold cannot see: `apply_card_effect` could multiply
+    /// the coefficient into the live `Works` and every fold test would still
+    /// pass. The state that must be order-independent is the one the simulation
+    /// reads, so assert it there.
+    ///
+    /// Bit-identical, not approximately equal — §6.5 is explicit that this is a
+    /// desync condition and not a tidiness preference.
+    #[test]
+    fn playing_works_cards_in_any_order_leaves_the_same_empire_state() {
+        use cards::{Card, CardId, Employment, Slant, Tree, WorksWrite};
+        let card = |i: u16, w: WorksWrite| Card {
+            id: CardId(i),
+            tree: Tree::Production,
+            slant: Slant::Balanced,
+            cost: 0.8,
+            effect: CardEffect::WriteWorks(w),
+            needs_subject: false,
+        };
+        // Multiplicative *and* additive writes, with factors chosen so the
+        // permutations genuinely differ in float order — an order-insensitive
+        // fixture would let a broken implementation through.
+        let deck = [
+            card(4, WorksWrite::Cap(Employment::Fabrication, 1.3)),
+            card(1, WorksWrite::EtaWorks(1.1)),
+            card(7, WorksWrite::Cap(Employment::Fabrication, 0.7)),
+            card(2, WorksWrite::AllocWeight(Employment::Extraction, 0.1)),
+            card(9, WorksWrite::AllocWeight(Employment::Extraction, 1.3)),
+            card(3, WorksWrite::MixWeight(Basic::Yellow, 1.7)),
+        ];
+        let guard: f64 = deck
+            .iter()
+            .filter_map(|c| match c.effect {
+                CardEffect::WriteWorks(WorksWrite::Cap(_, f)) => Some(f),
+                CardEffect::WriteWorks(WorksWrite::EtaWorks(f)) => Some(f),
+                _ => None,
+            })
+            .product();
+        assert_ne!(guard, 1.3 * 0.7 * 1.1, "fixture must be order-sensitive to be worth running");
+
+        let play = |order: &[usize]| {
+            let galaxy = Galaxy::generate(GalaxyConfig::new(2, 4)).unwrap();
+            let mut sim = Simulation::with_baseline(galaxy, test_cfg(4));
+            for &i in order {
+                sim.apply_card_effect(0, &deck[i], Target::None, 0);
+            }
+            *sim.world.works.get(sim.player_entity[0]).unwrap()
+        };
+
+        let want = play(&[0, 1, 2, 3, 4, 5]);
+        for order in [[5, 4, 3, 2, 1, 0], [2, 0, 5, 1, 4, 3], [1, 3, 0, 4, 2, 5], [3, 5, 1, 0, 2, 4]] {
+            let got = play(&order);
+            assert_eq!(
+                got.eta_works.to_bits(),
+                want.eta_works.to_bits(),
+                "eta_works differs under {order:?}: {} vs {}",
+                got.eta_works,
+                want.eta_works
+            );
+            for i in 0..3 {
+                assert_eq!(got.cap[i].to_bits(), want.cap[i].to_bits(), "cap[{i}] differs under {order:?}");
+                assert_eq!(got.half[i].to_bits(), want.half[i].to_bits(), "half[{i}] differs under {order:?}");
+                assert_eq!(got.alloc_w[i].to_bits(), want.alloc_w[i].to_bits(), "alloc_w[{i}] under {order:?}");
+                assert_eq!(got.mix_w[i].to_bits(), want.mix_w[i].to_bits(), "mix_w[{i}] under {order:?}");
+            }
+        }
+
+        // And the writes actually landed — an implementation that dropped every
+        // one of them would satisfy every assertion above.
+        assert_ne!(want, cards::Works::default(), "the plays must have moved the state");
+
+        // The rate the simulation reads moves with it, which is the only reason
+        // any of this matters.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 4)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(4));
+        let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let before = sim.fabrication_rate(yard);
+        sim.apply_card_effect(0, &card(4, WorksWrite::Cap(Employment::Fabrication, 2.0)), Target::None, 0);
+        assert!(sim.fabrication_rate(yard) > before, "a cap card must raise the yard's rate");
     }
 
     #[test]
@@ -5657,6 +5872,14 @@ mod tests {
     /// coloniser is quick enough to spam, and a General hull is a twelve-year
     /// commitment an opponent has time to notice and answer. These are approved
     /// values, **not MC-ratified**; the name says placeholder and so does §3.3.
+    ///
+    /// **Since T-69 the schedule is a floor rather than a reading.** Slips
+    /// divide a yard's throughput, so those three numbers are `t_lead +
+    /// m/F_slip` — the limit an arbitrarily industrialised yard descends
+    /// toward and never reaches. What T-74 pins here instead is the *anchor*:
+    /// a rung-I centre with default doctrine fabricates at exactly the flat
+    /// rate T-68 and the mining model shipped, so the rate curve pivots about
+    /// a configuration that was already ratified.
     #[test]
     fn build_time_is_lead_plus_mass_over_throughput() {
         let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
@@ -5677,11 +5900,21 @@ mod tests {
             "a rung-I centre must fabricate at exactly the old flat rate, got {}",
             sim.fabrication_rate(yard)
         );
+        // **§3.3's schedule is the limit, not a value any yard reaches** — T-69
+        // is what made that distinction real. Before slips, `t_build` was
+        // `t_lead + m/F` and a rung-I centre hit 2.2 / 3.0 / 12.0 on the nose.
+        // Slips divide the throughput, so the table is now the **asymptote**
+        // the curve descends toward and every real yard sits above it. Assert
+        // the schedule as what it is — the two constants, composed — and assert
+        // separately that a yard approaches it without arriving.
         for (hull, want) in
             [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
         {
+            let m = hull_cost(hull, &sim.config).on_scale::<units::Mass>().kilotons();
+            let limit = sim.config.build_lead_years + m / sim.config.slip_throughput;
+            assert!((limit - want).abs() < 1e-9, "{hull:?} floor is {limit} yr, schedule says {want}");
             let got = sim.build_time(yard, hull_cost(hull, &sim.config));
-            assert!((got - want).abs() < 1e-9, "{hull:?} builds in {got} yr, schedule says {want}");
+            assert!(got > want, "{hull:?} builds in {got} yr, under its own floor {want}");
         }
 
         // **The lead time is a floor and the mass term is strictly monotone.**
@@ -5705,6 +5938,101 @@ mod tests {
             (sim.build_time(yard, infra_rung_price(1, &sim.config)) - m).abs() < 1e-9,
             "a rung priced like a Medium hull takes a Medium hull's time"
         );
+    }
+
+    /// **The soft floor is the whole point of §3.2, so pin the floor and not the
+    /// formula** (T-69).
+    ///
+    /// `slips` exists so that industry buys *concurrency* and never a faster
+    /// single hull. That claim is exactly `t_build ≥ t_lead + m / F_slip` for
+    /// every yard, however rich — equivalently, per-berth throughput stays
+    /// strictly *under* `F_slip` and climbs toward it. The reciprocal is what
+    /// makes it easy to get backwards, and getting it backwards is not a
+    /// cosmetic error: dropping the `1 +` from `slips` lets a rung-II centre
+    /// build a Medium hull in 2.55 yr against a 3.0 yr floor, which deletes the
+    /// design property while still passing any number-by-number schedule test.
+    /// So this asserts the inequality, and the schedule test below asserts the
+    /// limit it approaches.
+    #[test]
+    fn industry_buys_concurrency_and_never_undercuts_the_turnaround_floor() {
+        let cfg = test_cfg(3);
+        let per_slip = cfg.slip_throughput;
+        let mass = Price::new(0.1);
+        let floor = cfg.build_lead_years + mass.on_scale::<units::Mass>().kilotons() / per_slip;
+
+        // Sweep across many multiples *and* straddle each one, because a
+        // boundary is where an off-by-one in `floor` would hide.
+        let mut last_slips = 0usize;
+        for step in 0..400 {
+            let f = per_slip * (step as f64) * 0.125;
+            let n = slips(f, &cfg);
+            assert!(n >= 1, "a centre always has a berth, F={f} gave {n}");
+            assert!(n >= last_slips, "concurrency must not fall as throughput rises at F={f}");
+            last_slips = n;
+            let per_berth = f / n as f64;
+            assert!(per_berth < per_slip, "per-berth throughput {per_berth} reaches the ceiling {per_slip} at F={f}");
+        }
+        // Concurrency itself is unbounded — that is the "build wide" axis.
+        assert!(slips(100.0 * per_slip, &cfg) > slips(10.0 * per_slip, &cfg));
+
+        // Read through `build_time`, since that is what the rest of the engine
+        // sees: strictly above the floor at every rung, and monotonically
+        // approaching it as the yard grows.
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
+        let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let mut prev = f64::INFINITY;
+        for rung in 1..=4 {
+            {
+                let f = sim.world.factors.get_mut(yard).unwrap();
+                f.infra = infra_rung_price(rung, &sim.config);
+            }
+            let t = sim.build_time(yard, mass);
+            assert!(t > floor, "rung {rung} builds in {t} yr, under the floor {floor}");
+            assert!(t < prev, "a richer yard must not turn a hull around more slowly: {prev} -> {t}");
+            prev = t;
+        }
+        assert!(prev < floor * 1.35, "four rungs should be well down the curve, got {prev} against {floor}");
+    }
+
+    /// **A yard with slips uses them** (T-69).
+    ///
+    /// Concurrency that is bought and not spent is worse than no concurrency at
+    /// all: `slips` divides a yard's throughput among its berths, so a decision
+    /// that commits one build and returns leaves the extra berths idle *and*
+    /// the occupied one running at a fraction of the rate. That is all of the
+    /// cost and none of the benefit, and it would have measured as a clean
+    /// regression with a completely wrong mechanism attached.
+    ///
+    /// Asserted against `slips` rather than against the number 2, so it keeps
+    /// meaning the same thing if `fab_cap` or `slip_throughput` is ratified.
+    #[test]
+    fn a_rich_yard_fills_every_berth_it_has_in_one_decision() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 13)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(13));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        {
+            let f = sim.world.factors.get_mut(home).unwrap();
+            f.infra = infra_rung_price(1, &sim.config);
+        }
+        let berths = slips(sim.fabrication_rate(home), &sim.config);
+        assert!(berths >= 2, "the anchor must give a rung-I yard more than one berth, got {berths}");
+
+        // Enough minerals that affordability cannot be what stops it.
+        {
+            let bank = sim.world.stockpile.get_mut(home).unwrap();
+            bank.cyan = 5_000.0;
+            bank.magenta = 5_000.0;
+            bank.yellow = 5_000.0;
+        }
+        sim.sys_build_decision(home);
+        let filled = sim.world.berths.get(home).map(|b| b.len()).unwrap_or(0);
+        assert_eq!(filled, berths, "a yard with {berths} berths and money committed {filled} builds");
+
+        // And it stops there rather than looping past its capacity.
+        let t0 = sim.clock;
+        sim.sys_build_decision(home);
+        assert_eq!(sim.world.berths.get(home).map(|b| b.len()).unwrap_or(0), berths, "a full yard must commit nothing");
+        assert_eq!(sim.clock, t0, "the decision must not advance the clock");
     }
 
     /// **The decision cadence is the build cadence, not the economy's (R-O69).**
@@ -5734,10 +6062,10 @@ mod tests {
         // order a rich homeworld picks (`logging_does_not_affect_outcomes`).
         sim.set_log_filter(LogFilter::none().with(crate::log::LogCategory::Production));
         sim.world.stockpile.get_mut(home).unwrap().cyan = 500.0;
-        assert!(!sim.world.building_until.contains(home), "yard starts free");
+        assert_eq!(sim.world.berths.get(home).map(|b| b.len()).unwrap_or(0), 0, "yard starts free");
 
         sim.sys_build_decision(home);
-        let Some(&done) = sim.world.building_until.get(home) else {
+        let Some(&done) = sim.world.berths.get(home).and_then(|b| b.first()) else {
             panic!("a center with 500 minerals and a live frontier must commit something");
         };
         // Whatever it chose, the yard is held for that order's build time — and
@@ -5765,7 +6093,10 @@ mod tests {
         sim.sys_production_tick(home);
         let after = sim.world.stockpile.get(home).unwrap().basic_total();
         assert!(after >= before, "an occupied yard must not have spent again: {before} -> {after}");
-        assert!(sim.world.building_until.contains(home), "the economy tick must not clear the yard");
+        assert!(
+            sim.world.berths.get(home).map(|b| !b.is_empty()).unwrap_or(false),
+            "the economy tick must not clear the yard"
+        );
 
         // And the decision that clears it is scheduled, not waited for.
         assert!(

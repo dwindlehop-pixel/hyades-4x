@@ -278,7 +278,7 @@ a population, because those are genuinely a world's capacity to hold people.
 | 7 | Works: colour-differentiated infrastructure price | T-70 | **T-73** |
 | 8 | Extraction and fabrication rates from Infra × allocation | T-70 | **T-74** |
 | 9a | `Works` struct + CardId-ordered fold + commutativity property test | T-74 | **T-75a** |
-| 9b | `Doctrine` allocation vector wired to the fold | T-75a | **T-75b** |
+| 9b | `Doctrine` allocation vector wired to the fold | T-75a | ~~**T-75b**~~ — **LANDED** |
 | 10 | Development freight and the balanced-exchange default | T-73 | **T-76** |
 | 11 | Exchange settles into a **freight leg**, not a transfer (refined mass traverses real space) | T-01 | **T-77** |
 
