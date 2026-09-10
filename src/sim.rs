@@ -3209,7 +3209,7 @@ impl Simulation {
                         self.settler_target(center, e, HullType::MediumSystems.colony_seed_capacity(&self.config)),
                         self.settler_target(center, e, HullType::GeneralSystems.colony_seed_capacity(&self.config)),
                     ];
-                    let mining_crew = self.mining_crew_for(e, &doctrine);
+                    let mining_crew = self.mining_crew_for(center, e);
                     best[slot] = Some(Candidate { view, ranked, settlers_by_hull, mining_crew });
                 }
             }
@@ -3482,7 +3482,7 @@ impl Simulation {
                         Some(te) => candidates
                             .iter()
                             .find(|c| self.planet_entity[c.view.id.0 as usize] == te)
-                            .map_or_else(|| self.mining_crew_for(te, &doctrine), |c| c.mining_crew),
+                            .map_or_else(|| self.mining_crew_for(center, te), |c| c.mining_crew),
                         None => 1,
                     }
                 } else {
@@ -3604,27 +3604,74 @@ impl Simulation {
     /// What a mining pair costs player `p` this cycle: the halves that are not
     /// already sitting in Reserve. Equals the full price whenever recycling is
     /// off, which is what keeps the flag a clean A/B.
-    /// **How many miners to put on this body** — `max(1, round(f · N(S)))`
-    /// (`Hyades_industry.md` §4.5, T-72).
+    /// **How many miners to put on this body — the crew that meets the buyer's
+    /// unmet demand, and no more** (`Hyades_industry.md` §4.5, T-83).
     ///
-    /// The crew is a property of the *rock*. T-57 ratified a flat 3, but that
-    /// was measured under a law with no deposit term at all: three miners were
-    /// three miners everywhere. Under T-71's crowding a flat count means
-    /// something different on every body — a full crew on a `Band I` pebble and
-    /// 17% of one on a `Band III` seam — so the constant does not survive as a
-    /// constant. What survives is the *policy* it stood for, and §4.5 names the
-    /// replacement: a target share of the deposit's veins.
+    /// **Crew is not a parameter.** It was `miners_per_outpost` (T-57, a flat
+    /// hull count) and then `miner_vein_fraction` (T-72, a share of the rock),
+    /// and both were policies someone had to tune against an objective that
+    /// could not price them. The measured verdict on the second was monotone in
+    /// the wrong direction — every crew size scored worse than the one below,
+    /// on both seeds and both objectives (§6.15) — and the reason is now the
+    /// model rather than a footnote: **ore nobody can spend is a cost.** A crew
+    /// sized without reference to demand buys hulls, freight and entity count
+    /// to bring forward a resource the empire is not short of.
     ///
-    /// Floored at one, because a crew of zero is not a decision anyone wants to
-    /// express and `veins` already floors at one vein.
-    fn mining_crew_for(&self, planet: Entity, doctrine: &Doctrine) -> usize {
+    /// So the crew *falls out* of demand. There is no knob.
+    ///
+    /// **Demand**, in kilotons per year, is what the founding centre can
+    /// actually consume and currently cannot get:
+    ///
+    /// ```text
+    /// D = fabrication_rate(centre) · mineral_pressure(centre)
+    /// ```
+    ///
+    /// Both terms already exist and both already run on this decision path.
+    /// `fabrication_rate` is the rate the yard turns minerals into mass — the
+    /// only sink that consumes ore — and `mineral_pressure` is `1.0` when the
+    /// centre is broke for its next rung and `0.0` when it is comfortable. A
+    /// centre with a full bank has no unmet demand and opens a mine with one
+    /// hull; a starved one crews to its throughput.
+    ///
+    /// **Supply** is §4.3's law read forwards, so the crew is that law inverted:
+    ///
+    /// ```text
+    /// supply(n) = ε · S · (n/N)^β / T          kt/yr, T = mining_tick_years
+    /// n*        = N · (D · T / (ε · S))^(1/β)   clamped to [1, N]
+    /// ```
+    ///
+    /// The sign this produces is the interesting part and it is the opposite of
+    /// both retired policies: **a richer rock wants a smaller crew**, because it
+    /// meets the same demand with fewer hands. Deposit mass grows as `N^{3/2}`
+    /// while the demand target does not grow at all, so `n*` *falls* as the body
+    /// gets richer. Under a flat fraction it rose. That inversion is why this is
+    /// a model change and not a retuning.
+    ///
+    /// **R-IND20: demand is read at the founding centre, not empire-wide.** An
+    /// outpost feeds the whole empire through freight, so the correct demand is
+    /// the empire's unmet total; that is an `O(planets)` scan on a decision path
+    /// (`CLAUDE.md` §4) and would need the `holdings_centroid` memo treatment.
+    /// The centre that pays for the pair is the defensible local proxy, and the
+    /// difference is what R-IND20 is for.
+    fn mining_crew_for(&self, center: Entity, planet: Entity) -> usize {
         let stock = self.world.density.get(planet).map(|d| d.total_mass()).unwrap_or(Kilotons::ZERO);
-        let want = doctrine.miner_vein_fraction.max(0.0) * veins(stock, &self.config);
-        // `as usize` saturates rather than wrapping, so this cannot be unsound —
-        // but a crew is spawned as hulls, so an absurd count is a hang and not a
-        // wrong number. Bounded by the vein ceiling for the same reason it
-        // exists.
-        (want.round().clamp(1.0, MAX_VEINS) as usize).max(1)
+        let ore = stock.kilotons();
+        if ore <= 0.0 {
+            return 1;
+        }
+        let demand = self.fabrication_rate(center) * self.mineral_pressure_of(center);
+        if demand <= 0.0 {
+            return 1;
+        }
+        let n_veins = veins(stock, &self.config);
+        // What one full crew would lift per year, against what is wanted per
+        // year. Both sides are kt/yr, which is the check that this is a rate
+        // comparison and not two magnitudes that happen to be `f64`.
+        let full_crew_rate = self.config.outpost_mining_fraction * ore / self.config.mining_tick_years.max(1e-12);
+        let share = (demand / full_crew_rate.max(1e-12)).clamp(0.0, 1.0);
+        let beta = self.config.crowding_beta.max(1e-6);
+        let want = n_veins * share.powf(1.0 / beta);
+        (want.round().clamp(1.0, n_veins.min(MAX_VEINS)) as usize).max(1)
     }
 
     fn mining_pair_price(&self, p: usize, crew: usize) -> Price {
@@ -5645,6 +5692,104 @@ mod tests {
         let _ = (m_infra, g_infra);
     }
 
+    /// **Crew falls out of demand, and the sign is inverted from both retired
+    /// policies** (T-83).
+    ///
+    /// The properties, not the numbers — the numbers are `ε`, `β` and
+    /// `veins_per_band`, all placeholders (R-IND18). What has to hold whatever
+    /// they become:
+    ///
+    /// - **No unmet demand, one hull.** A centre that can already afford what it
+    ///   wants does not buy a mine, it buys a mine's minimum.
+    /// - **A richer rock wants a *smaller* crew.** This is the inversion. Both
+    ///   retired policies made crew rise with richness — a flat count was
+    ///   richness-blind and a vein fraction rose with `N` — and §6.15 measured
+    ///   both as losses. A rich body meets the same demand with fewer hands.
+    /// - **More demand, more crew**, monotonically, up to the body's veins.
+    #[test]
+    fn a_mining_crew_is_derived_from_demand_and_shrinks_on_richer_rock() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
+        let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let rock = sim.planet_entity[10];
+
+        let set_ore = |sim: &mut Simulation, band: f64| {
+            let each = units::Kilotons::at_band(Band::new(band)).kilotons() / 3.0;
+            let d = sim.world.density.get_mut(rock).unwrap();
+            for b in Basic::ALL {
+                d.set(b, units::Kilotons::new(each));
+            }
+        };
+
+        // **A comfortable centre has no unmet demand.** `mineral_pressure` is
+        // zero while the bank covers the next rung, so `D = 0` whatever the
+        // yard could fabricate.
+        {
+            let bank = sim.world.stockpile.get_mut(center).unwrap();
+            bank.cyan = 10_000.0;
+            bank.magenta = 10_000.0;
+            bank.yellow = 10_000.0;
+        }
+        set_ore(&mut sim, 3.0);
+        assert_eq!(sim.mining_crew_for(center, rock), 1, "a centre that can afford its rung wants one hull");
+
+        // Starve it: pressure goes to 1 and the crew is whatever meets the
+        // yard's throughput.
+        {
+            let bank = sim.world.stockpile.get_mut(center).unwrap();
+            bank.cyan = 0.0;
+            bank.magenta = 0.0;
+            bank.yellow = 0.0;
+        }
+        {
+            let f = sim.world.factors.get_mut(center).unwrap();
+            f.infra = infra_rung_price(1, &sim.config);
+        }
+        assert!(sim.mineral_pressure_of(center) > 0.99, "a broke centre must read full pressure");
+
+        // **The crew never exceeds the body's veins**, at any richness. This is
+        // the constraint that binds at the bottom of the ladder and it is why
+        // the inversion below is stated over the range above it: a `Band I`
+        // pebble has one vein, so it gets one hull because there is nowhere to
+        // put a second — not because demand said so.
+        for band in [0.0, 1.0, 2.0, 3.0, 4.0] {
+            set_ore(&mut sim, band);
+            let stock = sim.world.density.get(rock).unwrap().total_mass();
+            let crew = sim.mining_crew_for(center, rock);
+            assert!(crew >= 1, "a crew is at least one hull");
+            assert!(
+                crew as f64 <= veins(stock, &sim.config) + 0.5,
+                "Band {band} has {} veins and asked for {crew}",
+                veins(stock, &sim.config)
+            );
+        }
+
+        // **The inversion**: same demand, richer rock, smaller crew — over the
+        // range where *demand* is what binds. Both retired policies had this
+        // sign backwards, and §6.15 measured both as losses.
+        let mut last = usize::MAX;
+        for band in [2.0, 3.0, 4.0] {
+            set_ore(&mut sim, band);
+            let crew = sim.mining_crew_for(center, rock);
+            assert!(
+                crew <= last,
+                "a richer rock must not want a larger crew: Band {band} asked for {crew} after {last}"
+            );
+            last = crew;
+        }
+        assert!(last < 2, "a Band IV seam meets a rung-I yard's demand with a single hull, got {last}");
+
+        // **Monotone in demand.** Raising what the yard can absorb cannot lower
+        // the crew, on a body poor enough that the veins are not the binding
+        // constraint.
+        set_ore(&mut sim, 1.0);
+        let lean = sim.mining_crew_for(center, rock);
+        {
+            let f = sim.world.factors.get_mut(center).unwrap();
+            f.infra = infra_rung_price(4, &sim.config);
+        }
+        assert!(sim.mining_crew_for(center, rock) >= lean, "a hungrier yard must not want fewer miners: {lean}",);
+    }
+
     /// **§4.2's vein table and §4.3's worked ratios, pinned** (T-71).
     ///
     /// The design's numbers, not the implementation's: a decade of veins per
@@ -6729,16 +6874,16 @@ mod tests {
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
         let mut cfg = test_cfg(5);
         cfg.recycle_mining_pairs = true;
-        // **A crew of one, pinned.** This test is about recycling, not about
-        // how many miners open an outpost, and any larger crew would make the
-        // mineral assertion below a test of *that* value instead — the same way
-        // three hull-ladder tests silently became tests of `limited_fleet_size`
-        // at stage 3b.
+        // **This test is about recycling, not about how many miners open an
+        // outpost**, and a large crew would make the mineral assertion below a
+        // test of *that* instead — the same way three hull-ladder tests silently
+        // became tests of `limited_fleet_size` at stage 3b.
         //
-        // Since T-72 the crew is `round(f · N(S))` floored at one, so `f = 0`
-        // is the way to say "one miner" — the deposit can no longer be assumed
-        // away by naming a count.
-        let doctrine = Doctrine { miner_vein_fraction: 0.0, ..Doctrine::default() };
+        // Since T-83 there is no crew knob to pin: the crew is derived from the
+        // founding centre's unmet demand, and a fresh homeworld with a full
+        // starting bank has none, so it opens an outpost with one hull. The
+        // assertion below states that rather than assuming it.
+        let doctrine = Doctrine::default();
         let autopilots: Vec<Box<dyn Autopilot>> =
             (0..2).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
         let mut sim = Simulation::new(galaxy, cfg, autopilots);

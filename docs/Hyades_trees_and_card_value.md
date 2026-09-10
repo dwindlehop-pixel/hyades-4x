@@ -165,7 +165,7 @@ Defined before use (`CLAUDE.md` §6), because §3 and §4 both index on them.
 | symbol | name | unit | where it comes from |
 |---|---|---|---|
 | `i`, `j` | player (seat) indices | — | `PlayerId` |
-| `T` | measurement horizon | yr | §3.1, currently 8,000 |
+| `T` | measurement horizon | yr | §3.1, **3,000** (was 8,000; revised by the author) |
 | `C_i(t)` | colonies owned by `i` at time `t` | count | `SimReport::players[i].colonies` |
 | `V_i(t)` | works owned by `i` | kt of works | `Hyades_industry.md` §5 — **not yet built** |
 | `F_i(t)` | fleet dry mass owned by `i` | kt | `hull_dry_mass` summed over owned hulls |
@@ -377,18 +377,35 @@ something scores suspiciously well.
 
 ## 3. The measurement bed
 
-### 3.1 The 8-kyr requirement, and what it costs
+### 3.1 The horizon is 3,000 years, not 8,000 (author's revision)
 
-The author's instruction is to measure all six on an **8,000-year** bed. The
-requirement is sound — colony count saturates early, but fleet mass, works and
-capability plausibly do not, and a horizon that truncates five of six stocks
-mid-compounding would bias every comparison toward Expansion.
+**Superseded.** The bed was specified at **8,000 years** on the reasoning that
+colony count saturates early but the other five stocks plausibly do not, so a
+short horizon would bias every comparison toward Expansion. The reasoning stands;
+the number does not. **The author's revision: every colonizable world is taken by
+~2,500 years, so 8 kyr buys nothing that 3 kyr does not** — and the engine's own
+measurements agree from the other side (`CLAUDE.md` §2: colony count reaches
+97.9% of its 4,000-year total by 1,500 yr and 99.9% by 2,000).
 
-**It is also, at today's throughput, the binding constraint on the entire card
-programme, and that has to be said plainly rather than discovered later.**
-Measured post-T-68 (`examples/horizon_cost`, seed 1, 3 seats): 4,000 yr costs
-~400 s. `CLAUDE.md` §7 records that 8 kyr cost **5.8×** the 4 kyr run at an
-earlier operating point, so one 8-kyr seed is on the order of **35–40 minutes**.
+**The bed is 3,000 years.** That is ~500 years of margin past the point
+colonisation completes, which is where the other five stocks are still
+compounding and therefore where a doubling-time regression has something to fit.
+
+**This is a 5.8x reduction in the cost of the entire card programme**, and the
+programme was the binding constraint on the schedule rather than the other way
+round. What follows about cost is now a smaller problem, not a different one:
+4,000 yr costs ~400 s post-T-68 (`examples/horizon_cost`, seed 1, 3 seats), and
+degradation is superlinear in duration, so 3 kyr is well under half that.
+
+**§3.2 is still the first measurement and it now costs a fifth of what it did.**
+Per-metric saturation decides which trees need even 3,000 years; nothing here
+assumes they all do.
+
+> **The general lesson, and it is §2's in a new place: shrink the scenario before
+> the horizon, and check what the horizon was bought for.** The 8-kyr figure was
+> reasoning about *stocks that compound*, applied by extending the clock — when
+> the thing that actually sets the floor is the point colonisation completes,
+> which is a property of the galaxy and the expansion loop, not of the trees.
 
 A single card's value distribution needs enough samples for a stable **92nd
 percentile** — realistically dozens, not a handful. Six trees × the card set ×
@@ -407,17 +424,19 @@ Three things soften the cost and none of them removes it:
   with the screen **re-calibrated** — the ρ figures in that file predate three
   landings and must not be assumed to carry.
 - **Measure where each stock actually saturates first** (§3.2). If fleet-years
-  saturates at 3,000 yr, the 8-kyr bed is only needed for the stocks that do not.
+  saturates at 2,000 yr, even the 3-kyr bed is longer than that tree needs.
 
 ### 3.2 Per-metric saturation is the first measurement, and it is cheap
 
-Before any card is measured: **one 8-kyr run per seed, instrumented for all six
+Before any card is measured: **one 3-kyr run per seed, instrumented for all six
 stocks, plotting each against time.** That single run answers, for each tree:
 
 - where its stock leaves the exponential regime (which sets the window §2.4's
   regression is fitted over);
 - where it saturates (which sets the horizon that tree actually needs);
-- and whether it saturates at all inside 8 kyr.
+- and whether it saturates at all inside 3 kyr — a tree whose stock is still
+  in its exponential regime at the horizon needs the regression fitted, not the
+  horizon extended (§3.1).
 
 This is a handful of runs to potentially cut the whole programme's horizon for
 four or five of the six trees. It is the highest-leverage measurement available
@@ -530,7 +549,7 @@ Stated so it is not discovered as a surprise:
 | **R-TREE4** | Capability: the axis set, the reference scales `q_ref,a`, the weights `s_a`, and above all `ρ` — how Liebig capability is. | §2.3.5 |
 | **R-TREE5** | Politics' coupling `κ`, and whether delivered freight is the whole of `φ_ij` or only its economic half (shared intelligence is the other candidate). | §2.3.6 |
 | **R-TREE6** | Dispersion measure for the tier-1 constraint. MAD proposed over variance; and the numeric bound for "similar P92". | §4.3 |
-| **R-TREE7** | Whether all six trees need the 8-kyr horizon, or only those whose stock has not saturated. Answered by T-78. | §3.2 |
+| **R-TREE7** | Whether all six trees need the full horizon, or only those whose stock has not saturated. Answered by T-78. The horizon itself is settled at **3,000 yr** (§3.1). | §3.2 |
 
 ---
 

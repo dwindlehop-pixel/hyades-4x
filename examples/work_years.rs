@@ -51,6 +51,21 @@ struct Run {
     /// cost and the thing that has moved the throughput table every time.
     yr_per_s: f64,
     vehicles: usize,
+    /// **Nanoseconds per event — the per-tick budget, not the aggregate.**
+    ///
+    /// `yr_per_s` is a *rate over a re-selected population*: a change that
+    /// raises the number of events per simulated year lowers it without making
+    /// any single event slower, and a change that makes every event slower
+    /// lowers it too. Those are different problems with different fixes, and the
+    /// aggregate cannot tell them apart. T-69 is the worked example —
+    /// throughput fell 27% while vehicle count *fell*, because the cost was
+    /// event count and not per-event work.
+    ///
+    /// This is `CLAUDE.md` §2's seventh artifact shape (an aggregate that moves
+    /// against its parts) applied to performance, and the decomposition is the
+    /// same prescription: report the mix beside the mean.
+    ns_per_event: f64,
+    events: u64,
 }
 
 fn run(seed: u64) -> Run {
@@ -89,6 +104,7 @@ fn run(seed: u64) -> Run {
     }
 
     let secs = t0.elapsed().as_secs_f64().max(1e-9);
+    let events = sim.report().events_processed;
     let snap = sim.snapshot();
     let owned: Vec<_> = snap.planets.iter().filter(|p| p.owner.is_some()).collect();
     Run {
@@ -98,6 +114,8 @@ fn run(seed: u64) -> Run {
         final_colonies: owned.len(),
         yr_per_s: HORIZON / secs,
         vehicles: snap.vehicles.len(),
+        ns_per_event: secs * 1.0e9 / (events.max(1) as f64),
+        events,
     }
 }
 
@@ -105,8 +123,8 @@ fn main() {
     println!("work-years — Growth's objective, {PLAYERS} seats, {HORIZON:.0} yr, sampled every {SAMPLE_YEARS:.0} yr");
     println!("colony-years is carried alongside as a *side-effect* read, never the verdict\n");
     println!(
-        "{:>6}{:>16}{:>16}{:>13}{:>11}{:>10}{:>10}",
-        "seed", "work-years", "colony-years", "final works", "colonies", "vehicles", "yr/s"
+        "{:>6}{:>16}{:>16}{:>13}{:>11}{:>10}{:>9}{:>12}{:>10}",
+        "seed", "work-years", "colony-years", "final works", "colonies", "vehicles", "yr/s", "events", "ns/event"
     );
     std::io::stdout().flush().ok();
 
@@ -114,8 +132,15 @@ fn main() {
     for seed in SEEDS {
         let r = run(seed);
         println!(
-            "{seed:>6}{:>16.1}{:>16.1}{:>13.2}{:>11}{:>10}{:>10.1}",
-            r.work_years, r.colony_years, r.final_works, r.final_colonies, r.vehicles, r.yr_per_s
+            "{seed:>6}{:>16.1}{:>16.1}{:>13.2}{:>11}{:>10}{:>9.1}{:>12}{:>10.0}",
+            r.work_years,
+            r.colony_years,
+            r.final_works,
+            r.final_colonies,
+            r.vehicles,
+            r.yr_per_s,
+            r.events,
+            r.ns_per_event
         );
         std::io::stdout().flush().ok();
         w += r.work_years;

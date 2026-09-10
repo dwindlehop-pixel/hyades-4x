@@ -249,58 +249,26 @@ pub struct Doctrine {
     // --- Expand (autopilot-doc §4) ---
     pub expand_bias: ExpandBias,
 
-    /// ~~**How many miner hulls open one outpost**~~ — **retired at T-72**,
-    /// replaced by [`Doctrine::miner_vein_fraction`].
+    /// ~~**How many miner hulls open one outpost**~~ (`miners_per_outpost`,
+    /// T-57) and ~~**what share of a deposit's veins to crew**~~
+    /// (`miner_vein_fraction`, T-72) — **both retired at T-83. Crew size is not
+    /// a policy any more; it falls out of mineral demand.**
     ///
-    /// It was ratified at **3** on the standard four-seed CRN bed
-    /// (+2.74% colony-years, doubling 270.3 → 260.7 yr, every seed positive),
-    /// and `Hyades_industry.md` §4.5 says in as many words that the value does
-    /// not survive T-71: it was measured under a law with **no deposit term at
-    /// all**, where three miners were three miners on every rock. Under
-    /// crowding the same constant is a full crew on a `Band I` pebble and 17% of
-    /// one on a `Band III` seam, so it no longer names a policy.
+    /// The two retired knobs were the same mistake twice: a number someone had
+    /// to choose, against an objective that could not price it. `3` was
+    /// ratified (+2.74% colony-years) under a law with no deposit term at all;
+    /// `0.3` replaced it and measured monotone in the wrong direction — every
+    /// crew size worse than the one below, on both seeds and both objectives.
     ///
-    /// **Removed rather than left at its ratified value**, because a knob
-    /// nothing reads is worse than no knob: a sweep moves it, measures nothing,
-    /// and reports a flat gradient — which is exactly how `cargo_unit_size` and
-    /// `outpost_mining_fraction` came to look inert (design law #14). The
-    /// measurement is not lost; it is the record above and the reason
-    /// `miner_vein_fraction`'s default has to be re-ratified rather than
-    /// inherited.
+    /// The mechanism behind that verdict is now in the model instead of in a
+    /// footnote: **a deposit is a finite stock, so a crew can only bring its
+    /// yield forward, and ore nobody can spend is a pure cost.** Sizing a crew
+    /// without reference to demand buys hulls, freight and entity count to
+    /// accelerate a resource the empire is not short of.
     ///
-    /// **What share of a deposit's veins to crew** (`Hyades_industry.md` §4.5,
-    /// T-72) — the knob that replaces `miners_per_outpost` as the thing a policy
-    /// actually chooses.
-    ///
-    /// Crew is `max(1, round(miner_vein_fraction · N(S)))`, so it is **a
-    /// property of the rock**: one hull on a `Band I` pebble, hundreds on a
-    /// `Band IV` seam. §4.5 is explicit that a hull *count* does not survive
-    /// T-71 — T-57 ratified `3` under a law with no deposit term at all, where
-    /// three miners were three miners on every body. Under crowding, three
-    /// miners on a `Band III` body work `(3/100)^½ = 17%` of a full crew's
-    /// share, so the same constant means something different on every rock and
-    /// nothing in particular on any of them.
-    ///
-    /// **`0.07` is a design call made *against* the metric, and §6.15 is why.**
-    /// The measured sweep is monotone — every crew size tested scores worse than
-    /// the one below it, on both seeds and both objectives — so the objective's
-    /// preferred crew is **one hull on every rock**. That is not a finding about
-    /// crews. A deposit is a finite stock, so a crew can only bring its yield
-    /// *forward*, and `examples/reach_limit` established that the binding
-    /// constraint on the standard bed is `k_high` and not the economy. Bringing
-    /// ore forward is worth something only where minerals are what you run out
-    /// of, and here they are not: **the bed cannot price mining at all.**
-    ///
-    /// So this ships at the value that delivers the mechanism at the smallest
-    /// measured cost: a `Band IV` seam gets **204 miners where it had 9**, for
-    /// −3.6% work-years and −1.6% colony-years. `0.3` gives the design's literal
-    /// "hundreds or thousands" and costs 10–23%, which is a larger bill than
-    /// should be paid on evidence this weak.
-    ///
-    /// **Placeholder. R-IND18 is narrowed to "which bed", not "how many
-    /// seeds"** — a mineral-scarce galaxy, or the 8-kyr multi-metric bed where
-    /// Production's fleet-years objective prices hulls directly.
-    pub miner_vein_fraction: f64,
+    /// `Simulation::mining_crew_for` derives the crew from what the founding
+    /// centre can consume and cannot currently get — §4.3's extraction law
+    /// inverted. See `Hyades_industry.md` §4.5. There is nothing here to tune.
 
     /// **Expansion rate knob** (MC experiment): how strongly the production
     /// queue favors *upgrading own infrastructure* (deepening) over *spending
@@ -337,7 +305,6 @@ impl Default for Doctrine {
             survey_avoids_inhabited: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
             expand_bias: ExpandBias::ProductionCentersFirst,
-            miner_vein_fraction: 0.07,
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
         }
@@ -454,11 +421,13 @@ pub struct Candidate {
     /// `apply_build_with` will spend — two copies of a rule that must not
     /// disagree, with nothing checking that they don't.
     pub settlers_by_hull: [Kilotons; 2],
-    /// **How many miners this body would be crewed with** (T-72).
+    /// **How many miners this body would be crewed with** (T-83).
     ///
-    /// `max(1, round(miner_vein_fraction · N(S)))` — a property of the rock,
-    /// not a constant, because crowding is relative to the deposit
-    /// (`Hyades_industry.md` §4.5). It is precomputed here for the same reason
+    /// Derived, not chosen: §4.3's extraction law inverted against what the
+    /// founding centre can consume and cannot currently get
+    /// (`Simulation::mining_crew_for`). It depends on the *pair* — which rock,
+    /// and which centre is buying — so it cannot be a doctrine field and cannot
+    /// be recomputed from the view alone. It is precomputed here for the same reason
     /// `settlers_by_hull` is: the crew sets the pair's *price*, and a price the
     /// decision reads that differs from the price the build charges is how a
     /// centre ends up sitting Idle next to hulls it can afford.

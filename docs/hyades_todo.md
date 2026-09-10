@@ -218,22 +218,28 @@ rather than in the existence of a pact.
 
 | # | Item | Blocked on | T-code |
 |---|---|---|---|
-| 1 | **Per-metric saturation study** — one 8-kyr run per seed, all six stocks against time | — | **T-78** |
+| 1 | **Per-metric saturation study** — one **3-kyr** run per seed, all six stocks against time | — | **T-78** |
 | 2 | Per-player, per-tree stock sampling on a fixed cadence | T-78 | **T-79** |
 | 3 | Card-value harness: CRN counterfactual, log-regression gradient, P92/median/P98 | T-79 | **T-80** |
 
+**The horizon is 3,000 years, not 8,000** — author's revision, spec §3.1. Every
+colonizable world is taken by ~2,500 yr, so the extra five thousand buy nothing;
+the engine agrees from the other side (colony count is 97.9% of its 4,000-yr
+total by 1,500 yr). That is a **5.8x cut to the whole programme's cost**, taken
+off the top before any of the mitigations below.
+
 **T-78 first, and it is cheap.** It answers, per tree, where the stock leaves the
 exponential regime (which sets the regression window the value measure is fitted
-over), where it saturates, and whether it saturates inside 8 kyr at all. A
-handful of runs that can cut the horizon for four or five of the six trees.
+over), where it saturates, and whether it saturates inside the horizon at all. A
+handful of runs that can cut the horizon further for four or five of the six
+trees — a tree still compounding at 3 kyr wants its regression fitted, not its
+clock extended.
 
-**The blocker to name out loud: this programme is not affordable at today's
-throughput.** One 8-kyr seed is ~35–40 minutes post-T-68, a stable 92nd
-percentile needs dozens of samples, and six trees × the card set × tiers ×
-timings puts the full sweep in the range of *years* of single-machine compute.
-**T-66 (throughput) is therefore a prerequisite for the card programme, not a
-parallel nicety** — and that is now a bigger reason to do it than the T-24 floor
-it was opened for.
+**The blocker is smaller but has not gone.** A stable 92nd percentile needs
+dozens of samples, and six trees × the card set × tiers × timings is still a
+large sweep. **T-66 (throughput) remains a prerequisite for the card programme,
+not a parallel nicety** — and that is still a bigger reason to do it than the
+T-24 floor it was opened for.
 
 **Two of the six objectives cannot be measured yet.** Growth wants work-years and
 works do not exist (T-73/T-74); the interim stock is infrastructure in kilotons
@@ -245,7 +251,7 @@ Production and Politics' freight flows are measurable today.
 **Open in the spec, not here:** R-TREE1 (the end-of-game chronicle), R-TREE2
 (Warfare's length scale), R-TREE3 (Growth's interim stock), R-TREE4 (the
 capability definition), R-TREE5 (Politics' coupling), R-TREE6 (dispersion measure
-for the tier-1 constraint), R-TREE7 (which trees actually need 8 kyr).
+for the tier-1 constraint), R-TREE7 (which trees need even the 3-kyr horizon).
 
 ---
 

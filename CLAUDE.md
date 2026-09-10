@@ -187,6 +187,94 @@ each suspect individually, after `--report-time` turned out to be nightly-only:
 - **Smoke went 500 → 300 yr** (87 s → 17 s). Every assertion in it is an
   invariant that holds at any horizon where expansion has started.
 
+### Reduce the galaxy before the horizon
+
+**Three sessions running, the answer to "this target got slow" was to cut a
+horizon. That lever runs out, and it runs out badly** — cut far enough and the
+mechanism stops firing, the assertions go vacuously true, and the suite stays
+green while testing nothing. The `moving` guard in
+`positions_never_exceed_lightspeed` exists because that nearly happened.
+
+**The other lever is the scenario, and it is usually the right one.** Ask what
+the assertion actually *reads*. That test asserts a property of
+`math::position_along` — no entity moves faster than `c` — and reads ships in
+flight and nothing else: no economy, no mineral field, no colonisation. On the
+standard bed it was paying for all three, and was **97 s of a 102 s target**.
+`GalaxyConfig::planet_count` is a plain override, so:
+
+| bed | horizon | in-flight samples | cost |
+|---|---|---|---|
+| standard | 800 yr | — | **97 s** |
+| standard, trimmed | 300 yr | 479 — *below the guard's floor* | 3.0 s |
+| **150 planets** | **800 yr** | **5,087** | **0.8 s** |
+
+The horizon went back **up** and the test got 120x cheaper, with five times the
+guard's margin. (60 planets gives 1,541 samples, 400 gives 13,682 at 2.1 s —
+150 is measured, not guessed.) `tests/determinism.rs::tiny_galaxy` is the
+helper.
+
+**The rule: only tests that measure a gradient need to be comparable to each
+other, and only those need the standard bed.** A test that pins a mechanism
+wants the smallest galaxy that exercises it. Keep one shared bed for the
+Monte-Carlo work — comparability across measurements is the whole value of it —
+and stop treating it as the default scenery for everything else.
+
+**What this trades, so it is not discovered later:** a smaller field exercises
+every code path fewer times, so it is worse at catching a bug that only appears
+at scale — an ordering fault in a large collection, say. That is a real cost and
+it is why `full_run_reports_are_bit_identical` still runs full-size galaxies
+across all five seat counts (R-NET14: a divergence at *any* seat count is a
+desync). Shrink the scenery on tests that assert a mechanism; leave it on tests
+whose question *is* scale.
+
+### Measure the per-event budget, not only the aggregate
+
+**`yr/s` is a rate over a population the change re-selects, and it cannot tell
+two different problems apart.** A change that makes every event slower lowers
+it. A change that raises events-per-simulated-year lowers it too, with every
+event costing exactly what it did. Those want opposite fixes.
+
+**T-69 is the worked example and it read backwards.** Throughput fell 27% while
+vehicle count *fell* — the table's standing lesson ("entity count is the
+first-order cost") pointed the wrong way, because the cost was **decision
+count**: every commit schedules its own `BuildDecision`, so a yard with `k`
+berths raises `k` events where it raised one.
+
+This is §2's **seventh artifact shape** — an aggregate that moves against its
+parts because the treatment changed the mix — applied to performance instead of
+to colonies, and the prescription is the same: **report the mix beside the
+mean.** `SimReport::events_processed` is already there, so `ns/event` costs a
+division. `examples/work_years` prints it next to `yr/s`; do the same in any
+harness that reports throughput.
+
+**It paid for itself on the first run.** The standard bed reports **~174 µs per
+event**, which reframes the whole throughput problem: the engine is not slow
+because the design produces many events — that is design law #14 and is not
+going away — it is slow because each event is expensive. T-52's `O(scanned)`
+production candidate scan is the suspect, and that is a *profiling* job, not an
+entity-count one. Years of this table have been read the other way.
+
+**And the instrument has to be free, or it is measuring itself.** Every census
+and ablation in this project reads a run with log categories enabled and
+compares it against one that did not. `tests/telemetry.rs` bounds that at 5%;
+measured across a 10x range of event counts the true cost is **below the
+machine's own run-to-run variance** (ratios 0.995 / 0.974 / 1.020 at 15.6k /
+59.2k / 148.6k events). Two of three land under 1.0, which is the honest signal
+that this is a *bound* rather than an estimate.
+
+Read them together:
+
+| `yr/s` | `ns/event` | what actually happened |
+|---|---|---|
+| down | flat | the simulation is doing **more**, each unit costs the same — a design change, not a regression |
+| down | up | the engine got **slower per unit** — this is the one to profile |
+| up | down | a real optimisation |
+| flat | up | events got dearer and fewer; something moved in both directions and needs decomposing further |
+
+Only the second row is a performance bug. Treating the first as one is how an
+optimisation pass gets spent on code that was never the problem — which §4's
+"profile before you optimise" already says, one level up.
+
 The general form, worth having separately from the instances: **a test's horizon
 is a cost, not a strength.** Ask what the assertion actually needs — an identity
 needs none, a cadence needs periods rather than years, an invariant needs the
@@ -1068,6 +1156,16 @@ changes how you *work*, not what is left to do:
   | **T-68 (`t_build` tracks hull mass), same bed** | — | **10–11 yr/s** | **~4×** |
   | T-70/73/74 bed (`slips ≡ 1` ablation), 3 seats, 4 kyr | 24,470–25,984 | 9.0–9.7 yr/s | 3.6–3.9× |
   | **T-69 (yards fill every berth), same bed** | 25,200–25,523 | **6.6–7.3 yr/s** | **2.6–2.9×** |
+  | T-71/T-72 (crowding, `f = 0.07` crews) | 37,269–37,706 | 9.8–9.9 yr/s | 3.9–4.0× |
+  | **T-83 (crew from demand)** | **23,258–24,801** | **8.5–9.0 yr/s** | **3.4–3.6×** |
+
+  **T-83's row is the first with `ns/event` beside it, and it is the number to
+  look at**: 173,886 and 176,747 ns/event on seeds 1 and 7. **174 microseconds
+  per event** is the real story that `yr/s` was hiding — the engine is not slow
+  because it processes many events, it is slow because each one is expensive.
+  That points at the production candidate scan (T-52, still `O(scanned)` and the
+  largest loop left), not at entity count. Every throughput figure from here
+  should carry this column.
 
   **T-62 halved it, and the mechanism is hauling — not vehicles and not mining**
   (`examples/haul_census`). Vehicles rose 1.20× and extraction ticks 1.02×, but

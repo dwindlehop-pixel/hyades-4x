@@ -21,6 +21,29 @@ fn fresh_short(players: usize, seed: u64, horizon_years: f64) -> Simulation {
     Simulation::with_baseline(galaxy, cfg)
 }
 
+/// **A galaxy with just enough in it to exercise one mechanism** — the
+/// alternative to shortening a full bed.
+///
+/// Not every test is measuring a gradient, and only the ones that are need to
+/// be comparable to each other. A test that asserts *"no entity moves faster
+/// than c"* is asserting a property of `math::position_along`; it needs ships
+/// in flight and nothing else. Running it on the standard bed makes it pay for
+/// a colonisation economy, a mineral field and thousands of planets it never
+/// reads — and then the only lever left when the bed gets more expensive is to
+/// cut the horizon, which eventually cuts the mechanism out too.
+///
+/// `planet_count` is a plain override (`GalaxyConfig`), so the cheaper move is
+/// to shrink the *galaxy*: keep the full horizon, keep the mechanism, drop the
+/// scenery. **Reduce complexity before duration.**
+fn tiny_galaxy(players: usize, seed: u64, planets: usize, horizon_years: f64) -> Simulation {
+    let mut gcfg = GalaxyConfig::new(players, seed);
+    gcfg.planet_count = planets;
+    let galaxy = Galaxy::generate(gcfg).unwrap();
+    let mut cfg = SimConfig::new(seed);
+    cfg.horizon_years = horizon_years;
+    Simulation::with_baseline(galaxy, cfg)
+}
+
 #[test]
 fn full_run_reports_are_bit_identical() {
     // Every fair seat count, 18 included (R-NET14). `Hyades_netcode.md` §6 makes
@@ -85,21 +108,23 @@ fn positions_never_exceed_lightspeed() {
     // Sample displacement over small windows the whole way to the horizon; no
     // entity may move faster than c (= 1 ly/yr).
     //
-    // **Horizon 800 -> 300 at T-69**, and the reason is worth stating because the
-    // sampling loop looks like the expensive part and is not. The stride is 7 yr
-    // over a 0.25 yr window, so this walks the timeline about a hundred times
-    // whatever the horizon; the cost is `sim.run()`, and T-69's berth filling
-    // roughly doubled what a simulated year costs. On its own this test was
-    // **97 s of a 102 s target**.
+    // **The scenery came out, not the timeline.** This asserts a property of
+    // `math::position_along` — no entity moves faster than c — which needs
+    // *ships in flight* and reads nothing else: no economy, no mineral field,
+    // no colonisation. On the standard bed it paid for all three, and it was
+    // **97 s of a 102 s target**, so the only lever left each time the bed got
+    // more expensive was to cut the horizon. Cut it far enough and there is
+    // nothing flying and the test passes vacuously.
     //
-    // What the assertion needs is ships *in flight* over a stretch of timeline,
-    // which is a property of `math::position_along` and holds at any horizon
-    // where the expansion loop has started. `CLAUDE.md` s2: a test's horizon is
-    // a cost, not a strength. The trim is guarded from below by `moving` --
-    // shortening a run until nothing is flying would leave every assertion
-    // vacuously true and the test still green.
-    const HORIZON: f64 = 300.0;
-    let mut sim = fresh_short(3, 808, HORIZON);
+    // A 150-planet galaxy launches scouts from the first year and yields
+    // **5,087 in-flight samples in 0.8 s** — five times the guard's floor, at
+    // the *full* 800-year horizon rather than the 300 an earlier trim had cut
+    // it to. So the horizon went back **up** and the test got 120x cheaper.
+    // That is the trade: reduce complexity before duration. (Measured: 60
+    // planets gives 1,541 samples, 400 gives 13,682 at 2.1 s — 150 is the
+    // comfortable middle, not a guess.)
+    const HORIZON: f64 = 800.0;
+    let mut sim = tiny_galaxy(3, 808, 150, HORIZON);
     sim.run();
     let dt = 0.25;
     let mut t = 0.0;
@@ -114,13 +139,11 @@ fn positions_never_exceed_lightspeed() {
                 moving += 1;
             }
         }
-        // **Stride 7 -> 2 alongside the horizon cut.** Sampling is O(entities)
-        // and the run is what costs; taking three times as many windows of a
-        // shorter timeline keeps the in-flight sample count up for almost
-        // nothing. The first attempt at this trim kept the stride and tripped
-        // `moving` at 479 -- which is exactly what that assertion is for.
         t += 2.0;
     }
+    // **The non-vacuity guard, and it earned its place** — it fired on the
+    // first attempt at the earlier horizon trim, which is how that trim was
+    // caught being too aggressive rather than shipping green and empty.
     assert!(moving > 1_000, "nothing was in flight: the bound was never exercised ({moving})");
 }
 
