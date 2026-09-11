@@ -1388,16 +1388,36 @@ struct Exchange {
     /// for — it is the first thing in the engine that is **owed** rather than
     /// owned."* A `Vec` appended in fill order, which is deterministic because
     /// `match_wave` is.
-    contracts: Vec<Contract>,
+    contracts: BTreeMap<u64, Contract>,
+    /// Next contract id. Monotonic — an id is never reused, so a settlement
+    /// event cannot be delivered to a different contract than the one that
+    /// scheduled it.
+    next_id: u64,
     /// Contracts settled, and `$` burned to transit, since the run began.
     /// Diagnostic only — §10.8's guard is a census.
     settled: u64,
+    defaulted: u64,
     burned: f64,
     /// **Cumulative offers posted per colour**, `(bids, asks)` — the census
     /// §10.8 asks for, and the only way to see the book's *depth* once clearing
     /// drains it. Live depth after a wave is the unmatched remainder, which
     /// answers a different question.
     posted: [(u64, u64); 3],
+    /// **Why a fill did not become a contract**, cumulative: `(self-trade, no
+    /// shared venue, no price, no purse)`.
+    ///
+    /// §10.8's census, at the one place a market can silently do nothing. A
+    /// book with deep two-sided depth and zero contracts is indistinguishable
+    /// from a book nobody posted to unless the *rejections* are counted — which
+    /// is `CLAUDE.md` §2's "instrument the decision", and it is how the first
+    /// run of this stage was diagnosed instead of guessed at.
+    rejected: [u64; 4],
+    /// Fills the matcher produced, before any filter.
+    fills: u64,
+    /// Kilotons actually delivered, per colour — the volume the market moved.
+    /// Without it a census can only say trade *happened*, not whether it
+    /// happened at a scale that could move anything.
+    traded: [f64; 3],
 }
 
 /// **A cleared trade, escrowed and awaiting settlement at its venue** (T-85).
@@ -1412,6 +1432,11 @@ struct Exchange {
 struct Contract {
     buyer: PlayerId,
     seller: PlayerId,
+    /// **The centre that owes the ore.** Recorded at match rather than looked
+    /// up at settlement, because §3.3's default case turns on *this* bank being
+    /// short — re-deriving "some centre of the seller's" at settlement would
+    /// make a default impossible to express.
+    seller_centre: Entity,
     colour: Basic,
     /// Kilotons of ore the seller owes.
     qty: f64,
@@ -1433,7 +1458,14 @@ struct Contract {
     ///
     /// `None` when the buyer settles in `$`, which has no location at all.
     buyer_drop: Option<Entity>,
-    /// When the contract was struck, for the transit burn.
+    /// When the contract was struck — the burn is measured from here to
+    /// settlement.
+    ///
+    /// **There is deliberately no `deliver_at`.** The scheduled `ContractDue`
+    /// event *is* the delivery time, and storing it twice would be two facts
+    /// that must agree with nothing checking that they do — the same defect
+    /// `mining_pair_cost` needed a comment to guard against and
+    /// `Candidate::settlers_by_hull` exists to avoid.
     ///
     /// **The obligation is struck instantly; only the goods are light-lagged**
     /// (author's ruling: *debt can travel faster than light*). That is not an
@@ -1545,6 +1577,10 @@ enum EventKind {
     /// moment of the strike, after clearing `building_until`; the seam is here
     /// so that is a scheduling call and not a redesign. **T-52.**
     BuildDecision { center: Entity },
+    /// **A contract's freight leg completes at its drop** (T-77). Carries the
+    /// contract id rather than an index, because ids are never reused and
+    /// indices shift when a contract settles.
+    ContractDue { id: u64 },
     /// An exhausted Scout reaches a friendly colony and scraps
     /// (`Hyades_vehicle_roles.md` §4.1/§4.6 — confirmed, LCV only).
     ScrapArrive { vehicle: Entity },
@@ -2127,6 +2163,14 @@ pub struct Simulation {
     /// ablation first among the three kinds of proof, and "posting changes
     /// nothing" is only checkable against a run that did not post.
     exchange_posting: bool,
+    /// Whether a struck contract is ever scheduled to settle (T-77).
+    ///
+    /// Separate from `exchange_posting` so the two stages stay separable: with
+    /// posting on and this off, contracts are struck and `$` is escrowed and
+    /// **no kilotonne moves**, which is what makes §10.7's stage-4 inertness a
+    /// checkable claim rather than one T-77 silently invalidated. It is also
+    /// the ablation for attributing T-77's own effect.
+    exchange_settlement: bool,
     /// Per-player pools of hulls whose rock ran dry, awaiting re-tasking. Push
     /// order is event order, so these are deterministic; selection is by
     /// distance to the new target, not by position in the pool.
@@ -2229,6 +2273,7 @@ impl Simulation {
             outpost_stock: BTreeMap::new(),
             exchange: Exchange::default(),
             exchange_posting: true,
+            exchange_settlement: true,
             reserve_miners: vec![Vec::new(); n],
             reserve_freighters: vec![Vec::new(); n],
             current_round: 0,
@@ -2601,6 +2646,7 @@ impl Simulation {
             EventKind::MiningTick { outpost } => self.sys_mining_tick(outpost),
             EventKind::ProductionTick { center } => self.sys_production_tick(center),
             EventKind::BuildDecision { center } => self.sys_build_decision(center),
+            EventKind::ContractDue { id } => self.sys_contract_due(id),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
             EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
@@ -4789,12 +4835,14 @@ impl Simulation {
         let now = self.clock;
         let mut fills: Vec<(usize, matching::Fill)> = Vec::new();
         for (i, book) in self.exchange.books.iter_mut().enumerate() {
-            for f in book.match_wave() {
+            for f in book.match_wave_cross_empire() {
                 fills.push((i, f));
             }
         }
         for (i, f) in fills {
+            self.exchange.fills += 1;
             if f.buyer == f.seller {
+                self.exchange.rejected[0] += 1;
                 continue;
             }
             let (bid_e, ask_e) = (Entity(f.bid), Entity(f.ask));
@@ -4803,6 +4851,7 @@ impl Simulation {
             };
             // The seller ships, so the seller picks its own drop.
             let Some(seller_drop) = self.shared_venue(f.buyer, f.seller, s_at) else {
+                self.exchange.rejected[1] += 1;
                 continue; // landlocked with respect to each other this round
             };
             // The buyer's side is `$` in the default transaction, and `$` has no
@@ -4812,10 +4861,17 @@ impl Simulation {
             let buyer_drop = None;
             let _ = b_at;
 
-            // Price is the bid's, which is what the buyer said it was worth.
-            let price = self.exchange.books[i].bid_of(f.bid).map_or(0.0, |o| o.price);
+            // **The price the fill cleared at**, carried on the fill rather
+            // than looked up — a wave drops exhausted offers, so a bid that
+            // matched in full is already gone from the book.
+            let price = f.price;
             let purse = self.purse_of(f.buyer);
-            if price <= 0.0 || purse <= 0.0 {
+            if price <= 0.0 {
+                self.exchange.rejected[2] += 1;
+                continue;
+            }
+            if purse <= 0.0 {
+                self.exchange.rejected[3] += 1;
                 continue;
             }
             let qty = f.qty.min(purse / price);
@@ -4826,23 +4882,156 @@ impl Simulation {
 
             let pe = self.player_entity[f.buyer.0 as usize];
             self.credit(pe, -escrow);
-            self.exchange.contracts.push(Contract {
-                buyer: f.buyer,
-                seller: f.seller,
-                colour: Basic::ALL[i],
-                qty,
-                escrow,
-                seller_drop,
-                buyer_drop,
-                struck: now,
-            });
+
+            // **The freight leg.** The obligation was instant; the ore is not.
+            // Transit is the seller's centre to its own drop, at civilian
+            // acceleration — the same `ship_travel_years` every other voyage in
+            // the engine uses, so a trade is priced in the same geometry as a
+            // colonisation or a haul (§8.1: a trade is a voyage).
+            let drop_at = *self.world.position.get(seller_drop).unwrap();
+            let t = math::ship_travel_years(s_at.distance(drop_at), self.config.civilian_accel_g * G);
+            let id = self.exchange.next_id;
+            self.exchange.next_id += 1;
+            self.exchange.contracts.insert(
+                id,
+                Contract {
+                    buyer: f.buyer,
+                    seller: f.seller,
+                    seller_centre: ask_e,
+                    colour: Basic::ALL[i],
+                    qty,
+                    escrow,
+                    seller_drop,
+                    buyer_drop,
+                    struck: now,
+                },
+            );
+            if self.exchange_settlement {
+                self.schedule(t, EventKind::ContractDue { id });
+            }
         }
+    }
+
+    /// **A contract's freight arrives at its drop** (§3.3, §10.6, T-77).
+    ///
+    /// The ore leaves the seller's bank and lands in the **buyer's pile at the
+    /// shared outpost** — not at the buyer's world. The buyer's own freighter
+    /// collects it on the need-based route it was already flying, which is why
+    /// this needs no cross-empire hull and why a foreign hull near a colony
+    /// stays a card rather than the default.
+    ///
+    /// **Mass is conserved** (design law #11): every kilotonne debited from the
+    /// seller is credited to the buyer, and the `$` burn is not mass — `$` was
+    /// never in the mass ledger (R-P1).
+    ///
+    /// **Both outcomes share the burn, which is what §2.3's sink is.**
+    ///
+    /// | | seller gets | buyer gets | burned |
+    /// |---|---|---|---|
+    /// | delivered | `E · exp(−λ·t)` | the ore | `E · (1 − exp(−λ·t))` |
+    /// | **defaulted** | nothing | `E · exp(−λ·t)` | the same |
+    ///
+    /// §3.3: *"the buyer loses the burn, the seller loses the cargo, the loss is
+    /// shared"* — **which is what makes escorting worth paying for** (R-IND10,
+    /// resolved there). A default is not a free option for the seller: it keeps
+    /// nothing and forfeits the sale.
+    ///
+    /// Default here is *inability*, not malice — the bank is short because the
+    /// centre spent the ore, or lost the world. Deliberate default is a card
+    /// (§7.2), and interdiction is T-86.
+    fn sys_contract_due(&mut self, id: u64) {
+        let Some(c) = self.exchange.contracts.remove(&id) else {
+            return; // already settled or cancelled
+        };
+        let t = (self.clock - c.struck).max(0.0);
+        let keep = (-self.config.trade_decay_lambda * t).exp();
+        let paid = c.escrow * keep;
+        let burn = c.escrow - paid;
+
+        // Does the seller still have it? `get_basic` is the colour the contract
+        // names, not the bank total — a centre rich in Cyan cannot settle a
+        // Yellow contract, which is the whole point of the colour axis.
+        let held = self.world.stockpile.get(c.seller_centre).map_or(0.0, |b| b.get_basic(c.colour));
+        let delivered = held + 1e-9 >= c.qty && self.world.owner.get(c.seller_centre).copied() == Some(c.seller);
+
+        if delivered {
+            if let Some(bank) = self.world.stockpile.get_mut(c.seller_centre) {
+                match c.colour {
+                    Basic::Cyan => bank.cyan -= c.qty,
+                    Basic::Magenta => bank.magenta -= c.qty,
+                    Basic::Yellow => bank.yellow -= c.qty,
+                }
+            }
+            // **Into the buyer's own pile at that rock** — `outpost_stock` is
+            // already keyed `(player, outpost)` and is already what a laden
+            // freighter loads from, so the collection leg needs no new code at
+            // all. The buyer's hauler picks the ore up on the route it was
+            // flying anyway, which is the amendment's whole claim made literal.
+            let pile = self.outpost_stock.entry((c.buyer.0, c.seller_drop.0)).or_default();
+            match c.colour {
+                Basic::Cyan => pile.cyan += c.qty,
+                Basic::Magenta => pile.magenta += c.qty,
+                Basic::Yellow => pile.yellow += c.qty,
+            }
+            let se = self.player_entity[c.seller.0 as usize];
+            self.credit(se, paid);
+            self.exchange.settled += 1;
+            self.exchange.traded[c.colour as usize] += c.qty;
+        } else {
+            let be = self.player_entity[c.buyer.0 as usize];
+            self.credit(be, paid);
+            self.exchange.defaulted += 1;
+        }
+        self.exchange.burned += burn;
     }
 
     /// Contracts in flight, and what the Exchange has settled and burned.
     /// Diagnostic — §10.8's guard is a census, not a scalar.
     pub fn exchange_state(&self) -> (usize, u64, f64) {
         (self.exchange.contracts.len(), self.exchange.settled, self.exchange.burned)
+    }
+
+    /// Contracts that **defaulted** — the seller's bank was short the colour it
+    /// owed, or it had lost the world, when the freight came due (§3.3).
+    pub fn exchange_defaults(&self) -> u64 {
+        self.exchange.defaulted
+    }
+
+    /// Turn the whole Exchange off — posting, clearing and settlement (T-77).
+    ///
+    /// The ablation `CLAUDE.md` §2 puts first among the three kinds of proof:
+    /// "trade narrowed colour dispersion" is only a claim if there is a run
+    /// without trade to compare against.
+    pub fn set_exchange_enabled(&mut self, on: bool) {
+        self.exchange_posting = on;
+        self.exchange_settlement = on;
+    }
+
+    /// Kilotons delivered per colour, in `Basic::ALL` order.
+    pub fn exchange_traded(&self) -> [f64; 3] {
+        self.exchange.traded
+    }
+
+    /// **An empire's ore waiting at outposts**, summed over every pile it holds.
+    ///
+    /// Delivered ore lands here, not in a bank (§10.6) — so a census that reads
+    /// only planet stockpiles **cannot see what the Exchange moved**. That is
+    /// the metric-blindness `CLAUDE.md` §2 keeps warning about, and it made the
+    /// first colour-flow reading look like trade changed nothing.
+    pub fn outpost_holdings(&self, p: PlayerId) -> Minerals {
+        let mut out = Minerals::default();
+        for ((owner, _), m) in self.outpost_stock.iter() {
+            if *owner == p.0 {
+                out.add_basics(m);
+            }
+        }
+        out
+    }
+
+    /// Fills produced, and why each rejected one was: `(self-trade, no venue,
+    /// no price, no purse)`.
+    pub fn exchange_rejections(&self) -> (u64, [u64; 4]) {
+        (self.exchange.fills, self.exchange.rejected)
     }
 
     /// Cumulative `(bids, asks)` posted per colour, in `Basic::ALL` order.
@@ -4866,7 +5055,7 @@ impl Simulation {
     pub fn exchange_contracts(&self) -> Vec<(PlayerId, PlayerId, Basic, f64, f64, PlanetId, Option<PlanetId>, f64)> {
         self.exchange
             .contracts
-            .iter()
+            .values()
             .map(|c| {
                 let drop = *self.world.planet_id.get(c.seller_drop).unwrap();
                 let pay = c.buyer_drop.and_then(|e| self.world.planet_id.get(e).copied());
@@ -6164,6 +6353,9 @@ mod tests {
             cfg.horizon_years = 900.0; // two round barriers at the default cadence
             let mut sim = Simulation::with_baseline(galaxy, cfg);
             sim.exchange_posting = post;
+            // Posting and *pricing* are what this stage is about; settlement is
+            // T-77 and moves ore, which would make the inertness claim false.
+            sim.exchange_settlement = false;
             let report = sim.run();
             let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();
             (report.events_processed, report.planets_scanned_total, pops, sim.exchange_posted())
@@ -6213,6 +6405,9 @@ mod tests {
             cfg.horizon_years = 1600.0; // several barriers, and time to open outposts
             let mut sim = Simulation::with_baseline(galaxy, cfg);
             sim.exchange_posting = clear;
+            // **Stage 4 only.** T-77 schedules settlement, which does move ore;
+            // holding it off is what keeps this a test of clearing alone.
+            sim.exchange_settlement = false;
             let report = sim.run();
             let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();
             let purses: Vec<f64> = (0..3).map(|p| sim.purse_of(PlayerId(p))).collect();
@@ -6229,6 +6424,7 @@ mod tests {
             st_on.0 > 0,
             "no contract was struck: either no colour had both sides, or no two empires shared an outpost"
         );
+        assert_eq!(st_on.1, 0, "settlement was disabled, so nothing may have settled");
 
         // **Escrow was locked.** `$` left the buyers' purses and is owed rather
         // than spent — the first thing in the engine that is owed (§10.2).
@@ -6238,6 +6434,119 @@ mod tests {
         assert_eq!(ev_off, ev_on, "clearing moved the event count");
         assert_eq!(scan_off, scan_on, "clearing moved survey");
         assert_eq!(pop_off, pop_on, "clearing moved population");
+    }
+
+    /// **T-77: settlement moves ore between empires and conserves it.**
+    ///
+    /// The first Exchange stage that moves a kilotonne, so the thing to assert
+    /// is **design law #11**: mass is conserved with no exclusions. The `$`
+    /// burn is not a counterexample — `$` was never in the mass ledger (R-P1),
+    /// which is the entire reason a faucet and a sink are legal at all.
+    ///
+    /// Also pins the destination, because it is the amendment's whole claim:
+    /// the ore lands in the **buyer's pile at the shared rock**, not at the
+    /// buyer's world. `outpost_stock` is already what a laden freighter loads
+    /// from, so the collection leg needed no new code.
+    #[test]
+    fn settlement_moves_ore_to_the_buyers_pile_and_conserves_mass() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 71)).unwrap(), test_cfg(71));
+        let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let rock = sim.planet_entity[30];
+        for p in 0..2u32 {
+            sim.mine_crew.insert((p, rock.0), vec![sim.world.spawn()]);
+        }
+        sim.world.stockpile.get_mut(seller_centre).unwrap().yellow = 100.0;
+        sim.credit(sim.player_entity[0], 500.0);
+
+        let total_yellow = |s: &Simulation| -> f64 {
+            let banked: f64 = s.planet_entity.iter().filter_map(|&e| s.world.stockpile.get(e)).map(|b| b.yellow).sum();
+            let piled: f64 = s.outpost_stock.values().map(|m| m.yellow).sum();
+            banked + piled
+        };
+        let before = total_yellow(&sim);
+
+        let id = sim.exchange.next_id;
+        sim.exchange.next_id += 1;
+        sim.exchange.contracts.insert(
+            id,
+            Contract {
+                buyer: PlayerId(0),
+                seller: PlayerId(1),
+                seller_centre,
+                colour: Basic::Yellow,
+                qty: 40.0,
+                escrow: 80.0,
+                seller_drop: rock,
+                buyer_drop: None,
+                struck: sim.clock,
+            },
+        );
+        sim.credit(sim.player_entity[0], -80.0);
+        let purse_before = sim.purse_of(PlayerId(1));
+
+        sim.sys_contract_due(id);
+
+        assert_eq!(sim.exchange_state().1, 1, "the contract must have settled");
+        assert_eq!(sim.exchange_defaults(), 0);
+        assert!(
+            (sim.world.stockpile.get(seller_centre).unwrap().yellow - 60.0).abs() < 1e-9,
+            "the seller's bank must be debited"
+        );
+        assert!(
+            (sim.outpost_stock.get(&(0, rock.0)).map_or(0.0, |m| m.yellow) - 40.0).abs() < 1e-9,
+            "the ore must land in the *buyer's* pile at the shared rock"
+        );
+        assert!((total_yellow(&sim) - before).abs() < 1e-9, "mass was not conserved across the trade");
+        assert!(sim.purse_of(PlayerId(1)) > purse_before, "the seller must be paid");
+    }
+
+    /// **A seller that cannot deliver defaults, and the loss is shared**
+    /// (§3.3, R-IND10, T-77).
+    ///
+    /// The buyer gets its escrow back **minus the burn** and the seller gets
+    /// nothing — so default is not a free option: it forfeits the sale. That
+    /// asymmetry is what makes escorting worth paying for, which is the reason
+    /// §3.3 chose shared loss over returning the escrow whole.
+    #[test]
+    fn a_seller_that_cannot_deliver_defaults_and_both_sides_pay() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 73)).unwrap(), test_cfg(73));
+        let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let rock = sim.planet_entity[30];
+        // The bank is short the colour it owes — rich in Cyan, owing Yellow.
+        {
+            let b = sim.world.stockpile.get_mut(seller_centre).unwrap();
+            b.yellow = 1.0;
+            b.cyan = 9_999.0;
+        }
+        let id = sim.exchange.next_id;
+        sim.exchange.next_id += 1;
+        sim.exchange.contracts.insert(
+            id,
+            Contract {
+                buyer: PlayerId(0),
+                seller: PlayerId(1),
+                seller_centre,
+                colour: Basic::Yellow,
+                qty: 40.0,
+                escrow: 80.0,
+                seller_drop: rock,
+                buyer_drop: None,
+                struck: sim.clock - 50.0, // far enough back that the burn bites
+            },
+        );
+        let (buyer_before, seller_before) = (sim.purse_of(PlayerId(0)), sim.purse_of(PlayerId(1)));
+
+        sim.sys_contract_due(id);
+
+        assert_eq!(sim.exchange_defaults(), 1, "a bank short the named colour must default");
+        assert_eq!(sim.exchange_state().1, 0, "a default is not a settlement");
+        let refunded = sim.purse_of(PlayerId(0)) - buyer_before;
+        assert!(refunded > 0.0 && refunded < 80.0, "the buyer is refunded minus the burn, got {refunded}");
+        assert_eq!(sim.purse_of(PlayerId(1)), seller_before, "the seller gains nothing by defaulting");
+        assert!(sim.exchange_state().2 > 0.0, "the burn is the sink (§2.3)");
+        // **A rich bank in the wrong colour does not help**, which is what the
+        // colour axis is for.
+        assert!(sim.world.stockpile.get(seller_centre).unwrap().cyan > 9_000.0, "the wrong colour was never touched");
     }
 
     /// **A trade needs a rock both parties work** (§10.6, T-85).
@@ -6296,9 +6605,12 @@ mod tests {
     ///
     /// - **The faucet runs.** An empire that fabricates accrues `$`, so the
     ///   ledger is not merely present and empty.
-    /// - **Nothing spends it.** The purse is write-only until T-85, so a run
-    ///   with the faucet must be bit-identical to one without — asserted by
-    ///   zeroing the rate, which is the ablation form of "nothing reads this".
+    /// - **Nothing spends it.** The purse was write-only when this was written;
+    ///   **T-85 made it readable**, so the test now runs with the Exchange
+    ///   disabled and the claim narrows to what it always meant: the *faucet*
+    ///   alone moves nothing. That is a retarget rather than a weakening — with
+    ///   trade on, a zero rate stops trade and moves the world through that
+    ///   instead, which is a different claim.
     #[test]
     fn the_dollar_ledger_fills_and_changes_nothing() {
         let run = |rate: f64| {
@@ -6308,6 +6620,12 @@ mod tests {
             let mut cfg = test_cfg(21);
             cfg.dollar_per_fabrication = rate;
             let mut sim = Simulation::with_baseline(galaxy, cfg);
+            // **Isolate the faucet.** Since T-85 the purse *is* read — clearing
+            // checks what a buyer can afford — so a zero rate would stop trade
+            // and move the world through that, which is a different claim than
+            // the one this test makes. The Exchange off, the faucet is again the
+            // only variable.
+            sim.set_exchange_enabled(false);
             let report = sim.run();
             let purses: Vec<u64> = (0..3).map(|p| sim.purse_of(PlayerId(p)).to_bits()).collect();
             let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();

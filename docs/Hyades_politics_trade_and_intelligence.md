@@ -940,6 +940,60 @@ non-delivery "escrow returns to the buyer minus the burn" — so the buyer loses
 the burn, the seller loses the cargo, and the loss is shared. That is what makes
 escorting worth paying for. Marked resolved below.
 
+### 10.6a T-77 measured — the market works and the volume does not matter
+
+**Settlement landed and does what it says.** Contracts clear, price, escrow,
+deliver into the buyer's pile at the shared rock, default when the seller's bank
+is short the colour it owes, and conserve mass. On a 400-planet, 1,200-year bed:
+**776 contracts settled and 76 defaulted** (seed 1), **666 and 108** (seed 7),
+with every rejection now accounted for and only *geography* rejecting anything.
+
+**And the ablation says it changed nothing.** Colour dispersion across empires —
+the coefficient of variation of each colour's holdings, banks **plus outpost
+piles** — with the Exchange on and off:
+
+| | Exchange ON | Exchange OFF |
+|---|---|---|
+| seed 1 — Cyan | 0.117 | 0.117 |
+| seed 1 — Magenta | 0.207 | 0.207 |
+| seed 1 — Yellow | 0.127 | 0.127 |
+| seed 7 — Cyan | 0.243 | 0.243 |
+| seed 7 — Magenta | 0.322 | 0.323 |
+| seed 7 — Yellow | 0.207 | 0.207 |
+
+Identical to three decimals. **The market clears and moves nothing that
+matters**, and the reason is arithmetic rather than mysterious: it delivered
+**327 kt** across the whole run, against an economy that extracts roughly
+**14.5 M kt** on the same bed (2,494 worked sites × ~5,819 kt each,
+`Hyades_industry.md` §6.16). **0.002%.**
+
+**Two structural limiters, and neither is the matcher.**
+
+- **Ten clearings per game.** `years_per_round = 400`, so a 4,000-year run
+  clears the book ten times. A market that opens a decade a century cannot move
+  an economy, however well it prices. §10.5's per-round clearing is *correct* —
+  a continuous book makes price a function of event ordering, which is a desync —
+  but "per round" and "rarely" are not the same requirement, and the round
+  cadence was set by the card layer, not by the market.
+- **A bid is one infrastructure rung.** `colour_deficit` is what a centre is
+  short for its **next** rung, so a centre bids for a single purchase rather
+  than for its consumption over the next four centuries. The offer is sized to a
+  transaction; the gap it would have to close is a flow.
+
+**R-P18, open: the Exchange's volume, and which of the two limiters to move.**
+Raising clearing frequency and widening the bid are different designs with
+different failure modes — the first multiplies event count against T-24's floor,
+the second lets an empire commit to buying ore it has not yet found a use for.
+Neither should be guessed at; both are measurable with the census this stage
+added, and **the null hypothesis is the one just measured: trade that changes
+nothing.**
+
+**What is *not* in doubt** is the mechanism, and that is what this stage was for.
+Yellow is the most-traded colour on both seeds (155.0 and 184.0 kt against
+Cyan's 115.9 and 129.6), which is the `3:2:1` works mix showing up as demand
+exactly as §10.4 said it would. The market is pointed the right way; it is too
+small to be felt.
+
 ### 10.7 The build order
 
 | # | Stage | Behaviour | Guard | T-code |
@@ -948,7 +1002,7 @@ escorting worth paying for. Marked resolved below.
 | 2 | `Commodity` gains the colour axis; `Offer` gains an owner | **neutral** — matcher now wired, nothing calls it | bit-identical | ~~**T-83**~~ — **done, with T-01** |
 | 3 | Cross-empire book; centres post `wtp` bids | **neutral** — nothing clears yet | bit-identical | ~~**T-84**~~ — **done** |
 | 4 | Clearing at the round barrier → contracts + escrow | **inert after the §10.6 amendment** — see below | bit-identical | ~~**T-85**~~ — **done** |
-| 5 | The freight leg; escrow settles on arrival | changes | §10.8 | **T-77** |
+| 5 | The freight leg; escrow settles on arrival | **works; volume immaterial** — §10.6a | §10.8 | ~~**T-77**~~ — **done** |
 | 6 | Default, interdiction, reputation | changes | §10.8 | **T-86** |
 
 Stages 1–3 are deliberately inert, for the same reason `Hyades_industry.md`
@@ -1015,6 +1069,7 @@ never as the verdict.
 | **R-P13** | Which stances may be written, by which tier, and on which index. Recommend near index first and only toward less hostile; far index (making two other empires enemies) a deep node | — |
 | **R-P14** | Does an imposed stance decay? Recommend yes, on the reputation clock — a permanent write is a permanent pact for one card | MC |
 | **R-P9** | Strength of both counter-graph effects; is the risk premium bounded? | MC |
+| **R-P18** | The Exchange's volume. It clears correctly and moves 0.002% of extracted mass, so it changes nothing measurable. Two limiters: ten clearings per game (`years_per_round`), and a bid sized to one infrastructure rung rather than to consumption. Which to move, and at what cost to T-24's floor. | §10.6a |
 | ~~**R-P17**~~ | ~~Venue choice when buyer and seller share more than one outpost~~ — **resolved, and the question was wrong.** A contract has **two** drops, one per shipper, each the shared rock nearest *that* shipper. The summed-transit formulation assumed a single venue. | §10.6 |
 | ~~**R-P10**~~ | ~~Clear per round or continuously?~~ **resolved: per round, at the barrier** (§10.5). A continuous book makes price a function of event ordering, which is a desync by design law #16 | — |
 | **R-P16** | The `$` faucet ships against infrastructure stock because `production` (works fabrication, T-74) does not exist yet. Revisit at T-74 (§10.3) | T-74 |
