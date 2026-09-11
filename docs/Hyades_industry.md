@@ -2051,6 +2051,12 @@ ratification (`CLAUDE.md` §6), so none is taken here.
 #### What follows
 
 - **R-IND21 stays withdrawn.** There is no need to invent a sink.
+- **R-O86 landed alongside this and moved mean infrastructure 1.027 → 1.462**
+  (`Hyades_autopilot_colonization_growth.md` §6b) by unblocking the
+  `outward == None` deepen fallback, which a survey pre-emption had been
+  swallowing. It does **not** change R-O85's crossover or reach the ceiling —
+  1.462 against 3.612, zero colonies at cap — so the price argument below stands
+  exactly as measured.
 - **R-O68 is closed**, and closing it did *not* recover the flat mineral-side
   results. `outpost_mining_fraction`, both crew policies (§6.15) and the Exchange
   (politics §10.6a) were measured on a bed that cannot spend minerals, and they
@@ -2293,6 +2299,7 @@ artifact in place contaminates every later measurement.
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
 | **R-IND19** | §4.3's `ε·S·W` double-counts the deposit — output goes as richness squared and a rich body is stripped in one tick. **Decided: the engine uses `W/N`, i.e. `(n/N)^β`,** which preserves every ratio §4.3 asserts and differs only in an absolute scale `ε` absorbs. Open only in whether the spec's own formula should be rewritten or annotated. | §4.3b |
 | ~~**R-O68**~~ | ~~The deepen/expand comparison is between incommensurable quantities~~ — **resolved (T-51).** Both sides are now `rank` score per kilotonne committed: `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`. `reinvest_bias` is an odds ratio with a state-dependent crossover. Bit-identical below `b = 0.96`; the old form's cliff at 0.9 moved to 1.0. | §6.18 |
+| **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
 | **R-O85** | **Infrastructure is priced as if it were the scarce thing.** The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |

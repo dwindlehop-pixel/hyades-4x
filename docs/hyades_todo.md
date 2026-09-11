@@ -123,6 +123,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **§10.6a corrected** | — | — | — | — | **My own screen.** A 400-planet bed reported 776 contracts / 327 kt and I concluded volume did not matter; the full bed is 64,642 / 29,460 kt. A conclusion of the form "X does not matter" cannot be drawn from a screen at all |
 | **R-IND21 opened, then withdrawn** | — | T-51 | R-IND21, then withdrawn | — | **R-IND21, by me, one commit later.** The measurement was right and the conclusion backwards: `unmet_colour_demand` reads the next rung only, so it measures demand the policy already decided to express |
 | **T-51 / R-O68** — the deepen/expand trade | **T-51**, **R-O68** | — | **T-89**, **R-O85** | Both sides of the comparison in one unit, using `rank`'s own `w_k` rather than a new constant; design law #16 (the `per_kt` floor exists because `0.0 * inf` is `NaN`); `CLAUDE.md` §2's ablation-before-explanation — the fix was measured against the old binary on both seeds before it was believed | **This file's own T-51 prescription.** Item 3 said fixing the units would make `reinvest_bias` "a preference over a real trade". It did not: the trade is real now and expansion still wins it by 24–49x, because an infra rung costs nine colonisers. The dead branch was the right answer reached for a wrong reason, and the cause moved to R-O85. Also **`reinvest_bias_is_a_step_function_not_a_dial`**, the characterization test that existed to stop this changing silently — replaced, deliberately, by the test that pins the new form |
+| **R-O86** — a scout needs somewhere to scout | **R-O86** | T-89 | — | Design law #11, restored on the engine's busiest path — `apply_build_with` was debiting the bank and holding the yard for a hull `launch_survey` then declined to spawn; `CLAUDE.md` §4's "hand a decision only the fields it reads" (`survey_frontier` is `O(1)` off a running integer count, not a walk) | **R-AC16's magnitude.** `survey_reserve = 1024` is compared against a quantity with median **0** and maximum **164**, so the test is a constant `true` and every value above ~200 is bit-identical. The direction the ratification argued is fine; the number never reached the simulation. Also **the code's own justification** for the `candidates.is_empty()` pre-emption — "no candidates means every other branch below returns Idle" — which is false and was swallowing the only live deepen path |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -3126,7 +3127,12 @@ own:
    two constants, and nothing in the engine says so out loud.
 
 So §6.17's 756-Band sink is real, it is not a demand-side fault, and it is priced
-out of reach. The only thing still scaling past rung II is `extraction_rate`
+out of reach. **R-O86 took a bite out of it and confirms the rest**: unblocking
+the `outward == None` deepen fallback moved mean infrastructure **Band 1.027 →
+1.462** at the 4,000-year horizon and infrastructure builds **88 → 1,539** —
+so centres *will* deepen the moment they are allowed to, and they still stop
+nowhere near the ceiling (3.612, **zero colonies at cap**). The crossover
+between 0.96 and 0.98 is unchanged by it. What is left is the price. The only thing still scaling past rung II is `extraction_rate`
 (linear in the stock), and extraction is not what binds on a bed holding
 19,619 kt of unspent ore.
 

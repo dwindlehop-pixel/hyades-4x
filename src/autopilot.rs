@@ -579,6 +579,21 @@ pub struct ProductionContext {
     /// replenishment the empire runs out of places to go long before it runs
     /// out of galaxy.
     pub candidate_count: usize,
+    /// **Worlds no survey craft has been dispatched to yet** — the frontier a
+    /// new scout could actually be *pointed at*.
+    ///
+    /// Distinct from [`Self::candidate_count`], and the distinction is
+    /// load-bearing. `candidate_count` is *known and still available*: it falls
+    /// to zero when everything scanned is owned or already targeted, which
+    /// happens constantly in a colonised galaxy and says nothing about whether
+    /// exploring would help. This is *unexplored*, and it is the only honest
+    /// precondition for building a survey craft — at zero, `launch_survey` has
+    /// nothing to pick and the hull flies nowhere.
+    ///
+    /// Counted off a running total rather than a walk, because a production
+    /// decision reads it (`CLAUDE.md` §4: per-decision work must be `O(what the
+    /// decision reads)`).
+    pub survey_frontier: usize,
 }
 
 /// The swappable per-seat decision **algorithm** (`Hyades_vehicle_roles.md`
@@ -827,7 +842,22 @@ impl Autopilot for BaselineAutopilot {
         // what lets expansion compound: colonies are drawn from *known* worlds,
         // so an empire that never scouts again exhausts its candidate list and
         // stops, however rich it gets.
-        let wants_survey = ctx.candidate_count < doctrine.survey_reserve;
+        // **Never build a survey craft when there is nothing left to survey.**
+        // `survey_frontier` is the set `launch_survey` picks from, so at zero the
+        // hull is built, tasked `Scout`, and flies nowhere — a pure cost, and on
+        // a fully-explored bed it is *most* of what the policy builds.
+        //
+        // The second term is the actual reserve test, and measurement says it is
+        // inert at the shipped value (R-O86). `candidate_count` is the count of
+        // known, unclaimed, non-Barren worlds; measured on seed 1
+        // (`examples/survey_timing`, 600 planets / 1,500 yr) its **median is 0**
+        // and its maximum over the whole run is **164**, against a ratified
+        // `survey_reserve` of **1024**. So the comparison is a constant `true`
+        // and every value above ~200 is bit-identical. That also explains the
+        // plateau `CLAUDE.md` §2 records as a measurement artifact — 2048 reads
+        // as noise, 512 / 256 / 64 fall off a cliff — as a threshold sitting
+        // above the whole range of the thing it thresholds.
+        let wants_survey = ctx.survey_frontier > 0 && ctx.candidate_count < doctrine.survey_reserve;
         let can_afford_light = ctx.stockpile_total + Price::new(1e-9) >= ctx.light_vehicle_cost;
 
         // Between the limited and medium tiers, survey is the only outward move.
@@ -847,9 +877,29 @@ impl Autopilot for BaselineAutopilot {
         }
 
         // With nothing known left to expand to, survey is the only move that can
-        // ever restart expansion. This is the one case where it outranks
-        // everything: no candidates means every other branch below returns Idle.
-        if candidates.is_empty() && can_afford_light {
+        // ever restart expansion — **if there is anything left to survey.**
+        //
+        // ~~"no candidates means every other branch below returns Idle."~~ That
+        // justification was false, and it was load-bearing: the branch it
+        // pre-empts is the `outward == None` deepen fallback, which is the only
+        // deepening path above `medium_min_level` that actually runs. So a
+        // centre with an empty frontier, a full bank and three Bands of headroom
+        // built a scout, every time, forever.
+        //
+        // And `candidates.is_empty()` is not the exploration question. It goes to
+        // zero the moment everything *scanned* is owned or targeted, which in a
+        // colonised galaxy is the common case — median `candidate_count` is **0**
+        // on the standard bed. `survey_frontier` is the honest precondition:
+        // worlds no craft has been dispatched to.
+        //
+        // Measured (`examples/deepen_census`, 600 planets / 1,500 yr), with the
+        // gate ablated so deepening pre-empts the scout instead: infrastructure
+        // builds **88 → 550** on seed 1 and **83 → 502** on seed 7, mean infra
+        // Band 1.028 → 1.167 and 1.026 → 1.151, with colonies and colony-years
+        // **up on both seeds** (3,309 → 3,314 / 2,540,752.7 → 2,544,150.4;
+        // 3,334 → 3,336 / 2,608,344.6 → 2,609,993.2). Strictly better, which is
+        // what a wasted build should look like when it stops.
+        if candidates.is_empty() && can_afford_light && ctx.survey_frontier > 0 {
             return hull_order(HullType::LimitedContactVehicle);
         }
 
@@ -1231,6 +1281,10 @@ mod tests {
             mining_pair_cost: Price::new(1.0),
             light_vehicle_cost: Price::new(0.25),
             candidate_count,
+            // An unexplored galaxy, so the survey gate is open and these cases
+            // exercise the branch they are about. `a_fully_explored_empire_deepens_instead_of_scouting`
+            // is the one that closes it.
+            survey_frontier: 1,
         }
     }
 
@@ -1361,6 +1415,52 @@ mod tests {
                     BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }
                 ),
             "between the two crossovers the decision must depend on the rung price, not only on b"
+        );
+    }
+
+    /// **A fully-explored empire deepens instead of scouting (R-O86).**
+    ///
+    /// `candidates.is_empty()` used to send a centre straight to a survey hull,
+    /// justified by "no candidates means every other branch below returns Idle."
+    /// That is false: the branch it pre-empts is the `outward == None` deepen
+    /// fallback, and that fallback is the only deepening path above
+    /// `medium_min_level` that actually runs at the shipped `reinvest_bias`.
+    ///
+    /// So the two halves are pinned here. With frontier left, an empty candidate
+    /// list still buys a scout — that is the mechanic restarting expansion, and
+    /// it must not regress. With the galaxy explored, the same centre deepens.
+    #[test]
+    fn a_fully_explored_empire_deepens_instead_of_scouting() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        // Mature, funded, nothing known left to take.
+        let mut ctx = prod_ctx(BandTier::III, 1.0, 100.0);
+        ctx.candidate_count = 0;
+
+        ctx.survey_frontier = 1;
+        assert!(
+            matches!(
+                ap.production_choice(&doctrine, &ctx, &[]),
+                BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+            ),
+            "with galaxy left to explore, an empty candidate list must still buy a scout"
+        );
+
+        ctx.survey_frontier = 0;
+        assert_eq!(
+            ap.production_choice(&doctrine, &ctx, &[]),
+            BuildOrder::UpgradeInfrastructure,
+            "with nothing left to survey, the same centre must spend on depth rather than on a hull \
+             that would be tasked Scout and fly nowhere"
+        );
+
+        // And it must not deepen past the ceiling just because survey is shut:
+        // a capped centre with nothing to explore and nothing to take idles.
+        ctx.infra = ctx.k_potential;
+        assert_eq!(
+            ap.production_choice(&doctrine, &ctx, &[]),
+            BuildOrder::Idle,
+            "a capped centre with no frontier and no candidates has nothing to buy"
         );
     }
 

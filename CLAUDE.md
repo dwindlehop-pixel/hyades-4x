@@ -574,6 +574,29 @@ Two habits follow, and the second is the transferable one:
   the next step would have been to tune a dial toward a decision the economics
   say is bad.
 
+**And the actual cause was found by an instrument built for a different
+question** (R-O86). The survey harness printed `candidate_count`'s distribution
+only to justify a sentence in a doc comment, and the answer — **median 0, max
+164, against a `survey_reserve` of 1024** — said the reserve test is a constant
+`true` and, one step on, that `candidates.is_empty()` was pre-empting the only
+live deepen path. That was the thing keeping infrastructure at Band 1.03, not
+the comparison and not (yet) the ladder.
+
+Three habits, and the last one is the one that would have saved the most time:
+
+- **Print the distribution of what a threshold is compared against, not just the
+  threshold.** One column. It converted a plateau this file had already recorded
+  as an unexplained measurement artifact into a one-line mechanism.
+- **Check whether a predicate means what its name says.** `candidate_count` is
+  "known and still available"; the survey question is "anything left to
+  explore". Those coincide early and diverge permanently, and nothing in the
+  types could tell them apart — both are `usize`.
+- **Ask what fraction of a busy path produces nothing.** The engine spent 99% of
+  its production issuing builds that created no object. Profiling cannot see
+  that: every one of those builds really ran. The tell is a count that does not
+  reconcile — 1,779,509 `BuildApplied` against 18,093 hulls — and nothing was
+  comparing the two until a census happened to print both.
+
 ### The artifact pattern — four of them, one shape
 
 Four measurements in this project were wrong in the same way, and the shape is
@@ -1226,6 +1249,19 @@ changes how you *work*, not what is left to do:
   | **T-69 (yards fill every berth), same bed** | 25,200–25,523 | **6.6–7.3 yr/s** | **2.6–2.9×** |
   | T-71/T-72 (crowding, `f = 0.07` crews) | 37,269–37,706 | 9.8–9.9 yr/s | 3.9–4.0× |
   | **T-87 (crew from demand)** | **23,258–24,801** | **8.5–9.0 yr/s** | **3.4–3.6×** |
+  | R-O86 bed *(same machine, same session)*, before | — | 14.9 yr/s | 6.0× |
+  | **R-O86 (a scout needs somewhere to scout), same pair** | — | **83–98 yr/s** | **33–39×** |
+
+  **R-O86's row is the largest speedup in this table and it came from deleting
+  work, not from optimising it** — which is why it is worth more than its
+  multiple. At the 4,000-year horizon the engine was issuing **1,779,509 hull
+  builds to produce 18,093 hulls**: `apply_build_with` debits the bank and holds
+  the yard *before* dispatching the role, and `launch_survey` spawns nothing when
+  the frontier is empty, so 99.0% of all production spent minerals and berth-time
+  on an object that never existed. Colony count is *identical* across the fix
+  (3,340) and colony-years move **+0.007%**. **Before optimising a hot path, check
+  what fraction of the work it does is producing nothing** — no amount of profiling
+  would have found this, because every one of those builds was genuinely running.
 
   **T-87's row is the first with `ns/event` beside it, and it is the number to
   look at**: 173,886 and 176,747 ns/event on seeds 1 and 7. **174 microseconds
@@ -1461,12 +1497,13 @@ changes how you *work*, not what is left to do:
   direction you just spent is not the direction you are now standing in.
 
   **And the whole mineral side of that argument has one cause, measured
-  three ways** (`Hyades_industry.md` §6.17). Colonies sit at **Band 1.05
+  three ways** (`Hyades_industry.md` §6.17). Colonies sat at **Band 1.05
   against a ceiling of 3.60, with zero at cap and 756 Bands unbuilt** while the
-  empire banks the ore to build it. Survey is saturated, so that is not the sink
-  either. 70 infrastructure builds against 18,373 hull builds is the same fact
-  counted again. It was read as R-O68's dead deepen branch; closing R-O68 left
-  the number unmoved and refined the cause to **the price of a rung** (R-O85).
+  empire banked the ore to build it. It was read as R-O68's dead deepen branch;
+  closing R-O68 left the number unmoved, and **R-O86 then moved it to Band
+  1.462** by unblocking the `outward == None` fallback that a survey pre-emption
+  had been swallowing. Still zero at cap against a 3.61 ceiling, so the residual
+  cause is **the price of a rung** (R-O85).
 
   **So every flat mineral-side result this project has recorded is downstream of
   the same thing** — `outpost_mining_fraction`, both crew policies, and the

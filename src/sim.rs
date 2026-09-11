@@ -360,6 +360,8 @@ struct Knowledge {
 #[derive(Clone, Debug, Default)]
 struct VisitedMask {
     bits: Vec<bool>,
+    /// Count of `true` bits, maintained on insert. See [`Self::len`].
+    set: usize,
 }
 
 /// A sorted, deduplicated set of planet ids, kept in a contiguous `Vec` so
@@ -417,12 +419,31 @@ impl VisitedMask {
         if i >= self.bits.len() {
             self.bits.resize(i + 1, false);
         }
-        self.bits[i] = true;
+        if !self.bits[i] {
+            self.bits[i] = true;
+            self.set = self.set.saturating_add(1);
+        }
     }
 
     #[inline]
     fn contains(&self, pid: PlanetId) -> bool {
         self.bits.get(pid.0 as usize).copied().unwrap_or(false)
+    }
+
+    /// **How many planets are flagged.** A running count rather than a walk,
+    /// because a production decision asks it and §4's rule is that per-decision
+    /// work must be `O(what the decision reads)` — counting 6,725 bools per
+    /// decision is exactly the shape of the `holdings_centroid` fault.
+    ///
+    /// A running total is safe *here* and is not in general: the
+    /// `holdings_centroid` memo had to store the recomputed value because float
+    /// addition is not associative, so an accumulation in claim order differs
+    /// in its last bits from a walk in planet-id order. This is an integer
+    /// increment on a set-once flag, so it is exact and order-independent by
+    /// construction — the same argument does not transfer to a float.
+    #[inline]
+    fn len(&self) -> usize {
+        self.set
     }
 }
 
@@ -3383,6 +3404,7 @@ impl Simulation {
         // frontier and not on the size of this slice.
         let mut count = 0usize;
         let mut best: [Option<Candidate>; 3] = [None, None, None];
+        let survey_frontier = self.survey_frontier(p);
         {
             let knowledge = self.world.knowledge.get(pe).unwrap();
             for &pid in &knowledge.scanned {
@@ -3459,6 +3481,7 @@ impl Simulation {
             ),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
+            survey_frontier,
         };
 
         let order = self.autopilots[p].production_choice(&doctrine, &ctx, &cands);
@@ -3663,6 +3686,28 @@ impl Simulation {
                 let Some(Tasking { role, target }) = tasking else {
                     return None; // nothing worth building this hull for right now
                 };
+
+                // **A Scout with no frontier is a hull that never exists, and
+                // the minerals for it vanish** — design law #11, on the path
+                // that was 96% of all production.
+                //
+                // `try_spend_total` runs below, *before* the role is dispatched,
+                // and `launch_survey` spawns nothing when `choose_survey_target`
+                // returns `None`. So the bank was debited, the yard held for
+                // `build_time`, and no object came out: mass destroyed, not
+                // converted. `assign_role` cannot catch this — the seam hands it
+                // candidates, never the survey frontier (design law #15) — so it
+                // belongs here, beside the roster gate, under the same contract
+                // this arm already states: *a hull with no job worth doing is
+                // declined.*
+                //
+                // The policy also declines it now (`ProductionContext::survey_frontier`),
+                // which is where the 484,136 → 18,066 hull builds came from. This
+                // is the guard that keeps the invariant true for any *other*
+                // caller — a card, or a future autopilot.
+                if role == Role::Scout && self.survey_frontier(p) == 0 {
+                    return None;
+                }
 
                 // A Miner is produced together with the Freighter that hauls for
                 // it (roles §5: the nearest center produces both), so the pair is
@@ -4554,6 +4599,21 @@ impl Simulation {
     /// `PlanetView`s, so allocating one per call was pure churn (memcpy alone
     /// was 4% of engine instructions). Callers `mem::take` the scratch buffer,
     /// fill it, and put it back.
+    /// **How many worlds a survey craft could still be dispatched to.**
+    ///
+    /// Exactly the size of the set [`Self::fill_survey_candidates`] offers, since
+    /// that filters on `visited` and nothing else — `visited` is marked at
+    /// *launch*, so a world with a craft already inbound is not frontier. At zero
+    /// [`Self::launch_survey`] picks nothing and spawns nothing, which is why
+    /// both the policy (`ProductionContext::survey_frontier`) and the build path
+    /// read this rather than a candidate count.
+    ///
+    /// `O(1)` — `VisitedMask` keeps the count. A production decision asks it.
+    fn survey_frontier(&self, p: usize) -> usize {
+        let visited = &self.world.knowledge.get(self.player_entity[p]).unwrap().visited;
+        self.planet_entity.len().saturating_sub(visited.len())
+    }
+
     fn fill_survey_candidates(&self, p: usize, out: &mut Vec<SurveyView>) {
         out.clear();
         let visited = &self.world.knowledge.get(self.player_entity[p]).unwrap().visited;
@@ -5482,6 +5542,56 @@ mod tests {
     /// multi-second sim and the suite from 6 s into 315 s. So tests pin a short
     /// horizon; long-run coverage questions belong in an example or the offline
     /// search, not here.
+    /// **A survey craft with nothing to survey is never built, and the minerals
+    /// for it are never spent** (R-O86, design law #11).
+    ///
+    /// The leak this pins was on the engine's busiest path. `apply_build_with`
+    /// debits the bank and holds the yard *before* dispatching the role, and
+    /// `launch_survey` spawns nothing when the frontier is empty — so the order
+    /// destroyed mass rather than converting it. On the standard bed that was
+    /// **96% of every hull build**: 484,136 → 18,066 on seed 1 once the policy
+    /// and this guard both stopped issuing it, with colony count and
+    /// colony-years unmoved.
+    ///
+    /// Asserted as conservation rather than as a decline, because the decline is
+    /// the implementation and the invariant is the point: the bank does not move
+    /// unless an object came out.
+    #[test]
+    fn a_scout_build_with_no_frontier_left_spends_nothing() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let home_pos = *sim.world.position.get(home).unwrap();
+        // Fund it well past a scout's price so the decline cannot be poverty.
+        sim.world.stockpile.get_mut(home).unwrap().add_basic(Basic::Cyan, 1_000.0);
+
+        let order = BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, class: Class::Tor };
+        let bank = |sim: &Simulation| sim.world.stockpile.get(home).unwrap().basic_total();
+        let vehicles = |sim: &Simulation| sim.world.role.items.iter().filter(|r| **r == Some(Role::Scout)).count();
+
+        // With frontier left it builds and the mass becomes a hull.
+        let before = (bank(&sim), vehicles(&sim));
+        assert!(sim.survey_frontier(0) > 0, "a fresh galaxy has somewhere to scout");
+        assert!(sim.apply_build_with(0, home, home_pos, order, &[]).is_some(), "a fresh galaxy buys a scout");
+        assert!(bank(&sim) < before.0, "it was paid for");
+        assert_eq!(vehicles(&sim), before.1 + 1, "and an object came out");
+
+        // Dispatch a craft at every world, so `choose_survey_target` has nothing
+        // left to pick — the state a colonised galaxy reaches and then stays in.
+        let pids: Vec<PlanetId> = sim.planet_entity.iter().map(|&e| *sim.world.planet_id.get(e).unwrap()).collect();
+        {
+            let k = sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap();
+            for pid in pids {
+                k.visited.insert(pid);
+            }
+        }
+        assert_eq!(sim.survey_frontier(0), 0);
+
+        let before = (bank(&sim), vehicles(&sim));
+        assert!(sim.apply_build_with(0, home, home_pos, order, &[]).is_none(), "the order must be declined");
+        assert_eq!(bank(&sim), before.0, "mass is conserved: a build that produced nothing spent nothing");
+        assert_eq!(vehicles(&sim), before.1, "and nothing was created either");
+    }
+
     fn test_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = 300.0;
