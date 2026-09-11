@@ -147,9 +147,12 @@ them cosmetic:
   and hold size.
 - **The deepen/expand trade changes meaning.** `deepen_headroom` is
   `k_potential − infra` (R-O68), which under the amendment is not a headroom at
-  all. Deepening no longer raises a ceiling; it raises **rates**. The branch was
-  already provably dead at the shipped `reinvest_bias` (R-O68), so this is a
-  chance to rebuild it rather than repair it.
+  all. Deepening no longer raises a ceiling; it raises **rates**. *(Updated at
+  §6.18: R-O68's units fault is closed — the trade is now a return per kilotonne
+  on both sides — and the branch is still cold at the shipped `reinvest_bias`,
+  now for the price reason R-O85 carries. `k_potential` remains what gates the
+  staircase, so this bullet's point stands: the quantity gating deepening is a
+  population ceiling, and what deepening buys is a rate.)*
 - **`medium_min_level` and the production gates are untouched** — they read
   population level, not infrastructure.
 
@@ -630,6 +633,8 @@ commitment** that an opponent has time to notice and answer.
 **This will move the bed.** Scouts and colonisers get dramatically cheaper in
 time while General hulls get slightly dearer — a direct accelerant on the
 expansion loop whose time constant T-51/R-O68 identified as the binding limiter.
+*(T-51 closed at §6.18; the limiter's mechanism resolved to the infra price
+ladder rather than to the comparison — R-O85.)*
 Guard is `examples/colony_years`; the prediction is *up*, and if it is not, find
 the mechanism before tuning the value (`CLAUDE.md` §2).
 
@@ -783,7 +788,9 @@ fabrication and warding.** Two reasons, and the first is the one that matters:
 - **Double saturation makes a Production card inert.** Under both curves,
   `cap_ext` is a ceiling above a function that already cannot reach it, so
   raising it moves nothing measurable — the same dead-branch shape R-O68 found
-  in `reinvest_bias`, arrived at from a different direction.
+  in `reinvest_bias`, arrived at from a different direction. *(§6.18 measured
+  the same saturation on the fabrication side: `fab_cap = 0.2` puts the whole
+  infra ladder inside one knee, which is R-O85.)*
 
 **Both knobs survive with their tree meanings intact**, mapped onto §4.3's two
 parameters instead of MM's:
@@ -1228,16 +1235,20 @@ difference is washed out before it can move anything:
 - `infra_rung_of` **rounds**, and every pricing path is built on it —
   `infra_step_price`, `mineral_pressure_of`.
 - The one continuous reader is `deepen_headroom = k_potential − infra`, and
-  **R-O68 measured that branch dead at the shipped `reinvest_bias = 0.5`**: it
-  cannot fire while any candidate exists.
+  that branch is **cold at the shipped `reinvest_bias = 0.5`** — R-O68 first
+  measured it dead on a units fault, and closing that fault (§6.18) left it cold
+  for a *price* reason instead (R-O85). The crossover sits at `b` between 0.96
+  and 0.98, so the reader is live in principle and never consulted in practice.
 
 Measured on the guard (`examples/colony_years`, 3 seats, 4,000 yr): seed 1
 **10,558,680.0 → 10,558,680.0** and seed 7 **10,474,864.5 → 10,474,864.5**,
 colonies and first-founding identical. Pinned by
 `infrastructure_reaches_every_decision_through_an_integer`, which asserts the two
 representations disagree in the Band and agree in the rung — so if a future
-change makes a *continuous* reader of infrastructure live, which is exactly what
-fixing R-O68 would do, the test fails and points at the reason.
+change makes a *continuous* reader of infrastructure live, the test fails and
+points at the reason. It survived R-O68's own fix — `examples/deepen_census`
+reports the whole run bit-identical below `b = 0.96` — and it is what will fail
+if R-O85 ever prices the rungs low enough for that reader to start deciding.
 
 **One real difference, found by that test rather than by reasoning.** Past the
 top playable rung the old Band climbed without limit — `up(1.0)` on a position
@@ -1344,7 +1355,8 @@ decision, where a total is what a centre weighs.
 Both terms are dimensionless fractions in `[0, 1]`, deliberately: R-O68 is this
 project's standing lesson on what a mixed-unit comparison does to a branch — a
 Band difference against an unbounded score, a constant absorbing the mismatch,
-and a path that could never fire.
+and a path that could never fire. *(Closed at §6.18; the lesson stands, and its
+sequel is that fixing the units revealed the branch was cold on its merits.)*
 
 **Degenerate case, stated rather than discovered:** a centre that can already pay
 every colour of its next bill scores `0`, and if every centre can, the choice
@@ -1923,9 +1935,9 @@ tell you what the decision declined to ask for.**
 
 #### The mechanism, and both sides of it are now measured (R-O68 closed)
 
-`production_choice` prefers depth when `b · deepen_headroom ≥ (1 − b) · score`.
-At the shipped `reinvest_bias = 0.5` that reduces to **`headroom ≥ score`** — and
-the two sides are in different units, which is the fault R-O68 named:
+`production_choice` preferred depth when `b · deepen_headroom ≥ (1 − b) · score`.
+At the shipped `reinvest_bias = 0.5` that reduced to **`headroom ≥ score`** — and
+the two sides were in different units, which is the fault R-O68 named:
 
 | side | what it is | measured |
 |---|---|---|
@@ -1933,30 +1945,121 @@ the two sides are in different units, which is the fault R-O68 named:
 | `score` | `rank`'s **unbounded weighted score** | p05 4.40 / median **6.17** / max 12.16 |
 
 **Headroom loses every comparison it is ever in.** 2.55 against a median 6.17 is
-not a close call, and it is not a tuning question: the deepen branch is
-*arithmetically unreachable* at any bias below ~0.8, which is what
-`examples/score_scale` measured and what this now confirms from the other end.
-**70 infrastructure builds against 18,373 hull builds** on the standard bed
-(`examples/bank_mix`) is the same fact counted a third way.
+not a close call: the deepen branch was *arithmetically unreachable* at any bias
+below ~0.8, which is what `examples/score_scale` measured and what the ceiling
+census confirms from the other end. **70 infrastructure builds against 18,373
+hull builds** on the standard bed (`examples/bank_mix`) is the same fact counted
+a third way.
 
-So the chain is complete: **a comparison between incommensurable quantities → a
-dead deepen branch → colonies frozen at rung 1 → nothing to spend ore on → every
-mineral-side ratification reads flat.** `outpost_mining_fraction`, both crew
-policies (§6.15) and the Exchange (politics §10.6a) were all measuring the
-downstream of one broken `if`.
+### 6.18 R-O68 resolved — the comparison is a return per kilotonne, and the branch is still cold (R-O85 opened)
+
+**The fix.** Both sides of the deepen-vs-expand test are now `rank` score per
+kilotonne committed, and neither half introduces a constant:
+
+```text
+expand = score / outward_cost                 // this candidate, at its price
+deepen = w_k · min(1, headroom) / infra_cost  // one rung, at its price
+```
+
+`w_k` is the weight `rank` already puts on one Band of `k_potential` (§3 of
+`Hyades_autopilot_colonization_growth.md`), and it is the right converter because
+the two moves trade in one commodity: expansion **acquires** a world's Bands of
+ceiling, deepening **realises** a Band of them here. `min(1, ·)` is what a rung
+actually delivers, since `apply_build` steps to the next whole rung whatever the
+headroom is — a last partial step pays a full price for less than a Band.
+
+The comparison is then an odds ratio: depth wins when `b/(1 − b) ≥ expand/deepen`.
+That crossover is **state-dependent**, which is the graded region the old form had
+nowhere — a centre facing a cheap next rung and a mediocre candidate deepens where
+one facing an expensive rung and a hub does not.
+
+**Measured** (`examples/deepen_census`, 600 planets / 1,500 yr, 3 seats):
+
+| `reinvest_bias` | infra builds | hull builds | colonies | mean infra | colony-years |
+|---|---|---|---|---|---|
+| **seed 1** | | | | | |
+| 0.00 / 0.50 / 0.90 / 0.95 / 0.96 | 88 | 484,136 | 3,309 | 1.028 | 2,540,752.7 |
+| 0.97 | 88 | 477,697 | 3,311 | 1.027 | 2,541,959.0 |
+| 0.98 | **326** | 484,686 | 3,308 | **1.099** | 2,534,733.4 |
+| 0.99 | 216 | 317,278 | 3,323 | 1.066 | **1,846,450.9** |
+| 1.00 | 0 | 564 | **3** | 2.000 | 0.0 |
+| **seed 7** | | | | | |
+| 0.50 / 0.95 | 83 | 512,499 | 3,334 | 1.026 | 2,608,344.6 |
+| 0.99 | 248 | 393,004 | 3,343 | 1.075 | **1,934,059.8** |
+
+Three things it says, and the first is the guard:
+
+- **The run is bit-identical to the old form everywhere below `b = 0.96`** —
+  same build mix, same colony count, same colony-years to the decimal, on both
+  seeds. This is a units fix and not a behaviour change, which is exactly the
+  property a units fix should have.
+- **The usable range of the dial grew, and that is the whole behavioural
+  payoff.** Under the old form the cliff sat between 0.5 and 0.9 with *nothing
+  working past it*: seed 1 at `b = 0.9` reached 70 colonies, seed 7 at `b = 0.95`
+  reached **3** — the homeworlds alone. Under the new form 0.97 and 0.98 are
+  working empires that genuinely deepen (326 infra builds against 88, mean infra
+  Band 1.028 → 1.099) at a cost of −0.24% colony-years, and the collapse moves to
+  `b = 1.0`, where `w_expand` is identically zero by definition.
+- **The branch is still cold at the shipped `0.5`, and the reason is now a
+  price.** The empirical crossover between 0.96 and 0.98 is an odds ratio of
+  **24–49**, which is the infra ladder's own ratio read from the other side: the
+  rung above the founding one costs **0.9 kt** where a Medium coloniser costs
+  **0.1 kt**, and the coloniser brings a whole world with its own ceiling, its own
+  ore and its own yard. Expansion *ought* to win. **The dead branch was the right
+  answer reached for a wrong reason.**
+
+#### R-O85 — infrastructure is priced as if it were the scarce thing
+
+What the fix exposes is not a tuning question, and it is the reason §6.17's sink
+stays unspent:
+
+At the shipped constants, printed off the engine's own functions:
+
+| rung | stock to stand there | step to the next | `fabrication_rate` | `slips` |
+|---|---|---|---|---|
+| 0 | 0.02 kt | 0.08 | 0.0333 kt/yr | 1 |
+| **I** | **0.10 kt** | **0.90** | 0.1000 | 2 |
+| II | 1.00 kt | **19.0** | 0.1818 | 2 |
+| III | 20.0 kt | **780** | 0.1990 | 2 |
+| IV | 800 kt | — | 0.2000 | 2 |
+
+For scale: a Limited hull is 0.02 kt, a **Medium coloniser 0.10 kt**, a General
+hull 1.00 kt, a mining pair 0.12 kt.
+
+- **The step above the founding rung costs nine colonisers**, and every colony is
+  founded at rung I (`founding_infra`), so that is the step every colony in the
+  empire is looking at.
+- **`fabrication_rate` saturates by rung II.** `fab_cap = 0.2` with
+  `works_knee = rung(1)/3` and an even three-way `alloc_w` puts the whole ladder
+  inside one hyperbola's knee: the 19-kt step buys **+0.017 kt/yr** and the 780-kt
+  step buys **+0.001**.
+- **`slips` is pinned at 2 from rung I onward**, for the same reason.
+  `slips(F) = 1 + ⌊F / slip_throughput⌋` with `slip_throughput = 0.1` and
+  `F < fab_cap = 0.2`, so **no amount of infrastructure ever buys a third berth.**
+  T-69's "industry buys more ships at once" is bounded at two by the ratio of two
+  constants, and nothing in the engine says so out loud.
+- So rungs III and IV are, today, almost pure cost. The only thing that keeps
+  scaling past rung II is `extraction_rate`, which is linear in the stock — and
+  extraction is not what binds on a bed holding 19,619 kt of unspent ore.
+
+That is the sink's real shape: it is 756 Bands wide and priced at a ladder whose
+top half buys nothing the empire is short of. Fixing it means moving MC-tuned
+surfaces — `fab_cap` and the knee, the infra ladder's anchor, or giving
+infrastructure a consumer that does not saturate — and every one of those needs
+ratification (`CLAUDE.md` §6), so none is taken here.
 
 #### What follows
 
-- **R-IND21 is withdrawn as stated.** There is no need to invent a sink.
-- **T-51/R-O68 is the fix and it is now the highest-value economic change
-  available**, because it is upstream of every flat result this project has
-  recorded. Fixing the comparison's units is a prerequisite for *re-measuring*
-  extraction, crews, freight and trade — all of which were ratified against a
-  bed that could not spend minerals.
+- **R-IND21 stays withdrawn.** There is no need to invent a sink.
+- **R-O68 is closed**, and closing it did *not* recover the flat mineral-side
+  results. `outpost_mining_fraction`, both crew policies (§6.15) and the Exchange
+  (politics §10.6a) were measured on a bed that cannot spend minerals, and they
+  still are — the cause has moved from the comparison to the price ladder, not
+  gone away. Re-measuring them is blocked on R-O85, not on T-51.
 - **T-76 (development freight) is the author's own answer to the same
   diagnosis** — `develop_bias` is a Doctrine knob that demands minerals for
-  development, and it reaches the world through a different path than the broken
-  comparison. It is next.
+  development, and it reaches the world through a different path than either the
+  comparison or the ladder. It is next.
 
 ## 7. Trade, development freight, and what needs a pact
 
@@ -2189,7 +2292,9 @@ artifact in place contaminates every later measurement.
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
 | **R-IND19** | §4.3's `ε·S·W` double-counts the deposit — output goes as richness squared and a rich body is stripped in one tick. **Decided: the engine uses `W/N`, i.e. `(n/N)^β`,** which preserves every ratio §4.3 asserts and differs only in an absolute scale `ε` absorbs. Open only in whether the spec's own formula should be rewritten or annotated. | §4.3b |
-| ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause is R-O68's dead deepen branch. | §6.17 |
+| ~~**R-O68**~~ | ~~The deepen/expand comparison is between incommensurable quantities~~ — **resolved (T-51).** Both sides are now `rank` score per kilotonne committed: `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`. `reinvest_bias` is an odds ratio with a state-dependent crossover. Bit-identical below `b = 0.96`; the old form's cliff at 0.9 moved to 1.0. | §6.18 |
+| **R-O85** | **Infrastructure is priced as if it were the scarce thing.** The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
+| ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |
 | **R-IND12** | How much a coloniser carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |

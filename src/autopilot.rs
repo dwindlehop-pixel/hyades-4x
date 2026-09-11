@@ -975,45 +975,79 @@ impl Autopilot for BaselineAutopilot {
         let outward_cost = outward.map(|(_, _, c)| c).unwrap_or(Price::ZERO);
         let can_expand = ctx.stockpile_total + Price::new(1e-9) >= outward_cost;
 
-        // ~~Deepen-vs-expand as a genuine convex dial.~~ **It is not one, and at
-        // the shipped `reinvest_bias` this branch is unreachable (R-O68).**
+        // **Deepen-vs-expand as a return on the minerals it costs (R-O68, T-51).**
         //
-        // The two sides are not in the same unit. `deepen_headroom` is a *Band*
-        // difference, `k_potential − infra`, bounded by 4 and in practice by
-        // `k_potential − 1`. `score` is `rank`'s weighted sum over a Band, a
-        // mineral density and a hub figure — unbounded and dimensionless-by-
-        // fiat. Measured on seed 1 (`examples/score_scale`), colony-class
-        // candidate scores run p05 = 4.40, median 6.17, max 12.16, and this
-        // branch compares against the **max** because `outward` takes the best
-        // candidate. So depth wins only when `b/(1−b) >= score/headroom ≈ 4`,
-        // i.e. `b >= 0.8`; at the shipped `0.5` it can never fire while any
-        // candidate exists.
+        // ~~`b · deepen_headroom >= (1 − b) · score`.~~ Those two sides were not
+        // in the same unit. The left was a *Band* difference, `k_potential −
+        // infra`, bounded by 4. The right was `rank`'s weighted sum over a Band,
+        // a mineral density and a hub figure — unbounded, and with no price in
+        // it at all. So `reinvest_bias` was not a convex trade but a unit
+        // conversion with a preference hidden inside it: measured on seed 1
+        // (`examples/score_scale`), headroom ran to a mean 2.55 against colony
+        // scores of p05 4.40 / median 6.17 / max 12.16 — and the branch compares
+        // against the **max**, because `outward` takes the best candidate. It
+        // could not fire at the shipped `0.5` while any candidate existed.
         //
-        // `reinvest_bias` is therefore **not a convex trade — it is inert below
-        // ~0.8 and a hard switch above it**, a step function wearing a dial's
-        // clothes. The same shape as CLAUDE.md §2's artifact list, and the same
-        // root cause as the `K = min(hab, bio, infra)` unit error: a comparison
-        // between incommensurable quantities that typechecks, with a constant
-        // absorbing the mismatch.
+        // **Both sides are now `rank` score per kilotonne committed**, and
+        // neither half introduces a constant:
         //
-        // Two live consequences. All real deepening happens through the other
-        // two paths — the unconditional pre-`medium_min_level` staircase above,
-        // and the `outward == None` fallback below — so the expansion-loop time
-        // constant is set by that staircase and not by any tunable trade. And
-        // R-O66's entire measured effect (−178 colonies) reached the objective
-        // through `deepen_possible`, which gates the *staircase*, not through
-        // this dial.
+        // ```text
+        // expand = score / outward_cost                 // this candidate, at its price
+        // deepen = w_k · min(1, headroom) / infra_cost  // one rung, at its price
+        // ```
         //
-        // Not fixed here: making both sides a rate of return in one unit is a
-        // policy redesign (T-51), and the bias is a globally MC-tuned parameter
-        // that needs ratification (§6). Pinned by
-        // `reinvest_bias_is_a_step_function_not_a_dial` so it cannot silently
-        // change meaning.
+        // `w_k` is the weight `rank` already puts on one Band of `k_potential`
+        // (autopilot-doc §3), and it is the right converter because the two
+        // moves trade in one commodity: expansion **acquires** a world's Bands
+        // of ceiling, deepening **realises** a Band of them here. The `min(1, ·)`
+        // is what a rung actually delivers — `apply_build` steps to the next
+        // whole rung whatever the headroom, so a last partial step pays a full
+        // price for less than a Band.
+        //
+        // The comparison is then an odds ratio — depth wins when
+        // `b/(1 − b) >= expand/deepen` — and that crossover is **state-
+        // dependent**, which is the graded region the old form had nowhere: a
+        // centre facing a cheap next rung and a mediocre candidate deepens where
+        // one facing an expensive rung and a hub does not.
+        //
+        // **What it does not do is revive the branch at the shipped defaults,
+        // and that is the finding rather than a shortfall.** The infra ladder
+        // charges 0.9 kt for the rung above the founding one where a Medium
+        // coloniser costs 0.1 kt, so expansion buys tens of times the score per
+        // kilotonne and *ought* to win: the dead branch was the right answer
+        // reached for a wrong reason.
+        //
+        // Measured (`examples/deepen_census`, 600 planets / 1,500 yr, seeds 1
+        // and 7): the run is **bit-identical to the old form** everywhere below
+        // `b = 0.96` — same build mix, same colony count, same colony-years to
+        // the decimal — so this is a units fix and not a behaviour change. What
+        // moved is the far end. The old form's cliff sat between 0.5 and 0.9
+        // with **nothing working beyond it** (seed 1 `b = 0.9`: 70 colonies;
+        // seed 7 `b = 0.95`: 3, i.e. the homeworlds alone). The new crossover is
+        // between **0.96 and 0.98**, and 0.97 and 0.98 are working empires that
+        // deepen — 326 infra builds against 88, mean infra Band 1.028 → 1.099,
+        // colony-years −0.24%. So the odds ratio at the crossover is 24–49,
+        // which is the price ladder's own ratio measured from the other side.
+        //
+        // **R-O85** carries what that exposes, and it is not a tuning question:
+        // infrastructure is priced as if it were scarce on a bed where minerals
+        // are the thing piling up unspent, and `fabrication_rate` saturates by
+        // the second rung, so the rungs above it cost 19 kt and 780 kt to buy
+        // almost no throughput.
         let b = doctrine.reinvest_bias;
         let deepen_headroom = (ctx.k_potential - ctx.infra).max(0.0);
-        let w_deepen = if deepen_possible { b * deepen_headroom } else { f64::NEG_INFINITY };
+        // Floored rather than branched on zero: `0.0 * f64::INFINITY` is `NaN`,
+        // and a NaN reaching replicated state is fatal (design law #16). Every
+        // price in the engine is positive, so the floor is unreachable in play
+        // and exists only to keep `b = 0` arithmetic.
+        let per_kt = |value: f64, cost: Price| value / cost.kilotons().max(1e-12);
+        let w_deepen = if deepen_possible {
+            b * per_kt(doctrine.rank.w_k * deepen_headroom.min(1.0), ctx.infra_cost)
+        } else {
+            f64::NEG_INFINITY
+        };
         let w_expand = match outward {
-            Some((_, score, _)) => (1.0 - b) * score,
+            Some((_, score, cost)) => (1.0 - b) * per_kt(score, cost),
             None => f64::NEG_INFINITY,
         };
 
@@ -1248,21 +1282,22 @@ mod tests {
         }]
     }
 
-    /// **`reinvest_bias` is a step function, not a dial (R-O68).**
+    /// **`reinvest_bias` is an odds ratio on two returns per kilotonne
+    /// (R-O68, resolved).**
     ///
-    /// `production_choice` picks depth when `b · headroom >= (1 − b) · score`,
-    /// and the two sides are not in the same unit: the left is a Band
-    /// difference bounded by 4, the right is `rank`'s unbounded weighted score.
-    /// So the branch has a crossover in `b`, and this pins where it is — far
-    /// above the shipped `0.5`, which means **at the default the branch cannot
-    /// fire while any candidate exists.**
+    /// `production_choice` picks depth when `b · deepen >= (1 − b) · expand`
+    /// with both sides in `rank` score per kilotonne committed. So the crossover
+    /// is a **price ratio**, `b* = expand / (expand + deepen)`, and it moves
+    /// with the state rather than sitting at one global step: halve the rung's
+    /// price and the crossover falls. That graded region is the thing the old
+    /// form did not have anywhere, and it is what this pins.
     ///
-    /// This is a characterization test, not an endorsement. It exists so the
-    /// dead branch cannot quietly come back to life (or get deader) without
-    /// someone reading R-O68 and T-51 first. Fixing it means putting both sides
-    /// in one unit — a rate of return — which is a policy redesign.
+    /// It also pins the sign of the shipped configuration, which the fix did
+    /// **not** change: an infra rung costs several colonisers, so expansion wins
+    /// at `b = 0.5` and the branch stays cold. That is now a statement about
+    /// prices (R-O85) rather than about units.
     #[test]
-    fn reinvest_bias_is_a_step_function_not_a_dial() {
+    fn reinvest_bias_is_an_odds_ratio_on_two_returns_per_kiloton() {
         let ap = BaselineAutopilot::default();
         let mut doctrine = Doctrine::default();
         // A mature center with the most deepening headroom the ladder allows
@@ -1272,17 +1307,35 @@ mod tests {
         ctx.k_potential = 4.0;
         let cands = one_colony_candidate(&ap, &doctrine);
         let score = cands[0].ranked.score;
-        let headroom = ctx.k_potential - ctx.infra;
 
-        // Where the branch flips, from the inequality itself.
-        let crossover = score / (score + headroom);
+        // The crossover, written from the inequality itself.
+        let crossover = |ctx: &ProductionContext| {
+            let headroom = (ctx.k_potential - ctx.infra).clamp(0.0, 1.0);
+            let deepen = doctrine.rank.w_k * headroom / ctx.infra_cost.kilotons();
+            let expand = score / ctx.colonizer_cost.kilotons();
+            expand / (expand + deepen)
+        };
+
+        // 1. It is a *dial over state*: a cheaper rung is a lower crossover, and
+        //    the movement is continuous rather than a single global step.
+        let dear = crossover(&ctx);
+        let mut cheap_ctx = ctx;
+        cheap_ctx.infra_cost = ctx.infra_cost / 8.0;
+        cheap_ctx.infra_bill = [cheap_ctx.infra_cost / 3.0; 3];
+        let cheap = crossover(&cheap_ctx);
         assert!(
-            crossover > 0.6,
-            "crossover at b = {crossover:.3} (score {score:.2} vs headroom {headroom:.2}) — if this has              dropped near 0.5 the two sides have become commensurable and R-O68 may be resolved"
+            cheap < dear - 0.05,
+            "crossover must track the rung price: {cheap:.3} at 1/8 the price against {dear:.3}"
         );
 
-        // Below the crossover the dial does nothing: the center expands.
+        // 2. The shipped bias still expands, because a rung costs more than a
+        //    coloniser and buys less. Prices, not units.
         doctrine.reinvest_bias = 0.5;
+        assert!(
+            crossover(&ctx) > 0.5,
+            "the shipped ladder must still favour expansion at b = 0.5 — if this has crossed, \
+             re-read R-O85 before ratifying"
+        );
         assert!(
             matches!(
                 ap.production_choice(&doctrine, &ctx, &cands),
@@ -1291,12 +1344,23 @@ mod tests {
             "at the shipped bias, a center with maximal headroom still expands"
         );
 
-        // Above it the dial does everything: same state, opposite decision, with
-        // no graded region in between that a search could climb.
-        doctrine.reinvest_bias = (crossover + 1.0) / 2.0;
+        // 3. Above the crossover the same state flips to depth — and the two
+        //    crossovers differ, so there is a band of `b` where the cheap-rung
+        //    centre deepens and the dear-rung one does not. That band is the
+        //    graded region.
+        doctrine.reinvest_bias = (dear + 1.0) / 2.0;
         assert!(
             matches!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::UpgradeInfrastructure),
             "above the crossover the same state must flip to depth"
+        );
+        doctrine.reinvest_bias = (cheap + dear) / 2.0;
+        assert!(
+            matches!(ap.production_choice(&doctrine, &cheap_ctx, &cands), BuildOrder::UpgradeInfrastructure)
+                && matches!(
+                    ap.production_choice(&doctrine, &ctx, &cands),
+                    BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }
+                ),
+            "between the two crossovers the decision must depend on the rung price, not only on b"
         );
     }
 

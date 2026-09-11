@@ -552,6 +552,28 @@ or a mechanism inferred from the sign of a gradient. And when the symptom is
 gate, branch, or serial dependency that sets the rate. Keep going until you
 reach one.
 
+**A proven mechanism is not automatically the cause, and R-O68 is the worked
+example of the difference.** The dead deepen branch was proved three ways — the
+two sides measured, the branch counted, a characterization test pinning the
+crossover — and it was real. Fixing it changed **nothing**: the run is
+bit-identical below `reinvest_bias = 0.96` on both seeds, and the branch is
+still cold at the shipped `0.5`. The defect was genuine and it was not what was
+producing the symptom; the price ladder was (R-O85), and that only became
+visible once the units stopped hiding it.
+
+Two habits follow, and the second is the transferable one:
+
+- **Measure the fix against the old binary, not against the prediction.** Build
+  both, run the same seeds, diff the numbers. Here it took one `git stash` and
+  two binaries, and it is the only reason "this is a units fix, not a behaviour
+  change" is a statement rather than a hope.
+- **A dead branch can be the right answer reached for a wrong reason.** Before
+  reviving one, price what it would have chosen. Expansion returns 24–49x per
+  kilotonne against deepening at the shipped ladder, so the policy was correct
+  and its *reasoning* was not — and had the fix been landed without that check,
+  the next step would have been to tune a dial toward a decision the economics
+  say is bad.
+
 ### The artifact pattern — four of them, one shape
 
 Four measurements in this project were wrong in the same way, and the shape is
@@ -1392,16 +1414,27 @@ changes how you *work*, not what is left to do:
   decimal and a performance change is provably behaviour-preserving.
 
   **And the time constant now has a proven mechanism, not just a name (R-O68,
-  T-51).** `production_choice` prefers depth when `b · deepen_headroom ≥
-  (1 − b) · score`, and those sides are in different units — a Band difference
-  bounded by 4 against `rank`'s unbounded weighted score. Measured
-  (`examples/score_scale`): colony-class scores run p05 4.40 / median 6.17 /
-  max 12.16, and the branch compares against the *max*, so depth wins only at
-  `b ≳ 0.8`. **At the shipped `reinvest_bias = 0.5` the branch cannot fire while
-  any candidate exists** — it is inert below ~0.8 and a hard switch above, a
-  step function wearing a dial's clothes, with no graded region for a search to
-  climb. Same root cause as the `K` unit error one section up: a comparison
-  between incommensurable quantities, with a constant absorbing the mismatch.
+  T-51 — both now closed).** `production_choice` preferred depth when
+  `b · deepen_headroom ≥ (1 − b) · score`, and those sides were in different
+  units — a Band difference bounded by 4 against `rank`'s unbounded weighted
+  score. Measured (`examples/score_scale`): colony-class scores run p05 4.40 /
+  median 6.17 / max 12.16, and the branch compares against the *max*, so depth
+  won only at `b ≳ 0.8`: a step function wearing a dial's clothes, with no
+  graded region for a search to climb. Same root cause as the `K` unit error one
+  section up.
+
+  **Both sides are now `rank` score per kilotonne committed** —
+  `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`, using
+  `rank`'s own weight rather than a new constant — so the comparison is an odds
+  ratio with a state-dependent crossover. And the result is the lesson: the run
+  is **bit-identical below `b = 0.96`** on both seeds (`examples/deepen_census`),
+  the old cliff at 0.9 moved to 1.0, and **the branch is still cold at the
+  shipped `0.5`**. The infra rung above the founding one costs 0.9 kt against a
+  Medium coloniser's 0.10 kt, `fabrication_rate` saturates by rung II, and
+  `slips` is pinned at 2 from rung I onward because `fab_cap / slip_throughput =
+  2` — so expansion returns 24–49x per kilotonne and *should* win. **The dead
+  branch was the right answer reached for a wrong reason**, and the cause moved
+  to the price ladder (R-O85/T-89) rather than going away.
 
   So the loop's time constant is the **unconditional pre-`medium_min_level`
   staircase** — found at `K = 1` with no headroom, then serially mine
@@ -1431,17 +1464,17 @@ changes how you *work*, not what is left to do:
   three ways** (`Hyades_industry.md` §6.17). Colonies sit at **Band 1.05
   against a ceiling of 3.60, with zero at cap and 756 Bands unbuilt** while the
   empire banks the ore to build it. Survey is saturated, so that is not the sink
-  either. The cause is R-O68's dead deepen branch: at `reinvest_bias = 0.5` the
-  test reduces to `headroom ≥ score`, and headroom is a **Band difference
-  averaging 2.55** against `rank`'s **unbounded score with median 6.17** — it
-  loses every comparison it is ever in. 70 infrastructure builds against 18,373
-  hull builds is the same fact counted again.
+  either. 70 infrastructure builds against 18,373 hull builds is the same fact
+  counted again. It was read as R-O68's dead deepen branch; closing R-O68 left
+  the number unmoved and refined the cause to **the price of a rung** (R-O85).
 
   **So every flat mineral-side result this project has recorded is downstream of
-  one broken `if`** — `outpost_mining_fraction`, both crew policies, and the
-  Exchange. Two things follow and the second is the transferable one. **Fix the
-  comparison before re-measuring any of them** (T-51). And: **a metric that reads
-  a decision's output cannot tell you what the decision declined to ask for** —
+  the same thing** — `outpost_mining_fraction`, both crew policies, and the
+  Exchange. Two things follow and the second is the transferable one. **They are
+  still blocked, now on R-O85 rather than on T-51**, and re-measuring any of them
+  before the sink is affordable measures the same nothing again. And: **a metric
+  that reads a decision's output cannot tell you what the decision declined to
+  ask for** —
   `unmet_colour_demand` summed each centre's shortfall against its *next* rung,
   so a centre with three Bands of headroom it never tried to buy reported zero
   demand, and the first conclusion drawn from it ("the economy has no demand

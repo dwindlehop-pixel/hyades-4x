@@ -113,6 +113,17 @@ describes.
 | **Exchange 2 (T-83)** | **T-83**, **T-01** | — | — | §3.1's cross-empire book shape; §10.5's canonical order (why `Basic: Ord`) | **§10.0's audit.** It called `matching.rs` "built, not wired" — it was never in `lib.rs`'s module list, so it did not compile and its tests never ran in CI |
 | **Exchange 3 (T-84)** | **T-84** | T-85, T-86 | — | §3.2's `wtp`; **§10.4's field list** — which is what T-11/R-O27 was holding open | — |
 
+**Since the rule landed**, each commit carries its own accounting in its message;
+these rows keep the table continuous so the ledger can be read in one place.
+
+| Landing | Closed | Advanced | Opened | Ratified decisions **implemented** | Ratified decisions **contradicted** |
+|---|---|---|---|---|---|
+| **Exchange 4 (T-85)** — clearing into escrowed contracts | **T-85** | T-77, T-86 | — | §10.6's two-location contract and FTL debt (the author's own amendment); design law #15 (settlement strikes at the round barrier, a protocol sync point) | **R-P17's venue rule.** One venue per pair is wrong when the two shippers are light-years apart; revised to per-shipper nearest |
+| **Exchange 5 (T-77)** — settlement | **T-77** | T-86 | **R-P18** | §10.6a's freight leg; §8.1 (refined mass traverses real space) | — |
+| **§10.6a corrected** | — | — | — | — | **My own screen.** A 400-planet bed reported 776 contracts / 327 kt and I concluded volume did not matter; the full bed is 64,642 / 29,460 kt. A conclusion of the form "X does not matter" cannot be drawn from a screen at all |
+| **R-IND21 opened, then withdrawn** | — | T-51 | R-IND21, then withdrawn | — | **R-IND21, by me, one commit later.** The measurement was right and the conclusion backwards: `unmet_colour_demand` reads the next rung only, so it measures demand the policy already decided to express |
+| **T-51 / R-O68** — the deepen/expand trade | **T-51**, **R-O68** | — | **T-89**, **R-O85** | Both sides of the comparison in one unit, using `rank`'s own `w_k` rather than a new constant; design law #16 (the `per_kt` floor exists because `0.0 * inf` is `NaN`); `CLAUDE.md` §2's ablation-before-explanation — the fix was measured against the old binary on both seeds before it was believed | **This file's own T-51 prescription.** Item 3 said fixing the units would make `reinvest_bias` "a preference over a real trade". It did not: the trade is real now and expansion still wins it by 24–49x, because an infra rung costs nine colonisers. The dead branch was the right answer reached for a wrong reason, and the cause moved to R-O85. Also **`reinvest_bias_is_a_step_function_not_a_dial`**, the characterization test that existed to stop this changing silently — replaced, deliberately, by the test that pins the new form |
+
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
 
@@ -2965,7 +2976,36 @@ biomass economy looked load-bearing and turned out entirely slack, and
 operating point.
 
 
-### T-51. R-O68 — the deepen/expand trade does not exist, and it is what sets the expansion-loop time constant
+### ~~T-51. R-O68 — the deepen/expand trade does not exist, and it is what sets the expansion-loop time constant~~ — **closed**
+
+
+> **Closed.** Both sides of the comparison are now `rank` score per kilotonne
+> committed — `score / outward_cost` against `w_k · min(1, headroom) /
+> infra_cost` — so `reinvest_bias` is an odds ratio with a **state-dependent**
+> crossover rather than a unit-conversion constant. `w_k` is `rank`'s own weight
+> on a Band of `k_potential`, so no new constant was introduced.
+>
+> Measured (`examples/deepen_census`, 600 planets / 1,500 yr, seeds 1 and 7):
+> the run is **bit-identical below `b = 0.96`**, so this is a units fix and not
+> a behaviour change. The old form's cliff sat between 0.5 and 0.9 with nothing
+> working past it (seed 1 at 0.9: 70 colonies; seed 7 at 0.95: 3). The new
+> crossover is between **0.96 and 0.98**, and 0.97/0.98 are working empires that
+> deepen — 326 infra builds against 88, mean infra Band 1.028 → 1.099, −0.24%
+> colony-years — with the collapse moved to `b = 1.0` where `w_expand` is zero
+> by definition.
+>
+> **What closing it revealed is the important part, and it is `T-89`/R-O85:**
+> the branch is still cold at the shipped `0.5`, and now for a price reason.
+> The rung above the founding one costs **0.9 kt** against a Medium coloniser's
+> **0.10 kt**, so the odds ratio at the crossover — 24 to 49, measured — is the
+> infra ladder's own ratio read from the other side. **The dead branch was the
+> right answer reached for a wrong reason**, and the mineral-side results that
+> read flat (`outpost_mining_fraction`, both crew policies, the Exchange) are
+> still measured against a bed that cannot spend minerals. Re-measuring them is
+> blocked on R-O85, not on this.
+>
+> Items 1, 2 and 4 below are **not** closed by this and stay live; they move to
+> T-89. Item 3 is what closed.
 
 **Symptom, then mechanism, as CLAUDE.md §2 requires.**
 
@@ -2989,7 +3029,9 @@ the best candidate. Depth therefore wins only when `b >= score/(score+headroom)
 candidate exists.** It is not a convex dial; it is **inert below ~0.8 and a hard
 switch above it** — a step function wearing a dial's clothes, and a search
 cannot climb it because there is no graded region. Pinned by
-`reinvest_bias_is_a_step_function_not_a_dial`.
+`reinvest_bias_is_a_step_function_not_a_dial`. *(That test is gone — replaced by
+`reinvest_bias_is_an_odds_ratio_on_two_returns_per_kiloton`, which pins the new
+form and the fact that the shipped ladder still favours expansion.)*
 
 **So the policy has three deepen paths and only two are live:**
 
@@ -3050,6 +3092,70 @@ which is why every probe so far has ranked ecology and hull-cost knobs.
    a decision tree; the fault is a dead branch and an incommensurable
    comparison, not the tree form. Fix the comparison before replacing the
    shape — otherwise a richer structure inherits the same broken predicate.
+
+### T-89. R-O85 — infrastructure is priced as if it were the scarce thing
+
+**Opened by closing T-51.** With the deepen/expand comparison made
+dimensionally coherent (§6.18 of `Hyades_industry.md`), the deepen branch is
+*still* cold at the shipped `reinvest_bias = 0.5` — and the mechanism is now a
+price ladder rather than a unit mismatch. Printed off the engine's own
+functions at the shipped constants:
+
+| rung | stock to stand there | step to the next | `fabrication_rate` | `slips` |
+|---|---|---|---|---|
+| 0 | 0.02 kt | 0.08 | 0.0333 kt/yr | 1 |
+| **I** | **0.10 kt** | **0.90** | 0.1000 | 2 |
+| II | 1.00 kt | **19.0** | 0.1818 | 2 |
+| III | 20.0 kt | **780** | 0.1990 | 2 |
+| IV | 800 kt | — | 0.2000 | 2 |
+
+A Limited hull is 0.02 kt, a **Medium coloniser 0.10 kt**, a General hull
+1.00 kt, a mining pair 0.12 kt. Three separate facts, each sufficient on its
+own:
+
+1. **Every colony in the empire is founded at rung I** (`founding_infra`), so the
+   step every one of them faces is **nine colonisers**.
+2. **`fabrication_rate` saturates by rung II.** `fab_cap = 0.2` with
+   `works_knee = infra_rung_price(1)/3` puts the entire ladder inside one
+   hyperbola's knee: the 19-kt step buys **+0.017 kt/yr**, the 780-kt step
+   **+0.001**.
+3. **`slips` is pinned at 2 from rung I onward.** `slips(F) = 1 + ⌊F /
+   slip_throughput⌋` with `slip_throughput = 0.1` and `F < fab_cap = 0.2`, so
+   **no amount of infrastructure ever buys a third berth.** T-69's "industry buys
+   more ships at once, never faster ships" is bounded at *two* by the ratio of
+   two constants, and nothing in the engine says so out loud.
+
+So §6.17's 756-Band sink is real, it is not a demand-side fault, and it is priced
+out of reach. The only thing still scaling past rung II is `extraction_rate`
+(linear in the stock), and extraction is not what binds on a bed holding
+19,619 kt of unspent ore.
+
+**Work, in order — and none of it is a quiet edit.** `fab_cap`, `slip_throughput`
+and the cost anchor are all globally MC-tuned surfaces and need ratification
+(`CLAUDE.md` §6):
+
+1. **Instrument before tuning.** `examples/deepen_census` reports the build mix,
+   the infra-vs-ceiling census and both objectives per bias; extend it to print
+   the two returns' distributions so the crossover is read rather than bracketed.
+2. **Decide what infrastructure is *for*.** Today it buys a saturating
+   fabrication rate, a berth count capped at 2, and a linear extraction rate
+   nobody needs. A sink has to buy something the empire is actually short of —
+   which, on the current bed, is **build throughput and berths**, not ore. The
+   candidates are `fab_cap` (raise the asymptote), `works_knee` (move the knee up
+   the ladder so rungs III/IV sit on the rising part), the cost anchor (make the
+   rungs affordable), or a *new* consumer of infrastructure. They are not
+   equivalent and the tree meanings in §5.3 constrain which is legitimate.
+3. **Re-measure everything mineral-side afterwards.** `outpost_mining_fraction`,
+   both retired crew policies (§6.15), the Exchange (politics §10.6a) and T-76's
+   development freight were all measured on a bed that could not spend minerals.
+4. **Then re-ratify `reinvest_bias`.** Not before: a dial whose crossover is a
+   price ratio cannot be tuned while the prices are the thing under question.
+
+**Carried over from T-51, which they do not depend on:** widening the gradient
+probe's surface to the continuous knobs on the expansion chain, sweeping the
+discrete gates (`medium_min_level`, `limited_min_level`, `cycle_years`)
+separately because a central difference cannot read them, and only then asking
+whether the policy's *structure* wants to change.
 
 ### T-50. Record gradient sensitivity as raw data, not prose — it is card-design input
 

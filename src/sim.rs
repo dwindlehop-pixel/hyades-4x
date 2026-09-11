@@ -7165,14 +7165,18 @@ mod tests {
     /// - `BaselineAutopilot::rank` does not read infrastructure at all. It
     ///   scores `k_potential`, minerals and position.
     /// - The one continuous reader is `deepen_headroom = k_potential − infra`,
-    ///   and **R-O68 measured that branch as dead at the shipped
-    ///   `reinvest_bias = 0.5`** — it cannot fire while any candidate exists.
+    ///   and that branch is **cold at the shipped `reinvest_bias = 0.5`** —
+    ///   R-O68 first measured it dead on a units fault, and closing that fault
+    ///   left it cold for a *price* reason instead (R-O85): the crossover sits
+    ///   at `b` between 0.96 and 0.98, so the reader is live in principle and
+    ///   never consulted in practice.
     ///
     /// So this test pins the actual invariant rather than the lucky number: the
     /// two representations disagree in the Band, agree in the rung, and
-    /// therefore agree in the price. If a future change makes a *continuous*
-    /// reader of infrastructure live — which is exactly what fixing R-O68 would
-    /// do — this stops being true, and the failure will point at the reason.
+    /// therefore agree in the price. It survived R-O68's fix — `deepen_census`
+    /// reports the whole run bit-identical below `b = 0.96` — and it is the
+    /// thing that will fail if R-O85 ever prices the rungs low enough for that
+    /// continuous reader to start deciding.
     #[test]
     fn infrastructure_reaches_every_decision_through_an_integer() {
         let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
