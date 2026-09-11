@@ -2048,7 +2048,66 @@ surfaces — `fab_cap` and the knee, the infra ladder's anchor, or giving
 infrastructure a consumer that does not saturate — and every one of those needs
 ratification (`CLAUDE.md` §6), so none is taken here.
 
-#### What follows
+### 6.19 R-O87 — `reinvest_bias` cannot move work-years, and that is an identity
+
+**The obvious next move after R-O68 was to tune the bias against Growth's own
+objective rather than Expansion's.** `examples/work_years` already argues that
+colony-years scores anything mineral-allocating with the sign reversed, and
+`reinvest_bias` is *the* mineral-allocating knob. So: sweep it against
+work-years, `∫ Σ_p infra_p dt`.
+
+**It does not move.** And before the measurement, the reason it cannot:
+
+| route | what it bills | works it adds | works per mineral |
+|---|---|---|---|
+| **deepen** | `infra_step_price / eta_works` | `infra_step_price` (the stock moves to the next rung) | `eta_works` |
+| **found** | `hull_cost(coloniser)` | `founding_infra = hull_cost` | **1** |
+
+The second row is design law #11 arriving somewhere nobody was looking for it.
+A recycled hull's minerals *are* the new colony's works stock (T-70) because a
+hull's mass is its cost (R-O57) — so at the card-free `eta_works = 1` the two
+routes are worth the same to the metric, **to the last bit**, at every rung a
+centre can stand on. `a_mineral_buys_the_same_works_whether_it_deepens_or_founds`
+pins it. The bias is choosing between equals, and everything downstream breaks
+the tie *for expansion*: a colony mines, grows and builds, while a rung past II
+buys almost no fabrication and no extra berth at all (§6.18's R-O85 table).
+
+**Measured** (`examples/work_years`, 4,000 yr, 3 seats, paired per seed under
+CRN). A 1,500-year screen put the best point at `b = 0.972`, on a narrow ridge:
+flat and bit-identical below 0.965, and off a cliff above 0.98 (−6.8% at 0.98,
+−35% at 0.99, and at 1.0 the empire never expands at all — 3 colonies).
+Confirmed at the objective horizon:
+
+| bed | mean | SE | verdict | seeds positive |
+|---|---|---|---|---|
+| standard four (1, 7, 42, 31337) | **+2.33%** | 0.96 | 2.4 SE — clears the bar | **4/4** |
+| four it was not chosen against (2, 3, 5, 11) | **−1.70%** | 2.42 | 0.7 SE | 1/4 |
+| **pooled, eight seeds** | **+0.32%** | **1.42** | **0.22 SE — flat** | 5/8 |
+
+**The first row is a coin landing on its edge, and the second row is what
+proved it.** `CLAUDE.md` §2 already carried that warning from `survey_reserve`
+— "a 2.4-SE reading on four seeds is not a finding" — and this is the first time
+the project has *refuted* one rather than merely doubted it. The refutation cost
+four runs and is far stronger than more seeds on the same bed would have been:
+a replication set cannot inherit whatever made the original four agree.
+
+The neighbourhood says the same thing from another direction. On the standard
+bed at 4,000 yr, `0.968` scores **−0.20% ± 0.76** and `0.975` scores **+2.24% ±
+2.08** — adjacent values swinging the full magnitude of the "effect" in both
+directions. That is a chaotic reordering of a compounding run, not a gradient,
+and no value on it is a place to stand.
+
+**So `reinvest_bias` stays at 0.5** — held rather than defaulted. Colony-years
+and colony count are unmoved across the whole comparison too (+0.009% and
+identical per seed), so this is not a trade being declined; there is no trade.
+
+**What would make it worth sweeping again**, and it is the useful half of the
+result: `eta_works`. It divides the deepening bill and nothing else, so a
+Production card genuinely does make a mineral buy more works, and it is the
+tie-break the baseline policy has no access to. The identity test fails the day
+that lands, which is exactly when someone should re-read this section.
+
+#### What follows#### What follows
 
 - **R-IND21 stays withdrawn.** There is no need to invent a sink.
 - **R-O86 landed alongside this and moved mean infrastructure 1.027 → 1.462**
@@ -2300,6 +2359,7 @@ artifact in place contaminates every later measurement.
 | **R-IND19** | §4.3's `ε·S·W` double-counts the deposit — output goes as richness squared and a rich body is stripped in one tick. **Decided: the engine uses `W/N`, i.e. `(n/N)^β`,** which preserves every ratio §4.3 asserts and differs only in an absolute scale `ε` absorbs. Open only in whether the spec's own formula should be rewritten or annotated. | §4.3b |
 | ~~**R-O68**~~ | ~~The deepen/expand comparison is between incommensurable quantities~~ — **resolved (T-51).** Both sides are now `rank` score per kilotonne committed: `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`. `reinvest_bias` is an odds ratio with a state-dependent crossover. Bit-identical below `b = 0.96`; the old form's cliff at 0.9 moved to 1.0. | §6.18 |
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
+| ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. | §6.19 |
 | **R-O85** | **Infrastructure is priced as if it were the scarce thing.** The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |

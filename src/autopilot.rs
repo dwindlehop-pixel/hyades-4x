@@ -305,12 +305,50 @@ pub struct Doctrine {
     /// **Placeholder magnitude** (R-P2).
     pub risk_aversion: f64,
 
-    /// **Expansion rate knob** (MC experiment): how strongly the production
-    /// queue favors *upgrading own infrastructure* (deepening) over *spending
-    /// minerals to reach outward* (expanding). `0.0` = always expand when able,
-    /// `1.0` = always deepen toward `K` first. The optimal value is state-
-    /// dependent (current pop, K-potential, neighbors) and is exactly what the
-    /// expansion-rate Monte-Carlo experiment optimizes (R-AC11/R-AC12).
+    /// **Expansion rate knob**: how strongly the production queue favors
+    /// *upgrading own infrastructure* (deepening) over *spending minerals to
+    /// reach outward* (expanding). `0.0` = always expand when able, `1.0` =
+    /// always deepen.
+    ///
+    /// Since R-O68 the two sides are `rank` score per kilotonne committed, so
+    /// this is an **odds ratio**: depth wins when `b/(1 − b) ≥ expand/deepen`.
+    /// The crossover is state-dependent — a centre facing a cheap next rung and
+    /// a mediocre candidate deepens where one facing an expensive rung and a hub
+    /// does not — and on the shipped ladder it sits between **0.96 and 0.98**.
+    ///
+    /// **Stays at 0.5, and R-O87 is why it is not worth sweeping again.** The
+    /// obvious objective for this knob is Growth's own — work-years,
+    /// `∫ Σ_p infra_p dt` — and it does not move it, because the two things the
+    /// knob chooses between are worth **exactly the same** to that metric:
+    ///
+    /// - deepening bills `infra_step_price / eta_works` and raises works by
+    ///   `infra_step_price`, so works per mineral is `eta_works`;
+    /// - founding bills the coloniser's price and the new colony's stock is
+    ///   `founding_infra = hull_cost` — the recycled hull's minerals *are* the
+    ///   stock (T-70) because a hull's mass is its cost (R-O57, design law #11) —
+    ///   so works per mineral is **1**.
+    ///
+    /// At the card-free `eta_works = 1` those are identical to the last bit
+    /// (`a_mineral_buys_the_same_works_whether_it_deepens_or_founds`), and
+    /// everything downstream breaks the tie *for expansion*, since a colony
+    /// mines, grows and builds while a rung past II buys almost no fabrication
+    /// and no extra berth at all (R-O85).
+    ///
+    /// Measured accordingly (`examples/work_years`, 4,000 yr, 3 seats):
+    /// `b = 0.972` — the best point a 1,500-year screen could find — scores
+    /// **+2.33% ± 0.96 work-years on the standard four-seed bed, 4/4 seeds
+    /// positive**, and **−1.70% ± 2.42 on four seeds it was not chosen
+    /// against**. Pooled over all eight: **+0.32% ± 1.42, 0.22 SE, 5/8
+    /// positive.** Flat, as the identity says it must be. Neighbouring values
+    /// swing the same magnitude in both directions (0.968 is −0.20%, 0.975 is
+    /// +2.24%), which is the signature of a chaotic reordering rather than a
+    /// gradient.
+    ///
+    /// **`eta_works` is the lever this knob is not.** It divides the deepening
+    /// bill and nothing else, so a Production card genuinely does make a mineral
+    /// buy more works — which is the tie-break the baseline has no access to.
+    /// Re-sweep this only once a card or a ladder change has broken the
+    /// identity; the test above is what will say so.
     pub reinvest_bias: f64,
 
     // --- Ranking (autopilot-doc §3) ---
@@ -346,6 +384,9 @@ impl Default for Doctrine {
             doctrine_demand: crate::cards::WORKS_MIX_DEFAULT,
             risk_aversion: 0.0,
             expand_bias: ExpandBias::ProductionCentersFirst,
+            // 0.5 — **held, not defaulted** (R-O87). Work-years is flat in this
+            // knob wherever it does anything at all, and falls off a cliff above
+            // ~0.98; see the field doc for the identity that makes it so.
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
         }

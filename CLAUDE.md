@@ -503,6 +503,28 @@ exists: the screen proposed a direction, the confirmation refuted it, and no
 default moved. A correction to the metric fixes some readings and can
 manufacture others; both need the same confirmation step.
 
+**It happened again at R-O87, and this time there is a cheap method that settles
+it: replicate on seeds the candidate was not chosen against.** Sweeping
+`reinvest_bias` against work-years produced `b = 0.972` at **+2.33% ± 0.96 on
+the standard four-seed bed with 4/4 seeds positive** — which is 2.4 SE *and* a
+1-in-16 sign test, and looks like a result. On seeds 2, 3, 5, 11 it scores
+**−1.70% ± 2.42**, 1/4 positive. Pooled over all eight: **+0.32% ± 1.42.** Flat.
+
+Four runs refuted it, and they are worth more than four more runs on the same
+bed would have been: **a replication set cannot inherit whatever made the
+original four agree.** More seeds on the bed the candidate was selected on
+shrink the error bar around a number that was chosen partly *because* of those
+seeds; a fresh set does not. Make it the last step before moving any globally
+tuned default — `WY_SEEDS` in `examples/work_years` is the pattern.
+
+Two corroborations were available and both are cheap enough to be routine.
+**Sweep the neighbours**: `0.968` scored −0.20% ± 0.76 and `0.975` +2.24% ± 2.08
+on the same bed, so adjacent values swing the full magnitude of the "effect" in
+both directions — a chaotic reordering of a compounding run, not a gradient, and
+no point on it is a place to stand. And **ask whether the knob has a mechanism
+by which it could move the metric at all**, which here it does not: deepening
+and founding buy *exactly* the same works per mineral (see §7).
+
 **The general rule, which is the transferable part:** an objective must be
 invariant to everything the thing being optimized can change. Ask of any
 metric — *what could a card do to move this without moving the world?* If the
@@ -1458,6 +1480,20 @@ changes how you *work*, not what is left to do:
   won only at `b ≳ 0.8`: a step function wearing a dial's clothes, with no
   graded region for a search to climb. Same root cause as the `K` unit error one
   section up.
+
+  **And the knob cannot move Growth's own objective either, by identity
+  (R-O87).** Work-years is `∫ Σ_p infra_p dt`, and the two things
+  `reinvest_bias` chooses between are worth the same to it: deepening bills
+  `infra_step_price / eta_works` and raises works by `infra_step_price`, while
+  founding bills the coloniser's price and the new colony's stock is
+  `founding_infra = hull_cost` — the recycled hull's minerals *are* the stock
+  (T-70) because a hull's mass is its cost (R-O57, design law #11). At the
+  card-free `eta_works = 1` those are identical to the last bit, at every rung,
+  and `a_mineral_buys_the_same_works_whether_it_deepens_or_founds` pins it.
+  Measured to match: **+0.32% ± 1.42 over eight seeds** at 4,000 yr. It stays at
+  **0.5**, and the lever it is not is `eta_works` — which divides the deepening
+  bill and nothing else, so a Production card genuinely does make a mineral buy
+  more works.
 
   **Both sides are now `rank` score per kilotonne committed** —
   `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`, using

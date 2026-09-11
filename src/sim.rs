@@ -5592,6 +5592,74 @@ mod tests {
         assert_eq!(vehicles(&sim), before.1, "and nothing was created either");
     }
 
+    /// **A mineral buys exactly the same works whether it deepens or founds
+    /// (R-O87), which is why `reinvest_bias` cannot move work-years.**
+    ///
+    /// Work-years is `∫ Σ_p infra_p dt` — the Growth tree's objective
+    /// (`Hyades_trees_and_card_value.md` §2.3.3) — and `reinvest_bias` is the
+    /// knob that chooses between the only two things a centre can spend
+    /// minerals on. The natural expectation is that turning it up buys works.
+    /// It does not, and the reason is an identity rather than a tuning
+    /// accident:
+    ///
+    /// - **Deepen.** The bill is `infra_step_price / eta_works` and the stock
+    ///   moves to exactly the next rung, so works rise by `infra_step_price`.
+    ///   Works per mineral = `eta_works`.
+    /// - **Found.** The bill is the coloniser's price, and the new colony's
+    ///   stock is `founding_infra = hull_cost` — the recycled hull's minerals
+    ///   *are* the stock (T-70), because a hull's mass is its cost (R-O57,
+    ///   design law #11). Works per mineral = **1**.
+    ///
+    /// So at `eta_works = 1` the two routes are worth the same to the metric,
+    /// to the last bit, and the bias is choosing between equals. Everything
+    /// downstream then breaks the tie *for expansion*: a new colony mines,
+    /// grows and builds, while a rung past II buys almost no fabrication and no
+    /// extra berth at all (R-O85). Measured, that is a work-years surface which
+    /// is flat across `[0, ~0.97]` and falls off a cliff above it.
+    ///
+    /// **`eta_works` is the intended lever**, and it is a Design card's to
+    /// move: it divides the deepening bill and nothing else, so a Production
+    /// card genuinely does make a mineral buy more works. This test pins the
+    /// *baseline* — card-free, the choice is neutral — so the day a ladder
+    /// change or a card makes it non-neutral, the bias is worth re-sweeping and
+    /// this is what says so.
+    #[test]
+    fn a_mineral_buys_the_same_works_whether_it_deepens_or_founds() {
+        let cfg = SimConfig::new(1);
+        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 1)).unwrap(), test_cfg(1));
+        let works = cards::Works::default();
+        assert_eq!(works.eta_works, 1.0, "the card-free baseline is what this identity is about");
+
+        // Found: what the coloniser costs, against the works its hull becomes.
+        let hull = hull_cost(HullType::MediumSystems, &cfg);
+        assert_eq!(
+            sim.founding_infra(HullType::MediumSystems),
+            hull,
+            "a recycled hull's minerals are the colony's works stock"
+        );
+
+        // Deepen, at every rung a centre can actually stand on: what the bill
+        // costs, against the works the rung adds.
+        for n in 0..BandTier::MAX_PLAYABLE.band().bands() as usize {
+            let stand = infra_rung_price(n, &cfg);
+            let step = infra_step_price(stand, &cfg);
+            let billed: Price = works_bill(step, &works).iter().fold(Price::ZERO, |a, &b| a + b);
+            let gained = infra_rung_price(n + 1, &cfg) - stand;
+            assert!(
+                (billed - gained).kilotons().abs() < 1e-12,
+                "rung {n}: billed {billed:?} against {gained:?} of works gained"
+            );
+            // And therefore the same works per mineral as founding does.
+            let deepen_yield = gained / billed;
+            let found_yield = sim.founding_infra(HullType::MediumSystems) / hull;
+            assert!(
+                (deepen_yield - found_yield).abs() < 1e-12,
+                "rung {n}: deepening yields {deepen_yield} works per mineral, founding {found_yield} — \
+                 reinvest_bias is no longer neutral for work-years and R-O87 wants re-sweeping"
+            );
+        }
+    }
+
     fn test_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = 300.0;
