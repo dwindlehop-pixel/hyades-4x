@@ -1889,64 +1889,74 @@ since the first one does not exist either.
 
 ---
 
-### 6.17 There is no unfulfilled demand for minerals, and that is the economy's shape
+### 6.17 The ore is idle because Doctrine never asks for it — not because nothing wants it
 
-**Measured, because the question is the right one to ask and the answer was not
-what anyone would guess** (`examples/colour_flow`, 600 planets / 1,500 yr, and
-confirmed at the standard bed):
+**This section replaces a wrong conclusion, and the correction is the useful
+part.** The first version measured that 91–98% of held ore sits idle while unmet
+demand is ~1/1000 of the pile, and concluded *the mineral economy has no demand
+side*. **The author rejected that and was right:** "there's uses for minerals but
+the Doctrine needs to shift to demand them."
+
+**Measured** (`examples/infra_ceiling`, 600 planets / 1,500 yr):
 
 | | seed 1 | seed 7 |
 |---|---|---|
-| banked, spendable | 18,906 kt | 54,289 kt |
-| **piled idle at outposts** | **1,119,004 kt** | **551,390 kt** |
-| share of held ore that is idle | **98.3%** | **91.0%** |
-| **unmet demand** (what centres cannot afford) | **427 kt** | **441 kt** |
-| idle pile as a multiple of unmet demand | **2,624x** | **1,252x** |
+| mean infrastructure | **Band 1.051** | **Band 1.047** |
+| mean ceiling `k` | **Band 3.595** | **Band 3.611** |
+| colonies **at** their ceiling | **0 (0.0%)** | **0 (0.0%)** |
+| unbuilt headroom across the empire | **756 Bands** | **769 Bands** |
+| banked ore available to build it | 19,619 kt | 57,464 kt |
+| survey coverage | 100% per player | 100% per player |
 
-**Nine tenths of everything mined never reaches a bank, and almost nobody wants
-it.** The obvious reading of a large idle pile is a transport failure — ore
-stranded because freight cannot keep up. It is not: unmet demand is three orders
-of magnitude smaller than the pile. **The ore is idle because there is nothing to
-spend it on.**
+**Colonies sit at 29% of their own ceiling and not one is capped.** The sink is
+not missing; it is 756 Bands wide and the empire is standing next to it holding
+the money. Survey is saturated, so scouts are not a sink either — both of the
+obvious uses are checked, and one of them is wide open.
 
-**The Exchange did not cause this and cannot fix it.** Ablated: 90.7% idle with
-trade disabled against 90.8% with it (standard bed, seed 1). The piles predate
-the market by construction, and the market's entire volume — 29,460 kt — is 2.6%
-of one seed's idle pile.
+**Why the first measurement missed it, and it is the artifact list's oldest
+shape.** `unmet_colour_demand` sums `colour_deficit`, which is the shortfall
+against a centre's **next rung only**. A centre that can afford its next rung
+reports **zero demand** — even with three more Bands of headroom above it. So the
+metric measured *demand the policy had already decided to express*, and the
+policy expresses almost none. **A metric that reads a decision's output cannot
+tell you what the decision declined to ask for.**
 
-**A second, independent line of evidence says the same thing.** A production
-decision goes `Idle` when the centre is **below `limited_min_level`** — a
-*population* gate — or when it does not want survey. It is not an affordability
-branch. So the ~21% of decisions that idle are waiting on **people, not
-minerals**, which is T-51/R-O68's "unconditional pre-`medium_min_level`
-staircase" arriving from the other direction.
+#### The mechanism, and both sides of it are now measured (R-O68 closed)
 
-**What this settles, and what it does not.**
+`production_choice` prefers depth when `b · deepen_headroom ≥ (1 − b) · score`.
+At the shipped `reinvest_bias = 0.5` that reduces to **`headroom ≥ score`** — and
+the two sides are in different units, which is the fault R-O68 named:
 
-- It settles why every mineral-side ratification on this bed has measured flat
-  or negative: `outpost_mining_fraction`, the crew policies (§6.15), and now the
-  Exchange (politics §10.6a). **`CLAUDE.md` §7 already stated the rule** — before
-  tuning an economic knob, check whether the thing being optimised is what is
-  actually scarce — and this is the measurement behind it. Minerals are not
-  scarce. They are not close to scarce.
-- It does **not** say the mineral economy is wrong. It says the *demand side* is
-  missing. An empire with somewhere to put a million kilotonnes — a fleet, a
-  works ladder that keeps climbing, a card that consumes ore at scale — would
-  make every one of those flat measurements live.
-- **Caveat on the demand figure, stated because it bounds the claim.**
-  `colour_deficit` is the shortfall against a centre's *next* rung only, so this
-  measures demand **at the margin**: a centre that could afford fifty rungs
-  reports zero. The correct reading is "centres are not mineral-constrained in
-  their next purchase", not "no empire could ever use more ore". Both the
-  `Idle`-branch evidence and §6.15's monotone crew result point the same way, so
-  the conclusion is not resting on this one number.
+| side | what it is | measured |
+|---|---|---|
+| `deepen_headroom` | a **Band difference**, bounded by 4 | mean **2.55** (3.60 − 1.05) |
+| `score` | `rank`'s **unbounded weighted score** | p05 4.40 / median **6.17** / max 12.16 |
 
-**R-IND21, open: give minerals a sink, or stop measuring against them.** The
-choice is a design one and it is upstream of every remaining economic
-ratification — there is no point tuning extraction, crews, freight or trade
-while the marginal kilotonne is worth nothing.
+**Headroom loses every comparison it is ever in.** 2.55 against a median 6.17 is
+not a close call, and it is not a tuning question: the deepen branch is
+*arithmetically unreachable* at any bias below ~0.8, which is what
+`examples/score_scale` measured and what this now confirms from the other end.
+**70 infrastructure builds against 18,373 hull builds** on the standard bed
+(`examples/bank_mix`) is the same fact counted a third way.
 
----
+So the chain is complete: **a comparison between incommensurable quantities → a
+dead deepen branch → colonies frozen at rung 1 → nothing to spend ore on → every
+mineral-side ratification reads flat.** `outpost_mining_fraction`, both crew
+policies (§6.15) and the Exchange (politics §10.6a) were all measuring the
+downstream of one broken `if`.
+
+#### What follows
+
+- **R-IND21 is withdrawn as stated.** There is no need to invent a sink.
+- **T-51/R-O68 is the fix and it is now the highest-value economic change
+  available**, because it is upstream of every flat result this project has
+  recorded. Fixing the comparison's units is a prerequisite for *re-measuring*
+  extraction, crews, freight and trade — all of which were ratified against a
+  bed that could not spend minerals.
+- **T-76 (development freight) is the author's own answer to the same
+  diagnosis** — `develop_bias` is a Doctrine knob that demands minerals for
+  development, and it reaches the world through a different path than the broken
+  comparison. It is next.
 
 ## 7. Trade, development freight, and what needs a pact
 
@@ -2179,7 +2189,7 @@ artifact in place contaminates every later measurement.
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
 | **R-IND19** | §4.3's `ε·S·W` double-counts the deposit — output goes as richness squared and a rich body is stripped in one tick. **Decided: the engine uses `W/N`, i.e. `(n/N)^β`,** which preserves every ratio §4.3 asserts and differs only in an absolute scale `ε` absorbs. Open only in whether the spec's own formula should be rewritten or annotated. | §4.3b |
-| **R-IND21** | The mineral economy has no demand side: 91–98% of held ore is idle at outposts and unmet demand is ~1/1000 of the pile. Give minerals a sink, or stop ratifying against them. Upstream of every remaining economic measurement. | §6.17 |
+| ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause is R-O68's dead deepen branch. | §6.17 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |
 | **R-IND12** | How much a coloniser carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |

@@ -1427,6 +1427,26 @@ changes how you *work*, not what is left to do:
   rather than the grid; then **re-measure it after you step**, because the
   direction you just spent is not the direction you are now standing in.
 
+  **And the whole mineral side of that argument has one cause, measured
+  three ways** (`Hyades_industry.md` §6.17). Colonies sit at **Band 1.05
+  against a ceiling of 3.60, with zero at cap and 756 Bands unbuilt** while the
+  empire banks the ore to build it. Survey is saturated, so that is not the sink
+  either. The cause is R-O68's dead deepen branch: at `reinvest_bias = 0.5` the
+  test reduces to `headroom ≥ score`, and headroom is a **Band difference
+  averaging 2.55** against `rank`'s **unbounded score with median 6.17** — it
+  loses every comparison it is ever in. 70 infrastructure builds against 18,373
+  hull builds is the same fact counted again.
+
+  **So every flat mineral-side result this project has recorded is downstream of
+  one broken `if`** — `outpost_mining_fraction`, both crew policies, and the
+  Exchange. Two things follow and the second is the transferable one. **Fix the
+  comparison before re-measuring any of them** (T-51). And: **a metric that reads
+  a decision's output cannot tell you what the decision declined to ask for** —
+  `unmet_colour_demand` summed each centre's shortfall against its *next* rung,
+  so a centre with three Bands of headroom it never tried to buy reported zero
+  demand, and the first conclusion drawn from it ("the economy has no demand
+  side") was exactly backwards.
+
   **Diminishing returns are visible, and the cause is now known.** +23.9, then
   +11.0, then +2.3 points. It is not that the economy ran out of headroom:
   `examples/reach_limit.rs` shows the binding constraint is **`k_high`, not the
