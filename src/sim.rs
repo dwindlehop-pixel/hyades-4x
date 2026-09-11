@@ -5012,6 +5012,32 @@ impl Simulation {
         self.exchange.traded
     }
 
+    /// **What an empire's centres want and cannot afford**, per colour (kt).
+    ///
+    /// The sum of `colour_deficit` over every centre it owns — each centre's
+    /// shortfall against its **next** infrastructure rung, in the colours that
+    /// rung is billed in. This is demand in the only sense the engine has one:
+    /// a purchase a centre would make and cannot.
+    ///
+    /// Paired with [`Self::outpost_holdings`] it answers the question that
+    /// matters about the mineral economy: **is ore sitting idle at outposts
+    /// while centres are short of it?** If both are large at once, the binding
+    /// constraint is *transport*, not extraction — and no amount of mining or
+    /// trading fixes it.
+    pub fn unmet_colour_demand(&self, p: PlayerId) -> [Price; 3] {
+        let mut out = [Price::ZERO; 3];
+        for &e in &self.planet_entity {
+            if self.world.owner.get(e).copied() != Some(p) {
+                continue;
+            }
+            let d = self.colour_deficit(e, p);
+            for i in 0..3 {
+                out[i] += d[i];
+            }
+        }
+        out
+    }
+
     /// **An empire's ore waiting at outposts**, summed over every pile it holds.
     ///
     /// Delivered ore lands here, not in a bank (§10.6) — so a census that reads

@@ -1889,6 +1889,65 @@ since the first one does not exist either.
 
 ---
 
+### 6.17 There is no unfulfilled demand for minerals, and that is the economy's shape
+
+**Measured, because the question is the right one to ask and the answer was not
+what anyone would guess** (`examples/colour_flow`, 600 planets / 1,500 yr, and
+confirmed at the standard bed):
+
+| | seed 1 | seed 7 |
+|---|---|---|
+| banked, spendable | 18,906 kt | 54,289 kt |
+| **piled idle at outposts** | **1,119,004 kt** | **551,390 kt** |
+| share of held ore that is idle | **98.3%** | **91.0%** |
+| **unmet demand** (what centres cannot afford) | **427 kt** | **441 kt** |
+| idle pile as a multiple of unmet demand | **2,624x** | **1,252x** |
+
+**Nine tenths of everything mined never reaches a bank, and almost nobody wants
+it.** The obvious reading of a large idle pile is a transport failure — ore
+stranded because freight cannot keep up. It is not: unmet demand is three orders
+of magnitude smaller than the pile. **The ore is idle because there is nothing to
+spend it on.**
+
+**The Exchange did not cause this and cannot fix it.** Ablated: 90.7% idle with
+trade disabled against 90.8% with it (standard bed, seed 1). The piles predate
+the market by construction, and the market's entire volume — 29,460 kt — is 2.6%
+of one seed's idle pile.
+
+**A second, independent line of evidence says the same thing.** A production
+decision goes `Idle` when the centre is **below `limited_min_level`** — a
+*population* gate — or when it does not want survey. It is not an affordability
+branch. So the ~21% of decisions that idle are waiting on **people, not
+minerals**, which is T-51/R-O68's "unconditional pre-`medium_min_level`
+staircase" arriving from the other direction.
+
+**What this settles, and what it does not.**
+
+- It settles why every mineral-side ratification on this bed has measured flat
+  or negative: `outpost_mining_fraction`, the crew policies (§6.15), and now the
+  Exchange (politics §10.6a). **`CLAUDE.md` §7 already stated the rule** — before
+  tuning an economic knob, check whether the thing being optimised is what is
+  actually scarce — and this is the measurement behind it. Minerals are not
+  scarce. They are not close to scarce.
+- It does **not** say the mineral economy is wrong. It says the *demand side* is
+  missing. An empire with somewhere to put a million kilotonnes — a fleet, a
+  works ladder that keeps climbing, a card that consumes ore at scale — would
+  make every one of those flat measurements live.
+- **Caveat on the demand figure, stated because it bounds the claim.**
+  `colour_deficit` is the shortfall against a centre's *next* rung only, so this
+  measures demand **at the margin**: a centre that could afford fifty rungs
+  reports zero. The correct reading is "centres are not mineral-constrained in
+  their next purchase", not "no empire could ever use more ore". Both the
+  `Idle`-branch evidence and §6.15's monotone crew result point the same way, so
+  the conclusion is not resting on this one number.
+
+**R-IND21, open: give minerals a sink, or stop measuring against them.** The
+choice is a design one and it is upstream of every remaining economic
+ratification — there is no point tuning extraction, crews, freight or trade
+while the marginal kilotonne is worth nothing.
+
+---
+
 ## 7. Trade, development freight, and what needs a pact
 
 The third gap in §0, and the answer turns out to be the same mechanism as
@@ -2120,6 +2179,7 @@ artifact in place contaminates every later measurement.
 | **R-IND8** | What an empire inherits when it captures developed Infrastructure. | §9 |
 | **R-IND9** | The extraction tail past `N(S)` — flat, or a shallow seam at floor grade. | §4.3 |
 | **R-IND19** | §4.3's `ε·S·W` double-counts the deposit — output goes as richness squared and a rich body is stripped in one tick. **Decided: the engine uses `W/N`, i.e. `(n/N)^β`,** which preserves every ratio §4.3 asserts and differs only in an absolute scale `ε` absorbs. Open only in whether the spec's own formula should be rewritten or annotated. | §4.3b |
+| **R-IND21** | The mineral economy has no demand side: 91–98% of held ore is idle at outposts and unmet demand is ~1/1000 of the pile. Give minerals a sink, or stop ratifying against them. Upstream of every remaining economic measurement. | §6.17 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |
 | **R-IND12** | How much a coloniser carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |

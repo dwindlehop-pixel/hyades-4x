@@ -150,10 +150,17 @@ fn main() {
         }
         let piled: f64 =
             (0..PLAYERS).map(|pl| sim.outpost_holdings(PlayerId(pl as u32)).basic_total().kilotons()).sum();
+        let demand: f64 = (0..PLAYERS)
+            .map(|pl| sim.unmet_colour_demand(PlayerId(pl as u32)).iter().map(|d| d.kilotons()).sum::<f64>())
+            .sum();
         println!(
             "  holdings: {banked:.0} kt banked / {piled:.0} kt piled at outposts  ({:.1}% idle)",
             100.0 * piled / (banked + piled).max(1e-9)
         );
+        // **The question that matters.** Idle ore is only a problem if somebody
+        // wants it. Demand here is what centres cannot afford for their next
+        // infrastructure rung — a purchase they would make and cannot.
+        println!("  unmet demand: {demand:.0} kt   ({:.0}x covered by the idle pile)", piled / demand.max(1e-9));
 
         let traded = sim.exchange_traded();
         for (i, &c) in Basic::ALL.iter().enumerate() {
