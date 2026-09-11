@@ -137,6 +137,24 @@ fn main() {
             "  offers posted (bids/asks): C {}/{}  M {}/{}  Y {}/{}",
             posted[0].0, posted[0].1, posted[1].0, posted[1].1, posted[2].0, posted[2].1
         );
+        // **Banked against piled** — the asymmetry test (R-P18). The seller's
+        // ore leaves a *spendable* bank at settlement; the buyer's lands in an
+        // outpost pile and waits for its own freighter. If trade is a machine
+        // for moving minerals out of banks and into piles, this is where it
+        // shows, and it is the difference between a market that works and one
+        // that only appears to.
+        let mut banked = 0.0f64;
+        let snap = sim.snapshot();
+        for p in snap.planets.iter().filter(|p| p.owner.is_some()) {
+            banked += p.stockpile.basic_total().kilotons();
+        }
+        let piled: f64 =
+            (0..PLAYERS).map(|pl| sim.outpost_holdings(PlayerId(pl as u32)).basic_total().kilotons()).sum();
+        println!(
+            "  holdings: {banked:.0} kt banked / {piled:.0} kt piled at outposts  ({:.1}% idle)",
+            100.0 * piled / (banked + piled).max(1e-9)
+        );
+
         let traded = sim.exchange_traded();
         for (i, &c) in Basic::ALL.iter().enumerate() {
             println!("  {c:?}: {:.1} kt delivered", traded[i]);
