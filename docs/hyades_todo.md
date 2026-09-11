@@ -207,7 +207,7 @@ it is a book *of*.
 | 1 | `$` ledger + faucet; nothing spends it | neutral | ~~**T-82**~~ — **LANDED**, bit-identical |
 | 2 | `Commodity` gains the colour axis; `Offer` gains an owner | neutral | ~~**T-83**~~ — **LANDED** with T-01 (the module was never in `lib.rs`) |
 | 3 | Cross-empire book; centres post `wtp` bids | neutral | ~~**T-84**~~ — **LANDED**, bit-identical |
-| 4 | Clearing at the round barrier → contracts + escrow | changes | **T-85** |
+| 4 | Clearing at the round barrier → contracts + escrow | **inert** after the §10.6 amendment | ~~**T-85**~~ — **LANDED** |
 | 5 | The freight leg; escrow settles on arrival | changes | **T-77** |
 | 6 | Default, interdiction, reputation | changes | **T-86** |
 

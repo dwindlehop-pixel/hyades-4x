@@ -892,12 +892,48 @@ implies. The default keeps foreign hulls out in the dark where the rocks are.
 What the stage still needs:
 
 - escrow released on settlement at the shared body, discounted and burned by
-  `exp(−λ·t)` over the *seller's* leg to the venue;
-- the loss case;
-- and a **venue choice** when buyer and seller share more than one outpost —
-  **R-P17**, open. The obvious candidate is the one minimising the sum of both
-  parties' transit, which is the same discounted-distance form `best_delivery_center`
-  already uses.
+  `exp(−λ·t)` over the shipper's leg to its drop;
+- and the loss case.
+
+#### A contract has two locations, and the debt travels faster than light
+
+**Author's ruling, and it changes both halves of R-P17.**
+
+> *"Contract can have two locations. Leave Y at X planet in exchange for M/C at
+> Y planet. Debt can travel faster than light."*
+
+**Two drops, not one venue.** A trade commits each side to a delivery, and the
+two deliveries need not meet at the same rock: the seller leaves Yellow at a
+shared outpost near *itself*, the buyer leaves Magenta or Cyan at a shared
+outpost near *itself*. **R-P17 is answered, and not as it was framed** — the
+first formulation minimised the two parties' *summed* transit, which is the
+right answer only if there is a single venue for both legs. There is not. Each
+drop is the shared rock nearest **the party shipping to it**, because a shipper
+pays for its own leg; one compromise venue would make each side pay for the
+other's geography, and §7.1's default transaction is *balanced in value*.
+
+**The obligation is instant; only the goods are light-lagged.** This is not an
+exception to design law #15 — it is R-P1 taken seriously. `$` and the claim it
+denominates are **not substances**: no mass, no hold, no distance crossed, so
+there is nothing for light-lag to bind. And a contract is struck at the **round
+barrier**, which is the protocol clock's synchronisation point (§10.5) and the
+same moment cards resolve and the `Works` fold is recomputed — not an in-world
+observation by an in-world agent, which is what design law #15 actually
+constrains.
+
+**The asymmetry is the design.** The ledger is instant and the freight is not, so
+a deal can be agreed across the theatre in a single round while the ore it
+commits takes decades to arrive — and everything that can happen to that ore on
+the way (§8.1: attack, diversion, theft, blockade) lives in the gap between the
+two. A contract is a promise that outruns its cargo, which is what makes
+defaulting, escorting and interdiction worth anything.
+
+**In the engine today** the buyer's side of the default transaction is `$`, which
+has no location, so `Contract::buyer_drop` is `None`. A goods counter-leg is the
+buyer's own contract on another colour's book, with its own drop — which is
+exactly how "leave Yellow at X in exchange for Magenta at Y" is expressed: two
+contracts between the same pair, on two books, settling at two rocks, with `$`
+pricing the balance between them.
 
 **R-IND10 is already answered by §3.3 and the register is stale.** On
 non-delivery "escrow returns to the buyer minus the burn" — so the buyer loses
@@ -911,7 +947,7 @@ escorting worth paying for. Marked resolved below.
 | 1 | `$` ledger + faucet; nothing spends it | **neutral** — nothing reads it | bit-identical | ~~**T-82**~~ — **done** |
 | 2 | `Commodity` gains the colour axis; `Offer` gains an owner | **neutral** — matcher now wired, nothing calls it | bit-identical | ~~**T-83**~~ — **done, with T-01** |
 | 3 | Cross-empire book; centres post `wtp` bids | **neutral** — nothing clears yet | bit-identical | ~~**T-84**~~ — **done** |
-| 4 | Clearing at the round barrier → contracts + escrow | changes | §10.8 | **T-85** |
+| 4 | Clearing at the round barrier → contracts + escrow | **inert after the §10.6 amendment** — see below | bit-identical | ~~**T-85**~~ — **done** |
 | 5 | The freight leg; escrow settles on arrival | changes | §10.8 | **T-77** |
 | 6 | Default, interdiction, reputation | changes | §10.8 | **T-86** |
 
@@ -919,8 +955,23 @@ Stages 1–3 are deliberately inert, for the same reason `Hyades_industry.md`
 §6.7's stages 3–5 were: **a system that lands neutral can be verified against a
 bit-identical bed before anything switches on.** That plan was not met at
 industry stage 5, and the reason it was not is worth carrying: the stage that
-broke it was the one that changed *what a purchase costs*. Stage 4 here is the
-same shape, and should be expected to move the bed rather than assumed not to.
+broke it was the one that changed *what a purchase costs*. Stage 4 was expected
+to be the same shape.
+
+> **Stage 4 turned out inert too, and the §10.6 amendment is why.** This table
+> was written when a cleared match was a cross-empire *delivery*, so clearing
+> and moving goods were one step. Settlement now happens at a shared rock, so
+> stage 4 strikes contracts and locks `$` — and `$` reaches nothing else yet —
+> while every kilotonne stays where it was until **T-77**. Measured
+> bit-identical, with contracts struck, by
+> `clearing_strikes_escrowed_contracts_without_moving_the_world`.
+>
+> **So the stage expected to be risky is not, and the risk moved to T-77 with
+> the goods.** That is worth stating rather than quietly enjoying: the
+> prediction in this table was wrong, and it was wrong because a *later* design
+> decision changed where the behaviour lives. A stage plan is a claim about
+> code, and an amendment to the design invalidates the plan's predictions along
+> with everything else it touches.
 
 ### 10.8 The guard — and it is not colony-years
 
@@ -964,7 +1015,7 @@ never as the verdict.
 | **R-P13** | Which stances may be written, by which tier, and on which index. Recommend near index first and only toward less hostile; far index (making two other empires enemies) a deep node | — |
 | **R-P14** | Does an imposed stance decay? Recommend yes, on the reputation clock — a permanent write is a permanent pact for one card | MC |
 | **R-P9** | Strength of both counter-graph effects; is the risk premium bounded? | MC |
-| **R-P17** | Venue choice when buyer and seller share more than one outpost. Candidate: minimise both parties' summed discounted transit, the form `best_delivery_center` already uses. | §10.6 |
+| ~~**R-P17**~~ | ~~Venue choice when buyer and seller share more than one outpost~~ — **resolved, and the question was wrong.** A contract has **two** drops, one per shipper, each the shared rock nearest *that* shipper. The summed-transit formulation assumed a single venue. | §10.6 |
 | ~~**R-P10**~~ | ~~Clear per round or continuously?~~ **resolved: per round, at the barrier** (§10.5). A continuous book makes price a function of event ordering, which is a desync by design law #16 | — |
 | **R-P16** | The `$` faucet ships against infrastructure stock because `production` (works fabrication, T-74) does not exist yet. Revisit at T-74 (§10.3) | T-74 |
 

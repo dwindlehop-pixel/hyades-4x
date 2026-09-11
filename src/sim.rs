@@ -1382,6 +1382,75 @@ struct World {
 #[derive(Default)]
 struct Exchange {
     books: [matching::Book; 3],
+    /// **Contracts in flight** — matched, escrowed, not yet settled (T-85).
+    ///
+    /// §10.2: *"this is the state §3.3 needs and the engine has no analogue
+    /// for — it is the first thing in the engine that is **owed** rather than
+    /// owned."* A `Vec` appended in fill order, which is deterministic because
+    /// `match_wave` is.
+    contracts: Vec<Contract>,
+    /// Contracts settled, and `$` burned to transit, since the run began.
+    /// Diagnostic only — §10.8's guard is a census.
+    settled: u64,
+    burned: f64,
+    /// **Cumulative offers posted per colour**, `(bids, asks)` — the census
+    /// §10.8 asks for, and the only way to see the book's *depth* once clearing
+    /// drains it. Live depth after a wave is the unmatched remainder, which
+    /// answers a different question.
+    posted: [(u64, u64); 3],
+}
+
+/// **A cleared trade, escrowed and awaiting settlement at its venue** (T-85).
+///
+/// Everything needed to settle without re-deriving it: who owes whom, what, how
+/// much `$` is locked, and **where the goods change hands**. The venue is on the
+/// contract rather than looked up later because the parties' shared outposts can
+/// change between clearing and settlement — a rock mines out, a crew is
+/// retasked — and a contract whose venue moved is a contract neither side
+/// agreed to.
+#[derive(Clone, Copy, Debug)]
+struct Contract {
+    buyer: PlayerId,
+    seller: PlayerId,
+    colour: Basic,
+    /// Kilotons of ore the seller owes.
+    qty: f64,
+    /// `$` locked from the buyer's purse at match (§2.3's `E`).
+    escrow: f64,
+    /// **Where the seller leaves the ore** (§10.6). A rock both parties work —
+    /// **not the buyer's world**, because a foreign hull near a colony is a
+    /// card and not the default.
+    seller_drop: Entity,
+    /// **Where the buyer leaves its side, when its side is goods.**
+    ///
+    /// A contract has **two locations, not one** (author's ruling): *leave
+    /// Yellow at X in exchange for Magenta at Y*. The two legs need not meet at
+    /// the same rock, and each is chosen by **the party making that delivery**,
+    /// minimising *its own* transit — which supersedes R-P17's symmetric
+    /// "minimum summed transit". A shipper pays for its own leg, so a shipper
+    /// picks its own drop; a single compromise venue would make each side pay
+    /// for the other's geography, and §7.1's default transaction is *balanced*.
+    ///
+    /// `None` when the buyer settles in `$`, which has no location at all.
+    buyer_drop: Option<Entity>,
+    /// When the contract was struck, for the transit burn.
+    ///
+    /// **The obligation is struck instantly; only the goods are light-lagged**
+    /// (author's ruling: *debt can travel faster than light*). That is not an
+    /// exception to design law #15 — it is R-P1 being taken seriously. `$` and
+    /// the claim it denominates are **not substances**: they have no mass,
+    /// occupy no hold and cross no distance, so there is nothing for light-lag
+    /// to bind. And the contract is struck at the **round barrier**, which is
+    /// the protocol clock's synchronisation point (§10.5) rather than an in-world
+    /// observation — the same moment cards resolve and the `Works` fold is
+    /// recomputed.
+    ///
+    /// The asymmetry is the design: **the ledger is instant and the freight is
+    /// not.** A deal can be agreed across the theatre in a round while the ore
+    /// it commits takes decades to arrive, and everything that can happen to
+    /// that ore on the way (§8.1 — attack, diversion, theft, blockade) is the
+    /// gap between the two.
+    struck: f64,
 }
 
 impl World {
@@ -2330,6 +2399,7 @@ impl Simulation {
         // inert until T-85 wires clearing.
         if self.exchange_posting {
             self.post_exchange_offers();
+            self.clear_exchange();
         }
 
         let next = round.saturating_add(1);
@@ -4613,6 +4683,7 @@ impl Simulation {
                     if short > 1e-9 {
                         let price = self.willingness_to_pay(e, c, &doctrine);
                         if price > 0.0 {
+                            self.exchange.posted[i].0 += 1;
                             self.exchange.books[i].post_bid(matching::Offer {
                                 entity: e.0,
                                 price,
@@ -4628,6 +4699,7 @@ impl Simulation {
                         // Yellow-poor one needs to reach.
                         let spare = bank.get_basic(c);
                         if spare > 1e-9 {
+                            self.exchange.posted[i].1 += 1;
                             self.exchange.books[i].post_ask(matching::Offer {
                                 entity: e.0,
                                 price: self.willingness_to_pay(e, c, &doctrine),
@@ -4640,6 +4712,167 @@ impl Simulation {
                 }
             }
         }
+    }
+
+    /// **The outposts an empire has crew standing on**, in outpost-id order
+    /// (T-85). The candidate venues it can settle a trade at.
+    fn worked_outposts(&self, p: PlayerId) -> Vec<u64> {
+        self.mine_crew
+            .range((p.0, 0u64)..=(p.0, u64::MAX))
+            .filter(|(_, crew)| !crew.is_empty())
+            .map(|((_, o), _)| *o)
+            .collect()
+    }
+
+    /// **Where two empires can hand goods over** — a rock they both work
+    /// (`Hyades_politics_trade_and_intelligence.md` §10.6, T-85).
+    ///
+    /// **R-P17, decided — and not as it was first framed.** The venue is the
+    /// shared rock nearest **the party making this delivery**, because a
+    /// contract has *two* drops and each side ships its own (see
+    /// [`Contract::buyer_drop`]). The first formulation minimised the two
+    /// parties' *summed* transit, which is the right answer only if there is one
+    /// venue for both legs — and there is not.
+    ///
+    /// `None` means these two empires cannot trade at all right now, and that is
+    /// the mechanic rather than a failure: **geography is the trade
+    /// constraint.** An empire with no rock in common with anyone is landlocked,
+    /// and reaching one is a reason to go somewhere.
+    fn shared_venue(&self, a: PlayerId, b: PlayerId, ship_from: Vec3) -> Option<Entity> {
+        let (mine, theirs) = (self.worked_outposts(a), self.worked_outposts(b));
+        let mut best: Option<(f64, u64)> = None;
+        // Both lists are id-sorted, so this is a linear merge rather than a
+        // nested scan — a centre can work thousands of rocks (§4.5).
+        let (mut i, mut j) = (0usize, 0usize);
+        while i < mine.len() && j < theirs.len() {
+            match mine[i].cmp(&theirs[j]) {
+                Ordering::Less => i += 1,
+                Ordering::Greater => j += 1,
+                Ordering::Equal => {
+                    let e = Entity(mine[i]);
+                    if let Some(&at) = self.world.position.get(e) {
+                        let cost = ship_from.distance(at);
+                        // Id breaks ties, so the choice is total and does not
+                        // depend on which party is named first.
+                        if best.is_none_or(|(c, o)| cost < c || (cost == c && mine[i] < o)) {
+                            best = Some((cost, mine[i]));
+                        }
+                    }
+                    i += 1;
+                    j += 1;
+                }
+            }
+        }
+        best.map(|(_, o)| Entity(o))
+    }
+
+    /// **Clear every colour book into escrowed contracts** (§10.5, T-85).
+    ///
+    /// The first stage of the Exchange that is **not** inert, and §10.7 says to
+    /// expect it to move the bed rather than assume it will not — it is the same
+    /// shape as the industry stage that broke §6.7's neutrality plan, because it
+    /// changes what a purchase costs.
+    ///
+    /// Three filters between a `Fill` and a `Contract`, and each one is a design
+    /// statement rather than a guard:
+    ///
+    /// - **No self-trades.** An empire filling its own ask is a no-op that would
+    ///   burn `$` and move nothing. §4's Corner — buying a mineral you have no
+    ///   use for so a rival cannot have it — is a *different* play and stays
+    ///   legal, because it has a real counterparty.
+    /// - **A shared venue, or no trade.** §10.6: goods change hands at a rock
+    ///   both parties work. This is what makes trade geographic.
+    /// - **What the purse can actually pay.** Escrow is locked at match, so a
+    ///   bid beyond the ledger is trimmed to what it can fund rather than
+    ///   creating a debt nobody agreed to.
+    fn clear_exchange(&mut self) {
+        let now = self.clock;
+        let mut fills: Vec<(usize, matching::Fill)> = Vec::new();
+        for (i, book) in self.exchange.books.iter_mut().enumerate() {
+            for f in book.match_wave() {
+                fills.push((i, f));
+            }
+        }
+        for (i, f) in fills {
+            if f.buyer == f.seller {
+                continue;
+            }
+            let (bid_e, ask_e) = (Entity(f.bid), Entity(f.ask));
+            let (Some(&b_at), Some(&s_at)) = (self.world.position.get(bid_e), self.world.position.get(ask_e)) else {
+                continue;
+            };
+            // The seller ships, so the seller picks its own drop.
+            let Some(seller_drop) = self.shared_venue(f.buyer, f.seller, s_at) else {
+                continue; // landlocked with respect to each other this round
+            };
+            // The buyer's side is `$` in the default transaction, and `$` has no
+            // location. A goods counter-leg is the buyer's own contract on
+            // another colour's book, with its own drop — which is how "leave
+            // Yellow at X in exchange for Magenta at Y" is expressed.
+            let buyer_drop = None;
+            let _ = b_at;
+
+            // Price is the bid's, which is what the buyer said it was worth.
+            let price = self.exchange.books[i].bid_of(f.bid).map_or(0.0, |o| o.price);
+            let purse = self.purse_of(f.buyer);
+            if price <= 0.0 || purse <= 0.0 {
+                continue;
+            }
+            let qty = f.qty.min(purse / price);
+            let escrow = qty * price;
+            if qty <= 1e-9 || !escrow.is_finite() {
+                continue;
+            }
+
+            let pe = self.player_entity[f.buyer.0 as usize];
+            self.credit(pe, -escrow);
+            self.exchange.contracts.push(Contract {
+                buyer: f.buyer,
+                seller: f.seller,
+                colour: Basic::ALL[i],
+                qty,
+                escrow,
+                seller_drop,
+                buyer_drop,
+                struck: now,
+            });
+        }
+    }
+
+    /// Contracts in flight, and what the Exchange has settled and burned.
+    /// Diagnostic — §10.8's guard is a census, not a scalar.
+    pub fn exchange_state(&self) -> (usize, u64, f64) {
+        (self.exchange.contracts.len(), self.exchange.settled, self.exchange.burned)
+    }
+
+    /// Cumulative `(bids, asks)` posted per colour, in `Basic::ALL` order.
+    pub fn exchange_posted(&self) -> [(u64, u64); 3] {
+        self.exchange.posted
+    }
+
+    /// **Who is contracted to move what, and where** — the Exchange census
+    /// (§10.8, T-85).
+    ///
+    /// Returns one row per contract in flight: `(buyer, seller, colour,
+    /// kilotons, escrow, seller_drop, buyer_drop, struck)`. §10.8 is explicit
+    /// that the guard for Exchange work is a **census** and not colony-years,
+    /// because colony-years is inverted for anything that changes how minerals
+    /// are spent — so the state has to be readable, not just summarised.
+    ///
+    /// It is also what answers the design's actual question: **does Yellow move
+    /// from Yellow-rich empires to Yellow-poor ones?** That is a claim about
+    /// direction and counterparties, and no scalar carries it.
+    #[allow(clippy::type_complexity)]
+    pub fn exchange_contracts(&self) -> Vec<(PlayerId, PlayerId, Basic, f64, f64, PlanetId, Option<PlanetId>, f64)> {
+        self.exchange
+            .contracts
+            .iter()
+            .map(|c| {
+                let drop = *self.world.planet_id.get(c.seller_drop).unwrap();
+                let pay = c.buyer_drop.and_then(|e| self.world.planet_id.get(e).copied());
+                (c.buyer, c.seller, c.colour, c.qty, c.escrow, drop, pay, c.struck)
+            })
+            .collect()
     }
 
     /// How many offers stand on each colour's book. Diagnostic — the interim
@@ -5922,7 +6155,7 @@ mod tests {
     /// colour and short the other two**, which is precisely the condition that
     /// makes a colour market worth having.
     #[test]
-    fn the_exchange_books_fill_on_both_sides_and_clear_nothing() {
+    fn the_exchange_books_fill_on_both_sides() {
         let run = |post: bool| {
             let mut gcfg = GalaxyConfig::new(3, 33);
             gcfg.planet_count = 400;
@@ -5933,17 +6166,17 @@ mod tests {
             sim.exchange_posting = post;
             let report = sim.run();
             let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();
-            (report.events_processed, report.planets_scanned_total, pops, sim.exchange_depth())
+            (report.events_processed, report.planets_scanned_total, pops, sim.exchange_posted())
         };
 
         let (ev_off, scan_off, pop_off, depth_off) = run(false);
         let (ev_on, scan_on, pop_on, depth_on) = run(true);
 
-        assert_eq!(depth_off, [(0, 0); 3], "posting disabled must leave the books empty");
+        assert_eq!(depth_off, [(0, 0); 3], "posting disabled must post nothing");
 
         // **Both sides, on at least one colour.** A one-sided book is a market
         // with nothing to match.
-        let (bids, asks): (usize, usize) = depth_on.iter().fold((0, 0), |(b, a), &(x, y)| (b + x, a + y));
+        let (bids, asks): (u64, u64) = depth_on.iter().fold((0, 0), |(b, a), &(x, y)| (b + x, a + y));
         assert!(bids > 0, "no centre bid for anything it was short of: {depth_on:?}");
         assert!(asks > 0, "no centre offered anything it was long of: {depth_on:?}");
         assert!(
@@ -5955,6 +6188,98 @@ mod tests {
         assert_eq!(ev_off, ev_on, "posting moved the event count");
         assert_eq!(scan_off, scan_on, "posting moved survey");
         assert_eq!(pop_off, pop_on, "posting moved population");
+    }
+
+    /// **T-85: contracts are struck and escrowed, and the world does not move.**
+    ///
+    /// **§10.7 predicted this stage would change the bed and it does not, which
+    /// is the outpost amendment's doing** (§10.6). The build order was written
+    /// when a cleared match was a cross-empire *delivery*, so clearing and
+    /// moving goods were one step. Settlement now happens at a shared rock, so
+    /// stage 4 strikes contracts and locks `$` — and `$` reaches nothing else —
+    /// while every kilotonne stays exactly where it was until T-77.
+    ///
+    /// So the stage that was expected to be the risky one is inert, and the
+    /// risk moved to T-77 with the goods. Worth having as a test rather than a
+    /// note, because "this stage is neutral" is a claim about code and §6.7's
+    /// version of it was wrong twice.
+    #[test]
+    fn clearing_strikes_escrowed_contracts_without_moving_the_world() {
+        let run = |clear: bool| {
+            let mut gcfg = GalaxyConfig::new(3, 51);
+            gcfg.planet_count = 500;
+            let galaxy = Galaxy::generate(gcfg).unwrap();
+            let mut cfg = test_cfg(51);
+            cfg.horizon_years = 1600.0; // several barriers, and time to open outposts
+            let mut sim = Simulation::with_baseline(galaxy, cfg);
+            sim.exchange_posting = clear;
+            let report = sim.run();
+            let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();
+            let purses: Vec<f64> = (0..3).map(|p| sim.purse_of(PlayerId(p))).collect();
+            (report.events_processed, report.planets_scanned_total, pops, sim.exchange_state(), purses)
+        };
+
+        let (ev_off, scan_off, pop_off, st_off, _) = run(false);
+        let (ev_on, scan_on, pop_on, st_on, purses_on) = run(true);
+
+        // **Trade happened.** Without this every assertion below is vacuous —
+        // an Exchange that matches nothing is also bit-identical.
+        assert_eq!(st_off.0, 0, "posting disabled must strike no contracts");
+        assert!(
+            st_on.0 > 0,
+            "no contract was struck: either no colour had both sides, or no two empires shared an outpost"
+        );
+
+        // **Escrow was locked.** `$` left the buyers' purses and is owed rather
+        // than spent — the first thing in the engine that is owed (§10.2).
+        assert!(purses_on.iter().all(|&p| p.is_finite()), "a purse went non-finite: {purses_on:?}");
+
+        // **And the world did not move.** Same seed, same run, to the bit.
+        assert_eq!(ev_off, ev_on, "clearing moved the event count");
+        assert_eq!(scan_off, scan_on, "clearing moved survey");
+        assert_eq!(pop_off, pop_on, "clearing moved population");
+    }
+
+    /// **A trade needs a rock both parties work** (§10.6, T-85).
+    ///
+    /// Geography is the trade constraint, and this pins it as a *mechanic*
+    /// rather than an implementation detail: two empires that share nothing
+    /// cannot settle, and **each drop is chosen by the party shipping to it**
+    /// (R-P17, as revised — a contract has two locations, and a shipper pays for
+    /// its own leg).
+    #[test]
+    fn two_empires_can_only_trade_where_they_both_have_crew() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 61)).unwrap(), test_cfg(61));
+        let (a, b) = (PlayerId(0), PlayerId(1));
+        let origin = Vec3::ZERO;
+
+        assert_eq!(sim.shared_venue(a, b, origin), None, "no crews anywhere, no venue");
+
+        // One rock each, different rocks: still nothing in common.
+        let (r1, r2) = (sim.planet_entity[20], sim.planet_entity[21]);
+        sim.mine_crew.insert((0, r1.0), vec![sim.world.spawn()]);
+        sim.mine_crew.insert((1, r2.0), vec![sim.world.spawn()]);
+        assert_eq!(sim.shared_venue(a, b, origin), None, "different rocks are not a venue");
+
+        // Now share two, and each shipper gets the one nearest *itself*.
+        let (r3, r4) = (sim.planet_entity[22], sim.planet_entity[23]);
+        for &r in &[r3, r4] {
+            sim.mine_crew.insert((0, r.0), vec![sim.world.spawn()]);
+            sim.mine_crew.insert((1, r.0), vec![sim.world.spawn()]);
+        }
+        let (p3, p4) = (*sim.world.position.get(r3).unwrap(), *sim.world.position.get(r4).unwrap());
+        assert_eq!(sim.shared_venue(a, b, p3), Some(r3), "a shipper standing on a shared rock drops there");
+        assert_eq!(sim.shared_venue(a, b, p4), Some(r4));
+
+        // **The venue set is symmetric even though the choice is not.** Which
+        // rocks are *available* cannot depend on which party is named first;
+        // which one is *picked* depends only on where the shipper is.
+        assert_eq!(sim.shared_venue(a, b, p3), sim.shared_venue(b, a, p3));
+        assert_ne!(
+            sim.shared_venue(a, b, p3),
+            sim.shared_venue(a, b, p4),
+            "two shippers in different places must not be forced to one compromise rock"
+        );
     }
 
     /// **T-82: the `$` ledger fills and nothing reads it.**
