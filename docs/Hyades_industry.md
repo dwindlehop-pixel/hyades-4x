@@ -2336,13 +2336,92 @@ given a **per-seat-count** horizon instead of a uniform one, which is cheaper
 *and* covers more (the 2-seat arm went from 812 events to ~2,800). Final: unit
 27.6 s, determinism 36.6 s, smoke 23.1 s.
 
-**What is still open.** The berth anchor is a placeholder (R-IND3's family), and
-R-O85's price ladder is untouched: rungs III and IV now buy enormous concurrency
-but still cost 19 kt and 780 kt, so whether anyone can afford the axis is the
-next question. Order is now **R-O85, then re-sweep** — T-88 having dropped down
-the list.
+**What is still open.** The berth anchor is a placeholder (R-IND3's family).
+R-O85's price ladder was the obvious next question — rungs III and IV now buy
+enormous concurrency but still cost 19 kt and 780 kt — and **§6.19c answers it:
+the ladder is scale-free and correctly priced.** The constraint is freight.
 
-#### What follows#### What follows#### What follows#### What follows
+### 6.19c R-O85 resolved — the ladder is fine; nearly half of all decisions hold the ore and lack the colour
+
+**R-O85 said infrastructure was priced as if it were the scarce thing.** R-O88
+refuted two of the three facts that rested on — `slips` is unbounded now, and the
+saturation is per berth and intended. Re-pricing the third against what a rung
+actually *buys* leaves nothing of it either:
+
+| rung | stock | berths | output | step cost | **payback** |
+|---|---|---|---|---|---|
+| I | 0.10 kt | 2 | 0.0500 kt/yr | 0.90 kt | — |
+| II | 1.00 kt | 17 | 0.5484 kt/yr | 19.0 kt | **1.8 yr** |
+| III | 20.0 kt | 334 | 11.11 kt/yr | 780 kt | **1.8 yr** |
+| IV | 800 kt | 13,334 | 444.4 kt/yr | — | **1.8 yr** |
+
+**Cost and output are both geometric in the stock, so the return is constant at
+every rung** — 0.555 kt/yr of hull production per kilotonne of infrastructure,
+a **1.8-year payback at any scale.** The ladder is scale-free, which is a
+property worth having on purpose: an empire deepens until its *ore supply*
+saturates its yard, and the price never decides that for it.
+
+Meanwhile the bed banks **1,714,697 kt** and sits at mean Band **1.442** against
+a ceiling of 3.612, with **none** at cap and 7,248 Bands unbuilt. A rung III step
+costs 19 kt. The money is there a hundred thousand times over, the return is
+enormous, and it is not being spent. So the question stopped being *what does it
+cost* and became **which line declines it**.
+
+#### Counted, per decision (`examples/deepen_blockers`, 3 seats, 1,500 yr)
+
+| | seed 1 | seed 7 |
+|---|---|---|
+| production decisions | 75,471 | 77,573 |
+| bought a rung | 617 (0.82%) | 570 (0.73%) |
+| **gated at the ceiling** | **0 (0.00%)** | **0 (0.00%)** |
+| **could not pay the bill** | **74,166 (98.27%)** | **76,465 (98.57%)** |
+| — of which **colour-short only** | **33,069 (43.82% of all)** | **36,178 (46.64% of all)** |
+| genuinely outbid | 688 (0.91%) | 538 (0.69%) |
+
+Three things, and the third is the finding:
+
+1. **Nothing is capped.** Not one decision in 153,044 was refused because the
+   world would allow no more infrastructure. `k_potential` is not the constraint
+   and never was.
+2. **The policy is not the constraint either.** The deepen-vs-expand comparison
+   declines an affordable rung in **0.7–0.9%** of decisions. R-O68's crossover,
+   which three sections of this document have circled, is very nearly irrelevant
+   — it almost never gets to choose. *(This is also why R-O87 found the bias
+   flat: a knob that is consulted in one decision in a hundred cannot move an
+   objective.)*
+3. **Nearly half of all production decisions are made by a centre that holds
+   enough ore and the wrong ore.** 43.8% and 46.6% of *every* decision are
+   colour-short with the total in hand.
+
+**That is T-73's prediction and §8.1's subject, measured.** A works bill is
+payable in *named colours*; the galaxy's supply is single-coloured (mean
+dominant-colour share **0.789**, 38% of sources ≥95% one colour); and refined
+mass has to **traverse real space** to reach the centre that needs it. The
+remaining ~54% are short on the total as well, which is the same problem one step
+earlier — §6.17's census found **98.3% of everything mined sitting idle at
+outposts**, never hauled.
+
+#### What this redirects
+
+**The mineral economy's binding constraint is freight, not price, not policy and
+not ceiling.** Getting the right colour to the right centre is the whole of it,
+and it is what every flat mineral-side result in this document has actually been
+measuring:
+
+- **R-O85 is resolved** — the ladder is correctly priced and scale-free. Nothing
+  to ratify.
+- **T-76 (development freight) is the next work**, and it is now the *first*
+  work rather than one option among several. `develop_bias` demands minerals for
+  development, and it reaches the world through routing — the path the
+  measurement says is blocked.
+- **The Exchange is the other half** (politics §10.6a). It settles ~0.2% of
+  volume today, and §8.1's freight leg is exactly the mechanism a colour-short
+  centre needs. Its flat measurement was taken against this same wall.
+- **Do not re-sweep `reinvest_bias`, `outpost_mining_fraction`, crew size or
+  anything else mineral-side until freight moves colour.** They have each been
+  measured flat, three times now, against a constraint none of them can touch.
+
+#### What follows#### What follows#### What follows#### What follows#### What follows
 
 - **R-IND21 stays withdrawn.** There is no need to invent a sink.
 - **R-O86 landed alongside this and moved mean infrastructure 1.027 → 1.462**
@@ -2596,7 +2675,8 @@ artifact in place contaminates every later measurement.
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
 | ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favours deepening (+29% hull/yr for 9 colonisers), and what eats it is a homeworld already at rung II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
 | ~~**R-O88**~~ | ~~There is no build-wide axis~~ — **resolved, option C.** `fab_cap` bounds the rate **per berth** (quality); `slips` reads the fabrication share of the **stock** (quantity, unbounded). `fab_cap` 0.2 → 0.1 is a re-denomination: per-berth turnaround is **bit-identical** at every playable rung, and §3.3's schedule now reads off one constant. `slip_throughput` deleted; berth size derived from the Limited hull (**placeholder anchor**). Berths at rung II: 2 → **17**. Fleet-years **+26–34%**, throughput 88.7 → 110.7 yr/s, colony count flat. Also drops the `t_lead` defect — there is no per-planet rate left to fail to reach — and takes T-88's after-idle gap 29.6 → 7.6 yr. | §3.2, §6.3, §6.19b |
-| **R-O85** | **Infrastructure is priced as if it were the scarce thing.** The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
+| ~~**R-O85**~~ | ~~Infrastructure is priced as if it were the scarce thing~~ — **resolved: it is not.** Post-R-O88 the ladder is **scale-free** — 0.555 kt/yr of output per kt of stock, a **1.8-year payback at every rung**. The bed banks 1,714,697 kt against a 19 kt rung and still sits at Band 1.442 with **none** at cap. Counted per decision: **0%** gated, **0.7–0.9%** outbid, **98.3%** cannot pay the bill — and **43.8–46.6% of all decisions hold the total and lack a colour**. The constraint is **freight**, not price. See §6.19c; the work is T-76. | §6.19c |
+| ~~R-O85, as originally framed~~ | ~~Infrastructure is priced as if it were the scarce thing.~~ The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |

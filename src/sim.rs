@@ -3512,6 +3512,9 @@ impl Simulation {
                 mining_pair_cost: ctx.mining_pair_cost.kilotons(),
                 mineral_pressure,
                 candidates_seen: count as u32,
+                // The predicate the decision actually used, not one the reader
+                // has to rebuild from totals — see the field's doc.
+                can_afford_infra: can_pay_bill(&bank, &infra_bill),
                 chosen: order,
             },
         );

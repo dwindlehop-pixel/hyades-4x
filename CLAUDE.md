@@ -1609,13 +1609,32 @@ changes how you *work*, not what is left to do:
   had been swallowing. Still zero at cap against a 3.61 ceiling, so the residual
   cause is **the price of a rung** (R-O85).
 
+  **And R-O85 — "infrastructure is priced out of reach" — is resolved as false
+  (§6.19c).** Post-R-O88 the ladder is **scale-free**: cost and output are both
+  geometric in the stock, so a rung pays for itself in **1.8 years at every
+  rung**. Counted per decision on the bed, **0%** are gated at the ceiling,
+  **0.7–0.9%** are outbid — so R-O68's crossover, which three sections of that
+  document circled, is consulted in one decision per hundred and cannot have been
+  causing anything — and **98.3% simply cannot pay the bill**, of which
+  **43.8–46.6% of *all* decisions hold the total and lack a colour.**
+
+  **So the mineral economy's binding constraint is freight**, and the chain of
+  four investigations that ended there is itself the lesson: units (R-O68),
+  survey waste (R-O86), works identity (R-O87), the build-wide axis (R-O88) and
+  the price ladder (R-O85) were each real and none was the cause. **What finally
+  named it was logging the decision's own predicate instead of reconstructing
+  it**: `can_afford_infra` is a per-colour test, and inferring it from a *total*
+  reported 44.7% "outbid" where the truth is 0.9%. A reconstruction that looks
+  arithmetically equivalent is not, when the thing it reconstructs is a
+  conjunction over three colours.
+
   **So every flat mineral-side result this project has recorded is downstream of
   the same thing** — `outpost_mining_fraction`, both crew policies, and the
   Exchange. Two things follow and the second is the transferable one. **They are
-  still blocked, now on R-O85 rather than on T-51**, and re-measuring any of them
-  before the sink is affordable measures the same nothing again. And: **a metric
-  that reads a decision's output cannot tell you what the decision declined to
-  ask for** —
+  blocked on freight moving colour (T-76), not on price or policy**, and
+  re-measuring any of them before that lands measures the same wall again. And:
+  **a metric that reads a decision's output cannot tell you what the decision
+  declined to ask for** —
   `unmet_colour_demand` summed each centre's shortfall against its *next* rung,
   so a centre with three Bands of headroom it never tried to buy reported zero
   demand, and the first conclusion drawn from it ("the economy has no demand
