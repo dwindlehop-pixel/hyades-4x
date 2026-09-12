@@ -560,6 +560,14 @@ slips(F) = 1 + floor(F / F_slip)
 Every `F_slip` of throughput buys another berth; a centre always has at least
 one. This is the "build wide" axis and it scales without limit, as asked.
 
+> **Measured false in the engine, and the cause is §6.3 (R-O88).** `slips` reads
+> `F`, and T-74 made `F` a Michaelis–Menten hyperbola bounded by `fab_cap`. With
+> `fab_cap = 0.2` and `F_slip = 0.1`, **`fab_cap / F_slip = 2` is the entire
+> axis** — a yard standing on 10¹² kt of infrastructure still has two berths, and
+> homeworlds are *generated* at rung II, already past the only step there is. The
+> axis is closed, not short. §6.19b carries the decision; this paragraph is the
+> half of it that is currently a claim rather than a description.
+
 **Turnaround has a soft floor, and it is not a second tuned curve — it falls out
 of the first.** Throughput divides among the active slips, so a hull of dry mass
 `m` occupies its berth for
@@ -1085,9 +1093,15 @@ reaches most of a nearer ceiling almost at once.
 
 **The ceiling is per *planet*, and the empire total is not capped.** An empire
 scales by holding more worlds, which is why Expansion's cheap, low-ceiling works
-are a strategy and not a handicap — and why `slips` (§3.2) growing linearly in
-`F` does not contradict a bounded `F`: the bound is per yard, and an empire has
-many yards.
+are a strategy and not a handicap.
+
+> ~~"and why `slips` (§3.2) growing linearly in `F` does not contradict a bounded
+> `F`: the bound is per yard, and an empire has many yards."~~ **Withdrawn — it
+> is a non-sequitur (R-O88).** §3.2's claim is about **one centre's berth
+> count**; "an empire has many yards" is about the **empire total**. The two
+> sentences are not about the same quantity, and the reconciliation they appear
+> to perform does not happen: `slips` reads `F`, `F < cap`, so a centre's berth
+> count is bounded by `cap / F_slip` — which is **2**. See §6.19b.
 
 ### 6.4 Why a card cannot be a discount
 
@@ -2184,7 +2198,91 @@ is now T-88 first, then R-O85** (`fab_cap`, the knee, or a berth count that
 actually grows), and only then re-sweep this knob. Sweeping it before the retry
 cadence is fixed measures the cadence.
 
-#### What follows#### What follows#### What follows
+### 6.19b R-O88 — there is no build-wide axis, and a yard cannot use the rate it is allowed
+
+**Author's objection: "we made slips and latency part of the building, so there's
+no saturation on Infra."** That is what §3.2 says and it is not what the engine
+does. Two ratified sections disagree and the engine implements the intersection
+of them rather than either.
+
+| | claim |
+|---|---|
+| **§3.2** (T-69) | `slips(F) = 1 + ⌊F / F_slip⌋` — "the *build wide* axis, and **it scales without limit, as asked**" |
+| **§6.3** (T-74) | `F = cap · u/(u + half)` — Michaelis–Menten, so `F < fab_cap` at **every** finite infrastructure |
+
+`slips` reads `F`. So the second bounds the first, and the bound is the ratio of
+two constants chosen independently in different landings:
+
+> **`fab_cap / slip_throughput = 0.2 / 0.1 = 2` is the entire build-wide axis.**
+
+**Closed, not short.** A yard standing on **10¹² kt** of infrastructure still has
+two berths, because the asymptote is never reached. And homeworlds are
+*generated* at `Band::new(2.0)` — rung II — so every homeworld is **born past the
+only step the axis has**. Pinned by
+`the_build_wide_axis_is_two_berths_wide_and_closed`.
+
+**§6.3's reconciliation does not reconcile anything.** It reads: *"`slips` (§3.2)
+growing linearly in `F` does not contradict a bounded `F`: the bound is per yard,
+and an empire has many yards."* §3.2's claim is about **one centre's berth
+count**; "an empire has many yards" is about the **empire total**. Those are
+different quantities, so the sentence answers a question nobody asked. Withdrawn
+above.
+
+#### The second defect is independent of the cap: `slips` ignores `t_lead`
+
+A berth's cycle is `t_lead + m/per_berth` and **only the second term
+fabricates**, so provisioning berths from a rate alone leaves most of each cycle
+idle. Against the `F` the same rung *allows* (rung II, `F = 0.1818 kt/yr`):
+
+| hull | dry mass | `t_build` | sustained output | **as % of `F`** | berths to saturate `F` | lead as % of cycle |
+|---|---|---|---|---|---|---|
+| Limited | 0.02 kt | 2.22 yr | 0.0180 kt/yr | **10%** | 20.2 | 90% |
+| Medium | 0.10 kt | 3.10 yr | 0.0645 kt/yr | **35%** | 5.6 | 65% |
+| General | 1.00 kt | 13.00 yr | 0.1538 kt/yr | 85% | 2.4 | 15% |
+
+**A rung-II yard building Medium hulls emits a third of the throughput it is
+allowed**, and building Limited hulls, a tenth. This survives whatever happens to
+the cap: even with `F` unbounded, `1 + ⌊F/F_slip⌋` under-provisions by
+`1 + t_lead · F_slip / m` — a factor of **11 for a Limited hull, 3 for a
+Medium**. The small hulls are worst hit, which is precisely backwards for a
+design whose expansion loop runs on Limited and Medium hulls.
+
+#### The decision, which is not mine to take
+
+**§3.2's unbounded build-wide axis and §6.3's per-planet rate ceiling cannot both
+hold for the same planet**, because concurrency, turnaround and output are one
+identity: `output = slips · m / t_build`. Three ways out, and they differ in what
+they do to §5.3's tree table rather than in difficulty:
+
+- **A — the cap is real; amend §3.2.** Keep `fab_cap` gating `slips`, delete
+  "scales without limit", and promote `fab_cap / slip_throughput` to a *stated
+  design magnitude*: how wide a single yard may ever get. It is currently **2**
+  by accident; if the intent is a real axis it wants to be something like 20.
+- **B — the axis is real; move the cap off the slips path.** Derive `slips` from
+  the fabrication **share of the infrastructure stock** rather than from the
+  saturating rate, so "build wide" scales as §3.2 asks. §6.3's "highest peak per
+  planet" then needs an expression that is not a rate asymptote `slips` reads.
+- **C — separate the two roles of `F` (recommended).** Let `fab_cap` bound the
+  rate **per berth** — a *quality* axis — and let `slips` scale with the stock —
+  a *quantity* axis. §5.3's table then reads directly: **Production** = fast
+  berths, **Expansion** = many slow berths, and neither is capped in the axis the
+  other is strong in. It costs one term in `slips` and one in `build_time`, it
+  keeps both ratified sections true, and it is the only option under which the
+  tree characters survive intact.
+
+**Under every option `slips` must gain a `t_lead` term**, or the yard still
+cannot use its own rate.
+
+**What this does to the surrounding findings.** R-O85 said infrastructure is
+*priced* out of reach; that was half the story — the **product** is capped too,
+and at rung II. §6.19a's "+29% for nine colonisers at rung I → II" is then the
+whole of what the ladder can ever offer a yard, and homeworlds are born holding
+it. And T-88's retry cadence (81% of a homeworld's timeline) sits on top of all
+of it. **Order: T-88, then R-O88, then R-O85** — each one un-gates the next, and
+measuring any economic knob before they land measures whichever of them binds
+first.
+
+#### What follows#### What follows#### What follows#### What follows
 
 - **R-IND21 stays withdrawn.** There is no need to invent a sink.
 - **R-O86 landed alongside this and moved mean infrastructure 1.027 → 1.462**
@@ -2437,6 +2535,7 @@ artifact in place contaminates every later measurement.
 | ~~**R-O68**~~ | ~~The deepen/expand comparison is between incommensurable quantities~~ — **resolved (T-51).** Both sides are now `rank` score per kilotonne committed: `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`. `reinvest_bias` is an odds ratio with a state-dependent crossover. Bit-identical below `b = 0.96`; the old form's cliff at 0.9 moved to 1.0. | §6.18 |
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
 | ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favours deepening (+29% hull/yr for 9 colonisers), and what eats it is a homeworld already at rung II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
+| **R-O88** | **There is no build-wide axis, and a yard cannot use the rate it is allowed.** §3.2 says `slips` "scales without limit"; §6.3 bounds `F` by `fab_cap`; `slips` reads `F`, so **`fab_cap / slip_throughput = 2` is the whole axis** — closed, not short (10¹² kt of infrastructure still buys two berths), and homeworlds are generated past it. Independently, `slips` ignores `t_lead`, so a rung-II yard emits **10–35%** of its allowed `F` on Limited and Medium hulls. Three options in §6.19b; **C recommended**. Not taken: `fab_cap` and `slip_throughput` are shipped magnitudes. | §3.2, §6.3, §6.19b |
 | **R-O85** | **Infrastructure is priced as if it were the scarce thing.** The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |

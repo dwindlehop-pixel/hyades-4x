@@ -1539,6 +1539,19 @@ changes how you *work*, not what is left to do:
   branch was the right answer reached for a wrong reason**, and the cause moved
   to the price ladder (R-O85/T-89) rather than going away.
 
+  **And that `slips` figure is a spec contradiction, not a design magnitude
+  (R-O88).** `Hyades_industry.md` §3.2 says the build-wide axis "scales without
+  limit"; §6.3 bounds `F` by `fab_cap`; `slips` reads `F`. So the axis is
+  **closed at two berths** — 10¹² kt of infrastructure still buys two — and
+  homeworlds are *generated* past the only step it has. §6.3's reconciliation
+  ("the bound is per yard, and an empire has many yards") answers a question
+  about the empire total, not about a centre's berth count, and is withdrawn.
+  Independently, **`slips` ignores `t_lead`**, so a rung-II yard emits 10–35% of
+  the rate its own rung allows on Limited and Medium hulls. **Order of work is
+  T-88 → R-O88 → R-O85** — the retry cadence, then what infrastructure can buy,
+  then what it costs; a knob measured before all three measures whichever binds
+  first.
+
   So the loop's time constant is the **unconditional pre-`medium_min_level`
   staircase** — found at `K = 1` with no headroom, then serially mine
   `round(infra)+1` minerals, deepen, grow past the level-3 `PopBands` edge,

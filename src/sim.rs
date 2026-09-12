@@ -5681,6 +5681,89 @@ mod tests {
         }
     }
 
+    /// **The "build wide" axis is two berths wide and closed, and a yard cannot
+    /// use the throughput it is allowed (R-O88).**
+    ///
+    /// Two ratified sections disagree, and the engine implements the
+    /// intersection rather than either:
+    ///
+    /// - **`Hyades_industry.md` §3.2**: `slips(F) = 1 + ⌊F / F_slip⌋`. "Every
+    ///   `F_slip` of throughput buys another berth… **This is the 'build wide'
+    ///   axis and it scales without limit, as asked.**"
+    /// - **§6.3** (T-74): `F = cap · u/(u + half)`, a Michaelis–Menten
+    ///   hyperbola, so `F < fab_cap` for every finite infrastructure.
+    ///
+    /// `slips` reads `F`, so the second bounds the first: with
+    /// `fab_cap = 0.2` and `slip_throughput = 0.1`, **`fab_cap /
+    /// slip_throughput = 2` is the entire axis.** Not slow — *closed*: at an
+    /// infrastructure stock of 10¹² kt a yard still has two berths, and
+    /// homeworlds are **generated** at rung II (`galaxy.rs`, `Band::new(2.0)`),
+    /// i.e. already past the only step there is.
+    ///
+    /// §6.3's reconciliation — "`slips` growing linearly in `F` does not
+    /// contradict a bounded `F`: the bound is per yard, and an empire has many
+    /// yards" — answers a different question. §3.2's claim is about **one
+    /// centre's berth count**; "an empire has many yards" is about the empire
+    /// total. The two sentences are not about the same quantity.
+    ///
+    /// **And there is a second, independent defect: `slips` ignores `t_lead`.**
+    /// A berth's cycle is `t_lead + m/per_berth`, and only the second term
+    /// fabricates, so a yard provisioned by rate alone spends most of its
+    /// berth-cycle producing nothing. Measured against the `F` the same rung
+    /// *allows*:
+    ///
+    /// | hull | rung II output | as % of `F` | berths needed to saturate `F` |
+    /// |---|---|---|---|
+    /// | Limited (0.02 kt) | 0.0180 kt/yr | **10%** | 20.2 |
+    /// | Medium (0.10 kt) | 0.0645 kt/yr | **35%** | 5.6 |
+    /// | General (1.00 kt) | 0.1538 kt/yr | 85% | 2.4 |
+    ///
+    /// This one survives whatever happens to the cap: even with `F` unbounded,
+    /// `1 + ⌊F/F_slip⌋` under-provisions by `1 + t_lead·F_slip/m` — a factor of
+    /// **11 for a Limited hull and 3 for a Medium**.
+    ///
+    /// Pinned rather than fixed: `fab_cap` and `slip_throughput` are shipped
+    /// magnitudes and the choice between "the cap is real and §3.2 is amended"
+    /// and "the axis is real and the cap moves off the slips path" is a design
+    /// call (R-O88), not a tuning one. **This test fails the day either is
+    /// settled, which is exactly when both spec sections need editing.**
+    #[test]
+    fn the_build_wide_axis_is_two_berths_wide_and_closed() {
+        let cfg = SimConfig::new(1);
+        let works = cards::Works::default();
+        let f_of = |infra: Price| {
+            employment_rate(infra, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg))
+        };
+
+        // 1. The axis is closed, not merely short. No infrastructure buys a third berth.
+        for stock in [1.0, 1.0e3, 1.0e6, 1.0e12] {
+            assert_eq!(
+                slips(f_of(Price::new(stock)), &cfg),
+                2,
+                "a yard standing on {stock} kt of infrastructure still has two berths — \
+                 §3.2's 'scales without limit' is false in the engine (R-O88)"
+            );
+        }
+
+        // 2. And the width of the axis is the ratio of two constants that were
+        //    chosen independently, which is what makes it an accident.
+        assert_eq!(cfg.fab_cap / cfg.slip_throughput, 2.0, "the whole build-wide axis is this ratio");
+
+        // 3. The second defect: a yard cannot emit the rate its own rung allows,
+        //    because `slips` is provisioned from `F` with no `t_lead` term.
+        let f = f_of(infra_rung_price(2, &cfg));
+        let s = slips(f, &cfg) as f64;
+        for (name, m) in [("Limited", 0.02), ("Medium", 0.10)] {
+            let t_build = cfg.build_lead_years + m / (f / s);
+            let output = s * m / t_build;
+            assert!(
+                output < 0.5 * f,
+                "{name}: a rung-II yard emits {output:.4} kt/yr of the {f:.4} it is allowed. \
+                 If this now passes, `slips` has learned about `t_lead` and R-O88's second half is fixed"
+            );
+        }
+    }
+
     fn test_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = 300.0;

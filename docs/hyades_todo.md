@@ -126,6 +126,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **R-O86** — a scout needs somewhere to scout | **R-O86** | T-89 | — | Design law #11, restored on the engine's busiest path — `apply_build_with` was debiting the bank and holding the yard for a hull `launch_survey` then declined to spawn; `CLAUDE.md` §4's "hand a decision only the fields it reads" (`survey_frontier` is `O(1)` off a running integer count, not a walk) | **R-AC16's magnitude.** `survey_reserve = 1024` is compared against a quantity with median **0** and maximum **164**, so the test is a constant `true` and every value above ~200 is bit-identical. The direction the ratification argued is fine; the number never reached the simulation. Also **the code's own justification** for the `candidates.is_empty()` pre-emption — "no candidates means every other branch below returns Idle" — which is false and was swallowing the only live deepen path |
 | **R-O87** — `reinvest_bias` against work-years | **R-O87** | T-89 | — | `CLAUDE.md` §2's 2-SE bar, enforced against my own candidate rather than someone else's; design law #11 surfacing as the works-per-mineral identity that makes the knob neutral | **Nothing ratified** — and that is the point: the candidate cleared the bar on the standard bed (+2.33% ± 0.96, 4/4 seeds) and was refuted by an independent seed set (−1.70% ± 2.42). `reinvest_bias` is **held at 0.5**, not re-ratified. The contradiction is of my own screen, not of a spec |
 | **§6.19a** — the identity was half an argument | — | **T-88** (quantified), T-89 | — | `CLAUDE.md` §2's "never leave a symptom without a proven mechanism", applied to my own flat result: the *flow* side was priced off the engine's functions and the bottleneck named and measured rather than asserted | **My own §6.19 reasoning.** "Everything downstream breaks the tie for expansion" was asserted and is wrong — rung I→II is **+29% hull/yr for nine colonisers**, payback 62 yr. The conclusion (hold 0.5) survives; the argument for it did not. Author's objection, correct |
+| **R-O88** — there is no build-wide axis | — | T-88, T-89 | **R-O88** | A characterization test pinning a contradiction rather than a number, so neither spec section can drift further apart silently | **Two ratified sections at once.** §3.2's "`slips` scales without limit" is false in the engine (`fab_cap / slip_throughput = 2` is the whole axis, and it is closed — 10¹² kt still buys two berths). §6.3's reconciliation of the two is a **non-sequitur** and is withdrawn: it defends a per-centre claim with an empire-wide fact. Author's objection, correct |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -342,6 +343,12 @@ the other 19% of the timeline — so a +29% rung improvement is worth +5.5% at t
 absolute best before anything else attenuates it. **Fix this before R-O85 and
 before re-sweeping any economic knob**; a sweep run today is measuring the retry
 cadence.
+
+**And R-O88 sits between them.** The build-wide axis is closed at two berths and
+a yard emits 10–35% of the rate its rung allows (`Hyades_industry.md` §6.19b), so
+the order is **T-88 → R-O88 → R-O85**: the retry cadence, then what
+infrastructure can even buy, then what it costs. Each un-gates the next, and a
+knob measured before all three measures whichever binds first.
 
 `cycle_years = 50` is doing two unrelated jobs and they want opposite values:
 
