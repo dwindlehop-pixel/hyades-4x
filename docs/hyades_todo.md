@@ -127,6 +127,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **R-O87** — `reinvest_bias` against work-years | **R-O87** | T-89 | — | `CLAUDE.md` §2's 2-SE bar, enforced against my own candidate rather than someone else's; design law #11 surfacing as the works-per-mineral identity that makes the knob neutral | **Nothing ratified** — and that is the point: the candidate cleared the bar on the standard bed (+2.33% ± 0.96, 4/4 seeds) and was refuted by an independent seed set (−1.70% ± 2.42). `reinvest_bias` is **held at 0.5**, not re-ratified. The contradiction is of my own screen, not of a spec |
 | **§6.19a** — the identity was half an argument | — | **T-88** (quantified), T-89 | — | `CLAUDE.md` §2's "never leave a symptom without a proven mechanism", applied to my own flat result: the *flow* side was priced off the engine's functions and the bottleneck named and measured rather than asserted | **My own §6.19 reasoning.** "Everything downstream breaks the tie for expansion" was asserted and is wrong — rung I→II is **+29% hull/yr for nine colonisers**, payback 62 yr. The conclusion (hold 0.5) survives; the argument for it did not. Author's objection, correct |
 | **R-O88** — there is no build-wide axis | — | T-88, T-89 | **R-O88** | A characterization test pinning a contradiction rather than a number, so neither spec section can drift further apart silently | **Two ratified sections at once.** §3.2's "`slips` scales without limit" is false in the engine (`fab_cap / slip_throughput = 2` is the whole axis, and it is closed — 10¹² kt still buys two berths). §6.3's reconciliation of the two is a **non-sequitur** and is withdrawn: it defends a per-centre claim with an empire-wide fact. Author's objection, correct |
+| **R-O88 resolved** — option C, split `F`'s two roles | **R-O88** | T-89 | — | §3.2's unbounded build-wide axis and §6.3's tree meanings for `cap`/`half`, both made true at once by denominating the ceiling per berth; `CLAUDE.md` §2's "when a change raises entity count, check the test horizons in the same commit" — unit 19→54 s and determinism 30→58 s, both fixed in this commit with `events_processed` floors guarding the trims | **`SimConfig::slip_throughput` deleted** and `fab_cap` 0.2 → 0.1. Neither is a retune: per-berth turnaround is bit-identical at every playable rung, and §3.3's approved schedule now reads off `fab_cap` directly. Also supersedes **T-88's own headline measurement** — the after-idle gap is 29.6 → 7.6 yr, so 81%-of-timeline no longer holds |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -344,11 +345,18 @@ absolute best before anything else attenuates it. **Fix this before R-O85 and
 before re-sweeping any economic knob**; a sweep run today is measuring the retry
 cadence.
 
-**And R-O88 sits between them.** The build-wide axis is closed at two berths and
-a yard emits 10–35% of the rate its rung allows (`Hyades_industry.md` §6.19b), so
-the order is **T-88 → R-O88 → R-O85**: the retry cadence, then what
-infrastructure can even buy, then what it costs. Each un-gates the next, and a
-knob measured before all three measures whichever binds first.
+> **Superseded by R-O88, which largely dissolved this as a side effect.** The
+> retry cadence bit because a declined build left the yard with *nothing*
+> scheduled. With berths instead of two, some other berth clears and re-triggers
+> the centre long before the economy tick does: the after-idle gap measured
+> **29.6 → 7.6 yr** and the after-build gap **1.5 → 0.1 yr**
+> (`Hyades_industry.md` §6.19b). The 81% figure above is the pre-R-O88 number and
+> should not be re-cited.
+>
+> **T-88 is still worth doing for the reason it was opened** — economic
+> *granularity*, a 50-year Euler step on a logistic, which is a fidelity argument
+> and not a throughput one. It is no longer the dominant throttle, so the order
+> is now **R-O85, then re-sweep**, with this below both.
 
 `cycle_years = 50` is doing two unrelated jobs and they want opposite values:
 

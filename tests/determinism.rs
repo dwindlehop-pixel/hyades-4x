@@ -49,12 +49,41 @@ fn full_run_reports_are_bit_identical() {
     // Every fair seat count, 18 included (R-NET14). `Hyades_netcode.md` §6 makes
     // bit-reproducibility a *network* property, not only an MC one: a divergence
     // at any seat count is a desync, and 18 is the count the protocol is now
-    // specified for. Cheap to cover — the horizon is pinned at 100 yr.
-    for &(n, seed) in &[(2usize, 1u64), (3, 7), (6, 13), (12, 99), (18, 4)] {
-        let mut a = fresh_short(n, seed, 100.0);
-        let mut b = fresh_short(n, seed, 100.0);
+    // specified for.
+    //
+    // **Full-size galaxies, and the horizon is now per seat count.** This is the
+    // one test `CLAUDE.md` §2 says must *keep* the scenery: an ordering fault in
+    // a large collection only shows at scale. So the lever is duration — and
+    // bit-identity is an arithmetic identity, which needs no horizon at all
+    // beyond enough of one that the mechanism has fired.
+    //
+    // A *uniform* horizon was the wrong shape. Cost goes as events, which go as
+    // seats × years, so 100 yr for everybody made the 18-seat arm pay for the
+    // whole target while the 2-seat arm ran only **812 events** — the thinnest
+    // coverage sat where the budget was not being spent. Opening the build-wide
+    // axis (R-O88) tripled the hulls in the water by any given year and took
+    // this target 30 s → 58 s, which is what forced the question.
+    //
+    // Equalising instead — each seat count gets the horizon that buys it a
+    // comparable number of events — is **cheaper and covers more**: the target
+    // comes back under budget *and* the worst-covered arm goes from 812 events
+    // to ~1,900. Measured events per arm at these horizons: 2,761 / 2,7xx /
+    // 3,0xx / ~1,800 / ~1,900.
+    //
+    // The `events_processed` floor below is what stops any future trim going
+    // vacuous — the same guard, and for the same reason, as `moving` in
+    // `positions_never_exceed_lightspeed`. It fired on the first attempt here
+    // too, at a uniform 50 yr.
+    for &(n, seed, horizon) in &[(2usize, 1u64, 200.0), (3, 7, 170.0), (6, 13, 120.0), (12, 99, 70.0), (18, 4, 60.0)] {
+        let mut a = fresh_short(n, seed, horizon);
+        let mut b = fresh_short(n, seed, horizon);
         let ra = a.run();
         let rb = b.run();
+        assert!(
+            ra.events_processed > 1_000,
+            "n={n} seed={seed} processed only {} events — the horizon has been cut past the point where              this test asserts anything",
+            ra.events_processed
+        );
         assert_eq!(ra.events_processed, rb.events_processed, "events n={n} seed={seed}");
         assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
         for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
@@ -186,8 +215,18 @@ fn stepping_in_any_granularity_reaches_the_same_state() {
 /// infinite quantity in this model.
 #[test]
 fn no_nan_or_infinity_reaches_replicated_state() {
-    let mut sim = fresh_short(6, 31337, 400.0);
+    // **200 yr, trimmed at R-O88** (was 400, which cost 30 s once the berth
+    // count opened). The assertion is an invariant — no non-finite value reaches
+    // replicated state — so it needs the mechanism to have fired, not a long
+    // accumulation. The full galaxy stays: this walks every planet's snapshot
+    // fields, so breadth is what it is actually reading.
+    let mut sim = fresh_short(6, 31337, 200.0);
     let report = sim.run();
+    assert!(
+        report.events_processed > 1_000,
+        "only {} events — the trim has gone past where this asserts anything",
+        report.events_processed
+    );
 
     let finite = |v: f64, what: &str| assert!(v.is_finite(), "{what} is not finite: {v}");
 

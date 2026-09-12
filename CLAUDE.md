@@ -1539,18 +1539,42 @@ changes how you *work*, not what is left to do:
   branch was the right answer reached for a wrong reason**, and the cause moved
   to the price ladder (R-O85/T-89) rather than going away.
 
-  **And that `slips` figure is a spec contradiction, not a design magnitude
-  (R-O88).** `Hyades_industry.md` §3.2 says the build-wide axis "scales without
-  limit"; §6.3 bounds `F` by `fab_cap`; `slips` reads `F`. So the axis is
-  **closed at two berths** — 10¹² kt of infrastructure still buys two — and
-  homeworlds are *generated* past the only step it has. §6.3's reconciliation
-  ("the bound is per yard, and an empire has many yards") answers a question
-  about the empire total, not about a centre's berth count, and is withdrawn.
-  Independently, **`slips` ignores `t_lead`**, so a rung-II yard emits 10–35% of
-  the rate its own rung allows on Limited and Medium hulls. **Order of work is
-  T-88 → R-O88 → R-O85** — the retry cadence, then what infrastructure can buy,
-  then what it costs; a knob measured before all three measures whichever binds
-  first.
+  **And that `slips` figure was a spec contradiction, not a design magnitude
+  (R-O88, now resolved).** §3.2 says the build-wide axis "scales without limit";
+  §6.3 bounded `F` by `fab_cap`; `slips` read `F`. So the axis was **closed at
+  two berths** — 10¹² kt of infrastructure still bought two — and homeworlds are
+  *generated* past the only step it had. §6.3's reconciliation ("the bound is per
+  yard, and an empire has many yards") answered a question about the empire
+  total, not about a centre's berth count, and is withdrawn.
+
+  **The fix was to notice that one variable was doing two jobs.** `fab_cap` now
+  bounds the rate **per berth** (quality) and `slips` reads the fabrication share
+  of the **stock** (quantity, unbounded) — so both sections are true at once and
+  §5.3's tree table reads off the engine directly: Production buys fast berths,
+  Expansion buys many slow ones. Berths at rung II went 2 → 17; **fleet-years
+  +26–34%** on both seeds, colony count flat (the bed is `k_high`-saturated, so
+  more yard cannot buy worlds the classifier does not admit), and **throughput
+  *improved* 88.7 → 110.7 yr/s** because a quarter of the events had been
+  decisions that declined and stalled.
+
+  Three things from it worth keeping:
+
+  - **When two ratified claims collide, check whether one symbol is carrying two
+    meanings before you pick a winner.** `F` was a per-planet rate *and* the
+    berth currency. Splitting it cost one function and contradicted neither
+    section — where choosing between them would have contradicted one.
+  - **A re-denomination is not a retune, and it is worth engineering for.**
+    `fab_cap` 0.2 → 0.1 reproduces the old per-berth rate *bit-for-bit* because
+    the old `slips` was always exactly 2, so turnaround did not move at all and
+    the only behavioural change in the landing is berth count. That is what makes
+    the measurement readable.
+  - **The cost landed in the test targets, not in throughput** — unit 19 → 54 s,
+    determinism 30 → 58 s — exactly as §2 predicts, and both were fixed in the
+    same commit. `full_run_reports_are_bit_identical` got a **per-seat-count**
+    horizon rather than a uniform one: cost goes as seats × years, so one horizon
+    for everybody made the 18-seat arm pay for the target while the 2-seat arm
+    ran 812 events. Equalising was **cheaper and covered more**. When a shared
+    horizon feeds arms of very different size, that is the trim to reach for.
 
   So the loop's time constant is the **unconditional pre-`medium_min_level`
   staircase** — found at `K = 1` with no headroom, then serially mine

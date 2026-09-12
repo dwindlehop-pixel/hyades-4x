@@ -1038,45 +1038,56 @@ fn miner_equivalent(cfg: &SimConfig) -> f64 {
     hull_cost(HullType::LimitedSystems, cfg).kilotons().max(1e-12)
 }
 
-/// **How many builds a yard runs at once** — `slips(F) = 1 + floor(F / F_slip)`
-/// (T-69, `Hyades_industry.md` §3.2).
-///
-/// Every `F_slip` of fabrication throughput buys another berth, and a centre
-/// always has at least one. **This is the "build wide" axis and it scales
-/// without limit**, which is what the design asks for — and it is why the
-/// *turnaround* floor below is not a second tuned curve but a consequence of
-/// this one.
-///
-/// Throughput divides among the active slips, so a hull of mass `m` occupies a
-/// berth for `t_lead + m / (F / slips(F))`. As `F` grows, `slips` grows with it,
-/// `F / slips → F_slip` **from above**, and
+/// **How many berths a yard has — the *quantity* axis** (`Hyades_industry.md`
+/// §3.2, re-derived at R-O88).
 ///
 /// ```text
-/// t_build → t_lead + m / F_slip        (approached from above, never reached)
+/// slips(u) = 1 + floor(u / infra_per_slip)
 /// ```
 ///
-/// **The soft limit is emergent, not imposed.** No amount of industry rushes one
-/// hull below that floor; industry buys *more ships at once*, never *faster
-/// ships*. Two consequences the design wants on purpose: a General hull stays a
-/// long, visible commitment that a rich empire cannot buy its way out of
-/// telegraphing (which is what the observation model trades in), and `m` is dry
-/// mass, which under R-O57 *is* mineral cost — so the time ladder and the price
-/// ladder are one ladder with no second constant to drift.
+/// where `u` is the **fabrication share of the centre's infrastructure stock**.
+/// Linear in the stock and therefore genuinely unbounded — which is what §3.2
+/// asks for and what the engine did not do until now.
 ///
-/// **The `1 +` is load-bearing and reads backwards until you take the
-/// reciprocal.** It makes per-berth throughput `F/(1 + floor(F/F_slip))`, which
-/// is *strictly below* `F_slip` for every finite `F` and rises toward it. Time
-/// is the reciprocal, so `t_build` sits strictly **above** the floor and falls
-/// toward it — which is the guarantee §3.2 is about. Dropping the `1 +` to
-/// "fix" the boundary inverts it: per-berth throughput would then *exceed*
-/// `F_slip` and a rich yard would build a single hull faster than the floor,
-/// deleting the design property outright. `§3.2`'s prose says `F/slips → F_slip`
-/// *from above*, which is the one line in it that is wrong; the operative
-/// sentence beside it — "no amount of industry rushes one hull below that
-/// floor" — is the claim, and this form is what satisfies it.
-fn slips(fabrication_rate: f64, cfg: &SimConfig) -> usize {
-    let per_slip = cfg.slip_throughput.max(1e-12);
-    1 + (fabrication_rate / per_slip).floor().max(0.0) as usize
+/// ~~`slips(F) = 1 + floor(F / F_slip)`~~ read the *rate*, and T-74 had made the
+/// rate a Michaelis–Menten hyperbola bounded by `fab_cap`. So the axis was
+/// bounded by `fab_cap / slip_throughput = 2` — **closed, not short**: a yard
+/// standing on 10¹² kt of infrastructure still had two berths, and homeworlds
+/// are *generated* at rung II, already past the only step it had (R-O88).
+///
+/// **Quantity here, quality in [`Simulation::berth_rate`].** That split is the
+/// whole of R-O88's fix: `fab_cap` now bounds what *one berth* can do, so §6.3's
+/// per-planet ceiling becomes a per-berth ceiling and §5.3's tree table reads
+/// directly — **Production buys fast berths, Expansion buys many slow ones** —
+/// with neither tree capped on the axis the other is strong in. A planet's total
+/// is `slips × berth_rate`, unbounded in the stock, exactly as "an empire scales
+/// by holding more worlds *and* by building more yard" requires.
+///
+/// **The `1 +` is still load-bearing**, for the same reason as before: a centre
+/// always has at least one berth, and `t_build` is floored by `t_lead + m /
+/// fab_cap` rather than divided down by a berth count that could reach zero.
+fn slips(fabrication_stock: f64, cfg: &SimConfig) -> usize {
+    let per_slip = infra_per_slip(cfg).max(1e-12);
+    1 + (fabrication_stock / per_slip).floor().max(0.0) as usize
+}
+
+/// **The infrastructure stock one berth occupies, in kilotons** — *derived, not
+/// tuned*: a slipway is sized like the smallest hull it can lay down, so it is
+/// one Limited Systems hull.
+///
+/// This replaces `SimConfig::slip_throughput`, which under R-O88 has no job
+/// left: its old meaning ("one slip's throughput, kt/yr") is now what `fab_cap`
+/// bounds, and §3.3's approved turnaround schedule is stated in terms of that
+/// bound. Deriving the berth size from the hull ladder rather than storing a
+/// second constant follows R-O57's rule — where two numbers must agree, keep
+/// one.
+///
+/// **Placeholder anchor** (R-O88): the *form* is the ratified part, the choice
+/// of the Limited hull as the unit is not. It is picked so a rung-I centre keeps
+/// exactly the two berths it had before this landed.
+#[inline]
+fn infra_per_slip(cfg: &SimConfig) -> f64 {
+    hull_cost(HullType::LimitedSystems, cfg).kilotons()
 }
 
 /// **The knee of the rate curve: one infrastructure rung's worth of works, as
@@ -1125,8 +1136,12 @@ fn works_knee(cfg: &SimConfig) -> f64 {
 /// `cap` and `half` from [`cards::Works`] are **multipliers on the base
 /// constants**, base `1.0`, so an empire that has played no works card sits
 /// exactly on the shipped curve.
+fn employment_stock(infra: Price, works: &cards::Works, e: cards::Employment) -> f64 {
+    infra.kilotons() * works.alloc_share(e)
+}
+
 fn employment_rate(infra: Price, works: &cards::Works, e: cards::Employment, base_cap: f64, base_half: f64) -> f64 {
-    let u = infra.kilotons() * works.alloc_share(e);
+    let u = employment_stock(infra, works, e);
     if u <= 0.0 {
         return 0.0;
     }
@@ -1662,26 +1677,25 @@ pub struct SimConfig {
     ///
     /// **Approved starting value, not MC-ratified** (§3.3).
     pub build_lead_years: f64,
-    /// **One slip's fabrication throughput, `F_slip`, in kt/yr** (§3.2, T-68).
+    /// **Fabrication ceiling, kt/yr — of one *berth*** (T-74 for the curve,
+    /// R-O88 for the denomination). Production raises it; `Hyades_industry.md`
+    /// §6.3.
     ///
-    /// Stage 2 is the single-slip case, so this is simply the rate at which a
-    /// yard turns mass into hull: `t_build = t_lead + m / F_slip`. Concurrency
-    /// — `slips(F) = 1 + floor(F / F_slip)`, and with it the *soft floor* that
-    /// makes this an asymptote rather than a divisor — is stage 3 (T-69). The
-    /// constant is introduced now with the meaning it will keep, so that landing
-    /// slips changes what divides by it and not what it means.
+    /// ~~The asymptote a single *planet* can ever reach.~~ Re-denominated at
+    /// R-O88, because `slips` read this rate and was therefore bounded by it —
+    /// `fab_cap / slip_throughput = 2` was the whole of §3.2's "build wide"
+    /// axis, closed at two berths however rich the yard. The ceiling is now what
+    /// one berth can do, and a planet's total is `slips × berth_rate`, unbounded
+    /// in the stock.
     ///
-    /// **Approved starting value, not MC-ratified** (§3.3).
-    pub slip_throughput: f64,
-    /// **Fabrication ceiling, kt/yr** — the asymptote `cap_fab` a single planet
-    /// can ever reach (T-74, `Hyades_industry.md` §6.3). Production raises it.
-    ///
-    /// **Anchored, not fitted.** The knee sits at one infrastructure rung
-    /// ([`works_knee`]), so a rung-I centre under default doctrine runs at
-    /// exactly *half* its ceiling — and this is `2 × slip_throughput`, which
-    /// makes that centre's rate identical to the flat constant T-68 shipped.
-    /// Below a rung it is slower, above it faster: the ramp, switched on,
-    /// pivoting about the configuration that was already ratified.
+    /// **0.2 → 0.1, and that is a re-denomination rather than a retune.** The
+    /// old code divided a planet-wide `F` by `slips`, which was always exactly
+    /// 2 at every rung a centre can occupy, so halving the ceiling reproduces
+    /// the old per-berth rate **bit-for-bit** — pinned by
+    /// `turnaround_is_unchanged_and_only_the_berth_count_opened`. It also makes
+    /// §3.3's approved turnaround schedule read off this constant directly:
+    /// `t_build → t_lead + m / fab_cap` is 2.2 / 3.0 / 12.0 yr for the three
+    /// Systems hulls, which is the table §3.3 approved.
     ///
     /// **Placeholder magnitude** (R-IND3), like every coefficient in §5.
     pub fab_cap: f64,
@@ -2050,8 +2064,7 @@ impl SimConfig {
             horizon_years: 4000.0,
             cycle_years: 50.0,
             build_lead_years: 2.0,
-            slip_throughput: 0.1,
-            fab_cap: 0.2,
+            fab_cap: 0.1,
             civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
@@ -3543,35 +3556,63 @@ impl Simulation {
     /// the same formula, so landing concurrency changes the divisor rather than
     /// the model.
     fn build_time(&self, center: Entity, mass: Price) -> f64 {
-        // **Throughput divides among the slips** (T-69). That is what makes the
-        // turnaround floor emergent rather than imposed: as `F` grows, `slips`
-        // grows with it and `F / slips` approaches `F_slip` from above, so one
-        // hull never builds faster than `t_lead + m / F_slip` however rich the
-        // empire is. Industry buys more ships at once, never faster ships.
-        let f = self.fabrication_rate(center);
-        let per_berth = (f / slips(f, &self.config) as f64).max(1e-12);
+        // **One berth's rate, not the planet's** (R-O88). A hull occupies a
+        // berth, so what sets its turnaround is what that berth can do — and
+        // `berth_rate` saturates at `fab_cap`, which makes the floor
+        // `t_lead + m / fab_cap` emergent rather than imposed. Industry buys
+        // more ships at once, never faster ships, and now the "more at once"
+        // half is genuinely unbounded.
+        let per_berth = self.berth_rate(center).max(1e-12);
         self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / per_berth
     }
 
-    /// **This centre's fabrication throughput, kt/yr** (T-74). It was the flat
-    /// `slip_throughput`; it is now what that centre's *works* produce, so
-    /// deepening buys build rate and razing takes it away.
-    fn fabrication_rate(&self, center: Entity) -> f64 {
+    /// **The fabrication share of this centre's infrastructure stock, kt** — the
+    /// quantity both yard axes are bought with (R-O88).
+    fn fabrication_stock(&self, center: Entity) -> f64 {
         let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
-        let works = self
-            .world
+        employment_stock(infra, &self.works_of(center), cards::Employment::Fabrication)
+    }
+
+    /// **One berth's throughput, kt/yr — the *quality* axis** (T-74's curve,
+    /// R-O88's denomination). Michaelis–Menten on the stock, saturating at
+    /// `fab_cap`: Production raises the ceiling, Growth and Expansion lower the
+    /// knee. See [`slips`] for the quantity axis this is paired with.
+    fn berth_rate(&self, center: Entity) -> f64 {
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        employment_rate(
+            infra,
+            &self.works_of(center),
+            cards::Employment::Fabrication,
+            self.config.fab_cap,
+            works_knee(&self.config),
+        )
+    }
+
+    /// **This centre's total fabrication throughput, kt/yr** — `slips ×
+    /// berth_rate`, so it is unbounded in the stock (R-O88).
+    ///
+    /// This is the *demand* figure — what the centre can consume — and it is
+    /// what `mining_crew_for` and the `$` faucet read. It is **not** what
+    /// [`Self::build_time`] reads: a hull sits in one berth, so its turnaround
+    /// is the berth's rate and not the yard's.
+    fn fabrication_rate(&self, center: Entity) -> f64 {
+        slips(self.fabrication_stock(center), &self.config) as f64 * self.berth_rate(center)
+    }
+
+    /// This centre's owner's works, or the card-free default if it is unowned.
+    fn works_of(&self, center: Entity) -> cards::Works {
+        self.world
             .owner
             .get(center)
             .and_then(|o| self.world.works.get(self.player_entity[o.0 as usize]))
             .copied()
-            .unwrap_or_default();
-        employment_rate(infra, &works, cards::Employment::Fabrication, self.config.fab_cap, works_knee(&self.config))
+            .unwrap_or_default()
     }
 
     /// **How many berths this centre has spare** (T-69). Zero means every slip
     /// is busy and the yard cannot commit again until one clears.
     fn free_berths(&self, center: Entity) -> usize {
-        let total = slips(self.fabrication_rate(center), &self.config);
+        let total = slips(self.fabrication_stock(center), &self.config);
         let busy = self.world.berths.get(center).map(|b| b.len()).unwrap_or(0);
         total.saturating_sub(busy)
     }
@@ -5681,86 +5722,70 @@ mod tests {
         }
     }
 
-    /// **The "build wide" axis is two berths wide and closed, and a yard cannot
-    /// use the throughput it is allowed (R-O88).**
+    /// **The build-wide axis is open, and turnaround did not move (R-O88).**
     ///
-    /// Two ratified sections disagree, and the engine implements the
-    /// intersection rather than either:
+    /// Two ratified sections used to disagree and the engine implemented the
+    /// intersection. `Hyades_industry.md` §3.2 says `slips` "scales without
+    /// limit"; §6.3 (T-74) made the fabrication rate a Michaelis–Menten
+    /// hyperbola bounded by `fab_cap`; and `slips` read that rate. So the axis
+    /// was `fab_cap / slip_throughput = 2` berths — **closed, not short**: a
+    /// yard on 10¹² kt of infrastructure still had two, and homeworlds are
+    /// *generated* at rung II, already past the only step it had.
     ///
-    /// - **`Hyades_industry.md` §3.2**: `slips(F) = 1 + ⌊F / F_slip⌋`. "Every
-    ///   `F_slip` of throughput buys another berth… **This is the 'build wide'
-    ///   axis and it scales without limit, as asked.**"
-    /// - **§6.3** (T-74): `F = cap · u/(u + half)`, a Michaelis–Menten
-    ///   hyperbola, so `F < fab_cap` for every finite infrastructure.
+    /// The fix splits `F`'s two roles. `slips` is the **quantity** axis and
+    /// reads the fabrication *stock*, unbounded. `berth_rate` is the **quality**
+    /// axis and is the MM curve, now denominated per berth. §5.3's tree table
+    /// then reads directly — Production buys fast berths, Expansion buys many
+    /// slow ones — and neither tree is capped on the axis the other is strong
+    /// in.
     ///
-    /// `slips` reads `F`, so the second bounds the first: with
-    /// `fab_cap = 0.2` and `slip_throughput = 0.1`, **`fab_cap /
-    /// slip_throughput = 2` is the entire axis.** Not slow — *closed*: at an
-    /// infrastructure stock of 10¹² kt a yard still has two berths, and
-    /// homeworlds are **generated** at rung II (`galaxy.rs`, `Band::new(2.0)`),
-    /// i.e. already past the only step there is.
-    ///
-    /// §6.3's reconciliation — "`slips` growing linearly in `F` does not
-    /// contradict a bounded `F`: the bound is per yard, and an empire has many
-    /// yards" — answers a different question. §3.2's claim is about **one
-    /// centre's berth count**; "an empire has many yards" is about the empire
-    /// total. The two sentences are not about the same quantity.
-    ///
-    /// **And there is a second, independent defect: `slips` ignores `t_lead`.**
-    /// A berth's cycle is `t_lead + m/per_berth`, and only the second term
-    /// fabricates, so a yard provisioned by rate alone spends most of its
-    /// berth-cycle producing nothing. Measured against the `F` the same rung
-    /// *allows*:
-    ///
-    /// | hull | rung II output | as % of `F` | berths needed to saturate `F` |
-    /// |---|---|---|---|
-    /// | Limited (0.02 kt) | 0.0180 kt/yr | **10%** | 20.2 |
-    /// | Medium (0.10 kt) | 0.0645 kt/yr | **35%** | 5.6 |
-    /// | General (1.00 kt) | 0.1538 kt/yr | 85% | 2.4 |
-    ///
-    /// This one survives whatever happens to the cap: even with `F` unbounded,
-    /// `1 + ⌊F/F_slip⌋` under-provisions by `1 + t_lead·F_slip/m` — a factor of
-    /// **11 for a Limited hull and 3 for a Medium**.
-    ///
-    /// Pinned rather than fixed: `fab_cap` and `slip_throughput` are shipped
-    /// magnitudes and the choice between "the cap is real and §3.2 is amended"
-    /// and "the axis is real and the cap moves off the slips path" is a design
-    /// call (R-O88), not a tuning one. **This test fails the day either is
-    /// settled, which is exactly when both spec sections need editing.**
+    /// **What this test is for is the claim that the change is surgical.**
+    /// `fab_cap` went 0.2 → 0.1, which is a re-denomination and not a retune:
+    /// the old code divided a planet-wide rate by a `slips` that was *always
+    /// exactly 2* at every rung a centre can occupy, so halving the ceiling
+    /// reproduces the old per-berth rate bit-for-bit. Turnaround is therefore
+    /// **unchanged at every playable rung**, and the only thing that moved is
+    /// how many hulls a yard can have in the water at once.
     #[test]
-    fn the_build_wide_axis_is_two_berths_wide_and_closed() {
+    fn turnaround_is_unchanged_and_only_the_berth_count_opened() {
         let cfg = SimConfig::new(1);
         let works = cards::Works::default();
-        let f_of = |infra: Price| {
-            employment_rate(infra, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg))
-        };
+        let knee = works_knee(&cfg);
 
-        // 1. The axis is closed, not merely short. No infrastructure buys a third berth.
-        for stock in [1.0, 1.0e3, 1.0e6, 1.0e12] {
-            assert_eq!(
-                slips(f_of(Price::new(stock)), &cfg),
-                2,
-                "a yard standing on {stock} kt of infrastructure still has two berths — \
-                 §3.2's 'scales without limit' is false in the engine (R-O88)"
+        for n in 1..=BandTier::MAX_PLAYABLE.band().bands() as usize {
+            let stock = infra_rung_price(n, &cfg);
+            let u = employment_stock(stock, &works, cards::Employment::Fabrication);
+
+            // What the pre-R-O88 engine charged: a planet-wide rate at
+            // `fab_cap = 0.2`, divided by a berth count that was always 2.
+            let old_planet_rate = 0.2 * u / (u + knee);
+            let old_per_berth = old_planet_rate / 2.0;
+            let new_per_berth = employment_rate(stock, &works, cards::Employment::Fabrication, cfg.fab_cap, knee);
+            assert!(
+                (old_per_berth - new_per_berth).abs() < 1e-15,
+                "rung {n}: per-berth rate moved, {old_per_berth} → {new_per_berth}. \
+                 R-O88 was supposed to be a re-denomination, not a retune"
             );
+
+            // And the berth count is the thing that opened.
+            let want = 1 + (u / infra_per_slip(&cfg)).floor() as usize;
+            assert_eq!(slips(u, &cfg), want);
         }
 
-        // 2. And the width of the axis is the ratio of two constants that were
-        //    chosen independently, which is what makes it an accident.
-        assert_eq!(cfg.fab_cap / cfg.slip_throughput, 2.0, "the whole build-wide axis is this ratio");
+        // Rung I keeps exactly the two berths it had; everything above opens.
+        let berths =
+            |n: usize| slips(employment_stock(infra_rung_price(n, &cfg), &works, cards::Employment::Fabrication), &cfg);
+        assert_eq!(berths(1), 2, "a rung-I yard is unchanged, which is what anchors the placeholder");
+        assert!(berths(2) > berths(1), "rung II must now buy berths — it bought none before");
+        assert!(berths(3) > berths(2));
+        assert!(berths(4) > berths(3));
 
-        // 3. The second defect: a yard cannot emit the rate its own rung allows,
-        //    because `slips` is provisioned from `F` with no `t_lead` term.
-        let f = f_of(infra_rung_price(2, &cfg));
-        let s = slips(f, &cfg) as f64;
-        for (name, m) in [("Limited", 0.02), ("Medium", 0.10)] {
-            let t_build = cfg.build_lead_years + m / (f / s);
-            let output = s * m / t_build;
-            assert!(
-                output < 0.5 * f,
-                "{name}: a rung-II yard emits {output:.4} kt/yr of the {f:.4} it is allowed. \
-                 If this now passes, `slips` has learned about `t_lead` and R-O88's second half is fixed"
-            );
+        // §3.3's approved schedule is now read off one constant.
+        for (hull, want) in
+            [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
+        {
+            let m = hull_cost(hull, &cfg).on_scale::<units::Mass>().kilotons();
+            assert!((cfg.build_lead_years + m / cfg.fab_cap - want).abs() < 1e-9, "{hull:?} floor moved");
         }
     }
 
@@ -5778,15 +5803,33 @@ mod tests {
     /// not of how long you accumulate it." Two runs is two horizons, so these
     /// pay double for a horizon that buys them nothing.
     ///
-    /// **Pinned at 250 yr, and the reason it had to move is T-68.** Making
-    /// `t_build` track mass took a Medium hull from 10 yr to 3.0, so a centre
-    /// decides three times as often, the entity count follows, and the same 600
-    /// yr does several times the work it used to. The identity is unchanged;
-    /// only the bill was.
+    /// **Pinned at 120 yr, and it has now had to move twice for the same
+    /// reason.** T-68 made `t_build` track mass (a Medium hull 10 yr → 3.0), so
+    /// a centre decides three times as often and 600 yr became 250. R-O88 opened
+    /// the build-wide axis, so a yard has berths instead of two, and 250 became
+    /// 120: the two paired tests were **35.5 s and 25.4 s of a 54 s target**
+    /// between them. The identity is unchanged both times; only the bill was.
+    ///
+    /// **Probed past the value shipped, per `CLAUDE.md` §2.** At 60 yr both
+    /// still pass and the target is faster again, so 120 is roughly double the
+    /// point where anything binds. What keeps that honest is
+    /// [`paired_mechanism_fired`], which every caller asserts: a horizon cut
+    /// until the runs are empty leaves "these two runs agree" true and
+    /// meaningless.
     fn paired_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
-        cfg.horizon_years = 250.0;
+        cfg.horizon_years = 120.0;
         cfg
+    }
+
+    /// The guard for [`paired_cfg`]: a paired identity is vacuously true on two
+    /// runs that did nothing, so assert that the run actually ran.
+    fn paired_mechanism_fired(report: &SimReport) {
+        assert!(
+            report.events_processed > 1_000,
+            "a paired run processed only {} events — the horizon has been cut past the point where              the identity asserts anything",
+            report.events_processed
+        );
     }
 
     #[test]
@@ -5959,6 +6002,7 @@ mod tests {
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut with_rounds = Simulation::with_baseline(galaxy, paired_cfg(1));
         let a = with_rounds.run();
+        paired_mechanism_fired(&a);
 
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut cfg = paired_cfg(1);
@@ -5976,16 +6020,21 @@ mod tests {
 
     #[test]
     fn round_boundaries_fire_on_the_specified_cadence() {
-        // 100 yr to the first, 100 yr between: at a 250 yr horizon that is
-        // rounds 0 and 1. The barrier is a scheduled event, so this also pins
-        // that it chains itself rather than being swept for.
+        // **Rounds expressed against the horizon, not against a constant.** The
+        // barrier is a scheduled event, so this pins that it chains itself
+        // rather than being swept for — and the arithmetic is stated in terms of
+        // `horizon_years` so that trimming `paired_cfg` cannot silently change
+        // what the test asserts. It did once: R-O88 took the horizon 250 → 120
+        // and the hard-coded `1` became a `0`, which is a test that was reading
+        // a constant it did not own.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut cfg = paired_cfg(1);
-        cfg.years_to_first_round = 100.0;
-        cfg.years_per_round = 100.0;
+        let period = cfg.horizon_years / 3.0;
+        cfg.years_to_first_round = period;
+        cfg.years_per_round = period;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         sim.run();
-        assert_eq!(sim.current_round(), 1, "(250-100)/100 = 1, so the last barrier is round 1");
+        assert_eq!(sim.current_round(), 2, "three periods to the horizon means barriers 0, 1 and 2");
 
         // And it chains rather than firing once, and stops at the horizon rather
         // than running away. **Shortened the cadence, not the horizon**
@@ -5998,11 +6047,12 @@ mod tests {
         // is exactly the same property, now better covered for 6% of the cost.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut cfg = paired_cfg(1);
-        cfg.years_to_first_round = 25.0;
-        cfg.years_per_round = 25.0;
+        let fine = cfg.horizon_years / 10.0;
+        cfg.years_to_first_round = fine;
+        cfg.years_per_round = fine;
         let mut chained = Simulation::with_baseline(galaxy, cfg);
         chained.run();
-        assert_eq!(chained.current_round(), 9, "(250-25)/25 = 9, so the last barrier is round 9");
+        assert_eq!(chained.current_round(), 9, "ten periods to the horizon means the last barrier is round 9");
     }
 
     #[test]
@@ -6102,6 +6152,7 @@ mod tests {
         };
         let (_a, ra) = mk(7);
         let (_b, rb) = mk(7);
+        paired_mechanism_fired(&ra);
         assert_eq!(ra.events_processed, rb.events_processed);
         assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
         let pa: Vec<usize> = ra.players.iter().map(|p| p.planets_owned).collect();
@@ -6210,6 +6261,7 @@ mod tests {
         let rq = quiet.run();
         let rl = loud.run();
 
+        paired_mechanism_fired(&rq);
         assert_eq!(rq.events_processed, rl.events_processed);
         assert_eq!(rq.planets_scanned_total, rl.planets_scanned_total);
         for (pq, pl) in rq.players.iter().zip(rl.players.iter()) {
@@ -7643,19 +7695,18 @@ mod tests {
         // **T-74 made `t_build` a property of the yard, so the schedule needs a
         // yard to be read at — and the one it holds at is the anchor.** A centre
         // standing at rung I with default doctrine sits exactly on the knee of
-        // the rate curve, where fabrication is `fab_cap/2 = slip_throughput`.
-        // So §3.3's approved schedule is not merely preserved by T-74, it is
-        // *what pins the calibration*: if this passes, the curve pivots about
-        // the configuration that was already ratified.
+        // the rate curve, where a berth runs at `fab_cap / 2`. Since R-O88 that
+        // is a *per-berth* statement and `fab_cap` is the per-berth ceiling, so
+        // §3.3's approved schedule reads off this one constant directly.
         let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         {
             let f = sim.world.factors.get_mut(yard).unwrap();
             f.infra = infra_rung_price(1, &sim.config);
         }
         assert!(
-            (sim.fabrication_rate(yard) - sim.config.slip_throughput).abs() < 1e-12,
-            "a rung-I centre must fabricate at exactly the old flat rate, got {}",
-            sim.fabrication_rate(yard)
+            (sim.berth_rate(yard) - sim.config.fab_cap / 2.0).abs() < 1e-12,
+            "a rung-I centre sits on the knee, so a berth runs at half the ceiling; got {}",
+            sim.berth_rate(yard)
         );
         // **§3.3's schedule is the limit, not a value any yard reaches** — T-69
         // is what made that distinction real. Before slips, `t_build` was
@@ -7668,7 +7719,7 @@ mod tests {
             [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
         {
             let m = hull_cost(hull, &sim.config).on_scale::<units::Mass>().kilotons();
-            let limit = sim.config.build_lead_years + m / sim.config.slip_throughput;
+            let limit = sim.config.build_lead_years + m / sim.config.fab_cap;
             assert!((limit - want).abs() < 1e-9, "{hull:?} floor is {limit} yr, schedule says {want}");
             let got = sim.build_time(yard, hull_cost(hull, &sim.config));
             assert!(got > want, "{hull:?} builds in {got} yr, under its own floor {want}");
@@ -7713,24 +7764,40 @@ mod tests {
     #[test]
     fn industry_buys_concurrency_and_never_undercuts_the_turnaround_floor() {
         let cfg = test_cfg(3);
-        let per_slip = cfg.slip_throughput;
+        let works = cards::Works::default();
+        let per_slip = infra_per_slip(&cfg);
         let mass = Price::new(0.1);
-        let floor = cfg.build_lead_years + mass.on_scale::<units::Mass>().kilotons() / per_slip;
+        let floor = cfg.build_lead_years + mass.on_scale::<units::Mass>().kilotons() / cfg.fab_cap;
 
         // Sweep across many multiples *and* straddle each one, because a
         // boundary is where an off-by-one in `floor` would hide.
         let mut last_slips = 0usize;
         for step in 0..400 {
-            let f = per_slip * (step as f64) * 0.125;
-            let n = slips(f, &cfg);
-            assert!(n >= 1, "a centre always has a berth, F={f} gave {n}");
-            assert!(n >= last_slips, "concurrency must not fall as throughput rises at F={f}");
+            let u = per_slip * (step as f64) * 0.125;
+            let n = slips(u, &cfg);
+            assert!(n >= 1, "a centre always has a berth, u={u} gave {n}");
+            assert!(n >= last_slips, "concurrency must not fall as the stock rises at u={u}");
             last_slips = n;
-            let per_berth = f / n as f64;
-            assert!(per_berth < per_slip, "per-berth throughput {per_berth} reaches the ceiling {per_slip} at F={f}");
         }
-        // Concurrency itself is unbounded — that is the "build wide" axis.
-        assert!(slips(100.0 * per_slip, &cfg) > slips(10.0 * per_slip, &cfg));
+        // **Concurrency is unbounded in the stock — that is the "build wide"
+        // axis, and until R-O88 it was closed at two berths** because `slips`
+        // read a rate the MM curve bounds. Asserted across six orders of
+        // magnitude, which is the span the old form was flat over.
+        let s_of =
+            |stock: f64| slips(employment_stock(Price::new(stock), &works, cards::Employment::Fabrication), &cfg);
+        assert!(s_of(1.0e3) > s_of(1.0), "the axis must open with the stock");
+        assert!(s_of(1.0e6) > s_of(1.0e3), "and keep opening — R-O88");
+
+        // **The turnaround floor is the other half and it still holds.** A
+        // berth's rate saturates at `fab_cap` without reaching it, so a hull
+        // never builds faster than `t_lead + m / fab_cap` however rich the yard.
+        for step in 1..400 {
+            let stock = Price::new(per_slip * (step as f64) * 0.5);
+            let r = employment_rate(stock, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg));
+            assert!(r < cfg.fab_cap, "a berth reaches its ceiling at stock {stock:?}: {r}");
+            let t = cfg.build_lead_years + mass.on_scale::<units::Mass>().kilotons() / r;
+            assert!(t > floor, "a hull built in {t} yr undercuts the {floor} yr floor at stock {stock:?}");
+        }
 
         // Read through `build_time`, since that is what the rest of the engine
         // sees: strictly above the floor at every rung, and monotonically
@@ -7760,8 +7827,11 @@ mod tests {
     /// cost and none of the benefit, and it would have measured as a clean
     /// regression with a completely wrong mechanism attached.
     ///
-    /// Asserted against `slips` rather than against the number 2, so it keeps
-    /// meaning the same thing if `fab_cap` or `slip_throughput` is ratified.
+    /// Asserted against [`Simulation::free_berths`] rather than against the
+    /// number 2, so it keeps meaning the same thing if `fab_cap` or the berth
+    /// anchor is ratified — and it caught R-O88's own landing, where reading the
+    /// berth count off the *rate* instead of the stock gave 6 where the yard had
+    /// 2.
     #[test]
     fn a_rich_yard_fills_every_berth_it_has_in_one_decision() {
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 13)).unwrap();
@@ -7771,7 +7841,7 @@ mod tests {
             let f = sim.world.factors.get_mut(home).unwrap();
             f.infra = infra_rung_price(1, &sim.config);
         }
-        let berths = slips(sim.fabrication_rate(home), &sim.config);
+        let berths = sim.free_berths(home);
         assert!(berths >= 2, "the anchor must give a rung-I yard more than one berth, got {berths}");
 
         // Enough minerals that affordability cannot be what stops it.

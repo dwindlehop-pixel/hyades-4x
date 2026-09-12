@@ -560,13 +560,14 @@ slips(F) = 1 + floor(F / F_slip)
 Every `F_slip` of throughput buys another berth; a centre always has at least
 one. This is the "build wide" axis and it scales without limit, as asked.
 
-> **Measured false in the engine, and the cause is §6.3 (R-O88).** `slips` reads
-> `F`, and T-74 made `F` a Michaelis–Menten hyperbola bounded by `fab_cap`. With
-> `fab_cap = 0.2` and `F_slip = 0.1`, **`fab_cap / F_slip = 2` is the entire
-> axis** — a yard standing on 10¹² kt of infrastructure still has two berths, and
-> homeworlds are *generated* at rung II, already past the only step there is. The
-> axis is closed, not short. §6.19b carries the decision; this paragraph is the
-> half of it that is currently a claim rather than a description.
+> **It was false in the engine for two landings, and is true again (R-O88).**
+> `slips` read the *rate* `F`, and T-74 made `F` a Michaelis–Menten hyperbola
+> bounded by `fab_cap`, so the axis was `fab_cap / F_slip = 2` berths — closed,
+> not short: a yard on 10¹² kt of infrastructure still had two, and homeworlds
+> are *generated* at rung II, already past the only step it had. **`slips` now
+> reads the fabrication share of the infrastructure *stock*** and is unbounded,
+> so `F` in the formula above is a stock and `F_slip` is the stock one berth
+> occupies. The per-berth *rate* is where `fab_cap` lives now — §6.19b.
 
 **Turnaround has a soft floor, and it is not a second tuned curve — it falls out
 of the first.** Throughput divides among the active slips, so a hull of dry mass
@@ -1099,9 +1100,16 @@ are a strategy and not a handicap.
 > `F`: the bound is per yard, and an empire has many yards."~~ **Withdrawn — it
 > is a non-sequitur (R-O88).** §3.2's claim is about **one centre's berth
 > count**; "an empire has many yards" is about the **empire total**. The two
-> sentences are not about the same quantity, and the reconciliation they appear
-> to perform does not happen: `slips` reads `F`, `F < cap`, so a centre's berth
-> count is bounded by `cap / F_slip` — which is **2**. See §6.19b.
+> sentences are not about the same quantity, and the reconciliation they
+> appeared to perform did not happen.
+>
+> **Resolved by denomination instead.** `cap_e` for fabrication is now the
+> ceiling **one berth** can reach, not one planet: `berth_rate = cap · u/(u +
+> half)`, and a planet's total is `slips × berth_rate`, unbounded in the stock.
+> Every word of this section's reading of `cap` and `half` survives — Production
+> raises the ceiling, Growth and Expansion lower the knee — it is simply a
+> statement about a berth. §5.3's table then reads directly: **Production buys
+> fast berths, Expansion buys many slow ones.** See §6.19b.
 
 ### 6.4 Why a card cannot be a discount
 
@@ -2247,40 +2255,92 @@ the cap: even with `F` unbounded, `1 + ⌊F/F_slip⌋` under-provisions by
 Medium**. The small hulls are worst hit, which is precisely backwards for a
 design whose expansion loop runs on Limited and Medium hulls.
 
-#### The decision, which is not mine to take
+#### Decided: option C — split `F`'s two roles
 
-**§3.2's unbounded build-wide axis and §6.3's per-planet rate ceiling cannot both
-hold for the same planet**, because concurrency, turnaround and output are one
-identity: `output = slips · m / t_build`. Three ways out, and they differ in what
-they do to §5.3's tree table rather than in difficulty:
+**Author's call.** `fab_cap` now bounds the rate **per berth** — the *quality*
+axis — and `slips` scales with the fabrication share of the infrastructure
+**stock** — the *quantity* axis. Neither tree is capped on the axis the other is
+strong in, and §5.3's table reads off the engine directly.
 
-- **A — the cap is real; amend §3.2.** Keep `fab_cap` gating `slips`, delete
-  "scales without limit", and promote `fab_cap / slip_throughput` to a *stated
-  design magnitude*: how wide a single yard may ever get. It is currently **2**
-  by accident; if the intent is a real axis it wants to be something like 20.
-- **B — the axis is real; move the cap off the slips path.** Derive `slips` from
-  the fabrication **share of the infrastructure stock** rather than from the
-  saturating rate, so "build wide" scales as §3.2 asks. §6.3's "highest peak per
-  planet" then needs an expression that is not a rate asymptote `slips` reads.
-- **C — separate the two roles of `F` (recommended).** Let `fab_cap` bound the
-  rate **per berth** — a *quality* axis — and let `slips` scale with the stock —
-  a *quantity* axis. §5.3's table then reads directly: **Production** = fast
-  berths, **Expansion** = many slow berths, and neither is capped in the axis the
-  other is strong in. It costs one term in `slips` and one in `build_time`, it
-  keeps both ratified sections true, and it is the only option under which the
-  tree characters survive intact.
+```text
+u          = infra · alloc_w[Fabrication] / Σ alloc_w     // the stock both axes buy from
+slips(u)   = 1 + ⌊u / infra_per_slip⌋                     // quantity — unbounded
+berth_rate = fab_cap · u / (u + half)                     // quality  — saturating
+t_build    = t_lead + m / berth_rate                      // one hull sits in one berth
+fabrication_rate = slips × berth_rate                     // the planet's total, for demand
+```
 
-**Under every option `slips` must gain a `t_lead` term**, or the yard still
-cannot use its own rate.
+**`fab_cap` went 0.2 → 0.1, and that is a re-denomination rather than a retune.**
+The old code divided a planet-wide rate by a `slips` that was *always exactly 2*
+at every rung a centre can occupy, so halving the ceiling reproduces the old
+per-berth rate **bit-for-bit** —
+`turnaround_is_unchanged_and_only_the_berth_count_opened` asserts it at every
+playable rung. Two things follow for free: §3.3's approved schedule now reads off
+one constant (`t_lead + m / fab_cap` is 2.2 / 3.0 / 12.0 yr, the table as
+approved), and **turnaround did not move at all** — the only thing that changed
+is how many hulls a yard can have in the water.
 
-**What this does to the surrounding findings.** R-O85 said infrastructure is
-*priced* out of reach; that was half the story — the **product** is capped too,
-and at rung II. §6.19a's "+29% for nine colonisers at rung I → II" is then the
-whole of what the ladder can ever offer a yard, and homeworlds are born holding
-it. And T-88's retry cadence (81% of a homeworld's timeline) sits on top of all
-of it. **Order: T-88, then R-O88, then R-O85** — each one un-gates the next, and
-measuring any economic knob before they land measures whichever of them binds
-first.
+**`slip_throughput` is deleted.** Its meaning ("one slip's throughput, kt/yr") is
+what `fab_cap` bounds now, and the berth *size* is derived rather than stored:
+one berth occupies one Limited hull's worth of stock, so a slipway is sized like
+the smallest thing it can lay down. That anchor is a **placeholder** — the form
+is what R-O88 settles, not the unit — and it is chosen so a rung-I yard keeps
+exactly the two berths it already had:
+
+| rung | fabrication stock | berths, before | **berths, after** |
+|---|---|---|---|
+| I | 0.033 kt | 2 | **2** |
+| II | 0.333 kt | 2 | **17** |
+| III | 6.67 kt | 2 | **334** |
+| IV | 267 kt | 2 | **13,334** |
+
+**Measured** (`examples/founding_tree`, 3 seats, 1,500 yr, `b = 0.5`):
+
+| | seed 1 before | seed 1 after | seed 7 before | seed 7 after |
+|---|---|---|---|---|
+| **fleet-years** `∫ vehicles dt` | 21,802,650 | **27,503,725 (+26.1%)** | 20,913,800 | **27,962,225 (+33.7%)** |
+| work-years | 976,147 | 1,112,797 (+14.0%) | 875,395 | 824,095 (−5.9%) |
+| colonies | 3,308 | 3,296 | 3,331 | 3,325 |
+| homeworld's first founding | 61.6 yr | **58.5 yr** | 57.4 | 57.4 |
+| throughput | 88.7 yr/s | **110.7 yr/s** | 86.5 | 113.5 |
+| ns/event | 69,355 | **52,278** | 70,952 | 54,066 |
+
+**The fleet is a quarter to a third larger and the engine got *faster*** — 88.7 →
+110.7 yr/s with 23% more vehicles, because a quarter of the events it used to
+process were decisions that declined and stalled. Colony count and colony-years
+barely move, which is the expected answer on a bed `k_high` already saturates
+(§6.17): more yard cannot buy worlds that the classifier does not admit.
+
+**And it largely dissolves T-88 as a side effect, which nothing predicted.** The
+retry cadence bit because a declined build left the yard with nothing scheduled;
+with berths instead of two, some *other* berth clears and re-triggers the centre
+long before the economy tick does. Measured at a homeworld:
+
+| | before | after |
+|---|---|---|
+| gap after a committed build | 1.5 yr | **0.1 yr** |
+| **gap after an `Idle`** | **29.6 yr** | **7.6 yr** |
+| decisions taken | 216 | 388 |
+| share that idled | 18% | 47% |
+
+T-88 is still worth doing for the reason it was opened — economic *granularity*,
+a 50-year Euler step on a logistic — but it is no longer the dominant throttle,
+and the 81%-of-timeline figure in its register entry is superseded.
+
+**Cost, and where it landed.** Not throughput, which improved; the **test
+targets**, which is where entity count always lands first (`CLAUDE.md` §2). Unit
+went 19 → 54 s and determinism 30 → 58 s, both fixed in the same commit and both
+by the lever that section prescribes — `paired_cfg` 250 → 120 yr with an
+`events_processed` floor guarding the trim, and `full_run_reports_are_bit_identical`
+given a **per-seat-count** horizon instead of a uniform one, which is cheaper
+*and* covers more (the 2-seat arm went from 812 events to ~2,800). Final: unit
+27.6 s, determinism 36.6 s, smoke 23.1 s.
+
+**What is still open.** The berth anchor is a placeholder (R-IND3's family), and
+R-O85's price ladder is untouched: rungs III and IV now buy enormous concurrency
+but still cost 19 kt and 780 kt, so whether anyone can afford the axis is the
+next question. Order is now **R-O85, then re-sweep** — T-88 having dropped down
+the list.
 
 #### What follows#### What follows#### What follows#### What follows
 
@@ -2535,7 +2595,7 @@ artifact in place contaminates every later measurement.
 | ~~**R-O68**~~ | ~~The deepen/expand comparison is between incommensurable quantities~~ — **resolved (T-51).** Both sides are now `rank` score per kilotonne committed: `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`. `reinvest_bias` is an odds ratio with a state-dependent crossover. Bit-identical below `b = 0.96`; the old form's cliff at 0.9 moved to 1.0. | §6.18 |
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
 | ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favours deepening (+29% hull/yr for 9 colonisers), and what eats it is a homeworld already at rung II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
-| **R-O88** | **There is no build-wide axis, and a yard cannot use the rate it is allowed.** §3.2 says `slips` "scales without limit"; §6.3 bounds `F` by `fab_cap`; `slips` reads `F`, so **`fab_cap / slip_throughput = 2` is the whole axis** — closed, not short (10¹² kt of infrastructure still buys two berths), and homeworlds are generated past it. Independently, `slips` ignores `t_lead`, so a rung-II yard emits **10–35%** of its allowed `F` on Limited and Medium hulls. Three options in §6.19b; **C recommended**. Not taken: `fab_cap` and `slip_throughput` are shipped magnitudes. | §3.2, §6.3, §6.19b |
+| ~~**R-O88**~~ | ~~There is no build-wide axis~~ — **resolved, option C.** `fab_cap` bounds the rate **per berth** (quality); `slips` reads the fabrication share of the **stock** (quantity, unbounded). `fab_cap` 0.2 → 0.1 is a re-denomination: per-berth turnaround is **bit-identical** at every playable rung, and §3.3's schedule now reads off one constant. `slip_throughput` deleted; berth size derived from the Limited hull (**placeholder anchor**). Berths at rung II: 2 → **17**. Fleet-years **+26–34%**, throughput 88.7 → 110.7 yr/s, colony count flat. Also drops the `t_lead` defect — there is no per-planet rate left to fail to reach — and takes T-88's after-idle gap 29.6 → 7.6 yr. | §3.2, §6.3, §6.19b |
 | **R-O85** | **Infrastructure is priced as if it were the scarce thing.** The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
