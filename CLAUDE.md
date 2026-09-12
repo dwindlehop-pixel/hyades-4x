@@ -522,8 +522,39 @@ Two corroborations were available and both are cheap enough to be routine.
 on the same bed, so adjacent values swing the full magnitude of the "effect" in
 both directions — a chaotic reordering of a compounding run, not a gradient, and
 no point on it is a place to stand. And **ask whether the knob has a mechanism
-by which it could move the metric at all**, which here it does not: deepening
-and founding buy *exactly* the same works per mineral (see §7).
+by which it could move the metric at all.**
+
+**That last question has a right and a wrong way to answer it, and I got it
+wrong first.** The answer I gave was an identity — deepening and founding buy
+exactly the same works per mineral — and it is true, and it is about **stock**.
+The knob's actual channel is **flow**: a colony is founded with a recycled hull
+and cannot keep improving that way, so deepening buys build *rate* forever.
+Priced off the engine's own functions that is **+29.0% hull/yr for nine
+colonisers at rung I → II, paid back in 62 years** against a 1,500-year horizon.
+The flat result had nothing to do with the identity.
+
+**A flat objective means the knob's mechanism is throttled somewhere, and the
+thing to measure is the utilisation of whatever the knob buys.** Here the knob
+buys yard throughput, and a homeworld's yard runs at **18.8% utilisation**:
+the gap from one production decision to the next is **1.5 yr after a committed
+build and 29.6 yr after an `Idle`**, because a declined build schedules nothing
+and waits out `cycle_years = 50`. **81% of the timeline is retry-wait**, so build
+rate governs a fifth of it and +29% on a fifth is +5.5% at best. That is T-88,
+and no objective would have found it — the number that did was a *ratio between
+two gaps*, which no aggregate carries.
+
+Three habits from it, and the first is the general one:
+
+- **Before concluding a knob is neutral, measure how much of the time the
+  resource it buys is even binding.** Utilisation is one division and it
+  distinguishes "this knob does nothing" from "this knob is fine and something
+  else is in the way" — which want completely different next actions.
+- **Separate stock from flow when you write the mechanism down.** An identity
+  over what a purchase *is worth now* says nothing about what it *earns later*,
+  and the second is usually where a compounding simulation's answer lives.
+- **Split an aggregate by what preceded it.** "Mean gap between decisions" was
+  6.7 yr and said nothing; the same data split by whether the previous decision
+  built or idled gave 1.5 against 29.6 and named the mechanism outright.
 
 **The general rule, which is the transferable part:** an objective must be
 invariant to everything the thing being optimized can change. Ask of any

@@ -5611,11 +5611,32 @@ mod tests {
     ///   design law #11). Works per mineral = **1**.
     ///
     /// So at `eta_works = 1` the two routes are worth the same to the metric,
-    /// to the last bit, and the bias is choosing between equals. Everything
-    /// downstream then breaks the tie *for expansion*: a new colony mines,
-    /// grows and builds, while a rung past II buys almost no fabrication and no
-    /// extra berth at all (R-O85). Measured, that is a work-years surface which
-    /// is flat across `[0, ~0.97]` and falls off a cliff above it.
+    /// to the last bit, and the bias is choosing between equals.
+    ///
+    /// **This is an identity about *stock*, and it is only half the argument —
+    /// the half about *flow* runs the other way.** A colony is founded with a
+    /// recycled hull and cannot keep improving that way, so what the two routes
+    /// buy *afterwards* is not symmetric: deepening raises this centre's build
+    /// rate forever. Priced off the engine's own functions, rung I → II is
+    /// **+29.0% hull/yr for 0.90 kt — nine colonisers — and pays itself back in
+    /// 62 years** against a 1,500-year horizon. That should dominate, and the
+    /// reason it does not is three separate facts, none of them this identity
+    /// (`Hyades_industry.md` §6.19a, `examples/founding_tree`):
+    ///
+    /// 1. **Homeworlds are generated at `Band 2.0`** (`galaxy.rs`), which is
+    ///    exactly where fabrication saturates, so the rung worth +29% is one
+    ///    they already have. Rung II → III costs 19 kt — 190 colonisers — for
+    ///    **+3.2%**.
+    /// 2. **`slips` never grows.** `1 + ⌊F / slip_throughput⌋` with
+    ///    `F < fab_cap = 0.2` and `slip_throughput = 0.1` is **2 berths at every
+    ///    rung** (R-O85).
+    /// 3. **Build rate governs a fifth of the timeline.** Measured at a
+    ///    homeworld: yard utilisation **18.8%**, and the gap from one decision
+    ///    to the next is **1.5 yr after a committed build against 29.6 yr after
+    ///    an `Idle`**, because `commit_one_build` returning `None` schedules
+    ///    nothing and the next attempt is the economy tick at
+    ///    `cycle_years = 50`. That is **T-88**, and it throttles the only
+    ///    channel this knob has.
     ///
     /// **`eta_works` is the intended lever**, and it is a Design card's to
     /// move: it divides the deepening bill and nothing else, so a Production

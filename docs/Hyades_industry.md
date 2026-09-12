@@ -2107,7 +2107,84 @@ Production card genuinely does make a mineral buy more works, and it is the
 tie-break the baseline policy has no access to. The identity test fails the day
 that lands, which is exactly when someone should re-read this section.
 
-#### What follows#### What follows
+### 6.19a The identity was half an argument — the other half favours deepening, and something else is eating it
+
+**Objection, and it was right:** a colony is founded with a recycled hull and
+*cannot keep improving that way*, so §6.19's identity — which says the two routes
+buy the same immediate works — says nothing about what they buy afterwards.
+Deepening delays the first ship and buys build rate forever, and over 1,500 years
+an integral should reward that.
+
+**Priced off the engine's own functions** (`t_lead = 2.0`, a Medium coloniser is
+0.10 kt):
+
+| rung | stock | `F` kt/yr | slips | `t_build` | hull/yr | next step costs |
+|---|---|---|---|---|---|---|
+| I | 0.10 kt | 0.1000 | 2 | 4.000 yr | 0.500 | 0.90 kt = **9 colonisers** |
+| **II** | 1.00 kt | 0.1818 | 2 | 3.100 yr | **0.645 (+29.0%)** | 19 kt = 190 colonisers |
+| III | 20.0 kt | 0.1990 | 2 | 3.005 yr | 0.666 (+3.2%) | 780 kt = 7,800 colonisers |
+| IV | 800 kt | 0.2000 | 2 | 3.000 yr | 0.667 (+0.2%) | — |
+
+So the objection is arithmetically right about the rung that matters: **+29% for
+nine colonisers pays back in 62 years** and should be worth ~200 extra hulls over
+the horizon. §6.19's "everything downstream breaks the tie for expansion" was
+asserted, not measured, and it is wrong.
+
+It is wrong about slips, and that is the engine's fault rather than the
+argument's: `slips(F) = 1 + ⌊F / slip_throughput⌋` with `F < fab_cap = 0.2` and
+`slip_throughput = 0.1` gives **two berths at every rung, forever** (R-O85).
+
+**Three facts eat the +29%, and none of them is the identity**
+(`examples/founding_tree`, 3 seats, 1,500 yr):
+
+| | shipped `b = 0.5` | deepening **ablated entirely** | `b = 0.99` |
+|---|---|---|---|
+| colonies the homeworld founds **itself** | **33.3** | **32.3** | **35.7** |
+| year its first one lands | **61.6** | **61.6** | **61.6** |
+| hulls the homeworld built | 176 | 178 | 213 |
+| the homeworld's final rung | **2.000** | **2.000** | **2.000** |
+| infrastructure builds, empire-wide | 620 | **0** | 469 |
+| work-years | 976,147 | 258,752 | 617,858 |
+| **fleet-years** `∫ vehicles dt` | **21,802,650** | 20,584,525 | **17,506,750** |
+
+1. **A homeworld never deepens, in any arm.** `galaxy.rs` generates homeworlds at
+   `Band::new(2.0)` — rung II, exactly where fabrication saturates — so the rung
+   worth +29% is one they are *born with*, and the next costs 190 colonisers for
+   +3.2%. The ablated arm has **zero** infrastructure builds and still reports
+   rung 2.000. This is also why the first founding lands at **61.6 yr in all
+   three arms**: there is no delayed-first-ship trade to make.
+2. **The yard is not the constraint.** Homeworld utilisation is **18.8%** — it
+   builds 176 hulls where rung II could have built ~930 over the same span.
+3. **A declined build costs thirty years of yard time.** Mean gap from one
+   production decision to the next at a homeworld: **1.5 yr after a committed
+   build, 29.6 yr after an `Idle`** (seed 7: 1.6 and 31.8). `commit_one_build`
+   returning `None` leaves the yard free and *schedules nothing* — the next
+   attempt is the economy tick, `cycle_years = 50`. With 18% of decisions
+   idling, **81% of the homeworld's production timeline is spent waiting out
+   that cadence**, which reconciles exactly with the 18.8% utilisation.
+
+**So build rate governs about a fifth of a centre's timeline, and deepening is
+the only thing this knob can buy.** +29% on 19% of the timeline is +5.5% at the
+absolute best, available only to a centre below rung II, against a 50-year retry
+that has nothing to do with infrastructure. That is the bottleneck, and it is
+**T-88** — already open, and now quantified.
+
+**Was work-years the wrong metric?** Not wrong, but not the informative one, and
+**no objective would have been**: the knob's only mechanism is throttled to a
+fifth of the timeline before it reaches any metric. Fleet-years — the objection's
+own suggestion — is the better-shaped instrument for this question and it is
+carried above; it agrees, and more sharply than work-years does (deepening at
+`b = 0.99` costs **−20%** of fleet-years where it costs −37% of work-years and
+−0.3% of colonies).
+
+**What this changes.** §6.19's conclusion stands — `reinvest_bias` is held at 0.5
+and no measurement supports moving it — but its *reasoning* was half an argument,
+and the half it was missing pointed the other way. **The order to fix things in
+is now T-88 first, then R-O85** (`fab_cap`, the knee, or a berth count that
+actually grows), and only then re-sweep this knob. Sweeping it before the retry
+cadence is fixed measures the cadence.
+
+#### What follows#### What follows#### What follows
 
 - **R-IND21 stays withdrawn.** There is no need to invent a sink.
 - **R-O86 landed alongside this and moved mean infrastructure 1.027 → 1.462**
@@ -2359,7 +2436,7 @@ artifact in place contaminates every later measurement.
 | **R-IND19** | §4.3's `ε·S·W` double-counts the deposit — output goes as richness squared and a rich body is stripped in one tick. **Decided: the engine uses `W/N`, i.e. `(n/N)^β`,** which preserves every ratio §4.3 asserts and differs only in an absolute scale `ε` absorbs. Open only in whether the spec's own formula should be rewritten or annotated. | §4.3b |
 | ~~**R-O68**~~ | ~~The deepen/expand comparison is between incommensurable quantities~~ — **resolved (T-51).** Both sides are now `rank` score per kilotonne committed: `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`. `reinvest_bias` is an odds ratio with a state-dependent crossover. Bit-identical below `b = 0.96`; the old form's cliff at 0.9 moved to 1.0. | §6.18 |
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
-| ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. | §6.19 |
+| ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favours deepening (+29% hull/yr for 9 colonisers), and what eats it is a homeworld already at rung II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
 | **R-O85** | **Infrastructure is priced as if it were the scarce thing.** The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |

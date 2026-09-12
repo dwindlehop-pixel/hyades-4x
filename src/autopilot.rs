@@ -329,10 +329,16 @@ pub struct Doctrine {
     ///   so works per mineral is **1**.
     ///
     /// At the card-free `eta_works = 1` those are identical to the last bit
-    /// (`a_mineral_buys_the_same_works_whether_it_deepens_or_founds`), and
-    /// everything downstream breaks the tie *for expansion*, since a colony
-    /// mines, grows and builds while a rung past II buys almost no fabrication
-    /// and no extra berth at all (R-O85).
+    /// (`a_mineral_buys_the_same_works_whether_it_deepens_or_founds`).
+    ///
+    /// **That identity is about stock and it is only half the argument.** On
+    /// *flow* deepening wins: rung I → II is **+29.0% hull/yr for nine
+    /// colonisers**, paid back in 62 years. It still does not reach the
+    /// objective, for three reasons that are the engine's rather than the
+    /// knob's — homeworlds start at rung II already, `slips` is pinned at 2 at
+    /// every rung, and **build rate governs only ~19% of a centre's timeline**
+    /// because a declined build waits out `cycle_years = 50` (T-88). See
+    /// `Hyades_industry.md` §6.19a and `examples/founding_tree`.
     ///
     /// Measured accordingly (`examples/work_years`, 4,000 yr, 3 seats):
     /// `b = 0.972` — the best point a 1,500-year screen could find — scores

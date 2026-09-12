@@ -125,6 +125,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **T-51 / R-O68** — the deepen/expand trade | **T-51**, **R-O68** | — | **T-89**, **R-O85** | Both sides of the comparison in one unit, using `rank`'s own `w_k` rather than a new constant; design law #16 (the `per_kt` floor exists because `0.0 * inf` is `NaN`); `CLAUDE.md` §2's ablation-before-explanation — the fix was measured against the old binary on both seeds before it was believed | **This file's own T-51 prescription.** Item 3 said fixing the units would make `reinvest_bias` "a preference over a real trade". It did not: the trade is real now and expansion still wins it by 24–49x, because an infra rung costs nine colonisers. The dead branch was the right answer reached for a wrong reason, and the cause moved to R-O85. Also **`reinvest_bias_is_a_step_function_not_a_dial`**, the characterization test that existed to stop this changing silently — replaced, deliberately, by the test that pins the new form |
 | **R-O86** — a scout needs somewhere to scout | **R-O86** | T-89 | — | Design law #11, restored on the engine's busiest path — `apply_build_with` was debiting the bank and holding the yard for a hull `launch_survey` then declined to spawn; `CLAUDE.md` §4's "hand a decision only the fields it reads" (`survey_frontier` is `O(1)` off a running integer count, not a walk) | **R-AC16's magnitude.** `survey_reserve = 1024` is compared against a quantity with median **0** and maximum **164**, so the test is a constant `true` and every value above ~200 is bit-identical. The direction the ratification argued is fine; the number never reached the simulation. Also **the code's own justification** for the `candidates.is_empty()` pre-emption — "no candidates means every other branch below returns Idle" — which is false and was swallowing the only live deepen path |
 | **R-O87** — `reinvest_bias` against work-years | **R-O87** | T-89 | — | `CLAUDE.md` §2's 2-SE bar, enforced against my own candidate rather than someone else's; design law #11 surfacing as the works-per-mineral identity that makes the knob neutral | **Nothing ratified** — and that is the point: the candidate cleared the bar on the standard bed (+2.33% ± 0.96, 4/4 seeds) and was refuted by an independent seed set (−1.70% ± 2.42). `reinvest_bias` is **held at 0.5**, not re-ratified. The contradiction is of my own screen, not of a spec |
+| **§6.19a** — the identity was half an argument | — | **T-88** (quantified), T-89 | — | `CLAUDE.md` §2's "never leave a symptom without a proven mechanism", applied to my own flat result: the *flow* side was priced off the engine's functions and the bottleneck named and measured rather than asserted | **My own §6.19 reasoning.** "Everything downstream breaks the tie for expansion" was asserted and is wrong — rung I→II is **+29% hull/yr for nine colonisers**, payback 62 yr. The conclusion (hold 0.5) survives; the argument for it did not. Author's objection, correct |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -318,6 +319,29 @@ rather than in the existence of a pact.
 economy tick can be made 1/year without adversely affecting years/second. I want
 to improve the granularity of the economic simulation, not the rate of decision
 making."**
+
+**Measured, and it is the largest throttle left in the economy**
+(`examples/founding_tree`, 3 seats, 1,500 yr, at a homeworld):
+
+| | |
+|---|---|
+| mean gap, decision → next decision, **after a committed build** | **1.5 yr** (seed 7: 1.6) |
+| mean gap, **after an `Idle`** | **29.6 yr** (seed 7: 31.8) |
+| share of decisions that idle | 18% (seed 7: 11%) |
+| **yard utilisation** | **18.8%** (seed 7: 28.6%) |
+
+`commit_one_build` returning `None` leaves the yard free and **schedules
+nothing** — the next attempt is the economy tick. So a single declined build
+costs up to `cycle_years` of yard time, sixteen builds' worth at rung II's
+3.1-year `t_build`, and **81% of a homeworld's production timeline is spent
+waiting out that cadence.**
+
+That is not merely a fidelity problem, it is why the industrial knobs read flat.
+`reinvest_bias` can only buy *build rate* (R-O87/§6.19a), and build rate governs
+the other 19% of the timeline — so a +29% rung improvement is worth +5.5% at the
+absolute best before anything else attenuates it. **Fix this before R-O85 and
+before re-sweeping any economic knob**; a sweep run today is measuring the retry
+cadence.
 
 `cycle_years = 50` is doing two unrelated jobs and they want opposite values:
 
