@@ -2866,7 +2866,19 @@ impl Simulation {
             let avail = stock.basic_total();
             let load = cap.on_scale::<units::Cost>().min(avail);
             if load > Price::ZERO {
-                let moved = take_basics(self.outpost_stock.get_mut(&(p, sh.outpost.0)).unwrap(), load);
+                // **Load against what the centre this hauler serves is short
+                // of** (R-O89), rather than in the ratio this rock happens to
+                // hold. `destination` is the centre it delivered to last, so the
+                // pairing is a standing relationship and not a lookup: serve a
+                // centre, learn what it lacks, fetch that. `O(1)`, where reading
+                // the empire's aggregate deficit would be `O(owned planets)` on
+                // one of the hottest paths in the engine (§4).
+                //
+                // The *pickup site* is deliberately still welded to this
+                // hauler's own miner. Re-routing that as well was measured and
+                // is **-52.3%** — see [`take_for_deficit`] and §6.20.
+                let want = self.colour_deficit(sh.destination, PlayerId(p));
+                let moved = take_for_deficit(self.outpost_stock.get_mut(&(p, sh.outpost.0)).unwrap(), &want, load);
                 self.world.cargo.get_mut(vehicle).unwrap().add_basics(&moved);
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
                 self.log.push(
@@ -5573,6 +5585,69 @@ fn take_basics(bank: &mut Minerals, amount: Price) -> Minerals {
     out
 }
 
+/// **Fill a hold against the destination's shortfall, not in proportion to the
+/// pile** (R-O89, T-76).
+///
+/// [`take_basics`] splits a load across colours in whatever ratio the pile
+/// happens to hold. That is the right rule for "move some ore" and the wrong one
+/// for "move what is needed": since T-73 a works bill is payable in **named
+/// colours**, and the galaxy's supply is single-coloured (6,725 sources, mean
+/// dominant share **0.789**, 38% at >=95% one colour, T-81). So a hauler standing
+/// on a rock that holds the Magenta a centre is short of would load 79% Yellow
+/// and close nothing — while the Magenta stayed in the dirt.
+///
+/// **This is the term the pickup leg never had.** T-81/R-IND17 gave the
+/// *delivery* leg a colour term — where a full hold goes. Nothing gave the
+/// *load* one: what went into the hold was decided by geology. Measured over
+/// eight seeds at 1,500 yr, adding it is **+8.40% ± 1.86 work-years, 8/8
+/// positive** (`Hyades_industry.md` §6.20) on **the same tonnage** — 20,259 →
+/// 20,292 kt delivered over 26,800 → 26,746 trips. The fleet did not haul more;
+/// it hauled the right thing.
+///
+/// **The split is the deficit's own ratio, not neediest-colour-first.** A bill is
+/// a *conjunction* — the rung pays only when every colour clears — so what
+/// matters is `min_c bank[c]/bill[c]`, not the sum of anything. Filling the
+/// neediest colour first maximises that sum and lands mono-coloured loads, and
+/// `try_spend_total` drains a bank **proportionally** for every hull, so the one
+/// colour a hauler carefully accumulated is diluted before the other two arrive.
+/// Measured head-to-head on the standard bed, proportional beats neediest-first
+/// by **+3.84% ± 0.20, 4/4 seeds** — a tiny error bar next to the ±3.06 either
+/// scores against baseline, which is CRN pairing doing its job.
+///
+/// The hold is filled **along** that direction, not merely up to the shortfall:
+/// a hauler that would fly home light instead overshoots in the ratio the
+/// destination wants, because the next rung is already waiting behind this one
+/// and ore banked in the right proportion is ore the following bill can spend.
+///
+/// **Then it tops up.** If the pile cannot supply the wanted direction — the
+/// colour is simply not in this rock — the remaining room loads proportionally,
+/// because a half-empty hull has spent the same transit for less and banked ore
+/// still buys hulls even when it buys no rung. A centre that is short of nothing
+/// skips the first pass entirely and this reduces to [`take_basics`].
+fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price) -> Minerals {
+    let mut out = Minerals::default();
+    let mut room = capacity.max(Price::ZERO);
+    if room <= Price::ZERO {
+        return out;
+    }
+    let short = deficit.iter().fold(Price::ZERO, |a, &b| a + b);
+    if short > Price::ZERO {
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            let take = (room * (deficit[i] / short)).min(Price::new(bank.get_basic(c))).max(Price::ZERO);
+            if take > Price::ZERO {
+                bank.add_basic(c, -take.kilotons());
+                out.add_basic(c, take.kilotons());
+            }
+        }
+        room = capacity - out.basic_total();
+    }
+    if room > Price::ZERO {
+        let extra = take_basics(bank, room);
+        out.add_basics(&extra);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5634,6 +5709,72 @@ mod tests {
         assert!(sim.apply_build_with(0, home, home_pos, order, &[]).is_none(), "the order must be declined");
         assert_eq!(bank(&sim), before.0, "mass is conserved: a build that produced nothing spent nothing");
         assert_eq!(vehicles(&sim), before.1, "and nothing was created either");
+    }
+
+    /// **A hold fetches the colours the destination is short of, and only the
+    /// slack goes to bulk** (R-O89).
+    ///
+    /// The rule this pins is not "carry the deficit" but *how* the deficit is
+    /// split: **along the deficit vector**, so all three colours advance
+    /// together toward a bill that pays only when every colour clears. The
+    /// obvious alternative — neediest colour first — maximises tonnage against
+    /// the largest single shortfall and lands mono-coloured loads, and it
+    /// measures **-3.84% ± 0.20 work-years, 4/4 seeds** (`Hyades_industry.md`
+    /// §6.20). Nothing in the types distinguishes the two, so this is the guard.
+    ///
+    /// The third case is the one that keeps a hauler honest: a centre short of
+    /// nothing must still fill up, because banked ore buys hulls even when it
+    /// buys no rung.
+    #[test]
+    fn a_hold_is_filled_along_the_deficit_and_topped_up_with_bulk() {
+        let pile = || Minerals { cyan: 100.0, magenta: 100.0, yellow: 100.0, ..Default::default() };
+        let kt = Price::new;
+
+        // Deficit 1:3:0 — the load mirrors the *deficit's* ratio, not the pile's
+        // (which is flat), and Yellow is untouched because nothing wants it.
+        let mut bank = pile();
+        let got = take_for_deficit(&mut bank, &[kt(1.0), kt(3.0), kt(0.0)], kt(4.0));
+        assert!((got.cyan - 1.0).abs() < 1e-9, "cyan {}", got.cyan);
+        assert!((got.magenta - 3.0).abs() < 1e-9, "magenta {}", got.magenta);
+        assert!(got.yellow.abs() < 1e-9, "yellow {}", got.yellow);
+        assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must fill");
+        assert!((bank.basic_total().kilotons() - 296.0).abs() < 1e-9, "mass is conserved out of the pile");
+
+        // Deficit smaller than the hold: the hold fills *along* the direction
+        // rather than stopping at the shortfall, so 1:1:0 over a 4 kt hold is
+        // 2:2:0 and not 1:1 plus two of bulk. Overshooting in the right ratio
+        // banks ore the *next* rung can spend; stopping short banks ore no rung
+        // can.
+        let mut bank = pile();
+        let got = take_for_deficit(&mut bank, &[kt(1.0), kt(1.0), kt(0.0)], kt(4.0));
+        assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must still fill");
+        assert!((got.cyan - 2.0).abs() < 1e-9 && (got.magenta - 2.0).abs() < 1e-9, "along the deficit: {got:?}");
+        assert!(got.yellow.abs() < 1e-9, "and nothing the destination cannot use");
+
+        // The top-up is what runs when the *pile* cannot supply that direction.
+        // No Magenta here, so the wanted half is short by 2 kt and the rest of
+        // the hold takes whatever the rock does hold rather than flying light.
+        let mut lopsided = Minerals { cyan: 100.0, yellow: 100.0, ..Default::default() };
+        let got = take_for_deficit(&mut lopsided, &[kt(1.0), kt(1.0), kt(0.0)], kt(4.0));
+        assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must still fill");
+        assert!(got.yellow > 0.0, "the top-up is proportional, so Yellow rides along: {}", got.yellow);
+        assert!(got.cyan > got.yellow, "but the wanted colour still leads");
+
+        // No deficit at all: identical to the proportional rule it replaces.
+        let mut a = pile();
+        let mut b = pile();
+        let want_nothing = take_for_deficit(&mut a, &[Price::ZERO; 3], kt(6.0));
+        let plain = take_basics(&mut b, kt(6.0));
+        assert_eq!(want_nothing.cyan, plain.cyan);
+        assert_eq!(want_nothing.magenta, plain.magenta);
+        assert_eq!(want_nothing.yellow, plain.yellow);
+
+        // A pile that cannot cover the deficit gives what it has, and nothing
+        // goes negative.
+        let mut thin = Minerals { cyan: 0.5, ..Default::default() };
+        let got = take_for_deficit(&mut thin, &[kt(2.0), kt(2.0), kt(2.0)], kt(6.0));
+        assert!((got.basic_total().kilotons() - 0.5).abs() < 1e-9);
+        assert!(thin.basic_total().kilotons() >= -1e-12 && thin.basic_total().kilotons() < 1e-9);
     }
 
     /// **A mineral buys exactly the same works whether it deepens or founds

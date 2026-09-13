@@ -699,6 +699,52 @@ ablations named the cause anyway — seed mass, not hull, not price, not transit
 `CLAUDE.md`'s ordering held: ablation refutes, instrumentation explains, and a
 metric that disagrees with an ablation is the metric's problem to answer for.
 
+### Decompose a rate into stock and per-unit before explaining it
+
+**R-O89's rejected arm is the worked example, and it refuted three plausible
+mechanisms in one table.** Need-routing the freight *pickup* leg cost −52.3% work
+-years, which reads as "hauling got worse". It did not:
+
+| | baseline | need-routed pickup |
+|---|---|---|
+| round trip | 123.77 yr | **109.24 yr** — *shorter* |
+| trips per active hauler | 1.84 | **1.87** — *unchanged* |
+| retirements to Reserve | 14,828 | 14,520 — *unchanged* |
+| **active haulers** | **1,946** | **988** — *halved* |
+
+Every per-unit measure is flat or better and the aggregate fell by half, because
+the *population* moved. This is §2's mix rule (an aggregate over a set the
+treatment re-selects) in its performance costume, and the decomposition is always
+the same one: **`total = population × rate`, and you must print both.** A rate
+that improves while the total collapses is not a paradox, it is a headcount
+problem — and the two want opposite fixes.
+
+Three habits from it:
+
+- **Bucket by time before concluding anything about a compounding run.** The two
+  arms are within noise until year 500 and diverge from there — which named the
+  trigger (the router first has a *choice* once a player works many rocks)
+  without any further instrumentation. A run-total would have said nothing.
+- **Check the filter matches the state at logging time.** Counting freighter
+  retirements on `VehicleParked { role: Role::Freighter }` returned **zero** in
+  both arms and read as "nothing ever retires"; `release_to_reserve` re-roles the
+  hull to `Role::Reserve` *before* it logs. A filter that silently matches
+  nothing is indistinguishable from a real negative result, so sanity-check every
+  new counter against something you already know is non-zero.
+- **Stop at the boundary and say so.** Three mechanisms were refuted and the
+  fourth — why the fleet stops growing — is *not* established. The candidate that
+  fits the sign (a need-routed pickup breaks the 1:1 miner↔hauler pairing) is
+  exactly the shape of all seven artifacts above. It is recorded as open under
+  T-76 rather than written down as the cause; the arm is not shipped, so nothing
+  depends on it.
+
+**And the 2×2 is why the good half survived.** Selective loading is **+8.4%** and
+pickup routing is **−52.3%**; run together they score −41.2%. Landed as one
+change, the whole thing reverts and the +8.4% is never found. **When two
+independent changes address the same diagnosis, ablate them apart before you
+believe either** — `CLAUDE.md`'s "ablate before you explain", applied *before*
+there is anything to explain.
+
 ### CI gates
 
 `.github/workflows/ci.yml` runs on every push and PR. Before you push, the four
@@ -1630,9 +1676,20 @@ changes how you *work*, not what is left to do:
 
   **So every flat mineral-side result this project has recorded is downstream of
   the same thing** — `outpost_mining_fraction`, both crew policies, and the
-  Exchange. Two things follow and the second is the transferable one. **They are
+  Exchange. Two things follow and the second is the transferable one. **They were
   blocked on freight moving colour (T-76), not on price or policy**, and
-  re-measuring any of them before that lands measures the same wall again. And:
+  re-measuring any of them before that landed measured the same wall again.
+
+  **It has now landed, on the load leg (R-O89, `Hyades_industry.md` §6.20).** A
+  hauler fills against the destination's colour deficit instead of in proportion
+  to the pile it happens to be standing on — **+8.40% ± 1.86 work-years, 8/8
+  seeds, replicated on four the candidate was not chosen against** — and it does
+  it on *the same tonnage*: 20,259 → 20,292 kt over 26,800 → 26,746 trips. Same
+  fleet, same trips, same round trip to two decimals; only the colours in the
+  hold changed. **That is the cleanest confirmation of a diagnosis this project
+  has produced** — the census said the constraint was colour composition, and a
+  change touching nothing but colour composition moved the objective. The block
+  above is lifted; each of those knobs is now its own re-measurement. And:
   **a metric that reads a decision's output cannot tell you what the decision
   declined to ask for** —
   `unmet_colour_demand` summed each centre's shortfall against its *next* rung,

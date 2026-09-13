@@ -129,6 +129,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **R-O88** — there is no build-wide axis | — | T-88, T-89 | **R-O88** | A characterization test pinning a contradiction rather than a number, so neither spec section can drift further apart silently | **Two ratified sections at once.** §3.2's "`slips` scales without limit" is false in the engine (`fab_cap / slip_throughput = 2` is the whole axis, and it is closed — 10¹² kt still buys two berths). §6.3's reconciliation of the two is a **non-sequitur** and is withdrawn: it defends a per-centre claim with an empire-wide fact. Author's objection, correct |
 | **R-O88 resolved** — option C, split `F`'s two roles | **R-O88** | T-89 | — | §3.2's unbounded build-wide axis and §6.3's tree meanings for `cap`/`half`, both made true at once by denominating the ceiling per berth; `CLAUDE.md` §2's "when a change raises entity count, check the test horizons in the same commit" — unit 19→54 s and determinism 30→58 s, both fixed in this commit with `events_processed` floors guarding the trims | **`SimConfig::slip_throughput` deleted** and `fab_cap` 0.2 → 0.1. Neither is a retune: per-berth turnaround is bit-identical at every playable rung, and §3.3's approved schedule now reads off `fab_cap` directly. Also supersedes **T-88's own headline measurement** — the after-idle gap is 29.6 → 7.6 yr, so 81%-of-timeline no longer holds |
 | **R-O85 resolved** — the ladder is fine, freight is not | **R-O85** | **T-76** (promoted to first) | — | `CLAUDE.md` §2's "measure the utilisation of whatever the knob buys", applied to a *price* — the ladder is scale-free (1.8-yr payback at every rung) so there is nothing to ratify; and logging the decision's own predicate rather than reconstructing it from totals, which inverted the answer | **R-O85's own premise.** Infrastructure is not priced out of reach: the bed banks 1,714,697 kt against a 19 kt rung. Counted per decision, **0%** gated and **0.7–0.9%** outbid — so R-O68's crossover, which three sections circled, is consulted in one decision per hundred and cannot have been the cause of anything. **43.8–46.6% of all decisions hold the total and lack a colour** |
+| **R-O89** — freight loads what the destination is short of | **R-O89** | **T-76** (the load half; the routing half stays open) | — | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** — +8.21% ± 3.06 on the standard bed, **+8.60% ± 2.61 on seeds 2/3/5/11**, pooled **+8.40% ± 1.86, 8/8**; and its **ablate before you explain** — the 2×2 ran before either arm was believed, and it is what saved the +8.4% from being buried under the −52.3% they scored together. T-73's colour-payable bill and design law #1's colour semantics, finally reaching the load leg | **§6.19c's instruction not to re-sweep anything mineral-side is lifted** — `outpost_mining_fraction`, both crew policies, `reinvest_bias` and the Exchange were each measured flat against this wall and are now re-measurable (none is re-measured here). Also **my own first attempt**: need-routing the *pickup* leg is −52.3%, and transit, per-hull throughput and hull recycling are each measured not to be why — the residual is left open under T-76 rather than given a story |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -465,8 +466,30 @@ a population, because those are genuinely a world's capacity to hold people.
 | 8 | Extraction and fabrication rates from Infra × allocation | T-70 | ~~**T-74**~~ — **LANDED** |
 | 9a | `Works` struct + CardId-ordered fold + commutativity property test | T-74 | ~~**T-75a**~~ — **LANDED** |
 | 9b | `Doctrine` allocation vector wired to the fold | T-75a | ~~**T-75b**~~ — **LANDED** |
-| 10 | Development freight and the balanced-exchange default | T-73 | **T-76** |
+| 10 | Development freight and the balanced-exchange default | T-73 | **T-76** — *load leg landed (R-O89); routing and development freight open* |
 | 11 | Exchange settles into a **freight leg**, not a transfer (refined mass traverses real space) | T-01 | **T-77** |
+
+**T-76 is part-landed (R-O89, `Hyades_industry.md` §6.20).** R-O85 promoted it to
+first work because 43.8–46.6% of every production decision holds the total of its
+next rung and lacks a *colour*. The **load leg** is now fixed: a hauler fills
+against the destination's colour deficit instead of in proportion to the pile —
+**+8.40% ± 1.86 work-years, 8/8 seeds**, on the *same tonnage*, which is what
+identifies it as a colour result rather than a hauling one.
+
+Two things stay open under this code:
+
+- **The pickup leg is still welded to the hauler's own miner, and that is
+  measured rather than assumed.** Need-routing it costs **−52.3%**, and the three
+  obvious explanations are each refuted: the round trip got *shorter*
+  (123.8 → 109.2 yr), trips per active hauler are unchanged, and retirements to
+  Reserve are equal. What happens is that the in-service fleet halves from
+  year 500 on — the point at which a player first works enough rocks for the
+  router to have a choice. **Why is not established**, and the candidate story
+  (the 1:1 miner↔hauler pairing is load-bearing for matching extraction to
+  haulage rock by rock) fits the sign and is exactly the shape of the seven
+  measurement artifacts in `CLAUDE.md` §2. Do not act on it without an ablation.
+- **Development freight itself** — `develop_bias`, a centre supplying a colony it
+  did not found — is untouched. So is the balanced-exchange default (§7.1).
 
 **Three of these invalidate a measured result, which is the part to be careful
 about:**
@@ -3195,6 +3218,9 @@ and the cost anchor are all globally MC-tuned surfaces and need ratification
 3. **Re-measure everything mineral-side afterwards.** `outpost_mining_fraction`,
    both retired crew policies (§6.15), the Exchange (politics §10.6a) and T-76's
    development freight were all measured on a bed that could not spend minerals.
+   **R-O89 has since unblocked this** (`Hyades_industry.md` §6.20): freight loads
+   against the destination's colour deficit, so the bed can now spend. Each is
+   its own ratification and none is re-measured yet.
 4. **Then re-ratify `reinvest_bias`.** Not before: a dial whose crossover is a
    price ratio cannot be tuned while the prices are the thing under question.
 
