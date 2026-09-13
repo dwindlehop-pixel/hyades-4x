@@ -158,6 +158,46 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-90. Outpost selection is colour-blind — R-O91
+
+**The third missing term, and it is one step further back than the last two.**
+λ gave freighter routing a *distance* component it did not have (coverage
+14.4% → 38.3%); R-O89 gave the freight *load* leg a *colour* component it did not
+have (+8.4% work-years). This is the decision that puts a mining pair on a rock
+in the first place, and it has a colour term that reads a **constant**:
+`RankWeights`-scored `scarcity_c` is written once at game start from the
+homeworld archetype and never again, while `mineral_pressure` is live but
+**scalar**. The empire can say *mine more*; it cannot say *mine Cyan*.
+
+**Measured consequence** (`examples/bank_mix`, `examples/decision_census`,
+`Hyades_industry.md` §6.23/§7.4):
+
+- **79.8% of production decisions return `Idle`**, and **100% of those are
+  "wants to deepen, cannot pay the bill"** with a mean bank of **561 kt**. Not
+  one idle decision in the run had `can_afford_infra == true`.
+- **99.7% of 360,517 banked kt cannot pay a balanced rung at any price.**
+- The median bank's dominant-colour share is **0.871** — *worse* than the
+  field's 0.789 — so freight **concentrates** the geology rather than mixing it.
+
+**Why not pickup re-routing.** Measured at R-O89 and it costs **−52.3%**, with
+transit, per-hull throughput and hull recycling each refuted as the reason and
+the cause still open. Outpost selection is a different intervention: made once at
+build time, it leaves the 1:1 miner↔hauler pairing intact, and it is where
+`CLAUDE.md` §4 says this class of decision belongs.
+
+**R-O91 is what has to be settled first** — whose shortfall the live term reads
+(a purely local one makes every centre chase the same colour at once; the empire
+aggregate is already balanced at 171x–2,356x and would say nothing), and whether
+reading ore on hand makes the term farmable under §2's invariance rule. Scarcity
+read from *bills outstanding* rather than ore on hand is the candidate that is
+not.
+
+**Acceptance is the mechanism, not just the objective.** Work-years is the
+metric; `bank_mix`'s payable fraction is the check. A change that does not move
+**0.043** has not done what it claims, whatever the objective reports.
+
+
+
 ### T-66. Hauling is the engine's largest cost, and the scale is ratified (R-O82 closed)
 
 **`mineral_peak = Band IV` is ratified**, so the throughput breach it opened can

@@ -6,6 +6,23 @@
 //! the composition the bill asks for — so this checks the composition directly
 //! rather than reasoning about it.
 //!
+//! **Extended at T-88 to answer the freight question** (`Hyades_industry.md`
+//! §6.23). The decision census says 100% of idle decisions are "wants to deepen,
+//! cannot pay the bill" with a mean bank of **561 kt** — the total is there and a
+//! colour is not. This quantifies how much of a banked kilotonne is *dead* to a
+//! three-colour bill, which is the number a routing change has to move.
+//!
+//! Two statistics, both per centre and then pooled:
+//!
+//! - **dominant share** — the largest colour's fraction of the bank. The
+//!   galaxy's *sources* sit at 0.789 (T-81); if banks sit near that too, freight
+//!   is inheriting the geology rather than mixing it.
+//! - **payable fraction** — `3·min_c(bank_c) / total`. A works bill is a
+//!   conjunction, so this is the share of the bank that could pay a balanced one
+//!   and `1 − it` is ore that is banked and cannot be spent on a rung at any
+//!   price. It is the direct measure of what R-O89's load-leg fix was reaching
+//!   for and could not get all of.
+//!
 //! Run: `cargo run --release --example bank_mix`
 use hyades_engine::autopilot::BuildOrder;
 use hyades_engine::prelude::*;
@@ -110,4 +127,44 @@ fn main() {
             println!("  planet {:>5}: C {:>10.4}  M {:>10.4}  Y {:>10.4}", p.id.0, s.cyan, s.magenta, s.yellow);
         }
     }
+
+    // --- the two summary statistics ---------------------------------------
+    let snap = sim.snapshot();
+    let mut dom = Vec::new();
+    let mut pay = Vec::new();
+    let (mut banked, mut dead) = (0.0f64, 0.0f64);
+    for pl in snap.planets.iter().filter(|p| p.owner.is_some()) {
+        let c = [pl.stockpile.cyan, pl.stockpile.magenta, pl.stockpile.yellow];
+        let total: f64 = c.iter().sum();
+        if total <= 1e-9 {
+            continue;
+        }
+        let hi = c.iter().cloned().fold(f64::MIN, f64::max);
+        let lo = c.iter().cloned().fold(f64::MAX, f64::min);
+        dom.push(hi / total);
+        let payable = 3.0 * lo / total;
+        pay.push(payable);
+        banked += total;
+        dead += total * (1.0 - payable);
+    }
+    dom.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    pay.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let pct = |v: &Vec<f64>, q: f64| v[((v.len() - 1) as f64 * q) as usize];
+    println!("\n=== composition of {} non-empty banks ===", dom.len());
+    println!(
+        "  dominant colour share   p10 {:.3}  median {:.3}  p90 {:.3}   (sources sit at 0.789, T-81)",
+        pct(&dom, 0.1),
+        pct(&dom, 0.5),
+        pct(&dom, 0.9)
+    );
+    println!(
+        "  payable fraction        p10 {:.3}  median {:.3}  p90 {:.3}   (3*min/total)",
+        pct(&pay, 0.1),
+        pct(&pay, 0.5),
+        pct(&pay, 0.9)
+    );
+    println!(
+        "  banked {banked:.0} kt, of which {dead:.0} kt ({:.1}%) cannot pay a balanced rung at any price",
+        100.0 * dead / banked.max(1e-9)
+    );
 }
