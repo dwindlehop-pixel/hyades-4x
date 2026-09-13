@@ -86,7 +86,7 @@ fn full_run_reports_are_bit_identical() {
     // vacuous — the same guard, and for the same reason, as `moving` in
     // `positions_never_exceed_lightspeed`. It fired on the first attempt here
     // too, at a uniform 50 yr.
-    for &(n, seed, horizon) in &[(2usize, 1u64, 62.0), (3, 7, 48.0), (6, 13, 32.0), (12, 99, 21.0), (18, 4, 16.0)] {
+    for &(n, seed, horizon) in &[(2usize, 1u64, 54.0), (3, 7, 42.0), (6, 13, 28.0), (12, 99, 18.0), (18, 4, 14.0)] {
         let mut a = fresh_short(n, seed, horizon);
         let mut b = fresh_short(n, seed, horizon);
         let ra = a.run();

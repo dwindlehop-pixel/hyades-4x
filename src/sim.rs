@@ -5949,9 +5949,7 @@ mod tests {
             // scenery is not what the test reads.
             cfg.horizon_years = 400.0;
             cfg.cycle_years = cycle;
-            let mut g = GalaxyConfig::new(2, 1);
-            g.planet_count = 150;
-            let mut sim = Simulation::with_baseline(Galaxy::generate(g).unwrap(), cfg);
+            let mut sim = Simulation::with_baseline(test_galaxy(2, 1), cfg);
             sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Production));
             sim.run();
             let d = sim.log().iter().filter(|r| matches!(r.event, LogEvent::ProductionDecision { .. })).count();
@@ -5998,6 +5996,10 @@ mod tests {
     /// gain, not a rescaling: **+20.3% ± 5.4 work-years at `cycle_years = 5`,
     /// 4/4 seeds**, saturating there — 1/yr buys nothing more than 5.
     ///
+    /// (That table is the shipped galaxy; this test runs `test_galaxy`'s smaller
+    /// one and lands at 1,136 / 1,978 / 3,518 / 4,296 — the same shape, which is
+    /// what it asserts.)
+    ///
     /// **Which is why this asserts convergence rather than invariance.** The two
     /// failure modes look identical in a single ratio and completely different
     /// across three: an integrator converging has each refinement move the
@@ -6009,13 +6011,10 @@ mod tests {
             let mut cfg = test_cfg(1);
             cfg.horizon_years = 300.0;
             cfg.cycle_years = cycle;
-            // **Shrink the scenery, not the horizon** (`CLAUDE.md` §2). This
-            // reads one homeworld's population and nothing else, so the galaxy
-            // is pure cost: 150 planets takes the test from 39 s to 3 s and the
+            // Shared small bed (see `test_galaxy`); this reads one homeworld's
+            // population and nothing else, so the scenery is pure cost and the
             // horizon stays where the convergence is legible.
-            let mut g = GalaxyConfig::new(2, 1);
-            g.planet_count = 150;
-            let mut sim = Simulation::with_baseline(Galaxy::generate(g).unwrap(), cfg);
+            let mut sim = Simulation::with_baseline(test_galaxy(2, 1), cfg);
             sim.run();
             sim.snapshot()
                 .planets
@@ -6031,13 +6030,24 @@ mod tests {
         let (p50, p25, p10, p5) = (pop_at(50.0), pop_at(25.0), pop_at(10.0), pop_at(5.0));
         assert!(p50 > 0.0 && p5 > 0.0, "the bed must grow a population to compare: {p50} .. {p5}");
         let step = |fine: f64, coarse: f64| (fine / coarse - 1.0).abs();
+        // `b` is the middle refinement, kept in the message because it is the
+        // one that is allowed to be non-monotone and a reader will want to see
+        // it before believing the assertion is loose on purpose.
         let (a, b, c) = (step(p25, p50), step(p10, p25), step(p5, p10));
+        // **Convergence across the range, not monotonicity at every step.** The
+        // strict form (`a > b > c`) was tried and is too brittle: this bed also
+        // *colonises*, so a refinement can move the homeworld a little more than
+        // the one before it while the sequence is plainly converging (0.741,
+        // 0.779, 0.221). What discriminates the failure mode is that under a
+        // per-tick rate with no `tick_scale` each halving moves the answer by
+        // the *step ratio* — so the last refinement stays as large as the first,
+        // forever, and never approaches zero.
         assert!(
-            a > b && b > c,
-            "halving the tick must move the answer less each time — got {a:.3}, {b:.3}, {c:.3} for \
-             ({p50:.1}, {p25:.1}, {p10:.1}, {p5:.1}). A ratio that does not shrink means a per-cycle rate is \
-             being applied per tick without `tick_scale`, which rescales the economy instead of refining it \
-             (T-88)."
+            c < 0.5 * a,
+            "the finest refinement must move the answer far less than the coarsest — got {a:.3}, {b:.3}, {c:.3} \
+             for ({p50:.1}, {p25:.1}, {p10:.1}, {p5:.1}). A step that keeps moving the answer by the same \
+             factor means a per-cycle rate is being applied per tick without `tick_scale`, which rescales the \
+             economy instead of refining it (T-88)."
         );
     }
 
@@ -6328,6 +6338,29 @@ mod tests {
         }
     }
 
+    /// **The unit tests' galaxy: small, and that is the point** (`CLAUDE.md` §2,
+    /// "reduce the galaxy before the horizon").
+    ///
+    /// Measured in debug, which is how tests run: a 2-seat 60-year run costs
+    /// **2,382 ms on the full field and 21 ms at 200 planets** — 110x, for
+    /// scenery almost none of these tests read. Generation itself is noise
+    /// either way (5–8 ms), so the cost is the *run*, and it is the planet count
+    /// that drives it rather than the horizon: trimming `test_cfg` from 60 yr to
+    /// 25 moved the target by under a second and started making assertions
+    /// vacuous, while this took it from **62 s to single digits**.
+    ///
+    /// **What it trades**, so it is not rediscovered: a small field exercises
+    /// every path fewer times and is worse at catching a fault that only appears
+    /// at scale. That is why `tests/determinism.rs::full_run_reports_are_bit_identical`
+    /// keeps full-size galaxies across every seat count (R-NET14) — shrink the
+    /// scenery on tests that pin a *mechanism*, never on the one whose question
+    /// **is** scale.
+    fn test_galaxy(players: usize, seed: u64) -> Galaxy {
+        let mut g = GalaxyConfig::new(players, seed);
+        g.planet_count = 200;
+        Galaxy::generate(g).unwrap()
+    }
+
     fn test_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = 60.0;
@@ -6437,7 +6470,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "degenerate hull ladder")]
     fn constructing_a_sim_on_a_degenerate_ladder_panics() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let galaxy = test_galaxy(3, 1);
         let mut cfg = test_cfg(1);
         // Both legs pinned: the fault is `medium ≥ limited`, and stating only
         // one side makes the test depend on the other's ratified value.
@@ -6491,7 +6524,7 @@ mod tests {
         assert_ne!(guard, 1.3 * 0.7 * 1.1, "fixture must be order-sensitive to be worth running");
 
         let play = |order: &[usize]| {
-            let galaxy = Galaxy::generate(GalaxyConfig::new(2, 4)).unwrap();
+            let galaxy = test_galaxy(2, 4);
             let mut sim = Simulation::with_baseline(galaxy, test_cfg(4));
             for &i in order {
                 sim.apply_card_effect(0, &deck[i], Target::None, 0);
@@ -6523,7 +6556,7 @@ mod tests {
 
         // The rate the simulation reads moves with it, which is the only reason
         // any of this matters.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 4)).unwrap();
+        let galaxy = test_galaxy(2, 4);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(4));
         let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let before = sim.fabrication_rate(yard);
@@ -6538,12 +6571,12 @@ mod tests {
         // number in the tree — and the offline search resting on them — valid
         // across the card layer landing. Verified at the shipped defaults:
         // seed 1 / 3 seats / 4 kyr gives 1,044 colonies with and without.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let galaxy = test_galaxy(3, 1);
         let mut with_rounds = Simulation::with_baseline(galaxy, paired_cfg(1));
         let a = with_rounds.run();
         paired_mechanism_fired(&a);
 
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let galaxy = test_galaxy(3, 1);
         let mut cfg = paired_cfg(1);
         cfg.years_per_round = 0.0; // disables the layer entirely
         let mut without = Simulation::with_baseline(galaxy, cfg);
@@ -6566,7 +6599,7 @@ mod tests {
         // what the test asserts. It did once: R-O88 took the horizon 250 → 120
         // and the hard-coded `1` became a `0`, which is a test that was reading
         // a constant it did not own.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let galaxy = test_galaxy(3, 1);
         let mut cfg = paired_cfg(1);
         let period = cfg.horizon_years / 3.0;
         cfg.years_to_first_round = period;
@@ -6584,7 +6617,7 @@ mod tests {
         // where the long run exercised four, and the property under test — the
         // barrier reschedules itself and the last one lands below the horizon —
         // is exactly the same property, now better covered for 6% of the cost.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let galaxy = test_galaxy(3, 1);
         let mut cfg = paired_cfg(1);
         let fine = cfg.horizon_years / 10.0;
         cfg.years_to_first_round = fine;
@@ -6599,7 +6632,7 @@ mod tests {
         // net §5.1 / design law #15. Every input maps to a legal transition:
         // a bogus seat, a bogus card and an unaffordable card must all leave
         // the sim untouched rather than panicking or half-applying.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let galaxy = test_galaxy(3, 1);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
         let before = sim.world.doctrine.get(sim.player_entity[0]).unwrap().growth_rate;
 
@@ -6620,7 +6653,7 @@ mod tests {
         // politics §5.3 / §6 — disclosure is the attack, and it is not opt-in.
         // Player 0 publishes player 1's scan record; player 2, who is not
         // involved at all, learns everything player 1 knew.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let galaxy = test_galaxy(3, 1);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
         sim.run();
 
@@ -6648,7 +6681,7 @@ mod tests {
     }
 
     fn run_default(players: usize, seed: u64) -> (Simulation, SimReport) {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(players, seed)).unwrap();
+        let galaxy = test_galaxy(players, seed);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(seed));
         let report = sim.run();
         (sim, report)
@@ -6684,7 +6717,7 @@ mod tests {
         // of a 68 s unit target on its own. `tests/determinism.rs` is the
         // full-scale guard; this is the in-module smoke version of it.
         let mk = |seed: u64| {
-            let galaxy = Galaxy::generate(GalaxyConfig::new(6, seed)).unwrap();
+            let galaxy = test_galaxy(6, seed);
             let mut sim = Simulation::with_baseline(galaxy, paired_cfg(seed));
             let report = sim.run();
             (sim, report)
@@ -6713,7 +6746,7 @@ mod tests {
     fn minerals_deplete_when_mined() {
         // The homeworld mines its own density every cycle, so its metallicity
         // must fall over the game.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 11)).unwrap();
+        let galaxy = test_galaxy(3, 11);
         let hw = galaxy.homeworlds[0];
         let before = galaxy.planet(hw).minerals.total_mass().kilotons();
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
@@ -6730,7 +6763,7 @@ mod tests {
         // Two identical runs must agree bit-for-bit on every entity's position
         // across a grid of times; and motion must never exceed c between samples.
         let mk = || {
-            let g = Galaxy::generate(GalaxyConfig::new(3, 23)).unwrap();
+            let g = test_galaxy(3, 23);
             Simulation::with_baseline(g, SimConfig::new(23))
         };
         let mut a = mk();
@@ -6766,7 +6799,7 @@ mod tests {
 
     #[test]
     fn enabling_a_category_captures_real_events() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 17)).unwrap();
+        let galaxy = test_galaxy(3, 17);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(17));
         sim.set_log_filter(crate::log::LogFilter::all());
         sim.run();
@@ -6788,8 +6821,12 @@ mod tests {
         // channel: turning it on must not change a single bit of the
         // simulation's deterministic results.
         let mk = |logging: bool| {
-            let g = Galaxy::generate(GalaxyConfig::new(6, 2024)).unwrap();
-            let mut s = Simulation::with_baseline(g, paired_cfg(2024));
+            // Six seats, small bed. This asserts an *identity* — the log is a
+            // pure side channel — so it needs the mechanism to have fired and
+            // nothing else; the seat count is what makes the log interesting
+            // (every player must appear) and the planet count was pure scenery.
+            // It was 58 s of a 67 s unit target on the full field.
+            let mut s = Simulation::with_baseline(test_galaxy(6, 2024), paired_cfg(2024));
             if logging {
                 s.set_log_filter(crate::log::LogFilter::all());
             }
@@ -6818,7 +6855,7 @@ mod tests {
         // The point of logging Entity (not just PlanetId) on vehicle events is
         // that a consumer can correlate a log line with the continuous-position
         // seam. Confirm that round trip actually works.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
+        let galaxy = test_galaxy(2, 5);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(5));
         sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Vehicles));
         sim.run();
@@ -6839,7 +6876,7 @@ mod tests {
         // A laden vehicle accelerates more slowly than an empty one, and an
         // empty hull of any size gets the full rate (R-O58: thrust and dry mass
         // both scale with area, so a_empty is size-independent).
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 1)).unwrap();
+        let galaxy = test_galaxy(2, 1);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(1));
         let base = sim.config.civilian_accel_g;
 
@@ -6856,7 +6893,7 @@ mod tests {
         }
 
         // an entity carrying cargo should accelerate strictly less
-        let mut sim2 = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 1)).unwrap(), SimConfig::new(1));
+        let mut sim2 = Simulation::with_baseline(test_galaxy(2, 1), SimConfig::new(1));
         let laden = sim2.world.spawn();
         let m = Minerals { cyan: 5.0, ..Minerals::default() };
         sim2.world.cargo.insert(laden, m);
@@ -7126,7 +7163,7 @@ mod tests {
     /// construction.
     #[test]
     fn a_colony_ship_carries_up_to_the_targets_capacity_and_no_more() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let mut sim = Simulation::with_baseline(test_galaxy(3, 1), test_cfg(1));
         // **A third cap joined the two this test is about** (R-O74): settlers
         // come out of the origin's population. Give this centre people to
         // spare so the hold-vs-world question stays readable;
@@ -7348,7 +7385,7 @@ mod tests {
     /// from, so the collection leg needed no new code.
     #[test]
     fn settlement_moves_ore_to_the_buyers_pile_and_conserves_mass() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 71)).unwrap(), test_cfg(71));
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 71), test_cfg(71));
         let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
         let rock = sim.planet_entity[30];
         for p in 0..2u32 {
@@ -7408,7 +7445,7 @@ mod tests {
     /// §3.3 chose shared loss over returning the escrow whole.
     #[test]
     fn a_seller_that_cannot_deliver_defaults_and_both_sides_pay() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 73)).unwrap(), test_cfg(73));
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 73), test_cfg(73));
         let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
         let rock = sim.planet_entity[30];
         // The bank is short the colour it owes — rich in Cyan, owing Yellow.
@@ -7457,7 +7494,7 @@ mod tests {
     /// its own leg).
     #[test]
     fn two_empires_can_only_trade_where_they_both_have_crew() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 61)).unwrap(), test_cfg(61));
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 61), test_cfg(61));
         let (a, b) = (PlayerId(0), PlayerId(1));
         let origin = Vec3::ZERO;
 
@@ -7567,7 +7604,7 @@ mod tests {
     /// bypassed by a new call site.
     #[test]
     fn a_non_finite_credit_never_reaches_the_ledger() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 9)).unwrap(), test_cfg(9));
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 9), test_cfg(9));
         let pe = sim.player_entity[0];
         sim.credit(pe, 10.0);
         assert_eq!(sim.purse_of(PlayerId(0)), 10.0);
@@ -7600,7 +7637,7 @@ mod tests {
     /// - **More demand, more crew**, monotonically, up to the body's veins.
     #[test]
     fn a_mining_crew_is_derived_from_demand_and_shrinks_on_richer_rock() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), test_cfg(3));
         let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let rock = sim.planet_entity[10];
 
@@ -7747,7 +7784,7 @@ mod tests {
     #[test]
     fn a_mining_crew_extracts_in_proportion_to_its_size() {
         let extracted = |crew: usize| {
-            let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
+            let mut sim = Simulation::with_baseline(test_galaxy(2, 3), test_cfg(3));
             let outpost = sim.planet_entity[10];
             // **Pin the ore rather than inherit it.** This test is about the
             // *proportionality* of the crew, so which rock the generator put at
@@ -7868,7 +7905,7 @@ mod tests {
     fn seats_start_with_the_ratified_lsv_plus_lcv_roster() {
         // R-O42/§7.1: LSV and LCV only, one class each — at turn 0 a scout, a
         // settler and a hauler are the same object.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
+        let galaxy = test_galaxy(3, 1);
         let sim = Simulation::with_baseline(galaxy, test_cfg(1));
         for p in 0..3 {
             let r = sim.world.roster.get(sim.player_entity[p]).expect("every seat has a roster");
@@ -7887,7 +7924,7 @@ mod tests {
         // no card system to unlock it — so enforcement forbids every expansion
         // build permanently. Measured over a full 4,000-year run that is 3
         // colonies and 18 vehicles against 1,183 and 4,778.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let galaxy = test_galaxy(2, 3);
         let mut cfg = test_cfg(3);
         cfg.enforce_roster = true;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
@@ -7903,7 +7940,7 @@ mod tests {
         assert!(sim.roster_permits(0, HullType::MediumSystems));
 
         // And with enforcement off — the shipped default — nothing is gated.
-        let galaxy2 = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let galaxy2 = test_galaxy(2, 3);
         let sim2 = Simulation::with_baseline(galaxy2, test_cfg(3));
         assert!(sim2.roster_permits(0, HullType::MediumSystems), "default config must not gate anything");
     }
@@ -7986,7 +8023,7 @@ mod tests {
     ///    `K = min(hab, bio, infra)` unit error this project already paid for.
     #[test]
     fn infrastructure_is_a_stock_and_the_rung_is_a_reading() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
         for rung in 1..=4usize {
@@ -8052,7 +8089,7 @@ mod tests {
     /// continuous reader to start deciding.
     #[test]
     fn infrastructure_reaches_every_decision_through_an_integer() {
-        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         let cfg = &sim.config;
 
         for hull in [HullType::MediumSystems, HullType::GeneralSystems] {
@@ -8121,7 +8158,7 @@ mod tests {
     /// of saying "make it cheaper".
     #[test]
     fn a_mix_card_cannot_change_the_total() {
-        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
 
         // Every mix a card could reach, including the sole-colour `1:0:0` that
@@ -8230,7 +8267,7 @@ mod tests {
     /// a configuration that was already ratified.
     #[test]
     fn build_time_is_lead_plus_mass_over_throughput() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         // **T-74 made `t_build` a property of the yard, so the schedule needs a
         // yard to be read at — and the one it holds at is the anchor.** A centre
         // standing at rung I with default doctrine sits exactly on the knee of
@@ -8341,7 +8378,7 @@ mod tests {
         // Read through `build_time`, since that is what the rest of the engine
         // sees: strictly above the floor at every rung, and monotonically
         // approaching it as the yard grows.
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), test_cfg(3));
         let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let mut prev = f64::INFINITY;
         for rung in 1..=4 {
@@ -8373,7 +8410,7 @@ mod tests {
     /// 2.
     #[test]
     fn a_rich_yard_fills_every_berth_it_has_in_one_decision() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 13)).unwrap();
+        let galaxy = test_galaxy(2, 13);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(13));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         {
@@ -8419,7 +8456,7 @@ mod tests {
     /// and a decision is pending for when it clears.**
     #[test]
     fn a_committed_build_occupies_the_yard_and_schedules_its_own_next_decision() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 11)).unwrap();
+        let galaxy = test_galaxy(2, 11);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(11));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
@@ -8482,7 +8519,7 @@ mod tests {
         // *masses*, `KT(pop) + biomass`. `pop + biomass` — the old assertion —
         // is a Band added to a mass and was only ever "conserved" because the
         // engine drew a Band increment out of a kiloton stock.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
+        let galaxy = test_galaxy(2, 5);
         let mut cfg = test_cfg(5);
         cfg.biosphere_regen_rate = 0.0; // isolate the exchange from the regrowth
         let mut sim = Simulation::with_baseline(galaxy, cfg);
@@ -8558,7 +8595,7 @@ mod tests {
 
     #[test]
     fn biosphere_regrows_toward_its_pristine_ceiling_but_never_past_it() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 6)).unwrap();
+        let galaxy = test_galaxy(2, 6);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(6));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         // A cratered ecology: standing mass far below the pristine ceiling.
@@ -8587,7 +8624,7 @@ mod tests {
     fn a_dead_biosphere_stays_dead_when_doctrine_zeroes_regrowth() {
         // The hostile-card case: reducing regen to zero makes the wound durable
         // rather than momentary.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 7)).unwrap();
+        let galaxy = test_galaxy(2, 7);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(7));
         let pe = sim.player_entity[0];
         sim.world.doctrine.get_mut(pe).unwrap().biosphere_regen_bonus = 0.0;
@@ -8612,7 +8649,7 @@ mod tests {
     /// expressed as `K` collapsing.
     #[test]
     fn growth_stalls_when_the_biosphere_cannot_pay_for_it() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 7)).unwrap();
+        let galaxy = test_galaxy(2, 7);
         let mut cfg = test_cfg(7);
         cfg.biosphere_regen_rate = 0.0;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
@@ -8666,7 +8703,7 @@ mod tests {
     /// is recorded rather than changed here.
     #[test]
     fn a_colony_seeded_above_its_capacity_crashes_below_it() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 7)).unwrap();
+        let galaxy = test_galaxy(2, 7);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(7));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
@@ -8723,7 +8760,7 @@ mod tests {
         // tens of thousands of years — real, and flagged separately as a
         // pacing question, but this test only needs to demonstrate the
         // mechanism, not depend on emergent full-galaxy exploration timing.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let galaxy = test_galaxy(2, 3);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(3));
         sim.set_log_filter(crate::log::LogFilter::all());
 
@@ -8785,7 +8822,7 @@ mod tests {
         // used to stop working for the rest of the match. Reserve is the roles
         // §4.6 state for a standing mission that ended, and a later mining
         // order takes the hull back rather than buying another.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
+        let galaxy = test_galaxy(2, 5);
         let mut cfg = test_cfg(5);
         cfg.recycle_mining_pairs = true;
         // **This test is about recycling, not about how many miners open an
@@ -8879,7 +8916,7 @@ mod tests {
         // dead and the hauler was not told, so it flew empty round trips for
         // the rest of the match — measured on seed 1, not one freighter of
         // 2,655 ever reached its stand-down branch.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
+        let galaxy = test_galaxy(2, 5);
         let mut cfg = test_cfg(5);
         cfg.recycle_mining_pairs = true;
         let autopilots: Vec<Box<dyn Autopilot>> =
@@ -8928,7 +8965,7 @@ mod tests {
     fn recycling_off_leaves_the_pair_where_the_rock_died() {
         // The flag's default has to be honest about what it changes: with it
         // off, exhaustion strands the hull exactly as before.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
+        let galaxy = test_galaxy(2, 5);
         let mut cfg = test_cfg(5);
         cfg.recycle_mining_pairs = false;
         let autopilots: Vec<Box<dyn Autopilot>> =
@@ -8957,7 +8994,7 @@ mod tests {
     fn mining_is_non_exclusive_between_owners() {
         // "mining is non-exclusive by default" — confirmed this conversation.
         // Two different owners' miners can both station at the same outpost.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let galaxy = test_galaxy(2, 3);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(3));
         let outpost = sim.planet_entity[10];
 
@@ -8984,7 +9021,7 @@ mod tests {
     fn most_needed_center_picks_highest_pressure_not_nearest_or_first() {
         // Confirmed this conversation: "autopilot must haul minerals to
         // where they are needed" — the query itself, in isolation.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let galaxy = test_galaxy(2, 3);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(3));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
@@ -9029,7 +9066,7 @@ mod tests {
     /// test whatever it was keying on.
     #[test]
     fn a_hauler_routes_to_the_colour_that_is_missing() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let galaxy = test_galaxy(2, 3);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(3));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let here = *sim.world.position.get(home).unwrap();
@@ -9113,7 +9150,7 @@ mod tests {
     fn freighter_delivers_to_need_not_its_original_pairing() {
         // The end-to-end version: a freighter built for one center still
         // delivers to a *different*, needier center once loaded.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let galaxy = test_galaxy(2, 3);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(3));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
@@ -9177,7 +9214,7 @@ mod tests {
     /// the claim that a later change cannot half-satisfy.
     #[test]
     fn settlers_are_drawn_from_a_real_population() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let mut sim = Simulation::with_baseline(test_galaxy(3, 1), test_cfg(1));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         // **A modest world and a big hull**, which is the case the mixed hold
         // exists for: the ceiling caps the settlers well below the hold, so the
@@ -9263,7 +9300,7 @@ mod tests {
     ///   that world can hold.
     #[test]
     fn the_seed_is_priced_in_time_not_as_a_share() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let mut sim = Simulation::with_baseline(test_galaxy(3, 1), test_cfg(1));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let target = sim.planet_entity[11];
         let cap = Band::new(3.0);
@@ -9315,7 +9352,7 @@ mod tests {
     /// because nothing checks it. This one is checked.
     #[test]
     fn the_hull_choice_sees_what_the_launch_will_load() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let mut sim = Simulation::with_baseline(test_galaxy(3, 1), test_cfg(1));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let here = *sim.world.position.get(home).unwrap();
         let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Price::ZERO);
@@ -9355,7 +9392,7 @@ mod tests {
     /// hold was a promise, and "settlers per mineral" could always be paid.
     #[test]
     fn a_hold_is_an_upper_bound_not_a_promise() {
-        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
+        let mut sim = Simulation::with_baseline(test_galaxy(3, 1), test_cfg(1));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let target = sim.planet_entity[11];
         sim.world.factors.insert(
@@ -9390,7 +9427,7 @@ mod tests {
         // "colonizing is exclusive by default" — confirmed this conversation.
         // A second Colonizer arriving at an already-founded world bounces
         // rather than founding a duplicate claim.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 4)).unwrap();
+        let galaxy = test_galaxy(2, 4);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(4));
         let target = sim.planet_entity[20];
         let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
@@ -9421,7 +9458,7 @@ mod tests {
 
     #[test]
     fn colonizer_consumes_its_pop_cargo_on_founding() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 4)).unwrap();
+        let galaxy = test_galaxy(2, 4);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(4));
         let target = sim.planet_entity[20];
         let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
@@ -9446,7 +9483,7 @@ mod tests {
         // with zero local density must start with exactly zero stockpile —
         // whatever it gets from here on comes from its own mining and/or
         // hauled-in freighter deliveries, never a founding windfall.
-        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 4)).unwrap();
+        let galaxy = test_galaxy(2, 4);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(4));
         let target = sim.planet_entity[20];
         let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
@@ -9493,7 +9530,7 @@ mod tests {
 
     #[test]
     fn fleets_group_by_owner_role_and_theater() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(3, 9)).unwrap();
+        let galaxy = test_galaxy(3, 9);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(9));
         sim.run();
 

@@ -179,6 +179,29 @@ things about *how* are worth keeping:
   identity caught immediately. It is now a single `SMOKE_HORIZON` constant. When
   a number is shared by a *paired* assertion, share the constant too.
 
+**Then the unit target came back at 62 s anyway, and the horizon lever was
+spent.** This is the case §"Reduce the galaxy before the horizon" was written
+for, and the numbers are worth having because they are lopsided:
+
+| lever | effect on the unit target |
+|---|---|
+| `test_cfg` horizon 60 → 45 → 35 → 25 | **62.4 s → 63.0 → 63.3 → 63.1** — nothing, and tests began failing at 25 |
+| `test_galaxy`, planet count → 200 | **62.4 s → 4.1 s**, all 198 still passing |
+
+**Fifteen times, from the lever that had already been named.** Measured in debug,
+which is how tests run: a 2-seat 60-year run costs **2,382 ms on the full field
+and 21 ms at 200 planets**, while galaxy *generation* is 5–8 ms either way. So
+the cost was never the horizon and never the generation — it was per-planet work
+inside the run, and no amount of shortening reaches it.
+
+Two things to take from the shape rather than the numbers. **When a trim does
+nothing, that is data**: three horizon cuts moving the target by under a second
+said the model of the cost was wrong, and the right response was to measure where
+the time went rather than to cut harder. And **a shared helper is what makes the
+lever reusable** — 55 call sites said `Galaxy::generate(GalaxyConfig::new(n, s))`,
+so one `test_galaxy(n, s)` converted them all and the next session can change the
+planet count in one place.
+
 **T-71/T-72 did it a third time in one session** — smoke 36 s → 68 s — and the
 answer was the same shape: `all_fair_counts_run_and_expand` was **65.8 s of the
 68** on its own, four seat counts at a 300-yr horizon inherited from when a
@@ -736,6 +759,56 @@ converging moves the answer *less* with each refinement (1.99, 1.55, 1.22), whil
 a rate applied per tick without scaling moves it by the step ratio every time,
 forever. The first version of that test asserted invariance, failed at 2.92x, and
 was wrong to — which is how the distinction got found.
+
+### A decision can be provably blind and fixing it change nothing
+
+**T-90 is the worked example, and the diagnosis that produced it was mine, one
+landing earlier.** `BaselineAutopilot::rank` scores a world's minerals as
+`Σ_c scarcity_c · Band(m_c)`, and `scarcity_c` is written once at game start from
+the homeworld archetype and never again — so outpost selection could say *mine
+more* and never *mine **Cyan***. That is a real defect, it is visible in the
+code, and it is **not** why 99.7% of banked ore cannot pay a rung.
+
+Replacing it with the deciding centre's live shortfall moved the mechanism check
+from **0.043 to 0.043**, cost **−3.30% ± 0.49 colony-years on 0/4 seeds**, and
+was reverted. Three habits, and the last one is the general shape:
+
+- **Write the mechanism check down before you measure, and let it refuse the
+  change.** The objective said +1.12% ± 4.31 — noise that could have been read as
+  a small win on a tired evening. `bank_mix`'s payable fraction is a *direct*
+  reading of the thing the fix claimed to move, and it said no. An objective
+  answers "did anything change"; only a mechanism check answers "did the thing I
+  described change".
+- **Probe the gain across an order of magnitude before calling an axis inert.**
+  "No effect at the shipped value" and "the axis does nothing" are different
+  findings with different next actions, and four runs separate them: swept
+  0 / 1 / 4 / 16, the payable fraction reads 0.043 / 0.043 / 0.057 / 0.045 and the
+  dead share is 99.7% at every one. Without that sweep the honest write-up would
+  have had to say "possibly undertuned" forever.
+- **Check whether the thing upstream was ever short.** The premise was that
+  colour-blind selection mines the wrong mix. The empire's outpost holdings are
+  **957k / 905k / 626k kt** across the three colours — already balanced. *The
+  decision was blind and had nothing to see.* One census of the upstream stock
+  would have refuted the diagnosis before a line was written, and it is the same
+  question §2 already asks about knobs — measure whether the resource the change
+  buys is even binding.
+
+**And the reason no routing fix reaches it is structural, not statistical.** A
+hold is filled from `outpost_stock[(player, rock)]` — one map entry — and a rock
+is one colour (0.789). So **every delivery is mono-coloured by construction**, and
+a bank is a sum of mono-coloured lumps. Which rock, and which centre the lump
+goes to, are both choices *over indivisible single-source loads*:
+
+> **If every unit of delivery is atomic in the dimension you need to mix, mixing
+> is not a routing problem.**
+
+Three interventions have now failed against that and one succeeded, and the split
+is exactly along this line: T-81 changed where a hold goes (banks did not mix),
+R-O89's pickup arm changed which rock it returns to (−52.3%), T-90 changed which
+rocks are mined (0.043 → 0.043) — while R-O89's *load* leg changed the
+composition **within** a hold and is the one that worked (+8.4%), bounded by what
+the single rock holds. **Before optimising a selection, check that the thing being
+selected among can express the property you want.**
 
 ### Never leave an identified symptom without a proven mechanism
 
