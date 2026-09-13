@@ -3494,13 +3494,64 @@ T-50's artifact and it is the thing to re-analyse from, not this table.
 | 31 | `risk_aversion` | 0.0 | **0.0000** | 0 | **unmeasurable** | 0 | 0 | 0 | 1.0000 | 1.0000 |
 | 32 | `max_survey_hops` | 120 | **0.0000** | 0 | **flat** | 0 | 0 | 0 | 1.0000 | 1.0000 |
 
-**Read the last two columns before the elasticity.** The top three are ~50%
-collapses on one side and ~0% on the other, so their "elasticity" is the average
-of a cliff and a plateau. All three set the Medium freighter's hold and all three
-are the same finding: **R-O90**, `Hyades_industry.md` §6.21.
+**Read the last two columns before the elasticity**, because the ordering above
+is by `|∂lnS/∂lnx|` and **that is not benefit** — it averages the two arms, so a
+knob that is pure downside ranks beside one that is pure upside. Ranked instead
+by the gain a ±10% step can actually take, `max(S(+10%), S(−10%)) − 1`:
+
+| # | knob | move | gain | ±SE | seeds+ | other arm |
+|---|---|---|---|---|---|---|
+| 1 | `general_vehicle_cost` | +10% | **+7.79%** | 2.60 | 4/4 | −52.33% |
+| 2 | `medium_fleet_size` | −10% | **+7.21%** | 1.31 | 4/4 | −51.32% |
+| 3 | `cycle_years` | −10% | **+4.76%** | 1.95 | 3/4 | −7.09% |
+| 4 | `growth_rate` | +10% | **+2.18%** | 0.69 | 4/4 | −3.12% |
+| 5 | `rank.w_mineral` | +10% | +1.44% | 0.69 | 4/4 | −1.01% |
+| 6 | `trade_decay_lambda` | −10% | +1.23% | 0.60 | 3/4 | −1.23% |
+| 7–14 | `civilian_accel_g`, `density_floor`, `survey_vehicles`, `build_lead_years`, `scrap_recovery_fraction`, `survey_reserve`, `outpost_mining_fraction`, `fab_cap` | — | +0.65% … +0.07% | — | ≤3/4 | — |
+| 15–20 | the six bit-identically flat knobs | — | 0.00% | 0 | — | 0.00% |
+| **22** | **`cargo_unit_size`** | +10% | **−0.34%** | 0.97 | 1/4 | **−51.58%** |
+| 21, 23–32 | `rank.centrality_scale`, `limited_fleet_size`, `rank.mineral_pressure_gain`, `veins_per_band`, `mining_tick_years`, `homeworld_start_minerals`, `rank.w_hub`, `survey_accel_g`, `crowding_beta`, `rank.w_k`, `rank.mineral_high` | — | −0.15% … −1.58% | — | ≤2/4 | — |
+
+**`cargo_unit_size` is third by |elasticity| and twenty-second by benefit**, below
+six knobs that are inert. It is pure hazard: there is nothing to win and 52% to
+lose. And **18 of 32 knobs have both arms below 1.0** — the defaults sit on a
+local maximum in more than half the engine's continuous surface, which is a
+result the elasticity ranking cannot express at all.
+
+#### Replicated on seeds the candidate was not chosen against
+
+`max` of two noisy arms is biased upward, and reading the top of 32 of them
+compounds it — R-O87's trap in a new costume (`CLAUDE.md` §2, trap 4). Seeds
+2, 3, 5, 11:
+
+| knob | move | orig | replication | pooled n=8 | verdict |
+|---|---|---|---|---|---|
+| `medium_fleet_size` | −10% | +7.21% ± 1.31, 4/4 | +8.56% ± 0.79, 4/4 | **+7.88% ± 0.75, 8/8** | holds |
+| `general_vehicle_cost` | +10% | +7.79% ± 2.60, 4/4 | +7.81% ± 0.86, 4/4 | **+7.80% ± 1.27, 8/8** | holds |
+| `cycle_years` | −10% | +4.76% ± 1.95, 3/4 | +6.41% ± 1.41, 4/4 | **+5.58% ± 1.15, 7/8** | holds |
+| `growth_rate` | +10% | +2.18% ± 0.69, 4/4 | +0.97% ± 1.25, 3/4 | +1.57% ± 0.70, 7/8 | weakens |
+| `trade_decay_lambda` | −10% | +1.23% ± 0.60, 3/4 | +0.34% ± 1.52, 1/4 | +0.78% ± 0.77, 4/8 | noise |
+| `rank.w_mineral` | +10% | +1.44% ± 0.69, 4/4 | **−0.14% ± 1.22, 2/4** | +0.65% ± 0.71, 6/8 | **refuted** |
+
+The top three hold *and their error bars tighten*, which is what a real effect
+looks like under replication. `rank.w_mineral` cleared 2 SE with a 1-in-16 sign
+test on the bed it was selected on and did not survive four fresh seeds.
+
+**None of these is ratified here.** The top two are on the hull cost ladder,
+whose response is a staircase (below), so a ±10% difference cannot price them;
+`cycle_years` is a genuine candidate and wants its own sweep and a throughput
+check, since shortening the economy tick raises event count (T-24).
 
 Seven readings worth keeping:
 
+- **The hull ladder is a staircase in *both* directions**, so neither ranking
+  prices it. Sweeping `cargo_unit_size` (which scales holds and nothing else),
+  geomean against the default: 0.490 / 0.488 / 0.494 at 0.90 / 0.95 / 0.98, then
+  **1.000** at the default, then a *dip* — 0.987 and 0.983 at +5% and +10% — then
+  **1.047 at +25%**. A ±10% probe lands in the dip and reports no upside for a
+  knob with 4.7% of it one step further out. The three hull-ladder knobs share a
+  *cliff* (R-O90) and do **not** share an upside: +19% of hold bought through the
+  ladder's geometry is +7.8%, +10% of hold given away free is worth nothing.
 - **`medium_fleet_size` flipped sign** — T-45 said `+32.7, raise` at 3.0; at 10.0
   it is −3.93 and raising it further walks off a cliff. **`cargo_unit_size` went
   from `inert` to third-largest.** Design law #14's corollary — *do not treat a

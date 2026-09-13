@@ -598,30 +598,89 @@ undefined — reasons in the harness docs and in trees §2.3. **Say which you le
 out and why**; a composite over an unstated subset is worse than a single metric.
 
 **First run, 32 knobs, 4 CRN seeds, 1,500 yr** — full raw per-seed dataset in
-`data/tree_gradient.tsv` (T-50), ranking and reversals under T-45. Four things
-that generalise past this operating point:
+`data/tree_gradient.tsv` (T-50), ranking and reversals under T-45. Two findings
+worth having here, then the traps, which are the transferable part:
 
-- **The top three are cliffs, not gradients, and they are one knob.**
-  `general_vehicle_cost`, `medium_fleet_size` and `cargo_unit_size` all report
-  |elasticity| ≈ 4, an order of magnitude clear of the fourth — and each is a
-  ~50% collapse on one side against ~0% on the other. All three set the Medium
-  freighter's hold, which buys **exactly one infrastructure rung with a 2.3%
-  margin** (R-O90). **Always print `S(+δ)` and `S(−δ)` beside the elasticity**: a
-  central difference across a step reports a large number that is not a slope,
-  and the asymmetry is the only thing in the table that says so.
-- **Six knobs are *bit-identically* flat, and one of those is the instrument's
-  fault.** `risk_aversion` is `0.0` at the default, and a **multiplicative** step
-  of ±10% on zero is zero — the probe cannot move it at all. A zero from a
-  relative-step probe means "no path to the simulation" *or* "the knob is zero";
-  check which before recording an inert verdict.
 - **Cross-tree conflicts are the thing the composite is for**, and they exist:
   `trade_decay_lambda` is +0.002 on Expansion and **−0.348 on Growth**, and
   `fab_cap` is **+0.069 on Expansion against −0.221 on Growth**. λ is the largest
   ratification in this project's history and it was measured on coverage alone.
   A single-metric probe cannot see either.
-- **A "significant" elasticity is still local.** `cycle_years` (−0.598) and
-  `growth_rate` (+0.265) are the only two non-cliff findings above 0.2, and both
-  are already ratified values.
+- **The defaults are on a local maximum in 18 of 32 knobs** — *both* arms score
+  below 1.0. That is a result, and the elasticity ranking cannot express it.
+
+### Six traps in reading a gradient
+
+All six were live in this project's first composite run, and the first one is
+the one that reorders the answer.
+
+**1. `|∂f/∂ln x|` is not benefit. Rank by the gain you can actually take.**
+A central difference averages the two arms, so a knob that is pure *downside*
+ranks beside one that is pure *upside*. `cargo_unit_size` came **third of 32** by
+|elasticity| and its upside is **−0.34%**: `S(+10%) = 0.997`, `S(−10%) = 0.484`.
+There is nothing to win there, only something to lose. Report two columns —
+`max(S(+δ), S(−δ)) − 1`, what the step can win, and the other arm, what it can
+lose — and rank on the first. Under that ranking `cargo_unit_size` falls to
+**22nd**, below six knobs that are bit-identically inert.
+
+**2. Both arms below 1.0 is a local maximum, and it is a finding.** More than
+half this bed's knobs are there. An |elasticity| ranking reports them as
+"significant" in proportion to how *asymmetric* the peak is, which is not a
+quantity anyone wants. Say "no gain either way" and move on.
+
+**3. A central difference is meaningless on a stepped response — in *both*
+directions.** The hold sweep, geomean against the default:
+
+| `cargo_unit_size` | 0.90 | 0.95 | 0.98 | **1.00** | 1.05 | 1.10 | 1.25 |
+|---|---|---|---|---|---|---|---|
+| score | 0.490 | 0.488 | 0.494 | **1.000** | 0.987 | 0.983 | **1.047** |
+
+A cliff below, then a *dip*, then +4.7% at +25%. A ±10% probe lands in the dip
+and reports "no upside" for a knob that has 4.7% of upside one step further out.
+So **neither** ranking is valid on a staircase: |elasticity| overstated it and
+best-arm gain understated it. The tell is `S(+δ)` and `S(−δ)` being wildly
+asymmetric; the fix is a sweep, not a better difference.
+
+This also corrected a story that was half right. The three hull-ladder knobs
+share a *cliff* — all three drop the Medium hold below the 0.900 kt rung
+(R-O90) — but they do **not** share an upside: +19% of hold via the ladder's
+geometry is worth **+7.8%**, while +10% of hold for free via `cargo_unit_size` is
+worth **nothing**. "They are the same knob" was true of the collapse and false of
+the gain, and only the two-column table separates them.
+
+**4. Taking the better of two arms across many knobs is a selection-bias
+machine.** `max` of two noisy arms is biased upward even when both are zero, and
+reading the top of 32 of them compounds it. This is R-O87's trap in a new
+costume, and the same fix caught it — **replicate on seeds the candidate was not
+chosen against**:
+
+| knob | move | orig (1,7,42,31337) | replication (2,3,5,11) | pooled n=8 |
+|---|---|---|---|---|
+| `medium_fleet_size` | −10% | +7.21% ± 1.31, 4/4 | +8.56% ± 0.79, 4/4 | **+7.88% ± 0.75, 8/8** |
+| `general_vehicle_cost` | +10% | +7.79% ± 2.60, 4/4 | +7.81% ± 0.86, 4/4 | **+7.80% ± 1.27, 8/8** |
+| `cycle_years` | −10% | +4.76% ± 1.95, 3/4 | +6.41% ± 1.41, 4/4 | **+5.58% ± 1.15, 7/8** |
+| `growth_rate` | +10% | +2.18% ± 0.69, 4/4 | +0.97% ± 1.25, 3/4 | +1.57% ± 0.70, 7/8 |
+| `trade_decay_lambda` | −10% | +1.23% ± 0.60, 3/4 | +0.34% ± 1.52, 1/4 | +0.78% ± 0.77, 4/8 |
+| `rank.w_mineral` | +10% | **+1.44% ± 0.69, 4/4** | **−0.14% ± 1.22, 2/4** | +0.65% ± 0.71, 6/8 |
+
+`rank.w_mineral` cleared 2 SE with a 1-in-16 sign test and is **refuted**. The
+top three hold and their error bars *tighten* — which is what a real effect looks
+like under replication, and is the cheapest way to tell one from a lucky max.
+
+**5. A multiplicative step cannot move a knob whose default is zero.**
+`risk_aversion = 0.0`, so `x(1 ± δ)` is `0.0` twice and the probe reports a
+confident flat. A zero from a relative-step probe means *"no path to the
+simulation"* **or** *"the knob is zero"*, and only one of those is about the
+engine. Check before recording an inert verdict; an absolute step is the fix.
+
+**6. "Exactly zero" and "inside noise" are different verdicts with different next
+actions.** Six knobs here are **bit-identically** flat — the perturbed run
+reproduces the base to the last bit, so the knob has no path to the simulation at
+this operating point and more seeds cannot change that. Those are candidates for
+*deletion*. `~noise` means a path too small to resolve at four seeds, and wants
+more seeds. Printing both as "0.0" loses the distinction — and it is how
+`center_mining_fraction` sat open for four sessions waiting for a bigger bed it
+did not need (T-47).
 
 ### Never leave an identified symptom without a proven mechanism
 

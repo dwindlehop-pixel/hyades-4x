@@ -36,4 +36,16 @@ meaningful against the commit that produced it. Each run appends; the base rows
 repeat per chunk and should be identical across chunks, which is a free
 determinism check.
 
+**Read it by available gain, not by elasticity.** A central difference averages
+the two arms, so a knob that is pure downside scores like one that is pure
+upside — `cargo_unit_size` is third of 32 by |elasticity| and twenty-second by
+benefit. Compute `max(S(+δ), S(−δ)) − 1` per knob and keep the other arm beside
+it; `CLAUDE.md` §2's "Six traps in reading a gradient" has the rest.
+
+The file carries **two seed sets**: 1 / 7 / 42 / 31337 is the standard CRN bed,
+and 2 / 3 / 5 / 11 is the independent replication set for the shortlist the first
+one produced. They are distinguished by the `seed` column alone, and mixing them
+in one estimate defeats the point of having them — a candidate's error bar on the
+bed it was selected on is not evidence about the candidate.
+
 Definitions: `Hyades_trees_and_card_value.md` §2.3.

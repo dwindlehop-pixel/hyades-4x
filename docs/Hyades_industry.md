@@ -2592,10 +2592,19 @@ separate ratification each, and this landing moves one default.
 continuous knob in the engine against a composite of the tree objectives
 (`Hyades_trees_and_card_value.md` §2.4). The top three by |elasticity| are
 `general_vehicle_cost` (+4.07), `medium_fleet_size` (−3.93) and `cargo_unit_size`
-(+3.60) — an order of magnitude clear of the fourth — and all three are the same
-thing: **the size of a Medium freighter's hold.** The first two are the two legs
-of the cost ladder and are near-perfectly antisymmetric, which is R-O58's "the
-cost ladder is one quantity" arriving from a new direction.
+(+3.60) — an order of magnitude clear of the fourth — and all three move the same
+quantity: **the size of a Medium freighter's hold.** The first two are the two
+legs of the cost ladder and are near-perfectly antisymmetric, which is R-O58's
+"the cost ladder is one quantity" arriving from a new direction.
+
+**They share a cliff and they do not share an upside**, which is a distinction
+|elasticity| cannot make and which took re-ranking the table by *available gain*
+to see (`CLAUDE.md` §2, trap 1). Ranked by `max(S(+10%), S(−10%)) − 1`,
+`general_vehicle_cost` is **+7.79%** and `medium_fleet_size` **+7.21%** — both
+4/4 seeds, both replicated on four more (pooled **+7.80% ± 1.27** and
+**+7.88% ± 0.75**, 8/8) — while `cargo_unit_size` falls to **22nd of 32 at
+−0.34%**, below six knobs that are bit-identically inert. It is pure hazard: 52%
+to lose and nothing to win. What follows is the cliff, which all three share.
 
 **But they are not gradients.** Every one is a ~50% collapse on one side and
 nothing on the other:
@@ -2625,7 +2634,11 @@ Sweeping `cargo_unit_size`, which scales holds and nothing else (1,500 yr, seeds
 | 1.05 | 0.967 | 2,550,150 | 1,028,645 | 3,316 |
 | 1.25 | 1.151 | 2,597,512 | 1,158,315 | 3,318 |
 
-**A 2% change doubles the game, and a 25% change buys 1%.** The threshold:
+**A 2% change doubles the game.** Above the default the response is *not* flat
+either — it dips and then recovers, which is why a ±10% central difference reads
+"no upside" here. Geomean against the default: **0.987** at +5%, **0.983** at
++10%, **1.047** at +25%. So the ladder is a staircase in both directions and only
+a sweep prices it. The threshold below the default:
 
 | | kt |
 |---|---|
@@ -2639,9 +2652,11 @@ the galaxy faces first, and the round trip that pays it is **~124 years**
 (§6.20). One trip or two is a factor of two on the entire development schedule,
 and that is precisely the factor the sweep shows.
 
-Note that this is *why* the step is invisible from above: past the threshold a
-bigger hold delivers a rung the colony cannot use faster, because the next rung
-costs **19 kt** — 20.6 trips — and no hold change reaches that.
+Note that this is *why* the step is nearly invisible from just above: past the
+threshold a bigger hold delivers a rung the colony cannot use faster, because the
+next rung costs **19 kt** — 20.6 trips — and no hold change within ±10% reaches
+that. The +4.7% at +25% is therefore **not** the same mechanism and has not been
+identified; it is carried under R-O90 rather than explained.
 
 #### What is and is not claimed
 

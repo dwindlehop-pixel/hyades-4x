@@ -438,6 +438,14 @@ fn main() {
     let all = knobs(&base_cfg, &base_doc);
     let from = env_f64("TG_FROM", 0.0) as usize;
     let to = (env_f64("TG_TO", all.len() as f64) as usize).min(all.len());
+    // **`TG_ONLY` names knobs directly**, for replicating a shortlist on seeds it
+    // was not chosen against — the step `CLAUDE.md` §2 requires before any
+    // globally tuned default moves, and the one that refuted R-O87's candidate.
+    // Index slicing cannot express a shortlist, because the knobs that survive a
+    // ranking are never contiguous.
+    let only: Vec<String> =
+        std::env::var("TG_ONLY").map(|v| v.split(',').map(|s| s.trim().to_string()).collect()).unwrap_or_default();
+    let wanted = |name: &str| only.is_empty() || only.iter().any(|o| o == name);
 
     println!(
         "tree gradient — geomean over {} measurable tree objectives, {PLAYERS} seats, {:.0} yr",
@@ -480,7 +488,7 @@ fn main() {
         "knob", "value", "d lnS/d lnx", "SE", "Expan", "Growth", "Produc", "S(+10%)", "S(-10%)"
     );
     let mut findings: Vec<Finding> = Vec::new();
-    for k in all.iter().take(to).skip(from) {
+    for k in all.iter().take(to).skip(from).filter(|k| wanted(k.name)) {
         let mut hi_cfg = base_cfg;
         let mut hi_doc = base_doc;
         (k.set)(&mut hi_cfg, &mut hi_doc, k.value * (1.0 + DELTA));
