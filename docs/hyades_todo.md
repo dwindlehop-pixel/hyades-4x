@@ -131,6 +131,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **R-O85 resolved** — the ladder is fine, freight is not | **R-O85** | **T-76** (promoted to first) | — | `CLAUDE.md` §2's "measure the utilisation of whatever the knob buys", applied to a *price* — the ladder is scale-free (1.8-yr payback at every rung) so there is nothing to ratify; and logging the decision's own predicate rather than reconstructing it from totals, which inverted the answer | **R-O85's own premise.** Infrastructure is not priced out of reach: the bed banks 1,714,697 kt against a 19 kt rung. Counted per decision, **0%** gated and **0.7–0.9%** outbid — so R-O68's crossover, which three sections circled, is consulted in one decision per hundred and cannot have been the cause of anything. **43.8–46.6% of all decisions hold the total and lack a colour** |
 | **R-O89** — freight loads what the destination is short of | **R-O89** | **T-76** (the load half; the routing half stays open) | — | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** — +8.21% ± 3.06 on the standard bed, **+8.60% ± 2.61 on seeds 2/3/5/11**, pooled **+8.40% ± 1.86, 8/8**; and its **ablate before you explain** — the 2×2 ran before either arm was believed, and it is what saved the +8.4% from being buried under the −52.3% they scored together. T-73's colour-payable bill and design law #1's colour semantics, finally reaching the load leg | **§6.19c's instruction not to re-sweep anything mineral-side is lifted** — `outpost_mining_fraction`, both crew policies, `reinvest_bias` and the Exchange were each measured flat against this wall and are now re-measurable (none is re-measured here). Also **my own first attempt**: need-routing the *pickup* leg is −52.3%, and transit, per-hull throughput and hull recycling are each measured not to be why — the residual is left open under T-76 rather than given a story |
 | **Tree gradient** — rank knobs against every tree | — | **T-45** (superseded and broadened 9 → 32 knobs), **T-50** (first raw dataset landed), T-78 | **R-O90**, **R-TREE8**, **R-TREE9** | Trees §2.1's "one global objective is wrong for five of six trees", finally applied to the *tuning* loop and not only to card costing; §2.3.4's mass reading of Production, which needed `VehicleSnapshot::dry_mass`; T-50's "persist the raw per-seed evaluations, not the summary" | **T-45's whole table.** Nine knobs at the pre-R-O66 operating point, ranked on coverage. `medium_fleet_size` has **flipped sign** (+32.7 "raise" → −3.93 and a cliff), `cargo_unit_size` went from **inert** to third-largest — design law #14's corollary about knobs that look dead while expansion is broken, confirmed — and `biosphere_regen_rate`, the **+141.2 ± 18.1 headline lever**, is now **bit-identically zero** because T-67 took infrastructure out of `K`. Also **trees §2.3.2 and §2.3.6**: Warfare is unreadable on the standard bed and Politics has no objective distinct from Expansion |
+| **T-88** — granularity without decision rate | **T-88** | T-52 (named, not fixed), T-24 | the idle census (see T-88) | The author's directive that opened it — *"move all decision making to trigger off an event so the economy tick can be made 1/year"*; `CLAUDE.md` §4's "entities evaluate on their own arrival events, never on a sweep", now true of the production decision as well as the ship; §2's "when a change raises event count, check the test horizons in the same commit" (all four targets rescaled here); and its replicate-on-fresh-seeds rule, run on both stage B and the new default | **`cycle_years` 50 → 5**, a ratified default moved on measurement plus an explicit directive. **And a units defect in three Monte-Carlo-tuned rates**: `growth_rate`, `biosphere_regen_rate` and `outpost_mining_fraction` were applied per *tick* irrespective of tick length, so the first sweep's +58.6% was mostly artifact. `tick_scale` fixes the denomination without moving a magnitude (bit-identical at the old cadence). **Every gradient measured before this is consumed**, including `data/tree_gradient.tsv` and T-45's table |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -318,7 +319,96 @@ Production counted in mass rather than hull count, Technology aggregated by powe
 mean rather than sum, and Politics' partner share grounded in *delivered freight*
 rather than in the existence of a pact.
 
-## T-88 — decouple economic *granularity* from decision *rate*
+## ~~T-88 — decouple economic *granularity* from decision *rate*~~ — **CLOSED**
+
+> **Landed.** The retry is severed from the economy tick, the per-cycle rates
+> are scaled by the tick, and `cycle_years` is ratified at **5.0**.
+>
+> **The severance works and the numbers say so.** At `cycle_years = 1`, economy
+> ticks go **48,707 → 3,602,083 (74x)** while decisions go **97,197 → 128,726
+> (1.32x)**. That ratio *is* the task. Two mechanisms do it: `wake_on_minerals`,
+> which decides the moment a freighter deposits (a saving centre is waiting for
+> exactly one thing, and ore landing is the event that changes whether it can
+> buy anything), and `decision_after`, a per-centre floor evaluated on the tick
+> as the catch-all beneath it. The wake path is also **cheaper than the cadence
+> it replaces** — ~26,800 deposits against ~99,000 ticks over 1,500 yr — so
+> responsiveness went up and decision count went down.
+>
+> Landed in stages so each is attributable:
+>
+> | stage | what | measured |
+> |---|---|---|
+> | A | `decision_after` floor, `decision_retry_years = 50` | **bit-identical** — the gate passes every tick at equal values |
+> | B | `wake_on_minerals` on freight deposit | **+6.81% ± 2.36 work-years, 7/8 seeds** (replicated) |
+> | C | skip the candidate scan when nothing is affordable | behaviour-identical, and **−3.3%** — see below |
+> | D | `tick_scale`: per-cycle rates scale with the tick | bit-identical at `cycle_years = 50` |
+> | E | `cycle_years` **50 → 5** | **+21.00% ± 4.19 work-years, 8/8 seeds** |
+>
+> **The sweep found a units defect before it found an answer.** `growth_rate` is
+> documented `1/cycle` and the logistic stepped it once per tick *regardless of
+> the tick's length*, as do `biosphere_regen_rate` and the centre's mining
+> fraction. So the first sweep reported **+58.6%** at `cycle_years = 1` — which
+> measured a fifty-times-faster economy, not a better-integrated one. `tick_scale`
+> multiplies every per-cycle rate by `cycle_years / rate_reference_years`, which
+> is exactly `1.0` at the shipped cadence, so **no Monte-Carlo-tuned magnitude
+> moves** and the re-denomination lands as a no-op.
+>
+> **What survives the correction is still large, and it is a genuine Euler
+> result.** The logistic advances by `r·dt` per tick and `r·dt = 0.873` at the
+> shipped values — stable under design law #11's `r < 2` bound and nowhere near
+> accurate. A homeworld's population at 300 yr:
+>
+> | `cycle_years` | 50 | 25 | 10 | 5 |
+> |---|---|---|---|---|
+> | homeworld population | 1,143 | 2,275 | 3,516 | 4,297 |
+> | ratio to next coarser | — | 1.99 | 1.55 | 1.22 |
+>
+> The 50-year step **under-integrates by ~4x**. Refining it is worth
+> **+21.00% ± 4.19 work-years (8/8 seeds)** and **+19.9% colony-years**, and it
+> **saturates at 5** — `cycle_years = 1` scores the same +20.3% on the original
+> bed for another 10% of throughput. Shipped at **5**.
+>
+> **Cost: 93.3 → 71.1 yr/s** on the standard bed; at 3 seats / 4 kyr, **68.9
+> yr/s** with **22,394 ns/event** (against ~174,000 at T-87 — the event mix is
+> now dominated by cheap economy ticks, which is what the table's `ns/event`
+> column is for).
+>
+> **Every gradient measured before this is consumed.** The operating point moved
+> a long way; `data/tree_gradient.tsv` and T-45's table are pre-T-88 and must be
+> re-run, not stepped along.
+>
+> **Opened by it:** the idle census below, which is the freight question.
+
+### What the decision census found, and it is not what was expected
+
+`examples/decision_census` counts the work rather than the aggregate. On the
+standard bed at 1,500 yr, seed 1:
+
+| | before T-88 | after |
+|---|---|---|
+| decisions | 77,961 | 97,197 |
+| **idle share** | 71.3% | **79.8%** |
+| candidate-scan steps | 5,096,496 | 10,304,207 |
+| per decision | 65 | 106 |
+
+**The scan is the engine's largest loop and 80% of it produces nothing** — which
+is R-O86's rule ("ask what fraction of a busy path produces nothing") pointing at
+T-52. The obvious fix was to skip the scan when the centre cannot afford
+anything; it is **behaviour-identical and bought −3.3%**, which refutes the
+premise: those centres can afford *something*.
+
+Breaking the idles down by their own logged inputs says what they are, and it is
+a single bucket:
+
+> **100% of idle decisions are "wants to deepen, cannot pay the bill", with a
+> mean bank of 561 kt.**
+
+Not one idle decision in the run had `can_afford_infra == true`. That is R-O85's
+colour conjunction — the bank holds the total and lacks a colour — measured from
+a completely different direction, and it is the reason R-O89's freight fix did
+not produce more than it did. See §"Why freight is not providing serious upside".
+
+
 
 **Author's directive: "move all decision making to trigger off an event so the
 economy tick can be made 1/year without adversely affecting years/second. I want

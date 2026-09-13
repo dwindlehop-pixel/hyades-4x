@@ -70,11 +70,23 @@ fn full_run_reports_are_bit_identical() {
     // to ~1,900. Measured events per arm at these horizons: 2,761 / 2,7xx /
     // 3,0xx / ~1,800 / ~1,900.
     //
+    // **Re-scaled at T-88**, and the first attempt overshot — which is the
+    // point of the floor. `cycle_years` 50 → 5 makes the economy tick ten times
+    // as often, so dividing every horizon by ten looked right and left the
+    // 2-seat arm on **450 events**: event count is not linear in the horizon
+    // here, because the early game has one centre and the tick multiplier has
+    // almost nothing to multiply. Measured instead, these horizons buy each arm
+    // ~1,500 events — against the 1,800–3,000 the old ones
+    // bought — and take the target from 267 s back under budget.
+    // The rule `CLAUDE.md` §2 states is the one being followed — when a change
+    // raises event count, check the test horizons *in the same commit* — and
+    // the floor below is what says the trim did not go too far.
+    //
     // The `events_processed` floor below is what stops any future trim going
     // vacuous — the same guard, and for the same reason, as `moving` in
     // `positions_never_exceed_lightspeed`. It fired on the first attempt here
     // too, at a uniform 50 yr.
-    for &(n, seed, horizon) in &[(2usize, 1u64, 200.0), (3, 7, 170.0), (6, 13, 120.0), (12, 99, 70.0), (18, 4, 60.0)] {
+    for &(n, seed, horizon) in &[(2usize, 1u64, 62.0), (3, 7, 48.0), (6, 13, 32.0), (12, 99, 21.0), (18, 4, 16.0)] {
         let mut a = fresh_short(n, seed, horizon);
         let mut b = fresh_short(n, seed, horizon);
         let ra = a.run();

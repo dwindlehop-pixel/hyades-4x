@@ -2684,6 +2684,101 @@ readings are available and they want opposite fixes:
 **This does not move a default.** The shipped value is on the good side and the
 sweep says nothing above it is worth taking.
 
+
+### 6.22 T-88 — the economy tick is an integration step again, and it was under-integrating by 4x
+
+`cycle_years = 50` was one symbol doing two unrelated jobs, and they wanted
+opposite values. The **economic integration step** — mine, grow, regrow, mint —
+is a rate over an interval and wants to be *small* for fidelity. The **retry
+cadence** for a saving centre's build decision wants to be large, or better, not
+a cadence at all (`CLAUDE.md` §4: entities evaluate on their own arrival events,
+never on a sweep). They were the same number because `sys_production_tick` called
+`sys_build_decision` inline, so lowering the tick multiplied the decisions with
+it — and a decision is two orders of magnitude dearer than a tick, because it
+runs T-52's candidate scan.
+
+**Severed.** A saving centre now decides when *minerals arrive*
+(`wake_on_minerals`, on the freight deposit), with a per-centre
+`decision_retry_years` floor as the catch-all beneath it. At `cycle_years = 1`,
+economy ticks go **48,707 → 3,602,083 (74x)** while decisions go **97,197 →
+128,726 (1.32x)**. The wake path is *cheaper* than the cadence it replaces —
+~26,800 deposits against ~99,000 ticks over 1,500 yr — so responsiveness rose
+and decision count fell. On its own it is **+6.81% ± 2.36 work-years, 7/8
+seeds**.
+
+#### The sweep found a units defect before it found an answer
+
+`growth_rate` is documented `1/cycle` and the logistic stepped it once per tick
+**irrespective of the tick's length** — as did `biosphere_regen_rate` and the
+centre's own `outpost_mining_fraction`. So the first sweep reported **+58.6%** at
+`cycle_years = 1`, which measured a fifty-times-faster economy rather than a
+better-integrated one. (The `$` faucet in the same function was already written
+`rate × cycle_years` and was correct, which is what made the omission visible.)
+
+`tick_scale` multiplies every per-cycle rate by
+`cycle_years / rate_reference_years`. That is exactly `1.0` at the cadence those
+rates were ratified at, so **no Monte-Carlo-tuned magnitude moves** and the
+re-denomination is bit-identical on the shipped bed — the R-O88 precedent, and
+the only reason a correction touching three ratified knobs is landable at all.
+
+#### What survives is a genuine Euler result
+
+The logistic advances by `r·dt` per tick and `r·dt = 0.873` at the shipped
+values: stable under design law #11's `r < 2` ceiling, and nowhere near
+accurate. A homeworld's population at 300 yr, everything else fixed:
+
+| `cycle_years` | 50 | 25 | 10 | 5 |
+|---|---|---|---|---|
+| homeworld population | 1,143 | 2,275 | 3,516 | 4,297 |
+| ratio to the next coarser | — | 1.99 | 1.55 | 1.22 |
+
+**The 50-year step under-integrates by ~4x.** Refining it:
+
+| `cycle_years` | work-years | vs 50 | colony-years | yr/s |
+|---|---|---|---|---|
+| 50 | 1,186,662 | — | 2,611,444 | 93.3 |
+| 25 | 1,314,608 | +10.96% ± 2.92, 4/4 | 2,854,106 | 81.9 |
+| **5** | **1,424,309** | **+20.34% ± 7.96, 4/4** | 3,048,875 | 71.1 |
+| 1 | 1,419,961 | +20.34% ± 5.44, 4/4 | 3,131,525 | 64.0 |
+
+**Ratified at 5**, replicated on seeds 2/3/5/11 (+21.67% ± 4.25, 4/4; pooled
+**+21.00% ± 4.19, 8/8**). Five rather than one because the answer **saturates**
+there — 1/yr scores the same on the original bed for another 10% of throughput,
+and the per-refinement change is already down to 1.22x at 5.
+
+**Every gradient measured before this is consumed**, `data/tree_gradient.tsv`
+included. The operating point moved 20%.
+
+### 6.23 Why freight is not providing serious upside — the decision census
+
+R-O89 fixed the freight *load* leg and was worth +8.4%. That is real and it is
+not the step-change §6.19c's diagnosis implied was available, and the decision
+census built for T-88 says why in one line.
+
+On the standard bed at 1,500 yr, **79.8% of all production decisions return
+`Idle`**, and broken down by the decision's own logged inputs:
+
+> **100% of them are "wants to deepen, cannot pay the bill", with a mean bank of
+> 561 kt.**
+
+Not one idle decision in the run had `can_afford_infra == true`. The bank holds
+the total — 561 kt against a 19 kt rung — and lacks a **colour**. That is R-O85's
+conjunction arriving from a third direction, after the per-decision census
+(§6.19c) and the supply/deficit ratio (§6.20), and it says the load-leg fix
+moved the right quantity and did not move enough of it.
+
+Two things follow, and the second is the open work:
+
+- **The candidate scan is the engine's largest loop and 80% of it produces
+  nothing** (10.3 M steps, 106 per decision). The obvious guard — skip the scan
+  when nothing is affordable — is **behaviour-identical and buys −3.3%**, which
+  refutes its own premise: those centres can afford *something*, just not in the
+  colours the bill names. A guard that would actually work has to test the
+  colour conjunction, which is the policy's business and not the engine's.
+- **The remaining freight lever is not numeric.** Every knob in the freight path
+  has been swept and the binding constraint is *which rock a hauler is standing
+  on* — a routing decision, not a magnitude. See §7.4.
+
 ## 7. Trade, development freight, and what needs a pact
 
 The third gap in §0, and the answer turns out to be the same mechanism as

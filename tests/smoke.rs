@@ -16,6 +16,22 @@ use hyades_engine::units::Measure;
 /// and the entity count follows. Nothing here asks a long-run question — every
 /// assertion is an invariant that holds at any horizon where expansion has
 /// started — so the horizon is the part that was safe to cut.
+/// **One horizon for the whole file** (T-88).
+///
+/// It was written out at each call site as `150.0`, and a paired identity in
+/// `stepping_matches_running` compares two runs that must agree — so trimming
+/// the target meant editing the same number in four places and the first attempt
+/// changed one of them, which the identity caught (1,028 against 10,574 events).
+/// A shared constant is what makes that class of edit impossible rather than
+/// merely caught.
+///
+/// **40 yr, down from 150**, because `cycle_years` 50 → 5 made a simulated year
+/// cost ~10x the events and the target went 22 s → 149 s. Every assertion in
+/// this file is an invariant that holds at any horizon where expansion has
+/// started, so the horizon is the part that was safe to cut — the same argument
+/// that put it at 150 in the first place.
+const SMOKE_HORIZON: f64 = 40.0;
+
 fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimReport) {
     let galaxy = Galaxy::generate(GalaxyConfig::new(players, seed)).unwrap();
     let mut cfg = SimConfig::new(seed);
@@ -38,7 +54,7 @@ fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimR
 #[test]
 fn all_fair_counts_run_and_expand() {
     for &n in &[2usize, 3, 6, 12] {
-        let (_sim, report) = run_short(n, 100 + n as u64, 150.0);
+        let (_sim, report) = run_short(n, 100 + n as u64, SMOKE_HORIZON);
         assert_eq!(report.players.len(), n);
         assert!(report.planets_scanned_total >= n, "no scanning for {n} seats");
         let colonies: usize = report.players.iter().map(|p| p.colonies).sum();
@@ -48,7 +64,7 @@ fn all_fair_counts_run_and_expand() {
 
 #[test]
 fn snapshot_is_consistent_with_report() {
-    let (sim, report) = run_short(6, 314, 150.0);
+    let (sim, report) = run_short(6, 314, SMOKE_HORIZON);
     let snap = sim.snapshot();
     // Owned-planet totals computed two different ways must agree.
     let owned_from_report: usize = report.players.iter().map(|p| p.planets_owned).sum();
@@ -94,8 +110,8 @@ fn snapshot_is_consistent_with_report() {
 /// you accumulate it, so 150 yr proves it exactly as well as 300 and costs half.
 #[test]
 fn determinism_across_full_runs() {
-    let (_a, ra) = run_short(6, 77, 150.0);
-    let (_b, rb) = run_short(6, 77, 150.0);
+    let (_a, ra) = run_short(6, 77, SMOKE_HORIZON);
+    let (_b, rb) = run_short(6, 77, SMOKE_HORIZON);
     assert_eq!(ra.events_processed, rb.events_processed);
     assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
 }
@@ -105,12 +121,12 @@ fn stepping_matches_running() {
     // Driving the event loop by hand must reach the same place as run().
     let galaxy = Galaxy::generate(GalaxyConfig::new(3, 9)).unwrap();
     let mut cfg = SimConfig::new(9);
-    cfg.horizon_years = 150.0;
+    cfg.horizon_years = SMOKE_HORIZON;
     let mut a = Simulation::with_baseline(galaxy, cfg);
     while a.step() {}
     let ra = a.report();
 
-    let (_b, rb) = run_short(3, 9, 150.0);
+    let (_b, rb) = run_short(3, 9, SMOKE_HORIZON);
     assert_eq!(ra.events_processed, rb.events_processed);
     assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
 }

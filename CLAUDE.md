@@ -162,6 +162,23 @@ answer was not where it looked:
   the run is not. **When you cut a horizon, assert that the mechanism still
   fires.**
 
+**T-88 did it a fourth time, and it moved every target at once** — unit 34 →
+110 s, determinism 37 → 267 s, smoke 22 → 149 s — because `cycle_years` 50 → 5
+makes a simulated year cost ~10x the events. The fix was horizons again, and two
+things about *how* are worth keeping:
+
+- **Dividing every horizon by the event multiplier is wrong**, and the floor
+  caught it. `full_run_reports_are_bit_identical` got its per-arm horizons cut
+  10x to match the 10x denser event stream, and the 2-seat arm landed on **450
+  events** against a floor of 1,000: event count is not linear in the horizon,
+  because the early game has one centre and the tick multiplier has nothing to
+  multiply yet. Measured instead of scaled, the arms come to ~1,500 events each.
+- **A horizon written out at four call sites is an edit waiting to go wrong.**
+  `tests/smoke.rs` had `150.0` in four places, one of them inside a paired
+  identity — changing one side gave 1,028 events against 10,574, which the
+  identity caught immediately. It is now a single `SMOKE_HORIZON` constant. When
+  a number is shared by a *paired* assertion, share the constant too.
+
 **T-71/T-72 did it a third time in one session** — smoke 36 s → 68 s — and the
 answer was the same shape: `all_fair_counts_run_and_expand` was **65.8 s of the
 68** on its own, four seat counts at a 300-yr horizon inherited from when a
@@ -681,6 +698,44 @@ this operating point and more seeds cannot change that. Those are candidates for
 more seeds. Printing both as "0.0" loses the distinction — and it is how
 `center_mining_fraction` sat open for four sessions waiting for a bigger bed it
 did not need (T-47).
+
+### A rate is per *something* — check what, before you change the step
+
+**T-88 swept `cycle_years` from 50 down to 1 and the objective reported +58.6%
+work-years. It was mostly an artifact, and the tell was that it was too good.**
+
+`growth_rate` is documented `1/cycle`, and the logistic stepped it once per tick
+**regardless of how long the tick was** — as did `biosphere_regen_rate` and the
+centre's mining fraction. So shrinking the tick did not integrate the same
+economy more finely, it ran a **fifty-times-faster one**. The sweep was measuring
+its own step size.
+
+Three things generalise:
+
+- **Before sweeping a step size, audit every rate the step multiplies.** The `$`
+  faucet in the same function was already written `rate × cycle_years` and was
+  correct; three siblings beside it were not, and nothing in the types
+  distinguished them because they are all `f64`. If a knob's doc comment says
+  `1/cycle`, changing the cycle changes the knob.
+- **Fix it by re-denominating, not retuning.** `tick_scale` multiplies each rate
+  by `cycle_years / rate_reference_years`, which is exactly `1.0` at the cadence
+  they were ratified at — so the change is bit-identical on the shipped bed and
+  **no Monte-Carlo-tuned magnitude moves.** That is the R-O88 precedent and it is
+  what makes a correction like this landable at all.
+- **What survives the correction can still be large, and here it was.** With the
+  denomination fixed, refining the tick is **+21.00% ± 4.19 work-years, 8/8
+  seeds** — because `r·dt = 0.873` per step is a genuinely bad Euler step, stable
+  under design law #11's `r < 2` bound and nowhere near accurate. A homeworld's
+  population at 300 yr goes 1,143 → 2,275 → 3,516 → 4,297 as the tick goes
+  50 → 25 → 10 → 5: the coarse step **under-integrates by ~4x**. Do not let the
+  artifact discredit the question it was asked about.
+
+**And the test for it asserts convergence, not invariance.** Those two failure
+modes are indistinguishable in one ratio and obvious across three: an integrator
+converging moves the answer *less* with each refinement (1.99, 1.55, 1.22), while
+a rate applied per tick without scaling moves it by the step ratio every time,
+forever. The first version of that test asserted invariance, failed at 2.92x, and
+was wrong to — which is how the distinction got found.
 
 ### Never leave an identified symptom without a proven mechanism
 
@@ -1469,6 +1524,18 @@ changes how you *work*, not what is left to do:
   | **T-87 (crew from demand)** | **23,258–24,801** | **8.5–9.0 yr/s** | **3.4–3.6×** |
   | R-O86 bed *(same machine, same session)*, before | — | 14.9 yr/s | 6.0× |
   | **R-O86 (a scout needs somewhere to scout), same pair** | — | **83–98 yr/s** | **33–39×** |
+  | R-O89 (freight loads by colour), 3 seats, 1.5 kyr | ~32,500 | 93.3 yr/s | 37× |
+  | **T-88 (`cycle_years` 50 → 5), 3 seats, 1.5 kyr** | ~35,400 | **71.1 yr/s** | **28×** |
+  | **T-88, 3 seats, 4 kyr — `ns/event` 22,394** | 31,337 | **68.9 yr/s** | **28×** |
+
+  **T-88's last row is the one to read, and it is `ns/event` that says why.**
+  Per-event cost went from ~174,000 ns at T-87 to **22,394** — not because any
+  event got cheaper, but because the mix changed: a ten-times-finer economy tick
+  adds millions of *cheap* ticks and the severance kept the *expensive*
+  decisions from multiplying with them. Throughput barely moved between the
+  1.5-kyr and 4-kyr runs (71.1 → 68.9), which is the first time this table has
+  shown that — the superlinear-in-duration degradation it records was entity
+  count compounding, and the economy tick does not compound.
 
   **R-O86's row is the largest speedup in this table and it came from deleting
   work, not from optimising it** — which is why it is worth more than its

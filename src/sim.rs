@@ -1344,6 +1344,20 @@ struct World {
     /// It stays presence-as-state — an empty list means an idle yard — for the
     /// same reason R-O69 needed a store that can vacate.
     berths: ComponentStore<Vec<f64>>,
+    /// **Earliest clock at which a saving centre asks again** (T-88).
+    ///
+    /// `cycle_years` was doing two unrelated jobs, and they want opposite
+    /// values: the economic integration step (mine, grow, mint — every one a
+    /// *rate over an interval*) wants to be **small** for fidelity, while a
+    /// saving centre's retry wants to be large, or better, not a cadence at
+    /// all. They were the same number because `sys_production_tick` called
+    /// `sys_build_decision` inline, so dropping the tick to 1/yr for
+    /// granularity would have multiplied decisions 50x with it — and the
+    /// decision half is what costs throughput.
+    ///
+    /// This is the separation. Absent means "ask on the next tick", which is
+    /// what a freshly-founded or freshly-woken centre wants.
+    decision_after: ComponentStore<f64>,
 
     // shared
     owner: ComponentStore<PlayerId>,
@@ -1534,6 +1548,7 @@ impl World {
             homeworld: ComponentStore::new(),
             archetype: ComponentStore::new(),
             berths: ComponentStore::new(),
+            decision_after: ComponentStore::new(),
             owner: ComponentStore::new(),
             role: ComponentStore::new(),
             hull_type: ComponentStore::new(),
@@ -1664,7 +1679,72 @@ impl Ord for Event {
 #[derive(Clone, Copy, Debug)]
 pub struct SimConfig {
     pub horizon_years: f64,
+    /// **The economic integration step** — how often a centre mines, grows its
+    /// population, regrows its biosphere and mints `$`. Every one of those is a
+    /// rate over an interval, so this is an Euler step and smaller is more
+    /// faithful; 50 years is a *coarse* step on a logistic.
+    ///
+    /// Since T-88 it is **only** that. It used to double as the retry cadence
+    /// for a saving centre's build decision, which is why it could not be
+    /// lowered: the fidelity argument wants 1 yr and the decision count is what
+    /// costs throughput. See [`SimConfig::decision_retry_years`].
+    ///
+    /// **Ratified at 5.0** (was 50.0), on the author's directive to improve the
+    /// granularity of the economic simulation. At 50 the logistic advanced by
+    /// `r·dt = 0.873` per step, which under-integrates a homeworld's population
+    /// by **~4x at 300 yr** — stable under design law #11's `r < 2` bound and
+    /// nowhere near accurate. Measured against work-years at 1,500 yr:
+    /// **+21.00% ± 4.19, 8/8 seeds**, replicated on four the value was not
+    /// chosen against.
+    ///
+    /// **5 rather than 1 because the answer saturates there** — 1/yr scores the
+    /// same +20.3% on the original bed for another 10% of throughput, and the
+    /// per-refinement change is already down to 1.22x at 5. The cost is
+    /// **93.3 → 71.1 yr/s** on the standard bed.
+    ///
+    /// **Every gradient measured before this lands is consumed**: the operating
+    /// point moved and moved a long way (colony-years +19.9%). Re-measure rather
+    /// than stepping along an old direction — `CLAUDE.md` §2 has recorded this
+    /// trap twice already.
     pub cycle_years: f64,
+    /// **How long a saving centre waits before asking again** (T-88) — the
+    /// second job [`SimConfig::cycle_years`] used to do.
+    ///
+    /// A centre that declined its last build has no `BuildDecision` pending, so
+    /// something has to bring it back. Two things do, and this is the slower
+    /// one: the fast path is minerals arriving (see `wake_on_minerals`), and
+    /// this is the floor under it — the catch-all for a situation that changed
+    /// in a way no wake site watches, such as a newly scanned candidate.
+    ///
+    /// **Defaulted to 50.0, which reproduces the pre-T-88 engine
+    /// bit-for-bit** at `cycle_years = 50`: the gate is evaluated on the
+    /// economy tick, so equal values mean it passes every time and the call is
+    /// the inline one it replaced. Not independently ratified — it is the old
+    /// coupled value, kept so the separation lands as a no-op and the sweep
+    /// that follows measures one thing.
+    pub decision_retry_years: f64,
+    /// **The cadence the per-cycle rates were ratified at** (T-88).
+    ///
+    /// `growth_rate`, `biosphere_regen_rate` and `outpost_mining_fraction` are
+    /// all *per tick*, not per year — `growth_rate` is documented as `1/cycle`
+    /// and the logistic steps it once per [`SimConfig::cycle_years`]. So
+    /// shrinking the tick for fidelity does not refine the same economy, it runs
+    /// **a different and much faster one**: at `cycle_years = 1` the population
+    /// grows fifty times faster in real time, and the objective duly reports
+    /// **+58.6% work-years**, which is not a measurement of anything.
+    ///
+    /// That is the trap this constant closes. Every per-cycle rate is now
+    /// multiplied by `cycle_years / rate_reference_years`, so it means *per
+    /// `rate_reference_years`* and the step size stops changing the economy.
+    /// **No ratified magnitude moves**: at the shipped `cycle_years = 50` the
+    /// factor is exactly `1.0` and the arithmetic is bit-identical, which is
+    /// what makes the re-denomination safe to land without re-ratifying four
+    /// Monte-Carlo-tuned knobs.
+    ///
+    /// It is not itself a tunable. Changing it *would* rescale all three at
+    /// once; it records the cadence they were measured at and should move only
+    /// if they are re-ratified at another one.
+    pub rate_reference_years: f64,
     /// **Irreducible per-hull lead time, `t_lead`** (`Hyades_industry.md` §3.2,
     /// T-68) — tooling and crew, the part of a build that does not scale with
     /// industry.
@@ -2062,7 +2142,9 @@ impl SimConfig {
     pub fn new(seed: u64) -> Self {
         SimConfig {
             horizon_years: 4000.0,
-            cycle_years: 50.0,
+            cycle_years: 5.0,
+            decision_retry_years: 50.0,
+            rate_reference_years: 50.0,
             build_lead_years: 2.0,
             fab_cap: 0.1,
             civilian_accel_g: 1.0,
@@ -2965,6 +3047,25 @@ impl Simulation {
                     },
                 );
             }
+            // **The centre's situation just changed, so it decides now** (T-88).
+            //
+            // This is the mechanism the retry floor is only a backstop for. A
+            // saving centre is waiting for exactly one thing — minerals — and
+            // ore landing in its bank is the event that changes whether it can
+            // buy anything. Before this it waited out the economy tick, so a
+            // delivery arriving one year after a tick sat unspent for the next
+            // forty-nine.
+            //
+            // It is also **cheaper than the cadence it replaces**: measured on
+            // the standard bed there are ~26,800 deposits against ~99,000
+            // production ticks over 1,500 yr, so moving the retry onto the
+            // arrival lowers the decision count while raising its
+            // responsiveness. `CLAUDE.md` §4's rule exactly — entities evaluate
+            // on their own arrival events, and the evaluation is `O(1)` to
+            // reach.
+            if cargo.basic_total() > Price::ZERO {
+                self.wake_on_minerals(sh.destination);
+            }
             // Return leg always goes back to the fixed mining source — only
             // the delivery side is need-routed, not the pickup side.
             let from = self.position_at(sh.destination, self.clock).unwrap();
@@ -3151,7 +3252,11 @@ impl Simulation {
             // (§4.4, T-71). `extraction_rate` returns the centre's capacity in
             // miner-equivalents; the deposit decides what that capacity is worth.
             let work = crowding_factor(self.extraction_rate(center), stock, &self.config);
-            stock.kilotons() * (self.config.outpost_mining_fraction * work).min(1.0)
+            // Scaled with the tick for the same reason as growth above — this
+            // one runs on `cycle_years`; an *outpost*'s extraction runs on
+            // `mining_tick_years` and is left alone, since that cadence is not
+            // what this scales.
+            stock.kilotons() * (self.config.outpost_mining_fraction * work * self.tick_scale()).min(1.0)
         };
         if amt > 0.0 {
             let extracted = self.world.density.get_mut(center).unwrap().extract(Kilotons::new(amt));
@@ -3191,8 +3296,12 @@ impl Simulation {
         // not just a ceiling — between an empire and its population. A world
         // grown faster than its ecology can regrow stalls until it recovers,
         // without its ceiling moving.
-        let growth = doctrine.growth_rate;
-        let regen = self.config.biosphere_regen_rate * doctrine.biosphere_regen_bonus;
+        // **Per *cycle*, so they scale with the step** (T-88). Both are rates
+        // over an interval and the interval is `cycle_years`; without this the
+        // tick size is a hidden multiplier on the whole economy.
+        let dt = self.tick_scale();
+        let growth = doctrine.growth_rate * dt;
+        let regen = self.config.biosphere_regen_rate * doctrine.biosphere_regen_bonus * dt;
         let k = self.world.factors.get(center).unwrap().k();
         {
             let pop_now = *self.world.population.get(center).unwrap();
@@ -3316,15 +3425,22 @@ impl Simulation {
         // empty yard has no such event pending, so the mining step doubles as
         // its retry — mining is what changes a saving center's situation.
         //
-        // **T-88 will sever this call.** `cycle_years` is doing two unrelated
-        // jobs — the economic integration step (mine, grow, mint, all rates over
-        // an interval, which want a *small* step for fidelity) and the retry
-        // cadence for a saving centre (which should not be a cadence at all).
-        // Dropping the tick to 1/yr for granularity would multiply decisions
-        // 50x along with it, and the decision half is what costs throughput.
-        // The retry belongs on the events that actually change a saving
-        // centre's situation — minerals arriving — not on a clock.
-        if self.free_berths(center) > 0 {
+        // **T-88: the two jobs are severed.** This call used to be
+        // unconditional, which made `cycle_years` the retry cadence as well as
+        // the integration step — so dropping the tick to 1/yr for fidelity
+        // would have multiplied decisions 50x with it, and the decision half is
+        // what costs throughput.
+        //
+        // The gate is a *floor*, not the mechanism. The mechanism is
+        // `wake_on_minerals`, which asks the moment the thing a saving centre
+        // was short of actually lands; this is the catch-all underneath it for
+        // a situation that changed somewhere no wake site watches — a newly
+        // scanned candidate, a population level crossing, a hull returning to
+        // Reserve. Evaluating it here rather than on its own event costs no
+        // events at all, and at `decision_retry_years == cycle_years` it passes
+        // every time and reproduces the inline call bit-for-bit.
+        if self.free_berths(center) > 0 && self.decision_is_due(center) {
+            self.arm_retry(center);
             self.sys_build_decision(center);
         }
         self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
@@ -3401,6 +3517,55 @@ impl Simulation {
             Price::new(bank.get_basic(Basic::Magenta)),
             Price::new(bank.get_basic(Basic::Yellow)),
         ];
+
+        // **A centre too poor to buy anything does not need to look at the
+        // galaxy first** (T-88 / T-52).
+        //
+        // Measured on the standard bed, **79.8% of production decisions return
+        // `Idle`** and each one first walks this player's scanned set — 110
+        // planets per decision, 10.7 M steps over a 1,500-year run, the largest
+        // loop left in the engine. Most of that is spent proving something the
+        // bank already knew.
+        //
+        // The guard is a *necessary* condition for any commit, not a re-
+        // implementation of the policy: every order the autopilot can return
+        // costs at least `floor` in total, and per-colour affordability implies
+        // affordability of the total, so a bank below it cannot buy anything the
+        // scan could propose. `mining_pair_price` is priced at a crew of one,
+        // which is its minimum, so the bound stays below the real price rather
+        // than guessing it.
+        //
+        // Behaviour is unchanged by construction — the skipped decisions are
+        // exactly the ones whose `apply_build_with` would have declined — and
+        // the log still records the decision, with `candidates_seen = 0`
+        // meaning *scanned*, which for this branch is the honest number.
+        let floor = infra_bill
+            .iter()
+            .fold(Price::ZERO, |a, &b| a + b)
+            .min(role_cost(Role::Scout, &self.config))
+            .min(hull_cost(HullType::MediumSystems, &self.config))
+            .min(self.mining_pair_price(p, 1));
+        if stock_total + Price::new(1e-9) < floor {
+            self.log.push(
+                self.clock,
+                LogEvent::ProductionDecision {
+                    player: p as u32,
+                    center: center_pid,
+                    pop_level: level,
+                    infra: infra_band.bands(),
+                    k_potential: k_potential.bands(),
+                    stockpile: stock_total.kilotons(),
+                    infra_cost: target_level.kilotons(),
+                    colonizer_cost: hull_cost(HullType::MediumSystems, &self.config).kilotons(),
+                    mining_pair_cost: self.mining_pair_price(p, 1).kilotons(),
+                    mineral_pressure: self.mineral_pressure_of(center),
+                    candidates_seen: 0,
+                    can_afford_infra: false,
+                    chosen: BuildOrder::Idle,
+                },
+            );
+            return false;
+        }
 
         let info = *self.world.player_info.get(pe).unwrap();
         // Live mineral pressure for this center: 1 when broke for its next infra
@@ -3626,6 +3791,49 @@ impl Simulation {
 
     /// **How many berths this centre has spare** (T-69). Zero means every slip
     /// is busy and the yard cannot commit again until one clears.
+    /// **Minerals landed here — decide now, floor or no floor** (T-88).
+    ///
+    /// Deliberately bypasses [`Self::decision_is_due`]. The floor exists to stop
+    /// a centre re-asking a question nothing has answered; a delivery *is* the
+    /// answer, so gating it behind the floor would reinstate the cadence this
+    /// task exists to remove. Re-arms the floor, so it means "50 years since
+    /// the last decision" rather than "since the last tick".
+    ///
+    /// A centre with no free berth is skipped: its decision already has a
+    /// `BuildDecision` pending for when the yard clears, and the minerals will
+    /// still be there.
+    fn wake_on_minerals(&mut self, center: Entity) {
+        if self.world.owner.get(center).is_none() || self.free_berths(center) == 0 {
+            return;
+        }
+        self.arm_retry(center);
+        self.sys_build_decision(center);
+    }
+
+    /// **How much of a reference cycle this tick is** (T-88).
+    ///
+    /// Every per-cycle rate is multiplied by this, which is what makes
+    /// [`SimConfig::cycle_years`] an *integration step* rather than a knob that
+    /// silently rescales the economy. Exactly `1.0` at the shipped values.
+    #[inline]
+    fn tick_scale(&self) -> f64 {
+        self.config.cycle_years / self.config.rate_reference_years.max(1e-12)
+    }
+
+    /// Has this centre's retry floor elapsed? (T-88.)
+    ///
+    /// Absent means "never asked, or woken deliberately" — both want an
+    /// immediate decision, so absence reads as due.
+    fn decision_is_due(&self, center: Entity) -> bool {
+        self.world.decision_after.get(center).is_none_or(|&t| self.clock + 1e-12 >= t)
+    }
+
+    /// Push the retry floor out one `decision_retry_years` from now.
+    fn arm_retry(&mut self, center: Entity) {
+        let next = self.clock + self.config.decision_retry_years;
+        self.world.decision_after.insert(center, next);
+    }
+
     fn free_berths(&self, center: Entity) -> usize {
         let total = slips(self.fabrication_stock(center), &self.config);
         let busy = self.world.berths.get(center).map(|b| b.len()).unwrap_or(0);
@@ -5713,6 +5921,126 @@ mod tests {
         assert_eq!(vehicles(&sim), before.1, "and nothing was created either");
     }
 
+    /// **Shrinking the economy tick refines the economy; it must not multiply
+    /// the decisions** (T-88).
+    ///
+    /// `cycle_years` was doing two unrelated jobs — the integration step for
+    /// every rate in the economy, and the retry cadence for a saving centre's
+    /// build decision — because `sys_production_tick` called
+    /// `sys_build_decision` inline. So the fidelity argument for a 1-year step
+    /// was unaffordable: it multiplied the *decision* count with it, and a
+    /// decision is two orders of magnitude dearer than a tick (it runs T-52's
+    /// candidate scan).
+    ///
+    /// Measured on the standard bed at 1,500 yr, seed 1, after the severance:
+    /// economy ticks go **48,707 → 3,602,083** (74x) while decisions go
+    /// **97,197 → 128,726** (1.32x). This pins the ratio, not the magnitudes —
+    /// what must not come back is decisions scaling with `1/cycle_years`.
+    #[test]
+    fn shrinking_the_economy_tick_does_not_multiply_decisions() {
+        let count = |cycle: f64| -> (usize, usize) {
+            let mut cfg = test_cfg(1);
+            // **Its own bed, and the reason is the property being asserted.**
+            // This is about the *steady-state* decision rate, and `test_cfg`'s
+            // horizon is deliberately short — over the first few decades the
+            // early ramp dominates and a correctly-integrated economy simply
+            // has more of everything, which this would read as a regression
+            // (it did: 3.68x at 60 yr). Small galaxy, long horizon: the
+            // scenery is not what the test reads.
+            cfg.horizon_years = 400.0;
+            cfg.cycle_years = cycle;
+            let mut g = GalaxyConfig::new(2, 1);
+            g.planet_count = 150;
+            let mut sim = Simulation::with_baseline(Galaxy::generate(g).unwrap(), cfg);
+            sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Production));
+            sim.run();
+            let d = sim.log().iter().filter(|r| matches!(r.event, LogEvent::ProductionDecision { .. })).count();
+            let b = sim.log().iter().filter(|r| matches!(r.event, LogEvent::BuildApplied { .. })).count();
+            (d, b)
+        };
+        let (coarse, _) = count(50.0);
+        let (fine, _) = count(5.0);
+        assert!(coarse > 0 && fine > 0, "the bed must actually decide something: {coarse} / {fine}");
+        // Ten times the ticks. If the retry were still on the tick this would be
+        // ~10x; the severance is what keeps it near 1.
+        let ratio = fine as f64 / coarse as f64;
+        assert!(
+            ratio < 3.0,
+            "decisions scaled {ratio:.2}x for a 10x finer tick ({coarse} -> {fine}). `cycle_years` is driving the \
+             decision rate again — see T-88; the retry belongs on `wake_on_minerals` and the `decision_after` floor."
+        );
+    }
+
+    /// **Refining the economy tick must converge, not rescale** (T-88).
+    ///
+    /// Two different things were wrong with `cycle_years` and only one of them
+    /// was a bug.
+    ///
+    /// The bug: `growth_rate` is documented `1/cycle` and the logistic stepped
+    /// it once per tick *regardless of the tick's length*, so shrinking the tick
+    /// ran a fifty-times-faster economy rather than a better-integrated one. The
+    /// objective duly reported **+58.6% work-years** for `cycle_years = 1`,
+    /// which measured nothing. [`Simulation::tick_scale`] closes that.
+    ///
+    /// What is **not** a bug, and is the reason T-88 was opened: with the rate
+    /// correctly denominated, a 50-year step is still a *bad* step. The logistic
+    /// advances by `r·dt` per tick and `r·dt = 0.873` at the shipped values —
+    /// nowhere near the small-step regime, though comfortably inside design law
+    /// #11's `r < 2` stability bound. Measured on a homeworld at 300 yr, seeds
+    /// and config otherwise fixed:
+    ///
+    /// | `cycle_years` | 50 | 25 | 10 | 5 |
+    /// |---|---|---|---|---|
+    /// | homeworld population | 1,143 | 2,275 | 3,516 | 4,297 |
+    /// | ratio to the next coarser | — | 1.99 | 1.55 | 1.22 |
+    ///
+    /// So the coarse step **under-integrates by ~4x** and refining it is a real
+    /// gain, not a rescaling: **+20.3% ± 5.4 work-years at `cycle_years = 5`,
+    /// 4/4 seeds**, saturating there — 1/yr buys nothing more than 5.
+    ///
+    /// **Which is why this asserts convergence rather than invariance.** The two
+    /// failure modes look identical in a single ratio and completely different
+    /// across three: an integrator converging has each refinement move the
+    /// answer *less*, while a rate applied per tick without scaling moves it by
+    /// the step ratio every time, forever.
+    #[test]
+    fn refining_the_economy_tick_converges_rather_than_rescaling() {
+        let pop_at = |cycle: f64| -> f64 {
+            let mut cfg = test_cfg(1);
+            cfg.horizon_years = 300.0;
+            cfg.cycle_years = cycle;
+            // **Shrink the scenery, not the horizon** (`CLAUDE.md` §2). This
+            // reads one homeworld's population and nothing else, so the galaxy
+            // is pure cost: 150 planets takes the test from 39 s to 3 s and the
+            // horizon stays where the convergence is legible.
+            let mut g = GalaxyConfig::new(2, 1);
+            g.planet_count = 150;
+            let mut sim = Simulation::with_baseline(Galaxy::generate(g).unwrap(), cfg);
+            sim.run();
+            sim.snapshot()
+                .planets
+                .iter()
+                .filter(|p| p.is_homeworld && p.owner == Some(0))
+                .map(|p| p.population.kilotons())
+                .sum()
+        };
+        // One world, not the empire total: the empire's population also counts
+        // *colonies*, and a finer tick founds more of them, so the aggregate
+        // conflates the integrator with the expansion loop and cannot answer
+        // this question. (It was written that way first, and said 2.92x.)
+        let (p50, p25, p10, p5) = (pop_at(50.0), pop_at(25.0), pop_at(10.0), pop_at(5.0));
+        assert!(p50 > 0.0 && p5 > 0.0, "the bed must grow a population to compare: {p50} .. {p5}");
+        let step = |fine: f64, coarse: f64| (fine / coarse - 1.0).abs();
+        let (a, b, c) = (step(p25, p50), step(p10, p25), step(p5, p10));
+        assert!(
+            a > b && b > c,
+            "halving the tick must move the answer less each time — got {a:.3}, {b:.3}, {c:.3} for \
+             ({p50:.1}, {p25:.1}, {p10:.1}, {p5:.1}). A ratio that does not shrink means a per-cycle rate is \
+             being applied per tick without `tick_scale`, which rescales the economy instead of refining it \
+             (T-88)."
+        );
+    }
+
     /// **One freighter hold buys exactly one infrastructure rung, and the
     /// margin is 2.3%** (R-O90).
     ///
@@ -6002,7 +6330,7 @@ mod tests {
 
     fn test_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
-        cfg.horizon_years = 300.0;
+        cfg.horizon_years = 60.0;
         cfg
     }
 

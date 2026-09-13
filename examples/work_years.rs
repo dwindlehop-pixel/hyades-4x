@@ -98,6 +98,14 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Run {
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = horizon;
+    // **`WY_CYCLE` sweeps the economic integration step** (T-88). It is only
+    // separable from the decision rate since that landing — before it, moving
+    // this moved both, and the decision half is what costs throughput.
+    if let Ok(c) = std::env::var("WY_CYCLE") {
+        if let Ok(c) = c.parse::<f64>() {
+            cfg.cycle_years = c;
+        }
+    }
     // **Common random numbers**: the same seed drives the galaxy and the sim at
     // every bias, so the difference between two rows is the knob and not the
     // draw (`CLAUDE.md` §2).
