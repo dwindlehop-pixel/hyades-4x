@@ -25,10 +25,20 @@ fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimR
     (sim, report)
 }
 
+/// **The horizon is 150 yr, and every assertion here is an invariant** — the
+/// seat count comes back, scanning happened, expansion happened. `CLAUDE.md`
+/// §2: an invariant needs the mechanism to have fired *once*, not a long run to
+/// accumulate in. 300 yr was inherited from when a simulated year was cheap;
+/// T-69 and T-71/T-72 have each roughly doubled entity count since, and this
+/// test alone was **65.8 s of a 68 s target**.
+///
+/// `colonies > 0` is also the non-vacuity guard: shorten it too far and the
+/// assertion fails rather than passing on an empty galaxy, which is the property
+/// a trimmed horizon most needs to keep.
 #[test]
 fn all_fair_counts_run_and_expand() {
     for &n in &[2usize, 3, 6, 12] {
-        let (_sim, report) = run_short(n, 100 + n as u64, 300.0);
+        let (_sim, report) = run_short(n, 100 + n as u64, 150.0);
         assert_eq!(report.players.len(), n);
         assert!(report.planets_scanned_total >= n, "no scanning for {n} seats");
         let colonies: usize = report.players.iter().map(|p| p.colonies).sum();
@@ -38,7 +48,7 @@ fn all_fair_counts_run_and_expand() {
 
 #[test]
 fn snapshot_is_consistent_with_report() {
-    let (sim, report) = run_short(6, 314, 300.0);
+    let (sim, report) = run_short(6, 314, 150.0);
     let snap = sim.snapshot();
     // Owned-planet totals computed two different ways must agree.
     let owned_from_report: usize = report.players.iter().map(|p| p.planets_owned).sum();
@@ -78,10 +88,14 @@ fn snapshot_is_consistent_with_report() {
     }
 }
 
+/// **A paired-run identity, so it pays double for a horizon that buys it
+/// nothing** — the same argument `sim::paired_cfg` and `tests/determinism.rs`
+/// already make. Determinism is a property of the arithmetic, not of how long
+/// you accumulate it, so 150 yr proves it exactly as well as 300 and costs half.
 #[test]
 fn determinism_across_full_runs() {
-    let (_a, ra) = run_short(6, 77, 300.0);
-    let (_b, rb) = run_short(6, 77, 300.0);
+    let (_a, ra) = run_short(6, 77, 150.0);
+    let (_b, rb) = run_short(6, 77, 150.0);
     assert_eq!(ra.events_processed, rb.events_processed);
     assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
 }
@@ -91,12 +105,12 @@ fn stepping_matches_running() {
     // Driving the event loop by hand must reach the same place as run().
     let galaxy = Galaxy::generate(GalaxyConfig::new(3, 9)).unwrap();
     let mut cfg = SimConfig::new(9);
-    cfg.horizon_years = 300.0;
+    cfg.horizon_years = 150.0;
     let mut a = Simulation::with_baseline(galaxy, cfg);
     while a.step() {}
     let ra = a.report();
 
-    let (_b, rb) = run_short(3, 9, 300.0);
+    let (_b, rb) = run_short(3, 9, 150.0);
     assert_eq!(ra.events_processed, rb.events_processed);
     assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
 }

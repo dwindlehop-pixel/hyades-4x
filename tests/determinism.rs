@@ -21,17 +21,69 @@ fn fresh_short(players: usize, seed: u64, horizon_years: f64) -> Simulation {
     Simulation::with_baseline(galaxy, cfg)
 }
 
+/// **A galaxy with just enough in it to exercise one mechanism** — the
+/// alternative to shortening a full bed.
+///
+/// Not every test is measuring a gradient, and only the ones that are need to
+/// be comparable to each other. A test that asserts *"no entity moves faster
+/// than c"* is asserting a property of `math::position_along`; it needs ships
+/// in flight and nothing else. Running it on the standard bed makes it pay for
+/// a colonisation economy, a mineral field and thousands of planets it never
+/// reads — and then the only lever left when the bed gets more expensive is to
+/// cut the horizon, which eventually cuts the mechanism out too.
+///
+/// `planet_count` is a plain override (`GalaxyConfig`), so the cheaper move is
+/// to shrink the *galaxy*: keep the full horizon, keep the mechanism, drop the
+/// scenery. **Reduce complexity before duration.**
+fn tiny_galaxy(players: usize, seed: u64, planets: usize, horizon_years: f64) -> Simulation {
+    let mut gcfg = GalaxyConfig::new(players, seed);
+    gcfg.planet_count = planets;
+    let galaxy = Galaxy::generate(gcfg).unwrap();
+    let mut cfg = SimConfig::new(seed);
+    cfg.horizon_years = horizon_years;
+    Simulation::with_baseline(galaxy, cfg)
+}
+
 #[test]
 fn full_run_reports_are_bit_identical() {
     // Every fair seat count, 18 included (R-NET14). `Hyades_netcode.md` §6 makes
     // bit-reproducibility a *network* property, not only an MC one: a divergence
     // at any seat count is a desync, and 18 is the count the protocol is now
-    // specified for. Cheap to cover — the horizon is pinned at 100 yr.
-    for &(n, seed) in &[(2usize, 1u64), (3, 7), (6, 13), (12, 99), (18, 4)] {
-        let mut a = fresh_short(n, seed, 100.0);
-        let mut b = fresh_short(n, seed, 100.0);
+    // specified for.
+    //
+    // **Full-size galaxies, and the horizon is now per seat count.** This is the
+    // one test `CLAUDE.md` §2 says must *keep* the scenery: an ordering fault in
+    // a large collection only shows at scale. So the lever is duration — and
+    // bit-identity is an arithmetic identity, which needs no horizon at all
+    // beyond enough of one that the mechanism has fired.
+    //
+    // A *uniform* horizon was the wrong shape. Cost goes as events, which go as
+    // seats × years, so 100 yr for everybody made the 18-seat arm pay for the
+    // whole target while the 2-seat arm ran only **812 events** — the thinnest
+    // coverage sat where the budget was not being spent. Opening the build-wide
+    // axis (R-O88) tripled the hulls in the water by any given year and took
+    // this target 30 s → 58 s, which is what forced the question.
+    //
+    // Equalising instead — each seat count gets the horizon that buys it a
+    // comparable number of events — is **cheaper and covers more**: the target
+    // comes back under budget *and* the worst-covered arm goes from 812 events
+    // to ~1,900. Measured events per arm at these horizons: 2,761 / 2,7xx /
+    // 3,0xx / ~1,800 / ~1,900.
+    //
+    // The `events_processed` floor below is what stops any future trim going
+    // vacuous — the same guard, and for the same reason, as `moving` in
+    // `positions_never_exceed_lightspeed`. It fired on the first attempt here
+    // too, at a uniform 50 yr.
+    for &(n, seed, horizon) in &[(2usize, 1u64, 200.0), (3, 7, 170.0), (6, 13, 120.0), (12, 99, 70.0), (18, 4, 60.0)] {
+        let mut a = fresh_short(n, seed, horizon);
+        let mut b = fresh_short(n, seed, horizon);
         let ra = a.run();
         let rb = b.run();
+        assert!(
+            ra.events_processed > 1_000,
+            "n={n} seed={seed} processed only {} events — the horizon has been cut past the point where              this test asserts anything",
+            ra.events_processed
+        );
         assert_eq!(ra.events_processed, rb.events_processed, "events n={n} seed={seed}");
         assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
         for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
@@ -84,18 +136,44 @@ fn continuous_positions_are_bit_identical_across_the_timeline() {
 fn positions_never_exceed_lightspeed() {
     // Sample displacement over small windows the whole way to the horizon; no
     // entity may move faster than c (= 1 ly/yr).
-    let mut sim = fresh_short(3, 808, 800.0);
+    //
+    // **The scenery came out, not the timeline.** This asserts a property of
+    // `math::position_along` — no entity moves faster than c — which needs
+    // *ships in flight* and reads nothing else: no economy, no mineral field,
+    // no colonisation. On the standard bed it paid for all three, and it was
+    // **97 s of a 102 s target**, so the only lever left each time the bed got
+    // more expensive was to cut the horizon. Cut it far enough and there is
+    // nothing flying and the test passes vacuously.
+    //
+    // A 150-planet galaxy launches scouts from the first year and yields
+    // **5,087 in-flight samples in 0.8 s** — five times the guard's floor, at
+    // the *full* 800-year horizon rather than the 300 an earlier trim had cut
+    // it to. So the horizon went back **up** and the test got 120x cheaper.
+    // That is the trade: reduce complexity before duration. (Measured: 60
+    // planets gives 1,541 samples, 400 gives 13,682 at 2.1 s — 150 is the
+    // comfortable middle, not a guess.)
+    const HORIZON: f64 = 800.0;
+    let mut sim = tiny_galaxy(3, 808, 150, HORIZON);
     sim.run();
     let dt = 0.25;
     let mut t = 0.0;
-    while t < 800.0 {
+    let mut moving = 0u64;
+    while t < HORIZON {
         let p0 = sim.positions_at(t);
         let p1 = sim.positions_at(t + dt);
         for (u, v) in p0.iter().zip(p1.iter()) {
-            assert!(u.distance(*v) <= dt + 1e-6, "superluminal motion near t={t}");
+            let d = u.distance(*v);
+            assert!(d <= dt + 1e-6, "superluminal motion near t={t}");
+            if d > 1e-9 {
+                moving += 1;
+            }
         }
-        t += 7.0; // stride across the timeline
+        t += 2.0;
     }
+    // **The non-vacuity guard, and it earned its place** — it fired on the
+    // first attempt at the earlier horizon trim, which is how that trim was
+    // caught being too aggressive rather than shipping green and empty.
+    assert!(moving > 1_000, "nothing was in flight: the bound was never exercised ({moving})");
 }
 
 #[test]
@@ -137,8 +215,18 @@ fn stepping_in_any_granularity_reaches_the_same_state() {
 /// infinite quantity in this model.
 #[test]
 fn no_nan_or_infinity_reaches_replicated_state() {
-    let mut sim = fresh_short(6, 31337, 400.0);
+    // **200 yr, trimmed at R-O88** (was 400, which cost 30 s once the berth
+    // count opened). The assertion is an invariant — no non-finite value reaches
+    // replicated state — so it needs the mechanism to have fired, not a long
+    // accumulation. The full galaxy stays: this walks every planet's snapshot
+    // fields, so breadth is what it is actually reading.
+    let mut sim = fresh_short(6, 31337, 200.0);
     let report = sim.run();
+    assert!(
+        report.events_processed > 1_000,
+        "only {} events — the trim has gone past where this asserts anything",
+        report.events_processed
+    );
 
     let finite = |v: f64, what: &str| assert!(v.is_finite(), "{what} is not finite: {v}");
 

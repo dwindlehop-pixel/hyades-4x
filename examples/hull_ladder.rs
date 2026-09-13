@@ -48,14 +48,15 @@ struct Leg {
 // acceptance test and for anything that moves the expansion economy.
 const LEGS: &[Leg] = &[
     Leg { name: "ratified ladder", apply: |_| {}, doctrine: |_| {} },
-    // **T-57: non-unitary mining colonies.** Extraction is per-miner now, so a
-    // crew of `n` works `n × outpost_mining_fraction` of the remaining field per
-    // tick, capped at all of it. A rock is a finite stock — a bigger crew does
-    // not raise what a field yields in total, it brings that total *forward*,
-    // and forward is what the expansion loop is short of.
-    Leg { name: "2 miners per outpost", apply: |_| {}, doctrine: |d| d.miners_per_outpost = 2 },
-    Leg { name: "3 miners per outpost", apply: |_| {}, doctrine: |d| d.miners_per_outpost = 3 },
-    Leg { name: "5 miners per outpost", apply: |_| {}, doctrine: |d| d.miners_per_outpost = 5 },
+    // ~~2/3/5 miners per outpost~~, ~~vein fraction 0.1/0.3/0.6~~ — **there is no
+    // crew leg any more (T-87).** Crew size stopped being a policy: it is
+    // derived from the founding centre's unmet mineral demand
+    // (`Hyades_industry.md` §4.5), so there is no value here to sweep.
+    //
+    // Both retired knobs were the same mistake, and the sweep is what found it:
+    // a rock is a finite stock, so a crew only brings its yield *forward*, and
+    // ore the empire cannot spend is a pure cost in hulls, freight and entity
+    // count. Every crew size measured worse than the one below it.
 ];
 
 struct Run {

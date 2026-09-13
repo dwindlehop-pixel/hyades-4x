@@ -131,9 +131,46 @@ by three orders of magnitude against a fixed freighter hold, so the round trips
 multiplied from the first cycle. T-64 gave it back by taking the `ln`/`powf` out
 of the growth step. **T-68 made `t_build` track hull mass** — a Medium hull went
 from 10 yr to 3.0 — so centres decide three times as often and the entity count
-follows. The lesson every time: **when a test target moves, look at what the
-simulation started doing, not at what the tests are asking.** The remaining
-ratification is T-24's floor breach (R-O82).
+follows. **T-69 did it again** — filling every berth amortises `t_lead` across
+slips, so a yard produces ~1.8x the hulls — taking unit 79 s → 168 s and
+determinism 67 s → 102 s at once. The lesson every time: **when a test target
+moves, look at what the simulation started doing, not at what the tests are
+asking.** The remaining ratification is T-24's floor breach (R-O82).
+
+**T-69's fix was one constant and one stride, and both were found by measuring
+rather than reading.** `--report-time` is still nightly-only, so the tool is a
+shell loop timing each test by name into a file — worth keeping, because the
+answer was not where it looked:
+
+- **`test_cfg`'s horizon was the whole unit target.** One constant, inherited by
+  dozens of tests, at 600 yr. At **300** all 172 still pass and the target is
+  **20.7 s** — and at 200 they *also* all pass in 17.6 s, which is how the trim
+  is known to be safe rather than lucky. 300 ships: ~50% headroom above the
+  point where anything binds, for 3 s. **Probe past the value you intend to ship
+  and report where it actually breaks** — that number, not the one you chose, is
+  what tells the next reader how much room is left.
+- **`positions_never_exceed_lightspeed` was 97 s of a 102 s target**, and the
+  sampling loop that *looks* expensive was not it: the stride is 7 yr, so it
+  walks ~100 windows whatever the horizon, and `sim.run()` at 800 yr was the
+  bill. 800 → 300 took it to **3.0 s** — a 32x saving for a 2.7x cut, which is
+  T-24's superlinear degradation seen from the other side.
+- **The trim guard is the reusable part.** Shortening a run until nothing is in
+  flight leaves every assertion in that test vacuously true and the suite green.
+  It now counts moving entities and fails below a floor — which **fired on the
+  first attempt** (479 samples), and the answer was to sample the shorter
+  timeline three times as densely rather than to lengthen it. Sampling is cheap;
+  the run is not. **When you cut a horizon, assert that the mechanism still
+  fires.**
+
+**T-71/T-72 did it a third time in one session** — smoke 36 s → 68 s — and the
+answer was the same shape: `all_fair_counts_run_and_expand` was **65.8 s of the
+68** on its own, four seat counts at a 300-yr horizon inherited from when a
+simulated year was cheap. Every assertion in the file is an invariant or a
+paired identity, so **the whole target went to 150 yr and cost 17 s**. Three
+targets, three sessions, one constant each time. The habit worth forming: **when
+a change raises entity count, check the test horizons in the same commit** — the
+cost lands there before it lands anywhere a user would notice, and the fix is
+almost never in the assertions.
 
 **T-68's 507 s was four tests paying in horizon for questions horizon does not
 answer**, and finding that out took one measurement rather than a guess — timing
@@ -149,6 +186,103 @@ each suspect individually, after `--report-time` turned out to be nightly-only:
   which is the same argument this file already makes for `tests/determinism.rs`.
 - **Smoke went 500 → 300 yr** (87 s → 17 s). Every assertion in it is an
   invariant that holds at any horizon where expansion has started.
+
+### Reduce the galaxy before the horizon
+
+**Three sessions running, the answer to "this target got slow" was to cut a
+horizon. That lever runs out, and it runs out badly** — cut far enough and the
+mechanism stops firing, the assertions go vacuously true, and the suite stays
+green while testing nothing. The `moving` guard in
+`positions_never_exceed_lightspeed` exists because that nearly happened.
+
+**The other lever is the scenario, and it is usually the right one.** Ask what
+the assertion actually *reads*. That test asserts a property of
+`math::position_along` — no entity moves faster than `c` — and reads ships in
+flight and nothing else: no economy, no mineral field, no colonisation. On the
+standard bed it was paying for all three, and was **97 s of a 102 s target**.
+`GalaxyConfig::planet_count` is a plain override, so:
+
+| bed | horizon | in-flight samples | cost |
+|---|---|---|---|
+| standard | 800 yr | — | **97 s** |
+| standard, trimmed | 300 yr | 479 — *below the guard's floor* | 3.0 s |
+| **150 planets** | **800 yr** | **5,087** | **0.8 s** |
+
+The horizon went back **up** and the test got 120x cheaper, with five times the
+guard's margin. (60 planets gives 1,541 samples, 400 gives 13,682 at 2.1 s —
+150 is measured, not guessed.) `tests/determinism.rs::tiny_galaxy` is the
+helper.
+
+**The rule: only tests that measure a gradient need to be comparable to each
+other, and only those need the standard bed.** A test that pins a mechanism
+wants the smallest galaxy that exercises it. Keep one shared bed for the
+Monte-Carlo work — comparability across measurements is the whole value of it —
+and stop treating it as the default scenery for everything else.
+
+**What this trades, so it is not discovered later:** a smaller field exercises
+every code path fewer times, so it is worse at catching a bug that only appears
+at scale — an ordering fault in a large collection, say. That is a real cost and
+it is why `full_run_reports_are_bit_identical` still runs full-size galaxies
+across all five seat counts (R-NET14: a divergence at *any* seat count is a
+desync). Shrink the scenery on tests that assert a mechanism; leave it on tests
+whose question *is* scale.
+
+### Measure the per-event budget, not only the aggregate
+
+**`yr/s` is a rate over a population the change re-selects, and it cannot tell
+two different problems apart.** A change that makes every event slower lowers
+it. A change that raises events-per-simulated-year lowers it too, with every
+event costing exactly what it did. Those want opposite fixes.
+
+**T-69 is the worked example and it read backwards.** Throughput fell 27% while
+vehicle count *fell* — the table's standing lesson ("entity count is the
+first-order cost") pointed the wrong way, because the cost was **decision
+count**: every commit schedules its own `BuildDecision`, so a yard with `k`
+berths raises `k` events where it raised one.
+
+This is §2's **seventh artifact shape** — an aggregate that moves against its
+parts because the treatment changed the mix — applied to performance instead of
+to colonies, and the prescription is the same: **report the mix beside the
+mean.** `SimReport::events_processed` is already there, so `ns/event` costs a
+division. `examples/work_years` prints it next to `yr/s`; do the same in any
+harness that reports throughput.
+
+**It paid for itself on the first run.** The standard bed reports **~174 µs per
+event**, which reframes the whole throughput problem: the engine is not slow
+because the design produces many events — that is design law #14 and is not
+going away — it is slow because each event is expensive. T-52's `O(scanned)`
+production candidate scan is the suspect, and that is a *profiling* job, not an
+entity-count one. Years of this table have been read the other way.
+
+**And the instrument has to be free, or it is measuring itself.** Every census
+and ablation in this project reads a run with log categories enabled and
+compares it against one that did not. `tests/telemetry.rs` bounds that at 5%;
+measured across a 10x range of event counts the true cost is **below the
+machine's own run-to-run variance** (ratios 1.001 / 0.974 / 1.020 at 15.6k /
+59.2k / 148.6k events). Two of three land under 1.0, which is the honest signal
+that this is a *bound* rather than an estimate.
+
+**It flaked once, at five repeats, and the fix was samples and not the
+threshold.** An unloaded machine ran the bed twice as fast, the per-pair ratios
+spread **0.948 to 1.067**, and because the two arms are minimised
+*independently* a small sample can pair a lucky bare run against an unlucky
+logged one — reporting 1.069 for a cost that is actually zero. Nine repeats give
+1.001 on the same bed. **A threshold widened to cover measurement noise stops
+bounding anything**, which is the whole point of the test; if a timing guard is
+flaky, buy more samples.
+
+Read them together:
+
+| `yr/s` | `ns/event` | what actually happened |
+|---|---|---|
+| down | flat | the simulation is doing **more**, each unit costs the same — a design change, not a regression |
+| down | up | the engine got **slower per unit** — this is the one to profile |
+| up | down | a real optimisation |
+| flat | up | events got dearer and fewer; something moved in both directions and needs decomposing further |
+
+Only the second row is a performance bug. Treating the first as one is how an
+optimisation pass gets spent on code that was never the problem — which §4's
+"profile before you optimise" already says, one level up.
 
 The general form, worth having separately from the instances: **a test's horizon
 is a cost, not a strength.** Ask what the assertion actually needs — an identity
@@ -203,6 +337,17 @@ consecutive `min_time_search` runs were killed at 3, 20 and 7 minutes in. So:
   produced two confidently wrong "still running" reports before it was caught,
   and CLAUDE.md had already recorded the same trap once (the `pkill -f` incident
   above). Compare `ls -l --time-style=+%H:%M:%S` against `date`.
+- **But mtime only works if the harness has written something**, and a
+  zero-byte file's mtime is its creation time. `colony_years` runs **two** full
+  sims per seed and printed nothing until a seed finished — ~12 minutes at
+  post-T-68 speeds — so it looked dead and was diagnosed as dead while running
+  at 99.9% CPU. **`ps -C <name>` does not rescue you either:** these binaries
+  are copied to a scratch name before being backgrounded, so the process is
+  called `cy_t70` and `ps -C colony_years` matches nothing. Two habits follow,
+  and the first is the one that generalises: **make every long harness print a
+  flushed line before it starts work and after each expensive stage**, so mtime
+  is a real signal; and when checking by process, match on `ps -eo comm` for the
+  name you actually launched.
 - **Anything over ~10 minutes should be run locally**, which is what §7 already
   says about `min_time_search` being a by-hand job. Cutting sample count buys
   some room but does not fix it — a 45-minute run still lost the race.
@@ -338,12 +483,22 @@ cosmetic. It was not — **correcting it reordered the top of the ranking**:
 
 | knob | under the fraction | under colony count | confirmed? |
 |---|---|---|---|
-| `biosphere_regen_rate` | +0.84 ± 0.24 — third | **+141.2 ± 18.1 — first (7.8 SE)** | yes |
+| `biosphere_regen_rate` | +0.84 ± 0.24 — third | **+141.2 ± 18.1 — first (7.8 SE)** | yes — *but see below* |
 | `growth_rate` | +2.27 ± 0.50 — first | +73.8 ± 20.3 — second | yes |
 | `survey_reserve` | −0.13 ± 0.23 — flat | −23.8 ± 10.1 — "significant" | **no — false positive** |
 
 The top two genuinely swapped, and `growth_rate` was ratified while the
-fraction under-weighted the actual top lever. But **the third row is a sixth
+fraction under-weighted the actual top lever.
+
+**`biosphere_regen_rate` is now bit-identically inert, and T-67 is why.** The
+largest lever this project ever measured reports **exactly 0.0000** at ±10% on
+the current bed (`examples/tree_gradient`). It is not a weakened effect, it is no
+effect: since `K = min(hab, bio_max)` the ceiling is the *pristine* biosphere and
+regrowth only refills the standing stock, which §7 already records as slack
+(deleting the biomass draw outright reproduces the run bit-for-bit). The +141.2
+is a true record of the engine that measured it and is not a fact about this one.
+`center_mining_fraction`, `productivity_step` and `reinvest_bias` are flat the
+same way. But **the third row is a sixth
 artifact, and this one the corrected metric *created*** — a direct sweep of
 `survey_reserve` (`gradient_step --sweep-reserve`) shows the probe had the sign
 backwards: 1024 sits on a plateau (2048 is +3.5 ± 2.6, noise) with a cliff
@@ -358,12 +513,115 @@ exists: the screen proposed a direction, the confirmation refuted it, and no
 default moved. A correction to the metric fixes some readings and can
 manufacture others; both need the same confirmation step.
 
+**It happened again at R-O87, and this time there is a cheap method that settles
+it: replicate on seeds the candidate was not chosen against.** Sweeping
+`reinvest_bias` against work-years produced `b = 0.972` at **+2.33% ± 0.96 on
+the standard four-seed bed with 4/4 seeds positive** — which is 2.4 SE *and* a
+1-in-16 sign test, and looks like a result. On seeds 2, 3, 5, 11 it scores
+**−1.70% ± 2.42**, 1/4 positive. Pooled over all eight: **+0.32% ± 1.42.** Flat.
+
+Four runs refuted it, and they are worth more than four more runs on the same
+bed would have been: **a replication set cannot inherit whatever made the
+original four agree.** More seeds on the bed the candidate was selected on
+shrink the error bar around a number that was chosen partly *because* of those
+seeds; a fresh set does not. Make it the last step before moving any globally
+tuned default — `WY_SEEDS` in `examples/work_years` is the pattern.
+
+Two corroborations were available and both are cheap enough to be routine.
+**Sweep the neighbours**: `0.968` scored −0.20% ± 0.76 and `0.975` +2.24% ± 2.08
+on the same bed, so adjacent values swing the full magnitude of the "effect" in
+both directions — a chaotic reordering of a compounding run, not a gradient, and
+no point on it is a place to stand. And **ask whether the knob has a mechanism
+by which it could move the metric at all.**
+
+**That last question has a right and a wrong way to answer it, and I got it
+wrong first.** The answer I gave was an identity — deepening and founding buy
+exactly the same works per mineral — and it is true, and it is about **stock**.
+The knob's actual channel is **flow**: a colony is founded with a recycled hull
+and cannot keep improving that way, so deepening buys build *rate* forever.
+Priced off the engine's own functions that is **+29.0% hull/yr for nine
+colonisers at rung I → II, paid back in 62 years** against a 1,500-year horizon.
+The flat result had nothing to do with the identity.
+
+**A flat objective means the knob's mechanism is throttled somewhere, and the
+thing to measure is the utilisation of whatever the knob buys.** Here the knob
+buys yard throughput, and a homeworld's yard runs at **18.8% utilisation**:
+the gap from one production decision to the next is **1.5 yr after a committed
+build and 29.6 yr after an `Idle`**, because a declined build schedules nothing
+and waits out `cycle_years = 50`. **81% of the timeline is retry-wait**, so build
+rate governs a fifth of it and +29% on a fifth is +5.5% at best. That is T-88,
+and no objective would have found it — the number that did was a *ratio between
+two gaps*, which no aggregate carries.
+
+Three habits from it, and the first is the general one:
+
+- **Before concluding a knob is neutral, measure how much of the time the
+  resource it buys is even binding.** Utilisation is one division and it
+  distinguishes "this knob does nothing" from "this knob is fine and something
+  else is in the way" — which want completely different next actions.
+- **Separate stock from flow when you write the mechanism down.** An identity
+  over what a purchase *is worth now* says nothing about what it *earns later*,
+  and the second is usually where a compounding simulation's answer lives.
+- **Split an aggregate by what preceded it.** "Mean gap between decisions" was
+  6.7 yr and said nothing; the same data split by whether the previous decision
+  built or idled gave 1.5 against 29.6 and named the mechanism outright.
+
 **The general rule, which is the transferable part:** an objective must be
 invariant to everything the thing being optimized can change. Ask of any
 metric — *what could a card do to move this without moving the world?* If the
 answer is not "nothing", the metric is a target, not a measurement. This joins
 the artifact list below as a fifth shape, and it is the only one that would
 have gotten worse rather than better with time.
+
+### Rank knobs against every tree, and normalise to the default
+
+**Colony count is Expansion's objective and only Expansion's**
+(`Hyades_trees_and_card_value.md` §2.1). Every gradient in this file was ranked
+on it, and `work_years` has already caught it scoring a development regression as
+an improvement four times running. `examples/tree_gradient` ranks against a
+composite instead: **divide each tree's stock integral by its value at the
+shipped default and take the geometric mean.**
+
+Three properties, and the second is why it is worth the trouble:
+
+- The default scores exactly **1.0** by construction, and units cancel before the
+  average, so no tree's scale sets its weight.
+- **`ln S` is the arithmetic mean of the per-tree log-ratios**, so the composite
+  elasticity is *exactly* the mean of the per-tree elasticities. The
+  decomposition is free and reconciles by construction — §2's mix rule satisfied
+  rather than obeyed. Print the parts beside the whole.
+- Everything is dimensionless (% per %), so knobs and *trees* are both comparable.
+
+Three of the six trees are measurable (Expansion, Growth, Production); Warfare is
+an algebraic zero on the 3-seat bed, Politics is Expansion exactly, Technology is
+undefined — reasons in the harness docs and in trees §2.3. **Say which you left
+out and why**; a composite over an unstated subset is worse than a single metric.
+
+**First run, 32 knobs, 4 CRN seeds, 1,500 yr** — full raw per-seed dataset in
+`data/tree_gradient.tsv` (T-50), ranking and reversals under T-45. Four things
+that generalise past this operating point:
+
+- **The top three are cliffs, not gradients, and they are one knob.**
+  `general_vehicle_cost`, `medium_fleet_size` and `cargo_unit_size` all report
+  |elasticity| ≈ 4, an order of magnitude clear of the fourth — and each is a
+  ~50% collapse on one side against ~0% on the other. All three set the Medium
+  freighter's hold, which buys **exactly one infrastructure rung with a 2.3%
+  margin** (R-O90). **Always print `S(+δ)` and `S(−δ)` beside the elasticity**: a
+  central difference across a step reports a large number that is not a slope,
+  and the asymmetry is the only thing in the table that says so.
+- **Six knobs are *bit-identically* flat, and one of those is the instrument's
+  fault.** `risk_aversion` is `0.0` at the default, and a **multiplicative** step
+  of ±10% on zero is zero — the probe cannot move it at all. A zero from a
+  relative-step probe means "no path to the simulation" *or* "the knob is zero";
+  check which before recording an inert verdict.
+- **Cross-tree conflicts are the thing the composite is for**, and they exist:
+  `trade_decay_lambda` is +0.002 on Expansion and **−0.348 on Growth**, and
+  `fab_cap` is **+0.069 on Expansion against −0.221 on Growth**. λ is the largest
+  ratification in this project's history and it was measured on coverage alone.
+  A single-metric probe cannot see either.
+- **A "significant" elasticity is still local.** `cycle_years` (−0.598) and
+  `growth_rate` (+0.265) are the only two non-cliff findings above 0.2, and both
+  are already ratified values.
 
 ### Never leave an identified symptom without a proven mechanism
 
@@ -406,6 +664,51 @@ or a mechanism inferred from the sign of a gradient. And when the symptom is
 "X is slow" or "X is the limiter", the mechanism is never a *rate* — it is the
 gate, branch, or serial dependency that sets the rate. Keep going until you
 reach one.
+
+**A proven mechanism is not automatically the cause, and R-O68 is the worked
+example of the difference.** The dead deepen branch was proved three ways — the
+two sides measured, the branch counted, a characterization test pinning the
+crossover — and it was real. Fixing it changed **nothing**: the run is
+bit-identical below `reinvest_bias = 0.96` on both seeds, and the branch is
+still cold at the shipped `0.5`. The defect was genuine and it was not what was
+producing the symptom; the price ladder was (R-O85), and that only became
+visible once the units stopped hiding it.
+
+Two habits follow, and the second is the transferable one:
+
+- **Measure the fix against the old binary, not against the prediction.** Build
+  both, run the same seeds, diff the numbers. Here it took one `git stash` and
+  two binaries, and it is the only reason "this is a units fix, not a behaviour
+  change" is a statement rather than a hope.
+- **A dead branch can be the right answer reached for a wrong reason.** Before
+  reviving one, price what it would have chosen. Expansion returns 24–49x per
+  kilotonne against deepening at the shipped ladder, so the policy was correct
+  and its *reasoning* was not — and had the fix been landed without that check,
+  the next step would have been to tune a dial toward a decision the economics
+  say is bad.
+
+**And the actual cause was found by an instrument built for a different
+question** (R-O86). The survey harness printed `candidate_count`'s distribution
+only to justify a sentence in a doc comment, and the answer — **median 0, max
+164, against a `survey_reserve` of 1024** — said the reserve test is a constant
+`true` and, one step on, that `candidates.is_empty()` was pre-empting the only
+live deepen path. That was the thing keeping infrastructure at Band 1.03, not
+the comparison and not (yet) the ladder.
+
+Three habits, and the last one is the one that would have saved the most time:
+
+- **Print the distribution of what a threshold is compared against, not just the
+  threshold.** One column. It converted a plateau this file had already recorded
+  as an unexplained measurement artifact into a one-line mechanism.
+- **Check whether a predicate means what its name says.** `candidate_count` is
+  "known and still available"; the survey question is "anything left to
+  explore". Those coincide early and diverge permanently, and nothing in the
+  types could tell them apart — both are `usize`.
+- **Ask what fraction of a busy path produces nothing.** The engine spent 99% of
+  its production issuing builds that created no object. Profiling cannot see
+  that: every one of those builds really ran. The tell is a count that does not
+  reconcile — 1,779,509 `BuildApplied` against 18,093 hulls — and nothing was
+  comparing the two until a census happened to print both.
 
 ### The artifact pattern — four of them, one shape
 
@@ -456,6 +759,52 @@ ablations named the cause anyway — seed mass, not hull, not price, not transit
 `CLAUDE.md`'s ordering held: ablation refutes, instrumentation explains, and a
 metric that disagrees with an ablation is the metric's problem to answer for.
 
+### Decompose a rate into stock and per-unit before explaining it
+
+**R-O89's rejected arm is the worked example, and it refuted three plausible
+mechanisms in one table.** Need-routing the freight *pickup* leg cost −52.3% work
+-years, which reads as "hauling got worse". It did not:
+
+| | baseline | need-routed pickup |
+|---|---|---|
+| round trip | 123.77 yr | **109.24 yr** — *shorter* |
+| trips per active hauler | 1.84 | **1.87** — *unchanged* |
+| retirements to Reserve | 14,828 | 14,520 — *unchanged* |
+| **active haulers** | **1,946** | **988** — *halved* |
+
+Every per-unit measure is flat or better and the aggregate fell by half, because
+the *population* moved. This is §2's mix rule (an aggregate over a set the
+treatment re-selects) in its performance costume, and the decomposition is always
+the same one: **`total = population × rate`, and you must print both.** A rate
+that improves while the total collapses is not a paradox, it is a headcount
+problem — and the two want opposite fixes.
+
+Three habits from it:
+
+- **Bucket by time before concluding anything about a compounding run.** The two
+  arms are within noise until year 500 and diverge from there — which named the
+  trigger (the router first has a *choice* once a player works many rocks)
+  without any further instrumentation. A run-total would have said nothing.
+- **Check the filter matches the state at logging time.** Counting freighter
+  retirements on `VehicleParked { role: Role::Freighter }` returned **zero** in
+  both arms and read as "nothing ever retires"; `release_to_reserve` re-roles the
+  hull to `Role::Reserve` *before* it logs. A filter that silently matches
+  nothing is indistinguishable from a real negative result, so sanity-check every
+  new counter against something you already know is non-zero.
+- **Stop at the boundary and say so.** Three mechanisms were refuted and the
+  fourth — why the fleet stops growing — is *not* established. The candidate that
+  fits the sign (a need-routed pickup breaks the 1:1 miner↔hauler pairing) is
+  exactly the shape of all seven artifacts above. It is recorded as open under
+  T-76 rather than written down as the cause; the arm is not shipped, so nothing
+  depends on it.
+
+**And the 2×2 is why the good half survived.** Selective loading is **+8.4%** and
+pickup routing is **−52.3%**; run together they score −41.2%. Landed as one
+change, the whole thing reverts and the +8.4% is never found. **When two
+independent changes address the same diagnosis, ablate them apart before you
+believe either** — `CLAUDE.md`'s "ablate before you explain", applied *before*
+there is anything to explain.
+
 ### CI gates
 
 `.github/workflows/ci.yml` runs on every push and PR. Before you push, the four
@@ -494,7 +843,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
 | `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement` |
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |
-| `src/matching.rs` | the Exchange (order-book matching) — **built, not yet wired into `lib.rs`** |
+| `src/matching.rs` | the Exchange (order-book matching) — wired in at T-01; **it was never in the module list, so it did not compile as part of the crate and its tests never ran in CI** |
 | `src/log.rs` | optional diagnostic event log (the interrogation seam) |
 | `src/snapshot.rs` | read-only views for the presentation layer |
 
@@ -816,6 +1165,43 @@ one, stop and flag it.
 
   If a change genuinely touches no spec, say so explicitly in the PR body. Silence
   reads as an oversight, because usually it is one.
+- **Every PR accounts for its T-codes and for every ratified decision it touches.**
+  Two lists in the body, and the second is the one that matters:
+
+  1. **Tasks.** Which `T-nn` this **closed**, which it **advanced** without
+     closing, and which it **opened**. A staged plan (`Hyades_industry.md` §6.7,
+     politics §10.7) is only navigable if each landing says where in it you now
+     are — and a T-code claimed as done that is only half done is worse than an
+     open one, because nobody re-reads it.
+  2. **Ratified decisions implemented or contradicted.** Every R-code, design
+     law and ratified magnitude the change **satisfies**, and every one it
+     **contradicts or invalidates** — named, with the resolution.
+
+  **The contradiction half is the whole point.** `docs/` is authoritative only
+  for as long as nothing lands that quietly disagrees with it; one unannounced
+  contradiction and the next reader cannot tell which of the two to believe, so
+  they must re-derive everything or trust nothing. Both are worse than a
+  sentence in a PR body.
+
+  Contradiction is **not** a reason to stop — this project has landed several on
+  purpose, and they were the good changes:
+
+  | Kind | Example | What the PR had to say |
+  |---|---|---|
+  | A ratified value stops meaning anything | `miners_per_outpost = 3` (+2.74% colony-years, every seed positive) retired at T-72, and its replacement retired at T-87 | *why* the measurement no longer applies — it was taken under a law with no deposit term at all |
+  | A prediction in a spec is measured false | §4.5's "fewer, larger, closer" — larger and closer held, **fewer did not** | which half failed, and that site count is `rank`'s decision and not this section's to make |
+  | A stated dependency has since landed | R-P16 shipped the `$` faucet against an infrastructure placeholder *because* T-74 had not landed | that it **resolves** rather than ships — the placeholder was never wanted, only unavoidable |
+  | A spec formula is arithmetically wrong | §4.3's `ε·S·W` double-counts the deposit, so output goes as richness squared | the corrected form, and that every *ratio* the section asserts survives it (R-IND19) |
+  | A ratified default is knowingly moved against the metric | `miner_vein_fraction`, then its deletion | the measured cost, and that it is a design call the objective cannot price |
+
+  **Landing one silently is the defect.** Say which decision, why it no longer
+  holds, and what replaces it — then mark it resolved where it is listed, which
+  the bullet above already requires. A contradiction that is argued is a
+  ratification; one that is not is a divergence nobody knows about yet.
+
+  It also catches bookkeeping faults cheaply: T-83 was used for two different
+  things in one session because no landing had been asked to enumerate its
+  codes, and the collision surfaced only when the second one was read back.
 - **Make concrete decisions; flag open questions as R-codes.** A decision plus a
   flagged R-code beats an open-ended clarifying question. Existing families:
   `R-MC*` (mineral cost / combat), `R-L*` (loadout), `R-ARENA*`, `R-MX*` (matching),
@@ -1018,12 +1404,47 @@ changes how you *work*, not what is left to do:
   | + T-64 (logistic on mass, no conversion in the step) | 23,227 | 42 yr/s | 17× |
   | post-R-O70 bed, 3 seats, 4 kyr | ~14,700 | 183–217 yr/s | ~79× |
   | **T-68 (`t_build` tracks hull mass), same bed** | — | **10–11 yr/s** | **~4×** |
+  | T-70/73/74 bed (`slips ≡ 1` ablation), 3 seats, 4 kyr | 24,470–25,984 | 9.0–9.7 yr/s | 3.6–3.9× |
+  | **T-69 (yards fill every berth), same bed** | 25,200–25,523 | **6.6–7.3 yr/s** | **2.6–2.9×** |
+  | T-71/T-72 (crowding, `f = 0.07` crews) | 37,269–37,706 | 9.8–9.9 yr/s | 3.9–4.0× |
+  | **T-87 (crew from demand)** | **23,258–24,801** | **8.5–9.0 yr/s** | **3.4–3.6×** |
+  | R-O86 bed *(same machine, same session)*, before | — | 14.9 yr/s | 6.0× |
+  | **R-O86 (a scout needs somewhere to scout), same pair** | — | **83–98 yr/s** | **33–39×** |
+
+  **R-O86's row is the largest speedup in this table and it came from deleting
+  work, not from optimising it** — which is why it is worth more than its
+  multiple. At the 4,000-year horizon the engine was issuing **1,779,509 hull
+  builds to produce 18,093 hulls**: `apply_build_with` debits the bank and holds
+  the yard *before* dispatching the role, and `launch_survey` spawns nothing when
+  the frontier is empty, so 99.0% of all production spent minerals and berth-time
+  on an object that never existed. Colony count is *identical* across the fix
+  (3,340) and colony-years move **+0.007%**. **Before optimising a hot path, check
+  what fraction of the work it does is producing nothing** — no amount of profiling
+  would have found this, because every one of those builds was genuinely running.
+
+  **T-87's row is the first with `ns/event` beside it, and it is the number to
+  look at**: 173,886 and 176,747 ns/event on seeds 1 and 7. **174 microseconds
+  per event** is the real story that `yr/s` was hiding — the engine is not slow
+  because it processes many events, it is slow because each one is expensive.
+  That points at the production candidate scan (T-52, still `O(scanned)` and the
+  largest loop left), not at entity count. Every throughput figure from here
+  should carry this column.
 
   **T-62 halved it, and the mechanism is hauling — not vehicles and not mining**
   (`examples/haul_census`). Vehicles rose 1.20× and extraction ticks 1.02×, but
   **freighter transfers rose 6.81×** because the log-normal field made the same
   rocks hold 2,256× the ore and a freighter's hold is a fixed size. Cost is
   proportional to ore hauled, not to worlds mined.
+
+  **T-69 is the first row where throughput moved and entity count did not.**
+  Seed 7 carries *fewer* vehicles under T-69 (25,200 against 25,984) and runs
+  27% slower. The cost is **decision count**: every commit schedules its own
+  `BuildDecision`, so a yard with `k` berths raises `k` events where it raised
+  one, and the fill loop re-runs the candidate scan per berth. Worth having as a
+  second shape — the table's standing lesson is "entity count is the
+  first-order cost", and that is still true as a default and was false here.
+  **Check it rather than assuming it**, the same way §2 says to check a
+  neutrality claim against the code.
 
   **T-68 took ~19x of it in one change, and that is the live problem.** Making
   `t_build` track hull mass dropped a Medium hull from 10 yr to 3.0, so yards
@@ -1188,16 +1609,78 @@ changes how you *work*, not what is left to do:
   decimal and a performance change is provably behaviour-preserving.
 
   **And the time constant now has a proven mechanism, not just a name (R-O68,
-  T-51).** `production_choice` prefers depth when `b · deepen_headroom ≥
-  (1 − b) · score`, and those sides are in different units — a Band difference
-  bounded by 4 against `rank`'s unbounded weighted score. Measured
-  (`examples/score_scale`): colony-class scores run p05 4.40 / median 6.17 /
-  max 12.16, and the branch compares against the *max*, so depth wins only at
-  `b ≳ 0.8`. **At the shipped `reinvest_bias = 0.5` the branch cannot fire while
-  any candidate exists** — it is inert below ~0.8 and a hard switch above, a
-  step function wearing a dial's clothes, with no graded region for a search to
-  climb. Same root cause as the `K` unit error one section up: a comparison
-  between incommensurable quantities, with a constant absorbing the mismatch.
+  T-51 — both now closed).** `production_choice` preferred depth when
+  `b · deepen_headroom ≥ (1 − b) · score`, and those sides were in different
+  units — a Band difference bounded by 4 against `rank`'s unbounded weighted
+  score. Measured (`examples/score_scale`): colony-class scores run p05 4.40 /
+  median 6.17 / max 12.16, and the branch compares against the *max*, so depth
+  won only at `b ≳ 0.8`: a step function wearing a dial's clothes, with no
+  graded region for a search to climb. Same root cause as the `K` unit error one
+  section up.
+
+  **And the knob cannot move Growth's own objective either, by identity
+  (R-O87).** Work-years is `∫ Σ_p infra_p dt`, and the two things
+  `reinvest_bias` chooses between are worth the same to it: deepening bills
+  `infra_step_price / eta_works` and raises works by `infra_step_price`, while
+  founding bills the coloniser's price and the new colony's stock is
+  `founding_infra = hull_cost` — the recycled hull's minerals *are* the stock
+  (T-70) because a hull's mass is its cost (R-O57, design law #11). At the
+  card-free `eta_works = 1` those are identical to the last bit, at every rung,
+  and `a_mineral_buys_the_same_works_whether_it_deepens_or_founds` pins it.
+  Measured to match: **+0.32% ± 1.42 over eight seeds** at 4,000 yr. It stays at
+  **0.5**, and the lever it is not is `eta_works` — which divides the deepening
+  bill and nothing else, so a Production card genuinely does make a mineral buy
+  more works.
+
+  **Both sides are now `rank` score per kilotonne committed** —
+  `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`, using
+  `rank`'s own weight rather than a new constant — so the comparison is an odds
+  ratio with a state-dependent crossover. And the result is the lesson: the run
+  is **bit-identical below `b = 0.96`** on both seeds (`examples/deepen_census`),
+  the old cliff at 0.9 moved to 1.0, and **the branch is still cold at the
+  shipped `0.5`**. The infra rung above the founding one costs 0.9 kt against a
+  Medium coloniser's 0.10 kt, `fabrication_rate` saturates by rung II, and
+  `slips` is pinned at 2 from rung I onward because `fab_cap / slip_throughput =
+  2` — so expansion returns 24–49x per kilotonne and *should* win. **The dead
+  branch was the right answer reached for a wrong reason**, and the cause moved
+  to the price ladder (R-O85/T-89) rather than going away.
+
+  **And that `slips` figure was a spec contradiction, not a design magnitude
+  (R-O88, now resolved).** §3.2 says the build-wide axis "scales without limit";
+  §6.3 bounded `F` by `fab_cap`; `slips` read `F`. So the axis was **closed at
+  two berths** — 10¹² kt of infrastructure still bought two — and homeworlds are
+  *generated* past the only step it had. §6.3's reconciliation ("the bound is per
+  yard, and an empire has many yards") answered a question about the empire
+  total, not about a centre's berth count, and is withdrawn.
+
+  **The fix was to notice that one variable was doing two jobs.** `fab_cap` now
+  bounds the rate **per berth** (quality) and `slips` reads the fabrication share
+  of the **stock** (quantity, unbounded) — so both sections are true at once and
+  §5.3's tree table reads off the engine directly: Production buys fast berths,
+  Expansion buys many slow ones. Berths at rung II went 2 → 17; **fleet-years
+  +26–34%** on both seeds, colony count flat (the bed is `k_high`-saturated, so
+  more yard cannot buy worlds the classifier does not admit), and **throughput
+  *improved* 88.7 → 110.7 yr/s** because a quarter of the events had been
+  decisions that declined and stalled.
+
+  Three things from it worth keeping:
+
+  - **When two ratified claims collide, check whether one symbol is carrying two
+    meanings before you pick a winner.** `F` was a per-planet rate *and* the
+    berth currency. Splitting it cost one function and contradicted neither
+    section — where choosing between them would have contradicted one.
+  - **A re-denomination is not a retune, and it is worth engineering for.**
+    `fab_cap` 0.2 → 0.1 reproduces the old per-berth rate *bit-for-bit* because
+    the old `slips` was always exactly 2, so turnaround did not move at all and
+    the only behavioural change in the landing is berth count. That is what makes
+    the measurement readable.
+  - **The cost landed in the test targets, not in throughput** — unit 19 → 54 s,
+    determinism 30 → 58 s — exactly as §2 predicts, and both were fixed in the
+    same commit. `full_run_reports_are_bit_identical` got a **per-seat-count**
+    horizon rather than a uniform one: cost goes as seats × years, so one horizon
+    for everybody made the 18-seat arm pay for the target while the 2-seat arm
+    ran 812 events. Equalising was **cheaper and covered more**. When a shared
+    horizon feeds arms of very different size, that is the trim to reach for.
 
   So the loop's time constant is the **unconditional pre-`medium_min_level`
   staircase** — found at `K = 1` with no headroom, then serially mine
@@ -1222,6 +1705,57 @@ changes how you *work*, not what is left to do:
   sweeping harder: check whether a term is absent; then measure the gradient
   rather than the grid; then **re-measure it after you step**, because the
   direction you just spent is not the direction you are now standing in.
+
+  **And the whole mineral side of that argument has one cause, measured
+  three ways** (`Hyades_industry.md` §6.17). Colonies sat at **Band 1.05
+  against a ceiling of 3.60, with zero at cap and 756 Bands unbuilt** while the
+  empire banked the ore to build it. It was read as R-O68's dead deepen branch;
+  closing R-O68 left the number unmoved, and **R-O86 then moved it to Band
+  1.462** by unblocking the `outward == None` fallback that a survey pre-emption
+  had been swallowing. Still zero at cap against a 3.61 ceiling, so the residual
+  cause is **the price of a rung** (R-O85).
+
+  **And R-O85 — "infrastructure is priced out of reach" — is resolved as false
+  (§6.19c).** Post-R-O88 the ladder is **scale-free**: cost and output are both
+  geometric in the stock, so a rung pays for itself in **1.8 years at every
+  rung**. Counted per decision on the bed, **0%** are gated at the ceiling,
+  **0.7–0.9%** are outbid — so R-O68's crossover, which three sections of that
+  document circled, is consulted in one decision per hundred and cannot have been
+  causing anything — and **98.3% simply cannot pay the bill**, of which
+  **43.8–46.6% of *all* decisions hold the total and lack a colour.**
+
+  **So the mineral economy's binding constraint is freight**, and the chain of
+  four investigations that ended there is itself the lesson: units (R-O68),
+  survey waste (R-O86), works identity (R-O87), the build-wide axis (R-O88) and
+  the price ladder (R-O85) were each real and none was the cause. **What finally
+  named it was logging the decision's own predicate instead of reconstructing
+  it**: `can_afford_infra` is a per-colour test, and inferring it from a *total*
+  reported 44.7% "outbid" where the truth is 0.9%. A reconstruction that looks
+  arithmetically equivalent is not, when the thing it reconstructs is a
+  conjunction over three colours.
+
+  **So every flat mineral-side result this project has recorded is downstream of
+  the same thing** — `outpost_mining_fraction`, both crew policies, and the
+  Exchange. Two things follow and the second is the transferable one. **They were
+  blocked on freight moving colour (T-76), not on price or policy**, and
+  re-measuring any of them before that landed measured the same wall again.
+
+  **It has now landed, on the load leg (R-O89, `Hyades_industry.md` §6.20).** A
+  hauler fills against the destination's colour deficit instead of in proportion
+  to the pile it happens to be standing on — **+8.40% ± 1.86 work-years, 8/8
+  seeds, replicated on four the candidate was not chosen against** — and it does
+  it on *the same tonnage*: 20,259 → 20,292 kt over 26,800 → 26,746 trips. Same
+  fleet, same trips, same round trip to two decimals; only the colours in the
+  hold changed. **That is the cleanest confirmation of a diagnosis this project
+  has produced** — the census said the constraint was colour composition, and a
+  change touching nothing but colour composition moved the objective. The block
+  above is lifted; each of those knobs is now its own re-measurement. And:
+  **a metric that reads a decision's output cannot tell you what the decision
+  declined to ask for** —
+  `unmet_colour_demand` summed each centre's shortfall against its *next* rung,
+  so a centre with three Bands of headroom it never tried to buy reported zero
+  demand, and the first conclusion drawn from it ("the economy has no demand
+  side") was exactly backwards.
 
   **Diminishing returns are visible, and the cause is now known.** +23.9, then
   +11.0, then +2.3 points. It is not that the economy ran out of headroom:

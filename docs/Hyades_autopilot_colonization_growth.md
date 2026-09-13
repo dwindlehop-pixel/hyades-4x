@@ -68,7 +68,7 @@ in particular — and that at least one of them (`medium_fleet_size`) already
 sits at a value **ratified for the opposite effect** on the coverage
 objective.
 
-**R-AC4:** scan dwell-time and any close-scan range. **R-AC16 (resolved):** `Doctrine::survey_reserve`, the frontier size a center tries to keep ahead of itself before spending an otherwise-idle cycle on a scout. **1024**, ratified with the snowball defaults — survey has to scale with the empire or expansion outruns its own map. The knob is deliberately monotone (see §6a) so the offline search can refine it without risk of the collapse an earlier pre-emptive version produced.
+**R-AC4:** scan dwell-time and any close-scan range. **R-AC16 (resolved, and the value is inert — R-O86):** `Doctrine::survey_reserve`, the frontier size a center tries to keep ahead of itself before spending an otherwise-idle cycle on a scout. **1024**, ratified with the snowball defaults — survey has to scale with the empire or expansion outruns its own map. The knob is deliberately monotone (see §6a) so the offline search can refine it without risk of the collapse an earlier pre-emptive version produced. **But it is compared against a quantity whose median is 0 and whose maximum is 164**, so at 1024 the test is a constant `true` and every value above ~200 is bit-identical (§6b). The ratification is not wrong about the *direction*; the magnitude simply does not reach the simulation, and the real precondition for a scout is `survey_frontier`, not this.
 
 > **Renumbered from R-AC18 — an ID collision, not a revision.** This question
 > and main's R-AC18 (*should the Colony class have a K floor at all*) were
@@ -276,7 +276,8 @@ Within a cycle the preference order is:
 1. **Deepen** toward `K`, if `reinvest_bias` favors depth and the upgrade is funded.
 2. **Expand** — colony vehicle or mining pair, by rank (§§4–5) — if funded.
 3. **Survey**, as a *fallback* for a cycle that would otherwise be spent Idle,
-   when the known frontier is below `survey_reserve` and a scout is affordable.
+   when there is **unexplored galaxy left** and the known frontier is below
+   `survey_reserve`, and a scout is affordable.
 4. **Idle** (save toward whichever of the above was preferred but unfunded).
 
 **Survey is a fallback, never a pre-emption**, and that ordering is load-bearing.
@@ -286,6 +287,80 @@ colonies while 4,096 collapsed to 3, because every center scouted every cycle an
 none ever colonized. As a fallback the knob is monotone — raising it converts idle
 cycles into survey and cannot starve expansion. The one exception is an empty
 candidate list, where survey outranks everything because nothing else is possible.
+
+### 6b. Both survey tests read the wrong quantity, and it cost 96% of production (R-O86)
+
+**`candidate_count` is not the exploration question, and `survey_reserve` never
+fires.** Measured (`examples/survey_timing`, seed 1, 600 planets / 1,500 yr) the
+count of *known, unclaimed, non-Barren* worlds has a **median of 0** and a
+maximum over the entire run of **164**, against a ratified `survey_reserve` of
+**1024**. The predicate `candidate_count < survey_reserve` is therefore a
+constant `true`, and every value above ~200 is bit-identical — which is exactly
+the plateau `CLAUDE.md` §2 records as a measurement artifact (2048 reads as
+noise; 512 / 256 / 64 fall off a cliff). A threshold sitting above the whole
+range of the thing it thresholds is not a knob.
+
+That median of 0 is the more important half. `candidate_count` goes to zero the
+moment everything *scanned* is owned or already targeted, which in a colonised
+galaxy is the common case and says nothing about whether exploring would help.
+So both survey paths fired almost always:
+
+- the `candidates.is_empty()` **pre-emption**, justified in the code by "no
+  candidates means every other branch below returns Idle" — **false**, and
+  load-bearing: the branch it pre-empts is the `outward == None` deepen
+  fallback, the only deepening path above `medium_min_level` that runs at the
+  shipped `reinvest_bias`;
+- the `survey_fallback`, taken whenever a centre could not afford its preferred
+  build.
+
+**And the hull was never built.** `apply_build_with` debits the bank and holds
+the yard *before* dispatching the role, and `launch_survey` spawns nothing when
+`choose_survey_target` returns `None`. So the order destroyed mass rather than
+converting it — a design law #11 violation on the engine's busiest path. The two
+counts reconcile it: **484,136 hull builds against 258 scouts that actually
+existed.**
+
+**The fix is one quantity.** `ProductionContext::survey_frontier` — worlds no
+craft has been dispatched to, the set `launch_survey` actually picks from,
+counted `O(1)` off `VisitedMask`. Both survey tests now require it non-zero, and
+`apply_build_with` declines a Scout order on an empty frontier under the same
+contract it already states for a hull with no job.
+
+**Measured** (`examples/deepen_census`, 3 seats, `reinvest_bias = 0.5`):
+
+| | seed 1 before | seed 1 after | seed 7 before | seed 7 after |
+|---|---|---|---|---|
+| hull builds | 484,136 | **18,066** | 512,499 | **16,201** |
+| infrastructure builds | 88 | **620** | 83 | **565** |
+| mean infrastructure | Band 1.028 | **1.188** | 1.026 | **1.170** |
+| colonies | 3,309 | 3,311 | 3,334 | 3,334 |
+| colony-years | 2,540,752.7 | 2,541,260.7 | 2,608,344.6 | 2,605,834.7 |
+| wall clock (1,500 yr) | 66.0 s | **13.8 s** | 74.1 s | **14.4 s** |
+
+And at the **full 4,000-year objective horizon**, same machine, same session,
+`reinvest_bias = 0.5`:
+
+| | seed 1 before | seed 1 after | seed 7 after |
+|---|---|---|---|
+| hull builds | **1,779,509** | **18,093** | 16,207 |
+| infrastructure builds | 88 | **1,539** | 1,445 |
+| mean infrastructure | Band 1.027 | **1.462** | 1.432 |
+| colonies | 3,340 | **3,340** | 3,349 |
+| colony-years | 10,877,084.4 | **10,877,821.2** | 10,969,501.8 |
+| wall clock | 268.8 s (14.9 yr/s) | **48.1 s (83.2 yr/s)** | 40.8 s (98.0 yr/s) |
+
+**99.0% of everything the empire built at the objective horizon was a hull that
+never existed.** The objective does not move when that stops: colony count is
+*identical* (3,340) and colony-years differ by **+0.007%**. What moves is
+throughput — **5.6x**, which is the largest single engine speedup this project
+has measured and it came from deleting work, not optimising it — and depth:
+infrastructure builds rise **17.5x** because the deepen fallback is finally
+reachable.
+
+Two things it does **not** do. It does not revive the `reinvest_bias` dial — the
+price ladder (R-O85) still puts the crossover between 0.96 and 0.98, unchanged.
+And it does not close R-O85's sink: **Band 1.462 against a ceiling of 3.612** is
+better than 1.028 and still nowhere near it, with **zero colonies at cap**.
 
 **Deepening uses headroom, not whole levels.** The guard is `infra < k_potential`,
 not `infra + 1 <= k_potential`. Since `K = min(hab, bio_max, infra)`, letting infra
@@ -312,7 +387,9 @@ Survey is not the limiter and neither is the economy. Only **11–41 worlds per 
 
 **The lever on the time constant is the deepen-versus-expand allocation, and the trade it is supposed to make does not exist (R-O68).** R-O66's whole measured effect was that a corrected `k_potential` hands centers real deepening headroom, which they spend instead of building colonizers: mean infra 1.420 → 1.443, mean `K` 1.418 → 1.430, 199 fewer colonies on seed 1.
 
-Pushing that to the code finds a dead branch. `production_choice` prefers depth when `b · deepen_headroom ≥ (1 − b) · score`, and **the two sides are in different units** — a Band difference bounded by 4 on the left, `rank`'s unbounded weighted score on the right. Measured (`examples/score_scale`, seed 1) colony-class scores run p05 4.40 / median 6.17 / max 12.16, and the branch compares against the *maximum* since `outward` takes the best candidate, so depth wins only at `b ≳ 0.8`. **At the shipped `reinvest_bias = 0.5` this branch never fires while any candidate exists.** `reinvest_bias` is inert below ~0.8 and a hard switch above it — a step function, not a dial, and nothing a search can climb.
+Pushing that to the code found a dead branch. `production_choice` preferred depth when `b · deepen_headroom ≥ (1 − b) · score`, and **the two sides were in different units** — a Band difference bounded by 4 on the left, `rank`'s unbounded weighted score on the right. Measured (`examples/score_scale`, seed 1) colony-class scores run p05 4.40 / median 6.17 / max 12.16, and the branch compares against the *maximum* since `outward` takes the best candidate, so depth won only at `b ≳ 0.8`. `reinvest_bias` was inert below ~0.8 and a hard switch above it — a step function, not a dial, and nothing a search could climb.
+
+**R-O68 is now resolved, and resolving it moved the diagnosis rather than the behaviour** (`Hyades_industry.md` §6.18). Both sides are now `rank` score per kilotonne committed — `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`, with `w_k` being `rank`'s own weight on a Band of `k_potential` — so the comparison is an odds ratio with a state-dependent crossover. Measured (`examples/deepen_census`, seeds 1 and 7) the run is **bit-identical below `b = 0.96`**; the old form's cliff at 0.9 had nothing working past it and the new crossover sits between **0.96 and 0.98**, where 0.97 and 0.98 are working empires that genuinely deepen. **The branch is still cold at the shipped `0.5`, and the reason is a price**: an infra rung above the founding one costs 0.9 kt against a Medium coloniser's 0.10 kt, so expansion returns 24–49x per kilotonne and ought to win. **The dead branch was the right answer reached for a wrong reason**, and what to do about the price ladder is R-O85/T-89.
 
 So all real deepening runs through the **unconditional pre-`medium_min_level` staircase** instead, which is also where R-O66's whole effect landed (it moved `deepen_possible`, which gates the staircase). The expansion-loop time constant is that staircase: found at `colony_seed_pop = 1` with `infra = 1` so `K = 1` and no growth headroom, then serially mine `round(infra)+1` minerals → deepen → grow past the level-3 `PopBands` edge → afford `colonizer_cost` → fly, every step quantized to `cycle_years = 50`. **Several of those gates are integers and one — the infra cost ladder — is not a parameter at all**, which is why an all-continuous gradient probe has never ranked them. T-51 carries the work. Two consequences worth stating. ~~The threshold is **not quite a fixed set**: population is paid for out of biosphere (L6) and `k_potential = min(hab, bio)`, so 240 / 207 / 286 / 275 worlds per seed end the run below a gate they started above — a settled world can drop out of the class that made it settleable.~~ **Corrected by R-O66: the threshold *is* a fixed set.** That erosion was the unit error, not a design property — `k_potential` was reading the biosphere's *standing mass* against two Band levels, so a world's classification fell as its own population ate it. It now reads `bio_max`, which nothing in the shipped engine moves, and `examples/reach_limit.rs`'s `gate_erosion` counter is structurally zero. It is kept as a **guard** rather than deleted: the first card that lowers a world's pristine biosphere makes the denominator playable again, which is exactly the failure mode CLAUDE.md's rule about metric denominators exists to catch. And lowering the gate to widen the ceiling directly shrinks the Mining-outpost class that funds expansion — the R-AC17 failure, run in the other direction. **R-AC18:** should the Colony class carry a K floor at all, or should `k_high` order *preference* rather than gate *eligibility*? The ceiling curve is in T-20; the two knobs must move together.
 

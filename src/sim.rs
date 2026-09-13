@@ -61,6 +61,7 @@ use crate::autopilot::{
 use crate::cards::{self, CardEffect, Order, Target};
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
+use crate::matching;
 use crate::math::{self, Vec3, G};
 use crate::resources::{Archetype, Basic, MineralField, Minerals};
 use crate::rng::Rng;
@@ -114,6 +115,16 @@ impl<T> ComponentStore<T> {
     fn remove(&mut self, e: Entity) -> Option<T> {
         self.items.get_mut(e.0 as usize).and_then(|o| o.take())
     }
+
+    /// Get the component, creating it from `f` if absent. Added for T-69's
+    /// berth list, which is grown one entry at a time rather than written whole.
+    fn entry_or_insert_with(&mut self, e: Entity, f: impl FnOnce() -> T) -> &mut T {
+        let slot = self.slot(e.0 as usize);
+        if slot.is_none() {
+            *slot = Some(f());
+        }
+        slot.as_mut().unwrap()
+    }
 }
 
 /// Marker tag for homeworld planet entities.
@@ -159,13 +170,25 @@ struct Factors {
     /// of times a run, for a quantity nothing has changed since galaxy
     /// generation. Identical value, computed once (R-O70).
     bio_max_band: Band,
-    /// Built infrastructure. Integer-valued; deepened one level at a time.
-    infra: Band,
+    /// **Built infrastructure, stored as the minerals standing in it**
+    /// (`Hyades_industry.md` §1.3, T-70).
+    ///
+    /// It is a `Price` rather than a `Band` because a **Band is a reading, not a
+    /// second thing to store** (`CLAUDE.md` §4) — and because the infrastructure
+    /// ladder *is* the mineral ladder (R-O80), so the reading has to be taken on
+    /// the **Cost** scale. `Price` is kilotons carrying that scale marker, which
+    /// is what satisfies §1.3's "stored as a mass in kilotons" without silently
+    /// moving every infrastructure threshold onto the mass ladder, where the
+    /// rungs are `^1.5` apart and every gate would mean something different.
+    ///
+    /// Read the rung with [`Factors::infra_band`]; never `in_bands()`, which
+    /// would take it on the wrong ladder.
+    infra: Price,
 }
 impl Factors {
     /// Build a set of factors, deriving the cached Band reading of `bio_max`.
     #[inline]
-    fn new(hab: Band, biomass: Kilotons, bio_max: Kilotons, infra: Band) -> Factors {
+    fn new(hab: Band, biomass: Kilotons, bio_max: Kilotons, infra: Price) -> Factors {
         Factors { hab, biomass, bio_max, bio_max_band: bio_max.in_bands(), infra }
     }
 
@@ -238,6 +261,19 @@ impl Factors {
     #[inline]
     fn k_potential(&self) -> Band {
         self.k()
+    }
+
+    /// **The infrastructure rung, read off the stock** — the one place the
+    /// Cost-ladder reading is taken (T-70).
+    ///
+    /// `infra` is stored as the minerals standing in it, so the rung is a `ln`
+    /// away. That is a conversion and conversions are not free (`CLAUDE.md` §4:
+    /// `band()` is 2.2x an arithmetic op), so call it at the **edges** — a
+    /// production decision, a log line, a view — and never inside a loop over
+    /// entities.
+    #[inline]
+    fn infra_band(&self, cfg: &SimConfig) -> Band {
+        self.infra.band_from(cost_anchor(cfg))
     }
 }
 
@@ -324,6 +360,8 @@ struct Knowledge {
 #[derive(Clone, Debug, Default)]
 struct VisitedMask {
     bits: Vec<bool>,
+    /// Count of `true` bits, maintained on insert. See [`Self::len`].
+    set: usize,
 }
 
 /// A sorted, deduplicated set of planet ids, kept in a contiguous `Vec` so
@@ -381,12 +419,31 @@ impl VisitedMask {
         if i >= self.bits.len() {
             self.bits.resize(i + 1, false);
         }
-        self.bits[i] = true;
+        if !self.bits[i] {
+            self.bits[i] = true;
+            self.set = self.set.saturating_add(1);
+        }
     }
 
     #[inline]
     fn contains(&self, pid: PlanetId) -> bool {
         self.bits.get(pid.0 as usize).copied().unwrap_or(false)
+    }
+
+    /// **How many planets are flagged.** A running count rather than a walk,
+    /// because a production decision asks it and §4's rule is that per-decision
+    /// work must be `O(what the decision reads)` — counting 6,725 bools per
+    /// decision is exactly the shape of the `holdings_centroid` fault.
+    ///
+    /// A running total is safe *here* and is not in general: the
+    /// `holdings_centroid` memo had to store the recomputed value because float
+    /// addition is not associative, so an accumulation in claim order differs
+    /// in its last bits from a walk in planet-id order. This is an integer
+    /// increment on a set-once flag, so it is exact and order-independent by
+    /// construction — the same argument does not transfer to a float.
+    #[inline]
+    fn len(&self) -> usize {
+        self.set
     }
 }
 
@@ -861,16 +918,307 @@ fn cost_anchor(cfg: &SimConfig) -> f64 {
     cfg.general_vehicle_cost / units::COST_LADDER[1]
 }
 
+/// **Workable veins in a deposit** — `N(S) = veins_per_band^(band(S) − 1)`
+/// (`Hyades_industry.md` §4.2, T-71).
+///
+/// Two miners cannot work the same vein, so capacity beyond the first must open
+/// another one and the best veins go first. That makes extraction *sublinear* in
+/// crew — Lanchester's lesson with the sign reversed, because sites are
+/// exclusive where fire concentrates. But **crowding is relative to the body**:
+/// a bigger deposit has more veins, so `n` miners crowd a pebble and rattle
+/// around a seam.
+///
+/// | deposit | mass | `N` |
+/// |---|---|---|
+/// | `Band I` | 1 kt | 1 |
+/// | `Band II` | 31.6 kt | 10 |
+/// | `Band III` | 2,828 kt | 100 |
+/// | `Band IV` | 715,500 kt | 1,000 |
+///
+/// Floored at one: a body always has somewhere to put the first miner, and the
+/// `Band Empty` floor (design law #11) means `band()` never returns a magnitude
+/// that would drive this to zero.
+fn veins(deposit: Kilotons, cfg: &SimConfig) -> f64 {
+    let band = deposit.in_bands().bands();
+    // `veins_per_band` below 1 would make `powf` of a negative exponent diverge
+    // and put an infinity into a quantity the simulation divides by — design
+    // law #16 says an infinity is a fatal value, not a small one, because it
+    // becomes a NaN in one subtraction. Clamped at the edge rather than checked
+    // at every call site.
+    let per_band = cfg.veins_per_band.max(1.0);
+    per_band.powf(band - 1.0).clamp(1.0, MAX_VEINS)
+}
+
+/// Ceiling on the vein count, and therefore on any crew derived from it.
+///
+/// Not a design constant — `Hyades_industry.md` §4.2's ladder tops out at 1,000
+/// for `Band IV`, four orders below this. It exists so that a mis-set
+/// `veins_per_band` produces an absurd number rather than an unbounded one: a
+/// crew is allocated as hulls, so an unclamped `N` is an allocation loop, not a
+/// wrong answer.
+const MAX_VEINS: f64 = 1.0e7;
+
+/// **Work performed at a site** — `W(n, S) = N(S)^(1−β) · n^β` for `n ≤ N(S)`
+/// (`Hyades_industry.md` §4.3, T-71).
+///
+/// `n` is **extraction capacity in miner-equivalents**: hulls on station for an
+/// outpost, infrastructure allocated to extraction for a colony, and the whole
+/// point of the shape is that it is *one law for both*. §4.4 is explicit that an
+/// asymmetry here would make "outpost or colony?" a question about rate shape
+/// when it should be a question about commitment.
+///
+/// Three properties, and they are why this shape rather than a bare `n^β`:
+///
+/// - **A full crew pays linearly in richness.** `W(N, S) = N`, so a `Band IV`
+///   body worked by its thousand miners yields a thousand times a `Band I`
+///   body's one.
+/// - **A large crew on a rich rock is rational.** On `Band IV` one miner does
+///   `W = 31.6` and a thousand do `W = 1000`.
+/// - **A poor rock saturates at once.** On `Band I`, `N = 1` and the second
+///   miner adds nothing.
+///
+/// **Past `N` this is flat, and that is a placeholder** (R-IND9). §4.3 says the
+/// marginal miner beyond `N` gets the *floor grade* rather than zero — there is
+/// always more poor ore — so the cap should be a knee and not a wall. Flat is
+/// the cheaper of the two candidates §4.3 lists and it matters only for absurd
+/// crews; R-IND9 is open and says to settle it by what reads better in a log.
+fn extraction_work(capacity: f64, deposit: Kilotons, cfg: &SimConfig) -> f64 {
+    let n_veins = veins(deposit, cfg);
+    let n = capacity.clamp(0.0, n_veins);
+    if n <= 0.0 {
+        return 0.0;
+    }
+    let beta = cfg.crowding_beta;
+    n_veins.powf(1.0 - beta) * n.powf(beta)
+}
+
+/// **The share of a deposit's veins a crew effectively works** — `W(n,S)/N(S)`,
+/// which reduces to `(n/N)^β` (T-71, R-IND19).
+///
+/// This is the form the engine multiplies the stock by, and it is **not** what
+/// §4.3 writes. §4.3 gives `extraction = ε · S · W`, and that double-counts the
+/// deposit: `W` rises with `N` and `N` rises with `S`, so output would go as
+/// richness *squared*. Concretely, at `ε = outpost_mining_fraction` a full crew
+/// on a `Band III` body would lift **307% of everything present** in one tick —
+/// the opposite of §4.3's own "output tracks the stock, so a body depletes
+/// asymptotically rather than cliff-edging".
+///
+/// **Every ratio §4.3 asserts survives the normalisation**, because dividing by
+/// `N` is a change of scale that `ε` absorbs, and §4.3's claims are all about
+/// ratios:
+///
+/// - *"one miner does `W = 31.6` and a thousand do `W = 1000` — 31.6x the ore
+///   for 1000x the hulls"* on `Band IV`: here `(1/1000)^½ = 0.0316` against
+///   `(1000/1000)^½ = 1`. **The same 31.6x.**
+/// - *"a full crew pays linearly in the deposit's richness"*: a full crew takes
+///   `ε·S` on every body, and `S` is the richness. Linear, once.
+/// - *"a poor rock saturates immediately"*: on `Band I`, `N = 1`, so the second
+///   miner is clamped away and adds nothing.
+///
+/// So the disagreement is confined to the absolute scale, which was never
+/// measured either way (R-IND18), and the engine takes the reading that keeps a
+/// body finite. **R-IND19** carries the spec correction.
+fn crowding_factor(capacity: f64, deposit: Kilotons, cfg: &SimConfig) -> f64 {
+    extraction_work(capacity, deposit, cfg) / veins(deposit, cfg)
+}
+
+/// **One miner-equivalent of extraction capacity, in kilotons** (T-71).
+///
+/// §4.3 says `n` counts "miner hulls on station **plus** units of
+/// Infrastructure allocated to extraction", which only type-checks if the two
+/// are commensurable — and under R-O57 they already are, because dry mass *is*
+/// mineral cost. So the unit is **a miner hull's own mass**: the baseline
+/// autopilot mines with `LimitedSystems`, one hull is one unit by construction,
+/// and a colony's infrastructure converts at the same rate rather than at a
+/// second constant nobody could calibrate.
+///
+/// Defining it this way is what makes §4.4's "one law, two ways to buy
+/// capacity" literally one law instead of two laws that resemble each other.
+fn miner_equivalent(cfg: &SimConfig) -> f64 {
+    hull_cost(HullType::LimitedSystems, cfg).kilotons().max(1e-12)
+}
+
+/// **How many berths a yard has — the *quantity* axis** (`Hyades_industry.md`
+/// §3.2, re-derived at R-O88).
+///
+/// ```text
+/// slips(u) = 1 + floor(u / infra_per_slip)
+/// ```
+///
+/// where `u` is the **fabrication share of the centre's infrastructure stock**.
+/// Linear in the stock and therefore genuinely unbounded — which is what §3.2
+/// asks for and what the engine did not do until now.
+///
+/// ~~`slips(F) = 1 + floor(F / F_slip)`~~ read the *rate*, and T-74 had made the
+/// rate a Michaelis–Menten hyperbola bounded by `fab_cap`. So the axis was
+/// bounded by `fab_cap / slip_throughput = 2` — **closed, not short**: a yard
+/// standing on 10¹² kt of infrastructure still had two berths, and homeworlds
+/// are *generated* at rung II, already past the only step it had (R-O88).
+///
+/// **Quantity here, quality in [`Simulation::berth_rate`].** That split is the
+/// whole of R-O88's fix: `fab_cap` now bounds what *one berth* can do, so §6.3's
+/// per-planet ceiling becomes a per-berth ceiling and §5.3's tree table reads
+/// directly — **Production buys fast berths, Expansion buys many slow ones** —
+/// with neither tree capped on the axis the other is strong in. A planet's total
+/// is `slips × berth_rate`, unbounded in the stock, exactly as "an empire scales
+/// by holding more worlds *and* by building more yard" requires.
+///
+/// **The `1 +` is still load-bearing**, for the same reason as before: a centre
+/// always has at least one berth, and `t_build` is floored by `t_lead + m /
+/// fab_cap` rather than divided down by a berth count that could reach zero.
+fn slips(fabrication_stock: f64, cfg: &SimConfig) -> usize {
+    let per_slip = infra_per_slip(cfg).max(1e-12);
+    1 + (fabrication_stock / per_slip).floor().max(0.0) as usize
+}
+
+/// **The infrastructure stock one berth occupies, in kilotons** — *derived, not
+/// tuned*: a slipway is sized like the smallest hull it can lay down, so it is
+/// one Limited Systems hull.
+///
+/// This replaces `SimConfig::slip_throughput`, which under R-O88 has no job
+/// left: its old meaning ("one slip's throughput, kt/yr") is now what `fab_cap`
+/// bounds, and §3.3's approved turnaround schedule is stated in terms of that
+/// bound. Deriving the berth size from the hull ladder rather than storing a
+/// second constant follows R-O57's rule — where two numbers must agree, keep
+/// one.
+///
+/// **Placeholder anchor** (R-O88): the *form* is the ratified part, the choice
+/// of the Limited hull as the unit is not. It is picked so a rung-I centre keeps
+/// exactly the two berths it had before this landed.
+#[inline]
+fn infra_per_slip(cfg: &SimConfig) -> f64 {
+    hull_cost(HullType::LimitedSystems, cfg).kilotons()
+}
+
+/// **The knee of the rate curve: one infrastructure rung's worth of works, as
+/// one employment's share of it** (T-74).
+///
+/// `infra_rung_price(1)` is what standing at rung I costs — the same number a
+/// Medium hull costs (R-O80) — and a default allocation splits the stock three
+/// ways. So a rung-I centre with no works cards played has `u = half` in every
+/// employment, sits exactly at half its ceiling, and reproduces the flat
+/// constants T-68 and the mining model shipped.
+///
+/// **That is the anchor and it is the whole calibration.** No number here was
+/// fitted to a run; the curve pivots about the configuration that was already
+/// ratified, so what T-74 changes is the *shape* around that point rather than
+/// the point itself.
+fn works_knee(cfg: &SimConfig) -> f64 {
+    infra_rung_price(1, cfg).kilotons() / 3.0
+}
+
+/// **A planet's rate for one employment, from its infrastructure** (T-74,
+/// `Hyades_industry.md` §6.3).
+///
+/// ```text
+/// u_e    = infra · alloc_w[e] / Σ alloc_w      // this employment's share of the stock
+/// rate_e = cap_e · u_e / (u_e + half_e)        // saturating, per planet
+/// ```
+///
+/// **A Michaelis–Menten hyperbola, chosen because its two parameters are exactly
+/// the two axes the trees are meant to differ on** — which is why one curve can
+/// carry the tall/wide distinction instead of it being imposed:
+///
+/// - `cap_e` is the **asymptote**, the highest rate this planet can ever reach.
+///   **Production raises it** — §5.2's "the highest peak per planet".
+/// - `half_e` is the **knee**, the stock at which you are halfway there, so the
+///   initial slope is `cap_e / half_e`. **Growth and Expansion lower it** —
+///   "better efficiency per kilotonne invested".
+///
+/// A Production world climbs slowly toward a distant ceiling; an Expansion world
+/// reaches most of a nearer one almost at once. Neither is a special case.
+///
+/// **The ceiling is per planet and the empire total is not capped**, which is
+/// why Expansion's cheap low-ceiling works are a strategy rather than a
+/// handicap, and why slips growing linearly in `F` (§3.2) does not contradict a
+/// bounded `F`: the bound is per yard, and an empire has many yards.
+///
+/// `cap` and `half` from [`cards::Works`] are **multipliers on the base
+/// constants**, base `1.0`, so an empire that has played no works card sits
+/// exactly on the shipped curve.
+fn employment_stock(infra: Price, works: &cards::Works, e: cards::Employment) -> f64 {
+    infra.kilotons() * works.alloc_share(e)
+}
+
+fn employment_rate(infra: Price, works: &cards::Works, e: cards::Employment, base_cap: f64, base_half: f64) -> f64 {
+    let u = employment_stock(infra, works, e);
+    if u <= 0.0 {
+        return 0.0;
+    }
+    let cap = base_cap * works.cap[e.index()];
+    let half = (base_half * works.half[e.index()]).max(1e-12);
+    cap * u / (u + half)
+}
+
+/// **The works bill for a centre's next rung, split by colour** (T-73,
+/// `Hyades_industry.md` §5.1/§6.3).
+///
+/// ```text
+/// total   = infra_step_price(stock) / eta_works      // Design, multiplicative
+/// bill[c] = total · mix_w[c] / Σ mix_w               // additive-weight share
+/// ```
+///
+/// **This is the mechanism that makes the galaxy's mineral distribution bite on
+/// development.** Until now the field bit only on card costs, and T-62 made it
+/// log-normal — so which colours a homeworld sits near was an enormous, almost
+/// unexpressed fact about a game. A works bill is payable *in named colours*, so
+/// a Yellow-poor empire genuinely cannot take the Yellow route however rich it
+/// is in total.
+///
+/// **A mix card can never lower the total** (§5.4/§6.4): `mix_w` is a *share* of
+/// a bill only `eta_works` sets, so moving weight between colours moves where
+/// the bill lands and nothing else. The orthogonality is structural — not a rule
+/// anyone has to remember in review — and `a_mix_card_cannot_change_the_total`
+/// asserts it.
+///
+/// One function, read by both the decision and the build, because the two
+/// disagreeing is this repo's recurring failure: `mining_pair_cost` carries a
+/// comment begging them to agree, and `settlers_by_hull` exists because they
+/// once did not.
+fn works_bill(step: Price, works: &cards::Works) -> [Price; 3] {
+    let total = step / works.eta_works.max(1e-12);
+    let mut bill = [Price::ZERO; 3];
+    for (i, &c) in Basic::ALL.iter().enumerate() {
+        bill[i] = total * works.mix_share(c);
+    }
+    bill
+}
+
+/// Can this bank pay a colour-split bill? **Every colour, not the total** —
+/// which is the whole content of T-73.
+fn can_pay_bill(bank: &Minerals, bill: &[Price; 3]) -> bool {
+    Basic::ALL.iter().enumerate().all(|(i, &c)| Price::new(bank.get_basic(c)) + Price::new(1e-9) >= bill[i])
+}
+
+/// Pay a colour-split bill. Assumes [`can_pay_bill`]; clamps at zero so a
+/// rounding crumb cannot drive a colour negative.
+fn pay_bill(bank: &mut Minerals, bill: &[Price; 3]) {
+    for (i, &c) in Basic::ALL.iter().enumerate() {
+        let have = bank.get_basic(c);
+        bank.add_basic(c, -(bill[i].kilotons().min(have)));
+    }
+}
+
 /// The minerals it takes to *stand at* whole infrastructure rung `n`.
 #[inline]
 fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
     Price::new(Price::rung_from(n, cost_anchor(cfg)))
 }
 
-/// Minerals to raise infrastructure from `from` to the next whole rung.
-fn infra_step_price(from: Band, cfg: &SimConfig) -> Price {
-    let at = from.round().bands().max(0.0) as usize;
+/// Minerals to raise infrastructure from the stock `from` to the next whole rung.
+///
+/// Takes the **stock** rather than a Band since T-70, so the rung is derived
+/// here rather than at every call site — one reading, one place it can be taken
+/// on the wrong ladder.
+fn infra_step_price(from: Price, cfg: &SimConfig) -> Price {
+    let at = infra_rung_of(from, cfg);
     infra_rung_price(at + 1, cfg) - infra_rung_price(at, cfg)
+}
+
+/// The whole rung an infrastructure stock stands at.
+#[inline]
+fn infra_rung_of(stock: Price, cfg: &SimConfig) -> usize {
+    stock.band_from(cost_anchor(cfg)).round().bands().max(0.0) as usize
 }
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
@@ -986,7 +1334,16 @@ struct World {
     /// yard for `build_years` and the next decision is taken when it clears.
     /// Presence is the whole state — the economy tick skips an occupied center,
     /// and [`EventKind::BuildDecision`] removes it on arrival.
-    building_until: ComponentStore<f64>,
+    /// **Occupied berths at a centre — completion times, ascending** (T-69,
+    /// `Hyades_industry.md` §3.2).
+    ///
+    /// Was one `f64`: a yard held exactly one build. Slips make concurrency
+    /// linear in fabrication throughput, so a rich centre runs several builds
+    /// at once and this is the list of when each clears.
+    ///
+    /// It stays presence-as-state — an empty list means an idle yard — for the
+    /// same reason R-O69 needed a store that can vacate.
+    berths: ComponentStore<Vec<f64>>,
 
     // shared
     owner: ComponentStore<PlayerId>,
@@ -1021,6 +1378,147 @@ struct World {
     /// Per-player **Design**: the roster of unlocked `(hull, class)` designs
     /// (R-O28). Written only by tree cards; permanent once written.
     roster: ComponentStore<Roster>,
+    /// **The folded works layer, per empire** (`Hyades_industry.md` §6.2, T-73).
+    ///
+    /// Recomputed from the played multiset in `CardId` order, never accumulated
+    /// at play time — see [`cards::Works::fold`] for why that is a desync and
+    /// not merely untidy. Identity until a works card exists.
+    works: ComponentStore<cards::Works>,
+    /// **The multiset the `works` fold is taken over** (T-75b).
+    ///
+    /// A card play appends `(CardId, WorksWrite)` here and `works` is then
+    /// re-derived from the whole list. Keeping the list is what makes the
+    /// derivation possible at all: a running product cannot be re-accumulated
+    /// in `CardId` order after the fact, because the order it *was* accumulated
+    /// in is already baked into its low bits (§6.5).
+    works_writes: ComponentStore<Vec<(cards::CardId, cards::WorksWrite)>>,
+    /// **The `$` ledger, per empire** (`Hyades_politics_trade_and_intelligence.md`
+    /// §2, T-82).
+    ///
+    /// `$` is a **claim, not a substance** (R-P1, ratified): it has no mass,
+    /// occupies no hold, cannot be mined and cannot be shot down. That is what
+    /// makes a faucet legal at all — design law #11 conserves mass with no
+    /// exclusions, so a `$` that *were* a commodity would make minting illegal
+    /// and the economy a closed barter system.
+    ///
+    /// It is **replicated state**, so design law #16 applies with no softening:
+    /// a NaN here is an unreproducible desync. `credit` is the only writer and
+    /// it refuses non-finite deltas.
+    purse: ComponentStore<f64>,
+}
+
+/// **The cross-empire Exchange — one book per basic colour**
+/// (`Hyades_politics_trade_and_intelligence.md` §3.1, T-84).
+///
+/// A `Resource` in the ECS sense, like the event queue: the Exchange never
+/// mutates world state, it produces `Fill`s and the caller turns those into
+/// events (§10.0). Indexed in `Basic::ALL` order so the set has a canonical
+/// order — which §10.5 needs, because per-round clearing over a *set* is what
+/// keeps price from being a function of event ordering.
+#[derive(Default)]
+struct Exchange {
+    books: [matching::Book; 3],
+    /// **Contracts in flight** — matched, escrowed, not yet settled (T-85).
+    ///
+    /// §10.2: *"this is the state §3.3 needs and the engine has no analogue
+    /// for — it is the first thing in the engine that is **owed** rather than
+    /// owned."* A `Vec` appended in fill order, which is deterministic because
+    /// `match_wave` is.
+    contracts: BTreeMap<u64, Contract>,
+    /// Next contract id. Monotonic — an id is never reused, so a settlement
+    /// event cannot be delivered to a different contract than the one that
+    /// scheduled it.
+    next_id: u64,
+    /// Contracts settled, and `$` burned to transit, since the run began.
+    /// Diagnostic only — §10.8's guard is a census.
+    settled: u64,
+    defaulted: u64,
+    burned: f64,
+    /// **Cumulative offers posted per colour**, `(bids, asks)` — the census
+    /// §10.8 asks for, and the only way to see the book's *depth* once clearing
+    /// drains it. Live depth after a wave is the unmatched remainder, which
+    /// answers a different question.
+    posted: [(u64, u64); 3],
+    /// **Why a fill did not become a contract**, cumulative: `(self-trade, no
+    /// shared venue, no price, no purse)`.
+    ///
+    /// §10.8's census, at the one place a market can silently do nothing. A
+    /// book with deep two-sided depth and zero contracts is indistinguishable
+    /// from a book nobody posted to unless the *rejections* are counted — which
+    /// is `CLAUDE.md` §2's "instrument the decision", and it is how the first
+    /// run of this stage was diagnosed instead of guessed at.
+    rejected: [u64; 4],
+    /// Fills the matcher produced, before any filter.
+    fills: u64,
+    /// Kilotons actually delivered, per colour — the volume the market moved.
+    /// Without it a census can only say trade *happened*, not whether it
+    /// happened at a scale that could move anything.
+    traded: [f64; 3],
+}
+
+/// **A cleared trade, escrowed and awaiting settlement at its venue** (T-85).
+///
+/// Everything needed to settle without re-deriving it: who owes whom, what, how
+/// much `$` is locked, and **where the goods change hands**. The venue is on the
+/// contract rather than looked up later because the parties' shared outposts can
+/// change between clearing and settlement — a rock mines out, a crew is
+/// retasked — and a contract whose venue moved is a contract neither side
+/// agreed to.
+#[derive(Clone, Copy, Debug)]
+struct Contract {
+    buyer: PlayerId,
+    seller: PlayerId,
+    /// **The centre that owes the ore.** Recorded at match rather than looked
+    /// up at settlement, because §3.3's default case turns on *this* bank being
+    /// short — re-deriving "some centre of the seller's" at settlement would
+    /// make a default impossible to express.
+    seller_centre: Entity,
+    colour: Basic,
+    /// Kilotons of ore the seller owes.
+    qty: f64,
+    /// `$` locked from the buyer's purse at match (§2.3's `E`).
+    escrow: f64,
+    /// **Where the seller leaves the ore** (§10.6). A rock both parties work —
+    /// **not the buyer's world**, because a foreign hull near a colony is a
+    /// card and not the default.
+    seller_drop: Entity,
+    /// **Where the buyer leaves its side, when its side is goods.**
+    ///
+    /// A contract has **two locations, not one** (author's ruling): *leave
+    /// Yellow at X in exchange for Magenta at Y*. The two legs need not meet at
+    /// the same rock, and each is chosen by **the party making that delivery**,
+    /// minimising *its own* transit — which supersedes R-P17's symmetric
+    /// "minimum summed transit". A shipper pays for its own leg, so a shipper
+    /// picks its own drop; a single compromise venue would make each side pay
+    /// for the other's geography, and §7.1's default transaction is *balanced*.
+    ///
+    /// `None` when the buyer settles in `$`, which has no location at all.
+    buyer_drop: Option<Entity>,
+    /// When the contract was struck — the burn is measured from here to
+    /// settlement.
+    ///
+    /// **There is deliberately no `deliver_at`.** The scheduled `ContractDue`
+    /// event *is* the delivery time, and storing it twice would be two facts
+    /// that must agree with nothing checking that they do — the same defect
+    /// `mining_pair_cost` needed a comment to guard against and
+    /// `Candidate::settlers_by_hull` exists to avoid.
+    ///
+    /// **The obligation is struck instantly; only the goods are light-lagged**
+    /// (author's ruling: *debt can travel faster than light*). That is not an
+    /// exception to design law #15 — it is R-P1 being taken seriously. `$` and
+    /// the claim it denominates are **not substances**: they have no mass,
+    /// occupy no hold and cross no distance, so there is nothing for light-lag
+    /// to bind. And the contract is struck at the **round barrier**, which is
+    /// the protocol clock's synchronisation point (§10.5) rather than an in-world
+    /// observation — the same moment cards resolve and the `Works` fold is
+    /// recomputed.
+    ///
+    /// The asymmetry is the design: **the ledger is instant and the freight is
+    /// not.** A deal can be agreed across the theatre in a round while the ore
+    /// it commits takes decades to arrive, and everything that can happen to
+    /// that ore on the way (§8.1 — attack, diversion, theft, blockade) is the
+    /// gap between the two.
+    struck: f64,
 }
 
 impl World {
@@ -1035,7 +1533,7 @@ impl World {
             planet_id: ComponentStore::new(),
             homeworld: ComponentStore::new(),
             archetype: ComponentStore::new(),
-            building_until: ComponentStore::new(),
+            berths: ComponentStore::new(),
             owner: ComponentStore::new(),
             role: ComponentStore::new(),
             hull_type: ComponentStore::new(),
@@ -1049,6 +1547,9 @@ impl World {
             knowledge: ComponentStore::new(),
             doctrine: ComponentStore::new(),
             roster: ComponentStore::new(),
+            works: ComponentStore::new(),
+            works_writes: ComponentStore::new(),
+            purse: ComponentStore::new(),
         }
     }
 
@@ -1112,6 +1613,10 @@ enum EventKind {
     /// moment of the strike, after clearing `building_until`; the seam is here
     /// so that is a scheduling call and not a redesign. **T-52.**
     BuildDecision { center: Entity },
+    /// **A contract's freight leg completes at its drop** (T-77). Carries the
+    /// contract id rather than an index, because ids are never reused and
+    /// indices shift when a contract settles.
+    ContractDue { id: u64 },
     /// An exhausted Scout reaches a friendly colony and scraps
     /// (`Hyades_vehicle_roles.md` §4.1/§4.6 — confirmed, LCV only).
     ScrapArrive { vehicle: Entity },
@@ -1172,17 +1677,28 @@ pub struct SimConfig {
     ///
     /// **Approved starting value, not MC-ratified** (§3.3).
     pub build_lead_years: f64,
-    /// **One slip's fabrication throughput, `F_slip`, in kt/yr** (§3.2, T-68).
+    /// **Fabrication ceiling, kt/yr — of one *berth*** (T-74 for the curve,
+    /// R-O88 for the denomination). Production raises it; `Hyades_industry.md`
+    /// §6.3.
     ///
-    /// Stage 2 is the single-slip case, so this is simply the rate at which a
-    /// yard turns mass into hull: `t_build = t_lead + m / F_slip`. Concurrency
-    /// — `slips(F) = 1 + floor(F / F_slip)`, and with it the *soft floor* that
-    /// makes this an asymptote rather than a divisor — is stage 3 (T-69). The
-    /// constant is introduced now with the meaning it will keep, so that landing
-    /// slips changes what divides by it and not what it means.
+    /// ~~The asymptote a single *planet* can ever reach.~~ Re-denominated at
+    /// R-O88, because `slips` read this rate and was therefore bounded by it —
+    /// `fab_cap / slip_throughput = 2` was the whole of §3.2's "build wide"
+    /// axis, closed at two berths however rich the yard. The ceiling is now what
+    /// one berth can do, and a planet's total is `slips × berth_rate`, unbounded
+    /// in the stock.
     ///
-    /// **Approved starting value, not MC-ratified** (§3.3).
-    pub slip_throughput: f64,
+    /// **0.2 → 0.1, and that is a re-denomination rather than a retune.** The
+    /// old code divided a planet-wide `F` by `slips`, which was always exactly
+    /// 2 at every rung a centre can occupy, so halving the ceiling reproduces
+    /// the old per-berth rate **bit-for-bit** — pinned by
+    /// `turnaround_is_unchanged_and_only_the_berth_count_opened`. It also makes
+    /// §3.3's approved turnaround schedule read off this constant directly:
+    /// `t_build → t_lead + m / fab_cap` is 2.2 / 3.0 / 12.0 yr for the three
+    /// Systems hulls, which is the table §3.3 approved.
+    ///
+    /// **Placeholder magnitude** (R-IND3), like every coefficient in §5.
+    pub fab_cap: f64,
     pub civilian_accel_g: f64,
     pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
@@ -1321,6 +1837,22 @@ pub struct SimConfig {
     /// The weakest of the four: 14.5 against 2 SE of 11.6 clears significance
     /// but not comfortably. First candidate to re-check on a wider bed.
     pub outpost_mining_fraction: f64,
+    /// **The crowding exponent β** (`Hyades_industry.md` §4.3, T-71).
+    ///
+    /// Work at a site is `W(n, S) = N(S)^(1−β) · n^β`, so β = 1 is no crowding
+    /// at all and β = 0 makes every extra unit of capacity worthless.
+    /// **Placeholder `1/2`** — §4.3's own value, never measured (R-IND18).
+    pub crowding_beta: f64,
+    /// **Workable veins per Band of deposit mass** (`Hyades_industry.md` §4.2,
+    /// T-71) — `N(S) = veins_per_band^(band(S) − 1)`.
+    ///
+    /// This is the term whose absence would have killed the mining ramp. A bare
+    /// `n^β` crowds a `Band I` pebble and a `Band IV` seam identically, so
+    /// nobody would ever put a large crew anywhere; the design wants hundreds or
+    /// thousands of miners on a high-value outpost. **Placeholder `10`** — "a
+    /// decade per Band", the design's own language for an order of magnitude
+    /// (R-IND18).
+    pub veins_per_band: f64,
     pub mining_tick_years: f64,
     /// Density below which a body is considered mined out.
     pub density_floor: f64,
@@ -1414,6 +1946,22 @@ pub struct SimConfig {
     /// *direction and order of magnitude*, and the precise optimum wants the
     /// ten-seed bed (T-44).
     pub trade_decay_lambda: f64,
+    /// **The `$` faucet rate** — `$` minted per kilotonne of fabrication capacity
+    /// per year (`Hyades_politics_trade_and_intelligence.md` §2.3, T-82).
+    ///
+    /// `$_income = base · production`, with **production the works fabrication
+    /// rate**, which is what R-P3 ratified: income tracks what an empire can
+    /// *make*, not how many people it has, so the biggest empire does not also
+    /// automatically hold the deepest purse.
+    ///
+    /// **R-P16 is resolved rather than shipped.** §10.3 decided to ship this
+    /// against infrastructure stock as an explicit placeholder *because T-74 had
+    /// not landed and there was no fabrication rate to read*. T-74 has landed,
+    /// so the faucet reads the real quantity and the placeholder is not needed.
+    ///
+    /// **Placeholder magnitude** (R-P2) — nothing spends `$` yet, so no
+    /// measurement can price it.
+    pub dollar_per_fabrication: f64,
 
     /// **Years before the first round barrier fires** (`Hyades_netcode.md` §1).
     ///
@@ -1516,7 +2064,7 @@ impl SimConfig {
             horizon_years: 4000.0,
             cycle_years: 50.0,
             build_lead_years: 2.0,
-            slip_throughput: 0.1,
+            fab_cap: 0.1,
             civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
@@ -1535,10 +2083,13 @@ impl SimConfig {
             center_mining_fraction: 0.15,
             biosphere_regen_rate: 0.127,
             outpost_mining_fraction: 0.238,
+            crowding_beta: 0.5,
+            veins_per_band: 10.0,
             mining_tick_years: 50.0,
             density_floor: 0.01,
             cargo_unit_size: 1.0,
             trade_decay_lambda: 0.01,
+            dollar_per_fabrication: 1.0,
             years_to_first_round: 200.0,
             years_per_round: 400.0,
             scrap_recovery_fraction: 0.5,
@@ -1635,6 +2186,25 @@ pub struct Simulation {
     /// same ore — contesting a field is a real mechanic, and a card that lets
     /// an empire draw from a rival's pile is a *card*, not the default.
     outpost_stock: BTreeMap<(u32, u64), Minerals>,
+    /// **The cross-empire Exchange** (T-84). Rebuilt and cleared at the round
+    /// barrier (§10.5), never continuously — a continuous book makes price a
+    /// function of event ordering, and two clients that tie-break a match
+    /// differently clear at different prices, which is an unreproducible desync.
+    exchange: Exchange,
+    /// Whether the round barrier posts to the Exchange at all (T-84).
+    ///
+    /// Exists for the inertness ablation and nothing else: `CLAUDE.md` §2 puts
+    /// ablation first among the three kinds of proof, and "posting changes
+    /// nothing" is only checkable against a run that did not post.
+    exchange_posting: bool,
+    /// Whether a struck contract is ever scheduled to settle (T-77).
+    ///
+    /// Separate from `exchange_posting` so the two stages stay separable: with
+    /// posting on and this off, contracts are struck and `$` is escrowed and
+    /// **no kilotonne moves**, which is what makes §10.7's stage-4 inertness a
+    /// checkable claim rather than one T-77 silently invalidated. It is also
+    /// the ablation for attributing T-77's own effect.
+    exchange_settlement: bool,
     /// Per-player pools of hulls whose rock ran dry, awaiting re-tasking. Push
     /// order is event order, so these are deterministic; selection is by
     /// distance to the new target, not by position in the pool.
@@ -1682,7 +2252,9 @@ impl Simulation {
                     // construction rather than by convention.
                     pl.biosphere.in_kilotons(),
                     pl.biosphere.in_kilotons(),
-                    pl.infrastructure,
+                    // Galaxy generation states the starting rung; the engine stores
+                    // the stock that rung costs (T-70).
+                    infra_rung_price(pl.infrastructure.round().bands().max(0.0) as usize, &config),
                 ),
             );
             world.density.insert(e, pl.minerals);
@@ -1733,6 +2305,9 @@ impl Simulation {
             active_mines: BTreeSet::new(),
             mine_crew: BTreeMap::new(),
             outpost_stock: BTreeMap::new(),
+            exchange: Exchange::default(),
+            exchange_posting: true,
+            exchange_settlement: true,
             reserve_miners: vec![Vec::new(); n],
             reserve_freighters: vec![Vec::new(); n],
             current_round: 0,
@@ -1830,6 +2405,9 @@ impl Simulation {
             roster.unlock(HullType::LimitedSystems, Class::Meadow);
             roster.unlock(HullType::LimitedContactVehicle, Class::Tor);
             self.world.roster.insert(pe, roster);
+            self.world.works.insert(pe, cards::Works::default());
+            self.world.works_writes.insert(pe, Vec::new());
+            self.world.purse.insert(pe, 0.0);
 
             // Seed the homeworld's stockpile so it can begin deepening infra.
             let seed = self.config.homeworld_start_minerals / 3.0;
@@ -1892,6 +2470,16 @@ impl Simulation {
         }
 
         self.apply_orders(round, &orders);
+
+        // **The Exchange clears at the barrier, not continuously** (§10.5).
+        // Cards have just resolved and the `Works` fold has been recomputed, so
+        // this is the moment the standing layer is coherent — and a round is a
+        // *set*, which is what gives the book a canonical order. Posting is
+        // inert until T-85 wires clearing.
+        if self.exchange_posting {
+            self.post_exchange_offers();
+            self.clear_exchange();
+        }
 
         let next = round.saturating_add(1);
         if self.clock + self.config.years_per_round <= self.config.horizon_years {
@@ -2005,6 +2593,17 @@ impl Simulation {
                     }
                 }
             }
+            CardEffect::WriteWorks(w) => {
+                // **Record, then re-derive** (T-75b, §6.5). The list is the
+                // state; `Works` is a cache of the fold over it. Doing it the
+                // other way — multiplying the coefficient in place — would make
+                // the result depend on play order in its last bits, which is a
+                // desync and not a rounding difference.
+                let pe = self.player_entity[p];
+                self.world.works_writes.get_mut(pe).unwrap().push((c.id, w));
+                let folded = cards::Works::fold(self.world.works_writes.get(pe).unwrap());
+                *self.world.works.get_mut(pe).unwrap() = folded;
+            }
             CardEffect::NotYetImplemented => {
                 self.inert_card_plays += 1;
             }
@@ -2081,6 +2680,7 @@ impl Simulation {
             EventKind::MiningTick { outpost } => self.sys_mining_tick(outpost),
             EventKind::ProductionTick { center } => self.sys_production_tick(center),
             EventKind::BuildDecision { center } => self.sys_build_decision(center),
+            EventKind::ContractDue { id } => self.sys_contract_due(id),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
             EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
@@ -2266,7 +2866,19 @@ impl Simulation {
             let avail = stock.basic_total();
             let load = cap.on_scale::<units::Cost>().min(avail);
             if load > Price::ZERO {
-                let moved = take_basics(self.outpost_stock.get_mut(&(p, sh.outpost.0)).unwrap(), load);
+                // **Load against what the centre this hauler serves is short
+                // of** (R-O89), rather than in the ratio this rock happens to
+                // hold. `destination` is the centre it delivered to last, so the
+                // pairing is a standing relationship and not a lookup: serve a
+                // centre, learn what it lacks, fetch that. `O(1)`, where reading
+                // the empire's aggregate deficit would be `O(owned planets)` on
+                // one of the hottest paths in the engine (§4).
+                //
+                // The *pickup site* is deliberately still welded to this
+                // hauler's own miner. Re-routing that as well was measured and
+                // is **-52.3%** — see [`take_for_deficit`] and §6.20.
+                let want = self.colour_deficit(sh.destination, PlayerId(p));
+                let moved = take_for_deficit(self.outpost_stock.get_mut(&(p, sh.outpost.0)).unwrap(), &want, load);
                 self.world.cargo.get_mut(vehicle).unwrap().add_basics(&moved);
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
                 self.log.push(
@@ -2310,13 +2922,17 @@ impl Simulation {
             // *discounted* need — confirmed: "autopilot must haul minerals to
             // where they are needed," not back to one hardcoded partner, and
             // (R-P2) not across the galaxy to a marginally needier one either.
-            // At the shipped `trade_decay_lambda = 0` this is exactly
-            // `most_needed_center`. Falls back to the outpost's own paired home
-            // center only if this owner holds no production center at all
+            // At `trade_decay_lambda = 0` this reduces exactly to
+            // `most_needed_center`; the shipped value is 0.01, so the discounted
+            // path is live. Since T-81 the need term is **per colour** and reads
+            // the cargo actually aboard, so a hauler carrying Yellow goes where
+            // Yellow is what is missing. Falls back to the outpost's own paired
+            // home center only if this owner holds no production center at all
             // (shouldn't happen; the homeworld always counts).
             let home = *self.world.home_center.get(vehicle).unwrap_or(&sh.outpost);
             let here = self.position_at(sh.outpost, self.clock).unwrap();
-            let dest = self.best_delivery_center(PlayerId(p), here).unwrap_or(home);
+            let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
+            let dest = self.best_delivery_center(PlayerId(p), here, &cargo).unwrap_or(home);
             self.world.shuttle.get_mut(vehicle).unwrap().destination = dest;
 
             let from = self.position_at(sh.outpost, self.clock).unwrap();
@@ -2454,7 +3070,17 @@ impl Simulation {
                 let d = self.world.density.get(outpost).unwrap();
                 // A fraction of the ore actually present — a **mass**, since
                 // T-62 made the field's colours Bands and only their masses add.
-                d.total_mass().kilotons() * (crew.max(1) as f64 * self.config.outpost_mining_fraction).min(1.0)
+                //
+                // **Crowding, scaled to the deposit** (§4.3, T-71). Extraction is
+                // `ε · S · W(n, S)` with `n` the crew in miner-equivalents — one
+                // Limited hull, one unit. `ε` is `outpost_mining_fraction`
+                // unchanged, which is what pins the calibration: on a `Band I`
+                // body `N = 1`, so `W(1, S) = 1` and a lone miner extracts
+                // exactly what it did before T-71.
+                let stock = d.total_mass();
+                let n = crew.max(1) as f64;
+                let work = crowding_factor(n, stock, &self.config);
+                stock.kilotons() * (self.config.outpost_mining_fraction * work).min(1.0)
             };
             if amt <= self.config.density_floor {
                 continue;
@@ -2505,10 +3131,27 @@ impl Simulation {
         let center_pid = *self.world.planet_id.get(center).unwrap();
         let doctrine = *self.world.doctrine.get(pe).unwrap();
 
+        // 0) **The `$` faucet** (§2.3, T-82). Income accrues where production
+        // happens, on the cadence a rate needs — the economy tick is an
+        // interval, and `$_income = base · production · dt` is a rate over one.
+        // No new cadence and no per-player sweep: summing over centres *is* the
+        // empire's production.
+        //
+        // **Nothing reads the purse yet**, which is the point of this stage: the
+        // ledger and the faucet land inert and the bed stays bit-identical, so
+        // the first thing that spends `$` is measured against a known baseline
+        // (§10.7 stages 1–3).
+        self.credit(pe, self.config.dollar_per_fabrication * self.fabrication_rate(center) * self.config.cycle_years);
+
         // 1) Local mining: the center works its own density into its stockpile.
         let amt = {
             let d = self.world.density.get(center).unwrap();
-            d.total_mass().kilotons() * self.config.center_mining_fraction
+            let stock = d.total_mass();
+            // **Same law as an outpost's crew, different way of buying `n`**
+            // (§4.4, T-71). `extraction_rate` returns the centre's capacity in
+            // miner-equivalents; the deposit decides what that capacity is worth.
+            let work = crowding_factor(self.extraction_rate(center), stock, &self.config);
+            stock.kilotons() * (self.config.outpost_mining_fraction * work).min(1.0)
         };
         if amt > 0.0 {
             let extracted = self.world.density.get_mut(center).unwrap().extract(Kilotons::new(amt));
@@ -2672,7 +3315,16 @@ impl Simulation {
         // [`EventKind::BuildDecision`] when the yard clears. A center with an
         // empty yard has no such event pending, so the mining step doubles as
         // its retry — mining is what changes a saving center's situation.
-        if !self.world.building_until.contains(center) {
+        //
+        // **T-88 will sever this call.** `cycle_years` is doing two unrelated
+        // jobs — the economic integration step (mine, grow, mint, all rates over
+        // an interval, which want a *small* step for fidelity) and the retry
+        // cadence for a saving centre (which should not be a cadence at all).
+        // Dropping the tick to 1/yr for granularity would multiply decisions
+        // 50x along with it, and the decision half is what costs throughput.
+        // The retry belongs on the events that actually change a saving
+        // centre's situation — minerals arriving — not on a clock.
+        if self.free_berths(center) > 0 {
             self.sys_build_decision(center);
         }
         self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
@@ -2689,27 +3341,66 @@ impl Simulation {
     /// `cycle_years` to `build_years` for a center that keeps finding things to
     /// buy.
     fn sys_build_decision(&mut self, center: Entity) {
-        // The yard is free by the time this runs, however it was reached.
-        self.world.building_until.remove(center);
+        // **Retire the berths that have cleared, not the whole yard** (T-69).
+        // Reached two ways — the economy tick with a berth free, and a
+        // `BuildDecision` scheduled when one clears — and in both cases the
+        // question is how many are still occupied, not whether any are.
+        if let Some(b) = self.world.berths.get_mut(center) {
+            let now = self.clock;
+            b.retain(|&t| t > now + 1e-12);
+            if b.is_empty() {
+                self.world.berths.remove(center);
+            }
+        }
+        // **Fill every free berth, not one** (T-69). Committing a single build
+        // per decision would leave the extra slips permanently idle while still
+        // dividing the yard's throughput among them — all of concurrency's cost
+        // and none of its benefit, which would measure as a regression for a
+        // reason that has nothing to do with the mechanism. The loop terminates
+        // because each commit takes a berth and `commit_one_build` returns
+        // `false` the moment the centre cannot or will not buy anything more.
+        while self.free_berths(center) > 0 {
+            if !self.commit_one_build(center) {
+                break;
+            }
+        }
+    }
+
+    /// One pass of the production decision: pick an order, commit it if it is
+    /// affordable and worth doing, and occupy a berth for its build time.
+    /// Returns whether anything was committed — which is what stops
+    /// [`Self::sys_build_decision`]'s loop.
+    fn commit_one_build(&mut self, center: Entity) -> bool {
         let owner = match self.world.owner.get(center).copied() {
             Some(o) => o,
-            None => return, // lost the world; no yard to run
+            None => return false, // lost the world; no yard to run
         };
         let p = owner.0 as usize;
         let pe = self.player_entity[p];
         let doctrine = *self.world.doctrine.get(pe).unwrap();
         let center_pid = *self.world.planet_id.get(center).unwrap();
 
-        let (infra, k_potential) = {
+        let (infra, infra_band, k_potential) = {
             let f = self.world.factors.get(center).unwrap();
-            (f.infra, f.k_potential())
+            // One reading, taken at the edge — the decision and the log line
+            // both want the rung, and `band_from` is a `ln` (`CLAUDE.md` §4).
+            (f.infra, f.infra_band(&self.config), f.k_potential())
         };
         let level = self.bands.level(*self.world.population.get(center).unwrap());
         let center_pos = *self.world.position.get(center).unwrap();
         let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
-        // Minerals to buy the next whole level. The ladder rung is a Band; its
-        // *price* is a mineral quantity, so the reading is taken explicitly.
+        // Minerals to buy the next whole level, from the stock standing there —
+        // and since T-73 the bill is payable *in colours*, so the split and the
+        // bank both go into the context.
         let target_level = infra_step_price(infra, &self.config);
+        let works = self.world.works.get(pe).copied().unwrap_or_default();
+        let infra_bill = works_bill(target_level, &works);
+        let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
+        let stockpile_by_colour = [
+            Price::new(bank.get_basic(Basic::Cyan)),
+            Price::new(bank.get_basic(Basic::Magenta)),
+            Price::new(bank.get_basic(Basic::Yellow)),
+        ];
 
         let info = *self.world.player_info.get(pe).unwrap();
         // Live mineral pressure for this center: 1 when broke for its next infra
@@ -2738,6 +3429,7 @@ impl Simulation {
         // frontier and not on the size of this slice.
         let mut count = 0usize;
         let mut best: [Option<Candidate>; 3] = [None, None, None];
+        let survey_frontier = self.survey_frontier(p);
         {
             let knowledge = self.world.knowledge.get(pe).unwrap();
             for &pid in &knowledge.scanned {
@@ -2769,7 +3461,8 @@ impl Simulation {
                         self.settler_target(center, e, HullType::MediumSystems.colony_seed_capacity(&self.config)),
                         self.settler_target(center, e, HullType::GeneralSystems.colony_seed_capacity(&self.config)),
                     ];
-                    best[slot] = Some(Candidate { view, ranked, settlers_by_hull });
+                    let mining_crew = self.mining_crew_for(center, e);
+                    best[slot] = Some(Candidate { view, ranked, settlers_by_hull, mining_crew });
                 }
             }
         }
@@ -2779,18 +3472,20 @@ impl Simulation {
         let ctx = ProductionContext {
             center_pos,
             level,
-            infra: infra.bands(),
+            infra: infra_band.bands(),
             k_potential: k_potential.bands(),
             stockpile_total: stock_total,
             medium_min_level: self.config.medium_min_level,
             limited_min_level: self.config.limited_min_level,
             infra_cost: target_level,
+            infra_bill,
+            stockpile_by_colour,
             colonizer_cost: hull_cost(HullType::MediumSystems, &self.config),
             general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
             medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
             general_seed_capacity: HullType::GeneralSystems.colony_seed_capacity(&self.config),
-            medium_founding_infra: self.founding_infra(HullType::MediumSystems),
-            general_founding_infra: self.founding_infra(HullType::GeneralSystems),
+            medium_founding_infra: self.founding_infra_band(HullType::MediumSystems),
+            general_founding_infra: self.founding_infra_band(HullType::GeneralSystems),
             // The *true* price of a pair to this center right now. With
             // recycling on, a half that comes out of Reserve is not bought, and
             // the context has to say so or the decision is made on a price the
@@ -2798,9 +3493,20 @@ impl Simulation {
             // sit Idle next to hulls it already owns. `apply_build_with` takes
             // the nearest reserved hull of each kind, so this matches what it
             // will actually spend.
-            mining_pair_cost: self.mining_pair_price(p, doctrine.miners_per_outpost.max(1) as usize),
+            // **Priced for the crew the chosen rock would get** (T-72). The
+            // autopilot only ever spends this on `best_mining`, and since T-71
+            // the crew is a property of the deposit — so pricing it from a flat
+            // doctrine count would put a number in front of the decision that
+            // the build step will not charge, which is the exact defect the
+            // comment above is about. `Candidate::mining_crew` is the one
+            // computation of the rule; this reads it rather than repeating it.
+            mining_pair_cost: self.mining_pair_price(
+                p,
+                cands.iter().find(|c| c.ranked.class == PlanetClass::MiningOutpost).map_or(1, |c| c.mining_crew),
+            ),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
+            survey_frontier,
         };
 
         let order = self.autopilots[p].production_choice(&doctrine, &ctx, &cands);
@@ -2810,7 +3516,7 @@ impl Simulation {
                 player: p as u32,
                 center: center_pid,
                 pop_level: level,
-                infra: infra.bands(),
+                infra: infra_band.bands(),
                 k_potential: k_potential.bands(),
                 stockpile: stock_total.kilotons(),
                 infra_cost: target_level.kilotons(),
@@ -2818,6 +3524,9 @@ impl Simulation {
                 mining_pair_cost: ctx.mining_pair_cost.kilotons(),
                 mineral_pressure,
                 candidates_seen: count as u32,
+                // The predicate the decision actually used, not one the reader
+                // has to rebuild from totals — see the field's doc.
+                can_afford_infra: can_pay_bill(&bank, &infra_bill),
                 chosen: order,
             },
         );
@@ -2825,14 +3534,21 @@ impl Simulation {
         // `apply_build_with` declines on an unaffordable price, a roster gate, or
         // a hull with no job worth doing, and a center that built nothing must
         // not be held busy for it.
-        if let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) {
-            let done = self.clock + self.build_time(committed);
-            self.world.building_until.insert(center, done);
-            self.schedule_at(done, EventKind::BuildDecision { center });
-        }
-        // Otherwise the yard stays free and the next economy tick retries, which
-        // is the right cadence for a center whose situation only changes as it
-        // mines.
+        let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) else {
+            // The yard stays free and the next economy tick retries, which is
+            // the right cadence for a center whose situation only changes as it
+            // mines. Returning `false` also ends the fill loop — a centre that
+            // declined this order will decline it again at the same instant.
+            return false;
+        };
+        let done = self.clock + self.build_time(center, committed);
+        let b = self.world.berths.entry_or_insert_with(center, Vec::new);
+        b.push(done);
+        // Ascending, so the list reads as "when does the next one clear" and
+        // stays deterministic however completions interleave.
+        b.sort_by(|x, y| x.partial_cmp(y).unwrap_or(core::cmp::Ordering::Equal));
+        self.schedule_at(done, EventKind::BuildDecision { center });
+        true
     }
 
     // --- build application -------------------------------------------------
@@ -2854,9 +3570,103 @@ impl Simulation {
     /// floor are T-69; this is deliberately the `slips = 1` specialisation of
     /// the same formula, so landing concurrency changes the divisor rather than
     /// the model.
-    fn build_time(&self, mass: Price) -> f64 {
-        let f = self.config.slip_throughput.max(1e-12);
-        self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / f
+    fn build_time(&self, center: Entity, mass: Price) -> f64 {
+        // **One berth's rate, not the planet's** (R-O88). A hull occupies a
+        // berth, so what sets its turnaround is what that berth can do — and
+        // `berth_rate` saturates at `fab_cap`, which makes the floor
+        // `t_lead + m / fab_cap` emergent rather than imposed. Industry buys
+        // more ships at once, never faster ships, and now the "more at once"
+        // half is genuinely unbounded.
+        let per_berth = self.berth_rate(center).max(1e-12);
+        self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / per_berth
+    }
+
+    /// **The fabrication share of this centre's infrastructure stock, kt** — the
+    /// quantity both yard axes are bought with (R-O88).
+    fn fabrication_stock(&self, center: Entity) -> f64 {
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        employment_stock(infra, &self.works_of(center), cards::Employment::Fabrication)
+    }
+
+    /// **One berth's throughput, kt/yr — the *quality* axis** (T-74's curve,
+    /// R-O88's denomination). Michaelis–Menten on the stock, saturating at
+    /// `fab_cap`: Production raises the ceiling, Growth and Expansion lower the
+    /// knee. See [`slips`] for the quantity axis this is paired with.
+    fn berth_rate(&self, center: Entity) -> f64 {
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        employment_rate(
+            infra,
+            &self.works_of(center),
+            cards::Employment::Fabrication,
+            self.config.fab_cap,
+            works_knee(&self.config),
+        )
+    }
+
+    /// **This centre's total fabrication throughput, kt/yr** — `slips ×
+    /// berth_rate`, so it is unbounded in the stock (R-O88).
+    ///
+    /// This is the *demand* figure — what the centre can consume — and it is
+    /// what `mining_crew_for` and the `$` faucet read. It is **not** what
+    /// [`Self::build_time`] reads: a hull sits in one berth, so its turnaround
+    /// is the berth's rate and not the yard's.
+    fn fabrication_rate(&self, center: Entity) -> f64 {
+        slips(self.fabrication_stock(center), &self.config) as f64 * self.berth_rate(center)
+    }
+
+    /// This centre's owner's works, or the card-free default if it is unowned.
+    fn works_of(&self, center: Entity) -> cards::Works {
+        self.world
+            .owner
+            .get(center)
+            .and_then(|o| self.world.works.get(self.player_entity[o.0 as usize]))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// **How many berths this centre has spare** (T-69). Zero means every slip
+    /// is busy and the yard cannot commit again until one clears.
+    fn free_berths(&self, center: Entity) -> usize {
+        let total = slips(self.fabrication_stock(center), &self.config);
+        let busy = self.world.berths.get(center).map(|b| b.len()).unwrap_or(0);
+        total.saturating_sub(busy)
+    }
+
+    /// **This centre's extraction capacity, in miner-equivalents** (T-71).
+    ///
+    /// ~~The fraction of its own density it works per cycle~~ — T-74 shipped that
+    /// as a Michaelis–Menten curve on infrastructure, and §4.3a retired the form:
+    /// MM has **no deposit term**, so it would make crowding identical on a
+    /// `Band I` pebble and a `Band IV` seam, which is the exact fault §4.2 exists
+    /// to correct. Extraction saturates once, through §4.3's crowding law; §6.3's
+    /// curve stays where it belongs, on fabrication.
+    ///
+    /// So this returns `n`, and [`crowding_factor`] turns `n` into a rate
+    /// against the body being worked — the **same law an outpost's crew runs
+    /// on** (§4.4). The two differ only in how capacity is bought: hulls for an
+    /// outpost, infrastructure for a colony.
+    ///
+    /// The works coefficients keep their tree meanings on §4.3's parameters
+    /// (§4.3a): `cap[Extraction]` scales the capacity a given stock buys —
+    /// Production's asymptote — and `half[Extraction]` divides it, so lowering
+    /// the knee buys more work per kilotonne, which is Growth and Expansion's
+    /// signature.
+    fn extraction_rate(&self, center: Entity) -> f64 {
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        let works = self
+            .world
+            .owner
+            .get(center)
+            .and_then(|o| self.world.works.get(self.player_entity[o.0 as usize]))
+            .copied()
+            .unwrap_or_default();
+        let e = cards::Employment::Extraction;
+        let stock = infra.kilotons() * works.alloc_share(e);
+        if stock <= 0.0 {
+            return 0.0;
+        }
+        let scale = works.cap[e.index()] / works.half[e.index()].max(1e-12);
+        stock * scale / miner_equivalent(&self.config)
     }
 
     /// Apply a production order. `candidates` is the empire's current candidate
@@ -2887,9 +3697,24 @@ impl Simulation {
             BuildOrder::Idle => None,
             BuildOrder::UpgradeInfrastructure => {
                 let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
-                if self.world.stockpile.get_mut(center).unwrap().try_spend_total(target) {
+                // **Pay the colour bill, not the total** (T-73). Same
+                // `works_bill` the decision was made against.
+                let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
+                let bill = works_bill(target, &works);
+                let payable = self.world.stockpile.get(center).map(|b| can_pay_bill(b, &bill)).unwrap_or(false);
+                // What was actually committed is the bill, not the ladder step:
+                // `eta_works` divides the total, so an efficiency card makes the
+                // rung genuinely cheaper — and the yard is held for what was
+                // built (T-68), which has to be the same number.
+                let billed: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
+                if payable {
+                    pay_bill(self.world.stockpile.get_mut(center).unwrap(), &bill);
                     let f = self.world.factors.get_mut(center).unwrap();
-                    f.infra = f.infra.up(1.0);
+                    // **A rung is bought, not incremented.** The stock moves to
+                    // exactly what standing at the next rung costs, so the
+                    // ladder stays the single source of the number (T-70).
+                    let next = infra_rung_of(f.infra, &self.config) + 1;
+                    f.infra = infra_rung_price(next, &self.config);
                     let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
                     self.log.push(
                         self.clock,
@@ -2897,11 +3722,11 @@ impl Simulation {
                             player: p as u32,
                             center: center_pid,
                             order,
-                            cost: target.kilotons(),
+                            cost: billed.kilotons(),
                             stockpile_after: stockpile_after.kilotons(),
                         },
                     );
-                    Some(target)
+                    Some(billed)
                 } else {
                     None
                 }
@@ -2918,6 +3743,28 @@ impl Simulation {
                     return None; // nothing worth building this hull for right now
                 };
 
+                // **A Scout with no frontier is a hull that never exists, and
+                // the minerals for it vanish** — design law #11, on the path
+                // that was 96% of all production.
+                //
+                // `try_spend_total` runs below, *before* the role is dispatched,
+                // and `launch_survey` spawns nothing when `choose_survey_target`
+                // returns `None`. So the bank was debited, the yard held for
+                // `build_time`, and no object came out: mass destroyed, not
+                // converted. `assign_role` cannot catch this — the seam hands it
+                // candidates, never the survey frontier (design law #15) — so it
+                // belongs here, beside the roster gate, under the same contract
+                // this arm already states: *a hull with no job worth doing is
+                // declined.*
+                //
+                // The policy also declines it now (`ProductionContext::survey_frontier`),
+                // which is where the 484,136 → 18,066 hull builds came from. This
+                // is the guard that keeps the invariant true for any *other*
+                // caller — a card, or a future autopilot.
+                if role == Role::Scout && self.survey_frontier(p) == 0 {
+                    return None;
+                }
+
                 // A Miner is produced together with the Freighter that hauls for
                 // it (roles §5: the nearest center produces both), so the pair is
                 // one economic act even though it is two objects.
@@ -2932,7 +3779,21 @@ impl Simulation {
                 // new pair can therefore still open an outpost with idle hulls,
                 // which is the whole point — 39% of outpost-years were being
                 // spent on exhausted rocks.
-                let crew = if role == Role::Miner { doctrine.miners_per_outpost.max(1) as usize } else { 1 };
+                // **The crew is the target's, not the doctrine's** (T-72). Read
+                // from the candidate list so it is bit-identical to what
+                // `mining_pair_cost` quoted; falling back to the deposit only if
+                // the target is not among the candidates.
+                let crew = if role == Role::Miner {
+                    match target.map(|t| self.planet_entity[t.0 as usize]) {
+                        Some(te) => candidates
+                            .iter()
+                            .find(|c| self.planet_entity[c.view.id.0 as usize] == te)
+                            .map_or_else(|| self.mining_crew_for(center, te), |c| c.mining_crew),
+                        None => 1,
+                    }
+                } else {
+                    1
+                };
                 let target_entity = target.map(|t| self.planet_entity[t.0 as usize]);
                 let (reused_miners, reused_freighter) = match (self.config.recycle_mining_pairs, role, target_entity) {
                     (true, Role::Miner, Some(te)) => {
@@ -2970,7 +3831,7 @@ impl Simulation {
                 // caller holds the yard — one number, computed once, rather than
                 // a per-ship time that could drift from the occupancy. Hulls
                 // taken from Reserve are already built and leave at once.
-                let launch_delay = self.build_time(cost);
+                let launch_delay = self.build_time(center, cost);
                 if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
@@ -3049,6 +3910,76 @@ impl Simulation {
     /// What a mining pair costs player `p` this cycle: the halves that are not
     /// already sitting in Reserve. Equals the full price whenever recycling is
     /// off, which is what keeps the flag a clean A/B.
+    /// **How many miners to put on this body — the crew that meets the buyer's
+    /// unmet demand, and no more** (`Hyades_industry.md` §4.5, T-87).
+    ///
+    /// **Crew is not a parameter.** It was `miners_per_outpost` (T-57, a flat
+    /// hull count) and then `miner_vein_fraction` (T-72, a share of the rock),
+    /// and both were policies someone had to tune against an objective that
+    /// could not price them. The measured verdict on the second was monotone in
+    /// the wrong direction — every crew size scored worse than the one below,
+    /// on both seeds and both objectives (§6.15) — and the reason is now the
+    /// model rather than a footnote: **ore nobody can spend is a cost.** A crew
+    /// sized without reference to demand buys hulls, freight and entity count
+    /// to bring forward a resource the empire is not short of.
+    ///
+    /// So the crew *falls out* of demand. There is no knob.
+    ///
+    /// **Demand**, in kilotons per year, is what the founding centre can
+    /// actually consume and currently cannot get:
+    ///
+    /// ```text
+    /// D = fabrication_rate(centre) · mineral_pressure(centre)
+    /// ```
+    ///
+    /// Both terms already exist and both already run on this decision path.
+    /// `fabrication_rate` is the rate the yard turns minerals into mass — the
+    /// only sink that consumes ore — and `mineral_pressure` is `1.0` when the
+    /// centre is broke for its next rung and `0.0` when it is comfortable. A
+    /// centre with a full bank has no unmet demand and opens a mine with one
+    /// hull; a starved one crews to its throughput.
+    ///
+    /// **Supply** is §4.3's law read forwards, so the crew is that law inverted:
+    ///
+    /// ```text
+    /// supply(n) = ε · S · (n/N)^β / T          kt/yr, T = mining_tick_years
+    /// n*        = N · (D · T / (ε · S))^(1/β)   clamped to [1, N]
+    /// ```
+    ///
+    /// The sign this produces is the interesting part and it is the opposite of
+    /// both retired policies: **a richer rock wants a smaller crew**, because it
+    /// meets the same demand with fewer hands. Deposit mass grows as `N^{3/2}`
+    /// while the demand target does not grow at all, so `n*` *falls* as the body
+    /// gets richer. Under a flat fraction it rose. That inversion is why this is
+    /// a model change and not a retuning.
+    ///
+    /// **R-IND20: demand is read at the founding centre, not empire-wide.** An
+    /// outpost feeds the whole empire through freight, so the correct demand is
+    /// the empire's unmet total; that is an `O(planets)` scan on a decision path
+    /// (`CLAUDE.md` §4) and would need the `holdings_centroid` memo treatment.
+    /// The centre that pays for the pair is the defensible local proxy, and the
+    /// difference is what R-IND20 is for.
+    fn mining_crew_for(&self, center: Entity, planet: Entity) -> usize {
+        let stock = self.world.density.get(planet).map(|d| d.total_mass()).unwrap_or(Kilotons::ZERO);
+        let ore = stock.kilotons();
+        if ore <= 0.0 {
+            return 1;
+        }
+        let demand = self.fabrication_rate(center) * self.mineral_pressure_of(center);
+        if demand <= 0.0 {
+            return 1;
+        }
+        let n_veins = veins(stock, &self.config);
+        // What one full crew would lift per year, against what is wanted per
+        // year. Both sides are kt/yr, which is the check that this is a rate
+        // comparison and not two magnitudes that happen to be `f64`.
+        let full_crew_rate = self.config.outpost_mining_fraction * ore / self.config.mining_tick_years.max(1e-12);
+        let share = (demand / full_crew_rate.max(1e-12)).clamp(0.0, 1.0);
+        let beta = self.config.crowding_beta.max(1e-6);
+        let want = n_veins * share.powf(1.0 / beta);
+        (want.round().clamp(1.0, n_veins.min(MAX_VEINS)) as usize).max(1)
+    }
+
     fn mining_pair_price(&self, p: usize, crew: usize) -> Price {
         let full_miner = role_cost(Role::Miner, &self.config);
         let full_freighter = role_cost(Role::Freighter, &self.config);
@@ -3200,9 +4131,21 @@ impl Simulation {
     /// R-V9 needs no special case at either end: a Limited hull's mass reads
     /// below `Band Empty`, so its colony would have no carrying capacity and
     /// [`Self::colony_seed_for`] declines.
-    fn founding_infra(&self, hull: HullType) -> Band {
-        let b = hull_cost(hull, &self.config).band_from(cost_anchor(&self.config));
-        Band::new(b.bands().clamp(0.0, BandTier::MAX_PLAYABLE.band().bands()))
+    fn founding_infra(&self, hull: HullType) -> Price {
+        // **The recycled hull's minerals *are* the stock** (T-70), so this is a
+        // price and no longer a Band — the clamp is to what the top playable
+        // rung costs rather than to the rung's index. Same content, one ladder
+        // reading fewer, and it lands on the ladder's own value rather than on
+        // a Band that has to be converted back the moment it is spent against.
+        let ceiling = infra_rung_price(BandTier::MAX_PLAYABLE.band().bands() as usize, &self.config);
+        hull_cost(hull, &self.config).min(ceiling).max(Price::ZERO)
+    }
+
+    /// [`Self::founding_infra`] as a rung, for the surfaces that want the
+    /// reading rather than the stock.
+    #[inline]
+    fn founding_infra_band(&self, hull: HullType) -> Band {
+        self.founding_infra(hull).band_from(cost_anchor(&self.config))
     }
 
     /// **The carrying capacity a colony will have the moment it is founded** —
@@ -3498,7 +4441,7 @@ impl Simulation {
         // The works rung: geometric mean of capacity and abundance, which on the
         // Band ladder is their midpoint (R-IND13, placeholder).
         let i_star = Band::new((f.k().bands() + density.bands()) * 0.5);
-        let from = self.founding_infra(hull).round().bands().max(0.0) as usize;
+        let from = infra_rung_of(self.founding_infra(hull), &self.config);
         let to = i_star.round().bands().max(0.0) as usize;
         let mut total = Price::ZERO;
         for rung in (from + 1)..=to {
@@ -3712,6 +4655,21 @@ impl Simulation {
     /// `PlanetView`s, so allocating one per call was pure churn (memcpy alone
     /// was 4% of engine instructions). Callers `mem::take` the scratch buffer,
     /// fill it, and put it back.
+    /// **How many worlds a survey craft could still be dispatched to.**
+    ///
+    /// Exactly the size of the set [`Self::fill_survey_candidates`] offers, since
+    /// that filters on `visited` and nothing else — `visited` is marked at
+    /// *launch*, so a world with a craft already inbound is not frontier. At zero
+    /// [`Self::launch_survey`] picks nothing and spawns nothing, which is why
+    /// both the policy (`ProductionContext::survey_frontier`) and the build path
+    /// read this rather than a candidate count.
+    ///
+    /// `O(1)` — `VisitedMask` keeps the count. A production decision asks it.
+    fn survey_frontier(&self, p: usize) -> usize {
+        let visited = &self.world.knowledge.get(self.player_entity[p]).unwrap().visited;
+        self.planet_entity.len().saturating_sub(visited.len())
+    }
+
     fn fill_survey_candidates(&self, p: usize, out: &mut Vec<SurveyView>) {
         out.clear();
         let visited = &self.world.knowledge.get(self.player_entity[p]).unwrap().visited;
@@ -3826,6 +4784,464 @@ impl Simulation {
         self.centroid_cache[owner.0 as usize] = None;
     }
 
+    /// **What a centre will pay for one kilotonne of a colour, in `$`/kt**
+    /// (politics §3.2, T-84).
+    ///
+    /// ```text
+    /// wtp = base_value[c] · doctrine_demand[c] · mineral_pressure(centre)
+    /// ```
+    ///
+    /// The fourth term §3.2 names — `risk_discount(counterparty)` — is not here
+    /// because it is a property of *whom you are trading with*, not of what you
+    /// want, so it belongs at match time and needs reputation (T-86).
+    ///
+    /// Every term is already ratified or already exists: `mineral_pressure_of`
+    /// is the engine's, and the two Doctrine fields default to the works mix
+    /// (`Hyades_industry.md` §6.10) rather than to a second independent
+    /// statement of what an empire wants.
+    fn willingness_to_pay(&self, center: Entity, colour: Basic, doctrine: &Doctrine) -> f64 {
+        let i = colour as usize;
+        doctrine.base_value[i] * doctrine.doctrine_demand[i] * self.mineral_pressure_of(center)
+    }
+
+    /// **Post every empire's bids and asks to the cross-empire books** (T-84).
+    ///
+    /// Runs at the round barrier and rebuilds the books from scratch, because
+    /// §10.5 clears a **set** rather than a stream: a book carried across rounds
+    /// would make a stale offer's position in it depend on when it was posted,
+    /// which is the event-ordering dependence per-round clearing exists to
+    /// avoid.
+    ///
+    /// **A centre bids for what it is short of and asks with what it is long
+    /// of**, both read off the same place — its own bank against its own next
+    /// works bill. That is what makes this move Yellow from the Yellow-rich to
+    /// the Yellow-poor rather than shuffling mass at random: T-73 measured
+    /// 1,494 of 1,515 banks single-coloured, so nearly every centre is
+    /// simultaneously long one colour and short the other two.
+    ///
+    /// **Nothing clears yet.** This stage is inert by construction (§10.7
+    /// stages 1–3) and the guard is a bit-identical bed.
+    fn post_exchange_offers(&mut self) {
+        for b in self.exchange.books.iter_mut() {
+            *b = matching::Book::new();
+        }
+        let players = self.player_entity.len();
+        for p in 0..players {
+            let pe = self.player_entity[p];
+            let doctrine = *self.world.doctrine.get(pe).unwrap();
+            let owner = PlayerId(p as u32);
+            // Planet-id order, which is the engine's canonical iteration order
+            // and the only one every client agrees on before the round exists.
+            for &e in &self.planet_entity {
+                if self.world.owner.get(e).copied() != Some(owner) {
+                    continue;
+                }
+                let deficit = self.colour_deficit(e, owner);
+                let bank = self.world.stockpile.get(e).copied().unwrap_or_default();
+                let pos = *self.world.position.get(e).unwrap();
+                let at = [pos.x, pos.y, pos.z];
+                for (i, &c) in Basic::ALL.iter().enumerate() {
+                    let short = deficit[i].kilotons();
+                    if short > 1e-9 {
+                        let price = self.willingness_to_pay(e, c, &doctrine);
+                        if price > 0.0 {
+                            self.exchange.posted[i].0 += 1;
+                            self.exchange.books[i].post_bid(matching::Offer {
+                                entity: e.0,
+                                price,
+                                qty: short,
+                                pos: at,
+                                owner,
+                            });
+                        }
+                    } else {
+                        // Long: whatever this bill does not claim is sellable.
+                        // A centre with no bill to pay is long everything it
+                        // holds, which is exactly the Yellow-rich empire the
+                        // Yellow-poor one needs to reach.
+                        let spare = bank.get_basic(c);
+                        if spare > 1e-9 {
+                            self.exchange.posted[i].1 += 1;
+                            self.exchange.books[i].post_ask(matching::Offer {
+                                entity: e.0,
+                                price: self.willingness_to_pay(e, c, &doctrine),
+                                qty: spare,
+                                pos: at,
+                                owner,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// **The outposts an empire has crew standing on**, in outpost-id order
+    /// (T-85). The candidate venues it can settle a trade at.
+    fn worked_outposts(&self, p: PlayerId) -> Vec<u64> {
+        self.mine_crew
+            .range((p.0, 0u64)..=(p.0, u64::MAX))
+            .filter(|(_, crew)| !crew.is_empty())
+            .map(|((_, o), _)| *o)
+            .collect()
+    }
+
+    /// **Where two empires can hand goods over** — a rock they both work
+    /// (`Hyades_politics_trade_and_intelligence.md` §10.6, T-85).
+    ///
+    /// **R-P17, decided — and not as it was first framed.** The venue is the
+    /// shared rock nearest **the party making this delivery**, because a
+    /// contract has *two* drops and each side ships its own (see
+    /// [`Contract::buyer_drop`]). The first formulation minimised the two
+    /// parties' *summed* transit, which is the right answer only if there is one
+    /// venue for both legs — and there is not.
+    ///
+    /// `None` means these two empires cannot trade at all right now, and that is
+    /// the mechanic rather than a failure: **geography is the trade
+    /// constraint.** An empire with no rock in common with anyone is landlocked,
+    /// and reaching one is a reason to go somewhere.
+    fn shared_venue(&self, a: PlayerId, b: PlayerId, ship_from: Vec3) -> Option<Entity> {
+        let (mine, theirs) = (self.worked_outposts(a), self.worked_outposts(b));
+        let mut best: Option<(f64, u64)> = None;
+        // Both lists are id-sorted, so this is a linear merge rather than a
+        // nested scan — a centre can work thousands of rocks (§4.5).
+        let (mut i, mut j) = (0usize, 0usize);
+        while i < mine.len() && j < theirs.len() {
+            match mine[i].cmp(&theirs[j]) {
+                Ordering::Less => i += 1,
+                Ordering::Greater => j += 1,
+                Ordering::Equal => {
+                    let e = Entity(mine[i]);
+                    if let Some(&at) = self.world.position.get(e) {
+                        let cost = ship_from.distance(at);
+                        // Id breaks ties, so the choice is total and does not
+                        // depend on which party is named first.
+                        if best.is_none_or(|(c, o)| cost < c || (cost == c && mine[i] < o)) {
+                            best = Some((cost, mine[i]));
+                        }
+                    }
+                    i += 1;
+                    j += 1;
+                }
+            }
+        }
+        best.map(|(_, o)| Entity(o))
+    }
+
+    /// **Clear every colour book into escrowed contracts** (§10.5, T-85).
+    ///
+    /// The first stage of the Exchange that is **not** inert, and §10.7 says to
+    /// expect it to move the bed rather than assume it will not — it is the same
+    /// shape as the industry stage that broke §6.7's neutrality plan, because it
+    /// changes what a purchase costs.
+    ///
+    /// Three filters between a `Fill` and a `Contract`, and each one is a design
+    /// statement rather than a guard:
+    ///
+    /// - **No self-trades.** An empire filling its own ask is a no-op that would
+    ///   burn `$` and move nothing. §4's Corner — buying a mineral you have no
+    ///   use for so a rival cannot have it — is a *different* play and stays
+    ///   legal, because it has a real counterparty.
+    /// - **A shared venue, or no trade.** §10.6: goods change hands at a rock
+    ///   both parties work. This is what makes trade geographic.
+    /// - **What the purse can actually pay.** Escrow is locked at match, so a
+    ///   bid beyond the ledger is trimmed to what it can fund rather than
+    ///   creating a debt nobody agreed to.
+    fn clear_exchange(&mut self) {
+        let now = self.clock;
+        let mut fills: Vec<(usize, matching::Fill)> = Vec::new();
+        for (i, book) in self.exchange.books.iter_mut().enumerate() {
+            for f in book.match_wave_cross_empire() {
+                fills.push((i, f));
+            }
+        }
+        for (i, f) in fills {
+            self.exchange.fills += 1;
+            if f.buyer == f.seller {
+                self.exchange.rejected[0] += 1;
+                continue;
+            }
+            let (bid_e, ask_e) = (Entity(f.bid), Entity(f.ask));
+            let (Some(&b_at), Some(&s_at)) = (self.world.position.get(bid_e), self.world.position.get(ask_e)) else {
+                continue;
+            };
+            // The seller ships, so the seller picks its own drop.
+            let Some(seller_drop) = self.shared_venue(f.buyer, f.seller, s_at) else {
+                self.exchange.rejected[1] += 1;
+                continue; // landlocked with respect to each other this round
+            };
+            // The buyer's side is `$` in the default transaction, and `$` has no
+            // location. A goods counter-leg is the buyer's own contract on
+            // another colour's book, with its own drop — which is how "leave
+            // Yellow at X in exchange for Magenta at Y" is expressed.
+            let buyer_drop = None;
+            let _ = b_at;
+
+            // **The price the fill cleared at**, carried on the fill rather
+            // than looked up — a wave drops exhausted offers, so a bid that
+            // matched in full is already gone from the book.
+            let price = f.price;
+            let purse = self.purse_of(f.buyer);
+            if price <= 0.0 {
+                self.exchange.rejected[2] += 1;
+                continue;
+            }
+            if purse <= 0.0 {
+                self.exchange.rejected[3] += 1;
+                continue;
+            }
+            let qty = f.qty.min(purse / price);
+            let escrow = qty * price;
+            if qty <= 1e-9 || !escrow.is_finite() {
+                continue;
+            }
+
+            let pe = self.player_entity[f.buyer.0 as usize];
+            self.credit(pe, -escrow);
+
+            // **The freight leg.** The obligation was instant; the ore is not.
+            // Transit is the seller's centre to its own drop, at civilian
+            // acceleration — the same `ship_travel_years` every other voyage in
+            // the engine uses, so a trade is priced in the same geometry as a
+            // colonisation or a haul (§8.1: a trade is a voyage).
+            let drop_at = *self.world.position.get(seller_drop).unwrap();
+            let t = math::ship_travel_years(s_at.distance(drop_at), self.config.civilian_accel_g * G);
+            let id = self.exchange.next_id;
+            self.exchange.next_id += 1;
+            self.exchange.contracts.insert(
+                id,
+                Contract {
+                    buyer: f.buyer,
+                    seller: f.seller,
+                    seller_centre: ask_e,
+                    colour: Basic::ALL[i],
+                    qty,
+                    escrow,
+                    seller_drop,
+                    buyer_drop,
+                    struck: now,
+                },
+            );
+            if self.exchange_settlement {
+                self.schedule(t, EventKind::ContractDue { id });
+            }
+        }
+    }
+
+    /// **A contract's freight arrives at its drop** (§3.3, §10.6, T-77).
+    ///
+    /// The ore leaves the seller's bank and lands in the **buyer's pile at the
+    /// shared outpost** — not at the buyer's world. The buyer's own freighter
+    /// collects it on the need-based route it was already flying, which is why
+    /// this needs no cross-empire hull and why a foreign hull near a colony
+    /// stays a card rather than the default.
+    ///
+    /// **Mass is conserved** (design law #11): every kilotonne debited from the
+    /// seller is credited to the buyer, and the `$` burn is not mass — `$` was
+    /// never in the mass ledger (R-P1).
+    ///
+    /// **Both outcomes share the burn, which is what §2.3's sink is.**
+    ///
+    /// | | seller gets | buyer gets | burned |
+    /// |---|---|---|---|
+    /// | delivered | `E · exp(−λ·t)` | the ore | `E · (1 − exp(−λ·t))` |
+    /// | **defaulted** | nothing | `E · exp(−λ·t)` | the same |
+    ///
+    /// §3.3: *"the buyer loses the burn, the seller loses the cargo, the loss is
+    /// shared"* — **which is what makes escorting worth paying for** (R-IND10,
+    /// resolved there). A default is not a free option for the seller: it keeps
+    /// nothing and forfeits the sale.
+    ///
+    /// Default here is *inability*, not malice — the bank is short because the
+    /// centre spent the ore, or lost the world. Deliberate default is a card
+    /// (§7.2), and interdiction is T-86.
+    fn sys_contract_due(&mut self, id: u64) {
+        let Some(c) = self.exchange.contracts.remove(&id) else {
+            return; // already settled or cancelled
+        };
+        let t = (self.clock - c.struck).max(0.0);
+        let keep = (-self.config.trade_decay_lambda * t).exp();
+        let paid = c.escrow * keep;
+        let burn = c.escrow - paid;
+
+        // Does the seller still have it? `get_basic` is the colour the contract
+        // names, not the bank total — a centre rich in Cyan cannot settle a
+        // Yellow contract, which is the whole point of the colour axis.
+        let held = self.world.stockpile.get(c.seller_centre).map_or(0.0, |b| b.get_basic(c.colour));
+        let delivered = held + 1e-9 >= c.qty && self.world.owner.get(c.seller_centre).copied() == Some(c.seller);
+
+        if delivered {
+            if let Some(bank) = self.world.stockpile.get_mut(c.seller_centre) {
+                match c.colour {
+                    Basic::Cyan => bank.cyan -= c.qty,
+                    Basic::Magenta => bank.magenta -= c.qty,
+                    Basic::Yellow => bank.yellow -= c.qty,
+                }
+            }
+            // **Into the buyer's own pile at that rock** — `outpost_stock` is
+            // already keyed `(player, outpost)` and is already what a laden
+            // freighter loads from, so the collection leg needs no new code at
+            // all. The buyer's hauler picks the ore up on the route it was
+            // flying anyway, which is the amendment's whole claim made literal.
+            let pile = self.outpost_stock.entry((c.buyer.0, c.seller_drop.0)).or_default();
+            match c.colour {
+                Basic::Cyan => pile.cyan += c.qty,
+                Basic::Magenta => pile.magenta += c.qty,
+                Basic::Yellow => pile.yellow += c.qty,
+            }
+            let se = self.player_entity[c.seller.0 as usize];
+            self.credit(se, paid);
+            self.exchange.settled += 1;
+            self.exchange.traded[c.colour as usize] += c.qty;
+        } else {
+            let be = self.player_entity[c.buyer.0 as usize];
+            self.credit(be, paid);
+            self.exchange.defaulted += 1;
+        }
+        self.exchange.burned += burn;
+    }
+
+    /// Contracts in flight, and what the Exchange has settled and burned.
+    /// Diagnostic — §10.8's guard is a census, not a scalar.
+    pub fn exchange_state(&self) -> (usize, u64, f64) {
+        (self.exchange.contracts.len(), self.exchange.settled, self.exchange.burned)
+    }
+
+    /// Contracts that **defaulted** — the seller's bank was short the colour it
+    /// owed, or it had lost the world, when the freight came due (§3.3).
+    pub fn exchange_defaults(&self) -> u64 {
+        self.exchange.defaulted
+    }
+
+    /// Turn the whole Exchange off — posting, clearing and settlement (T-77).
+    ///
+    /// The ablation `CLAUDE.md` §2 puts first among the three kinds of proof:
+    /// "trade narrowed colour dispersion" is only a claim if there is a run
+    /// without trade to compare against.
+    pub fn set_exchange_enabled(&mut self, on: bool) {
+        self.exchange_posting = on;
+        self.exchange_settlement = on;
+    }
+
+    /// Kilotons delivered per colour, in `Basic::ALL` order.
+    pub fn exchange_traded(&self) -> [f64; 3] {
+        self.exchange.traded
+    }
+
+    /// **What an empire's centres want and cannot afford**, per colour (kt).
+    ///
+    /// The sum of `colour_deficit` over every centre it owns — each centre's
+    /// shortfall against its **next** infrastructure rung, in the colours that
+    /// rung is billed in. This is demand in the only sense the engine has one:
+    /// a purchase a centre would make and cannot.
+    ///
+    /// Paired with [`Self::outpost_holdings`] it answers the question that
+    /// matters about the mineral economy: **is ore sitting idle at outposts
+    /// while centres are short of it?** If both are large at once, the binding
+    /// constraint is *transport*, not extraction — and no amount of mining or
+    /// trading fixes it.
+    pub fn unmet_colour_demand(&self, p: PlayerId) -> [Price; 3] {
+        let mut out = [Price::ZERO; 3];
+        for &e in &self.planet_entity {
+            if self.world.owner.get(e).copied() != Some(p) {
+                continue;
+            }
+            let d = self.colour_deficit(e, p);
+            for i in 0..3 {
+                out[i] += d[i];
+            }
+        }
+        out
+    }
+
+    /// **An empire's ore waiting at outposts**, summed over every pile it holds.
+    ///
+    /// Delivered ore lands here, not in a bank (§10.6) — so a census that reads
+    /// only planet stockpiles **cannot see what the Exchange moved**. That is
+    /// the metric-blindness `CLAUDE.md` §2 keeps warning about, and it made the
+    /// first colour-flow reading look like trade changed nothing.
+    pub fn outpost_holdings(&self, p: PlayerId) -> Minerals {
+        let mut out = Minerals::default();
+        for ((owner, _), m) in self.outpost_stock.iter() {
+            if *owner == p.0 {
+                out.add_basics(m);
+            }
+        }
+        out
+    }
+
+    /// Fills produced, and why each rejected one was: `(self-trade, no venue,
+    /// no price, no purse)`.
+    pub fn exchange_rejections(&self) -> (u64, [u64; 4]) {
+        (self.exchange.fills, self.exchange.rejected)
+    }
+
+    /// Cumulative `(bids, asks)` posted per colour, in `Basic::ALL` order.
+    pub fn exchange_posted(&self) -> [(u64, u64); 3] {
+        self.exchange.posted
+    }
+
+    /// **Who is contracted to move what, and where** — the Exchange census
+    /// (§10.8, T-85).
+    ///
+    /// Returns one row per contract in flight: `(buyer, seller, colour,
+    /// kilotons, escrow, seller_drop, buyer_drop, struck)`. §10.8 is explicit
+    /// that the guard for Exchange work is a **census** and not colony-years,
+    /// because colony-years is inverted for anything that changes how minerals
+    /// are spent — so the state has to be readable, not just summarised.
+    ///
+    /// It is also what answers the design's actual question: **does Yellow move
+    /// from Yellow-rich empires to Yellow-poor ones?** That is a claim about
+    /// direction and counterparties, and no scalar carries it.
+    #[allow(clippy::type_complexity)]
+    pub fn exchange_contracts(&self) -> Vec<(PlayerId, PlayerId, Basic, f64, f64, PlanetId, Option<PlanetId>, f64)> {
+        self.exchange
+            .contracts
+            .values()
+            .map(|c| {
+                let drop = *self.world.planet_id.get(c.seller_drop).unwrap();
+                let pay = c.buyer_drop.and_then(|e| self.world.planet_id.get(e).copied());
+                (c.buyer, c.seller, c.colour, c.qty, c.escrow, drop, pay, c.struck)
+            })
+            .collect()
+    }
+
+    /// How many offers stand on each colour's book. Diagnostic — the interim
+    /// guard for Exchange work is a census, not colony-years (§10.8).
+    pub fn exchange_depth(&self) -> [(usize, usize); 3] {
+        [self.exchange.books[0].len(), self.exchange.books[1].len(), self.exchange.books[2].len()]
+    }
+
+    /// **Add to an empire's `$` ledger** — the only writer (T-82).
+    ///
+    /// Refuses a non-finite delta rather than propagating it. Design law #16 is
+    /// explicit that a NaN in replicated state is a *fatal value*, not a small
+    /// one: core WASM picks NaN payloads nondeterministically, so a NaN that
+    /// reaches the hashed state is an intermittent desync with no reproducer.
+    /// The purse is replicated, so the guard belongs at the write and not at
+    /// the digest.
+    ///
+    /// A negative balance is *not* refused — debt is a legitimate state for a
+    /// claim, and §2.1 is explicit that `$` is an obligation rather than a
+    /// substance. What is refused is a value that is not a number.
+    fn credit(&mut self, player: Entity, delta: f64) {
+        if !delta.is_finite() {
+            return;
+        }
+        if let Some(p) = self.world.purse.get_mut(player) {
+            let next = *p + delta;
+            if next.is_finite() {
+                *p = next;
+            }
+        }
+    }
+
+    /// An empire's `$` balance. Presentation-readable; the simulation reads it
+    /// only through the Exchange.
+    pub fn purse_of(&self, player: PlayerId) -> f64 {
+        self.player_entity.get(player.0 as usize).and_then(|&e| self.world.purse.get(e)).copied().unwrap_or(0.0)
+    }
+
     /// Live mineral pressure for `center`: `1.0` when broke for its next
     /// infra upgrade, `0.0` when it can comfortably afford it. Callable for
     /// *any* owned production center, not just from within its own
@@ -3833,7 +5249,7 @@ impl Simulation {
     /// fresh, never stored, which is what lets [`Self::most_needed_center`]
     /// compare need across the whole empire.
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Band::ZERO);
+        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
         let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
         // The price of this center's *next* rung — the same function the build
         // path charges, rather than a second copy of `round(infra) + 1`.
@@ -3878,7 +5294,7 @@ impl Simulation {
     /// permanently: it was already the oracle for single-supply matching, and
     /// it is now the oracle for zero-discount routing too — the same function
     /// checking two different generalisations.
-    fn best_delivery_center(&self, owner: PlayerId, from: Vec3) -> Option<Entity> {
+    fn best_delivery_center(&self, owner: PlayerId, from: Vec3, cargo: &Minerals) -> Option<Entity> {
         let lambda = self.config.trade_decay_lambda;
         if lambda <= 0.0 {
             return self.most_needed_center(owner);
@@ -3891,7 +5307,7 @@ impl Simulation {
             }
             let d = from.distance(*self.world.position.get(e).unwrap());
             let t = math::ship_travel_years(d, accel);
-            let score = self.mineral_pressure_of(e) * (-lambda * t).exp();
+            let score = self.bill_completion(e, owner, cargo) * (-lambda * t).exp();
             // Entity id breaks ties so the choice is total and deterministic.
             let better = match best {
                 None => true,
@@ -3902,6 +5318,78 @@ impl Simulation {
             }
         }
         best.map(|(e, _)| e)
+    }
+
+    /// **How much of this destination's remaining shortfall the cargo closes**
+    /// (R-IND17, `Hyades_industry.md` §6.11).
+    ///
+    /// ```text
+    /// short_before = Σ_c deficit[c]
+    /// short_after  = Σ_c max(0, deficit[c] − cargo[c])
+    /// completion   = (short_before − short_after) / short_before
+    /// ```
+    ///
+    /// **This replaces T-81's `relief`, which was measured counterproductive.**
+    /// That version scored the fraction of the *cargo* that landed on a
+    /// deficit, which sends each colour to wherever that colour is scarcest —
+    /// by construction a different centre per colour. Paying a three-colour
+    /// bill needs ore to **converge**, so scattering it by colour is the
+    /// opposite of what the bill wants: measured, infrastructure builds fell
+    /// 57 → 31 and bank composition did not move at all.
+    ///
+    /// **The denominator is the centre's remaining shortfall, not the bill.**
+    /// That distinction is the whole mechanism and it is easy to get wrong — the
+    /// first written form of R-IND17 divided by `Σ bill`, and worked out on
+    /// paper that ties a centre needing only Yellow against one needing
+    /// everything, both scoring `0.5` for the same Yellow delivery. No
+    /// concentration at all. Dividing by what is left to find instead:
+    ///
+    /// | destination, given a Yellow cargo | `÷ Σ bill` | `÷ short_before` |
+    /// |---|---|---|
+    /// | needs only Yellow | 0.500 | **1.000** |
+    /// | needs Yellow and Magenta | 0.500 | 0.750 |
+    /// | needs everything | 0.500 | 0.500 |
+    /// | needs only Magenta | 0.000 | 0.000 |
+    ///
+    /// So a centre holding two colours and missing the third pulls the third
+    /// hardest, and ore concentrates where it can actually be spent.
+    ///
+    /// Still a dimensionless fraction in `[0, 1]`, because `exp(−λ·t)`
+    /// multiplies it — R-O68 is the standing lesson on mixed-unit comparisons.
+    ///
+    /// **What it cannot do.** No routing rule can give an empire a colour its
+    /// own ground does not hold, and the supply is single-coloured: 6,725
+    /// sources measured at a mean dominant-colour share of **0.789**, 38% of
+    /// them ≥95% one colour. That is §8.1's subject and the Exchange's job
+    /// (T-77), with design law #1's counter-graph as the other half.
+    fn bill_completion(&self, center: Entity, owner: PlayerId, cargo: &Minerals) -> f64 {
+        let deficit = self.colour_deficit(center, owner);
+        let short_before = deficit.iter().fold(Price::ZERO, |a, &b| a + b);
+        if short_before <= Price::ZERO {
+            return 0.0;
+        }
+        let mut short_after = Price::ZERO;
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            short_after += (deficit[i] - Price::new(cargo.get_basic(c))).max(Price::ZERO);
+        }
+        (short_before - short_after) / short_before
+    }
+
+    /// A centre's per-colour shortfall against its **next works bill** — the
+    /// quantity T-73 made meaningful and nothing was measuring.
+    fn colour_deficit(&self, center: Entity, owner: PlayerId) -> [Price; 3] {
+        let Some(f) = self.world.factors.get(center) else {
+            return [Price::ZERO; 3];
+        };
+        let step = infra_step_price(f.infra, &self.config);
+        let works = self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default();
+        let bill = works_bill(step, &works);
+        let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
+        let mut out = [Price::ZERO; 3];
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            out[i] = (bill[i] - Price::new(bank.get_basic(c))).max(Price::ZERO);
+        }
+        out
     }
 
     /// The nearest planet owned by player `p` to `from` — used to send an
@@ -3983,7 +5471,8 @@ impl Simulation {
                     biosphere: f.biomass.in_bands(),
                     bio_max: f.bio_max.in_bands(),
                     biomass: f.biomass,
-                    infrastructure: f.infra,
+                    infrastructure: f.infra_band(&self.config),
+                    works: f.infra,
                     k: f.k(),
                     population: pop,
                     pop_level: self.bands.level(pop),
@@ -4001,11 +5490,13 @@ impl Simulation {
             let e = self.world.entity_at(i);
             if let Some(&role) = self.world.role.get(e) {
                 let m = self.world.motion.get(e).unwrap();
+                let hull = self.world.hull_type.get(e).copied().unwrap_or_else(|| role_hull_type(role));
                 vehicles.push(VehicleSnapshot {
                     owner: self.world.owner.get(e).map(|o| o.0).unwrap_or(0),
                     kind: role.kind(),
                     position: self.position_at(e, self.clock).unwrap(),
                     cargo: *self.world.cargo.get(e).unwrap_or(&Minerals::default()),
+                    dry_mass: hull_dry_mass(hull, &self.config),
                     in_flight: m.arrive > self.clock,
                 });
             }
@@ -4096,6 +5587,69 @@ fn take_basics(bank: &mut Minerals, amount: Price) -> Minerals {
     out
 }
 
+/// **Fill a hold against the destination's shortfall, not in proportion to the
+/// pile** (R-O89, T-76).
+///
+/// [`take_basics`] splits a load across colours in whatever ratio the pile
+/// happens to hold. That is the right rule for "move some ore" and the wrong one
+/// for "move what is needed": since T-73 a works bill is payable in **named
+/// colours**, and the galaxy's supply is single-coloured (6,725 sources, mean
+/// dominant share **0.789**, 38% at >=95% one colour, T-81). So a hauler standing
+/// on a rock that holds the Magenta a centre is short of would load 79% Yellow
+/// and close nothing — while the Magenta stayed in the dirt.
+///
+/// **This is the term the pickup leg never had.** T-81/R-IND17 gave the
+/// *delivery* leg a colour term — where a full hold goes. Nothing gave the
+/// *load* one: what went into the hold was decided by geology. Measured over
+/// eight seeds at 1,500 yr, adding it is **+8.40% ± 1.86 work-years, 8/8
+/// positive** (`Hyades_industry.md` §6.20) on **the same tonnage** — 20,259 →
+/// 20,292 kt delivered over 26,800 → 26,746 trips. The fleet did not haul more;
+/// it hauled the right thing.
+///
+/// **The split is the deficit's own ratio, not neediest-colour-first.** A bill is
+/// a *conjunction* — the rung pays only when every colour clears — so what
+/// matters is `min_c bank[c]/bill[c]`, not the sum of anything. Filling the
+/// neediest colour first maximises that sum and lands mono-coloured loads, and
+/// `try_spend_total` drains a bank **proportionally** for every hull, so the one
+/// colour a hauler carefully accumulated is diluted before the other two arrive.
+/// Measured head-to-head on the standard bed, proportional beats neediest-first
+/// by **+3.84% ± 0.20, 4/4 seeds** — a tiny error bar next to the ±3.06 either
+/// scores against baseline, which is CRN pairing doing its job.
+///
+/// The hold is filled **along** that direction, not merely up to the shortfall:
+/// a hauler that would fly home light instead overshoots in the ratio the
+/// destination wants, because the next rung is already waiting behind this one
+/// and ore banked in the right proportion is ore the following bill can spend.
+///
+/// **Then it tops up.** If the pile cannot supply the wanted direction — the
+/// colour is simply not in this rock — the remaining room loads proportionally,
+/// because a half-empty hull has spent the same transit for less and banked ore
+/// still buys hulls even when it buys no rung. A centre that is short of nothing
+/// skips the first pass entirely and this reduces to [`take_basics`].
+fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price) -> Minerals {
+    let mut out = Minerals::default();
+    let mut room = capacity.max(Price::ZERO);
+    if room <= Price::ZERO {
+        return out;
+    }
+    let short = deficit.iter().fold(Price::ZERO, |a, &b| a + b);
+    if short > Price::ZERO {
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            let take = (room * (deficit[i] / short)).min(Price::new(bank.get_basic(c))).max(Price::ZERO);
+            if take > Price::ZERO {
+                bank.add_basic(c, -take.kilotons());
+                out.add_basic(c, take.kilotons());
+            }
+        }
+        room = capacity - out.basic_total();
+    }
+    if room > Price::ZERO {
+        let extra = take_basics(bank, room);
+        out.add_basics(&extra);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4109,9 +5663,346 @@ mod tests {
     /// multi-second sim and the suite from 6 s into 315 s. So tests pin a short
     /// horizon; long-run coverage questions belong in an example or the offline
     /// search, not here.
+    /// **A survey craft with nothing to survey is never built, and the minerals
+    /// for it are never spent** (R-O86, design law #11).
+    ///
+    /// The leak this pins was on the engine's busiest path. `apply_build_with`
+    /// debits the bank and holds the yard *before* dispatching the role, and
+    /// `launch_survey` spawns nothing when the frontier is empty — so the order
+    /// destroyed mass rather than converting it. On the standard bed that was
+    /// **96% of every hull build**: 484,136 → 18,066 on seed 1 once the policy
+    /// and this guard both stopped issuing it, with colony count and
+    /// colony-years unmoved.
+    ///
+    /// Asserted as conservation rather than as a decline, because the decline is
+    /// the implementation and the invariant is the point: the bank does not move
+    /// unless an object came out.
+    #[test]
+    fn a_scout_build_with_no_frontier_left_spends_nothing() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let home_pos = *sim.world.position.get(home).unwrap();
+        // Fund it well past a scout's price so the decline cannot be poverty.
+        sim.world.stockpile.get_mut(home).unwrap().add_basic(Basic::Cyan, 1_000.0);
+
+        let order = BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, class: Class::Tor };
+        let bank = |sim: &Simulation| sim.world.stockpile.get(home).unwrap().basic_total();
+        let vehicles = |sim: &Simulation| sim.world.role.items.iter().filter(|r| **r == Some(Role::Scout)).count();
+
+        // With frontier left it builds and the mass becomes a hull.
+        let before = (bank(&sim), vehicles(&sim));
+        assert!(sim.survey_frontier(0) > 0, "a fresh galaxy has somewhere to scout");
+        assert!(sim.apply_build_with(0, home, home_pos, order, &[]).is_some(), "a fresh galaxy buys a scout");
+        assert!(bank(&sim) < before.0, "it was paid for");
+        assert_eq!(vehicles(&sim), before.1 + 1, "and an object came out");
+
+        // Dispatch a craft at every world, so `choose_survey_target` has nothing
+        // left to pick — the state a colonised galaxy reaches and then stays in.
+        let pids: Vec<PlanetId> = sim.planet_entity.iter().map(|&e| *sim.world.planet_id.get(e).unwrap()).collect();
+        {
+            let k = sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap();
+            for pid in pids {
+                k.visited.insert(pid);
+            }
+        }
+        assert_eq!(sim.survey_frontier(0), 0);
+
+        let before = (bank(&sim), vehicles(&sim));
+        assert!(sim.apply_build_with(0, home, home_pos, order, &[]).is_none(), "the order must be declined");
+        assert_eq!(bank(&sim), before.0, "mass is conserved: a build that produced nothing spent nothing");
+        assert_eq!(vehicles(&sim), before.1, "and nothing was created either");
+    }
+
+    /// **One freighter hold buys exactly one infrastructure rung, and the
+    /// margin is 2.3%** (R-O90).
+    ///
+    /// This is not a knob and nobody set it. It is a coincidence between two
+    /// independently ratified ladders — the hull cost ladder sets a Medium
+    /// freighter's hold, the infrastructure cost ladder sets what a rung costs —
+    /// and the engine's whole development rate turns on which side of it the
+    /// defaults land:
+    ///
+    /// | | kt |
+    /// |---|---|
+    /// | Medium hold | **0.921** |
+    /// | rung 1 → 2, the step above founding | **0.900** |
+    /// | trips per rung | **0.977** |
+    ///
+    /// A colony is founded at rung 1 exactly (its stock *is* the recycled hull's
+    /// 0.100 kt, T-70/R-O57), so the step above founding is the one every colony
+    /// in the galaxy faces first, and a round trip is ~124 years
+    /// (`examples/freight_gap`). One trip or two is therefore a factor of two on
+    /// the whole development schedule.
+    ///
+    /// **Measured, by sweeping `cargo_unit_size`** (which scales holds and
+    /// nothing else) at 1,500 yr on seeds 1 and 7:
+    ///
+    /// | `cargo_unit_size` | Medium hold | colony-years | work-years |
+    /// |---|---|---|---|
+    /// | 0.95 | 0.875 | 1,333,212 | 413,473 |
+    /// | 0.98 | 0.903 | 1,294,462 | 436,873 |
+    /// | **1.00** | **0.921** | **2,564,425** | **1,055,511** |
+    /// | 1.05 | 0.967 | 2,550,150 | 1,028,645 |
+    /// | 1.25 | 1.151 | 2,597,512 | 1,158,315 |
+    ///
+    /// A **step**, not a slope: 2% below the default halves the game and 25%
+    /// above it buys ~1%. `examples/tree_gradient` found it as the three largest
+    /// elasticities in the engine — `general_vehicle_cost`, `medium_fleet_size`
+    /// and `cargo_unit_size`, which are the three knobs that set this hold — all
+    /// reporting a ~50% collapse on one side and nothing on the other.
+    ///
+    /// **The test is here because three separately MC-tuned constants can walk
+    /// off this edge without anything else failing.** It does not assert the
+    /// margin is *correct* — that is R-O90, open — only that a change which
+    /// crosses it has to say so.
+    #[test]
+    fn one_freighter_hold_covers_one_infrastructure_rung() {
+        let cfg = SimConfig::new(1);
+        let hold = HullType::MediumSystems.cargo_capacity(&cfg);
+        let founding = hull_cost(HullType::MediumSystems, &cfg);
+        let step = infra_step_price(founding, &cfg);
+        assert_eq!(infra_rung_of(founding, &cfg), 1, "a colony is founded standing on rung 1");
+        let trips = step.kilotons() / hold.kilotons();
+        assert!(
+            trips <= 1.0,
+            "a Medium hold ({:.4} kt) no longer covers the rung above founding ({:.4} kt): {trips:.4} trips. \
+             This is a cliff, not a gradient — 2% the wrong side of it halves colony-years and work-years \
+             (R-O90). If that is intended, move this assertion and say why.",
+            hold.kilotons(),
+            step.kilotons()
+        );
+        assert!(
+            trips > 0.90,
+            "the hold now overshoots the rung by more than 10% ({trips:.4} trips). Not a fault, but the \
+             coincidence this test pins has stopped being one and the sweep in the doc comment is stale."
+        );
+    }
+
+    /// **A hold fetches the colours the destination is short of, and only the
+    /// slack goes to bulk** (R-O89).
+    ///
+    /// The rule this pins is not "carry the deficit" but *how* the deficit is
+    /// split: **along the deficit vector**, so all three colours advance
+    /// together toward a bill that pays only when every colour clears. The
+    /// obvious alternative — neediest colour first — maximises tonnage against
+    /// the largest single shortfall and lands mono-coloured loads, and it
+    /// measures **-3.84% ± 0.20 work-years, 4/4 seeds** (`Hyades_industry.md`
+    /// §6.20). Nothing in the types distinguishes the two, so this is the guard.
+    ///
+    /// The third case is the one that keeps a hauler honest: a centre short of
+    /// nothing must still fill up, because banked ore buys hulls even when it
+    /// buys no rung.
+    #[test]
+    fn a_hold_is_filled_along_the_deficit_and_topped_up_with_bulk() {
+        let pile = || Minerals { cyan: 100.0, magenta: 100.0, yellow: 100.0, ..Default::default() };
+        let kt = Price::new;
+
+        // Deficit 1:3:0 — the load mirrors the *deficit's* ratio, not the pile's
+        // (which is flat), and Yellow is untouched because nothing wants it.
+        let mut bank = pile();
+        let got = take_for_deficit(&mut bank, &[kt(1.0), kt(3.0), kt(0.0)], kt(4.0));
+        assert!((got.cyan - 1.0).abs() < 1e-9, "cyan {}", got.cyan);
+        assert!((got.magenta - 3.0).abs() < 1e-9, "magenta {}", got.magenta);
+        assert!(got.yellow.abs() < 1e-9, "yellow {}", got.yellow);
+        assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must fill");
+        assert!((bank.basic_total().kilotons() - 296.0).abs() < 1e-9, "mass is conserved out of the pile");
+
+        // Deficit smaller than the hold: the hold fills *along* the direction
+        // rather than stopping at the shortfall, so 1:1:0 over a 4 kt hold is
+        // 2:2:0 and not 1:1 plus two of bulk. Overshooting in the right ratio
+        // banks ore the *next* rung can spend; stopping short banks ore no rung
+        // can.
+        let mut bank = pile();
+        let got = take_for_deficit(&mut bank, &[kt(1.0), kt(1.0), kt(0.0)], kt(4.0));
+        assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must still fill");
+        assert!((got.cyan - 2.0).abs() < 1e-9 && (got.magenta - 2.0).abs() < 1e-9, "along the deficit: {got:?}");
+        assert!(got.yellow.abs() < 1e-9, "and nothing the destination cannot use");
+
+        // The top-up is what runs when the *pile* cannot supply that direction.
+        // No Magenta here, so the wanted half is short by 2 kt and the rest of
+        // the hold takes whatever the rock does hold rather than flying light.
+        let mut lopsided = Minerals { cyan: 100.0, yellow: 100.0, ..Default::default() };
+        let got = take_for_deficit(&mut lopsided, &[kt(1.0), kt(1.0), kt(0.0)], kt(4.0));
+        assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must still fill");
+        assert!(got.yellow > 0.0, "the top-up is proportional, so Yellow rides along: {}", got.yellow);
+        assert!(got.cyan > got.yellow, "but the wanted colour still leads");
+
+        // No deficit at all: identical to the proportional rule it replaces.
+        let mut a = pile();
+        let mut b = pile();
+        let want_nothing = take_for_deficit(&mut a, &[Price::ZERO; 3], kt(6.0));
+        let plain = take_basics(&mut b, kt(6.0));
+        assert_eq!(want_nothing.cyan, plain.cyan);
+        assert_eq!(want_nothing.magenta, plain.magenta);
+        assert_eq!(want_nothing.yellow, plain.yellow);
+
+        // A pile that cannot cover the deficit gives what it has, and nothing
+        // goes negative.
+        let mut thin = Minerals { cyan: 0.5, ..Default::default() };
+        let got = take_for_deficit(&mut thin, &[kt(2.0), kt(2.0), kt(2.0)], kt(6.0));
+        assert!((got.basic_total().kilotons() - 0.5).abs() < 1e-9);
+        assert!(thin.basic_total().kilotons() >= -1e-12 && thin.basic_total().kilotons() < 1e-9);
+    }
+
+    /// **A mineral buys exactly the same works whether it deepens or founds
+    /// (R-O87), which is why `reinvest_bias` cannot move work-years.**
+    ///
+    /// Work-years is `∫ Σ_p infra_p dt` — the Growth tree's objective
+    /// (`Hyades_trees_and_card_value.md` §2.3.3) — and `reinvest_bias` is the
+    /// knob that chooses between the only two things a centre can spend
+    /// minerals on. The natural expectation is that turning it up buys works.
+    /// It does not, and the reason is an identity rather than a tuning
+    /// accident:
+    ///
+    /// - **Deepen.** The bill is `infra_step_price / eta_works` and the stock
+    ///   moves to exactly the next rung, so works rise by `infra_step_price`.
+    ///   Works per mineral = `eta_works`.
+    /// - **Found.** The bill is the coloniser's price, and the new colony's
+    ///   stock is `founding_infra = hull_cost` — the recycled hull's minerals
+    ///   *are* the stock (T-70), because a hull's mass is its cost (R-O57,
+    ///   design law #11). Works per mineral = **1**.
+    ///
+    /// So at `eta_works = 1` the two routes are worth the same to the metric,
+    /// to the last bit, and the bias is choosing between equals.
+    ///
+    /// **This is an identity about *stock*, and it is only half the argument —
+    /// the half about *flow* runs the other way.** A colony is founded with a
+    /// recycled hull and cannot keep improving that way, so what the two routes
+    /// buy *afterwards* is not symmetric: deepening raises this centre's build
+    /// rate forever. Priced off the engine's own functions, rung I → II is
+    /// **+29.0% hull/yr for 0.90 kt — nine colonisers — and pays itself back in
+    /// 62 years** against a 1,500-year horizon. That should dominate, and the
+    /// reason it does not is three separate facts, none of them this identity
+    /// (`Hyades_industry.md` §6.19a, `examples/founding_tree`):
+    ///
+    /// 1. **Homeworlds are generated at `Band 2.0`** (`galaxy.rs`), which is
+    ///    exactly where fabrication saturates, so the rung worth +29% is one
+    ///    they already have. Rung II → III costs 19 kt — 190 colonisers — for
+    ///    **+3.2%**.
+    /// 2. **`slips` never grows.** `1 + ⌊F / slip_throughput⌋` with
+    ///    `F < fab_cap = 0.2` and `slip_throughput = 0.1` is **2 berths at every
+    ///    rung** (R-O85).
+    /// 3. **Build rate governs a fifth of the timeline.** Measured at a
+    ///    homeworld: yard utilisation **18.8%**, and the gap from one decision
+    ///    to the next is **1.5 yr after a committed build against 29.6 yr after
+    ///    an `Idle`**, because `commit_one_build` returning `None` schedules
+    ///    nothing and the next attempt is the economy tick at
+    ///    `cycle_years = 50`. That is **T-88**, and it throttles the only
+    ///    channel this knob has.
+    ///
+    /// **`eta_works` is the intended lever**, and it is a Design card's to
+    /// move: it divides the deepening bill and nothing else, so a Production
+    /// card genuinely does make a mineral buy more works. This test pins the
+    /// *baseline* — card-free, the choice is neutral — so the day a ladder
+    /// change or a card makes it non-neutral, the bias is worth re-sweeping and
+    /// this is what says so.
+    #[test]
+    fn a_mineral_buys_the_same_works_whether_it_deepens_or_founds() {
+        let cfg = SimConfig::new(1);
+        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 1)).unwrap(), test_cfg(1));
+        let works = cards::Works::default();
+        assert_eq!(works.eta_works, 1.0, "the card-free baseline is what this identity is about");
+
+        // Found: what the coloniser costs, against the works its hull becomes.
+        let hull = hull_cost(HullType::MediumSystems, &cfg);
+        assert_eq!(
+            sim.founding_infra(HullType::MediumSystems),
+            hull,
+            "a recycled hull's minerals are the colony's works stock"
+        );
+
+        // Deepen, at every rung a centre can actually stand on: what the bill
+        // costs, against the works the rung adds.
+        for n in 0..BandTier::MAX_PLAYABLE.band().bands() as usize {
+            let stand = infra_rung_price(n, &cfg);
+            let step = infra_step_price(stand, &cfg);
+            let billed: Price = works_bill(step, &works).iter().fold(Price::ZERO, |a, &b| a + b);
+            let gained = infra_rung_price(n + 1, &cfg) - stand;
+            assert!(
+                (billed - gained).kilotons().abs() < 1e-12,
+                "rung {n}: billed {billed:?} against {gained:?} of works gained"
+            );
+            // And therefore the same works per mineral as founding does.
+            let deepen_yield = gained / billed;
+            let found_yield = sim.founding_infra(HullType::MediumSystems) / hull;
+            assert!(
+                (deepen_yield - found_yield).abs() < 1e-12,
+                "rung {n}: deepening yields {deepen_yield} works per mineral, founding {found_yield} — \
+                 reinvest_bias is no longer neutral for work-years and R-O87 wants re-sweeping"
+            );
+        }
+    }
+
+    /// **The build-wide axis is open, and turnaround did not move (R-O88).**
+    ///
+    /// Two ratified sections used to disagree and the engine implemented the
+    /// intersection. `Hyades_industry.md` §3.2 says `slips` "scales without
+    /// limit"; §6.3 (T-74) made the fabrication rate a Michaelis–Menten
+    /// hyperbola bounded by `fab_cap`; and `slips` read that rate. So the axis
+    /// was `fab_cap / slip_throughput = 2` berths — **closed, not short**: a
+    /// yard on 10¹² kt of infrastructure still had two, and homeworlds are
+    /// *generated* at rung II, already past the only step it had.
+    ///
+    /// The fix splits `F`'s two roles. `slips` is the **quantity** axis and
+    /// reads the fabrication *stock*, unbounded. `berth_rate` is the **quality**
+    /// axis and is the MM curve, now denominated per berth. §5.3's tree table
+    /// then reads directly — Production buys fast berths, Expansion buys many
+    /// slow ones — and neither tree is capped on the axis the other is strong
+    /// in.
+    ///
+    /// **What this test is for is the claim that the change is surgical.**
+    /// `fab_cap` went 0.2 → 0.1, which is a re-denomination and not a retune:
+    /// the old code divided a planet-wide rate by a `slips` that was *always
+    /// exactly 2* at every rung a centre can occupy, so halving the ceiling
+    /// reproduces the old per-berth rate bit-for-bit. Turnaround is therefore
+    /// **unchanged at every playable rung**, and the only thing that moved is
+    /// how many hulls a yard can have in the water at once.
+    #[test]
+    fn turnaround_is_unchanged_and_only_the_berth_count_opened() {
+        let cfg = SimConfig::new(1);
+        let works = cards::Works::default();
+        let knee = works_knee(&cfg);
+
+        for n in 1..=BandTier::MAX_PLAYABLE.band().bands() as usize {
+            let stock = infra_rung_price(n, &cfg);
+            let u = employment_stock(stock, &works, cards::Employment::Fabrication);
+
+            // What the pre-R-O88 engine charged: a planet-wide rate at
+            // `fab_cap = 0.2`, divided by a berth count that was always 2.
+            let old_planet_rate = 0.2 * u / (u + knee);
+            let old_per_berth = old_planet_rate / 2.0;
+            let new_per_berth = employment_rate(stock, &works, cards::Employment::Fabrication, cfg.fab_cap, knee);
+            assert!(
+                (old_per_berth - new_per_berth).abs() < 1e-15,
+                "rung {n}: per-berth rate moved, {old_per_berth} → {new_per_berth}. \
+                 R-O88 was supposed to be a re-denomination, not a retune"
+            );
+
+            // And the berth count is the thing that opened.
+            let want = 1 + (u / infra_per_slip(&cfg)).floor() as usize;
+            assert_eq!(slips(u, &cfg), want);
+        }
+
+        // Rung I keeps exactly the two berths it had; everything above opens.
+        let berths =
+            |n: usize| slips(employment_stock(infra_rung_price(n, &cfg), &works, cards::Employment::Fabrication), &cfg);
+        assert_eq!(berths(1), 2, "a rung-I yard is unchanged, which is what anchors the placeholder");
+        assert!(berths(2) > berths(1), "rung II must now buy berths — it bought none before");
+        assert!(berths(3) > berths(2));
+        assert!(berths(4) > berths(3));
+
+        // §3.3's approved schedule is now read off one constant.
+        for (hull, want) in
+            [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
+        {
+            let m = hull_cost(hull, &cfg).on_scale::<units::Mass>().kilotons();
+            assert!((cfg.build_lead_years + m / cfg.fab_cap - want).abs() < 1e-9, "{hull:?} floor moved");
+        }
+    }
+
     fn test_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
-        cfg.horizon_years = 600.0;
+        cfg.horizon_years = 300.0;
         cfg
     }
 
@@ -4123,15 +6014,33 @@ mod tests {
     /// not of how long you accumulate it." Two runs is two horizons, so these
     /// pay double for a horizon that buys them nothing.
     ///
-    /// **Pinned at 250 yr, and the reason it had to move is T-68.** Making
-    /// `t_build` track mass took a Medium hull from 10 yr to 3.0, so a centre
-    /// decides three times as often, the entity count follows, and the same 600
-    /// yr does several times the work it used to. The identity is unchanged;
-    /// only the bill was.
+    /// **Pinned at 120 yr, and it has now had to move twice for the same
+    /// reason.** T-68 made `t_build` track mass (a Medium hull 10 yr → 3.0), so
+    /// a centre decides three times as often and 600 yr became 250. R-O88 opened
+    /// the build-wide axis, so a yard has berths instead of two, and 250 became
+    /// 120: the two paired tests were **35.5 s and 25.4 s of a 54 s target**
+    /// between them. The identity is unchanged both times; only the bill was.
+    ///
+    /// **Probed past the value shipped, per `CLAUDE.md` §2.** At 60 yr both
+    /// still pass and the target is faster again, so 120 is roughly double the
+    /// point where anything binds. What keeps that honest is
+    /// [`paired_mechanism_fired`], which every caller asserts: a horizon cut
+    /// until the runs are empty leaves "these two runs agree" true and
+    /// meaningless.
     fn paired_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
-        cfg.horizon_years = 250.0;
+        cfg.horizon_years = 120.0;
         cfg
+    }
+
+    /// The guard for [`paired_cfg`]: a paired identity is vacuously true on two
+    /// runs that did nothing, so assert that the run actually ran.
+    fn paired_mechanism_fired(report: &SimReport) {
+        assert!(
+            report.events_processed > 1_000,
+            "a paired run processed only {} events — the horizon has been cut past the point where              the identity asserts anything",
+            report.events_processed
+        );
     }
 
     #[test]
@@ -4209,6 +6118,91 @@ mod tests {
         let _ = Simulation::with_baseline(galaxy, cfg);
     }
 
+    /// **T-75b: a works card play is recorded and the state re-derived, so the
+    /// empire's works are independent of the order its cards were played in.**
+    ///
+    /// `cards::works_fold_is_order_independent` already pins [`cards::Works::fold`]
+    /// itself. This pins the *engine's* half, which is the half that can go
+    /// wrong in a way the fold cannot see: `apply_card_effect` could multiply
+    /// the coefficient into the live `Works` and every fold test would still
+    /// pass. The state that must be order-independent is the one the simulation
+    /// reads, so assert it there.
+    ///
+    /// Bit-identical, not approximately equal — §6.5 is explicit that this is a
+    /// desync condition and not a tidiness preference.
+    #[test]
+    fn playing_works_cards_in_any_order_leaves_the_same_empire_state() {
+        use cards::{Card, CardId, Employment, Slant, Tree, WorksWrite};
+        let card = |i: u16, w: WorksWrite| Card {
+            id: CardId(i),
+            tree: Tree::Production,
+            slant: Slant::Balanced,
+            cost: 0.8,
+            effect: CardEffect::WriteWorks(w),
+            needs_subject: false,
+        };
+        // Multiplicative *and* additive writes, with factors chosen so the
+        // permutations genuinely differ in float order — an order-insensitive
+        // fixture would let a broken implementation through.
+        let deck = [
+            card(4, WorksWrite::Cap(Employment::Fabrication, 1.3)),
+            card(1, WorksWrite::EtaWorks(1.1)),
+            card(7, WorksWrite::Cap(Employment::Fabrication, 0.7)),
+            card(2, WorksWrite::AllocWeight(Employment::Extraction, 0.1)),
+            card(9, WorksWrite::AllocWeight(Employment::Extraction, 1.3)),
+            card(3, WorksWrite::MixWeight(Basic::Yellow, 1.7)),
+        ];
+        let guard: f64 = deck
+            .iter()
+            .filter_map(|c| match c.effect {
+                CardEffect::WriteWorks(WorksWrite::Cap(_, f)) => Some(f),
+                CardEffect::WriteWorks(WorksWrite::EtaWorks(f)) => Some(f),
+                _ => None,
+            })
+            .product();
+        assert_ne!(guard, 1.3 * 0.7 * 1.1, "fixture must be order-sensitive to be worth running");
+
+        let play = |order: &[usize]| {
+            let galaxy = Galaxy::generate(GalaxyConfig::new(2, 4)).unwrap();
+            let mut sim = Simulation::with_baseline(galaxy, test_cfg(4));
+            for &i in order {
+                sim.apply_card_effect(0, &deck[i], Target::None, 0);
+            }
+            *sim.world.works.get(sim.player_entity[0]).unwrap()
+        };
+
+        let want = play(&[0, 1, 2, 3, 4, 5]);
+        for order in [[5, 4, 3, 2, 1, 0], [2, 0, 5, 1, 4, 3], [1, 3, 0, 4, 2, 5], [3, 5, 1, 0, 2, 4]] {
+            let got = play(&order);
+            assert_eq!(
+                got.eta_works.to_bits(),
+                want.eta_works.to_bits(),
+                "eta_works differs under {order:?}: {} vs {}",
+                got.eta_works,
+                want.eta_works
+            );
+            for i in 0..3 {
+                assert_eq!(got.cap[i].to_bits(), want.cap[i].to_bits(), "cap[{i}] differs under {order:?}");
+                assert_eq!(got.half[i].to_bits(), want.half[i].to_bits(), "half[{i}] differs under {order:?}");
+                assert_eq!(got.alloc_w[i].to_bits(), want.alloc_w[i].to_bits(), "alloc_w[{i}] under {order:?}");
+                assert_eq!(got.mix_w[i].to_bits(), want.mix_w[i].to_bits(), "mix_w[{i}] under {order:?}");
+            }
+        }
+
+        // And the writes actually landed — an implementation that dropped every
+        // one of them would satisfy every assertion above.
+        assert_ne!(want, cards::Works::default(), "the plays must have moved the state");
+
+        // The rate the simulation reads moves with it, which is the only reason
+        // any of this matters.
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 4)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(4));
+        let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let before = sim.fabrication_rate(yard);
+        sim.apply_card_effect(0, &card(4, WorksWrite::Cap(Employment::Fabrication, 2.0)), Target::None, 0);
+        assert!(sim.fabrication_rate(yard) > before, "a cap card must raise the yard's rate");
+    }
+
     #[test]
     fn the_round_layer_is_behaviour_neutral_while_everyone_passes() {
         // The baseline autopilot's `choose_card` returns `None`, so adding the
@@ -4219,6 +6213,7 @@ mod tests {
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut with_rounds = Simulation::with_baseline(galaxy, paired_cfg(1));
         let a = with_rounds.run();
+        paired_mechanism_fired(&a);
 
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut cfg = paired_cfg(1);
@@ -4236,16 +6231,21 @@ mod tests {
 
     #[test]
     fn round_boundaries_fire_on_the_specified_cadence() {
-        // 100 yr to the first, 100 yr between: at a 250 yr horizon that is
-        // rounds 0 and 1. The barrier is a scheduled event, so this also pins
-        // that it chains itself rather than being swept for.
+        // **Rounds expressed against the horizon, not against a constant.** The
+        // barrier is a scheduled event, so this pins that it chains itself
+        // rather than being swept for — and the arithmetic is stated in terms of
+        // `horizon_years` so that trimming `paired_cfg` cannot silently change
+        // what the test asserts. It did once: R-O88 took the horizon 250 → 120
+        // and the hard-coded `1` became a `0`, which is a test that was reading
+        // a constant it did not own.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut cfg = paired_cfg(1);
-        cfg.years_to_first_round = 100.0;
-        cfg.years_per_round = 100.0;
+        let period = cfg.horizon_years / 3.0;
+        cfg.years_to_first_round = period;
+        cfg.years_per_round = period;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         sim.run();
-        assert_eq!(sim.current_round(), 1, "(250-100)/100 = 1, so the last barrier is round 1");
+        assert_eq!(sim.current_round(), 2, "three periods to the horizon means barriers 0, 1 and 2");
 
         // And it chains rather than firing once, and stops at the horizon rather
         // than running away. **Shortened the cadence, not the horizon**
@@ -4258,11 +6258,12 @@ mod tests {
         // is exactly the same property, now better covered for 6% of the cost.
         let galaxy = Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap();
         let mut cfg = paired_cfg(1);
-        cfg.years_to_first_round = 25.0;
-        cfg.years_per_round = 25.0;
+        let fine = cfg.horizon_years / 10.0;
+        cfg.years_to_first_round = fine;
+        cfg.years_per_round = fine;
         let mut chained = Simulation::with_baseline(galaxy, cfg);
         chained.run();
-        assert_eq!(chained.current_round(), 9, "(250-25)/25 = 9, so the last barrier is round 9");
+        assert_eq!(chained.current_round(), 9, "ten periods to the horizon means the last barrier is round 9");
     }
 
     #[test]
@@ -4362,6 +6363,7 @@ mod tests {
         };
         let (_a, ra) = mk(7);
         let (_b, rb) = mk(7);
+        paired_mechanism_fired(&ra);
         assert_eq!(ra.events_processed, rb.events_processed);
         assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
         let pa: Vec<usize> = ra.players.iter().map(|p| p.planets_owned).collect();
@@ -4470,6 +6472,7 @@ mod tests {
         let rq = quiet.run();
         let rl = loud.run();
 
+        paired_mechanism_fired(&rq);
         assert_eq!(rq.events_processed, rl.events_processed);
         assert_eq!(rq.planets_scanned_total, rl.planets_scanned_total);
         for (pq, pl) in rq.players.iter().zip(rl.players.iter()) {
@@ -4829,14 +6832,18 @@ mod tests {
             (HullType::GeneralSystems, BandTier::II),
         ] {
             let got = sim.founding_infra(hull);
-            assert!((got.bands() - rung.band().bands()).abs() < 1e-9, "{hull:?} founds at {got}, want {rung}");
+            let got_band = sim.founding_infra_band(hull);
+            assert!(
+                (got_band.bands() - rung.band().bands()).abs() < 1e-9,
+                "{hull:?} founds at {got_band} ({got}), want {rung}"
+            );
         }
         let m_infra = sim.founding_infra(HullType::MediumSystems);
         let g_infra = sim.founding_infra(HullType::GeneralSystems);
 
         // And the prices those rungs correspond to: `Infra I costs minerals I`.
         for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
-            let rung = sim.founding_infra(hull).round().bands() as usize;
+            let rung = infra_rung_of(sim.founding_infra(hull), &sim.config);
             let priced = infra_rung_price(rung, &sim.config);
             assert!(
                 (priced - hull_cost(hull, &sim.config)).abs() < Price::new(1e-12),
@@ -4849,7 +6856,7 @@ mod tests {
         let target = sim.planet_entity[11];
         sim.world.factors.insert(
             target,
-            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
 
         // **The founding capacity is the world's, and the hull has nothing to
@@ -4876,7 +6883,7 @@ mod tests {
         let poor = sim.planet_entity[12];
         sim.world.factors.insert(
             poor,
-            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
         let capped = sim.colony_seed_for(HullType::GeneralSystems, home, poor).expect("a General hull can found");
         assert!(
@@ -4893,13 +6900,522 @@ mod tests {
         let _ = (m_infra, g_infra);
     }
 
-    /// **T-57: extraction is per miner, not per rock.**
+    /// **T-84: the books fill with real two-sided depth, and nothing clears.**
     ///
-    /// `outpost_mining_fraction` used to be the fraction of remaining density a
-    /// *rock* yielded per tick, with the hull standing on it contributing
-    /// nothing but the schedule — so "how many miners per outpost" was not a
-    /// value anyone could tune, because there was no term for it. A crew of `n`
-    /// now works `n` times as much, capped at the whole remaining field.
+    /// The third and last inert stage. Two claims, and the first is what stops
+    /// the second being vacuous — an Exchange with empty books would also be
+    /// bit-identical.
+    ///
+    /// The interesting assertion is **two-sidedness**. §10.8 says the guard for
+    /// Exchange work is a census rather than colony-years, and this is that
+    /// census at its smallest: if every empire were short the same colours, the
+    /// books would be all bids and no asks and there would be no trade to make.
+    /// T-73 measured why they are not — 1,494 of 1,515 banks are
+    /// single-coloured, so nearly every centre is simultaneously **long one
+    /// colour and short the other two**, which is precisely the condition that
+    /// makes a colour market worth having.
+    #[test]
+    fn the_exchange_books_fill_on_both_sides() {
+        let run = |post: bool| {
+            let mut gcfg = GalaxyConfig::new(3, 33);
+            gcfg.planet_count = 400;
+            let galaxy = Galaxy::generate(gcfg).unwrap();
+            let mut cfg = test_cfg(33);
+            cfg.horizon_years = 900.0; // two round barriers at the default cadence
+            let mut sim = Simulation::with_baseline(galaxy, cfg);
+            sim.exchange_posting = post;
+            // Posting and *pricing* are what this stage is about; settlement is
+            // T-77 and moves ore, which would make the inertness claim false.
+            sim.exchange_settlement = false;
+            let report = sim.run();
+            let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();
+            (report.events_processed, report.planets_scanned_total, pops, sim.exchange_posted())
+        };
+
+        let (ev_off, scan_off, pop_off, depth_off) = run(false);
+        let (ev_on, scan_on, pop_on, depth_on) = run(true);
+
+        assert_eq!(depth_off, [(0, 0); 3], "posting disabled must post nothing");
+
+        // **Both sides, on at least one colour.** A one-sided book is a market
+        // with nothing to match.
+        let (bids, asks): (u64, u64) = depth_on.iter().fold((0, 0), |(b, a), &(x, y)| (b + x, a + y));
+        assert!(bids > 0, "no centre bid for anything it was short of: {depth_on:?}");
+        assert!(asks > 0, "no centre offered anything it was long of: {depth_on:?}");
+        assert!(
+            depth_on.iter().any(|&(b, a)| b > 0 && a > 0),
+            "no single colour has both sides, so nothing could ever match: {depth_on:?}"
+        );
+
+        // **Nothing clears.** Same seed, same run, to the bit.
+        assert_eq!(ev_off, ev_on, "posting moved the event count");
+        assert_eq!(scan_off, scan_on, "posting moved survey");
+        assert_eq!(pop_off, pop_on, "posting moved population");
+    }
+
+    /// **T-85: contracts are struck and escrowed, and the world does not move.**
+    ///
+    /// **§10.7 predicted this stage would change the bed and it does not, which
+    /// is the outpost amendment's doing** (§10.6). The build order was written
+    /// when a cleared match was a cross-empire *delivery*, so clearing and
+    /// moving goods were one step. Settlement now happens at a shared rock, so
+    /// stage 4 strikes contracts and locks `$` — and `$` reaches nothing else —
+    /// while every kilotonne stays exactly where it was until T-77.
+    ///
+    /// So the stage that was expected to be the risky one is inert, and the
+    /// risk moved to T-77 with the goods. Worth having as a test rather than a
+    /// note, because "this stage is neutral" is a claim about code and §6.7's
+    /// version of it was wrong twice.
+    #[test]
+    fn clearing_strikes_escrowed_contracts_without_moving_the_world() {
+        let run = |clear: bool| {
+            let mut gcfg = GalaxyConfig::new(3, 51);
+            gcfg.planet_count = 500;
+            let galaxy = Galaxy::generate(gcfg).unwrap();
+            let mut cfg = test_cfg(51);
+            cfg.horizon_years = 1600.0; // several barriers, and time to open outposts
+            let mut sim = Simulation::with_baseline(galaxy, cfg);
+            sim.exchange_posting = clear;
+            // **Stage 4 only.** T-77 schedules settlement, which does move ore;
+            // holding it off is what keeps this a test of clearing alone.
+            sim.exchange_settlement = false;
+            let report = sim.run();
+            let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();
+            let purses: Vec<f64> = (0..3).map(|p| sim.purse_of(PlayerId(p))).collect();
+            (report.events_processed, report.planets_scanned_total, pops, sim.exchange_state(), purses)
+        };
+
+        let (ev_off, scan_off, pop_off, st_off, _) = run(false);
+        let (ev_on, scan_on, pop_on, st_on, purses_on) = run(true);
+
+        // **Trade happened.** Without this every assertion below is vacuous —
+        // an Exchange that matches nothing is also bit-identical.
+        assert_eq!(st_off.0, 0, "posting disabled must strike no contracts");
+        assert!(
+            st_on.0 > 0,
+            "no contract was struck: either no colour had both sides, or no two empires shared an outpost"
+        );
+        assert_eq!(st_on.1, 0, "settlement was disabled, so nothing may have settled");
+
+        // **Escrow was locked.** `$` left the buyers' purses and is owed rather
+        // than spent — the first thing in the engine that is owed (§10.2).
+        assert!(purses_on.iter().all(|&p| p.is_finite()), "a purse went non-finite: {purses_on:?}");
+
+        // **And the world did not move.** Same seed, same run, to the bit.
+        assert_eq!(ev_off, ev_on, "clearing moved the event count");
+        assert_eq!(scan_off, scan_on, "clearing moved survey");
+        assert_eq!(pop_off, pop_on, "clearing moved population");
+    }
+
+    /// **T-77: settlement moves ore between empires and conserves it.**
+    ///
+    /// The first Exchange stage that moves a kilotonne, so the thing to assert
+    /// is **design law #11**: mass is conserved with no exclusions. The `$`
+    /// burn is not a counterexample — `$` was never in the mass ledger (R-P1),
+    /// which is the entire reason a faucet and a sink are legal at all.
+    ///
+    /// Also pins the destination, because it is the amendment's whole claim:
+    /// the ore lands in the **buyer's pile at the shared rock**, not at the
+    /// buyer's world. `outpost_stock` is already what a laden freighter loads
+    /// from, so the collection leg needed no new code.
+    #[test]
+    fn settlement_moves_ore_to_the_buyers_pile_and_conserves_mass() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 71)).unwrap(), test_cfg(71));
+        let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let rock = sim.planet_entity[30];
+        for p in 0..2u32 {
+            sim.mine_crew.insert((p, rock.0), vec![sim.world.spawn()]);
+        }
+        sim.world.stockpile.get_mut(seller_centre).unwrap().yellow = 100.0;
+        sim.credit(sim.player_entity[0], 500.0);
+
+        let total_yellow = |s: &Simulation| -> f64 {
+            let banked: f64 = s.planet_entity.iter().filter_map(|&e| s.world.stockpile.get(e)).map(|b| b.yellow).sum();
+            let piled: f64 = s.outpost_stock.values().map(|m| m.yellow).sum();
+            banked + piled
+        };
+        let before = total_yellow(&sim);
+
+        let id = sim.exchange.next_id;
+        sim.exchange.next_id += 1;
+        sim.exchange.contracts.insert(
+            id,
+            Contract {
+                buyer: PlayerId(0),
+                seller: PlayerId(1),
+                seller_centre,
+                colour: Basic::Yellow,
+                qty: 40.0,
+                escrow: 80.0,
+                seller_drop: rock,
+                buyer_drop: None,
+                struck: sim.clock,
+            },
+        );
+        sim.credit(sim.player_entity[0], -80.0);
+        let purse_before = sim.purse_of(PlayerId(1));
+
+        sim.sys_contract_due(id);
+
+        assert_eq!(sim.exchange_state().1, 1, "the contract must have settled");
+        assert_eq!(sim.exchange_defaults(), 0);
+        assert!(
+            (sim.world.stockpile.get(seller_centre).unwrap().yellow - 60.0).abs() < 1e-9,
+            "the seller's bank must be debited"
+        );
+        assert!(
+            (sim.outpost_stock.get(&(0, rock.0)).map_or(0.0, |m| m.yellow) - 40.0).abs() < 1e-9,
+            "the ore must land in the *buyer's* pile at the shared rock"
+        );
+        assert!((total_yellow(&sim) - before).abs() < 1e-9, "mass was not conserved across the trade");
+        assert!(sim.purse_of(PlayerId(1)) > purse_before, "the seller must be paid");
+    }
+
+    /// **A seller that cannot deliver defaults, and the loss is shared**
+    /// (§3.3, R-IND10, T-77).
+    ///
+    /// The buyer gets its escrow back **minus the burn** and the seller gets
+    /// nothing — so default is not a free option: it forfeits the sale. That
+    /// asymmetry is what makes escorting worth paying for, which is the reason
+    /// §3.3 chose shared loss over returning the escrow whole.
+    #[test]
+    fn a_seller_that_cannot_deliver_defaults_and_both_sides_pay() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 73)).unwrap(), test_cfg(73));
+        let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let rock = sim.planet_entity[30];
+        // The bank is short the colour it owes — rich in Cyan, owing Yellow.
+        {
+            let b = sim.world.stockpile.get_mut(seller_centre).unwrap();
+            b.yellow = 1.0;
+            b.cyan = 9_999.0;
+        }
+        let id = sim.exchange.next_id;
+        sim.exchange.next_id += 1;
+        sim.exchange.contracts.insert(
+            id,
+            Contract {
+                buyer: PlayerId(0),
+                seller: PlayerId(1),
+                seller_centre,
+                colour: Basic::Yellow,
+                qty: 40.0,
+                escrow: 80.0,
+                seller_drop: rock,
+                buyer_drop: None,
+                struck: sim.clock - 50.0, // far enough back that the burn bites
+            },
+        );
+        let (buyer_before, seller_before) = (sim.purse_of(PlayerId(0)), sim.purse_of(PlayerId(1)));
+
+        sim.sys_contract_due(id);
+
+        assert_eq!(sim.exchange_defaults(), 1, "a bank short the named colour must default");
+        assert_eq!(sim.exchange_state().1, 0, "a default is not a settlement");
+        let refunded = sim.purse_of(PlayerId(0)) - buyer_before;
+        assert!(refunded > 0.0 && refunded < 80.0, "the buyer is refunded minus the burn, got {refunded}");
+        assert_eq!(sim.purse_of(PlayerId(1)), seller_before, "the seller gains nothing by defaulting");
+        assert!(sim.exchange_state().2 > 0.0, "the burn is the sink (§2.3)");
+        // **A rich bank in the wrong colour does not help**, which is what the
+        // colour axis is for.
+        assert!(sim.world.stockpile.get(seller_centre).unwrap().cyan > 9_000.0, "the wrong colour was never touched");
+    }
+
+    /// **A trade needs a rock both parties work** (§10.6, T-85).
+    ///
+    /// Geography is the trade constraint, and this pins it as a *mechanic*
+    /// rather than an implementation detail: two empires that share nothing
+    /// cannot settle, and **each drop is chosen by the party shipping to it**
+    /// (R-P17, as revised — a contract has two locations, and a shipper pays for
+    /// its own leg).
+    #[test]
+    fn two_empires_can_only_trade_where_they_both_have_crew() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 61)).unwrap(), test_cfg(61));
+        let (a, b) = (PlayerId(0), PlayerId(1));
+        let origin = Vec3::ZERO;
+
+        assert_eq!(sim.shared_venue(a, b, origin), None, "no crews anywhere, no venue");
+
+        // One rock each, different rocks: still nothing in common.
+        let (r1, r2) = (sim.planet_entity[20], sim.planet_entity[21]);
+        sim.mine_crew.insert((0, r1.0), vec![sim.world.spawn()]);
+        sim.mine_crew.insert((1, r2.0), vec![sim.world.spawn()]);
+        assert_eq!(sim.shared_venue(a, b, origin), None, "different rocks are not a venue");
+
+        // Now share two, and each shipper gets the one nearest *itself*.
+        let (r3, r4) = (sim.planet_entity[22], sim.planet_entity[23]);
+        for &r in &[r3, r4] {
+            sim.mine_crew.insert((0, r.0), vec![sim.world.spawn()]);
+            sim.mine_crew.insert((1, r.0), vec![sim.world.spawn()]);
+        }
+        let (p3, p4) = (*sim.world.position.get(r3).unwrap(), *sim.world.position.get(r4).unwrap());
+        assert_eq!(sim.shared_venue(a, b, p3), Some(r3), "a shipper standing on a shared rock drops there");
+        assert_eq!(sim.shared_venue(a, b, p4), Some(r4));
+
+        // **The venue set is symmetric even though the choice is not.** Which
+        // rocks are *available* cannot depend on which party is named first;
+        // which one is *picked* depends only on where the shipper is.
+        assert_eq!(sim.shared_venue(a, b, p3), sim.shared_venue(b, a, p3));
+        assert_ne!(
+            sim.shared_venue(a, b, p3),
+            sim.shared_venue(a, b, p4),
+            "two shippers in different places must not be forced to one compromise rock"
+        );
+    }
+
+    /// **T-82: the `$` ledger fills and nothing reads it.**
+    ///
+    /// §10.7 stages 1–3 land the Exchange **inert**, for the reason
+    /// `Hyades_industry.md` §6.7's stages 3–5 did: a system that lands neutral
+    /// can be verified against a bit-identical bed before anything switches on,
+    /// so the first stage that *does* change behaviour is measured against a
+    /// known baseline instead of against a moving one. That plan was not met at
+    /// industry stage 5, and the stage that broke it was the one that changed
+    /// what a purchase costs — which is stage 4 here.
+    ///
+    /// Two claims, and the second is the one that can rot silently:
+    ///
+    /// - **The faucet runs.** An empire that fabricates accrues `$`, so the
+    ///   ledger is not merely present and empty.
+    /// - **Nothing spends it.** The purse was write-only when this was written;
+    ///   **T-85 made it readable**, so the test now runs with the Exchange
+    ///   disabled and the claim narrows to what it always meant: the *faucet*
+    ///   alone moves nothing. That is a retarget rather than a weakening — with
+    ///   trade on, a zero rate stops trade and moves the world through that
+    ///   instead, which is a different claim.
+    #[test]
+    fn the_dollar_ledger_fills_and_changes_nothing() {
+        let run = |rate: f64| {
+            let mut gcfg = GalaxyConfig::new(3, 21);
+            gcfg.planet_count = 300;
+            let galaxy = Galaxy::generate(gcfg).unwrap();
+            let mut cfg = test_cfg(21);
+            cfg.dollar_per_fabrication = rate;
+            let mut sim = Simulation::with_baseline(galaxy, cfg);
+            // **Isolate the faucet.** Since T-85 the purse *is* read — clearing
+            // checks what a buyer can afford — so a zero rate would stop trade
+            // and move the world through that, which is a different claim than
+            // the one this test makes. The Exchange off, the faucet is again the
+            // only variable.
+            sim.set_exchange_enabled(false);
+            let report = sim.run();
+            let purses: Vec<u64> = (0..3).map(|p| sim.purse_of(PlayerId(p)).to_bits()).collect();
+            let pops: Vec<u64> = report.players.iter().map(|x| x.total_population.kilotons().to_bits()).collect();
+            (report.events_processed, report.planets_scanned_total, pops, purses)
+        };
+
+        let (ev_off, scan_off, pop_off, purse_off) = run(0.0);
+        let (ev_on, scan_on, pop_on, purse_on) = run(1.0);
+
+        // The faucet is doing something — otherwise everything below is
+        // vacuously true and the test would still pass with `credit` deleted.
+        assert!(purse_off.iter().all(|&b| f64::from_bits(b) == 0.0), "a zero rate must mint nothing");
+        assert!(
+            purse_on.iter().all(|&b| f64::from_bits(b) > 0.0),
+            "every empire fabricates, so every purse must fill: {:?}",
+            purse_on.iter().map(|&b| f64::from_bits(b)).collect::<Vec<_>>()
+        );
+
+        // And it is reading *production*, not merely counting ticks: an empire
+        // that has built more infrastructure fabricates faster and must be
+        // richer. Sorting the two orderings together is what makes this a claim
+        // about the faucet's input rather than about a constant.
+        assert!(
+            purse_on.iter().map(|&b| f64::from_bits(b)).any(|v| v != f64::from_bits(purse_on[0])),
+            "three empires with different industry must not hold identical purses"
+        );
+
+        // **Nothing reads it.** Same seed, same run, to the bit.
+        assert_eq!(ev_off, ev_on, "the faucet moved the event count");
+        assert_eq!(scan_off, scan_on, "the faucet moved survey");
+        assert_eq!(pop_off, pop_on, "the faucet moved population");
+    }
+
+    /// **A non-finite credit is refused at the write** (T-82, design law #16).
+    ///
+    /// The purse is replicated state, and §6 H3 is explicit that core WASM picks
+    /// NaN payloads nondeterministically — so a NaN reaching the hashed state is
+    /// an intermittent desync with no reproducer to hand a bug report. Guarding
+    /// at the single writer is cheaper than guarding at the digest and cannot be
+    /// bypassed by a new call site.
+    #[test]
+    fn a_non_finite_credit_never_reaches_the_ledger() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 9)).unwrap(), test_cfg(9));
+        let pe = sim.player_entity[0];
+        sim.credit(pe, 10.0);
+        assert_eq!(sim.purse_of(PlayerId(0)), 10.0);
+
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            sim.credit(pe, bad);
+            assert!(sim.purse_of(PlayerId(0)).is_finite(), "{bad} reached the ledger");
+            assert_eq!(sim.purse_of(PlayerId(0)), 10.0, "{bad} moved the balance");
+        }
+
+        // Debt is legal — `$` is a claim, and an obligation can be negative.
+        // Only *not a number* is refused.
+        sim.credit(pe, -25.0);
+        assert_eq!(sim.purse_of(PlayerId(0)), -15.0, "a negative balance is a legal claim");
+    }
+
+    /// **Crew falls out of demand, and the sign is inverted from both retired
+    /// policies** (T-87).
+    ///
+    /// The properties, not the numbers — the numbers are `ε`, `β` and
+    /// `veins_per_band`, all placeholders (R-IND18). What has to hold whatever
+    /// they become:
+    ///
+    /// - **No unmet demand, one hull.** A centre that can already afford what it
+    ///   wants does not buy a mine, it buys a mine's minimum.
+    /// - **A richer rock wants a *smaller* crew.** This is the inversion. Both
+    ///   retired policies made crew rise with richness — a flat count was
+    ///   richness-blind and a vein fraction rose with `N` — and §6.15 measured
+    ///   both as losses. A rich body meets the same demand with fewer hands.
+    /// - **More demand, more crew**, monotonically, up to the body's veins.
+    #[test]
+    fn a_mining_crew_is_derived_from_demand_and_shrinks_on_richer_rock() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
+        let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let rock = sim.planet_entity[10];
+
+        let set_ore = |sim: &mut Simulation, band: f64| {
+            let each = units::Kilotons::at_band(Band::new(band)).kilotons() / 3.0;
+            let d = sim.world.density.get_mut(rock).unwrap();
+            for b in Basic::ALL {
+                d.set(b, units::Kilotons::new(each));
+            }
+        };
+
+        // **A comfortable centre has no unmet demand.** `mineral_pressure` is
+        // zero while the bank covers the next rung, so `D = 0` whatever the
+        // yard could fabricate.
+        {
+            let bank = sim.world.stockpile.get_mut(center).unwrap();
+            bank.cyan = 10_000.0;
+            bank.magenta = 10_000.0;
+            bank.yellow = 10_000.0;
+        }
+        set_ore(&mut sim, 3.0);
+        assert_eq!(sim.mining_crew_for(center, rock), 1, "a centre that can afford its rung wants one hull");
+
+        // Starve it: pressure goes to 1 and the crew is whatever meets the
+        // yard's throughput.
+        {
+            let bank = sim.world.stockpile.get_mut(center).unwrap();
+            bank.cyan = 0.0;
+            bank.magenta = 0.0;
+            bank.yellow = 0.0;
+        }
+        {
+            let f = sim.world.factors.get_mut(center).unwrap();
+            f.infra = infra_rung_price(1, &sim.config);
+        }
+        assert!(sim.mineral_pressure_of(center) > 0.99, "a broke centre must read full pressure");
+
+        // **The crew never exceeds the body's veins**, at any richness. This is
+        // the constraint that binds at the bottom of the ladder and it is why
+        // the inversion below is stated over the range above it: a `Band I`
+        // pebble has one vein, so it gets one hull because there is nowhere to
+        // put a second — not because demand said so.
+        for band in [0.0, 1.0, 2.0, 3.0, 4.0] {
+            set_ore(&mut sim, band);
+            let stock = sim.world.density.get(rock).unwrap().total_mass();
+            let crew = sim.mining_crew_for(center, rock);
+            assert!(crew >= 1, "a crew is at least one hull");
+            assert!(
+                crew as f64 <= veins(stock, &sim.config) + 0.5,
+                "Band {band} has {} veins and asked for {crew}",
+                veins(stock, &sim.config)
+            );
+        }
+
+        // **The inversion**: same demand, richer rock, smaller crew — over the
+        // range where *demand* is what binds. Both retired policies had this
+        // sign backwards, and §6.15 measured both as losses.
+        let mut last = usize::MAX;
+        for band in [2.0, 3.0, 4.0] {
+            set_ore(&mut sim, band);
+            let crew = sim.mining_crew_for(center, rock);
+            assert!(
+                crew <= last,
+                "a richer rock must not want a larger crew: Band {band} asked for {crew} after {last}"
+            );
+            last = crew;
+        }
+        assert!(last < 2, "a Band IV seam meets a rung-I yard's demand with a single hull, got {last}");
+
+        // **Monotone in demand.** Raising what the yard can absorb cannot lower
+        // the crew, on a body poor enough that the veins are not the binding
+        // constraint.
+        set_ore(&mut sim, 1.0);
+        let lean = sim.mining_crew_for(center, rock);
+        {
+            let f = sim.world.factors.get_mut(center).unwrap();
+            f.infra = infra_rung_price(4, &sim.config);
+        }
+        assert!(sim.mining_crew_for(center, rock) >= lean, "a hungrier yard must not want fewer miners: {lean}",);
+    }
+
+    /// **§4.2's vein table and §4.3's worked ratios, pinned** (T-71).
+    ///
+    /// The design's numbers, not the implementation's: a decade of veins per
+    /// Band, and on `Band IV` a thousand miners lift **31.6x** what one does.
+    /// That second figure is the one §4.3 uses to argue a large crew on a rich
+    /// rock is rational, and it is the figure `crowding_factor`'s normalisation
+    /// had to preserve (R-IND19) — so it is asserted through the normalised
+    /// form, which is what the engine actually multiplies by.
+    #[test]
+    fn veins_are_a_decade_per_band_and_crowding_pays_at_scale() {
+        let cfg = SimConfig::new(1);
+        for (rung, want) in [(1.0, 1.0), (2.0, 10.0), (3.0, 100.0), (4.0, 1000.0)] {
+            let mass = units::Kilotons::at_band(Band::new(rung));
+            let got = veins(mass, &cfg);
+            assert!(
+                (got / want - 1.0).abs() < 1e-6,
+                "Band {rung} holds {mass:?} and should have {want} veins, got {got}"
+            );
+        }
+
+        // §4.3, verbatim: "on `Band IV`, one miner does `W = 31.6` and a
+        // thousand do `W = 1000` — 31.6x the ore for 1000x the hulls".
+        let rich = units::Kilotons::at_band(Band::new(4.0));
+        let lone = crowding_factor(1.0, rich, &cfg);
+        let full = crowding_factor(1000.0, rich, &cfg);
+        assert!((full / lone - 31.6).abs() < 0.1, "1000 miners should lift 31.6x one, got {}", full / lone);
+
+        // **Richness is worth going to.** A lone miner on `Band IV` works a
+        // smaller *share* of the body than one on `Band I` — that is crowding —
+        // and lifts vastly more ore, because the body is vastly larger. Both
+        // halves are the design; only the second makes an outpost worth siting.
+        let poor = units::Kilotons::at_band(Band::new(1.0));
+        assert!(crowding_factor(1.0, rich, &cfg) < crowding_factor(1.0, poor, &cfg), "share must fall with richness");
+        assert!(
+            crowding_factor(1.0, rich, &cfg) * rich.kilotons() > crowding_factor(1.0, poor, &cfg) * poor.kilotons(),
+            "absolute yield must rise with richness"
+        );
+
+        // A full crew takes the same share of any body, which is the
+        // normalisation that stops output going as richness squared.
+        for rung in [1.0, 2.0, 3.0, 4.0] {
+            let mass = units::Kilotons::at_band(Band::new(rung));
+            let n = veins(mass, &cfg);
+            assert!((crowding_factor(n, mass, &cfg) - 1.0).abs() < 1e-9, "a full crew works the whole body at {rung}");
+        }
+    }
+
+    /// **T-71: extraction is per miner and sublinear, and the deposit sets where
+    /// the crowding bites.**
+    ///
+    /// Two prior laws, both superseded, and the shape of the correction is the
+    /// interesting part. Before T-57 `outpost_mining_fraction` was the fraction
+    /// a *rock* yielded per tick, with the hull standing on it contributing
+    /// nothing but the schedule — so "how many miners per outpost" had no term
+    /// to tune. T-57 made it linear in crew, which gave it one. T-71 makes it
+    /// **sublinear and relative to the body**: `(n/N(S))^β`.
+    ///
+    /// **This test used to assert exact linearity and §4.5 says that does not
+    /// survive** — T-57's ratified `miners_per_outpost = 3` was measured under a
+    /// law with no deposit term at all, and the right crew is now a property of
+    /// the rock rather than a constant. It asserts the new law's *properties*
+    /// rather than three numbers: sublinear, monotone, saturating at `N`.
     #[test]
     fn a_mining_crew_extracts_in_proportion_to_its_size() {
         let extracted = |crew: usize| {
@@ -4926,20 +7442,59 @@ mod tests {
             before - sim.world.density.get(outpost).unwrap().total_mass().kilotons()
         };
 
+        let cfg = SimConfig::new(3);
         let one = extracted(1);
         assert!(one > 0.0, "a single miner must extract something");
-        // Two miners take twice as much, three take three times — exactly, up
-        // to the cap, because the fraction is per miner now.
-        assert!((extracted(2) / one - 2.0).abs() < 1e-9, "two miners: {}", extracted(2) / one);
-        assert!((extracted(3) / one - 3.0).abs() < 1e-9, "three miners: {}", extracted(3) / one);
 
-        // And the rock is the ceiling: a crew large enough to want more than the
-        // field holds takes the field, not more. `outpost_mining_fraction` is
-        // 0.238, so five miners would ask for 1.19 of it.
-        let cfg = SimConfig::new(3);
-        let cap = (1.0 / cfg.outpost_mining_fraction).ceil() as usize;
-        assert!(extracted(cap) <= extracted(cap * 2) + 1e-12);
-        assert!((extracted(cap) - extracted(cap * 2)).abs() < 1e-9, "past the cap the rock binds, not the crew");
+        // **More crew is more ore, and each one is worth less than the last.**
+        // Both halves matter: monotone is what makes a crew worth sending,
+        // sublinear is what stops the answer being "always send more".
+        let (two, three) = (extracted(2), extracted(3));
+        assert!(two > one && three > two, "crew must be monotone: {one} {two} {three}");
+        assert!(two < 2.0 * one, "two miners must be worth less than twice one: {}", two / one);
+        assert!(three - two < two - one, "the marginal miner must be worth less than the last");
+
+        // The exponent is exactly what β says, on a body with veins to spare.
+        // 3 kt of ore reads well above `Band I`, so `N` is not the binding
+        // constraint at these crew sizes and the pure `n^β` shows through.
+        let want = 2f64.powf(cfg.crowding_beta);
+        assert!((two / one - want).abs() < 1e-9, "two miners: {} want {want}", two / one);
+
+        // **And a body saturates at its own vein count, not at a crew size.**
+        // That is the whole of §4.2: a bare `n^β` would crowd every rock
+        // identically and nobody would ever put a large crew anywhere.
+        let deposit = Kilotons::new(3.0);
+        let n_veins = veins(deposit, &cfg);
+        let full = n_veins.ceil() as usize;
+        assert!(
+            (extracted(full) - extracted(full * 4)).abs() < 1e-9,
+            "past `N` the rock binds, not the crew: {} vs {}",
+            extracted(full),
+            extracted(full * 4)
+        );
+        // **A degenerate config must produce an absurd number, not a divergent
+        // one** (design law #16). `veins_per_band < 1` makes `powf` of a
+        // negative exponent blow up, and the result is divided by — so an
+        // infinity here is a NaN one subtraction later, in replicated state,
+        // with no reproducer.
+        let mut bad = SimConfig::new(3);
+        bad.veins_per_band = 0.0;
+        for rung in [0.0, 1.0, 4.0] {
+            let mass = units::Kilotons::at_band(Band::new(rung));
+            let n = veins(mass, &bad);
+            assert!(n.is_finite() && n >= 1.0, "degenerate veins_per_band gave {n} at Band {rung}");
+            assert!(crowding_factor(3.0, mass, &bad).is_finite(), "crowding diverged at Band {rung}");
+        }
+
+        // A full crew takes exactly `ε` of the body — the normalisation that
+        // keeps a rich seam finite (`crowding_factor`, R-IND19).
+        // Three colours at 1 kt each — the same body `deposit` names above.
+        let before = deposit.kilotons();
+        assert!(
+            (extracted(full) / before - cfg.outpost_mining_fraction).abs() < 1e-9,
+            "a full crew must take ε of the body, took {}",
+            extracted(full) / before
+        );
     }
 
     #[test]
@@ -5025,6 +7580,304 @@ mod tests {
         assert!(sim2.roster_permits(0, HullType::MediumSystems), "default config must not gate anything");
     }
 
+    /// **T-74: the rate curve saturates, is monotone, and its two knobs mean
+    /// what §6.3 says they mean.**
+    ///
+    /// `Hyades_industry.md` §6.7's test 4. Cheap, and it pins the two
+    /// parameters to their stated roles so a later retune cannot quietly swap
+    /// them — which matters because the tall/wide axis *is* those two knobs:
+    /// Production raises `cap`, Growth and Expansion lower `half`.
+    #[test]
+    fn the_rate_curve_saturates_and_is_monotone() {
+        let cfg = SimConfig::new(1);
+        let w = cards::Works::default();
+        let e = cards::Employment::Fabrication;
+        let (cap, half) = (cfg.fab_cap, works_knee(&cfg));
+        let rate = |infra_kt: f64| employment_rate(Price::new(infra_kt), &w, e, cap, half);
+
+        // Zero stock, zero rate — the curve passes through the origin, so a
+        // razed world fabricates nothing rather than falling back to a floor.
+        assert_eq!(rate(0.0), 0.0);
+
+        // Monotone increasing, and never past the ceiling.
+        let mut prev = 0.0;
+        for i in 1..400 {
+            let r = rate(i as f64 * 0.01);
+            assert!(r > prev, "rate must rise with the stock at {i}");
+            assert!(r < cap, "rate must never reach the ceiling: {r} vs {cap}");
+            prev = r;
+        }
+
+        // **`half` is the knee**: `u = half` gives exactly `cap/2`. `u` is the
+        // employment's *share*, so at even allocation that is three knees of
+        // total stock.
+        let at_knee = rate(half * 3.0);
+        assert!((at_knee - cap / 2.0).abs() < 1e-12, "u = half must give cap/2, got {at_knee}");
+
+        // **Production raises the ceiling; Growth lowers the knee.** Both make a
+        // planet faster, and they do it differently — which is the whole reason
+        // one curve carries the tall/wide distinction.
+        let tall = cards::Works { cap: [1.0, 3.0, 1.0], ..cards::Works::default() };
+        let wide = cards::Works { half: [1.0, 0.25, 1.0], ..cards::Works::default() };
+        let stock = Price::new(half * 3.0);
+        let base = employment_rate(stock, &w, e, cap, half);
+        let t = employment_rate(stock, &tall, e, cap, half);
+        let d = employment_rate(stock, &wide, e, cap, half);
+        assert!(t > base && d > base, "both routes must beat the base at the knee");
+
+        // And they diverge where the design says: far up the stock the tall
+        // route wins outright, because it moved the asymptote and the wide one
+        // only got there sooner.
+        let far = Price::new(half * 300.0);
+        assert!(
+            employment_rate(far, &tall, e, cap, half) > employment_rate(far, &wide, e, cap, half),
+            "a raised ceiling must beat a lowered knee once the stock is large"
+        );
+    }
+
+    /// **T-70: infrastructure is a stock of minerals; the rung is a reading.**
+    ///
+    /// It was a `Band` — a position on a ladder, stored — which is the thing
+    /// `CLAUDE.md` §4 says never to do: *a Band is a reading, not a second thing
+    /// to store*. `Hyades_industry.md` §1.3 states the same rule for this
+    /// quantity specifically, because infrastructure is **built out of
+    /// minerals** and minerals are masses (L6/R-O57).
+    ///
+    /// Three things are pinned, and the third is the one that would have been a
+    /// silent disaster:
+    ///
+    /// 1. standing at rung `n` means holding exactly what rung `n` costs;
+    /// 2. buying a rung moves the stock by exactly `infra_step_price`, so the
+    ///    ladder is the single source of the number rather than an increment
+    ///    that happens to agree with it;
+    /// 3. **the reading is taken on the *Cost* ladder, not the mass ladder.**
+    ///    `Price` is kilotons, so `in_bands()` compiles and returns a completely
+    ///    different rung — the two ladders are `^1.5` apart (R-MC15). Reading
+    ///    infrastructure on the wrong one would move every development gate at
+    ///    once and typecheck while doing it, which is precisely the shape of the
+    ///    `K = min(hab, bio, infra)` unit error this project already paid for.
+    #[test]
+    fn infrastructure_is_a_stock_and_the_rung_is_a_reading() {
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+
+        for rung in 1..=4usize {
+            let stock = infra_rung_price(rung, &sim.config);
+            let f = sim.world.factors.get_mut(home).unwrap();
+            f.infra = stock;
+            assert_eq!(infra_rung_of(stock, &sim.config), rung, "standing at rung {rung} must read back as {rung}");
+
+            // Buying the next rung moves the stock by exactly the step price.
+            let step = infra_step_price(stock, &sim.config);
+            let next = infra_rung_price(rung + 1, &sim.config);
+            assert!(
+                ((stock + step) - next).kilotons().abs() < 1e-12,
+                "rung {rung} + step must land on rung {}: {} vs {next}",
+                rung + 1,
+                stock + step
+            );
+        }
+
+        // **The two ladders are different, and the type is what keeps them
+        // apart.** This is an assertion that the wrong reading is *available*
+        // and wrong — the compile-time guard is the `Scale` marker, and this is
+        // the runtime evidence that it is load-bearing rather than decorative.
+        let stock = infra_rung_price(2, &sim.config);
+        let on_cost = stock.band_from(cost_anchor(&sim.config));
+        let on_mass = stock.on_scale::<units::Mass>().in_bands();
+        assert!(
+            (on_cost.bands() - on_mass.bands()).abs() > 0.1,
+            "the same kilotons must read a different rung on each ladder: {on_cost} vs {on_mass}"
+        );
+    }
+
+    /// **Why T-70 came out bit-identical, which was not the prediction.**
+    ///
+    /// `Hyades_industry.md` §6.7 predicted stage 3 would be neutral; §6.8 then
+    /// argued it could not be, because storing the stock moves the rounding out
+    /// of exact Band-space addition (`infra.up(1.0)`) and into a `ln` round trip
+    /// (`band_from(rung_price(n))`), and those differ in the last bits. The
+    /// arithmetic half of that is true. The conclusion was wrong, and the guard
+    /// run said so: colony-years came back **identical to the decimal** on both
+    /// seeds.
+    ///
+    /// The mechanism is that **infrastructure reaches every live decision
+    /// through an integer**, so a difference of ~1e-12 in the Band reading is
+    /// washed out before it can change anything:
+    ///
+    /// - `infra_rung_of` **rounds**, and it is what `infra_step_price` and
+    ///   `mineral_pressure_of` are built on — every pricing path.
+    /// - `BaselineAutopilot::rank` does not read infrastructure at all. It
+    ///   scores `k_potential`, minerals and position.
+    /// - The one continuous reader is `deepen_headroom = k_potential − infra`,
+    ///   and that branch is **cold at the shipped `reinvest_bias = 0.5`** —
+    ///   R-O68 first measured it dead on a units fault, and closing that fault
+    ///   left it cold for a *price* reason instead (R-O85): the crossover sits
+    ///   at `b` between 0.96 and 0.98, so the reader is live in principle and
+    ///   never consulted in practice.
+    ///
+    /// So this test pins the actual invariant rather than the lucky number: the
+    /// two representations disagree in the Band, agree in the rung, and
+    /// therefore agree in the price. It survived R-O68's fix — `deepen_census`
+    /// reports the whole run bit-identical below `b = 0.96` — and it is the
+    /// thing that will fail if R-O85 ever prices the rungs low enough for that
+    /// continuous reader to start deciding.
+    #[test]
+    fn infrastructure_reaches_every_decision_through_an_integer() {
+        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let cfg = &sim.config;
+
+        for hull in [HullType::MediumSystems, HullType::GeneralSystems] {
+            // What the old code stored after founding: the Band of the hull's
+            // minerals. What the new code stores: those minerals.
+            let old_band = hull_cost(hull, cfg).band_from(cost_anchor(cfg));
+            let new_stock = sim.founding_infra(hull);
+            let new_band = new_stock.band_from(cost_anchor(cfg));
+            assert_eq!(old_band.bands().to_bits(), new_band.bands().to_bits(), "founding reads identically");
+
+            // Now climb. The old code added 1.0 in Band space; the new code
+            // buys the next rung. These are *not* the same f64 …
+            let top = BandTier::MAX_PLAYABLE.band().bands() as usize;
+            let mut old = old_band;
+            let mut stock = new_stock;
+            while infra_rung_of(stock, cfg) < top {
+                old = old.up(1.0);
+                stock = infra_rung_price(infra_rung_of(stock, cfg) + 1, cfg);
+                let new = stock.band_from(cost_anchor(cfg));
+
+                // … and the rung they round to is, which is the only thing any
+                // live path reads.
+                assert_eq!(
+                    old.round().bands() as usize,
+                    infra_rung_of(stock, cfg),
+                    "{hull:?}: the rung must agree even when the Band does not (old {old}, new {new})"
+                );
+                assert_eq!(
+                    infra_step_price(stock, cfg).kilotons().to_bits(),
+                    (infra_rung_price(infra_rung_of(stock, cfg) + 1, cfg)
+                        - infra_rung_price(infra_rung_of(stock, cfg), cfg))
+                    .kilotons()
+                    .to_bits(),
+                    "and the price follows the rung, not the Band"
+                );
+            }
+
+            // **The one place the two representations genuinely differ, stated
+            // rather than glossed.** The old Band climbed without limit — an
+            // `up(1.0)` on a position has no ceiling — while the stock
+            // saturates at the top playable rung, because the ladder does. It
+            // is invisible in play, and for a reason that is checked rather
+            // than assumed: deepening is gated on `infra < k_potential`, and
+            // `k_potential = min(hab, bio_max)` cannot exceed the top rung. So
+            // nothing in a shipped run ever reaches the difference.
+            //
+            // This is the better behaviour of the two — an unbounded
+            // infrastructure Band was a quantity with no meaning past `Band IV`
+            // — but it is a change, and it is the reason to keep the gate.
+            let over = infra_rung_price(top + 3, cfg);
+            assert_eq!(infra_rung_of(over, cfg), top, "the stock saturates at the top playable rung");
+            // The old Band had no such ceiling — `up(1.0)` on a position climbs
+            // forever — which is the difference this comment exists to record.
+            // It is not asserted, because an assertion about deleted code would
+            // be an assertion that cannot fail.
+        }
+    }
+
+    /// **T-73/§6.4: a mix card moves the colour mix and never lowers the total.**
+    ///
+    /// `eta_works` is multiplicative on the total; `mix_w` is a *share* of that
+    /// total. So the two are orthogonal **by construction**, which is what makes
+    /// §5.4's rule — *move the mix, never lower the total* — enforceable in a
+    /// type rather than in review. Without it the card list becomes a discount
+    /// race and "shift the mix away from pure Yellow" degrades into a worse way
+    /// of saying "make it cheaper".
+    #[test]
+    fn a_mix_card_cannot_change_the_total() {
+        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
+
+        // Every mix a card could reach, including the sole-colour `1:0:0` that
+        // §5.1 allows works and forbids card costs, and degenerate weights.
+        let mixes: [[f64; 3]; 6] =
+            [[1.0, 1.0, 1.0], [4.0, 2.0, 1.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [5.0, 4.0, 3.0], [1e-6, 1.0, 1e6]];
+        for m in mixes {
+            let w = cards::Works { mix_w: m, ..cards::Works::default() };
+            let bill = works_bill(step, &w);
+            let total: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
+            assert!(
+                (total - step).kilotons().abs() < 1e-12,
+                "mix {m:?} changed the bill: {total} against a step of {step}"
+            );
+            for b in bill {
+                assert!(b >= Price::ZERO, "mix {m:?} produced a negative colour share");
+            }
+        }
+
+        // And efficiency is the *other* axis: `eta_works` moves the total and
+        // leaves the split alone.
+        let base = works_bill(step, &cards::Works::default());
+        let eff = cards::Works { eta_works: 2.0, ..cards::Works::default() };
+        let bill = works_bill(step, &eff);
+        let total: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
+        assert!((total - step * 0.5).kilotons().abs() < 1e-12, "eta_works must halve the bill, got {total}");
+        // **The split is unchanged** — asserted as *shares*, not as three equal
+        // numbers. The identity mix is `3:2:1` Y:C:M and never was even, so an
+        // equality test here would have been checking the old placeholder
+        // rather than the invariant.
+        for i in 0..3 {
+            let (a, b) = (bill[i] / total, base[i] / (base.iter().fold(Price::ZERO, |a, &b| a + b)));
+            assert!((a - b).abs() < 1e-12, "an efficiency card must not move the mix: share {i} went {b} -> {a}");
+        }
+    }
+
+    /// **T-73: a colour-poor centre cannot buy the rung, however rich it is.**
+    ///
+    /// This is the whole point of the stage, and the thing no total-based
+    /// affordability test can express. `Minerals::try_spend_total` debits
+    /// *proportional to holdings*, so before this a bank of pure Cyan could buy
+    /// anything; now a bill naming Yellow needs Yellow. That is §5.1's *"the
+    /// mechanism that makes the galaxy's mineral distribution bite on
+    /// development"* — and T-62 made the field log-normal, so which colours a
+    /// homeworld sits near is an enormous fact that until now went almost
+    /// entirely unexpressed.
+    ///
+    /// Both halves are asserted, because only the pair is meaningful: the poor
+    /// centre is refused, and a centre with the *same total* spread across the
+    /// colours the bill names is not.
+    #[test]
+    fn a_colour_poor_centre_cannot_buy_the_rung() {
+        let step = Price::new(9.0);
+        let works = cards::Works::default(); // even thirds: 3.0 of each
+        let bill = works_bill(step, &works);
+
+        // A hundred times the bill, and all the wrong colour.
+        let hoard = Minerals { cyan: 900.0, ..Default::default() };
+        assert!(!can_pay_bill(&hoard, &bill), "a pure-Cyan hoard must not buy a bill that names Magenta and Yellow");
+
+        // Exactly the bill, in the proportions the bill actually names — which
+        // is `3:2:1` Y:C:M since the default mix was ratified, not even thirds.
+        let mut spread = Minerals {
+            cyan: bill[0].kilotons(),
+            magenta: bill[1].kilotons(),
+            yellow: bill[2].kilotons(),
+            ..Default::default()
+        };
+        assert!(can_pay_bill(&spread, &bill), "exactly the bill, in the right colours, must pay");
+        assert!(spread.basic_total() < hoard.basic_total(), "and it is the *poorer* bank that can afford it");
+
+        // Paying takes each colour's share and nothing else.
+        pay_bill(&mut spread, &bill);
+        assert!(spread.basic_total().kilotons().abs() < 1e-9, "the bill should have emptied it exactly");
+
+        // A sole-colour work — `1:0:0`, which §5.1 allows works and forbids card
+        // costs — is payable only by an empire that has that colour.
+        let yellow_only = cards::Works { mix_w: [0.0, 0.0, 1.0], ..cards::Works::default() };
+        let y_bill = works_bill(step, &yellow_only);
+        assert!(!can_pay_bill(&hoard, &y_bill), "Production's route is closed to a Yellow-poor empire");
+        let yellow = Minerals { yellow: 9.0, ..Default::default() };
+        assert!(can_pay_bill(&yellow, &y_bill), "and open to one that has Yellow");
+    }
+
     /// **T-68: build time tracks mass, and the two ladders are one ladder.**
     ///
     /// `build_years` was flat at 10.0, so a Limited hull and a General hull took
@@ -5039,14 +7892,48 @@ mod tests {
     /// coloniser is quick enough to spam, and a General hull is a twelve-year
     /// commitment an opponent has time to notice and answer. These are approved
     /// values, **not MC-ratified**; the name says placeholder and so does §3.3.
+    ///
+    /// **Since T-69 the schedule is a floor rather than a reading.** Slips
+    /// divide a yard's throughput, so those three numbers are `t_lead +
+    /// m/F_slip` — the limit an arbitrarily industrialised yard descends
+    /// toward and never reaches. What T-74 pins here instead is the *anchor*:
+    /// a rung-I centre with default doctrine fabricates at exactly the flat
+    /// rate T-68 and the mining model shipped, so the rate curve pivots about
+    /// a configuration that was already ratified.
     #[test]
     fn build_time_is_lead_plus_mass_over_throughput() {
-        let sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
+        // **T-74 made `t_build` a property of the yard, so the schedule needs a
+        // yard to be read at — and the one it holds at is the anchor.** A centre
+        // standing at rung I with default doctrine sits exactly on the knee of
+        // the rate curve, where a berth runs at `fab_cap / 2`. Since R-O88 that
+        // is a *per-berth* statement and `fab_cap` is the per-berth ceiling, so
+        // §3.3's approved schedule reads off this one constant directly.
+        let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        {
+            let f = sim.world.factors.get_mut(yard).unwrap();
+            f.infra = infra_rung_price(1, &sim.config);
+        }
+        assert!(
+            (sim.berth_rate(yard) - sim.config.fab_cap / 2.0).abs() < 1e-12,
+            "a rung-I centre sits on the knee, so a berth runs at half the ceiling; got {}",
+            sim.berth_rate(yard)
+        );
+        // **§3.3's schedule is the limit, not a value any yard reaches** — T-69
+        // is what made that distinction real. Before slips, `t_build` was
+        // `t_lead + m/F` and a rung-I centre hit 2.2 / 3.0 / 12.0 on the nose.
+        // Slips divide the throughput, so the table is now the **asymptote**
+        // the curve descends toward and every real yard sits above it. Assert
+        // the schedule as what it is — the two constants, composed — and assert
+        // separately that a yard approaches it without arriving.
         for (hull, want) in
             [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
         {
-            let got = sim.build_time(hull_cost(hull, &sim.config));
-            assert!((got - want).abs() < 1e-9, "{hull:?} builds in {got} yr, schedule says {want}");
+            let m = hull_cost(hull, &sim.config).on_scale::<units::Mass>().kilotons();
+            let limit = sim.config.build_lead_years + m / sim.config.fab_cap;
+            assert!((limit - want).abs() < 1e-9, "{hull:?} floor is {limit} yr, schedule says {want}");
+            let got = sim.build_time(yard, hull_cost(hull, &sim.config));
+            assert!(got > want, "{hull:?} builds in {got} yr, under its own floor {want}");
         }
 
         // **The lead time is a floor and the mass term is strictly monotone.**
@@ -5054,11 +7941,11 @@ mod tests {
         // ratification of either constant cannot quietly invert the ordering the
         // observation model leans on — a big hull must stay a long, visible
         // commitment (§3.2).
-        assert!((sim.build_time(Price::ZERO) - sim.config.build_lead_years).abs() < 1e-12);
+        assert!((sim.build_time(yard, Price::ZERO) - sim.config.build_lead_years).abs() < 1e-12);
         let (l, m, g) = (
-            sim.build_time(hull_cost(HullType::LimitedSystems, &sim.config)),
-            sim.build_time(hull_cost(HullType::MediumSystems, &sim.config)),
-            sim.build_time(hull_cost(HullType::GeneralSystems, &sim.config)),
+            sim.build_time(yard, hull_cost(HullType::LimitedSystems, &sim.config)),
+            sim.build_time(yard, hull_cost(HullType::MediumSystems, &sim.config)),
+            sim.build_time(yard, hull_cost(HullType::GeneralSystems, &sim.config)),
         );
         assert!(l < m && m < g, "time must order like mass: {l} {m} {g}");
 
@@ -5067,9 +7954,123 @@ mod tests {
         // build time by the same rule. `Infra I` is priced as a Medium hull
         // (R-O80), so it takes a Medium hull's time.
         assert!(
-            (sim.build_time(infra_rung_price(1, &sim.config)) - m).abs() < 1e-9,
+            (sim.build_time(yard, infra_rung_price(1, &sim.config)) - m).abs() < 1e-9,
             "a rung priced like a Medium hull takes a Medium hull's time"
         );
+    }
+
+    /// **The soft floor is the whole point of §3.2, so pin the floor and not the
+    /// formula** (T-69).
+    ///
+    /// `slips` exists so that industry buys *concurrency* and never a faster
+    /// single hull. That claim is exactly `t_build ≥ t_lead + m / F_slip` for
+    /// every yard, however rich — equivalently, per-berth throughput stays
+    /// strictly *under* `F_slip` and climbs toward it. The reciprocal is what
+    /// makes it easy to get backwards, and getting it backwards is not a
+    /// cosmetic error: dropping the `1 +` from `slips` lets a rung-II centre
+    /// build a Medium hull in 2.55 yr against a 3.0 yr floor, which deletes the
+    /// design property while still passing any number-by-number schedule test.
+    /// So this asserts the inequality, and the schedule test below asserts the
+    /// limit it approaches.
+    #[test]
+    fn industry_buys_concurrency_and_never_undercuts_the_turnaround_floor() {
+        let cfg = test_cfg(3);
+        let works = cards::Works::default();
+        let per_slip = infra_per_slip(&cfg);
+        let mass = Price::new(0.1);
+        let floor = cfg.build_lead_years + mass.on_scale::<units::Mass>().kilotons() / cfg.fab_cap;
+
+        // Sweep across many multiples *and* straddle each one, because a
+        // boundary is where an off-by-one in `floor` would hide.
+        let mut last_slips = 0usize;
+        for step in 0..400 {
+            let u = per_slip * (step as f64) * 0.125;
+            let n = slips(u, &cfg);
+            assert!(n >= 1, "a centre always has a berth, u={u} gave {n}");
+            assert!(n >= last_slips, "concurrency must not fall as the stock rises at u={u}");
+            last_slips = n;
+        }
+        // **Concurrency is unbounded in the stock — that is the "build wide"
+        // axis, and until R-O88 it was closed at two berths** because `slips`
+        // read a rate the MM curve bounds. Asserted across six orders of
+        // magnitude, which is the span the old form was flat over.
+        let s_of =
+            |stock: f64| slips(employment_stock(Price::new(stock), &works, cards::Employment::Fabrication), &cfg);
+        assert!(s_of(1.0e3) > s_of(1.0), "the axis must open with the stock");
+        assert!(s_of(1.0e6) > s_of(1.0e3), "and keep opening — R-O88");
+
+        // **The turnaround floor is the other half and it still holds.** A
+        // berth's rate saturates at `fab_cap` without reaching it, so a hull
+        // never builds faster than `t_lead + m / fab_cap` however rich the yard.
+        for step in 1..400 {
+            let stock = Price::new(per_slip * (step as f64) * 0.5);
+            let r = employment_rate(stock, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg));
+            assert!(r < cfg.fab_cap, "a berth reaches its ceiling at stock {stock:?}: {r}");
+            let t = cfg.build_lead_years + mass.on_scale::<units::Mass>().kilotons() / r;
+            assert!(t > floor, "a hull built in {t} yr undercuts the {floor} yr floor at stock {stock:?}");
+        }
+
+        // Read through `build_time`, since that is what the rest of the engine
+        // sees: strictly above the floor at every rung, and monotonically
+        // approaching it as the yard grows.
+        let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap(), test_cfg(3));
+        let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let mut prev = f64::INFINITY;
+        for rung in 1..=4 {
+            {
+                let f = sim.world.factors.get_mut(yard).unwrap();
+                f.infra = infra_rung_price(rung, &sim.config);
+            }
+            let t = sim.build_time(yard, mass);
+            assert!(t > floor, "rung {rung} builds in {t} yr, under the floor {floor}");
+            assert!(t < prev, "a richer yard must not turn a hull around more slowly: {prev} -> {t}");
+            prev = t;
+        }
+        assert!(prev < floor * 1.35, "four rungs should be well down the curve, got {prev} against {floor}");
+    }
+
+    /// **A yard with slips uses them** (T-69).
+    ///
+    /// Concurrency that is bought and not spent is worse than no concurrency at
+    /// all: `slips` divides a yard's throughput among its berths, so a decision
+    /// that commits one build and returns leaves the extra berths idle *and*
+    /// the occupied one running at a fraction of the rate. That is all of the
+    /// cost and none of the benefit, and it would have measured as a clean
+    /// regression with a completely wrong mechanism attached.
+    ///
+    /// Asserted against [`Simulation::free_berths`] rather than against the
+    /// number 2, so it keeps meaning the same thing if `fab_cap` or the berth
+    /// anchor is ratified — and it caught R-O88's own landing, where reading the
+    /// berth count off the *rate* instead of the stock gave 6 where the yard had
+    /// 2.
+    #[test]
+    fn a_rich_yard_fills_every_berth_it_has_in_one_decision() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 13)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(13));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        {
+            let f = sim.world.factors.get_mut(home).unwrap();
+            f.infra = infra_rung_price(1, &sim.config);
+        }
+        let berths = sim.free_berths(home);
+        assert!(berths >= 2, "the anchor must give a rung-I yard more than one berth, got {berths}");
+
+        // Enough minerals that affordability cannot be what stops it.
+        {
+            let bank = sim.world.stockpile.get_mut(home).unwrap();
+            bank.cyan = 5_000.0;
+            bank.magenta = 5_000.0;
+            bank.yellow = 5_000.0;
+        }
+        sim.sys_build_decision(home);
+        let filled = sim.world.berths.get(home).map(|b| b.len()).unwrap_or(0);
+        assert_eq!(filled, berths, "a yard with {berths} berths and money committed {filled} builds");
+
+        // And it stops there rather than looping past its capacity.
+        let t0 = sim.clock;
+        sim.sys_build_decision(home);
+        assert_eq!(sim.world.berths.get(home).map(|b| b.len()).unwrap_or(0), berths, "a full yard must commit nothing");
+        assert_eq!(sim.clock, t0, "the decision must not advance the clock");
     }
 
     /// **The decision cadence is the build cadence, not the economy's (R-O69).**
@@ -5099,10 +8100,10 @@ mod tests {
         // order a rich homeworld picks (`logging_does_not_affect_outcomes`).
         sim.set_log_filter(LogFilter::none().with(crate::log::LogCategory::Production));
         sim.world.stockpile.get_mut(home).unwrap().cyan = 500.0;
-        assert!(!sim.world.building_until.contains(home), "yard starts free");
+        assert_eq!(sim.world.berths.get(home).map(|b| b.len()).unwrap_or(0), 0, "yard starts free");
 
         sim.sys_build_decision(home);
-        let Some(&done) = sim.world.building_until.get(home) else {
+        let Some(&done) = sim.world.berths.get(home).and_then(|b| b.first()) else {
             panic!("a center with 500 minerals and a live frontier must commit something");
         };
         // Whatever it chose, the yard is held for that order's build time — and
@@ -5118,7 +8119,7 @@ mod tests {
             .last()
             .expect("a committed build logs what it spent");
         assert!(
-            (done - (sim.clock + sim.build_time(committed))).abs() < 1e-9,
+            (done - (sim.clock + sim.build_time(home, committed))).abs() < 1e-9,
             "the yard is held for t_build({committed}), got {done} at clock {}",
             sim.clock
         );
@@ -5130,7 +8131,10 @@ mod tests {
         sim.sys_production_tick(home);
         let after = sim.world.stockpile.get(home).unwrap().basic_total();
         assert!(after >= before, "an occupied yard must not have spent again: {before} -> {after}");
-        assert!(sim.world.building_until.contains(home), "the economy tick must not clear the yard");
+        assert!(
+            sim.world.berths.get(home).map(|b| !b.is_empty()).unwrap_or(false),
+            "the economy tick must not clear the yard"
+        );
 
         // And the decision that clears it is scheduled, not waited for.
         assert!(
@@ -5158,7 +8162,9 @@ mod tests {
         let bio_max = Band::new(4.0).in_kilotons();
         let pop0 = Kilotons::at_band(Band::new(1.0));
         let biomass = bio_max;
-        sim.world.factors.insert(home, Factors::new(Band::new(4.0), biomass, bio_max, Band::new(4.0)));
+        sim.world
+            .factors
+            .insert(home, Factors::new(Band::new(4.0), biomass, bio_max, infra_rung_price(4, &sim.config)));
         *sim.world.population.get_mut(home).unwrap() = pop0;
 
         let before = pop0 + sim.world.factors.get(home).unwrap().biomass;
@@ -5180,9 +8186,9 @@ mod tests {
     #[test]
     fn razing_infrastructure_does_not_move_the_ceiling() {
         let bio_max = Band::new(3.0).in_kilotons();
-        let developed = Factors::new(Band::new(4.0), bio_max, bio_max, Band::new(4.0));
+        let developed = Factors::new(Band::new(4.0), bio_max, bio_max, Price::new(10.0));
         let mut razed = developed;
-        razed.infra = Band::ZERO;
+        razed.infra = Price::ZERO;
 
         assert_eq!(developed.k(), razed.k(), "K must not depend on infrastructure");
         assert_eq!(developed.k(), Band::new(3.0), "and it is min(hab, bio_max) — here the biosphere");
@@ -5204,7 +8210,7 @@ mod tests {
     #[test]
     fn drawing_the_biosphere_down_does_not_lower_the_ceiling() {
         let bio_max = Band::new(4.0).in_kilotons();
-        let full = Factors::new(Band::new(4.0), bio_max, bio_max, Band::new(4.0));
+        let full = Factors::new(Band::new(4.0), bio_max, bio_max, Price::new(10.0));
         let mut razed = full;
         razed.biomass = bio_max * 0.01; // ecology in ruins, ceiling untouched
 
@@ -5236,7 +8242,7 @@ mod tests {
         // which is correct behaviour and a different test.
         let bio_max = Band::new(4.0).in_kilotons();
         let start = bio_max * 0.125;
-        sim.world.factors.insert(home, Factors::new(Band::new(4.0), start, bio_max, Band::ZERO));
+        sim.world.factors.insert(home, Factors::new(Band::new(4.0), start, bio_max, Price::ZERO));
         *sim.world.population.get_mut(home).unwrap() = units::POPULATION_SEED_FLOOR;
 
         let mut last = start;
@@ -5260,7 +8266,7 @@ mod tests {
         let home = sim.world.player_info.get(pe).unwrap().home;
         sim.world
             .factors
-            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
+            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Price::new(10.0)));
         *sim.world.population.get_mut(home).unwrap() = units::POPULATION_SEED_FLOOR;
 
         for _ in 0..20 {
@@ -5285,7 +8291,7 @@ mod tests {
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         sim.world
             .factors
-            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Band::new(4.0)));
+            .insert(home, Factors::new(Band::new(4.0), Kilotons::ZERO, Band::new(4.0).in_kilotons(), Price::new(10.0)));
         *sim.world.population.get_mut(home).unwrap() = Kilotons::at_band(Band::new(2.0));
 
         for _ in 0..10 {
@@ -5353,7 +8359,7 @@ mod tests {
                     Band::new(1.0),
                     Band::new(4.0).in_kilotons(),
                     Band::new(4.0).in_kilotons(),
-                    Band::new(4.0),
+                    Price::new(10.0),
                 ),
             );
             *sim.world.population.get_mut(home).unwrap() = seed;
@@ -5454,12 +8460,16 @@ mod tests {
         let galaxy = Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap();
         let mut cfg = test_cfg(5);
         cfg.recycle_mining_pairs = true;
-        // **A crew of one, pinned.** This test is about recycling, not about
-        // how many miners open an outpost, and the ratified
-        // `miners_per_outpost = 3` would make the mineral assertion below a
-        // test of that value instead — the same way three hull-ladder tests
-        // silently became tests of `limited_fleet_size` at stage 3b.
-        let doctrine = Doctrine { miners_per_outpost: 1, ..Doctrine::default() };
+        // **This test is about recycling, not about how many miners open an
+        // outpost**, and a large crew would make the mineral assertion below a
+        // test of *that* instead — the same way three hull-ladder tests silently
+        // became tests of `limited_fleet_size` at stage 3b.
+        //
+        // Since T-87 there is no crew knob to pin: the crew is derived from the
+        // founding centre's unmet demand, and a fresh homeworld with a full
+        // starting bank has none, so it opens an outpost with one hull. The
+        // assertion below states that rather than assuming it.
+        let doctrine = Doctrine::default();
         let autopilots: Vec<Box<dyn Autopilot>> =
             (0..2).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
         let mut sim = Simulation::new(galaxy, cfg, autopilots);
@@ -5507,6 +8517,7 @@ mod tests {
             view,
             ranked: Ranked { id: pid, score: 9.0, class: PlanetClass::MiningOutpost },
             settlers_by_hull: [Kilotons::ZERO; 2],
+            mining_crew: 1,
         }];
         let center_pos = *sim.world.position.get(center).unwrap();
         sim.apply_build_with(
@@ -5656,7 +8667,7 @@ mod tests {
         sim.world.owner.insert(colony, PlayerId(0));
         sim.world.factors.insert(
             colony,
-            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Band::new(1.0)),
+            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Price::new(1.0)),
         );
         sim.world.stockpile.insert(colony, Minerals::default());
 
@@ -5675,6 +8686,101 @@ mod tests {
         assert_eq!(picked, Some(colony), "should route to the needier colony, not the funded homeworld");
     }
 
+    /// **T-81: a hauler goes where its cargo is what is missing.**
+    ///
+    /// Routing scored need on a *total* — how broke a centre was overall — and
+    /// carried no colour term at all. T-73 made that binding: a works bill is
+    /// payable in named colours, T-62 made the field log-normal per colour, and
+    /// together they left banks holding one colour and traces of the others,
+    /// with deepening down 94.5%.
+    ///
+    /// Two centres, equally broke, needing opposite colours. A Yellow-laden
+    /// hauler must pick the Yellow-short one — and the same hauler carrying
+    /// Magenta must pick the other. Asserting *both* directions is the point: a
+    /// routing rule that always picked the same centre would pass a one-sided
+    /// test whatever it was keying on.
+    #[test]
+    fn a_hauler_routes_to_the_colour_that_is_missing() {
+        let galaxy = Galaxy::generate(GalaxyConfig::new(2, 3)).unwrap();
+        let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(3));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let here = *sim.world.position.get(home).unwrap();
+
+        // Two colonies, co-located with home so the λ discount cannot decide
+        // this — the colour term has to.
+        let (a, b) = (sim.planet_entity[15], sim.planet_entity[16]);
+        for &e in &[a, b] {
+            sim.world.owner.insert(e, PlayerId(0));
+            sim.world.factors.insert(
+                e,
+                Factors::new(
+                    Band::new(3.0),
+                    Band::new(3.0).in_kilotons(),
+                    Band::new(3.0).in_kilotons(),
+                    infra_rung_price(1, &sim.config),
+                ),
+            );
+            sim.world.position.insert(e, here);
+        }
+        // Home can pay for everything, so it is never the needy one.
+        sim.world.stockpile.insert(home, Minerals { cyan: 1e6, magenta: 1e6, yellow: 1e6, ..Default::default() });
+
+        let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
+        let bill = works_bill(step, &cards::Works::default());
+        // `a` has everything except Yellow; `b` has everything except Magenta.
+        sim.world.stockpile.insert(
+            a,
+            Minerals { cyan: bill[0].kilotons(), magenta: bill[1].kilotons(), yellow: 0.0, ..Default::default() },
+        );
+        sim.world.stockpile.insert(
+            b,
+            Minerals { cyan: bill[0].kilotons(), magenta: 0.0, yellow: bill[2].kilotons(), ..Default::default() },
+        );
+
+        let yellow = Minerals { yellow: 10.0, ..Default::default() };
+        let magenta = Minerals { magenta: 10.0, ..Default::default() };
+        assert_eq!(
+            sim.best_delivery_center(PlayerId(0), here, &yellow),
+            Some(a),
+            "a Yellow-laden hauler must go to the Yellow-short centre"
+        );
+        assert_eq!(
+            sim.best_delivery_center(PlayerId(0), here, &magenta),
+            Some(b),
+            "and the same route with Magenta aboard must go the other way"
+        );
+
+        // **And it concentrates** (R-IND17), which is the property T-81's relief
+        // term did not have. A third centre needing *everything* must score
+        // strictly lower on the same Yellow cargo than one needing only Yellow,
+        // or ore scatters by colour and a three-colour bill is never assembled
+        // anywhere.
+        let empty = sim.planet_entity[17];
+        sim.world.owner.insert(empty, PlayerId(0));
+        sim.world.factors.insert(
+            empty,
+            Factors::new(
+                Band::new(3.0),
+                Band::new(3.0).in_kilotons(),
+                Band::new(3.0).in_kilotons(),
+                infra_rung_price(1, &sim.config),
+            ),
+        );
+        sim.world.position.insert(empty, here);
+        sim.world.stockpile.insert(empty, Minerals::default());
+
+        let near = sim.bill_completion(a, PlayerId(0), &yellow);
+        let far = sim.bill_completion(empty, PlayerId(0), &yellow);
+        assert!((near - 1.0).abs() < 1e-12, "a centre missing only Yellow is completed by Yellow: {near}");
+        assert!(far > 0.0 && far < near, "and one missing everything scores strictly less: {far} vs {near}");
+        assert_eq!(sim.bill_completion(a, PlayerId(0), &magenta), 0.0, "the wrong colour completes nothing");
+        assert_eq!(
+            sim.best_delivery_center(PlayerId(0), here, &yellow),
+            Some(a),
+            "so the hauler goes to the centre it can finish, not the emptiest"
+        );
+    }
+
     #[test]
     fn freighter_delivers_to_need_not_its_original_pairing() {
         // The end-to-end version: a freighter built for one center still
@@ -5687,7 +8793,7 @@ mod tests {
         sim.world.owner.insert(colony, PlayerId(0));
         sim.world.factors.insert(
             colony,
-            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Band::new(1.0)),
+            Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Price::new(1.0)),
         );
         sim.world.stockpile.insert(colony, Minerals::default());
         {
@@ -5753,7 +8859,7 @@ mod tests {
         let target = sim.planet_entity[11];
         sim.world.factors.insert(
             target,
-            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
         sim.world.population.insert(home, Kilotons::at_tier(BandTier::III));
         {
@@ -5833,7 +8939,7 @@ mod tests {
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let target = sim.planet_entity[11];
         let cap = Band::new(3.0);
-        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Band::ZERO);
+        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Price::ZERO);
         sim.world.factors.insert(home, factors(cap));
         sim.world.factors.insert(target, factors(cap));
         let here = *sim.world.position.get(home).unwrap();
@@ -5884,7 +8990,7 @@ mod tests {
         let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(3, 1)).unwrap(), test_cfg(1));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let here = *sim.world.position.get(home).unwrap();
-        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Band::ZERO);
+        let factors = |b: Band| Factors::new(b, b.in_kilotons(), b.in_kilotons(), Price::ZERO);
         let hulls = [HullType::MediumSystems, HullType::GeneralSystems];
 
         for kp in [1.0, 2.5, 4.0] {
@@ -5926,7 +9032,7 @@ mod tests {
         let target = sim.planet_entity[11];
         sim.world.factors.insert(
             target,
-            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
         let hold = HullType::GeneralSystems.colony_seed_capacity(&sim.config);
 
@@ -5934,7 +9040,7 @@ mod tests {
         // hold binds, and the hull lands full.
         sim.world.factors.insert(
             home,
-            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Band::ZERO),
+            Factors::new(Band::new(4.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
         sim.world.population.insert(home, units::population_mass(Band::new(4.0)));
         let full = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();
