@@ -130,6 +130,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **R-O88 resolved** — option C, split `F`'s two roles | **R-O88** | T-89 | — | §3.2's unbounded build-wide axis and §6.3's tree meanings for `cap`/`half`, both made true at once by denominating the ceiling per berth; `CLAUDE.md` §2's "when a change raises entity count, check the test horizons in the same commit" — unit 19→54 s and determinism 30→58 s, both fixed in this commit with `events_processed` floors guarding the trims | **`SimConfig::slip_throughput` deleted** and `fab_cap` 0.2 → 0.1. Neither is a retune: per-berth turnaround is bit-identical at every playable rung, and §3.3's approved schedule now reads off `fab_cap` directly. Also supersedes **T-88's own headline measurement** — the after-idle gap is 29.6 → 7.6 yr, so 81%-of-timeline no longer holds |
 | **R-O85 resolved** — the ladder is fine, freight is not | **R-O85** | **T-76** (promoted to first) | — | `CLAUDE.md` §2's "measure the utilisation of whatever the knob buys", applied to a *price* — the ladder is scale-free (1.8-yr payback at every rung) so there is nothing to ratify; and logging the decision's own predicate rather than reconstructing it from totals, which inverted the answer | **R-O85's own premise.** Infrastructure is not priced out of reach: the bed banks 1,714,697 kt against a 19 kt rung. Counted per decision, **0%** gated and **0.7–0.9%** outbid — so R-O68's crossover, which three sections circled, is consulted in one decision per hundred and cannot have been the cause of anything. **43.8–46.6% of all decisions hold the total and lack a colour** |
 | **R-O89** — freight loads what the destination is short of | **R-O89** | **T-76** (the load half; the routing half stays open) | — | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** — +8.21% ± 3.06 on the standard bed, **+8.60% ± 2.61 on seeds 2/3/5/11**, pooled **+8.40% ± 1.86, 8/8**; and its **ablate before you explain** — the 2×2 ran before either arm was believed, and it is what saved the +8.4% from being buried under the −52.3% they scored together. T-73's colour-payable bill and design law #1's colour semantics, finally reaching the load leg | **§6.19c's instruction not to re-sweep anything mineral-side is lifted** — `outpost_mining_fraction`, both crew policies, `reinvest_bias` and the Exchange were each measured flat against this wall and are now re-measurable (none is re-measured here). Also **my own first attempt**: need-routing the *pickup* leg is −52.3%, and transit, per-hull throughput and hull recycling are each measured not to be why — the residual is left open under T-76 rather than given a story |
+| **Tree gradient** — rank knobs against every tree | — | **T-45** (superseded and broadened 9 → 32 knobs), **T-50** (first raw dataset landed), T-78 | **R-O90**, **R-TREE8**, **R-TREE9** | Trees §2.1's "one global objective is wrong for five of six trees", finally applied to the *tuning* loop and not only to card costing; §2.3.4's mass reading of Production, which needed `VehicleSnapshot::dry_mass`; T-50's "persist the raw per-seed evaluations, not the summary" | **T-45's whole table.** Nine knobs at the pre-R-O66 operating point, ranked on coverage. `medium_fleet_size` has **flipped sign** (+32.7 "raise" → −3.93 and a cliff), `cargo_unit_size` went from **inert** to third-largest — design law #14's corollary about knobs that look dead while expansion is broken, confirmed — and `biosphere_regen_rate`, the **+141.2 ± 18.1 headline lever**, is now **bit-identically zero** because T-67 took infrastructure out of `K`. Also **trees §2.3.2 and §2.3.6**: Warfare is unreadable on the standard bed and Politics has no objective distinct from Expansion |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -3264,6 +3265,25 @@ overwritten, one row per evaluation. Zero dependencies, diffable, and readable
 by whatever does the card-costing analysis later. The harness gains a
 `--record <path>` flag; nothing else changes.
 
+> **Advanced, not closed.** `examples/tree_gradient` writes exactly this shape
+> under `TG_RECORD`, and the first dataset is checked in at
+> `data/tree_gradient.tsv` (260 evaluations: 32 knobs × 2 arms × 4 seeds, plus
+> the base runs) with its schema in `data/README.md`. Every ranking in T-45 above
+> is recomputed *from that file*, which is the property that makes it worth
+> keeping.
+>
+> Three gaps remain before this closes. The **operating point is not in the
+> file** — it carries seed, horizon and seat count but not the full `SimConfig` +
+> `Doctrine` and not the engine commit, which is the half of T-50 that stops an
+> elasticity being a rumour. `examples/gradient_probe` still only prints. And
+> nothing yet appends a *second* operating point, so the format's real claim —
+> that a later reader can re-analyse under a different objective without
+> re-running — is untested against an actual change of objective.
+>
+> One property worth noting because it came free: each chunked run re-emits the
+> base rows, and all twelve repeats were **bit-identical**, so the dataset
+> carries its own determinism check.
+
 **Related:** T-45 (elasticity baseline) is the first dataset this should
 capture, and it needs re-running at the post-R-O66 operating point anyway.
 
@@ -3296,7 +3316,7 @@ somewhere for the mass to go, which is slag (R-O59/T-03). Concrete test once
 decided: zero a settled world's biosphere and assert the population curve.
 
 
-### T-47. R-AC20 — ~~time-to-10% vs. coverage disagree on `medium_fleet_size`~~ premise withdrawn; `center_mining_fraction` still open
+### ~~T-47. R-AC20 — time-to-10% vs. coverage disagree on `medium_fleet_size`~~ — **closed**: premise withdrawn, and `center_mining_fraction` measured bit-identically flat
 
 > **Resolved, and it was an artifact.** The two elasticities were measured at
 > different operating points (coverage's `+32.7 pts/ln` at `medium_fleet_size
@@ -3307,6 +3327,11 @@ decided: zero a settled world's biosphere and assert the population curve.
 > the mistake; "a gradient is local" (CLAUDE.md §2) has now produced a project
 > artifact rather than merely warning about one. **What is still open:**
 > `center_mining_fraction` (`~noise` at 1.33 SE) wants the ten-seed bed.
+> ~~**What is still open:**~~ **Closed.** `examples/tree_gradient` measures
+> `center_mining_fraction` **bit-identically flat** at ±10% on the composite and
+> on each of its three trees separately — not `~noise`, exactly zero, so the ten-
+> seed bed would only buy a tighter error bar around a number with no mechanism
+> behind it. It is a candidate for deletion rather than tuning (T-45).
 > **What the detour actually produced:** the `colonies@2000` screening metric
 > — ρ = 0.923 against true coverage at 31× less cost, now documented in
 > CLAUDE.md §2 and calibrated by `examples/proxy_metric_calibration.rs`.
@@ -3418,8 +3443,105 @@ rests on less evidence than the rest of the shipped defaults.
 
 ### T-45. Elasticity baseline — what the knobs actually do
 
-First run of `examples/gradient_probe.rs` (3 seats, 4 CRN seeds, ±10% central
-differences, 72 evaluations). Coverage `∂/∂ln x` in percentage points:
+> **Superseded by the tree gradient below.** The table that follows was measured
+> at the pre-R-O66 operating point against *coverage*, which is Expansion's
+> objective and no other tree's. It is kept because the reversals against it are
+> the most useful thing in the new measurement, not because any row of it is
+> still true.
+
+#### Current: `examples/tree_gradient`, 32 knobs, 4 CRN seeds, 1,500 yr
+
+Objective is the **geomean of the ratio-to-default** of the three measurable tree
+objectives — Expansion (colony-years), Growth (work-years), Production
+(fleet-years **in dry mass**) — so the default scores exactly 1.0 and every
+number below is dimensionless, `∂ln S/∂ln x`. Warfare, Politics and Technology
+are excluded for the reasons in `Hyades_trees_and_card_value.md` §2.3 (R-TREE8,
+R-TREE9). **Raw per-seed evaluations are in `data/tree_gradient.tsv`** — that is
+T-50's artifact and it is the thing to re-analyse from, not this table.
+
+| # | knob | value | `∂lnS/∂lnx` | SE | verdict | Expan | Growth | Produc | S(+10%) | S(−10%) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | `general_vehicle_cost` | 1.0 | **+4.066** | 0.453 | **CLIFF** | +3.22 | +5.37 | +3.61 | 1.078 | **0.477** |
+| 2 | `medium_fleet_size` | 10 | **−3.935** | 0.467 | **CLIFF** | −3.28 | −5.34 | −3.19 | **0.487** | 1.072 |
+| 3 | `cargo_unit_size` | 1.0 | **+3.598** | 0.439 | **CLIFF** | +3.39 | +4.67 | +2.73 | 0.997 | **0.484** |
+| 4 | `cycle_years` | 50 | **−0.598** | 0.055 | finding | −0.44 | −0.94 | −0.42 | 0.929 | 1.048 |
+| 5 | `growth_rate` | 0.873 | **+0.265** | 0.067 | finding | +0.22 | +0.37 | +0.21 | 1.022 | 0.969 |
+| 6 | `survey_vehicles` | 6 | **−0.164** | 0.052 | finding | +0.00 | −0.41 | −0.08 | 0.972 | 1.005 |
+| 7 | `trade_decay_lambda` | 0.01 | **−0.122** | 0.037 | finding, **split** | +0.00 | **−0.35** | −0.02 | 0.988 | 1.012 |
+| 8 | `rank.w_mineral` | 0.8 | +0.122 | 0.081 | ~noise | +0.02 | +0.32 | +0.03 | 1.014 | 0.990 |
+| 9 | `survey_accel_g` | 1.0 | +0.111 | 0.064 | ~noise | +0.08 | +0.18 | +0.07 | 0.991 | 0.969 |
+| 10 | `fab_cap` | 0.1 | **−0.096** | 0.037 | finding, **split** | **+0.07** | **−0.22** | −0.14 | 0.982 | 1.001 |
+| 11 | `build_lead_years` | 2.0 | **−0.092** | 0.043 | finding | −0.05 | −0.13 | −0.10 | 0.985 | 1.004 |
+| 12 | `homeworld_start_minerals` | 3.0 | +0.081 | 0.056 | ~noise | +0.08 | +0.12 | +0.04 | 0.992 | 0.976 |
+| 13 | `mining_tick_years` | 50 | −0.076 | 0.055 | ~noise | −0.06 | −0.14 | −0.03 | 0.977 | 0.992 |
+| 14 | `rank.mineral_pressure_gain` | 1.0 | +0.065 | 0.088 | ~noise | +0.01 | +0.10 | +0.09 | 0.995 | 0.982 |
+| 15 | `civilian_accel_g` | 1.0 | +0.064 | 0.069 | ~noise | +0.01 | +0.20 | −0.02 | 1.007 | 0.994 |
+| 16 | `rank.w_k` | 1.0 | +0.064 | 0.096 | ~noise | +0.01 | +0.20 | −0.01 | 0.988 | 0.975 |
+| 17 | `crowding_beta` | 0.5 | +0.054 | 0.070 | ~noise | −0.00 | +0.24 | −0.08 | 0.990 | 0.979 |
+| 18 | `rank.w_hub` | 1.2 | **−0.054** | 0.026 | finding | −0.01 | −0.10 | −0.04 | 0.980 | 0.991 |
+| 19 | `limited_fleet_size` | 50 | +0.054 | 0.049 | ~noise | −0.00 | +0.35 | −0.18 | 0.996 | 0.986 |
+| 20 | `survey_reserve` | 1024 | −0.042 | 0.030 | ~noise | +0.01 | −0.13 | −0.01 | 0.995 | 1.003 |
+| 21 | `rank.centrality_scale` | 150 | −0.039 | 0.068 | ~noise | −0.02 | −0.06 | −0.04 | 0.991 | 0.999 |
+| 22 | `density_floor` | 0.01 | +0.032 | 0.016 | ~noise | +0.00 | +0.10 | −0.01 | 1.005 | 0.999 |
+| 23 | `veins_per_band` | 10 | +0.025 | 0.106 | ~noise | −0.06 | +0.16 | −0.02 | 0.994 | 0.989 |
+| 24 | `scrap_recovery_fraction` | 0.5 | −0.021 | 0.019 | ~noise | +0.00 | −0.07 | +0.01 | 0.999 | 1.003 |
+| 25 | `outpost_mining_fraction` | 0.238 | +0.020 | 0.053 | ~noise | +0.06 | −0.01 | +0.01 | 1.001 | 0.997 |
+| 26 | `rank.mineral_high` | 2.0 | +0.005 | 0.050 | ~noise | +0.01 | +0.08 | −0.07 | 0.984 | 0.983 |
+| 27 | `biosphere_regen_rate` | 0.127 | **0.0000** | 0 | **flat** | 0 | 0 | 0 | 1.0000 | 1.0000 |
+| 28 | `center_mining_fraction` | 0.15 | **0.0000** | 0 | **flat** | 0 | 0 | 0 | 1.0000 | 1.0000 |
+| 29 | `productivity_step` | 0.2 | **0.0000** | 0 | **flat** | 0 | 0 | 0 | 1.0000 | 1.0000 |
+| 30 | `reinvest_bias` | 0.5 | **0.0000** | 0 | **flat** | 0 | 0 | 0 | 1.0000 | 1.0000 |
+| 31 | `risk_aversion` | 0.0 | **0.0000** | 0 | **unmeasurable** | 0 | 0 | 0 | 1.0000 | 1.0000 |
+| 32 | `max_survey_hops` | 120 | **0.0000** | 0 | **flat** | 0 | 0 | 0 | 1.0000 | 1.0000 |
+
+**Read the last two columns before the elasticity.** The top three are ~50%
+collapses on one side and ~0% on the other, so their "elasticity" is the average
+of a cliff and a plateau. All three set the Medium freighter's hold and all three
+are the same finding: **R-O90**, `Hyades_industry.md` §6.21.
+
+Seven readings worth keeping:
+
+- **`medium_fleet_size` flipped sign** — T-45 said `+32.7, raise` at 3.0; at 10.0
+  it is −3.93 and raising it further walks off a cliff. **`cargo_unit_size` went
+  from `inert` to third-largest.** Design law #14's corollary — *do not treat a
+  parameter as inert because it did nothing while expansion was broken* — named
+  both of these by name, and this is the confirmation.
+- **`biosphere_regen_rate` is bit-identically zero.** The +141.2 ± 18.1 headline
+  lever has no path to the simulation since T-67 took infrastructure out of `K`:
+  the ceiling is now the *pristine* biosphere and regrowth only refills a stock
+  that is already slack.
+- **Six knobs are exactly zero and one of those is the instrument.**
+  `risk_aversion` is 0.0 at the default and a *multiplicative* ±10% on zero is
+  zero, so this probe cannot move it. The other five are genuinely inert here and
+  are candidates for deletion rather than tuning — `reinvest_bias` flat is an
+  independent confirmation of R-O87.
+- **`center_mining_fraction` is inert**, which answers the half of **T-47** left
+  open: not "still open", measured flat, bit-identically.
+- **Two knobs split across trees, and one of them is λ.**
+  `trade_decay_lambda` is +0.002 on Expansion and **−0.348 on Growth**; `fab_cap`
+  is **+0.069 on Expansion and −0.221 on Growth**. λ is the largest ratification
+  in this project's history and it was measured on coverage alone. Neither
+  conflict is visible to a single-metric probe, and neither is resolved here —
+  they are the first real evidence that per-tree objectives change tuning answers
+  and not just card costing.
+- **`survey_vehicles` wants to go down**, entirely through Growth (−0.41) with
+  Expansion at +0.00. Post-R-O86 the frontier is served; extra scouts are hulls
+  that infrastructure did not get.
+- **Sixteen of thirty-two are inside 2 SE and six are exactly zero.** More than
+  two thirds of the engine's continuous surface cannot be told from noise at four
+  seeds, which is the same headline T-45 had and is worth re-stating: it applies
+  to every sweep taken before error bars existed.
+
+**What this is not.** 1,500 yr is a screen, not §3.1's ratified 3,000-yr bed —
+colony count is 97.9% saturated there while works and fleet mass are still
+compounding, so if anything the composite is biased *against* expansion-side
+knobs. Trust the ranking; ratify a magnitude on the full bed. And a gradient is
+local: it says which way is uphill here, not where the summit is.
+
+#### Superseded: first run of `examples/gradient_probe.rs`
+
+(3 seats, 4 CRN seeds, ±10% central differences, 72 evaluations). Coverage
+`∂/∂ln x` in percentage points:
 
 | knob | value | d/dln x | SE | verdict |
 |---|---|---|---|---|

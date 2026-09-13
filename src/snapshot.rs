@@ -82,6 +82,14 @@ pub struct VehicleSnapshot {
     pub position: Vec3,
     /// Minerals carried (mining/freighter cargo).
     pub cargo: Minerals,
+    /// **Dry mass of the hull, which since R-O57 *is* its mineral cost**
+    /// (design law #11). Exposed because Production's objective is
+    /// fleet-years **in mass** — `Hyades_trees_and_card_value.md` §2.3.4 is
+    /// explicit that counting hulls rewards fragmentation and would put that
+    /// tree in direct contradiction with design law #3. A consumer summing
+    /// `vehicles.len()` is measuring the wrong thing and nothing in the old
+    /// snapshot could tell it so.
+    pub dry_mass: Kilotons,
     /// `true` while in flight; `false` when on station / idle.
     pub in_flight: bool,
 }

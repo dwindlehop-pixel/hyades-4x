@@ -111,6 +111,15 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Arm {
     // Fleet-years and work-years both want a fixed time grid, not events —
     // event-driven sampling weights the series by activity, which is the thing
     // being measured.
+    //
+    // **This `fleet_years` is a hull *count*, and Production's objective is
+    // mass** (`Hyades_trees_and_card_value.md` §2.3.4: counting hulls rewards
+    // fragmentation and contradicts design law #3 outright). It is left as a
+    // count deliberately — R-O88's ratified "+26–34% fleet-years" was measured
+    // on this definition, and silently re-denominating it would invalidate that
+    // figure without re-running the comparison. Use
+    // `examples/tree_gradient`, which reads `VehicleSnapshot::dry_mass`, for
+    // anything that is actually Production's objective.
     let (mut work_years, mut fleet_years) = (0.0f64, 0.0f64);
     let (mut prev_t, mut prev_w, mut prev_v) = (0.0f64, 0.0f64, 0.0f64);
     let mut next = SAMPLE_YEARS;

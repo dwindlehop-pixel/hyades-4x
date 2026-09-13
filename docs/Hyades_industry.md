@@ -2585,6 +2585,90 @@ touch. §6.19c's instruction not to re-sweep them stands only until this lands; 
 has landed, and they are now re-measurable. None is re-measured here — that is a
 separate ratification each, and this landing moves one default.
 
+
+### 6.21 R-O90 — one freighter hold buys exactly one rung, and the default sits 2.3% above the cliff
+
+**Found by looking for something else.** `examples/tree_gradient` ranks every
+continuous knob in the engine against a composite of the tree objectives
+(`Hyades_trees_and_card_value.md` §2.4). The top three by |elasticity| are
+`general_vehicle_cost` (+4.07), `medium_fleet_size` (−3.93) and `cargo_unit_size`
+(+3.60) — an order of magnitude clear of the fourth — and all three are the same
+thing: **the size of a Medium freighter's hold.** The first two are the two legs
+of the cost ladder and are near-perfectly antisymmetric, which is R-O58's "the
+cost ladder is one quantity" arriving from a new direction.
+
+**But they are not gradients.** Every one is a ~50% collapse on one side and
+nothing on the other:
+
+| knob | S(+10%) | S(−10%) |
+|---|---|---|
+| `general_vehicle_cost` | 1.0779 | **0.4767** |
+| `medium_fleet_size` | **0.4868** | 1.0721 |
+| `cargo_unit_size` | 0.9966 | **0.4842** |
+
+A central difference across a step reports a large number that is not a slope.
+The first check ruled out the obvious cause: hull *capacity* is smooth and
+monotone in all three over ±15%, with no normaliser going to zero — so this is
+not §2's artifact table repeating itself.
+
+#### The mechanism, and it is a coincidence between two ladders
+
+Sweeping `cargo_unit_size`, which scales holds and nothing else (1,500 yr, seeds
+1 and 7):
+
+| `cargo_unit_size` | Medium hold | colony-years | work-years | colonies |
+|---|---|---|---|---|
+| 0.90 | 0.829 | 1,336,875 | 401,796 | 3,119 |
+| 0.95 | 0.875 | 1,333,212 | 413,473 | 3,050 |
+| 0.98 | 0.903 | 1,294,462 | 436,873 | 2,990 |
+| **1.00 (shipped)** | **0.921** | **2,564,425** | **1,055,511** | **3,315** |
+| 1.05 | 0.967 | 2,550,150 | 1,028,645 | 3,316 |
+| 1.25 | 1.151 | 2,597,512 | 1,158,315 | 3,318 |
+
+**A 2% change doubles the game, and a 25% change buys 1%.** The threshold:
+
+| | kt |
+|---|---|
+| Medium freighter hold | **0.921** |
+| infra rung 1 → 2, the step above founding | **0.900** |
+| trips per rung | **0.977** |
+
+A colony is founded standing on **rung 1 exactly** — its stock *is* the recycled
+hull's 0.100 kt (T-70, R-O57) — so the 0.900 kt step is the one every colony in
+the galaxy faces first, and the round trip that pays it is **~124 years**
+(§6.20). One trip or two is a factor of two on the entire development schedule,
+and that is precisely the factor the sweep shows.
+
+Note that this is *why* the step is invisible from above: past the threshold a
+bigger hold delivers a rung the colony cannot use faster, because the next rung
+costs **19 kt** — 20.6 trips — and no hold change reaches that.
+
+#### What is and is not claimed
+
+**Nobody chose this.** The hull cost ladder and the infrastructure cost ladder
+were ratified separately, against different objectives, years apart. That they
+meet at 0.977 is a coincidence, and the engine's development rate is standing on
+it with a 2.3% margin. Three independently MC-tuned constants
+(`general_vehicle_cost`, `medium_fleet_size`, `cargo_unit_size`) can each walk
+off that edge on their own, and nothing else would fail.
+
+`one_freighter_hold_covers_one_infrastructure_rung` pins it. The test asserts the
+margin exists, **not that it is correct** — that is R-O90 and it is open. Two
+readings are available and they want opposite fixes:
+
+- **It is good design.** "A freighter delivers a development step" is a legible
+  unit and the game is built on freight round trips (§8.1). Then the coincidence
+  should be made *deliberate* — derive one ladder's anchor from the other, and
+  the margin becomes a stated constant rather than an accident.
+- **It is a latent fault.** A discontinuity of this size next to the operating
+  point makes every measurement in its neighbourhood untrustworthy, and a card
+  that shrinks holds or raises rung prices would fall off it with no warning.
+  Then the fix is to make development rate continuous in hold size — part-paying
+  a rung across trips, which the bank already supports.
+
+**This does not move a default.** The shipped value is on the good side and the
+sweep says nothing above it is worth taking.
+
 ## 7. Trade, development freight, and what needs a pact
 
 The third gap in §0, and the answer turns out to be the same mechanism as
@@ -2820,6 +2904,7 @@ artifact in place contaminates every later measurement.
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
 | ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favours deepening (+29% hull/yr for 9 colonisers), and what eats it is a homeworld already at rung II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
 | ~~**R-O88**~~ | ~~There is no build-wide axis~~ — **resolved, option C.** `fab_cap` bounds the rate **per berth** (quality); `slips` reads the fabrication share of the **stock** (quantity, unbounded). `fab_cap` 0.2 → 0.1 is a re-denomination: per-berth turnaround is **bit-identical** at every playable rung, and §3.3's schedule now reads off one constant. `slip_throughput` deleted; berth size derived from the Limited hull (**placeholder anchor**). Berths at rung II: 2 → **17**. Fleet-years **+26–34%**, throughput 88.7 → 110.7 yr/s, colony count flat. Also drops the `t_lead` defect — there is no per-planet rate left to fail to reach — and takes T-88's after-idle gap 29.6 → 7.6 yr. | §3.2, §6.3, §6.19b |
+| **R-O90** | **One freighter hold buys exactly one infrastructure rung** — 0.921 kt against a 0.900 kt step, **0.977 trips**, and the shipped defaults sit 2.3% above a cliff that halves colony-years and work-years. Nobody chose it: the hull ladder and the infra ladder were ratified separately and happen to meet there. Open question is *which* way to resolve it — make the coincidence deliberate (derive one anchor from the other) or remove the discontinuity (let a rung be part-paid across trips). Pinned by `one_freighter_hold_covers_one_infrastructure_rung`, which asserts the margin exists and **not** that it is right. | §6.21 |
 | ~~**R-O89**~~ | ~~Freight loads in proportion to the pile, not to what the destination is short of~~ — **resolved: the load leg had no colour term.** T-81/R-IND17 gave the *delivery* leg one; nothing ever gave the *load* one, so with a single-coloured field (mean dominant share 0.789) what went into a hold was decided by geology. `take_for_deficit` fills **along the destination's deficit vector**, topping up proportionally only when the pile cannot supply it. **+8.40% ± 1.86 work-years, 8/8 seeds, 4.5 SE**, replicated on four seeds it was not chosen against — on **the same tonnage** (20,259 → 20,292 kt over 26,800 → 26,746 trips), which is what makes it a colour result rather than a hauling one. Deficit-proportional beats neediest-colour-first by **+3.84% ± 0.20, 4/4**. The **pickup site stays welded** to the hauler's own miner: need-routing it as well is **−52.3%**, and transit, per-hull throughput and hull recycling are each measured *not* to be the reason — the residual is open under T-76. | §6.20 |
 | ~~**R-O85**~~ | ~~Infrastructure is priced as if it were the scarce thing~~ — **resolved: it is not.** Post-R-O88 the ladder is **scale-free** — 0.555 kt/yr of output per kt of stock, a **1.8-year payback at every rung**. The bed banks 1,714,697 kt against a 19 kt rung and still sits at Band 1.442 with **none** at cap. Counted per decision: **0%** gated, **0.7–0.9%** outbid, **98.3%** cannot pay the bill — and **43.8–46.6% of all decisions hold the total and lack a colour**. The constraint is **freight**, not price. See §6.19c; the work is T-76. | §6.19c |
 | ~~R-O85, as originally framed~~ | ~~Infrastructure is priced as if it were the scarce thing.~~ The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |

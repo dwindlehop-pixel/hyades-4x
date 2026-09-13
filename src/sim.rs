@@ -5490,11 +5490,13 @@ impl Simulation {
             let e = self.world.entity_at(i);
             if let Some(&role) = self.world.role.get(e) {
                 let m = self.world.motion.get(e).unwrap();
+                let hull = self.world.hull_type.get(e).copied().unwrap_or_else(|| role_hull_type(role));
                 vehicles.push(VehicleSnapshot {
                     owner: self.world.owner.get(e).map(|o| o.0).unwrap_or(0),
                     kind: role.kind(),
                     position: self.position_at(e, self.clock).unwrap(),
                     cargo: *self.world.cargo.get(e).unwrap_or(&Minerals::default()),
+                    dry_mass: hull_dry_mass(hull, &self.config),
                     in_flight: m.arrive > self.clock,
                 });
             }
@@ -5709,6 +5711,71 @@ mod tests {
         assert!(sim.apply_build_with(0, home, home_pos, order, &[]).is_none(), "the order must be declined");
         assert_eq!(bank(&sim), before.0, "mass is conserved: a build that produced nothing spent nothing");
         assert_eq!(vehicles(&sim), before.1, "and nothing was created either");
+    }
+
+    /// **One freighter hold buys exactly one infrastructure rung, and the
+    /// margin is 2.3%** (R-O90).
+    ///
+    /// This is not a knob and nobody set it. It is a coincidence between two
+    /// independently ratified ladders — the hull cost ladder sets a Medium
+    /// freighter's hold, the infrastructure cost ladder sets what a rung costs —
+    /// and the engine's whole development rate turns on which side of it the
+    /// defaults land:
+    ///
+    /// | | kt |
+    /// |---|---|
+    /// | Medium hold | **0.921** |
+    /// | rung 1 → 2, the step above founding | **0.900** |
+    /// | trips per rung | **0.977** |
+    ///
+    /// A colony is founded at rung 1 exactly (its stock *is* the recycled hull's
+    /// 0.100 kt, T-70/R-O57), so the step above founding is the one every colony
+    /// in the galaxy faces first, and a round trip is ~124 years
+    /// (`examples/freight_gap`). One trip or two is therefore a factor of two on
+    /// the whole development schedule.
+    ///
+    /// **Measured, by sweeping `cargo_unit_size`** (which scales holds and
+    /// nothing else) at 1,500 yr on seeds 1 and 7:
+    ///
+    /// | `cargo_unit_size` | Medium hold | colony-years | work-years |
+    /// |---|---|---|---|
+    /// | 0.95 | 0.875 | 1,333,212 | 413,473 |
+    /// | 0.98 | 0.903 | 1,294,462 | 436,873 |
+    /// | **1.00** | **0.921** | **2,564,425** | **1,055,511** |
+    /// | 1.05 | 0.967 | 2,550,150 | 1,028,645 |
+    /// | 1.25 | 1.151 | 2,597,512 | 1,158,315 |
+    ///
+    /// A **step**, not a slope: 2% below the default halves the game and 25%
+    /// above it buys ~1%. `examples/tree_gradient` found it as the three largest
+    /// elasticities in the engine — `general_vehicle_cost`, `medium_fleet_size`
+    /// and `cargo_unit_size`, which are the three knobs that set this hold — all
+    /// reporting a ~50% collapse on one side and nothing on the other.
+    ///
+    /// **The test is here because three separately MC-tuned constants can walk
+    /// off this edge without anything else failing.** It does not assert the
+    /// margin is *correct* — that is R-O90, open — only that a change which
+    /// crosses it has to say so.
+    #[test]
+    fn one_freighter_hold_covers_one_infrastructure_rung() {
+        let cfg = SimConfig::new(1);
+        let hold = HullType::MediumSystems.cargo_capacity(&cfg);
+        let founding = hull_cost(HullType::MediumSystems, &cfg);
+        let step = infra_step_price(founding, &cfg);
+        assert_eq!(infra_rung_of(founding, &cfg), 1, "a colony is founded standing on rung 1");
+        let trips = step.kilotons() / hold.kilotons();
+        assert!(
+            trips <= 1.0,
+            "a Medium hold ({:.4} kt) no longer covers the rung above founding ({:.4} kt): {trips:.4} trips. \
+             This is a cliff, not a gradient — 2% the wrong side of it halves colony-years and work-years \
+             (R-O90). If that is intended, move this assertion and say why.",
+            hold.kilotons(),
+            step.kilotons()
+        );
+        assert!(
+            trips > 0.90,
+            "the hold now overshoots the rung by more than 10% ({trips:.4} trips). Not a fault, but the \
+             coincidence this test pins has stopped being one and the sweep in the doc comment is stale."
+        );
     }
 
     /// **A hold fetches the colours the destination is short of, and only the

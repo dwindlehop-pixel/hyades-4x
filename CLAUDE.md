@@ -483,12 +483,22 @@ cosmetic. It was not — **correcting it reordered the top of the ranking**:
 
 | knob | under the fraction | under colony count | confirmed? |
 |---|---|---|---|
-| `biosphere_regen_rate` | +0.84 ± 0.24 — third | **+141.2 ± 18.1 — first (7.8 SE)** | yes |
+| `biosphere_regen_rate` | +0.84 ± 0.24 — third | **+141.2 ± 18.1 — first (7.8 SE)** | yes — *but see below* |
 | `growth_rate` | +2.27 ± 0.50 — first | +73.8 ± 20.3 — second | yes |
 | `survey_reserve` | −0.13 ± 0.23 — flat | −23.8 ± 10.1 — "significant" | **no — false positive** |
 
 The top two genuinely swapped, and `growth_rate` was ratified while the
-fraction under-weighted the actual top lever. But **the third row is a sixth
+fraction under-weighted the actual top lever.
+
+**`biosphere_regen_rate` is now bit-identically inert, and T-67 is why.** The
+largest lever this project ever measured reports **exactly 0.0000** at ±10% on
+the current bed (`examples/tree_gradient`). It is not a weakened effect, it is no
+effect: since `K = min(hab, bio_max)` the ceiling is the *pristine* biosphere and
+regrowth only refills the standing stock, which §7 already records as slack
+(deleting the biomass draw outright reproduces the run bit-for-bit). The +141.2
+is a true record of the engine that measured it and is not a fact about this one.
+`center_mining_fraction`, `productivity_step` and `reinvest_bias` are flat the
+same way. But **the third row is a sixth
 artifact, and this one the corrected metric *created*** — a direct sweep of
 `survey_reserve` (`gradient_step --sweep-reserve`) shows the probe had the sign
 backwards: 1024 sits on a plateau (2048 is +3.5 ± 2.6, noise) with a cliff
@@ -562,6 +572,56 @@ metric — *what could a card do to move this without moving the world?* If the
 answer is not "nothing", the metric is a target, not a measurement. This joins
 the artifact list below as a fifth shape, and it is the only one that would
 have gotten worse rather than better with time.
+
+### Rank knobs against every tree, and normalise to the default
+
+**Colony count is Expansion's objective and only Expansion's**
+(`Hyades_trees_and_card_value.md` §2.1). Every gradient in this file was ranked
+on it, and `work_years` has already caught it scoring a development regression as
+an improvement four times running. `examples/tree_gradient` ranks against a
+composite instead: **divide each tree's stock integral by its value at the
+shipped default and take the geometric mean.**
+
+Three properties, and the second is why it is worth the trouble:
+
+- The default scores exactly **1.0** by construction, and units cancel before the
+  average, so no tree's scale sets its weight.
+- **`ln S` is the arithmetic mean of the per-tree log-ratios**, so the composite
+  elasticity is *exactly* the mean of the per-tree elasticities. The
+  decomposition is free and reconciles by construction — §2's mix rule satisfied
+  rather than obeyed. Print the parts beside the whole.
+- Everything is dimensionless (% per %), so knobs and *trees* are both comparable.
+
+Three of the six trees are measurable (Expansion, Growth, Production); Warfare is
+an algebraic zero on the 3-seat bed, Politics is Expansion exactly, Technology is
+undefined — reasons in the harness docs and in trees §2.3. **Say which you left
+out and why**; a composite over an unstated subset is worse than a single metric.
+
+**First run, 32 knobs, 4 CRN seeds, 1,500 yr** — full raw per-seed dataset in
+`data/tree_gradient.tsv` (T-50), ranking and reversals under T-45. Four things
+that generalise past this operating point:
+
+- **The top three are cliffs, not gradients, and they are one knob.**
+  `general_vehicle_cost`, `medium_fleet_size` and `cargo_unit_size` all report
+  |elasticity| ≈ 4, an order of magnitude clear of the fourth — and each is a
+  ~50% collapse on one side against ~0% on the other. All three set the Medium
+  freighter's hold, which buys **exactly one infrastructure rung with a 2.3%
+  margin** (R-O90). **Always print `S(+δ)` and `S(−δ)` beside the elasticity**: a
+  central difference across a step reports a large number that is not a slope,
+  and the asymmetry is the only thing in the table that says so.
+- **Six knobs are *bit-identically* flat, and one of those is the instrument's
+  fault.** `risk_aversion` is `0.0` at the default, and a **multiplicative** step
+  of ±10% on zero is zero — the probe cannot move it at all. A zero from a
+  relative-step probe means "no path to the simulation" *or* "the knob is zero";
+  check which before recording an inert verdict.
+- **Cross-tree conflicts are the thing the composite is for**, and they exist:
+  `trade_decay_lambda` is +0.002 on Expansion and **−0.348 on Growth**, and
+  `fab_cap` is **+0.069 on Expansion against −0.221 on Growth**. λ is the largest
+  ratification in this project's history and it was measured on coverage alone.
+  A single-metric probe cannot see either.
+- **A "significant" elasticity is still local.** `cycle_years` (−0.598) and
+  `growth_rate` (+0.265) are the only two non-cliff findings above 0.2, and both
+  are already ratified values.
 
 ### Never leave an identified symptom without a proven mechanism
 
