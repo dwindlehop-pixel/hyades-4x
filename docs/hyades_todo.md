@@ -342,6 +342,50 @@ that fewer items is not automatically faster when the traversal order degrades.
 
 ---
 
+### ~~T-100. `rank` recomputes three logarithms per scanned world~~ — **DONE**
+
+> **The production candidate scan is the engine, and one line of it was the
+> cost.** Instrumented on the standard bed, 800 yr, 3 seats: the scan is reached
+> **56,706** times, walks **251.6 M** entries (4,437 per decision), and **45.4 M**
+> of those survive the two filters and reach `view_of` + `rank` — 703 scan steps
+> and **127 rank calls per event**.
+>
+> `rank` scores ore as `Σ_c scarcity_c · Band(m_c)`, and `Band(·)` is a `ln`. So
+> that is ~136 M logarithms for a quantity that changes only when the rock is
+> mined. **Ablated** — the three conversions replaced by a constant — throughput
+> goes **80.2 → 187.4 yr/s**; ablating the `sqrt` + `exp` in `centrality` beside
+> it gives **89.0**, so the two are not comparable and only one was worth a
+> cache. That ablation is why no effort went into the second.
+>
+> Three changes, all **bit-identical** (357,786 events, 2,907 colonies,
+> population to the last digit on seed 1):
+>
+> - **A memo for the three Band readings**, keyed on the field's own bits rather
+>   than invalidated at each `density` write. The obvious design is an
+>   invalidation hook; the obvious failure of it is the write somebody adds
+>   later — `world.density.get_mut` is reached directly in eight places, most of
+>   them tests. Three `f64` compares against three `ln`s, correct by
+>   construction instead of by everyone remembering.
+> - **`view_of` used `f.bio_max.in_bands()`** where `Factors::bio_max_band` is
+>   the same value already kept in step. R-O70 put that field there precisely to
+>   keep a `ln` off the hot path, and the caller was still recomputing it.
+> - **`PlanetView` no longer carries a `MineralField`.** Nothing in the seam read
+>   the masses — `rank` converted them and threw them away — so the copy was a
+>   memory-traffic tax on the hottest path for a field with no reader
+>   (`CLAUDE.md` §4: hand a decision only the fields it reads).
+>
+> Measured against the old binary, three runs each: seed 1 **79.0–81.9 →
+> 104.6–114.4 yr/s**, seed 7 **86.6–91.7 → 107.9–118.2**. About **+30%**, for
+> **0%** disturbance to any simulation metric.
+>
+> **What is left, and it is most of it.** The ablation ceiling is ~187 yr/s and
+> this reaches ~114, so roughly half the available win is still on the table. The
+> residual is the scan itself: 206 M of the 251.6 M steps are rejected by the two
+> filters, and the survivors still pay a `PlanetView` construction and a full
+> `rank`. **T-101.**
+
+---
+
 ### T-99. The demand term is a ceiling, not this hauler's share
 
 **Opened by T-98.** `freighter_hull` reads the destination's fabrication rate as

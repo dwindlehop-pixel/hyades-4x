@@ -21,9 +21,8 @@
 use crate::cards::Order;
 use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
-use crate::resources::{Basic, MineralField};
 use crate::sim::{Class, HullType, Role};
-use crate::units::{Band, BandTier, Kilotons, Measure, Price};
+use crate::units::{Band, BandTier, Kilotons, Price};
 
 /// Which of the two cheap classes the colony pipeline reaches for first
 /// (autopilot-doc §4; R-AC1 / R-A1). Default is production-centers-first.
@@ -410,7 +409,16 @@ pub struct PlanetView {
     /// decision is about the ceiling; the standing stock only sets how fast a
     /// colony fills toward it, and is not remotely legible anyway.
     pub biosphere: Band,
-    pub minerals: MineralField,
+    /// **The three per-colour Band readings, precomputed** (T-100). `rank`
+    /// wants the *readings*, not the masses — `CLAUDE.md` §4's "hand a decision
+    /// only the fields it reads" — and computing them here lets the engine
+    /// memoise a conversion that was 136 M logarithms per run.
+    ///
+    /// **This replaces the `MineralField` the view used to carry.** Nothing in
+    /// the seam read the masses; `rank` converted them and threw them away. A
+    /// view is built 45.4 M times a run, so the copy was a memory-traffic tax
+    /// on the hottest path in the engine for a field with no reader.
+    pub mineral_bands: [f64; 3],
     pub owner: Option<PlayerId>,
     pub pop_level: BandTier,
 }
@@ -734,14 +742,16 @@ impl Autopilot for BaselineAutopilot {
 
         // mineral_value: scarcity-weighted tier-1 density (§3), inflated by the
         // empire's *live* mineral pressure so mining is valued when we're short.
-        let m = &view.minerals;
         // A scarcity-weighted **score** over the three Band readings, not a sum
         // of quantities — the readings are taken explicitly (`.bands()`) for
         // the same reason `hub_value` does: weights carry the units. Summing
         // the *masses* would be a different question (how much ore is here),
         // and `MineralField::total_mass` answers that one.
-        let base_mineral =
-            Basic::ALL.iter().zip(ctx.scarcity.iter()).map(|(&b, w)| w * m.get(b).in_bands().bands()).sum::<f64>();
+        // Reads the precomputed Band readings rather than converting three
+        // masses here (T-100). Same values, same summation order, so the score
+        // is bit-identical — the conversion simply moved to where it can be
+        // memoised across the 45.4 M times this runs.
+        let base_mineral = view.mineral_bands.iter().zip(ctx.scarcity.iter()).map(|(b, w)| w * b).sum::<f64>();
         let mineral_value = base_mineral * (1.0 + w.mineral_pressure_gain * ctx.mineral_pressure);
 
         // hub_value: high-K worlds near the empire's centre of mass are hubs.
@@ -1220,7 +1230,8 @@ impl Ranked {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resources::MineralField;
+    use crate::resources::{Basic, MineralField};
+    use crate::units::Measure;
 
     fn view(id: u32, pos: Vec3, hab: f64, bio: f64, minerals: MineralField) -> PlanetView {
         PlanetView {
@@ -1228,7 +1239,11 @@ mod tests {
             position: pos,
             habitability: Band::new(hab),
             biosphere: Band::new(bio),
-            minerals,
+            mineral_bands: [
+                minerals.get(Basic::Cyan).in_bands().bands(),
+                minerals.get(Basic::Magenta).in_bands().bands(),
+                minerals.get(Basic::Yellow).in_bands().bands(),
+            ],
             owner: None,
             pop_level: BandTier::Empty,
         }

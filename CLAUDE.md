@@ -1698,6 +1698,7 @@ changes how you *work*, not what is left to do:
   | T-94 (logistic in closed form), 3 seats, 800 yr — `ns/event` 50,637 | ~34,700 | 50.4 yr/s | 20× |
   | **T-96 (the drive is a mass), same bed — `ns/event` 51,732** | ~35,100 | **48.0 yr/s** | **19×** |
   | **T-98 (the hauler's hull is a forecast), same bed — `ns/event` 27,812** | ~40,900 | **82.9 yr/s** | **33×** |
+  | **T-100 (the Band readings are memoised), same bed — `ns/event` 19,549** | ~40,900 | **114.4 yr/s** | **46×** |
 
   **T-88's last row is the one to read, and it is `ns/event` that says why.**
   Per-event cost went from ~174,000 ns at T-87 to **22,394** — not because any

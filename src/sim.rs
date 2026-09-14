@@ -2393,6 +2393,11 @@ pub struct Simulation {
     bands: PopBands,
 
     planet_entity: Vec<Entity>,
+    /// Memo for [`Simulation::mineral_bands`], indexed by `PlanetId`. `Cell`
+    /// rather than `RefCell` because the entry is `Copy` and the engine is
+    /// single-threaded by construction (§4: no threads), so this costs a load
+    /// and a store and carries no borrow flag.
+    mineral_band_cache: Vec<core::cell::Cell<([f64; 3], [f64; 3])>>,
     player_entity: Vec<Entity>,
     /// Memoised holdings centroid per seat; `None` means "recompute".
     /// Invalidated only by [`Simulation::claim_planet`] — see
@@ -2542,6 +2547,9 @@ impl Simulation {
             config,
             survey_scratch: Vec::new(),
             bands: galaxy.bands,
+            mineral_band_cache: (0..planet_entity.len())
+                .map(|_| core::cell::Cell::new(([f64::NAN; 3], [0.0; 3])))
+                .collect(),
             planet_entity,
             player_entity,
             centroid_cache: vec![None; n],
@@ -5355,14 +5363,67 @@ impl Simulation {
         }
     }
 
+    /// **The three per-colour Band readings of a planet's minerals, memoised**
+    /// (T-100) — the single largest cost in the engine before this landed.
+    ///
+    /// `BaselineAutopilot::rank` scores a world's ore as
+    /// `Σ_c scarcity_c · Band(m_c)`, and `Band(·)` is a `ln`. The production
+    /// candidate scan reaches `rank` **45.4 M times** over an 800-year
+    /// three-seat run (T-52), so that is ~136 M logarithms for a quantity that
+    /// changes only when the rock is mined. Ablated — replacing the three
+    /// conversions with a constant — throughput goes **80.2 → 187.4 yr/s** and
+    /// `ns/event` **27,892 → 15,969**, which is what says this is worth a cache
+    /// and the `sqrt`+`exp` in `centrality` beside it is not (89.0 yr/s).
+    ///
+    /// **Keyed on the field's own bits, so it cannot go stale.** The obvious
+    /// design is an invalidation hook at every `density` write, and the obvious
+    /// failure of that design is the write somebody adds later — including in a
+    /// test, where `world.density.get_mut` is reached directly in eight places.
+    /// Comparing the three stored masses against the live ones is three `f64`
+    /// compares against three `ln`s, and it is correct by construction rather
+    /// than by everyone remembering.
+    ///
+    /// **Bit-identical.** The cached value is the same `f64` the conversion
+    /// returns, and `rank` sums it in the same order, so nothing reassociates —
+    /// which is the property R-O70 needed for `holdings_centroid` and for the
+    /// same reason: float addition is not associative and a memo that changes
+    /// the order changes the run.
+    ///
+    /// The `NaN` key is the empty sentinel and needs no flag: `NaN != NaN`, so
+    /// an untouched entry always misses.
+    fn mineral_bands(&self, e: Entity) -> [f64; 3] {
+        // Borrowed, never copied: a `MineralField` carries the supers and apex
+        // as well, and this reads three of its fields. Copying it here was the
+        // same memory-traffic tax `PlanetView` was carrying, one level down.
+        let Some(m) = self.world.density.get(e) else { return [0.0; 3] };
+        let key = [m.get(Basic::Cyan).kilotons(), m.get(Basic::Magenta).kilotons(), m.get(Basic::Yellow).kilotons()];
+        let pid = self.world.planet_id.get(e).map_or(usize::MAX, |p| p.0 as usize);
+        let Some(slot) = self.mineral_band_cache.get(pid) else {
+            return key.map(|kt| Kilotons::new(kt).in_bands().bands());
+        };
+        let (k, v) = slot.get();
+        if k == key {
+            return v;
+        }
+        let v = key.map(|kt| Kilotons::new(kt).in_bands().bands());
+        slot.set((key, v));
+        v
+    }
+
     fn view_of(&self, e: Entity) -> PlanetView {
         let f = self.world.factors.get(e).unwrap();
         PlanetView {
             id: *self.world.planet_id.get(e).unwrap(),
             position: *self.world.position.get(e).unwrap(),
             habitability: f.hab,
-            biosphere: f.bio_max.in_bands(),
-            minerals: *self.world.density.get(e).unwrap(),
+            // **The cached reading, not a fresh `ln`** (T-100). `Factors` keeps
+            // `bio_max` and its Band in step precisely so this conversion is
+            // paid once per *write* rather than once per read, and `view_of`
+            // runs 45.4 M times over an 800-year run — R-O70's standing note
+            // that a `ln` on the hot path is what `bio_max_band` exists to
+            // delete, applied to the caller that was still recomputing it.
+            biosphere: f.bio_max_band,
+            mineral_bands: self.mineral_bands(e),
             owner: self.world.owner.get(e).copied(),
             pop_level: self.bands.level(*self.world.population.get(e).unwrap()),
         }
