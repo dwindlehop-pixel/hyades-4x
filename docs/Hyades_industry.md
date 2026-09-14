@@ -2799,9 +2799,119 @@ finding measured from the other side, and it survived R-IND17's bill-completion
 routing.
 
 A single example makes the shape plain. Planet 111 holds
-**C 0.59 / M 275.74 / Y 0.54**: a 277 kt bank that cannot buy a 6 kt rung. No
-loading rule and no delivery rule reaches that, because both act on ore that has
-already been mined from the wrong rocks.
+**C 0.59 / M 275.74 / Y 0.54**: a 277 kt bank that cannot buy a 6 kt rung.
+
+> ~~No loading rule and no delivery rule reaches that, because both act on ore
+> that has already been mined from the wrong rocks.~~ **Half wrong, and corrected
+> by §6.24.** The ore *is* already mined, and a loading rule reaches it anyway —
+> what could not reach it was a loading rule confined to **one pile per voyage**.
+> Letting a leg visit two is **+55.13% ± 4.65 work-years, 8/8 seeds** (R-O92).
+> The sentence assumed the voyage shape it was written under and read that
+> assumption back as a law.
+
+---
+
+### 6.24 R-O92 / T-91 — the milk run: one voyage, two piles, and +55%
+
+**The atomicity, removed.** A hold was filled from `outpost_stock[(player,
+rock)]` — one map entry — and a rock is one colour (mean dominant share **0.789**
+over 6,725 sources). So every delivery in the engine was mono-coloured *by
+construction*, a bank was a sum of mono-coloured lumps, and a works bill is a
+conjunction over three colours (T-73). Three routing and selection fixes failed
+against that and the reason was structural rather than statistical:
+
+> **If every unit of delivery is atomic in the dimension you need to mix, mixing
+> is not a routing problem.**
+
+An outbound leg may now visit `SimConfig::max_pickup_stops` piles before turning
+for its destination. **Ratified at 2 (R-O92).**
+
+| | work-years, standard bed | work-years, replication bed |
+|---|---|---|
+| `1` — the pre-T-91 engine | 184,338 | 176,909 |
+| **`2` — shipped** | **284,199** | **271,930** |
+| `3` | 261,395 | 256,455 |
+| `4` | 235,971 | — |
+| `6` | 190,465 | — |
+
+Pooled over all eight seeds, `2` against `1` is **+55.13% ± 4.65 work-years,
+8/8 seeds positive** — 11.9 SE — with colony-years **+2.1%** and **+3.8%** on the
+two beds, so it is not works bought out of expansion. Throughput costs ~12%
+(3 seats, 800 yr: 74 → 66 yr/s at 41,906 → 43,911 ns/event), which is both more
+events and a dearer event; the dearer half is `next_pickup`'s scan, below.
+
+**Two is a peak and not a direction**, which is the whole reason for probing past
+the value one intends to ship: every extra stop is a detour paid in transit the
+hold is not earning, and past two the hauler is shopping for colours the
+destination is no longer short of. By `6` the gain is gone.
+
+#### The rule, and the cap that carries it
+
+The final stop of a leg fills the hold exactly as R-O89 does — overshoot along
+the destination's deficit ratio, then top up with bulk. **An intermediate stop
+does neither.** It takes each colour capped twice: at what is still wanted, and
+at that colour's **proportional share of the hold**.
+
+The share cap is not belt-and-braces, and it is worth **+10.2%** over the obvious
+`min(want, room)` rule on the standard bed (284,199 against 257,986 at two
+stops). The reason is the ladder: `infra_step_price` is geometric, so past the
+rung where a bill outgrows a hold, `min(want, room)` *is* `room` — the first pile
+takes everything and the milk run switches itself off in exactly the regime where
+development happens. `an_intermediate_stop_takes_its_share_and_leaves_the_rest`
+pins all three cases.
+
+Two things are deliberately left alone. The **base rock stays welded** to the
+hauler's own miner: `Shuttle::base` is immutable, every leg starts and ends
+there, and re-pointing *it* is R-O89's rejected arm at −52.3% (§6.20). And the
+`want` each stop reads is **net of the cargo already aboard**, so a run does not
+fetch the same colour twice and land short in the third.
+
+**Cost, stated rather than discovered later.** `next_pickup` is
+`O(piles this player works)` on one of the engine's hotter paths, which
+`CLAUDE.md` §4 would otherwise forbid. It runs only when a leg has a stop left,
+so it is one scan per outbound leg rather than per arrival, and it is measured at
+the ~5% of `ns/event` above. Carried as **T-93**.
+
+#### The mechanism check moved — for the first time in four interventions
+
+`bank_mix`'s payable fraction was the stated acceptance criterion, written down
+before the measurement, and it had sat at **0.043** through T-81, R-O89's pickup
+arm and T-90:
+
+| | stops = 1 | stops = 2 | stops = 3 |
+|---|---|---|---|
+| payable fraction, median | 0.043 | **0.052** | 0.053 |
+| infrastructure builds | 268 | **335** | 340 |
+| dominant colour share, median | 0.871 | 0.866 | 0.866 |
+| banked kt that cannot pay a rung | 99.7% | 99.5% | 99.5% |
+
+#### Why 99.5% of the bank is still dead — freight is 1.73% of it
+
+The payable fraction moved by a fifth and the dead share by two tenths of a
+point, against a **+55%** objective. Both are true, and the census that
+reconciles them is new (`examples/bank_mix`, provenance block):
+
+| into a centre's bank, seed 1, 800 yr | kt |
+|---|---|
+| **local mining** — `sys_production_tick` step 1, the centre working its *own* planet | 359,417 |
+| **hauled in** — every freighter delivery in the run | 6,321 |
+| | **freight is 1.73%** |
+
+and on the other side, **outposts dug 2,999,421 kt of which 0.21% was ever
+collected.**
+
+So the atomicity has a second floor one level below hauling: **a centre's bank is
+98.3% its own single-coloured planet**, and no freight rule can reach that ore
+because it never passes through a hull. Carried as **T-92**.
+
+**The lesson is not "the channel was too small to matter" — it is the opposite,
+and it is the transferable part.** Mass was never the binding resource: the
+empire banks 360,000 kt it cannot spend. A **conjunction** makes the *minority*
+colour the whole constraint, so a channel carrying 1.7% of the mass carried 100%
+of the scarcity, and fixing its composition was worth +55%. `CLAUDE.md` §2's rule
+is to check whether the resource a change buys is binding; T-91 says to check
+**which** resource, because an aggregate that is plainly slack can contain a
+component that is not.
 
 ## 7. Trade, development freight, and what needs a pact
 
@@ -2923,6 +3033,11 @@ static one did not:
 is work-years, with `bank_mix`'s payable fraction as the mechanism check — a fix
 that does not move **0.043** has not done what it claims, whatever the objective
 says.
+
+> **Outcome: refuted, and the criterion was right.** T-90 moved the payable
+> fraction 0.043 → 0.043 at every gain from 0 to 16 and cost −3.30% colony-years;
+> the term is a real defect and is not the cause. What moved it was **T-91's milk
+> run** (§6.24, R-O92) — the unit of delivery, not the selection over units.
 
 #### Implemented, and the mechanism check refused it
 
@@ -3149,6 +3264,7 @@ artifact in place contaminates every later measurement.
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
 | ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favours deepening (+29% hull/yr for 9 colonisers), and what eats it is a homeworld already at rung II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
 | ~~**R-O88**~~ | ~~There is no build-wide axis~~ — **resolved, option C.** `fab_cap` bounds the rate **per berth** (quality); `slips` reads the fabrication share of the **stock** (quantity, unbounded). `fab_cap` 0.2 → 0.1 is a re-denomination: per-berth turnaround is **bit-identical** at every playable rung, and §3.3's schedule now reads off one constant. `slip_throughput` deleted; berth size derived from the Limited hull (**placeholder anchor**). Berths at rung II: 2 → **17**. Fleet-years **+26–34%**, throughput 88.7 → 110.7 yr/s, colony count flat. Also drops the `t_lead` defect — there is no per-planet rate left to fail to reach — and takes T-88's after-idle gap 29.6 → 7.6 yr. | §3.2, §6.3, §6.19b |
+| ~~**R-O92**~~ | ~~Every delivery is mono-coloured because a hold is filled from exactly one rock~~ — **resolved: the milk run (T-91).** An outbound leg may visit `max_pickup_stops` piles before turning for its destination; the final stop fills the hold as R-O89 does and every earlier one takes each colour capped at what is still wanted **and** at its proportional share of the hold. **Ratified at 2: +55.13% ± 4.65 work-years, 8/8 seeds (11.9 SE)**, replicated on four seeds it was not chosen against, colony-years +2.1%/+3.8% on the two beds, ~12% throughput. Two is a **peak** — 1/2/3/4/6 score 184k/**284k**/261k/236k/190k — and the share cap is worth +10.2% over `min(want, room)` because a geometric bill outgrows a hold. The stated acceptance criterion moved for the first time in four interventions: payable fraction **0.043 → 0.052**, infrastructure builds 268 → 335. `base` stays welded to the hauler's own miner (re-pointing it is −52.3%). **What it does not reach** is carried as T-92: freight is **1.73%** of everything that ever enters a bank, the other 98.3% being `sys_production_tick`'s local mining of the centre's own single-coloured planet. Scan cost is T-93. | §6.24 |
 | ~~**R-O91**~~ | ~~**The ranking's colour term reads a constant.**~~ **Implemented and refuted — the term is a real defect and not the cause.** Live local scarcity moves the payable fraction from 0.043 to 0.043 and the dead share stays at 99.7% **at every gain from 0 to 16**, while costing **−3.30% ± 0.49 colony-years, 0/4 seeds**. Reverted. The reason is provable from the code: the empire already mines a balanced mix (957k/905k/626k kt), a rock is one colour (0.789), and **a hold is filled from exactly one rock** — so every delivery is mono-coloured and no *selection* over single-source trips can assemble a payable mixture. The successor is **T-91**. Original text: `scarcity_c` is written once at game start from the homeworld archetype and never again, and `mineral_pressure` is live but scalar — so outpost selection can say *mine more* and never *mine Cyan*. Measured consequence: median bank dominant share **0.871** against the field's 0.789, and **99.7% of 360,517 banked kt cannot pay a balanced rung at any price**. Open question is the *shape* of the live term — whose shortfall it reads, and whether reading ore on hand makes it farmable. The work is **T-90**. | §7.4, §6.23 |
 | **R-O90** | **One freighter hold buys exactly one infrastructure rung** — 0.921 kt against a 0.900 kt step, **0.977 trips**, and the shipped defaults sit 2.3% above a cliff that halves colony-years and work-years. Nobody chose it: the hull ladder and the infra ladder were ratified separately and happen to meet there. Open question is *which* way to resolve it — make the coincidence deliberate (derive one anchor from the other) or remove the discontinuity (let a rung be part-paid across trips). Pinned by `one_freighter_hold_covers_one_infrastructure_rung`, which asserts the margin exists and **not** that it is right. | §6.21 |
 | ~~**R-O89**~~ | ~~Freight loads in proportion to the pile, not to what the destination is short of~~ — **resolved: the load leg had no colour term.** T-81/R-IND17 gave the *delivery* leg one; nothing ever gave the *load* one, so with a single-coloured field (mean dominant share 0.789) what went into a hold was decided by geology. `take_for_deficit` fills **along the destination's deficit vector**, topping up proportionally only when the pile cannot supply it. **+8.40% ± 1.86 work-years, 8/8 seeds, 4.5 SE**, replicated on four seeds it was not chosen against — on **the same tonnage** (20,259 → 20,292 kt over 26,800 → 26,746 trips), which is what makes it a colour result rather than a hauling one. Deficit-proportional beats neediest-colour-first by **+3.84% ± 0.20, 4/4**. The **pickup site stays welded** to the hauler's own miner: need-routing it as well is **−52.3%**, and transit, per-hull throughput and hull recycling are each measured *not* to be the reason — the residual is open under T-76. | §6.20 |

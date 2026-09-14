@@ -106,6 +106,15 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Run {
             cfg.cycle_years = c;
         }
     }
+    // **`WY_STOPS` sweeps the milk run** (T-91). `1` is the pre-T-91 engine
+    // bit-identically, verified against the prior binary on seeds 1 and 7:
+    // work-years, colony-years, colonies, vehicles and event count all match to
+    // the digit.
+    if let Ok(n) = std::env::var("WY_STOPS") {
+        if let Ok(n) = n.parse::<usize>() {
+            cfg.max_pickup_stops = n.max(1);
+        }
+    }
     // **Common random numbers**: the same seed drives the galaxy and the sim at
     // every bias, so the difference between two rows is the knob and not the
     // draw (`CLAUDE.md` §2).

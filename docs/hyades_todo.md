@@ -133,6 +133,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **Tree gradient** — rank knobs against every tree | — | **T-45** (superseded and broadened 9 → 32 knobs), **T-50** (first raw dataset landed), T-78 | **R-O90**, **R-TREE8**, **R-TREE9** | Trees §2.1's "one global objective is wrong for five of six trees", finally applied to the *tuning* loop and not only to card costing; §2.3.4's mass reading of Production, which needed `VehicleSnapshot::dry_mass`; T-50's "persist the raw per-seed evaluations, not the summary" | **T-45's whole table.** Nine knobs at the pre-R-O66 operating point, ranked on coverage. `medium_fleet_size` has **flipped sign** (+32.7 "raise" → −3.93 and a cliff), `cargo_unit_size` went from **inert** to third-largest — design law #14's corollary about knobs that look dead while expansion is broken, confirmed — and `biosphere_regen_rate`, the **+141.2 ± 18.1 headline lever**, is now **bit-identically zero** because T-67 took infrastructure out of `K`. Also **trees §2.3.2 and §2.3.6**: Warfare is unreadable on the standard bed and Politics has no objective distinct from Expansion |
 | **T-88** — granularity without decision rate | **T-88** | T-52 (named, not fixed), T-24 | the idle census (see T-88) | The author's directive that opened it — *"move all decision making to trigger off an event so the economy tick can be made 1/year"*; `CLAUDE.md` §4's "entities evaluate on their own arrival events, never on a sweep", now true of the production decision as well as the ship; §2's "when a change raises event count, check the test horizons in the same commit" (all four targets rescaled here); and its replicate-on-fresh-seeds rule, run on both stage B and the new default | **`cycle_years` 50 → 5**, a ratified default moved on measurement plus an explicit directive. **And a units defect in three Monte-Carlo-tuned rates**: `growth_rate`, `biosphere_regen_rate` and `outpost_mining_fraction` were applied per *tick* irrespective of tick length, so the first sweep's +58.6% was mostly artifact. `tick_scale` fixes the denomination without moving a magnitude (bit-identical at the old cadence). **Every gradient measured before this is consumed**, including `data/tree_gradient.tsv` and T-45's table |
 | **T-90** — live local scarcity | **T-90** (refuted), **R-O91** (answered) | T-76 | **T-91** | `CLAUDE.md` §2's rule that a fix needs a *mechanism* check beside the objective — written down before the measurement and it is what refused this one; and "probe past the value you intend to ship", which is what separated *inert axis* from *gain too small* | **My own diagnosis from the previous landing.** §7.4 said outpost selection being colour-blind was why banks are mono-coloured. The term is genuinely a constant and correcting it changes nothing: the empire already mines a balanced mix, and **a hold is filled from exactly one rock**, so every delivery is mono-coloured however the rocks are chosen. Code reverted; the diagnosis is marked refuted where it was written rather than quietly dropped |
+| **T-91 / R-O92** — the milk run | **T-91**, **R-O92** | T-76 | **T-92**, **T-93** | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, error bar *tightened*) and **probe past the value you intend to ship** — 4 and 6 are where it breaks and that is why 2 is known to be a peak rather than a direction; the mechanism check written down in advance, which had refused T-90 and passed this; R-O89's welded pickup site left alone rather than re-litigated | **§6.23's closing sentence**, by me — *"no loading rule and no delivery rule reaches that, because both act on ore that has already been mined from the wrong rocks"*. A loading rule does reach it, and is +55%. The sentence was right about *which ore* and wrong that nothing could mix it, because it assumed the voyage shape it was written under. **And T-91's own premise is now half-refuted**: the atomicity was real, and removing it exposed that freight is only 1.73% of what enters a bank (T-92) |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -159,50 +160,97 @@ description of the change.
 
 ## Band A — ready to build
 
-### T-91. A hold is loaded from one rock, so every delivery is one colour
+### T-92. A centre's bank is 98.3% its own single-coloured planet
 
-**The successor to T-90, and the first freight task whose premise is a property
-of the code rather than a statistic.**
+**T-91's residual, and the atomicity one level below freight.**
 
-`sys_freighter_arrive` fills a hold from `outpost_stock[(player, rock)]` — one
-map entry, the pile at the single rock the hauler is standing on. A rock is
-mono-coloured (mean dominant share **0.789** over 6,725 sources, T-81). So
-**every delivery in the engine is mono-coloured by construction**, and a centre's
-bank is a sum of mono-coloured lumps: median dominant share **0.871**, and
-**99.7% of 360,517 banked kt cannot pay a balanced rung at any price**.
+`sys_production_tick` step 1 — *"local mining: the center works its own density
+into its stockpile"* — puts ore straight into the bank without a hull ever
+touching it. A planet is one colour. Measured on seed 1 at 800 yr
+(`examples/bank_mix`, provenance block):
 
-> **If every unit of delivery is atomic in the dimension you need to mix, mixing
-> is not a routing problem.**
+| into a centre's bank | kt |
+|---|---|
+| local mining | 359,417 |
+| hauled in by freight | 6,321 |
+| | **freight is 1.73%** |
 
-That is why three separate routing and selection fixes have now failed to reach
-it, and the failures are the evidence for this framing rather than against it:
+and outposts dug **2,999,421 kt of which 0.21% was ever collected.**
 
-| attempt | what it changed | result |
-|---|---|---|
-| T-81 / R-IND17 | *where* a full hold goes | banks did not mix |
-| R-O89 pickup arm | *which rock* a hauler returns to | **−52.3%** |
-| T-90 / R-O91 | *which rocks get mined*, by live local scarcity | payable fraction 0.043 → 0.043 at every gain 0–16 |
+So the milk run (T-91) mixes a channel carrying under a fiftieth of the mass. It
+was worth **+55%** anyway, because a conjunction makes the *minority* colour the
+whole constraint — but it also puts a ceiling on every further freight fix, and
+the payable fraction moving only 0.043 → 0.052 is that ceiling showing.
 
-R-O89's **load** leg is the one that worked (+8.4%) and it is the exception that
-fits: it changed the *composition within* a hold, which is the only lever any of
-these had on composition at all — and it is bounded by what the one rock holds.
+**Three shapes, not obviously equivalent:**
 
-**Two candidate shapes, and they are not equivalent:**
-
-- **A milk run.** A pickup leg visits more than one pile, filling against the
-  destination's colour deficit across sources. Directly removes the atomicity.
-  Cost: the voyage stops being two legs, which touches light-lag bookkeeping and
-  the `Shuttle` state machine.
 - **Inter-centre transfer** (T-76's other half, development freight). A centre
-  holding 275 kt of Magenta against 0.59 kt of Cyan ships some Magenta to a
-  centre that needs it. Leaves the voyage structure alone and lets banks
-  redistribute after the fact.
+  holding 275 kt of Magenta against 0.59 kt of Cyan ships Magenta to a centre
+  that needs it. Leaves the voyage structure alone, redistributes after the fact,
+  and is the one that is already specified (§7.3).
+- **Let local mining feed the outpost pile rather than the bank**, so everything
+  a centre banks has passed through a routing decision. The most direct removal
+  of the atomicity and the largest behavioural change; it makes a homeworld
+  dependent on its own hauling.
+- **The Exchange** (T-77 landed the settlement leg). Buying the missing colour is
+  the design's own answer to a colour shortage, and §8.1 makes it a voyage, so it
+  is the same mechanism with a different counterparty.
 
-**Acceptance is `bank_mix`'s payable fraction**, not the objective alone. It has
-sat at 0.043 through three interventions; a change that does not move it has not
-touched the mechanism, whatever work-years reports. That criterion has now fired
-once, on T-90, and it is the reason that landing cost four runs instead of a
-ratification.
+**Acceptance is the provenance split *and* the payable fraction.** A change that
+does not move freight's 1.73% share has not touched this, whatever it does to the
+objective — the same criterion that refused T-90 and passed T-91.
+
+---
+
+### T-93. `next_pickup` scans every pile the player works
+
+**Opened by T-91, and stated rather than discovered later.**
+
+`Simulation::next_pickup` is `O(piles this player works)` and runs once per
+outbound leg whenever a leg has a stop left. `CLAUDE.md` §4 forbids exactly this
+shape on a decision path — evaluation count scales with entity count, so
+per-evaluation cost must be `O(what the decision reads)`.
+
+Measured cost at the shipped `max_pickup_stops = 2`, standard bed, 800 yr:
+`ns/event` **41,906 → 43,911** and throughput 74 → 66 yr/s. Part of that is more
+events (real work the milk run creates) and part is the scan; the `ns/event`
+column is the half that is the scan.
+
+It is not urgent — the margin against T-24's floor is ~23x at 1,500 yr — and the
+fix is the same family as T-52's candidate scan: a spatial or incremental
+structure over the player's piles, **measured**, because R-O70 already recorded
+that fewer items is not automatically faster when the traversal order degrades.
+
+---
+
+### ~~T-91. A hold is loaded from one rock, so every delivery is one colour~~ — **DONE (R-O92, §6.24)**
+
+> **The milk run.** An outbound leg now visits `SimConfig::max_pickup_stops`
+> piles before turning for its destination; the final stop fills the hold as
+> R-O89 does, and every earlier one takes each colour capped at what is still
+> wanted **and** at its proportional share of the hold. `Shuttle` gained an
+> immutable `base` (the hauler's own miner's rock, which every leg starts and
+> ends at) and a per-leg `stops` counter.
+>
+> **Ratified at 2: +55.13% ± 4.65 work-years, 8/8 seeds (11.9 SE)**, replicated
+> on four seeds it was not chosen against, colony-years +2.1% and +3.8% on the
+> two beds, ~12% throughput. **Two is a peak** — 1/2/3/4/6 score
+> 184k / **284k** / 261k / 236k / 190k work-years on the standard bed — and the
+> share cap is worth **+10.2%** over the obvious `min(want, room)`, because a
+> geometric bill outgrows a hold and past that point `min(want, room)` *is*
+> `room`.
+>
+> **The stated acceptance criterion fired, and passed.** The payable fraction had
+> sat at **0.043** through T-81, R-O89's pickup arm and T-90; it is **0.052** at
+> two stops, with infrastructure builds 268 → 335. Writing it down before the
+> measurement is what made it a criterion rather than a rationalisation, and it
+> has now refused one change and passed one.
+>
+> **What it does not reach is T-92**, and that is the finding worth carrying:
+> freight is **1.73%** of everything that ever enters a bank. The lesson is the
+> opposite of "the channel was too small to matter" — mass was never binding, a
+> **conjunction** makes the minority colour the whole constraint, and a channel
+> carrying 1.7% of the mass carried all of the scarcity.
 
 ---
 

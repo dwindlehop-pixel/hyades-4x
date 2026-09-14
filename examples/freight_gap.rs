@@ -60,6 +60,14 @@ fn main() {
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = horizon;
+    // **`FG_STOPS` sweeps the milk run** (T-91). `loads` against `trips` below
+    // is how often it actually fires: one load per trip is the pre-T-91 engine,
+    // and anything above that is a detour that happened.
+    if let Ok(n) = std::env::var("FG_STOPS") {
+        if let Ok(n) = n.parse::<usize>() {
+            cfg.max_pickup_stops = n.max(1);
+        }
+    }
     let mut sim = Simulation::with_baseline(galaxy, cfg);
     sim.set_log_filter(LogFilter::none().with(LogCategory::Mining).with(LogCategory::Vehicles));
     sim.run();

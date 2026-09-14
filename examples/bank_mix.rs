@@ -25,6 +25,7 @@
 //!
 //! Run: `cargo run --release --example bank_mix`
 use hyades_engine::autopilot::BuildOrder;
+use hyades_engine::log::FreighterLeg;
 use hyades_engine::prelude::*;
 use std::io::Write;
 
@@ -33,8 +34,19 @@ fn main() {
     let galaxy = Galaxy::generate(GalaxyConfig::new(3, seed)).unwrap();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = 800.0;
+    // **`BM_STOPS` sweeps the milk run** (T-91). This harness is the acceptance
+    // test for it: the payable fraction below has sat at 0.043 through three
+    // interventions, so a change that does not move it has not touched the
+    // mechanism, whatever the objective reports.
+    if let Ok(n) = std::env::var("BM_STOPS") {
+        if let Ok(n) = n.parse::<usize>() {
+            cfg.max_pickup_stops = n.max(1);
+        }
+    }
     let mut sim = Simulation::with_baseline(galaxy, cfg);
-    sim.set_log_filter(LogFilter::none().with(LogCategory::Production));
+    sim.set_log_filter(
+        LogFilter::none().with(LogCategory::Production).with(LogCategory::Mining).with(LogCategory::Vehicles),
+    );
     sim.run();
 
     // **How often does a works bill actually get paid?** If the per-colour gate
@@ -84,6 +96,44 @@ fn main() {
         }
     }
     println!("  {n} non-empty banks: {even} exactly even, {skewed} skewed");
+
+    // **Where the banked ore came from** (T-91). Two sources reach a centre's
+    // stockpile and only one of them is freight: `sys_production_tick`'s "local
+    // mining" step works the centre's *own* planet straight into the bank, and
+    // a planet is one colour. So the bank is single-sourced one level below
+    // hauling, and a routing rule can only reach the fraction that was hauled.
+    //
+    // Split by ownership, which is exact rather than a heuristic: an outpost is
+    // never claimed (`sys_freighter_arrive`), so every `MineralsExtracted` at an
+    // owned planet is a centre working its own ground and every one at an
+    // unowned planet is an outpost pile a freighter may or may not come for.
+    let owned: std::collections::BTreeSet<u32> =
+        snap.planets.iter().filter(|p| p.owner.is_some()).map(|p| p.id.0).collect();
+    let (mut local, mut outpost_dug, mut hauled) = (0.0f64, 0.0f64, 0.0f64);
+    for r in sim.log().iter() {
+        match r.event {
+            LogEvent::MineralsExtracted { planet, amount, .. } => {
+                if owned.contains(&planet.0) {
+                    local += amount;
+                } else {
+                    outpost_dug += amount;
+                }
+            }
+            LogEvent::FreighterTransfer { leg: FreighterLeg::Deposited, amount, .. } => hauled += amount,
+            _ => {}
+        }
+    }
+    let into_banks = local + hauled;
+    println!(
+        "\n=== provenance of banked ore ===\n  local mining {local:.0} kt, hauled in {hauled:.0} kt \
+         -> freight is {:.2}% of everything that ever entered a bank",
+        if into_banks > 0.0 { 100.0 * hauled / into_banks } else { 0.0 }
+    );
+    println!(
+        "  outposts dug {outpost_dug:.0} kt, of which {:.2}% was ever collected",
+        if outpost_dug > 0.0 { 100.0 * hauled / outpost_dug } else { 0.0 }
+    );
+    std::io::stdout().flush().ok();
 
     // **Where the ore comes from.** A freighter carries one outpost's ore, so
     // if a *source* is single-coloured then no routing rule over single-coloured

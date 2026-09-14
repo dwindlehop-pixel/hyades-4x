@@ -810,6 +810,36 @@ composition **within** a hold and is the one that worked (+8.4%), bounded by wha
 the single rock holds. **Before optimising a selection, check that the thing being
 selected among can express the property you want.**
 
+**And then remove the atomicity, because that is the move the framing points at
+and it produced the largest single result this project has measured.** T-91 let
+one outbound leg visit two piles: **+55.13% ± 4.65 work-years, 8/8 seeds**, with
+the mechanism check moving for the first time in four attempts (payable fraction
+0.043 → 0.052). The sentence above is a diagnosis, not a dead end — *"mixing is
+not a routing problem"* means change the **unit of delivery**, not give up on
+mixing.
+
+Three things from it that generalise past freight:
+
+- **Cap a shared resource at its share, not at the need.** An intermediate stop
+  takes each colour capped at what is wanted **and** at its proportional share of
+  the hold. The second cap is worth **+10.2%** on its own, because the bill is
+  geometric in the rung: past the point where a bill outgrows a hold,
+  `min(want, room)` *is* `room` and the first pile takes everything — so the cap
+  is inert at today's magnitudes and load-bearing at the ones development
+  actually reaches. Inert-now is not redundant.
+- **Probe past the value you intend to ship, and report where it breaks.** One
+  stop through six scored 184k / **284k** / 261k / 236k / 190k work-years. Two is
+  a *peak*, which is a different claim from "two beats one" and is the one worth
+  writing down.
+- **"Check whether the resource is binding" needs the word *which*.** Mass was
+  plainly slack — the empire banks 360,000 kt it cannot spend — and freight
+  carries **1.73%** of everything that ever enters a bank, the other 98.3% being
+  the centre mining its own single-coloured planet straight into its own bank. By
+  the usual reading that channel is far too small to matter. It was worth +55%,
+  because a **conjunction** makes the *minority* component the whole constraint:
+  1.7% of the mass carried 100% of the scarcity. An aggregate that is slack can
+  contain a component that is not, and a conjunction is the tell.
+
 ### Never leave an identified symptom without a proven mechanism
 
 **A number is a symptom. Stop only when you can name the line of code that
@@ -1600,6 +1630,8 @@ changes how you *work*, not what is left to do:
   | R-O89 (freight loads by colour), 3 seats, 1.5 kyr | ~32,500 | 93.3 yr/s | 37× |
   | **T-88 (`cycle_years` 50 → 5), 3 seats, 1.5 kyr** | ~35,400 | **71.1 yr/s** | **28×** |
   | **T-88, 3 seats, 4 kyr — `ns/event` 22,394** | 31,337 | **68.9 yr/s** | **28×** |
+  | R-O92 off (`max_pickup_stops = 1`), 3 seats, 1.5 kyr — `ns/event` 26,494 | ~32,000 | 69.2 yr/s | 28× |
+  | **R-O92 (the milk run), same pair — `ns/event` 29,786** | ~34,500 | **57.8 yr/s** | **23×** |
 
   **T-88's last row is the one to read, and it is `ns/event` that says why.**
   Per-event cost went from ~174,000 ns at T-87 to **22,394** — not because any
@@ -1955,6 +1987,16 @@ changes how you *work*, not what is left to do:
   so a centre with three Bands of headroom it never tried to buy reported zero
   demand, and the first conclusion drawn from it ("the economy has no demand
   side") was exactly backwards.
+
+  **And the pickup leg followed it (R-O92/T-91), for four times as much.** A hold
+  was filled from one map entry — `outpost_stock[(player, rock)]` — so every
+  delivery was mono-coloured whatever the routing; letting one outbound leg visit
+  two piles is **+55.13% ± 4.65 work-years, 8/8 seeds**, and moves `bank_mix`'s
+  payable fraction off the 0.043 it had held through three interventions. What it
+  exposes is the next constraint and is worth knowing before the next freight
+  idea: **freight is 1.73% of everything that ever enters a bank** — the rest is
+  `sys_production_tick` mining the centre's own single-coloured planet directly
+  into the bank (T-92).
 
   **Diminishing returns are visible, and the cause is now known.** +23.9, then
   +11.0, then +2.3 points. It is not that the economy ran out of headroom:
