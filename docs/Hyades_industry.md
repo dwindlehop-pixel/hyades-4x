@@ -2913,6 +2913,98 @@ is to check whether the resource a change buys is binding; T-91 says to check
 **which** resource, because an aggregate that is plainly slack can contain a
 component that is not.
 
+### 6.25 T-94 — the population logistic is solved, not stepped
+
+**`dx/dt = r·x·(1 − x/K)` has a closed form and the engine was not using it.**
+
+```text
+x(t+Δ) = K·x / (x + (K − x)·e^(−rΔ))
+```
+
+The ceiling is constant across a tick — `K = min(hab, bio_max)` and `bio_max` is
+the *pristine* biosphere (R-O66), not the standing stock — so the population step
+is an **autonomous** logistic over the interval. Biomass enters afterwards, as a
+throttle on the draw, so it never couples into the integration. `settler_target`
+has been pricing colonisation off the exact solution's inverse
+(`t = ln(S/(K−S) · (K−x₀)/x₀) / r`) since R-IND11, so the engine already held
+both: a policy reasoning about the true curve, and an economy walking a crude
+approximation of it.
+
+**How crude.** Homeworld population at 300 yr, seed 1, 3 seats
+(`examples/pop_trace`):
+
+| `cycle_years` | 50 | 25 | 10 | 5 | 1 | 0.25 |
+|---|---|---|---|---|---|---|
+| Euler | 1,154 | 2,289 | 3,532 | **4,333** | 5,325 | 5,491 |
+| **closed form** | 5,288 | 5,646 | 5,371 | **5,395** | 5,573 | 5,555 |
+
+T-88 refined the tick from 50 to 5 and bought +21% work-years; that was buying
+back truncation error ten times a year. **At the refined tick the Euler step is
+still 21% short**, and the closed form is flat across a 200× range of step sizes
+— the residual spread is the expansion loop's own seed noise, not the
+integrator.
+
+**Measured on the standard bed, 800 yr, at the shipped `cycle_years = 5`:**
+
+| | work-years | colony-years | yr/s | ns/event |
+|---|---|---|---|---|
+| Euler | 284,199 | 761,631 | 49.9 | 52,879 |
+| closed form | 293,919 | **811,581** | 50.4 | 50,637 |
+
+Pooled over eight seeds including four the change was not chosen against:
+**+6.57% ± 1.14 colony-years, 8/8 seeds (5.7 SE)**, work-years **+6.30% ± 6.30,
+5/8 — noise**. Throughput is **unchanged**: one `exp` per centre per tick is
+below the run-to-run variance, and `ns/event` if anything falls. Netcode §6 H4
+settles the portability question — transcendentals ship inside the WASM module.
+
+**Three things it retires.**
+
+- **Design law #11's `r < 2` ceiling was a property of the Euler step.** T-64
+  derived it from the conjugacy to the logistic map with `μ = 1 + r`, which is
+  true of `x + r·x·(1 − x/K)` and of nothing else. `e^(−rΔ) ∈ (0, 1)` for every
+  positive `r`, so the closed form is monotone at any rate.
+  `the_logistic_is_monotone_at_any_growth_rate` asserts it from both directions
+  out to `r = 1000`.
+- **The clamp at `K` stops being load-bearing.** `CLAUDE.md` §2 records it as
+  *hiding* a too-large `r` — collapsing the logistic into a step function that
+  filled a world in one cycle and scored well doing it. It can now only fire on a
+  last-bit rounding, and is written as the interval the mathematics already
+  guarantees.
+- **The overshoot *below* `K` is gone, and it was truncation error.** A `Band II`
+  population on a `Band I` world went to **zero** in one tick under Euler
+  (`x + r·x·(1 − x/K)` at `x = 31.6·K` is `−52.9·K`, clamped); it now decays
+  **31.62 → 8.88 kt**, a 72% die-off in five years, converging on the ceiling
+  from above. **The collapse survives, the undershoot does not** — which matters
+  because its severity was a function of `cycle_years`, so the outcome of an
+  attack on a world's habitability was being set by a performance knob.
+
+**What it does not do is buy the tick back.** At `cycle_years = 50` the closed
+form scores **+33% work-years and +28% colony-years against Euler at the same
+cost** — so if the tick must be coarse, this is a large free gain. But exact @ 50
+is still 29% below exact @ 5 (207,351 against 293,919, colonies 2,378 against
+3,086), so `cycle_years` is doing a **second job** beyond integration: it
+quantises when a centre mines, crosses a `PopBands` edge, and re-decides.
+Separating that job from the integration step is **T-95**.
+
+| config | work-years | colony-years | colonies | yr/s | events |
+|---|---|---|---|---|---|
+| Euler @ 50 (pre-T-88) | 155,985 | 472,888 | 2,306 | 110.4 | 116k |
+| exact @ 50 | 207,351 | 603,719 | 2,378 | 103.8 | 140k |
+| exact @ 25 | 261,616 | 717,331 | 2,800 | 73.3 | 171k |
+| exact @ 10 | 294,495 | 784,731 | 3,066 | 52.6 | 227k |
+| **exact @ 5 (shipped)** | **293,919** | **811,581** | **3,086** | 49.6 | 283k |
+
+`cycle_years = 10` is now within noise of 5 on work-years and colonies for **20%
+fewer events** — a cheaper operating point that did not exist under Euler, and
+the first thing T-95 should re-examine.
+
+**What it consumes.** `growth_rate = 0.873` was ratified (R-O84) against the
+Euler trajectory, and `CLAUDE.md`'s rule applies: the operating point has moved,
+so every gradient measured on it is spent. The value is **carried, not
+re-ratified** — re-measuring it is part of T-95, and the plateau map R-O84 warns
+about has to be redrawn anyway because its step structure came from counting
+50-year cycles to a band edge.
+
 ## 7. Trade, development freight, and what needs a pact
 
 The third gap in §0, and the answer turns out to be the same mechanism as
@@ -3264,6 +3356,7 @@ artifact in place contaminates every later measurement.
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
 | ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favours deepening (+29% hull/yr for 9 colonisers), and what eats it is a homeworld already at rung II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
 | ~~**R-O88**~~ | ~~There is no build-wide axis~~ — **resolved, option C.** `fab_cap` bounds the rate **per berth** (quality); `slips` reads the fabrication share of the **stock** (quantity, unbounded). `fab_cap` 0.2 → 0.1 is a re-denomination: per-berth turnaround is **bit-identical** at every playable rung, and §3.3's schedule now reads off one constant. `slip_throughput` deleted; berth size derived from the Limited hull (**placeholder anchor**). Berths at rung II: 2 → **17**. Fleet-years **+26–34%**, throughput 88.7 → 110.7 yr/s, colony count flat. Also drops the `t_lead` defect — there is no per-planet rate left to fail to reach — and takes T-88's after-idle gap 29.6 → 7.6 yr. | §3.2, §6.3, §6.19b |
+| ~~**R-O93**~~ | ~~The population logistic is integrated with a forward Euler step at `r·Δ = 0.873`~~ — **resolved: it has a closed form.** `x(t+Δ) = K·x / (x + (K − x)·e^(−rΔ))`; the ceiling is constant across a tick so the step is autonomous, and `settler_target` was already pricing colonisation off this solution's inverse. The Euler form was **79% low** at `cycle_years = 50` and still **21% low** at T-88's refined 5. **+6.57% ± 1.14 colony-years, 8/8 seeds (5.7 SE)** replicated on four seeds it was not chosen against, work-years noise, **throughput unchanged** (one `exp` per centre per tick is under the run-to-run variance). Retires three things: **design law #11's `r < 2` ceiling** (a property of the Euler map, not the model), the load-bearing **clamp at `K`**, and the **undershoot below `K`** on an over-capacity world — the collapse survives (31.62 → 8.88 kt in one tick), the overshoot does not. Consumes R-O84's ratification of `growth_rate = 0.873`, which is carried rather than re-measured. It does **not** buy the tick back: exact @ 50 beats Euler @ 50 by +33% work-years at the same cost but is still 29% below exact @ 5, so `cycle_years` has a second job — **T-95**. | §6.25 |
 | ~~**R-O92**~~ | ~~Every delivery is mono-coloured because a hold is filled from exactly one rock~~ — **resolved: the milk run (T-91).** An outbound leg may visit `max_pickup_stops` piles before turning for its destination; the final stop fills the hold as R-O89 does and every earlier one takes each colour capped at what is still wanted **and** at its proportional share of the hold. **Ratified at 2: +55.13% ± 4.65 work-years, 8/8 seeds (11.9 SE)**, replicated on four seeds it was not chosen against, colony-years +2.1%/+3.8% on the two beds, ~12% throughput. Two is a **peak** — 1/2/3/4/6 score 184k/**284k**/261k/236k/190k — and the share cap is worth +10.2% over `min(want, room)` because a geometric bill outgrows a hold. The stated acceptance criterion moved for the first time in four interventions: payable fraction **0.043 → 0.052**, infrastructure builds 268 → 335. `base` stays welded to the hauler's own miner (re-pointing it is −52.3%). **What it does not reach** is carried as T-92: freight is **1.73%** of everything that ever enters a bank, the other 98.3% being `sys_production_tick`'s local mining of the centre's own single-coloured planet. Scan cost is T-93. | §6.24 |
 | ~~**R-O91**~~ | ~~**The ranking's colour term reads a constant.**~~ **Implemented and refuted — the term is a real defect and not the cause.** Live local scarcity moves the payable fraction from 0.043 to 0.043 and the dead share stays at 99.7% **at every gain from 0 to 16**, while costing **−3.30% ± 0.49 colony-years, 0/4 seeds**. Reverted. The reason is provable from the code: the empire already mines a balanced mix (957k/905k/626k kt), a rock is one colour (0.789), and **a hold is filled from exactly one rock** — so every delivery is mono-coloured and no *selection* over single-source trips can assemble a payable mixture. The successor is **T-91**. Original text: `scarcity_c` is written once at game start from the homeworld archetype and never again, and `mineral_pressure` is live but scalar — so outpost selection can say *mine more* and never *mine Cyan*. Measured consequence: median bank dominant share **0.871** against the field's 0.789, and **99.7% of 360,517 banked kt cannot pay a balanced rung at any price**. Open question is the *shape* of the live term — whose shortfall it reads, and whether reading ore on hand makes it farmable. The work is **T-90**. | §7.4, §6.23 |
 | **R-O90** | **One freighter hold buys exactly one infrastructure rung** — 0.921 kt against a 0.900 kt step, **0.977 trips**, and the shipped defaults sit 2.3% above a cliff that halves colony-years and work-years. Nobody chose it: the hull ladder and the infra ladder were ratified separately and happen to meet there. Open question is *which* way to resolve it — make the coincidence deliberate (derive one anchor from the other) or remove the discontinuity (let a rung be part-paid across trips). Pinned by `one_freighter_hold_covers_one_infrastructure_rung`, which asserts the margin exists and **not** that it is right. | §6.21 |

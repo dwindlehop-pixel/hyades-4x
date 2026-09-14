@@ -760,6 +760,25 @@ a rate applied per tick without scaling moves it by the step ratio every time,
 forever. The first version of that test asserted invariance, failed at 2.92x, and
 was wrong to — which is how the distinction got found.
 
+**Then ask whether the step needs to be a step at all (T-94).** `cycle_years`
+was refined because `r·Δ = 0.873` is a bad Euler step, and that was the right
+call — but the logistic has a **closed form**, and using it makes the answer
+*independent of the tick* rather than merely less wrong. Euler was 79% low at the
+old tick and still **21% low** at the refined one. Two habits:
+
+- **Check whether the thing you are refining has an analytic solution before you
+  spend event count on it.** The tell here was that the engine already contained
+  one: `settler_target` prices colonisation off the exact logistic's inverse, so
+  the policy and the economy were following different curves.
+- **A better integrator and a finer step are not substitutes, and the sweep says
+  which you are buying.** Exact at the *coarse* tick beats Euler at the coarse
+  tick by +33% work-years at the same cost — real accuracy. But it is still 29%
+  below exact at the fine tick, which says the step size was never only an
+  integration step: it also quantises when a centre mines, crosses a band edge
+  and re-decides. **Refining a step that carries more than one job improves all
+  of them, and fixing the integrator only pays for one.** Decompose before
+  concluding the refinement is spent.
+
 ### A decision can be provably blind and fixing it change nothing
 
 **T-90 is the worked example, and the diagnosis that produced it was mine, one
@@ -1275,13 +1294,28 @@ one, stop and flag it.
    growth steps `x + r·x·(1 − x/K)` on *people*, with `K`'s mass as the
    carrying capacity. It used to step on Band positions, which made `r` a rate
    of change of an *exponent* — the same `growth_rate` meaning a different
-   number of people at every point on the ladder. Two consequences: `r` now has
+   number of people at every point on the ladder. Two consequences: `r` had
    a hard arithmetic ceiling at **2** (the step is conjugate to the logistic map
    with `μ = 1 + r`, so it period-doubles there), and **the engine's `clamp` at
-   `K` hides that from below** — a too-large `r` does not visibly oscillate, it
-   collapses the logistic into a step function that fills a world in one cycle
-   and *scores well* while doing it. `the_population_logistic_is_a_rate_and_not_a_step`
+   `K` hid that from below** — a too-large `r` did not visibly oscillate, it
+   collapsed the logistic into a step function that filled a world in one cycle
+   and *scored well* while doing it. `the_population_logistic_is_a_rate_and_not_a_step`
    is the guard.
+
+   **Both of those are retired (T-94/R-O93): the step is now the closed form.**
+   `x(t+Δ) = K·x / (x + (K − x)·e^(−rΔ))` — the ceiling is constant across a tick,
+   so the step is autonomous and solvable, and `settler_target` had been pricing
+   colonisation off this solution's *inverse* since R-IND11. The `r < 2` ceiling
+   was a property of the Euler map and not of the model: `e^(−rΔ) ∈ (0, 1)` at
+   every positive `r`, so the map is monotone at any rate and the clamp can only
+   fire on a last-bit rounding. What the closed form also removes is the
+   **undershoot below `K`** — an over-capacity world now decays *toward* the
+   ceiling (31.62 → 8.88 kt in one tick, a 72% die-off) rather than overshooting
+   to zero. The collapse was design content; the undershoot was truncation error,
+   and its severity was a function of `cycle_years`, so the outcome of an attack
+   on a world's habitability was being set by a performance knob. **R-O84's
+   `growth_rate = 0.873` is carried, not re-ratified** — its operating point and
+   its plateau map are both consumed (T-95).
 
    **And population is conserved across space, not only across the biosphere
    (R-O74, `Hyades_industry.md` §1.7).** Growth draws people out of biomass;

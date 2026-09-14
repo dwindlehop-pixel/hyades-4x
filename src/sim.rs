@@ -3439,8 +3439,7 @@ impl Simulation {
             let start = pop_now.max(units::POPULATION_SEED_FLOOR);
             let mut target = start;
             if cap > Kilotons::ZERO {
-                let (s, c) = (start.kilotons(), cap.kilotons());
-                target = Kilotons::new((s + growth * s * (1.0 - s / c)).clamp(0.0, c));
+                target = Kilotons::new(logistic_step(start.kilotons(), cap.kilotons(), growth));
             }
             let mass_before = pop_now;
             let f = self.world.factors.get_mut(center).unwrap();
@@ -5989,6 +5988,68 @@ fn take_basics(bank: &mut Minerals, amount: Price) -> Minerals {
     bank.magenta -= out.magenta;
     bank.yellow -= out.yellow;
     out
+}
+
+/// **Advance the population logistic across one tick — exactly, not by an Euler
+/// step** (T-94).
+///
+/// ```text
+/// dx/dt = r·x·(1 − x/K)        ⇒        x(t+Δ) = K·x / (x + (K − x)·e^(−rΔ))
+/// ```
+///
+/// The ceiling is constant across a tick — `K = min(hab, bio_max)` and
+/// `bio_max` is the *pristine* biosphere (R-O66), not the standing stock — so
+/// the population step is an **autonomous** logistic over the interval and has
+/// a closed form. Biomass enters only afterwards, as a throttle on the draw, so
+/// it does not couple into the integration.
+///
+/// **Why this is not a tuning change.** `growth_rate = 0.873` per cycle means
+/// `r·Δ = 0.873` at the ratified cadence, which is not a small step by any
+/// reading: measured on the standard bed at 300 yr, a homeworld reaches 1,154
+/// at `cycle_years = 50` and 5,491 as the tick goes to zero. The Euler form was
+/// **79% low**, and still 21% low at T-88's refined `cycle_years = 5` (4,333).
+/// Refining the tick was the right call and it bought +21%; it was buying back
+/// truncation error ten times a year, and this buys the rest of it once.
+///
+/// Three properties the Euler form did not have, and each retires something:
+///
+/// - **Exact composition.** The map is a Möbius transform in `x`, so `n` steps
+///   of `Δ/n` equal one step of `Δ` to floating point. The answer stops
+///   depending on `cycle_years` at all, which is what lets the tick go back up
+///   without paying the accuracy for it.
+/// - **Unconditional monotonicity.** `e^(−rΔ) ∈ (0, 1)` for every `r > 0`, so
+///   the step moves toward `K` and never past it — at any `r`. **Design law
+///   #11's `r < 2` ceiling was a property of the Euler step, not of the model**
+///   (T-64 derived it from the conjugacy to the logistic map with `μ = 1 + r`).
+///   There is no period-doubling in a closed form.
+/// - **The clamp is provably inert.** The old `.clamp(0.0, c)` was
+///   load-bearing, and dangerously so: `CLAUDE.md` §2 records that it hid a
+///   too-large `r` by collapsing the logistic into a step function that filled a
+///   world in one cycle *and scored well doing it*. The clamp below can only
+///   fire on a last-bit rounding, and it is written as the interval the
+///   mathematics already guarantees — `[min(x, K), max(x, K)]` — so a future
+///   reader can see that it asserts the invariant rather than enforcing it.
+///
+/// **`x > K` is handled by the same formula**, not by a branch: the denominator
+/// is `x − (x − K)·e^(−rΔ) > K > 0`, so an over-ceiling world decays toward `K`
+/// monotonically. That is the case a razed biosphere or a card-written
+/// population reaches.
+///
+/// **Cost: one `exp` per centre per tick.** Netcode §6 H4 settles the
+/// portability question — transcendentals ship *inside* the WASM module, so
+/// they are bit-reproducible where a platform libm would not be. Measured, the
+/// call is under the run-to-run noise; the tick is dominated by everything
+/// around it.
+fn logistic_step(x: f64, k: f64, r_dt: f64) -> f64 {
+    let denom = x + (k - x) * (-r_dt).exp();
+    // Design law #16: a non-finite denominator is a fatal value, not a number
+    // to divide by. It is unreachable for finite inputs — the denominator is
+    // bounded below by `min(x, K) > 0` — so this is the invariant written down,
+    // not a case being handled.
+    if denom <= 0.0 || denom.is_nan() {
+        return k;
+    }
+    (k * x / denom).clamp(x.min(k), x.max(k))
 }
 
 /// **How far one stop may fill a hold** (T-91) — the parameter that makes a
@@ -9016,15 +9077,92 @@ mod tests {
             (from_band_i.band().bands() - 1.0).abs() < 1e-9,
             "a Band I seed should rest at K = Band I, got {from_band_i}"
         );
-        // A `Band II` seed does not settle back to `K` — it overshoots below.
+        // A `Band II` seed is **31.6x** its world's ceiling and sheds most of
+        // that in one tick: 31.62 kt -> 8.88 kt, a 72% die-off in five years.
+        let excess_before = Kilotons::at_tier(BandTier::II) - from_band_i;
+        let excess_after = from_band_ii - from_band_i;
         assert!(
-            from_band_ii < from_band_i,
-            "a Band II seed must end up *worse* than a Band I one: {from_band_ii} vs {from_band_i}"
+            excess_after < excess_before * 0.35,
+            "a population far above its ceiling must collapse toward it, not drift: {from_band_ii} against a \
+             ceiling of {from_band_i}, from {}",
+            Kilotons::at_tier(BandTier::II)
         );
+        // **And it must not go below.** This is the half T-94 changed, and it
+        // is the assertion worth having: the old Euler step overshot to *zero*
+        // here, which is not the model — `dx/dt = r·x·(1 − x/K)` has a fixed
+        // point at `K` and approaches it from above monotonically. The
+        // undershoot was truncation error, and its severity was a function of
+        // `cycle_years`, so the outcome of an attack on a world's habitability
+        // was being set by a performance knob.
         assert!(
-            from_band_ii < Kilotons::at_band(Band::new(0.5)),
-            "the overshoot is severe, not marginal — expected well under half a Band, got {from_band_ii}"
+            from_band_ii > from_band_i,
+            "the approach to K is monotone from above — no undershoot: {from_band_ii} against K = {from_band_i}"
         );
+    }
+
+    /// **The `r < 2` ceiling was a property of the Euler step, not of the
+    /// model** (T-94, amending design law #11).
+    ///
+    /// T-64 derived the bound from the conjugacy to the logistic map with
+    /// `μ = 1 + r`, which period-doubles at `r = 2` — true of `x + r·x·(1 −
+    /// x/K)` and of nothing else. The closed form has `e^(−rΔ) ∈ (0, 1)` for
+    /// every positive `r`, so it is monotone at any rate, and the `clamp` that
+    /// `CLAUDE.md` §2 records as *hiding* a too-large `r` can no longer be doing
+    /// any work.
+    ///
+    /// Asserted well past the retired bound, from both directions, because the
+    /// failure it guards against is a future Euler step returning — which would
+    /// oscillate on the first line and go negative on the second.
+    #[test]
+    fn the_logistic_is_monotone_at_any_growth_rate() {
+        let k = 100.0;
+        for &r in &[0.1, 0.873, 1.9, 2.0, 2.5, 10.0, 1e3] {
+            // From below: rises toward K, never past it.
+            let mut x = 1.0;
+            for _ in 0..400 {
+                let next = logistic_step(x, k, r);
+                assert!(next >= x - 1e-12 && next <= k + 1e-9, "r = {r}: {x} -> {next} left [x, K] with K = {k}");
+                x = next;
+            }
+            assert!((x - k).abs() < 1e-6, "r = {r}: should have converged to K = {k}, got {x}");
+            // From above: falls toward K, never past it. This is the arm the
+            // Euler step drove negative.
+            let mut y = 40.0 * k;
+            for _ in 0..400 {
+                let next = logistic_step(y, k, r);
+                assert!(next <= y + 1e-12 && next >= k - 1e-9, "r = {r}: {y} -> {next} left [K, y] with K = {k}");
+                y = next;
+            }
+            assert!((y - k).abs() < 1e-6, "r = {r}: should have converged to K = {k} from above, got {y}");
+        }
+        // The fixed points are exact, at every rate.
+        assert_eq!(logistic_step(0.0, k, 0.873), 0.0, "zero is a fixed point");
+        assert_eq!(logistic_step(k, k, 0.873), k, "K is a fixed point");
+    }
+
+    /// **The exact step composes, so the answer stops depending on the tick**
+    /// (T-94) — the property that lets `cycle_years` be chosen for cost.
+    ///
+    /// The map is a Möbius transform in `x`, so `n` steps of `Δ/n` equal one
+    /// step of `Δ`. Measured on the shipped bed at 300 yr, a homeworld's
+    /// population under the Euler step ran 1,154 / 2,289 / 3,532 / 4,333 as the
+    /// tick went 50 / 25 / 10 / 5 and converged at **5,491**; under this form it
+    /// is 5,288 / 5,646 / 5,371 / 5,395, flat to within the expansion loop's own
+    /// seed noise.
+    #[test]
+    fn refining_the_logistic_step_changes_nothing() {
+        let (k, r_total) = (1_000.0, 0.873 * 6.0);
+        let once = logistic_step(3.0, k, r_total);
+        for splits in [2, 5, 10, 100, 1_000] {
+            let mut x = 3.0;
+            for _ in 0..splits {
+                x = logistic_step(x, k, r_total / splits as f64);
+            }
+            assert!(
+                (x / once - 1.0).abs() < 1e-9,
+                "{splits} steps of dt/{splits} gave {x}, one step of dt gave {once} — the closed form must compose"
+            );
+        }
     }
 
     #[test]

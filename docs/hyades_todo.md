@@ -134,6 +134,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **T-88** — granularity without decision rate | **T-88** | T-52 (named, not fixed), T-24 | the idle census (see T-88) | The author's directive that opened it — *"move all decision making to trigger off an event so the economy tick can be made 1/year"*; `CLAUDE.md` §4's "entities evaluate on their own arrival events, never on a sweep", now true of the production decision as well as the ship; §2's "when a change raises event count, check the test horizons in the same commit" (all four targets rescaled here); and its replicate-on-fresh-seeds rule, run on both stage B and the new default | **`cycle_years` 50 → 5**, a ratified default moved on measurement plus an explicit directive. **And a units defect in three Monte-Carlo-tuned rates**: `growth_rate`, `biosphere_regen_rate` and `outpost_mining_fraction` were applied per *tick* irrespective of tick length, so the first sweep's +58.6% was mostly artifact. `tick_scale` fixes the denomination without moving a magnitude (bit-identical at the old cadence). **Every gradient measured before this is consumed**, including `data/tree_gradient.tsv` and T-45's table |
 | **T-90** — live local scarcity | **T-90** (refuted), **R-O91** (answered) | T-76 | **T-91** | `CLAUDE.md` §2's rule that a fix needs a *mechanism* check beside the objective — written down before the measurement and it is what refused this one; and "probe past the value you intend to ship", which is what separated *inert axis* from *gain too small* | **My own diagnosis from the previous landing.** §7.4 said outpost selection being colour-blind was why banks are mono-coloured. The term is genuinely a constant and correcting it changes nothing: the empire already mines a balanced mix, and **a hold is filled from exactly one rock**, so every delivery is mono-coloured however the rocks are chosen. Code reverted; the diagnosis is marked refuted where it was written rather than quietly dropped |
 | **T-91 / R-O92** — the milk run | **T-91**, **R-O92** | T-76 | **T-92**, **T-93** | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, error bar *tightened*) and **probe past the value you intend to ship** — 4 and 6 are where it breaks and that is why 2 is known to be a peak rather than a direction; the mechanism check written down in advance, which had refused T-90 and passed this; R-O89's welded pickup site left alone rather than re-litigated | **§6.23's closing sentence**, by me — *"no loading rule and no delivery rule reaches that, because both act on ore that has already been mined from the wrong rocks"*. A loading rule does reach it, and is +55%. The sentence was right about *which ore* and wrong that nothing could mix it, because it assumed the voyage shape it was written under. **And T-91's own premise is now half-refuted**: the atomicity was real, and removing it exposed that freight is only 1.73% of what enters a bank (T-92) |
+| **T-94 / R-O93** — the logistic is solved, not stepped | **T-94**, **R-O93** | T-24 | **T-95** | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, 5.7 SE); its `yr/s` **and** `ns/event` rule, which is what shows the `exp` is free rather than assumed to be; design law #16 at the denominator | **Design law #11's `r < 2` ceiling**, which T-64 derived from the conjugacy to the logistic map and which is a property of the *Euler step*, not of the model — the closed form is monotone at any rate. **R-O84's ratification of `growth_rate = 0.873`**, whose operating point and plateau map are both consumed; the value is carried, not re-measured. And **the undershoot below `K`**, which T-67 cited as supporting evidence for taking infrastructure out of the minimum — T-67's conclusion stands on its own (razing works must not move people) but that particular argument was resting on truncation error |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -159,6 +160,46 @@ description of the change.
 ---
 
 ## Band A — ready to build
+
+### T-95. `cycle_years` is doing two jobs, and only one of them is integration
+
+**Opened by T-94**, which removed the first job and left the second visible.
+
+With the logistic solved in closed form the population trajectory is *flat*
+across a 200× range of tick sizes — and the run is not. Exact integration at
+`cycle_years = 50` still scores **29% below** the same integrator at 5:
+
+| config | work-years | colony-years | colonies | yr/s | events |
+|---|---|---|---|---|---|
+| exact @ 50 | 207,351 | 603,719 | 2,378 | 103.8 | 140k |
+| exact @ 25 | 261,616 | 717,331 | 2,800 | 73.3 | 171k |
+| exact @ 10 | 294,495 | 784,731 | 3,066 | 52.6 | 227k |
+| **exact @ 5 (shipped)** | **293,919** | **811,581** | **3,086** | 49.6 | 283k |
+
+So the tick is also **quantising** three things that have nothing to do with
+integration accuracy: when a centre mines, when it notices it has crossed a
+`PopBands` edge, and when it re-decides. R-O84 already recorded the middle one —
+`growth_rate` reaches the objective "only through how many cycles a centre takes
+to cross a `PopBands` edge, an integer."
+
+**`cycle_years = 10` is the immediate prize**: within noise of 5 on work-years
+and colony count for **20% fewer events** and +6% throughput. That operating
+point did not exist under Euler, where 10 was 18% short on population. Measure it
+properly before adopting it.
+
+**The deeper question is whether the three jobs should be separated**, the way
+T-88 separated the decision rate from the tick. A band-edge crossing is a
+*threshold*, and a threshold on a trajectory with a closed form can be solved for
+and scheduled as an event rather than discovered on the next sweep — which is
+`CLAUDE.md` §4's rule ("entities evaluate on their own arrival events") applied to
+the one sweep the engine still has.
+
+**And R-O84 has to be redrawn either way.** `growth_rate = 0.873` was ratified
+against the Euler trajectory and its plateau map was built by counting 50-year
+cycles to a band edge. Both are consumed. Carry the value, re-measure before
+sweeping, and do not reuse the old surface.
+
+---
 
 ### T-92. A centre's bank is 98.3% its own single-coloured planet
 
@@ -220,6 +261,32 @@ It is not urgent — the margin against T-24's floor is ~23x at 1,500 yr — and
 fix is the same family as T-52's candidate scan: a spatial or incremental
 structure over the player's piles, **measured**, because R-O70 already recorded
 that fewer items is not automatically faster when the traversal order degrades.
+
+---
+
+### ~~T-94. The population logistic is a forward Euler step at `r·Δ = 0.873`~~ — **DONE (R-O93, §6.25)**
+
+> **It has a closed form.** `x(t+Δ) = K·x / (x + (K − x)·e^(−rΔ))` — the ceiling
+> is constant across a tick (`K = min(hab, bio_max)`, the *pristine* biosphere),
+> so the population step is autonomous and solvable. `settler_target` had been
+> pricing colonisation off this solution's inverse since R-IND11, so the engine
+> was already carrying both the true curve and a crude walk of it.
+>
+> Euler was **79% low** at `cycle_years = 50` and still **21% low** at T-88's
+> refined 5. **+6.57% ± 1.14 colony-years, 8/8 seeds (5.7 SE)**, work-years
+> noise, **throughput unchanged** — one `exp` per centre per tick is below the
+> run-to-run variance, and `ns/event` fell.
+>
+> Retires three things, and the third is the one to remember: design law #11's
+> **`r < 2` ceiling** was a property of the Euler map; the **clamp at `K`** stops
+> being load-bearing; and the **undershoot below `K`** was truncation error whose
+> severity was a function of `cycle_years` — so the outcome of an attack on a
+> world's habitability was being set by a performance knob. The *collapse*
+> survives (31.62 → 8.88 kt in one tick, converging from above); only the
+> undershoot goes.
+>
+> **Successor: T-95.** Exact @ 50 beats Euler @ 50 by +33% work-years at the same
+> cost, and is still 29% below exact @ 5 — so the tick has a second job.
 
 ---
 
