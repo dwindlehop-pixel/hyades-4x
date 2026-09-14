@@ -3774,7 +3774,7 @@ impl Simulation {
             .fold(Price::ZERO, |a, &b| a + b)
             .min(role_cost(Role::Scout, &self.config))
             .min(hull_cost(HullType::MediumSystems, &self.config))
-            .min(self.mining_pair_price(p, 1));
+            .min(self.mining_pair_price(p, 1, None));
         if stock_total + Price::new(1e-9) < floor {
             self.log.push(
                 self.clock,
@@ -3787,7 +3787,7 @@ impl Simulation {
                     stockpile: stock_total.kilotons(),
                     infra_cost: target_level.kilotons(),
                     colonizer_cost: hull_cost(HullType::MediumSystems, &self.config).kilotons(),
-                    mining_pair_cost: self.mining_pair_price(p, 1).kilotons(),
+                    mining_pair_cost: self.mining_pair_price(p, 1, None).kilotons(),
                     mineral_pressure: self.mineral_pressure_of(center),
                     candidates_seen: 0,
                     can_afford_infra: false,
@@ -3895,10 +3895,17 @@ impl Simulation {
             // the build step will not charge, which is the exact defect the
             // comment above is about. `Candidate::mining_crew` is the one
             // computation of the rule; this reads it rather than repeating it.
-            mining_pair_cost: self.mining_pair_price(
-                p,
-                cands.iter().find(|c| c.ranked.class == PlanetClass::MiningOutpost).map_or(1, |c| c.mining_crew),
-            ),
+            // **And priced for the rock it would be built for** (T-98). The
+            // hull is now a function of the pair, so quoting it without the
+            // target reintroduces exactly the drift this line was written to
+            // close: a number in front of the decision that the build step will
+            // not charge.
+            mining_pair_cost: {
+                let best = cands.iter().find(|c| c.ranked.class == PlanetClass::MiningOutpost);
+                let crew = best.map_or(1, |c| c.mining_crew);
+                let pair = best.map(|c| (center, self.planet_entity[c.ranked.id.0 as usize]));
+                self.mining_pair_price(p, crew, pair)
+            },
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
             survey_frontier,
@@ -4207,7 +4214,10 @@ impl Simulation {
                 // it (roles §5: the nearest center produces both), so the pair is
                 // one economic act even though it is two objects.
                 let paired_freighter = role == Role::Miner;
-                if paired_freighter && !self.roster_permits(p, role_hull_type(Role::Freighter)) {
+                // **The roster gate asks about the hull that will be built**
+                // (T-98), which is now a function of the pair — so it is decided
+                // below, once the target is known, and checked there.
+                if paired_freighter && target.is_none() {
                     return None;
                 }
 
@@ -4256,8 +4266,20 @@ impl Simulation {
                 // a heavier colonizer, and the failure would have been silent:
                 // a General hull bought at a Medium hull's price.
                 let mut cost = hull_cost(hull_type, &self.config) * (crew - reused_miners.len().min(crew)) as f64;
+                // **Derived from the pair, not from the role** (T-98). Decided
+                // once, here, and carried to both the price and the spawn — the
+                // two must read the same hull or a General hull gets bought at a
+                // Medium hull's price, which is the drift the comment above is
+                // about.
+                let hauler = match target_entity {
+                    Some(te) if paired_freighter => self.freighter_hull(p, center, te, crew),
+                    _ => role_hull_type(Role::Freighter),
+                };
+                if paired_freighter && !self.roster_permits(p, hauler) {
+                    return None;
+                }
                 if paired_freighter && reused_freighter.is_none() {
-                    cost += role_cost(Role::Freighter, &self.config);
+                    cost += hull_cost(hauler, &self.config);
                 }
 
                 if let Some(t) = target {
@@ -4313,7 +4335,7 @@ impl Simulation {
                         if paired_freighter {
                             match reused_freighter {
                                 Some(e) => self.retask_freighter(e, p, center, te),
-                                None => self.spawn_freighter(p, center, center_pos, te, launch_delay),
+                                None => self.spawn_freighter(p, center, center_pos, te, hauler, launch_delay),
                             }
                         }
                     }
@@ -4418,9 +4440,158 @@ impl Simulation {
         (want.round().clamp(1.0, n_veins.min(MAX_VEINS)) as usize).max(1)
     }
 
-    fn mining_pair_price(&self, p: usize, crew: usize) -> Price {
+    /// **Which hull hauls for this mining pair** (T-98) — derived from what the
+    /// rock yields and what the destination can absorb, not read off the role.
+    ///
+    /// ~~`role_hull_type(Role::Freighter) => MediumSystems`~~, whose doc comment
+    /// read *"spec: MSV/GSV, picking the cheaper."* That rule was correct under
+    /// the pre-R-O58 ladder, where fragmenting genuinely was cheaper per unit
+    /// hauled, and has been backwards since: cost per kilotonne hauled is
+    /// **0.109** for a Medium against **0.032** for a General. It survived
+    /// because the General hull's turnaround made it a bad idea anyway, and
+    /// T-96 removed that (round trip 1.252 → 1.011).
+    ///
+    /// **The rule is throughput per mineral, which is design law #3's own
+    /// quantity:**
+    ///
+    /// ```text
+    /// flow  = min(supply_rate, demand_rate)        kt/yr, the binding side
+    /// load  = min(capacity, flow · round_trip)     what the hold actually carries
+    /// score = load / round_trip / hull_cost        kt delivered per year, per kt of hull
+    /// ```
+    ///
+    /// and the two rates are the forecast the decision is keyed to:
+    ///
+    /// - **Supply** is this rock's yield into this player's pile — the deposit,
+    ///   its crowding factor at the crew that is being built for it, and the
+    ///   mining cadence. Exactly the expression `sys_mining_tick` runs, read
+    ///   forward.
+    /// - **Demand** is what the destination can turn into objects, which is its
+    ///   fabrication throughput (`slips × berth_rate`). Minerals arriving faster
+    ///   than a centre can fabricate are minerals that sit in a bank.
+    ///
+    /// **`min` is the point.** A thin rock cannot fill a big hold however hungry
+    /// the centre, and a centre at one berth cannot spend a rich rock however
+    /// fast it yields — so the hull is sized to the *bottleneck*, and the
+    /// decision says "small hull here, large hull there" rather than picking a
+    /// global winner. Below the crossover `load` is `flow · round_trip` for every
+    /// hull, the capacity term drops out, and the cheapest hull wins on cost
+    /// alone; above it `load` saturates at `capacity` and the General hull's 3.4×
+    /// mass efficiency takes over.
+    ///
+    /// **The round trip is solved, not assumed**, because it depends on the load
+    /// and the load depends on the round trip. Two fixed-point passes from a full
+    /// hold; it converges immediately because the laden leg is bounded and the
+    /// empty leg does not move.
+    ///
+    /// **Cost, stated rather than discovered later.** This is `O(1)` in galaxy
+    /// size — it reads one deposit, one centre and one distance — but it is three
+    /// hulls × two passes × two travel solves, so ~12 square roots per mining-pair
+    /// build. Builds are orders of magnitude rarer than arrivals, which is the
+    /// budget `CLAUDE.md` §4 actually sets.
+    ///
+    /// **What the demand term is not.** It is a *ceiling*, not this hauler's
+    /// share: a centre served by ten pairs can absorb its fabrication rate once,
+    /// not ten times. Turning it into a share needs a per-centre hauler census,
+    /// which is not `O(1)` from here — carried as **T-99**. The supply term has
+    /// no such caveat: it is exactly this rock's yield to this player.
+    fn freighter_hull(&self, p: usize, center: Entity, outpost: Entity, crew: usize) -> HullType {
+        // Supply: the rock's yield per year, as `sys_mining_tick` computes it.
+        let deposit = self.world.density.get(outpost).map(|d| d.total_mass()).unwrap_or(Kilotons::ZERO);
+        let work = crowding_factor(crew.max(1) as f64, deposit, &self.config);
+        let per_tick = deposit.kilotons() * (self.config.outpost_mining_fraction * work).min(1.0);
+        let supply = per_tick / self.config.mining_tick_years.max(1e-12);
+        // Demand: what the destination can fabricate per year.
+        let demand = self.fabrication_rate(center);
+        let flow = supply.min(demand).max(0.0);
+
+        let (Some(&a), Some(&b)) = (self.world.position.get(center), self.world.position.get(outpost)) else {
+            return HullType::MediumSystems;
+        };
+        let d = a.distance(b);
+        let g = self.config.civilian_accel_g * G;
+
+        // **Liquidity, which is design law #3's own counterweight** —
+        // *indivisibility as a liability*, and the half a steady-state
+        // throughput rule cannot see. The score below is a *rate*: it says what a
+        // hull returns per mineral once it is flying, and says nothing about the
+        // years spent saving for it. A General hauler returns 2.86x a Medium's
+        // and costs **12x**, so a centre whose bank is thin buys one big hull
+        // instead of twelve cheap ones and stops expanding while it saves.
+        //
+        // Measured without this term: **+60.2% work-years and −9.3%
+        // colony-years, 1/4 seeds**, and `all_fair_counts_run_and_expand`
+        // founding nothing in forty years. The development gain was real and it
+        // was being paid for out of the expansion loop.
+        //
+        // So the candidate set is what this centre could pay for **now**,
+        // alongside the crew it is buying. No new constant: the budget is the
+        // bank, which is the constraint the decision already lives under. Early,
+        // banks are thin and the cheap hull wins because it is the only one
+        // there; late, the forecast decides on merit. The cheapest hull is never
+        // filtered out, so the choice is total.
+        let bank = self.world.stockpile.get(center).map(|b| b.basic_total()).unwrap_or(Price::ZERO);
+        let budget = (bank - role_cost(Role::Miner, &self.config) * crew as f64).max(Price::ZERO);
+
+        let mut best: Option<(HullType, f64, f64)> = None;
+        for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
+            if !self.roster_permits(p, hull) {
+                continue;
+            }
+            let cap = hull.cargo_capacity(&self.config).kilotons();
+            let cost = hull_cost(hull, &self.config).kilotons();
+            if cap <= 0.0 || cost <= 0.0 {
+                continue;
+            }
+            // **A total, not a per-colour, reading.** The real payment still goes
+            // through the per-colour conjunction — this is a forecast input and
+            // reconstructing a conjunction from a total is the mistake §6.19c
+            // records (44.7% "outbid" against a true 0.9%). Here it only has to
+            // rank, and it is deliberately permissive: quoting a hull the centre
+            // then cannot pay for costs a declined build, not a wrong one.
+            if best.is_some() && hull_cost(hull, &self.config) > budget {
+                continue;
+            }
+            let empty = math::ship_travel_years(d, g * self.thrust_to_mass(hull, Kilotons::ZERO));
+            // Seed with a full hold, then re-solve once against the load that
+            // implies. The laden leg is monotone in the load, so one pass is
+            // enough to land inside a percent of the fixed point.
+            let mut load = cap;
+            let mut round = f64::INFINITY;
+            for _ in 0..2 {
+                let laden = math::ship_travel_years(d, g * self.thrust_to_mass(hull, Kilotons::new(load)));
+                round = laden + empty;
+                load = cap.min(flow * round);
+            }
+            if !round.is_finite() || round <= 0.0 {
+                continue;
+            }
+            let score = load / round / cost;
+            // Deterministic total order: score, then the cheaper hull, then
+            // declaration order. Ties are real here — below the crossover every
+            // hull carries `flow · round_trip` and only cost separates them.
+            let better = match best {
+                None => true,
+                Some((_, bs, bc)) => score > bs + 1e-12 || ((score - bs).abs() <= 1e-12 && cost < bc),
+            };
+            if better {
+                best = Some((hull, score, cost));
+            }
+        }
+        best.map_or(HullType::MediumSystems, |(h, _, _)| h)
+    }
+
+    /// **Priced for the hull that will actually be built** (T-98). `pair` is the
+    /// `(centre, rock)` the freighter would serve; `None` prices the *floor* —
+    /// the cheapest hauler that exists — which is what the skip-scan guard wants
+    /// and what a quote for an unchosen rock has to be, since a floor that
+    /// overestimates skips a build the centre could afford.
+    fn mining_pair_price(&self, p: usize, crew: usize, pair: Option<(Entity, Entity)>) -> Price {
         let full_miner = role_cost(Role::Miner, &self.config);
-        let full_freighter = role_cost(Role::Freighter, &self.config);
+        let full_freighter = match pair {
+            Some((center, outpost)) => hull_cost(self.freighter_hull(p, center, outpost, crew), &self.config),
+            None => hull_cost(HullType::LimitedSystems, &self.config),
+        };
         if !self.config.recycle_mining_pairs {
             return full_miner * crew as f64 + full_freighter;
         }
@@ -4963,13 +5134,21 @@ impl Simulation {
         );
     }
 
-    fn spawn_freighter(&mut self, p: usize, center: Entity, from: Vec3, outpost: Entity, launch_delay: f64) {
+    fn spawn_freighter(
+        &mut self,
+        p: usize,
+        center: Entity,
+        from: Vec3,
+        outpost: Entity,
+        hull: HullType,
+        launch_delay: f64,
+    ) {
         let dest = *self.world.position.get(outpost).unwrap();
         let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, Role::Freighter);
-        self.world.hull_type.insert(e, role_hull_type(Role::Freighter));
+        self.world.hull_type.insert(e, hull);
         self.world.cargo.insert(e, Minerals::default());
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { base: outpost, outpost, destination: center, outbound: true, stops: 0 });
@@ -5094,8 +5273,20 @@ impl Simulation {
         // `base_g` is retained as the caller's throttle (design law #10: a ship
         // may fly below peak and never above it), so a civilian leg still asks
         // for `civilian_accel_g` and gets what the drive can actually deliver.
+        base_g * G * self.thrust_to_mass(hull, laden - dry)
+    }
+
+    /// **Acceleration in `g`, for a hull carrying a stated load** (T-96, T-98).
+    ///
+    /// Factored out of [`Self::laden_accel`] so the *forecast* a build decision
+    /// runs on and the *flight* it produces are one expression. They were about
+    /// to be two, and `CLAUDE.md` §2 has the standing case for why that goes
+    /// wrong silently: a policy that prices a voyage differently from the engine
+    /// that flies it is choosing against a world it does not live in.
+    fn thrust_to_mass(&self, hull: HullType, load: Kilotons) -> f64 {
+        let dry = hull_dry_mass(hull, &self.config).max(Kilotons::new(1e-9));
         let thrust = self.config.drive_specific_thrust * hull.drive_mass(&self.config).kilotons();
-        base_g * G * (thrust / laden.kilotons())
+        thrust / (dry + load.max(Kilotons::ZERO)).kilotons()
     }
 
     /// Park a vehicle at `pos` (degenerate motion ⇒ fixed position, not in flight).
@@ -9532,11 +9723,71 @@ mod tests {
             "re-tasked to the new rock, flying from where the old one left it"
         );
         let spent = stock_before - sim.world.stockpile.get(center).unwrap().basic_total();
-        let freighter_only = role_cost(Role::Freighter, &sim.config);
+        // **The hauler's hull is derived from the pair now** (T-98), so this
+        // reads the decision rather than the role — and on this rock it comes
+        // out a Limited hull, which is the crossover doing its job: a thin
+        // deposit cannot fill a Medium hold between visits, so the cheapest hull
+        // wins on cost alone.
+        let hauler = sim.freighter_hull(0, center, next_rock, 1);
+        let freighter_only = hull_cost(hauler, &sim.config);
         assert!(
             (spent - freighter_only).abs() < Price::new(1e-9),
-            "only the freighter is bought: spent {spent}, freighter costs {freighter_only}"
+            "only the freighter is bought: spent {spent}, a {hauler:?} costs {freighter_only}"
         );
+    }
+
+    /// **The hauler's hull is a forecast, and the forecast has a crossover**
+    /// (T-98).
+    ///
+    /// `role_hull_type(Role::Freighter)` was a constant whose doc comment read
+    /// *"spec: MSV/GSV, picking the cheaper"* — correct under the pre-R-O58
+    /// ladder, where fragmenting really was cheaper per unit hauled, and
+    /// backwards since (0.109 kt of hull per kt hauled for a Medium against
+    /// 0.032 for a General). It survived because the General hull's turnaround
+    /// made it a bad idea anyway, and T-96 removed that.
+    ///
+    /// What this pins is not *which* hull — that is a measured default and will
+    /// move — but that **the decision reads the world**: the same centre picks
+    /// differently for a thin rock and a rich one, and it stops scaling up when
+    /// the destination cannot fabricate what arrives. A constant passes neither
+    /// half.
+    #[test]
+    fn the_hauler_is_sized_to_the_bottleneck_not_to_the_role() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
+        let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let rock = sim.planet_entity[11];
+
+        let with_deposit = |sim: &mut Simulation, kt: f64| {
+            let each = Kilotons::new(kt / 3.0);
+            let d = sim.world.density.get_mut(rock).unwrap();
+            for b in Basic::ALL {
+                d.set(b, each);
+            }
+            sim.freighter_hull(0, center, rock, 1)
+        };
+
+        // A deposit that yields a trickle cannot fill a big hold between visits,
+        // so every hull carries `flow · round_trip` and only cost separates them.
+        let thin = with_deposit(&mut sim, 1e-3);
+        assert_eq!(thin, HullType::LimitedSystems, "a trickle buys the cheapest hull, got {thin:?}");
+
+        // A deposit that yields faster than any hold can lift saturates the
+        // capacity term, and the General hull's mass efficiency takes over.
+        let rich = with_deposit(&mut sim, 1e9);
+        assert_eq!(rich, HullType::GeneralSystems, "a seam buys the largest hull, got {rich:?}");
+
+        // **And the demand side is what stops it there.** Same rich rock, a
+        // destination that can fabricate almost nothing: the ore would sit in a
+        // bank, so the big hull is not worth its price. This is the half a
+        // supply-only rule would get wrong, and the half that makes the
+        // `min` in the forecast load-bearing rather than decorative.
+        let starved = sim.planet_entity[12];
+        sim.world.factors.insert(
+            starved,
+            Factors::new(Band::new(1.0), Band::new(1.0).in_kilotons(), Band::new(1.0).in_kilotons(), Price::new(1e-9)),
+        );
+        let throttled = sim.freighter_hull(0, starved, rock, 1);
+        assert!(throttled < rich, "a destination that cannot fabricate must not buy a {rich:?}, got {throttled:?}");
     }
 
     #[test]
@@ -9888,7 +10139,7 @@ mod tests {
         // Build a freighter "paired" with the homeworld (its home_center),
         // as apply_build would, but the homeworld is the *less* needy side.
         let from = *sim.world.position.get(home).unwrap();
-        sim.spawn_freighter(0, home, from, outpost, 0.0);
+        sim.spawn_freighter(0, home, from, outpost, HullType::MediumSystems, 0.0);
         let freighter = Entity(sim.world.entity_count() as u64 - 1);
 
         // Give the outpost stockpile something to load, then run the load leg.

@@ -3005,6 +3005,92 @@ re-ratified** — re-measuring it is part of T-95, and the plateau map R-O84 war
 about has to be redrawn anyway because its step structure came from counting
 50-year cycles to a band edge.
 
+### 6.26 R-O94 / T-98 — the hauler's hull is a forecast, not a constant
+
+**`role_hull_type(Role::Freighter) => MediumSystems`**, with the doc comment
+*"spec: MSV/GSV, picking the cheaper."* Correct under the pre-R-O58 ladder, where
+fragmenting genuinely was cheaper per unit hauled; backwards since. Cost per
+kilotonne hauled is **0.109** for a Medium against **0.032** for a General. It
+survived because the General hull's turnaround made it a bad idea anyway, and
+§6.24 removed that.
+
+**The rule is throughput per mineral — design law #3's own quantity:**
+
+```text
+flow  = min(supply_rate, demand_rate)       kt/yr, the binding side
+load  = min(capacity, flow · round_trip)    what the hold actually carries
+score = load / round_trip / hull_cost       kt delivered per year, per kt of hull
+```
+
+| term | what it reads | cost |
+|---|---|---|
+| **supply** | this rock's yield into this player's pile — deposit, crowding factor at the crew being built, mining cadence. The expression `sys_mining_tick` runs, read forward | `O(1)` |
+| **demand** | what the destination can turn into objects: `slips × berth_rate` | `O(1)` |
+| **round trip** | solved, not assumed — the load depends on it and it on the load. Two fixed-point passes from a full hold | 12 √ per build |
+
+**`min` is the point.** A thin rock cannot fill a big hold however hungry the
+centre; a centre at one berth cannot spend a rich rock however fast it yields. So
+the hull is sized to the *bottleneck* and the decision says "small hull here,
+large hull there" rather than picking a global winner. On the standard bed at
+800 yr it builds **4,750 Medium, 1,452 General and 211 Limited** haulers.
+
+#### The liquidity term is most of the value, and the ablation is why it is known
+
+The score is a **rate**: what a hull returns per mineral once flying. It says
+nothing about the years spent saving for it. A General hauler returns 2.86× a
+Medium's and costs **12×**, so a thin-banked centre buys one big hull instead of
+twelve cheap ones and stops expanding while it saves. That is design law #3's own
+named counterweight — *indivisibility as a liability* — and a steady-state rule
+cannot see it.
+
+The fix needs no constant: the candidate set is what the centre could pay for
+**now**, alongside the crew it is buying. Early, banks are thin and the cheap hull
+wins because it is the only one there; late, the forecast decides on merit.
+
+| pooled over 8 seeds, vs §6.24 | forecast alone | **forecast + liquidity** |
+|---|---|---|
+| work-years | +51%, 5/8 | **+170.1% ± 16.2, 8/8 (10.5 SE)** |
+| colony-years | **−17%, 1/8** | **+9.54% ± 4.19, 7/8 (2.3 SE)** |
+| throughput | +53% | **+73%**, `ns/event` −46% |
+| `all_fair_counts_run_and_expand` | **founds nothing in 40 yr** | passes |
+
+Landed as one change, the whole thing looks like a development gain bought out of
+the expansion loop, and the honest response would have been to revert it. **Two
+changes addressing one diagnosis, ablated apart** — R-O89's standing lesson,
+applied before there was anything to explain.
+
+#### The mechanism check: freight is 1.73% of a bank no longer
+
+T-92 measured freight at **1.73%** of everything that ever entered a bank and
+named it the ceiling on every further freight fix. This is that ceiling moving,
+and it is the direct reading rather than the objective:
+
+| seed 1, 800 yr | T-91 | **T-98** |
+|---|---|---|
+| freight share of bank inflow | 1.73% | **14.70%** |
+| hauled into banks | 6,321 kt | **90,563 kt** |
+| outpost ore ever collected | 0.21% | **2.30%** |
+| payable fraction, median | 0.052 | **0.083** |
+| banked kt that cannot pay a rung | 99.5% | **97.5%** |
+| infrastructure builds | 335 | **601** |
+
+Bigger haulers on rich rocks move **14× the tonnage**, and because the milk run
+(§6.24) mixes colours *within* a hold, that tonnage is payable rather than piling
+up mono-coloured. The two changes compose; neither would do this alone.
+
+**T-92 is advanced, not closed.** 85% of bank inflow is still the centre mining
+its own single-coloured ground, and 97.5% of the bank still cannot pay a rung.
+
+#### What it costs, and it is not nothing
+
+**Colony count falls 6.1%** (3,100 → 2,912, mean over eight seeds) while
+colony-*years* rise 9.5%. Worlds are taken markedly earlier and the tail is
+shorter: minerals that used to buy the last few hundred colonisers now buy
+haulers and rungs. On a `k_high`-saturated bed that is a deepen-versus-expand
+reallocation made on better information, and it is the same shape as R-O66's
+−178 colonies — a policy question for `expand_bias` and T-20, not a defect. It is
+recorded here rather than left for the next reader to find in a table.
+
 ## 7. Trade, development freight, and what needs a pact
 
 The third gap in §0, and the answer turns out to be the same mechanism as
@@ -3356,6 +3442,7 @@ artifact in place contaminates every later measurement.
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
 | ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favours deepening (+29% hull/yr for 9 colonisers), and what eats it is a homeworld already at rung II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
 | ~~**R-O88**~~ | ~~There is no build-wide axis~~ — **resolved, option C.** `fab_cap` bounds the rate **per berth** (quality); `slips` reads the fabrication share of the **stock** (quantity, unbounded). `fab_cap` 0.2 → 0.1 is a re-denomination: per-berth turnaround is **bit-identical** at every playable rung, and §3.3's schedule now reads off one constant. `slip_throughput` deleted; berth size derived from the Limited hull (**placeholder anchor**). Berths at rung II: 2 → **17**. Fleet-years **+26–34%**, throughput 88.7 → 110.7 yr/s, colony count flat. Also drops the `t_lead` defect — there is no per-planet rate left to fail to reach — and takes T-88's after-idle gap 29.6 → 7.6 yr. | §3.2, §6.3, §6.19b |
+| ~~**R-O94**~~ | ~~The hauler's hull is a constant, and the constant is backwards~~ — **resolved: it is a forecast.** `freighter_hull` sizes the hull to `min(supply_rate, demand_rate) × round_trip` and ranks on delivered kt per year per kilotonne of hull — supply is the rock's own yield, demand is the destination's fabrication throughput, both `O(1)`, and the round trip is solved rather than assumed. **+170.1% ± 16.2 work-years, 8/8 (10.5 SE)**, colony-years +9.54% ± 4.19 (7/8), throughput **+73%** with `ns/event` −46%. **The liquidity term is most of it**: without capping candidates at what the centre can pay now, the same rule scores +51% work-years and **−17% colony-years on 1/8 seeds** and founds nothing in forty years — design law #3's *indivisibility as a liability*, which a steady-state rate cannot see. Mechanism check: freight's share of bank inflow **1.73% → 14.70%**, ore collected 0.21% → 2.30%, payable fraction 0.052 → 0.083, infrastructure builds 335 → 601 — so **T-92 is advanced**, with 85% of inflow still the centre's own ground. Cost: **colony count −6.1%**, a deepen-versus-expand reallocation on a `k_high`-saturated bed. Demand is a *ceiling*, not this hauler's share — T-99. | §6.26 |
 | ~~**R-O93**~~ | ~~The population logistic is integrated with a forward Euler step at `r·Δ = 0.873`~~ — **resolved: it has a closed form.** `x(t+Δ) = K·x / (x + (K − x)·e^(−rΔ))`; the ceiling is constant across a tick so the step is autonomous, and `settler_target` was already pricing colonisation off this solution's inverse. The Euler form was **79% low** at `cycle_years = 50` and still **21% low** at T-88's refined 5. **+6.57% ± 1.14 colony-years, 8/8 seeds (5.7 SE)** replicated on four seeds it was not chosen against, work-years noise, **throughput unchanged** (one `exp` per centre per tick is under the run-to-run variance). Retires three things: **design law #11's `r < 2` ceiling** (a property of the Euler map, not the model), the load-bearing **clamp at `K`**, and the **undershoot below `K`** on an over-capacity world — the collapse survives (31.62 → 8.88 kt in one tick), the overshoot does not. Consumes R-O84's ratification of `growth_rate = 0.873`, which is carried rather than re-measured. It does **not** buy the tick back: exact @ 50 beats Euler @ 50 by +33% work-years at the same cost but is still 29% below exact @ 5, so `cycle_years` has a second job — **T-95**. | §6.25 |
 | ~~**R-O92**~~ | ~~Every delivery is mono-coloured because a hold is filled from exactly one rock~~ — **resolved: the milk run (T-91).** An outbound leg may visit `max_pickup_stops` piles before turning for its destination; the final stop fills the hold as R-O89 does and every earlier one takes each colour capped at what is still wanted **and** at its proportional share of the hold. **Ratified at 2: +55.13% ± 4.65 work-years, 8/8 seeds (11.9 SE)**, replicated on four seeds it was not chosen against, colony-years +2.1%/+3.8% on the two beds, ~12% throughput. Two is a **peak** — 1/2/3/4/6 score 184k/**284k**/261k/236k/190k — and the share cap is worth +10.2% over `min(want, room)` because a geometric bill outgrows a hold. The stated acceptance criterion moved for the first time in four interventions: payable fraction **0.043 → 0.052**, infrastructure builds 268 → 335. `base` stays welded to the hauler's own miner (re-pointing it is −52.3%). **What it does not reach** is carried as T-92: freight is **1.73%** of everything that ever enters a bank, the other 98.3% being `sys_production_tick`'s local mining of the centre's own single-coloured planet. Scan cost is T-93. | §6.24 |
 | ~~**R-O91**~~ | ~~**The ranking's colour term reads a constant.**~~ **Implemented and refuted — the term is a real defect and not the cause.** Live local scarcity moves the payable fraction from 0.043 to 0.043 and the dead share stays at 99.7% **at every gain from 0 to 16**, while costing **−3.30% ± 0.49 colony-years, 0/4 seeds**. Reverted. The reason is provable from the code: the empire already mines a balanced mix (957k/905k/626k kt), a rock is one colour (0.789), and **a hold is filled from exactly one rock** — so every delivery is mono-coloured and no *selection* over single-source trips can assemble a payable mixture. The successor is **T-91**. Original text: `scarcity_c` is written once at game start from the homeworld archetype and never again, and `mineral_pressure` is live but scalar — so outpost selection can say *mine more* and never *mine Cyan*. Measured consequence: median bank dominant share **0.871** against the field's 0.789, and **99.7% of 360,517 banked kt cannot pay a balanced rung at any price**. Open question is the *shape* of the live term — whose shortfall it reads, and whether reading ore on hand makes it farmable. The work is **T-90**. | §7.4, §6.23 |

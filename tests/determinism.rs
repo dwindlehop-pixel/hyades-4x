@@ -70,6 +70,15 @@ fn full_run_reports_are_bit_identical() {
     // to ~1,900. Measured events per arm at these horizons: 2,761 / 2,7xx /
     // 3,0xx / ~1,800 / ~1,900.
     //
+    // **Re-scaled again at T-98**, and this time event count went *down* for a
+    // change that made the simulation do more: sizing a hauler's hull to its
+    // rock means **fewer, bigger trips** for the same tonnage, so every arm lost
+    // roughly a third of its events at a fixed horizon and three of the five
+    // dropped under the floor. Re-measured: 2,381 / 1,853 / 1,775 / 1,930 /
+    // 2,152 events at the horizons below. That is the `yr/s`-versus-`ns/event`
+    // distinction (`CLAUDE.md` §2) showing up in a test budget — the work per
+    // event rose, the event count fell, and only one of those is visible here.
+    //
     // **Re-scaled at T-88**, and the first attempt overshot — which is the
     // point of the floor. `cycle_years` 50 → 5 makes the economy tick ten times
     // as often, so dividing every horizon by ten looked right and left the
@@ -86,7 +95,7 @@ fn full_run_reports_are_bit_identical() {
     // vacuous — the same guard, and for the same reason, as `moving` in
     // `positions_never_exceed_lightspeed`. It fired on the first attempt here
     // too, at a uniform 50 yr.
-    for &(n, seed, horizon) in &[(2usize, 1u64, 54.0), (3, 7, 42.0), (6, 13, 28.0), (12, 99, 18.0), (18, 4, 14.0)] {
+    for &(n, seed, horizon) in &[(2usize, 1u64, 90.0), (3, 7, 60.0), (6, 13, 40.0), (12, 99, 26.0), (18, 4, 20.0)] {
         let mut a = fresh_short(n, seed, horizon);
         let mut b = fresh_short(n, seed, horizon);
         let ra = a.run();

@@ -136,6 +136,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **T-91 / R-O92** — the milk run | **T-91**, **R-O92** | T-76 | **T-92**, **T-93** | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, error bar *tightened*) and **probe past the value you intend to ship** — 4 and 6 are where it breaks and that is why 2 is known to be a peak rather than a direction; the mechanism check written down in advance, which had refused T-90 and passed this; R-O89's welded pickup site left alone rather than re-litigated | **§6.23's closing sentence**, by me — *"no loading rule and no delivery rule reaches that, because both act on ore that has already been mined from the wrong rocks"*. A loading rule does reach it, and is +55%. The sentence was right about *which ore* and wrong that nothing could mix it, because it assumed the voyage shape it was written under. **And T-91's own premise is now half-refuted**: the atomicity was real, and removing it exposed that freight is only 1.73% of what enters a bank (T-92) |
 | **T-94 / R-O93** — the logistic is solved, not stepped | **T-94**, **R-O93** | T-24 | **T-95** | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, 5.7 SE); its `yr/s` **and** `ns/event` rule, which is what shows the `exp` is free rather than assumed to be; design law #16 at the denominator | **Design law #11's `r < 2` ceiling**, which T-64 derived from the conjugacy to the logistic map and which is a property of the *Euler step*, not of the model — the closed form is monotone at any rate. **R-O84's ratification of `growth_rate = 0.873`**, whose operating point and plateau map are both consumed; the value is carried, not re-measured. And **the undershoot below `K`**, which T-67 cited as supporting evidence for taking infrastructure out of the minimum — T-67's conclusion stands on its own (razing works must not move people) but that particular argument was resting on truncation error |
 | **T-96 / R-MC16** — the drive is a mass, not a stat | **T-96**, **R-MC16** | R-O65 (still blocked), T-24 | **T-97**, **T-98** | R-MC16's own words — volume is the ENG ceiling, realized thrust is a Design quantity paid for in minerals; design law #11 (the drive masses and costs what it occupies) and #3 (the consolidation advantage stops being repaid in turnaround); R-O57 (cost stays exactly dry mass); `CLAUDE.md` §2's replication rule and its instruction to write the mechanism check down first — the round-trip ratio, which moved 1.252 → 1.011 | **R-O58's `a_empty` is size-independent**, which was true only while thrust *was* dry mass — empty acceleration now rises with size (1.00 / 2.37 / 5.06 g), which is the point. **§3.3's build schedule** 2.2/3.0/12.0 → 2.201/3.092/15.154, because `t_build` tracks hull mass and a hull now masses its drive. **The founding-infra rung coincidence** drifts +0.003/+0.038/+0.119 Bands — R-O80's claim about the two ladders is untouched (the shell still prices exactly at its rung) and R-O87's works identity survives, because both sides moved together |
+| **T-98 / R-O94** — the hauler's hull is a forecast | **T-98**, **R-O94** | **T-92** (freight 1.73% -> 14.70% of bank inflow), T-24 | **T-99** | `CLAUDE.md`'s **ablate them apart before you believe either** — the liquidity term is the whole difference between +170%/+9.5% and +51%/-17%, and landed as one change the honest response would have been to revert; the mechanism check written down in advance (freight's share of bank inflow, not the objective); design law #3 in both directions — its cost basis *and* its named counterweight, indivisibility; `CLAUDE.md` section 4's `O(1)` rule at the decision | **`role_hull_type(Role::Freighter)`'s stated rationale**, "spec: MSV/GSV, picking the cheaper" — correct under the pre-R-O58 ladder and backwards since R-O58 made cost per kilotonne hauled 0.109 against 0.032. It survived because the General hull's turnaround made it a bad idea for an unrelated reason, which T-96 removed. **And colony count falls 6.1%** — recorded rather than left to be found, and not a defect: colony-years rise 9.5% on the same bed |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -341,28 +342,67 @@ that fewer items is not automatically faster when the traversal order degrades.
 
 ---
 
-### ~~T-98. Freight never builds a General hull~~ — open
+### T-99. The demand term is a ceiling, not this hauler's share
 
-`role_hull_type(Role::Freighter)` is hardcoded to `MediumSystems`, with the doc
-comment *"spec: MSV/GSV, picking the cheaper"* — a rule that was correct under
-the pre-R-O58 ladder, where fragmenting genuinely was cheaper per unit hauled,
-and has been backwards since. Cost per kilotonne hauled is **0.109** for a Medium
-and **0.032** for a General.
+**Opened by T-98.** `freighter_hull` reads the destination's fabrication rate as
+the demand side, and a centre served by ten pairs can absorb that rate **once**,
+not ten times. So the term is an upper bound on what one hauler should size for,
+and it binds correctly only when a centre has few haulers.
 
-A freighter is never *ordered*: it is spawned as the second half of a mining pair
-and priced by `role_cost(Role::Freighter, …)`, so there is no path for a Design
-to choose its hull. `assign_role` closes the loop the other way — a General
-Systems hull maps to `Role::Colonizer`.
+The supply term has no such caveat — it is exactly this rock's yield to this
+player, and it is what discriminates today. Turning demand into a *share* needs a
+per-centre hauler census, which is not `O(1)` from the decision and so runs into
+`CLAUDE.md` §4 directly. Two shapes:
 
-**T-96 removed the reason not to.** The turnaround penalty that made a big
-freighter a bad idea is gone (round trip 1.252 → 1.011). The shape is a
-`FreighterPolicy` mirroring `ColonizerPolicy`, default `CheapestViable` so it
-lands bit-identical, swept against work-years. **Ablate it apart from T-96** —
-two changes addressing one diagnosis, which is R-O89's standing lesson.
+- **Maintain a count** per `(player, centre)` as haulers are built, retired and
+  re-routed. Cheap to read, but `Shuttle::destination` is need-routed and moves,
+  so "serving this centre" is not a stable membership and the count would drift.
+- **Read the centre's delivery rate** instead of its hauler count: `bank_mix`
+  already reconstructs it from `FreighterTransfer`, so the shortfall between
+  fabrication rate and arrival rate is the marginal demand a new hauler should
+  size for. Needs a per-centre running figure in sim state, which is exactly what
+  `CLAUDE.md` §4 warns to recompute rather than accumulate.
 
-The counterweight to measure rather than assume is **indivisibility**: a General
-hull costs 1.32 kt against a Medium's 0.109, and §6.19c found 98.3% of production
-decisions already unable to pay their bill.
+**Acceptance is the hull mix, not the objective.** Today's bed builds 4,750
+Medium / 1,452 General / 211 Limited; a correct share term should shift the mix
+toward smaller hulls at well-served centres without touching thin-rock pairs.
+
+---
+
+### ~~T-98. Freight never builds a General hull~~ — **DONE (R-O94, §6.26)**
+
+> **The hull is a forecast now.** `freighter_hull` sizes it to
+> `min(supply_rate, demand_rate) x round_trip` and ranks candidates on delivered
+> kilotonnes per year per kilotonne of hull — design law #3's own quantity.
+> Supply is the rock's yield as `sys_mining_tick` computes it; demand is the
+> destination's fabrication throughput; both are `O(1)`, and the round trip is
+> solved rather than assumed because the load depends on it and it on the load.
+>
+> **+170.1% ± 16.2 work-years, 8/8 seeds (10.5 SE)**, colony-years
+> **+9.54% ± 4.19 (7/8)**, throughput **+73%** with `ns/event` −46%.
+>
+> **The liquidity term is most of the value and the ablation is the reason that
+> is known.** Capping candidates at what the centre can pay for *now* costs no
+> new constant — the budget is the bank, which the decision already lives under.
+> Without it the same rule scores **+51% work-years and −17% colony-years on 1/8
+> seeds**, and `all_fair_counts_run_and_expand` founds nothing in forty years:
+> a thin-banked centre buys one General hauler instead of twelve Mediums and
+> stops expanding while it saves. That is design law #3's *indivisibility as a
+> liability*, and a steady-state rate cannot see it.
+>
+> **Mechanism check — this is T-92's ceiling moving.** Freight's share of bank
+> inflow **1.73% → 14.70%**, ore ever collected 0.21% → 2.30%, payable fraction
+> 0.052 → 0.083, infrastructure builds 335 → 601. Bigger haulers on rich rocks
+> move 14x the tonnage, and because the milk run mixes colours *within* a hold
+> that tonnage is payable. The two compose; neither does this alone. **T-92 is
+> advanced, not closed** — 85% of inflow is still the centre's own ground.
+>
+> **Cost: colony count −6.1%** while colony-years rise 9.5%. Worlds are taken
+> earlier and the tail is shorter. Same shape as R-O66's −178: a
+> deepen-versus-expand reallocation on better information, and a question for
+> `expand_bias` and T-20.
+>
+> **Successor: T-99** — demand is a ceiling, not a share.
 
 ---
 

@@ -1041,6 +1041,22 @@ independent changes address the same diagnosis, ablate them apart before you
 believe either** — `CLAUDE.md`'s "ablate before you explain", applied *before*
 there is anything to explain.
 
+**T-98 is the same lesson from the other side: the arm that looked like a
+refinement was the load-bearing one.** Sizing a hauler's hull to its rock scores
+**+51% work-years and −17% colony-years on 1/8 seeds** — a development gain
+bought out of the expansion loop, and the honest response to that is to revert.
+Adding a *liquidity* cap — only consider hulls the centre can pay for now — takes
+it to **+170% and +9.5%, 8/8 and 7/8**. Same rule, same objective; the second
+term is the whole result.
+
+The mechanism is worth having because it recurs: a score of the form
+`value / cost` is a **rate**, true in steady state, and it says nothing about the
+years spent saving for an indivisible purchase. A General hauler returns 2.86×
+a Medium's per mineral and costs **12×**, so a thin-banked centre buys one and
+stops expanding while it saves. **When a decision picks among lumpy purchases,
+price the wait as well as the return** — and note that the budget constraint was
+already there, so it cost no new constant.
+
 ### CI gates
 
 `.github/workflows/ci.yml` runs on every push and PR. Before you push, the four
@@ -1681,6 +1697,7 @@ changes how you *work*, not what is left to do:
   | **R-O92 (the milk run), same pair — `ns/event` 29,786** | ~34,500 | **57.8 yr/s** | **23×** |
   | T-94 (logistic in closed form), 3 seats, 800 yr — `ns/event` 50,637 | ~34,700 | 50.4 yr/s | 20× |
   | **T-96 (the drive is a mass), same bed — `ns/event` 51,732** | ~35,100 | **48.0 yr/s** | **19×** |
+  | **T-98 (the hauler's hull is a forecast), same bed — `ns/event` 27,812** | ~40,900 | **82.9 yr/s** | **33×** |
 
   **T-88's last row is the one to read, and it is `ns/event` that says why.**
   Per-event cost went from ~174,000 ns at T-87 to **22,394** — not because any
@@ -2046,6 +2063,16 @@ changes how you *work*, not what is left to do:
   idea: **freight is 1.73% of everything that ever enters a bank** — the rest is
   `sys_production_tick` mining the centre's own single-coloured planet directly
   into the bank (T-92).
+
+  **And T-98 moved that ceiling by building the right hull for the rock**:
+  freight's share of bank inflow **1.73% → 14.70%**, ore ever collected
+  0.21% → 2.30%, for **+170.1% ± 16.2 work-years, 8/8 seeds**. `role_hull_type`
+  was a constant whose rationale — *"picking the cheaper"* — was correct under
+  the pre-R-O58 ladder and backwards for every landing since; it survived because
+  the General hull's *turnaround* made it a bad idea for an unrelated reason,
+  which T-96 had just removed. **Check whether a constant's stated reason still
+  holds after you fix something else** — two of this project's largest results
+  were one rule waiting on another.
 
   **Diminishing returns are visible, and the cause is now known.** +23.9, then
   +11.0, then +2.3 points. It is not that the economy ran out of headroom:
