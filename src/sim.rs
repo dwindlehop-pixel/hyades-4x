@@ -781,6 +781,46 @@ impl HullType {
         g.reserved_core + self.hull_radius(cfg).cubed() * g.reserved_payload_fraction
     }
 
+    /// **Volume this hull's Design gives to drive** (R-MC16, T-96) — a share of
+    /// what is left of the hold after the role's core, and therefore volume that
+    /// is *not* hold.
+    ///
+    /// R-MC16 ratified the shape: *"Volume sets the ENG-slot ceiling a hull can
+    /// mount; realized thrust is a Design quantity drawn from `b_role · V` and
+    /// paid for in minerals."* This is that quantity. It comes out of the usable
+    /// interior rather than out of `V` because a slot lives in the hold and not
+    /// in the skin — §2.3's formula writes `b_role · V`, and the difference is
+    /// second-order at every rung but the Limited one, where `V` would put
+    /// engines inside the shell.
+    ///
+    /// **It is charged three times**, which is what makes it a trade rather
+    /// than an upgrade: it is volume not spent on cargo, mass to be
+    /// accelerated, and — because cost *is* dry mass (R-O57, design law #11) —
+    /// minerals at the yard.
+    pub fn drive_volume(self, cfg: &SimConfig) -> Volume {
+        let interior = (self.hold_volume(cfg) - self.reserved_volume(cfg)).max(Volume::ZERO);
+        interior * cfg.drive_volume_fraction
+    }
+
+    /// **Thrust-producing mass**, `δ · shell + ρ · V_drive` (T-96).
+    ///
+    /// Two terms, and the first is why a Limited hull still flies. `δ` is the
+    /// share of a hull's own *structure* that is drive — nozzles, plumbing,
+    /// radiators, the parts of a ship that are engine and hull at once — so it
+    /// is already inside the shell mass and is **not** added to it. The second
+    /// is the drive a Design mounts in the hold, which is.
+    ///
+    /// Without the structural term a volumetric law is not merely unbalanced,
+    /// it is **degenerate**: a Limited Contact Vehicle's reserved core (0.138)
+    /// exceeds its whole hold (0.026), so its usable interior is zero, its drive
+    /// would be zero, and **a scout would never move.** Measured across the
+    /// ladder, dropping `δ` to zero takes an LCV from 0.91 g to nothing and an
+    /// LSV from 1.00 g to 0.06 g.
+    pub fn drive_mass(self, cfg: &SimConfig) -> Kilotons {
+        let structural = hull_shell_mass(self, cfg) * cfg.structural_drive_fraction;
+        structural + Kilotons::new(self.drive_volume(cfg).hull_units_cubed() * cfg.cargo_unit_size)
+    }
+
     /// Cargo capacity **as a mass** (R-O58) — [`Kilotons`], the same unit as
     /// minerals, population, biosphere and the hull itself (L6). Typed rather
     /// than a bare `f64` because it is consumed by an acceleration term, which
@@ -818,7 +858,12 @@ impl HullType {
     /// survives is its ordinal content: each larger hull carries strictly more.
     /// The magnitudes are geometry now (R-O64).
     pub fn cargo_capacity(self, cfg: &SimConfig) -> Kilotons {
-        let usable = self.hold_volume(cfg) - self.reserved_volume(cfg);
+        // **Drive is a third reservation** (T-96), taken after the role's core
+        // and before anything can be carried. Deliberately deducted here and
+        // not from [`Self::hold_volume`]: the *hold* is what sits on a Band rung
+        // (R-MC15's `F_mass = F_cost^(3/2)` tie is a claim about it), so the
+        // rungs must not move because a Design mounted a bigger engine.
+        let usable = self.hold_volume(cfg) - self.reserved_volume(cfg) - self.drive_volume(cfg);
         Kilotons::new(usable.max(Volume::ZERO).hull_units_cubed() * cfg.cargo_unit_size)
     }
 
@@ -1256,6 +1301,19 @@ fn infra_rung_of(stock: Price, cfg: &SimConfig) -> usize {
 /// thrust-to-mass × dry mass, so the dry mass cancels exactly — empty-hull
 /// acceleration depends only on [`hull_thrust_to_mass`], as it did before.
 pub fn hull_dry_mass(hull: HullType, cfg: &SimConfig) -> Kilotons {
+    hull_shell_mass(hull, cfg) + Kilotons::new(hull.drive_volume(cfg).hull_units_cubed() * cfg.cargo_unit_size)
+}
+
+/// **The shell alone** — the material the cost ladder prices, before a Design
+/// mounts anything in the hold (T-96).
+///
+/// This is what [`hull_dry_mass`] used to be, and the split is the whole of
+/// T-96's accounting: the *shell* is what `hull_radius` is solved from and what
+/// the `1 : 1/10 : 1/50` ladder names, while the *dry mass* is the shell plus
+/// whatever drive the Design put inside it. Keeping them separate is what stops
+/// the geometry going circular — radius is solved from the shell, and the drive
+/// is then fitted into the hold that radius implies.
+fn hull_shell_mass(hull: HullType, cfg: &SimConfig) -> Kilotons {
     Kilotons::new(hull.cost_fraction(cfg) * cfg.general_vehicle_cost)
 }
 
@@ -1321,7 +1379,11 @@ fn role_cost(role: Role, cfg: &SimConfig) -> Price {
 /// L6/R-O57 — cost *is* dry mass — but read at the point of purchase rather
 /// than the point of flight.
 fn hull_cost(hull: HullType, cfg: &SimConfig) -> Price {
-    Price::new(hull.cost_fraction(cfg) * cfg.general_vehicle_cost)
+    // **Including the drive** (T-96). Cost is dry mass and dry mass now includes
+    // whatever the Design mounted, so a faster hull is a dearer one — which is
+    // the third of the three charges `HullType::drive_volume` levies, and the
+    // one that keeps a Design from being a free upgrade.
+    hull_dry_mass(hull, cfg).on_scale::<units::Cost>()
 }
 
 /// The component world: entity bookkeeping plus every typed store.
@@ -1757,6 +1819,63 @@ pub struct SimConfig {
     /// once; it records the cadence they were measured at and should move only
     /// if they are re-ratified at another one.
     pub rate_reference_years: f64,
+    /// **Specific thrust `k`** — kilotonne-g of thrust per kilotonne of drive
+    /// mounted (T-96, R-MC16). *The* standard measure of impulse: one unit of
+    /// engine delivers one proportionate unit of acceleration, the same for
+    /// every hull, every role and every size.
+    ///
+    /// **Derived from an anchor, not chosen.** Solved so that an *empty Limited
+    /// Systems hull still flies at 1 g*, which is what it did under the law this
+    /// replaces — so scouts and miners, which fly small hulls mostly empty, are
+    /// where they were (an LCV lands at 0.911 g) and the change is legible as
+    /// something that happened to the *large* end of the ladder. At
+    /// `drive_volume_fraction = 0.01` and `structural_drive_fraction = 0.05`
+    /// that anchor gives **18.21**.
+    ///
+    /// **Placeholder magnitude pinned to R-MC16**, not Monte-Carlo ratified: it
+    /// is one number standing in for a propulsion technology the Design layer
+    /// does not exist to describe yet.
+    pub drive_specific_thrust: f64,
+    /// **`δ` — the share of a hull's own shell that is drive** (T-96): nozzles,
+    /// plumbing, radiators, the parts that are engine and structure at once.
+    ///
+    /// Already inside the shell mass, so it adds none — it is a statement about
+    /// what the shell *is*, not a second purchase. **Without it a volumetric
+    /// drive is degenerate rather than merely unbalanced**: a Limited Contact
+    /// Vehicle's reserved core exceeds its entire hold, so its usable interior
+    /// is zero and a purely volumetric law gives it zero thrust. A scout would
+    /// never move.
+    ///
+    /// It is a hull constant rather than a Design field because it is structure;
+    /// the Design axis is [`Self::drive_volume_fraction`] beside it.
+    pub structural_drive_fraction: f64,
+    /// **`φ` — the share of usable interior a Design gives to drive** (T-96),
+    /// and the knob "dedicate slots to additional engines" means.
+    ///
+    /// **This is a Design quantity standing in a config field.** R-MC16 requires
+    /// it to be per-`Class` — realized thrust is what a hull *bought*, and design
+    /// law #10 needs it to vary, or observed acceleration would name the hull
+    /// class outright and the inverse problem collapses. It is global here
+    /// because Design writes cannot reach thrust until `on_refit` lands (T-08);
+    /// moving it onto `Class` is T-97.
+    ///
+    /// **Ratified at 0.01 against the alternatives, and the sweep is the reason**
+    /// (`examples/drive_probe`). Against `today`, with `δ` fixed at 0.05 and the
+    /// Limited hull's empty acceleration pinned:
+    ///
+    /// | `φ` | GSV ÷ MSV round trip | MSV cost | MSV kt/yr/kt$ | GSV kt/yr/kt$ |
+    /// |---|---|---|---|---|
+    /// | *today* | 1.252 | 1.000 | 1.000 | 1.000 |
+    /// | 0.005 | 1.036 | 1.046 | 1.031 | 1.126 |
+    /// | **0.01** | **1.011** | 1.092 | **1.016** | **1.044** |
+    /// | 0.02 | 1.001 | 1.184 | 0.954 | 0.867 |
+    /// | 0.05 | 0.997 | 1.461 | 0.770 | 0.548 |
+    ///
+    /// Turnaround parity arrives by 0.01 and everything past it is paid for in
+    /// hold and minerals for no further gain — the drive stops buying speed and
+    /// starts buying mass. At 0.01 throughput per kilotonne of hull **improves**
+    /// for both hulls: the drive pays for itself in shorter voyages.
+    pub drive_volume_fraction: f64,
     /// **How many piles one outbound leg may draw from** (T-91).
     ///
     /// A hold is filled from `outpost_stock[(player, rock)]` — one map entry —
@@ -2189,6 +2308,9 @@ impl SimConfig {
             cycle_years: 5.0,
             decision_retry_years: 50.0,
             rate_reference_years: 50.0,
+            drive_specific_thrust: 18.21,
+            structural_drive_fraction: 0.05,
+            drive_volume_fraction: 0.01,
             max_pickup_stops: 2,
             build_lead_years: 2.0,
             fab_cap: 0.1,
@@ -4956,7 +5078,24 @@ impl Simulation {
         let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
         let dry = hull_dry_mass(hull, &self.config).max(Kilotons::new(1e-9));
         let laden = dry + minerals + pop;
-        base_g * G * (dry.kilotons() / laden.kilotons())
+        // **Thrust is what the hull mounts, not what it masses** (T-96, R-MC16).
+        //
+        // This used to be `base_g · dry / laden`, i.e. thrust proportional to
+        // *dry mass* — and dry mass is the shell, which goes as `r²` while the
+        // load it has to push goes as `r³`. So laden acceleration fell as `1/r`
+        // by construction and the largest hull was the most sluggish: a laden
+        // GSV flew at **0.317x** a laden MSV and took 1.25x as long door to
+        // door, which is design law #3's consolidation advantage being paid
+        // back in turnaround. With thrust drawn from mounted drive instead,
+        // drive and cargo both scale `r³`, the shell term shrinks away, and
+        // laden acceleration becomes **size-independent** — measured at 1.01x
+        // across the Medium-to-General step, with nothing tuned to produce it.
+        //
+        // `base_g` is retained as the caller's throttle (design law #10: a ship
+        // may fly below peak and never above it), so a civilian leg still asks
+        // for `civilian_accel_g` and gets what the drive can actually deliver.
+        let thrust = self.config.drive_specific_thrust * hull.drive_mass(&self.config).kilotons();
+        base_g * G * (thrust / laden.kilotons())
     }
 
     /// Park a vehicle at `pos` (degenerate motion ⇒ fixed position, not in flight).
@@ -6273,7 +6412,8 @@ mod tests {
         );
     }
 
-    /// **Refining the economy tick must converge, not rescale** (T-88).
+    /// **The economy tick must not move the population at all** (T-88, then
+    /// T-94 — and the second landing reversed what this asserts).
     ///
     /// Two different things were wrong with `cycle_years` and only one of them
     /// was a bug.
@@ -6282,42 +6422,37 @@ mod tests {
     /// it once per tick *regardless of the tick's length*, so shrinking the tick
     /// ran a fifty-times-faster economy rather than a better-integrated one. The
     /// objective duly reported **+58.6% work-years** for `cycle_years = 1`,
-    /// which measured nothing. [`Simulation::tick_scale`] closes that.
+    /// which measured nothing. [`Simulation::tick_scale`] closes that, and it is
+    /// still what this test guards.
     ///
-    /// What is **not** a bug, and is the reason T-88 was opened: with the rate
-    /// correctly denominated, a 50-year step is still a *bad* step. The logistic
-    /// advances by `r·dt` per tick and `r·dt = 0.873` at the shipped values —
-    /// nowhere near the small-step regime, though comfortably inside design law
-    /// #11's `r < 2` stability bound. Measured on a homeworld at 300 yr, seeds
-    /// and config otherwise fixed:
+    /// **What changed at T-94 is the second half.** With the rate correctly
+    /// denominated, a 50-year forward Euler step was still a *bad* step —
+    /// `r·dt = 0.873`, nowhere near the small-step regime — so refining it was a
+    /// real gain and this test asserted **convergence**: each refinement moving
+    /// the answer less than the last (1.99, 1.55, 1.22 on the shipped galaxy).
+    /// That was the right assertion for an approximation that improves as you
+    /// refine it.
     ///
-    /// | `cycle_years` | 50 | 25 | 10 | 5 |
-    /// |---|---|---|---|---|
-    /// | homeworld population | 1,143 | 2,275 | 3,516 | 4,297 |
-    /// | ratio to the next coarser | — | 1.99 | 1.55 | 1.22 |
+    /// The step is now the **closed form**, which composes exactly, so there is
+    /// nothing left to converge to and **invariance is the stronger claim.** On
+    /// this bed the four tick sizes give 5,230 / 5,193 / 5,363 / 5,385 — a 3.7%
+    /// spread across a 10x range, against **3.78x** under the Euler step.
     ///
-    /// So the coarse step **under-integrates by ~4x** and refining it is a real
-    /// gain, not a rescaling: **+20.3% ± 5.4 work-years at `cycle_years = 5`,
-    /// 4/4 seeds**, saturating there — 1/yr buys nothing more than 5.
-    ///
-    /// (That table is the shipped galaxy; this test runs `test_galaxy`'s smaller
-    /// one and lands at 1,136 / 1,978 / 3,518 / 4,296 — the same shape, which is
-    /// what it asserts.)
-    ///
-    /// **Which is why this asserts convergence rather than invariance.** The two
-    /// failure modes look identical in a single ratio and completely different
-    /// across three: an integrator converging has each refinement move the
-    /// answer *less*, while a rate applied per tick without scaling moves it by
-    /// the step ratio every time, forever.
+    /// **This is not a return to the test's first version.** That one asserted
+    /// invariance against an integrator that genuinely should have moved, failed
+    /// at 2.92x, and was wrong to. The same assertion is right now for the
+    /// opposite reason, and it still catches the original defect loudly: a
+    /// per-cycle rate applied per tick without `tick_scale` moves this by the
+    /// **step ratio**, which is 10x and nowhere near the bound below.
     #[test]
-    fn refining_the_economy_tick_converges_rather_than_rescaling() {
+    fn the_economy_tick_does_not_move_the_population() {
         let pop_at = |cycle: f64| -> f64 {
             let mut cfg = test_cfg(1);
             cfg.horizon_years = 300.0;
             cfg.cycle_years = cycle;
             // Shared small bed (see `test_galaxy`); this reads one homeworld's
             // population and nothing else, so the scenery is pure cost and the
-            // horizon stays where the convergence is legible.
+            // horizon stays where the comparison is legible.
             let mut sim = Simulation::with_baseline(test_galaxy(2, 1), cfg);
             sim.run();
             sim.snapshot()
@@ -6328,30 +6463,24 @@ mod tests {
                 .sum()
         };
         // One world, not the empire total: the empire's population also counts
-        // *colonies*, and a finer tick founds more of them, so the aggregate
-        // conflates the integrator with the expansion loop and cannot answer
-        // this question. (It was written that way first, and said 2.92x.)
-        let (p50, p25, p10, p5) = (pop_at(50.0), pop_at(25.0), pop_at(10.0), pop_at(5.0));
-        assert!(p50 > 0.0 && p5 > 0.0, "the bed must grow a population to compare: {p50} .. {p5}");
-        let step = |fine: f64, coarse: f64| (fine / coarse - 1.0).abs();
-        // `b` is the middle refinement, kept in the message because it is the
-        // one that is allowed to be non-monotone and a reader will want to see
-        // it before believing the assertion is loose on purpose.
-        let (a, b, c) = (step(p25, p50), step(p10, p25), step(p5, p10));
-        // **Convergence across the range, not monotonicity at every step.** The
-        // strict form (`a > b > c`) was tried and is too brittle: this bed also
-        // *colonises*, so a refinement can move the homeworld a little more than
-        // the one before it while the sequence is plainly converging (0.741,
-        // 0.779, 0.221). What discriminates the failure mode is that under a
-        // per-tick rate with no `tick_scale` each halving moves the answer by
-        // the *step ratio* — so the last refinement stays as large as the first,
-        // forever, and never approaches zero.
+        // *colonies*, and the tick changes how many get founded, so the
+        // aggregate conflates the integrator with the expansion loop and cannot
+        // answer this question. (It was written that way first, and said 2.92x.)
+        let pops = [pop_at(50.0), pop_at(25.0), pop_at(10.0), pop_at(5.0)];
+        let lo = pops.iter().copied().fold(f64::INFINITY, f64::min);
+        let hi = pops.iter().copied().fold(0.0f64, f64::max);
+        assert!(lo > 0.0, "the bed must grow a population to compare: {pops:?}");
+        // The residual spread is the expansion loop, not the integrator: this
+        // bed also colonises, and which worlds it reaches by year 300 moves with
+        // the tick for reasons that have nothing to do with the logistic (T-95).
+        // 1.5 leaves five times the observed margin and is still far below the
+        // 10x a missing `tick_scale` would produce.
         assert!(
-            c < 0.5 * a,
-            "the finest refinement must move the answer far less than the coarsest — got {a:.3}, {b:.3}, {c:.3} \
-             for ({p50:.1}, {p25:.1}, {p10:.1}, {p5:.1}). A step that keeps moving the answer by the same \
-             factor means a per-cycle rate is being applied per tick without `tick_scale`, which rescales the \
-             economy instead of refining it (T-88)."
+            hi / lo < 1.5,
+            "the population must not track the tick size — got {pops:?}, spread {:.3}x. The closed form composes \
+             exactly, so a spread near the step ratio means a per-cycle rate is being applied per tick without \
+             `tick_scale` (T-88), and one merely large means the step is an approximation again (T-94).",
+            hi / lo
         );
     }
 
@@ -6669,10 +6798,18 @@ mod tests {
 
         // §3.3's approved schedule is now read off one constant.
         for (hull, want) in
-            [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
+            // **Moved by T-96**, and correctly: `t_build` tracks hull mass, and a
+            // hull now masses its drive as well as its shell. ~~2.2 / 3.0 /
+            // 12.0~~ — a bigger engine is more to fabricate, and the General
+            // hull's is the biggest because drive scales with the hold.
+            [
+                (HullType::LimitedSystems, 2.2010),
+                (HullType::MediumSystems, 3.0921),
+                (HullType::GeneralSystems, 15.1544),
+            ]
         {
             let m = hull_cost(hull, &cfg).on_scale::<units::Mass>().kilotons();
-            assert!((cfg.build_lead_years + m / cfg.fab_cap - want).abs() < 1e-9, "{hull:?} floor moved");
+            assert!((cfg.build_lead_years + m / cfg.fab_cap - want).abs() < 1e-3, "{hull:?} floor moved");
         }
     }
 
@@ -7211,27 +7348,49 @@ mod tests {
 
     #[test]
     fn cargo_derates_acceleration() {
-        // A laden vehicle accelerates more slowly than an empty one, and an
-        // empty hull of any size gets the full rate (R-O58: thrust and dry mass
-        // both scale with area, so a_empty is size-independent).
+        // A laden vehicle accelerates more slowly than an empty one — and since
+        // T-96 an empty hull's rate is **no longer size-independent.**
+        //
+        // ~~R-O58: thrust and dry mass both scale with area, so `a_empty` is
+        // size-independent.~~ That was true while thrust *was* dry mass. Thrust
+        // is now the drive a Design mounts, and drive volume scales with the
+        // hold (`r³`) against a shell that scales with area (`r²`), so a bigger
+        // hull is a faster one empty: **1.00 / 2.37 / 5.06 g** across
+        // Limited / Medium / General. That is the ocean-liner statement the
+        // ladder was missing, and it is the same `r³`-over-`r²` that gives
+        // design law #3 its cost advantage, now reaching acceleration.
         let galaxy = test_galaxy(2, 1);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(1));
         let base = sim.config.civilian_accel_g;
 
         // fabricate a throwaway entity id with no cargo component → empty
         let empty = Entity(u64::MAX); // no cargo store entry ⇒ 0 cargo
-        let a_empty = sim.laden_accel(empty, base);
-        assert!((a_empty - base * G).abs() < 1e-12, "empty ship should get full accel");
+        assert!(sim.laden_accel(empty, base) > 0.0, "an entity with no hull still flies on the default hull");
 
+        let mut last = 0.0;
         for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
             let e = sim.world.spawn();
             sim.world.hull_type.insert(e, hull);
             let a = sim.laden_accel(e, base);
-            assert!((a - base * G).abs() < 1e-12, "{hull:?} empty should get full accel, got {a}");
+            assert!(a > last, "{hull:?} empty should out-accelerate the size below it: {a} vs {last}");
+            last = a;
+        }
+        // **The small end is where the anchor is, and it is the reason the
+        // change is landable**: `drive_specific_thrust` is solved so an empty
+        // Limited Systems hull still flies at 1 g, so scouts and miners — which
+        // fly small hulls mostly empty — are where they were.
+        for (hull, want) in [(HullType::LimitedSystems, 1.0), (HullType::LimitedContactVehicle, 0.911)] {
+            let e = sim.world.spawn();
+            sim.world.hull_type.insert(e, hull);
+            let a = sim.laden_accel(e, base) / G;
+            assert!((a - want).abs() < 0.01, "{hull:?} empty flies at {a} g, anchor says {want}");
         }
 
         // an entity carrying cargo should accelerate strictly less
         let mut sim2 = Simulation::with_baseline(test_galaxy(2, 1), SimConfig::new(1));
+        let bare = sim2.world.spawn();
+        sim2.world.hull_type.insert(bare, HullType::MediumSystems);
+        let a_empty = sim2.laden_accel(bare, base);
         let laden = sim2.world.spawn();
         let m = Minerals { cyan: 5.0, ..Minerals::default() };
         sim2.world.cargo.insert(laden, m);
@@ -7239,10 +7398,12 @@ mod tests {
         let a_laden = sim2.laden_accel(laden, base);
         assert!(a_laden < a_empty, "laden accel {a_laden} should be < empty {a_empty}");
 
-        // R-O57: one mass unit, so the derate is exactly dry/(dry+cargo) with no
-        // conversion coefficient in between. An MSV costs 1/3 and hauls 5.
+        // R-O57: one mass unit, so the derate is exactly thrust/(dry+cargo) with
+        // no conversion coefficient in between — the numerator is what the hull
+        // mounts (T-96) and the denominator is everything it has to push.
         let dry = hull_dry_mass(HullType::MediumSystems, &sim2.config).kilotons();
-        assert!((a_laden - base * G * dry / (dry + 5.0)).abs() < 1e-12);
+        let thrust = sim2.config.drive_specific_thrust * HullType::MediumSystems.drive_mass(&sim2.config).kilotons();
+        assert!((a_laden - base * G * thrust / (dry + 5.0)).abs() < 1e-12);
 
         // The same load on a bigger hull derates *less* — dry mass is in the
         // denominator, so the spread is a statement about how full the hold is.
@@ -7281,10 +7442,22 @@ mod tests {
         assert!(l.hull_radius(&cfg) < m.hull_radius(&cfg));
         assert!(m.hull_radius(&cfg) < g.hull_radius(&cfg));
 
-        // R-O57: dry mass *is* the cost, in one unit.
+        // R-O57: dry mass *is* the cost, in one unit — and since T-96 both
+        // include the drive the Design mounted. The **shell** is what the
+        // `1 : 1/10 : 1/50` ladder names and what `hull_radius` is solved from;
+        // the dry mass is that plus the engine in the hold. Keeping the two
+        // apart is what stops the geometry going circular.
         for hull in [l, m, g] {
-            let cost = hull.cost_fraction(&cfg) * cfg.general_vehicle_cost;
-            assert!((hull_dry_mass(hull, &cfg).kilotons() - cost).abs() < 1e-12);
+            let shell = hull.cost_fraction(&cfg) * cfg.general_vehicle_cost;
+            assert!((hull_shell_mass(hull, &cfg).kilotons() - shell).abs() < 1e-12, "{hull:?} shell");
+            let mounted = hull.drive_volume(&cfg).hull_units_cubed() * cfg.cargo_unit_size;
+            assert!((hull_dry_mass(hull, &cfg).kilotons() - shell - mounted).abs() < 1e-12, "{hull:?} dry");
+            // Cost is still exactly dry mass, which is the half of R-O57 that
+            // must not drift: a faster hull is a dearer one, by its own mass.
+            assert!(
+                (hull_cost(hull, &cfg).kilotons() - hull_dry_mass(hull, &cfg).kilotons()).abs() < 1e-12,
+                "{hull:?} cost must be dry mass"
+            );
         }
 
         // What survives of roles §6's 0/1/2: the *ordinal* content. Each larger
@@ -7536,22 +7709,50 @@ mod tests {
         ] {
             let got = sim.founding_infra(hull);
             let got_band = sim.founding_infra_band(hull);
+            // **Near the rung, not on it, since T-96.** `founding_infra` is the
+            // recycled hull's minerals, and a hull now masses its drive as well
+            // as its shell — so a scrapped ship delivers its engine into the new
+            // colony's stock too, which is conservation and not a rounding. The
+            // rung coincidence was never designed: it fell out of
+            // `founding_infra == hull_cost` while hull cost *was* the cost
+            // ladder exactly. The drift is +0.003 / +0.038 / +0.119 Bands.
+            //
+            // **R-O87's identity is untouched** and that is the load-bearing
+            // part: deepening and founding still buy the same works per mineral,
+            // because both sides moved together —
+            // `a_mineral_buys_the_same_works_whether_it_deepens_or_founds`.
             assert!(
-                (got_band.bands() - rung.band().bands()).abs() < 1e-9,
-                "{hull:?} founds at {got_band} ({got}), want {rung}"
+                (got_band.bands() - rung.band().bands()).abs() < 0.15,
+                "{hull:?} founds at {got_band} ({got}), want within 0.15 Bands of {rung}"
             );
+            assert!(got_band.bands() >= rung.band().bands(), "{hull:?} founds at or above its rung, never below");
         }
         let m_infra = sim.founding_infra(HullType::MediumSystems);
         let g_infra = sim.founding_infra(HullType::GeneralSystems);
 
-        // And the prices those rungs correspond to: `Infra I costs minerals I`.
+        // And the prices those rungs correspond to: `Infra I costs minerals I`
+        // (R-O80). **The hull now lands *on or above* its rung rather than
+        // exactly on it** (T-96): `founding_infra` is the recycled hull's
+        // minerals and a hull masses its drive as well as its shell, so the
+        // excess is the engine going into the melt. R-O80's claim is about the
+        // two *ladders* being one ladder and is untouched; what broke is a
+        // coincidence between the hull ladder and the rungs, which nobody chose.
         for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
+            let cost = hull_cost(hull, &sim.config);
             let rung = infra_rung_of(sim.founding_infra(hull), &sim.config);
             let priced = infra_rung_price(rung, &sim.config);
+            assert!(priced <= cost + Price::new(1e-12), "{hull:?}: rung {rung} prices at {priced}, hull costs {cost}");
             assert!(
-                (priced - hull_cost(hull, &sim.config)).abs() < Price::new(1e-12),
-                "{hull:?}: rung {rung} prices at {priced} but the hull costs {}",
-                hull_cost(hull, &sim.config)
+                infra_rung_price(rung + 1, &sim.config) > cost,
+                "{hull:?} must not reach the rung above: costs {cost}, rung {} prices at {}",
+                rung + 1,
+                infra_rung_price(rung + 1, &sim.config)
+            );
+            // The shell alone is still exactly the rung, which is the half of
+            // R-O80 that is a statement about the ladders.
+            assert!(
+                (priced - hull_shell_mass(hull, &sim.config).on_scale::<units::Cost>()).abs() < Price::new(1e-12),
+                "{hull:?}: the shell must still price at its rung"
             );
         }
 
@@ -8630,11 +8831,19 @@ mod tests {
         // the schedule as what it is — the two constants, composed — and assert
         // separately that a yard approaches it without arriving.
         for (hull, want) in
-            [(HullType::LimitedSystems, 2.2), (HullType::MediumSystems, 3.0), (HullType::GeneralSystems, 12.0)]
+            // **Moved by T-96**, and correctly: `t_build` tracks hull mass, and a
+            // hull now masses its drive as well as its shell. ~~2.2 / 3.0 /
+            // 12.0~~ — a bigger engine is more to fabricate, and the General
+            // hull's is the biggest because drive scales with the hold.
+            [
+                (HullType::LimitedSystems, 2.2010),
+                (HullType::MediumSystems, 3.0921),
+                (HullType::GeneralSystems, 15.1544),
+            ]
         {
             let m = hull_cost(hull, &sim.config).on_scale::<units::Mass>().kilotons();
             let limit = sim.config.build_lead_years + m / sim.config.fab_cap;
-            assert!((limit - want).abs() < 1e-9, "{hull:?} floor is {limit} yr, schedule says {want}");
+            assert!((limit - want).abs() < 1e-3, "{hull:?} floor is {limit} yr, schedule says {want}");
             let got = sim.build_time(yard, hull_cost(hull, &sim.config));
             assert!(got > want, "{hull:?} builds in {got} yr, under its own floor {want}");
         }
@@ -8656,10 +8865,17 @@ mod tests {
         // infrastructure rung costs minerals, minerals are mass, so a rung has a
         // build time by the same rule. `Infra I` is priced as a Medium hull
         // (R-O80), so it takes a Medium hull's time.
+        // **Against the shell, since T-96**: a Medium *hull* now masses its drive
+        // too, so it takes longer than the rung its shell prices at. The rule
+        // being pinned is that `build_time` is a pure function of mass with no
+        // hull table in it, and that is what equal masses giving equal times
+        // says.
+        let shell = hull_shell_mass(HullType::MediumSystems, &sim.config).on_scale::<units::Cost>();
         assert!(
-            (sim.build_time(yard, infra_rung_price(1, &sim.config)) - m).abs() < 1e-9,
-            "a rung priced like a Medium hull takes a Medium hull's time"
+            (sim.build_time(yard, infra_rung_price(1, &sim.config)) - sim.build_time(yard, shell)).abs() < 1e-9,
+            "equal masses must take equal time, whatever the order is for"
         );
+        assert!(m > sim.build_time(yard, shell), "a hull with a drive in it takes longer than its bare shell");
     }
 
     /// **The soft floor is the whole point of §3.2, so pin the floor and not the

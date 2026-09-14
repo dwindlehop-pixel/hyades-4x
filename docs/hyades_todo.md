@@ -135,6 +135,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **T-90** — live local scarcity | **T-90** (refuted), **R-O91** (answered) | T-76 | **T-91** | `CLAUDE.md` §2's rule that a fix needs a *mechanism* check beside the objective — written down before the measurement and it is what refused this one; and "probe past the value you intend to ship", which is what separated *inert axis* from *gain too small* | **My own diagnosis from the previous landing.** §7.4 said outpost selection being colour-blind was why banks are mono-coloured. The term is genuinely a constant and correcting it changes nothing: the empire already mines a balanced mix, and **a hold is filled from exactly one rock**, so every delivery is mono-coloured however the rocks are chosen. Code reverted; the diagnosis is marked refuted where it was written rather than quietly dropped |
 | **T-91 / R-O92** — the milk run | **T-91**, **R-O92** | T-76 | **T-92**, **T-93** | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, error bar *tightened*) and **probe past the value you intend to ship** — 4 and 6 are where it breaks and that is why 2 is known to be a peak rather than a direction; the mechanism check written down in advance, which had refused T-90 and passed this; R-O89's welded pickup site left alone rather than re-litigated | **§6.23's closing sentence**, by me — *"no loading rule and no delivery rule reaches that, because both act on ore that has already been mined from the wrong rocks"*. A loading rule does reach it, and is +55%. The sentence was right about *which ore* and wrong that nothing could mix it, because it assumed the voyage shape it was written under. **And T-91's own premise is now half-refuted**: the atomicity was real, and removing it exposed that freight is only 1.73% of what enters a bank (T-92) |
 | **T-94 / R-O93** — the logistic is solved, not stepped | **T-94**, **R-O93** | T-24 | **T-95** | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, 5.7 SE); its `yr/s` **and** `ns/event` rule, which is what shows the `exp` is free rather than assumed to be; design law #16 at the denominator | **Design law #11's `r < 2` ceiling**, which T-64 derived from the conjugacy to the logistic map and which is a property of the *Euler step*, not of the model — the closed form is monotone at any rate. **R-O84's ratification of `growth_rate = 0.873`**, whose operating point and plateau map are both consumed; the value is carried, not re-measured. And **the undershoot below `K`**, which T-67 cited as supporting evidence for taking infrastructure out of the minimum — T-67's conclusion stands on its own (razing works must not move people) but that particular argument was resting on truncation error |
+| **T-96 / R-MC16** — the drive is a mass, not a stat | **T-96**, **R-MC16** | R-O65 (still blocked), T-24 | **T-97**, **T-98** | R-MC16's own words — volume is the ENG ceiling, realized thrust is a Design quantity paid for in minerals; design law #11 (the drive masses and costs what it occupies) and #3 (the consolidation advantage stops being repaid in turnaround); R-O57 (cost stays exactly dry mass); `CLAUDE.md` §2's replication rule and its instruction to write the mechanism check down first — the round-trip ratio, which moved 1.252 → 1.011 | **R-O58's `a_empty` is size-independent**, which was true only while thrust *was* dry mass — empty acceleration now rises with size (1.00 / 2.37 / 5.06 g), which is the point. **§3.3's build schedule** 2.2/3.0/12.0 → 2.201/3.092/15.154, because `t_build` tracks hull mass and a hull now masses its drive. **The founding-infra rung coincidence** drifts +0.003/+0.038/+0.119 Bands — R-O80's claim about the two ladders is untouched (the shell still prices exactly at its rung) and R-O87's works identity survives, because both sides moved together |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -201,6 +202,36 @@ sweeping, and do not reuse the old surface.
 
 ---
 
+### T-97. `drive_volume_fraction` is a Design quantity in a config field
+
+**Opened by T-96**, which wired the drive law but could only give it one global
+value.
+
+R-MC16 requires the drive fraction `φ` to be **per-`Class`**: realized thrust is
+what a hull *bought*, and design law #10 needs it to vary or observed
+acceleration names the hull class outright — *"if thrust were a fixed function of
+hull type, the inverse problem would collapse, and the observation model with
+it."* Today `SimConfig::drive_volume_fraction` is one number for every hull of
+every class, so it does exactly what the law forbids.
+
+**It is blocked on `on_refit` (T-08), not on the algebra.** R-O47b forbids a
+Design write reaching a hull already in the field, so `φ` moving onto `Class`
+needs the staggered-realization rule before it means anything — a fast Design
+must arrive with the ships built after it, not with the fleet.
+
+**And R-O65 is waiting on the same landing.** R-MC16 conditioned flattening
+`hull_thrust_to_mass`'s 1.2 / 1.1 / 1.0 Systems ladder on a Design write reaching
+thrust. T-96 is not that write; T-97 is.
+
+What it unlocks, in the order the value is available: a **freight Design** that
+trades hold for speed on long runs, a **ROU** that is the fastest thing in the
+game because it spends its volume on drive rather than on hold (the reason
+R-MC16 refused to make thrust a hull constant), and the concealment combo design
+law #10 describes — arming a fleet is loud *unless you also buy thrust*, which is
+only a combo if thrust is purchasable.
+
+---
+
 ### T-92. A centre's bank is 98.3% its own single-coloured planet
 
 **T-91's residual, and the atomicity one level below freight.**
@@ -261,6 +292,77 @@ It is not urgent — the margin against T-24's floor is ~23x at 1,500 yr — and
 fix is the same family as T-52's candidate scan: a spatial or incremental
 structure over the player's piles, **measured**, because R-O70 already recorded
 that fewer items is not automatically faster when the traversal order degrades.
+
+---
+
+### ~~T-96. A laden GSV is the most sluggish hull in the game~~ — **DONE (R-MC16, §2.3)**
+
+> **The drive is a mass, not a stat.** Civilian motion priced thrust as
+> `civilian_accel_g × dry_mass`, and dry mass is the *shell* — so thrust scaled
+> `r²` while the load scaled `r³`, laden acceleration fell as `1/r`, and design
+> law #3's consolidation advantage was being paid back in turnaround. A laden GSV
+> flew at **0.317×** a laden MSV and took **1.25×** as long door to door.
+>
+> `thrust = k · (δ·shell + ρ·φ·(hold − V_reserved))`. Three quantities and they
+> are the three the drive needs: **`k = 18.21`** specific thrust (kt·g per kt of
+> drive — one unit of engine, one proportionate unit of acceleration),
+> **`δ = 0.05`** the share of a hull's own structure that is drive, **`φ = 0.01`**
+> the share of usable interior a Design mounts. Volume comes out of the hold and
+> its mass out of the mineral budget, so speed is paid for in cargo, mass and
+> price at once.
+>
+> **`k` is derived, not chosen**: solved so an empty Limited Systems hull still
+> flies at 1 g, which is what makes the change landable — scouts and miners fly
+> small hulls mostly empty and stay where they were (LCV 0.911 g).
+>
+> **`δ` is load-bearing.** An LCV's reserved core (0.138) exceeds its entire hold
+> (0.026), so a purely volumetric drive gives it **zero thrust** and a scout never
+> moves. At `δ = 0` an LSV drops from 1.00 g to 0.06 g.
+>
+> **Result.** GSV ÷ equal-cost MSV fleet: laden acceleration **0.317 → 0.814**,
+> empty **1.00 → 2.14**, round trip **1.252 → 1.011**. Empty acceleration now
+> rises with size (1.00 / 2.37 / 5.06 g) — the ocean-liner statement, falling out
+> of the same `r³`-over-`r²` that gives design law #3 its cost advantage, with
+> nothing tuned to produce it. The General hull's disadvantage is **removed
+> rather than reversed**, and its 2.7× throughput-per-mineral advantage survives.
+>
+> Objective, pooled over eight seeds including four it was not chosen against:
+> **+11.33% ± 4.84 work-years, 7/8 (2.3 SE)**, colony-years +1.02% ± 0.59 (5/8,
+> marginal), throughput −4.7%. Read the mechanism first: the round-trip ratio is
+> what this change is about and it moved decisively; the objective agrees in sign
+> at a bar this file calls a coin on its edge, and one seed is strongly negative.
+>
+> **Nothing builds a GSV freighter yet**, so none of that gain is the General
+> hull being used — it is the whole fleet flying faster laden. Freight hull
+> choice is the follow-on (T-98), and it must be **ablated apart** from this one.
+>
+> **Successor: T-97** — `φ` has to move onto `Class` or design law #10's inverse
+> problem collapses.
+
+---
+
+### ~~T-98. Freight never builds a General hull~~ — open
+
+`role_hull_type(Role::Freighter)` is hardcoded to `MediumSystems`, with the doc
+comment *"spec: MSV/GSV, picking the cheaper"* — a rule that was correct under
+the pre-R-O58 ladder, where fragmenting genuinely was cheaper per unit hauled,
+and has been backwards since. Cost per kilotonne hauled is **0.109** for a Medium
+and **0.032** for a General.
+
+A freighter is never *ordered*: it is spawned as the second half of a mining pair
+and priced by `role_cost(Role::Freighter, …)`, so there is no path for a Design
+to choose its hull. `assign_role` closes the loop the other way — a General
+Systems hull maps to `Role::Colonizer`.
+
+**T-96 removed the reason not to.** The turnaround penalty that made a big
+freighter a bad idea is gone (round trip 1.252 → 1.011). The shape is a
+`FreighterPolicy` mirroring `ColonizerPolicy`, default `CheapestViable` so it
+lands bit-identical, swept against work-years. **Ablate it apart from T-96** —
+two changes addressing one diagnosis, which is R-O89's standing lesson.
+
+The counterweight to measure rather than assume is **indivisibility**: a General
+hull costs 1.32 kt against a Medium's 0.109, and §6.19c found 98.3% of production
+decisions already unable to pay their bill.
 
 ---
 

@@ -1247,6 +1247,19 @@ one, stop and flag it.
    combat, without combat: a laden General hull is dramatically slower than an empty
    one and a laden Limited hull barely differs, so **large hulls broadcast their load
    state and small ones do not** (standing-layer §9.2).
+
+   **T-96 kept the broadcast and deleted the tax.** Those are two different
+   things and thrust-∝-dry-mass conflated them: because thrust was the *shell*
+   (`r²`) and the load was the *hold* (`r³`), laden acceleration fell as `1/r`
+   and the law's own cost advantage was being repaid in turnaround — a laden GSV
+   flew at **0.317×** a laden MSV. With thrust drawn from mounted drive instead
+   (R-MC16), drive and cargo both scale `r³`, the shell term shrinks away, and
+   the round trip goes **1.252 → 1.011** against an equal-cost Medium fleet. The
+   *signature* is untouched, which is what §9.2 actually needs: a General hull
+   still drops from 5.06 g empty to 0.23 g laden, a 22× swing, against a Limited
+   hull's 1.00 → 0.70. **Read a law about a ratio as a claim about the ratio** —
+   "bigger is more efficient" was being paid for in a dimension nobody had
+   checked, and checking it took one round-trip column.
 4. **The Ship Testing Arena is the required empirical harness** for setting per-class
    `r_eq`. These values cannot be derived analytically.
 5. **`most_needed_center` is retained permanently as a test oracle** (single-supply
@@ -1666,6 +1679,8 @@ changes how you *work*, not what is left to do:
   | **T-88, 3 seats, 4 kyr — `ns/event` 22,394** | 31,337 | **68.9 yr/s** | **28×** |
   | R-O92 off (`max_pickup_stops = 1`), 3 seats, 1.5 kyr — `ns/event` 26,494 | ~32,000 | 69.2 yr/s | 28× |
   | **R-O92 (the milk run), same pair — `ns/event` 29,786** | ~34,500 | **57.8 yr/s** | **23×** |
+  | T-94 (logistic in closed form), 3 seats, 800 yr — `ns/event` 50,637 | ~34,700 | 50.4 yr/s | 20× |
+  | **T-96 (the drive is a mass), same bed — `ns/event` 51,732** | ~35,100 | **48.0 yr/s** | **19×** |
 
   **T-88's last row is the one to read, and it is `ns/event` that says why.**
   Per-event cost went from ~174,000 ns at T-87 to **22,394** — not because any

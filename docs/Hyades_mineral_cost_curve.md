@@ -477,6 +477,13 @@ its role's `τ` multiplier and `V_reserved`:
 | ROU | 0.10 | 0.73 | 0.0950 | 0.553 | 0.169 | 0.172 | 0.0961 | 0.270 | **0** | 0 |
 | GOU | 1.00 | 0.93 | 0.0990 | 1.819 | 6.020 | 0.054 | 5.090 | 2.903 | **2.19** | 2.19 |
 
+> **Amended by T-96: every hull now mounts a drive, and the drive has mass.**
+> The `cargo` column above is the hold less the role's core; since T-96 it is
+> also less the **drive volume** a Design mounts, and the `cost` column is the
+> shell *plus* that drive. Neither the `hold` column nor R-MC15's
+> `F_mass = F_cost^(3/2)` tie moves — the rung is the hold, and a bigger engine
+> must not relabel it. See "the drive is a mass, not a stat" below.
+
 Seven things this gets right that the superseded sketch did not, and they are
 the reason to adopt it:
 
@@ -548,6 +555,136 @@ spends it on hold and armour. So:
   cannot yet express, because no Design write reaches thrust. Flatten it *when*
   that write lands (`hyades_todo.md` T-08, `on_refit`), not before — it is
   MC-tuned combat surface (`CLAUDE.md` §6).
+
+#### R-MC16 — **resolved (T-96): the drive is a mass, not a stat**
+
+R-MC16 ratified the shape and left the implementation open: *"Volume sets the
+ENG-slot ceiling a hull can mount; realized thrust is a Design quantity drawn
+from `b_role · V` and paid for in minerals."* This is that, wired in.
+
+**What it replaces.** Civilian motion priced thrust as
+`civilian_accel_g × dry_mass`, and dry mass is the **shell** — so thrust scaled
+with `r²` while the load it had to push scaled with `r³`. Laden acceleration
+therefore fell as `1/r` *by construction*, and the consolidation advantage design
+law #3 grants on cost was being paid back in turnaround:
+
+| | LCV | LSV | MSV | GSV | GOU |
+|---|---|---|---|---|---|
+| laden `a` (g), before | 1.000 | 0.685 | **0.110** | **0.035** | 0.341 |
+| round trip (yr), before | 75.4 | 76.2 | **88.2** | **110.4** | 78.8 |
+
+A laden General hull flew at **0.317×** a laden Medium and took **1.25×** as long
+door to door.
+
+**The law.** Three quantities, and they are the three components the drive needs:
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `k` | **specific thrust** | kt·g of thrust per kt of drive | `SimConfig::drive_specific_thrust` = **18.21** |
+| `δ` | **structural drive fraction** | share of the shell that is drive | `SimConfig::structural_drive_fraction` = **0.05** |
+| `φ` | **drive volume fraction** | share of usable interior given to drive | `SimConfig::drive_volume_fraction` = **0.01** |
+
+```text
+V_drive   = φ · (hold − V_reserved)          volume, taken from the hold
+m_drive   = δ · shell + ρ · V_drive          thrust-producing mass
+thrust    = k · m_drive
+dry mass  = shell + ρ · V_drive              = cost (R-O57)
+cargo     = (hold − V_reserved − V_drive) · ρ
+a         = thrust / (dry + cargo + pop)
+```
+
+`ρ` is `cargo_unit_size`, the one density that turns a volume into a mass — a
+kilotonne is a kilotonne whether it is ore or engine (design law #11).
+
+**`k` is derived, not chosen.** It is solved so an **empty Limited Systems hull
+still flies at 1 g**, which is what it did under the law this replaces. That
+anchor is what makes the change landable: scouts and miners fly small hulls
+mostly empty, so they stay where they were (an LCV lands at 0.911 g) and the
+change is legible as something that happened to the *large* end of the ladder.
+
+**`δ` is not belt-and-braces; without it the law is degenerate.** An LCV's
+reserved core (0.138) exceeds its entire hold (0.026), so its usable interior is
+**zero** — a purely volumetric drive gives it zero thrust and a scout never
+moves. Dropping `δ` to zero takes an LCV to nothing and an LSV from 1.00 g to
+**0.06 g**. The structural term is the statement that part of a ship's drive —
+nozzles, plumbing, radiators — *is* its structure, which is why it is already
+inside the shell mass and adds none.
+
+**What it does.** Drive volume and cargo both scale with the hold (`r³`) while
+the shell scales with area (`r²`), so the shell term shrinks away with size and
+laden acceleration becomes **size-independent**. Nothing is tuned to produce
+that — it is the same `r³`-over-`r²` that gives design law #3 its cost
+advantage, now reaching acceleration:
+
+| | LCV | LSV | MSV | GSV | GOU |
+|---|---|---|---|---|---|
+| empty `a` (g), before | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| **empty `a` (g), after** | 0.911 | 1.000 | 2.369 | **5.059** | 1.281 |
+| laden `a` (g), before | — | 0.685 | 0.110 | **0.035** | 0.341 |
+| **laden `a` (g), after** | — | 0.702 | 0.283 | **0.230** | 0.579 |
+
+**Larger now means faster**, which is the ocean-liner statement the ladder was
+missing: an empty GSV flies at 5.06 g against an LSV's 1.00, because it has
+somewhere to put an engine and a small hull does not.
+
+**Read the round trip, not the laden leg, and the claim gets smaller and
+truer.** A laden GSV is still **0.81×** a laden MSV — the hold outgrows the
+shell faster than the drive recovers, so parity is approached and not reached on
+that leg alone. What closes it is the *return*: the General hull comes back empty
+at **2.13×** the Medium's rate, and door to door the two are level.
+
+| GSV ÷ equal-cost MSV fleet | before | after |
+|---|---|---|
+| laden acceleration | 0.317 | 0.814 |
+| empty acceleration | 1.000 | 2.135 |
+| **round trip** | **1.252** | **1.011** |
+| throughput per kilotonne of hull | 2.736 | 2.855 |
+
+So the General hull's disadvantage is **removed** rather than reversed, and its
+standing 2.7× throughput advantage per mineral survives intact — which is the
+honest form of "competitive in throughput and turnaround".
+
+**`φ = 0.01` is ratified against the alternatives, not assumed**
+(`examples/drive_probe`, `δ` fixed and the Limited hull's empty acceleration
+pinned in each row):
+
+| `φ` | GSV ÷ MSV round trip | MSV cost | MSV kt/yr/kt$ | GSV kt/yr/kt$ | LCV empty |
+|---|---|---|---|---|---|
+| *before* | 1.252 | 1.000 | 1.000 | 1.000 | 1.000 |
+| 0.005 | 1.036 | 1.046 | 1.031 | 1.126 | 0.977 |
+| **0.01** | **1.011** | 1.092 | **1.016** | **1.044** | 0.911 |
+| 0.02 | 1.001 | 1.184 | 0.954 | 0.867 | 0.915 |
+| 0.05 | 0.997 | 1.461 | 0.770 | 0.548 | 0.814 |
+
+Turnaround parity arrives by `0.01` and everything past it is paid for in hold
+and minerals for no further gain — the drive stops buying speed and starts
+buying mass. At `0.01` throughput per kilotonne of hull **improves** for both
+hulls: the drive pays for itself in shorter voyages.
+
+**Three consequences that are not the headline and are load-bearing:**
+
+- **`t_build` moves, correctly.** Time tracks hull mass (T-68) and a hull now
+  masses its drive, so §3.3's schedule goes **2.2 / 3.0 / 12.0 → 2.201 / 3.092 /
+  15.154 yr**. A bigger engine is more to fabricate.
+- **A recycled hull founds slightly above its rung.** `founding_infra` is the
+  hull's minerals and those now include the engine, so the Empty / I / II
+  coincidence drifts by **+0.003 / +0.038 / +0.119 Bands**. R-O80's claim is
+  about the two *ladders* being one ladder and is untouched — the shell alone
+  still prices exactly at its rung — and **R-O87's works identity survives
+  intact**, because deepening and founding both moved together.
+- **Combat is untouched, and by cancellation rather than by care.**
+  `Combatant::max_accel` is `hull_base_thrust · factor / hull_dry_mass` and
+  `hull_base_thrust` is thrust-to-mass × dry mass, so the dry mass cancels
+  exactly whatever it is. `tests/balance.rs` reproduces its goldens.
+
+**R-O65 stays open.** R-MC16 conditioned flattening `hull_thrust_to_mass`'s
+1.2 / 1.1 / 1.0 Systems ladder on *a Design write reaching thrust*, and this is
+not that write: `φ` is a global config field, not a per-`Class` Design value. It
+has to be per-Class — design law #10 needs realized thrust to vary, or observed
+acceleration names the hull class outright and the inverse problem collapses.
+Moving it onto `Class` is **T-97**, and it is blocked on `on_refit` (T-08) for
+the realization rule, since R-O47b forbids a Design write reaching a hull already
+in the field.
 
 ### 2.4 Class modulates the permutation, it doesn't replace it
 
@@ -1320,6 +1457,19 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   becomes the piecewise mass ladder starting at 31.62. The progression is a
   default subject to Monte-Carlo verification that it creates no colony-years
   bottleneck; the *rules* are settled.
+- **~~R-MC16~~ — resolved in §2.3 by T-96: the drive is a mass, not a stat.**
+  `thrust = k · (δ·shell + ρ·φ·(hold − V_reserved))`, with `k = 18.21` solved so
+  an empty Limited Systems hull still flies at 1 g. Drive volume comes out of the
+  hold and its mass out of the mineral budget, so a Design that buys speed pays
+  in cargo, mass **and** price. Laden acceleration becomes size-independent
+  because drive and cargo both scale `r³` against a shell that scales `r²`: the
+  General hull's round trip goes **1.252 → 1.011** against an equal-cost Medium
+  fleet, and empty acceleration now *rises* with size (1.00 / 2.37 / 5.06 g). The
+  structural term `δ` is load-bearing rather than decorative — an LCV's reserved
+  core exceeds its whole hold, so a purely volumetric drive gives it zero thrust
+  and a scout never moves. **R-O65 stays open**: this is not yet the per-`Class`
+  Design write it was conditioned on (T-97, blocked on T-08). Original text
+  follows.
 - **R-MC16 (new, §2.3): thrust scales with volume as a *capacity*, not as a
   per-`HullType` acceleration.** Volume sets the ENG-slot ceiling a hull can
   mount; realized thrust is a Design quantity drawn from `b_role · V` and paid
