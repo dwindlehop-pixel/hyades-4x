@@ -12,6 +12,17 @@
 //! counts the crews instead of arguing about them. No engine change: the log
 //! already records every miner that parks and where.
 //!
+//! **Since T-71 it is also the concentration instrument** (`Hyades_industry.md`
+//! §4.5). The crowding law predicts **fewer, larger, closer outposts**: a rich
+//! body genuinely rewards a big crew, so the fleet concentrates rather than
+//! spreading, and freight cost scales with *sites and distance* rather than with
+//! crew. `CLAUDE.md` §2 is explicit that a claim about site count has to be read
+//! from a census and must not be inferred from the objective — an objective that
+//! moved the right way would be consistent with the prediction and would not be
+//! evidence for it. So all three halves of "fewer, larger, closer" are printed
+//! side by side: site count, mean crew and mean ore per site, and mean distance
+//! from the working player's homeworld.
+//!
 //! Run: `cargo run --release --example crew_census`
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
@@ -26,19 +37,31 @@ fn main() {
         let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
         let autopilots: Vec<Box<dyn Autopilot>> =
             (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
+        // Homeworld positions before the sim consumes the galaxy, so "closer"
+        // has something to be closer *to*.
+        let homes: Vec<Vec3> = (0..PLAYERS).map(|p| galaxy.planet(galaxy.homeworlds[p]).position).collect();
+        let planet_pos: Vec<Vec3> = galaxy.planets.iter().map(|p| p.position).collect();
         let mut sim = Simulation::new(galaxy, SimConfig::new(seed), autopilots);
-        sim.set_log_filter(LogFilter::none().with(LogCategory::Vehicles));
+        sim.set_log_filter(LogFilter::none().with(LogCategory::Vehicles).with(LogCategory::Mining));
         sim.run();
 
         // Distinct miners parked per planet, and by which player, so a
         // double-worked rock can be told from a re-tasked one.
         let mut per_planet: BTreeMap<u32, Vec<(u32, u64)>> = BTreeMap::new();
+        // Ore lifted per body — "larger" in the sense that matters to freight.
+        let mut ore: BTreeMap<u32, f64> = BTreeMap::new();
         for r in sim.log().iter() {
-            if let LogEvent::VehicleParked { player, vehicle, role: Role::Miner, at } = r.event {
-                let e = per_planet.entry(at.0).or_default();
-                if !e.iter().any(|&(_, v)| v == vehicle.0) {
-                    e.push((player, vehicle.0));
+            match r.event {
+                LogEvent::VehicleParked { player, vehicle, role: Role::Miner, at } => {
+                    let e = per_planet.entry(at.0).or_default();
+                    if !e.iter().any(|&(_, v)| v == vehicle.0) {
+                        e.push((player, vehicle.0));
+                    }
                 }
+                LogEvent::MineralsExtracted { planet, amount, .. } => {
+                    *ore.entry(planet.0).or_default() += amount;
+                }
+                _ => {}
             }
         }
 
@@ -53,11 +76,34 @@ fn main() {
             })
             .count();
 
+        // "fewer, larger, closer" — the three halves of §4.5's prediction, each
+        // over the *worked* sites only, which is the population the prediction
+        // is about.
+        let crews: usize = per_planet.values().map(|v| v.len()).sum();
+        let mean_crew = crews as f64 / outposts.max(1) as f64;
+        let worked_ore: f64 = per_planet.keys().filter_map(|k| ore.get(k)).sum();
+        let mean_ore = worked_ore / outposts.max(1) as f64;
+        let mut dist_sum = 0.0;
+        let mut dist_n = 0usize;
+        for (&pid, crew) in &per_planet {
+            let Some(&pos) = planet_pos.get(pid as usize) else { continue };
+            for &(player, _) in crew {
+                if let Some(&home) = homes.get(player as usize) {
+                    dist_sum += home.distance(pos);
+                    dist_n += 1;
+                }
+            }
+        }
+        let mean_dist = if dist_n > 0 { dist_sum / dist_n as f64 } else { 0.0 };
+
         println!(
             "seed {seed:>6}: outposts worked = {outposts:>5}   with >1 miner = {:>5} ({:.1}%)   \
              max crew = {max_crew}   of those, cross-player = {cross_player}",
             multi.len(),
             100.0 * multi.len() as f64 / outposts.max(1) as f64,
+        );
+        println!(
+            "        §4.5 concentration: mean crew = {mean_crew:.2}                mean ore/site = {mean_ore:.1} kt   mean distance = {mean_dist:.2} ly"
         );
         std::io::stdout().flush().unwrap();
     }

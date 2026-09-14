@@ -21,15 +21,35 @@
 //! offers matched by priority block, then distance) and Bertsekas's auction
 //! algorithm (prices as the matching scalar). References in the spec doc.
 
+use crate::galaxy::PlayerId;
+use crate::resources::Basic;
+
 pub type Entity = u64;
 
-/// What is being exchanged. One `Book` per (owner, commodity) — or per
-/// commodity globally once cross-empire bidding (todo §1) lands.
+/// What is being exchanged. One `Book` per (owner, commodity) for the
+/// intra-empire haulage books; **one book per commodity globally** for the
+/// cross-empire Exchange (`Hyades_politics_trade_and_intelligence.md` §3.1).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Commodity {
     /// Basic-mineral haulage: bids are production centers (price =
     /// `mineral_pressure_of`), asks are laden/loading freighters.
+    ///
+    /// **Colour-blind, and that is correct for haulage** — an intra-empire
+    /// freighter moves whatever its origin has toward whoever needs most, and
+    /// R-IND17 already scores that leg by *bill completion* rather than by
+    /// colour. The colour axis below is for the Exchange, where the two sides
+    /// are different empires and the whole point is which colour moves.
     Minerals,
+    /// **One basic colour, priced in `$`** (T-83). This is the Exchange's
+    /// commodity and the reason `Commodity` needed an axis at all.
+    ///
+    /// §5.1 made works bills colour-payable and T-73 measured what that costs
+    /// on a log-normal per-colour field: **1,494 of 1,515 banks are
+    /// single-coloured**, mean dominant share 0.789, and every works ratio
+    /// except `1:0:0` demands all three. A colour-blind market cannot fix
+    /// that — moving "minerals" from a Yellow-rich empire to a Yellow-poor one
+    /// is not a trade anyone can express without naming the colour.
+    Basic(Basic),
     /// Exploitation targets: bids are unexploited planets (price = rank,
     /// posted on scan / card re-rank events), asks are production centers
     /// with free output. Colonization fills are exclusive (qty 1).
@@ -49,6 +69,19 @@ pub struct Offer {
     /// a light-lag-aware caller can pre-adjust by substituting effective
     /// distance for geometric distance before posting.
     pub pos: [f64; 3],
+    /// **Who is offering** (T-83).
+    ///
+    /// The intra-empire books never needed this — one book per owner meant the
+    /// owner was the book. A cross-empire book has both sides in it, and a fill
+    /// has to know **who owes whom**: escrow is debited from one purse and
+    /// credited to another, and §3.3's default case has to know whose cargo was
+    /// lost. Without it a `Fill` names two entities and no counterparties.
+    ///
+    /// It is also what makes a self-trade detectable, which §4's Corner needs:
+    /// an empire outbidding for a mineral it has no use for is a legitimate
+    /// play, but an empire filling its *own* ask is a no-op that would mint
+    /// reputation and burn `$` for nothing.
+    pub owner: PlayerId,
 }
 
 /// One executed pairing. The caller turns fills into scheduled events
@@ -59,6 +92,19 @@ pub struct Fill {
     pub bid: Entity,
     pub ask: Entity,
     pub qty: f64,
+    /// The counterparties (T-83). Equal for an intra-empire haulage fill;
+    /// different for an Exchange trade, which is what makes it one.
+    pub buyer: PlayerId,
+    pub seller: PlayerId,
+    /// **The price this cleared at** (T-77).
+    ///
+    /// Carried on the fill because it cannot be looked up afterwards: a wave
+    /// *drops exhausted offers*, so the bids that matched in full — exactly the
+    /// ones a caller most wants to price — are gone from the book by the time it
+    /// reads the fills. The first implementation of escrow looked the bid up
+    /// after the fact and priced **307 of 942 fills at zero**, which is every
+    /// cross-empire fill that matched completely.
+    pub price: f64,
 }
 
 /// A two-sided order book. At most one live bid and one live ask per
@@ -135,14 +181,36 @@ impl Book {
     /// Determinism: total order on every comparison; no float NaN can
     /// enter (debug-asserted on post); identical books ⇒ identical fills.
     pub fn match_wave(&mut self) -> Vec<Fill> {
+        self.match_wave_with(false)
+    }
+
+    /// **A wave that refuses to pair an empire with itself** (T-77).
+    ///
+    /// The Exchange's books are **cross-empire by construction** (§3.1): every
+    /// empire posts both sides of every colour, because a centre is short one
+    /// colour and long another at the same time (T-73 measured 1,494 of 1,515
+    /// banks single-coloured). An owner-blind matcher on such a book spends most
+    /// of its capacity pairing an empire with itself.
+    ///
+    /// **Measured before this existed: 608 of 942 fills were self-trades** —
+    /// 65% — and they are worse than merely useless, because a matched quantity
+    /// is *reserved*. Every self-trade consumed depth that a real counterparty
+    /// could have taken, so the anti-herding fix that makes the matcher good was
+    /// working against it here.
+    ///
+    /// The intra-empire haulage books (`Commodity::Minerals`, `BuildTarget`)
+    /// are per-owner and *want* same-owner pairings, which is why this is a
+    /// parameter and not a change to the matcher's one behaviour.
+    pub fn match_wave_cross_empire(&mut self) -> Vec<Fill> {
+        self.match_wave_with(true)
+    }
+
+    fn match_wave_with(&mut self, cross_empire: bool) -> Vec<Fill> {
         // Deterministic bid order: price desc, entity asc.
         let mut bid_idx: Vec<usize> = (0..self.bids.len()).collect();
         bid_idx.sort_by(|&i, &j| {
             let (a, b) = (&self.bids[i], &self.bids[j]);
-            b.price
-                .partial_cmp(&a.price)
-                .unwrap_or(core::cmp::Ordering::Equal)
-                .then(a.entity.cmp(&b.entity))
+            b.price.partial_cmp(&a.price).unwrap_or(core::cmp::Ordering::Equal).then(a.entity.cmp(&b.entity))
         });
 
         let mut fills = Vec::new();
@@ -153,15 +221,10 @@ impl Book {
                     .asks
                     .iter()
                     .enumerate()
-                    .filter(|(_, a)| a.qty > 0.0)
+                    .filter(|(_, a)| a.qty > 0.0 && !(cross_empire && a.owner == self.bids[bi].owner))
                     .min_by(|(_, a), (_, b)| {
-                        let (da, db) = (
-                            dist2(a.pos, self.bids[bi].pos),
-                            dist2(b.pos, self.bids[bi].pos),
-                        );
-                        da.partial_cmp(&db)
-                            .unwrap_or(core::cmp::Ordering::Equal)
-                            .then(a.entity.cmp(&b.entity))
+                        let (da, db) = (dist2(a.pos, self.bids[bi].pos), dist2(b.pos, self.bids[bi].pos));
+                        da.partial_cmp(&db).unwrap_or(core::cmp::Ordering::Equal).then(a.entity.cmp(&b.entity))
                     })
                     .map(|(ai, _)| ai);
                 let Some(ai) = best else { break };
@@ -170,6 +233,9 @@ impl Book {
                     bid: self.bids[bi].entity,
                     ask: self.asks[ai].entity,
                     qty: q,
+                    buyer: self.bids[bi].owner,
+                    seller: self.asks[ai].owner,
+                    price: self.bids[bi].price,
                 });
                 self.bids[bi].qty -= q; // reservation — the anti-herding fix
                 self.asks[ai].qty -= q;
@@ -187,8 +253,15 @@ impl Book {
 mod tests {
     use super::*;
 
+    /// The pre-T-83 helper: one owner, because these tests are about the
+    /// *matching*, not about who the counterparties are. `owned` below is the
+    /// cross-empire form.
     fn o(e: Entity, price: f64, qty: f64, x: f64) -> Offer {
-        Offer { entity: e, price, qty, pos: [x, 0.0, 0.0] }
+        Offer { entity: e, price, qty, pos: [x, 0.0, 0.0], owner: PlayerId(0) }
+    }
+
+    fn owned(e: Entity, price: f64, qty: f64, x: f64, owner: u32) -> Offer {
+        Offer { entity: e, price, qty, pos: [x, 0.0, 0.0], owner: PlayerId(owner) }
     }
 
     /// Identical books produce identical fills — the determinism contract.
@@ -217,8 +290,8 @@ mod tests {
         b.post_ask(o(101, 0.0, 1.0, 10.0)); // freighter near center 2
         let f = b.match_wave();
         assert_eq!(f.len(), 2);
-        assert!(f.contains(&Fill { bid: 1, ask: 100, qty: 1.0 }));
-        assert!(f.contains(&Fill { bid: 2, ask: 101, qty: 1.0 }));
+        assert!(f.contains(&Fill { bid: 1, ask: 100, qty: 1.0, buyer: PlayerId(0), seller: PlayerId(0), price: 0.9 }));
+        assert!(f.contains(&Fill { bid: 2, ask: 101, qty: 1.0, buyer: PlayerId(0), seller: PlayerId(0), price: 0.6 }));
     }
 
     /// With exactly one unit of supply, the wave reduces to
@@ -232,7 +305,7 @@ mod tests {
         b.post_bid(o(3, 0.8, 1.0, 200.0)); // tie → lower id wins
         b.post_ask(o(100, 0.0, 1.0, 0.0));
         let f = b.match_wave();
-        assert_eq!(f, vec![Fill { bid: 2, ask: 100, qty: 1.0 }]);
+        assert_eq!(f, vec![Fill { bid: 2, ask: 100, qty: 1.0, buyer: PlayerId(0), seller: PlayerId(0), price: 0.8 }]);
     }
 
     /// Unmatched supply/need stays queued — some producers and consumers
@@ -243,7 +316,7 @@ mod tests {
         b.post_bid(o(1, 0.5, 1.0, 0.0));
         b.post_ask(o(100, 0.0, 3.0, 0.0));
         let f = b.match_wave();
-        assert_eq!(f, vec![Fill { bid: 1, ask: 100, qty: 1.0 }]);
+        assert_eq!(f, vec![Fill { bid: 1, ask: 100, qty: 1.0, buyer: PlayerId(0), seller: PlayerId(0), price: 0.5 }]);
         assert_eq!(b.len(), (0, 1)); // 2.0 units of supply still queued
         assert_eq!(b.ask_of(100).unwrap().qty, 2.0);
     }
@@ -259,8 +332,8 @@ mod tests {
         assert_eq!(
             f,
             vec![
-                Fill { bid: 1, ask: 100, qty: 2.0 },
-                Fill { bid: 1, ask: 101, qty: 1.0 },
+                Fill { bid: 1, ask: 100, qty: 2.0, buyer: PlayerId(0), seller: PlayerId(0), price: 0.9 },
+                Fill { bid: 1, ask: 101, qty: 1.0, buyer: PlayerId(0), seller: PlayerId(0), price: 0.9 },
             ]
         );
         assert_eq!(b.ask_of(101).unwrap().qty, 1.0);
@@ -276,5 +349,84 @@ mod tests {
         assert_eq!(b.bid_of(1).unwrap().price, 0.7);
         b.post_bid(o(1, 0.7, 0.0, 0.0));
         assert_eq!(b.len(), (0, 0));
+    }
+    /// **T-83: a fill names who owes whom.**
+    ///
+    /// The intra-empire books never needed this — one book per owner meant the
+    /// owner *was* the book. A cross-empire book has both sides in it, and
+    /// escrow has to be debited from one purse and credited to another
+    /// (`Hyades_politics_trade_and_intelligence.md` §3.3). A `Fill` that names
+    /// two entities and no counterparties cannot settle.
+    #[test]
+    fn a_fill_carries_its_counterparties() {
+        let mut b = Book::new();
+        b.post_bid(owned(1, 0.9, 2.0, 0.0, 3)); // empire 3 wants
+        b.post_ask(owned(100, 0.0, 2.0, 1.0, 7)); // empire 7 has
+        let f = b.match_wave();
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].buyer, PlayerId(3));
+        assert_eq!(f[0].seller, PlayerId(7));
+        assert_ne!(f[0].buyer, f[0].seller, "this is what makes it a trade rather than haulage");
+    }
+
+    /// **The colour axis exists and orders canonically** (T-83).
+    ///
+    /// `Commodity` keys the Exchange's books and §10.5 clears per round, which
+    /// requires the book set to have a *canonical order* — that is the whole
+    /// argument for per-round clearing over continuous matching, because a
+    /// continuous book makes price a function of event ordering and two clients
+    /// that tie-break differently clear at different prices, which is a desync.
+    /// So `Ord` here is load-bearing, not a convenience.
+    #[test]
+    fn the_colour_axis_orders_canonically() {
+        use crate::resources::Basic;
+        let mut v = vec![
+            Commodity::BuildTarget,
+            Commodity::Basic(Basic::Yellow),
+            Commodity::Minerals,
+            Commodity::Basic(Basic::Cyan),
+            Commodity::Basic(Basic::Magenta),
+        ];
+        v.sort();
+        let mut w = v.clone();
+        w.reverse();
+        w.sort();
+        assert_eq!(v, w, "the ordering must not depend on the order it was built in");
+
+        // Every colour is a distinct commodity — the point of the axis. A
+        // colour-blind market cannot express "move Yellow to the Yellow-poor",
+        // which is what T-73 measured the need for: 1,494 of 1,515 banks are
+        // single-coloured and every works ratio but 1:0:0 wants all three.
+        let all: Vec<Commodity> = Basic::ALL.iter().map(|&c| Commodity::Basic(c)).collect();
+        for (i, a) in all.iter().enumerate() {
+            for (j, b) in all.iter().enumerate() {
+                assert_eq!(i == j, a == b, "colours must be distinct commodities");
+            }
+        }
+    }
+    /// **A cross-empire wave never pairs an empire with itself** (T-77).
+    ///
+    /// Measured before this existed: **608 of 942 fills were self-trades**, and
+    /// they are worse than useless because a matched quantity is *reserved* —
+    /// every one consumed depth a real counterparty could have taken. The
+    /// anti-herding fix that makes this matcher good was working against it on
+    /// a book where everyone posts both sides.
+    #[test]
+    fn a_cross_empire_wave_skips_an_empires_own_asks() {
+        let mut b = Book::new();
+        b.post_bid(owned(1, 0.9, 1.0, 0.0, 3));
+        b.post_ask(owned(100, 0.0, 1.0, 0.0, 3)); // same empire, and nearest
+        b.post_ask(owned(101, 0.0, 1.0, 50.0, 7)); // a real counterparty, far away
+
+        let plain = b.clone().match_wave();
+        assert_eq!(plain[0].seller, PlayerId(3), "the owner-blind wave takes the near self-ask");
+
+        let cross = b.match_wave_cross_empire();
+        assert_eq!(cross.len(), 1);
+        assert_eq!(cross[0].seller, PlayerId(7), "a cross-empire wave must reach past its own ask");
+        assert_ne!(cross[0].buyer, cross[0].seller);
+        // The intra-empire books still want same-owner pairing, which is why
+        // this is a second method and not a change to the one behaviour.
+        assert_eq!(plain.len(), 1);
     }
 }

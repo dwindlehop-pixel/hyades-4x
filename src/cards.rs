@@ -42,6 +42,7 @@
 
 use crate::autopilot::Doctrine;
 use crate::galaxy::PlayerId;
+use crate::resources::Basic;
 use crate::sim::{Class, HullType};
 
 /// The six trees (`Hyades_command_cards.md` §3).
@@ -104,6 +105,18 @@ pub enum CardEffect {
     /// Design is permanent and strictly earlier-is-better, so this leaks
     /// spatially and never goes stale (std §5).
     UnlockDesign(HullType, Class),
+    /// Write one field of the empire's **works** state — the industrial half of
+    /// the standing layer (`Hyades_industry.md` §6.2, T-75b).
+    ///
+    /// **The write is recorded, not applied.** The engine stores the
+    /// `(CardId, WorksWrite)` pair and re-derives [`Works`] with
+    /// [`Works::fold`], which accumulates in `CardId` order. Applying the
+    /// factor to a running product at play time would accumulate in *play*
+    /// order, and float multiplication is not associative — two players who
+    /// played the same cards in different orders would hold state differing in
+    /// its last bits, which is a desync (§6.5, and the same lesson as
+    /// `holdings_centroid`).
+    WriteWorks(WorksWrite),
     /// The effect needs a system the engine does not have yet — combat, the
     /// Exchange, `$`, the counter-graph. Counted rather than hidden, so a run
     /// can report how much of the card layer is still scaffolding.
@@ -255,9 +268,335 @@ pub fn apply_doctrine_write(d: &mut Doctrine, w: DoctrineWrite) {
     }
 }
 
+/// **What a planet's Infrastructure is *doing*** (`Hyades_industry.md` §2).
+///
+/// One stock, three employments — you cannot decline to build the thing that
+/// mines while building the thing that fabricates, because they are the same
+/// thing pointed differently. That is the whole answer to *Stars!*'s
+/// factoryless hyperexpander: three independently-priced stocks means three
+/// independent opt-outs, and the strongest builds opt out of two.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Employment {
+    /// Ore out of the ground, kt/yr (§4).
+    Extraction,
+    /// Hull mass per year, and slips (§3).
+    Fabrication,
+    /// Resistance to having Infrastructure razed. **R-IND2 open** — whether
+    /// this is a third share at all, or a Design hardness coefficient on the
+    /// stock, which is cheaper to reason about and does not force every empire
+    /// to hold defensive capacity it is not using.
+    Warding,
+}
+
+impl Employment {
+    pub const ALL: [Employment; 3] = [Employment::Extraction, Employment::Fabrication, Employment::Warding];
+    #[inline]
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// The works fields a card may move. A closed set, for the same reason
+/// [`DoctrineWrite`] is one: a card that could write *any* field would make the
+/// standing layer a free-form inbound channel.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WorksWrite {
+    /// Scale `eta_works` — Infrastructure gained per kilotonne spent. Design.
+    EtaWorks(f64),
+    /// Scale an employment's rate **ceiling** — the asymptote. Production's
+    /// signature: *the highest peak per planet* (§5.2). Design.
+    Cap(Employment, f64),
+    /// Scale an employment's **knee** — the Infrastructure at half the ceiling,
+    /// so the initial slope is `cap/half`. Growth and Expansion lower it, which
+    /// is what "better efficiency per kilotonne" means (§6.3). Design.
+    Half(Employment, f64),
+    /// Add weight to an employment's allocation share. Doctrine — revisable,
+    /// free, and therefore *weak early and strong late* (R-O37).
+    AllocWeight(Employment, f64),
+    /// Add weight to a colour's share of the works bill. Either layer.
+    ///
+    /// **This can never lower the total** (§5.4/§6.4): `mix_w` is a share of a
+    /// bill `eta_works` alone sets, so a mix card moves *which colours* the bill
+    /// lands in and nothing else. The orthogonality is structural rather than a
+    /// rule someone has to remember in review.
+    MixWeight(Basic, f64),
+}
+
+/// **The folded works state of one empire** (`Hyades_industry.md` §6.2).
+///
+/// Every field is at **identity** by default — coefficients `1.0`, weights
+/// `(1,1,1)` — so an empire that has played no works card is indistinguishable
+/// from one with no works layer at all. That is deliberate: a layering system
+/// that lands inert can be verified against a bit-identical bed before anything
+/// switches on (§6.7 stages 3–5).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Works {
+    /// Infrastructure gained per kilotonne spent — multiplicative, base `1.0`.
+    pub eta_works: f64,
+    /// Per-employment rate ceiling — multiplicative, base `1.0`.
+    pub cap: [f64; 3],
+    /// Per-employment knee — multiplicative, base `1.0`.
+    pub half: [f64; 3],
+    /// Employment weights → `(w_ext, w_fab, w_ward)` — additive, base `(1,1,1)`.
+    pub alloc_w: [f64; 3],
+    /// Colour weights → the works price split, in `Basic` order
+    /// (Cyan, Magenta, Yellow) — additive, base [`WORKS_MIX_DEFAULT`].
+    pub mix_w: [f64; 3],
+}
+
+/// **The default works mix: `3:2:1` in Yellow : Cyan : Magenta** (ratified by
+/// the author; `Hyades_industry.md` §5.1's *Default* point).
+///
+/// Stored in `Basic` order — Cyan, Magenta, Yellow — so the ratio reads
+/// `[2, 1, 3]` here and normalises to `C 0.333 / M 0.167 / Y 0.500`.
+///
+/// **Yellow-primary because Production is Yellow** (`Hyades_galaxy_and_autopilot.md`
+/// §4.8), so the ordinary cost of developing a world already leans toward the
+/// colour Production's tree is about, and every empire feels the pull of a
+/// colour it may not have. It is deliberately **not** `1:1:1`: §5.1 says a works
+/// ratio is "never a true 1:1:1", and an even split was the placeholder the
+/// first implementation shipped rather than a ratified point.
+///
+/// **Why `1:0:0` cannot be a starting point, and why it needs no mechanism to
+/// prevent.** The author's ruling is that Sole is reachable only through deep
+/// Production cards, several layers in — and that falls straight out of `mix_w`
+/// being an **additive weight**. A card that adds `k` to Yellow moves the share
+/// to `(3 + k) / (6 + k)`, so Sole is an **asymptote**:
+///
+/// | added Yellow weight | Yellow share |
+/// |---|---|
+/// | 0 (default) | 0.500 |
+/// | +3 | 0.667 |
+/// | +9 | 0.800 |
+/// | +24 | 0.900 |
+/// | +54 | 0.950 |
+///
+/// Diminishing returns are steep and `1:0:0` is never exactly reached. **So
+/// "Sole" is the deep end of a ladder rather than a discrete state**, which is
+/// the behaviour the ruling asks for without a special case anywhere. How much
+/// weight a deep Production card adds — and therefore how many layers "deep"
+/// is — is **R-IND16**, open.
+pub const WORKS_MIX_DEFAULT: [f64; 3] = [2.0, 1.0, 3.0];
+
+impl Default for Works {
+    fn default() -> Self {
+        Works { eta_works: 1.0, cap: [1.0; 3], half: [1.0; 3], alloc_w: [1.0; 3], mix_w: WORKS_MIX_DEFAULT }
+    }
+}
+
+impl Works {
+    /// **Recompute from the played multiset, in `CardId` order.** Never
+    /// accumulate at play time.
+    ///
+    /// This is the one trap `Hyades_industry.md` §6.7 singles out, and the repo
+    /// has already paid for it once: `holdings_centroid` (`CLAUDE.md` §4) walked
+    /// planets in id order while a running total would have accumulated in claim
+    /// order, and **float addition is not associative**, so the two answers
+    /// differ in their last bits. Multiplication is no better. A running product
+    /// updated as cards resolve therefore makes "A then B" differ from "B then
+    /// A" — which is a **desync** the moment two clients disagree about the
+    /// order two simultaneous cards resolved in, and design law #16 says a
+    /// desync with no reproducer is the worst kind of bug this engine can have.
+    ///
+    /// So the fold sorts. Cost is `O(n log n)` on a list that reaches a few
+    /// dozen entries per empire per game and runs on a round barrier rather than
+    /// in an entity loop, so the price is nothing and the reproducibility is the
+    /// entire point.
+    ///
+    /// `writes` is `(CardId, WorksWrite)` rather than a card list so the fold
+    /// can be property-tested **before any works card exists** — §6.7 puts the
+    /// acceptance test at stage 4 and the first industrial card after it.
+    pub fn fold(writes: &[(CardId, WorksWrite)]) -> Works {
+        let mut sorted: Vec<(CardId, WorksWrite)> = writes.to_vec();
+        // `CardId` is the canonical order. Duplicates are identical writes, so
+        // a stable sort on the id alone is a total order over the multiset.
+        sorted.sort_by_key(|(id, _)| id.0);
+        let mut w = Works::default();
+        for (_, write) in sorted {
+            match write {
+                WorksWrite::EtaWorks(f) => w.eta_works *= f,
+                WorksWrite::Cap(e, f) => w.cap[e.index()] *= f,
+                WorksWrite::Half(e, f) => w.half[e.index()] *= f,
+                WorksWrite::AllocWeight(e, v) => w.alloc_w[e.index()] += v,
+                WorksWrite::MixWeight(c, v) => w.mix_w[c as usize] += v,
+            }
+        }
+        w
+    }
+
+    /// An employment's share of the stock — `alloc_w[e] / Σ alloc_w` (§6.3).
+    ///
+    /// **Normalisation is the bound**, which is why no allocation can exceed the
+    /// stock and why no clamp is needed: shares sum to one by construction, so
+    /// no combination of Doctrine cards can conjure capacity (§2).
+    #[inline]
+    pub fn alloc_share(&self, e: Employment) -> f64 {
+        let total: f64 = self.alloc_w.iter().sum();
+        if total > 0.0 {
+            self.alloc_w[e.index()] / total
+        } else {
+            0.0
+        }
+    }
+
+    /// A colour's share of the works bill — `mix_w[c] / Σ mix_w` (§6.3).
+    #[inline]
+    pub fn mix_share(&self, c: Basic) -> f64 {
+        let total: f64 = self.mix_w.iter().sum();
+        if total > 0.0 {
+            self.mix_w[c as usize] / total
+        } else {
+            0.0
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A works multiset chosen to make order **matter** if the fold did not
+    /// sort: values that are not exactly representable, so their products and
+    /// sums genuinely differ across permutations in the last bits.
+    fn works_multiset() -> Vec<(CardId, WorksWrite)> {
+        vec![
+            (CardId(9), WorksWrite::EtaWorks(1.1)),
+            (CardId(2), WorksWrite::EtaWorks(1.05)),
+            (CardId(7), WorksWrite::EtaWorks(1.15)),
+            (CardId(4), WorksWrite::Cap(Employment::Fabrication, 1.3)),
+            (CardId(1), WorksWrite::Cap(Employment::Fabrication, 0.7)),
+            (CardId(8), WorksWrite::Half(Employment::Extraction, 0.9)),
+            (CardId(3), WorksWrite::Half(Employment::Extraction, 3.1)),
+            (CardId(6), WorksWrite::AllocWeight(Employment::Extraction, 0.1)),
+            (CardId(5), WorksWrite::AllocWeight(Employment::Extraction, 0.2)),
+            (CardId(11), WorksWrite::AllocWeight(Employment::Extraction, 1.3)),
+            (CardId(0), WorksWrite::MixWeight(Basic::Yellow, 1.7)),
+            (CardId(10), WorksWrite::MixWeight(Basic::Cyan, 0.9)),
+        ]
+    }
+
+    /// **R-IND4, the acceptance test for the whole layering section**
+    /// (`Hyades_industry.md` §6.5/§6.7): every permutation of a played multiset
+    /// folds to **bit-identical** `Works`.
+    ///
+    /// Written at stage 4, before any card exists that could make it fail —
+    /// which is the point. Float multiplication is not associative, so a fold
+    /// that accumulated at play time would make "A then B" differ from "B then
+    /// A" in the last bits, and two clients that disagree about the order two
+    /// simultaneous cards resolved in would then disagree about hashed state.
+    /// That is a desync with no reproducer (design law #16), and it would be
+    /// found by a player, in a real game, months later.
+    ///
+    /// Asserted with `to_bits()` rather than an epsilon: "close enough" is
+    /// exactly the standard that does not prevent a desync.
+    #[test]
+    fn works_fold_is_order_independent() {
+        let base = works_multiset();
+        let want = Works::fold(&base);
+
+        // Every rotation, plus reverse, plus a deterministic shuffle — enough
+        // distinct permutations that an unsorted fold cannot survive by luck.
+        let n = base.len();
+        let mut perms: Vec<Vec<(CardId, WorksWrite)>> = Vec::new();
+        for k in 0..n {
+            perms.push((0..n).map(|i| base[(i + k) % n]).collect());
+        }
+        let mut rev = base.clone();
+        rev.reverse();
+        perms.push(rev);
+        // A fixed odd-stride walk: coprime with the length, so it visits every
+        // element exactly once and is a genuine permutation, not a rotation.
+        perms.push((0..n).map(|i| base[(i * 7) % n]).collect());
+
+        for (k, p) in perms.iter().enumerate() {
+            let got = Works::fold(p);
+            assert_eq!(got.eta_works.to_bits(), want.eta_works.to_bits(), "permutation {k}: eta_works drifted");
+            for e in 0..3 {
+                assert_eq!(got.cap[e].to_bits(), want.cap[e].to_bits(), "permutation {k}: cap[{e}] drifted");
+                assert_eq!(got.half[e].to_bits(), want.half[e].to_bits(), "permutation {k}: half[{e}] drifted");
+                assert_eq!(got.alloc_w[e].to_bits(), want.alloc_w[e].to_bits(), "permutation {k}: alloc_w[{e}]");
+                assert_eq!(got.mix_w[e].to_bits(), want.mix_w[e].to_bits(), "permutation {k}: mix_w[{e}]");
+            }
+        }
+
+        // **Guard on the guard.** A fold that never sorted would pass this test
+        // trivially if the fixture's arithmetic happened to be associative, and
+        // the first draft's was — `1.1 * 0.3 * 7.7` is bit-identical in either
+        // direction, so the test proved nothing and said so. These values do
+        // differ, on both the multiplicative and the additive field, so a
+        // play-order accumulator is genuinely caught.
+        assert_ne!(
+            (1.0f64 * 1.05 * 1.15 * 1.1).to_bits(),
+            (1.0f64 * 1.15 * 1.1 * 1.05).to_bits(),
+            "the multiplicative fixture must be order-sensitive or it proves nothing"
+        );
+        assert_ne!(
+            (1.0f64 + 0.1 + 0.2 + 1.3).to_bits(),
+            (1.0f64 + 0.1 + 1.3 + 0.2).to_bits(),
+            "the additive fixture must be order-sensitive or it proves nothing"
+        );
+    }
+
+    /// **An empire that has played no works card is at identity**, which is what
+    /// makes stages 3–5 verifiable against a bit-identical bed (§6.7).
+    #[test]
+    fn an_unplayed_works_layer_is_the_identity() {
+        let w = Works::fold(&[]);
+        assert_eq!(w, Works::default());
+        assert_eq!(w.eta_works, 1.0);
+        for e in Employment::ALL {
+            assert_eq!(w.cap[e.index()], 1.0);
+            assert_eq!(w.half[e.index()], 1.0);
+            // Employment allocation *is* even by default — three equal weights.
+            assert!((w.alloc_share(e) - 1.0 / 3.0).abs() < 1e-15);
+        }
+        // The colour mix is **not**: `3:2:1` Y:C:M, because §5.1 says a works
+        // ratio is never a true 1:1:1 and Production is Yellow.
+        let total: f64 = Basic::ALL.iter().map(|&c| w.mix_share(c)).sum();
+        assert!((total - 1.0).abs() < 1e-15, "colour shares must sum to one, got {total}");
+        assert!((w.mix_share(Basic::Yellow) - 0.5).abs() < 1e-15, "Yellow is the 3 of 3:2:1");
+        assert!((w.mix_share(Basic::Cyan) - 1.0 / 3.0).abs() < 1e-15, "Cyan is the 2");
+        assert!((w.mix_share(Basic::Magenta) - 1.0 / 6.0).abs() < 1e-15, "Magenta is the 1");
+        assert!(
+            w.mix_share(Basic::Yellow) > w.mix_share(Basic::Cyan)
+                && w.mix_share(Basic::Cyan) > w.mix_share(Basic::Magenta),
+            "the ordering is the ratio, and it must not be permuted silently"
+        );
+
+        // **Sole is an asymptote, not a state.** Stacking Yellow weight — deep
+        // Production cards — approaches `1:0:0` and never reaches it, which is
+        // what makes the author's "only by multiple layers" ruling structural
+        // rather than a rule someone has to enforce.
+        let stacked = |k: f64| {
+            let mut w = Works::default();
+            w.mix_w[Basic::Yellow as usize] += k;
+            w.mix_share(Basic::Yellow)
+        };
+        assert!((stacked(9.0) - 0.8).abs() < 1e-12, "+9 weight is 80% Yellow");
+        assert!((stacked(54.0) - 0.95).abs() < 1e-12, "+54 weight is 95% Yellow");
+        assert!(stacked(1e6) < 1.0, "and Sole is never exactly reached");
+    }
+
+    /// **An allocation cannot exceed the stock** (§6.7's test 5): normalisation
+    /// is the bound, so this holds for *every* weight vector including
+    /// degenerate ones — and the degenerate cases are what would tempt someone
+    /// to add a clamp that quietly changes the model.
+    #[test]
+    fn an_allocation_cannot_exceed_the_stock() {
+        let vectors: [[f64; 3]; 5] =
+            [[1.0, 1.0, 1.0], [5.0, 0.0, 0.0], [0.0, 0.0, 1e12], [1e-9, 1.0, 1e9], [0.0, 0.0, 0.0]];
+        for v in vectors {
+            let w = Works { alloc_w: v, ..Works::default() };
+            let sum: f64 = Employment::ALL.iter().map(|&e| w.alloc_share(e)).sum();
+            // The all-zero vector is the one legitimate exception: no weights
+            // means no allocation, which is zero rather than one.
+            let want = if v.iter().all(|&x| x == 0.0) { 0.0 } else { 1.0 };
+            assert!((sum - want).abs() < 1e-12, "shares for {v:?} summed to {sum}, want {want}");
+            for &e in &Employment::ALL {
+                assert!(w.alloc_share(e) <= 1.0 + 1e-12, "a single share exceeded the stock: {v:?}");
+            }
+        }
+    }
 
     #[test]
     fn the_tier0_grid_is_three_slants_by_six_trees() {
@@ -354,5 +693,19 @@ mod tests {
         let inert: Vec<_> = TIER0.iter().filter(|c| c.effect == CardEffect::NotYetImplemented).collect();
         assert_eq!(inert.len(), 3);
         assert!(inert.iter().all(|c| c.tree == Tree::Warfare));
+    }
+
+    /// **The works write path exists and no tier-0 card uses it yet** (T-75b).
+    ///
+    /// Stated as a test rather than left implicit, because "unused variant" and
+    /// "variant a card was supposed to carry" look identical in the source. The
+    /// tier-0 eighteen are the *balance* scaffolding — reassigning one to a
+    /// works effect changes what every measurement so far was measuring — so
+    /// the write path lands first and the card that uses it is a separate,
+    /// deliberate change that has to edit this number.
+    #[test]
+    fn no_tier0_card_writes_works_yet_and_that_is_on_purpose() {
+        let works_cards = TIER0.iter().filter(|c| matches!(c.effect, CardEffect::WriteWorks(_))).count();
+        assert_eq!(works_cards, 0, "a tier-0 card gained a works effect — re-measure the bed before landing it");
     }
 }

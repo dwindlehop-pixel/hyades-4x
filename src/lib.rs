@@ -55,6 +55,7 @@ pub mod cards;
 pub mod combat;
 pub mod galaxy;
 pub mod log;
+pub mod matching;
 pub mod math;
 pub mod resources;
 pub mod rng;

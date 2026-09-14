@@ -157,6 +157,18 @@ pub enum LogEvent {
         mining_pair_cost: f64,
         mineral_pressure: f64,
         candidates_seen: u32,
+        /// **The decision's own per-colour affordability test** (T-73), not a
+        /// total it can be reconstructed from.
+        ///
+        /// A works bill is payable in *named colours*, and the galaxy's supply
+        /// is single-coloured (mean dominant-colour share 0.789, 38% of sources
+        /// ≥95% one colour), so "could this centre afford the rung" and "did
+        /// this centre hold enough ore" are different questions with different
+        /// answers. Reconstructing the first from `stockpile` and `infra_cost`
+        /// counts a colour-short centre as having *chosen* not to deepen, which
+        /// is the opposite of what happened — so the predicate is logged rather
+        /// than inferred.
+        can_afford_infra: bool,
         chosen: BuildOrder,
     },
     /// A chosen build was funded and applied this cycle.
@@ -305,12 +317,13 @@ impl fmt::Display for LogEvent {
                 mining_pair_cost,
                 mineral_pressure,
                 candidates_seen,
+                can_afford_infra,
                 chosen,
             } => write!(
                 f,
                 "P{player} planet#{} production: pop_lvl={pop_level} infra={infra:.2}/{k_potential:.2} \
-                 stock={stockpile:.2} (infra_cost={infra_cost:.2} colonizer={colonizer_cost:.2} \
-                 mining_pair={mining_pair_cost:.2}) \
+                 stock={stockpile:.2} (infra_cost={infra_cost:.2} payable={can_afford_infra} \
+                 colonizer={colonizer_cost:.2} mining_pair={mining_pair_cost:.2}) \
                  pressure={mineral_pressure:.2} candidates={candidates_seen} -> {chosen:?}",
                 center.0
             ),

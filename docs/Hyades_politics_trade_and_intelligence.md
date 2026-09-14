@@ -739,6 +739,340 @@ effect is not obviously bounded and could make early arming unplayable. Needs MC
 
 ---
 
+## 10. The implementation contract
+
+*§§2–8 are the design and they are not restated here. This section is the gap
+between that design and buildable code: what exists, what is missing, the
+decisions implementation forces, and a staged build order in which every stage
+is measurable on its own. It mirrors `Hyades_industry.md` §6.7, which worked.*
+
+### 10.0 What is already built, audited
+
+`src/matching.rs` — 280 lines, deterministic, dependency-free, and ~~not wired
+into `lib.rs`~~ **now wired (T-01, landed with T-83)**. It was never in the
+module list at all, which meant it did not compile as part of the crate and its
+tests never ran in CI — worth naming, because "built and audited" and "compiled"
+are different claims and this file was only the first. It is not the Exchange this spec describes; it is an
+*intra-empire haulage* matcher, and the distance between the two is the work:
+
+| | built | this spec needs |
+|---|---|---|
+| Books | one per `(owner, commodity)` | **cross-empire**, per commodity (§3.1) |
+| `Commodity` | `Minerals`, `BuildTarget` | **per colour** — the whole point since T-73 |
+| `Offer` | `entity, price, qty, pos` | plus **owner**, so a fill knows who owes whom |
+| Price scalar | `mineral_pressure ∈ [0,1]` | **`$`**, from `wtp` (§3.2) |
+| Settlement | a `Fill` | escrow → **a voyage** → release, burn, or loss (§3.0a, §3.3) |
+| `$` | does not exist anywhere in the engine | the ledger, faucet and sink (§2.3) |
+
+**The matcher's core is reusable and good** — highest price first, nearest
+within price, partial fills, matched quantity *reserved* (the anti-herding fix),
+unmatched remainder queued, ties by entity id, no `HashMap` anywhere. Keep all
+of that. What changes is what it is a book *of*.
+
+### 10.1 Terms
+
+| symbol | meaning | unit | where it comes from |
+|---|---|---|---|
+| `$` | the means of exchange | `$` — **not mass** (§2.1) | per-player ledger, §10.2 |
+| `E` | escrow locked at match | `$` | §2.3 |
+| `λ` | transit discount and burn rate | 1/yr | `SimConfig::trade_decay_lambda`, live at 0.01 |
+| `t` | one-way transit of the settling leg | yr | `math::ship_travel_years` |
+| `wtp` | a centre's willingness to pay | `$`/kt | §3.2 |
+| `base_value[c]` | a colour's floor price | `$`/kt | **new Doctrine field**, §10.4 |
+| `doctrine_demand[c]` | how much this empire's policy wants colour `c` | dimensionless | **new Doctrine field**, §10.4 |
+| `c` | a basic colour — Cyan, Magenta, Yellow | — | `resources::Basic` |
+
+### 10.2 State, and where it lives
+
+**Per player**, alongside `Doctrine`, `Roster` and `Works`:
+
+- `purse: $` — the ledger. **Replicated state**, so it is in the digest (R-P1)
+  and design law #16 applies: no NaN, no infinity.
+- `reputation` — public consensus by default, per-observer if bought (§3.3).
+
+**Global, one per commodity** (§3.1): the cross-empire `Book`.
+
+**Per contract, in flight**: buyer, seller, colour, quantity, escrow `E`, and
+the vehicle flying it. This is the state §3.3 needs and the engine has no
+analogue for — it is the first thing in the engine that is *owed* rather than
+owned.
+
+### 10.3 The faucet has an unlanded dependency, and that decides the order
+
+`$_income = base · production · politics_multiplier(depth)` (§2.3, R-P3).
+
+**`production` is not a measured quantity in the engine.** It is the works
+fabrication rate, which is `Hyades_industry.md` T-74, which has not landed. So
+either the faucet waits for T-74, or it ships against a proxy.
+
+**Decision: ship against infrastructure stock as an explicit placeholder.**
+T-70 landed and `Factors::infra` is kilotons of works, which is what production
+is *bought with* — a leading indicator of the real quantity rather than a
+different one, exactly as `Hyades_trees_and_card_value.md` §2.3.3 argues for
+Growth's interim stock. Flagged **R-P16**, and it must be revisited at T-74
+rather than quietly kept.
+
+### 10.4 What the autopilot bids — the Doctrine field list T-11 has been holding
+
+§3.2 says `base_value` and `doctrine_demand` "belong on `Doctrine` — which is
+exactly the diplomatic-fields slot **T-11/R-O27** has been holding open with no
+field list. **This spec is that field list**". Concretely:
+
+```rust
+/// Floor price per basic colour, `$`/kt. Placeholder magnitudes.
+pub base_value: [f64; 3],
+/// How much this empire's policy wants each colour — the term that turns the
+/// map's mineral geography into a market (§3.0).
+pub doctrine_demand: [f64; 3],
+/// Discount applied to a counterparty by reputation (§3.5).
+pub risk_aversion: f64,
+```
+
+**`doctrine_demand` is where the works mix enters the market.** An empire deep
+in Production is bidding on a `1:0:0` Yellow bill (`Hyades_industry.md` §6.10),
+so its demand for Yellow is a *standing* bid that moves the price of Yellow for
+everyone — including empires that never touch the Production tree. That is §3.0's
+"value diverges from kilotons because demand is Doctrine", made mechanical.
+
+### 10.5 Clearing cadence — R-P10, decided
+
+**Per round, at the barrier.** Not continuously on the event queue.
+
+Three reasons, and the third is the one that settles it:
+
+- Cards resolve at barriers and the `Works` fold is recomputed there, so a
+  round is already the moment the standing layer is coherent.
+- It is what the tabletop lineage does, and §1's pillar is *digital board game*.
+- **A continuous book makes price a function of event ordering.** Two clients
+  that process a tie in a different order clear at different prices, which is a
+  desync — and by design law #16 an unreproducible one. Per-round clearing makes
+  the book's contents a *set*, and a set has a canonical order.
+
+### 10.6 The freight leg — T-77. **Settlement is at a shared outpost, not at the buyer's world.**
+
+**Author's ruling, and it replaces the cross-empire delivery this section
+originally specified:** trade moves through **outposts** — caravan trade, goods
+changing hands at a waypoint. *"Having an outsider's freighter (or even more
+frightening hull) near your colony is a step left to cards."*
+
+That is a better mechanism than the one it replaces, and the reason is that
+**the engine already has the venue.** An outpost is a worked rock and it is
+**unowned** — no `owner` component is ever set on it — while `outpost_stock` is
+keyed `(player, rock)`, so **each empire holds its own pile at the same body**.
+§4.3's shared-rock rule is explicit that "each player's crew works the shared
+rock into that player's own pile". Measured on the standard bed, **2,226 of
+2,494 worked sites are cross-player**: two empires' hulls are already standing
+on the same rock, with separate stockpiles, most of the time.
+
+So a settlement is a transfer between two `outpost_stock` entries at the same
+body. Concretely:
+
+- **No cross-empire vehicle is constructed.** The thing §10.6 originally needed
+  and nothing built — a hull whose home is one empire and whose destination is
+  another's colony — is not needed at all.
+- **The buyer's own freighter carries it home**, on the need-based route it was
+  already flying. That leg exists, is laden, is light-lagged, and is
+  interdictable.
+- **`Hyades_industry.md` §8.1 is satisfied and not weakened.** Refined mass still
+  traverses real space and can still be attacked, diverted, stolen and
+  blockaded — the voyage is simply the *existing* haulage leg rather than a new
+  one. A trade is still not a ledger entry: the goods sit on a rock in the dark
+  until somebody comes for them.
+
+**Geography becomes the trade constraint, which is the point.** An empire can
+only settle with a counterparty it **shares an outpost with**, so the map decides
+who can trade with whom, and a contested rock is now valuable for a second
+reason. That is what makes this move Yellow from Yellow-rich empires to
+Yellow-poor ones along routes that exist rather than by fiat.
+
+**What is left to cards** is everything this default forbids: delivery straight
+to a colony, an outsider's hull in your home system at all, and the threat that
+implies. The default keeps foreign hulls out in the dark where the rocks are.
+
+What the stage still needs:
+
+- escrow released on settlement at the shared body, discounted and burned by
+  `exp(−λ·t)` over the shipper's leg to its drop;
+- and the loss case.
+
+#### A contract has two locations, and the debt travels faster than light
+
+**Author's ruling, and it changes both halves of R-P17.**
+
+> *"Contract can have two locations. Leave Y at X planet in exchange for M/C at
+> Y planet. Debt can travel faster than light."*
+
+**Two drops, not one venue.** A trade commits each side to a delivery, and the
+two deliveries need not meet at the same rock: the seller leaves Yellow at a
+shared outpost near *itself*, the buyer leaves Magenta or Cyan at a shared
+outpost near *itself*. **R-P17 is answered, and not as it was framed** — the
+first formulation minimised the two parties' *summed* transit, which is the
+right answer only if there is a single venue for both legs. There is not. Each
+drop is the shared rock nearest **the party shipping to it**, because a shipper
+pays for its own leg; one compromise venue would make each side pay for the
+other's geography, and §7.1's default transaction is *balanced in value*.
+
+**The obligation is instant; only the goods are light-lagged.** This is not an
+exception to design law #15 — it is R-P1 taken seriously. `$` and the claim it
+denominates are **not substances**: no mass, no hold, no distance crossed, so
+there is nothing for light-lag to bind. And a contract is struck at the **round
+barrier**, which is the protocol clock's synchronisation point (§10.5) and the
+same moment cards resolve and the `Works` fold is recomputed — not an in-world
+observation by an in-world agent, which is what design law #15 actually
+constrains.
+
+**The asymmetry is the design.** The ledger is instant and the freight is not, so
+a deal can be agreed across the theatre in a single round while the ore it
+commits takes decades to arrive — and everything that can happen to that ore on
+the way (§8.1: attack, diversion, theft, blockade) lives in the gap between the
+two. A contract is a promise that outruns its cargo, which is what makes
+defaulting, escorting and interdiction worth anything.
+
+**In the engine today** the buyer's side of the default transaction is `$`, which
+has no location, so `Contract::buyer_drop` is `None`. A goods counter-leg is the
+buyer's own contract on another colour's book, with its own drop — which is
+exactly how "leave Yellow at X in exchange for Magenta at Y" is expressed: two
+contracts between the same pair, on two books, settling at two rocks, with `$`
+pricing the balance between them.
+
+**R-IND10 is already answered by §3.3 and the register is stale.** On
+non-delivery "escrow returns to the buyer minus the burn" — so the buyer loses
+the burn, the seller loses the cargo, and the loss is shared. That is what makes
+escorting worth paying for. Marked resolved below.
+
+### 10.6a T-77 measured — and the screen got both the size and the verdict wrong
+
+**Settlement landed and does what it says.** Contracts clear, price, escrow,
+deliver into the buyer's pile at the shared rock, default when the seller's bank
+is short the colour it owes, and conserve mass. On the standard bed (3 seats,
+4,000 yr): **64,642 contracts settled and 3,484 defaulted** (seed 1), **64,553
+and 3,905** (seed 7), with only *geography* rejecting anything — 47 and 31 fills
+out of ~68,000 found no shared rock.
+
+**Yellow dominates the flow, which is the design goal arriving:**
+
+| colour | seed 1 delivered | seed 7 delivered | share |
+|---|---|---|---|
+| **Yellow** | **15,416.6 kt** | **14,380.5 kt** | **52%** |
+| Cyan | 9,188.0 kt | 9,204.6 kt | 31% |
+| Magenta | 4,855.0 kt | 5,012.6 kt | 17% |
+
+That is the `3:2:1` Y:C:M works mix (§6.10) reproduced as *trade flow*, on both
+seeds, without anything in the market being told about it — demand is Doctrine,
+and Doctrine is the works bill. **§10.4's claim that `doctrine_demand` turns the
+map's mineral geography into a market is measured, not asserted.**
+
+#### The 400-planet screen was wrong twice, and that is the lesson
+
+A 400-planet / 1,200-year probe reported **776 contracts and 327 kt** — 0.002% of
+extracted mass — and the conclusion written from it was "the market clears and
+moves nothing that matters". The standard bed reports **64,642 contracts and
+29,460 kt**, ~0.2%: **83x the contracts and 90x the volume.** The screen was not
+merely imprecise, it was *qualitatively* wrong, because trade volume is
+superlinear in galaxy size — more empires' worth of outposts overlap, so more
+pairs can reach each other at all.
+
+`CLAUDE.md` §2 says **screen on a truncated horizon, confirm on the objective**,
+and this is the rule earning its keep in the least comfortable way: the screen's
+*ranking* is usually fine and its *magnitude* is not, and here the magnitude was
+the whole claim. **A conclusion of the form "X does not matter" cannot be drawn
+from a screen at all** — it is an absolute statement, and a screen only ever
+supports a relative one.
+
+#### What it costs, and the mechanism to find
+
+**Trade is measurably *negative* on Growth's objective**, on both seeds
+(`examples/work_years`, against T-87's bed):
+
+| | work-years | colony-years |
+|---|---|---|
+| seed 1, no Exchange (T-87) | 1,495,212.5 | 10,888,100 |
+| seed 1, with trade | 1,425,905.0 (**−4.64%**) | 10,889,400 (+0.01%) |
+| seed 7, no Exchange (T-87) | 1,540,712.5 | 10,983,925 |
+| seed 7, with trade | 1,477,482.5 (**−4.11%**) | 10,982,875 (−0.01%) |
+
+Colony-years is flat to a hundredth on both seeds — which is what §10.8 predicted
+it would do and why it is not the guard — while work-years falls ~4.4%
+consistently. **A market that moves the right colour in the right direction is
+making the empire poorer**, and that is the finding this stage ends on.
+
+**The leading hypothesis, and it is a hypothesis until ablated:** the two legs
+are not symmetric. The seller's ore leaves its bank *immediately* at settlement,
+where it was spendable; the buyer's ore lands in an **outpost pile** and stays
+there until the buyer's own freighter happens to call. If collection lags
+delivery, trade is a machine for moving minerals out of banks and into piles —
+strictly worse than not trading, regardless of which colour moves where.
+
+That is checkable and must be checked before anything is tuned: compare banked
+against piled holdings over time, and measure the dwell between a contract
+settling and its ore reaching a bank. `CLAUDE.md` §2 is explicit that a
+plausible mechanism attached to a real number is the shape of every measurement
+artifact in this project — **so this one is recorded as unproven.**
+
+**R-P18** carries it, along with the two structural limiters on volume that the
+screen did correctly identify: ten clearings per game
+(`years_per_round = 400`, set by the card layer rather than the market) and a
+bid sized to one infrastructure rung rather than to consumption.
+
+### 10.7 The build order
+
+| # | Stage | Behaviour | Guard | T-code |
+|---|---|---|---|---|
+| 1 | `$` ledger + faucet; nothing spends it | **neutral** — nothing reads it | bit-identical | ~~**T-82**~~ — **done** |
+| 2 | `Commodity` gains the colour axis; `Offer` gains an owner | **neutral** — matcher now wired, nothing calls it | bit-identical | ~~**T-83**~~ — **done, with T-01** |
+| 3 | Cross-empire book; centres post `wtp` bids | **neutral** — nothing clears yet | bit-identical | ~~**T-84**~~ — **done** |
+| 4 | Clearing at the round barrier → contracts + escrow | **inert after the §10.6 amendment** — see below | bit-identical | ~~**T-85**~~ — **done** |
+| 5 | The freight leg; escrow settles on arrival | **works; costs ~4.4% work-years** — §10.6a | §10.8 | ~~**T-77**~~ — **done** |
+| 6 | Default, interdiction, reputation | changes | §10.8 | **T-86** |
+
+Stages 1–3 are deliberately inert, for the same reason `Hyades_industry.md`
+§6.7's stages 3–5 were: **a system that lands neutral can be verified against a
+bit-identical bed before anything switches on.** That plan was not met at
+industry stage 5, and the reason it was not is worth carrying: the stage that
+broke it was the one that changed *what a purchase costs*. Stage 4 was expected
+to be the same shape.
+
+> **Stage 4 turned out inert too, and the §10.6 amendment is why.** This table
+> was written when a cleared match was a cross-empire *delivery*, so clearing
+> and moving goods were one step. Settlement now happens at a shared rock, so
+> stage 4 strikes contracts and locks `$` — and `$` reaches nothing else yet —
+> while every kilotonne stays where it was until **T-77**. Measured
+> bit-identical, with contracts struck, by
+> `clearing_strikes_escrowed_contracts_without_moving_the_world`.
+>
+> **So the stage expected to be risky is not, and the risk moved to T-77 with
+> the goods.** That is worth stating rather than quietly enjoying: the
+> prediction in this table was wrong, and it was wrong because a *later* design
+> decision changed where the behaviour lives. A stage plan is a claim about
+> code, and an amendment to the design invalidates the plan's predictions along
+> with everything else it touches.
+
+### 10.8 The guard — and it is not colony-years
+
+**Measured on the works branch: colony-years is inverted for anything that
+changes how minerals are spent.** Seed 1, across four landings:
+
+| | infra builds | colony-years, seed 1 | colony-years, seed 7 |
+|---|---|---|---|
+| pre-works | 1,032 | 10,558,680 | 10,474,865 |
+| T-73 | 57 | 10,606,309 | 10,583,150 |
+| T-81 | 31 | **10,633,441** | **10,599,130** |
+| R-IND17 | 66 | 10,582,211 | 10,546,759 |
+
+Monotone inverse **on both seeds**: colony-years *rises* as development collapses
+and *falls* as it recovers, because minerals denied to infrastructure buy hulls and a `k_high`-bound
+bed takes worlds earlier. Four industry changes were guarded on it and it rewarded
+the breakage every time.
+
+`Hyades_trees_and_card_value.md` §2 names the right one — Growth's **work-years**
+— and it is not measurable until T-74. **So the interim guard for Exchange work
+is the build-mix census** (`examples/bank_mix`: infrastructure builds, hull
+builds, bank composition, source composition), which is what actually caught
+every defect on the works branch. Colony-years stays as a *side-effect* read,
+never as the verdict.
+
+---
+
 ## 9. Open ratification points
 
 | Code | Question | Blocked on |
@@ -755,7 +1089,10 @@ effect is not obviously bounded and could make early arming unplayable. Needs MC
 | **R-P13** | Which stances may be written, by which tier, and on which index. Recommend near index first and only toward less hostile; far index (making two other empires enemies) a deep node | — |
 | **R-P14** | Does an imposed stance decay? Recommend yes, on the reputation clock — a permanent write is a permanent pact for one card | MC |
 | **R-P9** | Strength of both counter-graph effects; is the risk premium bounded? | MC |
-| **R-P10** | Does the Exchange clear once per round, or continuously on the event queue? Per-round is simpler and matches the barrier; continuous is truer to a discrete-event engine | round layer |
+| **R-P18** | **Why trade costs ~4.4% of work-years on both seeds.** Leading hypothesis: the legs are asymmetric — the seller's ore leaves a spendable bank at once, the buyer's lands in an outpost pile until its freighter calls. Unproven, and must be ablated before anything is tuned. Carries the two volume limiters too: ten clearings per game (`years_per_round`) and a bid sized to one rung rather than to consumption. | §10.6a |
+| ~~**R-P17**~~ | ~~Venue choice when buyer and seller share more than one outpost~~ — **resolved, and the question was wrong.** A contract has **two** drops, one per shipper, each the shared rock nearest *that* shipper. The summed-transit formulation assumed a single venue. | §10.6 |
+| ~~**R-P10**~~ | ~~Clear per round or continuously?~~ **resolved: per round, at the barrier** (§10.5). A continuous book makes price a function of event ordering, which is a desync by design law #16 | — |
+| **R-P16** | The `$` faucet ships against infrastructure stock because `production` (works fabrication, T-74) does not exist yet. Revisit at T-74 (§10.3) | T-74 |
 
 ---
 

@@ -249,47 +249,112 @@ pub struct Doctrine {
     // --- Expand (autopilot-doc §4) ---
     pub expand_bias: ExpandBias,
 
-    /// **How many miners an outpost is opened with** (T-57).
+    /// ~~**How many miner hulls open one outpost**~~ (`miners_per_outpost`,
+    /// T-57) and ~~**what share of a deposit's veins to crew**~~
+    /// (`miner_vein_fraction`, T-72) — **both retired at T-87. Crew size is not
+    /// a policy any more; it falls out of mineral demand.**
     ///
-    /// Extraction is per-miner since T-57 — `n` miners work `n ×
-    /// outpost_mining_fraction` of the remaining field per tick, capped at all
-    /// of it — so this is the first knob in the engine that trades mineral
-    /// *rate* against hull count. A rock is a finite stock, so a bigger crew
-    /// does not raise the total a field yields; it brings that total forward,
-    /// which is what the expansion loop is starved of (`CLAUDE.md` §7: the
-    /// residual is worlds scanned and not reached in time).
+    /// The two retired knobs were the same mistake twice: a number someone had
+    /// to choose, against an objective that could not price it. `3` was
+    /// ratified (+2.74% colony-years) under a law with no deposit term at all;
+    /// `0.3` replaced it and measured monotone in the wrong direction — every
+    /// crew size worse than the one below, on both seeds and both objectives.
     ///
-    /// **Ratified at 3** on the standard four-seed CRN bed, 4,000 yr
-    /// (`examples/hull_ladder`), every seed positive at every crew size:
+    /// The mechanism behind that verdict is now in the model instead of in a
+    /// footnote: **a deposit is a finite stock, so a crew can only bring its
+    /// yield forward, and ore nobody can spend is a pure cost.** Sizing a crew
+    /// without reference to demand buys hulls, freight and entity count to
+    /// accelerate a resource the empire is not short of.
     ///
-    /// | crew | colony-years | vs 1 | per extra miner | doubling |
-    /// |---|---|---|---|---|
-    /// | 1 | 8,697,998 | — | — | 270.3 yr |
-    /// | 2 | 8,877,142 | +2.06% | +2.06% | 262.4 yr |
-    /// | **3** | **8,936,603** | **+2.74%** | +1.37% | **260.7 yr** |
-    /// | 5 | 8,965,467 | +3.08% | +0.77% | 264.2 yr |
-    ///
-    /// **3 is the ratification, not 5**, and the doubling column is why: five
-    /// miners buy 0.34 more points of colony-years and give back 3.5 years of
-    /// doubling time, because the extra hulls compete for the same build slots
-    /// the expansion loop needs. The marginal return per miner has already
-    /// halved by 3 and halved again by 5 — a rock is a finite stock, so a crew
-    /// cannot raise what a field yields in total, only bring it forward, and
-    /// there is only so much forward available.
-    ///
-    /// `1` reproduces the pre-T-57 arithmetic exactly (one miner working
-    /// `outpost_mining_fraction` *is* the old per-rock expression), so the
-    /// sweep's baseline is the engine as it was — except for the leaked-hull
-    /// fix `examples/crew_census` demonstrated, which is why the crew-1 figure
-    /// is 8,697,998 and not the pre-T-57 8,670,020.
-    pub miners_per_outpost: u8,
+    /// `Simulation::mining_crew_for` derives the crew from what the founding
+    /// centre can consume and cannot currently get — §4.3's extraction law
+    /// inverted. See `Hyades_industry.md` §4.5. There is nothing here to tune.
 
-    /// **Expansion rate knob** (MC experiment): how strongly the production
-    /// queue favors *upgrading own infrastructure* (deepening) over *spending
-    /// minerals to reach outward* (expanding). `0.0` = always expand when able,
-    /// `1.0` = always deepen toward `K` first. The optimal value is state-
-    /// dependent (current pop, K-potential, neighbors) and is exactly what the
-    /// expansion-rate Monte-Carlo experiment optimizes (R-AC11/R-AC12).
+    /// **Floor price per basic colour, `$`/kt** (politics §3.2, §10.4, T-84).
+    ///
+    /// The first term of `wtp`. Colours start equal — at first a kilotonne of
+    /// Cyan is worth a kilotonne of Yellow — and diverge as the game develops,
+    /// because **value is set by demand and demand is Doctrine**
+    /// (`Hyades_industry.md` §7.1). This is the floor they diverge *from*.
+    ///
+    /// **Placeholder magnitudes** (R-P2). Nothing clears yet, so nothing can
+    /// price them.
+    pub base_value: [f64; 3],
+
+    /// **How much this empire's policy wants each colour** (politics §3.2,
+    /// §10.4, T-84) — the term that turns the map's mineral geography into a
+    /// market.
+    ///
+    /// This is where the works mix enters the Exchange. An empire deep in
+    /// Production is bidding on a Yellow-heavy works bill
+    /// (`Hyades_industry.md` §6.10 — the default mix is already `3:2:1` Y:C:M),
+    /// so its demand for Yellow is a **standing bid that moves the price of
+    /// Yellow for everyone**, including empires that never touch the Production
+    /// tree. §3.0's "value diverges from kilotons because demand is Doctrine",
+    /// made mechanical.
+    ///
+    /// **Defaults to the works mix**, which is not arbitrary: the colours an
+    /// empire wants to buy are the colours its bills are denominated in, and
+    /// having two independent statements of that would be two copies of a rule
+    /// that must agree with nothing checking that they do.
+    pub doctrine_demand: [f64; 3],
+
+    /// **Discount applied to a counterparty by reputation** (politics §3.5,
+    /// §10.4). The fourth term of `wtp`. Inert until T-86 ships reputation.
+    ///
+    /// **Placeholder magnitude** (R-P2).
+    pub risk_aversion: f64,
+
+    /// **Expansion rate knob**: how strongly the production queue favors
+    /// *upgrading own infrastructure* (deepening) over *spending minerals to
+    /// reach outward* (expanding). `0.0` = always expand when able, `1.0` =
+    /// always deepen.
+    ///
+    /// Since R-O68 the two sides are `rank` score per kilotonne committed, so
+    /// this is an **odds ratio**: depth wins when `b/(1 − b) ≥ expand/deepen`.
+    /// The crossover is state-dependent — a centre facing a cheap next rung and
+    /// a mediocre candidate deepens where one facing an expensive rung and a hub
+    /// does not — and on the shipped ladder it sits between **0.96 and 0.98**.
+    ///
+    /// **Stays at 0.5, and R-O87 is why it is not worth sweeping again.** The
+    /// obvious objective for this knob is Growth's own — work-years,
+    /// `∫ Σ_p infra_p dt` — and it does not move it, because the two things the
+    /// knob chooses between are worth **exactly the same** to that metric:
+    ///
+    /// - deepening bills `infra_step_price / eta_works` and raises works by
+    ///   `infra_step_price`, so works per mineral is `eta_works`;
+    /// - founding bills the coloniser's price and the new colony's stock is
+    ///   `founding_infra = hull_cost` — the recycled hull's minerals *are* the
+    ///   stock (T-70) because a hull's mass is its cost (R-O57, design law #11) —
+    ///   so works per mineral is **1**.
+    ///
+    /// At the card-free `eta_works = 1` those are identical to the last bit
+    /// (`a_mineral_buys_the_same_works_whether_it_deepens_or_founds`).
+    ///
+    /// **That identity is about stock and it is only half the argument.** On
+    /// *flow* deepening wins: rung I → II is **+29.0% hull/yr for nine
+    /// colonisers**, paid back in 62 years. It still does not reach the
+    /// objective, for three reasons that are the engine's rather than the
+    /// knob's — homeworlds start at rung II already, `slips` is pinned at 2 at
+    /// every rung, and **build rate governs only ~19% of a centre's timeline**
+    /// because a declined build waits out `cycle_years = 50` (T-88). See
+    /// `Hyades_industry.md` §6.19a and `examples/founding_tree`.
+    ///
+    /// Measured accordingly (`examples/work_years`, 4,000 yr, 3 seats):
+    /// `b = 0.972` — the best point a 1,500-year screen could find — scores
+    /// **+2.33% ± 0.96 work-years on the standard four-seed bed, 4/4 seeds
+    /// positive**, and **−1.70% ± 2.42 on four seeds it was not chosen
+    /// against**. Pooled over all eight: **+0.32% ± 1.42, 0.22 SE, 5/8
+    /// positive.** Flat, as the identity says it must be. Neighbouring values
+    /// swing the same magnitude in both directions (0.968 is −0.20%, 0.975 is
+    /// +2.24%), which is the signature of a chaotic reordering rather than a
+    /// gradient.
+    ///
+    /// **`eta_works` is the lever this knob is not.** It divides the deepening
+    /// bill and nothing else, so a Production card genuinely does make a mineral
+    /// buy more works — which is the tie-break the baseline has no access to.
+    /// Re-sweep this only once a card or a ladder change has broken the
+    /// identity; the test above is what will say so.
     pub reinvest_bias: f64,
 
     // --- Ranking (autopilot-doc §3) ---
@@ -318,8 +383,16 @@ impl Default for Doctrine {
             // Off until a card or board state turns it on — see the field doc.
             survey_avoids_inhabited: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
+            base_value: [1.0; 3],
+            // The works mix, normalised — an empire wants to buy the colours its
+            // bills are denominated in. `WORKS_MIX_DEFAULT` is in `Basic` order
+            // and is `3:2:1` Yellow : Cyan : Magenta (`Hyades_industry.md` §6.10).
+            doctrine_demand: crate::cards::WORKS_MIX_DEFAULT,
+            risk_aversion: 0.0,
             expand_bias: ExpandBias::ProductionCentersFirst,
-            miners_per_outpost: 3,
+            // 0.5 — **held, not defaulted** (R-O87). Work-years is flat in this
+            // knob wherever it does anything at all, and falls off a cliff above
+            // ~0.98; see the field doc for the identity that makes it so.
             reinvest_bias: 0.5,
             rank: RankWeights::default(),
         }
@@ -436,6 +509,17 @@ pub struct Candidate {
     /// `apply_build_with` will spend — two copies of a rule that must not
     /// disagree, with nothing checking that they don't.
     pub settlers_by_hull: [Kilotons; 2],
+    /// **How many miners this body would be crewed with** (T-87).
+    ///
+    /// Derived, not chosen: §4.3's extraction law inverted against what the
+    /// founding centre can consume and cannot currently get
+    /// (`Simulation::mining_crew_for`). It depends on the *pair* — which rock,
+    /// and which centre is buying — so it cannot be a doctrine field and cannot
+    /// be recomputed from the view alone. It is precomputed here for the same reason
+    /// `settlers_by_hull` is: the crew sets the pair's *price*, and a price the
+    /// decision reads that differs from the price the build charges is how a
+    /// centre ends up sitting Idle next to hulls it can afford.
+    pub mining_crew: usize,
 }
 
 /// What a production center decides to build this cycle (autopilot-doc §§4–6).
@@ -493,8 +577,21 @@ pub struct ProductionContext {
     /// Minimum level required to build "limited" vehicles — the Scout/LCV. The
     /// same schedule puts this at **2**, one tier below expansion.
     pub limited_min_level: BandTier,
-    /// Mineral cost to raise infra by one level (= the target level).
+    /// Mineral cost to raise infra by one level (= the target level). The
+    /// **total**, kept for magnitude comparisons; affordability is per colour.
     pub infra_cost: Price,
+    /// **The works bill for the next rung, split by colour** — Cyan, Magenta,
+    /// Yellow (T-73, `Hyades_industry.md` §5.1).
+    ///
+    /// A work is payable *in named colours*, not out of a total, which is how
+    /// the galaxy's mineral distribution finally bites on development rather
+    /// than only on card costs. So the deepen branch cannot ask
+    /// `stockpile_total >= infra_cost` any more: a centre with plenty of ore and
+    /// none of the colour the bill names cannot buy the rung.
+    pub infra_bill: [Price; 3],
+    /// This centre's bank, by colour, in the same order — the other half of that
+    /// comparison.
+    pub stockpile_by_colour: [Price; 3],
     /// Mineral cost of a Colonizer on the **Medium** hull —
     /// `Hyades_vehicle_roles.md` §6's 1 CMY = 1 fleet model, not a flat
     /// placeholder anymore.
@@ -529,6 +626,21 @@ pub struct ProductionContext {
     /// replenishment the empire runs out of places to go long before it runs
     /// out of galaxy.
     pub candidate_count: usize,
+    /// **Worlds no survey craft has been dispatched to yet** — the frontier a
+    /// new scout could actually be *pointed at*.
+    ///
+    /// Distinct from [`Self::candidate_count`], and the distinction is
+    /// load-bearing. `candidate_count` is *known and still available*: it falls
+    /// to zero when everything scanned is owned or already targeted, which
+    /// happens constantly in a colonised galaxy and says nothing about whether
+    /// exploring would help. This is *unexplored*, and it is the only honest
+    /// precondition for building a survey craft — at zero, `launch_survey` has
+    /// nothing to pick and the hull flies nowhere.
+    ///
+    /// Counted off a running total rather than a walk, because a production
+    /// decision reads it (`CLAUDE.md` §4: per-decision work must be `O(what the
+    /// decision reads)`).
+    pub survey_frontier: usize,
 }
 
 /// The swappable per-seat decision **algorithm** (`Hyades_vehicle_roles.md`
@@ -757,7 +869,12 @@ impl Autopilot for BaselineAutopilot {
         let deepen_possible = ctx.infra < ctx.k_potential - 1e-9;
         // The epsilon is a price too — the whole comparison is on one ladder.
         let eps = Price::new(1e-9);
-        let can_afford_infra = ctx.stockpile_total + eps >= ctx.infra_cost;
+        // **Every colour, not the total** (T-73). `works_bill` in `sim` produces
+        // both sides of this and the build spends against the same function, so
+        // the decision and the purchase cannot drift — the failure
+        // `mining_pair_cost` carries a comment about and `settlers_by_hull` was
+        // written to end.
+        let can_afford_infra = (0..3).all(|i| ctx.stockpile_by_colour[i] + eps >= ctx.infra_bill[i]);
 
         // Below even the limited tier there is nothing to build; deepen or save.
         if ctx.level < ctx.limited_min_level {
@@ -772,7 +889,22 @@ impl Autopilot for BaselineAutopilot {
         // what lets expansion compound: colonies are drawn from *known* worlds,
         // so an empire that never scouts again exhausts its candidate list and
         // stops, however rich it gets.
-        let wants_survey = ctx.candidate_count < doctrine.survey_reserve;
+        // **Never build a survey craft when there is nothing left to survey.**
+        // `survey_frontier` is the set `launch_survey` picks from, so at zero the
+        // hull is built, tasked `Scout`, and flies nowhere — a pure cost, and on
+        // a fully-explored bed it is *most* of what the policy builds.
+        //
+        // The second term is the actual reserve test, and measurement says it is
+        // inert at the shipped value (R-O86). `candidate_count` is the count of
+        // known, unclaimed, non-Barren worlds; measured on seed 1
+        // (`examples/survey_timing`, 600 planets / 1,500 yr) its **median is 0**
+        // and its maximum over the whole run is **164**, against a ratified
+        // `survey_reserve` of **1024**. So the comparison is a constant `true`
+        // and every value above ~200 is bit-identical. That also explains the
+        // plateau `CLAUDE.md` §2 records as a measurement artifact — 2048 reads
+        // as noise, 512 / 256 / 64 fall off a cliff — as a threshold sitting
+        // above the whole range of the thing it thresholds.
+        let wants_survey = ctx.survey_frontier > 0 && ctx.candidate_count < doctrine.survey_reserve;
         let can_afford_light = ctx.stockpile_total + Price::new(1e-9) >= ctx.light_vehicle_cost;
 
         // Between the limited and medium tiers, survey is the only outward move.
@@ -792,9 +924,29 @@ impl Autopilot for BaselineAutopilot {
         }
 
         // With nothing known left to expand to, survey is the only move that can
-        // ever restart expansion. This is the one case where it outranks
-        // everything: no candidates means every other branch below returns Idle.
-        if candidates.is_empty() && can_afford_light {
+        // ever restart expansion — **if there is anything left to survey.**
+        //
+        // ~~"no candidates means every other branch below returns Idle."~~ That
+        // justification was false, and it was load-bearing: the branch it
+        // pre-empts is the `outward == None` deepen fallback, which is the only
+        // deepening path above `medium_min_level` that actually runs. So a
+        // centre with an empty frontier, a full bank and three Bands of headroom
+        // built a scout, every time, forever.
+        //
+        // And `candidates.is_empty()` is not the exploration question. It goes to
+        // zero the moment everything *scanned* is owned or targeted, which in a
+        // colonised galaxy is the common case — median `candidate_count` is **0**
+        // on the standard bed. `survey_frontier` is the honest precondition:
+        // worlds no craft has been dispatched to.
+        //
+        // Measured (`examples/deepen_census`, 600 planets / 1,500 yr), with the
+        // gate ablated so deepening pre-empts the scout instead: infrastructure
+        // builds **88 → 550** on seed 1 and **83 → 502** on seed 7, mean infra
+        // Band 1.028 → 1.167 and 1.026 → 1.151, with colonies and colony-years
+        // **up on both seeds** (3,309 → 3,314 / 2,540,752.7 → 2,544,150.4;
+        // 3,334 → 3,336 / 2,608,344.6 → 2,609,993.2). Strictly better, which is
+        // what a wasted build should look like when it stops.
+        if candidates.is_empty() && can_afford_light && ctx.survey_frontier > 0 {
             return hull_order(HullType::LimitedContactVehicle);
         }
 
@@ -920,45 +1072,79 @@ impl Autopilot for BaselineAutopilot {
         let outward_cost = outward.map(|(_, _, c)| c).unwrap_or(Price::ZERO);
         let can_expand = ctx.stockpile_total + Price::new(1e-9) >= outward_cost;
 
-        // ~~Deepen-vs-expand as a genuine convex dial.~~ **It is not one, and at
-        // the shipped `reinvest_bias` this branch is unreachable (R-O68).**
+        // **Deepen-vs-expand as a return on the minerals it costs (R-O68, T-51).**
         //
-        // The two sides are not in the same unit. `deepen_headroom` is a *Band*
-        // difference, `k_potential − infra`, bounded by 4 and in practice by
-        // `k_potential − 1`. `score` is `rank`'s weighted sum over a Band, a
-        // mineral density and a hub figure — unbounded and dimensionless-by-
-        // fiat. Measured on seed 1 (`examples/score_scale`), colony-class
-        // candidate scores run p05 = 4.40, median 6.17, max 12.16, and this
-        // branch compares against the **max** because `outward` takes the best
-        // candidate. So depth wins only when `b/(1−b) >= score/headroom ≈ 4`,
-        // i.e. `b >= 0.8`; at the shipped `0.5` it can never fire while any
-        // candidate exists.
+        // ~~`b · deepen_headroom >= (1 − b) · score`.~~ Those two sides were not
+        // in the same unit. The left was a *Band* difference, `k_potential −
+        // infra`, bounded by 4. The right was `rank`'s weighted sum over a Band,
+        // a mineral density and a hub figure — unbounded, and with no price in
+        // it at all. So `reinvest_bias` was not a convex trade but a unit
+        // conversion with a preference hidden inside it: measured on seed 1
+        // (`examples/score_scale`), headroom ran to a mean 2.55 against colony
+        // scores of p05 4.40 / median 6.17 / max 12.16 — and the branch compares
+        // against the **max**, because `outward` takes the best candidate. It
+        // could not fire at the shipped `0.5` while any candidate existed.
         //
-        // `reinvest_bias` is therefore **not a convex trade — it is inert below
-        // ~0.8 and a hard switch above it**, a step function wearing a dial's
-        // clothes. The same shape as CLAUDE.md §2's artifact list, and the same
-        // root cause as the `K = min(hab, bio, infra)` unit error: a comparison
-        // between incommensurable quantities that typechecks, with a constant
-        // absorbing the mismatch.
+        // **Both sides are now `rank` score per kilotonne committed**, and
+        // neither half introduces a constant:
         //
-        // Two live consequences. All real deepening happens through the other
-        // two paths — the unconditional pre-`medium_min_level` staircase above,
-        // and the `outward == None` fallback below — so the expansion-loop time
-        // constant is set by that staircase and not by any tunable trade. And
-        // R-O66's entire measured effect (−178 colonies) reached the objective
-        // through `deepen_possible`, which gates the *staircase*, not through
-        // this dial.
+        // ```text
+        // expand = score / outward_cost                 // this candidate, at its price
+        // deepen = w_k · min(1, headroom) / infra_cost  // one rung, at its price
+        // ```
         //
-        // Not fixed here: making both sides a rate of return in one unit is a
-        // policy redesign (T-51), and the bias is a globally MC-tuned parameter
-        // that needs ratification (§6). Pinned by
-        // `reinvest_bias_is_a_step_function_not_a_dial` so it cannot silently
-        // change meaning.
+        // `w_k` is the weight `rank` already puts on one Band of `k_potential`
+        // (autopilot-doc §3), and it is the right converter because the two
+        // moves trade in one commodity: expansion **acquires** a world's Bands
+        // of ceiling, deepening **realises** a Band of them here. The `min(1, ·)`
+        // is what a rung actually delivers — `apply_build` steps to the next
+        // whole rung whatever the headroom, so a last partial step pays a full
+        // price for less than a Band.
+        //
+        // The comparison is then an odds ratio — depth wins when
+        // `b/(1 − b) >= expand/deepen` — and that crossover is **state-
+        // dependent**, which is the graded region the old form had nowhere: a
+        // centre facing a cheap next rung and a mediocre candidate deepens where
+        // one facing an expensive rung and a hub does not.
+        //
+        // **What it does not do is revive the branch at the shipped defaults,
+        // and that is the finding rather than a shortfall.** The infra ladder
+        // charges 0.9 kt for the rung above the founding one where a Medium
+        // coloniser costs 0.1 kt, so expansion buys tens of times the score per
+        // kilotonne and *ought* to win: the dead branch was the right answer
+        // reached for a wrong reason.
+        //
+        // Measured (`examples/deepen_census`, 600 planets / 1,500 yr, seeds 1
+        // and 7): the run is **bit-identical to the old form** everywhere below
+        // `b = 0.96` — same build mix, same colony count, same colony-years to
+        // the decimal — so this is a units fix and not a behaviour change. What
+        // moved is the far end. The old form's cliff sat between 0.5 and 0.9
+        // with **nothing working beyond it** (seed 1 `b = 0.9`: 70 colonies;
+        // seed 7 `b = 0.95`: 3, i.e. the homeworlds alone). The new crossover is
+        // between **0.96 and 0.98**, and 0.97 and 0.98 are working empires that
+        // deepen — 326 infra builds against 88, mean infra Band 1.028 → 1.099,
+        // colony-years −0.24%. So the odds ratio at the crossover is 24–49,
+        // which is the price ladder's own ratio measured from the other side.
+        //
+        // **R-O85** carries what that exposes, and it is not a tuning question:
+        // infrastructure is priced as if it were scarce on a bed where minerals
+        // are the thing piling up unspent, and `fabrication_rate` saturates by
+        // the second rung, so the rungs above it cost 19 kt and 780 kt to buy
+        // almost no throughput.
         let b = doctrine.reinvest_bias;
         let deepen_headroom = (ctx.k_potential - ctx.infra).max(0.0);
-        let w_deepen = if deepen_possible { b * deepen_headroom } else { f64::NEG_INFINITY };
+        // Floored rather than branched on zero: `0.0 * f64::INFINITY` is `NaN`,
+        // and a NaN reaching replicated state is fatal (design law #16). Every
+        // price in the engine is positive, so the floor is unreachable in play
+        // and exists only to keep `b = 0` arithmetic.
+        let per_kt = |value: f64, cost: Price| value / cost.kilotons().max(1e-12);
+        let w_deepen = if deepen_possible {
+            b * per_kt(doctrine.rank.w_k * deepen_headroom.min(1.0), ctx.infra_cost)
+        } else {
+            f64::NEG_INFINITY
+        };
         let w_expand = match outward {
-            Some((_, score, _)) => (1.0 - b) * score,
+            Some((_, score, cost)) => (1.0 - b) * per_kt(score, cost),
             None => f64::NEG_INFINITY,
         };
 
@@ -1127,6 +1313,12 @@ mod tests {
             medium_min_level: BandTier::III,
             limited_min_level: BandTier::II,
             infra_cost: Price::new(infra + 1.0),
+            // Even thirds against a bank of even thirds: these cases are about
+            // the deepen/expand branch, not about colour scarcity, and
+            // `a_colour_poor_centre_cannot_buy_the_rung` covers that
+            // deliberately.
+            infra_bill: [Price::new((infra + 1.0) / 3.0); 3],
+            stockpile_by_colour: [Price::new(stockpile / 3.0); 3],
             colonizer_cost: Price::new(1.0),
             general_colonizer_cost: Price::new(10.0),
             medium_seed_capacity: Kilotons::at_tier(BandTier::I),
@@ -1136,6 +1328,10 @@ mod tests {
             mining_pair_cost: Price::new(1.0),
             light_vehicle_cost: Price::new(0.25),
             candidate_count,
+            // An unexplored galaxy, so the survey gate is open and these cases
+            // exercise the branch they are about. `a_fully_explored_empire_deepens_instead_of_scouting`
+            // is the one that closes it.
+            survey_frontier: 1,
         }
     }
 
@@ -1168,6 +1364,7 @@ mod tests {
             view: v,
             ranked,
             settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
+            mining_crew: 1,
         }];
         let order = ap.production_choice(&doctrine, &ctx, &cands);
         assert!(matches!(order, BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }));
@@ -1182,24 +1379,26 @@ mod tests {
             view: v,
             ranked,
             settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
+            mining_crew: 1,
         }]
     }
 
-    /// **`reinvest_bias` is a step function, not a dial (R-O68).**
+    /// **`reinvest_bias` is an odds ratio on two returns per kilotonne
+    /// (R-O68, resolved).**
     ///
-    /// `production_choice` picks depth when `b · headroom >= (1 − b) · score`,
-    /// and the two sides are not in the same unit: the left is a Band
-    /// difference bounded by 4, the right is `rank`'s unbounded weighted score.
-    /// So the branch has a crossover in `b`, and this pins where it is — far
-    /// above the shipped `0.5`, which means **at the default the branch cannot
-    /// fire while any candidate exists.**
+    /// `production_choice` picks depth when `b · deepen >= (1 − b) · expand`
+    /// with both sides in `rank` score per kilotonne committed. So the crossover
+    /// is a **price ratio**, `b* = expand / (expand + deepen)`, and it moves
+    /// with the state rather than sitting at one global step: halve the rung's
+    /// price and the crossover falls. That graded region is the thing the old
+    /// form did not have anywhere, and it is what this pins.
     ///
-    /// This is a characterization test, not an endorsement. It exists so the
-    /// dead branch cannot quietly come back to life (or get deader) without
-    /// someone reading R-O68 and T-51 first. Fixing it means putting both sides
-    /// in one unit — a rate of return — which is a policy redesign.
+    /// It also pins the sign of the shipped configuration, which the fix did
+    /// **not** change: an infra rung costs several colonisers, so expansion wins
+    /// at `b = 0.5` and the branch stays cold. That is now a statement about
+    /// prices (R-O85) rather than about units.
     #[test]
-    fn reinvest_bias_is_a_step_function_not_a_dial() {
+    fn reinvest_bias_is_an_odds_ratio_on_two_returns_per_kiloton() {
         let ap = BaselineAutopilot::default();
         let mut doctrine = Doctrine::default();
         // A mature center with the most deepening headroom the ladder allows
@@ -1209,17 +1408,35 @@ mod tests {
         ctx.k_potential = 4.0;
         let cands = one_colony_candidate(&ap, &doctrine);
         let score = cands[0].ranked.score;
-        let headroom = ctx.k_potential - ctx.infra;
 
-        // Where the branch flips, from the inequality itself.
-        let crossover = score / (score + headroom);
+        // The crossover, written from the inequality itself.
+        let crossover = |ctx: &ProductionContext| {
+            let headroom = (ctx.k_potential - ctx.infra).clamp(0.0, 1.0);
+            let deepen = doctrine.rank.w_k * headroom / ctx.infra_cost.kilotons();
+            let expand = score / ctx.colonizer_cost.kilotons();
+            expand / (expand + deepen)
+        };
+
+        // 1. It is a *dial over state*: a cheaper rung is a lower crossover, and
+        //    the movement is continuous rather than a single global step.
+        let dear = crossover(&ctx);
+        let mut cheap_ctx = ctx;
+        cheap_ctx.infra_cost = ctx.infra_cost / 8.0;
+        cheap_ctx.infra_bill = [cheap_ctx.infra_cost / 3.0; 3];
+        let cheap = crossover(&cheap_ctx);
         assert!(
-            crossover > 0.6,
-            "crossover at b = {crossover:.3} (score {score:.2} vs headroom {headroom:.2}) — if this has              dropped near 0.5 the two sides have become commensurable and R-O68 may be resolved"
+            cheap < dear - 0.05,
+            "crossover must track the rung price: {cheap:.3} at 1/8 the price against {dear:.3}"
         );
 
-        // Below the crossover the dial does nothing: the center expands.
+        // 2. The shipped bias still expands, because a rung costs more than a
+        //    coloniser and buys less. Prices, not units.
         doctrine.reinvest_bias = 0.5;
+        assert!(
+            crossover(&ctx) > 0.5,
+            "the shipped ladder must still favour expansion at b = 0.5 — if this has crossed, \
+             re-read R-O85 before ratifying"
+        );
         assert!(
             matches!(
                 ap.production_choice(&doctrine, &ctx, &cands),
@@ -1228,12 +1445,69 @@ mod tests {
             "at the shipped bias, a center with maximal headroom still expands"
         );
 
-        // Above it the dial does everything: same state, opposite decision, with
-        // no graded region in between that a search could climb.
-        doctrine.reinvest_bias = (crossover + 1.0) / 2.0;
+        // 3. Above the crossover the same state flips to depth — and the two
+        //    crossovers differ, so there is a band of `b` where the cheap-rung
+        //    centre deepens and the dear-rung one does not. That band is the
+        //    graded region.
+        doctrine.reinvest_bias = (dear + 1.0) / 2.0;
         assert!(
             matches!(ap.production_choice(&doctrine, &ctx, &cands), BuildOrder::UpgradeInfrastructure),
             "above the crossover the same state must flip to depth"
+        );
+        doctrine.reinvest_bias = (cheap + dear) / 2.0;
+        assert!(
+            matches!(ap.production_choice(&doctrine, &cheap_ctx, &cands), BuildOrder::UpgradeInfrastructure)
+                && matches!(
+                    ap.production_choice(&doctrine, &ctx, &cands),
+                    BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }
+                ),
+            "between the two crossovers the decision must depend on the rung price, not only on b"
+        );
+    }
+
+    /// **A fully-explored empire deepens instead of scouting (R-O86).**
+    ///
+    /// `candidates.is_empty()` used to send a centre straight to a survey hull,
+    /// justified by "no candidates means every other branch below returns Idle."
+    /// That is false: the branch it pre-empts is the `outward == None` deepen
+    /// fallback, and that fallback is the only deepening path above
+    /// `medium_min_level` that actually runs at the shipped `reinvest_bias`.
+    ///
+    /// So the two halves are pinned here. With frontier left, an empty candidate
+    /// list still buys a scout — that is the mechanic restarting expansion, and
+    /// it must not regress. With the galaxy explored, the same centre deepens.
+    #[test]
+    fn a_fully_explored_empire_deepens_instead_of_scouting() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        // Mature, funded, nothing known left to take.
+        let mut ctx = prod_ctx(BandTier::III, 1.0, 100.0);
+        ctx.candidate_count = 0;
+
+        ctx.survey_frontier = 1;
+        assert!(
+            matches!(
+                ap.production_choice(&doctrine, &ctx, &[]),
+                BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+            ),
+            "with galaxy left to explore, an empty candidate list must still buy a scout"
+        );
+
+        ctx.survey_frontier = 0;
+        assert_eq!(
+            ap.production_choice(&doctrine, &ctx, &[]),
+            BuildOrder::UpgradeInfrastructure,
+            "with nothing left to survey, the same centre must spend on depth rather than on a hull \
+             that would be tasked Scout and fly nowhere"
+        );
+
+        // And it must not deepen past the ceiling just because survey is shut:
+        // a capped centre with nothing to explore and nothing to take idles.
+        ctx.infra = ctx.k_potential;
+        assert_eq!(
+            ap.production_choice(&doctrine, &ctx, &[]),
+            BuildOrder::Idle,
+            "a capped centre with no frontier and no candidates has nothing to buy"
         );
     }
 

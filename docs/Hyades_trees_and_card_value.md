@@ -165,7 +165,7 @@ Defined before use (`CLAUDE.md` §6), because §3 and §4 both index on them.
 | symbol | name | unit | where it comes from |
 |---|---|---|---|
 | `i`, `j` | player (seat) indices | — | `PlayerId` |
-| `T` | measurement horizon | yr | §3.1, currently 8,000 |
+| `T` | measurement horizon | yr | §3.1, **3,000** (was 8,000; revised by the author) |
 | `C_i(t)` | colonies owned by `i` at time `t` | count | `SimReport::players[i].colonies` |
 | `V_i(t)` | works owned by `i` | kt of works | `Hyades_industry.md` §5 — **not yet built** |
 | `F_i(t)` | fleet dry mass owned by `i` | kt | `hull_dry_mass` summed over owned hulls |
@@ -225,6 +225,30 @@ moving the world?* Freezing `w_ij` at setup answers "nothing".
 > *without moving the world*. Destroying a rival's colony moves the world. The
 > distinction is the whole reason `w_ij` is frozen and `C_j` is not.
 
+**Measured, and it cannot be read on the standard bed at all — for a reason that
+is about the galaxy generator, not about the metric** (`examples/tree_gradient`,
+R-TREE8). Summed over seats, `Σ_i W_i` reports `−0.0000 ± 0.0000` on all four
+seeds. That is not a noisy small number, it is an algebraic zero: at 3 seats the
+homeworlds sit on a hex ring at pairwise distance **77.942 ly, spread 0.000%, on
+every seed** — an equilateral triangle. So every `w_ij = 1/2`, the weight matrix
+is doubly stochastic, and
+
+```text
+Σ_i W_i = Σ_i C_i − Σ_j C_j · (Σ_{i≠j} w_ij) = Σ_i C_i − Σ_j C_j = 0
+```
+
+identically, for any colony distribution, at any horizon, under any
+configuration. No number of seeds or years rescues it.
+
+Wider tables are not symmetric — the same measurement gives pairwise spread
+**100.0% at 6 seats and 286.4% at 12** — so `w_ij` is non-uniform there and the
+seat sum is no longer identically zero. But it remains a contrast between
+near-identical players, which is the deeper point: **Warfare is a per-seat
+objective and needs an asymmetric bed**, one seat carrying the card or the knob
+and the rest at the default. That is a different experiment from the symmetric
+CRN bed every other measurement in this project uses, and it has to be built
+rather than assumed (**R-TREE8**).
+
 #### 2.3.3 Growth — work-years
 
 ```text
@@ -250,7 +274,13 @@ consolidation wins under geometry alone. Since R-O57 dry mass *is* mineral cost,
 so fleet-years is also "minerals committed to hulls, integrated" — one quantity,
 two readings, no second ladder.
 
-Measurable today.
+Measurable today — **and now actually measured in mass.** `VehicleSnapshot`
+gained a `dry_mass` field for this; before it, the only harness computing
+fleet-years (`examples/founding_tree`) summed `vehicles.len()`, which is the
+hull count this section forbids, and nothing in the snapshot could have told it
+so. `examples/tree_gradient` reads the mass. R-O88's ratified "+26–34%
+fleet-years" was taken on the count and is **not** re-denominated here, because
+that would invalidate the figure without re-running the comparison.
 
 #### 2.3.5 Technology — capability-years
 
@@ -324,6 +354,14 @@ of them had to be legislated:
 clarification stands: this is a concrete proposal to measure, not a settled
 answer.
 
+**Today it is Expansion exactly.** The engine has no inter-player freight
+accounting, so `φ_ij ≡ 0` and `Pol_i ≡ E_i` to the last bit —
+`examples/tree_gradient` prints the ratio as `1.000000000` and **excludes**
+Politics from its composite for that reason, since including it would silently
+double Expansion's weight. Instrumenting `φ_ij` is the prerequisite for this tree
+having an objective at all, and it is the same accounting T-77's freight-leg
+Exchange needs.
+
 ### 2.4 Commensurability — the doubling time is the numeraire
 
 **The six objectives are in six different units, and §4 requires tier-1 cards to
@@ -349,6 +387,23 @@ Two consequences follow immediately and both are load-bearing:
   (§4.4). The author's two rules are not two rules: measuring on a gradient
   *forces* early evaluation, because that is the only window where a gradient is
   defined.
+
+**There is a second, cheaper route to commensurability, and it does not replace
+this one.** For *tuning* rather than card costing, what is wanted is one number
+per configuration rather than one per card, and the ratio to the shipped default
+supplies it: divide each tree's stock integral by its value at the default and
+take the **geometric mean**. The default scores exactly `1.0` on every tree by
+construction, units cancel before the average so no tree's scale sets its weight,
+and — the property that makes it worth having — `ln S` is the *arithmetic* mean
+of the per-tree log-ratios, so a composite elasticity `∂ln S/∂ln x` is exactly
+the mean of the per-tree elasticities and decomposes for free.
+
+That is dimensionless in both directions: knobs are comparable to each other and
+trees are comparable to each other, with no regression to fit and no compounding
+window to choose. What it does **not** give is card value — a geomean over a
+horizon is not a doubling time, and §4's percentile contract is written against
+`t₂`. Use the geomean to decide what to investigate; use the doubling time to
+cost a card. `examples/tree_gradient` implements the first (**R-TREE9**).
 
 **Estimate `g` by regression on `ln X_i(t)` over the compounding window, not from
 two endpoints.** Endpoint estimates are dominated by whichever end is noisier and
@@ -377,18 +432,35 @@ something scores suspiciously well.
 
 ## 3. The measurement bed
 
-### 3.1 The 8-kyr requirement, and what it costs
+### 3.1 The horizon is 3,000 years, not 8,000 (author's revision)
 
-The author's instruction is to measure all six on an **8,000-year** bed. The
-requirement is sound — colony count saturates early, but fleet mass, works and
-capability plausibly do not, and a horizon that truncates five of six stocks
-mid-compounding would bias every comparison toward Expansion.
+**Superseded.** The bed was specified at **8,000 years** on the reasoning that
+colony count saturates early but the other five stocks plausibly do not, so a
+short horizon would bias every comparison toward Expansion. The reasoning stands;
+the number does not. **The author's revision: every colonizable world is taken by
+~2,500 years, so 8 kyr buys nothing that 3 kyr does not** — and the engine's own
+measurements agree from the other side (`CLAUDE.md` §2: colony count reaches
+97.9% of its 4,000-year total by 1,500 yr and 99.9% by 2,000).
 
-**It is also, at today's throughput, the binding constraint on the entire card
-programme, and that has to be said plainly rather than discovered later.**
-Measured post-T-68 (`examples/horizon_cost`, seed 1, 3 seats): 4,000 yr costs
-~400 s. `CLAUDE.md` §7 records that 8 kyr cost **5.8×** the 4 kyr run at an
-earlier operating point, so one 8-kyr seed is on the order of **35–40 minutes**.
+**The bed is 3,000 years.** That is ~500 years of margin past the point
+colonisation completes, which is where the other five stocks are still
+compounding and therefore where a doubling-time regression has something to fit.
+
+**This is a 5.8x reduction in the cost of the entire card programme**, and the
+programme was the binding constraint on the schedule rather than the other way
+round. What follows about cost is now a smaller problem, not a different one:
+4,000 yr costs ~400 s post-T-68 (`examples/horizon_cost`, seed 1, 3 seats), and
+degradation is superlinear in duration, so 3 kyr is well under half that.
+
+**§3.2 is still the first measurement and it now costs a fifth of what it did.**
+Per-metric saturation decides which trees need even 3,000 years; nothing here
+assumes they all do.
+
+> **The general lesson, and it is §2's in a new place: shrink the scenario before
+> the horizon, and check what the horizon was bought for.** The 8-kyr figure was
+> reasoning about *stocks that compound*, applied by extending the clock — when
+> the thing that actually sets the floor is the point colonisation completes,
+> which is a property of the galaxy and the expansion loop, not of the trees.
 
 A single card's value distribution needs enough samples for a stable **92nd
 percentile** — realistically dozens, not a handful. Six trees × the card set ×
@@ -407,17 +479,19 @@ Three things soften the cost and none of them removes it:
   with the screen **re-calibrated** — the ρ figures in that file predate three
   landings and must not be assumed to carry.
 - **Measure where each stock actually saturates first** (§3.2). If fleet-years
-  saturates at 3,000 yr, the 8-kyr bed is only needed for the stocks that do not.
+  saturates at 2,000 yr, even the 3-kyr bed is longer than that tree needs.
 
 ### 3.2 Per-metric saturation is the first measurement, and it is cheap
 
-Before any card is measured: **one 8-kyr run per seed, instrumented for all six
+Before any card is measured: **one 3-kyr run per seed, instrumented for all six
 stocks, plotting each against time.** That single run answers, for each tree:
 
 - where its stock leaves the exponential regime (which sets the window §2.4's
   regression is fitted over);
 - where it saturates (which sets the horizon that tree actually needs);
-- and whether it saturates at all inside 8 kyr.
+- and whether it saturates at all inside 3 kyr — a tree whose stock is still
+  in its exponential regime at the horizon needs the regression fitted, not the
+  horizon extended (§3.1).
 
 This is a handful of runs to potentially cut the whole programme's horizon for
 four or five of the six trees. It is the highest-leverage measurement available
@@ -433,6 +507,15 @@ trying to measure.
 
 Three of the six are measurable today (`C`, `F`, and the freight flows `φ` needs);
 `V` waits on works (T-73/T-74) and `Q` on the capability definition (R-TREE4).
+
+**Updated: `V` has landed and `φ` has not.** Works exist since T-73/T-75, so
+Growth is measured directly rather than through R-TREE3's infrastructure proxy.
+`F` needs `VehicleSnapshot::dry_mass`, added for §2.3.4. What is *not* available
+is the one this section claimed was — **inter-player delivered freight is not
+accounted anywhere**, so `φ_ij` cannot be read and Politics has no objective
+distinct from Expansion (§2.3.6). So the count today is **three measurable**
+(`E`, `G`, `P`), one algebraically dead on the standard bed (`W`, R-TREE8), one
+blocked on freight accounting (`Pol`), and one undefined (`Q`, R-TREE4).
 
 ---
 
@@ -530,7 +613,9 @@ Stated so it is not discovered as a surprise:
 | **R-TREE4** | Capability: the axis set, the reference scales `q_ref,a`, the weights `s_a`, and above all `ρ` — how Liebig capability is. | §2.3.5 |
 | **R-TREE5** | Politics' coupling `κ`, and whether delivered freight is the whole of `φ_ij` or only its economic half (shared intelligence is the other candidate). | §2.3.6 |
 | **R-TREE6** | Dispersion measure for the tier-1 constraint. MAD proposed over variance; and the numeric bound for "similar P92". | §4.3 |
-| **R-TREE7** | Whether all six trees need the 8-kyr horizon, or only those whose stock has not saturated. Answered by T-78. | §3.2 |
+| **R-TREE7** | Whether all six trees need the full horizon, or only those whose stock has not saturated. Answered by T-78. The horizon itself is settled at **3,000 yr** (§3.1). | §3.2 |
+| **R-TREE8** | **Warfare needs an asymmetric bed.** Its seat sum is an *algebraic* zero at 3 seats (equilateral homeworlds ⇒ doubly stochastic `w_ij`), and a noise-dominated contrast at 6 and 12. Specify the perturbed-seat experiment: which seat, how the others are held, and how the result is paired across seeds. | §2.3.2 |
+| **R-TREE9** | **The composite objective.** `examples/tree_gradient` scores the geomean of the ratio-to-default of the measurable trees, which makes `∂ln S/∂ln x` the plain mean of the per-tree elasticities and everything dimensionless. Two things are unratified: the equal weighting across trees, and whether a geomean is the right aggregator once Warfare and Technology join (a tree that can go negative has no log). | §2.4 |
 
 ---
 
