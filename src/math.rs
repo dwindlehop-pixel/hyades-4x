@@ -111,6 +111,102 @@ pub fn signal_delay_years(distance_ly: f64) -> f64 {
     distance_ly / C
 }
 
+/// **The lower end of [`exp_decay`]'s fitted range.** Arguments below this fall
+/// back to `f64::exp`.
+///
+/// Measured, not assumed: the only caller is the ranking hot path, where the
+/// argument is `−distance / centrality_scale`. Histogrammed over full runs it
+/// spans **[−1.735, 0]** — 91.7% of calls in [−1, 0) and the rest in [−2, −1) —
+/// and the most negative value seen across 2, 3, 12 and 18 seats is **−1.735**.
+/// So `−2` is the measured extent plus 15%, and anything past it is somebody
+/// else's galaxy, where correctness comes from the fallback rather than from
+/// this bound being right.
+pub const EXP_DECAY_MIN: f64 = -2.0;
+
+/// Minimax coefficients for `exp` on `[EXP_DECAY_MIN, 0]`, degree 7, ascending.
+///
+/// Fitted by Remez exchange in the Chebyshev basis and converted to monomials;
+/// the max error below is *measured* on a 200,001-point grid, not predicted.
+/// They read as `1, 1, 1/2, 1/6, 1/24, …` because that is what they are — a
+/// truncated exponential with the truncation error spread evenly across the
+/// interval instead of piled up at the far end.
+///
+/// Written at the shortest decimal that round-trips to the fitted `f64`, which
+/// is also what clippy's `excessive_precision` insists on: the extra digits the
+/// fitter emitted named the same bits and read as accuracy that was not there.
+const EXP_DECAY_C: [f64; 8] = [
+    0.999_999_926_488_396_5,
+    0.999_995_157_993_455_1,
+    0.499_947_599_552_087_9,
+    0.166_449_614_576_505_6,
+    0.041_220_952_478_091_68,
+    0.007_827_208_892_832_536,
+    0.001_058_436_443_408_709_3,
+    7.556_538_929_505_768e-5,
+];
+
+/// **`exp(x)` for the decay range, by polynomial** — 2.7x `f64::exp` at a
+/// maximum relative error of **5.4e-7** (T-102).
+///
+/// The ranking hot path evaluates `exp(−distance / centrality_scale)` **45.4
+/// million times** over an 800-year three-seat run, and the result is a
+/// *classification weight*: it discounts a world's `k_potential` by distance and
+/// the product is compared against `hub_high`. Seven significant figures is
+/// several more than a weight in that position can spend.
+///
+/// **Estrin, not Horner, and that is the whole speed difference.** Both evaluate
+/// the same degree-7 polynomial to the same bits-ish accuracy, but Horner is a
+/// serial chain of seven dependent multiply-adds while Estrin splits it into
+/// four independent pairs combined in two levels. Measured on this machine over
+/// 65,536 inputs drawn from the real range:
+///
+/// | | ns/call | max relative error |
+/// |---|---|---|
+/// | `f64::exp` | 5.24 | — |
+/// | Horner, degree 5 | 1.98 | 1.2e-4 |
+/// | Horner, degree 7 | 2.98 | 5.4e-7 |
+/// | Horner, degree 9 | 4.05 | 1.5e-9 |
+/// | **Estrin, degree 7** | **1.97** | **5.4e-7** |
+///
+/// Estrin at degree 7 costs what Horner costs at degree 5 and is 220x more
+/// accurate, so the dependency chain — not the multiply count — was the price.
+///
+/// **It is also more deterministic than the function it replaces**, which is the
+/// half worth keeping. `f64::exp` is the platform libm natively and a Rust libm
+/// on wasm32; `Hyades_netcode.md` §6 H4 accepts that because the transcendental
+/// ships *inside* the module, but the argument only covers wasm against wasm. A
+/// polynomial of `+` and `*` is exactly specified by IEEE 754 and identical
+/// everywhere by construction. **No `mul_add`**: a fused multiply-add rounds
+/// once where a separate multiply and add round twice, so mixing the two across
+/// targets would reintroduce exactly the divergence this removes.
+///
+/// Outside the fitted range — below [`EXP_DECAY_MIN`], above zero, or `NaN` —
+/// it defers to `f64::exp`, so the function is correct on all of `f64` and only
+/// *fast* where it was measured to matter. The upper guard is not decoration:
+/// the polynomial is a minimax fit on a closed interval and says nothing at all
+/// about `x > 0`, where it passes 1% relative error by `x = 1`. The caller that
+/// motivated this passes `−distance / scale`, so neither branch is ever taken;
+/// the next caller may not be so tidy, and a fast wrong answer is worse than the
+/// two compares.
+#[inline]
+pub fn exp_decay(x: f64) -> f64 {
+    // Written as a negated `in range` so a `NaN` argument falls through to
+    // `f64::exp` and propagates rather than indexing into the polynomial.
+    if !(EXP_DECAY_MIN..=0.0).contains(&x) {
+        return x.exp();
+    }
+    let c = &EXP_DECAY_C;
+    let x2 = x * x;
+    let x4 = x2 * x2;
+    // Four independent pairs, then two levels of combination: depth 4 against
+    // Horner's 7, with the same operand count.
+    let a = c[0] + c[1] * x;
+    let b = c[2] + c[3] * x;
+    let d = c[4] + c[5] * x;
+    let e = c[6] + c[7] * x;
+    (a + b * x2) + (d + e * x2) * x4
+}
+
 /// **Ship travel time**: years for a torchship to cross `distance` ly under a
 /// symmetric flip-and-burn at constant proper acceleration `accel` (ly/yr²),
 /// starting and ending at rest.
@@ -215,5 +311,72 @@ mod tests {
         // endpoints land exactly.
         assert!(position_along(o, d, 0.0, arrive, G, 0.0).distance(o) < 1e-6);
         assert!(position_along(o, d, 0.0, arrive, G, arrive).distance(d) < 1e-6);
+    }
+
+    /// The accuracy claim in [`exp_decay`]'s doc comment, asserted rather than
+    /// asserted-in-prose. 1e-6 is the *bound* the caller was accepted against;
+    /// the fit measures 5.4e-7, so there is 1.9x of headroom and a refit that
+    /// silently loses a digit fails here instead of in a balance measurement.
+    #[test]
+    fn exp_decay_holds_its_error_bound_over_the_fitted_range() {
+        const STEPS: u32 = 200_000;
+        let mut worst = 0.0f64;
+        let mut worst_at = 0.0f64;
+        for i in 0..=STEPS {
+            let x = EXP_DECAY_MIN * (f64::from(STEPS - i) / f64::from(STEPS));
+            let want = x.exp();
+            let rel = ((exp_decay(x) - want) / want).abs();
+            if rel > worst {
+                worst = rel;
+                worst_at = x;
+            }
+        }
+        assert!(worst <= 1e-6, "max relative error {worst:e} at x={worst_at}");
+    }
+
+    /// Outside the fitted range the answer must be the library's, **bit for
+    /// bit** — not merely close. A fallback that is approximately right is a
+    /// second approximation nobody measured, and the guard is the only thing
+    /// keeping the polynomial's domain honest.
+    #[test]
+    fn exp_decay_defers_to_the_library_outside_the_fitted_range() {
+        for &x in &[
+            // Just past the guard: `EPSILON` is an ulp at 1.0, and the ulp
+            // at 2.0 is twice that, so a bare `MIN - EPSILON` rounds back onto
+            // the boundary and tests nothing.
+            EXP_DECAY_MIN - 4.0 * f64::EPSILON,
+            -2.5,
+            -10.0,
+            -745.0,
+            f64::NEG_INFINITY,
+            f64::MIN,
+            f64::EPSILON,
+            0.5,
+            1.0,
+            700.0,
+            f64::INFINITY,
+        ] {
+            assert_eq!(exp_decay(x).to_bits(), x.exp().to_bits(), "x={x}");
+        }
+        assert!(exp_decay(f64::NAN).is_nan());
+    }
+
+    /// The fit is monotone on the range and brackets the values the caller
+    /// treats as anchors — a weight that ran backwards in distance would be a
+    /// ranking inversion, which no error bound on its own rules out.
+    #[test]
+    fn exp_decay_is_monotone_and_anchored() {
+        // The fit does not interpolate its endpoints — a minimax polynomial
+        // spreads the error evenly rather than pinning it to zero anywhere — so
+        // `exp_decay(0.0)` is 1.0 to within the bound, not 1.0.
+        assert!((exp_decay(0.0) - 1.0).abs() <= 1e-6);
+        let mut prev = f64::INFINITY;
+        for i in 0..=2_000 {
+            let x = EXP_DECAY_MIN * (f64::from(i) / 2_000.0);
+            let y = exp_decay(x);
+            assert!(y <= prev, "not monotone decreasing at x={x}");
+            assert!(y > 0.0, "non-positive weight at x={x}");
+            prev = y;
+        }
     }
 }

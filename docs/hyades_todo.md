@@ -364,12 +364,17 @@ measurement — the ablation changes which worlds get ranked and therefore the r
 
 What is left inside the call, after T-100 removed the four logarithms:
 
-- **`centrality = exp(−dist / scale)`** — one `sqrt` and one `exp` per call. It
-  depends on the planet and on `holdings_centroid`, which is per-player and
-  moves ~3,400 times a run, so it is cacheable with a generation counter. The
-  arithmetic says each planet is ranked ~2× per centroid epoch, so the hit rate
-  would be ~50% and the win ~half of whatever the `exp` costs. Ablating just
-  this pair at the *current* operating point is the measurement to take first.
+- ~~**the `exp` in `centrality`**~~ — **done, see below.**
+- **The `sqrt` in `dist`.** `Vec3::distance` to `holdings_centroid`, once per
+  call. The obvious move is to compare squared distances, and it does not work
+  here: the result is not compared, it is *divided by a scale and exponentiated*.
+  Either the weight changes shape (a design question, not a performance one) or
+  the `sqrt` stays. The cacheable framing below is the live option.
+- **A generation-counter cache on `centrality`.** `holdings_centroid` is
+  per-player and moves ~3,400 times a run, so each planet is ranked ~2× per
+  centroid epoch and the hit rate would be ~50%. That was worth ~half an `exp`
+  before T-102; it is now worth ~half of **1.97 ns**, against a cache line pulled
+  per planet. Very likely a loss now — **measure before building it.**
 - **Five component lookups in `view_of`** to build a struct the caller reads
   once. `CLAUDE.md` §4's "hand a decision only the fields it reads" has already
   been applied once here (the `MineralField` came out at T-100); whether the
@@ -381,6 +386,42 @@ landings that changed the mix, and this file's own record is that the ranking of
 hot spots reorders when you fix one of them — T-100's `ln` was worth 2× and the
 `sqrt`+`exp` beside it was worth nothing *at that operating point*, which is not
 the operating point any more.
+
+#### Landed: the `exp` is a polynomial (`math::exp_decay`)
+
+**+2.7% throughput, 6/6 seeds, at a metric disturbance of zero on five of them.**
+`math::exp_decay` is a degree-7 minimax fit of `exp` on `[−2, 0]`, evaluated by
+Estrin's scheme, with a fallback to `f64::exp` outside that interval.
+
+Four things about *how*, because the method is the reusable part:
+
+- **The range was histogrammed, not assumed.** 45,440,043 calls span
+  **[−1.7348, 0]** — 91.7% in [−1, 0), 8.3% in [−2, −1) — and −1.7348 is the most
+  negative argument across 2, 3, 12 and 18 seats. Fitting the interval an
+  argument *actually takes* is what buys the accuracy: a degree-7 fit is 5.4e-7
+  over [−2, 0] and would be useless over [−40, 0].
+- **Estrin, not Horner, is the entire speed difference.** Degree 7 by Horner is
+  2.98 ns/call; the same polynomial by Estrin is **1.97**, which is what Horner
+  costs at *degree 5* and 220× more accurate. The dependency chain was the price,
+  not the multiply count. (`f64::exp`: 5.24 ns/call.)
+- **A polynomial is more deterministic than the thing it replaces.** `f64::exp`
+  is platform libm natively and a Rust libm on wasm32; `+` and `*` are exactly
+  specified by IEEE 754 and identical everywhere. **No `mul_add`** — a fused
+  multiply-add rounds once where a separate multiply and add round twice, which
+  would reintroduce precisely the cross-target divergence this removes.
+- **It is not bit-identical, and the liveness probe said so before the A/B did.**
+  Perturbing the polynomial by ×1.000001 changed seed 7's run — so the call site
+  is live and any bit-identity would be luck. Measured over six seeds at 800 yr,
+  3 seats: **five reproduce the `f64::exp` run exactly** and seed 3 moves
+  −0.08% events, +0.07% colonies (2,988 → 2,990), −0.02% population. Against the
+  ≤2% disturbance bar this is comfortable; against T-100 and T-101, which *were*
+  bit-identical, it is a different kind of change and is recorded as one.
+
+Guarded by three tests in `src/math.rs`: the 1e-6 error bound over a 200,001-point
+grid (the fit measures 5.4e-7, so 1.9× of headroom), **bit-for-bit** equality with
+`f64::exp` outside the range, and monotonicity — because an error bound alone does
+not rule out a weight that runs backwards in distance, which would be a ranking
+inversion rather than a rounding difference.
 
 ---
 

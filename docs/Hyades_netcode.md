@@ -562,6 +562,26 @@ native-target situation where the platform libm varies. The corresponding rule: 
 may cross the JS boundary inbound.** `Math.*` in JS is engine-provided and not required to
 be correctly rounded.
 
+**H4a · The gap H4 does not close is native *against* wasm.** H4 establishes
+wasm-vs-wasm, and that is the property a lobby of browser clients needs. But
+`CLAUDE.md` §4 asks for more — *"same seed ⇒ bit-identical results, native and
+wasm32"* — and a platform libm's `exp` need not agree with the Rust libm compiled
+into the module, so every transcendental on a path that reaches hashed state is a
+standing exception to that line. The exceptions are not enumerated anywhere and
+should be, because a native headless server validating a browser client's run is
+exactly the deployment H4 does not cover.
+
+T-102 removed one of them rather than documenting it: the ranking hot path's
+`exp(−distance / centrality_scale)` is now `math::exp_decay`, a degree-7 minimax
+polynomial over the range the argument was *measured* to take, built from `+` and
+`*` only. Under H8 those are correctly rounded and identical on every target, so
+that call site is now bit-identical native-to-wasm by construction rather than by
+assumption. Two properties of the fix are load-bearing and easy to lose: it uses
+**no `mul_add`** (a fused multiply-add rounds once where a multiply and an add
+round twice, so mixing the two across targets reintroduces the divergence), and
+arguments outside the fitted interval fall back to `f64::exp` — correct
+everywhere, fast only where it was measured to matter.
+
 **H5 · No host clock, no host entropy.** No `Date.now()`, `performance.now()`, or
 `Math.random()` inside the sim. Already satisfied (`log.rs` deliberately stamps with the
 sim clock).

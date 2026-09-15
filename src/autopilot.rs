@@ -756,7 +756,11 @@ impl Autopilot for BaselineAutopilot {
 
         // hub_value: high-K worlds near the empire's centre of mass are hubs.
         let dist = view.position.distance(ctx.holdings_centroid);
-        let centrality = (-dist / w.centrality_scale).exp();
+        // **A polynomial, not `exp`** (T-102). This is 45.4 M calls a run and
+        // the result is a classification *weight*; `math::exp_decay` is 2.7x the
+        // library function at 5.4e-7 relative error over the range this argument
+        // actually takes, which was histogrammed rather than assumed.
+        let centrality = crate::math::exp_decay(-dist / w.centrality_scale);
         // `Band` has no `Mul` since the units fix, and rightly: scaling a
         // position on a log ladder is not scaling a quantity. This is not a
         // quantity — it is a **classification score**, a `k_potential` reading
