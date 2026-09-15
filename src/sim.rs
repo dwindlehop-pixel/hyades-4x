@@ -381,6 +381,29 @@ struct VisitedMask {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct ScannedSet {
     ids: Vec<PlanetId>,
+    /// **The subset still worth ranking** (T-101) — every scanned world that is
+    /// not yet targeted and not yet owned, in the same ascending order.
+    ///
+    /// The production candidate scan walks `ids` and rejects **81.9%** of it on
+    /// two membership tests: 251.6 M steps over an 800-year three-seat run, of
+    /// which 45.4 M survive. Both tests are **monotone** — `Knowledge::targeted`
+    /// is only ever inserted and a planet's `owner` is only ever set, with no
+    /// `remove` for either anywhere in the engine — so a world that fails one
+    /// fails it forever, and 206 M of those steps re-derive a permanent answer.
+    ///
+    /// This is that answer, cached. Entries are appended when a world is first
+    /// scanned and **compacted out in place** during the scan that observes them
+    /// rejected, so the set pays for its own maintenance and nothing has to
+    /// remember to invalidate it.
+    ///
+    /// **Compaction, not swap-removal, and that distinction is the whole
+    /// landing.** R-O70 tried an incrementally-maintained frontier before: it
+    /// cut the scanned count 39% and came out *slower*, because swap-removal
+    /// scrambled the order and traded a sequential walk for random access across
+    /// three component stores — locality beat count. A retain-style compaction
+    /// preserves ascending order, so the walk stays sequential and the survivors
+    /// stay a sorted subsequence of `ids`.
+    live: Vec<PlanetId>,
 }
 
 impl ScannedSet {
@@ -390,6 +413,12 @@ impl ScannedSet {
             Ok(_) => false,
             Err(i) => {
                 self.ids.insert(i, pid);
+                // Sorted insert into the live pool too, so it stays a sorted
+                // subsequence and the scan below visits the same worlds in the
+                // same order it always did.
+                if let Err(j) = self.live.binary_search_by_key(&pid.0, |p| p.0) {
+                    self.live.insert(j, pid);
+                }
                 true
             }
         }
@@ -3834,15 +3863,34 @@ impl Simulation {
         let mut best: [Option<Candidate>; 3] = [None, None, None];
         let survey_frontier = self.survey_frontier(p);
         {
-            let knowledge = self.world.knowledge.get(pe).unwrap();
-            for &pid in &knowledge.scanned {
-                if knowledge.targeted.contains(pid) {
+            // **Walk the live pool and compact it in the same pass** (T-101).
+            //
+            // The two filters are monotone, so an entry that fails one is dead
+            // for the rest of the run: observing that is the only chance to
+            // record it, and doing it here means the pool pays for its own
+            // maintenance with no invalidation hook to forget.
+            //
+            // Taken by value rather than borrowed, because the loop reads
+            // `self.world.owner`, `self.planet_entity` and the autopilot while
+            // it writes the pool. `mem::take` on a `Vec` is a pointer swap, the
+            // borrow it needs ends immediately, and the pool goes back below —
+            // the alternative is threading a second lifetime through `view_of`
+            // and `rank` for no gain.
+            let mut live = core::mem::take(&mut self.world.knowledge.get_mut(pe).unwrap().scanned.live);
+            let mut keep = 0usize;
+            for i in 0..live.len() {
+                let pid = live[i];
+                if self.world.knowledge.get(pe).unwrap().targeted.contains(pid) {
                     continue;
                 }
                 let e = self.planet_entity[pid.0 as usize];
                 if self.world.owner.contains(e) {
                     continue;
                 }
+                // Survivor: keep it, compacting toward the front. `keep <= i`
+                // always, so this never reads an element it has not visited.
+                live[keep] = pid;
+                keep += 1;
                 let view = self.view_of(e);
                 let ranked = self.autopilots[p].rank(&doctrine, &view, &rctx);
                 let slot = match ranked.class {
@@ -3868,6 +3916,8 @@ impl Simulation {
                     best[slot] = Some(Candidate { view, ranked, settlers_by_hull, mining_crew });
                 }
             }
+            live.truncate(keep);
+            self.world.knowledge.get_mut(pe).unwrap().scanned.live = live;
         }
         let cands: Vec<Candidate> = best.into_iter().flatten().collect();
         // Built after `cands`, so the survey decision can see how much frontier

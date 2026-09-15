@@ -342,6 +342,91 @@ that fewer items is not automatically faster when the traversal order degrades.
 
 ---
 
+### T-102. The surviving 45.4 M `view_of` + `rank` calls
+
+**What is left of T-52 after T-100 and T-101**, and the scan is no longer the
+obvious target it was.
+
+The candidate scan now walks **45.5 M** entries instead of 251.6 M and ranks
+**all** of them — the filters were the only thing it was rejecting, and they are
+gone. So the remaining cost is exactly `view_of` + `rank`, 45.4 M times.
+
+Bounded by ablation (rank only one entry in four, three interleaved pairs):
+
+| | seed 1 | seed 7 |
+|---|---|---|
+| T-101 | 107.2 | 111.0 |
+| ranking 1-in-4 | 139.7 | 124.1 |
+
+So removing three quarters of it buys **+30% / +12%**. That is a *bound*, not a
+measurement — the ablation changes which worlds get ranked and therefore the run
+— but it says the remaining headroom in the scan is real and no longer dominant.
+
+What is left inside the call, after T-100 removed the four logarithms:
+
+- **`centrality = exp(−dist / scale)`** — one `sqrt` and one `exp` per call. It
+  depends on the planet and on `holdings_centroid`, which is per-player and
+  moves ~3,400 times a run, so it is cacheable with a generation counter. The
+  arithmetic says each planet is ranked ~2× per centroid epoch, so the hit rate
+  would be ~50% and the win ~half of whatever the `exp` costs. Ablating just
+  this pair at the *current* operating point is the measurement to take first.
+- **Five component lookups in `view_of`** to build a struct the caller reads
+  once. `CLAUDE.md` §4's "hand a decision only the fields it reads" has already
+  been applied once here (the `MineralField` came out at T-100); whether the
+  remaining fields want the same treatment is a question for a profiler, not a
+  guess.
+
+**Do not start here without re-ablating.** Every number above was taken after two
+landings that changed the mix, and this file's own record is that the ranking of
+hot spots reorders when you fix one of them — T-100's `ln` was worth 2× and the
+`sqrt`+`exp` beside it was worth nothing *at that operating point*, which is not
+the operating point any more.
+
+---
+
+### ~~T-101. 82% of the candidate scan re-derives a permanent answer~~ — **DONE**
+
+> **Both filters are monotone, so a rejected entry is rejected forever.**
+> `Knowledge::targeted` is only ever inserted and a planet's `owner` is only ever
+> set — there is no `remove` for either anywhere in the engine — so the 206 M of
+> 251.6 M scan steps that failed one of them were re-deriving a permanent answer,
+> once per production decision, for the rest of the run.
+>
+> `ScannedSet` now carries a **live pool** beside `ids`: the scanned worlds not
+> yet targeted and not yet owned, in the same ascending order. Entries are
+> appended when a world is first scanned and **compacted out in place** during
+> the scan that observes them rejected, so the set pays for its own maintenance
+> and there is no invalidation hook to forget.
+>
+> **Compaction, not swap-removal, and that is the whole difference from the
+> attempt that failed.** R-O70 tried an incrementally-maintained frontier before:
+> it cut the scanned count 39% and came out *slower*, because swap-removal
+> scrambled the order and traded a sequential walk for random access across three
+> component stores. A retain-style compaction preserves ascending order, so the
+> walk stays sequential and the survivors stay a sorted subsequence of `ids` —
+> which is also what makes the result bit-identical, since the scan visits the
+> same worlds in the same order and simply skips the ones it would have skipped.
+>
+> **Measured, four interleaved pairs in one session** (the arms must be
+> interleaved — this container's speed drifts enough between sessions to swamp
+> the effect):
+>
+> | | seed 1 | seed 7 |
+> |---|---|---|
+> | T-100 | 95.4–97.4 | 98.6–100.1 |
+> | **T-101** | **106.2–107.3** | **111.1–111.5** |
+>
+> **+10.6% / +11.9%**, bit-identical — 357,786 events, 2,907 colonies and total
+> population to the last digit on seed 1.
+>
+> **And the interesting number is the one that did *not* show up.** Scan steps
+> fell **251.6 M → 45.5 M, −82%**, with the ranked count unchanged at 45.44 M —
+> so the pruning removed exactly the dead entries and nothing else. Deleting 82%
+> of a loop's iterations bought **11%**, because the iterations deleted were two
+> bitmap lookups apiece. **Iteration count is not cost.** The residual is T-102.
+
+---
+
 ### ~~T-100. `rank` recomputes three logarithms per scanned world~~ — **DONE**
 
 > **The production candidate scan is the engine, and one line of it was the

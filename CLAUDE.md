@@ -1206,6 +1206,16 @@ combat logic into the arena or into an example.
     at horizon 4,000 (9.67 s vs 8.90 s): swap-removal scrambled the order, trading a
     sequential walk for random access across three component stores. Locality beat
     count. That attempt is reverted; the finding is not.
+
+    **T-101 did it again and it worked, and the difference is one word:
+    *compaction*.** The candidate scan's two filters are monotone, so a rejected
+    entry is rejected forever; pruning them cut the walk **251.6 M → 45.5 M steps,
+    −82%**, bit-identical. What made it a win rather than a repeat of the above is
+    that a retain-style compaction preserves ascending order — the walk stays
+    sequential — where swap-removal does not. **And the win was 11%, not 82%:**
+    the steps deleted were two bitmap lookups apiece, so *iteration count is not
+    cost*. Both halves of that are worth carrying: prune monotone filters, and do
+    not expect the speedup to track the count you removed.
   - **Memoise a scan whose answer only changes on an event** — but store the
     *recomputed* value, not a running total. `holdings_centroid` walked every
     planet once per production decision (1.14 G iterations on seed 1) for a value
@@ -1699,6 +1709,7 @@ changes how you *work*, not what is left to do:
   | **T-96 (the drive is a mass), same bed — `ns/event` 51,732** | ~35,100 | **48.0 yr/s** | **19×** |
   | **T-98 (the hauler's hull is a forecast), same bed — `ns/event` 27,812** | ~40,900 | **82.9 yr/s** | **33×** |
   | **T-100 (the Band readings are memoised), same bed — `ns/event` 19,549** | ~40,900 | **114.4 yr/s** | **46×** |
+  | **T-101 (the candidate scan prunes what it has rejected)** — interleaved against T-100 in one session: **96.4 → 106.6** and **99.4 → 111.2 yr/s** | ~40,900 | **+11%** | — |
 
   **T-88's last row is the one to read, and it is `ns/event` that says why.**
   Per-event cost went from ~174,000 ns at T-87 to **22,394** — not because any
