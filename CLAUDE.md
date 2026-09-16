@@ -1206,6 +1206,16 @@ combat logic into the arena or into an example.
     at horizon 4,000 (9.67 s vs 8.90 s): swap-removal scrambled the order, trading a
     sequential walk for random access across three component stores. Locality beat
     count. That attempt is reverted; the finding is not.
+
+    **T-101 did it again and it worked, and the difference is one word:
+    *compaction*.** The candidate scan's two filters are monotone, so a rejected
+    entry is rejected forever; pruning them cut the walk **251.6 M → 45.5 M steps,
+    −82%**, bit-identical. What made it a win rather than a repeat of the above is
+    that a retain-style compaction preserves ascending order — the walk stays
+    sequential — where swap-removal does not. **And the win was 11%, not 82%:**
+    the steps deleted were two bitmap lookups apiece, so *iteration count is not
+    cost*. Both halves of that are worth carrying: prune monotone filters, and do
+    not expect the speedup to track the count you removed.
   - **Memoise a scan whose answer only changes on an event** — but store the
     *recomputed* value, not a running total. `holdings_centroid` walked every
     planet once per production decision (1.14 G iterations on seed 1) for a value
@@ -1214,6 +1224,33 @@ combat logic into the arena or into an example.
     associative: the centroid would differ in its last bits, every rank score with
     it, and the run would diverge. Memoising the walk is bit-identical; only the
     *number* of walks changes.
+  - **Replace a library transcendental with a polynomial fitted to the range
+    the argument actually takes.** `rank`'s `centrality` calls `exp` 45.4 M times
+    a run for a *classification weight*; a degree-7 minimax fit on `[−2, 0]` is
+    **+2.7% throughput at 5.4e-7 relative error** (T-102, `math::exp_decay`).
+    Four things about it generalise past this call site:
+
+    - **Histogram the argument before you fit.** The measured span is
+      **[−1.7348, 0]** across 2/3/12/18 seats. A degree-7 fit is excellent over
+      [−2, 0] and worthless over [−40, 0], so the *range* is what buys the
+      accuracy — and a range assumed rather than measured is a silent accuracy
+      claim with nothing behind it.
+    - **Estrin, not Horner.** Same polynomial, same operand count: 2.98 ns/call
+      by Horner, **1.97** by Estrin, which is what Horner costs at *degree 5* and
+      220× more accurate. On a modern core the serial dependency chain is the
+      price, not the multiply count.
+    - **A polynomial is *more* deterministic than the function it replaces.**
+      `f64::exp` is platform libm natively and a Rust libm on wasm32; `+` and `*`
+      are exactly specified by IEEE 754 and identical everywhere. **Never
+      `mul_add`** — it rounds once where a multiply and an add round twice, which
+      reintroduces exactly the cross-target divergence the change removes.
+    - **Perturb the approximation to find out whether the call site is even
+      live.** Scaling the polynomial by ×1.000001 moved seed 7's run, which said
+      before any A/B that bit-identity would be luck rather than a property —
+      and it was: five of six seeds reproduce exactly and one moves +0.07%
+      colonies. **A cheap deliberate perturbation tells you what kind of change
+      you are making, and it is the difference between reporting a disturbance
+      and discovering one.**
   - **Pick the container for the access pattern, and check the siblings.**
     `Knowledge::visited` was converted from `BTreeSet` to a bitmap when one
     `contains` turned out to be 63% of engine instructions — and `targeted`, its
@@ -1698,6 +1735,9 @@ changes how you *work*, not what is left to do:
   | T-94 (logistic in closed form), 3 seats, 800 yr — `ns/event` 50,637 | ~34,700 | 50.4 yr/s | 20× |
   | **T-96 (the drive is a mass), same bed — `ns/event` 51,732** | ~35,100 | **48.0 yr/s** | **19×** |
   | **T-98 (the hauler's hull is a forecast), same bed — `ns/event` 27,812** | ~40,900 | **82.9 yr/s** | **33×** |
+  | **T-100 (the Band readings are memoised), same bed — `ns/event` 19,549** | ~40,900 | **114.4 yr/s** | **46×** |
+  | **T-101 (the candidate scan prunes what it has rejected)** — interleaved against T-100 in one session: **96.4 → 106.6** and **99.4 → 111.2 yr/s** | ~40,900 | **+11%** | — |
+  | **T-102 (`exp` is a polynomial)** — interleaved, 6 seeds, 800 yr: **104.9 → 107.8**, **109.4 → 112.4**, **107.3 → 110.6**, **114.5 → 118.3**, **120.1 → 123.0**, **108.6 → 110.1 yr/s** | ~40,900 | **+2.7%** | — |
 
   **T-88's last row is the one to read, and it is `ns/event` that says why.**
   Per-event cost went from ~174,000 ns at T-87 to **22,394** — not because any

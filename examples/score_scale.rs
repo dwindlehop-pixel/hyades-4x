@@ -42,7 +42,11 @@ fn main() {
                 position: p.position,
                 habitability: p.habitability,
                 biosphere: p.biosphere,
-                minerals: p.minerals,
+                mineral_bands: [
+                    p.minerals.get(Basic::Cyan).in_bands().bands(),
+                    p.minerals.get(Basic::Magenta).in_bands().bands(),
+                    p.minerals.get(Basic::Yellow).in_bands().bands(),
+                ],
                 owner: None,
                 pop_level: BandTier::Empty,
             };

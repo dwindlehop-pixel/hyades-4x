@@ -342,6 +342,176 @@ that fewer items is not automatically faster when the traversal order degrades.
 
 ---
 
+### T-102. The surviving 45.4 M `view_of` + `rank` calls
+
+**What is left of T-52 after T-100 and T-101**, and the scan is no longer the
+obvious target it was.
+
+The candidate scan now walks **45.5 M** entries instead of 251.6 M and ranks
+**all** of them — the filters were the only thing it was rejecting, and they are
+gone. So the remaining cost is exactly `view_of` + `rank`, 45.4 M times.
+
+Bounded by ablation (rank only one entry in four, three interleaved pairs):
+
+| | seed 1 | seed 7 |
+|---|---|---|
+| T-101 | 107.2 | 111.0 |
+| ranking 1-in-4 | 139.7 | 124.1 |
+
+So removing three quarters of it buys **+30% / +12%**. That is a *bound*, not a
+measurement — the ablation changes which worlds get ranked and therefore the run
+— but it says the remaining headroom in the scan is real and no longer dominant.
+
+What is left inside the call, after T-100 removed the four logarithms:
+
+- ~~**the `exp` in `centrality`**~~ — **done, see below.**
+- **The `sqrt` in `dist`.** `Vec3::distance` to `holdings_centroid`, once per
+  call. The obvious move is to compare squared distances, and it does not work
+  here: the result is not compared, it is *divided by a scale and exponentiated*.
+  Either the weight changes shape (a design question, not a performance one) or
+  the `sqrt` stays. The cacheable framing below is the live option.
+- **A generation-counter cache on `centrality`.** `holdings_centroid` is
+  per-player and moves ~3,400 times a run, so each planet is ranked ~2× per
+  centroid epoch and the hit rate would be ~50%. That was worth ~half an `exp`
+  before T-102; it is now worth ~half of **1.97 ns**, against a cache line pulled
+  per planet. Very likely a loss now — **measure before building it.**
+- **Five component lookups in `view_of`** to build a struct the caller reads
+  once. `CLAUDE.md` §4's "hand a decision only the fields it reads" has already
+  been applied once here (the `MineralField` came out at T-100); whether the
+  remaining fields want the same treatment is a question for a profiler, not a
+  guess.
+
+**Do not start here without re-ablating.** Every number above was taken after two
+landings that changed the mix, and this file's own record is that the ranking of
+hot spots reorders when you fix one of them — T-100's `ln` was worth 2× and the
+`sqrt`+`exp` beside it was worth nothing *at that operating point*, which is not
+the operating point any more.
+
+#### Landed: the `exp` is a polynomial (`math::exp_decay`)
+
+**+2.7% throughput, 6/6 seeds, at a metric disturbance of zero on five of them.**
+`math::exp_decay` is a degree-7 minimax fit of `exp` on `[−2, 0]`, evaluated by
+Estrin's scheme, with a fallback to `f64::exp` outside that interval.
+
+Four things about *how*, because the method is the reusable part:
+
+- **The range was histogrammed, not assumed.** 45,440,043 calls span
+  **[−1.7348, 0]** — 91.7% in [−1, 0), 8.3% in [−2, −1) — and −1.7348 is the most
+  negative argument across 2, 3, 12 and 18 seats. Fitting the interval an
+  argument *actually takes* is what buys the accuracy: a degree-7 fit is 5.4e-7
+  over [−2, 0] and would be useless over [−40, 0].
+- **Estrin, not Horner, is the entire speed difference.** Degree 7 by Horner is
+  2.98 ns/call; the same polynomial by Estrin is **1.97**, which is what Horner
+  costs at *degree 5* and 220× more accurate. The dependency chain was the price,
+  not the multiply count. (`f64::exp`: 5.24 ns/call.)
+- **A polynomial is more deterministic than the thing it replaces.** `f64::exp`
+  is platform libm natively and a Rust libm on wasm32; `+` and `*` are exactly
+  specified by IEEE 754 and identical everywhere. **No `mul_add`** — a fused
+  multiply-add rounds once where a separate multiply and add round twice, which
+  would reintroduce precisely the cross-target divergence this removes.
+- **It is not bit-identical, and the liveness probe said so before the A/B did.**
+  Perturbing the polynomial by ×1.000001 changed seed 7's run — so the call site
+  is live and any bit-identity would be luck. Measured over six seeds at 800 yr,
+  3 seats: **five reproduce the `f64::exp` run exactly** and seed 3 moves
+  −0.08% events, +0.07% colonies (2,988 → 2,990), −0.02% population. Against the
+  ≤2% disturbance bar this is comfortable; against T-100 and T-101, which *were*
+  bit-identical, it is a different kind of change and is recorded as one.
+
+Guarded by three tests in `src/math.rs`: the 1e-6 error bound over a 200,001-point
+grid (the fit measures 5.4e-7, so 1.9× of headroom), **bit-for-bit** equality with
+`f64::exp` outside the range, and monotonicity — because an error bound alone does
+not rule out a weight that runs backwards in distance, which would be a ranking
+inversion rather than a rounding difference.
+
+---
+
+### ~~T-101. 82% of the candidate scan re-derives a permanent answer~~ — **DONE**
+
+> **Both filters are monotone, so a rejected entry is rejected forever.**
+> `Knowledge::targeted` is only ever inserted and a planet's `owner` is only ever
+> set — there is no `remove` for either anywhere in the engine — so the 206 M of
+> 251.6 M scan steps that failed one of them were re-deriving a permanent answer,
+> once per production decision, for the rest of the run.
+>
+> `ScannedSet` now carries a **live pool** beside `ids`: the scanned worlds not
+> yet targeted and not yet owned, in the same ascending order. Entries are
+> appended when a world is first scanned and **compacted out in place** during
+> the scan that observes them rejected, so the set pays for its own maintenance
+> and there is no invalidation hook to forget.
+>
+> **Compaction, not swap-removal, and that is the whole difference from the
+> attempt that failed.** R-O70 tried an incrementally-maintained frontier before:
+> it cut the scanned count 39% and came out *slower*, because swap-removal
+> scrambled the order and traded a sequential walk for random access across three
+> component stores. A retain-style compaction preserves ascending order, so the
+> walk stays sequential and the survivors stay a sorted subsequence of `ids` —
+> which is also what makes the result bit-identical, since the scan visits the
+> same worlds in the same order and simply skips the ones it would have skipped.
+>
+> **Measured, four interleaved pairs in one session** (the arms must be
+> interleaved — this container's speed drifts enough between sessions to swamp
+> the effect):
+>
+> | | seed 1 | seed 7 |
+> |---|---|---|
+> | T-100 | 95.4–97.4 | 98.6–100.1 |
+> | **T-101** | **106.2–107.3** | **111.1–111.5** |
+>
+> **+10.6% / +11.9%**, bit-identical — 357,786 events, 2,907 colonies and total
+> population to the last digit on seed 1.
+>
+> **And the interesting number is the one that did *not* show up.** Scan steps
+> fell **251.6 M → 45.5 M, −82%**, with the ranked count unchanged at 45.44 M —
+> so the pruning removed exactly the dead entries and nothing else. Deleting 82%
+> of a loop's iterations bought **11%**, because the iterations deleted were two
+> bitmap lookups apiece. **Iteration count is not cost.** The residual is T-102.
+
+---
+
+### ~~T-100. `rank` recomputes three logarithms per scanned world~~ — **DONE**
+
+> **The production candidate scan is the engine, and one line of it was the
+> cost.** Instrumented on the standard bed, 800 yr, 3 seats: the scan is reached
+> **56,706** times, walks **251.6 M** entries (4,437 per decision), and **45.4 M**
+> of those survive the two filters and reach `view_of` + `rank` — 703 scan steps
+> and **127 rank calls per event**.
+>
+> `rank` scores ore as `Σ_c scarcity_c · Band(m_c)`, and `Band(·)` is a `ln`. So
+> that is ~136 M logarithms for a quantity that changes only when the rock is
+> mined. **Ablated** — the three conversions replaced by a constant — throughput
+> goes **80.2 → 187.4 yr/s**; ablating the `sqrt` + `exp` in `centrality` beside
+> it gives **89.0**, so the two are not comparable and only one was worth a
+> cache. That ablation is why no effort went into the second.
+>
+> Three changes, all **bit-identical** (357,786 events, 2,907 colonies,
+> population to the last digit on seed 1):
+>
+> - **A memo for the three Band readings**, keyed on the field's own bits rather
+>   than invalidated at each `density` write. The obvious design is an
+>   invalidation hook; the obvious failure of it is the write somebody adds
+>   later — `world.density.get_mut` is reached directly in eight places, most of
+>   them tests. Three `f64` compares against three `ln`s, correct by
+>   construction instead of by everyone remembering.
+> - **`view_of` used `f.bio_max.in_bands()`** where `Factors::bio_max_band` is
+>   the same value already kept in step. R-O70 put that field there precisely to
+>   keep a `ln` off the hot path, and the caller was still recomputing it.
+> - **`PlanetView` no longer carries a `MineralField`.** Nothing in the seam read
+>   the masses — `rank` converted them and threw them away — so the copy was a
+>   memory-traffic tax on the hottest path for a field with no reader
+>   (`CLAUDE.md` §4: hand a decision only the fields it reads).
+>
+> Measured against the old binary, three runs each: seed 1 **79.0–81.9 →
+> 104.6–114.4 yr/s**, seed 7 **86.6–91.7 → 107.9–118.2**. About **+30%**, for
+> **0%** disturbance to any simulation metric.
+>
+> **What is left, and it is most of it.** The ablation ceiling is ~187 yr/s and
+> this reaches ~114, so roughly half the available win is still on the table. The
+> residual is the scan itself: 206 M of the 251.6 M steps are rejected by the two
+> filters, and the survivors still pay a `PlanetView` construction and a full
+> `rank`. **T-101.**
+
+---
+
 ### T-99. The demand term is a ceiling, not this hauler's share
 
 **Opened by T-98.** `freighter_hull` reads the destination's fabrication rate as
