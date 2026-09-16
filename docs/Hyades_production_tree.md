@@ -1,8 +1,8 @@
 # Hyades — Production: Works, Yards, and the Hull Ladder
 
 *The design space for **Production**, the tree that turns minerals into hulls.
-Its objective is **fleet-years in mass** (`Hyades_trees_and_card_value.md`
-§2.3.4). Companion to `Hyades_industry.md` (the economy and the layering
+Its objective is **fleet-years in volume** (`Hyades_trees_and_card_value.md`
+§2.3.4, R-PROD5). Companion to `Hyades_industry.md` (the economy and the layering
 algebra), `Hyades_mineral_cost_curve.md` (the two ladders),
 `Hyades_vehicle_roles.md` (what a hull is for) and `Hyades_loadout.md` (what it
 is fitted with). New calls continue the **R-PROD n** series.*
@@ -254,21 +254,65 @@ the wrong colour.**
 
 ## 6. Objective and guards
 
-**6.1 `RATIFIED` — the objective is fleet-years in *mass*.**
+**6.1 `RATIFIED` — the objective is fleet-years in *volume*** (R-PROD5).
 
 ```text
-P_i = ∫₀^T F_i(t) dt      // F = fleet dry mass owned by i, kt
+P_i = ∫₀^T F_i(t) dt      // F = fleet enclosed volume owned by i, hull units³
 ```
 
-**Mass, never hull count.** Counting hulls rewards fragmentation and would put
-this objective in direct contradiction with design law #3. Since dry mass *is*
-mineral cost, fleet-years is also "minerals committed to hulls, integrated" — one
-quantity, two readings, no second ladder.
+`F` is the whole enclosed volume `r³` — shell plus interior — summed over owned
+hulls. **Never hull count, and never mass**, and those are two different
+arguments.
 
-> **A caveat that is load-bearing:** R-O88's ratified "+26–34% fleet-years" was
-> taken on the **count**, before `VehicleSnapshot` carried `dry_mass`. It is
-> **not** re-denominated, because that would invalidate the figure without
-> re-running the comparison.
+**Counting hulls rewards fragmentation outright.** One step, and it contradicts
+design law #3.
+
+**Counting mass is the subtler error and it stood through two revisions of this
+tree.** Since dry mass *is* mineral cost, mass-years is "minerals committed to
+hulls, integrated" — which scores one General hull and the fleet of Mediums its
+minerals would buy **exactly equally, by construction**. Design law #3 is a claim
+about that ratio. **A metric identically indifferent to a ratio cannot express a
+law about it**; mass-years was not scoring consolidation wrong, it was silent on
+it — which is the same failure mode as R-O58, where cost and capacity were each
+individually ratified and nothing asserted the ratio between them.
+
+Measured on the shipped ladder (`examples/volume_ladder`, appendix §A.14), at
+**equal mineral spend**:
+
+| | volume ratio | mass ratio |
+|---|---|---|
+| GSV vs an equal-cost MSV fleet | **2.47×** | 1.000 |
+| GOU vs an equal-cost ROU fleet | **3.49×** | 1.000 |
+| MSV vs an equal-cost LSV fleet | **1.90×** | 1.000 |
+
+**Why the whole hull and not the hold.** The interior `(r − τ)³` also works
+directionally and scores consolidation higher (2.63 / 5.19 / 2.06), and it is
+the wrong reading for a fleet: a Limited Offensive hull's interior is 0.0066
+against a reserved core of 0.194, so its hold is entirely spoken for and its
+cargo is zero. **Scoring a warship by its hold scores it by the one thing a
+warship does not have.** The shell is armour, not waste.
+
+The decomposition is exact and worth keeping in view:
+
+```text
+r³ = η · shell_mass + hold
+```
+
+The first term is the ladder price times a shape efficiency — the old objective's
+basis — and the second is the part that grows as `cost^(3/2)`. **Volume-years is
+mass-years plus the interior.**
+
+> **What this knowingly invalidates**, per `CLAUDE.md` §6. R-O88's ratified
+> "+26–34% fleet-years" was taken on the **count**, and `data/tree_gradient.tsv`'s
+> Production column and composite geomean (T-50) were taken on the **mass**.
+> Neither is re-denominated here — that would keep the number's authority while
+> destroying its meaning. **R-TREE10** carries the re-measurement.
+>
+> **What it does not appear to change**, spot-checked and labelled as a spot
+> check: on the three hull-ladder knobs at seed 1 / 600 yr / one seed, the
+> Production elasticity moves by 0.1–0.6 and no sign flips. **The change is
+> principled, not a large numerical shift on this bed** — its value is that the
+> metric can now express the law, not that it reorders today's ranking.
 
 **6.2 `RATIFIED` — colony-years is not a guard for this tree.** It is **monotone
 inverse** for anything that changes how minerals are spent: it *rises* as
@@ -325,6 +369,7 @@ world. **R-IND8 — open**, and it is the join with Warfare.
 | T-68 | `t_build` tracks hull mass |
 | T-69 | a yard fills every berth |
 | T-75b | works writes are recorded and folded in `CardId` order |
+| R-PROD5 | fleet-years is **volume**, not mass — mass is silent on design law #3 |
 | — | the cost ladder: 1.0 / 10.0 / 50.0, +8.6% colony-years |
 
 ### Open
@@ -337,6 +382,7 @@ world. **R-IND8 — open**, and it is the join with Warfare.
 | R-PROD1 | which `Works` fields each card tier writes | the dispersion constraint, then MC |
 | R-PROD2 | what a Production card may do to the hull ladder | a decision — probably "nothing" |
 | R-PROD3 | fleet-years' saturation point on the bed | one cheap measurement |
+| R-TREE10 | re-measure the composite with Production in volume | the full 32-knob bed |
 | R-PROD4 | capitals and synthesis at pop-Band IV | a design pass, with Technology |
 | T-74 | fabrication rate as a measured quantity | engine work; blocks R-P16 and Growth |
 | T-92 | 85% of bank inflow is a centre mining its own planet | a census, then a mechanism |

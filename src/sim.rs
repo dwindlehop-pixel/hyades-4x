@@ -792,6 +792,37 @@ impl HullType {
         self.hold_radius(cfg).cubed()
     }
 
+    /// **The whole enclosed volume, `r³`** — shell plus interior, and the stock
+    /// Production's objective integrates (`Hyades_production_tree.md` §6.1,
+    /// R-PROD5).
+    ///
+    /// **Why the whole object and not the hold.** Fleet-years used to be taken
+    /// in *mass*, and since R-O57 dry mass **is** mineral cost — so the metric
+    /// was "minerals committed to hulls, integrated", which is exactly
+    /// indifferent between one General hull and the ten Mediums its minerals
+    /// would buy. **A metric that cannot tell those apart cannot express design
+    /// law #3**, which is a claim about that very ratio. Volume can: measured on
+    /// the shipped ladder (`examples/volume_ladder`), an equal-cost General
+    /// fleet encloses **2.47×** a Medium one (Systems), **3.49×** (Offensive)
+    /// and **1.90×** for Medium over Limited, where mass scores all three at
+    /// 1.000 by construction.
+    ///
+    /// The *hold* would also work directionally and score consolidation higher
+    /// still (2.63 / 5.19 / 2.06), and it is the wrong reading for a fleet:
+    /// a Limited Offensive hull's interior is 0.0066 against a reserved core of
+    /// 0.194, so its hold is entirely spoken for and its cargo is zero.
+    /// **Scoring a warship by its hold scores it by the one thing a warship does
+    /// not have.** The shell is armour, not waste, and `r³` counts it.
+    ///
+    /// The decomposition is exact and worth keeping in view:
+    /// `r³ = η · shell_mass + hold`. The first term is the ladder price times a
+    /// shape efficiency — i.e. the old mass objective's basis — and the second
+    /// is the part that grows as `cost^(3/2)`. **Volume-years is mass-years plus
+    /// the interior.**
+    pub fn hull_volume(self, cfg: &SimConfig) -> Volume {
+        self.hull_radius(cfg).cubed()
+    }
+
     /// The **shell's** volume, `r³ − (r − τ)³` — the material actually bought,
     /// and therefore (L6/R-O57) the hull's cost and its dry mass.
     ///
@@ -6341,6 +6372,7 @@ impl Simulation {
                     position: self.position_at(e, self.clock).unwrap(),
                     cargo: *self.world.cargo.get(e).unwrap_or(&Minerals::default()),
                     dry_mass: hull_dry_mass(hull, &self.config),
+                    volume: hull.hull_volume(&self.config),
                     in_flight: m.arrive > self.clock,
                 });
             }
@@ -7713,6 +7745,62 @@ mod tests {
         sim2.world.cargo.insert(big, m);
         sim2.world.hull_type.insert(big, HullType::GeneralSystems);
         assert!(sim2.laden_accel(big, base) > a_laden);
+    }
+
+    /// **Production's objective must be able to express design law #3, and in
+    /// mass it provably cannot** (R-PROD5).
+    ///
+    /// The law says consolidation wins under geometry alone: cost is surface
+    /// area, value is volume. Since R-O57 dry mass *is* mineral cost, so
+    /// fleet-years in mass is "minerals committed to hulls, integrated" — and
+    /// that is **exactly indifferent** between one General hull and the fleet of
+    /// Mediums its minerals would buy. This pins both halves: mass scores the
+    /// comparison at 1.0 to within rounding, and volume does not.
+    ///
+    /// The mass half is the one that matters. It is not a property anybody would
+    /// think to check, and without it a future change back to mass would lose
+    /// law #3 silently — which is exactly how the law came to be false in the
+    /// engine the first time (R-O58: cost and capacity were each individually
+    /// ratified, and nothing asserted the ratio).
+    #[test]
+    fn fleet_years_in_volume_expresses_consolidation_and_in_mass_cannot() {
+        let cfg = SimConfig::new(1);
+        use HullType::*;
+
+        // `r³` decomposes exactly into what was bought and what it encloses.
+        for hull in [LimitedSystems, MediumSystems, GeneralSystems, LimitedOffensive, GeneralOffensive] {
+            let whole = hull.hull_volume(&cfg).hull_units_cubed();
+            let parts = hull.shell_volume(&cfg).hull_units_cubed() + hull.hold_volume(&cfg).hull_units_cubed();
+            assert!((whole - parts).abs() < 1e-12, "{hull:?}: r³ {whole} != shell + hold {parts}");
+        }
+
+        // Volume bought per kilotonne spent rises strictly with size, within
+        // every family. This is the whole content of the objective change.
+        for family in
+            [[LimitedSystems, MediumSystems, GeneralSystems], [LimitedOffensive, RapidOffensive, GeneralOffensive]]
+        {
+            let per_kt = |h: HullType| h.hull_volume(&cfg).hull_units_cubed() / hull_dry_mass(h, &cfg).kilotons();
+            assert!(per_kt(family[0]) < per_kt(family[1]), "{:?} -> {:?}", family[0], family[1]);
+            assert!(per_kt(family[1]) < per_kt(family[2]), "{:?} -> {:?}", family[1], family[2]);
+        }
+
+        // At **equal mineral spend**, the larger hull encloses strictly more —
+        // and masses exactly the same, by construction.
+        for (big, small) in [(GeneralSystems, MediumSystems), (GeneralOffensive, RapidOffensive)] {
+            let (cb, cs) = (hull_dry_mass(big, &cfg).kilotons(), hull_dry_mass(small, &cfg).kilotons());
+            let n = cb / cs; // small hulls the big one's minerals buy
+
+            let vol_ratio = big.hull_volume(&cfg).hull_units_cubed() / (n * small.hull_volume(&cfg).hull_units_cubed());
+            assert!(vol_ratio > 1.5, "{big:?} vs {small:?}: volume ratio {vol_ratio} — consolidation not expressed");
+
+            // The mass arm. `n · cs` *is* `cb`, so this is 1.0 by construction
+            // and the assertion is the point: mass cannot see the law.
+            let mass_ratio = cb / (n * cs);
+            assert!(
+                (mass_ratio - 1.0).abs() < 1e-12,
+                "{big:?} vs {small:?}: mass ratio {mass_ratio} — if this is no longer 1, re-read R-PROD5"
+            );
+        }
     }
 
     #[test]

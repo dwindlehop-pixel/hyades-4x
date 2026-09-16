@@ -13,6 +13,14 @@ overwritten.
 
 ## `tree_gradient.tsv`
 
+> **⚠ The Production column and the composite geomean in the committed rows are
+> denominated in *mass*, and the objective is now *volume* (R-PROD5,
+> `Hyades_trees_and_card_value.md` §2.3.4).** Expansion, Growth and the per-seed
+> pairing are unaffected. The rows are kept as measured rather than
+> re-denominated — this file exists precisely so a later reader can re-analyse
+> without re-running, and rewriting a recorded measurement to match a later
+> definition destroys that. **R-TREE10** carries the re-run.
+
 Written by `examples/tree_gradient` when `TG_RECORD` is set. **One row per
 `(knob, arm, seed)`** — the CRN pairing is the whole point of the measurement and
 a mean discards it.

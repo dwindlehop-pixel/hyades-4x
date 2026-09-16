@@ -16,7 +16,7 @@
 use crate::galaxy::PlanetId;
 use crate::math::Vec3;
 use crate::resources::{MineralField, Minerals};
-use crate::units::{Band, BandTier, Kilotons, Price};
+use crate::units::{Band, BandTier, Kilotons, Price, Volume};
 
 /// Which civilian role a ship is fulfilling (read-only mirror of the engine's
 /// hull enum, kept here so presentation never depends on `sim`).
@@ -61,7 +61,10 @@ pub struct PlanetSnapshot {
     /// (`Hyades_trees_and_card_value.md` §2.3.3), and it is why that objective
     /// is measurable now rather than waiting on works.
     pub works: Price,
-    /// Liebig carrying capacity `K = min(hab, bio_max, infra)`, over Bands.
+    /// Liebig carrying capacity `K = min(hab, bio_max)`, over Bands.
+    /// **Infrastructure is not a term** — it left the minimum at
+    /// `Hyades_industry.md` §1.1, because razing industry must not move
+    /// population.
     pub k: Band,
     pub population: Kilotons,
     pub pop_level: BandTier,
@@ -82,14 +85,27 @@ pub struct VehicleSnapshot {
     pub position: Vec3,
     /// Minerals carried (mining/freighter cargo).
     pub cargo: Minerals,
-    /// **Dry mass of the hull, which since R-O57 *is* its mineral cost**
-    /// (design law #11). Exposed because Production's objective is
-    /// fleet-years **in mass** — `Hyades_trees_and_card_value.md` §2.3.4 is
-    /// explicit that counting hulls rewards fragmentation and would put that
-    /// tree in direct contradiction with design law #3. A consumer summing
-    /// `vehicles.len()` is measuring the wrong thing and nothing in the old
-    /// snapshot could tell it so.
+    /// **Dry mass of the hull, which since R-O57 *is* its mineral cost plus its
+    /// mounted drive** (design law #11, T-96). This is what the hull *masses*
+    /// and what it *cost*; it is **not** Production's objective — see
+    /// [`Self::volume`].
     pub dry_mass: Kilotons,
+    /// **Enclosed volume `r³`, and the stock Production's objective integrates**
+    /// (`Hyades_trees_and_card_value.md` §2.3.4, R-PROD5).
+    ///
+    /// Counting *hulls* rewards fragmentation outright. Counting *mass* is
+    /// subtler and was wrong for longer: since dry mass is mineral cost, mass
+    /// -years is "minerals committed to hulls, integrated", which scores one
+    /// General hull and the ten Mediums its minerals would buy **exactly
+    /// equally** — so it is silent on design law #3, a law about that ratio.
+    /// Volume is the law's own value basis, and on the shipped ladder an
+    /// equal-cost General fleet encloses 2.47x a Medium one.
+    ///
+    /// Both fields ship because they answer different questions: `dry_mass` is
+    /// conservation and acceleration, `volume` is capability. A consumer summing
+    /// `vehicles.len()` is measuring the wrong thing, and nothing in the
+    /// snapshot could tell it so until these existed.
+    pub volume: Volume,
     /// `true` while in flight; `false` when on station / idle.
     pub in_flight: bool,
 }

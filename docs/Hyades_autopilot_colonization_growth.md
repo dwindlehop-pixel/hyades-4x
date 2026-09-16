@@ -426,7 +426,9 @@ placeholder magnitude**, and a doctrine parameter a Greening card retunes.
 `slips` reads the *fabrication share of the stock* and is unbounded; `fab_cap =
 0.1` bounds the rate **per berth**. Before R-O88 one variable did both jobs and
 the build-wide axis was **closed at two berths** — 10¹² kt of infrastructure still
-bought two. Berths at rung II went 2 → 17; **fleet-years +26–34%.**
+bought two. Berths at rung II went 2 → 17; **fleet-years +26–34%** — measured as
+a hull *count*, which is neither the mass nor the volume denomination the
+objective has since carried (R-PROD5); kept as measured, R-TREE10 re-runs it.
 
 **When two ratified claims collide, check whether one symbol is carrying two
 meanings before you pick a winner.**
@@ -552,7 +554,7 @@ count, not a fraction — and the guard is kept rather than deleted.
 | R-O84 | `growth_rate = 0.873` | 4-seed, carried through T-94 |
 | R-O86 | a scout needs somewhere to scout | 5.6× throughput, objective flat |
 | R-O87 | `reinvest_bias = 0.5`, held | 8 seeds, +0.32% ± 1.42 |
-| R-O88 | `slips` is quantity, `fab_cap` is quality | +26–34% fleet-years |
+| R-O88 | `slips` is quantity, `fab_cap` is quality | +26–34%, on a hull *count* |
 | R-O89 | freight loads against the destination's colour deficit | 8/8 seeds, replicated |
 | R-O92 | one outbound leg visits two piles | 8/8 seeds |
 | R-O93 | the population logistic is solved, not stepped | 8/8 seeds |

@@ -433,6 +433,85 @@ Final: **+6.57% ± 1.14 colony-years, 8/8 seeds**, throughput unchanged.
 `growth_rate = 0.873` is **carried, not re-ratified** — its operating point and
 its plateau map are both consumed.
 
+## A.14 R-PROD5 — fleet-years in mass is provably indifferent to design law #3
+
+**Harness:** `examples/volume_ladder`. **Bed:** none needed — this is the shipped
+hull ladder's own geometry, not a simulation result, which is why it is a
+two-second run and not a sweep.
+
+**The question.** Design law #3 says consolidation wins under geometry alone:
+cost is surface area, value is volume. Production's objective was fleet-years in
+**mass**, and since R-O57 dry mass *is* mineral cost — so the objective was
+"minerals committed to hulls, integrated". Does that express the law?
+
+**No, and the failure is exact rather than approximate.** At equal mineral spend,
+one General hull and the fleet of Mediums its minerals buy have **identical
+mass** — `n · cs` *is* `cb`, by construction. The metric scores them 1.000, to
+the bit, for every pair on the ladder.
+
+| hull | dry kt | radius | vol `r³` | hold | shell | vol per kt |
+|---|---|---|---|---|---|---|
+| LSV | 0.02010 | 0.4742 | 0.10664 | 0.08944 | 0.01720 | **5.30** |
+| MSV | 0.10921 | 1.0317 | 1.09800 | 1.00000 | 0.09800 | **10.05** |
+| GSV | 1.31544 | 3.1953 | 32.62278 | 31.62278 | 1.00000 | **24.80** |
+| LCV | 0.02000 | 0.3447 | 0.04097 | 0.02597 | 0.01500 | 2.05 |
+| GCV | 1.09954 | 2.3511 | 12.99582 | 12.03582 | 0.96000 | 11.82 |
+| LOU | 0.02000 | 0.2688 | 0.01942 | **0.00662** | 0.01280 | 0.97 |
+| ROU | 0.10000 | 0.5529 | 0.16906 | 0.09606 | 0.07300 | 1.69 |
+| GOU | 1.02187 | 1.8191 | 6.01987 | 5.08987 | 0.93000 | 5.89 |
+
+**Volume per kilotonne rises monotonically with size inside every family**, which
+is the law restated. At equal spend:
+
+| | `r³` ratio | hold ratio | **mass ratio** |
+|---|---|---|---|
+| GSV vs MSV (12.05 small per big) | **2.467** | 2.625 | **1.000** |
+| GOU vs ROU (10.22 per big) | **3.485** | 5.185 | **1.000** |
+| MSV vs LSV (5.43 per big) | **1.895** | 2.058 | **1.000** |
+
+**The choice of `r³` over the hold, and why the stronger number lost.** The
+interior scores consolidation higher on all three pairs. It is still wrong for a
+*fleet* metric: **a Limited Offensive hull's interior is 0.00662 against a
+reserved core of 0.194**, so its hold is entirely spoken for and its cargo is
+zero. Scoring a warship by its hold scores it by the one thing a warship does not
+have — and design law #8 wants LOUs to be *useful*, not to score zero. The shell
+is armour, not waste, and `r³` counts it.
+
+**The decomposition is exact**, verified to 1e-12 for every hull:
+
+```text
+r³ = shell_volume + hold_volume,   shell_volume = η · shell_mass
+```
+
+So volume-years is the old mass objective's basis plus the interior, and the
+interior is the term that grows as `cost^(3/2)`.
+
+### What the change costs on the current bed: very little, and that is stated rather than buried
+
+`examples/tree_gradient`, **seed 1, 600 yr, one seed, no error bar** — a sanity
+check that the leg still measures something sensible, *not* a result:
+
+| knob | Production elasticity, **mass** | **volume** |
+|---|---|---|
+| `medium_fleet_size` | −6.639 | −6.007 |
+| `general_vehicle_cost` | +7.078 | +6.620 |
+| `limited_fleet_size` | −0.549 | −0.441 |
+
+**No sign flips and nothing reorders.** The second-order economic effect — cheaper
+hulls mean more colonies mean more hulls — dominates the first-order geometric one
+on this bed, which is why the direct ladder comparison above shows a 2.5–3.5×
+effect and the simulated elasticity shows 0.1–0.6.
+
+**So the change is principled, not numerically dramatic here**, and the honest
+statement of its value is: the metric can now *express* design law #3. A metric
+that is silent on a law will stay silent right up until a card makes the law
+matter, and card design is the thing it would mislead — which is the same
+argument `CLAUDE.md` §2 makes about a denominator the game can play.
+
+**`data/tree_gradient.tsv` (T-50) is stale** in its Production column and its
+composite geomean. Not re-denominated, because that would keep the numbers'
+authority while destroying their meaning. **R-TREE10** carries the re-run.
+
 ---
 
 # §B. Politics, Trade and Intelligence

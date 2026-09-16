@@ -2169,6 +2169,14 @@ argument's: `slips(F) = 1 + ⌊F / slip_throughput⌋` with `F < fab_cap = 0.2` 
 | work-years | 976,147 | 258,752 | 617,858 |
 | **fleet-years** `∫ vehicles dt` | **21,802,650** | 20,584,525 | **17,506,750** |
 
+> **These rows are a hull *count*** (`∫ vehicles dt`), not Production's
+> objective. That objective was fleet-years in **mass** when these were taken and
+> is fleet-years in **volume** since R-PROD5 (`Hyades_trees_and_card_value.md`
+> §2.3.4). The figures are kept as measured rather than re-denominated, because
+> re-denominating without re-running keeps a number's authority and destroys its
+> meaning. **R-TREE10** carries the re-measurement.
+
+
 1. **A homeworld never deepens, in any arm.** `galaxy.rs` generates homeworlds at
    `Band::new(2.0)` — rung II, exactly where fabrication saturates — so the rung
    worth +29% is one they are *born with*, and the next costs 190 colonisers for
@@ -2299,6 +2307,14 @@ exactly the two berths it already had:
 | | seed 1 before | seed 1 after | seed 7 before | seed 7 after |
 |---|---|---|---|---|
 | **fleet-years** `∫ vehicles dt` | 21,802,650 | **27,503,725 (+26.1%)** | 20,913,800 | **27,962,225 (+33.7%)** |
+
+> **These rows are a hull *count*** (`∫ vehicles dt`), not Production's
+> objective. That objective was fleet-years in **mass** when these were taken and
+> is fleet-years in **volume** since R-PROD5 (`Hyades_trees_and_card_value.md`
+> §2.3.4). The figures are kept as measured rather than re-denominated, because
+> re-denominating without re-running keeps a number's authority and destroys its
+> meaning. **R-TREE10** carries the re-measurement.
+
 | work-years | 976,147 | 1,112,797 (+14.0%) | 875,395 | 824,095 (−5.9%) |
 | colonies | 3,308 | 3,296 | 3,331 | 3,325 |
 | homeworld's first founding | 61.6 yr | **58.5 yr** | 57.4 | 57.4 |
