@@ -1,7 +1,7 @@
 //! **Does Yellow actually move from Yellow-rich empires to Yellow-poor ones?**
 //!
 //! The design's stated goal for the Exchange
-//! (`Hyades_politics_trade_and_intelligence.md` §10.6): *"move Y from Y rich
+//! (`Hyades_politics_trade_and_intelligence.md` §2.3): *"move Y from Y rich
 //! empires to Y poor empires with a sort of Arabian trade via outposts."*
 //!
 //! **That is a claim about direction, and no scalar carries it.** §10.8 is

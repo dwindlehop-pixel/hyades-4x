@@ -50,12 +50,28 @@ formulation (§2.5). Card value is the **fractional reduction in the doubling ti
 of its own tree's stock**, measured at earliest legal play, designed to the 92nd
 percentile.
 
-**`docs/Hyades_politics_trade_and_intelligence.md` (Rev 1)** specifies the two
-systems the Politics tree needs and neither of which exists: the Exchange with
-`$`, and granular shared intelligence. Its §0 is the organizing thesis and worth
-reading before touching anything in that tree — *eliminate the value of
-collusion by making the simulation-state effects of collusion available without
-a confederate*. That is why Politics cards are **not opt-in**.
+**`docs/Hyades_politics_trade_and_intelligence.md` (Rev 2)** specifies the two
+systems the Politics tree needs: the Exchange with `$`, and granular shared
+intelligence. Its §0 is the organizing thesis and worth reading before touching
+anything in that tree — *eliminate the value of collusion by making the
+simulation-state effects of collusion available without a confederate*. That is
+why Politics cards are **not opt-in**.
+
+**There is one spec per tree, and each carries only ratified and open
+decisions.** `Hyades_autopilot_colonization_growth.md` (Expansion + Growth,
+Rev 4), `Hyades_production_tree.md`, `Hyades_technology_tree.md`,
+`Hyades_warfare_tree.md` and the politics spec above. The three new ones are
+Rev 1 and are mostly `OPEN` **on purpose** — Technology has no objective at all
+until `Q_i` is instrumented, and Warfare is blocked on T-30's missing
+accept/decline site — so read their registers before assuming a question is
+unasked.
+
+**`docs/Hyades_experiments_appendix.md` is where the measurement record lives.**
+Nothing in it is normative. It holds the runs, the refuted hypotheses and the
+superseded design that used to be inlined in the specs, each linked from the
+decision it supports, and its §C collects all seven measurement-artifact shapes
+in one table. **Check it before re-opening a question** — several were closed by
+a measurement whose bed no longer exists, and the entry says so.
 
 ---
 
@@ -1482,6 +1498,51 @@ one, stop and flag it.
 
   If a change genuinely touches no spec, say so explicitly in the PR body. Silence
   reads as an oversight, because usually it is one.
+- **A spec carries ratified decisions and open decisions. Nothing else.**
+  Every statement in a spec is one of exactly two things: **a decision that has
+  been ratified**, or **a decision that is still open**. Everything else — the
+  runs, the tables, the refuted hypotheses, the superseded design, the
+  measurement that turned out to be an artifact — belongs in
+  `docs/Hyades_experiments_appendix.md`, **linked from the decision it
+  supports**, never deleted.
+
+  **A proposal is an open decision, not a third category.** A recommendation
+  with nobody's ratification behind it is `OPEN` with a recommendation attached,
+  and it is labelled that way — the failure mode this rule exists to stop is a
+  proposal written in the present indicative for long enough that a later reader
+  takes it for settled. Mark the status explicitly on each item rather than
+  leaving it to the prose's confidence.
+
+  The reason is not tidiness, it is that the two kinds of statement **decay
+  differently**. A decision is true until something contradicts it and is
+  supposed to be read on every visit. A measurement is a record of a run on a
+  bed that no longer exists — `biosphere_regen_rate = +141.2 ± 18.1` is a true
+  record of the engine that measured it and is not a fact about this one — and
+  is supposed to be read once, when someone re-opens the question. Interleaving
+  them makes the spec grow without bound and, worse, makes a reader unable to
+  tell which sentences they still have to believe. Both of the specs this rule
+  was written for had passed 400 and 1,100 lines and were majority history;
+  neither could be read for what the engine must do.
+
+  Concretely, per claim, and the last one is the one that gets skipped:
+
+  - **A decision states what holds, its magnitude and units, and whether the
+    value is confirmed or a placeholder.** One line, plus a link.
+  - **The evidence is a link, not an inlined table.** `See appendix §A.3` with
+    the harness name, the bed, and the result in one clause — enough to decide
+    whether to go and read it.
+  - **An open decision states what would settle it**, which is the difference
+    between an R-code and a complaint.
+  - **Superseded design moves to the appendix under the decision that replaced
+    it, and says what it was wrong about.** A retracted claim that is merely
+    deleted takes its refutation with it, and the next reader re-derives the
+    same wrong idea — this project has done that at least twice. Strike it
+    through in place only when the correction is a *clarification* of the same
+    decision; move it when the decision itself changed.
+
+  **A spec section that is doing both jobs is the tell**, and the split is
+  mechanical: everything in the past tense with a number in it is appendix,
+  everything in the present tense saying what the engine does is spec.
 - **Every PR accounts for its T-codes and for every ratified decision it touches.**
   Two lists in the body, and the second is the one that matters:
 

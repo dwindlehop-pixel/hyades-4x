@@ -1525,7 +1525,7 @@ struct World {
 }
 
 /// **The cross-empire Exchange — one book per basic colour**
-/// (`Hyades_politics_trade_and_intelligence.md` §3.1, T-84).
+/// (`Hyades_politics_trade_and_intelligence.md` §2.10, T-84).
 ///
 /// A `Resource` in the ECS sense, like the event queue: the Exchange never
 /// mutates world state, it produces `Fill`s and the caller turns those into
@@ -2184,7 +2184,7 @@ pub struct SimConfig {
 
     /// **Transit discount rate `λ`, per year** — how fast the value of a
     /// delivery decays with time in flight
-    /// (`Hyades_politics_trade_and_intelligence.md` §2.3).
+    /// (`Hyades_politics_trade_and_intelligence.md` §1.3).
     ///
     /// One constant with two jobs, which is the whole reason it is a single
     /// number: on the Exchange it is the travel-time discount *and* the `$`
@@ -2219,7 +2219,7 @@ pub struct SimConfig {
     /// ten-seed bed (T-44).
     pub trade_decay_lambda: f64,
     /// **The `$` faucet rate** — `$` minted per kilotonne of fabrication capacity
-    /// per year (`Hyades_politics_trade_and_intelligence.md` §2.3, T-82).
+    /// per year (`Hyades_politics_trade_and_intelligence.md` §1.5, T-82).
     ///
     /// `$_income = base · production`, with **production the works fabrication
     /// rate**, which is what R-P3 ratified: income tracks what an empire can
@@ -2271,7 +2271,7 @@ pub struct SimConfig {
 /// It is by a wide margin the largest effect available on this surface, which
 /// says more about the surface than about the effect: five of the six mining
 /// *knobs* cannot be told from noise at all
-/// (`Hyades_autopilot_colonization_growth.md` §5b). Tuning was exhausted; this
+/// (`Hyades_experiments_appendix.md` §A.5). Tuning was exhausted; this
 /// is a term.
 pub const RECYCLE_MINING_PAIRS_DEFAULT: bool = true;
 
@@ -5644,7 +5644,7 @@ impl Simulation {
     }
 
     /// **Where two empires can hand goods over** — a rock they both work
-    /// (`Hyades_politics_trade_and_intelligence.md` §10.6, T-85).
+    /// (`Hyades_politics_trade_and_intelligence.md` §2.3, T-85).
     ///
     /// **R-P17, decided — and not as it was first framed.** The venue is the
     /// shared rock nearest **the party making this delivery**, because a
@@ -6039,7 +6039,7 @@ impl Simulation {
     /// `score = mineral_pressure(center) · exp(−λ · t_transit)`
     ///
     /// This is the *same* `λ` the Exchange discounts a trade by
-    /// (`Hyades_politics_trade_and_intelligence.md` §2.3), and that is the
+    /// (`Hyades_politics_trade_and_intelligence.md` §1.3), and that is the
     /// claim R-P2 conditions its ratification on: one constant should price a
     /// delivery whether the counterparty is your own colony or a rival's.
     /// Internal haulage is just a trade you clear with yourself, so if the

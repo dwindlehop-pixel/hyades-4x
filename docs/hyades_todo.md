@@ -163,6 +163,69 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-103. The rest of the specs still carry their own experiment history
+
+**Opened by the Rev 4 / Rev 2 split.** `CLAUDE.md` §6 now says a spec carries
+**ratified decisions and open decisions only**, and everything else goes to
+`docs/Hyades_experiments_appendix.md` linked from the decision it supports.
+
+**Done:** `Hyades_autopilot_colonization_growth.md` (430 → the Rev 4 register,
+history to appendix §A) and `Hyades_politics_trade_and_intelligence.md`
+(1,125 → the Rev 2 register, history to appendix §B). Three new specs were
+written to the rule from the start — `Hyades_production_tree.md`,
+`Hyades_technology_tree.md`, `Hyades_warfare_tree.md` — so every tree now has
+exactly one file.
+
+**Not done, and it is the big one:** `Hyades_industry.md` is **3,480 lines** and
+§§6.8–6.26 are a continuous measurement diary — nineteen sections of run tables,
+refuted hypotheses and superseded stage plans. It is the largest remaining
+instance of the problem the rule was written for, and it is also the spec most
+often consulted, which is the worst combination.
+
+Two smaller ones behind it: `Hyades_standing_layer_and_observation.md` (1,190)
+and `Hyades_mineral_cost_curve.md` (1,532).
+
+**The split is mechanical** and was done by hand twice without difficulty:
+everything in the past tense with a number in it is appendix, everything in the
+present tense saying what the engine does is spec. **Nothing is deleted** — a
+retracted claim that is merely dropped takes its refutation with it, and the next
+reader re-derives the same wrong idea.
+
+**Why this is Band A rather than housekeeping.** Both rewritten specs contained
+claims that were *false about the current engine* and were only found by reading
+every line: the autopilot spec still said `K = min(hab, bio_max, infra)` in one
+place and `cycle_years = 50` in four, and cited `growth_rate = 0.546` and
+`medium_fleet_size = 4.45` against shipped values of 0.873 and 10.0. A spec that
+is majority history does not merely waste a reader's time — **it hides its own
+staleness in the volume.**
+
+---
+
+### T-104. Three trees have specs and two of them cannot be measured
+
+**Opened by the new tree specs**, and it is the register's job to say so rather
+than leaving it inside three separate documents.
+
+- **Production is measurable today.** Fleet-years in mass, and
+  `VehicleSnapshot::dry_mass` exists. What it lacks is a saturation measurement
+  (**R-PROD3**) and any card that writes `Works` (**R-PROD1**).
+- **Technology has no objective at all.** `Q_i` is a proposal with three
+  candidate axes and an unratified aggregator exponent `ρ` (**R-TREE4**), so
+  `examples/tree_gradient` **excludes** Technology from its composite and says
+  so. **R-TECH1** is the prerequisite for measuring a single Technology card.
+- **Warfare is an algebraic zero on the 3-seat bed**, because nothing fights —
+  and it cannot fight until **T-30** gives the engine an accept/decline site.
+  `belief.rs` has shipped the estimator and the predicate since R-O41 and they
+  are wired to nothing. **R-WAR3** (`w_ij`, the neighbour weight) is unset, so
+  even a bed that fought could not be scored.
+
+**The ordering this implies:** T-30 unblocks Warfare's whole tree *and* R-AC13
+*and* the belief wiring, which is three trees' worth of dependency behind one
+missing seam. It is the highest-leverage unbuilt thing in the engine and it is
+not currently in Band A anywhere.
+
+---
+
 ### T-95. `cycle_years` is doing two jobs, and only one of them is integration
 
 **Opened by T-94**, which removed the first job and left the second visible.
