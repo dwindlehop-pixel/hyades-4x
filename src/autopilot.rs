@@ -241,6 +241,29 @@ pub struct Doctrine {
     /// the shape of a card — one field, standing behavior, flipped when the
     /// right tech or board state is reached (`Hyades_card_contract.md` §5).
     pub survey_avoids_inhabited: bool,
+    /// **Is an empire you have no quarrel with a target?** (R-O27/T-11, T-111.)
+    ///
+    /// The first — and for now the only — diplomatic field on `Doctrine`. R-O27
+    /// has stood open since the standing layer shipped because nobody specified
+    /// the *list*; this adds the one field the design has a concrete consumer
+    /// for and leaves the rest of the list open, rather than inventing a
+    /// diplomatic model to hold it.
+    ///
+    /// **Default `false`, and that is the design's own default, not a safety
+    /// catch.** `Hyades_warfare_tree.md` §7.2 specifies the first Warfare card
+    /// as writing exactly this field — *"a Neutral empire is an Enemy empire"* —
+    /// which only means anything if neutrality is where everyone starts. So the
+    /// shipped galaxy is at peace and a card is what starts the shooting.
+    ///
+    /// **Hostility is not symmetric and is not negotiated.** If you set this and
+    /// your neighbour does not, you attack and they are attacked; declining is
+    /// not theirs to do. What they *can* do is outrun you, which is
+    /// [`crate::belief::can_disengage`] and is decided on kinematics rather than
+    /// on consent.
+    ///
+    /// Gated additionally by [`crate::sim::SimConfig::engagements_enabled`],
+    /// which is the master switch that keeps the measurement corpus valid.
+    pub engage_neutrals: bool,
     /// Whether heading-bias discipline is global, opening-only, or persistent
     /// (R-AC3). See [`SurveyStrategy`].
     pub survey_strategy: SurveyStrategy,
@@ -381,6 +404,9 @@ impl Default for Doctrine {
             survey_reserve: 1024,
             // Off until a card or board state turns it on — see the field doc.
             survey_avoids_inhabited: false,
+            // Peace is the default (see the field doc): a Warfare card is what
+            // turns a neutral into an enemy.
+            engage_neutrals: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
             base_value: [1.0; 3],
             // The works mix, normalised — an empire wants to buy the colours its

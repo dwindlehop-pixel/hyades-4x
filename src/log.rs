@@ -53,16 +53,20 @@ pub enum LogCategory {
     Scanning,
     /// Round barriers and the cards played at them (the protocol clock).
     Cards,
+    /// Engagements resolved in the simulation loop and the hulls they destroyed
+    /// (`Hyades_warfare_tree.md` §7, T-111) — `EngagementResolved`.
+    Combat,
 }
 
 impl LogCategory {
-    pub const ALL: [LogCategory; 6] = [
+    pub const ALL: [LogCategory; 7] = [
         LogCategory::Production,
         LogCategory::Mining,
         LogCategory::Vehicles,
         LogCategory::Population,
         LogCategory::Scanning,
         LogCategory::Cards,
+        LogCategory::Combat,
     ];
 }
 
@@ -76,6 +80,7 @@ pub struct LogFilter {
     population: bool,
     scanning: bool,
     cards: bool,
+    combat: bool,
 }
 
 impl LogFilter {
@@ -88,7 +93,15 @@ impl LogFilter {
     /// Every category enabled — full interrogation, highest overhead. Good for
     /// a single re-run of one seed; not meant for a Monte-Carlo sweep.
     pub fn all() -> Self {
-        LogFilter { production: true, mining: true, vehicles: true, population: true, scanning: true, cards: true }
+        LogFilter {
+            production: true,
+            mining: true,
+            vehicles: true,
+            population: true,
+            scanning: true,
+            cards: true,
+            combat: true,
+        }
     }
 
     /// Builder-style: `LogFilter::none().with(LogCategory::Production)`.
@@ -105,6 +118,7 @@ impl LogFilter {
             LogCategory::Population => self.population = on,
             LogCategory::Scanning => self.scanning = on,
             LogCategory::Cards => self.cards = on,
+            LogCategory::Combat => self.combat = on,
         }
     }
 
@@ -117,12 +131,13 @@ impl LogFilter {
             LogCategory::Population => self.population,
             LogCategory::Scanning => self.scanning,
             LogCategory::Cards => self.cards,
+            LogCategory::Combat => self.combat,
         }
     }
 
     #[inline]
     pub fn any(&self) -> bool {
-        self.production || self.mining || self.vehicles || self.population || self.scanning
+        self.production || self.mining || self.vehicles || self.population || self.scanning || self.combat
     }
 }
 
@@ -227,6 +242,27 @@ pub enum LogEvent {
     /// A card resolved at a round barrier. `card` is the [`crate::cards::CardId`]
     /// index; `round` is the protocol clock, not the sim clock.
     CardPlayed { player: u32, card: u16, round: u32 },
+
+    /// **An engagement was resolved in the simulation loop** (T-111) — the first
+    /// `LogEvent` that records something being destroyed.
+    ///
+    /// `attacker`/`defender` are seats; `attacker` is the empire whose Doctrine
+    /// started it. `committed` is the attacker's accept/decline
+    /// ([`crate::belief::Engagement`]) read as a bool: `true` when it could not
+    /// have broken off. `losses_*` are hull counts and `slag` is the mass they
+    /// became, so a census can reconcile the two against the cost ladder rather
+    /// than trusting either alone.
+    EngagementResolved {
+        site: PlanetId,
+        attacker: u32,
+        defender: u32,
+        attacker_ships: u32,
+        defender_ships: u32,
+        losses_attacker: u32,
+        losses_defender: u32,
+        committed: bool,
+        slag: f64,
+    },
 }
 
 impl LogEvent {
@@ -245,6 +281,7 @@ impl LogEvent {
             PopulationStep { .. } => LogCategory::Population,
             ScanReceived { .. } => LogCategory::Scanning,
             CardPlayed { .. } => LogCategory::Cards,
+            EngagementResolved { .. } => LogCategory::Combat,
         }
     }
 
@@ -263,7 +300,10 @@ impl LogEvent {
             | VehicleScrapped { player, .. }
             | ScanReceived { player, .. }
             | CardPlayed { player, .. } => Some(player),
-            MineralsExtracted { .. } | MiningExhausted { .. } | PopulationStep { .. } => None,
+            // An engagement is about two seats, so it belongs to neither.
+            MineralsExtracted { .. } | MiningExhausted { .. } | PopulationStep { .. } | EngagementResolved { .. } => {
+                None
+            }
         }
     }
 
@@ -277,6 +317,7 @@ impl LogEvent {
             | PopulationStep { planet, .. }
             | ScanReceived { planet, .. } => Some(planet),
             FreighterTransfer { at, .. } | VehicleParked { at, .. } | VehicleScrapped { at, .. } => Some(at),
+            EngagementResolved { site, .. } => Some(site),
             VehicleSpawned { to, .. } => Some(to),
             ContactArrived { planet, .. } => Some(planet),
             ColonyFounded { planet, .. } | ColonyContested { planet, .. } => Some(planet),
@@ -367,6 +408,22 @@ impl fmt::Display for LogEvent {
             }
             ScanReceived { player, planet } => write!(f, "P{player} scan of planet#{} received", planet.0),
             CardPlayed { player, card, round } => write!(f, "P{player} played card#{card} at round {round}"),
+            EngagementResolved {
+                site,
+                attacker,
+                defender,
+                attacker_ships,
+                defender_ships,
+                losses_attacker,
+                losses_defender,
+                committed,
+                slag,
+            } => write!(
+                f,
+                "engagement at {site:?}: P{attacker} ({attacker_ships}) vs P{defender} ({defender_ships}) \
+                 -> -{losses_attacker}/-{losses_defender}, {}, {slag:.4} kt slag",
+                if *committed { "committed" } else { "could disengage" }
+            ),
         }
     }
 }

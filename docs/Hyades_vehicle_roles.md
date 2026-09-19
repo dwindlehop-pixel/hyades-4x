@@ -274,6 +274,23 @@ sacrificed."
 
 ### 4.6 Reserve vs. Scrap — which applies when
 
+**There is a third terminal state since T-111: destroyed.** Reserve and Scrap are
+both *choices a hull's owner makes*; a hull lost in an engagement made none.
+`Hyades_warfare_tree.md` §7 is the mechanism; what belongs here is where the mass
+goes, because design law #11 has no exclusions and "the loser's ships vanish"
+would be the largest leak in the engine on the one path Warfare runs on.
+
+**A destroyed hull's dry mass becomes slag at the site** — `World::slag`, a
+per-planet kiloton tally. Since R-O57 dry mass *is* the hull's mineral cost, so
+the wreckage is exactly what was paid for it, and
+`slag_conserves_the_mass_of_what_it_destroyed` reconciles the two against the
+cost ladder rather than trusting either alone.
+
+**It is inert, and that is R-O59's own answer rather than a shortcut**: slag is
+useless by default and a tier-1 card makes it refinable. Nothing reads it. The
+alternative — wreckage salvaged by whoever holds the field — is a Warfare
+*reward*, and nobody has ratified one. Advances **T-03**.
+
 Rev 4 generalized "idle → never scrap" across every role from one example.
 Confirmed this conversation that's too strong: **LCV scraps** on mission
 exhaustion (§4.1); **ROU does not**, even with no enemies nearby (§4.7) —

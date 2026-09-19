@@ -163,6 +163,90 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-111. Combat is wired into the simulation loop — and the occasion was always there
+
+**Landed.** `combat::resolve_engagement` is called from `sim.rs`. Specified in
+`Hyades_warfare_tree.md` §7; the arena still seeds no production and the
+dependency is `sim → combat`, never `sim → arena`.
+
+**The framing this corrects is the useful part.** §3.4 read *"there is no round
+or command layer for a 'do I take this fight' decision to live in"*, and cited
+T-30. Both halves had stopped being true:
+
+- **The round layer landed** (T-30, partially — what is still missing is hidden
+  simultaneity, which is T-42). The entry was citing a blocker that had shipped.
+- **The premise that nothing meets was never checked, and it is false.**
+  `examples/contact_census`, 3 seats, 1,500 yr: **68–75% of occupied sites are
+  worked by more than one empire**, ~4,200 contacts per run, up to three seats on
+  one rock. Mining is non-exclusive (roles §4.3) and has been since outposts
+  existed. The engine was producing thousands of co-locations a run and nothing
+  was looking at them.
+
+**One census refuted a blocker that had stood since the standing layer shipped**,
+and it cost one run. `CLAUDE.md` §2's rule — *check whether the thing upstream
+was ever short* — applied to a design claim instead of a knob.
+
+#### What it is
+
+| piece | where | status |
+|---|---|---|
+| trigger | `sys_mining_arrive` raises `EventKind::Engagement` on a shared rock | `O(seats)`, reads the existing `mine_crew` index |
+| hostility | `Doctrine::engage_neutrals`, default **false** | R-O27/T-11's first field; the rest of the list stays open |
+| master gate | `SimConfig::engagements_enabled`, default **false** | keeps the measurement corpus valid |
+| accept/decline | `belief::resolve_engagement_choice` | wired at its **degenerate end** — see below |
+| resolution | `combat::resolve_engagement` | the same call the arena makes |
+| losses | destroyed hull mass → `World::slag` at the site | design law #11; inert per R-O59, advances **T-03** |
+
+#### Measured (`examples/engagement_census`, 8 seeds, 3 seats, 800 yr)
+
+| | mean | seeds positive |
+|---|---|---|
+| colony count | **+0.43% ± 0.17** (2.5 SE) | 5/8 |
+| colony-years | **−0.74% ± 0.26** (2.8 SE) | 3/8 |
+
+3,701–4,131 engagements and **5,488–12,819 hulls destroyed** per run, 110–258 kt
+of slag. **Neither aggregate is a finding** — a 5/8 or 3/8 sign test is noise —
+and the magnitude is the point: *an empire can lose its whole mining fleet
+several times over and its expansion does not notice.* That is §6.19c's and
+R-O92's conclusion reached by destroying the hulls rather than by counting them.
+
+**Throughput rose on all eight seeds with `ns/event` falling**, which
+`CLAUDE.md` §2's table reads as "a real optimisation". It is not: the workload
+shrank because 11,345 hulls stopped existing. The table assumes a fixed
+workload; this is the row it does not cover, and it is now recorded there.
+
+#### Two defects it surfaced, one in my own code
+
+- **`Rng::fork` takes `&self` and does not advance.** Forking both fleets on the
+  ship index alone handed attacker `i` and defender `i` **bit-identical**
+  `thrust_factor` draws, so `own == theirs`, `can_disengage` (a strict `>`) was
+  false forever, and the census read **100% committed across 8,127
+  engagements**. The fleet index is now in the label and it reads 49.4–51.6%.
+  *A column printed only for completeness is what caught it* — R-O86's lesson
+  again, and the reason to print the distribution rather than the verdict.
+- **`resolve_engagement` carried two arena assumptions.** `laser_ships[0]`
+  panics on an empty side, which a scenario cannot reach and the sim can; and
+  `carrier_accel` reads ship 0 under a comment saying *"same hull both sides"*,
+  true of a one-hull sweep and false of two empires. The first is fixed (a
+  walkover), the second is **R-WAR5** — changing it moves every golden in
+  `tests/balance.rs`.
+
+#### What is still open
+
+- **R-WAR5** — which side carries which weapon. The defender takes the lasers
+  and the arriver the missiles; a convention that decides outcomes. Needs R-L0.
+- **The belief layer's interesting half.** Zero range means belief *is* truth, so
+  masking and surprise are untested. Needs T-33 and an engagement at range.
+- **Only miners fight.** Freighters in transit, colonisers under way and
+  colonies themselves are untouchable, so §4.4's commerce raiding and blockade
+  and §4.1's infrastructure strike are all still unreachable. Each needs a
+  detection query rather than an arrival — which is where R-AC13 and the posture
+  cards actually live.
+- **No magnitude is ratified.** Warfare's objective is an algebraic zero on the
+  symmetric bed (R-TREE8), so nothing here was tuned against a galaxy.
+
+---
+
 ### T-103. The rest of the specs still carry their own experiment history
 
 **Opened by the Rev 4 / Rev 2 split.** `CLAUDE.md` §6 now says a spec carries
@@ -213,16 +297,25 @@ than leaving it inside three separate documents.
   candidate axes and an unratified aggregator exponent `ρ` (**R-TREE4**), so
   `examples/tree_gradient` **excludes** Technology from its composite and says
   so. **R-TECH1** is the prerequisite for measuring a single Technology card.
-- **Warfare is an algebraic zero on the 3-seat bed**, because nothing fights —
-  and it cannot fight until **T-30** gives the engine an accept/decline site.
-  `belief.rs` has shipped the estimator and the predicate since R-O41 and they
-  are wired to nothing. **R-WAR3** (`w_ij`, the neighbour weight) is unset, so
-  even a bed that fought could not be scored.
+- **Warfare is an algebraic zero on the 3-seat bed** — and **the reason given
+  here was wrong (T-111).** This said *"because nothing fights, and it cannot
+  fight until T-30 gives the engine an accept/decline site."* The round layer had
+  already landed, and the engine was producing ~4,200 co-locations a run at
+  shared mining outposts that nothing was looking at. Combat now resolves in the
+  loop and **the zero is unchanged**, because it was never about whether anyone
+  fought: `Σ_i W_i` is an *algebraic* zero at 3 seats whatever the colony
+  distribution (equilateral homeworlds ⇒ doubly stochastic `w_ij`, trees
+  §2.3.2). **R-TREE8**'s asymmetric bed and **R-WAR3**'s `w_ij` are what this
+  waits on, and neither is engine work.
 
-**The ordering this implies:** T-30 unblocks Warfare's whole tree *and* R-AC13
-*and* the belief wiring, which is three trees' worth of dependency behind one
-missing seam. It is the highest-leverage unbuilt thing in the engine and it is
-not currently in Band A anywhere.
+**The ordering this implies, revised.** The claim that one missing seam held
+three trees was **half right and the wrong half was load-bearing**: the seam was
+cheaper than it looked (a census and a handler), and clearing it moved Warfare's
+measurability not at all. What actually gates the tree is R-TREE8 — a bed on
+which a relative objective can be read — and that is a measurement design, not a
+module. **T-111's residual is the part that really is engine work**: every fight
+today is two miners on a rock, so §4.1's infrastructure strike, §4.4's commerce
+raiding and R-AC13's "if pressed" all still need an engagement at *range*.
 
 ---
 
@@ -3742,14 +3835,18 @@ stand. Still to be implemented, and it is not a one-line change:
 Two things the production decoupling (R-O69) left open, one blocked and one a
 cost it exposed.
 
-**The hostile-interrupt trigger does not exist.** The design calls for a new
-decision when a build is *interrupted by hostiles* as well as when one
-completes. `EventKind::BuildDecision` is the event either would raise, but
-nothing can raise the second: **no combat is wired into the simulation loop** —
-`combat::resolve_engagement` is never called from `sim.rs`. When it is,
-interruption is this event scheduled at the moment of the strike after clearing
-`building_until`, which is a scheduling call rather than a redesign. Blocked on
-combat integration (T-12/T-30), not on engine work here.
+**The hostile-interrupt trigger does not exist, and it is no longer blocked on
+combat integration (T-111).** The design calls for a new decision when a build is
+*interrupted by hostiles* as well as when one completes. `EventKind::BuildDecision`
+is the event either would raise, and combat now **is** wired into the simulation
+loop — `sys_engagement` resolves through `combat::resolve_engagement`.
+
+**What still blocks it is what the engagement can reach.** Fights happen at
+shared *mining outposts*, which are not production centres: nothing in the
+engagement path touches a yard, so there is no strike to interrupt a build. The
+trigger needs an engagement that reaches a *colony*, which needs an engagement
+that is not a co-location of miners — the same gap as §4.1's infrastructure
+strike and §4.4's commerce raiding (`Hyades_warfare_tree.md` §7.4).
 
 ~~**The decoupling exposed a pre-existing `O(galaxy)` cost in the decision path,
 and made it fire twice as often.**~~ **Fixed — R-O70.** The premise was right and

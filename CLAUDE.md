@@ -340,6 +340,15 @@ Only the second row is a performance bug. Treating the first as one is how an
 optimisation pass gets spent on code that was never the problem — which §4's
 "profile before you optimise" already says, one level up.
 
+**The table assumes a fixed workload, and T-111 is the case where that fails.**
+Wiring combat into the sim moved throughput **up on all eight seeds** (109→126 …
+124→137 yr/s) with `ns/event` **down** (20,556→18,060) — the third row, "a real
+optimisation". Nothing was optimised: the change destroys 5,488–12,819 mining
+hulls per run, so there are fewer entities *and* a cheaper event mix, and the
+simulation is simply doing less. **Before reading either column, ask whether the
+change altered the amount of work rather than the cost of it** — a mechanic that
+removes entities improves both and has optimised nothing.
+
 The general form, worth having separately from the instances: **a test's horizon
 is a cost, not a strength.** Ask what the assertion actually needs — an identity
 needs none, a cadence needs periods rather than years, an invariant needs the
@@ -828,6 +837,15 @@ was reverted. Three habits, and the last one is the general shape:
   question §2 already asks about knobs — measure whether the resource the change
   buys is even binding.
 
+  **Ask it of a blocker in `docs/`, not only of a knob (T-111).** The Warfare
+  spec said combat could not be wired in because there was no accept/decline
+  site and nothing ever met. The round layer had shipped, and one census showed
+  **68–75% of occupied sites already hosting more than one empire** at ~4,200
+  contacts per run — mining is non-exclusive, so the engine had been producing
+  co-locations since outposts existed. A blocker that has stood a long time is a
+  *claim about the engine*, and it decays exactly the way a measurement does;
+  the cost of re-checking one was a single run.
+
 **And the reason no routing fix reaches it is structural, not statistical.** A
 hold is filled from `outpost_stock[(player, rock)]` — one map entry — and a rock
 is one colour (0.789). So **every delivery is mono-coloured by construction**, and
@@ -1109,7 +1127,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/belief.rs` | **believed kinematics** (R-O41) — one-sided `a_max` estimate from light-lagged observations, and the accept/decline predicate that runs on it |
 | `src/cards.rs` | the **card layer** — 18 tier-0 placeholders (3 slants × 6 trees), `Order`, and the coerce-never-reject rule |
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
-| `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement` |
+| `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement`, and the tuned station-keeping spread — **two callers since T-111**, the arena and `sim::sys_engagement` |
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |
 | `src/matching.rs` | the Exchange (order-book matching) — wired in at T-01; **it was never in the module list, so it did not compile as part of the crate and its tests never ran in CI** |
 | `src/log.rs` | optional diagnostic event log (the interrogation seam) |
@@ -1123,6 +1141,22 @@ constraints of Hyades production** (no economy, no mineral budget, no colonizati
 place them, and call `combat::resolve_engagement`. **The arena resolves no damage.**
 Dependency direction is `arena → combat`, never the reverse. Do not reintroduce
 combat logic into the arena or into an example.
+
+**Since T-111 the simulation is the second caller, and the rule extends rather
+than bends: `sim → combat`, never `sim → arena`.** `sys_engagement` builds its
+own `Combatant`s from hulls that were paid for; the arena's whole purpose is
+spawning ones that were not. Tuned constants live on the `combat` side of that
+line — the station-keeping spread moved there from `arena` when the sim needed
+it, with `arena::ROU_STATION_*` kept as re-exports, because **a Monte-Carlo-tuned
+number with two definitions is an edit waiting to go wrong.**
+
+**Wiring a second caller is also how you find out what the first one assumed.**
+Two arena assumptions had been invisible for as long as `resolve_engagement` had
+one caller: `laser_ships[0]` panics on an empty side (a scenario always seeds
+both fleets; the sim reaches "nobody left" legitimately), and `carrier_accel`
+reads ship 0 under a comment saying *"same hull both sides"* — true of a one-hull
+sweep, false of two empires bringing what they built. **A second caller is a
+cheap audit of the first**, and neither defect was findable by reading.
 
 ---
 

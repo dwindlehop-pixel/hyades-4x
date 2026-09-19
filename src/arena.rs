@@ -65,10 +65,12 @@ pub fn default_hull_for(role: Role) -> HullType {
 
 // --- Scenarios (the "spawn outside production, then fight" harness) ---------
 
-/// Station-keeping ranges the ROU laser-vs-missile sweep was tuned at — kept
-/// here (not in the example) so the tuned scenario setup lives in one place.
-pub const ROU_STATION_RADIUS: (f64, f64) = (0.00005, 0.0002);
-pub const ROU_STATION_PERIOD: (f64, f64) = (0.02, 0.08); // years
+/// Station-keeping ranges the ROU laser-vs-missile sweep was tuned at. **The
+/// definitions moved to `combat` at T-111** — they are a tuned property of the
+/// combat model and the simulation now places its own stationed hulls with
+/// them, so one copy has to be canonical. These names are kept as re-exports
+/// because the sweep and its goldens are written against them.
+pub use crate::combat::{STATION_PERIOD as ROU_STATION_PERIOD, STATION_RADIUS as ROU_STATION_RADIUS};
 
 /// The canonical ROU laser-vs-missile trial: both sides fly `RapidOffensive`
 /// (η=0.73 Gangster anchor), the laser fleet at rest and the missile fleet

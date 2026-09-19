@@ -59,6 +59,7 @@ use crate::autopilot::{
     SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
+use crate::combat::{CombatConfig, Combatant, FleetTrajectory, StationKeeping};
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
 use crate::matching;
@@ -1458,6 +1459,19 @@ struct World {
     density: ComponentStore<MineralField>,
     stockpile: ComponentStore<Minerals>,
     population: ComponentStore<Kilotons>,
+    /// **Wreckage standing at a site, in kilotons** (R-O59, T-03).
+    ///
+    /// A hull destroyed in an engagement does not leave the ledger — design law
+    /// #11 has no exclusions, and "the loser's ships vanish" would be the
+    /// largest mass leak in the engine on the one path Warfare runs on. Its dry
+    /// mass (which R-O57 makes its mineral cost exactly) lands here.
+    ///
+    /// **Inert by design, and that is R-O59's own answer**: slag is useless by
+    /// default and a tier-1 card makes it refinable. Nothing reads this yet, so
+    /// it is a conserved tally rather than an economy — which is the whole
+    /// point, because a salvage yield would be a Warfare *reward* nobody has
+    /// ratified. `slag_conserves_the_mass_of_what_it_destroyed` pins the sum.
+    slag: ComponentStore<Kilotons>,
     planet_id: ComponentStore<PlanetId>,
     homeworld: ComponentStore<Homeworld>,
     archetype: ComponentStore<Archetype>,
@@ -1678,6 +1692,7 @@ impl World {
             density: ComponentStore::new(),
             stockpile: ComponentStore::new(),
             population: ComponentStore::new(),
+            slag: ComponentStore::new(),
             planet_id: ComponentStore::new(),
             homeworld: ComponentStore::new(),
             archetype: ComponentStore::new(),
@@ -1769,6 +1784,18 @@ enum EventKind {
     /// An exhausted Scout reaches a friendly colony and scraps
     /// (`Hyades_vehicle_roles.md` §4.1/§4.6 — confirmed, LCV only).
     ScrapArrive { vehicle: Entity },
+    /// **Two empires' hulls are standing on the same rock** (T-111).
+    ///
+    /// Raised by [`Simulation::sys_mining_arrive`] when a miner parks at an
+    /// outpost another empire is already working — the arrival *is* the moment
+    /// the situation changed, which is §4's rule, and mining is non-exclusive by
+    /// default (roles §4.3) so this is a legal board state and not an error.
+    ///
+    /// It carries the site and nothing else: who is present is read from
+    /// `mine_crew` at resolution time, because a hull can leave between the
+    /// arrival and the shot and an event that cached the crew would fight with
+    /// ships that are no longer there.
+    Engagement { site: Entity },
     /// **The round barrier** (`Hyades_netcode.md` §1) — the protocol clock's
     /// only tick. Cards are played here and nowhere else.
     ///
@@ -2100,6 +2127,37 @@ pub struct SimConfig {
     /// is measurable) but not yet binding. Flip this on with the card layer, or
     /// with a doctrine that can unlock designs.
     pub enforce_roster: bool,
+    /// **Does the simulation resolve engagements at all?** (T-111.)
+    ///
+    /// The master gate on `sys_engagement`, and it **defaults off** for the same
+    /// reason [`Self::enforce_roster`] does: the mechanic is real and none of its
+    /// magnitudes are ratified. Every coverage, colony-year and work-year figure
+    /// this project has measured was taken on a galaxy where nothing fights, so
+    /// turning combat on by default would consume the entire measurement corpus
+    /// in one landing (`CLAUDE.md` §6). Off, the run is **bit-identical** —
+    /// `combat_off_is_bit_identical` pins it.
+    ///
+    /// It is a *master* switch, not the design's own answer to "who fights".
+    /// That is [`crate::autopilot::Doctrine::engage_neutrals`], which is
+    /// per-player and is what a Warfare card writes
+    /// (`Hyades_warfare_tree.md` §7.2). Both must be on for a shot to be fired.
+    pub engagements_enabled: bool,
+    /// How long a resolved engagement is simulated for, in years.
+    ///
+    /// **Placeholder magnitude (R-WAR5).** `resolve_engagement` walks `dt`-sized
+    /// steps to this horizon, so it is the per-engagement cost knob as well as a
+    /// balance one; 0.5 yr is what `examples/laser_vs_missile` sweeps at.
+    pub engagement_horizon_years: f64,
+    /// Integration step inside an engagement, in years.
+    ///
+    /// **Not a tuning knob: `dt = 0.0005` (~0.18 days) is a numerical
+    /// requirement.** At the old `dt = 0.006` missiles scored *zero* hits
+    /// against a dodging target (§8, warfare §2.6). Raising it does not make
+    /// combat cheaper, it makes it wrong.
+    pub engagement_dt_years: f64,
+    /// Seconds — years — between missile volleys inside an engagement.
+    /// **Placeholder magnitude (R-WAR5).**
+    pub engagement_volley_period_years: f64,
     /// Fraction of a center's local density mined into its stockpile per cycle.
     pub center_mining_fraction: f64,
     /// Logistic regrowth rate of planetary **biosphere mass** per production
@@ -2388,6 +2446,12 @@ impl SimConfig {
             limited_fleet_size: 50.0,
             homeworld_start_minerals: 3.0,
             enforce_roster: false,
+            // Off: the mechanic is unratified and every measured number in the
+            // tree was taken without it. See the field doc.
+            engagements_enabled: false,
+            engagement_horizon_years: 0.5,
+            engagement_dt_years: 0.0005,
+            engagement_volley_period_years: 0.05,
             recycle_mining_pairs: RECYCLE_MINING_PAIRS_DEFAULT,
             center_mining_fraction: 0.15,
             biosphere_regen_rate: 0.127,
@@ -2487,6 +2551,16 @@ pub struct Simulation {
     /// outpost" was not a value anyone could tune — there was no term in the
     /// model for it.
     mine_crew: BTreeMap<(u32, u64), Vec<Entity>>,
+    /// **The tuned combat surface** (T-111) — the same `CombatConfig` the arena
+    /// sweeps with, held here so the simulation resolves fights with the engine's
+    /// one fighting model rather than a second set of constants.
+    ///
+    /// Everything in it is globally Monte-Carlo-tuned and may not be changed
+    /// silently (the working agreement). It is not part of `SimConfig` because
+    /// `SimConfig` is the *economy*'s surface and these are weapons; keeping them
+    /// apart is what lets `tests/balance.rs` hold its goldens while the economy
+    /// moves underneath. Override with [`Simulation::set_combat_config`].
+    combat: CombatConfig,
     /// Ore an outpost has extracted **for one player**, awaiting a freighter.
     ///
     /// Keyed by `(player, outpost)`, and that is the correction: the rock's
@@ -2621,6 +2695,7 @@ impl Simulation {
             events_processed: 0,
             active_mines: BTreeSet::new(),
             mine_crew: BTreeMap::new(),
+            combat: CombatConfig::default(),
             outpost_stock: BTreeMap::new(),
             exchange: Exchange::default(),
             exchange_posting: true,
@@ -2663,6 +2738,23 @@ impl Simulation {
     /// on `Production` only for the window you're interrogating, then turn it
     /// back off. Does not affect simulation outcomes (see
     /// `tests::logging_does_not_affect_outcomes`).
+    /// Replace the tuned combat surface used by [`Self::sys_engagement`].
+    ///
+    /// For the arena and for sweeps. **Changing any of it is a ratification**
+    /// (the working agreement), not a tuning convenience.
+    pub fn set_combat_config(&mut self, cfg: CombatConfig) {
+        self.combat = cfg;
+    }
+
+    /// Wreckage standing at a planet, in kilotons — inert (R-O59, T-03).
+    pub fn slag_at(&self, planet: PlanetId) -> Kilotons {
+        self.planet_entity
+            .get(planet.0 as usize)
+            .and_then(|&e| self.world.slag.get(e))
+            .copied()
+            .unwrap_or(Kilotons::ZERO)
+    }
+
     pub fn set_log_filter(&mut self, filter: LogFilter) {
         self.log.set_filter(filter);
     }
@@ -2999,6 +3091,7 @@ impl Simulation {
             EventKind::BuildDecision { center } => self.sys_build_decision(center),
             EventKind::ContractDue { id } => self.sys_contract_due(id),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
+            EventKind::Engagement { site } => self.sys_engagement(site),
             EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
         true
@@ -3160,6 +3253,217 @@ impl Simulation {
         if self.active_mines.insert(outpost.0) {
             self.schedule(self.config.mining_tick_years, EventKind::MiningTick { outpost });
         }
+        // **Contact.** Mining is non-exclusive (roles §4.3), so this arrival may
+        // have just put two empires' hulls on the same rock — the one place in
+        // the shipped engine where that legally happens, and it happens a lot:
+        // 68-75% of occupied sites end up shared and a 1,500-year run produces
+        // ~4,200 contacts (`examples/contact_census`). The arrival *is* the
+        // moment the situation changed (§4), so the check belongs here and
+        // nowhere else.
+        if self.hostile_contact_at(outpost).is_some() {
+            self.schedule(0.0, EventKind::Engagement { site: outpost });
+        }
+    }
+
+    /// **Is there a fight at this outpost, and who starts it?**
+    ///
+    /// Returns `(attacker_seat, defender_seat)` for the first hostile pairing in
+    /// seat order, or `None`. The attacker is the empire whose Doctrine says a
+    /// neutral is an enemy; the defender is the lowest-numbered seat it is
+    /// standing next to. Deliberately **not symmetric**: hostility is a property
+    /// of one side's doctrine, and being shot at is not a choice
+    /// (`Doctrine::engage_neutrals`).
+    ///
+    /// `O(seats²)` at worst, with seats ≤ 18 and no allocation — the locality
+    /// rule §4 requires of anything on an arrival path. `mine_crew` is already
+    /// keyed `(seat, outpost)`, so this reads the index rather than scanning.
+    fn hostile_contact_at(&self, outpost: Entity) -> Option<(usize, usize)> {
+        if !self.config.engagements_enabled {
+            return None;
+        }
+        let mut present: Vec<usize> = Vec::new();
+        for (&(seat, site), crew) in self.mine_crew.range((0u32, outpost.0)..=(u32::MAX, outpost.0)) {
+            if site == outpost.0 && !crew.is_empty() {
+                present.push(seat as usize);
+            }
+        }
+        if present.len() < 2 {
+            return None;
+        }
+        for &a in &present {
+            if self.doctrine_of(a).engage_neutrals {
+                if let Some(&d) = present.iter().find(|&&d| d != a) {
+                    return Some((a, d));
+                }
+            }
+        }
+        None
+    }
+
+    /// This seat's standing Doctrine.
+    fn doctrine_of(&self, seat: usize) -> Doctrine {
+        *self.world.doctrine.get(self.player_entity[seat]).unwrap()
+    }
+
+    /// **Resolve one engagement at a shared site** (T-111) — the call
+    /// `combat.rs`'s own doc comment has named `sys_engagement` since the combat
+    /// refactor, and the thing whose absence blocks R-AC13, the belief wiring
+    /// and every posture card (`Hyades_warfare_tree.md` §3.4).
+    ///
+    /// Four steps, and the middle two are the design rather than the plumbing:
+    ///
+    /// 1. **Re-read who is present.** The event carries the site only — a hull
+    ///    can leave between the arrival that raised it and this call.
+    /// 2. **Accept/decline on believed kinematics** (R-O41, warfare §5.5). At a
+    ///    shared rock the two fleets are *co-located*, so the range is zero and
+    ///    so is the light-lag: the observation available now is current, and
+    ///    belief equals truth. That is not a hole in design law #15, it is the
+    ///    degenerate case of it — §5.4 already exempts close range for exactly
+    ///    this reason. **The interesting half of `belief.rs` is still unwired**:
+    ///    a surprise attack needs an engagement decided *at range* against a
+    ///    stale observation, which needs T-33's observation store.
+    /// 3. **Fight** through `combat::resolve_engagement` — the same function the
+    ///    arena calls, which is the whole point of the combat/arena split.
+    /// 4. **Conserve the wreckage.** Destroyed hulls become slag at the site.
+    ///
+    /// **Which side carries which weapon is a placeholder (R-WAR5).**
+    /// `resolve_engagement` is laser-side-vs-missile-side because that is the
+    /// sweep it was tuned on, and per-hull slot tables do not exist (R-L0).
+    /// The defender holds station and takes the laser side; the arriving
+    /// attacker takes the missile side. That is a *convention*, it decides the
+    /// outcome, and it is not ratified.
+    fn sys_engagement(&mut self, site: Entity) {
+        let Some((attacker, defender)) = self.hostile_contact_at(site) else { return };
+        let Some(pid) = self.world.planet_id.get(site).copied() else { return };
+        let Some(pos) = self.position_at(site, self.clock) else { return };
+
+        let att_hulls = self.crew_hulls(attacker, site);
+        let def_hulls = self.crew_hulls(defender, site);
+        if att_hulls.is_empty() || def_hulls.is_empty() {
+            return;
+        }
+
+        // Both fleets sit on the rock, so both trajectories are the site's own
+        // and the separation is the station-keeping spread alone.
+        let fleets = [FleetTrajectory { origin: pos, velocity: Vec3::ZERO }; 2];
+        let mut rng = self.rng.fork(self.seq ^ site.0.wrapping_mul(0x9E37_79B9));
+        let def_ships = self.combatants(&def_hulls, 0, &mut rng);
+        let att_ships = self.combatants(&att_hulls, 1, &mut rng);
+
+        // Step 2: can the attacker break off if this goes badly? Zero range, so
+        // the belief is a fresh observation and cannot be stale.
+        let own = att_ships[0].max_accel(&self.config);
+        let theirs = def_ships[0].max_accel(&self.config);
+        let choice = crate::belief::resolve_engagement_choice(own, theirs);
+        let committed = choice == crate::belief::Engagement::Committed;
+
+        let outcome = crate::combat::resolve_engagement(
+            &self.config,
+            &self.combat,
+            &mut rng,
+            &fleets,
+            &def_ships,
+            &att_ships,
+            self.config.engagement_horizon_years,
+            self.config.engagement_dt_years,
+            self.config.engagement_volley_period_years,
+        );
+
+        // Step 4: losses, oldest-first within each crew so the choice of *which*
+        // hull dies is deterministic and not a function of iteration order.
+        let def_lost = def_hulls.len().saturating_sub(outcome.laser_survivors);
+        let att_lost = att_hulls.len().saturating_sub(outcome.missile_survivors);
+        let mut slag = Kilotons::ZERO;
+        slag += self.destroy_hulls(defender, site, &def_hulls[..def_lost]);
+        slag += self.destroy_hulls(attacker, site, &att_hulls[..att_lost]);
+        let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + slag;
+        self.world.slag.insert(site, total);
+
+        self.log.push(
+            self.clock,
+            LogEvent::EngagementResolved {
+                site: pid,
+                attacker: attacker as u32,
+                defender: defender as u32,
+                attacker_ships: att_hulls.len() as u32,
+                defender_ships: def_hulls.len() as u32,
+                losses_attacker: att_lost as u32,
+                losses_defender: def_lost as u32,
+                committed,
+                slag: slag.kilotons(),
+            },
+        );
+    }
+
+    /// One seat's hulls standing at `site`, in arrival order.
+    fn crew_hulls(&self, seat: usize, site: Entity) -> Vec<Entity> {
+        self.mine_crew.get(&(seat as u32, site.0)).cloned().unwrap_or_default()
+    }
+
+    /// Turn stationed hulls into [`Combatant`]s — the sim's own spawn path.
+    ///
+    /// Deliberately **not** `arena::spawn_fleet`: the arena exists to spawn
+    /// outside production and the dependency runs `arena → combat`, never
+    /// `sim → arena`. These ships are the opposite — they were paid for, they
+    /// have a real hull, and their acceleration is whatever that hull gives.
+    fn combatants(&self, hulls: &[Entity], fleet: usize, rng: &mut Rng) -> Vec<Combatant> {
+        hulls
+            .iter()
+            .enumerate()
+            .map(|(i, &e)| {
+                let hull = *self.world.hull_type.get(e).unwrap_or(&HullType::LimitedSystems);
+                let role = *self.world.role.get(e).unwrap_or(&Role::Reserve);
+                // **The fleet index has to be in the label.** `Rng::fork` takes
+                // `&self` and does not advance, so forking on `i` alone hands
+                // the two fleets bit-identical draws ship-for-ship: attacker 0
+                // and defender 0 get the same `thrust_factor`, `own == theirs`,
+                // and `can_disengage` — a strict `>` — is false forever. The
+                // census read **100% committed across 8,127 engagements**,
+                // which is what a degenerate draw looks like from the outside.
+                let mut ship_rng = rng.fork(((fleet as u64) << 32) | i as u64);
+                let (lo, hi) = hull_thrust_multiplier_range(hull);
+                Combatant {
+                    role,
+                    hull,
+                    thrust_factor: ship_rng.range(lo, hi),
+                    fleet,
+                    station: StationKeeping::draw(
+                        &mut ship_rng,
+                        crate::arena::ROU_STATION_RADIUS,
+                        crate::arena::ROU_STATION_PERIOD,
+                    ),
+                    maneuver_velocity: Vec3::ZERO,
+                    maneuver_start: 0.0,
+                    maneuver_origin_offset: Vec3::ZERO,
+                }
+            })
+            .collect()
+    }
+
+    /// Remove destroyed hulls from the crew index and return the mass they were.
+    ///
+    /// A hull's dry mass **is** its mineral cost (R-O57), so this is the exact
+    /// quantity that has to reappear as slag for design law #11 to hold.
+    fn destroy_hulls(&mut self, seat: usize, site: Entity, dead: &[Entity]) -> Kilotons {
+        if dead.is_empty() {
+            return Kilotons::ZERO;
+        }
+        let mut mass = Kilotons::ZERO;
+        for &e in dead {
+            let hull = *self.world.hull_type.get(e).unwrap_or(&HullType::LimitedSystems);
+            mass += hull_dry_mass(hull, &self.config);
+            // Terminal: the hull is gone. `Role::Scrapped` is the engine's
+            // existing "this entity is finished" marker and nothing re-tasks it.
+            self.world.role.insert(e, Role::Scrapped);
+            self.world.motion.remove(e);
+        }
+        if let Some(crew) = self.mine_crew.get_mut(&(seat as u32, site.0)) {
+            crew.retain(|e| !dead.contains(e));
+            if crew.is_empty() {
+                self.mine_crew.remove(&(seat as u32, site.0));
+            }
+        }
+        mass
     }
 
     fn sys_freighter_arrive(&mut self, vehicle: Entity) {
@@ -7657,6 +7961,144 @@ mod tests {
         }
         assert!(!loud.log().is_empty());
         assert!(quiet.log().is_empty());
+    }
+
+    /// **Combat off reproduces the galaxy bit-for-bit** (T-111).
+    ///
+    /// The property the whole gate exists for. Every coverage, colony-year and
+    /// work-year figure this project has measured was taken before anything
+    /// fought, and the offline search rests on them; a mechanic that perturbed
+    /// the default run would consume that corpus on the day it landed. So the
+    /// engagement path must be *unreachable* rather than merely quiet, and this
+    /// asserts it against a run built before the code existed.
+    #[test]
+    fn combat_off_is_bit_identical() {
+        let mk = || Simulation::with_baseline(test_galaxy(3, 2024), paired_cfg(2024));
+        let mut a = mk();
+        let mut b = mk();
+        let ra = a.run();
+        let rb = b.run();
+        paired_mechanism_fired(&ra);
+        assert!(!a.config.engagements_enabled, "the gate must ship closed");
+        assert_eq!(ra.events_processed, rb.events_processed);
+        for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
+            assert_eq!(pa.colonies, pb.colonies);
+            assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
+        }
+        // And nothing was destroyed: no slag anywhere.
+        let total: f64 = (0..a.planet_entity.len()).map(|i| a.slag_at(PlanetId(i as u32)).kilotons()).sum();
+        assert_eq!(total, 0.0, "combat is off and {total} kt of wreckage appeared");
+    }
+
+    /// A bed where two empires have actually grown into each other.
+    ///
+    /// **The horizon is the whole content of this helper.** `paired_cfg`'s
+    /// 120 yr produces 12 occupied sites and **zero** shared ones — the seats
+    /// are still expanding into empty space and have not met. Measured on this
+    /// galaxy: 120 yr gives 0 shared sites and 0 fights, 400 yr gives 76 and
+    /// 141. So a combat test at 120 yr passes or fails on whether anyone has
+    /// *met*, which is not what it is asking. `CLAUDE.md` §2's rule about
+    /// horizons cut past the point a mechanism fires, arrived at from the other
+    /// side: this one had to go **up**.
+    fn contact_cfg(seed: u64) -> SimConfig {
+        let mut cfg = SimConfig::new(seed);
+        cfg.horizon_years = 400.0;
+        cfg.engagements_enabled = true;
+        cfg
+    }
+
+    /// Three seats whose doctrine says a neutral is an enemy.
+    fn belligerents(galaxy: Galaxy, cfg: SimConfig) -> Simulation {
+        let doctrine = Doctrine { engage_neutrals: true, ..Doctrine::default() };
+        let autopilots: Vec<Box<dyn Autopilot>> =
+            (0..3).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
+        Simulation::new(galaxy, cfg, autopilots)
+    }
+
+    /// **The gate is what closes it, not the absence of contact** (T-111).
+    ///
+    /// Two runs that differ only in `engagements_enabled` + `engage_neutrals`
+    /// must differ, or the mechanic is inert and the test above proves nothing.
+    /// `examples/contact_census` measured the upstream side — 68-75% of occupied
+    /// sites end up shared — and this is the same claim from inside the engine.
+    #[test]
+    fn combat_on_actually_fights() {
+        let mut sim = belligerents(test_galaxy(3, 2024), contact_cfg(2024));
+        sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
+        sim.run();
+
+        let fights =
+            sim.log().iter().filter(|r| matches!(r.event, crate::log::LogEvent::EngagementResolved { .. })).count();
+        assert!(fights > 0, "combat is on and nothing fought — the trigger never fired");
+    }
+
+    /// **Slag conserves the mass of what it destroyed** (design law #11, R-O59).
+    ///
+    /// Mass has no exclusions, and "the loser's ships vanish" would be a leak on
+    /// the one path Warfare runs on. A hull's dry mass *is* its mineral cost
+    /// (R-O57), so the wreckage standing at a site must equal the summed cost of
+    /// the hulls that died there — reconciled from the log, which records both
+    /// counts and mass independently.
+    #[test]
+    fn slag_conserves_the_mass_of_what_it_destroyed() {
+        let mut sim = belligerents(test_galaxy(3, 2024), contact_cfg(2024));
+        sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
+        sim.run();
+
+        let mut logged_slag = 0.0;
+        let mut kills = 0u32;
+        for r in sim.log().iter() {
+            if let crate::log::LogEvent::EngagementResolved { slag, losses_attacker, losses_defender, .. } = r.event {
+                logged_slag += slag;
+                kills += losses_attacker + losses_defender;
+            }
+        }
+        assert!(kills > 0, "nothing died, so this asserts nothing");
+        let standing: f64 = (0..sim.planet_entity.len()).map(|i| sim.slag_at(PlanetId(i as u32)).kilotons()).sum();
+        assert!(
+            (standing - logged_slag).abs() < 1e-9,
+            "slag standing on the board is {standing} kt but {logged_slag} kt was destroyed"
+        );
+        // Every miner is a Limited Systems hull, so the mass is exactly the
+        // count times its price — the reconciliation `CLAUDE.md` §2 asks for
+        // when a count and a mass are reported side by side.
+        let unit = hull_dry_mass(HullType::LimitedSystems, &sim.config).kilotons();
+        assert!(
+            (logged_slag - kills as f64 * unit).abs() < 1e-9,
+            "{kills} hulls at {unit} kt should be {} kt, logged {logged_slag}",
+            kills as f64 * unit
+        );
+    }
+
+    /// **An empty side is a walkover, not a panic** (T-111).
+    ///
+    /// `laser_ships[0]` was an arena assumption — a scenario always seeds both
+    /// fleets. The simulation reaches the empty case legitimately (a crew that
+    /// left between the arrival and the shot), and a panic in the event loop on
+    /// a legal board state is a crash, not a rule.
+    #[test]
+    fn an_engagement_with_one_empty_side_is_a_walkover() {
+        let cfg = SimConfig::new(1);
+        let combat = CombatConfig::default();
+        let mut rng = Rng::new(1);
+        let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }; 2];
+        let one = crate::arena::spawn_fleet(
+            &mut rng,
+            0,
+            3,
+            Role::Miner,
+            HullType::LimitedSystems,
+            crate::combat::STATION_RADIUS,
+            crate::combat::STATION_PERIOD,
+        );
+        let none: Vec<Combatant> = Vec::new();
+
+        let a = crate::combat::resolve_engagement(&cfg, &combat, &mut rng, &fleets, &one, &none, 0.1, 0.0005, 0.05);
+        assert_eq!(a.laser_survivors, 3);
+        assert_eq!(a.missile_survivors, 0);
+        let b = crate::combat::resolve_engagement(&cfg, &combat, &mut rng, &fleets, &none, &one, 0.1, 0.0005, 0.05);
+        assert_eq!(b.laser_survivors, 0);
+        assert_eq!(b.missile_survivors, 3);
     }
 
     #[test]

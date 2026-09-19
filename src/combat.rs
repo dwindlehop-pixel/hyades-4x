@@ -124,6 +124,21 @@ fn arbitrary_perpendicular(axis: Vec3) -> Vec3 {
     seed.sub(axis.scale(seed.dot(axis))).normalized()
 }
 
+/// **Station-keeping spread a fleet holds around its reference trajectory.**
+///
+/// Tuned on the ROU laser-vs-missile sweep and **MC-tuned surface**: changing
+/// either moves every engagement outcome, so it needs explicit ratification
+/// (the working agreement). They live here rather than in `arena.rs` because
+/// `arena` is a scenario seeder that owns no combat model, and since T-111 the
+/// *simulation* needs them too — `sim::Simulation::combatants` places stationed
+/// hulls with the same spread the arena does, and a second copy of a tuned
+/// number is an edit waiting to go wrong. `arena::ROU_STATION_RADIUS` and
+/// `ROU_STATION_PERIOD` are re-exports of these, so the names the sweep uses
+/// still resolve.
+pub const STATION_RADIUS: (f64, f64) = (0.00005, 0.0002);
+/// Station-keeping period range, in years. See [`STATION_RADIUS`].
+pub const STATION_PERIOD: (f64, f64) = (0.02, 0.08);
+
 /// A ship in the arena — hull/role (driving its max acceleration, per the
 /// propulsion model confirmed this conversation), which fleet it belongs
 /// to, and its station-keeping offset around that fleet's trajectory.
@@ -754,7 +769,30 @@ pub fn resolve_engagement(
 ) -> EngagementOutcome {
     let n_lasers = laser_ships.len();
     let n_missiles = missile_ships.len();
-    let carrier_accel = laser_ships[0].max_accel(sim_cfg); // same hull both sides
+    // **An empty side is a legal input, and it used to panic.** `laser_ships[0]`
+    // is an arena assumption: a scenario always seeds both fleets, so the index
+    // could not fail. The *simulation* calls this with whoever happens to be
+    // standing on a rock (T-111), and "nobody" is a state it can reach — a crew
+    // that left between the arrival and the shot. Indexing there would be a
+    // panic in the event loop on a legal board state.
+    //
+    // It is also not a fight: with no shooter on one side nothing can be
+    // resolved, so the honest answer is the walkover rather than a zero-length
+    // loop that reports `Winner::Draw`.
+    if n_lasers == 0 || n_missiles == 0 {
+        return EngagementOutcome {
+            winner: if n_lasers == 0 { Winner::Missile } else { Winner::Laser },
+            laser_survivors: n_lasers,
+            missile_survivors: n_missiles,
+        };
+    }
+    // **`carrier_accel` reads ship 0 and calls it "same hull both sides".** True
+    // in the arena, which seeds one hull per trial; false in the simulation,
+    // where two empires bring whatever they built. Missile acceleration is
+    // therefore derived from the *laser* side's first hull whatever the attacker
+    // flies — a real approximation, carried as **R-WAR5** rather than silently
+    // fixed, because changing it moves every tuned outcome in `tests/balance.rs`.
+    let carrier_accel = laser_ships[0].max_accel(sim_cfg);
     let missile_accel = carrier_accel * cfg.missile_accel_multiplier;
 
     let mut laser_alive = vec![true; n_lasers];

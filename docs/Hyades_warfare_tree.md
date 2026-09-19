@@ -64,6 +64,15 @@ Dependency direction is `arena → combat`, never the reverse.
 an example once (`laser_vs_missile`), which meant the balancer and the game could
 diverge silently.
 
+**Since T-111 there are two callers and the direction is unchanged.**
+`sim::Simulation::sys_engagement` resolves through the same function the arena
+does, so the production game and the balancer still fight with one model. The
+dependency is `sim → combat`, **never `sim → arena`**: the arena's whole job is
+spawning outside production, and these ships were paid for. The station-keeping
+constants the sweep was tuned at moved from `arena` to `combat` for the same
+reason — a tuned number with two copies is an edit waiting to go wrong — and
+`arena::ROU_STATION_*` are re-exports so the sweep's own names still resolve.
+
 **1.3 `RATIFIED` — the Ship Testing Arena is the *required* empirical harness for
 per-class `r_eq`.** Design law #4. **These values cannot be derived
 analytically**, and the arena exists precisely so that hull supremacy is measured
@@ -172,14 +181,38 @@ insurgency.** Design law #8: not useful force projection, but Mao-style harass,
 avoid, and strike the resting or retreating enemy. **An LOU that were good in a
 line battle would violate 3.2.**
 
-**3.4 `OPEN, and it blocks the rest of the tree` — T-30: there is no accept/decline
-site in the engine.** `combat::resolve_engagement` is a *pure tactical resolver*
-that takes two fully-specified fleets. There is no round or command layer for a
-"do I take this fight" decision to live in.
+**3.4 ~~`OPEN, and it blocks the rest of the tree`~~ `RATIFIED` — the engine has
+an engagement site, and two thirds of this entry was wrong (T-111).**
 
-Three things wait on it: `belief.rs`'s wiring (§5), R-AC13's "if pressed" trigger
-at the colonisation layer, and every Warfare card whose effect is a *posture*
-rather than a stat.
+The original text said: *"`combat::resolve_engagement` is a pure tactical
+resolver that takes two fully-specified fleets. There is no round or command
+layer for a 'do I take this fight' decision to live in."* Both halves of that
+have since stopped being true, and for different reasons:
+
+- **The round layer landed.** `EventKind::RoundBoundary` is a scheduled,
+  self-chaining event and `Simulation::apply_orders` is the single inbound
+  channel design law #15 requires (T-30, partially done — what is still missing
+  is *hidden simultaneity*, which is T-42 and is a different problem). This
+  entry was still citing T-30 as though nothing had shipped.
+- **The premise that nothing meets was never checked, and it is false.**
+  Colonisation is exclusive (R-V3) so colony worlds cannot host two owners, but
+  **mining is non-exclusive** (roles §4.3) — and measured on the standard bed
+  (`examples/contact_census`, 3 seats, 1,500 yr) **68–75% of all occupied sites
+  end up worked by more than one empire**, at ~4,200 contacts per run, up to all
+  three seats on one rock. The engine has been producing thousands of contacts a
+  run since outposts existed, with everyone politely ignoring each other.
+
+**So what was missing was the call, not the occasion.** `sys_engagement` — the
+name `combat.rs`'s own doc comment has used since the combat refactor — now
+exists: a miner parking at a rock another empire is working raises
+`EventKind::Engagement`, and that resolves through the same
+`combat::resolve_engagement` the arena calls. §7 is what it does; §8.5 is what
+it still does not.
+
+**What this does and does not unblock.** `belief.rs` is wired, but only at its
+*degenerate* end (§5.5 below). R-AC13's "if pressed" trigger at the colonisation
+layer and every posture card are **still open** — both need a decision taken at
+*range*, and this one is taken at zero range where there is nothing to decide.
 
 **3.5 `OPEN` — R-MC9c / T-12: the four layers `resolve_engagement` still needs**,
 all as `CombatConfig` fields plus slot-derived stats:
@@ -274,8 +307,20 @@ layer's asymmetric-leak rule.
 kinematics.** Close range is exactly where the degeneracy breaks, so a missile a
 few thousand km out is *not* working from a lower bound.
 
-**5.5 `RATIFIED` — the rule when T-30 lands.** The accept/decline decision reads a
-`BeliefAMax` and **never** the other side's true `Combatant::max_accel`.
+**5.5 `RATIFIED, wired at one end only` — the rule.** The accept/decline decision
+reads a `BeliefAMax` and **never** the other side's true `Combatant::max_accel`.
+
+**§7's engagement site honours this vacuously, and that is worth stating plainly
+rather than counting as progress.** A shared mining rock puts the two fleets at
+the *same place*, so the range is zero, so the light-lag is zero, and the
+observation available at the moment of decision is current — belief equals truth
+and `was_surprised` is identically false. §5.4 already exempts close range for
+exactly this reason, so this is the degenerate case of the rule and not a hole in
+it. **The interesting half is still unwired**: masking, surprise and the
+one-sided error need a decision taken against a *stale* observation at range,
+which needs T-33's observation store and an engagement that is not a co-location.
+Measured: `committed` runs 49.4–51.6% across eight seeds, which is the coin flip
+two identical hulls should produce and carries no information about either side.
 
 **5.6 `OPEN` — R-O40 / T-09: throttle fraction, and observing `a` from the
 trajectory rather than the stat block.** Today the engine reads the stat block,
@@ -300,7 +345,7 @@ undercosted.**
 `Conduct::engage` feeds `belief::decide_engagement`'s `Unobserved` policy, so
 "what do I assume about a fleet I cannot measure" is a per-stance Doctrine
 decision rather than a constant
-(`Hyades_politics_trade_and_intelligence.md` §7.2).
+(`Hyades_politics_trade_and_intelligence.md` §8.2).
 
 **6.3 `RATIFIED` — Warfare's counter into Politics is Interdict**, and Politics'
 counter into Warfare is the supply-chain effect: **mobilising against your
@@ -313,7 +358,7 @@ distribution (§8 of the politics spec).
 is authorable until §3.4 and §3.5 land, because the effect is either a *posture*
 (needs an accept/decline site) or a *stat* (needs the four resolver layers). What
 **is** specifiable now is the shape — empire-scale, legible, placing an object
-rather than applying a percentage — and **§7 is the first card specified to it**:
+rather than applying a percentage — and **§8 is the first card specified to it**:
 the armed coloniser, which places a standing fleet on the board by declining to
 consume the hull that founds a colony. Its Design half is blocked on T-97 and its
 Doctrine half on §3.4; its *value model* and one refuted design claim are settled.
@@ -328,7 +373,106 @@ a coloniser re-routing away from a detected threat. Blocked with T-30.
 
 ---
 
-## 7. The first Warfare card — the armed coloniser (R-WAR2, advanced)
+## 7. The engagement site — combat in the simulation loop (T-111)
+
+**`RATIFIED` as a seam; every magnitude in it is a placeholder.** What is settled
+is that the simulation resolves fights through `combat::resolve_engagement` and
+that a destroyed hull's mass is conserved. What is not settled is any number.
+
+### 7.1 Where a fight happens, and why there was already one to have
+
+**A shared mining outpost.** Mining is non-exclusive (roles §4.3) and
+colonisation is not (R-V3), so a rock is the one site in the shipped engine where
+two empires' hulls legitimately stand together. `sys_mining_arrive` raises
+`EventKind::Engagement` when a miner parks somewhere another empire is already
+working — the arrival *is* the moment the situation changed, which is §4's rule,
+and `mine_crew` is already keyed `(seat, outpost)` so the check is `O(seats)`
+with no scan.
+
+**The occasion was never the scarce thing** (`examples/contact_census`, 3 seats,
+1,500 yr): 68–75% of occupied sites end up shared, ~4,200 contacts per run, up
+to three seats on one rock. §3.4 assumed the opposite for as long as it stood.
+
+### 7.2 Who starts it
+
+`Doctrine::engage_neutrals`, default **false** — R-O27/T-11's first diplomatic
+field, added because §8.2's card needs exactly it and the rest of the list is
+still unspecified. Peace is the design's own default, not a safety catch: §8.2
+specifies the first Warfare card as writing *"a Neutral empire is an Enemy
+empire"*, which means nothing unless neutrality is where everyone starts.
+
+**Hostility is asymmetric and is not negotiated.** One side's doctrine starts it;
+the other is in a fight whether or not it wanted one. What it can do is outrun
+them, which is §5's kinematic criterion and not consent.
+
+A second gate, `SimConfig::engagements_enabled`, also defaults off. It is not a
+design statement — it is what keeps every coverage, colony-year and work-year
+figure this project has measured valid, since all of them were taken on a galaxy
+where nothing fought. `combat_off_is_bit_identical` pins it.
+
+### 7.3 What it costs the economy — measured, and it is almost nothing
+
+Eight seeds, 3 seats, 800 yr (`examples/engagement_census`), war against peace:
+
+| | mean | seeds positive |
+|---|---|---|
+| colony count | **+0.43% ± 0.17** | 5/8 |
+| colony-years | **−0.74% ± 0.26** | 3/8 |
+
+Per run: **3,701–4,131 engagements** and **5,488–12,819 hulls destroyed**, for
+110–258 kt of slag. Neither aggregate is a finding — `CLAUDE.md` §2 puts the
+2-SE bar as a floor for *considering* a number, and a 5/8 or 3/8 sign test is
+noise — but the **magnitude** is the point, and it is a corroboration rather than
+a surprise:
+
+> **An empire can lose its entire mining fleet several times over and its
+> expansion does not notice.** That is the same conclusion §6.19c and R-O92
+> reached from the economic side — the binding constraint is `k_high` and the
+> colour composition of freight, not hull count — arrived at by destroying the
+> hulls instead of by counting them.
+
+**Throughput rose on all eight seeds** (109→126 … 124→137 yr/s) with `ns/event`
+*falling* (20,556→18,060). `CLAUDE.md` §2's table reads that pair as "a real
+optimisation", and it is not one: nothing got faster per unit of work, there is
+simply less work because 11,345 hulls stopped existing. That table assumes a
+fixed workload, and this is the row it does not cover.
+
+### 7.4 What it does not do, stated so it is not mistaken for more
+
+- **It is not balanced and cannot be.** Warfare's objective is an algebraic zero
+  on the symmetric 3-seat bed (R-TREE8), so nothing here was tuned against a
+  galaxy and no magnitude in `CombatConfig` has seen one.
+- **The belief layer is wired at its degenerate end only** (§5.5): zero range
+  means belief equals truth, and `committed` measures 49.4–51.6% — a coin flip
+  between two identical hulls.
+- **Only miners ever fight**, because a shared outpost is the only co-location
+  the engine produces. Freighters in transit, colonisers under way and the
+  colonies themselves are untouchable. Commerce raiding (§4.4) and blockade need
+  an engagement in open space, which needs a detection query rather than an
+  arrival.
+- **Nothing is captured and nothing is razed.** §4.1 says infrastructure is the
+  war target; this reaches no infrastructure at all.
+- **R-WAR5**: the defender takes the laser side and the arriver the missiles,
+  and `carrier_accel` reads the laser side's first hull. A convention that
+  decides outcomes.
+
+### 7.5 Two arena assumptions the wiring exposed
+
+Worth recording because both were invisible while `resolve_engagement` had one
+caller, and both are the shape `CLAUDE.md` §2 warns about — a constant whose
+stated reason stopped holding when something else changed.
+
+- **An empty side panicked.** `laser_ships[0]` is safe in a scenario that always
+  seeds both fleets; the simulation reaches "nobody is left on that side"
+  legitimately, and indexing there is a crash on a legal board state. It now
+  returns the walkover.
+- **`carrier_accel` assumed one hull per trial.** True of the sweep, false of two
+  empires bringing what they built. Carried as R-WAR5 rather than fixed, because
+  changing it moves every golden in `tests/balance.rs`.
+
+---
+
+## 8. The first Warfare card — the armed coloniser (R-WAR2, advanced)
 
 *The first concrete answer to **R-WAR2** (§6.4), which said nothing was
 authorable until §3.4 and §3.5 land. That still holds for the card's *effects* —
@@ -343,7 +487,7 @@ stated intent. This section settles those three and says what is blocked.*
 placeholder and says so. What is settled is the card's shape, the measurement
 that refutes one third of its stated intent, and the bed the head-to-head needs.
 
-### 7.1 Warfare's licence, and why it is currently worth nothing
+### 8.1 Warfare's licence, and why it is currently worth nothing
 
 **Only Warfare cards may carry Doctrine that kills population** (card contract
 §10). That is Warfare's distinguishing capability and the reason five other
@@ -361,7 +505,7 @@ not need the licence, it needs the licence to *exist* before a later card can
 use it — and it establishes the tree's board presence while T-107 makes
 population a factor of production.
 
-### 7.2 The card — one Design write, three Doctrine writes
+### 8.2 The card — one Design write, three Doctrine writes
 
 **Author's specification.** The colony ship moves off the Systems family and
 onto the Contact family: armed, worse freight per kilotonne of price, and —
@@ -391,7 +535,7 @@ keeps its minerals in the hull, so **the colony it founds starts with only what
 the hold carried as endowment** (`Hyades_industry.md` §1.7). Mass is conserved
 either way — the trade is *where the minerals stand*, not whether they exist.
 
-### 7.3 One third of the stated intent is impossible, and the engine says so exactly
+### 8.3 One third of the stated intent is impossible, and the engine says so exactly
 
 The design intent was three properties at once, against the Medium Systems hull
 the coloniser rides today: **less cargo per kilotonne of cost, lower laden
@@ -462,7 +606,7 @@ Two different readings of the same observable; neither is the other, and a card
 that moves both moves them in opposite directions. **That is the concealment
 combo T-97 predicts, arrived at from the other side.**
 
-### 7.4 What it is evaluated against, and why trees §4 does not cover it
+### 8.4 What it is evaluated against, and why trees §4 does not cover it
 
 **Author's specification: evaluate against a Growth card that raises the growth
 rate** — `TIER0` slots 3 and 4, `WriteDoctrine(GrowthRate(1.15 | 1.35))`.
@@ -517,29 +661,31 @@ so if that holds, the first Warfare card is not a tier-1 card and the pair does
 not belong at the same depth. That is a falsifiable claim about where the card
 sits in the tree, and it is the first thing the head-to-head should be asked.
 
-### 7.5 What this is blocked on, in order
+### 8.5 What this is blocked on, in order
 
 Stated as a chain because none of it is parallel:
 
 | # | blocker | code | why it binds |
 |---|---|---|---|
-| 1 | no accept/decline site, and no combat in the simulation loop | §3.4, T-30 / T-12 | `combat::resolve_engagement` is never called from `sim.rs`, so *"engage nearby enemies"* has no execution path and the card's whole Warfare half is inert |
-| 2 | no diplomatic fields on `Doctrine` | R-O27 / T-11 | *"a Neutral empire is an Enemy empire"* is a stance default, and there is no stance |
-| 3 | `φ` is global, not per-`Class` | T-97, blocked on T-08 | §7.3's Design write cannot be expressed; R-O47b forbids it reaching hulls already in the field |
-| 4 | Warfare's objective is unreadable on the standard bed, and `w_ij` is unset | R-TREE8, **R-WAR3** | §7.4 |
-| 5 | population is not a factor of production | T-107 | §7.1 — the licence the tree is being given costs its victims nothing |
+| 1 | ~~no accept/decline site, and no combat in the simulation loop~~ — **half cleared (T-111)** | §7 | `resolve_engagement` *is* called from `sim.rs` now, and hostility is a Doctrine write, so the card's second and third writes have somewhere to land. What is still missing is the **posture**: an engagement fires when a miner parks on a shared rock, not when an unladen hull *chooses* to close on a contact it can see. *"Engage nearby enemies"* needs a detection query at range, which is R-AC13's shape and T-33's data |
+| 2 | ~~no diplomatic fields on `Doctrine`~~ — **cleared for this card (T-111)** | R-O27 / T-11 | `Doctrine::engage_neutrals` is the stance *"a Neutral empire is an Enemy empire"* writes. The **rest** of R-O27's field list is still unspecified, so T-11 stays open; this card no longer waits on it |
+| 3 | `φ` is global, not per-`Class` | T-97, blocked on T-08 | §8.3's Design write cannot be expressed; R-O47b forbids it reaching hulls already in the field |
+| 4 | Warfare's objective is unreadable on the standard bed, and `w_ij` is unset | R-TREE8, **R-WAR3** | §8.4 |
+| 5 | population is not a factor of production | T-107 | §8.1 — the licence the tree is being given costs its victims nothing |
 
-Items 1–3 are engine work with no open design question left in them — and item 1
-is §3.4, which T-104 names the highest-leverage unbuilt thing in the engine.
-Items 4 and 5 are design work, specified here and in `Hyades_industry.md` §1.8. **The card is
-authorable now and measurable at none of these steps but the last**, which is
-why it is written down rather than built.
+Items 1–3 are engine work with no open design question left in them. **Two of
+the five moved at T-111 and the chain is shorter than it was**: the card's
+Doctrine half now has a field to write and a resolver to reach, and what remains
+of item 1 is a *posture* — closing on a contact you can see — rather than the
+whole of combat. Items 4 and 5 are design work, specified here and in
+`Hyades_industry.md` §1.8. **The card is authorable now and measurable at none of
+these steps but the last**, which is why it is written down rather than built.
 
 ---
 
 ---
 
-## 8. Register
+## 9. Register
 
 ### Ratified
 
@@ -554,16 +700,20 @@ why it is written down rather than built.
 | R-O41 | belief is the max ever observed; masking is spend-once; error is one-sided |
 | R-O93 | the population logistic is solved, so attack outcomes are tick-independent |
 | R-MC16 | thrust is drawn from mounted drive; the load-state broadcast survives |
-| **R-O95** | the empty-to-laden acceleration swing **is** the hull's cargo efficiency, exactly — so a hull cannot be worse at freight, faster empty and slower laden at once (§7.3) |
+| **R-O95** | the empty-to-laden acceleration swing **is** the hull's cargo efficiency, exactly — so a hull cannot be worse at freight, faster empty and slower laden at once (§8.3) |
 | — | **only Warfare may carry a population-lethal Doctrine write** (card contract §10), enforced in the card layer rather than by authoring convention |
 | — | the wreck roll is the only stochastic beat, bounded in (0, 1) |
+| **T-111** | `combat::resolve_engagement` is called from `sim.rs`; the simulation and the arena fight with one model, and the arena still seeds no production |
+| law #11 | a destroyed hull's mass becomes **slag at the site** — inert (R-O59), conserved, and never a salvage yield |
 | — | no tick-based initiative; `dt = 0.0005 yr`; < 2 ms per tick |
 
 ### Open
 
 | Code | Question | What would settle it |
 |---|---|---|
-| **T-30** | **no accept/decline site exists** — blocks belief wiring, R-AC13, and every posture card | engine work; the round/command layer |
+| ~~**T-30**~~ | ~~no accept/decline site exists~~ — **closed as stated (T-111).** The round layer had already landed and the engine was producing ~4,200 co-locations per run unremarked; `sys_engagement` now resolves them. R-AC13 and posture cards are **not** unblocked: both need a decision at *range* | done; see §3.4 and §7 |
+| **R-WAR5** | **which side carries which weapon.** `resolve_engagement` is laser-side-vs-missile-side because that is the sweep it was tuned on; the sim gives the defender the lasers and the arriver the missiles, and `carrier_accel` reads the laser side's first hull whatever the attacker flies. A convention that decides outcomes | R-L0's per-hull slot tables, then the arena |
+| **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |
 | R-MC9c / T-12 | HP pools, weapon count, missile AoE, magazines | engine work, then the arena |
 | R-L0 | per-hull slot tables | the arena |
 | R-L2 | single closing pass or repeated passes? | pin with the wreck roll |
@@ -573,7 +723,7 @@ why it is written down rather than built.
 | R-IND8 | captured infrastructure | a design pass, with Production |
 | R-WAR1 | **elimination** — nothing eliminates anyone | a design pass |
 | R-WAR2 | the card surface | **advanced** — §7 specifies the first card's shape and value model; its effects stay blocked on T-30 and R-MC9c |
-| **R-WAR4** | **the armed coloniser's magnitudes** — the Contact coloniser class's drive fraction `φ` (0.02 is the smallest value that makes its cargo-inefficiency claim true, and it is a placeholder), the card's mineral cost, and where in the tree the pair sits once §7.4's dispersion prediction is measured | T-97 first, then a measurement on the asymmetric bed |
+| **R-WAR4** | **the armed coloniser's magnitudes** — the Contact coloniser class's drive fraction `φ` (0.02 is the smallest value that makes its cargo-inefficiency claim true, and it is a placeholder), the card's mineral cost, and where in the tree the pair sits once §8.4's dispersion prediction is measured | T-97 first, then a measurement on the asymmetric bed |
 | **R-TREE12** | Warfare card value has no doubling time of its own; decided as the fractional *increase* in the **target's** | trees §5; the target set is still open |
 | R-WAR3 | `w_ij`, the neighbour weight | a decision; the objective needs it |
 | R-AC13 | "if pressed" at the colonisation layer | blocked on T-30 |
@@ -588,15 +738,15 @@ why it is written down rather than built.
 - `Hyades_standing_layer_and_observation.md` §3 (σ), §6.2 (acceleration as the
   observable), §6.4–6.5 (belief and SPRT), §9.2 (laden hulls are conspicuous)
 - `Hyades_trees_and_card_value.md` §2.3.2 — the relative objective and `w_ij`;
-  §4 — card value, the P92 contract and the doubling-time numeraire §7.4 departs from
-- `Hyades_card_contract.md` §10 — the write-capability partition §7.1 rests on
+  §4 — card value, the P92 contract and the doubling-time numeraire §8.4 departs from
+- `Hyades_card_contract.md` §10 — the write-capability partition §8.1 rests on
 - `Hyades_technology_tree.md` — what capability is bought with
 - `Hyades_politics_trade_and_intelligence.md` §8 — the time-dependent counter-graph
   edge between these two trees
 - `Hyades_industry.md` §1.2 (infrastructure is the war target), §1.8 (population is
-  not a factor of production, which is why §7.1's licence is currently inert),
+  not a factor of production, which is why §8.1's licence is currently inert),
   §9 (captured infra)
 - `Hyades_vehicle_roles.md` §4.2 — the Colonizer role and the arrival behaviour
-  §7.2 changes
+  §8.2 changes
 - `src/combat.rs`, `src/arena.rs`, `src/belief.rs`
 - CLAUDE.md design laws #2, #3, #4, #7, #8, #10, #11
