@@ -99,3 +99,108 @@ Until 1–4 exist, cards beyond round 1 can be *named and slotted* (saga beats) 
 
 ## 9. Ratification points
 - **R-C1** closed list of legal `target_rule` kinds · **R-C2** realization curves per order family · **R-C3** scaling house-rules per tree · **R-C4** lock the engine-efficiency example (magnitude/class/singleton) once hulls exist · **R-C5** order precedence algebra · **R-C6** `V` state-vector + exact-vs-estimator · **R-C7** balance metrics + thresholds
+
+---
+
+## 10. Write capability is partitioned by tree, and the partition is enforced in the engine
+
+**Author's ruling: only Warfare cards may carry Doctrine that kills population,
+and this is enforced at the simulation level.** That is a constraint on the
+*card layer's data*, not on card text, so it belongs here with the rest of the
+contract.
+
+### 10.1 The rule
+
+> **A standing-layer write whose realization can reduce a player's population
+> may appear only on a card whose `tree` is `Warfare`.** Every other tree's
+> cards are population-safe by construction.
+
+Three reasons it is a contract clause rather than an authoring convention:
+
+- **It is what makes the trees mean anything.** Trees §2 gives each tree its own
+  objective; §2.3.2 makes Warfare's the only one that scores by *lowering*
+  someone else's stock. If a Growth card can crater a biosphere, five trees have
+  a Warfare mouth and Warfare has no distinguishing act.
+- **Its absence is silent.** Nothing in `CardEffect` or `DoctrineWrite`
+  distinguishes a write that raises a ceiling from one that lowers it — both are
+  an `f64` — so a mis-slotted card compiles, runs, and reports a plausible
+  number. This is `CLAUDE.md` §4's *"a quantity carries its unit in the type"*
+  applied to a capability instead of a unit.
+- **`Hyades_standing_layer_and_observation.md` §5 already says Doctrine and
+  Design are written *only* by tree cards.** This says *which* tree, which is
+  the half that was missing.
+
+### 10.2 The predicate is on the write's value, not on its variant
+
+The obvious implementation — a list of population-lethal `DoctrineWrite`
+variants — is wrong, and the shipped card list shows why. `TIER0` card 5 is
+**Growth / LessGuarded**, carrying `WriteDoctrine(BiosphereRegen(1.5))`. The
+variant is population-lethal: `biosphere_regen_bonus` scales the rate the
+biosphere regrows toward `bio_max`, and since T-94 an over-capacity world decays
+*toward* its ceiling rather than overshooting to zero, so a factor below `1.0`
+starves growth and, sustained, lowers the standing stock population is drawn
+out of (design law #11). At `1.5` it does the opposite and is harmless.
+
+So the predicate reads the **argument**:
+
+```text
+lethal(WriteDoctrine(GrowthRate(f)))     =  f < 1.0
+lethal(WriteDoctrine(BiosphereRegen(f))) =  f < 1.0
+lethal(WriteDoctrine(SurveyVehicles(_))) =  false
+lethal(WriteDoctrine(ReinvestBias(_)))   =  false
+lethal(UnlockDesign(..))                 =  false      // Design adds a roster entry
+lethal(DiscloseScans)                    =  false
+lethal(WriteWorks(..))                   =  false      // works are industrial, §1.1
+```
+
+`lethal` is **total over `CardEffect`**, so a new variant must state its answer
+rather than defaulting to permitted. That is the property worth having: the check
+fails closed when the card layer grows.
+
+### 10.3 Where it is enforced, and why there are two places
+
+Two enforcement points, for two different failure modes, and both are cheap:
+
+1. **At the card list** — a `const` assertion over `TIER0` that no non-Warfare
+   card carries a lethal effect. This is a **static** property of shipped data,
+   so it costs nothing at runtime and fails the build rather than a match. It is
+   the same shape as the `compile_fail` doctest that stops a rung being written
+   as a bare number (`CLAUDE.md` §4).
+2. **In `Order::coerce`** — a play of a lethal card from a non-Warfare tree
+   coerces to `Order::pass`, like any other illegality. Redundant while the list
+   is static, and **not** redundant once cards are data: §7's Monte-Carlo
+   balancing revises the list every run, and netcode §5.1 requires every client
+   to reach the same verdict from state it already holds. Legality here is a
+   pure function of `(card.tree, card.effect)`, both of which every client has,
+   so the coercion is free of message exchange and cannot desync.
+
+**Coerce, never reject** (§1, netcode §5.1). A lethal card in the wrong tree is
+not an error to surface; it is an illegal order, and an illegal order becomes a
+pass.
+
+### 10.4 What the rule does *not* say
+
+Stated so the boundary is not re-argued later:
+
+- **It does not make Warfare cards population-lethal.** It licenses them. The
+  first Warfare card specified (`Hyades_warfare_tree.md` §7) carries no lethal
+  write at all — its
+  lethality is to hulls — and it is still a Warfare card for reasons of its own.
+- **It does not cover Design.** A roster entry adds a hull; hulls kill people
+  by being used, which is combat, not a standing-layer write. Gating Design by
+  tree would forbid Technology from unlocking an Offensive hull, which §8.3's
+  cross-tree ladder disruption requires it to be able to do.
+- **It does not cover indirect economic harm.** A Politics card that publishes a
+  rival's holdings gets their colonies attacked; that is the design working
+  (politics §5.3). The rule is about a *write* whose own realization reduces
+  population, not about consequences downstream of other players' choices.
+- **It is not a claim that population loss is currently costly.** It is not:
+  `Hyades_industry.md` §1.8 records that no output function in the engine reads
+  population, so a population kill costs its target nothing per year. The gate
+  and the thing it gates are separate work items (T-109 and T-107).
+
+**R-TREE11** carries the two calls this leaves open: whether `lethal` should be
+a *sign* test as above or a declared capability flag per card, and whether the
+partition is exclusive (only Warfare) or a floor (Warfare must carry some,
+others may not) — the same shape as R-O33's lean-as-a-ratio rule, which this
+deliberately does not follow, because a ratio cannot express a prohibition.

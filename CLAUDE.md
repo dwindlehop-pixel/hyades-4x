@@ -1329,6 +1329,18 @@ one, stop and flag it.
    hull's 1.00 → 0.70. **Read a law about a ratio as a claim about the ratio** —
    "bigger is more efficient" was being paid for in a dimension nobody had
    checked, and checking it took one round-trip column.
+
+   **And the signature is not a free axis — it *is* this law's ratio (R-O95).**
+   Because T-96 made thrust independent of the load and R-O57 makes cost equal
+   dry mass, `a_empty / a_laden = 1 + C / M_dry` exactly, at every
+   configuration — the empty-to-laden swing and the cargo efficiency are one
+   number (`the_acceleration_swing_is_the_cargo_efficiency`). So a hull cannot
+   be made worse at freight, faster empty and slower laden at once; that triple
+   is over-determined, and it refuted a third of the first Warfare card's stated
+   intent before a line was written (`Hyades_warfare_tree.md` §7.3).
+   **Write a design intent down as algebra before measuring it** — three
+   plausible properties collapsed to two in one line, where a sweep would have
+   spent a bed discovering it.
 4. **The Ship Testing Arena is the required empirical harness** for setting per-class
    `r_eq`. These values cannot be derived analytically.
 5. **`most_needed_center` is retained permanently as a test oracle** (single-supply

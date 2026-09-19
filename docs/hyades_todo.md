@@ -226,6 +226,165 @@ not currently in Band A anywhere.
 
 ---
 
+### T-107. Population is not a factor of production — `Y` must read `P`
+
+**The prerequisite under T-108 and under the whole Warfare tree**, and it is a
+statement about call signatures rather than a measurement.
+`Sim::extraction_rate` (`src/sim.rs:4157`) and `Sim::berth_rate`
+(`src/sim.rs:4055`) each read exactly two things: the centre's `Factors::infra`
+and its owner's `Works`. `Sim::fabrication_rate` is `slips × berth_rate`.
+**Population is an argument to none of them**, so a colony emptied of people
+mines and fabricates at the same rate as one at its carrying capacity.
+
+Two consequences, and the second is the one that makes this Band A rather than
+Band C:
+
+- **`Hyades_industry.md` §1.8's profitability test cannot be written without
+  it.** With output independent of population the payback ratio is scale-free
+  (§6.19c measured 1.8 years at every rung), the test is a constant `true`, and
+  the author's ruling has nothing to bite on.
+- **A population kill costs its target nothing per year.** §1.1 removed
+  infrastructure from `K` so that an industrial strike would not be a population
+  strike; the converse was never checked. Card contract §10 gives Warfare the
+  exclusive licence to kill population, and as the engine stands that licence
+  confers **no measurable effect on anyone's objective**.
+
+**The shape, proposed in `Hyades_industry.md` §1.8 and not ratified** — a
+utilisation factor on the stock rather than a fourth additive capacity:
+
+```text
+I_worked = I · u(P / P_req(I)),     u monotone, u(0) = 0, u(x ≥ 1) = 1
+```
+
+`u ≤ 1` bounds the change above by current behaviour, so the first measurement
+is an ablation against a known baseline and can only remove output. Expect
+work-years and colony-years to fall; the question is by how much and whether the
+loss concentrates on young colonies. **R-IND22** carries `u`'s shape and
+`P_req`'s magnitude.
+
+**Do not conflate it with §4.3's `β`.** Crowding is sublinearity in the number
+of workers on a fixed deposit; this is whether there are workers at all.
+
+**Re-test on landing:** `a_mineral_buys_the_same_works_whether_it_deepens_or_founds`
+must still pass (R-O87's identity is about stock, and this is about flow).
+§6.16's demand-derived crew reads `fabrication_rate`, so `n*` should fall on
+under-populated centres — that is the mechanism, not a regression.
+
+---
+
+### T-108. Development is a profitability test — R-IND22
+
+**Author's ruling: a production centre should develop a colony when it is
+profitable to do so, read off population, minerals and infrastructure.**
+Specified in `Hyades_industry.md` §1.8. **Blocked on T-107**, which supplies the
+population term; the other two are already on `ProductionContext`.
+
+What lands:
+
+```text
+develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
+          and  b_c ≤ bank_c   for every colour c
+```
+
+- The affordability half stays a **conjunction over colours** and is not folded
+  into the ratio. §6.19c counted the alternative's cost: inferring payability
+  from a *total* reported 44.7% "outbid" where the truth is 0.9%.
+- `τ_pay` is a placeholder (**R-IND22**).
+
+**What it supersedes, in kind rather than by correction.** §6.18 put both sides
+of the deepen-vs-expand test in `rank` score per kilotonne, which fixed a real
+units defect and is not a profit — `w_k` is a ranking weight, and nothing in
+`w_k · min(1, headroom) / infra_cost` is denominated in kilotons per year.
+§6.18's measurements stay true of the engine that produced them and are **not
+comparable** to anything taken after `Y` reads `P`.
+
+**Watch `reinvest_bias`.** R-O87 shows it is flat because deepening and founding
+buy the same works per mineral (+0.32% ± 1.42 pooled over eight seeds). A
+staffing term breaks that identity in one direction only — founding brings its
+own population, deepening does not — so the knob may stop being flat. Re-measure
+it on work-years after T-107, not before.
+
+---
+
+### T-109. The write-capability partition — only Warfare may kill population
+
+**Author's ruling, enforced at the simulation level.** Specified in
+`Hyades_card_contract.md` §10; **R-TREE10** carries what is open.
+
+Two enforcement points, for two failure modes:
+
+1. **A `const` assertion over `TIER0`** that no non-Warfare card carries a
+   population-lethal effect. Static, costs nothing at runtime, fails the build.
+2. **`Order::coerce`** returns `Order::pass` for a lethal card outside Warfare.
+   Redundant while the card list is static and **not** redundant once cards are
+   data (contract §7 revises the list every Monte-Carlo run). Legality is a pure
+   function of `(card.tree, card.effect)`, both of which every client holds, so
+   the coercion needs no message and cannot desync (netcode §5.1).
+
+**The predicate reads the write's argument, not its variant**, and the shipped
+list is why: `TIER0` card 5 is **Growth**/`BiosphereRegen(1.5)`, and the variant
+is lethal at any factor below `1.0` while `1.5` is harmless. Make `lethal` total
+over `CardEffect` so a new variant must state its answer rather than defaulting
+to permitted.
+
+Independent of T-107 as *engine work* — the gate compiles either way — and
+dependent on it for the gate to matter.
+
+---
+
+### T-110. The first Warfare card — the armed coloniser
+
+Specified in `Hyades_warfare_tree.md` §7 — the first concrete answer to
+**R-WAR2** — with the roles amendment in `Hyades_vehicle_roles.md` §4.2. One Design write and three Doctrine writes; the
+Design half moves the Colonizer role from the Medium Systems hull to a Contact
+class, and the third Doctrine write stops the coloniser recycling itself into
+the colony it founds.
+
+**One third of the stated intent was refuted by the engine's own algebra and is
+withdrawn.** The intent was *worse cargo per kilotonne of cost, lower laden
+acceleration, higher dry acceleration*. Since T-96 thrust does not vary with the
+load and since R-O57 cost is dry mass, so
+
+```text
+a_dry / a_laden  =  1 + C / M_dry
+```
+
+exactly — the empty-to-laden swing **is** the cargo efficiency (R-O95, pinned by
+`sim::tests::the_acceleration_swing_is_the_cargo_efficiency`). Cutting cargo
+efficiency narrows the swing, so a hull cannot be worse at freight, faster empty
+and slower laden at once. **Decided: keep the first two and take the narrowed
+signature as the compensation** — an armed coloniser is worse freight and
+*quieter*, which is a Warfare property bought with no combat constant
+(standing layer §9.2).
+
+**Blocked, in this order** — none of it is parallel:
+
+| # | blocker | code |
+|---|---|---|
+| 1 | no combat in the simulation loop; `combat::resolve_engagement` is never called from `sim.rs` | T-12 / T-30, via T-52 |
+| 2 | `Doctrine` has no diplomatic stance field | R-O27 / T-11 |
+| 3 | `drive_volume_fraction` is global, not per-`Class` | T-97, itself blocked on T-08 |
+| 4 | Warfare's objective is an algebraic zero on the standard bed, and `w_ij` is unset | R-TREE8, R-WAR3 |
+| 5 | population is not a factor of production | **T-107** |
+
+**The evaluation is against a Growth card that raises the growth rate**
+(`TIER0` slots 3 and 4), on the asymmetric bed R-TREE8 calls for, and it needs
+two things settled first. **R-TREE12**: Warfare's stock is a difference that can
+go negative, so it has no doubling time and §4's numeraire does not apply —
+decided as the fractional *increase* the card causes in the **target's**
+doubling time. And **the Growth card's own ratified numbers do not transfer**:
+`growth_rate` was measured on colony count, which is Expansion's objective, and
+T-94/T-95 consumed the surface outright. Re-measure on work-years at the 3-kyr
+bed.
+
+**Prediction, written down so the measurement can refuse it:** Growth compounds
+and this card does not, so Growth's P92 should exceed Warfare's at earliest
+legal play with Warfare's dispersion higher — and §4.3 requires tier-1
+dispersion to be the lowest of any tier, so if that holds, the pair does not
+belong at tier 1.
+
+---
+
 ### T-95. `cycle_years` is doing two jobs, and only one of them is integration
 
 **Opened by T-94**, which removed the first job and left the second visible.

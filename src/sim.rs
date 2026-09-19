@@ -7867,6 +7867,55 @@ mod tests {
         assert!(per_kt(g) < per_kt(m), "bigger hull must be cheaper per kt hauled");
     }
 
+    /// **The empty-to-laden acceleration swing *is* the hull's cargo efficiency
+    /// (R-O95).**
+    ///
+    /// Since T-96 thrust is a property of the mounted drive and does not depend
+    /// on the load, and since R-O57 a hull's cost *is* its dry mass. So
+    ///
+    /// ```text
+    /// a_dry / a_laden = (T / M_dry) / (T / (M_dry + C)) = 1 + C / M_dry
+    /// ```
+    ///
+    /// and `C / M_dry` is cargo capacity per kilotonne of price — the quantity
+    /// design law #3 is a claim about. The two readings are the same number.
+    ///
+    /// **What it forbids is worth more than what it states.**
+    /// `Hyades_standing_layer_and_observation.md` §9.2 reads the swing as the
+    /// load-state broadcast: a large hull announces whether it is laden and a
+    /// small one does not. This says the broadcast's *width* cannot be designed
+    /// separately from the hold — a hull made worse at freight is thereby made
+    /// quieter, and no Design write can lower laden acceleration while raising
+    /// empty acceleration and cutting cargo efficiency at the same time. That
+    /// triple is over-determined by one constraint (`Hyades_warfare_tree.md` §7.3).
+    ///
+    /// Asserted across a 10x span of `drive_volume_fraction` so it is a property
+    /// of the law rather than of the shipped magnitude.
+    #[test]
+    fn the_acceleration_swing_is_the_cargo_efficiency() {
+        for phi in [0.01, 0.02, 0.05, 0.1] {
+            let mut cfg = SimConfig::new(1);
+            cfg.drive_volume_fraction = phi;
+            for hull in [
+                HullType::LimitedSystems,
+                HullType::MediumSystems,
+                HullType::GeneralSystems,
+                HullType::GeneralContactVehicle,
+                HullType::GeneralOffensive,
+            ] {
+                let dry = hull_dry_mass(hull, &cfg).kilotons();
+                let cargo = hull.cargo_capacity(&cfg).kilotons();
+                let thrust = cfg.drive_specific_thrust * hull.drive_mass(&cfg).kilotons();
+                let swing = (thrust / dry) / (thrust / (dry + cargo));
+                assert!(
+                    (swing - (1.0 + cargo / dry)).abs() < 1e-12,
+                    "{hull:?} at phi={phi}: swing {swing} != 1 + {}",
+                    cargo / dry
+                );
+            }
+        }
+    }
+
     /// **R-O71 closed: the hold ladder *is* the mass ladder, tied to the cost
     /// ladder by `F_mass = F_cost^(3/2)`.**
     ///
