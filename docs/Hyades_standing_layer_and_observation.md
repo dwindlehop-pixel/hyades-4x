@@ -261,6 +261,21 @@ discount.
 **Commutativity is the acceptance test**, and it belongs in the engine as a
 property test over the card list rather than as a claim here (R-IND4).
 
+**Which tree may write what — the capability partition (card contract §10).**
+§5 says Doctrine and Design are written *only* by tree cards; it does not say
+*which* tree, and one write kind now needs that said. **A standing-layer write
+whose realization can reduce a player's population may appear only on a Warfare
+card.** It is enforced in the card layer rather than by authoring convention,
+because nothing in `CardEffect` distinguishes a write that raises a ceiling from
+one that lowers it — both are an `f64` — so a mis-slotted card compiles and
+reports a plausible number. Card contract §10 carries the predicate, the two
+enforcement points and the boundary; **R-TREE10** carries what is open.
+
+This is *not* the lean rule two paragraphs up. R-O33 expresses a tree's lean as
+a **ratio of magnitudes**, deliberately, so that no archetype is locked out of a
+tree. A ratio cannot express a prohibition, so the partition is a separate
+mechanism with a separate enforcement point, and neither subsumes the other.
+
 **Politics has nothing to write to (R-O27).** The `Doctrine` struct has no
 diplomatic fields — no trade lanes, partners, or pact state. Same gap as
 galaxy §6's R-A3.
@@ -795,6 +810,36 @@ not.** Consolidation always wins under geometry alone and the counterweight has
 so far had to come from combat effects; this is a counterweight that is not
 combat at all — small fleets are harder to read.
 
+**The broadcast's width *is* the hull's cargo efficiency (R-O95).** Since T-96
+thrust is a property of the mounted drive rather than of the load, and since
+R-O57 a hull's cost is its dry mass, so for every hull at every configuration:
+
+```text
+a_empty / a_laden  =  (T / M_dry) / (T / (M_dry + C))  =  1 + C / M_dry
+```
+
+with `C / M_dry` cargo capacity per kilotonne of price — the quantity design
+law #3 is a claim about. `sim::tests::the_acceleration_swing_is_the_cargo_efficiency`
+asserts it to a residual below `1e-12` across five hull types and a ten-fold span
+of `drive_volume_fraction`, so it is a property of the law and not of the shipped
+magnitudes. The table above says the same thing in the pre-T-96 notation; this is
+the exact form, and it survived thrust moving off dry mass.
+
+**It is a design constraint, not a restatement.** The swing cannot be tuned
+separately from the hold: a hull made *worse* at freight is thereby made
+*quieter*, and no Design write can lower a hull's laden acceleration while
+raising its empty acceleration and cutting its cargo efficiency at the same
+time. That triple is over-determined by one constraint, which is how it refuted
+one third of the first Warfare card's stated intent
+(`Hyades_trees_and_card_value.md` §5.3).
+
+**Read it beside design law #10, not as a version of it.** The law says arming a
+fleet is loud unless you also buy thrust — a claim about the **level** of
+observed acceleration, which a bigger drive raises. This is about the **spread**
+between a hull's two load states, which a smaller hold narrows. Two readings of
+one observable, moving in opposite directions under the same card: the
+concealment combo the law describes, obtained from the cargo side.
+
 ### 9.3 Slag (R-O59)
 
 Synthesis wastage is not destroyed, it is **degraded**. Slag is **useless by
@@ -1053,7 +1098,7 @@ is why exotic synthesis is pair production (§9.6).
 |---|---|---|
 | 1 | ~~Split `BuildOrder::ColonyVehicle` (and mining/freighter builds) into `BuildOrder::Hull { hull_type, class }` + separate role assignment~~ **done** — see §7 | R-O29 **resolved** |
 | 2 | Add a **Design/roster component** — which hull types and classes a player has unlocked | **R-O28** (blocks σ_vector for Design entirely) |
-| 3 | Add **diplomatic fields** to `Doctrine` — trade lanes, partners, pact state | R-O27 / R-A3 |
+| 3 | Add **diplomatic fields** to `Doctrine` — trade lanes, partners, pact state, **and a stance default**, which the first Warfare card writes (*a Neutral empire is an Enemy empire*, `Hyades_trees_and_card_value.md` §5.2) | R-O27 / R-A3 |
 | 4 | Add a **throttle fraction** to `Doctrine`; derive observed acceleration from trajectory, not the stat block | R-O40 |
 | 5 | Equalise colony cargo mass and mineral cargo mass | R-O32 |
 | 6 | Expose `min_time_search` as a **reachability cone** query (same function, reverse direction); prune candidates via the existing BSP tree | R-O31 |
@@ -1147,6 +1192,7 @@ than a power spike.
 | **R-O52** | concealment-by-offset: cost the thrust-and-armament combo that holds `a` constant while σ_commit is large. Concealment is a combo property, not a card property |
 | **R-O53** | the observable-channel enumeration is **open**. Specify the structural channel (infrastructure, orbitals) and the economic channel (drawdown, exchange pressure), each with its own range / latency / maskability profile |
 | **R-O54** | is planetside development quieter at long range than a burn? If so, Growth and Production are structurally more inscrutable than Warfare, independent of card choice |
+| **R-O95** | ~~can a hull be worse at freight, faster empty and slower laden at once?~~ **Answered: no, and the answer is an identity** — `a_empty / a_laden = 1 + C / M_dry`, exactly, at every configuration (§9.2, pinned by `sim::tests::the_acceleration_swing_is_the_cargo_efficiency`). What stays open is the **magnitude** the first Warfare card should take: the Contact coloniser class's drive fraction `φ`, which is blocked on T-97 making `φ` per-`Class` at all. Carried as R-TREE11 |
 
 **Pre-existing, depended on:** R-5 (full clock math), R-7/R-9 (round-1 cost
 numbers — now the *sole* throttle on breadth), R-C1, R-C2, R-C5, R-C7,

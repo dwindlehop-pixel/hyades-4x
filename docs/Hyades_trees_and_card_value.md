@@ -603,7 +603,210 @@ Stated so it is not discovered as a surprise:
 
 ---
 
-## 5. R-code register
+## 5. The first Warfare card — the armed coloniser
+
+*Specified here rather than in `Hyades_card_contract.md` because what is settled
+is its **value model**: which objective it is read on, what it is compared
+against, and why the comparison is not the one §4 was written for. The contract
+half — that only Warfare may carry it — is card contract §10.*
+
+**Nothing in this section is Monte-Carlo ratified.** Every magnitude is a
+placeholder and says so. What is settled is the card's shape, the measurement
+that refutes one third of its stated intent, and the bed the head-to-head needs.
+
+### 5.1 Warfare's licence, and why it is currently worth nothing
+
+**Only Warfare cards may carry Doctrine that kills population** (card contract
+§10). That is Warfare's distinguishing capability and the reason five other
+trees cannot reach §2.3.2's objective by economic means.
+
+**As the engine stands the licence confers nothing measurable, and the reason is
+one line long.** `Sim::extraction_rate` and `Sim::berth_rate` read
+`Factors::infra` and the owner's `Works` and nothing else
+(`Hyades_industry.md` §1.8). Population is not an argument to any output
+function, so a world emptied of people mines and fabricates exactly as fast as a
+full one. A population kill costs its target **nothing per year**.
+
+So the first Warfare card is deliberately **not** a population strike. It does
+not need the licence, it needs the licence to *exist* before a later card can
+use it — and it establishes the tree's board presence while T-104 makes
+population a factor of production.
+
+### 5.2 The card — one Design write, three Doctrine writes
+
+**Author's specification.** The colony ship moves off the Systems family and
+onto the Contact family: armed, worse freight per kilotonne of price, and —
+crucially — **it is not consumed when it founds**.
+
+| half | write | engine surface | status |
+|---|---|---|---|
+| **Design** | unlock a Contact coloniser class: `(GeneralContactVehicle, Class)` | `CardEffect::UnlockDesign`, and a per-`Class` drive fraction | `UnlockDesign` **exists**; per-`Class` `φ` is **T-97**, blocked on T-08 |
+| **Doctrine** | unladen Contact Vehicles engage nearby enemies | an engagement-posture field on `Doctrine` | **absent** — no such field, and no combat in the sim loop (T-52) |
+| **Doctrine** | a Neutral empire is an Enemy empire | a diplomatic stance default on `Doctrine` | **absent** — R-O27/T-11, the field list has never been specified |
+| **Doctrine** | a Contact coloniser patrols instead of scrapping itself | the Colonizer role's arrival behaviour (roles §4.2) | the arrival path exists; the branch does not |
+
+**The two halves are one card, and that is a design position.** §5 of
+`Hyades_standing_layer_and_observation.md` makes Design permanent and
+earlier-is-better while Doctrine is revisable and best played informed — opposite
+timing profiles (R-O37). A card carrying both is therefore *not* priced as the
+sum of its halves: the Doctrine half wants to be played late and the Design half
+early, so the card's value distribution is the narrower of the two, not the
+wider. **That is a prediction §4's method can check**, and it is the reason to
+ship the first Warfare card as a pair rather than as two cards.
+
+**The third Doctrine write is the expensive one and it is the point.** Roles
+§4.2 has a coloniser recycle into the new colony's `Band I` infrastructure, and
+T-70 makes that exact: `founding_infra = hull_cost`, because a hull's mass *is*
+its cost (R-O57, design law #11). A coloniser that patrols instead of scrapping
+keeps its minerals in the hull, so **the colony it founds starts with only what
+the hold carried as endowment** (`Hyades_industry.md` §1.7). Mass is conserved
+either way — the trade is *where the minerals stand*, not whether they exist.
+
+### 5.3 One third of the stated intent is impossible, and the engine says so exactly
+
+The design intent was three properties at once, against the Medium Systems hull
+the coloniser rides today: **less cargo per kilotonne of cost, lower laden
+acceleration, higher dry acceleration.**
+
+**Two of the three already hold as shipped, and the third is backwards.**
+Evaluated at the shipped configuration — these are exact values of deterministic
+functions, not estimates and not bounds:
+
+| | MSV (today) | GCV (as shipped) | GCV ÷ MSV |
+|---|---|---|---|
+| cost = dry mass | 0.1092 kt | 1.0995 kt | 10.07× |
+| cargo capacity | 0.9118 kt | 9.8549 kt | — |
+| **cargo per kt of cost** | **8.349** | **8.963** | **+7.4%** ✗ *(wanted lower)* |
+| **dry acceleration** | **2.3694 g** | **2.4767 g** | **+4.5%** ✓ |
+| **laden acceleration** | **0.2534 g** | **0.2486 g** | **−1.9%** ✓ |
+| founding seed capacity | 1.000 kt | 12.036 kt | 12.0× |
+
+**And the third cannot be fixed, because the three quantities are two.** Since
+T-96 thrust is a property of the mounted drive and does not vary with the load,
+and since R-O57 a hull's cost *is* its dry mass. So for any hull, at any
+configuration:
+
+```text
+a_dry / a_laden  =  (T / M_dry) / (T / (M_dry + C))  =  1 + C / M_dry
+```
+
+and `C / M_dry` is cargo capacity per kilotonne of price. **The empty-to-laden
+acceleration swing and the hull's cargo efficiency are the same number.**
+Asserted to a residual below `1e-12` across five hull types and a ten-fold span
+of `drive_volume_fraction` by
+`sim::tests::the_acceleration_swing_is_the_cargo_efficiency` (R-O95).
+
+Read as a constraint: cutting cargo efficiency *narrows* the swing, so it raises
+laden acceleration relative to dry. A hull cannot be simultaneously worse at
+freight, faster empty and slower laden — the triple is over-determined by one
+constraint. Measured on the one Design write that could move it, a per-`Class`
+drive fraction (T-97):
+
+| `φ` for the Contact coloniser class | cost | cargo/cost | dry `a` | laden `a` |
+|---|---|---|---|---|
+| **0.01** (shipped, global) | 1.0995 kt | 8.963 | 2.4767 g | 0.2486 g |
+| **0.02** | 1.1991 kt | **8.136** | **3.7828 g** | **0.4141 g** |
+| 0.05 | 1.4977 kt | 6.314 | 6.6595 g | 0.9105 g |
+| 0.10 | 1.9954 kt | 4.490 | 9.5405 g | 1.7379 g |
+
+`φ = 0.02` is the smallest Contact-class drive that makes the cargo-inefficiency
+claim true against the MSV, and it raises laden acceleration by **+63%** rather
+than lowering it.
+
+**Decision: drop "lower laden acceleration"; take the narrowed signature
+instead.** The design was reaching for *the armed coloniser is worse freight*,
+and the identity says the compensation for that is not a slower voyage — it is
+**concealment**, which is a better fit for the tree that gets it. §9.2 of
+`Hyades_standing_layer_and_observation.md` reads the empty-to-laden swing as the
+load-state broadcast: a large hull announces whether it is laden and a small one
+does not. The identity says the *width* of that broadcast is exactly the hull's
+cargo efficiency, so a Contact coloniser at `φ = 0.02` swings 9.14× where the
+MSV swings 9.35× and the GSV swings 24.7×. **A warship built out of a freighter's
+budget is quieter than the freighter**, and that is a Warfare property obtained
+without a single combat constant.
+
+This **extends** design law #10 rather than contradicting it. The law says
+*arming a fleet is loud unless you also buy thrust* — a claim about the **level**
+of observed acceleration, which rises with a bigger drive. The identity is about
+the **spread** between a hull's two load states, which falls as the hold does.
+Two different readings of the same observable; neither is the other, and a card
+that moves both moves them in opposite directions. **That is the concealment
+combo T-97 predicts, arrived at from the other side.**
+
+### 5.4 What it is evaluated against, and why that is not §4 as written
+
+**Author's specification: evaluate against a Growth card that raises the growth
+rate** — `TIER0` slots 3 and 4, `WriteDoctrine(GrowthRate(1.15 | 1.35))`.
+
+§2.4's numeraire makes that comparison well-posed in principle: card value is
+the fractional reduction in the doubling time of **its own tree's** stock, which
+is dimensionless and therefore comparable across trees. The Growth card is read
+on work-years (§2.3.3), the Warfare card on §2.3.2's neighbour-weighted colony
+contrast, and §4.3 asks whether two tier-1 cards land at similar P92.
+
+**Three things break that, and each has a concrete answer.**
+
+**1. Warfare's stock has no doubling time.** `W_i = ∫ [C_i − Σ_j w_ij C_j] dt`
+is a difference that may be zero or negative, and `t₂ = ln 2 / g` requires a
+positive compounding stock. R-TREE9 already flags that a tree which can go
+negative has no log; the first Warfare card is where it stops being hypothetical.
+
+> **Decision (R-TREE12): cost a Warfare card as the fractional *increase* it
+> causes in the **target's** doubling time**, measured on the target's own tree
+> stock, against a CRN counterfactual in which the card was not played. That is
+> the same dimensionless quantity §2.4 defines — a fractional change in a
+> doubling time — with the sign and the subject reversed, which is exactly what
+> §2.3.2 says Warfare is for. It keeps §4.3's tier-equality claim well-posed and
+> needs no new numeraire.
+
+**2. The standard bed cannot read Warfare at all.** R-TREE8: at 3 seats the
+homeworlds are equilateral (pairwise 77.942 ly, spread 0.000% on every seed), so
+`w_ij` is doubly stochastic and `Σ_i W_i` is an **algebraic** zero — not a small
+noisy number, and no count of seeds or years touches it. The head-to-head
+therefore runs on the **asymmetric bed R-TREE8 calls for**: one seat carrying the
+card under test, every other seat at the default, paired across seeds by CRN.
+Under R-TREE12's per-target reading the asymmetric bed is not an extra
+requirement — it is the only bed on which either card's value is defined.
+
+**3. The Growth card's own ratified numbers do not transfer.** `growth_rate` was
+measured on **colony count** — Expansion's objective, not Growth's — and
+`CLAUDE.md` §2 records that the 2,000-year screen overstated it by ~3.7× against
+the 4,000-year objective while preserving the ranking. Worse, T-94/T-95 consumed
+the surface outright: the closed-form logistic made the answer independent of the
+tick, and R-O84's plateau map was built by counting 50-year cycles to a Band
+edge. **Re-measure the Growth card on work-years at the 3-kyr bed (§3.1); do not
+carry a colony-count figure into this comparison.**
+
+**What the comparison should show, stated in advance so the measurement can
+refuse it.** The Growth card compounds and the Warfare card does not: a growth
+multiplier acts on a rate forever, while the armed coloniser's value is an
+inventory of hulls that would otherwise have been scrapped. So the prediction is
+**Growth's P92 above Warfare's at earliest legal play, and Warfare's dispersion
+higher** — and §4.3 requires tier-1 dispersion to be the *lowest* of any tier,
+so if that holds, the first Warfare card is not a tier-1 card and the pair does
+not belong at the same depth. That is a falsifiable claim about where the card
+sits in the tree, and it is the first thing the head-to-head should be asked.
+
+### 5.5 What this is blocked on, in order
+
+Stated as a chain because none of it is parallel:
+
+| # | blocker | code | why it binds |
+|---|---|---|---|
+| 1 | no combat in the simulation loop | T-12 / T-30, via T-52 | `combat::resolve_engagement` is never called from `sim.rs`, so *"engage nearby enemies"* has no execution path and the card's whole Warfare half is inert |
+| 2 | no diplomatic fields on `Doctrine` | R-O27 / T-11 | *"a Neutral empire is an Enemy empire"* is a stance default, and there is no stance |
+| 3 | `φ` is global, not per-`Class` | T-97, blocked on T-08 | §5.3's Design write cannot be expressed; R-O47b forbids it reaching hulls already in the field |
+| 4 | Warfare's objective is unreadable on the standard bed | R-TREE8 | §5.4.2 |
+| 5 | population is not a factor of production | T-104 | §5.1 — the licence the tree is being given costs its victims nothing |
+
+Items 1–3 are engine work with no open design question left in them. Items 4 and
+5 are design work specified here and in `Hyades_industry.md` §1.8. **The card is
+authorable now and measurable at none of these steps but the last**, which is
+why it is written down rather than built.
+
+---
+
+## 6. R-code register
 
 | Code | Question | Where |
 |---|---|---|
@@ -616,6 +819,9 @@ Stated so it is not discovered as a surprise:
 | **R-TREE7** | Whether all six trees need the full horizon, or only those whose stock has not saturated. Answered by T-78. The horizon itself is settled at **3,000 yr** (§3.1). | §3.2 |
 | **R-TREE8** | **Warfare needs an asymmetric bed.** Its seat sum is an *algebraic* zero at 3 seats (equilateral homeworlds ⇒ doubly stochastic `w_ij`), and a noise-dominated contrast at 6 and 12. Specify the perturbed-seat experiment: which seat, how the others are held, and how the result is paired across seeds. | §2.3.2 |
 | **R-TREE9** | **The composite objective.** `examples/tree_gradient` scores the geomean of the ratio-to-default of the measurable trees, which makes `∂ln S/∂ln x` the plain mean of the per-tree elasticities and everything dimensionless. Two things are unratified: the equal weighting across trees, and whether a geomean is the right aggregator once Warfare and Technology join (a tree that can go negative has no log). | §2.4 |
+| **R-TREE10** | **The write-capability partition** (card contract §10). Whether "population-lethal" is a *sign* test on the write's argument or a declared per-card flag, and whether the partition is exclusive (only Warfare) or a floor (Warfare must carry some, others may not). | card contract §10.4 |
+| **R-TREE11** | **The armed coloniser's magnitudes** — the Contact coloniser class's drive fraction `φ` (0.02 is the smallest value that makes its cargo-inefficiency claim true, and it is a placeholder), the card's mineral cost, and where in the tree the pair sits once §5.4's dispersion prediction is measured. | §5.3, §5.4 |
+| **R-TREE12** | **Warfare card value has no doubling time of its own.** Decided here: cost a Warfare card as the fractional *increase* it causes in the **target's** doubling time, on the target's own tree stock, against a CRN counterfactual. Open: whether the target is the single highest-`w_ij` neighbour or the `w`-weighted mean over all of them, and how that composes with §4.2's P92 when the target set is itself a random variable. | §5.4 |
 
 ---
 

@@ -30,6 +30,29 @@
 //! coercing is how a lockstep system desyncs. [`Order::coerce`] is that rule,
 //! and it is the only place it lives.
 //!
+//! ## Write capability is partitioned by tree — specified, not yet enforced
+//!
+//! `Hyades_card_contract.md` §10: **a standing-layer write whose realization can
+//! reduce a player's population may appear only on a `Tree::Warfare` card.**
+//! Nothing below enforces that yet (**T-105**), and the gap is not cosmetic —
+//! nothing in [`CardEffect`] or [`DoctrineWrite`] distinguishes a write that
+//! raises a ceiling from one that lowers it, because both are an `f64`. So a
+//! mis-slotted card compiles, runs, and reports a plausible number.
+//!
+//! The predicate reads the write's **argument**, not its variant, and
+//! [`TIER0`]'s own card 5 is why: it is `Growth` carrying
+//! `BiosphereRegen(1.5)`, and that variant is population-lethal at any factor
+//! below `1.0` while `1.5` is harmless. Two enforcement points are specified —
+//! a `const` assertion over [`TIER0`] (static, fails the build) and a coercion
+//! in [`Order::coerce`] (for when the list becomes data). Legality is a pure
+//! function of `(card.tree, card.effect)`, which every client holds, so the
+//! coercion needs no message and cannot desync.
+//!
+//! **The licence is currently worth nothing to its holder**, which is a separate
+//! work item: no output function in the engine reads population
+//! (`Hyades_industry.md` §1.8, **T-104**), so a population kill costs its target
+//! nothing per year.
+//!
 //! ## Politics cards are not opt-in
 //!
 //! `Hyades_politics_trade_and_intelligence.md` §6: an opponent may initiate

@@ -495,6 +495,127 @@ open question about how much of T-67's gain ran through the conjured-mass
 channel is answered by re-measuring rather than by ablation now, since the
 channel is closed.
 
+### 1.8 Development is a profitability test, and it has three terms (R-IND22, T-103)
+
+**Author's ruling: a production centre should develop a colony when it is
+profitable to do so — read off population, minerals and infrastructure.** That
+is a change of *kind*, not of magnitude: today the deepen side of
+`production_choice` is a **preference**, and this makes it a **return**.
+
+#### What the decision compares today
+
+§6.18 put both sides of the deepen-vs-expand test in one unit, `rank` score per
+kilotonne committed:
+
+```text
+expand = score / outward_cost                 // this candidate, at its price
+deepen = w_k · min(1, headroom) / infra_cost  // one rung, at its price
+```
+
+`w_k` is a **ranking weight** — how much `rank` likes a Band of `k_potential`.
+It is a coefficient chosen to order candidate worlds, and §6.18 adopted it as
+the converter because the two moves trade in one commodity. That was the right
+fix for the units defect it closed, and it is not a profit: nothing in
+`w_k · min(1, headroom) / infra_cost` is denominated in kilotons per year, so
+the comparison cannot say whether the rung pays for itself, only whether the
+autopilot prefers it.
+
+#### The three terms, and why each is load-bearing
+
+| symbol | name | unit | where it comes from |
+|---|---|---|---|
+| `I` | the centre's infrastructure stock | kt | `Factors::infra` |
+| `ΔI` | the next rung's step | kt | `infra_step_price`, geometric in `I` (§6.19c) |
+| `b_c` | the rung's bill in colour `c` | kt | `ProductionContext::infra_bill`, a **conjunction** over C/M/Y |
+| `P` | the centre's population | kt | `World::population` (`src/sim.rs:1429`) — **not read by any production path today** |
+| `Y(I, P)` | the centre's output at that stock and that population | kt/yr | §4.3 extraction plus §3.2 fabrication |
+| `τ_pay` | payback horizon the policy will accept | yr | **placeholder**, R-IND22 |
+
+```text
+develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
+          and  b_c ≤ bank_c   for every colour c
+```
+
+- **Minerals are the bill, and the bill is per colour.** §6.19c counted it: of
+  all declined deepen decisions, **0%** are gated at the ceiling, **0.7–0.9%**
+  are outbid, and **98.3%** simply cannot pay — of which **43.8–46.6% of all
+  decisions hold the total and lack a colour.** A profitability test written
+  against `stockpile_total` would reproduce the defect that census exists to
+  name, so the affordability half stays a conjunction and is not folded into
+  the ratio.
+- **Infrastructure sets both sides.** The ladder is geometric in the stock, and
+  §6.19c measured the consequence: cost and output are both geometric, so a rung
+  pays for itself in **1.8 years at every rung** — scale-free. Read alone, that
+  makes the payback test a constant `true` and the rule vacuous.
+- **Population is what makes it non-vacuous**, and it is the term that does not
+  exist yet.
+
+#### Population is not a factor of production today, and that is the blocker (T-104)
+
+`Sim::extraction_rate` (`src/sim.rs:4157`) and `Sim::berth_rate`
+(`src/sim.rs:4055`) each read exactly two things: `Factors::infra` and the
+owner's `Works`. `Sim::fabrication_rate` is `slips × berth_rate`. **No output
+function in the engine takes population as an argument.** That is a statement
+about the call signatures, not an estimate from a run: a colony whose population
+is zero mines and fabricates at the same rate as one at its carrying capacity.
+
+Three things follow, and they are the reason this section is a prerequisite
+rather than a refinement:
+
+- **The profitability test cannot be written without it.** With `Y` independent
+  of `P`, the population column of the author's ruling has nothing to multiply,
+  and the test collapses back to the scale-free 1.8-year payback above.
+- **It is the same question `CLAUDE.md` §2 asks of any knob** — *measure whether
+  the resource the change buys is even binding.* A rung of infrastructure with
+  nobody to work it is capacity bought and not staffed. T-88 found the same
+  shape one level up: build rate governs ~19% of a centre's timeline, so +29%
+  of it is +5.5% at best.
+- **It is what makes §1.1's war target real in both directions.** §1.1 removed
+  infrastructure from `K` so an industrial strike would not be a population
+  strike. The converse was never checked: with population outside the output
+  law, a *population* strike is not an industrial strike either, so killing a
+  world's people costs its owner **nothing per year** and Warfare's most
+  distinctive act is mechanically inert. Trees §6.1 is the rule that depends on
+  this; it has nothing to gate until `Y` reads `P`.
+
+**The shape to add, proposed and not ratified.** §4.3's law already has the
+right slot: `n` is *"miner hulls on station plus units of Infrastructure
+allocated to extraction"*, and staffing belongs beside it as a **utilisation
+factor on the stock** rather than as a fourth additive capacity —
+
+```text
+I_worked = I · u(P / P_req(I)),     u monotone, u(0) = 0, u(x ≥ 1) = 1
+```
+
+with `P_req(I)` the population one unit of stock needs. Written this way the
+change is bounded above by the current behaviour (`u ≤ 1`), so it can only
+remove output, which makes the first measurement a clean ablation against a
+known baseline. **`u`'s shape and `P_req`'s magnitude are R-IND22**, together
+with `τ_pay`. Note that §4.3's `β` crowding exponent is *not* this: crowding is
+sublinearity in the number of workers on a fixed deposit, and this is whether
+there are workers at all.
+
+#### What this contradicts, named
+
+- **§6.18's deepen expression is superseded in kind**, not corrected. Its units
+  fix stands and its measurement — bit-identical below `reinvest_bias = 0.96`,
+  crossover between 0.96 and 0.98 — remains a true record of the engine that
+  produced it. It is **not comparable** to anything measured after `Y` reads
+  `P`, for the reason §1.7 gives about the conjured-population figures.
+- **R-O87's works identity is the thing to re-test first.** *"A mineral buys the
+  same works whether it deepens or founds"* is exact at `eta_works = 1` and is
+  why `reinvest_bias` is flat (+0.32% ± 1.42 over eight seeds, a pooled estimate
+  with 8 runs behind it). It is an identity over **stock**, and a profitability
+  test is about **flow** — so it does not forbid this change, and
+  `a_mineral_buys_the_same_works_whether_it_deepens_or_founds` should still
+  pass. What breaks the flatness is that founding brings its own population and
+  deepening does not: under a staffing term the two stop being interchangeable.
+  If that test fails, the change has gone further than this section claims.
+- **§6.16's demand-derived crew reads `fabrication_rate`**, so a staffing factor
+  reaches crew sizing as well as output. Expect `n*` to fall on under-populated
+  centres; that is the mechanism, not a regression.
+
+
 ---
 
 ---
@@ -3451,6 +3572,7 @@ artifact in place contaminates every later measurement.
 | ~~**R-O85**~~ | ~~Infrastructure is priced as if it were the scarce thing~~ — **resolved: it is not.** Post-R-O88 the ladder is **scale-free** — 0.555 kt/yr of output per kt of stock, a **1.8-year payback at every rung**. The bed banks 1,714,697 kt against a 19 kt rung and still sits at Band 1.442 with **none** at cap. Counted per decision: **0%** gated, **0.7–0.9%** outbid, **98.3%** cannot pay the bill — and **43.8–46.6% of all decisions hold the total and lack a colour**. The constraint is **freight**, not price. See §6.19c; the work is T-76. | §6.19c |
 | ~~R-O85, as originally framed~~ | ~~Infrastructure is priced as if it were the scarce thing.~~ The step above the founding rung costs nine colonisers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
+| **R-IND22** | **The development profitability test's three unknowns** (§1.8, T-103/T-104): the staffing factor `u`'s shape, the population one unit of stock needs `P_req(I)`, and the payback horizon `τ_pay` the policy will accept. The *form* is proposed — `I_worked = I · u(P / P_req(I))` with `u ≤ 1`, so the first landing is an ablation against a known baseline — and nothing about its size is measured. Distinct from §4.3's `β`: crowding is sublinearity in workers on a fixed deposit, this is whether there are workers at all. | §1.8 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding centre's population and the rest of the hold is loaded from its bank; a contested coloniser unloads both halves back home. | §1.7 |
 | **R-IND12** | How much a coloniser carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |

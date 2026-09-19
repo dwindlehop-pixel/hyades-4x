@@ -194,6 +194,26 @@ carries no such information itself.
   owner per world; a second colonizer arriving at a claimed world is the
   contested case below. Cards may override this (e.g. shared/condominium
   worlds, forced co-settlement).
+- **A Warfare card moves this role onto the Contact family, and the arrival
+  behaviour changes with it** (`Hyades_trees_and_card_value.md` §5.2,
+  **T-106**). The armed coloniser is a **GCV** — Contact has no Medium size
+  (§3), so the card is a 10× step in hull price, not a sidegrade — and it
+  **does not recycle on arrival**. Two consequences, and both are the card
+  rather than a defect:
+  - **The colony is founded thin.** `founding_infra = hull_cost` is the
+    recycled hull's own minerals (T-70, R-O57), so a coloniser that keeps its
+    hull leaves the new colony with only what the hold carried as endowment
+    (`Hyades_industry.md` §1.7). Mass is conserved either way; what moves is
+    *where the minerals stand*.
+  - **The hull becomes a patrol craft** rather than infrastructure, under the
+    same card's Doctrine write (*unladen Contact Vehicles engage nearby
+    enemies*). That is the exchange being offered: an empire buys a smaller
+    colony and a standing fleet out of one build.
+
+  **It is a Warfare card and it carries no population-lethal write** — its
+  lethality is to hulls. Card contract §10 licenses Warfare to carry such
+  writes; it does not require it.
+
 - **Contingent — contested** (R-AC8): target already claimed → returns
   toward home, then goes to Reserve (§4.6) like any entity with no further
   task. Because it still carries its pop, that pop returns with it (available
