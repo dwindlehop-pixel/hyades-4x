@@ -792,6 +792,37 @@ impl HullType {
         self.hold_radius(cfg).cubed()
     }
 
+    /// **The whole enclosed volume, `r³`** — shell plus interior, and the stock
+    /// Production's objective integrates (`Hyades_production_tree.md` §6.1,
+    /// R-PROD5).
+    ///
+    /// **Why the whole object and not the hold.** Fleet-years used to be taken
+    /// in *mass*, and since R-O57 dry mass **is** mineral cost — so the metric
+    /// was "minerals committed to hulls, integrated", which is exactly
+    /// indifferent between one General hull and the ten Mediums its minerals
+    /// would buy. **A metric that cannot tell those apart cannot express design
+    /// law #3**, which is a claim about that very ratio. Volume can: measured on
+    /// the shipped ladder (`examples/volume_ladder`), an equal-cost General
+    /// fleet encloses **2.47×** a Medium one (Systems), **3.49×** (Offensive)
+    /// and **1.90×** for Medium over Limited, where mass scores all three at
+    /// 1.000 by construction.
+    ///
+    /// The *hold* would also work directionally and score consolidation higher
+    /// still (2.63 / 5.19 / 2.06), and it is the wrong reading for a fleet:
+    /// a Limited Offensive hull's interior is 0.0066 against a reserved core of
+    /// 0.194, so its hold is entirely spoken for and its cargo is zero.
+    /// **Scoring a warship by its hold scores it by the one thing a warship does
+    /// not have.** The shell is armour, not waste, and `r³` counts it.
+    ///
+    /// The decomposition is exact and worth keeping in view:
+    /// `r³ = η · shell_mass + hold`. The first term is the ladder price times a
+    /// shape efficiency — i.e. the old mass objective's basis — and the second
+    /// is the part that grows as `cost^(3/2)`. **Volume-years is mass-years plus
+    /// the interior.**
+    pub fn hull_volume(self, cfg: &SimConfig) -> Volume {
+        self.hull_radius(cfg).cubed()
+    }
+
     /// The **shell's** volume, `r³ − (r − τ)³` — the material actually bought,
     /// and therefore (L6/R-O57) the hull's cost and its dry mass.
     ///
@@ -1525,7 +1556,7 @@ struct World {
 }
 
 /// **The cross-empire Exchange — one book per basic colour**
-/// (`Hyades_politics_trade_and_intelligence.md` §3.1, T-84).
+/// (`Hyades_politics_trade_and_intelligence.md` §2.10, T-84).
 ///
 /// A `Resource` in the ECS sense, like the event queue: the Exchange never
 /// mutates world state, it produces `Fill`s and the caller turns those into
@@ -2184,7 +2215,7 @@ pub struct SimConfig {
 
     /// **Transit discount rate `λ`, per year** — how fast the value of a
     /// delivery decays with time in flight
-    /// (`Hyades_politics_trade_and_intelligence.md` §2.3).
+    /// (`Hyades_politics_trade_and_intelligence.md` §1.3).
     ///
     /// One constant with two jobs, which is the whole reason it is a single
     /// number: on the Exchange it is the travel-time discount *and* the `$`
@@ -2219,7 +2250,7 @@ pub struct SimConfig {
     /// ten-seed bed (T-44).
     pub trade_decay_lambda: f64,
     /// **The `$` faucet rate** — `$` minted per kilotonne of fabrication capacity
-    /// per year (`Hyades_politics_trade_and_intelligence.md` §2.3, T-82).
+    /// per year (`Hyades_politics_trade_and_intelligence.md` §1.5, T-82).
     ///
     /// `$_income = base · production`, with **production the works fabrication
     /// rate**, which is what R-P3 ratified: income tracks what an empire can
@@ -2271,7 +2302,7 @@ pub struct SimConfig {
 /// It is by a wide margin the largest effect available on this surface, which
 /// says more about the surface than about the effect: five of the six mining
 /// *knobs* cannot be told from noise at all
-/// (`Hyades_autopilot_colonization_growth.md` §5b). Tuning was exhausted; this
+/// (`Hyades_experiments_appendix.md` §A.5). Tuning was exhausted; this
 /// is a term.
 pub const RECYCLE_MINING_PAIRS_DEFAULT: bool = true;
 
@@ -5644,7 +5675,7 @@ impl Simulation {
     }
 
     /// **Where two empires can hand goods over** — a rock they both work
-    /// (`Hyades_politics_trade_and_intelligence.md` §10.6, T-85).
+    /// (`Hyades_politics_trade_and_intelligence.md` §2.3, T-85).
     ///
     /// **R-P17, decided — and not as it was first framed.** The venue is the
     /// shared rock nearest **the party making this delivery**, because a
@@ -6039,7 +6070,7 @@ impl Simulation {
     /// `score = mineral_pressure(center) · exp(−λ · t_transit)`
     ///
     /// This is the *same* `λ` the Exchange discounts a trade by
-    /// (`Hyades_politics_trade_and_intelligence.md` §2.3), and that is the
+    /// (`Hyades_politics_trade_and_intelligence.md` §1.3), and that is the
     /// claim R-P2 conditions its ratification on: one constant should price a
     /// delivery whether the counterparty is your own colony or a rival's.
     /// Internal haulage is just a trade you clear with yourself, so if the
@@ -6341,6 +6372,7 @@ impl Simulation {
                     position: self.position_at(e, self.clock).unwrap(),
                     cargo: *self.world.cargo.get(e).unwrap_or(&Minerals::default()),
                     dry_mass: hull_dry_mass(hull, &self.config),
+                    volume: hull.hull_volume(&self.config),
                     in_flight: m.arrive > self.clock,
                 });
             }
@@ -7715,6 +7747,62 @@ mod tests {
         assert!(sim2.laden_accel(big, base) > a_laden);
     }
 
+    /// **Production's objective must be able to express design law #3, and in
+    /// mass it provably cannot** (R-PROD5).
+    ///
+    /// The law says consolidation wins under geometry alone: cost is surface
+    /// area, value is volume. Since R-O57 dry mass *is* mineral cost, so
+    /// fleet-years in mass is "minerals committed to hulls, integrated" — and
+    /// that is **exactly indifferent** between one General hull and the fleet of
+    /// Mediums its minerals would buy. This pins both halves: mass scores the
+    /// comparison at 1.0 to within rounding, and volume does not.
+    ///
+    /// The mass half is the one that matters. It is not a property anybody would
+    /// think to check, and without it a future change back to mass would lose
+    /// law #3 silently — which is exactly how the law came to be false in the
+    /// engine the first time (R-O58: cost and capacity were each individually
+    /// ratified, and nothing asserted the ratio).
+    #[test]
+    fn fleet_years_in_volume_expresses_consolidation_and_in_mass_cannot() {
+        let cfg = SimConfig::new(1);
+        use HullType::*;
+
+        // `r³` decomposes exactly into what was bought and what it encloses.
+        for hull in [LimitedSystems, MediumSystems, GeneralSystems, LimitedOffensive, GeneralOffensive] {
+            let whole = hull.hull_volume(&cfg).hull_units_cubed();
+            let parts = hull.shell_volume(&cfg).hull_units_cubed() + hull.hold_volume(&cfg).hull_units_cubed();
+            assert!((whole - parts).abs() < 1e-12, "{hull:?}: r³ {whole} != shell + hold {parts}");
+        }
+
+        // Volume bought per kilotonne spent rises strictly with size, within
+        // every family. This is the whole content of the objective change.
+        for family in
+            [[LimitedSystems, MediumSystems, GeneralSystems], [LimitedOffensive, RapidOffensive, GeneralOffensive]]
+        {
+            let per_kt = |h: HullType| h.hull_volume(&cfg).hull_units_cubed() / hull_dry_mass(h, &cfg).kilotons();
+            assert!(per_kt(family[0]) < per_kt(family[1]), "{:?} -> {:?}", family[0], family[1]);
+            assert!(per_kt(family[1]) < per_kt(family[2]), "{:?} -> {:?}", family[1], family[2]);
+        }
+
+        // At **equal mineral spend**, the larger hull encloses strictly more —
+        // and masses exactly the same, by construction.
+        for (big, small) in [(GeneralSystems, MediumSystems), (GeneralOffensive, RapidOffensive)] {
+            let (cb, cs) = (hull_dry_mass(big, &cfg).kilotons(), hull_dry_mass(small, &cfg).kilotons());
+            let n = cb / cs; // small hulls the big one's minerals buy
+
+            let vol_ratio = big.hull_volume(&cfg).hull_units_cubed() / (n * small.hull_volume(&cfg).hull_units_cubed());
+            assert!(vol_ratio > 1.5, "{big:?} vs {small:?}: volume ratio {vol_ratio} — consolidation not expressed");
+
+            // The mass arm. `n · cs` *is* `cb`, so this is 1.0 by construction
+            // and the assertion is the point: mass cannot see the law.
+            let mass_ratio = cb / (n * cs);
+            assert!(
+                (mass_ratio - 1.0).abs() < 1e-12,
+                "{big:?} vs {small:?}: mass ratio {mass_ratio} — if this is no longer 1, re-read R-PROD5"
+            );
+        }
+    }
+
     #[test]
     fn shell_model_ladders_are_derived_not_tuned() {
         // R-O58. The radius ladder falls out of the cost ladder (cost ∝ area),
@@ -7777,6 +7865,55 @@ mod tests {
         // 0.067 cost per unit hauled, so *fragmenting* was cheaper.
         let per_kt = |h: HullType| h.cost_fraction(&cfg) * cfg.general_vehicle_cost / h.cargo_capacity(&cfg).kilotons();
         assert!(per_kt(g) < per_kt(m), "bigger hull must be cheaper per kt hauled");
+    }
+
+    /// **The empty-to-laden acceleration swing *is* the hull's cargo efficiency
+    /// (R-O95).**
+    ///
+    /// Since T-96 thrust is a property of the mounted drive and does not depend
+    /// on the load, and since R-O57 a hull's cost *is* its dry mass. So
+    ///
+    /// ```text
+    /// a_dry / a_laden = (T / M_dry) / (T / (M_dry + C)) = 1 + C / M_dry
+    /// ```
+    ///
+    /// and `C / M_dry` is cargo capacity per kilotonne of price — the quantity
+    /// design law #3 is a claim about. The two readings are the same number.
+    ///
+    /// **What it forbids is worth more than what it states.**
+    /// `Hyades_standing_layer_and_observation.md` §9.2 reads the swing as the
+    /// load-state broadcast: a large hull announces whether it is laden and a
+    /// small one does not. This says the broadcast's *width* cannot be designed
+    /// separately from the hold — a hull made worse at freight is thereby made
+    /// quieter, and no Design write can lower laden acceleration while raising
+    /// empty acceleration and cutting cargo efficiency at the same time. That
+    /// triple is over-determined by one constraint (`Hyades_warfare_tree.md` §7.3).
+    ///
+    /// Asserted across a 10x span of `drive_volume_fraction` so it is a property
+    /// of the law rather than of the shipped magnitude.
+    #[test]
+    fn the_acceleration_swing_is_the_cargo_efficiency() {
+        for phi in [0.01, 0.02, 0.05, 0.1] {
+            let mut cfg = SimConfig::new(1);
+            cfg.drive_volume_fraction = phi;
+            for hull in [
+                HullType::LimitedSystems,
+                HullType::MediumSystems,
+                HullType::GeneralSystems,
+                HullType::GeneralContactVehicle,
+                HullType::GeneralOffensive,
+            ] {
+                let dry = hull_dry_mass(hull, &cfg).kilotons();
+                let cargo = hull.cargo_capacity(&cfg).kilotons();
+                let thrust = cfg.drive_specific_thrust * hull.drive_mass(&cfg).kilotons();
+                let swing = (thrust / dry) / (thrust / (dry + cargo));
+                assert!(
+                    (swing - (1.0 + cargo / dry)).abs() < 1e-12,
+                    "{hull:?} at phi={phi}: swing {swing} != 1 + {}",
+                    cargo / dry
+                );
+            }
+        }
     }
 
     /// **R-O71 closed: the hold ladder *is* the mass ladder, tied to the cost

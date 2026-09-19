@@ -168,7 +168,7 @@ Defined before use (`CLAUDE.md` §6), because §3 and §4 both index on them.
 | `T` | measurement horizon | yr | §3.1, **3,000** (was 8,000; revised by the author) |
 | `C_i(t)` | colonies owned by `i` at time `t` | count | `SimReport::players[i].colonies` |
 | `V_i(t)` | works owned by `i` | kt of works | `Hyades_industry.md` §5 — **not yet built** |
-| `F_i(t)` | fleet dry mass owned by `i` | kt | `hull_dry_mass` summed over owned hulls |
+| `F_i(t)` | fleet **enclosed volume** owned by `i` | hull units³ | `HullType::hull_volume` summed over owned hulls (R-PROD5) |
 | `Q_i(t)` | capability of `i` | dimensionless | §2.3.5, **proposed here** |
 | `w_ij` | Warfare's neighbour weight of `j` from `i`'s view | dimensionless, `Σ_j w_ij = 1` | §2.3.2, fixed at game start |
 | `φ_ij(t)` | share of `j`'s output accruing to `i` | dimensionless, `Σ_i φ_ij ≤ 1` | §2.3.6, from delivered freight |
@@ -262,25 +262,57 @@ stock works are bought with, so it is a leading indicator of the real quantity
 rather than a different one. Flagged so the substitution is not forgotten
 (**R-TREE3**).
 
-#### 2.3.4 Production — fleet-years, in mass
+#### 2.3.4 Production — fleet-years, in volume
 
 ```text
 P_i = ∫₀^T F_i(t) dt
 ```
 
-**Mass, never hull count.** Counting hulls rewards fragmentation and would put
-this objective in direct contradiction with design law #3, which says
-consolidation wins under geometry alone. Since R-O57 dry mass *is* mineral cost,
-so fleet-years is also "minerals committed to hulls, integrated" — one quantity,
-two readings, no second ladder.
+`F_i(t)` is the **enclosed volume `r³`** of every hull `i` owns, summed —
+shell plus interior, in hull units cubed.
 
-Measurable today — **and now actually measured in mass.** `VehicleSnapshot`
-gained a `dry_mass` field for this; before it, the only harness computing
-fleet-years (`examples/founding_tree`) summed `vehicles.len()`, which is the
-hull count this section forbids, and nothing in the snapshot could have told it
-so. `examples/tree_gradient` reads the mass. R-O88's ratified "+26–34%
-fleet-years" was taken on the count and is **not** re-denominated here, because
-that would invalidate the figure without re-running the comparison.
+**Volume, never hull count and never mass**, and the two exclusions are
+different arguments.
+
+**Counting hulls rewards fragmentation outright**, which contradicts design
+law #3 in one step.
+
+**Counting mass is the subtler error, and it stood for two revisions.** Since
+R-O57 dry mass *is* mineral cost, so fleet-years in mass is "minerals committed
+to hulls, integrated" — which scores one General hull and the fleet of Mediums
+its minerals would buy **exactly equally, by construction**. Design law #3 is a
+claim about precisely that ratio: cost is surface area, value is volume, and the
+isoperimetric inequality makes bigger more efficient. **A metric that is
+identically indifferent to a ratio cannot express a law about it.** Mass-years
+was not scoring consolidation wrong; it was silent on it.
+
+Volume is the law's own value basis, and on the shipped ladder it says what the
+law says — measured, not asserted (`examples/volume_ladder`, appendix §A.14):
+an equal-cost General fleet encloses **2.47×** a Medium one (Systems), **3.49×**
+(Offensive), and a Medium fleet **1.90×** an equal-cost Limited one. All three
+are **1.000** under mass.
+
+**Why the whole hull and not the hold.** The interior `(r − τ)³` also works
+directionally and scores consolidation higher still (2.63 / 5.19 / 2.06). It is
+the wrong reading for a *fleet*: a Limited Offensive hull's interior is 0.0066
+against a reserved core of 0.194, so its hold is entirely spoken for and its
+cargo is zero. **Scoring a warship by its hold scores it by the one thing a
+warship does not have.** The shell is armour, not waste. The decomposition is
+exact — `r³ = η · shell_mass + hold` — so volume-years is mass-years' basis plus
+the interior, and the interior is the term that grows as `cost^(3/2)`.
+
+Measurable today. `VehicleSnapshot` carries both `dry_mass` and `volume`,
+because they answer different questions — conservation and acceleration for the
+first, capability for the second. Before either existed, the only harness
+computing fleet-years (`examples/founding_tree`) summed `vehicles.len()`, which
+is the hull count this section forbids, and nothing in the snapshot could have
+told it so.
+
+**Two figures are stale and are not silently re-denominated.** R-O88's ratified
+"+26–34% fleet-years" was taken on the **count**; `data/tree_gradient.tsv`'s
+Production column and composite geomean (T-50) were taken on the **mass**.
+Re-denominating either without re-running the comparison would invalidate the
+number while keeping its authority. **R-PROD5** carries the re-measurement.
 
 #### 2.3.5 Technology — capability-years
 
@@ -366,7 +398,7 @@ Exchange needs.
 
 **The six objectives are in six different units, and §4 requires tier-1 cards to
 be worth "about the same" across trees.** Colony-years cannot be compared to
-kilotons of fleet-years. Something has to make them commensurable, and the author
+hull-unit-cubed fleet-years. Something has to make them commensurable, and the author
 named it: the **gradient**, *e.g. years to double*.
 
 That is the right answer, and it is worth stating why it works. While a stock is
@@ -615,7 +647,10 @@ Stated so it is not discovered as a surprise:
 | **R-TREE6** | Dispersion measure for the tier-1 constraint. MAD proposed over variance; and the numeric bound for "similar P92". | §4.3 |
 | **R-TREE7** | Whether all six trees need the full horizon, or only those whose stock has not saturated. Answered by T-78. The horizon itself is settled at **3,000 yr** (§3.1). | §3.2 |
 | **R-TREE8** | **Warfare needs an asymmetric bed.** Its seat sum is an *algebraic* zero at 3 seats (equilateral homeworlds ⇒ doubly stochastic `w_ij`), and a noise-dominated contrast at 6 and 12. Specify the perturbed-seat experiment: which seat, how the others are held, and how the result is paired across seeds. | §2.3.2 |
+| **R-TREE10** | **Re-measure the composite on volume.** `data/tree_gradient.tsv` (T-50, 32 knobs, 4 seeds) was taken with Production in **mass**; §2.3.4 now reads volume. Spot-checked on the three hull-ladder knobs at seed 1 / 600 yr, the Production elasticity moves by 0.1–0.6 and no sign changes (appendix §A.14), but one seed with no error bar is a sanity check and not a result. The full bed wants re-running before anything cites that column again. | §2.3.4 |
 | **R-TREE9** | **The composite objective.** `examples/tree_gradient` scores the geomean of the ratio-to-default of the measurable trees, which makes `∂ln S/∂ln x` the plain mean of the per-tree elasticities and everything dimensionless. Two things are unratified: the equal weighting across trees, and whether a geomean is the right aggregator once Warfare and Technology join (a tree that can go negative has no log). | §2.4 |
+| **R-TREE11** | **The write-capability partition** (card contract §10). Whether "population-lethal" is a *sign* test on the write's argument or a declared per-card flag, and whether the partition is exclusive (only Warfare) or a floor (Warfare must carry some, others may not). | card contract §10.4 |
+| **R-TREE12** | **Warfare card value has no doubling time of its own.** Decided here: cost a Warfare card as the fractional *increase* it causes in the **target's** doubling time, on the target's own tree stock, against a CRN counterfactual. Open: whether the target is the single highest-`w_ij` neighbour or the `w`-weighted mean over all of them, and how that composes with §4.2's P92 when the target set is itself a random variable. | §5.4 |
 
 ---
 

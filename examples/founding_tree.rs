@@ -113,12 +113,13 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Arm {
     // being measured.
     //
     // **This `fleet_years` is a hull *count*, and Production's objective is
-    // mass** (`Hyades_trees_and_card_value.md` §2.3.4: counting hulls rewards
-    // fragmentation and contradicts design law #3 outright). It is left as a
+    // enclosed volume** (`Hyades_trees_and_card_value.md` §2.3.4, R-PROD5:
+    // counting hulls rewards fragmentation outright, and counting mass is
+    // silent on design law #3 because dry mass *is* cost). It is left as a
     // count deliberately — R-O88's ratified "+26–34% fleet-years" was measured
     // on this definition, and silently re-denominating it would invalidate that
     // figure without re-running the comparison. Use
-    // `examples/tree_gradient`, which reads `VehicleSnapshot::dry_mass`, for
+    // `examples/tree_gradient`, which reads `VehicleSnapshot::volume`, for
     // anything that is actually Production's objective.
     let (mut work_years, mut fleet_years) = (0.0f64, 0.0f64);
     let (mut prev_t, mut prev_w, mut prev_v) = (0.0f64, 0.0f64, 0.0f64);

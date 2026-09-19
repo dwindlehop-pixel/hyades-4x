@@ -28,7 +28,7 @@ pub type Entity = u64;
 
 /// What is being exchanged. One `Book` per (owner, commodity) for the
 /// intra-empire haulage books; **one book per commodity globally** for the
-/// cross-empire Exchange (`Hyades_politics_trade_and_intelligence.md` §3.1).
+/// cross-empire Exchange (`Hyades_politics_trade_and_intelligence.md` §2.10).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Commodity {
     /// Basic-mineral haulage: bids are production centers (price =
@@ -355,7 +355,7 @@ mod tests {
     /// The intra-empire books never needed this — one book per owner meant the
     /// owner *was* the book. A cross-empire book has both sides in it, and
     /// escrow has to be debited from one purse and credited to another
-    /// (`Hyades_politics_trade_and_intelligence.md` §3.3). A `Fill` that names
+    /// (`Hyades_politics_trade_and_intelligence.md` §2.6). A `Fill` that names
     /// two entities and no counterparties cannot settle.
     #[test]
     fn a_fill_carries_its_counterparties() {
