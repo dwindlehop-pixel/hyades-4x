@@ -500,6 +500,14 @@ pub enum Role {
     Colonizer,
     Miner,
     Freighter,
+    /// **Denial.** A hull holding an *unclaimed* world so nobody else founds
+    /// there (`Hyades_warfare_tree.md` §8, T-112).
+    ///
+    /// The one role whose product is something that does **not** happen. It
+    /// occupies no ground it owns, extracts nothing and builds nothing; its
+    /// whole output is the colony a rival did not plant. A standing mission
+    /// under roles §4.6, so it never auto-scraps.
+    Picket,
     /// Standing, re-taskable, never auto-scrapped
     /// (`Hyades_vehicle_roles.md` §4.6 — confirmed for e.g. ROU; applied here
     /// to any non-Scout entity with nothing left to do).
@@ -516,6 +524,7 @@ impl Role {
             Role::Colonizer => VehicleKind::Colonizer,
             Role::Miner => VehicleKind::Miner,
             Role::Freighter => VehicleKind::Freighter,
+            Role::Picket => VehicleKind::Picket,
             Role::Reserve => VehicleKind::Reserve,
             Role::Scrapped => VehicleKind::Scrapped,
         }
@@ -976,6 +985,9 @@ pub fn role_hull_type(role: Role) -> HullType {
         Role::Colonizer => HullType::MediumSystems,
         Role::Miner => HullType::LimitedSystems,
         Role::Freighter => HullType::MediumSystems,
+        // A picket has to be able to fight something (T-112); the Contact
+        // family is the armed one (std §7.2).
+        Role::Picket => HullType::GeneralContactVehicle,
         Role::Reserve | Role::Scrapped => HullType::LimitedSystems, // inert; value unused
     }
 }
@@ -1796,6 +1808,16 @@ enum EventKind {
     /// arrival and the shot and an event that cached the crew would fight with
     /// ships that are no longer there.
     Engagement { site: Entity },
+    /// **A picket's light has reached an inbound coloniser's empire** (T-112).
+    ///
+    /// Scheduled at `established_at + distance(world, the coloniser's home
+    /// centre)`, which is the earliest instant the order to turn back could
+    /// physically have been given. If that lands after the coloniser's own
+    /// arrival the news is simply too late and this never fires — which is the
+    /// light-lag counterplay window doing its job rather than a special case.
+    ColonyDivert { vehicle: Entity },
+    /// A picket reaches the world it is to hold and takes station (T-112).
+    PicketArrive { vehicle: Entity },
     /// **The round barrier** (`Hyades_netcode.md` §1) — the protocol clock's
     /// only tick. Cards are played here and nowhere else.
     ///
@@ -2142,6 +2164,9 @@ pub struct SimConfig {
     /// per-player and is what a Warfare card writes
     /// (`Hyades_warfare_tree.md` §7.2). Both must be on for a shot to be fired.
     pub engagements_enabled: bool,
+    /// **Ablation (T-112): does a colony founded by a departing picket keep its
+    /// `Band I` stock?** Temporary; see the census.
+    pub picket_keeps_founding_infra: bool,
     /// How long a resolved engagement is simulated for, in years.
     ///
     /// **Placeholder magnitude (R-WAR5).** `resolve_engagement` walks `dt`-sized
@@ -2449,6 +2474,7 @@ impl SimConfig {
             // Off: the mechanic is unratified and every measured number in the
             // tree was taken without it. See the field doc.
             engagements_enabled: false,
+            picket_keeps_founding_infra: false,
             engagement_horizon_years: 0.5,
             engagement_dt_years: 0.0005,
             engagement_volley_period_years: 0.05,
@@ -2561,6 +2587,25 @@ pub struct Simulation {
     /// apart is what lets `tests/balance.rs` hold its goldens while the economy
     /// moves underneath. Override with [`Simulation::set_combat_config`].
     combat: CombatConfig,
+    /// **Who is holding each unclaimed world, and since when** (T-112).
+    ///
+    /// Planet id → `(seat, hull, established_at)`. One picket per world: a
+    /// second adds no denial, so the first to arrive holds it and later
+    /// arrivals are redundant.
+    ///
+    /// `established_at` is not bookkeeping — it is the **light-lag origin**. A
+    /// rival learns of the picket no earlier than `established_at +
+    /// distance / c`, and that gap is the whole counterplay window (card
+    /// contract §2: *"a reaction to a detected fleet is scheduled by the
+    /// distance to the responder"*).
+    picket: BTreeMap<u64, (u32, Entity, f64)>,
+    /// **Colonisers currently flying at each world**, target planet id → hulls.
+    ///
+    /// Maintained at launch and cleared on arrival or diversion. It exists so a
+    /// newly established picket can notify exactly the ships it threatens in
+    /// `O(inbound)` instead of scanning the fleet — §4's locality rule, on a
+    /// path that fires once per founding.
+    inbound_colonisers: BTreeMap<u64, Vec<Entity>>,
     /// Ore an outpost has extracted **for one player**, awaiting a freighter.
     ///
     /// Keyed by `(player, outpost)`, and that is the correction: the rock's
@@ -2696,6 +2741,8 @@ impl Simulation {
             active_mines: BTreeSet::new(),
             mine_crew: BTreeMap::new(),
             combat: CombatConfig::default(),
+            picket: BTreeMap::new(),
+            inbound_colonisers: BTreeMap::new(),
             outpost_stock: BTreeMap::new(),
             exchange: Exchange::default(),
             exchange_posting: true,
@@ -3092,6 +3139,8 @@ impl Simulation {
             EventKind::ContractDue { id } => self.sys_contract_due(id),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
             EventKind::Engagement { site } => self.sys_engagement(site),
+            EventKind::ColonyDivert { vehicle } => self.sys_colony_divert(vehicle),
+            EventKind::PicketArrive { vehicle } => self.sys_picket_arrive(vehicle),
             EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
         true
@@ -3176,6 +3225,31 @@ impl Simulation {
         let target = voyage.target;
         let here = self.position_at(target, self.clock).unwrap();
         let target_pid = *self.world.planet_id.get(target).unwrap();
+        self.clear_inbound(target, vehicle);
+
+        // **A hostile picket is standing here** (T-112). The news did not reach
+        // this empire in time — light-lag — so the ship arrived anyway and is
+        // now in a fight it did not choose.
+        //
+        // **Resolved inline rather than scheduled.** Scheduling an engagement
+        // and re-queuing this arrival would loop forever whenever both sides
+        // survive; the outcome is needed *here*, to decide between founding and
+        // turning back. Three outcomes, and the middle one is why a picket is
+        // not an absolute veto:
+        //
+        // - the coloniser dies → nothing founds, and nothing returns;
+        // - the picket dies → the ground is clear and it founds normally;
+        // - both live → it turns back with its people, as if contested (R-AC8).
+        if self.picket_blocks(target, owner.0) {
+            self.resolve_picket_fight(target, p);
+            if self.world.role.get(vehicle).copied() == Some(Role::Scrapped) {
+                return; // destroyed on arrival
+            }
+            if self.picket_blocks(target, owner.0) {
+                self.bounce_colonizer(vehicle, target, here, p, target_pid);
+                return;
+            }
+        }
 
         if !self.world.owner.contains(target) {
             // Found the colony; recycle the vehicle's hull into level-1 infra.
@@ -3223,18 +3297,64 @@ impl Simulation {
             self.world.knowledge.get_mut(self.player_entity[p]).unwrap().scanned.insert(pid);
             self.schedule(self.config.cycle_years, EventKind::ProductionTick { center: target });
             self.log.push(self.clock, LogEvent::ColonyFounded { player: p as u32, vehicle, planet: target_pid });
-            self.park(vehicle, here); // recycled hull, now inert infrastructure
+            // **The hull either becomes the colony or holds the next world**
+            // (T-112). Under `picket_after_founding` it is not recycled — it
+            // flies on and denies somewhere. The infrastructure credited above
+            // is the same either way, which is deliberate and is the card's
+            // price: roles §4.2 makes `founding_infra` the *recycled hull*, so
+            // a colony founded by a ship that leaves is a colony whose starting
+            // stock walked away. Charging it here rather than skipping the
+            // credit keeps `founding_infra` one expression.
+            if self.picket_doctrine(p) {
+                if !self.config.picket_keeps_founding_infra {
+                    // **The colony keeps only what the hold carried, floored at
+                    // the ladder's own floor rung — never zero.**
+                    //
+                    // Zero is not a price, it is a death sentence, and the line
+                    // that makes it one is `employment_rate`: it returns exactly
+                    // `0.0` for a stock of zero, and `fabrication_rate` is
+                    // `slips × berth_rate`, so a colony founded at infra 0 can
+                    // never mine, never build and never recover. Measured before
+                    // this floor existed, the card took its own player from 769
+                    // colonies to **10** and *raised* the neighbours 20% — the
+                    // empire had removed itself from the game.
+                    //
+                    // `Band Empty` is the mass ladder's floor and exists for
+                    // exactly this (design law #11, T-63): the smallest rung
+                    // that is a real quantity rather than an absorbing zero. The
+                    // drop from `Band I` is still most of the hull's value, so
+                    // the card is still paying for the ship it kept.
+                    // **Placeholder magnitude (R-WAR6).**
+                    let floor = infra_rung_price(0, &self.config).max(Price::new(1e-9));
+                    let f = self.world.factors.get_mut(target).unwrap();
+                    f.infra = f.infra.min(floor);
+                }
+                self.dispatch_picket(p, vehicle, target);
+            } else {
+                self.park(vehicle, here); // recycled hull, now inert infrastructure
+            }
         } else {
             // Contested (R-AC8): a systems vehicle returns home, carried pop
             // and all — nothing is lost, it's available to re-task
             // (`Hyades_vehicle_roles.md` §4.2).
-            let home = *self.world.home_center.get(vehicle).unwrap_or(&target);
-            let home_pos = *self.world.position.get(home).unwrap();
-            let accel = self.config.civilian_accel_g * G;
-            let arrive = self.set_leg(vehicle, here, home_pos, accel, 0.0);
-            self.schedule_at(arrive, EventKind::ReturnArrive { vehicle });
-            self.log.push(self.clock, LogEvent::ColonyContested { player: p as u32, vehicle, planet: target_pid });
+            self.bounce_colonizer(vehicle, target, here, p, target_pid);
         }
+    }
+
+    /// Turn a coloniser around, people and endowment intact (R-AC8, roles §4.2).
+    ///
+    /// One expression for the two reasons a ship gives up on a world: someone
+    /// claimed it first, or someone is **standing on it** (T-112). The second
+    /// was written as a copy of the first before it was factored out, which is
+    /// the shape of a divergence waiting to happen — the unload-on-return rule
+    /// lives in `sys_return_arrive` and only works if both paths reach it.
+    fn bounce_colonizer(&mut self, vehicle: Entity, target: Entity, here: Vec3, p: usize, target_pid: PlanetId) {
+        let home = *self.world.home_center.get(vehicle).unwrap_or(&target);
+        let home_pos = *self.world.position.get(home).unwrap();
+        let accel = self.config.civilian_accel_g * G;
+        let arrive = self.set_leg(vehicle, here, home_pos, accel, 0.0);
+        self.schedule_at(arrive, EventKind::ReturnArrive { vehicle });
+        self.log.push(self.clock, LogEvent::ColonyContested { player: p as u32, vehicle, planet: target_pid });
     }
 
     fn sys_mining_arrive(&mut self, vehicle: Entity) {
@@ -3298,6 +3418,254 @@ impl Simulation {
             }
         }
         None
+    }
+
+    // --- Denial: pickets, light-lagged warning, and diversion (T-112) --------
+
+    /// Does this seat hold ground after founding? Gated by the master switch
+    /// for the same reason everything else in T-111 is.
+    fn picket_doctrine(&self, seat: usize) -> bool {
+        self.config.engagements_enabled && self.doctrine_of(seat).picket_after_founding
+    }
+
+    /// Is an unclaimed world held against `seat` right now?
+    ///
+    /// Ground truth, and it is read **only** at the moment of arrival — where
+    /// the range is zero and there is nothing left to be lagged about. The
+    /// *decision* to turn back is taken on light-lagged news
+    /// ([`Self::notify_inbound`]); this is the ship discovering what is
+    /// actually there by flying into it.
+    fn picket_blocks(&self, world: Entity, seat: u32) -> bool {
+        self.picket.get(&world.0).is_some_and(|&(holder, _, _)| holder != seat)
+    }
+
+    /// **Send a just-freed coloniser to hold the best nearby unclaimed world.**
+    ///
+    /// The target is the nearest unclaimed, unpicketed world this empire has
+    /// scanned — *nearest*, not best, because denial is about being there and a
+    /// picket that is still in transit denies nothing. The scan is over this
+    /// player's own `scanned` set, which is the fleet-bounded collection §4's
+    /// locality rule allows, and it runs once per founding.
+    fn dispatch_picket(&mut self, p: usize, vehicle: Entity, from: Entity) {
+        let origin = *self.world.position.get(from).unwrap();
+        // **Placement is the mechanism, and both rules tried are refuted**
+        // (T-112, `Hyades_warfare_tree.md` §8.6).
+        //
+        // *Nearest to the founding* — this one — squats on the picketing
+        // empire's **own** frontier, so it threatens nobody: measured at
+        // **493–793 pickets for 3–12 diversions per run**, one to two percent
+        // utilisation. *Nearest to the closest rival homeworld* is worse, and
+        // for the opposite reason: **24–32 pickets and zero diversions**,
+        // because a world this empire has scanned and a rival has not yet
+        // claimed barely exists — near a rival, everything visible is already
+        // owned. There is no contested frontier to stand on.
+        //
+        // The simpler rule is kept because it at least fields pickets. Neither
+        // is a design that works; see the write-up.
+        let aim = origin;
+        let mut best: Option<(Entity, f64)> = None;
+        let scanned: Vec<PlanetId> =
+            self.world.knowledge.get(self.player_entity[p]).unwrap().scanned.iter().copied().collect();
+        for pid in scanned {
+            let Some(&e) = self.planet_entity.get(pid.0 as usize) else { continue };
+            if self.world.owner.contains(e) || self.picket.contains_key(&e.0) || e == from {
+                continue;
+            }
+            let d = self.world.position.get(e).unwrap().distance(aim);
+            // Deterministic argmin: distance, tie-broken by planet id.
+            if best.is_none_or(|(be, bd)| d < bd || (d == bd && e.0 < be.0)) {
+                best = Some((e, d));
+            }
+        }
+        let Some((world, _)) = best else {
+            // Nowhere to hold. The hull stands down rather than vanishing.
+            let at = *self.world.planet_id.get(from).unwrap();
+            self.release_to_reserve(vehicle, Role::Colonizer, at);
+            return;
+        };
+        self.world.role.insert(vehicle, Role::Picket);
+        self.world.voyage.insert(vehicle, Voyage { target: world, heading_bias: None, hops: 0 });
+        let dest = *self.world.position.get(world).unwrap();
+        let accel = self.config.civilian_accel_g * G;
+        let arrive = self.set_leg(vehicle, origin, dest, accel, 0.0);
+        self.schedule_at(arrive, EventKind::PicketArrive { vehicle });
+    }
+
+    /// A picket reaches its world and takes station.
+    fn sys_picket_arrive(&mut self, vehicle: Entity) {
+        let Some(&voyage) = self.world.voyage.get(vehicle) else { return };
+        let world = voyage.target;
+        let Some(&owner) = self.world.owner.get(vehicle) else { return };
+        let Some(here) = self.position_at(world, self.clock) else { return };
+        let pid = *self.world.planet_id.get(world).unwrap();
+        self.park(vehicle, here);
+        // First to arrive holds it; a second picket adds no denial.
+        if self.picket.contains_key(&world.0) || self.world.owner.contains(world) {
+            self.release_to_reserve(vehicle, Role::Picket, pid);
+            return;
+        }
+        self.picket.insert(world.0, (owner.0, vehicle, self.clock));
+        self.log.push(self.clock, LogEvent::VehicleParked { player: owner.0, vehicle, role: Role::Picket, at: pid });
+        self.notify_inbound(world);
+    }
+
+    /// **Tell every threatened coloniser, at the speed of light.**
+    ///
+    /// For each rival hull already flying at this world, the earliest instant
+    /// its empire could have learned is `now + distance(world, its home
+    /// centre)` — the responder is the centre that dispatched it, which is card
+    /// contract §2's rule verbatim. If that is later than the ship's own
+    /// arrival the warning never lands and it flies in blind, which is the
+    /// counterplay window rather than an oversight.
+    fn notify_inbound(&mut self, world: Entity) {
+        let Some(inbound) = self.inbound_colonisers.get(&world.0).cloned() else { return };
+        let Some(&(holder, _, _)) = self.picket.get(&world.0) else { return };
+        let world_pos = *self.world.position.get(world).unwrap();
+        for v in inbound {
+            if self.world.owner.get(v).copied().map(|o| o.0) == Some(holder) {
+                continue;
+            }
+            let Some(&home) = self.world.home_center.get(v) else { continue };
+            let Some(&home_pos) = self.world.position.get(home) else { continue };
+            // c = 1, distance in light-years, time in years (`math`).
+            self.schedule(world_pos.distance(home_pos), EventKind::ColonyDivert { vehicle: v });
+        }
+    }
+
+    /// **The warning arrived in time: turn back.**
+    ///
+    /// Guarded three ways, because the event was scheduled against a world state
+    /// that may have moved on: the ship may have already landed, the picket may
+    /// be gone, and the ship may no longer be a coloniser. A stale wake is the
+    /// normal case, not an error.
+    fn sys_colony_divert(&mut self, vehicle: Entity) {
+        if self.world.role.get(vehicle).copied() != Some(Role::Colonizer) {
+            return;
+        }
+        let Some(&voyage) = self.world.voyage.get(vehicle) else { return };
+        let target = voyage.target;
+        let Some(&owner) = self.world.owner.get(vehicle) else { return };
+        if !self.picket_blocks(target, owner.0) {
+            return;
+        }
+        // Still inbound? If the arrival already fired it is off the index.
+        let still_flying = self.inbound_colonisers.get(&target.0).is_some_and(|v| v.contains(&vehicle));
+        if !still_flying {
+            return;
+        }
+        let Some(here) = self.position_at(vehicle, self.clock) else { return };
+        let pid = *self.world.planet_id.get(target).unwrap();
+        let holder = self.picket.get(&target.0).map(|&(h, _, _)| h).unwrap_or(owner.0);
+        self.clear_inbound(target, vehicle);
+        self.log.push(self.clock, LogEvent::ColonyDiverted { player: owner.0, vehicle, planet: pid, holder });
+        self.bounce_colonizer(vehicle, target, here, owner.0 as usize, pid);
+    }
+
+    /// Drop a coloniser from the inbound index.
+    fn clear_inbound(&mut self, target: Entity, vehicle: Entity) {
+        if let Some(v) = self.inbound_colonisers.get_mut(&target.0) {
+            v.retain(|&e| e != vehicle);
+            if v.is_empty() {
+                self.inbound_colonisers.remove(&target.0);
+            }
+        }
+    }
+
+    /// **A coloniser that flew in anyway fights the picket holding the world.**
+    ///
+    /// Same resolver as everything else (T-111). The picket takes the laser side
+    /// — it is the one on station — and the arriving coloniser the missile side,
+    /// which is R-WAR5's placeholder convention and decides outcomes.
+    fn resolve_picket_fight(&mut self, world: Entity, arriving_seat: usize) {
+        let Some(&(holder, picket_ship, _)) = self.picket.get(&world.0) else { return };
+        let Some(pos) = self.position_at(world, self.clock) else { return };
+        let pid = *self.world.planet_id.get(world).unwrap();
+        let attackers: Vec<Entity> = self
+            .inbound_colonisers
+            .get(&world.0)
+            .map(|v| {
+                v.iter()
+                    .copied()
+                    .filter(|&e| self.world.owner.get(e).copied().map(|o| o.0 as usize) == Some(arriving_seat))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let defenders = vec![picket_ship];
+        if attackers.is_empty() {
+            return;
+        }
+
+        let fleets = [FleetTrajectory { origin: pos, velocity: Vec3::ZERO }; 2];
+        let mut rng = self.rng.fork(self.seq ^ world.0.wrapping_mul(0x9E37_79B9));
+        let def_ships = self.combatants(&defenders, 0, &mut rng);
+        let att_ships = self.combatants(&attackers, 1, &mut rng);
+        let committed = crate::belief::resolve_engagement_choice(
+            att_ships[0].max_accel(&self.config),
+            def_ships[0].max_accel(&self.config),
+        ) == crate::belief::Engagement::Committed;
+
+        let outcome = crate::combat::resolve_engagement(
+            &self.config,
+            &self.combat,
+            &mut rng,
+            &fleets,
+            &def_ships,
+            &att_ships,
+            self.config.engagement_horizon_years,
+            self.config.engagement_dt_years,
+            self.config.engagement_volley_period_years,
+        );
+        let def_lost = defenders.len().saturating_sub(outcome.laser_survivors);
+        let att_lost = attackers.len().saturating_sub(outcome.missile_survivors);
+
+        let mut slag = Kilotons::ZERO;
+        if def_lost > 0 {
+            self.picket.remove(&world.0);
+            slag += self.destroy_free_hulls(&defenders[..def_lost]);
+        }
+        for &dead in &attackers[..att_lost] {
+            self.clear_inbound(world, dead);
+        }
+        slag += self.destroy_free_hulls(&attackers[..att_lost]);
+        let total = *self.world.slag.get(world).unwrap_or(&Kilotons::ZERO) + slag;
+        self.world.slag.insert(world, total);
+
+        self.log.push(
+            self.clock,
+            LogEvent::EngagementResolved {
+                site: pid,
+                attacker: arriving_seat as u32,
+                defender: holder,
+                attacker_ships: attackers.len() as u32,
+                defender_ships: defenders.len() as u32,
+                losses_attacker: att_lost as u32,
+                losses_defender: def_lost as u32,
+                committed,
+                slag: slag.kilotons(),
+            },
+        );
+    }
+
+    /// Destroy hulls that are not in a crew index (pickets and colonisers).
+    fn destroy_free_hulls(&mut self, dead: &[Entity]) -> Kilotons {
+        let mut mass = Kilotons::ZERO;
+        for &e in dead {
+            let hull = *self.world.hull_type.get(e).unwrap_or(&HullType::LimitedSystems);
+            mass += hull_dry_mass(hull, &self.config);
+            // **The people aboard die with it** (design law #11). A coloniser's
+            // settlers were debited from its origin at launch (R-O74), so
+            // dropping the hull without them would put the mass back into the
+            // ledger as a gain. This is the one path in the engine where
+            // population is destroyed rather than moved, and it is Warfare's.
+            let pop = self.world.pop_cargo.get(e).copied().unwrap_or(Kilotons::ZERO);
+            mass += pop;
+            mass += self.world.cargo.get(e).copied().unwrap_or_default().basic_total().on_scale::<units::Mass>();
+            self.world.pop_cargo.insert(e, Kilotons::ZERO);
+            self.world.cargo.insert(e, Minerals::default());
+            self.world.role.insert(e, Role::Scrapped);
+            self.world.motion.remove(e);
+        }
+        mass
     }
 
     /// This seat's standing Doctrine.
@@ -5511,6 +5879,11 @@ impl Simulation {
             Role::Colonizer => EventKind::ColonyArrive { vehicle: e },
             _ => EventKind::MiningArrive { vehicle: e },
         };
+        if role == Role::Colonizer {
+            // Index it so a picket established while it is in flight can find
+            // it without scanning the fleet (T-112).
+            self.inbound_colonisers.entry(target.0).or_default().push(e);
+        }
         self.schedule_at(arrive, ev);
         let target_pid = *self.world.planet_id.get(target).unwrap();
         self.log.push(
@@ -8099,6 +8472,98 @@ mod tests {
         let b = crate::combat::resolve_engagement(&cfg, &combat, &mut rng, &fleets, &none, &one, 0.1, 0.0005, 0.05);
         assert_eq!(b.laser_survivors, 0);
         assert_eq!(b.missile_survivors, 3);
+    }
+
+    /// **Denial off reproduces the galaxy bit-for-bit** (T-112).
+    ///
+    /// Same property and same reason as `combat_off_is_bit_identical`: the card
+    /// is measured to be *harmful to its own player*, so it must be
+    /// unreachable by default or every number in the tree moves.
+    #[test]
+    fn picketing_off_is_bit_identical() {
+        let mk = || Simulation::with_baseline(test_galaxy(3, 2024), paired_cfg(2024));
+        let mut a = mk();
+        let mut b = mk();
+        let ra = a.run();
+        let rb = b.run();
+        paired_mechanism_fired(&ra);
+        assert!(!Doctrine::default().picket_after_founding, "the card must ship unplayed");
+        assert_eq!(ra.events_processed, rb.events_processed);
+        assert!(a.picket.is_empty(), "nobody played the card and {} worlds are held", a.picket.len());
+    }
+
+    /// **A colony founded by a departing picket is never a multiplicative
+    /// zero** (T-112, R-WAR6).
+    ///
+    /// The defect this pins is the one that cost 57% of the card-player's
+    /// colonies: `employment_rate` returns exactly `0.0` for a stock of zero
+    /// and `fabrication_rate` is `slips × berth_rate`, so a colony founded at
+    /// infra 0 can never mine, never build and never recover. The hull walking
+    /// away is a price; zero is an absorbing state.
+    #[test]
+    fn a_picketed_founding_still_leaves_a_workable_colony() {
+        let cfg = SimConfig::new(1);
+        let floor = infra_rung_price(0, &cfg);
+        assert!(floor > Price::ZERO, "the floor rung must be a real quantity, got {floor:?}");
+        // The thing that would break: an employment rate of exactly zero.
+        let works = cards::Works::default();
+        let rate = employment_rate(floor, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg));
+        assert!(rate > 0.0, "a colony at the floor rung must still fabricate, got {rate}");
+        let dead = employment_rate(Price::ZERO, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg));
+        assert_eq!(dead, 0.0, "zero must still be the absorbing state this floor exists to avoid");
+    }
+
+    /// **A picket holds ground and a rival coloniser turns back from it**
+    /// (T-112) — the mechanism check, built rather than waited for.
+    ///
+    /// **It has to be constructed, and that is itself the finding.** On the
+    /// standard bed the whole card produces **3–12 diversions per 800-year
+    /// run** against 493–793 pickets, so an emergent test would be asserting
+    /// on a one-in-a-hundred event and would sit at zero on a small galaxy.
+    /// This places the picket and the rival coloniser directly, so the path is
+    /// pinned even though the card almost never walks it in play.
+    #[test]
+    fn a_picket_turns_a_rival_coloniser_back() {
+        let mut cfg = test_cfg(2024);
+        cfg.horizon_years = 400.0;
+        cfg.engagements_enabled = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 2024), cfg);
+
+        // Seat 1 sends a coloniser at the nearest unclaimed world to its own
+        // homeworld: the warning travels the same distance the ship does, and
+        // the ship is slower than light, so the margin is real but small.
+        let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let home1_pos = *sim.world.position.get(home1).unwrap();
+        let target = *sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .min_by(|&&a, &&b| {
+                let da = sim.world.position.get(a).unwrap().distance(home1_pos);
+                let db = sim.world.position.get(b).unwrap().distance(home1_pos);
+                da.partial_cmp(&db).unwrap().then(a.0.cmp(&b.0))
+            })
+            .expect("an unclaimed world");
+        sim.spawn_courier(1, Role::Colonizer, HullType::MediumSystems, home1, target, 0.0);
+        let coloniser = *sim.inbound_colonisers.get(&target.0).unwrap().first().unwrap();
+
+        // Seat 0 is already holding it, as of now.
+        let picket_hull = sim.world.spawn();
+        sim.world.owner.insert(picket_hull, PlayerId(0));
+        sim.world.role.insert(picket_hull, Role::Picket);
+        sim.world.hull_type.insert(picket_hull, HullType::GeneralContactVehicle);
+        sim.picket.insert(target.0, (0, picket_hull, sim.clock));
+        sim.notify_inbound(target);
+
+        sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
+        sim.run();
+
+        let diverted =
+            sim.log().iter().filter(|r| matches!(r.event, crate::log::LogEvent::ColonyDiverted { .. })).count();
+        assert_eq!(diverted, 1, "the coloniser should have turned back exactly once");
+        // And it did not found: the world is still unowned.
+        assert!(!sim.world.owner.contains(target), "a diverted coloniser must not have founded");
+        assert_ne!(sim.world.role.get(coloniser).copied(), Some(Role::Colonizer), "it should be re-tasked");
     }
 
     #[test]

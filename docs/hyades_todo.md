@@ -163,6 +163,101 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-112. Denial: pickets, light-lagged diversion — and the card is refuted as specified
+
+**Built, gated off, measured on the asymmetric bed, and it does the opposite of
+what it is for.** Full write-up in `Hyades_warfare_tree.md` §8.6–8.7.
+
+The author's specification: *"A Contact Vehicle that has founded a colony
+without recycling itself should travel to a nearby site and prevent it from
+being colonized. A threatened Colony Ship should divert from its course… I
+expect to greatly decrease the expansion of the Warfare player's neighbors."*
+
+#### What it does (`examples/denial_census`, 8 seeds, 3 seats, 800 yr)
+
+Seat 0 plays the card; seats 1–2 at the default doctrine — the asymmetric bed
+R-TREE8 requires, and the first measurement in this project to use one.
+
+| | mean | seeds |
+|---|---|---|
+| **neighbour colonies** | **+4.40% ± 1.09** (4.0 SE) | 1/8 negative |
+| own colonies | −9.55% ± 2.61 (3.7 SE) | 7/8 negative |
+| `W_0 = C_0 − mean(C_j)` | **−133.2 colonies ± 35.3** (3.8 SE) | 1/8 positive |
+
+The neighbours expand **more**, at 4.0 SE with 7/8 seeds agreeing.
+
+#### Three things establish why, and only the first is a magnitude
+
+- **Pickets are fielded and never used.** 493–793 pickets produce **3–12
+  diversions** per run — one to two percent utilisation. Placement is the
+  mechanism: the picket takes the world nearest the colony just founded, which
+  is the picketing empire's *own* frontier.
+- **Aiming at the neighbour is worse, and structurally so.** Nearest-to-rival
+  placement gives **24–32 pickets and zero diversions** on every seed: a world
+  this empire has scanned and a rival has not yet claimed barely exists.
+  Colonisation is exclusive (R-V3) and worlds go unscanned → owned without
+  pausing. **There is no contested frontier to stand on.**
+- **A 1:1 trade would still lose, and that is arithmetic.** Spending `k`
+  colonisers to deny `k` neighbour colonies gives
+  `ΔW_0 = −k + w_0A·k = −k(1 − w_0A)`, and `Σ_j w_0j = 1` by construction, so
+  `ΔW_0 < 0` at any table wider than two seats **however well it is aimed**. The
+  realised ratio is **−0.97 denied per spent**, where even +1.00 would not have
+  been enough.
+
+#### The defect that was mine, and the shape worth keeping
+
+The first arm charged the card honestly — roles §4.2 makes a colony's `Band I`
+stock the *recycled hull*, so a hull that leaves leaves nothing — and debited the
+founding rung to **zero**. That took seat 0 from **769 colonies to 10** and
+raised the neighbours **+20.0%**.
+
+**`employment_rate` returns exactly `0.0` for a stock of zero**, and
+`fabrication_rate` is `slips × berth_rate`, so a colony founded at infra 0 can
+never mine, never build and never recover. **Zero is not a price, it is an
+absorbing state.** Floored at the ladder's own floor rung (`Band Empty`, design
+law #11/T-63) and pinned by
+`a_picketed_founding_still_leaves_a_workable_colony`.
+
+Three arms, and the monotonicity is what identifies self-harm rather than denial
+— **the neighbours' gain tracks the card-player's loss one for one across a
+25-point range**:
+
+| founding rung | own | neighbours | `W_0` |
+|---|---|---|---|
+| zero | −57.2% | **+20.0%** | −688 |
+| **floor (shipped)** | −9.6% | **+4.4%** | −133 |
+| unchanged `Band I` | +2.6% | −0.7% | +31 |
+
+Even the arm that charges the card *nothing* moves the neighbours −0.71% ± 0.54,
+inside noise.
+
+#### What it did unblock
+
+- **An accept/decline at range**, on a genuinely light-lagged edge: a picket's
+  warning reaches an inbound coloniser's home centre at
+  `established_at + distance/c`, and whether it beats the ship is the
+  counterplay window. §7.4's *"only miners ever fight"* is amended.
+- **`Role::Picket`**, the first role whose product is something that does not
+  happen, and the population-destroying path design law #11 needed
+  (`destroy_free_hulls` debits settlers and endowment with the hull).
+
+#### What would have to change
+
+- **A picket must cost less than a colony** — a coloniser is the most expensive
+  object in the expansion loop, spent on an object that produces nothing.
+- **Or deny more than one world per hull** — a blockade over an approach rather
+  than a point clears the `1 − w_0A` bound.
+- **Or run ahead of the wave** — picketing *after* founding puts hulls where
+  expansion has already been. That is a production order, not a founding side
+  effect, and it is a different card.
+
+**R-WAR6** carries the magnitudes. The mechanic ships gated off
+(`SimConfig::engagements_enabled` + `Doctrine::picket_after_founding`, both
+false); `picketing_off_is_bit_identical` pins that the default galaxy is
+untouched.
+
+---
+
 ### T-111. Combat is wired into the simulation loop — and the occasion was always there
 
 **Landed.** `combat::resolve_engagement` is called from `sim.rs`. Specified in

@@ -243,6 +243,14 @@ pub enum LogEvent {
     /// index; `round` is the protocol clock, not the sim clock.
     CardPlayed { player: u32, card: u16, round: u32 },
 
+    /// **A coloniser turned back because a rival is holding its target**
+    /// (T-112) — distinct from [`Self::ColonyContested`], which is losing a
+    /// *race*, and the distinction is load-bearing: the two were counted
+    /// together once and the combined figure read as ~33% of diverts being the
+    /// picketing seat's own, which is simply its share of the table and says
+    /// nothing about denial at all.
+    ColonyDiverted { player: u32, vehicle: Entity, planet: PlanetId, holder: u32 },
+
     /// **An engagement was resolved in the simulation loop** (T-111) — the first
     /// `LogEvent` that records something being destroyed.
     ///
@@ -281,7 +289,7 @@ impl LogEvent {
             PopulationStep { .. } => LogCategory::Population,
             ScanReceived { .. } => LogCategory::Scanning,
             CardPlayed { .. } => LogCategory::Cards,
-            EngagementResolved { .. } => LogCategory::Combat,
+            EngagementResolved { .. } | ColonyDiverted { .. } => LogCategory::Combat,
         }
     }
 
@@ -299,6 +307,7 @@ impl LogEvent {
             | ColonyContested { player, .. }
             | VehicleScrapped { player, .. }
             | ScanReceived { player, .. }
+            | ColonyDiverted { player, .. }
             | CardPlayed { player, .. } => Some(player),
             // An engagement is about two seats, so it belongs to neither.
             MineralsExtracted { .. } | MiningExhausted { .. } | PopulationStep { .. } | EngagementResolved { .. } => {
@@ -318,6 +327,7 @@ impl LogEvent {
             | ScanReceived { planet, .. } => Some(planet),
             FreighterTransfer { at, .. } | VehicleParked { at, .. } | VehicleScrapped { at, .. } => Some(at),
             EngagementResolved { site, .. } => Some(site),
+            ColonyDiverted { planet, .. } => Some(planet),
             VehicleSpawned { to, .. } => Some(to),
             ContactArrived { planet, .. } => Some(planet),
             ColonyFounded { planet, .. } | ColonyContested { planet, .. } => Some(planet),
@@ -408,6 +418,9 @@ impl fmt::Display for LogEvent {
             }
             ScanReceived { player, planet } => write!(f, "P{player} scan of planet#{} received", planet.0),
             CardPlayed { player, card, round } => write!(f, "P{player} played card#{card} at round {round}"),
+            ColonyDiverted { player, planet, holder, .. } => {
+                write!(f, "P{player} turned back from {planet:?}: P{holder} is holding it")
+            }
             EngagementResolved {
                 site,
                 attacker,

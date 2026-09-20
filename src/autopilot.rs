@@ -264,6 +264,30 @@ pub struct Doctrine {
     /// Gated additionally by [`crate::sim::SimConfig::engagements_enabled`],
     /// which is the master switch that keeps the measurement corpus valid.
     pub engage_neutrals: bool,
+    /// **Do colonisers hold the ground they did not take?** (T-112.)
+    ///
+    /// The second half of the first Warfare card (`Hyades_warfare_tree.md` §8),
+    /// and the half that carries the card's actual intent. With this set, a
+    /// coloniser is **not consumed when it founds** — it flies on to a nearby
+    /// unclaimed world and sits there, and nobody else founds there while it
+    /// does.
+    ///
+    /// **The product of a picket is a colony that does not happen**, which is
+    /// the only thing in the engine whose output is a negative. That is what
+    /// makes it a Warfare card rather than an Expansion one: the tree's
+    /// objective is colony-years *relative to the table* (§0), so denying a
+    /// neighbour a world scores exactly what founding one does.
+    ///
+    /// **What it costs the player who plays it** is the recycled hull: roles
+    /// §4.2 turns a spent coloniser into the new colony's `Band I`
+    /// infrastructure, and a picket keeps its minerals in the hull instead. So
+    /// every colony this empire founds starts thinner, and that is the price of
+    /// the denial rather than a side effect.
+    ///
+    /// Separate from [`Self::engage_neutrals`] on purpose, so the two arms can
+    /// be ablated apart (`CLAUDE.md` §2's 2×2 rule). Denial and shooting are
+    /// different mechanisms and the card carries both.
+    pub picket_after_founding: bool,
     /// Whether heading-bias discipline is global, opening-only, or persistent
     /// (R-AC3). See [`SurveyStrategy`].
     pub survey_strategy: SurveyStrategy,
@@ -407,6 +431,7 @@ impl Default for Doctrine {
             // Peace is the default (see the field doc): a Warfare card is what
             // turns a neutral into an enemy.
             engage_neutrals: false,
+            picket_after_founding: false,
             survey_strategy: SurveyStrategy::OpeningSectors,
             base_value: [1.0; 3],
             // The works mix, normalised — an empire wants to buy the colours its

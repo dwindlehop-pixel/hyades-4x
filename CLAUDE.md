@@ -631,6 +631,24 @@ Three habits from it, and the first is the general one:
   6.7 yr and said nothing; the same data split by whether the previous decision
   built or idled gave 1.5 against 29.6 and named the mechanism outright.
 
+**A zero in a multiplicative chain is not a small number, it is an absorbing
+state (T-112).** A Warfare card was charged its honest price — a coloniser that
+keeps its hull leaves the colony without the recycled stock roles §4.2 makes its
+`Band I` infrastructure — by debiting the founding rung to zero. That took the
+card's own player from **769 colonies to 10** and *raised* its neighbours 20%.
+The line is `employment_rate`, which returns exactly `0.0` for a stock of zero,
+and `fabrication_rate` is `slips × berth_rate`: the colony could never mine,
+never build and never recover. **Before charging a cost against a stock, check
+whether the stock multiplies anything** — a price that can reach zero on a term
+that gates production is not a price, and the measurement it produces is of the
+player deleting itself rather than of the mechanic. The ladder's floor rung
+exists for this (design law #11/T-63).
+
+**And the tell was in the split, not the total.** The neighbours' gain tracked
+the card-player's loss one-for-one across three arms spanning 25 points — which
+is what says "self-harm", where either number alone reads as "the card works on
+somebody".
+
 **The general rule, which is the transferable part:** an objective must be
 invariant to everything the thing being optimized can change. Ask of any
 metric — *what could a card do to move this without moving the world?* If the

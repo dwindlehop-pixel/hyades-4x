@@ -205,10 +205,17 @@ carries no such information itself.
     hull leaves the new colony with only what the hold carried as endowment
     (`Hyades_industry.md` §1.7). Mass is conserved either way; what moves is
     *where the minerals stand*.
-  - **The hull becomes a patrol craft** rather than infrastructure, under the
-    same card's Doctrine write (*unladen Contact Vehicles engage nearby
-    enemies*). That is the exchange being offered: an empire buys a smaller
-    colony and a standing fleet out of one build.
+  - **The hull becomes a picket** rather than infrastructure, under the same
+    card's Doctrine write: it flies to a nearby unclaimed world and holds it, so
+    nobody else founds there (`Role::Picket`, T-112). That is the exchange being
+    offered: a smaller colony now against a colony a rival does not get later.
+  - **Measured, the exchange is a bad one** — the neighbours expand **+4.40% ±
+    1.09** rather than less, and the card's own player loses 9.6% of its
+    colonies (`Hyades_warfare_tree.md` §8.6). It ships gated off.
+  - **"Thin" has a floor, and finding it cost 57% of a bed.** Founding at infra
+    *zero* is not a price but an absorbing state: `employment_rate` returns
+    exactly `0.0` there, so the colony can never mine or build. A departing
+    picket leaves the ladder's floor rung (§8.7, **R-WAR6**).
 
   **It is a Warfare card and it carries no population-lethal write** — its
   lethality is to hulls. Card contract §10 licenses Warfare to carry such

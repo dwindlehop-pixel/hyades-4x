@@ -316,9 +316,11 @@ the *same place*, so the range is zero, so the light-lag is zero, and the
 observation available at the moment of decision is current — belief equals truth
 and `was_surprised` is identically false. §5.4 already exempts close range for
 exactly this reason, so this is the degenerate case of the rule and not a hole in
-it. **The interesting half is still unwired**: masking, surprise and the
-one-sided error need a decision taken against a *stale* observation at range,
-which needs T-33's observation store and an engagement that is not a co-location.
+it. **The interesting half is half wired since T-112**: a coloniser diverting from a
+picket *is* a decision at range on a light-lagged warning, and whether the
+warning beats the ship is exactly the counterplay window. What is still missing
+is **belief**: the warning is a fact about the world, not an estimate that can be
+wrong, so masking and the one-sided error still need T-33's observation store.
 Measured: `committed` runs 49.4–51.6% across eight seeds, which is the coin flip
 two identical hulls should produce and carries no information about either side.
 
@@ -445,11 +447,13 @@ fixed workload, and this is the row it does not cover.
 - **The belief layer is wired at its degenerate end only** (§5.5): zero range
   means belief equals truth, and `committed` measures 49.4–51.6% — a coin flip
   between two identical hulls.
-- **Only miners ever fight**, because a shared outpost is the only co-location
-  the engine produces. Freighters in transit, colonisers under way and the
-  colonies themselves are untouchable. Commerce raiding (§4.4) and blockade need
-  an engagement in open space, which needs a detection query rather than an
-  arrival.
+- ~~**Only miners ever fight.**~~ **Amended by T-112**: a coloniser arriving at
+  a world a rival is *holding* fights too, and the decision to press on or turn
+  back is taken at **range**, against a warning that travelled at `c` — the
+  thing §5.5 records as the unwired half. Freighters in transit are still
+  untouchable, so commerce raiding (§4.4) and blockade remain out of reach.
+  What T-112 also establishes is that the denial those fights serve **does not
+  work as specified** (§8.6).
 - **Nothing is captured and nothing is razed.** §4.1 says infrastructure is the
   war target; this reaches no infrastructure at all.
 - **R-WAR5**: the defender takes the laser side and the arriver the missiles,
@@ -516,7 +520,7 @@ crucially — **it is not consumed when it founds**.
 | **Design** | unlock a Contact coloniser class: `(GeneralContactVehicle, Class)` | `CardEffect::UnlockDesign`, and a per-`Class` drive fraction | `UnlockDesign` **exists**; per-`Class` `φ` is **T-97**, blocked on T-08 |
 | **Doctrine** | unladen Contact Vehicles engage nearby enemies | an engagement-posture field on `Doctrine` | **absent** — no such field, and no combat in the sim loop (T-52) |
 | **Doctrine** | a Neutral empire is an Enemy empire | a diplomatic stance default on `Doctrine` | **absent** — R-O27/T-11, the field list has never been specified |
-| **Doctrine** | a Contact coloniser patrols instead of scrapping itself | the Colonizer role's arrival behaviour (roles §4.2) | the arrival path exists; the branch does not |
+| **Doctrine** | a Contact coloniser patrols instead of scrapping itself | `Doctrine::picket_after_founding`, `Role::Picket`, `EventKind::ColonyDivert` | **built (T-112)**, and **measured to do the opposite of what it is for** — §8.6 |
 
 **The two halves are one card, and that is a design position.** §5 of
 `Hyades_standing_layer_and_observation.md` makes Design permanent and
@@ -685,6 +689,134 @@ these steps but the last**, which is why it is written down rather than built.
 
 ---
 
+### 8.6 Denial measured — the card does the opposite of what it is for (T-112)
+
+**`OPEN`, and the direction is refuted rather than untuned.** The mechanic is
+built, gated off, and measured on the asymmetric bed R-TREE8 asks for: seat 0
+plays the card, seats 1–2 are at the default doctrine.
+
+#### What was built
+
+A coloniser under `Doctrine::picket_after_founding` is **not consumed when it
+founds**. It flies on to the nearest unclaimed world it has scanned and holds
+it; nobody else founds there while it does. A rival coloniser already in flight
+is warned at `established_at + distance(world, its home centre)` — card contract
+§2's rule verbatim, *"a reaction to a detected fleet is scheduled by the distance
+to the responder"* — and turns back if the warning beats it there. If it does
+not, it arrives into a fight it did not choose, and founds only if it wins.
+
+That is the author's specification implemented as stated, and it is the first
+thing in the engine that takes a decision at **range** on a light-lagged edge.
+
+#### What it does, on eight seeds at 800 yr (`examples/denial_census`)
+
+| | mean | seeds |
+|---|---|---|
+| **neighbour colonies** | **+4.40% ± 1.09** (4.0 SE) | 1/8 negative |
+| own colonies | −9.55% ± 2.61 (3.7 SE) | 7/8 negative |
+| `W_0 = C_0 − mean(C_j)` | **−133.2 colonies ± 35.3** (3.8 SE) | 1/8 positive |
+
+**The neighbours expand *more*.** The stated goal was to curb their growth; the
+card accelerates it, at 4.0 SE with seven of eight seeds agreeing. Warfare's own
+objective moves the wrong way by 133 colonies.
+
+#### The mechanism, and it is placement rather than magnitude
+
+**Pickets are fielded and almost never used.** 493–793 pickets per run produce
+**3–12 diversions** — a utilisation of one to two percent. A picket is placed on
+the world nearest the colony that just founded, which is the *picketing empire's
+own* frontier: it squats on ground its own colonisers were about to take and
+threatens nobody.
+
+**Aiming it at the neighbour is worse, and the reason is structural.** Placing
+the picket on the scanned unclaimed world nearest the closest rival homeworld
+gives **24–32 pickets and zero diversions** on every seed. A world that this
+empire has scanned and a rival has not yet claimed barely exists: near a rival,
+everything visible is already owned. **There is no contested frontier to stand
+on** — colonisation is exclusive (R-V3) and worlds go from unscanned to owned
+without pausing in between.
+
+So the two placements fail for opposite reasons, and neither is a tuning
+question.
+
+#### And a 1:1 trade would still lose, which is arithmetic rather than a measurement
+
+Suppose placement were solved and every picket denied exactly one neighbour
+colony. Seat 0 spends `k` colonisers to field `k` pickets, so `C_0` falls by `k`
+and the denied neighbour's count falls by `k`. Then
+
+```text
+ΔW_0 = −k + w_0A · k = −k(1 − w_0A)
+```
+
+and `Σ_j w_0j = 1` by construction (§0), so `w_0A < 1` whenever there is more
+than one neighbour and **ΔW_0 < 0**. A denial bought with a whole coloniser is a
+losing trade against the tree's own objective at any table wider than two seats,
+however well it is aimed.
+
+Measured, the realised trade is far past that bound: seat 0 gave up **718
+colonies** across the bed and the neighbours gained 696 — a ratio of **−0.97
+denied per spent**, where even +1.00 would not have been enough.
+
+#### What would have to change
+
+Stated as the design question rather than left as a failure:
+
+- **A picket must cost less than a colony.** The card spends a coloniser — the
+  most expensive object in the expansion loop — on an object that produces
+  nothing. A cheap dedicated hull breaks the 1:1 bound above; a recycled
+  coloniser cannot.
+- **Or it must deny more than one world per hull.** A blockade that covers an
+  approach rather than a point, or one that persists against many arrivals, is
+  the shape that clears `1 − w_0A`.
+- **Or denial must happen before the wave, not behind it.** Picketing *after*
+  founding places hulls where expansion has already been; the contested ground
+  is ahead of it. That is a production order, not a founding side effect, and it
+  is a different card.
+
+**R-WAR6** carries the two magnitudes this left behind: the founding rung a
+departing picket leaves (§8.7) and the picket's own cost.
+
+### 8.7 The first arm was an absorbing zero, and the floor is why
+
+Worth recording separately because the failure was *mine and not the design's*,
+and because it is a shape that recurs.
+
+The first implementation charged the card honestly: roles §4.2 makes a colony's
+`Band I` stock the **recycled hull**, so a hull that leaves should leave nothing.
+It debited the founding rung to zero. Measured, that took seat 0 from **769
+colonies to 10** and *raised* the neighbours **+20.0%**: the empire had removed
+itself from the game, and the neighbours' gain was one fewer competitor rather
+than any denial at all.
+
+**The line is `employment_rate`** (`src/sim.rs`): it returns exactly `0.0` for a
+stock of zero, and `fabrication_rate` is `slips × berth_rate`, so a colony
+founded at infra 0 can never mine, never build and never recover. Zero is not a
+price, it is an **absorbing state**.
+
+The founding rung is now floored at the ladder's own floor (`Band Empty`,
+design law #11/T-63) — the smallest rung that is a real quantity. Three arms,
+same bed, and the monotonicity is the evidence that the floor is the term that
+matters:
+
+| founding rung under the card | own colonies | neighbour colonies | `W_0` |
+|---|---|---|---|
+| zero | −57.2% | **+20.0%** | −688 |
+| **floor (shipped)** | −9.6% | **+4.4%** | −133 |
+| unchanged `Band I` | +2.6% | −0.7% | +31 |
+
+**The neighbours' gain tracks the card-player's self-harm one for one**, across a
+25-point range, which is what says the measured effect is self-harm and not
+denial. Even the arm that charges the card *nothing* only moves the neighbours
+−0.71% ± 0.54 — inside noise, and nowhere near "greatly decrease".
+
+`a_picketed_founding_still_leaves_a_workable_colony` pins the floor against the
+absorbing zero. **R-WAR6**: whether `Band Empty` is the right rung, or whether a
+departing picket should instead found at whatever its mineral endowment buys
+(§1.7), is unratified.
+
+---
+
 ## 9. Register
 
 ### Ratified
@@ -703,6 +835,7 @@ these steps but the last**, which is why it is written down rather than built.
 | **R-O95** | the empty-to-laden acceleration swing **is** the hull's cargo efficiency, exactly — so a hull cannot be worse at freight, faster empty and slower laden at once (§8.3) |
 | — | **only Warfare may carry a population-lethal Doctrine write** (card contract §10), enforced in the card layer rather than by authoring convention |
 | — | the wreck roll is the only stochastic beat, bounded in (0, 1) |
+| **T-112** | a colony founded at infrastructure **zero** is an absorbing state, not a price — `employment_rate` returns exactly `0.0` there, so it can never mine or build. A departing picket leaves the ladder's floor rung instead (§8.7) |
 | **T-111** | `combat::resolve_engagement` is called from `sim.rs`; the simulation and the arena fight with one model, and the arena still seeds no production |
 | law #11 | a destroyed hull's mass becomes **slag at the site** — inert (R-O59), conserved, and never a salvage yield |
 | — | no tick-based initiative; `dt = 0.0005 yr`; < 2 ms per tick |
@@ -712,6 +845,7 @@ these steps but the last**, which is why it is written down rather than built.
 | Code | Question | What would settle it |
 |---|---|---|
 | ~~**T-30**~~ | ~~no accept/decline site exists~~ — **closed as stated (T-111).** The round layer had already landed and the engine was producing ~4,200 co-locations per run unremarked; `sys_engagement` now resolves them. R-AC13 and posture cards are **not** unblocked: both need a decision at *range* | done; see §3.4 and §7 |
+| **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole coloniser loses at any table wider than two seats, so this is a *design* question before it is a magnitude | a cheaper picket hull, or a denial that covers more than one world |
 | **R-WAR5** | **which side carries which weapon.** `resolve_engagement` is laser-side-vs-missile-side because that is the sweep it was tuned on; the sim gives the defender the lasers and the arriver the missiles, and `carrier_accel` reads the laser side's first hull whatever the attacker flies. A convention that decides outcomes | R-L0's per-hull slot tables, then the arena |
 | **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |
 | R-MC9c / T-12 | HP pools, weapon count, missile AoE, magazines | engine work, then the arena |
