@@ -815,6 +815,169 @@ absorbing zero. **R-WAR6**: whether `Band Empty` is the right rung, or whether a
 departing picket should instead found at whatever its mineral endowment buys
 (§1.7), is unratified.
 
+### 8.8 Claiming instead of denying — three arms, and all three are bounded by supply (T-113)
+
+**`OPEN`.** §8.6 refuted denial *as arithmetic*: a denial bought with a whole
+coloniser gives `ΔW_0 = −k(1 − w_0A)`, and `Σ_j w_0j = 1`, so it loses at any
+table wider than two seats however well it is aimed. §8.6's own "what would have
+to change" list named three exits. This section measures the first two.
+
+The author's specification: *"Add LOU to the Doctrine and Design as a cheap
+picket to claim the frontier to support the Contact Vehicles. Load colony ships
+with a mix of minerals for Infra and population so they do not suffer from the
+no recycling policy,"* and *"Warfare tree should colonize worlds with a
+picket."*
+
+#### What was built
+
+| | Doctrine write | What it is for |
+|---|---|---|
+| **cheap picket** | `picket_reserve: usize` | pickets as a *purpose*, on `HullType::LimitedOffensive` — §8.6's "a picket must cost less than a colony" |
+| **claim the target** | `picket_claims_target: bool` | a centre that has named an outward world it cannot yet pay for holds it while the bank fills |
+| **erect the hold** | `founding_infra_share: f64` | part of a coloniser's mineral endowment becomes the new colony's stock instead of its bank |
+| **settle held ground** | — (unconditional; self-gating) | a coloniser prefers a world this empire's pickets already hold over a better one nobody holds |
+
+`Class::Unnamed` on `LimitedOffensive` is a Design write, so TIER0 card 15
+(Warfare / Inscrutable) is now `UnlockDesign` rather than `NotYetImplemented`.
+
+#### What they measure (`examples/denial_census`, 8 seeds, 3 seats, 800 yr)
+
+Seat 0 plays the card; seats 1–2 at the default doctrine. `own` and
+`neighbours` are percentage changes against the peace arm on the same seed
+(CRN); `W_0` is in colonies. **Neighbours should fall and `W_0` should rise.**
+
+| arm | own | neighbours | `W_0` | diverts | pickets |
+|---|---|---|---|---|---|
+| T-112 coloniser pickets, **+ settle held ground** | −8.30 ± 2.69 | +4.07 ± 1.09 | −120 ± 34 | 59 | 5,415 |
+| + hold erects infra (`share = 0.5`) | −8.33 ± 2.56 | +4.04 ± 1.04 | −119 ± 32 | 60 | 5,411 |
+| + cheap LOU pickets (`reserve = 128`) | −9.01 ± 2.62 | +4.42 ± 1.12 | −129 ± 34 | 56 | 5,402 |
+| LOU pickets alone | −1.57 ± 1.21 | +0.93 ± 0.38 | −21 ± 12 | 2 | 95 |
+| LOU pickets **+ claims its target** | −1.62 ± 4.47 | +1.10 ± 1.83 | −35 ± 61 | 2 | 188 |
+
+**Nothing here reverses the direction §8.6 measured.** The last two arms are
+inside 2 SE on every column, which is *not* a result and is recorded as one
+only because of what the picket column says.
+
+The `LOU pickets alone` row is −1.57 where §8.6's run of the same arm read
+−1.21: that difference is the held-ground preference below, now firing.
+
+#### Settling held ground is the one arm that moved, and it needed an engine fix first
+
+The preference is worth **+1.25 points of own colonies and +13 on `W_0`** —
+arm 1 was −9.55 / +4.40 / −133 before it (§8.6) and is −8.30 / +4.07 / −120
+after. It recovers about a seventh of the card's self-harm. It does not change
+the sign, and on the tree's own objective the card is still a losing trade.
+
+**It read as exactly zero first, and that was a defect rather than a finding.**
+`sim::commit_one_build` reduces the scanned pool to the per-class argmax before
+the policy sees it (R-O70), which is exact for a consumer reading the argmax of
+a **class**. This preference reads the argmax of a **subset** of a class, and
+`max(S)` does not carry `max(S′)` for `S′ ⊂ S` — so a held world reached the
+policy only when it already won its class outright, and the preference was
+inert by construction. The reduction now carries six slots (per-class winner,
+plus per-class winner among held ground);
+`the_candidate_reduction_carries_held_ground_without_duplicating_it` and
+`a_coloniser_prefers_held_ground_to_a_better_unheld_world` pin both halves.
+
+#### The cheap picket is not measurably cheaper, because it is not built
+
+§8.6's arithmetic says a picket costing a fraction of a colony clears the
+`1 − w_0A` bound. The measurement cannot see that, because the hull is fielded
+**95 times across eight seeds** — twelve per run, against 5,400 coloniser
+pickets in the arms above.
+
+**The mechanism is the branch's position, and it is one predicate.** The picket
+sits in the production fallback behind survey:
+
+```text
+wants_survey = survey_frontier > 0 && candidate_count < survey_reserve
+```
+
+R-O86 measured the second term a **constant `true`** — median `candidate_count`
+is 0 and its maximum over a run is 164, against a ratified `survey_reserve` of
+1024. So the picket branch is reachable only once the survey frontier is
+*exhausted*, which on this bed happens late and rarely. It is behind survey on
+purpose: a picket ahead of survey cost its own player **24.5%** of its colonies
+in the first version of this branch, because survey is what finds worlds to
+picket at all.
+
+#### Giving it its own state doubles the supply and changes nothing
+
+`picket_claims_target` opens the one other state where a cheap hull is the best
+thing a centre can do with a cycle: it has **named an outward world and cannot
+pay for it yet**. Those cycles are already spent saving, and a picket standing
+on the target is what makes the voyage safe to have committed to. It is gated
+on the target not already being held *or claimed* — `Simulation::picket_inbound`
+counts hulls already under way — so a centre lays down one picket per world
+rather than one per decision for the whole voyage.
+
+Supply goes **95 → 188 pickets**, and every objective column stays inside 2 SE.
+
+Without the in-flight guard the same arm reads **−4.87 ± 5.65 / +1.05 ± 2.75 /
+−58 ± 85 on 177 pickets**. The 3.3-point difference in own colonies is smaller
+than either arm's error bar, so **the guard's value is not resolved at eight
+seeds**; it is kept because laying down a hull per decision for the length of a
+voyage is waste whether or not this bed can price it.
+
+**The state is rare**: expansion on this bed is not bound by the coloniser's
+price, so centres seldom sit in "named it, cannot buy it". That is consistent
+with `Hyades_industry.md` §6.19c, which measures the mineral constraint as a
+*colour* conjunction on the infrastructure bill rather than a shortfall against
+hull prices.
+
+**Diversions stay at 2 per eight seeds**, which is §8.6's structural finding
+unchanged: there is no contested frontier to stand on, so more pickets standing
+on it would not obviously help either.
+
+#### Erecting the hold is flat because the hold has nothing in it
+
+`founding_infra_share` measures −8.33 against −8.30: no change. §8.7 establishes
+that the founding rung matters enormously — floor against an unchanged `Band I`
+is a twelve-point swing — so flat here is a claim about the *quantity*, and
+`examples/founding_stock` measures it directly (seed 1, 800 yr, seat 0's own
+foundings, floor rung `Band Empty` = 0.020 kt):
+
+| `founding_infra_share` | foundings | median stock | mean | max | above the floor |
+|---|---|---|---|---|---|
+| 0.00 | 650 | 0.020 | 0.020 | **0.020** | **0.0%** |
+| 0.50 | 649 | 0.020 | 0.051 | 0.313 | 21.0% |
+| 1.00 | 649 | 0.020 | 0.087 | 0.625 | 22.5% |
+
+At share 0 the **maximum** is the floor: no coloniser under this doctrine lands
+with an endowment worth anything. At 0.5 the median is still the floor and only
+a fifth of foundings clear it — and **the whole hold erected (1.00) adds 1.5
+points**, so the axis is exhausted rather than undertuned.
+
+**A coloniser's hold is nearly all settlers.** `settler_target` sizes the
+people to the destination's carrying capacity (R-IND12) and the minerals take
+whatever volume is left, which is usually none. So *"load colony ships with a
+mix of minerals for Infra and population"* is not a share of the hold — it is a
+**reservation against the hold**, and that is a change to `settler_target`, not
+to this write. **R-WAR7** carries it.
+
+#### Where this leaves the card
+
+Two of §8.6's three exits are now measured and neither works at the magnitudes
+reachable today:
+
+- **"A picket must cost less than a colony"** — built, and the cost is not what
+  binds. Twelve to twenty-three hulls a run is a supply problem, and its two
+  causes are both load-bearing elsewhere (survey's priority, and expansion not
+  being coloniser-price-bound).
+- **"Denial must happen before the wave"** — `picket_claims_target` is the
+  cheapest form of it and fires in a state that is rare.
+
+The third exit — **deny more than one world per hull** — is untouched and is
+the only one whose arithmetic clears the `1 − w_0A` bound by construction rather
+than by magnitude. That is a blockade over an approach, and it needs a spatial
+object the engine does not have.
+
+**What did land on its own merits** is the held-ground preference and the
+reduction fix behind it: those are Expansion machinery, they help any doctrine
+that holds ground for any reason, and they are the only part of this section not
+waiting on a magnitude.
+
+
 ---
 
 ## 9. Register
@@ -835,6 +998,7 @@ departing picket should instead found at whatever its mineral endowment buys
 | **R-O95** | the empty-to-laden acceleration swing **is** the hull's cargo efficiency, exactly — so a hull cannot be worse at freight, faster empty and slower laden at once (§8.3) |
 | — | **only Warfare may carry a population-lethal Doctrine write** (card contract §10), enforced in the card layer rather than by authoring convention |
 | — | the wreck roll is the only stochastic beat, bounded in (0, 1) |
+| **T-113** | the per-class candidate reduction (R-O70) is exact only for a consumer reading the argmax of a **class**; a consumer reading the argmax of a *subset* needs its own slot, and got one (§8.8) |
 | **T-112** | a colony founded at infrastructure **zero** is an absorbing state, not a price — `employment_rate` returns exactly `0.0` there, so it can never mine or build. A departing picket leaves the ladder's floor rung instead (§8.7) |
 | **T-111** | `combat::resolve_engagement` is called from `sim.rs`; the simulation and the arena fight with one model, and the arena still seeds no production |
 | law #11 | a destroyed hull's mass becomes **slag at the site** — inert (R-O59), conserved, and never a salvage yield |
@@ -845,7 +1009,8 @@ departing picket should instead found at whatever its mineral endowment buys
 | Code | Question | What would settle it |
 |---|---|---|
 | ~~**T-30**~~ | ~~no accept/decline site exists~~ — **closed as stated (T-111).** The round layer had already landed and the engine was producing ~4,200 co-locations per run unremarked; `sys_engagement` now resolves them. R-AC13 and posture cards are **not** unblocked: both need a decision at *range* | done; see §3.4 and §7 |
-| **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole coloniser loses at any table wider than two seats, so this is a *design* question before it is a magnitude | a cheaper picket hull, or a denial that covers more than one world |
+| **R-WAR7** | **a coloniser's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
+| **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole coloniser loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
 | **R-WAR5** | **which side carries which weapon.** `resolve_engagement` is laser-side-vs-missile-side because that is the sweep it was tuned on; the sim gives the defender the lasers and the arriver the missiles, and `carrier_accel` reads the laser side's first hull whatever the attacker flies. A convention that decides outcomes | R-L0's per-hull slot tables, then the arena |
 | **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |
 | R-MC9c / T-12 | HP pools, weapon count, missile AoE, magazines | engine work, then the arena |

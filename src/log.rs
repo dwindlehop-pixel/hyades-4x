@@ -218,7 +218,15 @@ pub enum LogEvent {
     ContactArrived { player: u32, vehicle: Entity, planet: PlanetId, next: Option<PlanetId> },
     /// A colony vehicle founded a colony and was **recycled into its level-1
     /// infrastructure** — it does not return, scrap, or persist as a ship.
-    ColonyFounded { player: u32, vehicle: Entity, planet: PlanetId },
+    ///
+    /// `infra` is the founding stock in kilotons, *after* every term that can
+    /// set it: the recycled hull, the share of the hold erected on arrival, and
+    /// the floor rung. It is logged because zero there is an absorbing state
+    /// rather than a small number (`Hyades_warfare_tree.md` §8.7), so the
+    /// distribution of this one figure is what says whether a Doctrine write
+    /// aimed at it is doing anything — and reconstructing it from the hull type
+    /// would miss the other two terms.
+    ColonyFounded { player: u32, vehicle: Entity, planet: PlanetId, infra: f64 },
     /// A colony vehicle arrived at a target someone else had already claimed
     /// (race under light-lag); it turns back rather than founding.
     ColonyContested { player: u32, vehicle: Entity, planet: PlanetId },
@@ -404,8 +412,8 @@ impl fmt::Display for LogEvent {
                 Some(n) => write!(f, "P{player} scout reached planet#{} -> on to planet#{}", planet.0, n.0),
                 None => write!(f, "P{player} scout reached planet#{} -> no targets left, holding", planet.0),
             },
-            ColonyFounded { player, planet, .. } => {
-                write!(f, "P{player} founded colony at planet#{} (vehicle recycled into infra-1)", planet.0)
+            ColonyFounded { player, planet, infra, .. } => {
+                write!(f, "P{player} founded colony at planet#{} (founding stock {infra:.6} kt)", planet.0)
             }
             ColonyContested { player, planet, .. } => {
                 write!(f, "P{player} colony ship found planet#{} already claimed, turning back", planet.0)

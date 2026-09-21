@@ -985,9 +985,15 @@ pub fn role_hull_type(role: Role) -> HullType {
         Role::Colonizer => HullType::MediumSystems,
         Role::Miner => HullType::LimitedSystems,
         Role::Freighter => HullType::MediumSystems,
-        // A picket has to be able to fight something (T-112); the Contact
-        // family is the armed one (std §7.2).
-        Role::Picket => HullType::GeneralContactVehicle,
+        // **The cheapest armed hull in the game** (T-113). §8.6 measured why
+        // this matters more than anything else about a picket: denial bought
+        // with a *coloniser* loses under Warfare's own objective by arithmetic
+        // — `ΔW = −k(1 − w_0A)` with `Σ_j w_0j = 1` — whatever the placement.
+        // An LOU costs `1/limited_fleet_size` of a General hull against a
+        // Medium coloniser's `1/medium_fleet_size`, so the trade stops being
+        // one-for-one and starts being one-for-many. Design law #8 already says
+        // what an LOU is for: not force projection, but harass-and-hold.
+        Role::Picket => HullType::LimitedOffensive,
         Role::Reserve | Role::Scrapped => HullType::LimitedSystems, // inert; value unused
     }
 }
@@ -1330,8 +1336,14 @@ fn pay_bill(bank: &mut Minerals, bill: &[Price; 3]) {
 }
 
 /// The minerals it takes to *stand at* whole infrastructure rung `n`.
+///
+/// Public because rung 0 is the **floor** a colony is founded at when nothing
+/// else sets its stock, and zero there is an absorbing state rather than a small
+/// number (`Hyades_warfare_tree.md` §8.7) — so a harness asking whether a
+/// Doctrine write aimed at the founding stock does anything has to compare
+/// against this exact quantity rather than a reconstruction of it.
 #[inline]
-fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
+pub fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
     Price::new(Price::rung_from(n, cost_anchor(cfg)))
 }
 
@@ -2164,9 +2176,6 @@ pub struct SimConfig {
     /// per-player and is what a Warfare card writes
     /// (`Hyades_warfare_tree.md` §7.2). Both must be on for a shot to be fired.
     pub engagements_enabled: bool,
-    /// **Ablation (T-112): does a colony founded by a departing picket keep its
-    /// `Band I` stock?** Temporary; see the census.
-    pub picket_keeps_founding_infra: bool,
     /// How long a resolved engagement is simulated for, in years.
     ///
     /// **Placeholder magnitude (R-WAR5).** `resolve_engagement` walks `dt`-sized
@@ -2474,7 +2483,6 @@ impl SimConfig {
             // Off: the mechanic is unratified and every measured number in the
             // tree was taken without it. See the field doc.
             engagements_enabled: false,
-            picket_keeps_founding_infra: false,
             engagement_horizon_years: 0.5,
             engagement_dt_years: 0.0005,
             engagement_volley_period_years: 0.05,
@@ -2599,6 +2607,31 @@ pub struct Simulation {
     /// contract §2: *"a reaction to a detected fleet is scheduled by the
     /// distance to the responder"*).
     picket: BTreeMap<u64, (u32, Entity, f64)>,
+    /// **Pickets in flight, per world** (T-113) — how many hulls this empire
+    /// has already dispatched to hold a world that nobody holds yet.
+    ///
+    /// Needed because [`Doctrine::picket_claims_target`] fires on a *state*
+    /// (the world is not held) that a hull already under way is on its way to
+    /// change. Without it a centre lays down a fresh picket every decision for
+    /// the whole voyage, which is waste rather than a runaway — `picket_reserve`
+    /// still bounds the empire — but it is waste on the expansion loop's own
+    /// budget.
+    ///
+    /// Marking the world held at *dispatch* would be the cheaper index and is
+    /// wrong: `picket` is what `picket_blocks` reads to turn a rival coloniser
+    /// back, so an entry written before the hull arrives would deny at a
+    /// distance with no light-lag — the exact instant global state change
+    /// design law #15 exists to rule out.
+    ///
+    /// Leak-free because the only exit from "in flight" is `PicketArrive`,
+    /// which `spawn_courier` schedules unconditionally, and an in-flight hull
+    /// is at no site so no engagement can destroy it.
+    picket_inbound: BTreeMap<u64, u32>,
+    /// **How many worlds each seat is holding**, so the build decision can ask
+    /// in `O(1)`. Derivable from [`Self::picket`] by scanning it, which is
+    /// hundreds of entries on a run that plays the card — §4's locality rule
+    /// forbids that on a decision path.
+    picket_count: Vec<u32>,
     /// **Colonisers currently flying at each world**, target planet id → hulls.
     ///
     /// Maintained at launch and cleared on arrival or diversion. It exists so a
@@ -2742,6 +2775,8 @@ impl Simulation {
             mine_crew: BTreeMap::new(),
             combat: CombatConfig::default(),
             picket: BTreeMap::new(),
+            picket_inbound: BTreeMap::new(),
+            picket_count: vec![0; n],
             inbound_colonisers: BTreeMap::new(),
             outpost_stock: BTreeMap::new(),
             exchange: Exchange::default(),
@@ -3260,7 +3295,12 @@ impl Simulation {
                 // a courier constructed without one is a test fixture, not a
                 // build, and the Medium hull is the baseline colonizer.
                 let hull = self.world.hull_type.get(vehicle).copied().unwrap_or(HullType::MediumSystems);
-                let founded_at = self.founding_infra(hull);
+                // **Only a hull that is actually consumed becomes the stock**
+                // (roles §4.2, T-113). A coloniser that flies on to picket keeps
+                // its minerals in the hull, so it has none to leave here — and
+                // what it leaves instead is whatever the hold was loaded with,
+                // credited just below.
+                let founded_at = if self.picket_doctrine(p) { Price::ZERO } else { self.founding_infra(hull) };
                 let f = self.world.factors.get_mut(target).unwrap();
                 f.infra = f.infra.max(founded_at);
             }
@@ -3288,15 +3328,61 @@ impl Simulation {
             // already paid for out of its own bank at launch.
             let endowment = self.world.cargo.get(vehicle).copied().unwrap_or_default();
             if endowment.basic_total() > Price::ZERO {
+                // **Part of the hold is erected rather than banked** (T-113).
+                //
+                // A colony whose hull did not recycle has a full bank and no
+                // way to spend it: `employment_rate` is exactly `0.0` at a
+                // stock of zero, so nothing mines and nothing builds (§8.7).
+                // Erecting a share of the endowment *as* the stock is not a
+                // grant — infrastructure **is** the minerals standing in it
+                // (T-70, R-O57), so this is the same kilotons on the same
+                // ladder, placed rather than stored.
+                //
+                // Default share is 0.0, so the shipped galaxy banks all of it
+                // exactly as before.
+                let share = self.doctrine_of(p).founding_infra_share.clamp(0.0, 1.0);
+                let total = endowment.basic_total();
+                let erected = total * share;
+                let mut remaining = endowment;
+                let banked = take_basics(&mut remaining, total - erected);
                 if let Some(bank) = self.world.stockpile.get_mut(target) {
-                    bank.add_basics(&endowment);
+                    bank.add_basics(&banked);
                 }
+                let f = self.world.factors.get_mut(target).unwrap();
+                f.infra = f.infra.max(erected);
                 self.world.cargo.insert(vehicle, Minerals::default());
             }
+            // **The floor, applied once and unconditionally** (§8.7).
+            //
+            // Zero infrastructure is not a small stock, it is an absorbing
+            // state: `employment_rate` returns exactly `0.0` there and
+            // `fabrication_rate` is `slips × berth_rate`, so a colony founded at
+            // zero can never mine, never build and never recover. Measured
+            // before this existed, a card that left colonies at zero took its
+            // own player from 769 colonies to **10**.
+            //
+            // A `max` rather than a `min`, and outside the picket branch: it
+            // catches *any* route to zero — a hull that left, a hold that was
+            // empty, a share of nothing — instead of the one that happened to
+            // be found first. **Placeholder rung (R-WAR6).**
+            let founding_stock = {
+                let floor = infra_rung_price(0, &self.config).max(Price::new(1e-9));
+                let f = self.world.factors.get_mut(target).unwrap();
+                f.infra = f.infra.max(floor);
+                f.infra
+            };
             let pid = *self.world.planet_id.get(target).unwrap();
             self.world.knowledge.get_mut(self.player_entity[p]).unwrap().scanned.insert(pid);
             self.schedule(self.config.cycle_years, EventKind::ProductionTick { center: target });
-            self.log.push(self.clock, LogEvent::ColonyFounded { player: p as u32, vehicle, planet: target_pid });
+            self.log.push(
+                self.clock,
+                LogEvent::ColonyFounded {
+                    player: p as u32,
+                    vehicle,
+                    planet: target_pid,
+                    infra: founding_stock.kilotons(),
+                },
+            );
             // **The hull either becomes the colony or holds the next world**
             // (T-112). Under `picket_after_founding` it is not recycled — it
             // flies on and denies somewhere. The infrastructure credited above
@@ -3306,29 +3392,6 @@ impl Simulation {
             // stock walked away. Charging it here rather than skipping the
             // credit keeps `founding_infra` one expression.
             if self.picket_doctrine(p) {
-                if !self.config.picket_keeps_founding_infra {
-                    // **The colony keeps only what the hold carried, floored at
-                    // the ladder's own floor rung — never zero.**
-                    //
-                    // Zero is not a price, it is a death sentence, and the line
-                    // that makes it one is `employment_rate`: it returns exactly
-                    // `0.0` for a stock of zero, and `fabrication_rate` is
-                    // `slips × berth_rate`, so a colony founded at infra 0 can
-                    // never mine, never build and never recover. Measured before
-                    // this floor existed, the card took its own player from 769
-                    // colonies to **10** and *raised* the neighbours 20% — the
-                    // empire had removed itself from the game.
-                    //
-                    // `Band Empty` is the mass ladder's floor and exists for
-                    // exactly this (design law #11, T-63): the smallest rung
-                    // that is a real quantity rather than an absorbing zero. The
-                    // drop from `Band I` is still most of the hull's value, so
-                    // the card is still paying for the ship it kept.
-                    // **Placeholder magnitude (R-WAR6).**
-                    let floor = infra_rung_price(0, &self.config).max(Price::new(1e-9));
-                    let f = self.world.factors.get_mut(target).unwrap();
-                    f.infra = f.infra.min(floor);
-                }
                 self.dispatch_picket(p, vehicle, target);
             } else {
                 self.park(vehicle, here); // recycled hull, now inert infrastructure
@@ -3495,6 +3558,14 @@ impl Simulation {
     fn sys_picket_arrive(&mut self, vehicle: Entity) {
         let Some(&voyage) = self.world.voyage.get(vehicle) else { return };
         let world = voyage.target;
+        // Off the in-flight ledger before any early return below, so a picket
+        // that arrives second and stands down still clears its reservation.
+        if let Some(n) = self.picket_inbound.get_mut(&world.0) {
+            *n -= 1;
+            if *n == 0 {
+                self.picket_inbound.remove(&world.0);
+            }
+        }
         let Some(&owner) = self.world.owner.get(vehicle) else { return };
         let Some(here) = self.position_at(world, self.clock) else { return };
         let pid = *self.world.planet_id.get(world).unwrap();
@@ -3505,6 +3576,7 @@ impl Simulation {
             return;
         }
         self.picket.insert(world.0, (owner.0, vehicle, self.clock));
+        self.picket_count[owner.0 as usize] += 1;
         self.log.push(self.clock, LogEvent::VehicleParked { player: owner.0, vehicle, role: Role::Picket, at: pid });
         self.notify_inbound(world);
     }
@@ -3620,7 +3692,9 @@ impl Simulation {
 
         let mut slag = Kilotons::ZERO;
         if def_lost > 0 {
-            self.picket.remove(&world.0);
+            if let Some((seat, _, _)) = self.picket.remove(&world.0) {
+                self.picket_count[seat as usize] = self.picket_count[seat as usize].saturating_sub(1);
+            }
             slag += self.destroy_free_hulls(&defenders[..def_lost]);
         }
         for &dead in &attackers[..att_lost] {
@@ -4563,8 +4637,30 @@ impl Simulation {
         // count, because `survey_reserve` is a threshold on the size of the
         // frontier and not on the size of this slice.
         let mut count = 0usize;
-        let mut best: [Option<Candidate>; 3] = [None, None, None];
+        // **Six slots, not three: the per-class winner and the per-class winner
+        // among held ground** (T-113).
+        //
+        // The reduction above is exact for a consumer that reads the argmax of a
+        // class. `assign_role`'s colonizer arm reads the argmax of a *subset* —
+        // the worlds this empire's pickets are standing on — and the maximum of
+        // a set does not carry the maximum of its subsets, so a three-slot
+        // reduction hands that consumer nothing to choose over: a held world
+        // survives to the list only when it already won its class outright, and
+        // the preference is then a no-op by construction. Measured that way
+        // (`examples/denial_census`, 8 seeds): the held-ground arm reproduced the
+        // arm without it to every printed digit.
+        //
+        // Cost is one extra comparison per survivor and one extra `Candidate`
+        // construction per improvement *within* the held subset, which is empty
+        // in every galaxy where no player has the Warfare doctrine — see
+        // `any_pickets` below. The slice stays `O(1)` in memory and the walk
+        // stays sequential, which is what §4's locality rule is actually about.
+        let mut best: [Option<Candidate>; 6] = [None; 6];
         let survey_frontier = self.survey_frontier(p);
+        // Hoisted so the shipped default bed pays one bool for this whole
+        // feature: with no picket anywhere on the board there is no held subset
+        // to reduce, and the per-survivor map probe never runs.
+        let any_pickets = !self.picket.is_empty() || !self.picket_inbound.is_empty();
         {
             // **Walk the live pool and compact it in the same pass** (T-101).
             //
@@ -4603,26 +4699,41 @@ impl Simulation {
                     PlanetClass::Barren => continue,
                 };
                 count += 1;
-                let better = match &best[slot] {
+                let beats = |cur: &Option<Candidate>| match cur {
                     None => true,
-                    Some(cur) => Ranked::score_then_id(&ranked, &cur.ranked).is_gt(),
+                    Some(c) => Ranked::score_then_id(&ranked, &c.ranked).is_gt(),
                 };
-                if better {
-                    // The per-hull settler figure is computed for the three
-                    // reduced winners only, not for every scanned world — the
-                    // reduction is exactly what makes that affordable (R-O70).
+                let held_by_me =
+                    any_pickets && self.picket.get(&e.0).is_some_and(|&(holder, _, _)| holder as usize == p);
+                // A hull already on its way counts for the *claim* decision and
+                // not for the *settle* one: a picket in flight is a
+                // reservation, and a world is only safe to send a coloniser to
+                // once the hull is standing on it.
+                let claim_inbound = any_pickets && self.picket_inbound.contains_key(&e.0);
+                let wins_class = beats(&best[slot]);
+                let wins_held = held_by_me && beats(&best[HELD + slot]);
+                if wins_class || wins_held {
+                    // The per-hull settler figure is computed for the reduced
+                    // winners only, not for every scanned world — the reduction
+                    // is exactly what makes that affordable (R-O70).
                     let settlers_by_hull = [
                         self.settler_target(center, e, HullType::MediumSystems.colony_seed_capacity(&self.config)),
                         self.settler_target(center, e, HullType::GeneralSystems.colony_seed_capacity(&self.config)),
                     ];
                     let mining_crew = self.mining_crew_for(center, e);
-                    best[slot] = Some(Candidate { view, ranked, settlers_by_hull, mining_crew });
+                    let cand = Candidate { view, ranked, settlers_by_hull, mining_crew, held_by_me, claim_inbound };
+                    if wins_class {
+                        best[slot] = Some(cand);
+                    }
+                    if wins_held {
+                        best[HELD + slot] = Some(cand);
+                    }
                 }
             }
             live.truncate(keep);
             self.world.knowledge.get_mut(pe).unwrap().scanned.live = live;
         }
-        let cands: Vec<Candidate> = best.into_iter().flatten().collect();
+        let cands: Vec<Candidate> = flatten_candidate_slots(&best);
         // Built after `cands`, so the survey decision can see how much frontier
         // this empire has left to aim at.
         let ctx = ProductionContext {
@@ -4667,6 +4778,8 @@ impl Simulation {
                 let pair = best.map(|c| (center, self.planet_entity[c.ranked.id.0 as usize]));
                 self.mining_pair_price(p, crew, pair)
             },
+            picket_cost: hull_cost(HullType::LimitedOffensive, &self.config),
+            pickets_held: self.picket_count[p] as usize,
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
             survey_frontier,
@@ -5043,8 +5156,20 @@ impl Simulation {
                     cost += hull_cost(hauler, &self.config);
                 }
 
+                // **A picket does not claim the world it holds** (T-113).
+                //
+                // `targeted` means *a coloniser of ours is already flying
+                // there*, and it is never cleared — so marking it for a picket
+                // permanently deletes that world from this empire's own
+                // candidate list. `assign_role` sends pickets to the
+                // *highest-ranked* world, so at `picket_reserve = 128` the card
+                // was burning its own 128 best targets. A picket denies rivals
+                // (`picket_blocks` tests `holder != seat`); it must not deny
+                // its owner.
                 if let Some(t) = target {
-                    self.mark_targeted(p, t);
+                    if role != Role::Picket {
+                        self.mark_targeted(p, t);
+                    }
                 }
                 // **The whole order occupies one yard, so it launches as one
                 // unit** (T-68). The delay every hull in this order waits out is
@@ -5877,12 +6002,16 @@ impl Simulation {
         let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         let ev = match role {
             Role::Colonizer => EventKind::ColonyArrive { vehicle: e },
+            Role::Picket => EventKind::PicketArrive { vehicle: e },
             _ => EventKind::MiningArrive { vehicle: e },
         };
         if role == Role::Colonizer {
             // Index it so a picket established while it is in flight can find
             // it without scanning the fleet (T-112).
             self.inbound_colonisers.entry(target.0).or_default().push(e);
+        }
+        if role == Role::Picket {
+            *self.picket_inbound.entry(target.0).or_default() += 1;
         }
         self.schedule_at(arrive, ev);
         let target_pid = *self.world.planet_id.get(target).unwrap();
@@ -7312,6 +7441,40 @@ fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price, 
     out
 }
 
+/// **Where the held-ground half of the candidate reduction starts** (T-113).
+///
+/// Slots `0..HELD` are the per-class winners and `HELD..2*HELD` the per-class
+/// winners among held ground, so this is both the number of `PlanetClass`
+/// values the scan keeps and the offset between the two halves. One definition,
+/// because the scan and `flatten_candidate_slots` have to agree about it and a
+/// constant with two definitions is an edit waiting to go wrong.
+const HELD: usize = 3;
+
+/// **Flatten the six-slot candidate reduction into the list the policy reads**
+/// (T-113).
+///
+/// Slots `0..3` are the per-class winners; slots `3..6` are the per-class
+/// winners *among worlds this empire's pickets hold*. The held winner of a
+/// class is dropped when it already **is** that class's winner, so no world
+/// appears twice.
+///
+/// Every consumer reads the list through `filter(..).max_by(score_then_id)`,
+/// which a duplicate would not disturb — but a list that names a world twice is
+/// one a future consumer can miscount, and the guard costs one comparison.
+/// Extracted from the scan so that guard is testable without standing up a
+/// simulation.
+fn flatten_candidate_slots(best: &[Option<Candidate>; 6]) -> Vec<Candidate> {
+    let mut v: Vec<Candidate> = best[..HELD].iter().flatten().copied().collect();
+    for slot in 0..HELD {
+        if let Some(h) = best[HELD + slot] {
+            if best[slot].is_none_or(|c| c.ranked.id != h.ranked.id) {
+                v.push(h);
+            }
+        }
+    }
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8500,6 +8663,64 @@ mod tests {
     /// and `fabrication_rate` is `slips × berth_rate`, so a colony founded at
     /// infra 0 can never mine, never build and never recover. The hull walking
     /// away is a price; zero is an absorbing state.
+    /// **The six-slot reduction carries held ground and never names a world
+    /// twice** (T-113).
+    ///
+    /// The three-slot reduction it replaced was exact for a consumer reading
+    /// the argmax of a *class*; `assign_role`'s colonizer arm reads the argmax
+    /// of a **subset** of a class, and the maximum of a set does not carry the
+    /// maxima of its subsets. With three slots a held world reached the policy
+    /// only when it already won its class outright, so the preference was a
+    /// no-op by construction — which is how it measured
+    /// (`examples/denial_census`: the arm reproduced the arm without it to
+    /// every printed digit).
+    #[test]
+    fn the_candidate_reduction_carries_held_ground_without_duplicating_it() {
+        let c = |id: u32, score: f64, class: PlanetClass, held: bool| Candidate {
+            view: PlanetView {
+                id: PlanetId(id),
+                position: Vec3::ZERO,
+                habitability: Band::new(1.0),
+                biosphere: Band::new(1.0),
+                mineral_bands: [1.0; 3],
+                owner: None,
+                pop_level: BandTier::I,
+            },
+            ranked: Ranked { id: PlanetId(id), score, class },
+            settlers_by_hull: [Kilotons::ZERO; 2],
+            mining_crew: 1,
+            held_by_me: held,
+            claim_inbound: false,
+        };
+        let winner = c(1, 9.0, PlanetClass::Colony, false);
+        let held = c(2, 4.0, PlanetClass::Colony, true);
+
+        // A held world that is *not* its class winner survives the reduction —
+        // this is the whole point, and the three-slot form dropped it.
+        let mut slots: [Option<Candidate>; 6] = [None; 6];
+        slots[1] = Some(winner);
+        slots[4] = Some(held);
+        let out = flatten_candidate_slots(&slots);
+        assert_eq!(out.len(), 2, "both the class winner and the held winner must reach the policy");
+        assert!(out.iter().any(|x| x.ranked.id == held.ranked.id && x.held_by_me));
+
+        // When the held world *is* the class winner there is one world, and the
+        // list must say so once.
+        let both = c(3, 9.0, PlanetClass::Colony, true);
+        let mut same: [Option<Candidate>; 6] = [None; 6];
+        same[1] = Some(both);
+        same[4] = Some(both);
+        let out = flatten_candidate_slots(&same);
+        assert_eq!(out.len(), 1, "a world that wins its class and is held is still one world");
+
+        // And an empty held subset reproduces the old three-slot list exactly.
+        let mut plain: [Option<Candidate>; 6] = [None; 6];
+        plain[1] = Some(winner);
+        let out = flatten_candidate_slots(&plain);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].ranked.id, winner.ranked.id);
+    }
+
     #[test]
     fn a_picketed_founding_still_leaves_a_workable_colony() {
         let cfg = SimConfig::new(1);
@@ -10860,6 +11081,8 @@ mod tests {
             ranked: Ranked { id: pid, score: 9.0, class: PlanetClass::MiningOutpost },
             settlers_by_hull: [Kilotons::ZERO; 2],
             mining_crew: 1,
+            held_by_me: false,
+            claim_inbound: false,
         }];
         let center_pos = *sim.world.position.get(center).unwrap();
         sim.apply_build_with(

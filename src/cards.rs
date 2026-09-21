@@ -223,9 +223,15 @@ pub const TIER0: [Card; 18] = {
         c(12, Technology, Inscrutable, 0.5, UnlockDesign(HullType::MediumSystems, Class::Unnamed), false),
         c(13, Technology, Balanced, 0.8, UnlockDesign(HullType::GeneralSystems, Class::Unnamed), false),
         c(14, Technology, LessGuarded, 1.2, UnlockDesign(HullType::GeneralContactVehicle, Class::Unnamed), false),
-        // Warfare — nothing implementable: sim has no combat path at all
-        // (`combat::resolve_engagement` is never called from `sim`).
-        c(15, Warfare, Inscrutable, 0.5, NotYetImplemented, false),
+        // Warfare — **the Inscrutable slot is implementable since T-111/T-113**:
+        // combat resolves in the sim loop, and a picket is a Design write plus a
+        // Doctrine write. `LimitedOffensive` is the cheap armed hull the denial
+        // card is built on (`Hyades_warfare_tree.md` §8.8) — and it is the
+        // *inscrutable* slot on its merits: an LOU roster entry is one line of
+        // Design that says nothing about what you mean to do with it, since
+        // design law #8 makes the same hull chaff in a line battle and the whole
+        // point of an insurgency.
+        c(15, Warfare, Inscrutable, 0.5, UnlockDesign(HullType::LimitedOffensive, Class::Unnamed), false),
         c(16, Warfare, Balanced, 0.8, NotYetImplemented, true),
         c(17, Warfare, LessGuarded, 1.2, NotYetImplemented, true),
     ]
@@ -711,10 +717,17 @@ mod tests {
 
     #[test]
     fn every_unimplemented_effect_says_so_rather_than_doing_nothing_quietly() {
-        // The point of the variant: a run can count inert plays. Today that is
-        // Warfare's three, because `sim` never calls `combat::resolve_engagement`.
+        // The point of the variant: a run can count inert plays.
+        //
+        // **Warfare's three became two at T-113.** `sim` now calls
+        // `combat::resolve_engagement`, and the Inscrutable slot carries a real
+        // Design write — the `LimitedOffensive` roster entry the denial card is
+        // built on. The remaining two need effects the engine still lacks.
+        // This number is meant to fall; it is asserted so that it falls
+        // *deliberately* rather than because a variant was reassigned by
+        // accident.
         let inert: Vec<_> = TIER0.iter().filter(|c| c.effect == CardEffect::NotYetImplemented).collect();
-        assert_eq!(inert.len(), 3);
+        assert_eq!(inert.len(), 2, "an inert card changed — say which effect it gained and why");
         assert!(inert.iter().all(|c| c.tree == Tree::Warfare));
     }
 

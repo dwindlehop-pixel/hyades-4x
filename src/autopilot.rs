@@ -288,6 +288,75 @@ pub struct Doctrine {
     /// be ablated apart (`CLAUDE.md` §2's 2×2 rule). Denial and shooting are
     /// different mechanisms and the card carries both.
     pub picket_after_founding: bool,
+    /// **How many worlds this empire tries to keep held** (T-113).
+    ///
+    /// Pickets built as a *purpose* rather than as a coloniser's afterlife, on
+    /// the cheapest armed hull there is (`Role::Picket` → `LimitedOffensive`).
+    /// This is the fix §8.6's arithmetic pointed at: denial bought with a
+    /// coloniser loses under Warfare's objective by `ΔW = −k(1 − w_0A)`
+    /// whatever the placement, because `Σ_j w_0j = 1`. Denial bought with a
+    /// hull that costs a fraction of a colony does not.
+    ///
+    /// **A fallback, never a pre-emption**, for the reason
+    /// [`Self::survey_reserve`] records: an earlier survey rule that *did*
+    /// pre-empt made its own knob non-monotonic, because centres scouted every
+    /// cycle and never colonised. Raising this converts idle cycles into
+    /// pickets and can never starve expansion.
+    ///
+    /// The cost of that ordering is that the branch almost never runs — see
+    /// [`Self::picket_claims_target`], which is the one state where a picket
+    /// may go ahead of survey, and the measurement that says why it has to.
+    ///
+    /// **Placeholder magnitude, default 0** (R-WAR6) — the card sets it.
+    pub picket_reserve: usize,
+    /// **Claim the world this centre is saving for** (T-113).
+    ///
+    /// [`Self::picket_reserve`] alone is a fallback behind survey, and measurement
+    /// says that is a fallback that almost never fires: `wants_survey` is
+    /// `survey_frontier > 0 && candidate_count < survey_reserve`, and R-O86
+    /// measured the second term a constant `true` (median `candidate_count` 0,
+    /// maximum 164, against a ratified reserve of 1024). So the picket branch is
+    /// reachable only once the frontier is exhausted, which on the 800-year bed
+    /// produced **100 pickets across eight seeds** — a supply too small for any
+    /// placement or preference rule to select over.
+    ///
+    /// This opens the one other state where a cheap hull is the best thing a
+    /// centre can do with a cycle: it has **named an outward target and cannot
+    /// pay for it yet**. Those cycles are already spent saving, the world is
+    /// already the one this empire intends to settle, and a picket standing on
+    /// it is what makes the voyage safe to have committed to.
+    ///
+    /// Self-limiting per target rather than by a global reserve: the branch is
+    /// gated on the target *not already being held*, so a centre lays down at
+    /// most one picket per world it is saving for, and stops the moment that
+    /// hull arrives. [`Self::picket_reserve`] still bounds the empire-wide
+    /// stock on top of that.
+    ///
+    /// **Placeholder, default false** (R-WAR6) — measured as its own ablation
+    /// arm in `examples/denial_census`, because it and [`Self::picket_reserve`]
+    /// address one diagnosis and landing them together would make either
+    /// unattributable (`CLAUDE.md` §2's 2×2 rule).
+    pub picket_claims_target: bool,
+    /// **Share of a coloniser's mineral endowment erected as infrastructure on
+    /// arrival**, rather than banked (T-113).
+    ///
+    /// A coloniser's hold is already one kiloton budget carrying settlers *and*
+    /// minerals sized to the destination's build-out (R-O74,
+    /// `Hyades_industry.md` §1.7). Those minerals land in the new colony's
+    /// **stockpile** — and a colony whose hull did not recycle has no
+    /// infrastructure to spend them with, because `employment_rate` returns
+    /// exactly `0.0` at a stock of zero. The bank is full and the colony is
+    /// stillborn (§8.7).
+    ///
+    /// This erects part of the hold *as* the stock instead. It is not a grant:
+    /// the minerals were debited from the founding centre at launch and
+    /// infrastructure **is** the minerals standing in it (T-70, R-O57), so the
+    /// conversion is an identity rather than a rate. What it buys is that a
+    /// coloniser which keeps its hull can still found something that works.
+    ///
+    /// **Placeholder magnitude, default 0.0** (R-WAR6) — inert until a card
+    /// sets it, so the shipped galaxy is untouched.
+    pub founding_infra_share: f64,
     /// Whether heading-bias discipline is global, opening-only, or persistent
     /// (R-AC3). See [`SurveyStrategy`].
     pub survey_strategy: SurveyStrategy,
@@ -432,6 +501,9 @@ impl Default for Doctrine {
             // turns a neutral into an enemy.
             engage_neutrals: false,
             picket_after_founding: false,
+            picket_reserve: 0,
+            picket_claims_target: false,
+            founding_infra_share: 0.0,
             survey_strategy: SurveyStrategy::OpeningSectors,
             base_value: [1.0; 3],
             // The works mix, normalised — an empire wants to buy the colours its
@@ -553,6 +625,28 @@ pub struct Ranked {
 pub struct Candidate {
     pub view: PlanetView,
     pub ranked: Ranked,
+    /// **This empire already has a picket standing on this world** (T-113).
+    ///
+    /// Held ground is ground a rival's coloniser turns back from, so settling it
+    /// is the cheapest colony available: the race for it is already won. This
+    /// is what turns a picket from *denial* — which §8.6 measured as a losing
+    /// trade under Warfare's own objective — into **claiming**, where the hull
+    /// reserves a place in the queue rather than spending a colony to deny one.
+    ///
+    /// Read off the engine's own picket index, so it is ground truth about
+    /// *this* empire's own ships, not about a rival's — no light-lag question
+    /// arises (design law #15).
+    pub held_by_me: bool,
+    /// **This empire has a picket already on its way here** (T-113).
+    ///
+    /// Distinct from [`Self::held_by_me`] because the two answer different
+    /// questions. *Settling* held ground wants a hull that has **arrived** —
+    /// an inbound picket denies nobody yet, and a coloniser sent on the
+    /// strength of one is racing an empty world. *Claiming* wants to know
+    /// whether a hull is already committed, so a centre saving for a world
+    /// lays down one picket for it rather than one per decision for the whole
+    /// voyage.
+    pub claim_inbound: bool,
     /// **What a coloniser would actually land here, per hull** — Medium first,
     /// then General, in kilotons of settlers (R-IND12).
     ///
@@ -679,6 +773,12 @@ pub struct ProductionContext {
     /// (autopilot-doc §2); every later one is paid for out of a center's
     /// stockpile like any other build.
     pub light_vehicle_cost: Price,
+    /// Mineral cost of one picket — a **Limited Offensive** hull, the cheapest
+    /// armed thing in the ladder (T-113).
+    pub picket_cost: Price,
+    /// How many worlds this empire is already holding, against
+    /// [`Doctrine::picket_reserve`].
+    pub pickets_held: usize,
     /// Known, unclaimed, non-Barren worlds this empire could still expand to.
     /// The autopilot builds survey craft to keep this above
     /// [`Doctrine::survey_reserve`] — expansion consumes candidates, so without
@@ -906,13 +1006,51 @@ impl Autopilot for BaselineAutopilot {
                     ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
                     ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
                 };
-                best(a).or_else(|| best(b)).map(|c| Tasking { role: Role::Colonizer, target: Some(c.ranked.id) })
+                // **Settle the ground the pickets are holding, first** (T-113).
+                //
+                // A world this empire holds is one a rival's coloniser turns
+                // back from, so the race for it is already won and the voyage
+                // cannot be wasted on a claim someone else got to first. That is
+                // what makes a picket worth its hull: not the colony a rival
+                // does not found, which §8.6 measured as a losing trade, but the
+                // one *this* empire does.
+                //
+                // Ahead of the class preference rather than folded into `rank`:
+                // holding is a fact about the board, not a score, and mixing it
+                // into the weighted sum would make it tradeable against
+                // mineral richness at some exchange rate nobody has ratified.
+                let held = |want: PlanetClass| {
+                    candidates.iter().filter(|c| c.held_by_me && c.ranked.class == want).max_by(score_then_id)
+                };
+                held(a)
+                    .or_else(|| held(b))
+                    .or_else(|| best(a))
+                    .or_else(|| best(b))
+                    .map(|c| Tasking { role: Role::Colonizer, target: Some(c.ranked.id) })
             }
 
             // A Limited Systems hull mines; the freighter that hauls for it is
             // produced alongside (roles §5 — the center produces both).
             HullType::LimitedSystems => {
                 best(PlanetClass::MiningOutpost).map(|c| Tasking { role: Role::Miner, target: Some(c.ranked.id) })
+            }
+
+            // **A Limited Offensive hull holds ground** (T-113, design law #8:
+            // not force projection, but harass-and-hold). It takes the best
+            // world on the candidate list — the same ranking a *rival's*
+            // coloniser would be reading, which is the point: denial is only
+            // worth anything on ground somebody else wants.
+            //
+            // That is a third placement rule, and the first two were both
+            // refuted (§8.6): nearest-to-own-founding threatens nobody, and
+            // nearest-to-rival finds nothing unclaimed to stand on. Ranking by
+            // *value* rather than by geometry is the remaining axis.
+            HullType::LimitedOffensive => {
+                let (a, b) = match doctrine.expand_bias {
+                    ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
+                    ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
+                };
+                best(a).or_else(|| best(b)).map(|c| Tasking { role: Role::Picket, target: Some(c.ranked.id) })
             }
 
             // Nothing else is produced yet; hold rather than invent a mission.
@@ -1026,6 +1164,11 @@ impl Autopilot for BaselineAutopilot {
             ExpandBias::ProductionCentersFirst => best_center.or(best_colony),
             ExpandBias::ColoniesFirst => best_colony.or(best_center),
         };
+        // Whether a picket is already standing on the world this centre is
+        // aiming at. Read here rather than in the claim branch below because
+        // `colony_target` is the only place the *candidate* is in scope —
+        // `outward` reduces it to an order, a score and a price.
+        let colony_target_claimed = colony_target.is_some_and(|c| c.held_by_me || c.claim_inbound);
 
         // The best outward move (colony vs mining, by score).
         // What the center *wants* to reach still drives which hull it lays down —
@@ -1221,10 +1364,49 @@ impl Autopilot for BaselineAutopilot {
         // because centers scouted every cycle and never colonized at all. As a
         // fallback it is self-limiting: raising the reserve converts idle cycles
         // into survey and can never starve expansion.
+        //
+        // **The picket sits in front of survey in the same fallback** (T-113).
+        // Same self-limiting shape and the same reason: an idle cycle is the
+        // only thing either is allowed to spend, so neither can starve
+        // expansion however high its reserve is set. Ahead of survey because a
+        // held world is a standing asset and a scan is a one-off — and because
+        // `picket_reserve` is a *stock* target that converges, where
+        // `survey_reserve` is a frontier that refills.
+        // **Behind survey, not in front of it.** Survey is ratified and
+        // load-bearing — R-O86 showed a scout with nowhere to scout was 99% of
+        // all production, and `survey_reserve = 1024` is what keeps the map
+        // ahead of the expansion loop. A picket that pre-empts it starves the
+        // thing that finds worlds to picket. The first version of this branch
+        // sat *ahead* of survey and cost its own player 24.5% of its colonies.
+        let wants_picket = ctx.pickets_held < doctrine.picket_reserve;
+        let can_afford_picket = ctx.stockpile_total + Price::new(1e-9) >= ctx.picket_cost;
         let survey_fallback = if wants_survey && can_afford_light {
             hull_order(HullType::LimitedContactVehicle)
+        } else if wants_picket && can_afford_picket {
+            hull_order(HullType::LimitedOffensive)
         } else {
             BuildOrder::Idle
+        };
+        // **The saving-for-a-world fallback** (T-113,
+        // [`Doctrine::picket_claims_target`]). This is the one state where the
+        // picket goes *ahead* of survey, and the reason it may is that the
+        // centre is not choosing between scouting and holding in the abstract:
+        // it has already named the world, and the cycle is already committed to
+        // waiting for it.
+        //
+        // It cannot run away, because it is gated on the target not yet being
+        // held — one hull per world, not one per cycle — as well as on the
+        // empire-wide reserve. The branch that *did* run away sat in front of
+        // survey in every arm and cost its own player 24.5% of its colonies.
+        let claim_fallback = if doctrine.picket_claims_target
+            && wants_picket
+            && can_afford_picket
+            && !colony_target_claimed
+            && colony_target.is_some()
+        {
+            hull_order(HullType::LimitedOffensive)
+        } else {
+            survey_fallback
         };
 
         if w_deepen >= w_expand && deepen_possible {
@@ -1239,7 +1421,7 @@ impl Autopilot for BaselineAutopilot {
             if can_expand {
                 order
             } else {
-                survey_fallback
+                claim_fallback
             }
         } else if deepen_possible && can_afford_infra {
             BuildOrder::UpgradeInfrastructure
@@ -1382,6 +1564,10 @@ mod tests {
             stockpile_total: Price::new(stockpile),
             medium_min_level: BandTier::III,
             limited_min_level: BandTier::II,
+            // Pickets are off in these fixtures: the reserve is 0 by default, so
+            // the branch never fires and these tests stay about deepen/expand.
+            picket_cost: Price::new(0.02),
+            pickets_held: 0,
             infra_cost: Price::new(infra + 1.0),
             // Even thirds against a bank of even thirds: these cases are about
             // the deepen/expand branch, not about colour scarcity, and
@@ -1435,9 +1621,56 @@ mod tests {
             ranked,
             settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
             mining_crew: 1,
+            held_by_me: false,
+            claim_inbound: false,
         }];
         let order = ap.production_choice(&doctrine, &ctx, &cands);
         assert!(matches!(order, BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }));
+    }
+
+    /// **A coloniser settles held ground over a better world nobody holds**
+    /// (T-113). This is the preference the six-slot reduction in
+    /// `sim::commit_one_build` exists to feed: with a three-slot reduction the
+    /// held world reaches the policy only when it already wins its class, so
+    /// the filter below has nothing to select and the arm is a no-op by
+    /// construction — which is exactly how it measured before the reduction was
+    /// widened (`examples/denial_census`: every printed digit unchanged).
+    ///
+    /// The ranking is asserted rather than assumed, so a future change to
+    /// `rank` cannot make this test pass by accident.
+    #[test]
+    fn a_coloniser_prefers_held_ground_to_a_better_unheld_world() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
+        let cand = |id: u32, hab: f64, held: bool| {
+            let v = view(id, Vec3::new(10.0, 0.0, 0.0), hab, hab, MineralField::default());
+            let ranked = ap.rank(&doctrine, &v, &rctx);
+            Candidate {
+                view: v,
+                ranked,
+                settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
+                mining_crew: 1,
+                held_by_me: held,
+                claim_inbound: false,
+            }
+        };
+        let better = cand(5, 3.5, false);
+        let held = cand(6, 3.3, true);
+        assert_eq!(better.ranked.class, held.ranked.class, "the two must be the same class for this to be a choice");
+        assert!(better.ranked.score > held.ranked.score, "the unheld world must be the one rank actually prefers");
+
+        let tasking = ap
+            .assign_role(&doctrine, HullType::MediumSystems, Class::Unnamed, &[better, held])
+            .expect("a Medium Systems hull should find a colonisation mission");
+        assert_eq!(tasking.role, Role::Colonizer);
+        assert_eq!(tasking.target, Some(held.ranked.id), "held ground wins: the race for it is already over");
+
+        // And with nothing held, the ranking is untouched — the preference is a
+        // tie-break on a subset, not a new term in the score.
+        let neither =
+            ap.assign_role(&doctrine, HullType::MediumSystems, Class::Unnamed, &[better, cand(6, 3.3, false)]).unwrap();
+        assert_eq!(neither.target, Some(better.ranked.id), "without a picket the best world still wins");
     }
 
     /// One `Candidate` a mature center would happily colonize.
@@ -1450,6 +1683,8 @@ mod tests {
             ranked,
             settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
             mining_crew: 1,
+            held_by_me: false,
+            claim_inbound: false,
         }]
     }
 

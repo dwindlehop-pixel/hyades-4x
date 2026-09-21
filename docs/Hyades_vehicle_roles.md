@@ -216,6 +216,16 @@ carries no such information itself.
     *zero* is not a price but an absorbing state: `employment_rate` returns
     exactly `0.0` there, so the colony can never mine or build. A departing
     picket leaves the ladder's floor rung (§8.7, **R-WAR6**).
+  - **And the floor is what it leaves, whatever the hold carried** (T-113).
+    `Doctrine::founding_infra_share` erects part of the endowment as the new
+    colony's stock rather than banking it, and measured it does nothing:
+    `examples/founding_stock` puts **0.0% of foundings above the floor at
+    share 0** — the maximum *is* the floor — and 21.0% at 0.5, with the median
+    unmoved at every share. A coloniser's hold is nearly all settlers, because
+    `settler_target` sizes the people to the destination's carrying capacity
+    (R-IND12) and minerals take whatever volume is left. Carrying a real
+    endowment is a **reservation against the hold**, which is a change to
+    `settler_target` (**R-WAR7**), not a share of the remainder.
 
   **It is a Warfare card and it carries no population-lethal write** — its
   lethality is to hulls. Card contract §10 licenses Warfare to carry such

@@ -163,6 +163,142 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-114. `tests/determinism.rs` is over the 60-second budget, and it arrived that way at T-112
+
+**Measured, not suspected.** `cargo test --test determinism` is **69.08 s at
+`HEAD` (T-112)** and **67.36 s** with T-113 applied, on the same machine in the
+same session. The budget is 60 s per target (`CLAUDE.md` §2), so the target is
+over it and **T-113 did not put it there** — the ~1.7 s difference is inside
+this machine's run-to-run variance and is not read as a saving.
+
+T-112 raised entity count (pickets that never scrap, engagements, the round
+layer) without checking test horizons in the same landing, which is exactly the
+habit `CLAUDE.md` §2 records: *"when a change raises entity count, check the
+test horizons in the same commit."*
+
+**What it needs, in the order §2 prescribes.** Not a uniform horizon cut —
+`full_run_reports_are_bit_identical` already carries **per-seat-count** horizons
+because cost goes as seats × years, and the arm that pays for the target is not
+the arm a uniform cut would trim. Time each test by name first (the shell loop
+in §2, since `--report-time` is nightly-only), then reduce the **galaxy** before
+the horizon where the assertion is about a mechanism rather than about scale.
+`full_run_reports_are_bit_identical` is the one test here whose question *is*
+scale (R-NET14: a divergence at any seat count is a desync), so its galaxies
+stay full-size.
+
+**And any horizon that is cut needs a guard that the mechanism still fired** —
+a shortened run leaves every assertion vacuously true and the suite green, which
+is why `positions_never_exceed_lightspeed` counts moving entities and
+`full_run_reports_are_bit_identical` floors its event count at 1,000.
+
+---
+
+### T-113. Claiming instead of denying — the cheap picket, the erected hold, and settling held ground
+
+**Built, gated off, measured on the asymmetric bed.** Full write-up in
+`Hyades_warfare_tree.md` §8.8. Three Doctrine writes and one unconditional
+preference; **one of the four moved the objective**, and it needed an engine fix
+before it could move anything at all.
+
+The author's specification: *"Add LOU to the Doctrine and Design as a cheap
+picket to claim the frontier to support the Contact Vehicles. Load colony ships
+with a mix of minerals for Infra and population so they do not suffer from the
+no recycling policy,"* and *"Warfare tree should colonize worlds with a
+picket."*
+
+#### What it measures (`examples/denial_census`, 8 seeds, 3 seats, 800 yr)
+
+| arm | own | neighbours | `W_0` | pickets |
+|---|---|---|---|---|
+| T-112 + settle held ground | −8.30 ± 2.69 | +4.07 ± 1.09 | −120 ± 34 | 5,415 |
+| + hold erects infra (`share = 0.5`) | −8.33 ± 2.56 | +4.04 ± 1.04 | −119 ± 32 | 5,411 |
+| + cheap LOU pickets (`reserve = 128`) | −9.01 ± 2.62 | +4.42 ± 1.12 | −129 ± 34 | 5,402 |
+| LOU pickets alone | −1.57 ± 1.21 | +0.93 ± 0.38 | −21 ± 12 | 95 |
+| LOU pickets + claims its target | −1.62 ± 4.47 | +1.10 ± 1.83 | −35 ± 61 | 188 |
+
+Neighbours should **fall** and `W_0` should **rise**. Neither does. The last two
+arms are inside 2 SE on every column.
+
+#### The one that moved, and the defect behind it
+
+Settling held ground is worth **+1.25 points of own colonies and +13 on `W_0`**
+(arm 1 was −9.55 / +4.40 / −133 at T-112). It recovers roughly a seventh of the
+card's self-harm and does not change its sign.
+
+**It measured as exactly zero first.** `sim::commit_one_build` reduces the
+scanned pool to the per-class argmax before the policy sees it (R-O70) — exact
+for a consumer reading the argmax of a **class**. This preference reads the
+argmax of a **subset**, and `max(S)` does not carry `max(S′)` for `S′ ⊂ S`, so a
+held world reached the policy only when it already won its class outright. The
+arm reproduced the arm without it *to every printed digit*, which is the tell:
+**a behavioural change that reproduces the baseline exactly is inert or
+unreachable, not small.** Six slots now — per-class winner, plus per-class
+winner among held ground — pinned by
+`the_candidate_reduction_carries_held_ground_without_duplicating_it` and
+`a_coloniser_prefers_held_ground_to_a_better_unheld_world`. Recorded in
+`CLAUDE.md` §"A decision can be provably blind".
+
+#### The cheap picket is not built, and the reason is one predicate
+
+§8.6 said a picket must cost less than a colony. It now does
+(`HullType::LimitedOffensive`), and the hull is fielded **95 times across eight
+seeds**. The branch sits in the production fallback behind
+`wants_survey = survey_frontier > 0 && candidate_count < survey_reserve`, and
+R-O86 measured the second term a **constant `true`** (median `candidate_count`
+0, max 164, against a reserve of 1024) — so it is reachable only once the survey
+frontier is exhausted. It is behind survey on purpose: ahead of it, the first
+version cost its own player **24.5%** of its colonies.
+
+`picket_claims_target` opens the other state where a cheap hull is the best use
+of a cycle — the centre has named an outward world and cannot pay for it —
+gated on the target not already being held **or claimed**
+(`Simulation::picket_inbound`, so one hull per world rather than one per
+decision for a whole voyage). Supply **95 → 188**, objective unmoved. The state
+is rare: expansion here is not bound by the coloniser's price.
+
+#### Erecting the hold is flat because the hold is empty
+
+`examples/founding_stock` (new) prints the distribution of the founding stock
+against the floor rung (`Band Empty` = 0.020 kt), seed 1, seat 0's own
+foundings:
+
+| `founding_infra_share` | foundings | median | mean | max | above floor |
+|---|---|---|---|---|---|
+| 0.00 | 650 | 0.020 | 0.020 | **0.020** | **0.0%** |
+| 0.50 | 649 | 0.020 | 0.051 | 0.313 | 21.0% |
+| 1.00 | 649 | 0.020 | 0.087 | 0.625 | 22.5% |
+
+At share 0 the *maximum* is the floor. At 1.00 — the whole hold erected — the
+median is still the floor and coverage gains 1.5 points over 0.50, so the axis
+is **exhausted, not undertuned**. `settler_target` sizes people to the
+destination's carrying capacity (R-IND12) and minerals take what volume is left,
+which is usually none. **R-WAR7**: loading a mix is a *reservation against the
+hold*, which is a change to `settler_target`.
+
+#### What ships
+
+All three writes default off (`picket_reserve = 0`,
+`picket_claims_target = false`, `founding_infra_share = 0.0`);
+`picketing_off_is_bit_identical` still pins the default galaxy. The held-ground
+preference is unconditional but self-gating — `held_by_me` is false everywhere
+no picket exists — and the six-slot reduction costs one `is_empty()` on a bed
+with no pickets.
+
+TIER0 card 15 (Warfare / Inscrutable) is now `UnlockDesign(LimitedOffensive,
+Class::Unnamed)` rather than `NotYetImplemented`; two inert cards remain.
+
+#### What is still open
+
+- **R-WAR7** — a `settler_target` that reserves mineral volume.
+- **R-WAR6** — amended: the cheaper hull is built and cost is not what binds.
+  The one remaining exit from §8.6's arithmetic is a denial covering more than
+  one world, which needs a spatial object the engine does not have.
+- The in-flight guard's own value is **not resolved at eight seeds** (−1.62
+  against −4.87 own colonies, both error bars wider than the gap). Kept on
+  waste grounds, not measured grounds.
+
+---
+
 ### T-112. Denial: pickets, light-lagged diversion — and the card is refuted as specified
 
 **Built, gated off, measured on the asymmetric bed, and it does the opposite of

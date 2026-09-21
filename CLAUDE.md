@@ -178,6 +178,16 @@ answer was not where it looked:
   the run is not. **When you cut a horizon, assert that the mechanism still
   fires.**
 
+**T-112 did it a fifth time and nobody checked**, which is the point of the
+habit rather than a new lesson: pickets that never scrap plus a live engagement
+layer put `tests/determinism.rs` at **69.08 s** against a 60-second budget, and
+it landed that way because the horizons were not looked at in the same commit.
+Measured at T-114 by building both revisions and timing the target on each —
+67.36 s with T-113 applied, so the breach is inherited and not new. **When a
+change raises entity count, time the test targets before you push, and time the
+old binary too** — otherwise the next landing inherits the breach and gets
+blamed for it.
+
 **T-88 did it a fourth time, and it moved every target at once** — unit 34 →
 110 s, determinism 37 → 267 s, smoke 22 → 149 s — because `cycle_years` 50 → 5
 makes a simulated year cost ~10x the events. The fix was horizons again, and two
@@ -880,6 +890,30 @@ rocks are mined (0.043 → 0.043) — while R-O89's *load* leg changed the
 composition **within** a hold and is the one that worked (+8.4%), bounded by what
 the single rock holds. **Before optimising a selection, check that the thing being
 selected among can express the property you want.**
+
+**The same question catches a *reduction*, not only a cargo hold (T-113).**
+`commit_one_build` reduces the scanned pool to the per-class argmax before the
+policy ever sees it (R-O70), and that reduction is **exact** for a consumer
+reading the argmax of a class — the comment above it says so, and names the
+consumers it was derived against. A new colonizer preference read the argmax of a
+**subset** of a class (the worlds this empire's pickets hold), and `max(S)` does
+not carry `max(S′)` for `S′ ⊂ S`: a held world reached the policy only when it
+already won its class outright. The preference was inert by construction and
+measured as inert — the arm reproduced the arm without it **to every printed
+digit**. Widening the reduction to six slots (per-class winner, plus per-class
+winner among held ground) moved it on the first run.
+
+Two habits, and the second is the cheap one:
+
+- **A reduction is exact only for the consumers it was derived against.
+  Re-derive it when you add one.** Nothing in the types distinguishes "the best
+  world" from "the best world with a property" — both are `Option<Candidate>`.
+- **A behavioural change that reproduces the baseline *exactly* is inert or
+  unreachable, not small.** An approximate match is a weak effect and wants more
+  seeds; a bit-identical one is a structural claim, and the place to look is the
+  **data the decision reads**, not the decision. This is §2's "exactly zero and
+  inside noise are different verdicts" one level up, and it cost one run to read
+  correctly instead of a bed.
 
 **And then remove the atomicity, because that is the move the framing points at
 and it produced the largest single result this project has measured.** T-91 let

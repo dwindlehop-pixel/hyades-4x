@@ -40,14 +40,53 @@ struct Arm {
     pickets: u64,
 }
 
-fn run(seed: u64, card: bool) -> Arm {
+/// Which half of the card is switched on — `CLAUDE.md` §2's 2x2 rule, because
+/// T-112 and T-113 address the same diagnosis and landing them together would
+/// make either one unattributable.
+#[derive(Clone, Copy, PartialEq)]
+enum Card {
+    /// Nobody plays anything.
+    Peace,
+    /// T-112 as measured: colonisers picket after founding, and nothing else.
+    ColoniserPickets,
+    /// …plus the hold erects part of its endowment as infrastructure (T-113).
+    PlusInfraShare,
+    /// …plus cheap Limited Offensive pickets built on purpose (T-113).
+    PlusLouPickets,
+    /// The LOU pickets *without* the coloniser ones — is the cheap hull the
+    /// whole result, or does it only help the expensive one?
+    LouOnly,
+    /// `LouOnly` plus the claim branch: a centre saving for a world it has
+    /// already named holds that world with a cheap hull while the bank fills.
+    /// This is the *supply* arm — `LouOnly` builds ~12 pickets a run because
+    /// its branch sits behind a survey test that is almost always true, so no
+    /// placement or preference rule has a population to act on.
+    ClaimsTarget,
+}
+
+fn run(seed: u64, arm: Card) -> Arm {
+    let card = arm != Card::Peace;
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
     // Seat 0 alone plays the card.
     let autopilots: Vec<Box<dyn Autopilot>> = (0..PLAYERS)
         .map(|i| {
+            let me = card && i == 0;
             let d = Doctrine {
-                engage_neutrals: card && i == 0,
-                picket_after_founding: card && i == 0,
+                engage_neutrals: me,
+                picket_after_founding: me && !matches!(arm, Card::LouOnly | Card::ClaimsTarget),
+                // Half the hold is erected rather than banked — a placeholder,
+                // probed below.
+                founding_infra_share: if me && matches!(arm, Card::PlusInfraShare | Card::PlusLouPickets) {
+                    0.5
+                } else {
+                    0.0
+                },
+                picket_reserve: if me && matches!(arm, Card::PlusLouPickets | Card::LouOnly | Card::ClaimsTarget) {
+                    128
+                } else {
+                    0
+                },
+                picket_claims_target: me && arm == Card::ClaimsTarget,
                 ..Doctrine::default()
             };
             Box::new(BaselineAutopilot::new(d)) as Box<_>
@@ -56,7 +95,6 @@ fn run(seed: u64, card: bool) -> Arm {
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = HORIZON;
     cfg.engagements_enabled = card;
-    cfg.picket_keeps_founding_infra = std::env::var("KEEP_INFRA").is_ok();
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
     sim.set_log_filter(LogFilter::none().with(LogCategory::Combat).with(LogCategory::Vehicles));
     let report = sim.run();
@@ -80,65 +118,74 @@ fn run(seed: u64, card: bool) -> Arm {
     Arm { own, neighbours, kills, diverts, pickets }
 }
 
-fn stat(label: &str, v: &[f64]) {
-    let n = v.len() as f64;
-    let mean = v.iter().sum::<f64>() / n;
-    let var = v.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-    let se = (var / n).sqrt();
-    let neg = v.iter().filter(|x| **x < 0.0).count();
-    println!(
-        "{label:>22}: {mean:+.2}% +/- {se:.2} ({:.1} SE), {neg}/{} seeds negative",
-        (mean / se.max(1e-12)).abs(),
-        v.len()
-    );
-}
-
 fn main() {
+    let all = [
+        ("T-112 coloniser pickets", Card::ColoniserPickets),
+        ("+ hold erects infra    ", Card::PlusInfraShare),
+        ("+ cheap LOU pickets    ", Card::PlusLouPickets),
+        ("LOU pickets alone      ", Card::LouOnly),
+        ("+ claims its target    ", Card::ClaimsTarget),
+    ];
+    // **Re-run one arm without re-running the bed.** A full pass is 48 runs and
+    // the peace baseline is a sixth of it, so an arm that has to be re-measured
+    // after an engine fix costs a whole afternoon otherwise. The baseline is
+    // always run, because every figure below is a ratio against it on the same
+    // seed (CRN).
+    let only: Vec<String> = std::env::args().skip(1).collect();
+    let arms: Vec<_> = if only.is_empty() {
+        all.to_vec()
+    } else {
+        all.iter().filter(|(l, _)| only.iter().any(|o| l.trim().contains(o.as_str()))).copied().collect()
+    };
+    assert!(!arms.is_empty(), "no arm matched {only:?}");
+    // **Print before the work, not after it.** `CLAUDE.md` §2: a harness that
+    // says nothing until its first expensive stage finishes is indistinguishable
+    // from a hung one, and this one sat silent for four minutes.
+    println!("peace baseline: {} seeds, {PLAYERS} seats, {HORIZON} yr…", SEEDS.len());
+    let _ = std::io::stdout().flush();
+    let peace: Vec<Arm> = SEEDS
+        .iter()
+        .map(|&s| {
+            let a = run(s, Card::Peace);
+            print!(".");
+            let _ = std::io::stdout().flush();
+            a
+        })
+        .collect();
+    println!();
     println!(
-        "{:>6}  {:>9}  {:>9}  {:>9}  {:>9}  {:>7}  {:>8}  {:>8}",
-        "seed", "own p->c", "nbr p->c", "d-own%", "d-nbr%", "kills", "diverts", "pickets"
+        "{:>25}  {:>10}  {:>10}  {:>9}  {:>8}  {:>8}  {:>8}",
+        "arm", "own", "neighbours", "W_0", "diverts", "pickets", "kills"
     );
     let _ = std::io::stdout().flush();
-    let (mut d_own, mut d_nbr, mut w_gain) = (Vec::new(), Vec::new(), Vec::new());
-    let (mut spent, mut denied) = (Vec::new(), Vec::new());
-    for &seed in SEEDS {
-        let p = run(seed, false);
-        let c = run(seed, true);
-        let do_ = 100.0 * (c.own / p.own - 1.0);
-        let dn = 100.0 * (c.neighbours / p.neighbours - 1.0);
-        d_own.push(do_);
-        d_nbr.push(dn);
-        // **The trade the card is actually making**, in colonies: what seat 0
-        // gave up against what the neighbours lost. This is the ratio the whole
-        // design turns on — see the write-up.
-        spent.push(p.own - c.own);
-        denied.push((p.neighbours - c.neighbours) * (PLAYERS - 1) as f64);
-        // Warfare's objective at uniform w_ij, as a change in colonies.
-        w_gain.push((c.own - c.neighbours) - (p.own - p.neighbours));
+
+    for (label, arm) in arms {
+        let (mut d_own, mut d_nbr, mut w_gain) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut diverts, mut pickets, mut kills) = (0u64, 0u64, 0u64);
+        for (i, &seed) in SEEDS.iter().enumerate() {
+            let p = &peace[i];
+            let c = run(seed, arm);
+            d_own.push(100.0 * (c.own / p.own - 1.0));
+            d_nbr.push(100.0 * (c.neighbours / p.neighbours - 1.0));
+            w_gain.push((c.own - c.neighbours) - (p.own - p.neighbours));
+            diverts += c.diverts;
+            pickets += c.pickets;
+            kills += c.kills;
+        }
+        let m = |v: &[f64]| {
+            let n = v.len() as f64;
+            let mean = v.iter().sum::<f64>() / n;
+            let var = v.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+            (mean, (var / n).sqrt())
+        };
+        let (own_m, own_se) = m(&d_own);
+        let (nbr_m, nbr_se) = m(&d_nbr);
+        let (w_m, w_se) = m(&w_gain);
         println!(
-            "{seed:>6}  {:>4.0}->{:<4.0}  {:>4.0}->{:<4.0}  {do_:>+8.2}%  {dn:>+8.2}%  {:>7}  {:>8}  {:>8}",
-            p.own, c.own, p.neighbours, c.neighbours, c.kills, c.diverts, c.pickets
+            "{label}  {own_m:>+6.2}±{own_se:<4.2}  {nbr_m:>+6.2}±{nbr_se:<4.2}  {w_m:>+6.0}±{w_se:<3.0}  {diverts:>8}  {pickets:>8}  {kills:>8}",
         );
         let _ = std::io::stdout().flush();
     }
-    stat("own colonies", &d_own);
-    stat("neighbour colonies", &d_nbr);
-    let tot_spent: f64 = spent.iter().sum();
-    let tot_denied: f64 = denied.iter().sum();
-    println!(
-        "{:>22}: seat 0 gave up {tot_spent:.0} colonies to deny {tot_denied:.0} — ratio {:.3} denied per spent",
-        "the trade",
-        tot_denied / tot_spent.abs().max(1e-9)
-    );
-    let n = w_gain.len() as f64;
-    let m = w_gain.iter().sum::<f64>() / n;
-    let var = w_gain.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (n - 1.0);
-    let se = (var / n).sqrt();
-    println!(
-        "{:>22}: {m:+.1} colonies +/- {se:.1} ({:.1} SE), {}/{} seeds positive",
-        "W_0 (uniform w_ij)",
-        (m / se.max(1e-12)).abs(),
-        w_gain.iter().filter(|x| **x > 0.0).count(),
-        w_gain.len()
-    );
+    println!("\n  own/neighbours are % against peace; W_0 = (C_0 - mean C_j) change, in colonies.");
+    println!("  Neighbours should FALL and W_0 should RISE. 8 seeds, 3 seats, 800 yr.");
 }
