@@ -172,15 +172,15 @@ pub enum LogEvent {
         mining_pair_cost: f64,
         mineral_pressure: f64,
         candidates_seen: u32,
-        /// **The decision's own per-colour affordability test** (T-73), not a
+        /// **The decision's own per-color affordability test** (T-73), not a
         /// total it can be reconstructed from.
         ///
-        /// A works bill is payable in *named colours*, and the galaxy's supply
-        /// is single-coloured (mean dominant-colour share 0.789, 38% of sources
-        /// ≥95% one colour), so "could this centre afford the rung" and "did
-        /// this centre hold enough ore" are different questions with different
+        /// A works bill is payable in *named colors*, and the galaxy's supply
+        /// is single-colored (mean dominant-color share 0.789, 38% of sources
+        /// ≥95% one color), so "could this center afford the rung" and "did
+        /// this center hold enough ore" are different questions with different
         /// answers. Reconstructing the first from `stockpile` and `infra_cost`
-        /// counts a colour-short centre as having *chosen* not to deepen, which
+        /// counts a color-short center as having *chosen* not to deepen, which
         /// is the opposite of what happened — so the predicate is logged rather
         /// than inferred.
         can_afford_infra: bool,
@@ -227,6 +227,14 @@ pub enum LogEvent {
     /// aimed at it is doing anything — and reconstructing it from the hull type
     /// would miss the other two terms.
     ColonyFounded { player: u32, vehicle: Entity, planet: PlanetId, infra: f64 },
+    /// **A picket left station to head off a colony ship** (T-115).
+    ///
+    /// `margin` is how many years it expects to be on the ground before the
+    /// colony ship arrives — the slack the race is won by, which is the number
+    /// that says whether the mechanic is firing comfortably or on a knife edge.
+    /// Logged because the objective cannot distinguish an interception that
+    /// never happened from one that happened and did not matter.
+    PicketIntercept { player: u32, vehicle: Entity, target: PlanetId, margin: f64 },
     /// A colony vehicle arrived at a target someone else had already claimed
     /// (race under light-lag); it turns back rather than founding.
     ColonyContested { player: u32, vehicle: Entity, planet: PlanetId },
@@ -251,7 +259,7 @@ pub enum LogEvent {
     /// index; `round` is the protocol clock, not the sim clock.
     CardPlayed { player: u32, card: u16, round: u32 },
 
-    /// **A coloniser turned back because a rival is holding its target**
+    /// **A colonizer turned back because a rival is holding its target**
     /// (T-112) — distinct from [`Self::ColonyContested`], which is losing a
     /// *race*, and the distinction is load-bearing: the two were counted
     /// together once and the combined figure read as ~33% of diverts being the
@@ -287,6 +295,7 @@ impl LogEvent {
         use LogEvent::*;
         match self {
             ProductionDecision { .. } | BuildApplied { .. } => LogCategory::Production,
+            PicketIntercept { .. } => LogCategory::Combat,
             MineralsExtracted { .. } | MiningExhausted { .. } | FreighterTransfer { .. } => LogCategory::Mining,
             VehicleSpawned { .. }
             | VehicleParked { .. }
@@ -306,6 +315,7 @@ impl LogEvent {
         use LogEvent::*;
         match *self {
             ProductionDecision { player, .. }
+            | PicketIntercept { player, .. }
             | BuildApplied { player, .. }
             | FreighterTransfer { player, .. }
             | VehicleSpawned { player, .. }
@@ -336,6 +346,7 @@ impl LogEvent {
             FreighterTransfer { at, .. } | VehicleParked { at, .. } | VehicleScrapped { at, .. } => Some(at),
             EngagementResolved { site, .. } => Some(site),
             ColonyDiverted { planet, .. } => Some(planet),
+            PicketIntercept { target, .. } => Some(target),
             VehicleSpawned { to, .. } => Some(to),
             ContactArrived { planet, .. } => Some(planet),
             ColonyFounded { planet, .. } | ColonyContested { planet, .. } => Some(planet),
@@ -349,6 +360,7 @@ impl LogEvent {
         use LogEvent::*;
         match *self {
             FreighterTransfer { vehicle, .. }
+            | PicketIntercept { vehicle, .. }
             | VehicleSpawned { vehicle, .. }
             | VehicleParked { vehicle, .. }
             | ContactArrived { vehicle, .. }
@@ -412,6 +424,9 @@ impl fmt::Display for LogEvent {
                 Some(n) => write!(f, "P{player} scout reached planet#{} -> on to planet#{}", planet.0, n.0),
                 None => write!(f, "P{player} scout reached planet#{} -> no targets left, holding", planet.0),
             },
+            PicketIntercept { player, target, margin, .. } => {
+                write!(f, "P{player} picket breaks for planet#{} ({margin:.2} yr ahead)", target.0)
+            }
             ColonyFounded { player, planet, infra, .. } => {
                 write!(f, "P{player} founded colony at planet#{} (founding stock {infra:.6} kt)", planet.0)
             }

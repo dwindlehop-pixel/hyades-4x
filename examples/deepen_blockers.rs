@@ -24,13 +24,13 @@
 //!
 //! - **gated** — `infra >= k_potential`, so the world allows no more. Not a
 //!   defect, a ceiling.
-//! - **colour-short** — the bill is payable in *named colours* (T-73) and this
-//!   centre lacks one. Read off `can_afford_infra`, the predicate the decision
+//! - **color-short** — the bill is payable in *named colors* (T-73) and this
+//!   center lacks one. Read off `can_afford_infra`, the predicate the decision
 //!   itself used, rather than reconstructed from totals: the galaxy's supply is
-//!   single-coloured (mean dominant share 0.789), so a centre can hold a hundred
+//!   single-colored (mean dominant share 0.789), so a center can hold a hundred
 //!   times the bill and still be unable to pay it, and inferring affordability
 //!   from a total counts that as a *choice* not to deepen.
-//! - **ore-short** — short on the total as well, so colour is not the whole of
+//! - **ore-short** — short on the total as well, so color is not the whole of
 //!   it.
 //! - **outbid** — it could afford it and chose something else. That is the
 //!   deepen-vs-expand comparison (R-O68), and it is the only one of the three
@@ -61,11 +61,11 @@ fn main() {
 
     let (mut total, mut gated, mut unaffordable, mut outbid, mut bought) = (0u64, 0u64, 0u64, 0u64, 0u64);
     // Of the unaffordable ones, how many held the *total* and lacked only a
-    // colour. That is the split T-73 predicts and nothing has measured.
-    let mut colour_only = 0u64;
+    // color. That is the split T-73 predicts and nothing has measured.
+    let mut color_only = 0u64;
     // Of the outbid ones, what did they buy instead?
     let (mut to_hull, mut to_idle) = (0u64, 0u64);
-    // And how rich were they when they declined? A centre that is outbid while
+    // And how rich were they when they declined? A center that is outbid while
     // holding many times the bill is the strongest form of the finding.
     let mut wealth: Vec<f64> = Vec::new();
     for r in sim.log().iter() {
@@ -89,7 +89,7 @@ fn main() {
             } else if !can_afford_infra {
                 unaffordable += 1;
                 if stockpile >= infra_cost {
-                    colour_only += 1;
+                    color_only += 1;
                 }
             } else {
                 outbid += 1;
@@ -113,9 +113,9 @@ fn main() {
         pct(gated)
     );
     println!(
-        "  could not pay the bill {unaffordable:>9}  {:>6.2}%   of which COLOUR-SHORT ONLY: {colour_only} ({:.2}% of all)",
+        "  could not pay the bill {unaffordable:>9}  {:>6.2}%   of which COLOR-SHORT ONLY: {color_only} ({:.2}% of all)",
         pct(unaffordable),
-        pct(colour_only)
+        pct(color_only)
     );
     println!("  **outbid**             {outbid:>9}  {:>6.2}%   -> hull {to_hull}, idle {to_idle}", pct(outbid));
 
@@ -129,6 +129,6 @@ fn main() {
             q(0.99),
             wealth.last().copied().unwrap_or(0.0)
         );
-        println!("  (a centre declining a rung it could buy {:.0} times over is the finding)", q(0.9));
+        println!("  (a center declining a rung it could buy {:.0} times over is the finding)", q(0.9));
     }
 }

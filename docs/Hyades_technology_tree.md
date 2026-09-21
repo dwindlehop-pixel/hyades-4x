@@ -63,7 +63,7 @@ intelligence price ladder a ladder at all, and it is what makes a Design
 disclosure an attack rather than a nuisance.
 
 **1.4 `RATIFIED` — no retroactive refits.** Design law #12 / **R-O47b**. A Design
-write never reaches a hull already in the field by fiat; realisation is
+write never reaches a hull already in the field by fiat; realization is
 `on_refit`, so a fleet-wide change lands **staggered by transit time**.
 
 Retroactive would change every acceleration signature at once, laglessly, with no
@@ -73,7 +73,7 @@ offset by a thrust write, because what leaks is the movement, not the mass.
 
 **1.5 `RATIFIED` — the seeded roster is LSV(Meadow) + LCV(Tor).**
 `SimConfig::enforce_roster` gates production on the roster and **defaults off**,
-because the engine has no card system and therefore no unlock path: coloniser and
+because the engine has no card system and therefore no unlock path: colonizer and
 freighter ride on MSV, which the starting roster excludes, so enforcement forbids
 every expansion build permanently — measured, **3 colonies and 18 vehicles against
 1,183 and 4,778** over 4,000 yr. **Blocked on cards, not on engine work (T-25).**
@@ -101,7 +101,7 @@ enforcement.
 | **SHD** | shields | regenerating buffer |
 | **AoS** | armor *or* shield | flex defense |
 | **ELEC** | stealth, sensors, targeting, steering | detection, evasion, accuracy |
-| **MECH** | cargo pods, colonisation gear, mining rigs, mass drivers | the Systems-role tooling |
+| **MECH** | cargo pods, colonization gear, mining rigs, mass drivers | the Systems-role tooling |
 | **GP** | anything except ENG | fill to taste |
 
 **2.2 `RATIFIED` — hull type sets the slot layout, and class *biases* it without
@@ -113,7 +113,7 @@ items.
 
 **2.3 `RATIFIED` — ship-level aggregates are queries, never stored fields.**
 Total mass, total thrust, effective acceleration, total armor, sensor range are
-computed from the fit on demand. A fit changes only at a production centre and
+computed from the fit on demand. A fit changes only at a production center and
 mass changes every time cargo moves, so storing derived totals means invalidating
 them on every such event; recomputing from `O(slots)` data cannot desync.
 
@@ -166,8 +166,8 @@ native super** — so every empire self-synthesises exactly one and must acquire
 other two. **That is the structural reason the Exchange exists.**
 
 **3.3 `RATIFIED` — no categorical strategic classification may be co-extensive
-with a colour domain.** Design law #13 / **R-O34**. It would lock out exactly the
-archetype poor in that colour. Continuous classifications expressed as magnitude
+with a color domain.** Design law #13 / **R-O34**. It would lock out exactly the
+archetype poor in that color. Continuous classifications expressed as magnitude
 are exempt.
 
 **3.4 `RATIFIED` — the counter-graph is a per-player ladder disrupted by cards**,
@@ -207,7 +207,7 @@ per-mass effectiveness times the mass, naturally a **vector**:
 | axis | meaning | measurable as |
 |---|---|---|
 | projection | deliverable combat mass at range | combat mass × reach under `a_max` within a response window |
-| defence | combat mass within response time of owned colonies | the same, evaluated against own holdings |
+| defense | combat mass within response time of owned colonies | the same, evaluated against own holdings |
 | acquisition | ore delivered per year | freighter deliveries — **already logged** |
 
 Aggregate with a **power mean**, not a sum and not a hard minimum:
@@ -285,9 +285,9 @@ because it is the obvious thing to add later.
 |---|---|
 | R-O28 | Design is the `Roster`, written only by tree cards |
 | R-O29 | hull, class and role are three separate things |
-| R-O34 | no classification co-extensive with a colour domain (law #13) |
+| R-O34 | no classification co-extensive with a color domain (law #13) |
 | R-O42 | seats are seeded LSV(Meadow) + LCV(Tor) |
-| R-O47b | no retroactive refits; realisation is `on_refit` (law #12) |
+| R-O47b | no retroactive refits; realization is `on_refit` (law #12) |
 | R-MC16 | thrust is drawn from mounted drive |
 | — | supers are synthesised at pop-Band IV by fixed two-basic recipes |
 | — | Red is the general key; Blue and Green are traversal keys (law #1) |

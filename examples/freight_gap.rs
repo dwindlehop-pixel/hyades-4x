@@ -1,20 +1,20 @@
-//! **Is the colour a centre needs anywhere its own empire can reach?**
+//! **Is the color a center needs anywhere its own empire can reach?**
 //!
 //! R-O85 closed with the constraint named but not located: 43.8–46.6% of every
-//! production decision is a centre that holds the *total* of its next rung and
-//! lacks a *colour* (§6.19c). That is either a **freight** problem — the colour
+//! production decision is a center that holds the *total* of its next rung and
+//! lacks a *color* (§6.19c). That is either a **freight** problem — the color
 //! exists and is not moving — or a **trade** problem, the empire's ground simply
 //! not holding it. Those want completely different fixes, and nothing has
 //! separated them.
 //!
-//! So this puts the empire's colour deficit beside its own supply, per colour:
+//! So this puts the empire's color deficit beside its own supply, per color:
 //!
-//! - **deficit** — `Σ over owned centres` of the shortfall against the next rung.
+//! - **deficit** — `Σ over owned centers` of the shortfall against the next rung.
 //! - **at outposts** — mined, sitting in `outpost_stock`, waiting on a hull.
-//! - **in banks** — already delivered to some centre, just not the one short of it.
+//! - **in banks** — already delivered to some center, just not the one short of it.
 //!
 //! If supply covers deficit many times over, the ore exists and freight is the
-//! constraint. If a colour is genuinely absent, that is §8.1's subject and the
+//! constraint. If a color is genuinely absent, that is §8.1's subject and the
 //! Exchange's, not the hauler's.
 //!
 //! It also reports the freight fleet itself, because a routing fix is pointless
@@ -75,11 +75,11 @@ fn main() {
     let snap = sim.snapshot();
     println!(
         "\n{:>7} {:>9} {:>14} {:>14} {:>14} {:>12}",
-        "player", "colour", "deficit kt", "at outposts", "in banks", "supply/need"
+        "player", "color", "deficit kt", "at outposts", "in banks", "supply/need"
     );
     for p in 0..PLAYERS {
         let pid = PlayerId(p as u32);
-        let deficit = sim.unmet_colour_demand(pid);
+        let deficit = sim.unmet_color_demand(pid);
         let outposts = sim.outpost_holdings(pid);
         // Everything already delivered somewhere in this empire.
         let mut banks = [0.0f64; 3];

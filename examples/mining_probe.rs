@@ -40,7 +40,7 @@
 //! cargo run --release --example mining_probe -- step 0.5          # verify a joint move
 //! ```
 //!
-//! `step` is the second half of the method: it applies a normalised move along
+//! `step` is the second half of the method: it applies a normalized move along
 //! the measured gradient at fraction α and reports the paired improvement on the
 //! same seeds, which is what turns a gradient into a ratifiable change.
 
@@ -193,8 +193,8 @@ const PRESSURE_GAIN_E: f64 = 0.0;
 const OUTPOST_FRACTION_E: f64 = 0.0;
 const TICK_YEARS_E: f64 = 0.0;
 
-/// Apply the normalised gradient move at fraction `alpha` in log space:
-/// `x ← x · exp(α · e / max|e|)`. Normalising by the largest elasticity keeps
+/// Apply the normalized gradient move at fraction `alpha` in log space:
+/// `x ← x · exp(α · e / max|e|)`. Normalizing by the largest elasticity keeps
 /// the step scale-free and bounded, which is what makes α comparable between
 /// this move and `gradient_step`'s.
 fn stepped(alpha: f64) -> (SimConfig, Doctrine) {
@@ -295,7 +295,7 @@ fn census(seed: u64, recycle: bool) {
             // Freighters: the park-on-a-dead-rock (flag off) and the Reserve
             // stand-down (flag on) are the same branch of `sys_freighter_arrive`
             // under two labels, so counting both keeps the comparison about
-            // behaviour rather than about bookkeeping.
+            // behavior rather than about bookkeeping.
             LogEvent::VehicleParked { vehicle, role: Role::Reserve, .. }
             | LogEvent::VehicleParked { vehicle, role: Role::Freighter, .. } => {
                 idle_since.insert(vehicle, rec.time);
@@ -305,7 +305,7 @@ fn census(seed: u64, recycle: bool) {
     }
     // Miners are the asymmetric case and have to be handled by hand: with the
     // flag off a stranded miner logs *nothing at all* when its rock dies, so
-    // reading idleness off the log would credit the old behaviour with zero
+    // reading idleness off the log would credit the old behavior with zero
     // idle years. Derive it from the rock's death instead, which is symmetric —
     // and re-check afterwards whether anything picked the hull up again.
     let exhausted_at: HashMap<PlanetId, f64> = exhausted.iter().copied().collect();

@@ -132,8 +132,8 @@ It's gReat!
 - Expand breadth first
 - Expand depth first
 - Expand in a direction
-- Expand towards a resource
-- Expand towards empty space
+- Expand toward a resource
+- Expand toward empty space
 - Profit off some location
 - Profit off some mineral
 - Create some mineral in an area

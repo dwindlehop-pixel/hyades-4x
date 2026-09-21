@@ -357,7 +357,7 @@ fn main() {
     // DID move it". First correction: at 8.0/12.0 the derived hull ladder was
     // then thought to explode or invert, so the range was narrowed to
     // [2.5, 3.0, 4.0]. Second correction: the "explosion" was itself an
-    // artifact — capacity was normalised against the *live* Medium radius, a
+    // artifact — capacity was normalized against the *live* Medium radius, a
     // denominator that went to zero, not an economic effect. Fixed against a
     // constant reference instead, so `hull_ladder_fault` now refuses only a
     // genuinely inverted ladder and the knob is confirmed real and large by

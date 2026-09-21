@@ -1,8 +1,8 @@
 # Hyades — The Trees: Tone, Objectives, and Card Value
 
 *The normative spec for **what the six trees are about, what each one is trying to
-maximise, and how a card's power is measured and compared.** Companion to
-`Hyades_galaxy_and_autopilot.md` §7 (the sagas and the colour spine, which §1
+maximize, and how a card's power is measured and compared.** Companion to
+`Hyades_galaxy_and_autopilot.md` §7 (the sagas and the color spine, which §1
 here **amends**), `Hyades_card_contract.md` (the card data model),
 `Hyades_standing_layer_and_observation.md` §5 (Doctrine and Design as state),
 `Hyades_industry.md` §5 (works) and §8.1 (refined mass traverses real space), and
@@ -84,7 +84,7 @@ altruism to justify atrocity.** Specifically the register in which:
 - expansion is framed as a moral obligation to unborn trillions, so that anything
   standing on the land is an *obstacle to the light cone*;
 - harm is netted out in expectation, at a scale where the arithmetic stops being
-  checkable and starts being a licence;
+  checkable and starts being a license;
 - the language of care — flourishing, stewardship, the long term, the garden — is
   the working vocabulary of an extraction operation;
 - and the people running it are **sincere**, which is what makes it worth
@@ -99,7 +99,7 @@ Concrete, so this is checkable rather than a vibe:
 
 1. **Never wink.** No card may signal that it knows it is in a satire. The
    moment one does, the player stops supplying the irony and the gap closes.
-2. **Bureaucratic and founder registers, both sincere.** Programme names, launch
+2. **Bureaucratic and founder registers, both sincere.** Program names, launch
    language, mission statements, initiative titles. Warm hard SF, never imperial
    or naval — `Hyades_galaxy_and_autopilot.md` §7's rule survives intact and is
    in fact what makes the satire land.
@@ -111,7 +111,7 @@ Concrete, so this is checkable rather than a vibe:
    empire's *framing* and the outcome, never between the card's text and its
    rules.
 5. **Flavour text is the author's own** (`CLAUDE.md` §6). This section constrains
-   register; it does not licence anyone to rewrite the author's lines.
+   register; it does not license anyone to rewrite the author's lines.
 
 ### 1.5 What this amends
 
@@ -148,7 +148,7 @@ longer the game's own claim about what happened.
 Every ratification in this project has been measured against **absolute colony
 count at a fixed horizon**, with colony-years as the guard. That is the right
 objective for exactly one tree — Expansion — and it is actively misleading for
-the other five. A Warfare card that ends a neighbour's colony *lowers* the global
+the other five. A Warfare card that ends a neighbor's colony *lowers* the global
 count. A Production card that converts minerals into hulls does not move it at
 all. Measured on the shipped objective, half the design scores zero or negative.
 
@@ -170,7 +170,7 @@ Defined before use (`CLAUDE.md` §6), because §3 and §4 both index on them.
 | `V_i(t)` | works owned by `i` | kt of works | `Hyades_industry.md` §5 — **not yet built** |
 | `F_i(t)` | fleet **enclosed volume** owned by `i` | hull units³ | `HullType::hull_volume` summed over owned hulls (R-PROD5) |
 | `Q_i(t)` | capability of `i` | dimensionless | §2.3.5, **proposed here** |
-| `w_ij` | Warfare's neighbour weight of `j` from `i`'s view | dimensionless, `Σ_j w_ij = 1` | §2.3.2, fixed at game start |
+| `w_ij` | Warfare's neighbor weight of `j` from `i`'s view | dimensionless, `Σ_j w_ij = 1` | §2.3.2, fixed at game start |
 | `φ_ij(t)` | share of `j`'s output accruing to `i` | dimensionless, `Σ_i φ_ij ≤ 1` | §2.3.6, from delivered freight |
 | `κ` | Politics coupling constant | dimensionless, `0 < κ < 1` | §2.3.6, placeholder |
 | `X_i` | a tree's stock for player `i` | tree-specific | one of `C`, `V`, `F`, `Q` |
@@ -192,36 +192,36 @@ E_i = ∫₀^T C_i(t) dt
 
 The shipped objective, unchanged, now correctly scoped to one tree.
 
-#### 2.3.2 Warfare — colony-years relative to the table, neighbour-weighted
+#### 2.3.2 Warfare — colony-years relative to the table, neighbor-weighted
 
 ```text
 W_i = ∫₀^T [ C_i(t) − Σ_{j≠i} w_ij · C_j(t) ] dt
 ```
 
-**Ending a neighbour's colony is worth exactly what founding your own is**, and
-slowing or reversing a neighbour's expansion scores continuously rather than only
-on kills. `w_ij` weights near neighbours heavily — a rival across the theatre is
+**Ending a neighbor's colony is worth exactly what founding your own is**, and
+slowing or reversing a neighbor's expansion scores continuously rather than only
+on kills. `w_ij` weights near neighbors heavily — a rival across the theatre is
 someone else's problem.
 
 Proposed form, reusing the hyperbolic shape R-IND12 already uses and a quantity
 the engine already computes:
 
 ```text
-w_ij ∝ 1 / (1 + d_ij / λ_w)        normalised so Σ_{j≠i} w_ij = 1
+w_ij ∝ 1 / (1 + d_ij / λ_w)        normalized so Σ_{j≠i} w_ij = 1
 ```
 
 with `d_ij` the distance between the two empires' holdings centroids and `λ_w` a
 placeholder length scale (**R-TREE2**).
 
 **`d_ij` is measured once, at game start, from homeworld positions — and this is
-an anti-farm rule, not an optimisation.** A live `d_ij` would be a term the
+an anti-farm rule, not an optimization.** A live `d_ij` would be a term the
 Warfare player can move without fighting: expand *away* from a strong rival and
 their weight falls, scoring the same as having beaten them. `CLAUDE.md` §2's
 invariance rule in its exact form — *what could a card do to move this without
 moving the world?* Freezing `w_ij` at setup answers "nothing".
 
 > **Warfare's objective is relative, and that is not a violation of the
-> invariance rule.** The rule forbids a metric the optimised thing can move
+> invariance rule.** The rule forbids a metric the optimized thing can move
 > *without moving the world*. Destroying a rival's colony moves the world. The
 > distinction is the whole reason `w_ij` is frozen and `C_j` is not.
 
@@ -297,7 +297,7 @@ directionally and scores consolidation higher still (2.63 / 5.19 / 2.06). It is
 the wrong reading for a *fleet*: a Limited Offensive hull's interior is 0.0066
 against a reserved core of 0.194, so its hold is entirely spoken for and its
 cargo is zero. **Scoring a warship by its hold scores it by the one thing a
-warship does not have.** The shell is armour, not waste. The decomposition is
+warship does not have.** The shell is armor, not waste. The decomposition is
 exact — `r³ = η · shell_mass + hold` — so volume-years is mass-years' basis plus
 the interior, and the interior is the term that grows as `cost^(3/2)`.
 
@@ -330,7 +330,7 @@ first factor. It is naturally a **vector** over the axes the author named:
 | axis | meaning | measurable as |
 |---|---|---|
 | projection | deliverable combat mass at range | combat mass × reach under `a_max` within a response window |
-| defence | combat mass within response time of owned colonies | same, evaluated against own holdings |
+| defense | combat mass within response time of owned colonies | same, evaluated against own holdings |
 | acquisition | ore delivered per year | freighter deliveries — **already logged** |
 
 **Aggregate them with a power mean, not a sum and not a hard minimum**
@@ -475,11 +475,11 @@ measurements agree from the other side (`CLAUDE.md` §2: colony count reaches
 97.9% of its 4,000-year total by 1,500 yr and 99.9% by 2,000).
 
 **The bed is 3,000 years.** That is ~500 years of margin past the point
-colonisation completes, which is where the other five stocks are still
+colonization completes, which is where the other five stocks are still
 compounding and therefore where a doubling-time regression has something to fit.
 
-**This is a 5.8x reduction in the cost of the entire card programme**, and the
-programme was the binding constraint on the schedule rather than the other way
+**This is a 5.8x reduction in the cost of the entire card program**, and the
+program was the binding constraint on the schedule rather than the other way
 round. What follows about cost is now a smaller problem, not a different one:
 4,000 yr costs ~400 s post-T-68 (`examples/horizon_cost`, seed 1, 3 seats), and
 degradation is superlinear in duration, so 3 kyr is well under half that.
@@ -491,16 +491,16 @@ assumes they all do.
 > **The general lesson, and it is §2's in a new place: shrink the scenario before
 > the horizon, and check what the horizon was bought for.** The 8-kyr figure was
 > reasoning about *stocks that compound*, applied by extending the clock — when
-> the thing that actually sets the floor is the point colonisation completes,
+> the thing that actually sets the floor is the point colonization completes,
 > which is a property of the galaxy and the expansion loop, not of the trees.
 
 A single card's value distribution needs enough samples for a stable **92nd
 percentile** — realistically dozens, not a handful. Six trees × the card set ×
-tiers × timings × that sample count puts the full programme in the range of
+tiers × timings × that sample count puts the full program in the range of
 **years of single-machine compute**. It is not a scheduling problem to be
 absorbed; it is a blocker.
 
-**So T-66 (throughput) is a prerequisite for this programme, not a parallel
+**So T-66 (throughput) is a prerequisite for this program, not a parallel
 nicety** — and it now has a second, larger reason to happen than the T-24 floor.
 Three things soften the cost and none of them removes it:
 
@@ -525,7 +525,7 @@ stocks, plotting each against time.** That single run answers, for each tree:
   in its exponential regime at the horizon needs the regression fitted, not the
   horizon extended (§3.1).
 
-This is a handful of runs to potentially cut the whole programme's horizon for
+This is a handful of runs to potentially cut the whole program's horizon for
 four or five of the six trees. It is the highest-leverage measurement available
 and it should be done first (**T-78**).
 
@@ -568,7 +568,7 @@ all *when* it is played. It is a random variable, and:
 
 The reasoning, stated because it is a real design position rather than a
 convention: a card is chosen by a player who thinks the moment is right, so the
-realised distribution is not the unconditional one — it is *conditioned on
+realized distribution is not the unconditional one — it is *conditioned on
 someone choosing to play it*. Balancing on the mean balances a card as though it
 were played at random, which no card ever is. P92 asks *"how good is this when it
 is working?"*, which is the case that decides whether a card warps the game. P98
@@ -630,7 +630,7 @@ Stated so it is not discovered as a surprise:
   *jointly*, never summed.
 - **It says nothing about whether a card is interesting.** It is a power
   measurement. Legibility (design law #9), flavour, and whether a card places a
-  behaviour-rich object on the board are design judgements this method does not
+  behavior-rich object on the board are design judgments this method does not
   make.
 
 ---
@@ -640,7 +640,7 @@ Stated so it is not discovered as a surprise:
 | Code | Question | Where |
 |---|---|---|
 | **R-TREE1** | The end-of-game chronicle: generated from real events, in the empire's register, with the euphemism derived from the act. Scope and surface. | §1.2 |
-| **R-TREE2** | `λ_w`, Warfare's neighbour length scale — and whether centroid distance at setup is the right proximity measure. | §2.3.2 |
+| **R-TREE2** | `λ_w`, Warfare's neighbor length scale — and whether centroid distance at setup is the right proximity measure. | §2.3.2 |
 | **R-TREE3** | Growth's interim stock until works exist. Infrastructure in kilotons is proposed; confirm or replace when T-73/T-74 land. | §2.3.3 |
 | **R-TREE4** | Capability: the axis set, the reference scales `q_ref,a`, the weights `s_a`, and above all `ρ` — how Liebig capability is. | §2.3.5 |
 | **R-TREE5** | Politics' coupling `κ`, and whether delivered freight is the whole of `φ_ij` or only its economic half (shared intelligence is the other candidate). | §2.3.6 |
@@ -650,7 +650,7 @@ Stated so it is not discovered as a surprise:
 | **R-TREE10** | **Re-measure the composite on volume.** `data/tree_gradient.tsv` (T-50, 32 knobs, 4 seeds) was taken with Production in **mass**; §2.3.4 now reads volume. Spot-checked on the three hull-ladder knobs at seed 1 / 600 yr, the Production elasticity moves by 0.1–0.6 and no sign changes (appendix §A.14), but one seed with no error bar is a sanity check and not a result. The full bed wants re-running before anything cites that column again. | §2.3.4 |
 | **R-TREE9** | **The composite objective.** `examples/tree_gradient` scores the geomean of the ratio-to-default of the measurable trees, which makes `∂ln S/∂ln x` the plain mean of the per-tree elasticities and everything dimensionless. Two things are unratified: the equal weighting across trees, and whether a geomean is the right aggregator once Warfare and Technology join (a tree that can go negative has no log). | §2.4 |
 | **R-TREE11** | **The write-capability partition** (card contract §10). Whether "population-lethal" is a *sign* test on the write's argument or a declared per-card flag, and whether the partition is exclusive (only Warfare) or a floor (Warfare must carry some, others may not). | card contract §10.4 |
-| **R-TREE12** | **Warfare card value has no doubling time of its own.** Decided here: cost a Warfare card as the fractional *increase* it causes in the **target's** doubling time, on the target's own tree stock, against a CRN counterfactual. Open: whether the target is the single highest-`w_ij` neighbour or the `w`-weighted mean over all of them, and how that composes with §4.2's P92 when the target set is itself a random variable. | §5.4 |
+| **R-TREE12** | **Warfare card value has no doubling time of its own.** Decided here: cost a Warfare card as the fractional *increase* it causes in the **target's** doubling time, on the target's own tree stock, against a CRN counterfactual. Open: whether the target is the single highest-`w_ij` neighbor or the `w`-weighted mean over all of them, and how that composes with §4.2's P92 when the target set is itself a random variable. | §5.4 |
 
 ---
 

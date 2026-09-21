@@ -1,7 +1,7 @@
 # Hyades — Warfare: Combat, the Arena, and What Is Worth Hitting
 
 *The design space for **Warfare**, the tree that takes colony-years off the
-table. Its objective is **colony-years relative to the table, neighbour-weighted**
+table. Its objective is **colony-years relative to the table, neighbor-weighted**
 (`Hyades_trees_and_card_value.md` §2.3.2). Companion to
 `Hyades_simulation_model.md` §4 (deterministic combat and the wreck roll),
 `Hyades_loadout.md` (what a ship is fitted with),
@@ -31,7 +31,7 @@ why the single global colony count every ratification before
 
 **Two consequences that shape the whole design:**
 
-- **A warfare card is measured against a neighbour, not against a bed.** `w_ij`
+- **A warfare card is measured against a neighbor, not against a bed.** `w_ij`
   is fixed at game start and `Σ_j w_ij = 1`.
 - **Warfare is an algebraic zero on the 3-seat measurement bed**, because nothing
   fights. Every number in this file is therefore about mechanism, not balance,
@@ -50,13 +50,13 @@ shooting starts.
 **1.1 `RATIFIED` — `combat.rs` is engine-native and is the same code both
 consumers resolve fights with.** The production game and the Monte-Carlo balancer
 share it. It holds the kinematic primitives (fleet trajectories, station-keeping,
-Isaacs intercept, lasers with light-lag aim and point defence, dodging
+Isaacs intercept, lasers with light-lag aim and point defense, dodging
 fuel-limited missiles, the BSP targeting index), the tuned weapon parameters
 (`CombatConfig`), and the resolution loop.
 
 **1.2 `RATIFIED` — `arena.rs` is a scenario seeder and owns no combat logic.**
 Its only job is to **spawn ships outside the constraints of Hyades production** —
-no planets, no mining, no colonisation, no mineral budget — place them as two
+no planets, no mining, no colonization, no mineral budget — place them as two
 fleets, and call `combat::resolve_engagement`. **The arena resolves no damage.**
 Dependency direction is `arena → combat`, never the reverse.
 
@@ -101,7 +101,7 @@ cornered fleet. Same logistic form as population growth, which keeps the game's
 curved quantities mathematically consistent.
 
 **2.3 `RATIFIED` — there is no tick-based initiative.** No per-round turn order,
-no INIT stat deciding who fires first. Each weapon's reach and closing behaviour
+no INIT stat deciding who fires first. Each weapon's reach and closing behavior
 is a function of range and the two ships' kinematics, **resolved geometrically**.
 
 Concretely: a torpedo's advantage is that it delivers damage *before the closing
@@ -116,8 +116,8 @@ ladder.** They differ in the range/kinematics regime where they are strong:
 |---|---|---|
 | **Beam** | close, all-aspect, instant hit — range-limited hitscan, the reliable backbone | long range (falloff) |
 | **Pulse** | point-blank, high burst; tiny, cheap, murderous up close | anything past knife range |
-| **Torpedo** | long range, heavy hit; slow projectile, big | close (arming distance), vs. point defence |
-| **Missile** | long range, tracking | vs. point defence and jammers — countered by ELEC, unlike torpedoes |
+| **Torpedo** | long range, heavy hit; slow projectile, big | close (arming distance), vs. point defense |
+| **Missile** | long range, tracking | vs. point defense and jammers — countered by ELEC, unlike torpedoes |
 
 **2.5 `RATIFIED` — station-keeping is a designed periodic motion, not orbital
 mechanics.** There is no central mass and nothing integrates a two-body problem.
@@ -195,7 +195,7 @@ have since stopped being true, and for different reasons:
   is *hidden simultaneity*, which is T-42 and is a different problem). This
   entry was still citing T-30 as though nothing had shipped.
 - **The premise that nothing meets was never checked, and it is false.**
-  Colonisation is exclusive (R-V3) so colony worlds cannot host two owners, but
+  Colonization is exclusive (R-V3) so colony worlds cannot host two owners, but
   **mining is non-exclusive** (roles §4.3) — and measured on the standard bed
   (`examples/contact_census`, 3 seats, 1,500 yr) **68–75% of all occupied sites
   end up worked by more than one empire**, at ~4,200 contacts per run, up to all
@@ -210,7 +210,7 @@ exists: a miner parking at a rock another empire is working raises
 it still does not.
 
 **What this does and does not unblock.** `belief.rs` is wired, but only at its
-*degenerate* end (§5.5 below). R-AC13's "if pressed" trigger at the colonisation
+*degenerate* end (§5.5 below). R-AC13's "if pressed" trigger at the colonization
 layer and every posture card are **still open** — both need a decision taken at
 *range*, and this one is taken at zero range where there is nothing to decide.
 
@@ -278,7 +278,7 @@ takes a developed world. The join with Production, and unanswered.
 **4.6 `OPEN` — R-WAR1: elimination.** The design pillar is **hard win conditions
 with progressive player elimination**, and nothing in the engine eliminates
 anyone. What ends a seat, what happens to its holdings, and whether `w_ij`
-renormalises are all unspecified.
+renormalizes are all unspecified.
 
 ---
 
@@ -310,13 +310,13 @@ few thousand km out is *not* working from a lower bound.
 **5.5 `RATIFIED, wired at one end only` — the rule.** The accept/decline decision
 reads a `BeliefAMax` and **never** the other side's true `Combatant::max_accel`.
 
-**§7's engagement site honours this vacuously, and that is worth stating plainly
+**§7's engagement site honors this vacuously, and that is worth stating plainly
 rather than counting as progress.** A shared mining rock puts the two fleets at
 the *same place*, so the range is zero, so the light-lag is zero, and the
 observation available at the moment of decision is current — belief equals truth
 and `was_surprised` is identically false. §5.4 already exempts close range for
 exactly this reason, so this is the degenerate case of the rule and not a hole in
-it. **The interesting half is half wired since T-112**: a coloniser diverting from a
+it. **The interesting half is half wired since T-112**: a colonizer diverting from a
 picket *is* a decision at range on a light-lagged warning, and whether the
 warning beats the ship is exactly the counterplay window. What is still missing
 is **belief**: the warning is a fact about the world, not an estimate that can be
@@ -338,7 +338,7 @@ Same function, reverse direction. It is what makes tier-1 movement intelligence
 ## 6. What a Warfare card writes
 
 **6.1 `RATIFIED` — cards operate at empire/macro scale only.** Design law #7.
-**War Sun is the gold standard**: flavourful, legible, places a behaviour-rich
+**War Sun is the gold standard**: flavourful, legible, places a behavior-rich
 board object. Combo cards are the connective tissue between trees — **if
 single-tree play can win without cross-tree engagement, combo cards are
 undercosted.**
@@ -361,17 +361,17 @@ is authorable until §3.4 and §3.5 land, because the effect is either a *postur
 (needs an accept/decline site) or a *stat* (needs the four resolver layers). What
 **is** specifiable now is the shape — empire-scale, legible, placing an object
 rather than applying a percentage — and **§8 is the first card specified to it**:
-the armed coloniser, which places a standing fleet on the board by declining to
+the armed colonizer, which places a standing fleet on the board by declining to
 consume the hull that founds a colony. Its Design half is blocked on T-97 and its
 Doctrine half on §3.4; its *value model* and one refuted design claim are settled.
 
-**6.5 `OPEN` — R-WAR3: `w_ij`, the neighbour weight.** Fixed at game start and
+**6.5 `OPEN` — R-WAR3: `w_ij`, the neighbor weight.** Fixed at game start and
 summing to 1, but by what — distance, shared frontier, archetype complementarity?
 The objective is not measurable until this is chosen, and the choice decides
 whether Warfare is a *positional* tree or a *targeting* one.
 
-**6.6 `OPEN` — R-AC13: the "if pressed" trigger at the colonisation layer** — e.g.
-a coloniser re-routing away from a detected threat. Blocked with T-30.
+**6.6 `OPEN` — R-AC13: the "if pressed" trigger at the colonization layer** — e.g.
+a colonizer re-routing away from a detected threat. Blocked with T-30.
 
 ---
 
@@ -384,7 +384,7 @@ that a destroyed hull's mass is conserved. What is not settled is any number.
 ### 7.1 Where a fight happens, and why there was already one to have
 
 **A shared mining outpost.** Mining is non-exclusive (roles §4.3) and
-colonisation is not (R-V3), so a rock is the one site in the shipped engine where
+colonization is not (R-V3), so a rock is the one site in the shipped engine where
 two empires' hulls legitimately stand together. `sys_mining_arrive` raises
 `EventKind::Engagement` when a miner parks somewhere another empire is already
 working — the arrival *is* the moment the situation changed, which is §4's rule,
@@ -430,12 +430,12 @@ a surprise:
 > **An empire can lose its entire mining fleet several times over and its
 > expansion does not notice.** That is the same conclusion §6.19c and R-O92
 > reached from the economic side — the binding constraint is `k_high` and the
-> colour composition of freight, not hull count — arrived at by destroying the
+> color composition of freight, not hull count — arrived at by destroying the
 > hulls instead of by counting them.
 
 **Throughput rose on all eight seeds** (109→126 … 124→137 yr/s) with `ns/event`
 *falling* (20,556→18,060). `CLAUDE.md` §2's table reads that pair as "a real
-optimisation", and it is not one: nothing got faster per unit of work, there is
+optimization", and it is not one: nothing got faster per unit of work, there is
 simply less work because 11,345 hulls stopped existing. That table assumes a
 fixed workload, and this is the row it does not cover.
 
@@ -447,7 +447,7 @@ fixed workload, and this is the row it does not cover.
 - **The belief layer is wired at its degenerate end only** (§5.5): zero range
   means belief equals truth, and `committed` measures 49.4–51.6% — a coin flip
   between two identical hulls.
-- ~~**Only miners ever fight.**~~ **Amended by T-112**: a coloniser arriving at
+- ~~**Only miners ever fight.**~~ **Amended by T-112**: a colonizer arriving at
   a world a rival is *holding* fights too, and the decision to press on or turn
   back is taken at **range**, against a warning that travelled at `c` — the
   thing §5.5 records as the unwired half. Freighters in transit are still
@@ -476,7 +476,7 @@ stated reason stopped holding when something else changed.
 
 ---
 
-## 8. The first Warfare card — the armed coloniser (R-WAR2, advanced)
+## 8. The first Warfare card — the armed colonizer (R-WAR2, advanced)
 
 *The first concrete answer to **R-WAR2** (§6.4), which said nothing was
 authorable until §3.4 and §3.5 land. That still holds for the card's *effects* —
@@ -491,13 +491,13 @@ stated intent. This section settles those three and says what is blocked.*
 placeholder and says so. What is settled is the card's shape, the measurement
 that refutes one third of its stated intent, and the bed the head-to-head needs.
 
-### 8.1 Warfare's licence, and why it is currently worth nothing
+### 8.1 Warfare's license, and why it is currently worth nothing
 
 **Only Warfare cards may carry Doctrine that kills population** (card contract
 §10). That is Warfare's distinguishing capability and the reason five other
 trees cannot reach §2.3.2's objective by economic means.
 
-**As the engine stands the licence confers nothing measurable, and the reason is
+**As the engine stands the license confers nothing measurable, and the reason is
 one line long.** `Sim::extraction_rate` and `Sim::berth_rate` read
 `Factors::infra` and the owner's `Works` and nothing else
 (`Hyades_industry.md` §1.8). Population is not an argument to any output
@@ -505,7 +505,7 @@ function, so a world emptied of people mines and fabricates exactly as fast as a
 full one. A population kill costs its target **nothing per year**.
 
 So the first Warfare card is deliberately **not** a population strike. It does
-not need the licence, it needs the licence to *exist* before a later card can
+not need the license, it needs the license to *exist* before a later card can
 use it — and it establishes the tree's board presence while T-107 makes
 population a factor of production.
 
@@ -517,10 +517,10 @@ crucially — **it is not consumed when it founds**.
 
 | half | write | engine surface | status |
 |---|---|---|---|
-| **Design** | unlock a Contact coloniser class: `(GeneralContactVehicle, Class)` | `CardEffect::UnlockDesign`, and a per-`Class` drive fraction | `UnlockDesign` **exists**; per-`Class` `φ` is **T-97**, blocked on T-08 |
+| **Design** | unlock a Contact colonizer class: `(GeneralContactVehicle, Class)` | `CardEffect::UnlockDesign`, and a per-`Class` drive fraction | `UnlockDesign` **exists**; per-`Class` `φ` is **T-97**, blocked on T-08 |
 | **Doctrine** | unladen Contact Vehicles engage nearby enemies | an engagement-posture field on `Doctrine` | **absent** — no such field, and no combat in the sim loop (T-52) |
 | **Doctrine** | a Neutral empire is an Enemy empire | a diplomatic stance default on `Doctrine` | **absent** — R-O27/T-11, the field list has never been specified |
-| **Doctrine** | a Contact coloniser patrols instead of scrapping itself | `Doctrine::picket_after_founding`, `Role::Picket`, `EventKind::ColonyDivert` | **built (T-112)**, and **measured to do the opposite of what it is for** — §8.6 |
+| **Doctrine** | a Contact colonizer patrols instead of scrapping itself | `Doctrine::picket_after_founding`, `Role::Picket`, `EventKind::ColonyDivert` | **built (T-112)**, and **measured to do the opposite of what it is for** — §8.6 |
 
 **The two halves are one card, and that is a design position.** §5 of
 `Hyades_standing_layer_and_observation.md` makes Design permanent and
@@ -532,9 +532,9 @@ wider. **That is a prediction §4's method can check**, and it is the reason to
 ship the first Warfare card as a pair rather than as two cards.
 
 **The third Doctrine write is the expensive one and it is the point.** Roles
-§4.2 has a coloniser recycle into the new colony's `Band I` infrastructure, and
+§4.2 has a colonizer recycle into the new colony's `Band I` infrastructure, and
 T-70 makes that exact: `founding_infra = hull_cost`, because a hull's mass *is*
-its cost (R-O57, design law #11). A coloniser that patrols instead of scrapping
+its cost (R-O57, design law #11). A colonizer that patrols instead of scrapping
 keeps its minerals in the hull, so **the colony it founds starts with only what
 the hold carried as endowment** (`Hyades_industry.md` §1.7). Mass is conserved
 either way — the trade is *where the minerals stand*, not whether they exist.
@@ -542,7 +542,7 @@ either way — the trade is *where the minerals stand*, not whether they exist.
 ### 8.3 One third of the stated intent is impossible, and the engine says so exactly
 
 The design intent was three properties at once, against the Medium Systems hull
-the coloniser rides today: **less cargo per kilotonne of cost, lower laden
+the colonizer rides today: **less cargo per kilotonne of cost, lower laden
 acceleration, higher dry acceleration.**
 
 **Two of the three already hold as shipped, and the third is backwards.**
@@ -579,7 +579,7 @@ freight, faster empty and slower laden — the triple is over-determined by one
 constraint. Measured on the one Design write that could move it, a per-`Class`
 drive fraction (T-97):
 
-| `φ` for the Contact coloniser class | cost | cargo/cost | dry `a` | laden `a` |
+| `φ` for the Contact colonizer class | cost | cargo/cost | dry `a` | laden `a` |
 |---|---|---|---|---|
 | **0.01** (shipped, global) | 1.0995 kt | 8.963 | 2.4767 g | 0.2486 g |
 | **0.02** | 1.1991 kt | **8.136** | **3.7828 g** | **0.4141 g** |
@@ -591,13 +591,13 @@ claim true against the MSV, and it raises laden acceleration by **+63%** rather
 than lowering it.
 
 **Decision: drop "lower laden acceleration"; take the narrowed signature
-instead.** The design was reaching for *the armed coloniser is worse freight*,
+instead.** The design was reaching for *the armed colonizer is worse freight*,
 and the identity says the compensation for that is not a slower voyage — it is
 **concealment**, which is a better fit for the tree that gets it. §9.2 of
 `Hyades_standing_layer_and_observation.md` reads the empty-to-laden swing as the
 load-state broadcast: a large hull announces whether it is laden and a small one
 does not. The identity says the *width* of that broadcast is exactly the hull's
-cargo efficiency, so a Contact coloniser at `φ = 0.02` swings 9.14× where the
+cargo efficiency, so a Contact colonizer at `φ = 0.02` swings 9.14× where the
 MSV swings 9.35× and the GSV swings 24.7×. **A warship built out of a freighter's
 budget is quieter than the freighter**, and that is a Warfare property obtained
 without a single combat constant.
@@ -618,7 +618,7 @@ rate** — `TIER0` slots 3 and 4, `WriteDoctrine(GrowthRate(1.15 | 1.35))`.
 `Hyades_trees_and_card_value.md` §2.4's numeraire makes that comparison well-posed in principle: card value is
 the fractional reduction in the doubling time of **its own tree's** stock, which
 is dimensionless and therefore comparable across trees. The Growth card is read
-on work-years (§2.3.3), the Warfare card on §2.3.2's neighbour-weighted colony
+on work-years (§2.3.3), the Warfare card on §2.3.2's neighbor-weighted colony
 contrast, and `Hyades_trees_and_card_value.md` §4.3 asks whether two tier-1 cards land at
 similar P92.
 
@@ -657,7 +657,7 @@ carry a colony-count figure into this comparison.**
 
 **What the comparison should show, stated in advance so the measurement can
 refuse it.** The Growth card compounds and the Warfare card does not: a growth
-multiplier acts on a rate forever, while the armed coloniser's value is an
+multiplier acts on a rate forever, while the armed colonizer's value is an
 inventory of hulls that would otherwise have been scrapped. So the prediction is
 **Growth's P92 above Warfare's at earliest legal play, and Warfare's dispersion
 higher** — and §4.3 requires tier-1 dispersion to be the *lowest* of any tier,
@@ -675,7 +675,7 @@ Stated as a chain because none of it is parallel:
 | 2 | ~~no diplomatic fields on `Doctrine`~~ — **cleared for this card (T-111)** | R-O27 / T-11 | `Doctrine::engage_neutrals` is the stance *"a Neutral empire is an Enemy empire"* writes. The **rest** of R-O27's field list is still unspecified, so T-11 stays open; this card no longer waits on it |
 | 3 | `φ` is global, not per-`Class` | T-97, blocked on T-08 | §8.3's Design write cannot be expressed; R-O47b forbids it reaching hulls already in the field |
 | 4 | Warfare's objective is unreadable on the standard bed, and `w_ij` is unset | R-TREE8, **R-WAR3** | §8.4 |
-| 5 | population is not a factor of production | T-107 | §8.1 — the licence the tree is being given costs its victims nothing |
+| 5 | population is not a factor of production | T-107 | §8.1 — the license the tree is being given costs its victims nothing |
 
 Items 1–3 are engine work with no open design question left in them. **Two of
 the five moved at T-111 and the chain is shorter than it was**: the card's
@@ -691,16 +691,25 @@ these steps but the last**, which is why it is written down rather than built.
 
 ### 8.6 Denial measured — the card does the opposite of what it is for (T-112)
 
+> **Every number in §8.6, §8.7 and §8.8 was measured before R-WAR9 (§8.9.6),
+> and the engine that produced them no longer exists.** The colonization leg was
+> flown at the empty-hull rate, so a colony ship crossed 25 ly in 26.9 years
+> where it now takes 32.3 — the expansion loop is slower everywhere and the
+> whole bed moves. Re-measured after the fix, the first arm below reads
+> **−21.46% / +9.25% / −281** against the −9.55 / +4.40 / −133 it records.
+> **The direction is unchanged and the magnitudes are not.** Read these sections
+> for their mechanisms; read §8.9 for the magnitudes.
+
 **`OPEN`, and the direction is refuted rather than untuned.** The mechanic is
 built, gated off, and measured on the asymmetric bed R-TREE8 asks for: seat 0
 plays the card, seats 1–2 are at the default doctrine.
 
 #### What was built
 
-A coloniser under `Doctrine::picket_after_founding` is **not consumed when it
+A colonizer under `Doctrine::picket_after_founding` is **not consumed when it
 founds**. It flies on to the nearest unclaimed world it has scanned and holds
-it; nobody else founds there while it does. A rival coloniser already in flight
-is warned at `established_at + distance(world, its home centre)` — card contract
+it; nobody else founds there while it does. A rival colonizer already in flight
+is warned at `established_at + distance(world, its home center)` — card contract
 §2's rule verbatim, *"a reaction to a detected fleet is scheduled by the distance
 to the responder"* — and turns back if the warning beats it there. If it does
 not, it arrives into a fight it did not choose, and founds only if it wins.
@@ -712,28 +721,28 @@ thing in the engine that takes a decision at **range** on a light-lagged edge.
 
 | | mean | seeds |
 |---|---|---|
-| **neighbour colonies** | **+4.40% ± 1.09** (4.0 SE) | 1/8 negative |
+| **neighbor colonies** | **+4.40% ± 1.09** (4.0 SE) | 1/8 negative |
 | own colonies | −9.55% ± 2.61 (3.7 SE) | 7/8 negative |
 | `W_0 = C_0 − mean(C_j)` | **−133.2 colonies ± 35.3** (3.8 SE) | 1/8 positive |
 
-**The neighbours expand *more*.** The stated goal was to curb their growth; the
+**The neighbors expand *more*.** The stated goal was to curb their growth; the
 card accelerates it, at 4.0 SE with seven of eight seeds agreeing. Warfare's own
 objective moves the wrong way by 133 colonies.
 
 #### The mechanism, and it is placement rather than magnitude
 
 **Pickets are fielded and almost never used.** 493–793 pickets per run produce
-**3–12 diversions** — a utilisation of one to two percent. A picket is placed on
+**3–12 diversions** — a utilization of one to two percent. A picket is placed on
 the world nearest the colony that just founded, which is the *picketing empire's
-own* frontier: it squats on ground its own colonisers were about to take and
+own* frontier: it squats on ground its own colonizers were about to take and
 threatens nobody.
 
-**Aiming it at the neighbour is worse, and the reason is structural.** Placing
+**Aiming it at the neighbor is worse, and the reason is structural.** Placing
 the picket on the scanned unclaimed world nearest the closest rival homeworld
 gives **24–32 pickets and zero diversions** on every seed. A world that this
 empire has scanned and a rival has not yet claimed barely exists: near a rival,
 everything visible is already owned. **There is no contested frontier to stand
-on** — colonisation is exclusive (R-V3) and worlds go from unscanned to owned
+on** — colonization is exclusive (R-V3) and worlds go from unscanned to owned
 without pausing in between.
 
 So the two placements fail for opposite reasons, and neither is a tuning
@@ -741,31 +750,31 @@ question.
 
 #### And a 1:1 trade would still lose, which is arithmetic rather than a measurement
 
-Suppose placement were solved and every picket denied exactly one neighbour
-colony. Seat 0 spends `k` colonisers to field `k` pickets, so `C_0` falls by `k`
-and the denied neighbour's count falls by `k`. Then
+Suppose placement were solved and every picket denied exactly one neighbor
+colony. Seat 0 spends `k` colonizers to field `k` pickets, so `C_0` falls by `k`
+and the denied neighbor's count falls by `k`. Then
 
 ```text
 ΔW_0 = −k + w_0A · k = −k(1 − w_0A)
 ```
 
 and `Σ_j w_0j = 1` by construction (§0), so `w_0A < 1` whenever there is more
-than one neighbour and **ΔW_0 < 0**. A denial bought with a whole coloniser is a
+than one neighbor and **ΔW_0 < 0**. A denial bought with a whole colonizer is a
 losing trade against the tree's own objective at any table wider than two seats,
 however well it is aimed.
 
-Measured, the realised trade is far past that bound: seat 0 gave up **718
-colonies** across the bed and the neighbours gained 696 — a ratio of **−0.97
+Measured, the realized trade is far past that bound: seat 0 gave up **718
+colonies** across the bed and the neighbors gained 696 — a ratio of **−0.97
 denied per spent**, where even +1.00 would not have been enough.
 
 #### What would have to change
 
 Stated as the design question rather than left as a failure:
 
-- **A picket must cost less than a colony.** The card spends a coloniser — the
+- **A picket must cost less than a colony.** The card spends a colonizer — the
   most expensive object in the expansion loop — on an object that produces
   nothing. A cheap dedicated hull breaks the 1:1 bound above; a recycled
-  coloniser cannot.
+  colonizer cannot.
 - **Or it must deny more than one world per hull.** A blockade that covers an
   approach rather than a point, or one that persists against many arrivals, is
   the shape that clears `1 − w_0A`.
@@ -785,8 +794,8 @@ and because it is a shape that recurs.
 The first implementation charged the card honestly: roles §4.2 makes a colony's
 `Band I` stock the **recycled hull**, so a hull that leaves should leave nothing.
 It debited the founding rung to zero. Measured, that took seat 0 from **769
-colonies to 10** and *raised* the neighbours **+20.0%**: the empire had removed
-itself from the game, and the neighbours' gain was one fewer competitor rather
+colonies to 10** and *raised* the neighbors **+20.0%**: the empire had removed
+itself from the game, and the neighbors' gain was one fewer competitor rather
 than any denial at all.
 
 **The line is `employment_rate`** (`src/sim.rs`): it returns exactly `0.0` for a
@@ -799,15 +808,15 @@ design law #11/T-63) — the smallest rung that is a real quantity. Three arms,
 same bed, and the monotonicity is the evidence that the floor is the term that
 matters:
 
-| founding rung under the card | own colonies | neighbour colonies | `W_0` |
+| founding rung under the card | own colonies | neighbor colonies | `W_0` |
 |---|---|---|---|
 | zero | −57.2% | **+20.0%** | −688 |
 | **floor (shipped)** | −9.6% | **+4.4%** | −133 |
 | unchanged `Band I` | +2.6% | −0.7% | +31 |
 
-**The neighbours' gain tracks the card-player's self-harm one for one**, across a
+**The neighbors' gain tracks the card-player's self-harm one for one**, across a
 25-point range, which is what says the measured effect is self-harm and not
-denial. Even the arm that charges the card *nothing* only moves the neighbours
+denial. Even the arm that charges the card *nothing* only moves the neighbors
 −0.71% ± 0.54 — inside noise, and nowhere near "greatly decrease".
 
 `a_picketed_founding_still_leaves_a_workable_colony` pins the floor against the
@@ -818,7 +827,7 @@ departing picket should instead found at whatever its mineral endowment buys
 ### 8.8 Claiming instead of denying — three arms, and all three are bounded by supply (T-113)
 
 **`OPEN`.** §8.6 refuted denial *as arithmetic*: a denial bought with a whole
-coloniser gives `ΔW_0 = −k(1 − w_0A)`, and `Σ_j w_0j = 1`, so it loses at any
+colonizer gives `ΔW_0 = −k(1 − w_0A)`, and `Σ_j w_0j = 1`, so it loses at any
 table wider than two seats however well it is aimed. §8.6's own "what would have
 to change" list named three exits. This section measures the first two.
 
@@ -833,9 +842,9 @@ picket."*
 | | Doctrine write | What it is for |
 |---|---|---|
 | **cheap picket** | `picket_reserve: usize` | pickets as a *purpose*, on `HullType::LimitedOffensive` — §8.6's "a picket must cost less than a colony" |
-| **claim the target** | `picket_claims_target: bool` | a centre that has named an outward world it cannot yet pay for holds it while the bank fills |
-| **erect the hold** | `founding_infra_share: f64` | part of a coloniser's mineral endowment becomes the new colony's stock instead of its bank |
-| **settle held ground** | — (unconditional; self-gating) | a coloniser prefers a world this empire's pickets already hold over a better one nobody holds |
+| **claim the target** | `picket_claims_target: bool` | a center that has named an outward world it cannot yet pay for holds it while the bank fills |
+| **erect the hold** | `founding_infra_share: f64` | part of a colonizer's mineral endowment becomes the new colony's stock instead of its bank |
+| **settle held ground** | — (unconditional; self-gating) | a colonizer prefers a world this empire's pickets already hold over a better one nobody holds |
 
 `Class::Unnamed` on `LimitedOffensive` is a Design write, so TIER0 card 15
 (Warfare / Inscrutable) is now `UnlockDesign` rather than `NotYetImplemented`.
@@ -843,12 +852,12 @@ picket."*
 #### What they measure (`examples/denial_census`, 8 seeds, 3 seats, 800 yr)
 
 Seat 0 plays the card; seats 1–2 at the default doctrine. `own` and
-`neighbours` are percentage changes against the peace arm on the same seed
-(CRN); `W_0` is in colonies. **Neighbours should fall and `W_0` should rise.**
+`neighbors` are percentage changes against the peace arm on the same seed
+(CRN); `W_0` is in colonies. **Neighbors should fall and `W_0` should rise.**
 
-| arm | own | neighbours | `W_0` | diverts | pickets |
+| arm | own | neighbors | `W_0` | diverts | pickets |
 |---|---|---|---|---|---|
-| T-112 coloniser pickets, **+ settle held ground** | −8.30 ± 2.69 | +4.07 ± 1.09 | −120 ± 34 | 59 | 5,415 |
+| T-112 colonizer pickets, **+ settle held ground** | −8.30 ± 2.69 | +4.07 ± 1.09 | −120 ± 34 | 59 | 5,415 |
 | + hold erects infra (`share = 0.5`) | −8.33 ± 2.56 | +4.04 ± 1.04 | −119 ± 32 | 60 | 5,411 |
 | + cheap LOU pickets (`reserve = 128`) | −9.01 ± 2.62 | +4.42 ± 1.12 | −129 ± 34 | 56 | 5,402 |
 | LOU pickets alone | −1.57 ± 1.21 | +0.93 ± 0.38 | −21 ± 12 | 2 | 95 |
@@ -877,13 +886,13 @@ policy only when it already won its class outright, and the preference was
 inert by construction. The reduction now carries six slots (per-class winner,
 plus per-class winner among held ground);
 `the_candidate_reduction_carries_held_ground_without_duplicating_it` and
-`a_coloniser_prefers_held_ground_to_a_better_unheld_world` pin both halves.
+`a_colonizer_prefers_held_ground_to_a_better_unheld_world` pin both halves.
 
 #### The cheap picket is not measurably cheaper, because it is not built
 
 §8.6's arithmetic says a picket costing a fraction of a colony clears the
 `1 − w_0A` bound. The measurement cannot see that, because the hull is fielded
-**95 times across eight seeds** — twelve per run, against 5,400 coloniser
+**95 times across eight seeds** — twelve per run, against 5,400 colonizer
 pickets in the arms above.
 
 **The mechanism is the branch's position, and it is one predicate.** The picket
@@ -904,11 +913,11 @@ picket at all.
 #### Giving it its own state doubles the supply and changes nothing
 
 `picket_claims_target` opens the one other state where a cheap hull is the best
-thing a centre can do with a cycle: it has **named an outward world and cannot
+thing a center can do with a cycle: it has **named an outward world and cannot
 pay for it yet**. Those cycles are already spent saving, and a picket standing
 on the target is what makes the voyage safe to have committed to. It is gated
 on the target not already being held *or claimed* — `Simulation::picket_inbound`
-counts hulls already under way — so a centre lays down one picket per world
+counts hulls already under way — so a center lays down one picket per world
 rather than one per decision for the whole voyage.
 
 Supply goes **95 → 188 pickets**, and every objective column stays inside 2 SE.
@@ -919,10 +928,10 @@ than either arm's error bar, so **the guard's value is not resolved at eight
 seeds**; it is kept because laying down a hull per decision for the length of a
 voyage is waste whether or not this bed can price it.
 
-**The state is rare**: expansion on this bed is not bound by the coloniser's
-price, so centres seldom sit in "named it, cannot buy it". That is consistent
+**The state is rare**: expansion on this bed is not bound by the colonizer's
+price, so centers seldom sit in "named it, cannot buy it". That is consistent
 with `Hyades_industry.md` §6.19c, which measures the mineral constraint as a
-*colour* conjunction on the infrastructure bill rather than a shortfall against
+*color* conjunction on the infrastructure bill rather than a shortfall against
 hull prices.
 
 **Diversions stay at 2 per eight seeds**, which is §8.6's structural finding
@@ -943,12 +952,12 @@ foundings, floor rung `Band Empty` = 0.020 kt):
 | 0.50 | 649 | 0.020 | 0.051 | 0.313 | 21.0% |
 | 1.00 | 649 | 0.020 | 0.087 | 0.625 | 22.5% |
 
-At share 0 the **maximum** is the floor: no coloniser under this doctrine lands
+At share 0 the **maximum** is the floor: no colonizer under this doctrine lands
 with an endowment worth anything. At 0.5 the median is still the floor and only
 a fifth of foundings clear it — and **the whole hold erected (1.00) adds 1.5
 points**, so the axis is exhausted rather than undertuned.
 
-**A coloniser's hold is nearly all settlers.** `settler_target` sizes the
+**A colonizer's hold is nearly all settlers.** `settler_target` sizes the
 people to the destination's carrying capacity (R-IND12) and the minerals take
 whatever volume is left, which is usually none. So *"load colony ships with a
 mix of minerals for Infra and population"* is not a share of the hold — it is a
@@ -963,7 +972,7 @@ reachable today:
 - **"A picket must cost less than a colony"** — built, and the cost is not what
   binds. Twelve to twenty-three hulls a run is a supply problem, and its two
   causes are both load-bearing elsewhere (survey's priority, and expansion not
-  being coloniser-price-bound).
+  being colonizer-price-bound).
 - **"Denial must happen before the wave"** — `picket_claims_target` is the
   cheapest form of it and fires in a state that is rare.
 
@@ -977,6 +986,305 @@ reduction fix behind it: those are Expansion machinery, they help any doctrine
 that holds ground for any reason, and they are the only part of this section not
 waiting on a magnitude.
 
+
+### 8.9 Two responders, a moving picket, and an armed scout (T-115)
+
+**`OPEN`.** Four corrections, three of them to things §8.6–8.8 got wrong rather
+than to things that were merely untuned. The author's specification: *"Pickets
+should move to the frontier if the site they patrol is colonized. LOU can
+replace LSV as scout in this Doctrine… I think the enemy colony ships should be
+reacting in addition to enemy home centers. Also, pickets should actively close
+the distance to targets they can intercept prior to founding a colony."*
+
+#### The bed, re-measured (`examples/denial_census`, 8 seeds, 3 seats, 800 yr)
+
+Seat 0 plays the card; seats 1–2 at the default doctrine. `own` and `neighbors`
+are percentage changes against the peace arm on the same seed (CRN); `W_0` is in
+colonies. **Neighbors should fall and `W_0` should rise.** Every row is measured
+*after* R-WAR9 (§8.9.6), so this table and §8.6–8.8's are from different
+engines and must not be read against each other.
+
+| arm | own | neighbors | `W_0` | diverts | pickets |
+|---|---|---|---|---|---|
+| T-112 colonizer pickets | −21.46 ± 4.41 | +9.25 ± 2.78 | −281 ± 72 | 15 | 4,974 |
+| + hold erects infra (`share = 0.5`) | −21.25 ± 4.48 | +9.16 ± 2.74 | −276 ± 70 | 14 | 5,012 |
+| + cheap LOU pickets (`reserve = 128`) | −21.02 ± 4.55 | +8.86 ± 2.52 | −267 ± 63 | 21 | 5,079 |
+| LOU pickets alone | −2.87 ± 2.11 | +1.06 ± 0.58 | −29 ± 19 | 1 | 188 |
+| + claims its target | −2.64 ± 2.38 | +1.76 ± 0.80 | −49 ± 25 | 2 | 333 |
+| **+ the LOU scouts** | **−2.87 ± 2.11** | **+1.06 ± 0.58** | **−29 ± 19** | **1** | **188** |
+| + and intercepts | −2.29 ± 1.99 | +0.85 ± 0.62 | −22 ± 20 | 0 | 195 |
+
+*(An `intercepts` column was added after this run and is measured separately;
+see §8.9.5. The objective columns reproduce exactly with logging on, which is
+`tests/telemetry.rs`'s bound holding.)*
+
+**The direction §8.6 measured is unchanged and the magnitudes roughly doubled**:
+a colonizer that keeps its hull now costs its own player 21.5% of its colonies
+where it cost 9.6, because a slower expansion loop makes a spent colonizer dearer.
+The cheap-hull arms are the mild ones and the last three are inside 2 SE on every
+column. The `LOU scouts` row reproducing the one above it **to every printed
+digit** is §8.9.7.
+
+#### 8.9.1 The colony ship hears it itself, not only through its capital
+
+§8.6 scheduled one warning, at `now + distance(world, the ship's home center)`,
+on card contract §2's rule that *a reaction to a detected fleet is scheduled by
+the distance to the responder*. That rule is right and the reading of it was too
+narrow: **there are two responders.** The home center issues an order; the crew
+notices a picket. A hull flying at the world the picket took is closing on the
+source, so the light reaches it *sooner* than it reaches anything standing
+still at its launch range.
+
+Both are now scheduled. The ship-side instant is the root of
+
+```text
+f(t) = (t − now) − |p(t) − world|
+```
+
+— where the light's travelled distance equals the hull's current range — found
+by 48 bisections, because the trajectory is a relativistic 1 g brachistochrone
+with a departure delay and has no elementary inverse. Bisection uses comparison,
+addition and `sqrt` only, all exactly specified by IEEE 754, where a fitted
+approximation would be a per-platform divergence in replicated state (design
+law #16).
+
+#### 8.9.2 Which forces a second question, and it is kinematic
+
+Light outruns a colony ship, so with the ship-side channel the warning **always**
+arrives before the hull does. *"Did the warning arrive in time"* therefore stops
+discriminating, and left alone it would turn every ship back and delete the
+arrival fight §8.6 built.
+
+The question that replaces it costs no constant. A leg accelerates to the
+midpoint and decelerates from it, so **before turnover the hull's velocity still
+points somewhere it can choose; after turnover it is shedding velocity it has
+already spent and arrives whatever it decides.** The gate is
+`now < (depart + arrive) / 2`.
+
+So the counterplay window is a **margin** rather than a race, and both channels
+still matter: the crew's own sighting is early, and the order from home may or
+may not land before the hull is past turning.
+
+#### 8.9.3 A picket whose world gets settled goes back to the frontier
+
+A picket's whole product is a colony somebody does not found. Once the world it
+stands on *is* a colony, a parked hull is a hull doing nothing — and worse, one
+the empire keeps counting, so `picket_reserve` throttles the replacements it
+should be buying. `Simulation::vacate_picket` takes it off station and off the
+books in one function, because every path that removes a picket has to move both
+and the one that forgot would leave a permanent phantom holding.
+
+This is the situation T-113's held-ground preference *creates*: settling ground
+you hold is the recommended play, and until now it stranded the hull that held
+it.
+
+#### 8.9.4 The armed hull takes the survey slot
+
+§8.8 measured the cheap picket's problem as supply: **95 hulls across eight
+seeds**, because the picket branch sits behind a survey test R-O86 measured a
+constant `true`. `Doctrine::picket_claims_target` answered that by finding the
+picket a new branch. `Doctrine::scout_hull_offensive` answers it the opposite
+way — **put the picket in the branch that already runs constantly.** An empire
+that wants ground held is already building an unarmed light hull in the slot
+where it could be building an armed one.
+
+The survey *cadence* is untouched; only the hull it names changes.
+
+**The price was expected to be paid at the yard, and it is not** — an LOU and an
+LCV cost the same 0.020 kt, so the write is bit-identically inert. §8.9.7 has
+the two reasons and what would make either bite.
+
+**A scout built this way carries `Class::Tor`.** The class is the design
+(R-O28/R-O42b), so a Tor on an offensive shell is a survey design mounted on a
+fighting hull — which is what a Design write does — and it is how `assign_role`
+tells a scouting LOU from a picketing one without a second piece of state.
+
+> **Note on the specification.** The author wrote *"LOU can replace LSV as
+> scout"*. The engine's scout rides the **LCV** (`role_hull_type(Role::Scout)`,
+> `Class::Tor`, §7.1's starting roster); the LSV is the mining hull. The write
+> replaces the LCV.
+
+#### 8.9.5 Interception, and the geometry that decides when it fires
+
+`Doctrine::picket_intercepts` lets a picket leave station for a world it has
+seen a colony ship launched at, when it can be on the ground first:
+
+```text
+t_see   = depart + |origin − station|              // light, c = 1
+t_reach = t_see  + flight(station → world)
+go iff t_reach < colony_arrival
+```
+
+Every term is an existing quantity — no reaction time, no interception radius,
+and nothing the picket knows that light has not delivered. Cost is
+`O(pickets held)` per colony-ship launch, and one `is_empty()` where nobody
+plays the card.
+
+**The window is the colony ship's travel time minus light's**, because light
+carries the news over the same ground the ship crosses. Measured
+(`examples/intercept_probe`), with the colony ship flown at the rate its load
+implies (§8.9.6):
+
+| range | light | laden colony ship | **window** |
+|---|---|---|---|
+| 5 ly | 5.000 yr | 10.395 yr | 5.395 |
+| 25 ly | 25.000 | 32.253 | 7.253 |
+| 100 ly | 100.000 | 107.986 | 7.986 |
+| 200 ly | 200.000 | 208.139 | **8.139** |
+
+A laden Medium colonizer makes **0.241 ly/yr²** against an empty hull's 2.446,
+so its overhead over light **saturates at ≈8.14 years**. An empty LOU picket
+(0.940 ly/yr²) covers **6.29 ly** in that time, against a median
+nearest-neighbor spacing of **6.16 ly** on the shipped field:
+
+| nearest-neighbor spacing (6,725 planets) | min | p10 | median | p90 |
+|---|---|---|---|---|
+| distance | 0.345 ly | 2.911 ly | **6.162 ly** | 15.469 ly |
+| picket hop | 1.260 yr | 4.567 yr | **8.012 yr** | 17.468 yr |
+
+**The median world sits just inside the window**, so roughly half the field is
+interceptable from a neighboring station — and the margin at the median is
+0.13 years, which is thin enough that the reach is a property of the drive
+ladder rather than a comfortable constant.
+
+**And the sign of one term is the design.** A station 0.5 ly *beyond* the
+contested world loses the race; the same 0.5 ly on the *near* side wins it,
+because the far side pays that distance twice — once in light to hear the
+launch and once in flight. **Interception is a forward-deployment mechanic**,
+not a reaction one.
+
+#### What it actually does, counted
+
+`LogEvent::PicketIntercept` exists because neither the objective nor the picket
+column can see this mechanic: an interception **moves** a hull rather than
+building one, so the census's picket count barely registers it. Counted
+directly (`intercepts` column, 8 seeds):
+
+| | value |
+|---|---|
+| interceptions launched | **81** (≈10 a run) |
+| picket arrivals on station | 195 |
+| **diversions caused** | **0** |
+| `W_0` against `LOU pickets alone` | −22 ± 20 against −29 ± 19 |
+
+**It fires, on about 40% of the pickets that exist** — the geometry of §8.9.5 is
+real and the mechanic reaches it. What it does *not* produce is diversions, and
+that follows from §8.9.2 rather than being a separate failure: a picket that
+arrives just ahead of a colony ship arrives when that ship is long past
+turnover, so the warning lands on a hull that cannot turn. **Interception
+converts an uncontested founding into a fight at the destination**, which is
+what `resolve_picket_fight` then resolves.
+
+Whether that pays is **not resolved at eight seeds**: −22 ± 20 against −29 ± 19
+is a 7-colony improvement with error bars three times its size, and the two arms
+share seeds so the difference is paired — the missing measurement is more seeds
+on an arm that is still supply-starved at 24 pickets a run.
+
+#### 8.9.6 R-WAR9 — the colonization leg was flown unladen, and it is fixed
+
+**Resolved.** `Simulation::spawn_courier` computed the leg's acceleration as
+`civilian_accel_g · G` **before** the hold was loaded and never re-read it, so a
+colony ship flew at the empty-hull rate while every `laden_accel` call site in
+the engine was freight. `CLAUDE.md` §7 records standing-layer item 5 (R-O32) as
+closing exactly that — *"it was massless, so a laden colony ship flew like an
+empty hull"* — and it had closed it for the arena and not for this dispatcher.
+
+The leg now reads `laden_accel` after the hold is loaded, which also stops it
+pretending every hull mounts the same drive (T-96); `launch_picket` and the
+interception's own feasibility test read the same function, so the decision and
+the leg cannot disagree about who wins a race. Guarded by
+`the_colonization_leg_is_flown_at_the_rate_its_own_load_implies`.
+
+**It contradicts every transit-dependent magnitude measured before it**, this
+document's own §8.6–8.8 arms included: a colony ship is 20% slower over 25 ly
+and 56% slower over 5, so the expansion loop is slower everywhere and the whole
+bed moves. §8.9's table is measured after the fix; §8.6–8.8's are not, and the
+comparison between them is between two different engines.
+
+**How it was found is the reusable part.** Nothing was looking for it. The
+interception mechanic needed a number — how long a colony ship takes compared to
+light — and the number turned out to be a property of a defect rather than of
+the design. `CLAUDE.md` §3's *"a second caller is a cheap audit of the first"*
+holds for physics as well as for panics.
+
+**And the first answer this document gave was wrong because of it.** §8.9.5
+originally reported a 1.92-year window and concluded interception would fire on
+fewer than a tenth of worlds. That figure was the *empty* hull's overhead,
+computed from the same defect that had already been written up one subsection
+below. **A probe inherits every assumption of the code it measures**; when one of
+those assumptions has just been found wrong, the probe is part of what has to be
+re-derived.
+
+#### 8.9.7 The armed scout is bit-identically inert, and the reason is the cost ladder
+
+`Doctrine::scout_hull_offensive` reproduces the arm without it **to every
+printed digit** — 188 pickets, −2.87% own, +1.06% neighbors, `W_0` −29, on all
+eight seeds, and it did so before the R-WAR9 fix as well as after it. That is
+the *exactly zero* verdict rather than the *inside noise* one (`CLAUDE.md` §2),
+and its cause is one line:
+
+**`hull_dry_mass(LimitedContactVehicle) == hull_dry_mass(LimitedOffensive) ==
+0.020 kt.`** Under R-O57 cost *is* dry mass, and `hull_dry_mass` reads the cost
+*tier*, which groups every Limited hull together. So an LOU and an LCV are the
+same object economically — same price, same mass, same shell — and swapping one
+for the other changes nothing the simulation reads.
+
+The two hulls *do* differ in `shell_thickness` and `drive_mass` — and
+**neither reaches a scout.** `launch_survey` flies its leg at
+`doctrine.survey_accel_g · G`, a flat constant, where the colonization and
+picket legs now read `laden_accel` and therefore read the hull's own drive
+(§8.9.6). So the survey leg has exactly the defect R-WAR9 just closed for the
+other two, and closing it there as well is what would make the drive half of
+this write bite.
+
+So the write is inert for two independent reasons and is kept for both: it
+becomes live in **price** when hull types carry differentiated cost (**R-O64**,
+roles §6's 0/1/2 was a unit count and not a mass ladder; **R-L0**, per-hull slot
+tables), and live in **speed** when the survey leg reads the hull it is flying.
+Until then *"the LOU takes the survey slot"* is a Design statement with no
+mechanical content.
+
+It also weakens §8.6's framing. *"A picket must cost less than a colony"* is
+satisfied — 0.020 kt against a Medium colonizer's 0.109 — but the cheap armed
+hull is not cheaper than the cheap unarmed one, so *arming* the frontier is
+free and the trade §8.6's arithmetic describes is not the trade being made.
+
+#### 8.9.8 What is still not modeled — `R-WAR10`
+
+**`OPEN`.** `offer_interception` is handed the colony ship's **destination**,
+read from the launch. That is not what a picket can see. What light delivers is
+a *trajectory* — a departure point, a time, and a heading — from which a
+destination is an inference, and design law #10 already says the observable is
+acceleration rather than intent.
+
+So the destination should be **inferred**, from the heading and the worlds along
+it, which makes a picket's response wrong sometimes — and a colony ship that
+launches on a bearing it does not intend to keep is then running a feint, which
+is yomi content rather than a modeling gap. That is the whole of R-WAR10.
+
+**And the thing it is *not* is worth recording, because it was the obvious next
+idea and one probe refuted it.** *"Meet the ship anywhere on its path rather than
+racing it to a world"* sounds like a strictly larger set and is a narrower one,
+because **the interception window is back-loaded.** On a 25 ly voyage
+(`examples/intercept_probe`), the perpendicular offset a station can sit at and
+still make the meeting is:
+
+| point on the track | 12.5% | 25% | 50% | 75% | 87.5% | **destination** |
+|---|---|---|---|---|---|---|
+| tolerable offset | 1.24 ly | 1.62 | 1.95 | 2.25 | 2.62 | **4.96 ly** |
+
+The slack a picket lives on is `t_ship(along) − along` — how far behind light the
+ship is at that point — and it **accumulates**, because the hull spends the back
+half of a brachistochrone decelerating. Early in the voyage there is almost
+none. So the destination is where the whole window is, and the shipped criterion
+is already taking it; meeting on the path would trade the mechanic's entire
+margin for generality it does not need.
+
+**What would settle R-WAR10**: a heading-based candidate set — the worlds within
+some cone of the observed bearing — in place of the true target, and a measure of
+how often the inference is wrong. It does **not** need the reachability cone
+(R-O31/T-05) or a deep-space engagement site, which is what this subsection
+originally claimed.
 
 ---
 
@@ -998,6 +1306,9 @@ waiting on a magnitude.
 | **R-O95** | the empty-to-laden acceleration swing **is** the hull's cargo efficiency, exactly — so a hull cannot be worse at freight, faster empty and slower laden at once (§8.3) |
 | — | **only Warfare may carry a population-lethal Doctrine write** (card contract §10), enforced in the card layer rather than by authoring convention |
 | — | the wreck roll is the only stochastic beat, bounded in (0, 1) |
+| **R-WAR9** | **the colonization leg is flown at the rate its own load implies** — `spawn_courier` read `civilian_accel_g · G` before the hold was loaded, so a colony ship flew like an empty hull and R-O32 was closed for the arena but not for this dispatcher. A laden Medium colonizer makes **0.241 ly/yr² against 2.446 empty**. It **invalidates every transit-dependent magnitude measured before it**, §8.6–8.8's arms included (§8.9.6) |
+| **T-115** | **there are two responders to a picket, not one** — the home center issues an order and the crew notices, and light reaches a closing hull sooner than a standing observer. Because light outruns a colony ship, *whether the warning arrives* stopped discriminating; **turnover** replaces it, and it is kinematics rather than a constant (§8.9.1–8.9.2) |
+| **T-115** | **a picket whose world is colonized returns to the frontier**, off station and off the books in one function — which is the situation T-113's held-ground preference creates (§8.9.3) |
 | **T-113** | the per-class candidate reduction (R-O70) is exact only for a consumer reading the argmax of a **class**; a consumer reading the argmax of a *subset* needs its own slot, and got one (§8.8) |
 | **T-112** | a colony founded at infrastructure **zero** is an absorbing state, not a price — `employment_rate` returns exactly `0.0` there, so it can never mine or build. A departing picket leaves the ladder's floor rung instead (§8.7) |
 | **T-111** | `combat::resolve_engagement` is called from `sim.rs`; the simulation and the arena fight with one model, and the arena still seeds no production |
@@ -1009,8 +1320,10 @@ waiting on a magnitude.
 | Code | Question | What would settle it |
 |---|---|---|
 | ~~**T-30**~~ | ~~no accept/decline site exists~~ — **closed as stated (T-111).** The round layer had already landed and the engine was producing ~4,200 co-locations per run unremarked; `sys_engagement` now resolves them. R-AC13 and posture cards are **not** unblocked: both need a decision at *range* | done; see §3.4 and §7 |
-| **R-WAR7** | **a coloniser's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
-| **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole coloniser loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
+| **R-WAR10** | **a picket is handed the colony ship's destination**, not its trajectory. Light delivers a departure, a time and a heading; a destination is an *inference* from those, and inferring it wrong is what makes a feint possible. **Meeting the ship on its path instead is refuted** — the window is back-loaded, so a mid-track intercept tolerates a 1.95 ly offset against the destination's 4.96 (§8.9.8) | a heading-based candidate set in place of the true target, and a measure of how often the inference is wrong |
+| **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is **bit-identically inert** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |
+| **R-WAR7** | **a colonizer's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
+| **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole colonizer loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
 | **R-WAR5** | **which side carries which weapon.** `resolve_engagement` is laser-side-vs-missile-side because that is the sweep it was tuned on; the sim gives the defender the lasers and the arriver the missiles, and `carrier_accel` reads the laser side's first hull whatever the attacker flies. A convention that decides outcomes | R-L0's per-hull slot tables, then the arena |
 | **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |
 | R-MC9c / T-12 | HP pools, weapon count, missile AoE, magazines | engine work, then the arena |
@@ -1022,10 +1335,10 @@ waiting on a magnitude.
 | R-IND8 | captured infrastructure | a design pass, with Production |
 | R-WAR1 | **elimination** — nothing eliminates anyone | a design pass |
 | R-WAR2 | the card surface | **advanced** — §7 specifies the first card's shape and value model; its effects stay blocked on T-30 and R-MC9c |
-| **R-WAR4** | **the armed coloniser's magnitudes** — the Contact coloniser class's drive fraction `φ` (0.02 is the smallest value that makes its cargo-inefficiency claim true, and it is a placeholder), the card's mineral cost, and where in the tree the pair sits once §8.4's dispersion prediction is measured | T-97 first, then a measurement on the asymmetric bed |
+| **R-WAR4** | **the armed colonizer's magnitudes** — the Contact colonizer class's drive fraction `φ` (0.02 is the smallest value that makes its cargo-inefficiency claim true, and it is a placeholder), the card's mineral cost, and where in the tree the pair sits once §8.4's dispersion prediction is measured | T-97 first, then a measurement on the asymmetric bed |
 | **R-TREE12** | Warfare card value has no doubling time of its own; decided as the fractional *increase* in the **target's** | trees §5; the target set is still open |
-| R-WAR3 | `w_ij`, the neighbour weight | a decision; the objective needs it |
-| R-AC13 | "if pressed" at the colonisation layer | blocked on T-30 |
+| R-WAR3 | `w_ij`, the neighbor weight | a decision; the objective needs it |
+| R-AC13 | "if pressed" at the colonization layer | blocked on T-30 |
 | — | nothing moves `bio_max`, so the durable target is untouchable | a Warfare card, and the guard in §4.2 |
 
 ---
@@ -1033,7 +1346,7 @@ waiting on a magnitude.
 ## References
 
 - `Hyades_simulation_model.md` §4 (deterministic combat, the wreck roll), §5
-- `Hyades_loadout.md` §3.2 (the four weapon families), §3.3 (defence), §5
+- `Hyades_loadout.md` §3.2 (the four weapon families), §3.3 (defense), §5
 - `Hyades_standing_layer_and_observation.md` §3 (σ), §6.2 (acceleration as the
   observable), §6.4–6.5 (belief and SPRT), §9.2 (laden hulls are conspicuous)
 - `Hyades_trees_and_card_value.md` §2.3.2 — the relative objective and `w_ij`;
@@ -1043,9 +1356,9 @@ waiting on a magnitude.
 - `Hyades_politics_trade_and_intelligence.md` §8 — the time-dependent counter-graph
   edge between these two trees
 - `Hyades_industry.md` §1.2 (infrastructure is the war target), §1.8 (population is
-  not a factor of production, which is why §8.1's licence is currently inert),
+  not a factor of production, which is why §8.1's license is currently inert),
   §9 (captured infra)
-- `Hyades_vehicle_roles.md` §4.2 — the Colonizer role and the arrival behaviour
+- `Hyades_vehicle_roles.md` §4.2 — the Colonizer role and the arrival behavior
   §8.2 changes
 - `src/combat.rs`, `src/arena.rs`, `src/belief.rs`
 - CLAUDE.md design laws #2, #3, #4, #7, #8, #10, #11

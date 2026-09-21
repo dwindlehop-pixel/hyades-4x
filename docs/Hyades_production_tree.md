@@ -9,7 +9,7 @@ is fitted with). New calls continue the **R-PROD n** series.*
 
 **Rev 1, new.** Carries **ratified decisions and open decisions only**
 (`CLAUDE.md` §6). More of this tree is built than any other unlanded tree —
-`Works`, the employment split, the fold, the colour-denominated bill, the berth
+`Works`, the employment split, the fold, the color-denominated bill, the berth
 model and the cost ladder all ship — so the ratified half is substantial and the
 open half is mostly *cards*: nothing writes `Works` yet except a test.
 
@@ -68,9 +68,9 @@ geometric in the stock, so **a rung pays for itself in 1.8 years at every rung**
 **R-O85 is resolved as false**: infrastructure was never priced out of reach.
 Counted per decision on the standard bed, 0% of decisions are gated at the
 ceiling, 0.7–0.9% are outbid, and **98.3% simply cannot pay the bill** — of which
-**43.8–46.6% of *all* decisions hold the total and lack a colour.**
+**43.8–46.6% of *all* decisions hold the total and lack a color.**
 
-**The binding constraint on this tree is therefore colour composition, not
+**The binding constraint on this tree is therefore color composition, not
 price**, which is what R-O89 and R-O92 then moved.
 
 **1.5 `OPEN` — R-IND2: is Warding a third employment share at all?** Or is it a
@@ -83,7 +83,7 @@ can target.
 
 ## 2. The works bill
 
-**2.1 `RATIFIED` — a bill is payable in named colours, and that is a
+**2.1 `RATIFIED` — a bill is payable in named colors, and that is a
 conjunction.**
 
 ```text
@@ -92,14 +92,14 @@ bill[c] = total × mix_share(c)                     // Doctrine, a simplex
 ```
 
 **A bill denominated in a total is an unexpressed fact about a game.** The
-conjunction is why `can_afford_infra` is a per-colour test, and why inferring it
+conjunction is why `can_afford_infra` is a per-color test, and why inferring it
 from a total reported 44.7% "outbid" where the truth is 0.9%. **A reconstruction
 that looks arithmetically equivalent is not, when the thing it reconstructs is a
-conjunction over three colours.**
+conjunction over three colors.**
 
 **2.2 `RATIFIED` — the default mix is `3:2:1` Yellow : Cyan : Magenta, and Sole
-is an asymptote.** **R-IND15.** `WORKS_MIX_DEFAULT`, normalised, in `Basic`
-order. A card moves weight *between* colours; it cannot move the total, which
+is an asymptote.** **R-IND15.** `WORKS_MIX_DEFAULT`, normalized, in `Basic`
+order. A card moves weight *between* colors; it cannot move the total, which
 only `eta_works` sets.
 
 **This is measured downstream, not merely asserted:** trade flow reproduces the
@@ -124,7 +124,7 @@ negative.
 
 **3.1 `RATIFIED` — there are two algebras, not three.** A **product** (Design:
 `eta_works`, `cap`, `half` — multiplicative, commutative, order-free) and a
-**simplex** (Doctrine: `mix_w`, `alloc` — weights that renormalise). "Rotation"
+**simplex** (Doctrine: `mix_w`, `alloc` — weights that renormalize). "Rotation"
 was a third candidate and was wrong. **Commutativity is the acceptance test**
 (`Hyades_industry.md` §6.5).
 
@@ -138,7 +138,7 @@ played the same cards in different orders would hold state differing in its last
 bits, which is a desync. Same lesson as `holdings_centroid`. **T-75b.**
 
 **3.3 `RATIFIED` — the base is the identity.** `eta_works = 1.0`, `cap = [1;3]`,
-`half = [1;3]`, and `mix_w` normalised to the default mix. **An empire that has
+`half = [1;3]`, and `mix_w` normalized to the default mix. **An empire that has
 played no works card sits exactly on the shipped constants**, so the layer is
 inert until a card exists and every measurement taken before cards is still
 valid.
@@ -170,16 +170,16 @@ meanings before you pick a winner.**
 **4.2 `RATIFIED` — the re-denomination was engineered to be bit-identical.**
 `fab_cap` 0.2 → 0.1 reproduces the old per-berth rate *exactly*, because the old
 `slips` was always exactly 2 — so turnaround did not move at all and the only
-behavioural change in the landing is berth count. **That is what makes the
+behavioral change in the landing is berth count. **That is what makes the
 measurement readable**, and it is the precedent for any future re-denomination.
 
 **4.3 `RATIFIED` — build time tracks hull mass.**
 `t_build = build_lead_years + m / fab_cap`, `build_lead_years = 2.0`. A Medium
 hull went from 10 yr to 3.0 at **T-68**, which bought +10.5% colony-years with
-colony count unmoved — and cost ~19× throughput, because centres then decide
+colony count unmoved — and cost ~19× throughput, because centers then decide
 three to four times as often.
 
-**4.4 `RATIFIED` — a yard fills every berth.** Filling all berths amortises
+**4.4 `RATIFIED` — a yard fills every berth.** Filling all berths amortizes
 `build_lead_years` across slips, so a yard produces ~1.8× the hulls (**T-69**).
 The cost is **decision count**, not entity count: every commit schedules its own
 `BuildDecision`, so a yard with `k` berths raises `k` events where it raised one.
@@ -235,7 +235,7 @@ replaced rather than a target, and it has been.
 
 **5.5 `RATIFIED` — the hull a role flies is a decision, not a constant.**
 `freighter_hull` scores candidates on `load / round_trip / hull_cost` under a
-**liquidity cap** — only hulls the centre can pay for now. **+170.1% ± 16.2
+**liquidity cap** — only hulls the center can pay for now. **+170.1% ± 16.2
 work-years, 8/8 seeds** (R-O94). Without the cap the same change is +51%
 work-years and **−17% colony-years**.
 
@@ -248,7 +248,7 @@ The ladder is geometry, so a card cannot move `F_mass = F_cost^(3/2)` without
 breaking design law #3. What it *can* move is `eta_works` (the bill), `fab_cap`
 (the rate) and the roster (which hulls exist at all — but that is Technology).
 **A Production card that made big hulls cheaper would be a Technology card wearing
-the wrong colour.**
+the wrong color.**
 
 ---
 
@@ -290,7 +290,7 @@ directionally and scores consolidation higher (2.63 / 5.19 / 2.06), and it is
 the wrong reading for a fleet: a Limited Offensive hull's interior is 0.0066
 against a reserved core of 0.194, so its hold is entirely spoken for and its
 cargo is zero. **Scoring a warship by its hold scores it by the one thing a
-warship does not have.** The shell is armour, not waste.
+warship does not have.** The shell is armor, not waste.
 
 The decomposition is exact and worth keeping in view:
 
@@ -308,7 +308,7 @@ mass-years plus the interior.**
 > Neither is re-denominated here — that would keep the number's authority while
 > destroying its meaning. **R-TREE10** carries the re-measurement.
 >
-> **What it does not appear to change**, spot-checked and labelled as a spot
+> **What it does not appear to change**, spot-checked and labeled as a spot
 > check: on the three hull-ladder knobs at seed 1 / 600 yr / one seed, the
 > Production elasticity moves by 0.1–0.6 and no sign flips. **The change is
 > principled, not a large numerical shift on this bed** — its value is that the
@@ -336,7 +336,7 @@ measured against nothing.
 
 ## 7. What is not here
 
-**7.1 Capitals and synthesis.** A production centre that reaches **pop-Band IV**
+**7.1 Capitals and synthesis.** A production center that reaches **pop-Band IV**
 unlocks capitals and synthesis (world model §5.2). Nothing of this exists in the
 engine and it is the natural depth-3 of this tree. **R-PROD4 — open**, and it is
 the join with Technology: synthesis makes *supers*, which are a Technology
@@ -359,10 +359,10 @@ world. **R-IND8 — open**, and it is the join with Warfare.
 | R-IND1 | `K = min(hab, bio_max)`; infrastructure is capacity only |
 | R-IND15 | the default works mix is `3:2:1` Y:C:M; Sole is an asymptote |
 | R-IND18 | extraction saturates once, in the mining law |
-| R-IND19 | the deposit law is normalised by `N` — output is not richness squared |
+| R-IND19 | the deposit law is normalized by `N` — output is not richness squared |
 | R-O57 | dry mass *is* mineral cost |
 | R-O58 | the shell model — cost on area, hold on volume |
-| R-O85 | **resolved false** — the rung ladder is scale-free; colour is the constraint |
+| R-O85 | **resolved false** — the rung ladder is scale-free; color is the constraint |
 | R-O88 | `slips` is quantity, `fab_cap` is quality |
 | R-O94 | a hauler's hull is a forecast under a liquidity cap |
 | R-MC15 | `F_mass = F_cost^(3/2)` |
@@ -385,13 +385,13 @@ world. **R-IND8 — open**, and it is the join with Warfare.
 | R-TREE10 | re-measure the composite with Production in volume | the full 32-knob bed |
 | R-PROD4 | capitals and synthesis at pop-Band IV | a design pass, with Technology |
 | T-74 | fabrication rate as a measured quantity | engine work; blocks R-P16 and Growth |
-| T-92 | 85% of bank inflow is a centre mining its own planet | a census, then a mechanism |
+| T-92 | 85% of bank inflow is a center mining its own planet | a census, then a mechanism |
 
 ---
 
 ## References
 
-- `Hyades_industry.md` §1 (the stock), §3 (the ramp), §5 (works and colours),
+- `Hyades_industry.md` §1 (the stock), §3 (the ramp), §5 (works and colors),
   §6 (the layering algebra and the whole measurement branch)
 - `Hyades_experiments_appendix.md` §A, §B — the measurement record
 - `Hyades_mineral_cost_curve.md` §2.3 (the shell model), §2.6 (the Band ladder)

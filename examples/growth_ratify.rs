@@ -17,7 +17,7 @@
 //! **What it found, and the part worth keeping.** The 2,000-year screen showed
 //! `r` behaving as a *step function of itself* — 1.10 and 1.35 scored
 //! bit-identically, and so did 1.60 and 1.90 — because growth reaches the
-//! objective only through how many 50-year cycles a centre takes to cross a
+//! objective only through how many 50-year cycles a center takes to cross a
 //! `PopBands` edge, and that is an integer. Same root cause as R-O68: the gate
 //! downstream is discrete.
 //!
@@ -84,7 +84,7 @@ fn main() {
     let confirm = std::env::args().any(|a| a == "--confirm");
     let horizon = if confirm { OBJECTIVE } else { SCREEN };
     // **The objective is a step function of `r`, so map the plateaus.** Growth
-    // reaches the objective only through *how many 50-year cycles* a centre
+    // reaches the objective only through *how many 50-year cycles* a center
     // takes to cross a `PopBands` edge, and that is an integer — so `r` is a
     // selector over cycle counts, not a dial. The first screen made this
     // unmissable: 1.10 and 1.35 scored bit-identically, and so did 1.60 and

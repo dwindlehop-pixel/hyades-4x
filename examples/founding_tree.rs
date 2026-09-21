@@ -1,4 +1,4 @@
-//! **Does deepening buy ships? Count what one centre actually founds.**
+//! **Does deepening buy ships? Count what one center actually founds.**
 //!
 //! The work-years sweep (R-O87) found `reinvest_bias` flat and explained it with
 //! an identity: a mineral buys the same *works* whether it deepens or founds.
@@ -8,17 +8,17 @@
 //! exactly what an integral over 1,500 years should reward.
 //!
 //! The flow arithmetic, off the engine's own functions (`t_lead = 2.0`, a Medium
-//! coloniser is 0.10 kt):
+//! colonizer is 0.10 kt):
 //!
 //! | rung | stock | `F` | slips | `t_build` | hull/yr | next step |
 //! |---|---|---|---|---|---|---|
-//! | I | 0.10 kt | 0.1000 | 2 | 4.000 yr | 0.500 | 0.90 kt = **9 colonisers** |
-//! | II | 1.00 kt | 0.1818 | 2 | 3.100 yr | **0.645 (+29.0%)** | 19 kt = 190 colonisers |
-//! | III | 20.0 kt | 0.1990 | 2 | 3.005 yr | 0.666 (+3.2%) | 780 kt = 7,800 colonisers |
+//! | I | 0.10 kt | 0.1000 | 2 | 4.000 yr | 0.500 | 0.90 kt = **9 colonizers** |
+//! | II | 1.00 kt | 0.1818 | 2 | 3.100 yr | **0.645 (+29.0%)** | 19 kt = 190 colonizers |
+//! | III | 20.0 kt | 0.1990 | 2 | 3.005 yr | 0.666 (+3.2%) | 780 kt = 7,800 colonizers |
 //! | IV | 800 kt | 0.2000 | 2 | 3.000 yr | 0.667 (+0.2%) | — |
 //!
 //! So the objection is right about rung I→II: **+29% build rate for the price of
-//! nine colonisers pays itself back in 62 years** and should be worth ~200 extra
+//! nine colonizers pays itself back in 62 years** and should be worth ~200 extra
 //! hulls over the horizon. It is wrong about slips, and that is the engine's
 //! fault rather than the argument's — `slips(F) = 1 + ⌊F / slip_throughput⌋`
 //! with `F < fab_cap = 0.2` and `slip_throughput = 0.1`, so **a yard has two
@@ -44,7 +44,7 @@ const PLAYERS: usize = 3;
 const SAMPLE_YEARS: f64 = 50.0;
 
 struct Arm {
-    /// Colonies founded by a coloniser that launched **from a homeworld** —
+    /// Colonies founded by a colonizer that launched **from a homeworld** —
     /// the homeworld's own children, not its descendants.
     home_foundings: f64,
     /// Year the first of those landed. The "delayed first ship" the deepening
@@ -68,7 +68,7 @@ struct Arm {
     /// Hulls the homeworld built as a fraction of what its rung could have
     /// built over the same span. **If this is small, build rate is not the
     /// binding constraint and no amount of deepening can matter.**
-    utilisation: f64,
+    utilization: f64,
     /// Production decisions taken at the homeworld, and the share of them that
     /// chose `Idle`. A declined build leaves the yard free and the *next*
     /// retry is the economy tick, `cycle_years = 50` — sixteen builds' worth of
@@ -76,7 +76,7 @@ struct Arm {
     decisions: f64,
     idle_share: f64,
     /// Mean years between consecutive decisions at the homeworld. Compare
-    /// against `t_build`: if it is near `cycle_years` the centre is waiting on
+    /// against `t_build`: if it is near `cycle_years` the center is waiting on
     /// the tick, not on the yard.
     decision_gap: f64,
     /// Of the decisions that idled, the share that had **no candidate to build
@@ -84,12 +84,12 @@ struct Arm {
     idle_no_target: f64,
     #[allow(dead_code)]
     idle_no_money: f64,
-    /// **Mean years from a decision to the centre's next one, split by what the
+    /// **Mean years from a decision to the center's next one, split by what the
     /// decision chose.** This is the whole question. `commit_one_build`
     /// returning `None` leaves the yard free and schedules nothing — the next
     /// attempt is the *economy tick*, `cycle_years = 50`. A committed build
     /// schedules its own `BuildDecision` at `t_build`. So if the after-idle gap
-    /// is an order of magnitude larger than the after-build gap, the centre's
+    /// is an order of magnitude larger than the after-build gap, the center's
     /// throughput is set by the retry cadence and not by the yard, and
     /// deepening — which only buys yard rate — cannot reach the objective.
     gap_after_idle: f64,
@@ -145,7 +145,7 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Arm {
     }
 
     // Parentage by join: a spawn records where it launched from, a founding
-    // records which vehicle did it. `from` is the centre's own position, copied
+    // records which vehicle did it. `from` is the center's own position, copied
     // verbatim, so an exact match is the right test and not a tolerance.
     let is_home = |p: Vec3| homes.contains(&p);
     let mut launched_from_home: HashMap<u64, f64> = HashMap::new();
@@ -222,7 +222,7 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Arm {
     let capacity = 0.6452 * span;
     let n = PLAYERS as f64;
     Arm {
-        utilisation: (home_hulls / n) / capacity.max(1e-9),
+        utilization: (home_hulls / n) / capacity.max(1e-9),
         decisions: decisions / n,
         idle_share: if decisions > 0.0 { idles / decisions } else { 0.0 },
         decision_gap: if decisions > n { span / (decisions / n) } else { f64::NAN },
@@ -287,7 +287,7 @@ fn main() {
                 a.colonies,
                 a.work_years,
                 a.fleet_years,
-                100.0 * a.utilisation,
+                100.0 * a.utilization,
                 a.decisions,
                 100.0 * a.idle_share,
                 a.decision_gap,

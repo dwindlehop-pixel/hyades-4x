@@ -1,7 +1,7 @@
 # Hyades — Expansion and Growth
 
 *The autopilot the simulation runs for **The Far Shore** (Expansion) and **The
-Greening** (Growth): survey, planet classification, colonisation, mining
+Greening** (Growth): survey, planet classification, colonization, mining
 outposts, freight, and the production decision. Companion to
 `Hyades_simulation_model.md`, `Hyades_galaxy_and_autopilot.md` (world model),
 `Hyades_industry.md` (the economy this spends), `Hyades_trees_and_card_value.md`
@@ -15,7 +15,7 @@ R-O86's 99% waste, the `survey_reserve` plateau, and the withdrawn R-AC20 sign
 conflict — is in **`Hyades_experiments_appendix.md` §A**, linked per decision.
 Rev 4 also reconciles the spec with everything landed through T-102: the
 `K = min(hab, bio_max)` amendment, the five-year economy tick, the closed-form
-logistic, the shell/drive model, and freight's two colour fixes.
+logistic, the shell/drive model, and freight's two color fixes.
 
 ---
 
@@ -23,7 +23,7 @@ logistic, the shell/drive model, and freight's two colour fixes.
 
 Every numbered item below is one of exactly two things:
 
-- **`RATIFIED`** — the engine must honour it. Magnitude and unit are stated, and
+- **`RATIFIED`** — the engine must honor it. Magnitude and unit are stated, and
   the value is marked **confirmed** (Monte-Carlo ratified on a named bed) or
   **placeholder** (shipped because something had to be).
 - **`OPEN`** — not settled. States what would settle it. A recommendation with
@@ -37,9 +37,9 @@ behind it, the appendix section is named in the same line.
 
 ## 1. Information model
 
-**1.1 `RATIFIED` — the command view is omniscient over realised state; the
+**1.1 `RATIFIED` — the command view is omniscient over realized state; the
 simulation is not.** Planets, structures and fleets are fully visible to the
-*player* for planning. Hidden simultaneous *orders* are not realised state and
+*player* for planning. Hidden simultaneous *orders* are not realized state and
 stay concealed until they resolve. The *simulation* acts only on light-lagged,
 player-relative knowledge (design law #15). **R-AC1 resolved.**
 
@@ -76,7 +76,7 @@ headings** (±X/±Y/±Z), free starting units, 1 g constant proper acceleration.
 magnitudes.**
 
 **2.2 `RATIFIED` — every later survey craft is a paid build** from a production
-centre, charged to that centre's stockpile. Each chain ends after
+center, charged to that center's stockpile. Each chain ends after
 `max_survey_hops = 120` worlds and the craft scraps at the nearest friendly
 colony.
 
@@ -109,7 +109,7 @@ because 99.0% of all production was issuing builds that created no object.
 Appendix §A.4.
 
 **2.6 `RATIFIED but inert` — `Doctrine::survey_reserve = 1024`.** The frontier
-size a centre tries to keep ahead of itself before spending an otherwise-idle
+size a center tries to keep ahead of itself before spending an otherwise-idle
 cycle on a scout. **The direction is ratified and the magnitude does not reach
 the simulation**: it is compared against `candidate_count`, whose median is 0 and
 whose maximum over a run is 164, so every value above ~200 is bit-identical.
@@ -127,7 +127,7 @@ follows from where the score and its components land.**
 
 | Class | Signature | Handled by |
 |---|---|---|
-| **Production centre** | high `k_potential` **and** hub value | colony vehicle (§4) |
+| **Production center** | high `k_potential` **and** hub value | colony vehicle (§4) |
 | **Colony** | high `k_potential`, weak hub value | colony vehicle (§4) |
 | **Mining outpost** | high mineral density, low `k_potential` — *can out-rank a colony* | miner + freighter (§5) |
 | **Barren** | low on all | ignored |
@@ -150,11 +150,11 @@ ecology. Appendix §A.9.
 | field | value | meaning |
 |---|---|---|
 | `w_k` | 1.0 | weight on `k_potential` |
-| `w_mineral` | 0.8 | weight on the per-colour Band sum |
+| `w_mineral` | 0.8 | weight on the per-color Band sum |
 | `w_hub` | 1.2 | weight on hub value |
-| `k_high` | **Band 3.2** | at/above ⇒ high-K (centre or colony); below ⇒ a mineral-rich world is an outpost |
+| `k_high` | **Band 3.2** | at/above ⇒ high-K (center or colony); below ⇒ a mineral-rich world is an outpost |
 | `mineral_high` | 2.0 | at/above ⇒ a low-K world is an outpost |
-| `hub_high` | Band 0.8 | at/above ⇒ a high-K world is a production centre |
+| `hub_high` | Band 0.8 | at/above ⇒ a high-K world is a production center |
 | `centrality_scale` | 150.0 ly | decay scale of centrality to holdings |
 | `mineral_pressure_gain` | 1.0 | gain on the scarcity term |
 
@@ -166,7 +166,7 @@ coverage in *both* directions. **R-AC17 resolved**; appendix §A.7, §A.2.
 built from `+` and `*` only, so the term is bit-identical native-to-wasm by
 construction rather than by assumption (T-102, netcode H4a).
 
-**3.5 `RATIFIED` — the mineral term reads Bands, memoised on the field's own
+**3.5 `RATIFIED` — the mineral term reads Bands, memoized on the field's own
 bits.** `rank` scores ore as `Σ_c scarcity_c · Band(m_c)`; `PlanetView` carries
 `mineral_bands: [f64; 3]` rather than a `MineralField`, because nothing in the
 seam read the masses (T-100).
@@ -188,32 +188,32 @@ expansion — R-AC17 run backwards. **The two knobs must move together.**
 
 **3.9 `OPEN` — the scarcity vector is written once at game start and never
 again.** `scarcity_c` comes from the homeworld archetype, so selection can say
-*mine more* and never *mine Cyan*. Replacing it with the deciding centre's live
+*mine more* and never *mine Cyan*. Replacing it with the deciding center's live
 shortfall was **implemented, measured and reverted** (−3.30% ± 0.49 colony-years,
 0/4 seeds) — the decision was blind and had nothing to see. Appendix §A.12. The
 defect is real and remains; what is open is whether it matters anywhere.
 
 ---
 
-## 4. Colonisation
+## 4. Colonization
 
-**4.1 `RATIFIED` — production centres first, colonies next, always by descending
+**4.1 `RATIFIED` — production centers first, colonies next, always by descending
 rank.** `ExpandBias::ProductionCentersFirst`. A colony vehicle targets the
-highest-rank production-centre-class planet; if none remain unclaimed, the
+highest-rank production-center-class planet; if none remain unclaimed, the
 highest-rank colony-class planet. On arrival it founds a colony, which begins its
 own production schedule (§6).
 
-**4.2 `RATIFIED` — a coloniser's hold is one kiloton budget carrying a mix of
+**4.2 `RATIFIED` — a colonizer's hold is one kiloton budget carrying a mix of
 settlers and minerals.** Whatever volume the people do not fill leaves with
-minerals **out of the founding centre's own bank** and lands in the new colony's
+minerals **out of the founding center's own bank** and lands in the new colony's
 stockpile. That is a transfer a parent paid for, not a grant. **R-O74** —
 supersedes "no mineral seed for colonies".
 
 **4.3 `RATIFIED` — settlers are conserved.** Founding *moves people that already
-exist*; it does not conjure them. Until R-O74 landed, a coloniser's settlers were
+exist*; it does not conjure them. Until R-O74 landed, a colonizer's settlers were
 written into its hold with nothing debited anywhere — one exemption from design
 law #11, on the exact path the expansion loop runs on. **An exemption from
-conservation is not a modelling shortcut, it is a free resource, and a search
+conservation is not a modeling shortcut, it is a free resource, and a search
 will find it and call it a strategy.**
 
 **4.4 `RATIFIED` — `colony_seed_pop = BandTier::I`.** Typed as a rung, not a
@@ -227,7 +227,7 @@ deliberately not shipped** — it scores +13.97% colony-years on a bit-identical
 colony count, and two ablations put the entire effect on the **seed mass**
 (`Hyades_industry.md` §1.6), not on the hull, its price or transit.
 
-**4.6 `OPEN` — R-AC7: coloniser cost, build time and founding infrastructure** as
+**4.6 `OPEN` — R-AC7: colonizer cost, build time and founding infrastructure** as
 independent magnitudes. Today all three are derived — cost from the hull ladder,
 build time from hull mass, and `founding_infra = hull_cost` because a hull's mass
 *is* its cost (design law #11).
@@ -235,20 +235,20 @@ build time from hull mass, and `founding_infra = hull_cost` because a hull's mas
 **4.7 `OPEN` — R-AC8: contested claims.** What happens when two empires target
 the same planet. Presumed resolved by arrival time under light-lag; not
 specified, and **design law #15 is at risk here** — T-34 records that
-colonisation currently filters on instantaneous global ownership.
+colonization currently filters on instantaneous global ownership.
 
 ---
 
 ## 5. Mining outposts and freight
 
-**5.1 `RATIFIED` — an outpost is worked, not colonised, and it is unowned.** No
+**5.1 `RATIFIED` — an outpost is worked, not colonized, and it is unowned.** No
 `owner` component is ever set on a worked rock. `outpost_stock` is keyed
 `(player, rock)`, so **each empire holds its own pile at the same body** and each
 player's crew works the shared rock into that player's own pile. Measured on the
 standard bed, **2,226 of 2,494 worked sites are cross-player.**
 
 **5.2 `RATIFIED` — a mining pair is a miner plus a freighter**, built by the
-nearest production centre. The miner extracts; the freighter hauls to a centre.
+nearest production center. The miner extracts; the freighter hauls to a center.
 
 **5.3 `RATIFIED` — crew size is derived from demand, not configured.**
 `miners_per_outpost` was ratified at 3 (+2.74% colony-years, every seed positive)
@@ -258,11 +258,11 @@ longer applies because it was taken under a law with no deposit term at all.
 **5.4 `RATIFIED` — extraction is sublinear in crew and scales with the deposit.**
 `outpost_mining_fraction = 0.238` is the fraction **one miner** works;
 `crowding_beta = 0.5`; `veins_per_band = 10.0`; `mining_tick_years = 50.0`;
-`density_floor = 0.01`. Law and normalisation in `Hyades_industry.md` §4.3/§4.3b.
+`density_floor = 0.01`. Law and normalization in `Hyades_industry.md` §4.3/§4.3b.
 **Placeholder magnitudes except the crowding law's shape.**
 
 **5.5 `RATIFIED` — an exhausted pair goes to Reserve and is re-tasked, not
-stranded.** `SimConfig::recycle_mining_pairs`, **default on**. The next centre
+stranded.** `SimConfig::recycle_mining_pairs`, **default on**. The next center
 ordering a pair takes the reserved hulls nearest its target — no minerals, no
 build delay, only the flight. **+1.69 ± 0.53 over eight seeds, positive on all
 eight.** **R-AC19 resolved**; appendix §A.6.
@@ -274,7 +274,7 @@ it is actually going to buy** (it quoted the full price even when hulls sat in
 Reserve).
 
 **5.6 `RATIFIED` — freight routes by distance-discounted need.**
-`argmax` over owned centres of `mineral_pressure(centre) · exp(−λ · t_transit)`,
+`argmax` over owned centers of `mineral_pressure(center) · exp(−λ · t_transit)`,
 `trade_decay_lambda = 0.01` (half-life 69 yr). **`λ = 0` reduces exactly to
 `most_needed_center`**, which design law #5 keeps as the single-supply oracle, so
 one function checks two independent degeneracies. **Confirmed on 3 seeds** —
@@ -284,17 +284,17 @@ thin for a ratified constant; appendix §B.1.
 > Growth**. It is the largest ratification in this project's history and it was
 > measured on coverage alone.
 
-**5.7 `RATIFIED` — a hold is filled against the destination's colour deficit**,
+**5.7 `RATIFIED` — a hold is filled against the destination's color deficit**,
 not in proportion to the pile the hauler happens to be standing on. **+8.40% ±
 1.86 work-years, 8/8 seeds, replicated on four the candidate was not chosen
-against**, on *the same tonnage* and the same trips — only the colours in the
+against**, on *the same tonnage* and the same trips — only the colors in the
 hold changed. **R-O89.**
 
 **5.8 `RATIFIED` — one outbound leg may visit two piles.**
 `max_pickup_stops = 2`. A hold used to be filled from one map entry, so **every
-delivery was mono-coloured by construction** and no routing fix could reach it.
+delivery was mono-colored by construction** and no routing fix could reach it.
 **+55.13% ± 4.65 work-years, 8/8 seeds** (**R-O92**), and the intermediate stop
-caps each colour at what is wanted **and** at its proportional share of the
+caps each color at what is wanted **and** at its proportional share of the
 hold — the second cap is worth +10.2% on its own and is inert at today's
 magnitudes, load-bearing at the ones development reaches.
 
@@ -303,7 +303,7 @@ magnitudes, load-bearing at the ones development reaches.
 
 **5.9 `RATIFIED` — a hauler's hull is sized to its rock, under a liquidity
 cap.** `freighter_hull` scores candidate hulls on `load / round_trip / hull_cost`
-where load is `min(supply, demand)`, and **considers only hulls the centre can
+where load is `min(supply, demand)`, and **considers only hulls the center can
 pay for now**. **+170.1% ± 16.2 work-years, 8/8 seeds; +9.54% colony-years, 7/8**
 (**R-O94/T-98**). Without the liquidity term the same change is +51% work-years
 and **−17% colony-years on 1/8 seeds** — a development gain bought out of the
@@ -313,22 +313,22 @@ The mechanism generalises: **a score of the form `value / cost` is a rate, true
 in steady state, and says nothing about the years spent saving for an indivisible
 purchase.**
 
-**5.10 `OPEN` — R-AC9: "nearest production centre" under light-lag** — true
+**5.10 `OPEN` — R-AC9: "nearest production center" under light-lag** — true
 nearest or nearest-known. Today true nearest, which is a design law #15 concern
 of the same family as T-34.
 
 **5.11 `OPEN` — R-AC10: mining rate, freighter capacity and cadence** as ratified
 magnitudes rather than derived placeholders.
 
-**5.12 `OPEN` — freight is 1.73% → 14.70% of bank inflow and the rest is a centre
-mining its own single-coloured planet straight into its own bank** (T-92). That
+**5.12 `OPEN` — freight is 1.73% → 14.70% of bank inflow and the rest is a center
+mining its own single-colored planet straight into its own bank** (T-92). That
 is the next constraint on the mineral economy and it is not a freight problem.
 
 ---
 
 ## 6. The production decision — Growth
 
-**6.1 `RATIFIED` — a centre's *economy* is cadence-driven and its *decision* is
+**6.1 `RATIFIED` — a center's *economy* is cadence-driven and its *decision* is
 not.** Mining and growth are rates over an interval, and an interval is what a
 rate needs: `cycle_years = 5.0`. The **decision** is an event — `BuildDecision`,
 raised when the yard clears `build_years` after a build was committed — because a
@@ -353,7 +353,7 @@ x(t+Δ) = K·x / ( x + (K − x)·e^(−rΔ) )
 ```
 
 The ceiling is constant across a tick, so the step is autonomous and solvable —
-and `settler_target` had been pricing colonisation off this solution's *inverse*
+and `settler_target` had been pricing colonization off this solution's *inverse*
 since R-IND11, so the policy and the economy were following different curves.
 **T-94/R-O93**, +6.57% ± 1.14 colony-years, 8/8 seeds, at no throughput cost.
 
@@ -373,7 +373,7 @@ biosphere; biosphere regrows logistically toward `bio_max` at
 current operating point** — since `K = min(hab, bio_max)` the ceiling is the
 pristine biosphere and regrowth only refills the standing stock.
 
-**6.5 `RATIFIED` — tier gates.** A centre's development level decides which hull
+**6.5 `RATIFIED` — tier gates.** A center's development level decides which hull
 classes it may build: `limited_min_level = BandTier::II`,
 `medium_min_level = BandTier::II`, all classes at Band IV. Both are config;
 **placeholder magnitudes**, and both are `u8`-valued, which is why an
@@ -381,9 +381,9 @@ all-continuous gradient probe has never ranked them.
 
 **6.6 `RATIFIED` — the preference order within a decision.**
 
-1. **Deepen** toward `k_potential`, if `reinvest_bias` favours depth and the
+1. **Deepen** toward `k_potential`, if `reinvest_bias` favors depth and the
    upgrade is funded.
-2. **Expand** — coloniser or mining pair, by rank (§§4–5) — if funded.
+2. **Expand** — colonizer or mining pair, by rank (§§4–5) — if funded.
 3. **Survey**, as a *fallback* for a decision that would otherwise be Idle, when
    there is unexplored galaxy left (§2.5) and a scout is affordable.
 4. **Idle** — save toward whichever of the above was preferred but unfunded.
@@ -391,16 +391,16 @@ all-continuous gradient probe has never ranked them.
 **Survey is a fallback, never a pre-emption**, and that ordering is load-bearing:
 an earlier revision gave survey priority whenever the frontier was thin, which
 made `survey_reserve` non-monotonic — on seed 1 a reserve of 256 reached 1,047
-colonies while 4,096 collapsed to **3**, because every centre scouted every cycle
-and none ever colonised.
+colonies while 4,096 collapsed to **3**, because every center scouted every cycle
+and none ever colonized.
 
 **6.7 `RATIFIED` — deepening uses headroom, not whole levels.** The guard is
 `infra < k_potential`, not `infra + 1 <= k_potential`. Blocking the last partial
-step strands a centre below the population bands permanently: a world with
+step strands a center below the population bands permanently: a world with
 `k_potential = 2.86` sat at infra 2, which pinned `K` at 2, which pinned
 population at 2, which never crossed the level-3 band edge — it could never build
 anything and accumulated minerals it could not spend. **1,050 of 2,435 Idle
-decisions on seed 1 were centres in exactly that state.**
+decisions on seed 1 were centers in exactly that state.**
 
 **6.8 `RATIFIED` — `reinvest_bias = 0.5`, held rather than tuned.** Both sides of
 the comparison are now `rank` score per kilotonne committed — `score /
@@ -414,7 +414,7 @@ buys the same works whether it deepens or founds, at every rung, at the card-fre
 Appendix §A.11.
 
 **The branch is still cold at 0.5, and that is correct**: an infra rung above the
-founding one costs 0.9 kt against a Medium coloniser's 0.10 kt, so expansion
+founding one costs 0.9 kt against a Medium colonizer's 0.10 kt, so expansion
 returns 24–49× per kilotonne. **R-O68 resolved** — the dead branch was the right
 answer reached for a wrong reason. Appendix §A.10.
 
@@ -433,20 +433,20 @@ objective has since carried (R-PROD5); kept as measured, R-TREE10 re-runs it.
 **When two ratified claims collide, check whether one symbol is carrying two
 meanings before you pick a winner.**
 
-**6.11 `RATIFIED` — a yard fills every berth.** Filling all berths amortises
+**6.11 `RATIFIED` — a yard fills every berth.** Filling all berths amortizes
 `build_lead_years = 2.0` across slips, so a yard produces ~1.8× the hulls. Every
 commit schedules its own `BuildDecision`, so a yard with `k` berths raises `k`
 events where it raised one — which is a **decision-count** cost, not an
 entity-count one.
 
-**6.12 `OPEN` — R-AC12: how a centre splits output across multiple pending
+**6.12 `OPEN` — R-AC12: how a center splits output across multiple pending
 targets.** One build per decision versus a genuine parallel allocation across
 filled berths.
 
 **6.13 `OPEN` — the expansion loop's time constant.** The limiter is the
 **unconditional pre-`medium_min_level` staircase**: found at `K = 1` with no
 headroom, then serially mine `round(infra)+1` minerals, deepen, grow past the
-level-3 `PopBands` edge, afford the coloniser, fly. **Several of those gates are
+level-3 `PopBands` edge, afford the colonizer, fly. **Several of those gates are
 integers and one — the infra cost ladder — is not a parameter at all**, which is
 why every continuous gradient probe has ranked ecology and hull-cost knobs
 instead: *the rate limiters are invisible to the instrument.* Sweep the gates
@@ -454,14 +454,14 @@ discretely. **T-51 carries the work**; appendix §A.8.
 
 ---
 
-## 7. Defence — the hook only
+## 7. Defense — the hook only
 
 **7.1 `RATIFIED` — default posture is expand in all directions, defending if
 pressed.** A hostile detected within reach schedules a defensive reaction,
 light-lagged by the distance to the responder.
 
 **7.2 `OPEN` — R-AC13: the trigger and reaction for "if pressed" at the
-colonisation layer** — e.g. a coloniser re-routing away from a detected threat.
+colonization layer** — e.g. a colonizer re-routing away from a detected threat.
 The substance belongs to `Hyades_warfare_tree.md`.
 
 ---
@@ -513,7 +513,7 @@ Doctrine, the Roster, per-player knowledge, and `Works`. An illegal order is
 
 | Tree | Writes |
 |---|---|
-| **The Far Shore** (Expansion) | survey volume / speed / range, directional or sector bias, colonisation priority, claim rate, contest resolution, `survey_avoids_inhabited` |
+| **The Far Shore** (Expansion) | survey volume / speed / range, directional or sector bias, colonization priority, claim rate, contest resolution, `survey_avoids_inhabited` |
 | **The Greening** (Growth) | `productivity_step`, `growth_rate`, **K-ceiling lifts (terraforming `hab`/`bio_max`)** — which retroactively re-rank planets per §3.1 — and carrying-capacity effects |
 
 **9.3 `RATIFIED` — Expansion is scored on colony-years and Growth on
@@ -555,7 +555,7 @@ count, not a fraction — and the guard is kept rather than deleted.
 | R-O86 | a scout needs somewhere to scout | 5.6× throughput, objective flat |
 | R-O87 | `reinvest_bias = 0.5`, held | 8 seeds, +0.32% ± 1.42 |
 | R-O88 | `slips` is quantity, `fab_cap` is quality | +26–34%, on a hull *count* |
-| R-O89 | freight loads against the destination's colour deficit | 8/8 seeds, replicated |
+| R-O89 | freight loads against the destination's color deficit | 8/8 seeds, replicated |
 | R-O92 | one outbound leg visits two piles | 8/8 seeds |
 | R-O93 | the population logistic is solved, not stepped | 8/8 seeds |
 | R-O94 | a hauler's hull is a forecast under a liquidity cap | 8/8 and 7/8 seeds |
@@ -569,19 +569,19 @@ count, not a fraction — and the guard is kept rather than deleted.
 | R-AC4 | scan dwell time and close-scan range | a decision |
 | R-AC5 | the rank formula's *shape* and class thresholds | terms, not a sweep — §A.5 |
 | R-AC6 | provisional remote ranks before a close scan | a decision |
-| R-AC7 | coloniser cost / build time / founding infra as independent magnitudes | MC, once they stop being derived |
+| R-AC7 | colonizer cost / build time / founding infra as independent magnitudes | MC, once they stop being derived |
 | R-AC8 | contested-claim resolution | a decision; blocked with T-34 |
-| R-AC9 | "nearest centre" under light-lag | a decision; design law #15 |
+| R-AC9 | "nearest center" under light-lag | a decision; design law #15 |
 | R-AC10 | mining and freighter rates | MC |
 | R-AC12 | multi-target output split across filled berths | a design pass |
-| R-AC13 | "if pressed" at the colonisation layer | `Hyades_warfare_tree.md` |
+| R-AC13 | "if pressed" at the colonization layer | `Hyades_warfare_tree.md` |
 | R-AC14 | the three drive constants of §8.4 | the arena |
 | R-AC15 | lock enough to author depth-1 beats | §§2–6 stable |
 | R-AC18 | should the Colony class carry a `K` floor at all | joint sweep with T-20's ceiling curve |
 | R-AC20 | `center_mining_fraction`'s sign | a ten-seed bed |
 | R-SIM4 | departure traffic as an inferential signal | a formulation |
 | T-51 | the expansion loop's integer gates | a discrete sweep |
-| T-92 | 85% of bank inflow is a centre mining its own planet | a census, then a mechanism |
+| T-92 | 85% of bank inflow is a center mining its own planet | a census, then a mechanism |
 | — | λ is +0.002 on Expansion and −0.348 on Growth | the composite objective |
 
 ---

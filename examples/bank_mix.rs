@@ -1,7 +1,7 @@
-//! **Are a centre's stockpiles even across the colours?**
+//! **Are a center's stockpiles even across the colors?**
 //!
-//! T-73's ablation (per-colour gate, proportional payment) reproduced the full
-//! colour-billed run *bit-identically*, which says the payment scheme changes
+//! T-73's ablation (per-color gate, proportional payment) reproduced the full
+//! color-billed run *bit-identically*, which says the payment scheme changes
 //! nothing. That is only possible if every bank paying a works bill already has
 //! the composition the bill asks for — so this checks the composition directly
 //! rather than reasoning about it.
@@ -9,12 +9,12 @@
 //! **Extended at T-88 to answer the freight question** (`Hyades_industry.md`
 //! §6.23). The decision census says 100% of idle decisions are "wants to deepen,
 //! cannot pay the bill" with a mean bank of **561 kt** — the total is there and a
-//! colour is not. This quantifies how much of a banked kilotonne is *dead* to a
-//! three-colour bill, which is the number a routing change has to move.
+//! color is not. This quantifies how much of a banked kilotonne is *dead* to a
+//! three-color bill, which is the number a routing change has to move.
 //!
-//! Two statistics, both per centre and then pooled:
+//! Two statistics, both per center and then pooled:
 //!
-//! - **dominant share** — the largest colour's fraction of the bank. The
+//! - **dominant share** — the largest color's fraction of the bank. The
 //!   galaxy's *sources* sit at 0.789 (T-81); if banks sit near that too, freight
 //!   is inheriting the geology rather than mixing it.
 //! - **payable fraction** — `3·min_c(bank_c) / total`. A works bill is a
@@ -49,7 +49,7 @@ fn main() {
     );
     sim.run();
 
-    // **How often does a works bill actually get paid?** If the per-colour gate
+    // **How often does a works bill actually get paid?** If the per-color gate
     // refuses nearly all of them, `pay_bill` barely runs — and that alone would
     // explain why swapping the payment scheme changed nothing.
     let (mut upgrades, mut hulls, mut idle_decisions, mut decisions) = (0usize, 0usize, 0usize, 0usize);
@@ -97,15 +97,15 @@ fn main() {
     }
     println!("  {n} non-empty banks: {even} exactly even, {skewed} skewed");
 
-    // **Where the banked ore came from** (T-91). Two sources reach a centre's
+    // **Where the banked ore came from** (T-91). Two sources reach a center's
     // stockpile and only one of them is freight: `sys_production_tick`'s "local
-    // mining" step works the centre's *own* planet straight into the bank, and
-    // a planet is one colour. So the bank is single-sourced one level below
+    // mining" step works the center's *own* planet straight into the bank, and
+    // a planet is one color. So the bank is single-sourced one level below
     // hauling, and a routing rule can only reach the fraction that was hauled.
     //
     // Split by ownership, which is exact rather than a heuristic: an outpost is
     // never claimed (`sys_freighter_arrive`), so every `MineralsExtracted` at an
-    // owned planet is a centre working its own ground and every one at an
+    // owned planet is a center working its own ground and every one at an
     // unowned planet is an outpost pile a freighter may or may not come for.
     let owned: std::collections::BTreeSet<u32> =
         snap.planets.iter().filter(|p| p.owner.is_some()).map(|p| p.id.0).collect();
@@ -136,8 +136,8 @@ fn main() {
     std::io::stdout().flush().ok();
 
     // **Where the ore comes from.** A freighter carries one outpost's ore, so
-    // if a *source* is single-coloured then no routing rule over single-coloured
-    // cargoes can assemble a three-coloured bank. Measure the sources.
+    // if a *source* is single-colored then no routing rule over single-colored
+    // cargoes can assemble a three-colored bank. Measure the sources.
     let (mut src, mut src_dom) = (0usize, 0.0f64);
     let mut dom_hist = [0usize; 5]; // <40, <60, <80, <95, >=95 % dominant
     for p in snap.planets.iter() {
@@ -162,14 +162,14 @@ fn main() {
         };
         dom_hist[b] += 1;
     }
-    println!("  {src} mineral sources, mean dominant-colour share {:.3}", src_dom / src.max(1) as f64);
+    println!("  {src} mineral sources, mean dominant-color share {:.3}", src_dom / src.max(1) as f64);
     println!(
         "    <40%: {}  40-60%: {}  60-80%: {}  80-95%: {}  >=95%: {}",
         dom_hist[0], dom_hist[1], dom_hist[2], dom_hist[3], dom_hist[4]
     );
     std::io::stdout().flush().ok();
     println!("  worst deviation from an even third: {:.6} (planet {})", worst.0, worst.1);
-    // Show a few so the shape is visible rather than summarised away.
+    // Show a few so the shape is visible rather than summarized away.
     for p in snap.planets.iter().filter(|p| p.owner.is_some()).take(60) {
         let s = p.stockpile;
         let t = s.cyan + s.magenta + s.yellow;
@@ -202,7 +202,7 @@ fn main() {
     let pct = |v: &Vec<f64>, q: f64| v[((v.len() - 1) as f64 * q) as usize];
     println!("\n=== composition of {} non-empty banks ===", dom.len());
     println!(
-        "  dominant colour share   p10 {:.3}  median {:.3}  p90 {:.3}   (sources sit at 0.789, T-81)",
+        "  dominant color share   p10 {:.3}  median {:.3}  p90 {:.3}   (sources sit at 0.789, T-81)",
         pct(&dom, 0.1),
         pct(&dom, 0.5),
         pct(&dom, 0.9)

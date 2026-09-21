@@ -6,7 +6,7 @@
 //! takes, per colony, from the log:
 //!
 //! - `ColonyFounded` gives the founding time.
-//! - The first `BuildApplied { order: UpgradeInfrastructure }` at that centre is
+//! - The first `BuildApplied { order: UpgradeInfrastructure }` at that center is
 //!   the upgrade that lifts it to `Band I`, because `infra_step_price` rounds
 //!   `0.046` to `0` and charges `1`.
 //!

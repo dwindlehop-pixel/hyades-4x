@@ -6,7 +6,7 @@
 //! worth nothing if co-location never happens, and one census answers that before
 //! any code is written.
 //!
-//! Colonisation is **exclusive** by default (R-V3), so colony worlds cannot host
+//! Colonization is **exclusive** by default (R-V3), so colony worlds cannot host
 //! two owners. Mining is **non-exclusive** (roles §4.3), so a mining outpost is
 //! the one site in the shipped engine where two empires' hulls can legitimately
 //! stand together. This counts them.

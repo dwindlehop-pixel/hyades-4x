@@ -14,11 +14,11 @@
 //! So this measures the flow itself, three ways:
 //!
 //! - **Direction.** For every settled contract, was the seller richer in that
-//!   colour than the buyer *at the moment it was struck*? A market that moves
+//!   color than the buyer *at the moment it was struck*? A market that moves
 //!   ore from those who have it to those who do not should be near 100%; a
 //!   market that shuffles at random should be near 50%. **50% is the null
 //!   hypothesis and it is what makes this a measurement rather than a tally.**
-//! - **Dispersion.** The spread of each colour's holdings across empires, over
+//! - **Dispersion.** The spread of each color's holdings across empires, over
 //!   time. Trade that works should *narrow* it — that is what "rich to poor"
 //!   means in aggregate, and it is the half a per-contract tally cannot see,
 //!   because a market can move every unit downhill and still not move enough
@@ -27,21 +27,21 @@
 //!   struck. Geography is the trade constraint (§10.6), so a low reach is not a
 //!   bug — it is the map saying these empires cannot trade yet.
 //!
-//! Run: `cargo run --release --example colour_flow`
+//! Run: `cargo run --release --example color_flow`
 use hyades_engine::prelude::*;
 use hyades_engine::resources::Basic;
 use std::io::Write;
 
 const SEEDS: [u64; 2] = [1, 7];
 const PLAYERS: usize = 3;
-/// Overridable from argv (`colour_flow <planets> <horizon>`) so the *diagnosis*
+/// Overridable from argv (`color_flow <planets> <horizon>`) so the *diagnosis*
 /// can run on a small galaxy and only the verdict pays for the full bed —
 /// `CLAUDE.md` §2's "reduce the galaxy before the horizon".
 const HORIZON: f64 = 4000.0;
 const SAMPLE_YEARS: f64 = 200.0;
 
-/// Coefficient of variation of a colour's holdings across empires — dimensionless,
-/// so the three colours are comparable even though their masses are not.
+/// Coefficient of variation of a color's holdings across empires — dimensionless,
+/// so the three colors are comparable even though their masses are not.
 fn dispersion(holdings: &[f64]) -> f64 {
     let n = holdings.len() as f64;
     if n < 2.0 {
@@ -56,7 +56,7 @@ fn dispersion(holdings: &[f64]) -> f64 {
 }
 
 fn main() {
-    println!("colour flow — does Y move from Y-rich to Y-poor? {PLAYERS} seats, {HORIZON:.0} yr");
+    println!("color flow — does Y move from Y-rich to Y-poor? {PLAYERS} seats, {HORIZON:.0} yr");
     println!("null hypothesis: a market that shuffles at random sells downhill 50% of the time\n");
     std::io::stdout().flush().ok();
 
@@ -78,7 +78,7 @@ fn main() {
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         sim.set_exchange_enabled(trade);
 
-        // Dispersion at the start and end of the run, per colour.
+        // Dispersion at the start and end of the run, per color.
         let holdings = |s: &Simulation| -> [Vec<f64>; 3] {
             let mut out = [vec![0.0; PLAYERS], vec![0.0; PLAYERS], vec![0.0; PLAYERS]];
             let snap = s.snapshot();
@@ -151,14 +151,14 @@ fn main() {
         let piled: f64 =
             (0..PLAYERS).map(|pl| sim.outpost_holdings(PlayerId(pl as u32)).basic_total().kilotons()).sum();
         let demand: f64 = (0..PLAYERS)
-            .map(|pl| sim.unmet_colour_demand(PlayerId(pl as u32)).iter().map(|d| d.kilotons()).sum::<f64>())
+            .map(|pl| sim.unmet_color_demand(PlayerId(pl as u32)).iter().map(|d| d.kilotons()).sum::<f64>())
             .sum();
         println!(
             "  holdings: {banked:.0} kt banked / {piled:.0} kt piled at outposts  ({:.1}% idle)",
             100.0 * piled / (banked + piled).max(1e-9)
         );
         // **The question that matters.** Idle ore is only a problem if somebody
-        // wants it. Demand here is what centres cannot afford for their next
+        // wants it. Demand here is what centers cannot afford for their next
         // infrastructure rung — a purchase they would make and cannot.
         println!("  unmet demand: {demand:.0} kt   ({:.0}x covered by the idle pile)", piled / demand.max(1e-9));
 

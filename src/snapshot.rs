@@ -26,7 +26,7 @@ pub enum VehicleKind {
     Colonizer,
     Miner,
     Freighter,
-    /// **Holding an unclaimed world against someone else's coloniser**
+    /// **Holding an unclaimed world against someone else's colonizer**
     /// (`Hyades_warfare_tree.md` §8, T-112) — a standing mission, so it never
     /// auto-scraps (roles §4.6).
     Picket,

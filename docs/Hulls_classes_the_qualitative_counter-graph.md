@@ -1,6 +1,6 @@
 General Offensive Unit
 
-The most capable Offensive Units were classified as General Offensive Units (GOU). While earlier GOUs contained a human crew, the later iterations no longer hosted any crew at all. Instead, every cubic centimetre of volume was dedicated to weaponry.
+The most capable Offensive Units were classified as General Offensive Units (GOU). While earlier GOUs contained a human crew, the later iterations no longer hosted any crew at all. Instead, every cubic centimeter of volume was dedicated to weaponry.
 
 There were various known classes of GOU:
 
@@ -8,9 +8,9 @@ There were various known classes of GOU:
     Delinquent Class
     Abominator Class
 
-Abominators were composed of multiple subsections. These included at least five major elements[3] - effectively autonomous spacecraft[4] - and subsidiary munitions platforms. These subsections allowed each ship to become a small fleet. An Abominator was only 1.6 kilometres long when operating as a single vehicle contained only by naked hull in full compression. In standard operational deployment mode, it was 2.8 kilometres long. 
+Abominators were composed of multiple subsections. These included at least five major elements[3] - effectively autonomous spacecraft[4] - and subsidiary munitions platforms. These subsections allowed each ship to become a small fleet. An Abominator was only 1.6 kilometers long when operating as a single vehicle contained only by naked hull in full compression. In standard operational deployment mode, it was 2.8 kilometers long. 
 
-Murderers were about 350 metres long;[3] the nose was a sleek point,[2][3] and the rear was blunt and flat.[2]
+Murderers were about 350 meters long;[3] the nose was a sleek point,[2][3] and the rear was blunt and flat.[2]
 
 Three long weapon blisters were mounted on the nose, and another five fat blisters were mounted around the waist.[2][3] All blisters could fire forward, and a target to the side was always in view of at least five blisters.[3]
 
@@ -18,7 +18,7 @@ One example from the Idiran-Culture War carried three effectors in the nose, in 
 
 Rapid Offensive Unit
 
-Rapid Offensive Units consist of little more than engines, weapons and the ship's Mind. While some ROUs are crewed, the crew complement on such vessels is much smaller than those of the more general purpose ships of the Culture, such as General Contact Units and General Systems Vehicles. ROUs are the Culture's fastest ships and have been described as having been outrun only once, by the GSV Sleeper Service, which covertly optimised itself for speed.
+Rapid Offensive Units consist of little more than engines, weapons and the ship's Mind. While some ROUs are crewed, the crew complement on such vessels is much smaller than those of the more general purpose ships of the Culture, such as General Contact Units and General Systems Vehicles. ROUs are the Culture's fastest ships and have been described as having been outrun only once, by the GSV Sleeper Service, which covertly optimized itself for speed.
 
 The known classes of ROU were:
 
@@ -31,7 +31,7 @@ The known classes of ROU were:
 
 Gangsters had segmented cylindrical hulls that were 200 m. long with 50 m. diameters.[2]
 
-The Killer-class was a type of Culture Offensive Unit constructed during the Idiran-Culture War. Units constructed early in the Idiran-Culture War were 200-metres long.
+The Killer-class was a type of Culture Offensive Unit constructed during the Idiran-Culture War. Units constructed early in the Idiran-Culture War were 200-meters long.
 
 Psychopaths resembled dildos.[2] Based on a 1500 year old example built in the c. 14th century CE, Psychopaths were nearly 300 m. long and relatively slim. The forward section was roughly conical and contained weapons. The central section resembled a spindle; it contained general systems and sensors and a crew section in the rear resembling a thick band. The rear three-fifths of the ship was a cylinder containing the engine.[3]
 
@@ -65,11 +65,11 @@ The most capable and largests SVs were classified as General Systems Vehicles (G
 
 The physical hull of a Plate was over 50 km long and 20 km wide,[1][2] with a height of 4 km.[1][3][4]
 
-The top kilometre was the accommodation section for biological passengers.[3] The flat portions of the top area have a combined surface area of 800 km2.[5]
+The top kilometer was the accommodation section for biological passengers.[3] The flat portions of the top area have a combined surface area of 800 km2.[5]
 
-The middle two kilometres were docks and construction yards for spacecraft.[3]
+The middle two kilometers were docks and construction yards for spacecraft.[3]
 
-The lower kilometre was engineering space, primarily for engines.[3]
+The lower kilometer was engineering space, primarily for engines.[3]
 
 With an external multiple-layer field-complex could reach 90[1] to 100 km.[4]
 
@@ -91,7 +91,7 @@ Medium Systems Vehicles (MSV) were smaller than the GSVs in operation at the tim
 
 The Desert-class, the first type of GSV, was reclassified as a MSV after being superseded by much larger ships.[6][7]
 
-Ships of the Desert class were slightly over 3 kilometres long.[1]
+Ships of the Desert class were slightly over 3 kilometers long.[1]
 
 The Steppe-class was a type of Culture Systems Vehicle.[1]
 
@@ -119,7 +119,7 @@ Limited Contact Unit
 
 The Limited Contact Unit (LCU) was a smaller, less capable Contact Unit. By the 24th century CE, the Scree-class Limited Contact Unit was the smallest ship of this type. Relatively few were built; they were disfavored as the Minds of the Scree-class were regarded as "guaranteed to go a bit mad" due to the extremely small crew size of five.[3]
 
-Screes were very small; they were the least expensive type of Contact Unit to build.[2] They were only 80 metres long; types of ancient Culture missiles were larger than them.[3] Screes were nearly unarmed.[4] 
+Screes were very small; they were the least expensive type of Contact Unit to build.[2] They were only 80 meters long; types of ancient Culture missiles were larger than them.[3] Screes were nearly unarmed.[4] 
 
 General Contact Vehicle
 

@@ -63,7 +63,7 @@ open work, and a T-code assigned inside a spec's own build-order table
 `grep -rohE '\*\*T-[0-9]+\*\*' docs/ | sort | uniq -d` flags **19 of the
 codes in use** — a code is legitimately *mentioned* in many places, and bold is
 not a definition. Trying to compare definitions instead (register headings plus
-build-order rows, matched on normalised description) still flags eight, because
+build-order rows, matched on normalized description) still flags eight, because
 a measurement table row and an assignment row are not distinguishable by shape:
 both are a `|`-row containing exactly one T-code. **Mention and definition are
 not separable by regex in prose tables**, so a checker here is a research
@@ -99,13 +99,13 @@ describes.
 |---|---|---|---|---|---|
 | **Works 3–4** — infra as a stock, CardId-ordered fold | **T-70**, **T-75a** | T-73 | — | R-O80 (the infra ladder *is* the mineral ladder); design law #16 (fold refuses non-finite); R-IND4 at the algebra level | — |
 | **T-70 measured** | — | T-70 | — | — | **My own prediction, not a spec's** — I asserted `rank` reads infrastructure and that bit-identity was therefore impossible. It does not; one grep would have shown it. Infrastructure reaches every live decision through an integer |
-| **Works 5 (T-73)** — colour-payable bills | **T-73** | T-81 | R-IND15 | §5.1 ("never a true 1:1:1"); design law #13 | — |
+| **Works 5 (T-73)** — color-payable bills | **T-73** | T-81 | R-IND15 | §5.1 ("never a true 1:1:1"); design law #13 | — |
 | **T-73 measured** | — | — | — | — | **§6.7's neutrality claim for stage 5.** The stage was planned inert and was not: it changes *what a purchase costs*. Deepening fell 94.5% |
 | **T-81 + 3:2:1 default** | — | T-81 | R-IND16 | **R-IND15 resolved** — `3:2:1` Y:C:M, Yellow-primary because Production is Yellow | The placeholder `(1,1,1)`, which contradicted §5.1 on the spec's own terms |
-| **T-81 measured false** | **T-81** (kept as the record, not reverted) | — | R-IND17 | design law #1 (substitution is the counter-graph's, not the ladder's) | **T-81's own premise.** Relief routing *anti-concentrates*: builds fell 57 → 31. A three-colour bill needs colours arriving together, and relief scatters them |
-| **R-IND17** — bill-completion routing | **R-IND17** | T-77 | — | — | **The spec's own formula.** §6.11 divided by `Σ bill`, which ties a centre needing one colour with one needing everything. Corrected to `short_before` before implementing |
+| **T-81 measured false** | **T-81** (kept as the record, not reverted) | — | R-IND17 | design law #1 (substitution is the counter-graph's, not the ladder's) | **T-81's own premise.** Relief routing *anti-concentrates*: builds fell 57 → 31. A three-color bill needs colors arriving together, and relief scatters them |
+| **R-IND17** — bill-completion routing | **R-IND17** | T-77 | — | — | **The spec's own formula.** §6.11 divided by `Σ bill`, which ties a center needing one color with one needing everything. Corrected to `short_before` before implementing |
 | **Politics §10 spec** | — | T-82, T-86 | R-P16, R-P10 resolved | **R-P10 decided** (clear per round: a continuous book makes price a function of event ordering) | R-IND10 marked resolved — **the register was stale**, §3.3 had already answered it |
-| **T-74** — MM rate curve | **T-74** | — | — | §6.3's two-parameter curve, anchored so a rung-I centre reproduces the flat constants | — |
+| **T-74** — MM rate curve | **T-74** | — | — | §6.3's two-parameter curve, anchored so a rung-I center reproduces the flat constants | — |
 | **T-69** — slips | **T-69**, **T-75b** | — | R-IND18 | §3.2's soft floor; **R-IND4 resolved** at both levels | **§3.2's prose.** "`F/slips → F_slip` from above" is the reciprocal of what `slips` does; the `1 +` is load-bearing and dropping it inverts the design property. Also **§3.3's schedule** becomes an asymptote rather than a reading |
 | **T-71 + T-72** — crowding | **T-71**, **T-72** | — | R-IND19, R-IND20 | §4.2's vein ladder; §4.3's ratios; design law #16 (vein clamp) | Three: **§4.3's `ε·S·W`** double-counts the deposit (R-IND19); **§6.3 vs §4.3** both claimed extraction (§4.3a); **T-57's ratified crew of 3** does not survive a law with a deposit term |
 | **T-87** — crew from demand | **T-87** | T-52 | R-IND20, **T-88** | Author's ruling: crew is not a parameter | **`miner_vein_fraction` itself**, shipped one landing earlier. And **§4.5's "fewer"** — site count is identical to the digit; that half was never crowding's to deliver |
@@ -121,18 +121,18 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **Exchange 4 (T-85)** — clearing into escrowed contracts | **T-85** | T-77, T-86 | — | §10.6's two-location contract and FTL debt (the author's own amendment); design law #15 (settlement strikes at the round barrier, a protocol sync point) | **R-P17's venue rule.** One venue per pair is wrong when the two shippers are light-years apart; revised to per-shipper nearest |
 | **Exchange 5 (T-77)** — settlement | **T-77** | T-86 | **R-P18** | §10.6a's freight leg; §8.1 (refined mass traverses real space) | — |
 | **§10.6a corrected** | — | — | — | — | **My own screen.** A 400-planet bed reported 776 contracts / 327 kt and I concluded volume did not matter; the full bed is 64,642 / 29,460 kt. A conclusion of the form "X does not matter" cannot be drawn from a screen at all |
-| **R-IND21 opened, then withdrawn** | — | T-51 | R-IND21, then withdrawn | — | **R-IND21, by me, one commit later.** The measurement was right and the conclusion backwards: `unmet_colour_demand` reads the next rung only, so it measures demand the policy already decided to express |
-| **T-51 / R-O68** — the deepen/expand trade | **T-51**, **R-O68** | — | **T-89**, **R-O85** | Both sides of the comparison in one unit, using `rank`'s own `w_k` rather than a new constant; design law #16 (the `per_kt` floor exists because `0.0 * inf` is `NaN`); `CLAUDE.md` §2's ablation-before-explanation — the fix was measured against the old binary on both seeds before it was believed | **This file's own T-51 prescription.** Item 3 said fixing the units would make `reinvest_bias` "a preference over a real trade". It did not: the trade is real now and expansion still wins it by 24–49x, because an infra rung costs nine colonisers. The dead branch was the right answer reached for a wrong reason, and the cause moved to R-O85. Also **`reinvest_bias_is_a_step_function_not_a_dial`**, the characterization test that existed to stop this changing silently — replaced, deliberately, by the test that pins the new form |
+| **R-IND21 opened, then withdrawn** | — | T-51 | R-IND21, then withdrawn | — | **R-IND21, by me, one commit later.** The measurement was right and the conclusion backwards: `unmet_color_demand` reads the next rung only, so it measures demand the policy already decided to express |
+| **T-51 / R-O68** — the deepen/expand trade | **T-51**, **R-O68** | — | **T-89**, **R-O85** | Both sides of the comparison in one unit, using `rank`'s own `w_k` rather than a new constant; design law #16 (the `per_kt` floor exists because `0.0 * inf` is `NaN`); `CLAUDE.md` §2's ablation-before-explanation — the fix was measured against the old binary on both seeds before it was believed | **This file's own T-51 prescription.** Item 3 said fixing the units would make `reinvest_bias` "a preference over a real trade". It did not: the trade is real now and expansion still wins it by 24–49x, because an infra rung costs nine colonizers. The dead branch was the right answer reached for a wrong reason, and the cause moved to R-O85. Also **`reinvest_bias_is_a_step_function_not_a_dial`**, the characterization test that existed to stop this changing silently — replaced, deliberately, by the test that pins the new form |
 | **R-O86** — a scout needs somewhere to scout | **R-O86** | T-89 | — | Design law #11, restored on the engine's busiest path — `apply_build_with` was debiting the bank and holding the yard for a hull `launch_survey` then declined to spawn; `CLAUDE.md` §4's "hand a decision only the fields it reads" (`survey_frontier` is `O(1)` off a running integer count, not a walk) | **R-AC16's magnitude.** `survey_reserve = 1024` is compared against a quantity with median **0** and maximum **164**, so the test is a constant `true` and every value above ~200 is bit-identical. The direction the ratification argued is fine; the number never reached the simulation. Also **the code's own justification** for the `candidates.is_empty()` pre-emption — "no candidates means every other branch below returns Idle" — which is false and was swallowing the only live deepen path |
 | **R-O87** — `reinvest_bias` against work-years | **R-O87** | T-89 | — | `CLAUDE.md` §2's 2-SE bar, enforced against my own candidate rather than someone else's; design law #11 surfacing as the works-per-mineral identity that makes the knob neutral | **Nothing ratified** — and that is the point: the candidate cleared the bar on the standard bed (+2.33% ± 0.96, 4/4 seeds) and was refuted by an independent seed set (−1.70% ± 2.42). `reinvest_bias` is **held at 0.5**, not re-ratified. The contradiction is of my own screen, not of a spec |
-| **§6.19a** — the identity was half an argument | — | **T-88** (quantified), T-89 | — | `CLAUDE.md` §2's "never leave a symptom without a proven mechanism", applied to my own flat result: the *flow* side was priced off the engine's functions and the bottleneck named and measured rather than asserted | **My own §6.19 reasoning.** "Everything downstream breaks the tie for expansion" was asserted and is wrong — rung I→II is **+29% hull/yr for nine colonisers**, payback 62 yr. The conclusion (hold 0.5) survives; the argument for it did not. Author's objection, correct |
-| **R-O88** — there is no build-wide axis | — | T-88, T-89 | **R-O88** | A characterization test pinning a contradiction rather than a number, so neither spec section can drift further apart silently | **Two ratified sections at once.** §3.2's "`slips` scales without limit" is false in the engine (`fab_cap / slip_throughput = 2` is the whole axis, and it is closed — 10¹² kt still buys two berths). §6.3's reconciliation of the two is a **non-sequitur** and is withdrawn: it defends a per-centre claim with an empire-wide fact. Author's objection, correct |
+| **§6.19a** — the identity was half an argument | — | **T-88** (quantified), T-89 | — | `CLAUDE.md` §2's "never leave a symptom without a proven mechanism", applied to my own flat result: the *flow* side was priced off the engine's functions and the bottleneck named and measured rather than asserted | **My own §6.19 reasoning.** "Everything downstream breaks the tie for expansion" was asserted and is wrong — rung I→II is **+29% hull/yr for nine colonizers**, payback 62 yr. The conclusion (hold 0.5) survives; the argument for it did not. Author's objection, correct |
+| **R-O88** — there is no build-wide axis | — | T-88, T-89 | **R-O88** | A characterization test pinning a contradiction rather than a number, so neither spec section can drift further apart silently | **Two ratified sections at once.** §3.2's "`slips` scales without limit" is false in the engine (`fab_cap / slip_throughput = 2` is the whole axis, and it is closed — 10¹² kt still buys two berths). §6.3's reconciliation of the two is a **non-sequitur** and is withdrawn: it defends a per-center claim with an empire-wide fact. Author's objection, correct |
 | **R-O88 resolved** — option C, split `F`'s two roles | **R-O88** | T-89 | — | §3.2's unbounded build-wide axis and §6.3's tree meanings for `cap`/`half`, both made true at once by denominating the ceiling per berth; `CLAUDE.md` §2's "when a change raises entity count, check the test horizons in the same commit" — unit 19→54 s and determinism 30→58 s, both fixed in this commit with `events_processed` floors guarding the trims | **`SimConfig::slip_throughput` deleted** and `fab_cap` 0.2 → 0.1. Neither is a retune: per-berth turnaround is bit-identical at every playable rung, and §3.3's approved schedule now reads off `fab_cap` directly. Also supersedes **T-88's own headline measurement** — the after-idle gap is 29.6 → 7.6 yr, so 81%-of-timeline no longer holds |
-| **R-O85 resolved** — the ladder is fine, freight is not | **R-O85** | **T-76** (promoted to first) | — | `CLAUDE.md` §2's "measure the utilisation of whatever the knob buys", applied to a *price* — the ladder is scale-free (1.8-yr payback at every rung) so there is nothing to ratify; and logging the decision's own predicate rather than reconstructing it from totals, which inverted the answer | **R-O85's own premise.** Infrastructure is not priced out of reach: the bed banks 1,714,697 kt against a 19 kt rung. Counted per decision, **0%** gated and **0.7–0.9%** outbid — so R-O68's crossover, which three sections circled, is consulted in one decision per hundred and cannot have been the cause of anything. **43.8–46.6% of all decisions hold the total and lack a colour** |
-| **R-O89** — freight loads what the destination is short of | **R-O89** | **T-76** (the load half; the routing half stays open) | — | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** — +8.21% ± 3.06 on the standard bed, **+8.60% ± 2.61 on seeds 2/3/5/11**, pooled **+8.40% ± 1.86, 8/8**; and its **ablate before you explain** — the 2×2 ran before either arm was believed, and it is what saved the +8.4% from being buried under the −52.3% they scored together. T-73's colour-payable bill and design law #1's colour semantics, finally reaching the load leg | **§6.19c's instruction not to re-sweep anything mineral-side is lifted** — `outpost_mining_fraction`, both crew policies, `reinvest_bias` and the Exchange were each measured flat against this wall and are now re-measurable (none is re-measured here). Also **my own first attempt**: need-routing the *pickup* leg is −52.3%, and transit, per-hull throughput and hull recycling are each measured not to be why — the residual is left open under T-76 rather than given a story |
+| **R-O85 resolved** — the ladder is fine, freight is not | **R-O85** | **T-76** (promoted to first) | — | `CLAUDE.md` §2's "measure the utilization of whatever the knob buys", applied to a *price* — the ladder is scale-free (1.8-yr payback at every rung) so there is nothing to ratify; and logging the decision's own predicate rather than reconstructing it from totals, which inverted the answer | **R-O85's own premise.** Infrastructure is not priced out of reach: the bed banks 1,714,697 kt against a 19 kt rung. Counted per decision, **0%** gated and **0.7–0.9%** outbid — so R-O68's crossover, which three sections circled, is consulted in one decision per hundred and cannot have been the cause of anything. **43.8–46.6% of all decisions hold the total and lack a color** |
+| **R-O89** — freight loads what the destination is short of | **R-O89** | **T-76** (the load half; the routing half stays open) | — | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** — +8.21% ± 3.06 on the standard bed, **+8.60% ± 2.61 on seeds 2/3/5/11**, pooled **+8.40% ± 1.86, 8/8**; and its **ablate before you explain** — the 2×2 ran before either arm was believed, and it is what saved the +8.4% from being buried under the −52.3% they scored together. T-73's color-payable bill and design law #1's color semantics, finally reaching the load leg | **§6.19c's instruction not to re-sweep anything mineral-side is lifted** — `outpost_mining_fraction`, both crew policies, `reinvest_bias` and the Exchange were each measured flat against this wall and are now re-measurable (none is re-measured here). Also **my own first attempt**: need-routing the *pickup* leg is −52.3%, and transit, per-hull throughput and hull recycling are each measured not to be why — the residual is left open under T-76 rather than given a story |
 | **Tree gradient** — rank knobs against every tree | — | **T-45** (superseded and broadened 9 → 32 knobs), **T-50** (first raw dataset landed), T-78 | **R-O90**, **R-TREE8**, **R-TREE9** | Trees §2.1's "one global objective is wrong for five of six trees", finally applied to the *tuning* loop and not only to card costing; §2.3.4's mass reading of Production, which needed `VehicleSnapshot::dry_mass`; T-50's "persist the raw per-seed evaluations, not the summary" | **T-45's whole table.** Nine knobs at the pre-R-O66 operating point, ranked on coverage. `medium_fleet_size` has **flipped sign** (+32.7 "raise" → −3.93 and a cliff), `cargo_unit_size` went from **inert** to third-largest — design law #14's corollary about knobs that look dead while expansion is broken, confirmed — and `biosphere_regen_rate`, the **+141.2 ± 18.1 headline lever**, is now **bit-identically zero** because T-67 took infrastructure out of `K`. Also **trees §2.3.2 and §2.3.6**: Warfare is unreadable on the standard bed and Politics has no objective distinct from Expansion |
 | **T-88** — granularity without decision rate | **T-88** | T-52 (named, not fixed), T-24 | the idle census (see T-88) | The author's directive that opened it — *"move all decision making to trigger off an event so the economy tick can be made 1/year"*; `CLAUDE.md` §4's "entities evaluate on their own arrival events, never on a sweep", now true of the production decision as well as the ship; §2's "when a change raises event count, check the test horizons in the same commit" (all four targets rescaled here); and its replicate-on-fresh-seeds rule, run on both stage B and the new default | **`cycle_years` 50 → 5**, a ratified default moved on measurement plus an explicit directive. **And a units defect in three Monte-Carlo-tuned rates**: `growth_rate`, `biosphere_regen_rate` and `outpost_mining_fraction` were applied per *tick* irrespective of tick length, so the first sweep's +58.6% was mostly artifact. `tick_scale` fixes the denomination without moving a magnitude (bit-identical at the old cadence). **Every gradient measured before this is consumed**, including `data/tree_gradient.tsv` and T-45's table |
-| **T-90** — live local scarcity | **T-90** (refuted), **R-O91** (answered) | T-76 | **T-91** | `CLAUDE.md` §2's rule that a fix needs a *mechanism* check beside the objective — written down before the measurement and it is what refused this one; and "probe past the value you intend to ship", which is what separated *inert axis* from *gain too small* | **My own diagnosis from the previous landing.** §7.4 said outpost selection being colour-blind was why banks are mono-coloured. The term is genuinely a constant and correcting it changes nothing: the empire already mines a balanced mix, and **a hold is filled from exactly one rock**, so every delivery is mono-coloured however the rocks are chosen. Code reverted; the diagnosis is marked refuted where it was written rather than quietly dropped |
+| **T-90** — live local scarcity | **T-90** (refuted), **R-O91** (answered) | T-76 | **T-91** | `CLAUDE.md` §2's rule that a fix needs a *mechanism* check beside the objective — written down before the measurement and it is what refused this one; and "probe past the value you intend to ship", which is what separated *inert axis* from *gain too small* | **My own diagnosis from the previous landing.** §7.4 said outpost selection being color-blind was why banks are mono-colored. The term is genuinely a constant and correcting it changes nothing: the empire already mines a balanced mix, and **a hold is filled from exactly one rock**, so every delivery is mono-colored however the rocks are chosen. Code reverted; the diagnosis is marked refuted where it was written rather than quietly dropped |
 | **T-91 / R-O92** — the milk run | **T-91**, **R-O92** | T-76 | **T-92**, **T-93** | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, error bar *tightened*) and **probe past the value you intend to ship** — 4 and 6 are where it breaks and that is why 2 is known to be a peak rather than a direction; the mechanism check written down in advance, which had refused T-90 and passed this; R-O89's welded pickup site left alone rather than re-litigated | **§6.23's closing sentence**, by me — *"no loading rule and no delivery rule reaches that, because both act on ore that has already been mined from the wrong rocks"*. A loading rule does reach it, and is +55%. The sentence was right about *which ore* and wrong that nothing could mix it, because it assumed the voyage shape it was written under. **And T-91's own premise is now half-refuted**: the atomicity was real, and removing it exposed that freight is only 1.73% of what enters a bank (T-92) |
 | **T-94 / R-O93** — the logistic is solved, not stepped | **T-94**, **R-O93** | T-24 | **T-95** | `CLAUDE.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, 5.7 SE); its `yr/s` **and** `ns/event` rule, which is what shows the `exp` is free rather than assumed to be; design law #16 at the denominator | **Design law #11's `r < 2` ceiling**, which T-64 derived from the conjugacy to the logistic map and which is a property of the *Euler step*, not of the model — the closed form is monotone at any rate. **R-O84's ratification of `growth_rate = 0.873`**, whose operating point and plateau map are both consumed; the value is carried, not re-measured. And **the undershoot below `K`**, which T-67 cited as supporting evidence for taking infrastructure out of the minimum — T-67's conclusion stands on its own (razing works must not move people) but that particular argument was resting on truncation error |
 | **T-96 / R-MC16** — the drive is a mass, not a stat | **T-96**, **R-MC16** | R-O65 (still blocked), T-24 | **T-97**, **T-98** | R-MC16's own words — volume is the ENG ceiling, realized thrust is a Design quantity paid for in minerals; design law #11 (the drive masses and costs what it occupies) and #3 (the consolidation advantage stops being repaid in turnaround); R-O57 (cost stays exactly dry mass); `CLAUDE.md` §2's replication rule and its instruction to write the mechanism check down first — the round-trip ratio, which moved 1.252 → 1.011 | **R-O58's `a_empty` is size-independent**, which was true only while thrust *was* dry mass — empty acceleration now rises with size (1.00 / 2.37 / 5.06 g), which is the point. **§3.3's build schedule** 2.2/3.0/12.0 → 2.201/3.092/15.154, because `t_build` tracks hull mass and a hull now masses its drive. **The founding-infra rung coincidence** drifts +0.003/+0.038/+0.119 Bands — R-O80's claim about the two ladders is untouched (the shell still prices exactly at its rung) and R-O87's works identity survives, because both sides moved together |
@@ -162,6 +162,193 @@ description of the change.
 ---
 
 ## Band A — ready to build
+
+### T-115. Two responders, a moving picket, an armed scout — and a mechanic priced before it was believed
+
+**Built, gated off, measured.** Full write-up in `Hyades_warfare_tree.md` §8.9.
+Four corrections, three of them to things §8.6–8.8 got *wrong* rather than left
+untuned, plus one contradiction found and deliberately not fixed.
+
+The author's specification: *"Pickets should move to the frontier if the site
+they patrol is colonized. LOU can replace LSV as scout in this Doctrine… I think
+the enemy colony ships should be reacting in addition to enemy home centers.
+Also, pickets should actively close the distance to targets they can intercept
+prior to founding a colony."*
+
+#### The bed, re-measured (`examples/denial_census`, 8 seeds, 3 seats, 800 yr)
+
+Every row is measured *after* R-WAR9, so this table and T-112/T-113's are from
+different engines. `own`/`neighbors` are % against the peace arm on the same
+seed; `W_0` is in colonies. Neighbors should **fall** and `W_0` should **rise**.
+
+| arm | own | neighbors | `W_0` | diverts | pickets |
+|---|---|---|---|---|---|
+| T-112 colonizer pickets | −21.46 ± 4.41 | +9.25 ± 2.78 | −281 ± 72 | 15 | 4,974 |
+| + hold erects infra | −21.25 ± 4.48 | +9.16 ± 2.74 | −276 ± 70 | 14 | 5,012 |
+| + cheap LOU pickets | −21.02 ± 4.55 | +8.86 ± 2.52 | −267 ± 63 | 21 | 5,079 |
+| LOU pickets alone | −2.87 ± 2.11 | +1.06 ± 0.58 | −29 ± 19 | 1 | 188 |
+| + claims its target | −2.64 ± 2.38 | +1.76 ± 0.80 | −49 ± 25 | 2 | 333 |
+| **+ the LOU scouts** | **−2.87 ± 2.11** | **+1.06 ± 0.58** | **−29 ± 19** | **1** | **188** |
+| + and intercepts | −2.29 ± 1.99 | +0.85 ± 0.62 | −22 ± 20 | 0 | 195 |
+
+The direction is unchanged and the magnitudes roughly doubled: a colonizer that
+keeps its hull costs its own player **21.5%** of its colonies where it cost 9.6,
+because a slower expansion loop makes a spent colonizer dearer. The last three
+arms are inside 2 SE on every column, and the `LOU scouts` row reproducing the
+one above it to every digit is its own finding below.
+
+#### The colony ship hears it itself — and that broke the predicate
+
+§8.6 scheduled one warning, by distance to the ship's home center, on card
+contract §2. The rule is right and the reading was too narrow: the home center
+issues an *order*, the crew *notices*. The ship-side instant is the root of
+`f(t) = (t − now) − |p(t) − world|`, found by 48 bisections because the
+trajectory has no elementary inverse and bisection uses only IEEE-exact
+operations (design law #16).
+
+**Adding it made the warning arrive every time**, because light outruns a
+sub-light hull by construction — so *"did the warning arrive"* stopped having
+two outcomes, and left alone it would have turned every ship back and deleted
+the arrival fight. The gate that replaces it costs no constant: a leg is a 1 g
+brachistochrone, so **before turnover the hull's velocity still points somewhere
+it can choose and after turnover it arrives whatever it decides.** The
+counterplay window is now a *margin* rather than a race.
+
+#### Interception is a forward-deployment mechanic, and it fires on about half the field
+
+`Doctrine::picket_intercepts`: a picket leaves station when
+`depart + |origin − station| + flight(station → world) < colony_arrival`. Every
+term already exists — no reaction time, no interception radius. Cost is
+`O(pickets held)` per launch, one `is_empty()` where nobody plays the card.
+
+**Priced before it was believed** (`examples/intercept_probe`, new), with the
+colony ship flown at the rate its load implies (R-WAR9 below):
+
+| range | light | laden colony ship | **window** |
+|---|---|---|---|
+| 5 ly | 5.000 yr | 10.395 yr | 5.395 |
+| 25 ly | 25.000 | 32.253 | 7.253 |
+| 200 ly | 200.000 | 208.139 | **8.139** |
+
+A laden Medium colonizer makes **0.241 ly/yr²** against an empty hull's 2.446,
+so its overhead over light **saturates at ≈8.14 yr** — and that overhead is the
+whole window an interceptor has. An empty LOU picket (0.940 ly/yr²) covers
+**6.29 ly** in it, against a median nearest-neighbor spacing of **6.16 ly**. So
+roughly **half the field is interceptable from a neighboring station**, with a
+margin at the median of 0.13 years.
+
+**And the sign of one term is the design.** A station 0.5 ly *beyond* the
+contested world loses the race; the same 0.5 ly on the *near* side wins it,
+because the far side pays the distance twice — once in light to hear the launch,
+once in flight.
+
+**And it fires** — `LogEvent::PicketIntercept` counts **81 interceptions across
+eight seeds** (≈10 a run) against 195 picket arrivals, so roughly 40% of the
+pickets that exist end up breaking for a contested world. The event exists
+because nothing else can see the mechanic: an interception *moves* a hull rather
+than building one, so the picket column barely registers it.
+
+**Zero diversions, and that follows from the turnover gate rather than being a
+second failure.** A picket that arrives just ahead of a colony ship arrives when
+that ship is long past turnover, so the warning lands on a hull that cannot
+turn — interception converts an uncontested founding into a **fight at the
+destination**. `W_0` goes −29 ± 19 → −22 ± 20, which is a 7-colony paired
+improvement with error bars three times its size: **not resolved at eight
+seeds**, and the arm is still supply-starved at 24 pickets a run.
+
+**The first version of this section said 1.92 yr and "fewer than a tenth".**
+That was the *empty* hull's overhead, measured with the R-WAR9 defect below —
+which had already been found and written up one subsection later, and used
+anyway. **A probe inherits every assumption of the code it measures.**
+
+#### Two supply writes, and they pull in opposite directions
+
+§8.8 measured the cheap picket's problem as supply (95 hulls across eight
+seeds), because its branch sits behind a survey test R-O86 measured a constant
+`true`. `picket_claims_target` (T-113) found the picket a *new* branch;
+**`scout_hull_offensive` puts it in the branch that already runs constantly** —
+the armed hull takes the survey slot. Cadence untouched, hull changed, price
+paid at the yard.
+
+A scout built this way carries **`Class::Tor`**, which is how `assign_role`
+tells a scouting LOU from a picketing one. The class *is* the design
+(R-O28/R-O42b), so it needs no second piece of state.
+
+**Note on the specification**: the author wrote *"LOU can replace LSV as
+scout"*. The engine's scout rides the **LCV** (`role_hull_type(Role::Scout)`,
+`Class::Tor`); the LSV is the mining hull. The write replaces the LCV.
+
+#### A picket whose world is settled goes back to the frontier
+
+Its product is a colony somebody does not found; once the world it stands on
+*is* a colony there is nothing left to deny, and a parked hull the empire keeps
+counting throttles `picket_reserve` against its own replacements.
+`vacate_picket` moves the map and the count together, because every path that
+removes a picket has to move both. This is precisely the situation T-113's
+held-ground preference *creates*.
+
+#### The contradiction, found by needing a number — **R-WAR9, fixed**
+
+Implementing interception meant needing the colony ship's speed, which is how
+`spawn_courier` turned out to compute the leg's acceleration as
+`civilian_accel_g · G` **before** the hold is loaded, never re-reading it —
+every `laden_accel` call site in the engine was freight. `CLAUDE.md` §7 records
+standing-layer item 5 (R-O32) as **done** (*"a laden colony ship flew like an
+empty hull"*); it had closed it for the arena and not for this dispatcher.
+
+The leg now reads `laden_accel` after loading, which also stops it pretending
+every hull mounts the same drive (T-96). `launch_picket` and the interception's
+own feasibility test read the same function, so the decision and the leg cannot
+disagree about who wins a race. Guarded by
+`the_colonization_leg_is_flown_at_the_rate_its_own_load_implies`.
+
+**It invalidates every transit-dependent magnitude measured before it**, this
+entry's own §8.6–8.8 arms included: a colony ship is 20% slower over 25 ly and
+56% slower over 5, so the expansion loop is slower everywhere. The §8.9 census
+is measured after the fix; the earlier ones are not, and comparing across them
+is comparing two engines.
+
+#### The armed scout is bit-identically inert, and the cost ladder is why
+
+`scout_hull_offensive` reproduces its baseline **to every printed digit** — 188
+pickets, −2.87% own, +1.06% neighbors, all eight seeds, and it did so both
+before and after the R-WAR9 fix. Cause:
+**`hull_dry_mass(LCV) == hull_dry_mass(LOU) == 0.020 kt`**, because under R-O57
+cost *is* dry mass and `hull_dry_mass` reads the cost *tier*, which groups every
+Limited hull. The two are the same object economically, so swapping them changes
+nothing the simulation reads.
+
+Not a wiring defect, and the write is kept: it goes live when hull types carry
+differentiated cost (**R-O64**, **R-L0**). It does weaken §8.6's framing —
+*"a picket must cost less than a colony"* holds (0.020 against 0.109 kt), but
+the cheap *armed* hull is not cheaper than the cheap unarmed one, so arming the
+frontier is free and the trade §8.6 describes is not the one being made.
+
+#### What is still not modeled — **R-WAR10**
+
+`offer_interception` is handed the colony ship's **destination**. Light delivers
+a *trajectory* — departure point, time, heading — and a destination is an
+inference from it; inferring it wrong is what makes a feint possible, which is
+yomi content rather than a gap. That is the whole of R-WAR10.
+
+**The obvious larger idea was refuted by one probe, which is why it is recorded
+here rather than built.** *"Meet the ship on its path instead of racing it to a
+world"* is a *narrower* set, not a wider one, because the window is
+**back-loaded**: the slack a picket lives on is `t_ship(along) − along`, and it
+accumulates as the hull decelerates through the back half of its
+brachistochrone. On a 25 ly voyage the tolerable perpendicular offset runs
+**1.24 ly at 12.5% of the track → 1.95 at half → 4.96 at the destination**. The
+destination is where the entire window is, and the shipped criterion already
+takes it.
+
+#### What ships
+
+`scout_hull_offensive` and `picket_intercepts` both default false (**R-WAR8**).
+The ship-side warning, the turnover gate and the picket's return to the frontier
+are unconditional but reachable only where a picket exists, so
+`picketing_off_is_bit_identical` still pins the default galaxy.
+
+---
 
 ### T-114. `tests/determinism.rs` is over the 60-second budget, and it arrived that way at T-112
 
@@ -195,6 +382,11 @@ is why `positions_never_exceed_lightspeed` counts moving entities and
 
 ### T-113. Claiming instead of denying — the cheap picket, the erected hold, and settling held ground
 
+> **Measured before R-WAR9 (T-115)**, like T-112 above: the colonization leg was
+> flown unladen. The mechanisms below hold; the magnitudes are from an engine
+> that no longer exists.
+
+
 **Built, gated off, measured on the asymmetric bed.** Full write-up in
 `Hyades_warfare_tree.md` §8.8. Three Doctrine writes and one unconditional
 preference; **one of the four moved the objective**, and it needed an engine fix
@@ -208,7 +400,7 @@ picket."*
 
 #### What it measures (`examples/denial_census`, 8 seeds, 3 seats, 800 yr)
 
-| arm | own | neighbours | `W_0` | pickets |
+| arm | own | neighbors | `W_0` | pickets |
 |---|---|---|---|---|
 | T-112 + settle held ground | −8.30 ± 2.69 | +4.07 ± 1.09 | −120 ± 34 | 5,415 |
 | + hold erects infra (`share = 0.5`) | −8.33 ± 2.56 | +4.04 ± 1.04 | −119 ± 32 | 5,411 |
@@ -216,7 +408,9 @@ picket."*
 | LOU pickets alone | −1.57 ± 1.21 | +0.93 ± 0.38 | −21 ± 12 | 95 |
 | LOU pickets + claims its target | −1.62 ± 4.47 | +1.10 ± 1.83 | −35 ± 61 | 188 |
 
-Neighbours should **fall** and `W_0` should **rise**. Neither does. The last two
+*(Pre-R-WAR9. The same arms re-measured are in the T-115 entry above.)*
+
+Neighbors should **fall** and `W_0` should **rise**. Neither does. The last two
 arms are inside 2 SE on every column.
 
 #### The one that moved, and the defect behind it
@@ -231,11 +425,11 @@ for a consumer reading the argmax of a **class**. This preference reads the
 argmax of a **subset**, and `max(S)` does not carry `max(S′)` for `S′ ⊂ S`, so a
 held world reached the policy only when it already won its class outright. The
 arm reproduced the arm without it *to every printed digit*, which is the tell:
-**a behavioural change that reproduces the baseline exactly is inert or
+**a behavioral change that reproduces the baseline exactly is inert or
 unreachable, not small.** Six slots now — per-class winner, plus per-class
 winner among held ground — pinned by
 `the_candidate_reduction_carries_held_ground_without_duplicating_it` and
-`a_coloniser_prefers_held_ground_to_a_better_unheld_world`. Recorded in
+`a_colonizer_prefers_held_ground_to_a_better_unheld_world`. Recorded in
 `CLAUDE.md` §"A decision can be provably blind".
 
 #### The cheap picket is not built, and the reason is one predicate
@@ -250,11 +444,11 @@ frontier is exhausted. It is behind survey on purpose: ahead of it, the first
 version cost its own player **24.5%** of its colonies.
 
 `picket_claims_target` opens the other state where a cheap hull is the best use
-of a cycle — the centre has named an outward world and cannot pay for it —
+of a cycle — the center has named an outward world and cannot pay for it —
 gated on the target not already being held **or claimed**
 (`Simulation::picket_inbound`, so one hull per world rather than one per
 decision for a whole voyage). Supply **95 → 188**, objective unmoved. The state
-is rare: expansion here is not bound by the coloniser's price.
+is rare: expansion here is not bound by the colonizer's price.
 
 #### Erecting the hold is flat because the hold is empty
 
@@ -301,6 +495,13 @@ Class::Unnamed)` rather than `NotYetImplemented`; two inert cards remain.
 
 ### T-112. Denial: pickets, light-lagged diversion — and the card is refuted as specified
 
+> **Measured before R-WAR9 (T-115).** The colonization leg was flown at the
+> empty-hull rate, so every magnitude below is from an engine that no longer
+> exists. Re-measured after the fix the headline arm reads **−21.46% own /
+> +9.25% neighbors / −281 `W_0`** against the −9.55 / +4.40 / −133 recorded
+> here. The direction is unchanged; the magnitudes are not.
+
+
 **Built, gated off, measured on the asymmetric bed, and it does the opposite of
 what it is for.** Full write-up in `Hyades_warfare_tree.md` §8.6–8.7.
 
@@ -316,28 +517,28 @@ R-TREE8 requires, and the first measurement in this project to use one.
 
 | | mean | seeds |
 |---|---|---|
-| **neighbour colonies** | **+4.40% ± 1.09** (4.0 SE) | 1/8 negative |
+| **neighbor colonies** | **+4.40% ± 1.09** (4.0 SE) | 1/8 negative |
 | own colonies | −9.55% ± 2.61 (3.7 SE) | 7/8 negative |
 | `W_0 = C_0 − mean(C_j)` | **−133.2 colonies ± 35.3** (3.8 SE) | 1/8 positive |
 
-The neighbours expand **more**, at 4.0 SE with 7/8 seeds agreeing.
+The neighbors expand **more**, at 4.0 SE with 7/8 seeds agreeing.
 
 #### Three things establish why, and only the first is a magnitude
 
 - **Pickets are fielded and never used.** 493–793 pickets produce **3–12
-  diversions** per run — one to two percent utilisation. Placement is the
+  diversions** per run — one to two percent utilization. Placement is the
   mechanism: the picket takes the world nearest the colony just founded, which
   is the picketing empire's *own* frontier.
-- **Aiming at the neighbour is worse, and structurally so.** Nearest-to-rival
+- **Aiming at the neighbor is worse, and structurally so.** Nearest-to-rival
   placement gives **24–32 pickets and zero diversions** on every seed: a world
   this empire has scanned and a rival has not yet claimed barely exists.
-  Colonisation is exclusive (R-V3) and worlds go unscanned → owned without
+  Colonization is exclusive (R-V3) and worlds go unscanned → owned without
   pausing. **There is no contested frontier to stand on.**
 - **A 1:1 trade would still lose, and that is arithmetic.** Spending `k`
-  colonisers to deny `k` neighbour colonies gives
+  colonizers to deny `k` neighbor colonies gives
   `ΔW_0 = −k + w_0A·k = −k(1 − w_0A)`, and `Σ_j w_0j = 1` by construction, so
   `ΔW_0 < 0` at any table wider than two seats **however well it is aimed**. The
-  realised ratio is **−0.97 denied per spent**, where even +1.00 would not have
+  realized ratio is **−0.97 denied per spent**, where even +1.00 would not have
   been enough.
 
 #### The defect that was mine, and the shape worth keeping
@@ -345,7 +546,7 @@ The neighbours expand **more**, at 4.0 SE with 7/8 seeds agreeing.
 The first arm charged the card honestly — roles §4.2 makes a colony's `Band I`
 stock the *recycled hull*, so a hull that leaves leaves nothing — and debited the
 founding rung to **zero**. That took seat 0 from **769 colonies to 10** and
-raised the neighbours **+20.0%**.
+raised the neighbors **+20.0%**.
 
 **`employment_rate` returns exactly `0.0` for a stock of zero**, and
 `fabrication_rate` is `slips × berth_rate`, so a colony founded at infra 0 can
@@ -355,22 +556,22 @@ law #11/T-63) and pinned by
 `a_picketed_founding_still_leaves_a_workable_colony`.
 
 Three arms, and the monotonicity is what identifies self-harm rather than denial
-— **the neighbours' gain tracks the card-player's loss one for one across a
+— **the neighbors' gain tracks the card-player's loss one for one across a
 25-point range**:
 
-| founding rung | own | neighbours | `W_0` |
+| founding rung | own | neighbors | `W_0` |
 |---|---|---|---|
 | zero | −57.2% | **+20.0%** | −688 |
 | **floor (shipped)** | −9.6% | **+4.4%** | −133 |
 | unchanged `Band I` | +2.6% | −0.7% | +31 |
 
-Even the arm that charges the card *nothing* moves the neighbours −0.71% ± 0.54,
+Even the arm that charges the card *nothing* moves the neighbors −0.71% ± 0.54,
 inside noise.
 
 #### What it did unblock
 
 - **An accept/decline at range**, on a genuinely light-lagged edge: a picket's
-  warning reaches an inbound coloniser's home centre at
+  warning reaches an inbound colonizer's home center at
   `established_at + distance/c`, and whether it beats the ship is the
   counterplay window. §7.4's *"only miners ever fight"* is amended.
 - **`Role::Picket`**, the first role whose product is something that does not
@@ -379,7 +580,7 @@ inside noise.
 
 #### What would have to change
 
-- **A picket must cost less than a colony** — a coloniser is the most expensive
+- **A picket must cost less than a colony** — a colonizer is the most expensive
   object in the expansion loop, spent on an object that produces nothing.
 - **Or deny more than one world per hull** — a blockade over an approach rather
   than a point clears the `1 − w_0A` bound.
@@ -442,7 +643,7 @@ several times over and its expansion does not notice.* That is §6.19c's and
 R-O92's conclusion reached by destroying the hulls rather than by counting them.
 
 **Throughput rose on all eight seeds with `ns/event` falling**, which
-`CLAUDE.md` §2's table reads as "a real optimisation". It is not: the workload
+`CLAUDE.md` §2's table reads as "a real optimization". It is not: the workload
 shrank because 11,345 hulls stopped existing. The table assumes a fixed
 workload; this is the row it does not cover, and it is now recorded there.
 
@@ -468,7 +669,7 @@ workload; this is the row it does not cover, and it is now recorded there.
   and the arriver the missiles; a convention that decides outcomes. Needs R-L0.
 - **The belief layer's interesting half.** Zero range means belief *is* truth, so
   masking and surprise are untested. Needs T-33 and an engagement at range.
-- **Only miners fight.** Freighters in transit, colonisers under way and
+- **Only miners fight.** Freighters in transit, colonizers under way and
   colonies themselves are untouchable, so §4.4's commerce raiding and blockade
   and §4.1's infrastructure strike are all still unreachable. Each needs a
   detection query rather than an arrival — which is where R-AC13 and the posture
@@ -555,7 +756,7 @@ raiding and R-AC13's "if pressed" all still need an engagement at *range*.
 **The prerequisite under T-108 and under the whole Warfare tree**, and it is a
 statement about call signatures rather than a measurement.
 `Sim::extraction_rate` (`src/sim.rs:4157`) and `Sim::berth_rate`
-(`src/sim.rs:4055`) each read exactly two things: the centre's `Factors::infra`
+(`src/sim.rs:4055`) each read exactly two things: the center's `Factors::infra`
 and its owner's `Works`. `Sim::fabrication_rate` is `slips × berth_rate`.
 **Population is an argument to none of them**, so a colony emptied of people
 mines and fabricates at the same rate as one at its carrying capacity.
@@ -570,17 +771,17 @@ Band C:
 - **A population kill costs its target nothing per year.** §1.1 removed
   infrastructure from `K` so that an industrial strike would not be a population
   strike; the converse was never checked. Card contract §10 gives Warfare the
-  exclusive licence to kill population, and as the engine stands that licence
+  exclusive license to kill population, and as the engine stands that license
   confers **no measurable effect on anyone's objective**.
 
 **The shape, proposed in `Hyades_industry.md` §1.8 and not ratified** — a
-utilisation factor on the stock rather than a fourth additive capacity:
+utilization factor on the stock rather than a fourth additive capacity:
 
 ```text
 I_worked = I · u(P / P_req(I)),     u monotone, u(0) = 0, u(x ≥ 1) = 1
 ```
 
-`u ≤ 1` bounds the change above by current behaviour, so the first measurement
+`u ≤ 1` bounds the change above by current behavior, so the first measurement
 is an ablation against a known baseline and can only remove output. Expect
 work-years and colony-years to fall; the question is by how much and whether the
 loss concentrates on young colonies. **R-IND22** carries `u`'s shape and
@@ -592,13 +793,13 @@ of workers on a fixed deposit; this is whether there are workers at all.
 **Re-test on landing:** `a_mineral_buys_the_same_works_whether_it_deepens_or_founds`
 must still pass (R-O87's identity is about stock, and this is about flow).
 §6.16's demand-derived crew reads `fabrication_rate`, so `n*` should fall on
-under-populated centres — that is the mechanism, not a regression.
+under-populated centers — that is the mechanism, not a regression.
 
 ---
 
 ### T-108. Development is a profitability test — R-IND22
 
-**Author's ruling: a production centre should develop a colony when it is
+**Author's ruling: a production center should develop a colony when it is
 profitable to do so, read off population, minerals and infrastructure.**
 Specified in `Hyades_industry.md` §1.8. **Blocked on T-107**, which supplies the
 population term; the other two are already on `ProductionContext`.
@@ -607,10 +808,10 @@ What lands:
 
 ```text
 develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
-          and  b_c ≤ bank_c   for every colour c
+          and  b_c ≤ bank_c   for every color c
 ```
 
-- The affordability half stays a **conjunction over colours** and is not folded
+- The affordability half stays a **conjunction over colors** and is not folded
   into the ratio. §6.19c counted the alternative's cost: inferring payability
   from a *total* reported 44.7% "outbid" where the truth is 0.9%.
 - `τ_pay` is a placeholder (**R-IND22**).
@@ -656,12 +857,12 @@ dependent on it for the gate to matter.
 
 ---
 
-### T-110. The first Warfare card — the armed coloniser
+### T-110. The first Warfare card — the armed colonizer
 
 Specified in `Hyades_warfare_tree.md` §7 — the first concrete answer to
 **R-WAR2** — with the roles amendment in `Hyades_vehicle_roles.md` §4.2. One Design write and three Doctrine writes; the
 Design half moves the Colonizer role from the Medium Systems hull to a Contact
-class, and the third Doctrine write stops the coloniser recycling itself into
+class, and the third Doctrine write stops the colonizer recycling itself into
 the colony it founds.
 
 **One third of the stated intent was refuted by the engine's own algebra and is
@@ -677,7 +878,7 @@ exactly — the empty-to-laden swing **is** the cargo efficiency (R-O95, pinned 
 `sim::tests::the_acceleration_swing_is_the_cargo_efficiency`). Cutting cargo
 efficiency narrows the swing, so a hull cannot be worse at freight, faster empty
 and slower laden at once. **Decided: keep the first two and take the narrowed
-signature as the compensation** — an armed coloniser is worse freight and
+signature as the compensation** — an armed colonizer is worse freight and
 *quieter*, which is a Warfare property bought with no combat constant
 (standing layer §9.2).
 
@@ -725,9 +926,9 @@ across a 200× range of tick sizes — and the run is not. Exact integration at
 | **exact @ 5 (shipped)** | **293,919** | **811,581** | **3,086** | 49.6 | 283k |
 
 So the tick is also **quantising** three things that have nothing to do with
-integration accuracy: when a centre mines, when it notices it has crossed a
+integration accuracy: when a center mines, when it notices it has crossed a
 `PopBands` edge, and when it re-decides. R-O84 already recorded the middle one —
-`growth_rate` reaches the objective "only through how many cycles a centre takes
+`growth_rate` reaches the objective "only through how many cycles a center takes
 to cross a `PopBands` edge, an integer."
 
 **`cycle_years = 10` is the immediate prize**: within noise of 5 on work-years
@@ -779,16 +980,16 @@ only a combo if thrust is purchasable.
 
 ---
 
-### T-92. A centre's bank is 98.3% its own single-coloured planet
+### T-92. A center's bank is 98.3% its own single-colored planet
 
 **T-91's residual, and the atomicity one level below freight.**
 
 `sys_production_tick` step 1 — *"local mining: the center works its own density
 into its stockpile"* — puts ore straight into the bank without a hull ever
-touching it. A planet is one colour. Measured on seed 1 at 800 yr
+touching it. A planet is one color. Measured on seed 1 at 800 yr
 (`examples/bank_mix`, provenance block):
 
-| into a centre's bank | kt |
+| into a center's bank | kt |
 |---|---|
 | local mining | 359,417 |
 | hauled in by freight | 6,321 |
@@ -797,22 +998,22 @@ touching it. A planet is one colour. Measured on seed 1 at 800 yr
 and outposts dug **2,999,421 kt of which 0.21% was ever collected.**
 
 So the milk run (T-91) mixes a channel carrying under a fiftieth of the mass. It
-was worth **+55%** anyway, because a conjunction makes the *minority* colour the
+was worth **+55%** anyway, because a conjunction makes the *minority* color the
 whole constraint — but it also puts a ceiling on every further freight fix, and
 the payable fraction moving only 0.043 → 0.052 is that ceiling showing.
 
 **Three shapes, not obviously equivalent:**
 
-- **Inter-centre transfer** (T-76's other half, development freight). A centre
-  holding 275 kt of Magenta against 0.59 kt of Cyan ships Magenta to a centre
+- **Inter-center transfer** (T-76's other half, development freight). A center
+  holding 275 kt of Magenta against 0.59 kt of Cyan ships Magenta to a center
   that needs it. Leaves the voyage structure alone, redistributes after the fact,
   and is the one that is already specified (§7.3).
 - **Let local mining feed the outpost pile rather than the bank**, so everything
-  a centre banks has passed through a routing decision. The most direct removal
-  of the atomicity and the largest behavioural change; it makes a homeworld
+  a center banks has passed through a routing decision. The most direct removal
+  of the atomicity and the largest behavioral change; it makes a homeworld
   dependent on its own hauling.
-- **The Exchange** (T-77 landed the settlement leg). Buying the missing colour is
-  the design's own answer to a colour shortage, and §8.1 makes it a voyage, so it
+- **The Exchange** (T-77 landed the settlement leg). Buying the missing color is
+  the design's own answer to a color shortage, and §8.1 makes it a voyage, so it
   is the same mechanism with a different counterparty.
 
 **Acceptance is the provenance split *and* the payable fraction.** A change that
@@ -1061,27 +1262,27 @@ inversion rather than a rounding difference.
 ### T-99. The demand term is a ceiling, not this hauler's share
 
 **Opened by T-98.** `freighter_hull` reads the destination's fabrication rate as
-the demand side, and a centre served by ten pairs can absorb that rate **once**,
+the demand side, and a center served by ten pairs can absorb that rate **once**,
 not ten times. So the term is an upper bound on what one hauler should size for,
-and it binds correctly only when a centre has few haulers.
+and it binds correctly only when a center has few haulers.
 
 The supply term has no such caveat — it is exactly this rock's yield to this
 player, and it is what discriminates today. Turning demand into a *share* needs a
-per-centre hauler census, which is not `O(1)` from the decision and so runs into
+per-center hauler census, which is not `O(1)` from the decision and so runs into
 `CLAUDE.md` §4 directly. Two shapes:
 
-- **Maintain a count** per `(player, centre)` as haulers are built, retired and
+- **Maintain a count** per `(player, center)` as haulers are built, retired and
   re-routed. Cheap to read, but `Shuttle::destination` is need-routed and moves,
-  so "serving this centre" is not a stable membership and the count would drift.
-- **Read the centre's delivery rate** instead of its hauler count: `bank_mix`
+  so "serving this center" is not a stable membership and the count would drift.
+- **Read the center's delivery rate** instead of its hauler count: `bank_mix`
   already reconstructs it from `FreighterTransfer`, so the shortfall between
   fabrication rate and arrival rate is the marginal demand a new hauler should
-  size for. Needs a per-centre running figure in sim state, which is exactly what
+  size for. Needs a per-center running figure in sim state, which is exactly what
   `CLAUDE.md` §4 warns to recompute rather than accumulate.
 
 **Acceptance is the hull mix, not the objective.** Today's bed builds 4,750
 Medium / 1,452 General / 211 Limited; a correct share term should shift the mix
-toward smaller hulls at well-served centres without touching thin-rock pairs.
+toward smaller hulls at well-served centers without touching thin-rock pairs.
 
 ---
 
@@ -1098,20 +1299,20 @@ toward smaller hulls at well-served centres without touching thin-rock pairs.
 > **+9.54% ± 4.19 (7/8)**, throughput **+73%** with `ns/event` −46%.
 >
 > **The liquidity term is most of the value and the ablation is the reason that
-> is known.** Capping candidates at what the centre can pay for *now* costs no
+> is known.** Capping candidates at what the center can pay for *now* costs no
 > new constant — the budget is the bank, which the decision already lives under.
 > Without it the same rule scores **+51% work-years and −17% colony-years on 1/8
 > seeds**, and `all_fair_counts_run_and_expand` founds nothing in forty years:
-> a thin-banked centre buys one General hauler instead of twelve Mediums and
+> a thin-banked center buys one General hauler instead of twelve Mediums and
 > stops expanding while it saves. That is design law #3's *indivisibility as a
 > liability*, and a steady-state rate cannot see it.
 >
 > **Mechanism check — this is T-92's ceiling moving.** Freight's share of bank
 > inflow **1.73% → 14.70%**, ore ever collected 0.21% → 2.30%, payable fraction
 > 0.052 → 0.083, infrastructure builds 335 → 601. Bigger haulers on rich rocks
-> move 14x the tonnage, and because the milk run mixes colours *within* a hold
+> move 14x the tonnage, and because the milk run mixes colors *within* a hold
 > that tonnage is payable. The two compose; neither does this alone. **T-92 is
-> advanced, not closed** — 85% of inflow is still the centre's own ground.
+> advanced, not closed** — 85% of inflow is still the center's own ground.
 >
 > **Cost: colony count −6.1%** while colony-years rise 9.5%. Worlds are taken
 > earlier and the tail is shorter. Same shape as R-O66's −178: a
@@ -1127,12 +1328,12 @@ toward smaller hulls at well-served centres without touching thin-rock pairs.
 > **It has a closed form.** `x(t+Δ) = K·x / (x + (K − x)·e^(−rΔ))` — the ceiling
 > is constant across a tick (`K = min(hab, bio_max)`, the *pristine* biosphere),
 > so the population step is autonomous and solvable. `settler_target` had been
-> pricing colonisation off this solution's inverse since R-IND11, so the engine
+> pricing colonization off this solution's inverse since R-IND11, so the engine
 > was already carrying both the true curve and a crude walk of it.
 >
 > Euler was **79% low** at `cycle_years = 50` and still **21% low** at T-88's
 > refined 5. **+6.57% ± 1.14 colony-years, 8/8 seeds (5.7 SE)**, work-years
-> noise, **throughput unchanged** — one `exp` per centre per tick is below the
+> noise, **throughput unchanged** — one `exp` per center per tick is below the
 > run-to-run variance, and `ns/event` fell.
 >
 > Retires three things, and the third is the one to remember: design law #11's
@@ -1148,11 +1349,11 @@ toward smaller hulls at well-served centres without touching thin-rock pairs.
 
 ---
 
-### ~~T-91. A hold is loaded from one rock, so every delivery is one colour~~ — **DONE (R-O92, §6.24)**
+### ~~T-91. A hold is loaded from one rock, so every delivery is one color~~ — **DONE (R-O92, §6.24)**
 
 > **The milk run.** An outbound leg now visits `SimConfig::max_pickup_stops`
 > piles before turning for its destination; the final stop fills the hold as
-> R-O89 does, and every earlier one takes each colour capped at what is still
+> R-O89 does, and every earlier one takes each color capped at what is still
 > wanted **and** at its proportional share of the hold. `Shuttle` gained an
 > immutable `base` (the hauler's own miner's rock, which every leg starts and
 > ends at) and a per-leg `stops` counter.
@@ -1174,15 +1375,15 @@ toward smaller hulls at well-served centres without touching thin-rock pairs.
 > **What it does not reach is T-92**, and that is the finding worth carrying:
 > freight is **1.73%** of everything that ever enters a bank. The lesson is the
 > opposite of "the channel was too small to matter" — mass was never binding, a
-> **conjunction** makes the minority colour the whole constraint, and a channel
+> **conjunction** makes the minority color the whole constraint, and a channel
 > carrying 1.7% of the mass carried all of the scarcity.
 
 ---
 
-### ~~T-90. Outpost selection is colour-blind — R-O91~~ — **IMPLEMENTED AND REFUTED**
+### ~~T-90. Outpost selection is color-blind — R-O91~~ — **IMPLEMENTED AND REFUTED**
 
 > **The term is a real defect and it is not the cause.** `local_scarcity` weighted
-> a world's colours by the deciding centre's own shortfall against its next rung,
+> a world's colors by the deciding center's own shortfall against its next rung,
 > reducing exactly to the old constant when nothing is short. Measured:
 > **payable fraction 0.043 → 0.043**, dead share **99.7% → 99.7%**, work-years
 > **+1.12% ± 4.31 (2/4 — noise)**, colony-years **−3.30% ± 0.49 (0/4)**.
@@ -1194,7 +1395,7 @@ toward smaller hulls at well-served centres without touching thin-rock pairs.
 > is 99.7% at every one.
 >
 > **The mechanism is in §7.4 and it is provable from the code**: the empire
-> already mines a balanced mix, a rock is one colour, and a hold is filled from
+> already mines a balanced mix, a rock is one color, and a hold is filled from
 > exactly one rock. Selection had nothing to fix. The successor is **T-91**
 > above.
 
@@ -1202,9 +1403,9 @@ toward smaller hulls at well-served centres without touching thin-rock pairs.
 
 **The third missing term, and it is one step further back than the last two.**
 λ gave freighter routing a *distance* component it did not have (coverage
-14.4% → 38.3%); R-O89 gave the freight *load* leg a *colour* component it did not
+14.4% → 38.3%); R-O89 gave the freight *load* leg a *color* component it did not
 have (+8.4% work-years). This is the decision that puts a mining pair on a rock
-in the first place, and it has a colour term that reads a **constant**:
+in the first place, and it has a color term that reads a **constant**:
 `RankWeights`-scored `scarcity_c` is written once at game start from the
 homeworld archetype and never again, while `mineral_pressure` is live but
 **scalar**. The empire can say *mine more*; it cannot say *mine Cyan*.
@@ -1216,7 +1417,7 @@ homeworld archetype and never again, while `mineral_pressure` is live but
   "wants to deepen, cannot pay the bill"** with a mean bank of **561 kt**. Not
   one idle decision in the run had `can_afford_infra == true`.
 - **99.7% of 360,517 banked kt cannot pay a balanced rung at any price.**
-- The median bank's dominant-colour share is **0.871** — *worse* than the
+- The median bank's dominant-color share is **0.871** — *worse* than the
   field's 0.789 — so freight **concentrates** the geology rather than mixing it.
 
 **Why not pickup re-routing.** Measured at R-O89 and it costs **−52.3%**, with
@@ -1226,7 +1427,7 @@ build time, it leaves the 1:1 miner↔hauler pairing intact, and it is where
 `CLAUDE.md` §4 says this class of decision belongs.
 
 **R-O91 is what has to be settled first** — whose shortfall the live term reads
-(a purely local one makes every centre chase the same colour at once; the empire
+(a purely local one makes every center chase the same color at once; the empire
 aggregate is already balanced at 171x–2,356x and would say nothing), and whether
 reading ore on hand makes the term farmable under §2's invariance rule. Scarcity
 read from *bills outstanding* rather than ore on hand is the candidate that is
@@ -1267,13 +1468,13 @@ demand: an outpost sitting on a `Band IV` body schedules a trip per hold-full
 forever, and a body that large is never exhausted. So the fix is on the *demand*
 side, and it should be cheap:
 
-- **Haul against what a centre can actually spend**, not against what the rock
+- **Haul against what a center can actually spend**, not against what the rock
   still holds. `most_needed_center` already ranks by need (design law #5 keeps it
   as the oracle); what is missing is a stop condition when nothing needs it.
 - **Cap standing outpost stock**, so a rich body is drawn down at the rate the
   empire consumes rather than as fast as miners can dig.
 - Either way, **measure with `colony_years` held to the decimal** — a
-  behaviour-preserving change must not move it, and that is the guard that makes
+  behavior-preserving change must not move it, and that is the guard that makes
   this checkable rather than hopeful.
 
 **The margin this is against.** 3 seats / 4 kyr sits at 42 yr/s, 17× T-24's
@@ -1296,17 +1497,17 @@ measurable alone.
 
 **`src/matching.rs` is built, good, and is not this.** It is an *intra-empire
 haulage* matcher: books per `(owner, commodity)`, `Commodity::Minerals` with no
-colour axis, `Offer` with no owner, price as `mineral_pressure ∈ [0,1]` rather
+color axis, `Offer` with no owner, price as `mineral_pressure ∈ [0,1]` rather
 than `$`, and it is **not wired into `lib.rs`**. Its matching core is worth
 keeping wholesale — highest price first, nearest within price, partial fills,
 matched quantity reserved, ties by entity id, no `HashMap`. What changes is what
 it is a book *of*.
 
-| # | Stage | Behaviour | T-code |
+| # | Stage | Behavior | T-code |
 |---|---|---|---|
 | 1 | `$` ledger + faucet; nothing spends it | neutral | ~~**T-82**~~ — **LANDED**, bit-identical |
-| 2 | `Commodity` gains the colour axis; `Offer` gains an owner | neutral | ~~**T-83**~~ — **LANDED** with T-01 (the module was never in `lib.rs`) |
-| 3 | Cross-empire book; centres post `wtp` bids | neutral | ~~**T-84**~~ — **LANDED**, bit-identical |
+| 2 | `Commodity` gains the color axis; `Offer` gains an owner | neutral | ~~**T-83**~~ — **LANDED** with T-01 (the module was never in `lib.rs`) |
+| 3 | Cross-empire book; centers post `wtp` bids | neutral | ~~**T-84**~~ — **LANDED**, bit-identical |
 | 4 | Clearing at the round barrier → contracts + escrow | **inert** after the §10.6 amendment | ~~**T-85**~~ — **LANDED** |
 | 5 | The freight leg; escrow settles on arrival | works; costs ~4.4% work-years (§10.6a, R-P18) | ~~**T-77**~~ — **LANDED** |
 | 6 | Default, interdiction, reputation | changes | **T-86** |
@@ -1334,48 +1535,48 @@ the interim guard is the build-mix census in `examples/bank_mix`.
 
 ---
 
-### T-81. Freight has no colour term — **LANDED AND MEASURED FALSE**
+### T-81. Freight has no color term — **LANDED AND MEASURED FALSE**
 
 **A missing term, not a tuning question** — the same shape as λ, the largest
 single ratification in this project's history (freighter routing had no *distance*
 component; adding it took coverage 14.4% → 38.3%).
 
-T-73 made a works bill payable **in named colours**. T-62 made the mineral field
-log-normal **per colour**. Together, a centre's bank is dominated by one colour
+T-73 made a works bill payable **in named colors**. T-62 made the mineral field
+log-normal **per color**. Together, a center's bank is dominated by one color
 with traces of the others — 1,494 of 1,515 non-empty banks measured skewed at
 t=800, one holding `C 477.2 / M 0.0095 / Y 1.04` — so a bill naming all three is
 unpayable there. Measured effect: **infrastructure builds fell 1,032 → 57**, a
 94.5% cut, with the minerals going to hulls instead.
 
-`most_needed_center` routes ore by mineral **pressure** — how broke a centre is
-overall — and carries **no colour term at all**. Route by what a centre's *bill*
+`most_needed_center` routes ore by mineral **pressure** — how broke a center is
+overall — and carries **no color term at all**. Route by what a center's *bill*
 needs and the constraint gets the answer §5.3 promises and design law #13
 requires. Note that all four of §5.1's ratio points (`1:0:0`, `4:2:1`, `3:2:1`,
-`5:4:3`) demand every colour except the first, so the alternative routes do **not**
+`5:4:3`) demand every color except the first, so the alternative routes do **not**
 supply that answer on their own; freight does, which is §8.1's subject.
 
 **Landed with the ratified `3:2:1` Y:C:M default mix** (R-IND15 resolved,
 `Hyades_industry.md` §6.10) as two separate commits so the two effects can be
 attributed apart. Routing now scores `relief · exp(−λ·t)` where `relief` is the
-fraction of the cargo aboard that lands on a colour the destination cannot
+fraction of the cargo aboard that lands on a color the destination cannot
 otherwise buy; it *replaces* `mineral_pressure_of` in the score rather than
 multiplying it, since the two are the same question at different resolutions.
 
 **It does not work and it is counterproductive** (`Hyades_industry.md` §6.11).
 Banks did not mix (1,533 of 1,551 still skewed) and infrastructure builds fell
-further, **57 → 31**. Two measured mechanisms: the **supply is single-coloured**
-(6,725 sources, mean dominant-colour share **0.789**, 38% at ≥95%), so a
+further, **57 → 31**. Two measured mechanisms: the **supply is single-colored**
+(6,725 sources, mean dominant-color share **0.789**, 38% at ≥95%), so a
 freighter's cargo inherits the skew; and **relief routing anti-concentrates** —
-paying a three-colour bill needs ore to converge on one centre, and sending each
-colour to wherever that colour is scarcest scatters it by construction.
+paying a three-color bill needs ore to converge on one center, and sending each
+color to wherever that color is scarcest scatters it by construction.
 
 Live proposal is **R-IND17**: score the *completion of the bill*
-(`(short_before − short_after) / Σ bill`) rather than the relief of one colour, so
-a centre holding two colours and missing the third attracts the third and ore
+(`(short_before − short_after) / Σ bill`) rather than the relief of one color, so
+a center holding two colors and missing the third attracts the third and ore
 concentrates. Not ratified.
 
 **And the premise was too strong.** No internal routing can give an empire a
-colour its own ground does not hold — that is §8.1 and the Exchange (T-77), with
+color its own ground does not hold — that is §8.1 and the Exchange (T-77), with
 design law #1's counter-graph as the other half.
 
 ---
@@ -1392,9 +1593,9 @@ designed to the **92nd percentile** (§4).
 **The headline for anyone about to measure anything:** every ratification in this
 project so far has run against a single global colony-count objective. That is
 correct for Expansion and misleading for the other five trees — a Warfare card
-that ends a neighbour's colony *lowers* it, and a Production card does not move
+that ends a neighbor's colony *lowers* it, and a Production card does not move
 it at all. **Four of the six objectives had a live metric farm in their obvious
-formulation** (§2.5); the fixes are Warfare's neighbour weight frozen at setup,
+formulation** (§2.5); the fixes are Warfare's neighbor weight frozen at setup,
 Production counted in mass rather than hull count, Technology aggregated by power
 mean rather than sum, and Politics' partner share grounded in *delivered freight*
 rather than in the existence of a pact.
@@ -1407,9 +1608,9 @@ rather than in the existence of a pact.
 > **The severance works and the numbers say so.** At `cycle_years = 1`, economy
 > ticks go **48,707 → 3,602,083 (74x)** while decisions go **97,197 → 128,726
 > (1.32x)**. That ratio *is* the task. Two mechanisms do it: `wake_on_minerals`,
-> which decides the moment a freighter deposits (a saving centre is waiting for
+> which decides the moment a freighter deposits (a saving center is waiting for
 > exactly one thing, and ore landing is the event that changes whether it can
-> buy anything), and `decision_after`, a per-centre floor evaluated on the tick
+> buy anything), and `decision_after`, a per-center floor evaluated on the tick
 > as the catch-all beneath it. The wake path is also **cheaper than the cadence
 > it replaces** — ~26,800 deposits against ~99,000 ticks over 1,500 yr — so
 > responsiveness went up and decision count went down.
@@ -1420,13 +1621,13 @@ rather than in the existence of a pact.
 > |---|---|---|
 > | A | `decision_after` floor, `decision_retry_years = 50` | **bit-identical** — the gate passes every tick at equal values |
 > | B | `wake_on_minerals` on freight deposit | **+6.81% ± 2.36 work-years, 7/8 seeds** (replicated) |
-> | C | skip the candidate scan when nothing is affordable | behaviour-identical, and **−3.3%** — see below |
+> | C | skip the candidate scan when nothing is affordable | behavior-identical, and **−3.3%** — see below |
 > | D | `tick_scale`: per-cycle rates scale with the tick | bit-identical at `cycle_years = 50` |
 > | E | `cycle_years` **50 → 5** | **+21.00% ± 4.19 work-years, 8/8 seeds** |
 >
 > **The sweep found a units defect before it found an answer.** `growth_rate` is
 > documented `1/cycle` and the logistic stepped it once per tick *regardless of
-> the tick's length*, as do `biosphere_regen_rate` and the centre's mining
+> the tick's length*, as do `biosphere_regen_rate` and the center's mining
 > fraction. So the first sweep reported **+58.6%** at `cycle_years = 1` — which
 > measured a fifty-times-faster economy, not a better-integrated one. `tick_scale`
 > multiplies every per-cycle rate by `cycle_years / rate_reference_years`, which
@@ -1473,9 +1674,9 @@ standard bed at 1,500 yr, seed 1:
 
 **The scan is the engine's largest loop and 80% of it produces nothing** — which
 is R-O86's rule ("ask what fraction of a busy path produces nothing") pointing at
-T-52. The obvious fix was to skip the scan when the centre cannot afford
-anything; it is **behaviour-identical and bought −3.3%**, which refutes the
-premise: those centres can afford *something*.
+T-52. The obvious fix was to skip the scan when the center cannot afford
+anything; it is **behavior-identical and bought −3.3%**, which refutes the
+premise: those centers can afford *something*.
 
 Breaking the idles down by their own logged inputs says what they are, and it is
 a single bucket:
@@ -1484,7 +1685,7 @@ a single bucket:
 > mean bank of 561 kt.**
 
 Not one idle decision in the run had `can_afford_infra == true`. That is R-O85's
-colour conjunction — the bank holds the total and lacks a colour — measured from
+color conjunction — the bank holds the total and lacks a color — measured from
 a completely different direction, and it is the reason R-O89's freight fix did
 not produce more than it did. See §"Why freight is not providing serious upside".
 
@@ -1503,7 +1704,7 @@ making."**
 | mean gap, decision → next decision, **after a committed build** | **1.5 yr** (seed 7: 1.6) |
 | mean gap, **after an `Idle`** | **29.6 yr** (seed 7: 31.8) |
 | share of decisions that idle | 18% (seed 7: 11%) |
-| **yard utilisation** | **18.8%** (seed 7: 28.6%) |
+| **yard utilization** | **18.8%** (seed 7: 28.6%) |
 
 `commit_one_build` returning `None` leaves the yard free and **schedules
 nothing** — the next attempt is the economy tick. So a single declined build
@@ -1521,7 +1722,7 @@ cadence.
 > **Superseded by R-O88, which largely dissolved this as a side effect.** The
 > retry cadence bit because a declined build left the yard with *nothing*
 > scheduled. With berths instead of two, some other berth clears and re-triggers
-> the centre long before the economy tick does: the after-idle gap measured
+> the center long before the economy tick does: the after-idle gap measured
 > **29.6 → 7.6 yr** and the after-build gap **1.5 → 0.1 yr**
 > (`Hyades_industry.md` §6.19b). The 81% figure above is the pre-R-O88 number and
 > should not be re-cited.
@@ -1536,15 +1737,15 @@ cadence.
 | job | wants | why |
 |---|---|---|
 | **Economic integration step** — mine, grow, mint `$` | **small** (1 yr) | every one is a *rate over an interval*, and a 50-year step is a coarse Euler step on a logistic. Fidelity is the whole reason to shrink it. |
-| **Decision retry cadence** — a saving centre re-checks whether it can afford anything | large, or better, **not a cadence at all** | a decision is triggered by a *change in situation*, and `CLAUDE.md` §4 says so: entities evaluate on their own arrival events, never on a sweep. |
+| **Decision retry cadence** — a saving center re-checks whether it can afford anything | large, or better, **not a cadence at all** | a decision is triggered by a *change in situation*, and `CLAUDE.md` §4 says so: entities evaluate on their own arrival events, never on a sweep. |
 
 Dropping `cycle_years` to 1 today multiplies **both**, and the decision half is
 what costs throughput. R-O69 already moved the production decision *off* the
-tick for a centre with a build under way — but `sys_production_tick` still calls
+tick for a center with a build under way — but `sys_production_tick` still calls
 `sys_build_decision` directly when the yard is free (`src/sim.rs`, "the mining
 step doubles as its retry"). That call is the remaining coupling.
 
-**The work:** make the retry event-driven too. A saving centre's situation
+**The work:** make the retry event-driven too. A saving center's situation
 changes when *minerals arrive* — `FreighterArrive`, the local extraction that
 crosses an affordability threshold, or a `Reserve` hull becoming available — not
 when a fixed clock ticks. Raise `BuildDecision` from those, and the economy tick
@@ -1554,7 +1755,7 @@ becomes purely economic: mine, grow, mint, reschedule.
 logistic is conjugate to the logistic map, so step size is not a cosmetic choice
 — a 50-year step is why `growth_rate` is a *step function of itself* (T-64/R-O84,
 the objective is piecewise constant in `r` because what matters is how many
-50-year cycles a centre takes to cross a `PopBands` edge). **A 1-year step would
+50-year cycles a center takes to cross a `PopBands` edge). **A 1-year step would
 give that surface a gradient a probe can actually read**, which is worth more
 than the value it would find.
 
@@ -1562,7 +1763,7 @@ than the value it would find.
 that decomposition exists for — the *right* outcome is `yr/s` down and
 `ns/event` flat or better, which is "the simulation is doing more, each unit
 costs the same". Reading the aggregate alone would call a fidelity improvement a
-regression. Colony-years and work-years are the behaviour guards; a 50x finer
+regression. Colony-years and work-years are the behavior guards; a 50x finer
 integration step **will** move them and that is not a bug, so expect to
 re-ratify `growth_rate` after it rather than treating the shift as a defect.
 
@@ -1577,7 +1778,7 @@ re-ratify `growth_rate` after it rather than treating the shift as a defect.
 **The horizon is 3,000 years, not 8,000** — author's revision, spec §3.1. Every
 colonizable world is taken by ~2,500 yr, so the extra five thousand buy nothing;
 the engine agrees from the other side (colony count is 97.9% of its 4,000-yr
-total by 1,500 yr). That is a **5.8x cut to the whole programme's cost**, taken
+total by 1,500 yr). That is a **5.8x cut to the whole program's cost**, taken
 off the top before any of the mitigations below.
 
 **T-78 first, and it is cheap.** It answers, per tree, where the stock leaves the
@@ -1589,14 +1790,14 @@ clock extended.
 
 **The blocker is smaller but has not gone.** A stable 92nd percentile needs
 dozens of samples, and six trees × the card set × tiers × timings is still a
-large sweep. **T-66 (throughput) remains a prerequisite for the card programme,
+large sweep. **T-66 (throughput) remains a prerequisite for the card program,
 not a parallel nicety** — and that is still a bigger reason to do it than the
 T-24 floor it was opened for.
 
 **Two of the six objectives cannot be measured yet.** Growth wants work-years and
 works do not exist (T-73/T-74); the interim stock is infrastructure in kilotons
 once T-70 lands. Technology wants capability-years and the metric is a *proposal*
-in §2.3.5 — a power mean over projection, defence and acquisition, with the
+in §2.3.5 — a power mean over projection, defense and acquisition, with the
 exponent `ρ` (how Liebig capability is) as the thing to ratify. Expansion,
 Production and Politics' freight flows are measurable today.
 
@@ -1612,7 +1813,7 @@ for the tier-1 constraint), R-TREE7 (which trees need even the 3-kyr horizon).
 **A new spec, `docs/Hyades_industry.md` (Rev 1), covers all ten.** It settles
 three gaps that have been quietly shaping every economic measurement: infrastructure
 is not differentiated in minerals, mining and production rates are not investable
-at all, and a production centre cannot develop a colony it did not just found.
+at all, and a production center cannot develop a colony it did not just found.
 Read it before picking any of these up — the shape matters more than the
 magnitudes, and every magnitude in it is a flagged placeholder.
 
@@ -1633,7 +1834,7 @@ a population, because those are genuinely a world's capacity to hold people.
 | 4 | Infrastructure stored as kilotons; the Band is a reading | T-67 | ~~**T-70**~~ — **LANDED** |
 | 5 | Extraction law: `N(S)` veins per deposit, `W = N^(1−β)·n^β` — one law for crews and works | — | ~~**T-71**~~ — **LANDED** |
 | 6 | `miners_per_outpost` becomes a target *fraction of `N(S)`*, not a hull count | T-71 | ~~**T-72**~~ — **LANDED** |
-| 7 | Works: colour-differentiated infrastructure price | T-70 | ~~**T-73**~~ — **LANDED** |
+| 7 | Works: color-differentiated infrastructure price | T-70 | ~~**T-73**~~ — **LANDED** |
 | 8 | Extraction and fabrication rates from Infra × allocation | T-70 | ~~**T-74**~~ — **LANDED** |
 | 9a | `Works` struct + CardId-ordered fold + commutativity property test | T-74 | ~~**T-75a**~~ — **LANDED** |
 | 9b | `Doctrine` allocation vector wired to the fold | T-75a | ~~**T-75b**~~ — **LANDED** |
@@ -1642,10 +1843,10 @@ a population, because those are genuinely a world's capacity to hold people.
 
 **T-76 is part-landed (R-O89, `Hyades_industry.md` §6.20).** R-O85 promoted it to
 first work because 43.8–46.6% of every production decision holds the total of its
-next rung and lacks a *colour*. The **load leg** is now fixed: a hauler fills
-against the destination's colour deficit instead of in proportion to the pile —
+next rung and lacks a *color*. The **load leg** is now fixed: a hauler fills
+against the destination's color deficit instead of in proportion to the pile —
 **+8.40% ± 1.86 work-years, 8/8 seeds**, on the *same tonnage*, which is what
-identifies it as a colour result rather than a hauling one.
+identifies it as a color result rather than a hauling one.
 
 Two things stay open under this code:
 
@@ -1659,7 +1860,7 @@ Two things stay open under this code:
   (the 1:1 miner↔hauler pairing is load-bearing for matching extraction to
   haulage rock by rock) fits the sign and is exactly the shape of the seven
   measurement artifacts in `CLAUDE.md` §2. Do not act on it without an ablation.
-- **Development freight itself** — `develop_bias`, a centre supplying a colony it
+- **Development freight itself** — `develop_bias`, a center supplying a colony it
   did not found — is untouched. So is the balanced-exchange default (§7.1).
 
 **Three of these invalidate a measured result, which is the part to be careful
@@ -1687,7 +1888,7 @@ expressions intersect is a coincidence with good luck, not an invariant.**
 **It also reopened the hull choice as R-IND11 — now measured, and blocked
 rather than answered** (`Hyades_industry.md` §1.6). `SettlersPerMineral` scores
 **+13.97% colony-years on a bit-identical colony count**, with foundings ~399 yr
-earlier. The transit story that motivated it is **refuted**: mean coloniser
+earlier. The transit story that motivated it is **refuted**: mean colonizer
 flight time is 107.6-116.7 yr in every arm and moves 4.0 yr, against a 398.8 yr
 shift in founding.
 
@@ -1695,7 +1896,7 @@ Two one-line ablations on `colony_seed_for` close the mechanism from both sides.
 Force every seed to the **General's** hold and `CheapestViable` reproduces the
 whole gain (+14.35%) **while building zero General hulls**; force every seed to
 the **Medium's** hold and `SettlersPerMineral` still buys General hulls for 91.9%
-of its colonisers at 10x the price and lands back at baseline (-0.08%). The cause
+of its colonizers at 10x the price and lands back at baseline (-0.08%). The cause
 is **the seed mass alone** — not the hull, not its price, not transit.
 
 Which is why it was blocked and not ratified: **R-O74**, founding settlers were
@@ -1703,9 +1904,9 @@ conjured, so the number measured how much free mass a policy could pull out of a
 open design-law-#11 violation. Default stays `CheapestViable`.
 
 **R-O74 is now closed** (`Hyades_industry.md` §1.7, author's ruling). Settlers are
-debited from the founding centre's population; whatever hold the people do not
-fill leaves with minerals out of that centre's own bank and lands in the new
-colony's stockpile; a contested coloniser unloads both halves back home. The
+debited from the founding center's population; whatever hold the people do not
+fill leaves with minerals out of that center's own bank and lands in the new
+colony's stockpile; a contested colonizer unloads both halves back home. The
 amount is a **demand-side** question (**R-IND12**): settlers priced in time —
 what the seed saves the destination against what it costs the origin to regrow,
 discounted by the voyage — and minerals sized by the destination's intended
@@ -1718,7 +1919,7 @@ that created population.** They are records of what that engine did, not baselin
 for what this one does — including the +13.97% above and T-67's +4.4%/+4.7%.
 
 One thing it also flags and that survives the fix: ablation B is a controlled 10x
-overpayment per coloniser hull that costs **-0.08%**, which is
+overpayment per colonizer hull that costs **-0.08%**, which is
 `examples/reach_limit`'s "the economy is not the binding constraint" arriving from
 an unrelated direction. (The other flag — that some of T-67's gain ran through the
 conjured-mass channel — is now answered by re-measuring rather than by ablation,
@@ -1816,7 +2017,7 @@ Cited by `galaxy.rs` (×3), `tests/smoke.rs`, `tests/determinism.rs` and
 `Hyades_matching.md` — and **absent from this tree**, so the throughput claims
 resting on it are currently uncheckable. Rewrite it to sweep *entity count*, not
 just hex size: entity count is the first-order cost now that the snowball is the
-shipped behaviour (design law #14), and hex size is not.
+shipped behavior (design law #14), and hex size is not.
 
 ### T-03. Slag as a bank entry — R-O59
 
@@ -1840,7 +2041,7 @@ tree. Standing-layer roadmap item 6.
 ### T-06. Split three long functions
 
 `sys_production_tick` (~149 lines), `apply_build_with` (~148), `production_choice`
-(~137). Pure refactor, no behaviour change — verify by A/B on seed 1.
+(~137). Pure refactor, no behavior change — verify by A/B on seed 1.
 
 ### T-07. Recalibrate `centrality_scale`
 
@@ -1856,7 +2057,7 @@ and ratify; the premise recorded here was backwards.
 
 **A search-harness correctness bug, found by the search reporting a result that
 was an artifact.** Since R-O58 the cost ladder *is* the capacity ladder: hull
-radius is `sqrt(cost / cost_Limited)` and capacity is `(r − 1)³` normalised to
+radius is `sqrt(cost / cost_Limited)` and capacity is `(r − 1)³` normalized to
 the Medium hull. So `medium_fleet_size` is not a price — it also sets how much
 bigger a Medium hull is than a Limited one, and therefore the whole contents
 ladder.
@@ -1865,11 +2066,11 @@ Sweeping it alone over `[3, 4, 6, 8, 12]` reported **8.0 as optimal (25.1% vs
 15.2% at the default)** and read 12.0's collapse to 0.3% as an economic cliff.
 Neither reading survives: at 8.0 against `limited_fleet_size = 9` a General hull
 holds **~36,000×** a Medium's load, and at 12.0 the Medium hull is *smaller*
-than the Limited one, the normaliser is zero and **every hull carries nothing.**
-The "cliff" was the normaliser, not the economy.
+than the Limited one, the normalizer is zero and **every hull carries nothing.**
+The "cliff" was the normalizer, not the economy.
 
 It stayed invisible because the freighter is an MSV and the Medium hull is the
-normalisation unit, so `cap_M` is pinned at `cargo_unit_size` and the haul per
+normalization unit, so `cap_M` is pinned at `cargo_unit_size` and the haul per
 trip never moves. **A nonsense ladder that does not perturb the objective is the
 worst kind**, and it is why `SimConfig::hull_ladder_fault` is now a hard check
 that `Simulation::new` panics on rather than a comment.
@@ -1889,7 +2090,7 @@ Three contaminated measurements from one coupling is the argument for the guard
 being a panic rather than a lint.
 
 > **Retracted — this was a fourth artifact of the same root cause, and the
-> escalation that came with it was wrong.** Capacity used to be normalised
+> escalation that came with it was wrong.** Capacity used to be normalized
 > against the *live* Medium radius, which pinned `cap_Medium` at
 > `cargo_unit_size` for **every** cost ladder. So raising `medium_fleet_size`
 > made colonizers cheaper while the freighter's haul never shrank — a free
@@ -1899,10 +2100,10 @@ being a panic rather than a lint.
 >
 > | `medium_fleet_size` | 2.0 | 3.0 | 4.0 | 5.0 | 6.0 | 8.0 |
 > |---|---|---|---|---|---|---|
-> | `cap_M`, old (live normaliser) | 5.00 | 5.00 | 5.00 | 5.00 | 5.00 | 5.00 |
+> | `cap_M`, old (live normalizer) | 5.00 | 5.00 | 5.00 | 5.00 | 5.00 | 5.00 |
 > | `cap_M`, fixed reference | 17.97 | 5.00 | 1.59 | 0.51 | 0.14 | 0.003 |
 >
-> Normalising against a **constant** reference radius (√3, the Medium hull at
+> Normalizing against a **constant** reference radius (√3, the Medium hull at
 > the reference ladder) fixes it: nothing diverges, narrow ladders are legal and
 > meaningful, and the soft `r_M < 1.25` guard is deleted. Only the *inverted*
 > ladder is still refused, and for a naming reason rather than a physical one —
@@ -1931,7 +2132,7 @@ the free lunch above, not a statement about hull pricing.
 What remains: sweep `(medium_fleet_size, limited_fleet_size)` **jointly**, or
 better, sweep the *radius* ladder directly and derive cost from it — radius is
 the primitive under R-O58 and the cost ladder is the derived thing, so the
-search is currently optimising the wrong parameterisation.
+search is currently optimizing the wrong parameterisation.
 
 ---
 
@@ -2027,7 +2228,7 @@ illegal orders coerce to `pass` rather than being rejected (net §5.1).
 Cadence is `years_to_first_round` (200) and `years_per_round` (400), both
 MC/playtest surfaces (R-P12).
 
-**Behaviour-neutral**, which is the property that matters: `choose_card`
+**Behavior-neutral**, which is the property that matters: `choose_card`
 defaults to `None`, so seed 1 / 3 seats / 4 kyr still gives 1,044 colonies and
 every coverage number in the tree — and the offline search resting on them —
 stays valid. Pinned as a test.
@@ -2220,7 +2421,7 @@ steps on people, with `K`'s mass as the carrying capacity.
 **Ablated, not argued.** Restoring only that one expression — Band-space step,
 everything else migrated — reproduces the pre-T-64 objective **bit-identically**
 (10,004,297.0 and 9,930,181.6 on seeds 1 and 7). So the rest of the migration is
-provably behaviour-neutral, and the whole of the change is one line. On mass:
+provably behavior-neutral, and the whole of the change is one line. On mass:
 
 | | seed 1 | seed 7 | colonies |
 |---|---|---|---|
@@ -2263,7 +2464,7 @@ The 2,000-year screen is unambiguous and was not what anyone expected:
 | 1.600 | 3,038,783 | +22.94% |
 | 1.900 | 3,038,783 | **+22.94% — bit-identical to 1.600** |
 
-Growth reaches the objective only through *how many 50-year cycles* a centre
+Growth reaches the objective only through *how many 50-year cycles* a center
 takes to cross a `PopBands` edge, and that is an integer. So `r` is a **selector
 over cycle counts, not a dial**, and the objective is piecewise constant in it.
 Ratifying off a coarse grid would have picked a plateau *edge* by accident,
@@ -2360,7 +2561,7 @@ Six things the next search should not have to rediscover:
 objective. A 24-value map is ~48 minutes screened and several hours confirmed —
 an offline job, in the same category `CLAUDE.md` §2 puts `min_time_search`.
 Sweep `(0.873, 1.95)` at the objective, find the plateau edges, and take a
-plateau's **centre**; do not take a value adjacent to `2`, however well it
+plateau's **center**; do not take a value adjacent to `2`, however well it
 scores, because item 3 means the score stops being informative there.
 
 ---
@@ -2402,7 +2603,7 @@ and `Band II`. Two tests that had been asserting the geometry against
 `MASS_LADDER` were retargeted to assert it against the cost ladder it actually
 comes from, which is the claim that was always meant.
 
-**Behaviourally it is inert on the standard bed:** 10,021,989 → 10,004,297
+**Behaviorally it is inert on the standard bed:** 10,021,989 → 10,004,297
 colony-years on seed 1, 9,941,898 → 9,930,182 on seed 7 (−0.2%, −0.1%), colony
 counts identical. That is the complaint restated as a measurement — almost
 nothing in the live economy operates below `Band I`. What it does change is that
@@ -2420,7 +2621,7 @@ engine does not: `World::population` and `World::pop_cargo` are
 (`s + growth·s·(1 − s/kb)`) before converting to mass to pay the biomass draw.
 Logistic growth is a mass process; running it on the log reading is the same
 class of error as R-O66. Storing the mass and reading Bands off it is the fix,
-and it is a behaviour change large enough to want its own stage and its own
+and it is a behavior change large enough to want its own stage and its own
 measurement. `habitability` and `infrastructure` are *levels*, not masses, and
 are a separate question.
 
@@ -2435,7 +2636,7 @@ makes sense if the Bands are distributed in this manner; in kilotons the
 distribution is not normal because of the ladder. The game design requires very
 very high value planets located near each other."*
 
-`galaxy.rs` set each colour to `mineral_peak · g · z_decay · noise` and stored
+`galaxy.rs` set each color to `mineral_peak · g · z_decay · noise` and stored
 that number directly as the density. Every other magnitude in the engine had
 moved onto the ladder by R-O66; this one had not, so the §4.3 Gaussian was over
 kilotons and the field was *linear*. `Band IV` next to `Band I` meant 4× the ore.
@@ -2453,7 +2654,7 @@ generator does its Gaussian in Band space and converts once.
 
 **The reading §4.4 takes is the mean Band, and getting that wrong cost half the
 game.** Routing the anticorrelation through `abundance()` — the Band of the
-*total* mass — makes the reading track whichever colour is richest, so a world at
+*total* mass — makes the reading track whichever color is richest, so a world at
 `(II, I, Empty)` reads ~`II` instead of ~`I` and, at `anticorrelation = 0.6`,
 loses a whole extra Band of habitability. Measured: **−52% colony-years** on seed
 1 (10,105,286 → 4,845,144). The mean Band — the geometric mean of the three
@@ -2520,15 +2721,15 @@ Same ratification, second symptom.
 
 - **There are no barren worlds any more.** `Band(0).in_kilotons()` is the
   `Empty` rung, not zero, so the Gaussian's tail floors at ~0.089 kt per
-  colour rather than decaying to nothing. Every rock in the galaxy now carries a
+  color rather than decaying to nothing. Every rock in the galaxy now carries a
   trace. That is consistent with `Empty > 0` — the ladder does not name zero —
   but it is a free-money floor the linear field did not have, and it is a
   candidate explanation for anything that later looks like a mining surplus.
-- **`mineral_high` reads the per-colour Band sum**, which is what
+- **`mineral_high` reads the per-color Band sum**, which is what
   `BaselineAutopilot::rank` computes at unit scarcity, and is *not*
   `abundance()`. `examples/reach_limit` was corrected to match; anything else
   that wants "is this world rich?" must pick a reading deliberately, because the
-  two now differ by more than a Band on a single-colour world.
+  two now differ by more than a Band on a single-color world.
 
 ---
 
@@ -2602,7 +2803,7 @@ colonizer now picked a General it could not afford and built **nothing**,
 banking indefinitely. `ColonizerHull::GeneralWhenAffordable` used to carry that
 rule explicitly; deriving the hull dropped it, and nothing noticed because the
 shipped ladder happened to make Medium the answer anyway. The score now ranks
-only hulls the centre can pay for today.
+only hulls the center can pay for today.
 
 ### T-60. The founding subsidy is removed (R-O77 closed), and what it broke
 
@@ -2645,7 +2846,7 @@ than against a formula, which is the only version that cannot drift.
 | **without** | **1,860** | **4,558,015** | **377.1 yr** |
 
 −46% colonies, −48% colony-years, and 93 years added to the doubling time.
-Colonisation now costs 10× per colony because only the General hull founds
+Colonization now costs 10× per colony because only the General hull founds
 anything viable, and nothing in the engine yet relieves that.
 
 **Full bed:** 1,813 colonies against 3,481 (**−47.9%**), colony-years
@@ -2704,7 +2905,7 @@ The third is the interesting one: **the bed has stopped saturating**, which
 means the diminishing-returns wall `CLAUDE.md` §7 documents has moved. Every
 economic knob measured against a saturated bed is worth re-measuring here.
 
-**The three-part freight programme, kept for when it has a target:**
+**The three-part freight program, kept for when it has a target:**
 
 1. **Minerals to low-infra colonies.** `most_needed_center` already routes
    freighters on need with a λ distance discount, so this is a re-weighting
@@ -3049,9 +3250,9 @@ size sets the *slope* within it.
 **`V_reserved` needs a second term, which §2.3 does not have.** §2.3 defines it
 as "engines, structure, crew — the non-cargo baseline every hull needs
 **regardless of size**", i.e. purely absolute. That is right for the core and
-wrong for the role: a General Offensive amortises a fixed core and comes out
+wrong for the role: a General Offensive amortizes a fixed core and comes out
 **cargo-rich — 33.2 against a GSV's 133.4, 25%, not "little to zero"**. The fix
-is that a warship's reserved volume *is* weapons, armour and magazines, and
+is that a warship's reserved volume *is* weapons, armor and magazines, and
 those scale with the hull:
 
 ```
@@ -3062,7 +3263,7 @@ V_reserved(role, V) = a_role + b_role · V
 |---|---|---|---|
 | Systems | 0.25 | **0.00** | cargo *is* the payload |
 | Contact | 0.40 | 0.35 | sensor/probe fit — between |
-| Offensive | 0.55 | **0.92** | weapons + armour + magazines scale with the hull, so cargo stays ~0 at every size |
+| Offensive | 0.55 | **0.92** | weapons + armor + magazines scale with the hull, so cargo stays ~0 at every size |
 
 #### The candidate ladder, all three axes
 
@@ -3228,7 +3429,7 @@ replacing in Stage 3 by a test on the ratified tie.
 
 #### Stage 2 — hull geometry carries its units in the type
 
-**Landed. Behaviour-preserving, verified on colony-years:** seeds 1 and 7
+**Landed. Behavior-preserving, verified on colony-years:** seeds 1 and 7
 reproduce **7,819,401.0** and **8,480,172.0** bit-for-bit, the same figures
 R-O70 was held to.
 
@@ -3270,7 +3471,7 @@ golden. The comment says so at the site.
 
 #### Stage 2b — `Band Zero`, and the anchor moved to a round kiloton
 
-Both from the ratification pass; behaviour-preserving, colony-years unchanged
+Both from the ratification pass; behavior-preserving, colony-years unchanged
 at 7,819,401.0 / 8,480,172.0.
 
 **`BandTier::Zero`.** Ratifying `Band Empty > 0` took away the rung that used
@@ -3408,7 +3609,7 @@ loading only. At the ratified ladder the Medium hold is 4.81 kt and the seed
 fits. The assertion is inverted and R-V9 is now a consequence of the geometry.
 
 **Still outstanding for stage 3c:** the spec's `cargo_unit_size = 1.0` is not
-yet the Medium hull's hold in the engine, because capacity is normalised against
+yet the Medium hull's hold in the engine, because capacity is normalized against
 the fixed reference radius `√3`. Making the spec's number the engine's number
 needs §2.3's per-`(role, size)` thickness and `η` — which is also what separates
 cost from capacity so they stop being the same knob.
@@ -3432,8 +3633,8 @@ had that coupling in common.
 
 `HullType::geometry` carries the ratified table — `η` per §2.2, `τ` per §2.3,
 and the two `V_reserved` terms — written out for all ten hulls so a new variant
-cannot inherit a neighbour's shell. `REFERENCE_MEDIUM_RADIUS` and
-`UNIT_SHELL_THICKNESS` are **deleted**: there is no normaliser left to put a
+cannot inherit a neighbor's shell. `REFERENCE_MEDIUM_RADIUS` and
+`UNIT_SHELL_THICKNESS` are **deleted**: there is no normalizer left to put a
 derived quantity in a denominator.
 
 **The engine reproduces §2.3 exactly** (`examples/cargo_units`):
@@ -3485,7 +3686,7 @@ off its rung, which is the tie being visible rather than a bug.
   by the price and the hull's own thickness, so a Medium hull priced like a
   Limited one simply *has* a Limited hull's hold: they converge (1.14×) instead
   of collapsing toward zero. Same conclusion — narrow is a real economic
-  statement, not a modelling failure — reached by arithmetic with no denominator
+  statement, not a modeling failure — reached by arithmetic with no denominator
   in it.
 - `shell_model_ladders_are_derived_not_tuned` — the `1 : √3 : 3` radius
   assertions are replaced by the **inversion**: `shell_volume / η` must return
@@ -3510,7 +3711,7 @@ the result is uninterpretable.
 
 Three parts, landed together because only the first is separable and none of
 the others means anything alone. **The default is unchanged**
-(`ColonizerHull::Medium`), so this commit is behaviour-neutral: it makes the
+(`ColonizerHull::Medium`), so this commit is behavior-neutral: it makes the
 choice *possible* and the measurement is what decides the default.
 
 **4a — the ordered hull is the hull that gets built.** R-O29 moved the hull
@@ -3522,7 +3723,7 @@ colonizer would have flown a Medium ship on a General ship's bill and nothing
 would have complained. Now priced and spawned from `hull_type`, with
 `hull_cost(hull)` beside `role_cost(role)` (which survives for the Scout and
 the paired Freighter, where the role genuinely still picks the hull).
-Behaviour-neutral, verified: colony-years **8,481,134.1 / 8,717,150.7**,
+Behavior-neutral, verified: colony-years **8,481,134.1 / 8,717,150.7**,
 bit-identical, and `the_ordered_hull_is_the_hull_that_is_priced_and_flown` pins
 the round trip that used to hold by luck.
 
@@ -3542,7 +3743,7 @@ Two consequences worth naming:
   Nothing debits the founding center's population or biosphere for the people put
   aboard. That was already a design law #11 violation at `Band I`; at `Band II` it
   is a bigger one. Not fixed here on purpose: drawing the seed from the origin is a
-  behaviour change that would dominate the measurement stage 4 exists to take.
+  behavior change that would dominate the measurement stage 4 exists to take.
 
 **4c — `Doctrine::colonizer_hull`**, with `Medium` / `GeneralWhenAffordable` /
 `General`. `ProductionContext` gains `general_colonizer_cost` so the policy can
@@ -3592,7 +3793,7 @@ finding cannot decay back into prose.
 **R-O75 (new, open): the discrete logistic can overshoot downward.** Nothing in
 the design says an overfull world should lose three quarters of its people in
 fifty years; a saturating step, or the closed-form logistic over the interval,
-would not. It is a real modelling artifact — but it is on the hottest path in
+would not. It is a real modeling artifact — but it is on the hottest path in
 the engine and **every ratified growth number was measured with it**, so it is
 recorded rather than changed. Fixing it consumes `growth_rate`'s ratification.
 
@@ -3704,7 +3905,7 @@ a fit:** `medium_fleet_size = 10` and `1+2+3+4 = 10`. And the Limited hull
 buying a fifth of a Band is R-V9 arriving for the *third* time from a different
 direction — first the hold ladder, then the seed floor, now the infra ladder.
 
-**Behaviour-neutral, verified:** 8,670,020.2 colony-years on the four-seed bed,
+**Behavior-neutral, verified:** 8,670,020.2 colony-years on the four-seed bed,
 bit-identical on every seed. The baseline still builds Medium colonizers and a
 Medium hull's founding infra did not move.
 
@@ -3733,7 +3934,7 @@ objective before changing the rule.
 Medium hull costs 0.1 minerals and becomes a Band of infrastructure the ladder
 charges 1.0 for — founding conjures 10× the minerals spent. Stage 4d preserves
 that rate rather than introducing it. Same family as R-O74's conjured settlers,
-and recorded rather than closed because removing it would stop colonisation
+and recorded rather than closed because removing it would stop colonization
 outright at the ratified hull prices.
 
 
@@ -3747,7 +3948,7 @@ outright at the ratified hull prices.
 2. **Typed hull geometry — done.** `Length`, `Area` and `Volume` newtypes so a
    unit mismatch in hull design is a compile error, and `shell_thickness` /
    `hold_radius` / `hold_volume` / `shell_volume` as named quantities.
-   Behaviour-preserving, verified on colony-years. `η` is still not in the
+   Behavior-preserving, verified on colony-years. `η` is still not in the
    engine; it arrives with the values in stage 3.
 3. **Adopt the ratified ladder — done**, in three measured steps: 3a the
    piecewise mass ladder (bit-identical), 3b the cost ladder (+8.6%
@@ -3774,8 +3975,8 @@ of `src/sim.rs` or derived from those readings.
 
 | symbol | value | what it is | code |
 |---|---|---|---|
-| `√3` | 1.7320508 | `REFERENCE_MEDIUM_RADIUS` — the *constant* radius the capacity ladder normalises against. Constant on purpose (R-O58b): normalising against the live Medium radius made a quantity that can approach zero into a divisor. | `sim.rs` |
-| `(√3−1)³` | 0.392305 | the normaliser as it actually appears | `cargo_capacity` |
+| `√3` | 1.7320508 | `REFERENCE_MEDIUM_RADIUS` — the *constant* radius the capacity ladder normalizes against. Constant on purpose (R-O58b): normalizing against the live Medium radius made a quantity that can approach zero into a divisor. | `sim.rs` |
+| `(√3−1)³` | 0.392305 | the normalizer as it actually appears | `cargo_capacity` |
 
 **Read out of the code** (definitions, not assumptions):
 
@@ -4073,7 +4274,7 @@ is the event either would raise, and combat now **is** wired into the simulation
 loop — `sys_engagement` resolves through `combat::resolve_engagement`.
 
 **What still blocks it is what the engagement can reach.** Fights happen at
-shared *mining outposts*, which are not production centres: nothing in the
+shared *mining outposts*, which are not production centers: nothing in the
 engagement path touches a yard, so there is no strike to interrupt a build. The
 trigger needs an engagement that reaches a *colony*, which needs an engagement
 that is not a co-location of miners — the same gap as §4.1's infrastructure
@@ -4102,7 +4303,7 @@ this one, and it cost one instrumented run.
 
 **The three real fixes, all bit-identical:**
 
-1. **`holdings_centroid` memoised.** A full `planet_entity` walk per decision,
+1. **`holdings_centroid` memoized.** A full `planet_entity` walk per decision,
    for a value that only moves when a colony is founded — ~3,400 changes against
    169,211 calls. The cache stores the **recomputed** value rather than a running
    sum, deliberately: an incremental sum accumulates in claim order while the
@@ -4189,7 +4390,7 @@ in the same test so it cannot drift unnoticed.
 kilotons". It is the hold of a hull at `REFERENCE_MEDIUM_RADIUS = √3`, which the
 Medium hull has only when `medium_fleet_size == 3`; at the ratified 4.45 the
 Medium hull carries **0.959 kt against the field's 5.0**, a factor of 5.2. The
-constant normaliser is deliberate and correct (R-O58b) — the doc line was
+constant normalizer is deliberate and correct (R-O58b) — the doc line was
 stale. It matters because the `binding_check` sweep table in that same comment
 has this field as its x-axis, so "the hold stops binding past roughly 1–5"
 means *past roughly 0.19–0.96 kt of real Medium hold*. Since R-O58 the cost
@@ -4227,7 +4428,7 @@ operating point.
 >
 > Measured (`examples/deepen_census`, 600 planets / 1,500 yr, seeds 1 and 7):
 > the run is **bit-identical below `b = 0.96`**, so this is a units fix and not
-> a behaviour change. The old form's cliff sat between 0.5 and 0.9 with nothing
+> a behavior change. The old form's cliff sat between 0.5 and 0.9 with nothing
 > working past it (seed 1 at 0.9: 70 colonies; seed 7 at 0.95: 3). The new
 > crossover is between **0.96 and 0.98**, and 0.97/0.98 are working empires that
 > deepen — 326 infra builds against 88, mean infra Band 1.028 → 1.099, −0.24%
@@ -4236,7 +4437,7 @@ operating point.
 >
 > **What closing it revealed is the important part, and it is `T-89`/R-O85:**
 > the branch is still cold at the shipped `0.5`, and now for a price reason.
-> The rung above the founding one costs **0.9 kt** against a Medium coloniser's
+> The rung above the founding one costs **0.9 kt** against a Medium colonizer's
 > **0.10 kt**, so the odds ratio at the crossover — 24 to 49, measured — is the
 > infra ladder's own ratio read from the other side. **The dead branch was the
 > right answer reached for a wrong reason**, and the mineral-side results that
@@ -4271,7 +4472,7 @@ switch above it** — a step function wearing a dial's clothes, and a search
 cannot climb it because there is no graded region. Pinned by
 `reinvest_bias_is_a_step_function_not_a_dial`. *(That test is gone — replaced by
 `reinvest_bias_is_an_odds_ratio_on_two_returns_per_kiloton`, which pins the new
-form and the fact that the shipped ladder still favours expansion.)*
+form and the fact that the shipped ladder still favors expansion.)*
 
 **So the policy has three deepen paths and only two are live:**
 
@@ -4349,12 +4550,12 @@ functions at the shipped constants:
 | III | 20.0 kt | **780** | 0.1990 | 2 |
 | IV | 800 kt | — | 0.2000 | 2 |
 
-A Limited hull is 0.02 kt, a **Medium coloniser 0.10 kt**, a General hull
+A Limited hull is 0.02 kt, a **Medium colonizer 0.10 kt**, a General hull
 1.00 kt, a mining pair 0.12 kt. Three separate facts, each sufficient on its
 own:
 
 1. **Every colony in the empire is founded at rung I** (`founding_infra`), so the
-   step every one of them faces is **nine colonisers**.
+   step every one of them faces is **nine colonizers**.
 2. **`fabrication_rate` saturates by rung II.** `fab_cap = 0.2` with
    `works_knee = infra_rung_price(1)/3` puts the entire ladder inside one
    hyperbola's knee: the 19-kt step buys **+0.017 kt/yr**, the 780-kt step
@@ -4369,7 +4570,7 @@ So §6.17's 756-Band sink is real, it is not a demand-side fault, and it is pric
 out of reach. **R-O86 took a bite out of it and confirms the rest**: unblocking
 the `outward == None` deepen fallback moved mean infrastructure **Band 1.027 →
 1.462** at the 4,000-year horizon and infrastructure builds **88 → 1,539** —
-so centres *will* deepen the moment they are allowed to, and they still stop
+so centers *will* deepen the moment they are allowed to, and they still stop
 nowhere near the ceiling (3.612, **zero colonies at cap**). The crossover
 between 0.96 and 0.98 is unchanged by it. What is left is the price. The only thing still scaling past rung II is `extraction_rate`
 (linear in the stock), and extraction is not what binds on a bed holding
@@ -4394,7 +4595,7 @@ and the cost anchor are all globally MC-tuned surfaces and need ratification
    both retired crew policies (§6.15), the Exchange (politics §10.6a) and T-76's
    development freight were all measured on a bed that could not spend minerals.
    **R-O89 has since unblocked this** (`Hyades_industry.md` §6.20): freight loads
-   against the destination's colour deficit, so the bed can now spend. Each is
+   against the destination's color deficit, so the bed can now spend. Each is
    its own ratification and none is re-measured yet.
 4. **Then re-ratify `reinvest_bias`.** Not before: a dial whose crossover is a
    price ratio cannot be tuned while the prices are the thing under question.
@@ -4425,12 +4626,12 @@ summary — into a checked-in dataset, with:
   mean discards it);
 - the operating point: full `SimConfig` + `Doctrine` at the time, plus the
   engine commit. An elasticity without its operating point is not a
-  measurement, it is a rumour — this file has already recorded that mistake
+  measurement, it is a rumor — this file has already recorded that mistake
   twice (R-AC18/R-AC20, and the post-gradient-step re-measure).
 
 **Why raw and not derived.** Standard errors, elasticities and rankings are all
 recoverable from the raw evaluations; the reverse is not true. It also lets a
-later reader re-analyse under a *different* objective without re-running — which
+later reader re-analyze under a *different* objective without re-running — which
 matters, because this project has changed its objective twice already (fraction
 → absolute count, and the operating point moved again at R-O66).
 
@@ -4449,9 +4650,9 @@ by whatever does the card-costing analysis later. The harness gains a
 > Three gaps remain before this closes. The **operating point is not in the
 > file** — it carries seed, horizon and seat count but not the full `SimConfig` +
 > `Doctrine` and not the engine commit, which is the half of T-50 that stops an
-> elasticity being a rumour. `examples/gradient_probe` still only prints. And
+> elasticity being a rumor. `examples/gradient_probe` still only prints. And
 > nothing yet appends a *second* operating point, so the format's real claim —
-> that a later reader can re-analyse under a different objective without
+> that a later reader can re-analyze under a different objective without
 > re-running — is untested against an actual change of objective.
 >
 > One property worth noting because it came free: each chunked run re-emits the
@@ -4608,7 +4809,7 @@ without them.
 Ratified at **0.01** (half-life 69 yr) on 3 seeds — an interior optimum, 39.0%
 against 14.35% at λ=0. Direction and order of magnitude are not in doubt; the
 precise value is, because three seeds is thin for a shipped constant and the
-neighbouring points (0.005 → 35.2%, 0.02 → 36.9%) are close enough that seed
+neighboring points (0.005 → 35.2%, 0.02 → 36.9%) are close enough that seed
 noise could move the peak.
 
 Re-run `lambda_routing` over the ten-seed `TEST_BED_SEEDS` and refine between
@@ -4631,7 +4832,7 @@ objectives — Expansion (colony-years), Growth (work-years), Production
 number below is dimensionless, `∂ln S/∂ln x`. Warfare, Politics and Technology
 are excluded for the reasons in `Hyades_trees_and_card_value.md` §2.3 (R-TREE8,
 R-TREE9). **Raw per-seed evaluations are in `data/tree_gradient.tsv`** — that is
-T-50's artifact and it is the thing to re-analyse from, not this table.
+T-50's artifact and it is the thing to re-analyze from, not this table.
 
 | # | knob | value | `∂lnS/∂lnx` | SE | verdict | Expan | Growth | Produc | S(+10%) | S(−10%) |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -4781,7 +4982,7 @@ local: it says which way is uphill here, not where the summit is.
 | `cargo_unit_size` | 5.0 | +0.0 | 0.0 | **inert** |
 
 **Acted on**: the four significant knobs were moved jointly along the
-normalised gradient, α = 0.5, verified at **+10.99 ± 1.86 points** paired
+normalized gradient, α = 0.5, verified at **+10.99 ± 1.86 points** paired
 (38.26% → 49.25%) and ratified. α = 1.0 collapses to 6.9% — a cliff, because the
 Medium hull's hold vanishes as the cost ladder narrows — so 0.5 is deliberately
 short of the edge rather than at it. Chasing the last points toward a known

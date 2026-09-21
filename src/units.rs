@@ -1252,7 +1252,7 @@ mod tests {
         }
         let wrapped = t.elapsed().as_secs_f64();
 
-        // Consume both so neither loop can be optimised away entirely.
+        // Consume both so neither loop can be optimized away entirely.
         assert!((a - b.kilotons()).abs() < 1e-6, "the two loops must compute the same thing");
         (raw, wrapped)
     }

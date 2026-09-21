@@ -1,7 +1,7 @@
 //! **What a colony is actually founded with** (T-113) — the distribution of the
 //! founding infrastructure stock, and what set it.
 //!
-//! `Doctrine::founding_infra_share` erects part of a coloniser's hold as the new
+//! `Doctrine::founding_infra_share` erects part of a colonizer's hold as the new
 //! colony's stock instead of banking it, and measured against the objective it
 //! is flat (`examples/denial_census`: −8.33% against −8.30% own colonies, −119
 //! against −120 on `W_0`). Flat against an objective is not a mechanism, and

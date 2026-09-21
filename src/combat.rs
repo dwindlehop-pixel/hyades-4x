@@ -237,7 +237,7 @@ pub struct InterceptSolution {
 /// otherwise coast relative to the target — the standard result for this
 /// model (confirmed numerically solvable "through the solution of a
 /// quartic equation at each instant of time," Bakolas & Tsiotras-style
-/// analyses of the same model, e.g. Buzikov & Mayer, "Time-optimal feedback
+/// analyzes of the same model, e.g. Buzikov & Mayer, "Time-optimal feedback
 /// control for the game of two Isotropic Rockets," *Systems & Control
 /// Letters*, 2024). Rather than the closed-form quartic (which has
 /// numerically awkward degenerate cases), this solves the equivalent

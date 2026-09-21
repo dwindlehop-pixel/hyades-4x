@@ -14,7 +14,7 @@ routing sweep, the four faucet/sink models, T-77's settlement census, the
 risky stage, and the guard that turned out inverted — is in
 **`Hyades_experiments_appendix.md` §B**, linked per decision.
 
-**Rev 1 was labelled "proposed for ratification" and much of it still is.** Rev 2
+**Rev 1 was labeled "proposed for ratification" and much of it still is.** Rev 2
 marks each item's status explicitly rather than leaving it to the prose, because
 a proposal written in the present indicative for long enough gets read as
 settled.
@@ -158,7 +158,7 @@ the composite.
 kilotons** — they begin equal and diverge as the game develops, because value is
 set by demand and demand is Doctrine. And **a free par market is what makes the
 deficit cards mean something**: if ordinary trade needed a pact, a pact would be a
-licence to trade and the interesting play would be gated behind bookkeeping.
+license to trade and the interesting play would be gated behind bookkeeping.
 
 **2.2 `RATIFIED` — settlement is a voyage, not a transfer.** Minerals, supers and
 apex traverse real space (`Hyades_industry.md` §8.1). A matched contract is
@@ -169,7 +169,7 @@ piracy lives.** Blockade is not a special rule — it is a fleet sitting on a ro
 that has to be flown.
 
 It makes scarcity **positional rather than only geological**: an empire can sit on
-all six colours and be unable to use them because the routes run through somebody
+all six colors and be unable to use them because the routes run through somebody
 else's reach, while a poor empire astride a corridor has something to sell that is
 not ore.
 
@@ -203,7 +203,7 @@ shipping to it**, because a shipper pays for its own leg — one compromise venu
 would make each side pay for the other's geography, and §2.1's default
 transaction is balanced in value.
 
-**R-P17 resolved, and the question was wrong**: the earlier formulation minimised
+**R-P17 resolved, and the question was wrong**: the earlier formulation minimized
 the two parties' *summed* transit, which is right only if there is a single venue.
 Appendix §B.6.
 
@@ -242,7 +242,7 @@ Appendix §B.7.
 
 **2.7 `RATIFIED` — reputation is mechanical, not social.** A defaulter's
 counterparties raise their escrow requirement and discount their bids. No human
-judgement, no table talk, no appeal: the autopilot prices you. This is the only
+judgment, no table talk, no appeal: the autopilot prices you. This is the only
 workable design when every participant is a program, and it is *better* than a
 social norm because it is legible and exactly as forgiving as its decay constant
 says.
@@ -274,7 +274,7 @@ a desync, and by design law #16 an unreproducible one. Per-round clearing makes
 the book's contents a **set**, and a set has a canonical order.
 
 **2.10 `RATIFIED` — books are one per commodity, spanning empires**, with the
-commodity axis being **per colour**. Determinism is unaffected: the book is
+commodity axis being **per color**. Determinism is unaffected: the book is
 already ordered by pressure then entity id, and entity ids are globally unique.
 
 **2.11 `RATIFIED` — a bid is derived, never chosen by a human.**
@@ -296,9 +296,9 @@ risk term live on `Doctrine`, which is the diplomatic-fields slot **T-11/R-O27**
 was holding open with no field list. **This spec is that field list:**
 
 ```rust
-/// Floor price per basic colour, `$`/kt. Placeholder magnitudes.
+/// Floor price per basic color, `$`/kt. Placeholder magnitudes.
 pub base_value: [f64; 3],
-/// How much this empire's policy wants each colour (§2.1).
+/// How much this empire's policy wants each color (§2.1).
 pub doctrine_demand: [f64; 3],
 /// Discount applied to a counterparty by reputation (§3).
 pub risk_aversion: f64,
@@ -320,7 +320,7 @@ clocks, and a bid window driven by a local timer is a desync). *Recommend* the
 window be a fraction of `years_per_round` so it composes with the round layer.
 
 **2.14 `OPEN` — R-P18: why trade costs ~4.4% of work-years on both seeds.**
-Settlement works and moves the right colour in the right direction, and the empire
+Settlement works and moves the right color in the right direction, and the empire
 is measurably poorer for it. **Leading hypothesis, recorded as unproven:** the two
 legs are asymmetric — the seller's ore leaves a spendable bank at settlement while
 the buyer's lands in an outpost pile until its own freighter calls. Checkable by
@@ -364,7 +364,7 @@ ratified part; costs are R-P7.*
 | **Offer** | post an ask: commit stock at a reserve price | 0 |
 | **Bid** | post a bid at your derived WTP | 0 |
 | **Consign** | ship before a buyer exists — pay transit early, clear on arrival | 1 |
-| **Underwrite** | lower a named counterparty's escrow requirement — a favour with a price, and the seed of a bloc | 1 |
+| **Underwrite** | lower a named counterparty's escrow requirement — a favor with a price, and the seed of a bloc | 1 |
 | **Broker** | clear through a third party, so a trade completes between players who cannot deal directly | 2 |
 | **Embargo** | raise the effective `λ` on a counterparty's trades — tax their distance, not their price | 2 |
 | **Corner** | bid across an entire mineral *class* rather than a lot — denial at scale | 3 |
@@ -388,7 +388,7 @@ clearest depth gradient.**
 - **Tier 2 — Broker.** A third party clears it. The minerals reach you, the
   broker takes a cut, and your enemy sold into a market and cannot tell to whom.
   **This is the collusion effect bought without a colluder** — the third party is
-  maximising its own return, not acting as an ally.
+  maximizing its own return, not acting as an ally.
 - **Tier 3 — direct.** Deep Politics buys the ability to outbid an enemy *in the
   open*. They can see you doing it and cannot stop it except by outbidding you,
   which costs them the same `$` they wanted the minerals for.
@@ -416,7 +416,7 @@ an observation stays true, the more it is worth.
 
 **5.2 `RATIFIED` — scan data is the tier-0 card, and the game phase does its
 balancing.** A card strong in round 1 and dead by round 8 needs no balance
-scaffolding; the player's judgement about *when* it stops being worth an action is
+scaffolding; the player's judgment about *when* it stops being worth an action is
 the skill. It is also the one Politics card whose value can be measured against
 the objective the engine is already tuned on.
 
@@ -648,15 +648,15 @@ what it is a book *of*.
 | `E` | escrow locked at match | `$` | §1.3 |
 | `λ` | transit discount and burn rate | 1/yr | `SimConfig::trade_decay_lambda = 0.01` |
 | `t` | one-way transit of the settling leg | yr | `math::ship_travel_years` |
-| `wtp` | a centre's willingness to pay | `$`/kt | §2.11 |
-| `base_value[c]` | a colour's floor price | `$`/kt | `Doctrine`, §2.12 |
-| `doctrine_demand[c]` | how much this empire's policy wants colour `c` | dimensionless | `Doctrine`, §2.12 |
-| `c` | a basic colour — Cyan, Magenta, Yellow | — | `resources::Basic` |
+| `wtp` | a center's willingness to pay | `$`/kt | §2.11 |
+| `base_value[c]` | a color's floor price | `$`/kt | `Doctrine`, §2.12 |
+| `doctrine_demand[c]` | how much this empire's policy wants color `c` | dimensionless | `Doctrine`, §2.12 |
+| `c` | a basic color — Cyan, Magenta, Yellow | — | `resources::Basic` |
 
 **9.3 `RATIFIED` — state, and where it lives.** Per player, alongside `Doctrine`,
 `Roster` and `Works`: `purse: $` (**replicated state**, so it is in the digest and
 design law #16 applies — no NaN, no infinity) and `reputation`. Global, one per
-commodity: the cross-empire `Book`. Per contract in flight: buyer, seller, colour,
+commodity: the cross-empire `Book`. Per contract in flight: buyer, seller, color,
 quantity, escrow `E`, and the two drops. **That last is the first thing in the
 engine that is *owed* rather than owned.**
 
@@ -665,8 +665,8 @@ engine that is *owed* rather than owned.**
 | # | Stage | State | T-code |
 |---|---|---|---|
 | 1 | `$` ledger + faucet; nothing spends it | **done**, bit-identical | ~~T-82~~ |
-| 2 | `Commodity` gains the colour axis; `Offer` gains an owner | **done**, bit-identical | ~~T-83~~, with ~~T-01~~ |
-| 3 | Cross-empire book; centres post `wtp` bids | **done**, bit-identical | ~~T-84~~ |
+| 2 | `Commodity` gains the color axis; `Offer` gains an owner | **done**, bit-identical | ~~T-83~~, with ~~T-01~~ |
+| 3 | Cross-empire book; centers post `wtp` bids | **done**, bit-identical | ~~T-84~~ |
 | 4 | Clearing at the round barrier → contracts + escrow | **done**, bit-identical | ~~T-85~~ |
 | 5 | The freight leg; escrow settles on arrival | **done; costs ~4.4% work-years** (§2.14) | ~~T-77~~ |
 | 6 | Default, interdiction, reputation | **open** | **T-86** |
@@ -727,7 +727,7 @@ bed before anything switches on.**
   ratified item above
 - `Hyades_matching.md` — the matching engine this builds on; `src/matching.rs`
 - `Hyades_industry.md` §8.1 (refined mass traverses real space), §6.10 (the works
-  mix), §6.20 (freight by colour)
+  mix), §6.20 (freight by color)
 - `Hyades_standing_layer_and_observation.md` §2 (concealment by vector), §3 (σ),
   §5 (the asymmetric leak), §6.2 (acceleration as the observable), §6.5 (SPRT),
   §9.2 (laden hulls are conspicuous)

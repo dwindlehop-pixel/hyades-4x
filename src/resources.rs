@@ -17,7 +17,7 @@ use crate::units::{Band, Kilotons, Measure, Price};
 // `Ord` so `Basic` can key a deterministic ordering — `matching::Commodity`
 // carries one (T-83) and `Commodity` must be `Ord` for the Exchange's books to
 // have a canonical order. The variant order is the `Basic::ALL` order and is
-// what every colour-indexed array in the engine already assumes.
+// what every color-indexed array in the engine already assumes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Basic {
     Cyan,
@@ -92,7 +92,7 @@ impl Archetype {
 /// Per-planet **density** of each tier-1 basic (the mineable field, §4.3). Not a
 /// stockpile — a rate-determining ground truth a close scan reveals.
 ///
-/// **One number per colour: the ore in the ground, in kilotons.** A Band is a
+/// **One number per color: the ore in the ground, in kilotons.** A Band is a
 /// *reading* of that number — a log shorthand for talking about it — never a
 /// second thing to store, and this field stores no Bands. That matters here
 /// because the field **depletes**: hold a Band and write it back after each
@@ -158,7 +158,7 @@ impl MineralField {
     }
 
     /// Extract up to `amount` of ore, **depleting** the field (density falls as
-    /// minerals are mined out). Draws from each colour in proportion to its
+    /// minerals are mined out). Draws from each color in proportion to its
     /// remaining mass and returns what was actually extracted as a cargo bank.
     /// A field mines out toward zero and then yields nothing.
     pub fn extract(&mut self, amount: Kilotons) -> Minerals {

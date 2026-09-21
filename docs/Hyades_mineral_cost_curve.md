@@ -34,10 +34,10 @@ continuum:
 `tertiary = round(T·c/(a+b+c))`.
 
 > **Works have their own, wider ratio system** (`Hyades_industry.md` §5.1).
-> Infrastructure purchases may go all the way to **`1:0:0` — a single colour** —
+> Infrastructure purchases may go all the way to **`1:0:0` — a single color** —
 > which card costs may not, because a card is a choice made once and a
-> colour-locked card is *unavailable* to an archetype poor in that colour (design
-> law #13). A work is a repeated purchase **with alternatives**, so a sole-colour
+> color-locked card is *unavailable* to an archetype poor in that color (design
+> law #13). A work is a repeated purchase **with alternatives**, so a sole-color
 > route is a specialisation rather than a lock. That is the mechanism which makes
 > the galaxy's mineral distribution bite on *development* and not only on cards.
 
@@ -383,7 +383,7 @@ earlier sections claimed:
   absolute engine/crew/avionics core every hull of that role needs regardless of
   size — it is what turns a `Band Empty` hold into a token cargo, *as a result
   rather than a definition*. `b_role` is the role's own volume-proportional
-  payload — weapons, magazines, armour backing, sensor arrays — and it is what
+  payload — weapons, magazines, armor backing, sensor arrays — and it is what
   keeps an Offensive hull from becoming a freighter simply by being large.
 
 **Ratified constants (this conversation).** Offensive reserves the most,
@@ -505,7 +505,7 @@ the reason to adopt it:
    with class rather than inverting as the pre-R-O58 ladder did.
 6. **Shell thickness orders Offensive > Contact > Systems at every size**
    (`t/r`: 0.301 / 0.141 / 0.057 at Limited; 0.054 / 0.025 / 0.010 at General),
-   which is the armour statement expressed as geometry rather than as a combat
+   which is the armor statement expressed as geometry rather than as a combat
    constant — design law #2 stays intact.
 7. **R-MC12 resolves in lane (a): cost is a function of size alone; role
    changes what you get for the money.** A GOU and a GSV both cost
@@ -536,7 +536,7 @@ common constant, under three candidate laws:
 contradicts the class's role and its name. No choice of exponent fixes it,
 because the ROU's advantage was never geometric — a Rapid Offensive Unit
 *spends* its reserved volume and its mineral cost on drive where a General
-spends it on hold and armour. So:
+spends it on hold and armor. So:
 
 - **Thrust capacity ∝ `V`.** A hull's ENG slots scale with its volume
   (`Hyades_loadout.md` §3.1), so volume sets the maximum drive it can mount.
@@ -1090,7 +1090,7 @@ Three consequences to carry into the code change rather than discover in it:
   (`CLAUDE.md` §6). Moving 4.45 → 10 and 9.0 → 50 must be measured on
   **colony-years**, not colony count, because the acceptance test for this whole
   ladder is whether making General hulls *more expensive* still speeds
-  colonisation up.
+  colonization up.
 - **`BAND_STEP` is no longer a single exponential.** The ratified progression
   has a different factor per rung, so the `KT(b) = KT_I · BAND_STEP^(b−1)`
   bridge in `src/units.rs` becomes **piecewise**, and

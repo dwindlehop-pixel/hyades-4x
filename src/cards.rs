@@ -48,7 +48,7 @@
 //! function of `(card.tree, card.effect)`, which every client holds, so the
 //! coercion needs no message and cannot desync.
 //!
-//! **The licence is currently worth nothing to its holder**, which is a separate
+//! **The license is currently worth nothing to its holder**, which is a separate
 //! work item: no output function in the engine reads population
 //! (`Hyades_industry.md` §1.8, **T-107**), so a population kill costs its target
 //! nothing per year.
@@ -342,10 +342,10 @@ pub enum WorksWrite {
     /// Add weight to an employment's allocation share. Doctrine — revisable,
     /// free, and therefore *weak early and strong late* (R-O37).
     AllocWeight(Employment, f64),
-    /// Add weight to a colour's share of the works bill. Either layer.
+    /// Add weight to a color's share of the works bill. Either layer.
     ///
     /// **This can never lower the total** (§5.4/§6.4): `mix_w` is a share of a
-    /// bill `eta_works` alone sets, so a mix card moves *which colours* the bill
+    /// bill `eta_works` alone sets, so a mix card moves *which colors* the bill
     /// lands in and nothing else. The orthogonality is structural rather than a
     /// rule someone has to remember in review.
     MixWeight(Basic, f64),
@@ -368,7 +368,7 @@ pub struct Works {
     pub half: [f64; 3],
     /// Employment weights → `(w_ext, w_fab, w_ward)` — additive, base `(1,1,1)`.
     pub alloc_w: [f64; 3],
-    /// Colour weights → the works price split, in `Basic` order
+    /// Color weights → the works price split, in `Basic` order
     /// (Cyan, Magenta, Yellow) — additive, base [`WORKS_MIX_DEFAULT`].
     pub mix_w: [f64; 3],
 }
@@ -377,12 +377,12 @@ pub struct Works {
 /// the author; `Hyades_industry.md` §5.1's *Default* point).
 ///
 /// Stored in `Basic` order — Cyan, Magenta, Yellow — so the ratio reads
-/// `[2, 1, 3]` here and normalises to `C 0.333 / M 0.167 / Y 0.500`.
+/// `[2, 1, 3]` here and normalizes to `C 0.333 / M 0.167 / Y 0.500`.
 ///
 /// **Yellow-primary because Production is Yellow** (`Hyades_galaxy_and_autopilot.md`
 /// §4.8), so the ordinary cost of developing a world already leans toward the
-/// colour Production's tree is about, and every empire feels the pull of a
-/// colour it may not have. It is deliberately **not** `1:1:1`: §5.1 says a works
+/// color Production's tree is about, and every empire feels the pull of a
+/// color it may not have. It is deliberately **not** `1:1:1`: §5.1 says a works
 /// ratio is "never a true 1:1:1", and an even split was the placeholder the
 /// first implementation shipped rather than a ratified point.
 ///
@@ -402,7 +402,7 @@ pub struct Works {
 ///
 /// Diminishing returns are steep and `1:0:0` is never exactly reached. **So
 /// "Sole" is the deep end of a ladder rather than a discrete state**, which is
-/// the behaviour the ruling asks for without a special case anywhere. How much
+/// the behavior the ruling asks for without a special case anywhere. How much
 /// weight a deep Production card adds — and therefore how many layers "deep"
 /// is — is **R-IND16**, open.
 pub const WORKS_MIX_DEFAULT: [f64; 3] = [2.0, 1.0, 3.0];
@@ -455,7 +455,7 @@ impl Works {
 
     /// An employment's share of the stock — `alloc_w[e] / Σ alloc_w` (§6.3).
     ///
-    /// **Normalisation is the bound**, which is why no allocation can exceed the
+    /// **Normalization is the bound**, which is why no allocation can exceed the
     /// stock and why no clamp is needed: shares sum to one by construction, so
     /// no combination of Doctrine cards can conjure capacity (§2).
     #[inline]
@@ -468,7 +468,7 @@ impl Works {
         }
     }
 
-    /// A colour's share of the works bill — `mix_w[c] / Σ mix_w` (§6.3).
+    /// A color's share of the works bill — `mix_w[c] / Σ mix_w` (§6.3).
     #[inline]
     pub fn mix_share(&self, c: Basic) -> f64 {
         let total: f64 = self.mix_w.iter().sum();
@@ -579,10 +579,10 @@ mod tests {
             // Employment allocation *is* even by default — three equal weights.
             assert!((w.alloc_share(e) - 1.0 / 3.0).abs() < 1e-15);
         }
-        // The colour mix is **not**: `3:2:1` Y:C:M, because §5.1 says a works
+        // The color mix is **not**: `3:2:1` Y:C:M, because §5.1 says a works
         // ratio is never a true 1:1:1 and Production is Yellow.
         let total: f64 = Basic::ALL.iter().map(|&c| w.mix_share(c)).sum();
-        assert!((total - 1.0).abs() < 1e-15, "colour shares must sum to one, got {total}");
+        assert!((total - 1.0).abs() < 1e-15, "color shares must sum to one, got {total}");
         assert!((w.mix_share(Basic::Yellow) - 0.5).abs() < 1e-15, "Yellow is the 3 of 3:2:1");
         assert!((w.mix_share(Basic::Cyan) - 1.0 / 3.0).abs() < 1e-15, "Cyan is the 2");
         assert!((w.mix_share(Basic::Magenta) - 1.0 / 6.0).abs() < 1e-15, "Magenta is the 1");
@@ -606,7 +606,7 @@ mod tests {
         assert!(stacked(1e6) < 1.0, "and Sole is never exactly reached");
     }
 
-    /// **An allocation cannot exceed the stock** (§6.7's test 5): normalisation
+    /// **An allocation cannot exceed the stock** (§6.7's test 5): normalization
     /// is the bound, so this holds for *every* weight vector including
     /// degenerate ones — and the degenerate cases are what would tempt someone
     /// to add a clamp that quietly changes the model.

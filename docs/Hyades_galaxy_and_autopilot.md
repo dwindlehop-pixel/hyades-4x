@@ -25,7 +25,7 @@ Homeworlds seed in **adjacent hexes forming a vertex-transitive cluster** where 
 
 Cliques cap at 3, rings come in 6s, 4/5/7 have no equal-adjacency arrangement. A radius-`r` ring holds exactly **6r** cells, so the ring family is **6, 12, 18, 24, …** — note that 9 and 15 are multiples of 3 but form *no* ring, so a `% 3` rule would be the wrong predicate. The **neutral core** is equidistant from all — early contested space.
 
-**Balance targets the 2-neighbour configurations — 3, 6, 12, 18 — where every seat borders exactly two others.** **N=2 is supported but is not a balance target** (ratified): the domino gives each player *one* neighbour, and the `p % 3` archetype cycle leaves it with Blue and Red and no Green. Both are accepted consequences of a configuration nothing is tuned around — which **resolves R-O9** as "known and accepted" rather than as a defect to fix.
+**Balance targets the 2-neighbor configurations — 3, 6, 12, 18 — where every seat borders exactly two others.** **N=2 is supported but is not a balance target** (ratified): the domino gives each player *one* neighbor, and the `p % 3` archetype cycle leaves it with Blue and Red and no Green. Both are accepted consequences of a configuration nothing is tuned around — which **resolves R-O9** as "known and accepted" rather than as a defect to fix.
 
 **R-O12 (resolved): `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12, 18]`.** It had been truncated at 12 while `starting_hex_radius` already carried an `18 => 4.5` branch; all three of its ring radii are exactly `N/6 + 1.5`, so that branch was the third term of the family rather than a stray, and the list was simply one term short. The engine now expresses the family as that closed form instead of three magic numbers. **R-G2:** core contents (supported counts now settled).
 
@@ -93,10 +93,10 @@ forever.
 ### 4.4 Habitability ↔ metallicity, negatively correlated
 Rich-mineral hexes tend **low-habitability**; habitable hexes **metal-poor** → expansion forces a **colony-vs-mine** choice. Homeworlds are the bounded exception (§3). **R-M4:** strength.
 
-**The reading is the world's *mean* Band across the three colours** — the
+**The reading is the world's *mean* Band across the three colors** — the
 geometric mean of the three masses — not the Band of their total. Both are
 legitimate classifications; on a log ladder they are wildly different, because
-the total is dominated by whichever colour is richest. A world at
+the total is dominated by whichever color is richest. A world at
 `(II, I, Empty)` reads ~`II` under the total and ~`I` under the mean, and at
 `anticorrelation = 0.6` that difference burns a whole extra Band of
 habitability off every such world. Measured: routing §4.4 through the total

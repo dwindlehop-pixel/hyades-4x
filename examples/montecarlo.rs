@@ -14,7 +14,7 @@ use hyades_engine::prelude::*;
 ///
 /// **Pinned at 1,000 yr, explicitly** (design law #14's corollary). At the
 /// shipped defaults that is ~2,500 colonies on seed 1: deep into the snowball,
-/// with colonisation, mining, hauling and recycling all exercised. The default
+/// with colonization, mining, hauling and recycling all exercised. The default
 /// 4,000 costs **35x** as much (`examples/horizon_cost`) because cost is
 /// violently superlinear in duration, and it was 6 full runs — which is how this
 /// job came to blow its 25-minute CI budget after T-68.

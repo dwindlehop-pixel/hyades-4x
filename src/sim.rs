@@ -249,7 +249,7 @@ impl Factors {
     ///
     /// **Identical to [`Self::k`] since T-67**, and kept as a separate name
     /// because the autopilot's deepening staircase means something different by
-    /// it: `k` is what population may reach, `k_potential` is what a centre is
+    /// it: `k` is what population may reach, `k_potential` is what a center is
     /// still allowed to build. They coincide today; they are not the same
     /// question, and the industrial ramp (`Hyades_industry.md` §6) will give
     /// the second one its own answer.
@@ -653,7 +653,7 @@ pub struct HullGeometry {
     pub shape_efficiency: f64,
     /// **`τ`** — absolute shell thickness. Rises `Limited < Medium < General`
     /// within a role and by role `Systems < Contact < Offensive`, the second
-    /// being the armour statement expressed as geometry rather than as a combat
+    /// being the armor statement expressed as geometry rather than as a combat
     /// constant (design law #2).
     pub shell_thickness: Length,
     /// **`a_role`** — the absolute engine/crew/avionics core every hull of this
@@ -662,7 +662,7 @@ pub struct HullGeometry {
     /// special case.
     pub reserved_core: Volume,
     /// **`b_role`** — the role's own volume-proportional payload: weapons,
-    /// magazines, armour backing, sensor arrays. It is what stops an Offensive
+    /// magazines, armor backing, sensor arrays. It is what stops an Offensive
     /// hull becoming a freighter simply by being large.
     pub reserved_payload_fraction: f64,
 }
@@ -707,7 +707,7 @@ impl HullType {
 
     /// This hull's ratified geometry (§2.3). The table is written out rather
     /// than computed so that every one of the ten hulls is greppable and a new
-    /// variant cannot inherit a neighbour's shell by accident.
+    /// variant cannot inherit a neighbor's shell by accident.
     pub const fn geometry(self) -> HullGeometry {
         use HullType::*;
         let (eta, tau, core, payload) = match self {
@@ -822,7 +822,7 @@ impl HullType {
     /// a Limited Offensive hull's interior is 0.0066 against a reserved core of
     /// 0.194, so its hold is entirely spoken for and its cargo is zero.
     /// **Scoring a warship by its hold scores it by the one thing a warship does
-    /// not have.** The shell is armour, not waste, and `r³` counts it.
+    /// not have.** The shell is armor, not waste, and `r³` counts it.
     ///
     /// The decomposition is exact and worth keeping in view:
     /// `r³ = η · shell_mass + hold`. The first term is the ladder price times a
@@ -915,7 +915,7 @@ impl HullType {
     ///   prize crews — so "Offensive has little to zero cargo" is size-dependent
     ///   rather than a flat zero.
     ///
-    /// **The normaliser is gone.** Capacity used to be `(r − 1)³` scaled against
+    /// **The normalizer is gone.** Capacity used to be `(r − 1)³` scaled against
     /// a fixed reference radius `√3`, which made `cargo_unit_size` the hold of a
     /// hull no ladder actually produced and put a derived quantity in a
     /// denominator — the shape of four of the measurement artifacts in
@@ -987,10 +987,10 @@ pub fn role_hull_type(role: Role) -> HullType {
         Role::Freighter => HullType::MediumSystems,
         // **The cheapest armed hull in the game** (T-113). §8.6 measured why
         // this matters more than anything else about a picket: denial bought
-        // with a *coloniser* loses under Warfare's own objective by arithmetic
+        // with a *colonizer* loses under Warfare's own objective by arithmetic
         // — `ΔW = −k(1 − w_0A)` with `Σ_j w_0j = 1` — whatever the placement.
         // An LOU costs `1/limited_fleet_size` of a General hull against a
-        // Medium coloniser's `1/medium_fleet_size`, so the trade stops being
+        // Medium colonizer's `1/medium_fleet_size`, so the trade stops being
         // one-for-one and starts being one-for-many. Design law #8 already says
         // what an LOU is for: not force projection, but harass-and-hold.
         Role::Picket => HullType::LimitedOffensive,
@@ -1001,11 +1001,11 @@ pub fn role_hull_type(role: Role) -> HullType {
 // The two constants this block used to hold — `REFERENCE_MEDIUM_RADIUS` (√3)
 // and `UNIT_SHELL_THICKNESS` (1.0) — are **deleted by T-56 stage 3c.** Both
 // were consequences of a geometry that no longer exists: capacity was
-// `(r − 1)³` normalised against a fixed reference radius, so the shell
+// `(r − 1)³` normalized against a fixed reference radius, so the shell
 // thickness was a literal `1` and `cargo_unit_size` was the hold of a hull no
 // ladder actually produced. Thickness is now a ratified per-hull quantity
 // (`HullType::geometry`) and capacity is a volume times a density, so there is
-// no normaliser left to put a derived quantity in a denominator — which is
+// no normalizer left to put a derived quantity in a denominator — which is
 // what four of the measurement artifacts in `CLAUDE.md` §2 had in common.
 
 // `FOUNDING_INFRA_AT_MEDIUM` is **deleted (R-O77 closed)**. It was the anchor a
@@ -1139,7 +1139,7 @@ fn extraction_work(capacity: f64, deposit: Kilotons, cfg: &SimConfig) -> f64 {
 /// the opposite of §4.3's own "output tracks the stock, so a body depletes
 /// asymptotically rather than cliff-edging".
 ///
-/// **Every ratio §4.3 asserts survives the normalisation**, because dividing by
+/// **Every ratio §4.3 asserts survives the normalization**, because dividing by
 /// `N` is a change of scale that `ε` absorbs, and §4.3's claims are all about
 /// ratios:
 ///
@@ -1181,7 +1181,7 @@ fn miner_equivalent(cfg: &SimConfig) -> f64 {
 /// slips(u) = 1 + floor(u / infra_per_slip)
 /// ```
 ///
-/// where `u` is the **fabrication share of the centre's infrastructure stock**.
+/// where `u` is the **fabrication share of the center's infrastructure stock**.
 /// Linear in the stock and therefore genuinely unbounded — which is what §3.2
 /// asks for and what the engine did not do until now.
 ///
@@ -1199,7 +1199,7 @@ fn miner_equivalent(cfg: &SimConfig) -> f64 {
 /// is `slips × berth_rate`, unbounded in the stock, exactly as "an empire scales
 /// by holding more worlds *and* by building more yard" requires.
 ///
-/// **The `1 +` is still load-bearing**, for the same reason as before: a centre
+/// **The `1 +` is still load-bearing**, for the same reason as before: a center
 /// always has at least one berth, and `t_build` is floored by `t_lead + m /
 /// fab_cap` rather than divided down by a berth count that could reach zero.
 fn slips(fabrication_stock: f64, cfg: &SimConfig) -> usize {
@@ -1219,7 +1219,7 @@ fn slips(fabrication_stock: f64, cfg: &SimConfig) -> usize {
 /// one.
 ///
 /// **Placeholder anchor** (R-O88): the *form* is the ratified part, the choice
-/// of the Limited hull as the unit is not. It is picked so a rung-I centre keeps
+/// of the Limited hull as the unit is not. It is picked so a rung-I center keeps
 /// exactly the two berths it had before this landed.
 #[inline]
 fn infra_per_slip(cfg: &SimConfig) -> f64 {
@@ -1231,7 +1231,7 @@ fn infra_per_slip(cfg: &SimConfig) -> f64 {
 ///
 /// `infra_rung_price(1)` is what standing at rung I costs — the same number a
 /// Medium hull costs (R-O80) — and a default allocation splits the stock three
-/// ways. So a rung-I centre with no works cards played has `u = half` in every
+/// ways. So a rung-I center with no works cards played has `u = half` in every
 /// employment, sits exactly at half its ceiling, and reproduces the flat
 /// constants T-68 and the mining model shipped.
 ///
@@ -1286,7 +1286,7 @@ fn employment_rate(infra: Price, works: &cards::Works, e: cards::Employment, bas
     cap * u / (u + half)
 }
 
-/// **The works bill for a centre's next rung, split by colour** (T-73,
+/// **The works bill for a center's next rung, split by color** (T-73,
 /// `Hyades_industry.md` §5.1/§6.3).
 ///
 /// ```text
@@ -1296,13 +1296,13 @@ fn employment_rate(infra: Price, works: &cards::Works, e: cards::Employment, bas
 ///
 /// **This is the mechanism that makes the galaxy's mineral distribution bite on
 /// development.** Until now the field bit only on card costs, and T-62 made it
-/// log-normal — so which colours a homeworld sits near was an enormous, almost
-/// unexpressed fact about a game. A works bill is payable *in named colours*, so
+/// log-normal — so which colors a homeworld sits near was an enormous, almost
+/// unexpressed fact about a game. A works bill is payable *in named colors*, so
 /// a Yellow-poor empire genuinely cannot take the Yellow route however rich it
 /// is in total.
 ///
 /// **A mix card can never lower the total** (§5.4/§6.4): `mix_w` is a *share* of
-/// a bill only `eta_works` sets, so moving weight between colours moves where
+/// a bill only `eta_works` sets, so moving weight between colors moves where
 /// the bill lands and nothing else. The orthogonality is structural — not a rule
 /// anyone has to remember in review — and `a_mix_card_cannot_change_the_total`
 /// asserts it.
@@ -1320,14 +1320,14 @@ fn works_bill(step: Price, works: &cards::Works) -> [Price; 3] {
     bill
 }
 
-/// Can this bank pay a colour-split bill? **Every colour, not the total** —
+/// Can this bank pay a color-split bill? **Every color, not the total** —
 /// which is the whole content of T-73.
 fn can_pay_bill(bank: &Minerals, bill: &[Price; 3]) -> bool {
     Basic::ALL.iter().enumerate().all(|(i, &c)| Price::new(bank.get_basic(c)) + Price::new(1e-9) >= bill[i])
 }
 
-/// Pay a colour-split bill. Assumes [`can_pay_bill`]; clamps at zero so a
-/// rounding crumb cannot drive a colour negative.
+/// Pay a color-split bill. Assumes [`can_pay_bill`]; clamps at zero so a
+/// rounding crumb cannot drive a color negative.
 fn pay_bill(bank: &mut Minerals, bill: &[Price; 3]) {
     for (i, &c) in Basic::ALL.iter().enumerate() {
         let have = bank.get_basic(c);
@@ -1506,29 +1506,29 @@ struct World {
     /// yard for `build_years` and the next decision is taken when it clears.
     /// Presence is the whole state — the economy tick skips an occupied center,
     /// and [`EventKind::BuildDecision`] removes it on arrival.
-    /// **Occupied berths at a centre — completion times, ascending** (T-69,
+    /// **Occupied berths at a center — completion times, ascending** (T-69,
     /// `Hyades_industry.md` §3.2).
     ///
     /// Was one `f64`: a yard held exactly one build. Slips make concurrency
-    /// linear in fabrication throughput, so a rich centre runs several builds
+    /// linear in fabrication throughput, so a rich center runs several builds
     /// at once and this is the list of when each clears.
     ///
     /// It stays presence-as-state — an empty list means an idle yard — for the
     /// same reason R-O69 needed a store that can vacate.
     berths: ComponentStore<Vec<f64>>,
-    /// **Earliest clock at which a saving centre asks again** (T-88).
+    /// **Earliest clock at which a saving center asks again** (T-88).
     ///
     /// `cycle_years` was doing two unrelated jobs, and they want opposite
     /// values: the economic integration step (mine, grow, mint — every one a
     /// *rate over an interval*) wants to be **small** for fidelity, while a
-    /// saving centre's retry wants to be large, or better, not a cadence at
+    /// saving center's retry wants to be large, or better, not a cadence at
     /// all. They were the same number because `sys_production_tick` called
     /// `sys_build_decision` inline, so dropping the tick to 1/yr for
     /// granularity would have multiplied decisions 50x with it — and the
     /// decision half is what costs throughput.
     ///
     /// This is the separation. Absent means "ask on the next tick", which is
-    /// what a freshly-founded or freshly-woken centre wants.
+    /// what a freshly-founded or freshly-woken center wants.
     decision_after: ComponentStore<f64>,
 
     // shared
@@ -1593,7 +1593,7 @@ struct World {
     purse: ComponentStore<f64>,
 }
 
-/// **The cross-empire Exchange — one book per basic colour**
+/// **The cross-empire Exchange — one book per basic color**
 /// (`Hyades_politics_trade_and_intelligence.md` §2.10, T-84).
 ///
 /// A `Resource` in the ECS sense, like the event queue: the Exchange never
@@ -1620,7 +1620,7 @@ struct Exchange {
     settled: u64,
     defaulted: u64,
     burned: f64,
-    /// **Cumulative offers posted per colour**, `(bids, asks)` — the census
+    /// **Cumulative offers posted per color**, `(bids, asks)` — the census
     /// §10.8 asks for, and the only way to see the book's *depth* once clearing
     /// drains it. Live depth after a wave is the unmatched remainder, which
     /// answers a different question.
@@ -1636,7 +1636,7 @@ struct Exchange {
     rejected: [u64; 4],
     /// Fills the matcher produced, before any filter.
     fills: u64,
-    /// Kilotons actually delivered, per colour — the volume the market moved.
+    /// Kilotons actually delivered, per color — the volume the market moved.
     /// Without it a census can only say trade *happened*, not whether it
     /// happened at a scale that could move anything.
     traded: [f64; 3],
@@ -1654,12 +1654,12 @@ struct Exchange {
 struct Contract {
     buyer: PlayerId,
     seller: PlayerId,
-    /// **The centre that owes the ore.** Recorded at match rather than looked
+    /// **The center that owes the ore.** Recorded at match rather than looked
     /// up at settlement, because §3.3's default case turns on *this* bank being
-    /// short — re-deriving "some centre of the seller's" at settlement would
+    /// short — re-deriving "some center of the seller's" at settlement would
     /// make a default impossible to express.
-    seller_centre: Entity,
-    colour: Basic,
+    seller_center: Entity,
+    color: Basic,
     /// Kilotons of ore the seller owes.
     qty: f64,
     /// `$` locked from the buyer's purse at match (§2.3's `E`).
@@ -1673,7 +1673,7 @@ struct Contract {
     /// A contract has **two locations, not one** (author's ruling): *leave
     /// Yellow at X in exchange for Magenta at Y*. The two legs need not meet at
     /// the same rock, and each is chosen by **the party making that delivery**,
-    /// minimising *its own* transit — which supersedes R-P17's symmetric
+    /// minimizing *its own* transit — which supersedes R-P17's symmetric
     /// "minimum summed transit". A shipper pays for its own leg, so a shipper
     /// picks its own drop; a single compromise venue would make each side pay
     /// for the other's geography, and §7.1's default transaction is *balanced*.
@@ -1820,11 +1820,11 @@ enum EventKind {
     /// arrival and the shot and an event that cached the crew would fight with
     /// ships that are no longer there.
     Engagement { site: Entity },
-    /// **A picket's light has reached an inbound coloniser's empire** (T-112).
+    /// **A picket's light has reached an inbound colonizer's empire** (T-112).
     ///
-    /// Scheduled at `established_at + distance(world, the coloniser's home
-    /// centre)`, which is the earliest instant the order to turn back could
-    /// physically have been given. If that lands after the coloniser's own
+    /// Scheduled at `established_at + distance(world, the colonizer's home
+    /// center)`, which is the earliest instant the order to turn back could
+    /// physically have been given. If that lands after the colonizer's own
     /// arrival the news is simply too late and this never fires — which is the
     /// light-lag counterplay window doing its job rather than a special case.
     ColonyDivert { vehicle: Entity },
@@ -1874,13 +1874,13 @@ impl Ord for Event {
 #[derive(Clone, Copy, Debug)]
 pub struct SimConfig {
     pub horizon_years: f64,
-    /// **The economic integration step** — how often a centre mines, grows its
+    /// **The economic integration step** — how often a center mines, grows its
     /// population, regrows its biosphere and mints `$`. Every one of those is a
     /// rate over an interval, so this is an Euler step and smaller is more
     /// faithful; 50 years is a *coarse* step on a logistic.
     ///
     /// Since T-88 it is **only** that. It used to double as the retry cadence
-    /// for a saving centre's build decision, which is why it could not be
+    /// for a saving center's build decision, which is why it could not be
     /// lowered: the fidelity argument wants 1 yr and the decision count is what
     /// costs throughput. See [`SimConfig::decision_retry_years`].
     ///
@@ -1902,10 +1902,10 @@ pub struct SimConfig {
     /// than stepping along an old direction — `CLAUDE.md` §2 has recorded this
     /// trap twice already.
     pub cycle_years: f64,
-    /// **How long a saving centre waits before asking again** (T-88) — the
+    /// **How long a saving center waits before asking again** (T-88) — the
     /// second job [`SimConfig::cycle_years`] used to do.
     ///
-    /// A centre that declined its last build has no `BuildDecision` pending, so
+    /// A center that declined its last build has no `BuildDecision` pending, so
     /// something has to bring it back. Two things do, and this is the slower
     /// one: the fast path is minerals arriving (see `wake_on_minerals`), and
     /// this is the floor under it — the catch-all for a situation that changed
@@ -2000,11 +2000,11 @@ pub struct SimConfig {
     /// **How many piles one outbound leg may draw from** (T-91).
     ///
     /// A hold is filled from `outpost_stock[(player, rock)]` — one map entry —
-    /// and a rock is one colour (mean dominant share **0.789** over 6,725
-    /// sources). So at `1` every delivery in the engine is mono-coloured *by
-    /// construction*, a bank is a sum of mono-coloured lumps, and **99.7% of
+    /// and a rock is one color (mean dominant share **0.789** over 6,725
+    /// sources). So at `1` every delivery in the engine is mono-colored *by
+    /// construction*, a bank is a sum of mono-colored lumps, and **99.7% of
     /// banked ore cannot pay a balanced rung at any price** (`Hyades_industry.md`
-    /// §6.23). A works bill is a conjunction over three colours (T-73), so that
+    /// §6.23). A works bill is a conjunction over three colors (T-73), so that
     /// is the whole of the mineral economy's remaining constraint.
     ///
     /// Three routing and selection fixes failed against it and the reason is
@@ -2022,7 +2022,7 @@ pub struct SimConfig {
     /// Work-years against the standard bed: `1` 184,338 · **`2` 284,199** ·
     /// `3` 261,395 · `4` 235,971 · `6` 190,465. Every extra stop is a detour
     /// paid in transit the hold is not earning, and past two the hauler is
-    /// shopping for colours the destination is no longer short of.
+    /// shopping for colors the destination is no longer short of.
     ///
     /// **`1` is the pre-T-91 engine, bit-identically** — one stop means the
     /// first stop is also the last, so the hauler loads exactly as it did.
@@ -2054,7 +2054,7 @@ pub struct SimConfig {
     ///
     /// **0.2 → 0.1, and that is a re-denomination rather than a retune.** The
     /// old code divided a planet-wide `F` by `slips`, which was always exactly
-    /// 2 at every rung a centre can occupy, so halving the ceiling reproduces
+    /// 2 at every rung a center can occupy, so halving the ceiling reproduces
     /// the old per-berth rate **bit-for-bit** — pinned by
     /// `turnaround_is_unchanged_and_only_the_berth_count_opened`. It also makes
     /// §3.3's approved turnaround schedule read off this constant directly:
@@ -2110,7 +2110,7 @@ pub struct SimConfig {
     /// **Measured before adopting** (`examples/hull_ladder`, the standard
     /// four-seed CRN bed, 4,000 yr), because T-56's acceptance test is that
     /// making General hulls *relatively more expensive* must not slow
-    /// colonisation down:
+    /// colonization down:
     ///
     /// | | colony-years | vs shipped | doubling |
     /// |---|---|---|---|
@@ -2224,7 +2224,7 @@ pub struct SimConfig {
     ///
     /// **MC-ratified at 0.238** by a verified gradient step (`gradient_probe`
     /// then `gradient_step`): elasticity +14.5 ± 5.8 points per ln, moved α = 0.5 along
-    /// the normalised gradient and confirmed on the same CRN seeds. The step as
+    /// the normalized gradient and confirmed on the same CRN seeds. The step as
     /// a whole bought **+10.99 ± 1.86 points** of coverage, 38.26% → 49.25%.
     /// Not a solo optimum — one component of a joint move, and it should be
     /// re-derived jointly if any of the other three changes.
@@ -2260,14 +2260,14 @@ pub struct SimConfig {
     ///
     /// ~~What a Medium hull carries~~ — **it is the hold of a hull at the
     /// reference radius √3, which the Medium hull only has when
-    /// `medium_fleet_size == 3`.** The normaliser is a constant on purpose (see
+    /// `medium_fleet_size == 3`.** The normalizer is a constant on purpose (see
     /// [`REFERENCE_MEDIUM_RADIUS`]); it is this doc line that was stale.
     ///
     /// **Ratified at 1.0 — `KT(I)`, one kiloton** (§2.6, R-MC15), where the
     /// spec puts `Band I` for every quantity on the mass ladder. At the
     /// ratified cost ladder the Medium radius is `√5` and a Medium hull carries
     /// **4.81 kt**, so this field and the hull's real hold still differ by the
-    /// normaliser; making them the same number needs the per-`(role, size)`
+    /// normalizer; making them the same number needs the per-`(role, size)`
     /// thickness and `η` of §2.3 (T-56 stage 3c).
     ///
     /// **Adopting it was free, and provably so.** On top of the ratified cost
@@ -2424,11 +2424,11 @@ impl SimConfig {
     ///
     /// **There is no "too close" soft bound**, and the reason is worth keeping.
     /// An earlier version refused `r_M < 1.25` because the General : Medium
-    /// capacity ratio blew up there — an artifact of normalising capacity
+    /// capacity ratio blew up there — an artifact of normalizing capacity
     /// against the *live* Medium radius, i.e. dividing by a quantity that goes
-    /// to zero. There is no normaliser at all now. A narrow ladder just means
+    /// to zero. There is no normalizer at all now. A narrow ladder just means
     /// the Medium hull is nearly all shell and hauls nearly nothing, which is a
-    /// real economic consequence rather than a modelling failure.
+    /// real economic consequence rather than a modeling failure.
     pub fn hull_ladder_fault(&self) -> Option<&'static str> {
         if self.medium_fleet_size >= self.limited_fleet_size {
             return Some(
@@ -2557,7 +2557,7 @@ pub struct Simulation {
     /// and a store and carries no borrow flag.
     mineral_band_cache: Vec<core::cell::Cell<([f64; 3], [f64; 3])>>,
     player_entity: Vec<Entity>,
-    /// Memoised holdings centroid per seat; `None` means "recompute".
+    /// Memoized holdings centroid per seat; `None` means "recompute".
     /// Invalidated only by [`Simulation::claim_planet`] — see
     /// [`Simulation::holdings_centroid`] for why this is a memo and not a
     /// running sum.
@@ -2612,13 +2612,13 @@ pub struct Simulation {
     ///
     /// Needed because [`Doctrine::picket_claims_target`] fires on a *state*
     /// (the world is not held) that a hull already under way is on its way to
-    /// change. Without it a centre lays down a fresh picket every decision for
+    /// change. Without it a center lays down a fresh picket every decision for
     /// the whole voyage, which is waste rather than a runaway — `picket_reserve`
     /// still bounds the empire — but it is waste on the expansion loop's own
     /// budget.
     ///
     /// Marking the world held at *dispatch* would be the cheaper index and is
-    /// wrong: `picket` is what `picket_blocks` reads to turn a rival coloniser
+    /// wrong: `picket` is what `picket_blocks` reads to turn a rival colonizer
     /// back, so an entry written before the hull arrives would deny at a
     /// distance with no light-lag — the exact instant global state change
     /// design law #15 exists to rule out.
@@ -2632,13 +2632,13 @@ pub struct Simulation {
     /// hundreds of entries on a run that plays the card — §4's locality rule
     /// forbids that on a decision path.
     picket_count: Vec<u32>,
-    /// **Colonisers currently flying at each world**, target planet id → hulls.
+    /// **Colonizers currently flying at each world**, target planet id → hulls.
     ///
     /// Maintained at launch and cleared on arrival or diversion. It exists so a
     /// newly established picket can notify exactly the ships it threatens in
     /// `O(inbound)` instead of scanning the fleet — §4's locality rule, on a
     /// path that fires once per founding.
-    inbound_colonisers: BTreeMap<u64, Vec<Entity>>,
+    inbound_colonizers: BTreeMap<u64, Vec<Entity>>,
     /// Ore an outpost has extracted **for one player**, awaiting a freighter.
     ///
     /// Keyed by `(player, outpost)`, and that is the correction: the rock's
@@ -2693,7 +2693,7 @@ impl Simulation {
         // where nothing can carry cargo still *runs* — it produces numbers, and
         // they look like an economy's — which is exactly why this must be loud.
         // Design law #14's rule against benchmarking a broken configuration
-        // only helps if the broken configuration is recognisable.
+        // only helps if the broken configuration is recognizable.
         if let Some(why) = config.hull_ladder_fault() {
             panic!("degenerate hull ladder: {why}");
         }
@@ -2777,7 +2777,7 @@ impl Simulation {
             picket: BTreeMap::new(),
             picket_inbound: BTreeMap::new(),
             picket_count: vec![0; n],
-            inbound_colonisers: BTreeMap::new(),
+            inbound_colonizers: BTreeMap::new(),
             outpost_stock: BTreeMap::new(),
             exchange: Exchange::default(),
             exchange_posting: true,
@@ -3272,7 +3272,7 @@ impl Simulation {
         // turning back. Three outcomes, and the middle one is why a picket is
         // not an absolute veto:
         //
-        // - the coloniser dies → nothing founds, and nothing returns;
+        // - the colonizer dies → nothing founds, and nothing returns;
         // - the picket dies → the ground is clear and it founds normally;
         // - both live → it turns back with its people, as if contested (R-AC8).
         if self.picket_blocks(target, owner.0) {
@@ -3296,7 +3296,7 @@ impl Simulation {
                 // build, and the Medium hull is the baseline colonizer.
                 let hull = self.world.hull_type.get(vehicle).copied().unwrap_or(HullType::MediumSystems);
                 // **Only a hull that is actually consumed becomes the stock**
-                // (roles §4.2, T-113). A coloniser that flies on to picket keeps
+                // (roles §4.2, T-113). A colonizer that flies on to picket keeps
                 // its minerals in the hull, so it has none to leave here — and
                 // what it leaves instead is whatever the hold was loaded with,
                 // credited just below.
@@ -3309,7 +3309,7 @@ impl Simulation {
             // constant applied on arrival regardless of what was brought).
             //
             // **Credited, not assigned** (R-O74). These people were debited from
-            // the founding centre at launch, so they are *added* to whatever the
+            // the founding center at launch, so they are *added* to whatever the
             // world holds rather than `max`'d into place. An unowned world holds
             // zero (`galaxy.rs`), so the two agreed until settlers had to come
             // from somewhere — at which point `max` would have destroyed the
@@ -3324,7 +3324,7 @@ impl Simulation {
             // was "no mineral seed for colonies, homeworlds only" — superseded:
             // a hold may carry any mix of settlers and minerals, and the
             // minerals jumpstart production (`Hyades_industry.md` §1.7). This
-            // is not a new grant, it is the endowment the founding centre
+            // is not a new grant, it is the endowment the founding center
             // already paid for out of its own bank at launch.
             let endowment = self.world.cargo.get(vehicle).copied().unwrap_or_default();
             if endowment.basic_total() > Price::ZERO {
@@ -3391,6 +3391,21 @@ impl Simulation {
             // a colony founded by a ship that leaves is a colony whose starting
             // stock walked away. Charging it here rather than skipping the
             // credit keeps `founding_infra` one expression.
+            // **A picket standing here has nothing left to deny** (T-115).
+            //
+            // Its whole product is a colony somebody does not found, and this
+            // world now has one. Leaving it parked would be a hull doing
+            // nothing for the rest of the run — and the empire's `picket_count`
+            // would keep counting it, so `picket_reserve` would throttle the
+            // replacements it should be buying. It goes back to the frontier.
+            //
+            // Ordered after the founding rather than before it, because
+            // `dispatch_picket` refuses any world that is already owned and
+            // this one has just become so — the pass that re-aims it must see
+            // the board as it now is.
+            if let Some((seat, hull)) = self.vacate_picket(target) {
+                self.dispatch_picket(seat, hull, target);
+            }
             if self.picket_doctrine(p) {
                 self.dispatch_picket(p, vehicle, target);
             } else {
@@ -3404,7 +3419,7 @@ impl Simulation {
         }
     }
 
-    /// Turn a coloniser around, people and endowment intact (R-AC8, roles §4.2).
+    /// Turn a colonizer around, people and endowment intact (R-AC8, roles §4.2).
     ///
     /// One expression for the two reasons a ship gives up on a world: someone
     /// claimed it first, or someone is **standing on it** (T-112). The second
@@ -3502,7 +3517,20 @@ impl Simulation {
         self.picket.get(&world.0).is_some_and(|&(holder, _, _)| holder != seat)
     }
 
-    /// **Send a just-freed coloniser to hold the best nearby unclaimed world.**
+    /// **Take a picket off station and off the books**, returning the seat that
+    /// held it and the hull that was standing there.
+    ///
+    /// One function because the count and the map have to move together: every
+    /// other path that removes a `picket` entry has to decrement
+    /// `picket_count`, and the one place that forgot would give the empire a
+    /// permanent phantom holding that `picket_reserve` throttles against.
+    fn vacate_picket(&mut self, world: Entity) -> Option<(usize, Entity)> {
+        let (seat, hull, _) = self.picket.remove(&world.0)?;
+        self.picket_count[seat as usize] = self.picket_count[seat as usize].saturating_sub(1);
+        Some((seat as usize, hull))
+    }
+
+    /// **Send a just-freed colonizer to hold the best nearby unclaimed world.**
     ///
     /// The target is the nearest unclaimed, unpicketed world this empire has
     /// scanned — *nearest*, not best, because denial is about being there and a
@@ -3517,7 +3545,7 @@ impl Simulation {
         // *Nearest to the founding* — this one — squats on the picketing
         // empire's **own** frontier, so it threatens nobody: measured at
         // **493–793 pickets for 3–12 diversions per run**, one to two percent
-        // utilisation. *Nearest to the closest rival homeworld* is worse, and
+        // utilization. *Nearest to the closest rival homeworld* is worse, and
         // for the opposite reason: **24–32 pickets and zero diversions**,
         // because a world this empire has scanned and a rival has not yet
         // claimed barely exists — near a rival, everything visible is already
@@ -3546,12 +3574,127 @@ impl Simulation {
             self.release_to_reserve(vehicle, Role::Colonizer, at);
             return;
         };
+        self.launch_picket(vehicle, origin, world, 0.0);
+    }
+
+    /// **Put a hull on a picket leg**, from wherever it is to `world`, departing
+    /// `delay` years from now.
+    ///
+    /// The one place a picket leg is created, because three callers now make
+    /// them — a colonizer that kept its hull, a picket whose world was
+    /// colonized out from under it, and an interception — and each has to book
+    /// the same in-flight ledger. `spawn_courier` books one for every
+    /// `Role::Picket` it launches and none of these go through it, so a world
+    /// with a picket already on its way would otherwise read as unclaimed to
+    /// [`Doctrine::picket_claims_target`] and buy a second hull for ground that
+    /// is already spoken for. One ledger, every dispatcher.
+    ///
+    /// Returns the arrival time.
+    fn launch_picket(&mut self, vehicle: Entity, origin: Vec3, world: Entity, delay: f64) -> f64 {
         self.world.role.insert(vehicle, Role::Picket);
         self.world.voyage.insert(vehicle, Voyage { target: world, heading_bias: None, hops: 0 });
         let dest = *self.world.position.get(world).unwrap();
-        let accel = self.config.civilian_accel_g * G;
-        let arrive = self.set_leg(vehicle, origin, dest, accel, 0.0);
+        // The hull's own empty acceleration, not a flat constant (R-WAR9). An
+        // LOU mounts a small drive and makes **0.94 ly/yr²** where an empty
+        // Medium hull makes 2.45 — which is what decides whether it wins the
+        // race in `offer_interception`, so the flat figure was answering that
+        // question with a number belonging to no hull in particular.
+        let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
+        let arrive = self.set_leg(vehicle, origin, dest, accel, delay);
+        *self.picket_inbound.entry(world.0).or_default() += 1;
         self.schedule_at(arrive, EventKind::PicketArrive { vehicle });
+        arrive
+    }
+
+    /// **A picket that can see this launch and beat it there goes** (T-115,
+    /// [`Doctrine::picket_intercepts`]).
+    ///
+    /// Called once per colony-ship launch, on the *launching* seat's target.
+    /// `from_center` is the yard the hull left — the light a picket sees comes
+    /// from there and not from the empire's capital — and `depart` is when its
+    /// drive lit, which `spawn_courier`'s `launch_delay` can put in the future.
+    /// Every standing picket is a candidate; the one that can be on the ground
+    /// earliest, and still before the colony ship, leaves station.
+    ///
+    /// ```text
+    /// t_see   = depart + distance(origin, station)      // light, c = 1
+    /// t_reach = t_see  + ship_travel_years(station → world)
+    /// feasible iff t_reach < t_arrive(colony ship)
+    /// ```
+    ///
+    /// **Cost is `O(pickets held)`, not `O(galaxy)`** (§4). `picket` is a
+    /// fleet-bounded map — `picket_reserve` bounds it per empire — and in a
+    /// galaxy where nobody plays the card it is empty, so the whole feature is
+    /// one `is_empty()` on the launch path.
+    ///
+    /// **It reads no more than light delivers.** The launch time, the origin
+    /// and the destination are all properties of an event the picket sees at
+    /// `t_see`; the arrival time it is racing is one its own crew can compute
+    /// from the observed acceleration, which is design law #10's observable.
+    /// What it does *not* get is a re-decision when the colony ship changes
+    /// course — it committed on what it saw, and arriving at a world nobody
+    /// comes to is the cost of having guessed.
+    fn offer_interception(
+        &mut self,
+        launcher: usize,
+        from_center: Entity,
+        target: Entity,
+        depart: f64,
+        colony_arrival: f64,
+    ) {
+        if self.picket.is_empty() || !self.config.engagements_enabled {
+            return;
+        }
+        if self.world.owner.contains(target) || self.picket.contains_key(&target.0) {
+            return;
+        }
+        let Some(&dest) = self.world.position.get(target) else { return };
+        // The light leaves the **center that dispatched it**, not the capital:
+        // that is where the hull was built and lit its drive.
+        let Some(&origin_pos) = self.world.position.get(from_center) else { return };
+        let mut best: Option<(f64, Entity, Entity, f64)> = None;
+        for (&w, &(seat, hull, _)) in self.picket.iter() {
+            if seat as usize == launcher || !self.doctrine_of(seat as usize).picket_intercepts {
+                continue;
+            }
+            // The map is keyed by the world **entity** id, not by `PlanetId` —
+            // they index different arrays and the engine has no total order
+            // between them.
+            let from = Entity(w);
+            let Some(&station) = self.world.position.get(from) else { continue };
+            let t_see = depart + origin_pos.distance(station);
+            // Priced at the acceleration this hull will actually fly at — the
+            // same `laden_accel` `launch_picket` will read — so the decision and
+            // the leg cannot disagree about who wins the race.
+            let accel = self.laden_accel(hull, self.config.civilian_accel_g);
+            let t_reach = t_see + math::ship_travel_years(station.distance(dest), accel);
+            if t_reach >= colony_arrival {
+                continue;
+            }
+            // Deterministic argmin over a sorted map: earliest on the ground,
+            // ties broken by the world it is leaving.
+            if best.is_none_or(|(bt, _, _, _)| t_reach < bt) {
+                // The delay is measured from *now*, and `depart` may be in the
+                // future, so the picket waits out the yard time too — it has
+                // not seen anything yet either.
+                best = Some((t_reach, hull, from, t_see - self.clock));
+            }
+        }
+        let Some((t_reach, hull, from, delay)) = best else { return };
+        let Some((seat, ship)) = self.vacate_picket(from) else { return };
+        debug_assert_eq!(ship, hull);
+        let station = *self.world.position.get(from).unwrap();
+        self.launch_picket(hull, station, target, delay);
+        let pid = *self.world.planet_id.get(target).unwrap();
+        self.log.push(
+            self.clock,
+            LogEvent::PicketIntercept {
+                player: seat as u32,
+                vehicle: hull,
+                target: pid,
+                margin: colony_arrival - t_reach,
+            },
+        );
     }
 
     /// A picket reaches its world and takes station.
@@ -3581,34 +3724,95 @@ impl Simulation {
         self.notify_inbound(world);
     }
 
-    /// **Tell every threatened coloniser, at the speed of light.**
+    /// **Tell every threatened colony ship, at the speed of light — twice.**
     ///
-    /// For each rival hull already flying at this world, the earliest instant
-    /// its empire could have learned is `now + distance(world, its home
-    /// centre)` — the responder is the centre that dispatched it, which is card
-    /// contract §2's rule verbatim. If that is later than the ship's own
-    /// arrival the warning never lands and it flies in blind, which is the
-    /// counterplay window rather than an oversight.
+    /// There are two responders and they are not the same responder, which is
+    /// the correction T-115 makes to T-112.
+    ///
+    /// **The home center**, at `now + distance(world, home center)`. That is
+    /// card contract §2's rule verbatim — *a reaction to a detected fleet is
+    /// scheduled by the distance to the responder* — and it is the channel that
+    /// carries an *order*.
+    ///
+    /// **The ship itself**, at the instant the light actually overtakes it.
+    /// A hull flying toward the world is closing on the source, so the news
+    /// reaches it sooner than it reaches anything behind it, and it does not
+    /// need anyone's permission to notice a picket. Leaving this channel out
+    /// made every diversion a round trip through an empire's capital, which is
+    /// not what the observation model says and not what a crew would do.
+    ///
+    /// Both are scheduled; [`Self::sys_colony_divert`] is idempotent and guards
+    /// against a stale wake, so whichever lands first is the one that decides.
     fn notify_inbound(&mut self, world: Entity) {
-        let Some(inbound) = self.inbound_colonisers.get(&world.0).cloned() else { return };
+        let Some(inbound) = self.inbound_colonizers.get(&world.0).cloned() else { return };
         let Some(&(holder, _, _)) = self.picket.get(&world.0) else { return };
         let world_pos = *self.world.position.get(world).unwrap();
         for v in inbound {
             if self.world.owner.get(v).copied().map(|o| o.0) == Some(holder) {
                 continue;
             }
-            let Some(&home) = self.world.home_center.get(v) else { continue };
-            let Some(&home_pos) = self.world.position.get(home) else { continue };
-            // c = 1, distance in light-years, time in years (`math`).
-            self.schedule(world_pos.distance(home_pos), EventKind::ColonyDivert { vehicle: v });
+            if let Some(&home) = self.world.home_center.get(v) {
+                if let Some(&home_pos) = self.world.position.get(home) {
+                    // c = 1, distance in light-years, time in years (`math`).
+                    self.schedule(world_pos.distance(home_pos), EventKind::ColonyDivert { vehicle: v });
+                }
+            }
+            if let Some(lag) = self.light_overtakes(v, world_pos) {
+                self.schedule(lag, EventKind::ColonyDivert { vehicle: v });
+            }
         }
+    }
+
+    /// **When does light leaving `source` now catch up with a moving hull?**
+    ///
+    /// Returns the delay in years, or `None` if the hull has no position.
+    ///
+    /// A stationary observer at distance `d` is reached at `d`. A hull *closing*
+    /// on the source is reached sooner, and by how much depends on the whole
+    /// trajectory, so the answer is the root of
+    ///
+    /// ```text
+    /// f(t) = (t − now) − |p(t) − source|
+    /// ```
+    ///
+    /// which is where the light's travelled distance equals the hull's current
+    /// range. `f(now) = −d₀ ≤ 0`, and at `now + d₀` the hull is no farther than
+    /// it was (it is closing, and past arrival `position_at` pins it at the
+    /// destination), so `f ≥ 0` there and a root is bracketed. Bisection, 48
+    /// halvings, which is exact to the last bits of a double over any bracket
+    /// this engine produces.
+    ///
+    /// **Bisection rather than a closed form on purpose.** The trajectory is a
+    /// relativistic 1 g brachistochrone with a departure delay
+    /// (`math::position_along`), so `|p(t) − source|` has no elementary
+    /// inverse — and a root found by halving uses only comparison, addition and
+    /// `sqrt`, all exactly specified by IEEE 754, where a fitted approximation
+    /// would be a per-platform divergence in replicated state (design law #16,
+    /// and the reason `math::exp_decay` forbids `mul_add`).
+    fn light_overtakes(&self, vehicle: Entity, source: Vec3) -> Option<f64> {
+        let now = self.clock;
+        let d0 = self.position_at(vehicle, now)?.distance(source);
+        if d0 <= 0.0 {
+            return Some(0.0);
+        }
+        let range_at = |t: f64| self.position_at(vehicle, t).map(|p| p.distance(source)).unwrap_or(0.0);
+        let (mut lo, mut hi) = (0.0f64, d0);
+        for _ in 0..48 {
+            let mid = 0.5 * (lo + hi);
+            if mid - range_at(now + mid) < 0.0 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        Some(hi)
     }
 
     /// **The warning arrived in time: turn back.**
     ///
     /// Guarded three ways, because the event was scheduled against a world state
     /// that may have moved on: the ship may have already landed, the picket may
-    /// be gone, and the ship may no longer be a coloniser. A stale wake is the
+    /// be gone, and the ship may no longer be a colonizer. A stale wake is the
     /// normal case, not an error.
     fn sys_colony_divert(&mut self, vehicle: Entity) {
         if self.world.role.get(vehicle).copied() != Some(Role::Colonizer) {
@@ -3621,8 +3825,32 @@ impl Simulation {
             return;
         }
         // Still inbound? If the arrival already fired it is off the index.
-        let still_flying = self.inbound_colonisers.get(&target.0).is_some_and(|v| v.contains(&vehicle));
+        let still_flying = self.inbound_colonizers.get(&target.0).is_some_and(|v| v.contains(&vehicle));
         if !still_flying {
+            return;
+        }
+        // **Past turnover the ship is committed, and that is kinematics rather
+        // than a rule** (T-115).
+        //
+        // Now that the hull hears the news itself and not only through its
+        // capital, the warning *always* beats it there: light leaves the world
+        // the picket took, and the hull is closing on that world below `c`. So
+        // "did the warning arrive in time" stopped discriminating, and without
+        // a second question every picket would turn every ship back and the
+        // arrival fight would never happen again.
+        //
+        // The question that replaces it costs no constant. A leg is a
+        // relativistic 1 g brachistochrone (`math`), so the hull accelerates to
+        // the midpoint and decelerates from it; **before turnover its velocity
+        // still points somewhere it can choose, after turnover it is shedding
+        // the velocity it already spent and arrives whatever it decides.** The
+        // midpoint in time is `(depart + arrive) / 2`.
+        //
+        // So the counterplay window is a *margin* rather than a race, and both
+        // channels still matter: the ship's own sighting is early and the
+        // order from home may or may not land before the hull is past turning.
+        let Some(&motion) = self.world.motion.get(vehicle) else { return };
+        if self.clock >= 0.5 * (motion.depart + motion.arrive) {
             return;
         }
         let Some(here) = self.position_at(vehicle, self.clock) else { return };
@@ -3633,27 +3861,27 @@ impl Simulation {
         self.bounce_colonizer(vehicle, target, here, owner.0 as usize, pid);
     }
 
-    /// Drop a coloniser from the inbound index.
+    /// Drop a colonizer from the inbound index.
     fn clear_inbound(&mut self, target: Entity, vehicle: Entity) {
-        if let Some(v) = self.inbound_colonisers.get_mut(&target.0) {
+        if let Some(v) = self.inbound_colonizers.get_mut(&target.0) {
             v.retain(|&e| e != vehicle);
             if v.is_empty() {
-                self.inbound_colonisers.remove(&target.0);
+                self.inbound_colonizers.remove(&target.0);
             }
         }
     }
 
-    /// **A coloniser that flew in anyway fights the picket holding the world.**
+    /// **A colonizer that flew in anyway fights the picket holding the world.**
     ///
     /// Same resolver as everything else (T-111). The picket takes the laser side
-    /// — it is the one on station — and the arriving coloniser the missile side,
+    /// — it is the one on station — and the arriving colonizer the missile side,
     /// which is R-WAR5's placeholder convention and decides outcomes.
     fn resolve_picket_fight(&mut self, world: Entity, arriving_seat: usize) {
         let Some(&(holder, picket_ship, _)) = self.picket.get(&world.0) else { return };
         let Some(pos) = self.position_at(world, self.clock) else { return };
         let pid = *self.world.planet_id.get(world).unwrap();
         let attackers: Vec<Entity> = self
-            .inbound_colonisers
+            .inbound_colonizers
             .get(&world.0)
             .map(|v| {
                 v.iter()
@@ -3692,9 +3920,7 @@ impl Simulation {
 
         let mut slag = Kilotons::ZERO;
         if def_lost > 0 {
-            if let Some((seat, _, _)) = self.picket.remove(&world.0) {
-                self.picket_count[seat as usize] = self.picket_count[seat as usize].saturating_sub(1);
-            }
+            self.vacate_picket(world);
             slag += self.destroy_free_hulls(&defenders[..def_lost]);
         }
         for &dead in &attackers[..att_lost] {
@@ -3720,13 +3946,13 @@ impl Simulation {
         );
     }
 
-    /// Destroy hulls that are not in a crew index (pickets and colonisers).
+    /// Destroy hulls that are not in a crew index (pickets and colonizers).
     fn destroy_free_hulls(&mut self, dead: &[Entity]) -> Kilotons {
         let mut mass = Kilotons::ZERO;
         for &e in dead {
             let hull = *self.world.hull_type.get(e).unwrap_or(&HullType::LimitedSystems);
             mass += hull_dry_mass(hull, &self.config);
-            // **The people aboard die with it** (design law #11). A coloniser's
+            // **The people aboard die with it** (design law #11). A colonizer's
             // settlers were debited from its origin at launch (R-O74), so
             // dropping the hull without them would put the mass back into the
             // ledger as a gain. This is the one path in the engine where
@@ -3940,11 +4166,11 @@ impl Simulation {
             // room for the piles still ahead.
             let last_stop = sh.stops as usize + 1 >= self.config.max_pickup_stops;
             if load > Price::ZERO {
-                // **Load against what the centre this hauler serves is short
+                // **Load against what the center this hauler serves is short
                 // of** (R-O89), rather than in the ratio this rock happens to
-                // hold. `destination` is the centre it delivered to last, so the
+                // hold. `destination` is the center it delivered to last, so the
                 // pairing is a standing relationship and not a lookup: serve a
-                // centre, learn what it lacks, fetch that. `O(1)`, where reading
+                // center, learn what it lacks, fetch that. `O(1)`, where reading
                 // the empire's aggregate deficit would be `O(owned planets)` on
                 // one of the hottest paths in the engine (§4).
                 //
@@ -3953,8 +4179,8 @@ impl Simulation {
                 // is **-52.3%** — see [`take_for_deficit`] and §6.20.
                 //
                 // **Net of what is already aboard** (T-91): an earlier stop on
-                // this leg may already have covered a colour, and a want that
-                // does not subtract it makes the run fetch the same colour
+                // this leg may already have covered a color, and a want that
+                // does not subtract it makes the run fetch the same color
                 // twice and still land short in the third.
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
                 let fill = if last_stop { Fill::Hold } else { Fill::Shortfall };
@@ -4039,7 +4265,7 @@ impl Simulation {
             // (R-P2) not across the galaxy to a marginally needier one either.
             // At `trade_decay_lambda = 0` this reduces exactly to
             // `most_needed_center`; the shipped value is 0.01, so the discounted
-            // path is live. Since T-81 the need term is **per colour** and reads
+            // path is live. Since T-81 the need term is **per color** and reads
             // the cargo actually aboard, so a hauler carrying Yellow goes where
             // Yellow is what is missing. Falls back to the outpost's own paired
             // home center only if this owner holds no production center at all
@@ -4080,10 +4306,10 @@ impl Simulation {
                     },
                 );
             }
-            // **The centre's situation just changed, so it decides now** (T-88).
+            // **The center's situation just changed, so it decides now** (T-88).
             //
             // This is the mechanism the retry floor is only a backstop for. A
-            // saving centre is waiting for exactly one thing — minerals — and
+            // saving center is waiting for exactly one thing — minerals — and
             // ore landing in its bank is the event that changes whether it can
             // buy anything. Before this it waited out the economy tick, so a
             // delivery arriving one year after a tick sat unspent for the next
@@ -4131,7 +4357,7 @@ impl Simulation {
         // separately in `sys_contact_arrive`.
         self.world.role.insert(vehicle, Role::Reserve);
         // **Unload before parking** (R-O74). A bounced Colonizer is carrying
-        // people and minerals that were debited from its home centre, and this
+        // people and minerals that were debited from its home center, and this
         // is where "nothing is lost" stops being a comment and becomes an
         // entry: park it still laden and the endowment sits in a hold forever,
         // which is a slow leak rather than an obvious one.
@@ -4215,7 +4441,7 @@ impl Simulation {
             let amt = {
                 let d = self.world.density.get(outpost).unwrap();
                 // A fraction of the ore actually present — a **mass**, since
-                // T-62 made the field's colours Bands and only their masses add.
+                // T-62 made the field's colors Bands and only their masses add.
                 //
                 // **Crowding, scaled to the deposit** (§4.3, T-71). Extraction is
                 // `ε · S · W(n, S)` with `n` the crew in miner-equivalents — one
@@ -4280,7 +4506,7 @@ impl Simulation {
         // 0) **The `$` faucet** (§2.3, T-82). Income accrues where production
         // happens, on the cadence a rate needs — the economy tick is an
         // interval, and `$_income = base · production · dt` is a rate over one.
-        // No new cadence and no per-player sweep: summing over centres *is* the
+        // No new cadence and no per-player sweep: summing over centers *is* the
         // empire's production.
         //
         // **Nothing reads the purse yet**, which is the point of this stage: the
@@ -4294,7 +4520,7 @@ impl Simulation {
             let d = self.world.density.get(center).unwrap();
             let stock = d.total_mass();
             // **Same law as an outpost's crew, different way of buying `n`**
-            // (§4.4, T-71). `extraction_rate` returns the centre's capacity in
+            // (§4.4, T-71). `extraction_rate` returns the center's capacity in
             // miner-equivalents; the deposit decides what that capacity is worth.
             let work = crowding_factor(self.extraction_rate(center), stock, &self.config);
             // Scaled with the tick for the same reason as growth above — this
@@ -4476,7 +4702,7 @@ impl Simulation {
         // what costs throughput.
         //
         // The gate is a *floor*, not the mechanism. The mechanism is
-        // `wake_on_minerals`, which asks the moment the thing a saving centre
+        // `wake_on_minerals`, which asks the moment the thing a saving center
         // was short of actually lands; this is the catch-all underneath it for
         // a situation that changed somewhere no wake site watches — a newly
         // scanned candidate, a population level crossing, a hull returning to
@@ -4497,7 +4723,7 @@ impl Simulation {
     /// applies the build immediately — `apply_build_with` is unchanged, so a
     /// vehicle's launch delay and arrival time are exactly what they were — and
     /// then holds the yard for `build_years` before the next decision. **The
-    /// only behavioural change is the cadence of decisions**, from
+    /// only behavioral change is the cadence of decisions**, from
     /// `cycle_years` to `build_years` for a center that keeps finding things to
     /// buy.
     fn sys_build_decision(&mut self, center: Entity) {
@@ -4518,7 +4744,7 @@ impl Simulation {
         // and none of its benefit, which would measure as a regression for a
         // reason that has nothing to do with the mechanism. The loop terminates
         // because each commit takes a berth and `commit_one_build` returns
-        // `false` the moment the centre cannot or will not buy anything more.
+        // `false` the moment the center cannot or will not buy anything more.
         while self.free_berths(center) > 0 {
             if !self.commit_one_build(center) {
                 break;
@@ -4550,19 +4776,19 @@ impl Simulation {
         let center_pos = *self.world.position.get(center).unwrap();
         let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
         // Minerals to buy the next whole level, from the stock standing there —
-        // and since T-73 the bill is payable *in colours*, so the split and the
+        // and since T-73 the bill is payable *in colors*, so the split and the
         // bank both go into the context.
         let target_level = infra_step_price(infra, &self.config);
         let works = self.world.works.get(pe).copied().unwrap_or_default();
         let infra_bill = works_bill(target_level, &works);
         let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
-        let stockpile_by_colour = [
+        let stockpile_by_color = [
             Price::new(bank.get_basic(Basic::Cyan)),
             Price::new(bank.get_basic(Basic::Magenta)),
             Price::new(bank.get_basic(Basic::Yellow)),
         ];
 
-        // **A centre too poor to buy anything does not need to look at the
+        // **A center too poor to buy anything does not need to look at the
         // galaxy first** (T-88 / T-52).
         //
         // Measured on the standard bed, **79.8% of production decisions return
@@ -4573,13 +4799,13 @@ impl Simulation {
         //
         // The guard is a *necessary* condition for any commit, not a re-
         // implementation of the policy: every order the autopilot can return
-        // costs at least `floor` in total, and per-colour affordability implies
+        // costs at least `floor` in total, and per-color affordability implies
         // affordability of the total, so a bank below it cannot buy anything the
         // scan could propose. `mining_pair_price` is priced at a crew of one,
         // which is its minimum, so the bound stays below the real price rather
         // than guessing it.
         //
-        // Behaviour is unchanged by construction — the skipped decisions are
+        // Behavior is unchanged by construction — the skipped decisions are
         // exactly the ones whose `apply_build_with` would have declined — and
         // the log still records the decision, with `candidates_seen = 0`
         // meaning *scanned*, which for this branch is the honest number.
@@ -4707,7 +4933,7 @@ impl Simulation {
                     any_pickets && self.picket.get(&e.0).is_some_and(|&(holder, _, _)| holder as usize == p);
                 // A hull already on its way counts for the *claim* decision and
                 // not for the *settle* one: a picket in flight is a
-                // reservation, and a world is only safe to send a coloniser to
+                // reservation, and a world is only safe to send a colonizer to
                 // once the hull is standing on it.
                 let claim_inbound = any_pickets && self.picket_inbound.contains_key(&e.0);
                 let wins_class = beats(&best[slot]);
@@ -4746,7 +4972,7 @@ impl Simulation {
             limited_min_level: self.config.limited_min_level,
             infra_cost: target_level,
             infra_bill,
-            stockpile_by_colour,
+            stockpile_by_color,
             colonizer_cost: hull_cost(HullType::MediumSystems, &self.config),
             general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
             medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
@@ -4813,7 +5039,7 @@ impl Simulation {
         let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) else {
             // The yard stays free and the next economy tick retries, which is
             // the right cadence for a center whose situation only changes as it
-            // mines. Returning `false` also ends the fill loop — a centre that
+            // mines. Returning `false` also ends the fill loop — a center that
             // declined this order will decline it again at the same instant.
             return false;
         };
@@ -4857,7 +5083,7 @@ impl Simulation {
         self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / per_berth
     }
 
-    /// **The fabrication share of this centre's infrastructure stock, kt** — the
+    /// **The fabrication share of this center's infrastructure stock, kt** — the
     /// quantity both yard axes are bought with (R-O88).
     fn fabrication_stock(&self, center: Entity) -> f64 {
         let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
@@ -4879,10 +5105,10 @@ impl Simulation {
         )
     }
 
-    /// **This centre's total fabrication throughput, kt/yr** — `slips ×
+    /// **This center's total fabrication throughput, kt/yr** — `slips ×
     /// berth_rate`, so it is unbounded in the stock (R-O88).
     ///
-    /// This is the *demand* figure — what the centre can consume — and it is
+    /// This is the *demand* figure — what the center can consume — and it is
     /// what `mining_crew_for` and the `$` faucet read. It is **not** what
     /// [`Self::build_time`] reads: a hull sits in one berth, so its turnaround
     /// is the berth's rate and not the yard's.
@@ -4890,7 +5116,7 @@ impl Simulation {
         slips(self.fabrication_stock(center), &self.config) as f64 * self.berth_rate(center)
     }
 
-    /// This centre's owner's works, or the card-free default if it is unowned.
+    /// This center's owner's works, or the card-free default if it is unowned.
     fn works_of(&self, center: Entity) -> cards::Works {
         self.world
             .owner
@@ -4900,17 +5126,17 @@ impl Simulation {
             .unwrap_or_default()
     }
 
-    /// **How many berths this centre has spare** (T-69). Zero means every slip
+    /// **How many berths this center has spare** (T-69). Zero means every slip
     /// is busy and the yard cannot commit again until one clears.
     /// **Minerals landed here — decide now, floor or no floor** (T-88).
     ///
     /// Deliberately bypasses [`Self::decision_is_due`]. The floor exists to stop
-    /// a centre re-asking a question nothing has answered; a delivery *is* the
+    /// a center re-asking a question nothing has answered; a delivery *is* the
     /// answer, so gating it behind the floor would reinstate the cadence this
     /// task exists to remove. Re-arms the floor, so it means "50 years since
     /// the last decision" rather than "since the last tick".
     ///
-    /// A centre with no free berth is skipped: its decision already has a
+    /// A center with no free berth is skipped: its decision already has a
     /// `BuildDecision` pending for when the yard clears, and the minerals will
     /// still be there.
     fn wake_on_minerals(&mut self, center: Entity) {
@@ -4931,7 +5157,7 @@ impl Simulation {
         self.config.cycle_years / self.config.rate_reference_years.max(1e-12)
     }
 
-    /// Has this centre's retry floor elapsed? (T-88.)
+    /// Has this center's retry floor elapsed? (T-88.)
     ///
     /// Absent means "never asked, or woken deliberately" — both want an
     /// immediate decision, so absence reads as due.
@@ -4951,7 +5177,7 @@ impl Simulation {
         total.saturating_sub(busy)
     }
 
-    /// **This centre's extraction capacity, in miner-equivalents** (T-71).
+    /// **This center's extraction capacity, in miner-equivalents** (T-71).
     ///
     /// ~~The fraction of its own density it works per cycle~~ — T-74 shipped that
     /// as a Michaelis–Menten curve on infrastructure, and §4.3a retired the form:
@@ -5016,7 +5242,7 @@ impl Simulation {
             BuildOrder::Idle => None,
             BuildOrder::UpgradeInfrastructure => {
                 let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
-                // **Pay the colour bill, not the total** (T-73). Same
+                // **Pay the color bill, not the total** (T-73). Same
                 // `works_bill` the decision was made against.
                 let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
                 let bill = works_bill(target, &works);
@@ -5158,7 +5384,7 @@ impl Simulation {
 
                 // **A picket does not claim the world it holds** (T-113).
                 //
-                // `targeted` means *a coloniser of ours is already flying
+                // `targeted` means *a colonizer of ours is already flying
                 // there*, and it is never cleared — so marking it for a picket
                 // permanently deletes that world from this empire's own
                 // candidate list. `assign_role` sends pickets to the
@@ -5271,18 +5497,18 @@ impl Simulation {
     ///
     /// So the crew *falls out* of demand. There is no knob.
     ///
-    /// **Demand**, in kilotons per year, is what the founding centre can
+    /// **Demand**, in kilotons per year, is what the founding center can
     /// actually consume and currently cannot get:
     ///
     /// ```text
-    /// D = fabrication_rate(centre) · mineral_pressure(centre)
+    /// D = fabrication_rate(center) · mineral_pressure(center)
     /// ```
     ///
     /// Both terms already exist and both already run on this decision path.
     /// `fabrication_rate` is the rate the yard turns minerals into mass — the
     /// only sink that consumes ore — and `mineral_pressure` is `1.0` when the
-    /// centre is broke for its next rung and `0.0` when it is comfortable. A
-    /// centre with a full bank has no unmet demand and opens a mine with one
+    /// center is broke for its next rung and `0.0` when it is comfortable. A
+    /// center with a full bank has no unmet demand and opens a mine with one
     /// hull; a starved one crews to its throughput.
     ///
     /// **Supply** is §4.3's law read forwards, so the crew is that law inverted:
@@ -5299,11 +5525,11 @@ impl Simulation {
     /// gets richer. Under a flat fraction it rose. That inversion is why this is
     /// a model change and not a retuning.
     ///
-    /// **R-IND20: demand is read at the founding centre, not empire-wide.** An
+    /// **R-IND20: demand is read at the founding center, not empire-wide.** An
     /// outpost feeds the whole empire through freight, so the correct demand is
     /// the empire's unmet total; that is an `O(planets)` scan on a decision path
     /// (`CLAUDE.md` §4) and would need the `holdings_centroid` memo treatment.
-    /// The centre that pays for the pair is the defensible local proxy, and the
+    /// The center that pays for the pair is the defensible local proxy, and the
     /// difference is what R-IND20 is for.
     fn mining_crew_for(&self, center: Entity, planet: Entity) -> usize {
         let stock = self.world.density.get(planet).map(|d| d.total_mass()).unwrap_or(Kilotons::ZERO);
@@ -5354,10 +5580,10 @@ impl Simulation {
     ///   forward.
     /// - **Demand** is what the destination can turn into objects, which is its
     ///   fabrication throughput (`slips × berth_rate`). Minerals arriving faster
-    ///   than a centre can fabricate are minerals that sit in a bank.
+    ///   than a center can fabricate are minerals that sit in a bank.
     ///
     /// **`min` is the point.** A thin rock cannot fill a big hold however hungry
-    /// the centre, and a centre at one berth cannot spend a rich rock however
+    /// the center, and a center at one berth cannot spend a rich rock however
     /// fast it yields — so the hull is sized to the *bottleneck*, and the
     /// decision says "small hull here, large hull there" rather than picking a
     /// global winner. Below the crossover `load` is `flow · round_trip` for every
@@ -5371,14 +5597,14 @@ impl Simulation {
     /// empty leg does not move.
     ///
     /// **Cost, stated rather than discovered later.** This is `O(1)` in galaxy
-    /// size — it reads one deposit, one centre and one distance — but it is three
+    /// size — it reads one deposit, one center and one distance — but it is three
     /// hulls × two passes × two travel solves, so ~12 square roots per mining-pair
     /// build. Builds are orders of magnitude rarer than arrivals, which is the
     /// budget `CLAUDE.md` §4 actually sets.
     ///
     /// **What the demand term is not.** It is a *ceiling*, not this hauler's
-    /// share: a centre served by ten pairs can absorb its fabrication rate once,
-    /// not ten times. Turning it into a share needs a per-centre hauler census,
+    /// share: a center served by ten pairs can absorb its fabrication rate once,
+    /// not ten times. Turning it into a share needs a per-center hauler census,
     /// which is not `O(1)` from here — carried as **T-99**. The supply term has
     /// no such caveat: it is exactly this rock's yield to this player.
     fn freighter_hull(&self, p: usize, center: Entity, outpost: Entity, crew: usize) -> HullType {
@@ -5402,7 +5628,7 @@ impl Simulation {
         // throughput rule cannot see. The score below is a *rate*: it says what a
         // hull returns per mineral once it is flying, and says nothing about the
         // years spent saving for it. A General hauler returns 2.86x a Medium's
-        // and costs **12x**, so a centre whose bank is thin buys one big hull
+        // and costs **12x**, so a center whose bank is thin buys one big hull
         // instead of twelve cheap ones and stops expanding while it saves.
         //
         // Measured without this term: **+60.2% work-years and −9.3%
@@ -5410,7 +5636,7 @@ impl Simulation {
         // founding nothing in forty years. The development gain was real and it
         // was being paid for out of the expansion loop.
         //
-        // So the candidate set is what this centre could pay for **now**,
+        // So the candidate set is what this center could pay for **now**,
         // alongside the crew it is buying. No new constant: the budget is the
         // bank, which is the constraint the decision already lives under. Early,
         // banks are thin and the cheap hull wins because it is the only one
@@ -5429,11 +5655,11 @@ impl Simulation {
             if cap <= 0.0 || cost <= 0.0 {
                 continue;
             }
-            // **A total, not a per-colour, reading.** The real payment still goes
-            // through the per-colour conjunction — this is a forecast input and
+            // **A total, not a per-color, reading.** The real payment still goes
+            // through the per-color conjunction — this is a forecast input and
             // reconstructing a conjunction from a total is the mistake §6.19c
             // records (44.7% "outbid" against a true 0.9%). Here it only has to
-            // rank, and it is deliberately permissive: quoting a hull the centre
+            // rank, and it is deliberately permissive: quoting a hull the center
             // then cannot pay for costs a declined build, not a wrong one.
             if best.is_some() && hull_cost(hull, &self.config) > budget {
                 continue;
@@ -5468,10 +5694,10 @@ impl Simulation {
     }
 
     /// **Priced for the hull that will actually be built** (T-98). `pair` is the
-    /// `(centre, rock)` the freighter would serve; `None` prices the *floor* —
+    /// `(center, rock)` the freighter would serve; `None` prices the *floor* —
     /// the cheapest hauler that exists — which is what the skip-scan guard wants
     /// and what a quote for an unchosen rock has to be, since a floor that
-    /// overestimates skips a build the centre could afford.
+    /// overestimates skips a build the center could afford.
     fn mining_pair_price(&self, p: usize, crew: usize, pair: Option<(Entity, Entity)>) -> Price {
         let full_miner = role_cost(Role::Miner, &self.config);
         let full_freighter = match pair {
@@ -5699,7 +5925,7 @@ impl Simulation {
     /// biosphere for the people put aboard, which was already a design law #11
     /// violation at `Band I` and is a bigger one at `Band II`. It is recorded
     /// rather than fixed here because drawing the seed from the origin is a
-    /// behaviour change that would dominate the measurement stage 4 exists to
+    /// behavior change that would dominate the measurement stage 4 exists to
     /// take — and mixing the two is exactly the confound this staging avoids.
     fn colony_seed_for(&self, hull: HullType, origin: Entity, target: Entity) -> Option<Kilotons> {
         // **R-V9 is enforced on the hold, and since T-67 it has to be.**
@@ -5726,13 +5952,13 @@ impl Simulation {
         // one R-O74 was missing. The **world** caps it, because a seed above `K`
         // would crash rather than settle. The **hold** caps it, because that is
         // capability. And the **origin** decides it — not as a share of what it
-        // has, but as the split that maximises the growth of the combined
+        // has, but as the split that maximizes the growth of the combined
         // origin-plus-colony system under a travel discount (R-IND12; see
         // `settler_target`, which also defines every symbol it uses).
         Some(hold.min(self.founding_capacity(target)).min(self.settler_target(origin, target, hold)))
     }
 
-    /// **How many settlers a centre sends, and where the number comes from
+    /// **How many settlers a center sends, and where the number comes from
     /// (R-IND12).**
     ///
     /// Every symbol, before any of them is used:
@@ -5766,7 +5992,7 @@ impl Simulation {
     ///            -- the time the seed saves the child, floor -> S
     /// cost(S)  = T_p(S) = S / g(x_p − S, K_p)
     ///            -- the time the origin needs to regrow what it gave away
-    /// maximise   delta · T_c(S) − T_p(S)
+    /// maximize   delta · T_c(S) − T_p(S)
     /// ```
     ///
     /// **`r` cancels.** Both terms carry `1/r`, so the split is independent of
@@ -5779,7 +6005,7 @@ impl Simulation {
     ///
     /// - *Marginal next-cycle rate*, `g(x_p − S) + delta·g(S)`: closed form, and
     ///   it ships **nothing at all** whenever the origin is below `K_p/2` and the
-    ///   target is far. That is precisely the early game, when colonising matters
+    ///   target is far. That is precisely the early game, when colonizing matters
     ///   most, so it would have stalled expansion by construction.
     /// - *Sum of fill times*: strips a full origin to 99% of itself at zero
     ///   distance, and ships nothing from one at its ceiling when the target is
@@ -5875,7 +6101,7 @@ impl Simulation {
         1.0 / (1.0 + tau / self.config.cycle_years.max(1e-9))
     }
 
-    /// **The minerals a centre sends with the settlers — sized by what the
+    /// **The minerals a center sends with the settlers — sized by what the
     /// destination will build, not by what the origin happens to hold.**
     ///
     /// Terms:
@@ -5899,7 +6125,7 @@ impl Simulation {
     /// **The demand is the intended build-out**, `E = min(H − S, C(I_0 →
     /// I_star), bank)`. Sending more than the destination will spend is freight
     /// for ore that then sits in a stockpile; sending less means it waits on a
-    /// freighter for something the coloniser had room for.
+    /// freighter for something the colonizer had room for.
     ///
     /// **`I_star` is where works value enters, and works are superadditive in
     /// `K` and `D`** (§5, author's ruling: *"Works have higher value on high K
@@ -5964,11 +6190,10 @@ impl Simulation {
         target: Entity,
         launch_delay: f64,
     ) {
-        // The launch point *is* the centre — it was passed in alongside it until
+        // The launch point *is* the center — it was passed in alongside it until
         // T-68 needed a seventh argument, and the two were always the same read.
         let from = *self.world.position.get(center).unwrap();
         let dest = *self.world.position.get(target).unwrap();
-        let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, role);
@@ -5998,6 +6223,28 @@ impl Simulation {
         };
         self.world.cargo.insert(e, endowment);
         self.world.pop_cargo.insert(e, settlers);
+        // **Read the acceleration *after* the hold is loaded** (R-WAR9,
+        // standing-layer item 5 / R-O32).
+        //
+        // This line used to be `civilian_accel_g · G`, computed before the
+        // settlers and the endowment went aboard and never re-read — so the
+        // colonization leg was flown at the empty-hull rate while every
+        // `laden_accel` call site in the engine was freight. R-O32 is recorded
+        // as having closed exactly that: *"it was massless, so a laden colony
+        // ship flew like an empty hull"*. It had closed it for the arena's
+        // `laden_accel` and not for this dispatcher.
+        //
+        // It is not a small correction. A Medium colonizer under a full hold
+        // accelerates at **0.241 ly/yr² against 2.446 empty**, a 10.2x swing,
+        // which is design law #3's load-state broadcast (§9.2) finally applying
+        // to the hull it was written about. Downstream, a colony ship's travel
+        // time exceeds light's by **~8.1 years** rather than 1.92, and that
+        // overhead is the entire window an interceptor has to work in
+        // (`Hyades_warfare_tree.md` §8.9.5).
+        //
+        // `laden_accel` reads the hull's own drive as well as its load (T-96),
+        // so this also stops the leg pretending every hull has the same thrust.
+        let accel = self.laden_accel(e, self.config.civilian_accel_g);
         self.world.home_center.insert(e, center);
         let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         let ev = match role {
@@ -6008,10 +6255,17 @@ impl Simulation {
         if role == Role::Colonizer {
             // Index it so a picket established while it is in flight can find
             // it without scanning the fleet (T-112).
-            self.inbound_colonisers.entry(target.0).or_default().push(e);
+            self.inbound_colonizers.entry(target.0).or_default().push(e);
         }
         if role == Role::Picket {
             *self.picket_inbound.entry(target.0).or_default() += 1;
+        }
+        if role == Role::Colonizer {
+            // The light leaves when the drive lights, not when the yard
+            // finishes the paperwork: `launch_delay` is part of `depart`
+            // (`set_leg`), and a picket that read `now` would be reacting to a
+            // hull that has not moved yet.
+            self.offer_interception(p, center, target, self.clock + launch_delay, arrive);
         }
         self.schedule_at(arrive, ev);
         let target_pid = *self.world.planet_id.get(target).unwrap();
@@ -6250,7 +6504,7 @@ impl Simulation {
         }
     }
 
-    /// **The three per-colour Band readings of a planet's minerals, memoised**
+    /// **The three per-color Band readings of a planet's minerals, memoized**
     /// (T-100) — the single largest cost in the engine before this landed.
     ///
     /// `BaselineAutopilot::rank` scores a world's ore as
@@ -6316,7 +6570,7 @@ impl Simulation {
         }
     }
 
-    /// Centroid of player `p`'s holdings — **memoised, because it only moves
+    /// Centroid of player `p`'s holdings — **memoized, because it only moves
     /// when a colony is founded** (R-O70).
     ///
     /// The computation is a full walk of `planet_entity`, and it ran once per
@@ -6370,7 +6624,7 @@ impl Simulation {
     ///
     /// Ownership is what moves [`Self::holdings_centroid`], so the cache is
     /// invalidated here and nowhere else. Writing `world.owner` directly for a
-    /// *planet* leaves every subsequent rank reading a stale centre of mass —
+    /// *planet* leaves every subsequent rank reading a stale center of mass —
     /// silently, and only on some seeds. The `debug_assert` in
     /// `holdings_centroid`'s caller-facing test build catches exactly that.
     fn claim_planet(&mut self, planet: Entity, owner: PlayerId) {
@@ -6378,11 +6632,11 @@ impl Simulation {
         self.centroid_cache[owner.0 as usize] = None;
     }
 
-    /// **What a centre will pay for one kilotonne of a colour, in `$`/kt**
+    /// **What a center will pay for one kilotonne of a color, in `$`/kt**
     /// (politics §3.2, T-84).
     ///
     /// ```text
-    /// wtp = base_value[c] · doctrine_demand[c] · mineral_pressure(centre)
+    /// wtp = base_value[c] · doctrine_demand[c] · mineral_pressure(center)
     /// ```
     ///
     /// The fourth term §3.2 names — `risk_discount(counterparty)` — is not here
@@ -6393,8 +6647,8 @@ impl Simulation {
     /// is the engine's, and the two Doctrine fields default to the works mix
     /// (`Hyades_industry.md` §6.10) rather than to a second independent
     /// statement of what an empire wants.
-    fn willingness_to_pay(&self, center: Entity, colour: Basic, doctrine: &Doctrine) -> f64 {
-        let i = colour as usize;
+    fn willingness_to_pay(&self, center: Entity, color: Basic, doctrine: &Doctrine) -> f64 {
+        let i = color as usize;
         doctrine.base_value[i] * doctrine.doctrine_demand[i] * self.mineral_pressure_of(center)
     }
 
@@ -6406,12 +6660,12 @@ impl Simulation {
     /// which is the event-ordering dependence per-round clearing exists to
     /// avoid.
     ///
-    /// **A centre bids for what it is short of and asks with what it is long
+    /// **A center bids for what it is short of and asks with what it is long
     /// of**, both read off the same place — its own bank against its own next
     /// works bill. That is what makes this move Yellow from the Yellow-rich to
     /// the Yellow-poor rather than shuffling mass at random: T-73 measured
-    /// 1,494 of 1,515 banks single-coloured, so nearly every centre is
-    /// simultaneously long one colour and short the other two.
+    /// 1,494 of 1,515 banks single-colored, so nearly every center is
+    /// simultaneously long one color and short the other two.
     ///
     /// **Nothing clears yet.** This stage is inert by construction (§10.7
     /// stages 1–3) and the guard is a bit-identical bed.
@@ -6430,7 +6684,7 @@ impl Simulation {
                 if self.world.owner.get(e).copied() != Some(owner) {
                     continue;
                 }
-                let deficit = self.colour_deficit(e, owner);
+                let deficit = self.color_deficit(e, owner);
                 let bank = self.world.stockpile.get(e).copied().unwrap_or_default();
                 let pos = *self.world.position.get(e).unwrap();
                 let at = [pos.x, pos.y, pos.z];
@@ -6450,7 +6704,7 @@ impl Simulation {
                         }
                     } else {
                         // Long: whatever this bill does not claim is sellable.
-                        // A centre with no bill to pay is long everything it
+                        // A center with no bill to pay is long everything it
                         // holds, which is exactly the Yellow-rich empire the
                         // Yellow-poor one needs to reach.
                         let spare = bank.get_basic(c);
@@ -6486,7 +6740,7 @@ impl Simulation {
     /// **R-P17, decided — and not as it was first framed.** The venue is the
     /// shared rock nearest **the party making this delivery**, because a
     /// contract has *two* drops and each side ships its own (see
-    /// [`Contract::buyer_drop`]). The first formulation minimised the two
+    /// [`Contract::buyer_drop`]). The first formulation minimized the two
     /// parties' *summed* transit, which is the right answer only if there is one
     /// venue for both legs — and there is not.
     ///
@@ -6498,7 +6752,7 @@ impl Simulation {
         let (mine, theirs) = (self.worked_outposts(a), self.worked_outposts(b));
         let mut best: Option<(f64, u64)> = None;
         // Both lists are id-sorted, so this is a linear merge rather than a
-        // nested scan — a centre can work thousands of rocks (§4.5).
+        // nested scan — a center can work thousands of rocks (§4.5).
         let (mut i, mut j) = (0usize, 0usize);
         while i < mine.len() && j < theirs.len() {
             match mine[i].cmp(&theirs[j]) {
@@ -6522,7 +6776,7 @@ impl Simulation {
         best.map(|(_, o)| Entity(o))
     }
 
-    /// **Clear every colour book into escrowed contracts** (§10.5, T-85).
+    /// **Clear every color book into escrowed contracts** (§10.5, T-85).
     ///
     /// The first stage of the Exchange that is **not** inert, and §10.7 says to
     /// expect it to move the bed rather than assume it will not — it is the same
@@ -6566,7 +6820,7 @@ impl Simulation {
             };
             // The buyer's side is `$` in the default transaction, and `$` has no
             // location. A goods counter-leg is the buyer's own contract on
-            // another colour's book, with its own drop — which is how "leave
+            // another color's book, with its own drop — which is how "leave
             // Yellow at X in exchange for Magenta at Y" is expressed.
             let buyer_drop = None;
             let _ = b_at;
@@ -6594,10 +6848,10 @@ impl Simulation {
             self.credit(pe, -escrow);
 
             // **The freight leg.** The obligation was instant; the ore is not.
-            // Transit is the seller's centre to its own drop, at civilian
+            // Transit is the seller's center to its own drop, at civilian
             // acceleration — the same `ship_travel_years` every other voyage in
             // the engine uses, so a trade is priced in the same geometry as a
-            // colonisation or a haul (§8.1: a trade is a voyage).
+            // colonization or a haul (§8.1: a trade is a voyage).
             let drop_at = *self.world.position.get(seller_drop).unwrap();
             let t = math::ship_travel_years(s_at.distance(drop_at), self.config.civilian_accel_g * G);
             let id = self.exchange.next_id;
@@ -6607,8 +6861,8 @@ impl Simulation {
                 Contract {
                     buyer: f.buyer,
                     seller: f.seller,
-                    seller_centre: ask_e,
-                    colour: Basic::ALL[i],
+                    seller_center: ask_e,
+                    color: Basic::ALL[i],
                     qty,
                     escrow,
                     seller_drop,
@@ -6647,7 +6901,7 @@ impl Simulation {
     /// nothing and forfeits the sale.
     ///
     /// Default here is *inability*, not malice — the bank is short because the
-    /// centre spent the ore, or lost the world. Deliberate default is a card
+    /// center spent the ore, or lost the world. Deliberate default is a card
     /// (§7.2), and interdiction is T-86.
     fn sys_contract_due(&mut self, id: u64) {
         let Some(c) = self.exchange.contracts.remove(&id) else {
@@ -6658,15 +6912,15 @@ impl Simulation {
         let paid = c.escrow * keep;
         let burn = c.escrow - paid;
 
-        // Does the seller still have it? `get_basic` is the colour the contract
-        // names, not the bank total — a centre rich in Cyan cannot settle a
-        // Yellow contract, which is the whole point of the colour axis.
-        let held = self.world.stockpile.get(c.seller_centre).map_or(0.0, |b| b.get_basic(c.colour));
-        let delivered = held + 1e-9 >= c.qty && self.world.owner.get(c.seller_centre).copied() == Some(c.seller);
+        // Does the seller still have it? `get_basic` is the color the contract
+        // names, not the bank total — a center rich in Cyan cannot settle a
+        // Yellow contract, which is the whole point of the color axis.
+        let held = self.world.stockpile.get(c.seller_center).map_or(0.0, |b| b.get_basic(c.color));
+        let delivered = held + 1e-9 >= c.qty && self.world.owner.get(c.seller_center).copied() == Some(c.seller);
 
         if delivered {
-            if let Some(bank) = self.world.stockpile.get_mut(c.seller_centre) {
-                match c.colour {
+            if let Some(bank) = self.world.stockpile.get_mut(c.seller_center) {
+                match c.color {
                     Basic::Cyan => bank.cyan -= c.qty,
                     Basic::Magenta => bank.magenta -= c.qty,
                     Basic::Yellow => bank.yellow -= c.qty,
@@ -6678,7 +6932,7 @@ impl Simulation {
             // all. The buyer's hauler picks the ore up on the route it was
             // flying anyway, which is the amendment's whole claim made literal.
             let pile = self.outpost_stock.entry((c.buyer.0, c.seller_drop.0)).or_default();
-            match c.colour {
+            match c.color {
                 Basic::Cyan => pile.cyan += c.qty,
                 Basic::Magenta => pile.magenta += c.qty,
                 Basic::Yellow => pile.yellow += c.qty,
@@ -6686,7 +6940,7 @@ impl Simulation {
             let se = self.player_entity[c.seller.0 as usize];
             self.credit(se, paid);
             self.exchange.settled += 1;
-            self.exchange.traded[c.colour as usize] += c.qty;
+            self.exchange.traded[c.color as usize] += c.qty;
         } else {
             let be = self.player_entity[c.buyer.0 as usize];
             self.credit(be, paid);
@@ -6701,7 +6955,7 @@ impl Simulation {
         (self.exchange.contracts.len(), self.exchange.settled, self.exchange.burned)
     }
 
-    /// Contracts that **defaulted** — the seller's bank was short the colour it
+    /// Contracts that **defaulted** — the seller's bank was short the color it
     /// owed, or it had lost the world, when the freight came due (§3.3).
     pub fn exchange_defaults(&self) -> u64 {
         self.exchange.defaulted
@@ -6710,37 +6964,37 @@ impl Simulation {
     /// Turn the whole Exchange off — posting, clearing and settlement (T-77).
     ///
     /// The ablation `CLAUDE.md` §2 puts first among the three kinds of proof:
-    /// "trade narrowed colour dispersion" is only a claim if there is a run
+    /// "trade narrowed color dispersion" is only a claim if there is a run
     /// without trade to compare against.
     pub fn set_exchange_enabled(&mut self, on: bool) {
         self.exchange_posting = on;
         self.exchange_settlement = on;
     }
 
-    /// Kilotons delivered per colour, in `Basic::ALL` order.
+    /// Kilotons delivered per color, in `Basic::ALL` order.
     pub fn exchange_traded(&self) -> [f64; 3] {
         self.exchange.traded
     }
 
-    /// **What an empire's centres want and cannot afford**, per colour (kt).
+    /// **What an empire's centers want and cannot afford**, per color (kt).
     ///
-    /// The sum of `colour_deficit` over every centre it owns — each centre's
-    /// shortfall against its **next** infrastructure rung, in the colours that
+    /// The sum of `color_deficit` over every center it owns — each center's
+    /// shortfall against its **next** infrastructure rung, in the colors that
     /// rung is billed in. This is demand in the only sense the engine has one:
-    /// a purchase a centre would make and cannot.
+    /// a purchase a center would make and cannot.
     ///
     /// Paired with [`Self::outpost_holdings`] it answers the question that
     /// matters about the mineral economy: **is ore sitting idle at outposts
-    /// while centres are short of it?** If both are large at once, the binding
+    /// while centers are short of it?** If both are large at once, the binding
     /// constraint is *transport*, not extraction — and no amount of mining or
     /// trading fixes it.
-    pub fn unmet_colour_demand(&self, p: PlayerId) -> [Price; 3] {
+    pub fn unmet_color_demand(&self, p: PlayerId) -> [Price; 3] {
         let mut out = [Price::ZERO; 3];
         for &e in &self.planet_entity {
             if self.world.owner.get(e).copied() != Some(p) {
                 continue;
             }
-            let d = self.colour_deficit(e, p);
+            let d = self.color_deficit(e, p);
             for i in 0..3 {
                 out[i] += d[i];
             }
@@ -6753,7 +7007,7 @@ impl Simulation {
     /// Delivered ore lands here, not in a bank (§10.6) — so a census that reads
     /// only planet stockpiles **cannot see what the Exchange moved**. That is
     /// the metric-blindness `CLAUDE.md` §2 keeps warning about, and it made the
-    /// first colour-flow reading look like trade changed nothing.
+    /// first color-flow reading look like trade changed nothing.
     pub fn outpost_holdings(&self, p: PlayerId) -> Minerals {
         let mut out = Minerals::default();
         for ((owner, _), m) in self.outpost_stock.iter() {
@@ -6770,7 +7024,7 @@ impl Simulation {
         (self.exchange.fills, self.exchange.rejected)
     }
 
-    /// Cumulative `(bids, asks)` posted per colour, in `Basic::ALL` order.
+    /// Cumulative `(bids, asks)` posted per color, in `Basic::ALL` order.
     pub fn exchange_posted(&self) -> [(u64, u64); 3] {
         self.exchange.posted
     }
@@ -6778,11 +7032,11 @@ impl Simulation {
     /// **Who is contracted to move what, and where** — the Exchange census
     /// (§10.8, T-85).
     ///
-    /// Returns one row per contract in flight: `(buyer, seller, colour,
+    /// Returns one row per contract in flight: `(buyer, seller, color,
     /// kilotons, escrow, seller_drop, buyer_drop, struck)`. §10.8 is explicit
     /// that the guard for Exchange work is a **census** and not colony-years,
     /// because colony-years is inverted for anything that changes how minerals
-    /// are spent — so the state has to be readable, not just summarised.
+    /// are spent — so the state has to be readable, not just summarized.
     ///
     /// It is also what answers the design's actual question: **does Yellow move
     /// from Yellow-rich empires to Yellow-poor ones?** That is a claim about
@@ -6795,12 +7049,12 @@ impl Simulation {
             .map(|c| {
                 let drop = *self.world.planet_id.get(c.seller_drop).unwrap();
                 let pay = c.buyer_drop.and_then(|e| self.world.planet_id.get(e).copied());
-                (c.buyer, c.seller, c.colour, c.qty, c.escrow, drop, pay, c.struck)
+                (c.buyer, c.seller, c.color, c.qty, c.escrow, drop, pay, c.struck)
             })
             .collect()
     }
 
-    /// How many offers stand on each colour's book. Diagnostic — the interim
+    /// How many offers stand on each color's book. Diagnostic — the interim
     /// guard for Exchange work is a census, not colony-years (§10.8).
     pub fn exchange_depth(&self) -> [(usize, usize); 3] {
         [self.exchange.books[0].len(), self.exchange.books[1].len(), self.exchange.books[2].len()]
@@ -6883,7 +7137,7 @@ impl Simulation {
     /// discount is right for one it should be right for the other.
     ///
     /// **`λ = 0` reduces exactly to [`most_needed_center`]**, which is the
-    /// shipped default and keeps this behaviour-neutral until it is ratified.
+    /// shipped default and keeps this behavior-neutral until it is ratified.
     /// That degeneracy is also why design law #5 keeps `most_needed_center`
     /// permanently: it was already the oracle for single-supply matching, and
     /// it is now the oracle for zero-discount routing too — the same function
@@ -6925,16 +7179,16 @@ impl Simulation {
     ///
     /// **This replaces T-81's `relief`, which was measured counterproductive.**
     /// That version scored the fraction of the *cargo* that landed on a
-    /// deficit, which sends each colour to wherever that colour is scarcest —
-    /// by construction a different centre per colour. Paying a three-colour
-    /// bill needs ore to **converge**, so scattering it by colour is the
+    /// deficit, which sends each color to wherever that color is scarcest —
+    /// by construction a different center per color. Paying a three-color
+    /// bill needs ore to **converge**, so scattering it by color is the
     /// opposite of what the bill wants: measured, infrastructure builds fell
     /// 57 → 31 and bank composition did not move at all.
     ///
-    /// **The denominator is the centre's remaining shortfall, not the bill.**
+    /// **The denominator is the center's remaining shortfall, not the bill.**
     /// That distinction is the whole mechanism and it is easy to get wrong — the
     /// first written form of R-IND17 divided by `Σ bill`, and worked out on
-    /// paper that ties a centre needing only Yellow against one needing
+    /// paper that ties a center needing only Yellow against one needing
     /// everything, both scoring `0.5` for the same Yellow delivery. No
     /// concentration at all. Dividing by what is left to find instead:
     ///
@@ -6945,19 +7199,19 @@ impl Simulation {
     /// | needs everything | 0.500 | 0.500 |
     /// | needs only Magenta | 0.000 | 0.000 |
     ///
-    /// So a centre holding two colours and missing the third pulls the third
+    /// So a center holding two colors and missing the third pulls the third
     /// hardest, and ore concentrates where it can actually be spent.
     ///
     /// Still a dimensionless fraction in `[0, 1]`, because `exp(−λ·t)`
     /// multiplies it — R-O68 is the standing lesson on mixed-unit comparisons.
     ///
-    /// **What it cannot do.** No routing rule can give an empire a colour its
-    /// own ground does not hold, and the supply is single-coloured: 6,725
-    /// sources measured at a mean dominant-colour share of **0.789**, 38% of
-    /// them ≥95% one colour. That is §8.1's subject and the Exchange's job
+    /// **What it cannot do.** No routing rule can give an empire a color its
+    /// own ground does not hold, and the supply is single-colored: 6,725
+    /// sources measured at a mean dominant-color share of **0.789**, 38% of
+    /// them ≥95% one color. That is §8.1's subject and the Exchange's job
     /// (T-77), with design law #1's counter-graph as the other half.
     fn bill_completion(&self, center: Entity, owner: PlayerId, cargo: &Minerals) -> f64 {
-        let deficit = self.colour_deficit(center, owner);
+        let deficit = self.color_deficit(center, owner);
         let short_before = deficit.iter().fold(Price::ZERO, |a, &b| a + b);
         if short_before <= Price::ZERO {
             return 0.0;
@@ -6969,9 +7223,9 @@ impl Simulation {
         (short_before - short_after) / short_before
     }
 
-    /// A centre's per-colour shortfall against its **next works bill** — the
+    /// A center's per-color shortfall against its **next works bill** — the
     /// quantity T-73 made meaningful and nothing was measuring.
-    fn colour_deficit(&self, center: Entity, owner: PlayerId) -> [Price; 3] {
+    fn color_deficit(&self, center: Entity, owner: PlayerId) -> [Price; 3] {
         let Some(f) = self.world.factors.get(center) else {
             return [Price::ZERO; 3];
         };
@@ -6989,15 +7243,15 @@ impl Simulation {
     /// **What a hauler standing on a pile should still be looking for** — the
     /// destination's shortfall, net of the cargo already in the hold (T-91).
     ///
-    /// [`Self::colour_deficit`] answers "what is this centre short of", which
+    /// [`Self::color_deficit`] answers "what is this center short of", which
     /// is the right question for the *first* pile of a leg and the wrong one
     /// for the second: ore already aboard is ore that is going to land there.
-    /// Without the subtraction a milk run tops up the colour it just loaded and
-    /// arrives as mono-coloured as before, having spent an extra transit to do
-    /// it. Reduces to `colour_deficit` on an empty hold, which is every stop at
+    /// Without the subtraction a milk run tops up the color it just loaded and
+    /// arrives as mono-colored as before, having spent an extra transit to do
+    /// it. Reduces to `color_deficit` on an empty hold, which is every stop at
     /// `max_pickup_stops = 1`.
     fn wanted_here(&self, center: Entity, owner: PlayerId, aboard: &Minerals) -> [Price; 3] {
-        let mut want = self.colour_deficit(center, owner);
+        let mut want = self.color_deficit(center, owner);
         for (i, &c) in Basic::ALL.iter().enumerate() {
             want[i] = (want[i] - Price::new(aboard.get_basic(c))).max(Price::ZERO);
         }
@@ -7013,9 +7267,9 @@ impl Simulation {
     /// ```
     ///
     /// `useful` is a **conjunction-aware** quantity and that is the whole point
-    /// of the function: it counts only ore in a colour the destination is short
-    /// of, so a rock holding a mountain of the colour already aboard scores
-    /// zero however close it is. A works bill pays when every colour clears
+    /// of the function: it counts only ore in a color the destination is short
+    /// of, so a rock holding a mountain of the color already aboard scores
+    /// zero however close it is. A works bill pays when every color clears
     /// (T-73), and the census that opened T-91 found **99.7% of banked ore
     /// unable to pay a rung** precisely because tonnage and usefulness had come
     /// apart (`Hyades_industry.md` §6.23).
@@ -7314,7 +7568,7 @@ fn take_basics(bank: &mut Minerals, amount: Price) -> Minerals {
 /// monotonically. That is the case a razed biosphere or a card-written
 /// population reaches.
 ///
-/// **Cost: one `exp` per centre per tick.** Netcode §6 H4 settles the
+/// **Cost: one `exp` per center per tick.** Netcode §6 H4 settles the
 /// portability question — transcendentals ship *inside* the WASM module, so
 /// they are bit-reproducible where a platform libm would not be. Measured, the
 /// call is under the run-to-run noise; the tick is dominated by everything
@@ -7338,13 +7592,13 @@ fn logistic_step(x: f64, k: f64, r_dt: f64) -> f64 {
 /// pile is the only one this leg will see, so a hauler that would otherwise fly
 /// home light overshoots along the destination's deficit ratio and then tops up
 /// with bulk. [`Fill::Shortfall`] is the intermediate stop: the room is owed to
-/// the piles still ahead, and spending it here on a colour the destination is
-/// not short of would land the same mono-coloured hold one stop later.
+/// the piles still ahead, and spending it here on a color the destination is
+/// not short of would land the same mono-colored hold one stop later.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Fill {
     /// Fill the hold: overshoot along the deficit ratio, then top up with bulk.
     Hold,
-    /// Take at most the stated shortfall, colour by colour, and leave the rest
+    /// Take at most the stated shortfall, color by color, and leave the rest
     /// of the room for the next stop.
     Shortfall,
 }
@@ -7352,28 +7606,28 @@ enum Fill {
 /// **Fill a hold against the destination's shortfall, not in proportion to the
 /// pile** (R-O89, T-76).
 ///
-/// [`take_basics`] splits a load across colours in whatever ratio the pile
+/// [`take_basics`] splits a load across colors in whatever ratio the pile
 /// happens to hold. That is the right rule for "move some ore" and the wrong one
 /// for "move what is needed": since T-73 a works bill is payable in **named
-/// colours**, and the galaxy's supply is single-coloured (6,725 sources, mean
-/// dominant share **0.789**, 38% at >=95% one colour, T-81). So a hauler standing
-/// on a rock that holds the Magenta a centre is short of would load 79% Yellow
+/// colors**, and the galaxy's supply is single-colored (6,725 sources, mean
+/// dominant share **0.789**, 38% at >=95% one color, T-81). So a hauler standing
+/// on a rock that holds the Magenta a center is short of would load 79% Yellow
 /// and close nothing — while the Magenta stayed in the dirt.
 ///
 /// **This is the term the pickup leg never had.** T-81/R-IND17 gave the
-/// *delivery* leg a colour term — where a full hold goes. Nothing gave the
+/// *delivery* leg a color term — where a full hold goes. Nothing gave the
 /// *load* one: what went into the hold was decided by geology. Measured over
 /// eight seeds at 1,500 yr, adding it is **+8.40% ± 1.86 work-years, 8/8
 /// positive** (`Hyades_industry.md` §6.20) on **the same tonnage** — 20,259 →
 /// 20,292 kt delivered over 26,800 → 26,746 trips. The fleet did not haul more;
 /// it hauled the right thing.
 ///
-/// **The split is the deficit's own ratio, not neediest-colour-first.** A bill is
-/// a *conjunction* — the rung pays only when every colour clears — so what
+/// **The split is the deficit's own ratio, not neediest-color-first.** A bill is
+/// a *conjunction* — the rung pays only when every color clears — so what
 /// matters is `min_c bank[c]/bill[c]`, not the sum of anything. Filling the
-/// neediest colour first maximises that sum and lands mono-coloured loads, and
+/// neediest color first maximizes that sum and lands mono-colored loads, and
 /// `try_spend_total` drains a bank **proportionally** for every hull, so the one
-/// colour a hauler carefully accumulated is diluted before the other two arrive.
+/// color a hauler carefully accumulated is diluted before the other two arrive.
 /// Measured head-to-head on the standard bed, proportional beats neediest-first
 /// by **+3.84% ± 0.20, 4/4 seeds** — a tiny error bar next to the ±3.06 either
 /// scores against baseline, which is CRN pairing doing its job.
@@ -7384,13 +7638,13 @@ enum Fill {
 /// and ore banked in the right proportion is ore the following bill can spend.
 ///
 /// **Then it tops up.** If the pile cannot supply the wanted direction — the
-/// colour is simply not in this rock — the remaining room loads proportionally,
+/// color is simply not in this rock — the remaining room loads proportionally,
 /// because a half-empty hull has spent the same transit for less and banked ore
-/// still buys hulls even when it buys no rung. A centre that is short of nothing
+/// still buys hulls even when it buys no rung. A center that is short of nothing
 /// skips the first pass entirely and this reduces to [`take_basics`].
 ///
 /// **Both of those are [`Fill::Hold`].** Under [`Fill::Shortfall`] neither
-/// happens: each colour is capped at what is wanted, and unspent room is left
+/// happens: each color is capped at what is wanted, and unspent room is left
 /// for the next pile on the run.
 fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price, fill: Fill) -> Minerals {
     let mut out = Minerals::default();
@@ -7403,10 +7657,10 @@ fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price, 
         // An intermediate stop on a milk run (T-91). The hold is a *shared*
         // resource across the remaining stops, so filling it here with whatever
         // this rock holds is exactly the atomicity the milk run exists to break:
-        // one pile taking all the room re-creates the mono-coloured load one
+        // one pile taking all the room re-creates the mono-colored load one
         // stop later.
         //
-        // So each colour is capped **twice** — at what is wanted, and at its
+        // So each color is capped **twice** — at what is wanted, and at its
         // proportional share of the hold. The second cap is the one that does
         // the work, and it is not belt-and-braces: the infrastructure ladder is
         // geometric, so a rung's bill outgrows a hold, and past that point
@@ -7522,7 +7776,7 @@ mod tests {
         assert_eq!(vehicles(&sim), before.1 + 1, "and an object came out");
 
         // Dispatch a craft at every world, so `choose_survey_target` has nothing
-        // left to pick — the state a colonised galaxy reaches and then stays in.
+        // left to pick — the state a colonized galaxy reaches and then stays in.
         let pids: Vec<PlanetId> = sim.planet_entity.iter().map(|&e| *sim.world.planet_id.get(e).unwrap()).collect();
         {
             let k = sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap();
@@ -7542,7 +7796,7 @@ mod tests {
     /// the decisions** (T-88).
     ///
     /// `cycle_years` was doing two unrelated jobs — the integration step for
-    /// every rate in the economy, and the retry cadence for a saving centre's
+    /// every rate in the economy, and the retry cadence for a saving center's
     /// build decision — because `sys_production_tick` called
     /// `sys_build_decision` inline. So the fidelity argument for a 1-year step
     /// was unaffordable: it multiplied the *decision* count with it, and a
@@ -7645,7 +7899,7 @@ mod tests {
         let hi = pops.iter().copied().fold(0.0f64, f64::max);
         assert!(lo > 0.0, "the bed must grow a population to compare: {pops:?}");
         // The residual spread is the expansion loop, not the integrator: this
-        // bed also colonises, and which worlds it reaches by year 300 moves with
+        // bed also colonizes, and which worlds it reaches by year 300 moves with
         // the tick for reasons that have nothing to do with the logistic (T-95).
         // 1.5 leaves five times the observed margin and is still far below the
         // 10x a missing `tick_scale` would produce.
@@ -7723,18 +7977,18 @@ mod tests {
         );
     }
 
-    /// **A hold fetches the colours the destination is short of, and only the
+    /// **A hold fetches the colors the destination is short of, and only the
     /// slack goes to bulk** (R-O89).
     ///
     /// The rule this pins is not "carry the deficit" but *how* the deficit is
-    /// split: **along the deficit vector**, so all three colours advance
-    /// together toward a bill that pays only when every colour clears. The
-    /// obvious alternative — neediest colour first — maximises tonnage against
-    /// the largest single shortfall and lands mono-coloured loads, and it
+    /// split: **along the deficit vector**, so all three colors advance
+    /// together toward a bill that pays only when every color clears. The
+    /// obvious alternative — neediest color first — maximizes tonnage against
+    /// the largest single shortfall and lands mono-colored loads, and it
     /// measures **-3.84% ± 0.20 work-years, 4/4 seeds** (`Hyades_industry.md`
     /// §6.20). Nothing in the types distinguishes the two, so this is the guard.
     ///
-    /// The third case is the one that keeps a hauler honest: a centre short of
+    /// The third case is the one that keeps a hauler honest: a center short of
     /// nothing must still fill up, because banked ore buys hulls even when it
     /// buys no rung.
     #[test]
@@ -7770,7 +8024,7 @@ mod tests {
         let got = take_for_deficit(&mut lopsided, &[kt(1.0), kt(1.0), kt(0.0)], kt(4.0), Fill::Hold);
         assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must still fill");
         assert!(got.yellow > 0.0, "the top-up is proportional, so Yellow rides along: {}", got.yellow);
-        assert!(got.cyan > got.yellow, "but the wanted colour still leads");
+        assert!(got.cyan > got.yellow, "but the wanted color still leads");
 
         // No deficit at all: identical to the proportional rule it replaces.
         let mut a = pile();
@@ -7803,7 +8057,7 @@ mod tests {
         let kt = Price::new;
         let cyan_only = || Minerals { cyan: 100.0, ..Default::default() };
 
-        // An even three-colour want over a 6 kt hold gives Cyan a 2 kt share.
+        // An even three-color want over a 6 kt hold gives Cyan a 2 kt share.
         // The pile holds nothing else, so 4 kt of room survives the stop.
         let mut pile = cyan_only();
         let got = take_for_deficit(&mut pile, &[kt(3.0), kt(3.0), kt(3.0)], kt(6.0), Fill::Shortfall);
@@ -7828,7 +8082,7 @@ mod tests {
     ///
     /// Work-years is `∫ Σ_p infra_p dt` — the Growth tree's objective
     /// (`Hyades_trees_and_card_value.md` §2.3.3) — and `reinvest_bias` is the
-    /// knob that chooses between the only two things a centre can spend
+    /// knob that chooses between the only two things a center can spend
     /// minerals on. The natural expectation is that turning it up buys works.
     /// It does not, and the reason is an identity rather than a tuning
     /// accident:
@@ -7836,7 +8090,7 @@ mod tests {
     /// - **Deepen.** The bill is `infra_step_price / eta_works` and the stock
     ///   moves to exactly the next rung, so works rise by `infra_step_price`.
     ///   Works per mineral = `eta_works`.
-    /// - **Found.** The bill is the coloniser's price, and the new colony's
+    /// - **Found.** The bill is the colonizer's price, and the new colony's
     ///   stock is `founding_infra = hull_cost` — the recycled hull's minerals
     ///   *are* the stock (T-70), because a hull's mass is its cost (R-O57,
     ///   design law #11). Works per mineral = **1**.
@@ -7847,22 +8101,22 @@ mod tests {
     /// **This is an identity about *stock*, and it is only half the argument —
     /// the half about *flow* runs the other way.** A colony is founded with a
     /// recycled hull and cannot keep improving that way, so what the two routes
-    /// buy *afterwards* is not symmetric: deepening raises this centre's build
+    /// buy *afterwards* is not symmetric: deepening raises this center's build
     /// rate forever. Priced off the engine's own functions, rung I → II is
-    /// **+29.0% hull/yr for 0.90 kt — nine colonisers — and pays itself back in
+    /// **+29.0% hull/yr for 0.90 kt — nine colonizers — and pays itself back in
     /// 62 years** against a 1,500-year horizon. That should dominate, and the
     /// reason it does not is three separate facts, none of them this identity
     /// (`Hyades_industry.md` §6.19a, `examples/founding_tree`):
     ///
     /// 1. **Homeworlds are generated at `Band 2.0`** (`galaxy.rs`), which is
     ///    exactly where fabrication saturates, so the rung worth +29% is one
-    ///    they already have. Rung II → III costs 19 kt — 190 colonisers — for
+    ///    they already have. Rung II → III costs 19 kt — 190 colonizers — for
     ///    **+3.2%**.
     /// 2. **`slips` never grows.** `1 + ⌊F / slip_throughput⌋` with
     ///    `F < fab_cap = 0.2` and `slip_throughput = 0.1` is **2 berths at every
     ///    rung** (R-O85).
     /// 3. **Build rate governs a fifth of the timeline.** Measured at a
-    ///    homeworld: yard utilisation **18.8%**, and the gap from one decision
+    ///    homeworld: yard utilization **18.8%**, and the gap from one decision
     ///    to the next is **1.5 yr after a committed build against 29.6 yr after
     ///    an `Idle`**, because `commit_one_build` returning `None` schedules
     ///    nothing and the next attempt is the economy tick at
@@ -7882,7 +8136,7 @@ mod tests {
         let works = cards::Works::default();
         assert_eq!(works.eta_works, 1.0, "the card-free baseline is what this identity is about");
 
-        // Found: what the coloniser costs, against the works its hull becomes.
+        // Found: what the colonizer costs, against the works its hull becomes.
         let hull = hull_cost(HullType::MediumSystems, &cfg);
         assert_eq!(
             sim.founding_infra(HullType::MediumSystems),
@@ -7890,7 +8144,7 @@ mod tests {
             "a recycled hull's minerals are the colony's works stock"
         );
 
-        // Deepen, at every rung a centre can actually stand on: what the bill
+        // Deepen, at every rung a center can actually stand on: what the bill
         // costs, against the works the rung adds.
         for n in 0..BandTier::MAX_PLAYABLE.band().bands() as usize {
             let stand = infra_rung_price(n, &cfg);
@@ -7932,7 +8186,7 @@ mod tests {
     /// **What this test is for is the claim that the change is surgical.**
     /// `fab_cap` went 0.2 → 0.1, which is a re-denomination and not a retune:
     /// the old code divided a planet-wide rate by a `slips` that was *always
-    /// exactly 2* at every rung a centre can occupy, so halving the ceiling
+    /// exactly 2* at every rung a center can occupy, so halving the ceiling
     /// reproduces the old per-berth rate bit-for-bit. Turnaround is therefore
     /// **unchanged at every playable rung**, and the only thing that moved is
     /// how many hulls a yard can have in the water at once.
@@ -8026,7 +8280,7 @@ mod tests {
     ///
     /// **Pinned at 120 yr, and it has now had to move twice for the same
     /// reason.** T-68 made `t_build` track mass (a Medium hull 10 yr → 3.0), so
-    /// a centre decides three times as often and 600 yr became 250. R-O88 opened
+    /// a center decides three times as often and 600 yr became 250. R-O88 opened
     /// the build-wide axis, so a yard has berths instead of two, and 250 became
     /// 120: the two paired tests were **35.5 s and 25.4 s of a 54 s target**
     /// between them. The identity is unchanged both times; only the bill was.
@@ -8061,11 +8315,11 @@ mod tests {
         // R-O58 coupled the cost ladder to the capacity ladder, so
         // `medium_fleet_size` is not just a price — it also sets how much
         // bigger a Medium hull is than a Limited one. Capacity used to be
-        // normalised against the *live* Medium radius, i.e. divided by a
+        // normalized against the *live* Medium radius, i.e. divided by a
         // quantity that goes to zero as the ladder narrows, which made the
         // General : Medium ratio appear to diverge. That looked like a physical
         // absurdity and got a guard (`r_M < 1.25`). It was an artifact of the
-        // normaliser. Against a fixed reference nothing diverges and narrow
+        // normalizer. Against a fixed reference nothing diverges and narrow
         // ladders are perfectly meaningful, so the guard is gone.
         //
         // **Pins both legs of the ladder**, rather than varying one against
@@ -8091,7 +8345,7 @@ mod tests {
         // set by the price and the hull's own thickness, so a Medium hull
         // priced like a Limited one simply *has a Limited hull's hold*: the two
         // converge instead of collapsing. Same conclusion — a narrow ladder is
-        // a real economic statement, not a modelling failure — reached by
+        // a real economic statement, not a modeling failure — reached by
         // arithmetic that no longer has a denominator in it.
         cfg.medium_fleet_size = 8.0;
         assert!(cfg.hull_ladder_fault().is_none(), "a narrow ladder is meaningful, not a fault");
@@ -8214,7 +8468,7 @@ mod tests {
     }
 
     #[test]
-    fn the_round_layer_is_behaviour_neutral_while_everyone_passes() {
+    fn the_round_layer_is_behavior_neutral_while_everyone_passes() {
         // The baseline autopilot's `choose_card` returns `None`, so adding the
         // round layer must move *nothing*. This is what keeps every coverage
         // number in the tree — and the offline search resting on them — valid
@@ -8734,23 +8988,269 @@ mod tests {
         assert_eq!(dead, 0.0, "zero must still be the absorbing state this floor exists to avoid");
     }
 
-    /// **A picket holds ground and a rival coloniser turns back from it**
+    /// **The hull hears the picket before its capital does** (T-115).
+    ///
+    /// The correction T-115 makes to T-112 is that there are two responders,
+    /// and this pins the one that was missing: a ship closing on the world the
+    /// picket took is reached by that light *sooner* than a stationary
+    /// observer at its launch range, because it is flying into the wavefront.
+    ///
+    /// Asserted as an inequality against the two bounds that bracket it rather
+    /// than against a golden number, so it stays true under any change to the
+    /// flight model.
+    #[test]
+    fn the_light_overtakes_a_closing_hull_sooner_than_a_standing_one() {
+        let mut cfg = test_cfg(4242);
+        cfg.horizon_years = 200.0;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 4242), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let target = *sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .max_by(|&&a, &&b| {
+                let p = |e| sim.world.position.get(e).unwrap().distance(*sim.world.position.get(home).unwrap());
+                p(a).partial_cmp(&p(b)).unwrap().then(a.0.cmp(&b.0))
+            })
+            .expect("a distant unclaimed world");
+        sim.spawn_courier(0, Role::Colonizer, HullType::MediumSystems, home, target, 0.0);
+        let ship = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
+
+        let world_pos = *sim.world.position.get(target).unwrap();
+        let d0 = sim.position_at(ship, sim.clock).unwrap().distance(world_pos);
+        assert!(d0 > 0.0, "the ship has to be somewhere else for this to say anything");
+
+        let lag = sim.light_overtakes(ship, world_pos).expect("the ship has a position");
+        assert!(lag > 0.0, "light does not arrive instantly, got {lag}");
+        assert!(lag < d0, "a closing hull is reached sooner than a standing one: {lag} vs {d0}");
+
+        // And the root is a root: the light has travelled exactly the hull's range.
+        let range = sim.position_at(ship, sim.clock + lag).unwrap().distance(world_pos);
+        assert!((lag - range).abs() < 1e-9, "light travelled {lag}, hull range {range}");
+    }
+
+    /// **A picket whose world gets colonized goes back to the frontier**
+    /// (T-115). Its product is a colony somebody does not found, and this world
+    /// now has one — so a hull left parked there is a hull doing nothing, and
+    /// worse, one `picket_reserve` keeps counting against the replacements it
+    /// should be buying.
+    #[test]
+    fn a_picket_leaves_a_world_that_has_been_colonized() {
+        let mut cfg = test_cfg(77);
+        cfg.horizon_years = 50.0;
+        cfg.engagements_enabled = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 77), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let home_pos = *sim.world.position.get(home).unwrap();
+        let target = *sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .min_by(|&&a, &&b| {
+                let d = |e| sim.world.position.get(e).unwrap().distance(home_pos);
+                d(a).partial_cmp(&d(b)).unwrap().then(a.0.cmp(&b.0))
+            })
+            .expect("an unclaimed world");
+
+        // Seat 0 holds it, and seat 0 then settles it — the held-ground
+        // preference T-113 added is exactly what produces this situation.
+        let picket = sim.world.spawn();
+        sim.world.owner.insert(picket, PlayerId(0));
+        sim.world.role.insert(picket, Role::Picket);
+        sim.world.hull_type.insert(picket, HullType::LimitedOffensive);
+        sim.picket.insert(target.0, (0, picket, sim.clock));
+        sim.picket_count[0] += 1;
+
+        // Somewhere for it to go. `dispatch_picket` re-aims within this seat's
+        // own scanned set — the fleet-bounded collection §4 allows — so without
+        // a second known world the honest outcome is Reserve and the test would
+        // be asserting on an empty frontier rather than on the re-aim.
+        let elsewhere: Vec<PlanetId> = sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| e != target && !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .take(4)
+            .map(|&e| *sim.world.planet_id.get(e).unwrap())
+            .collect();
+        assert!(!elsewhere.is_empty(), "the bed needs at least one other unclaimed world");
+        {
+            let k = sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap();
+            for pid in &elsewhere {
+                k.scanned.insert(*pid);
+            }
+        }
+
+        sim.spawn_courier(0, Role::Colonizer, HullType::MediumSystems, home, target, 0.0);
+        sim.run();
+
+        assert!(sim.world.owner.contains(target), "the colony should have been founded");
+        assert!(!sim.picket.contains_key(&target.0), "nothing is left to deny on a world that is now a colony");
+        assert_eq!(sim.picket_count[0], 0, "and the empire must stop counting it as ground held");
+        // The hull is re-tasked, not parked and not destroyed.
+        assert_eq!(sim.world.role.get(picket).copied(), Some(Role::Picket), "it is still a picket");
+        assert_ne!(
+            sim.world.voyage.get(picket).map(|v| v.target),
+            Some(target),
+            "aimed somewhere new, not at the world it just left"
+        );
+    }
+
+    /// **The colonization leg is flown laden** (R-WAR9 resolved, standing-layer
+    /// item 5 / R-O32).
+    ///
+    /// `spawn_courier` used to read `civilian_accel_g · G` **before** the hold
+    /// was loaded and never re-read it, so the leg flew at the empty-hull rate
+    /// while every `laden_accel` call site in the engine was freight — even
+    /// though `CLAUDE.md` §7 records R-O32 as having closed exactly that
+    /// (*"it was massless, so a laden colony ship flew like an empty hull"*).
+    ///
+    /// It was found by needing the number for something else: an interceptor's
+    /// whole window is the colony ship's travel time minus light's, which is
+    /// **1.92 years** for an empty hull and **~8.1** for a laden one
+    /// (`Hyades_warfare_tree.md` §8.9.5). Four times the window, and it is the
+    /// difference between a mechanic that fires on a tenth of the field and one
+    /// that fires on half of it.
+    ///
+    /// Asserted as the identity rather than against a golden acceleration, so
+    /// it survives any retune of `civilian_accel_g` or the drive ladder.
+    #[test]
+    fn the_colonization_leg_is_flown_at_the_rate_its_own_load_implies() {
+        let mut cfg = test_cfg(31);
+        cfg.horizon_years = 5.0;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 31), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let home_pos = *sim.world.position.get(home).unwrap();
+        let target = *sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .min_by(|&&a, &&b| {
+                let d = |e| sim.world.position.get(e).unwrap().distance(home_pos);
+                d(a).partial_cmp(&d(b)).unwrap().then(a.0.cmp(&b.0))
+            })
+            .expect("an unclaimed world");
+        sim.spawn_courier(0, Role::Colonizer, HullType::MediumSystems, home, target, 0.0);
+        let ship = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
+
+        // It is carrying something — otherwise this test says nothing.
+        let pop = sim.world.pop_cargo.get(ship).copied().unwrap_or(Kilotons::ZERO);
+        assert!(pop > Kilotons::ZERO, "the hull must actually be laden for the comparison to bite");
+
+        let flown = sim.world.motion.get(ship).expect("under way").accel;
+        let empty = sim.config.civilian_accel_g * G;
+        let laden = sim.laden_accel(ship, sim.config.civilian_accel_g);
+        assert!(laden < empty, "a laden hull is the slower one, or there is nothing to check");
+        assert_eq!(flown, laden, "R-O32: the leg flies at the rate its own load implies");
+        assert_ne!(flown, empty, "R-WAR9: and not at the empty-hull rate it used to");
+    }
+
+    /// **A picket leaves station to head off a colony ship it can beat there**
+    /// (T-115). The race is run under light-lag and is allowed to be lost: the
+    /// launch is seen at `depart + distance(origin, station)`, the flight takes
+    /// what it takes, and the interception is attempted only when the sum lands
+    /// before the colony ship does.
+    ///
+    /// Placed directly rather than waited for, for the reason §8.6 gives about
+    /// the diversion test: on the standard bed the contested-frontier event is
+    /// a one-in-a-hundred occurrence, so an emergent test would sit at zero.
+    #[test]
+    fn a_picket_intercepts_a_colony_ship_it_can_beat_there() {
+        let mut cfg = test_cfg(909);
+        cfg.horizon_years = 10.0;
+        cfg.engagements_enabled = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
+        {
+            let d = sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap();
+            d.picket_intercepts = true;
+        }
+        assert!(!Doctrine::default().picket_intercepts, "the write must ship unplayed");
+
+        let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+
+        // **The geometry is constructed rather than searched for**, and that is
+        // a statement about this 200-planet bed and not about the mechanic
+        // (`examples/intercept_probe`). A laden colony ship's flight-time
+        // overhead over light **saturates at ≈8.14 years**, in which an empty
+        // LOU covers **6.29 ly** — against a median nearest-neighbor spacing of
+        // **6.16 ly** on the shipped field, so about half of it is
+        // interceptable. The unit bed is a twentieth of that field and its
+        // spacing is correspondingly wider, so placing the station keeps this
+        // test about the criterion, the departure delay and the argmin, and
+        // leaves how often the real field offers such a pair to the census.
+        let accel = sim.config.civilian_accel_g * G;
+        let free: Vec<Entity> = sim
+            .planet_entity
+            .iter()
+            .copied()
+            .filter(|&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .collect();
+        assert!(free.len() >= 2, "the bed needs two unclaimed worlds");
+        let home1_pos = *sim.world.position.get(home1).unwrap();
+        let contested = *free
+            .iter()
+            .max_by(|&&a, &&b| {
+                let d = |e| sim.world.position.get(e).unwrap().distance(home1_pos);
+                d(a).partial_cmp(&d(b)).unwrap().then(a.0.cmp(&b.0))
+            })
+            .unwrap();
+        let station = *free.iter().find(|&&e| e != contested).unwrap();
+        let contested_pos = *sim.world.position.get(contested).unwrap();
+        let out = contested_pos.sub(home1_pos).normalized();
+        // **Between the launcher and the prize, not behind it.** A station 0.5 ly
+        // *beyond* the contested world pays 0.5 ly of extra light to hear the
+        // launch and loses the race by 0.05 yr; the same 0.5 ly on the near
+        // side wins it by about a year. Forward deployment is the whole
+        // geometry of interception, and the sign of one term is what says so.
+        sim.world.position.insert(station, contested_pos.sub(out.scale(0.5)));
+        let picket = sim.world.spawn();
+        sim.world.owner.insert(picket, PlayerId(0));
+        sim.world.role.insert(picket, Role::Picket);
+        sim.world.hull_type.insert(picket, HullType::LimitedOffensive);
+        sim.picket.insert(station.0, (0, picket, sim.clock));
+        sim.picket_count[0] += 1;
+
+        // Diagnostic in the message, so a failure says which term missed.
+        let sp = *sim.world.position.get(station).unwrap();
+        let t_see = home1_pos.distance(sp);
+        let t_reach = t_see + math::ship_travel_years(sp.distance(contested_pos), accel);
+        let colony_reach = math::ship_travel_years(home1_pos.distance(contested_pos), accel);
+        assert!(t_reach < colony_reach, "constructed race must be winnable: {t_reach:.3} vs {colony_reach:.3}");
+
+        sim.spawn_courier(1, Role::Colonizer, HullType::MediumSystems, home1, contested, 0.0);
+
+        assert!(
+            !sim.picket.contains_key(&station.0),
+            "it should have left the world nobody was racing for: reach {t_reach:.3} vs {colony_reach:.3}"
+        );
+        assert_eq!(sim.picket_count[0], 0, "and come off the books while it is in flight");
+        assert_eq!(
+            sim.world.voyage.get(picket).map(|v| v.target),
+            Some(contested),
+            "aimed at the world the colony ship is going to"
+        );
+        let m = sim.world.motion.get(picket).expect("it is under way");
+        assert!(m.depart > sim.clock, "it cannot leave before the light gets there: {} vs {}", m.depart, sim.clock);
+        let colony_arrival = sim.world.motion.get(sim.inbound_colonizers[&contested.0][0]).unwrap().arrive;
+        assert!(m.arrive < colony_arrival, "and it only goes if it wins: {} vs {colony_arrival}", m.arrive);
+    }
+
+    /// **A picket holds ground and a rival colonizer turns back from it**
     /// (T-112) — the mechanism check, built rather than waited for.
     ///
     /// **It has to be constructed, and that is itself the finding.** On the
     /// standard bed the whole card produces **3–12 diversions per 800-year
     /// run** against 493–793 pickets, so an emergent test would be asserting
     /// on a one-in-a-hundred event and would sit at zero on a small galaxy.
-    /// This places the picket and the rival coloniser directly, so the path is
+    /// This places the picket and the rival colonizer directly, so the path is
     /// pinned even though the card almost never walks it in play.
     #[test]
-    fn a_picket_turns_a_rival_coloniser_back() {
+    fn a_picket_turns_a_rival_colonizer_back() {
         let mut cfg = test_cfg(2024);
         cfg.horizon_years = 400.0;
         cfg.engagements_enabled = true;
         let mut sim = Simulation::with_baseline(test_galaxy(2, 2024), cfg);
 
-        // Seat 1 sends a coloniser at the nearest unclaimed world to its own
+        // Seat 1 sends a colonizer at the nearest unclaimed world to its own
         // homeworld: the warning travels the same distance the ship does, and
         // the ship is slower than light, so the margin is real but small.
         let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
@@ -8766,7 +9266,7 @@ mod tests {
             })
             .expect("an unclaimed world");
         sim.spawn_courier(1, Role::Colonizer, HullType::MediumSystems, home1, target, 0.0);
-        let coloniser = *sim.inbound_colonisers.get(&target.0).unwrap().first().unwrap();
+        let colonizer = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
 
         // Seat 0 is already holding it, as of now.
         let picket_hull = sim.world.spawn();
@@ -8781,10 +9281,10 @@ mod tests {
 
         let diverted =
             sim.log().iter().filter(|r| matches!(r.event, crate::log::LogEvent::ColonyDiverted { .. })).count();
-        assert_eq!(diverted, 1, "the coloniser should have turned back exactly once");
+        assert_eq!(diverted, 1, "the colonizer should have turned back exactly once");
         // And it did not found: the world is still unowned.
-        assert!(!sim.world.owner.contains(target), "a diverted coloniser must not have founded");
-        assert_ne!(sim.world.role.get(coloniser).copied(), Some(Role::Colonizer), "it should be re-tasked");
+        assert!(!sim.world.owner.contains(target), "a diverted colonizer must not have founded");
+        assert_ne!(sim.world.role.get(colonizer).copied(), Some(Role::Colonizer), "it should be re-tasked");
     }
 
     #[test]
@@ -9051,7 +9551,7 @@ mod tests {
     /// pinned a disagreement between two ratified specs — §2.6 demanded one
     /// step factor in `[4, 8]` for every Band-laddered quantity, cargo capacity
     /// named among them, while the shell model stepped Medium → General by
-    /// ~106×. R-MC15 resolved it in the geometry's favour: the `[4, 8]` window
+    /// ~106×. R-MC15 resolved it in the geometry's favor: the `[4, 8]` window
     /// is withdrawn, capacity sits on the **mass** ladder rather than the cost
     /// one, and the `3/2` exponent is what makes those one geometry instead of
     /// two scales. The old test's failure message asked for exactly this
@@ -9159,8 +9659,8 @@ mod tests {
         assert!(l.shell_thickness() < m.shell_thickness());
         assert!(m.shell_thickness() < g.shell_thickness());
 
-        // **And with armour**, at every size: Offensive > Contact > Systems.
-        // The armour statement as geometry rather than as a combat constant,
+        // **And with armor**, at every size: Offensive > Contact > Systems.
+        // The armor statement as geometry rather than as a combat constant,
         // which is what keeps design law #2 intact.
         assert!(l.shell_thickness() < HullType::LimitedContactVehicle.shell_thickness());
         assert!(HullType::LimitedContactVehicle.shell_thickness() < HullType::LimitedOffensive.shell_thickness());
@@ -9243,7 +9743,7 @@ mod tests {
     fn a_colony_ship_carries_up_to_the_targets_capacity_and_no_more() {
         let mut sim = Simulation::with_baseline(test_galaxy(3, 1), test_cfg(1));
         // **A third cap joined the two this test is about** (R-O74): settlers
-        // come out of the origin's population. Give this centre people to
+        // come out of the origin's population. Give this center people to
         // spare so the hold-vs-world question stays readable;
         // `settlers_are_drawn_from_a_real_population` pins the origin case.
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
@@ -9379,12 +9879,12 @@ mod tests {
     ///
     /// The interesting assertion is **two-sidedness**. §10.8 says the guard for
     /// Exchange work is a census rather than colony-years, and this is that
-    /// census at its smallest: if every empire were short the same colours, the
+    /// census at its smallest: if every empire were short the same colors, the
     /// books would be all bids and no asks and there would be no trade to make.
     /// T-73 measured why they are not — 1,494 of 1,515 banks are
-    /// single-coloured, so nearly every centre is simultaneously **long one
-    /// colour and short the other two**, which is precisely the condition that
-    /// makes a colour market worth having.
+    /// single-colored, so nearly every center is simultaneously **long one
+    /// color and short the other two**, which is precisely the condition that
+    /// makes a color market worth having.
     #[test]
     fn the_exchange_books_fill_on_both_sides() {
         let run = |post: bool| {
@@ -9408,14 +9908,14 @@ mod tests {
 
         assert_eq!(depth_off, [(0, 0); 3], "posting disabled must post nothing");
 
-        // **Both sides, on at least one colour.** A one-sided book is a market
+        // **Both sides, on at least one color.** A one-sided book is a market
         // with nothing to match.
         let (bids, asks): (u64, u64) = depth_on.iter().fold((0, 0), |(b, a), &(x, y)| (b + x, a + y));
-        assert!(bids > 0, "no centre bid for anything it was short of: {depth_on:?}");
-        assert!(asks > 0, "no centre offered anything it was long of: {depth_on:?}");
+        assert!(bids > 0, "no center bid for anything it was short of: {depth_on:?}");
+        assert!(asks > 0, "no center offered anything it was long of: {depth_on:?}");
         assert!(
             depth_on.iter().any(|&(b, a)| b > 0 && a > 0),
-            "no single colour has both sides, so nothing could ever match: {depth_on:?}"
+            "no single color has both sides, so nothing could ever match: {depth_on:?}"
         );
 
         // **Nothing clears.** Same seed, same run, to the bit.
@@ -9464,7 +9964,7 @@ mod tests {
         assert_eq!(st_off.0, 0, "posting disabled must strike no contracts");
         assert!(
             st_on.0 > 0,
-            "no contract was struck: either no colour had both sides, or no two empires shared an outpost"
+            "no contract was struck: either no color had both sides, or no two empires shared an outpost"
         );
         assert_eq!(st_on.1, 0, "settlement was disabled, so nothing may have settled");
 
@@ -9492,12 +9992,12 @@ mod tests {
     #[test]
     fn settlement_moves_ore_to_the_buyers_pile_and_conserves_mass() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 71), test_cfg(71));
-        let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let seller_center = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
         let rock = sim.planet_entity[30];
         for p in 0..2u32 {
             sim.mine_crew.insert((p, rock.0), vec![sim.world.spawn()]);
         }
-        sim.world.stockpile.get_mut(seller_centre).unwrap().yellow = 100.0;
+        sim.world.stockpile.get_mut(seller_center).unwrap().yellow = 100.0;
         sim.credit(sim.player_entity[0], 500.0);
 
         let total_yellow = |s: &Simulation| -> f64 {
@@ -9514,8 +10014,8 @@ mod tests {
             Contract {
                 buyer: PlayerId(0),
                 seller: PlayerId(1),
-                seller_centre,
-                colour: Basic::Yellow,
+                seller_center,
+                color: Basic::Yellow,
                 qty: 40.0,
                 escrow: 80.0,
                 seller_drop: rock,
@@ -9531,7 +10031,7 @@ mod tests {
         assert_eq!(sim.exchange_state().1, 1, "the contract must have settled");
         assert_eq!(sim.exchange_defaults(), 0);
         assert!(
-            (sim.world.stockpile.get(seller_centre).unwrap().yellow - 60.0).abs() < 1e-9,
+            (sim.world.stockpile.get(seller_center).unwrap().yellow - 60.0).abs() < 1e-9,
             "the seller's bank must be debited"
         );
         assert!(
@@ -9552,11 +10052,11 @@ mod tests {
     #[test]
     fn a_seller_that_cannot_deliver_defaults_and_both_sides_pay() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 73), test_cfg(73));
-        let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let seller_center = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
         let rock = sim.planet_entity[30];
-        // The bank is short the colour it owes — rich in Cyan, owing Yellow.
+        // The bank is short the color it owes — rich in Cyan, owing Yellow.
         {
-            let b = sim.world.stockpile.get_mut(seller_centre).unwrap();
+            let b = sim.world.stockpile.get_mut(seller_center).unwrap();
             b.yellow = 1.0;
             b.cyan = 9_999.0;
         }
@@ -9567,8 +10067,8 @@ mod tests {
             Contract {
                 buyer: PlayerId(0),
                 seller: PlayerId(1),
-                seller_centre,
-                colour: Basic::Yellow,
+                seller_center,
+                color: Basic::Yellow,
                 qty: 40.0,
                 escrow: 80.0,
                 seller_drop: rock,
@@ -9580,15 +10080,15 @@ mod tests {
 
         sim.sys_contract_due(id);
 
-        assert_eq!(sim.exchange_defaults(), 1, "a bank short the named colour must default");
+        assert_eq!(sim.exchange_defaults(), 1, "a bank short the named color must default");
         assert_eq!(sim.exchange_state().1, 0, "a default is not a settlement");
         let refunded = sim.purse_of(PlayerId(0)) - buyer_before;
         assert!(refunded > 0.0 && refunded < 80.0, "the buyer is refunded minus the burn, got {refunded}");
         assert_eq!(sim.purse_of(PlayerId(1)), seller_before, "the seller gains nothing by defaulting");
         assert!(sim.exchange_state().2 > 0.0, "the burn is the sink (§2.3)");
-        // **A rich bank in the wrong colour does not help**, which is what the
-        // colour axis is for.
-        assert!(sim.world.stockpile.get(seller_centre).unwrap().cyan > 9_000.0, "the wrong colour was never touched");
+        // **A rich bank in the wrong color does not help**, which is what the
+        // color axis is for.
+        assert!(sim.world.stockpile.get(seller_center).unwrap().cyan > 9_000.0, "the wrong color was never touched");
     }
 
     /// **A trade needs a rock both parties work** (§10.6, T-85).
@@ -9638,7 +10138,7 @@ mod tests {
     /// §10.7 stages 1–3 land the Exchange **inert**, for the reason
     /// `Hyades_industry.md` §6.7's stages 3–5 did: a system that lands neutral
     /// can be verified against a bit-identical bed before anything switches on,
-    /// so the first stage that *does* change behaviour is measured against a
+    /// so the first stage that *does* change behavior is measured against a
     /// known baseline instead of against a moving one. That plan was not met at
     /// industry stage 5, and the stage that broke it was the one that changed
     /// what a purchase costs — which is stage 4 here.
@@ -9734,7 +10234,7 @@ mod tests {
     /// `veins_per_band`, all placeholders (R-IND18). What has to hold whatever
     /// they become:
     ///
-    /// - **No unmet demand, one hull.** A centre that can already afford what it
+    /// - **No unmet demand, one hull.** A center that can already afford what it
     ///   wants does not buy a mine, it buys a mine's minimum.
     /// - **A richer rock wants a *smaller* crew.** This is the inversion. Both
     ///   retired policies made crew rise with richness — a flat count was
@@ -9755,7 +10255,7 @@ mod tests {
             }
         };
 
-        // **A comfortable centre has no unmet demand.** `mineral_pressure` is
+        // **A comfortable center has no unmet demand.** `mineral_pressure` is
         // zero while the bank covers the next rung, so `D = 0` whatever the
         // yard could fabricate.
         {
@@ -9765,7 +10265,7 @@ mod tests {
             bank.yellow = 10_000.0;
         }
         set_ore(&mut sim, 3.0);
-        assert_eq!(sim.mining_crew_for(center, rock), 1, "a centre that can afford its rung wants one hull");
+        assert_eq!(sim.mining_crew_for(center, rock), 1, "a center that can afford its rung wants one hull");
 
         // Starve it: pressure goes to 1 and the crew is whatever meets the
         // yard's throughput.
@@ -9779,7 +10279,7 @@ mod tests {
             let f = sim.world.factors.get_mut(center).unwrap();
             f.infra = infra_rung_price(1, &sim.config);
         }
-        assert!(sim.mineral_pressure_of(center) > 0.99, "a broke centre must read full pressure");
+        assert!(sim.mineral_pressure_of(center) > 0.99, "a broke center must read full pressure");
 
         // **The crew never exceeds the body's veins**, at any richness. This is
         // the constraint that binds at the bottom of the ladder and it is why
@@ -9830,8 +10330,8 @@ mod tests {
     /// The design's numbers, not the implementation's: a decade of veins per
     /// Band, and on `Band IV` a thousand miners lift **31.6x** what one does.
     /// That second figure is the one §4.3 uses to argue a large crew on a rich
-    /// rock is rational, and it is the figure `crowding_factor`'s normalisation
-    /// had to preserve (R-IND19) — so it is asserted through the normalised
+    /// rock is rational, and it is the figure `crowding_factor`'s normalization
+    /// had to preserve (R-IND19) — so it is asserted through the normalized
     /// form, which is what the engine actually multiplies by.
     #[test]
     fn veins_are_a_decade_per_band_and_crowding_pays_at_scale() {
@@ -9864,7 +10364,7 @@ mod tests {
         );
 
         // A full crew takes the same share of any body, which is the
-        // normalisation that stops output going as richness squared.
+        // normalization that stops output going as richness squared.
         for rung in [1.0, 2.0, 3.0, 4.0] {
             let mass = units::Kilotons::at_band(Band::new(rung));
             let n = veins(mass, &cfg);
@@ -9957,9 +10457,9 @@ mod tests {
             assert!(crowding_factor(3.0, mass, &bad).is_finite(), "crowding diverged at Band {rung}");
         }
 
-        // A full crew takes exactly `ε` of the body — the normalisation that
+        // A full crew takes exactly `ε` of the body — the normalization that
         // keeps a rich seam finite (`crowding_factor`, R-IND19).
-        // Three colours at 1 kt each — the same body `deposit` names above.
+        // Three colors at 1 kt each — the same body `deposit` names above.
         let before = deposit.kilotons();
         assert!(
             (extracted(full) / before - cfg.outpost_mining_fraction).abs() < 1e-9,
@@ -10242,7 +10742,7 @@ mod tests {
             // `k_potential = min(hab, bio_max)` cannot exceed the top rung. So
             // nothing in a shipped run ever reaches the difference.
             //
-            // This is the better behaviour of the two — an unbounded
+            // This is the better behavior of the two — an unbounded
             // infrastructure Band was a quantity with no meaning past `Band IV`
             // — but it is a change, and it is the reason to keep the gate.
             let over = infra_rung_price(top + 3, cfg);
@@ -10254,7 +10754,7 @@ mod tests {
         }
     }
 
-    /// **T-73/§6.4: a mix card moves the colour mix and never lowers the total.**
+    /// **T-73/§6.4: a mix card moves the color mix and never lowers the total.**
     ///
     /// `eta_works` is multiplicative on the total; `mix_w` is a *share* of that
     /// total. So the two are orthogonal **by construction**, which is what makes
@@ -10267,7 +10767,7 @@ mod tests {
         let sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
 
-        // Every mix a card could reach, including the sole-colour `1:0:0` that
+        // Every mix a card could reach, including the sole-color `1:0:0` that
         // §5.1 allows works and forbids card costs, and degenerate weights.
         let mixes: [[f64; 3]; 6] =
             [[1.0, 1.0, 1.0], [4.0, 2.0, 1.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [5.0, 4.0, 3.0], [1e-6, 1.0, 1e6]];
@@ -10280,7 +10780,7 @@ mod tests {
                 "mix {m:?} changed the bill: {total} against a step of {step}"
             );
             for b in bill {
-                assert!(b >= Price::ZERO, "mix {m:?} produced a negative colour share");
+                assert!(b >= Price::ZERO, "mix {m:?} produced a negative color share");
             }
         }
 
@@ -10301,27 +10801,27 @@ mod tests {
         }
     }
 
-    /// **T-73: a colour-poor centre cannot buy the rung, however rich it is.**
+    /// **T-73: a color-poor center cannot buy the rung, however rich it is.**
     ///
     /// This is the whole point of the stage, and the thing no total-based
     /// affordability test can express. `Minerals::try_spend_total` debits
     /// *proportional to holdings*, so before this a bank of pure Cyan could buy
     /// anything; now a bill naming Yellow needs Yellow. That is §5.1's *"the
     /// mechanism that makes the galaxy's mineral distribution bite on
-    /// development"* — and T-62 made the field log-normal, so which colours a
+    /// development"* — and T-62 made the field log-normal, so which colors a
     /// homeworld sits near is an enormous fact that until now went almost
     /// entirely unexpressed.
     ///
     /// Both halves are asserted, because only the pair is meaningful: the poor
-    /// centre is refused, and a centre with the *same total* spread across the
-    /// colours the bill names is not.
+    /// center is refused, and a center with the *same total* spread across the
+    /// colors the bill names is not.
     #[test]
-    fn a_colour_poor_centre_cannot_buy_the_rung() {
+    fn a_color_poor_center_cannot_buy_the_rung() {
         let step = Price::new(9.0);
         let works = cards::Works::default(); // even thirds: 3.0 of each
         let bill = works_bill(step, &works);
 
-        // A hundred times the bill, and all the wrong colour.
+        // A hundred times the bill, and all the wrong color.
         let hoard = Minerals { cyan: 900.0, ..Default::default() };
         assert!(!can_pay_bill(&hoard, &bill), "a pure-Cyan hoard must not buy a bill that names Magenta and Yellow");
 
@@ -10333,15 +10833,15 @@ mod tests {
             yellow: bill[2].kilotons(),
             ..Default::default()
         };
-        assert!(can_pay_bill(&spread, &bill), "exactly the bill, in the right colours, must pay");
+        assert!(can_pay_bill(&spread, &bill), "exactly the bill, in the right colors, must pay");
         assert!(spread.basic_total() < hoard.basic_total(), "and it is the *poorer* bank that can afford it");
 
-        // Paying takes each colour's share and nothing else.
+        // Paying takes each color's share and nothing else.
         pay_bill(&mut spread, &bill);
         assert!(spread.basic_total().kilotons().abs() < 1e-9, "the bill should have emptied it exactly");
 
-        // A sole-colour work — `1:0:0`, which §5.1 allows works and forbids card
-        // costs — is payable only by an empire that has that colour.
+        // A sole-color work — `1:0:0`, which §5.1 allows works and forbids card
+        // costs — is payable only by an empire that has that color.
         let yellow_only = cards::Works { mix_w: [0.0, 0.0, 1.0], ..cards::Works::default() };
         let y_bill = works_bill(step, &yellow_only);
         assert!(!can_pay_bill(&hoard, &y_bill), "Production's route is closed to a Yellow-poor empire");
@@ -10360,7 +10860,7 @@ mod tests {
     ///
     /// Pins the **approved starting schedule** of §3.3 — 2.2 / 3.0 / 12.0 yr —
     /// which is where the design wants it: a scout is a season's work, a
-    /// coloniser is quick enough to spam, and a General hull is a twelve-year
+    /// colonizer is quick enough to spam, and a General hull is a twelve-year
     /// commitment an opponent has time to notice and answer. These are approved
     /// values, **not MC-ratified**; the name says placeholder and so does §3.3.
     ///
@@ -10368,14 +10868,14 @@ mod tests {
     /// divide a yard's throughput, so those three numbers are `t_lead +
     /// m/F_slip` — the limit an arbitrarily industrialised yard descends
     /// toward and never reaches. What T-74 pins here instead is the *anchor*:
-    /// a rung-I centre with default doctrine fabricates at exactly the flat
+    /// a rung-I center with default doctrine fabricates at exactly the flat
     /// rate T-68 and the mining model shipped, so the rate curve pivots about
     /// a configuration that was already ratified.
     #[test]
     fn build_time_is_lead_plus_mass_over_throughput() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         // **T-74 made `t_build` a property of the yard, so the schedule needs a
-        // yard to be read at — and the one it holds at is the anchor.** A centre
+        // yard to be read at — and the one it holds at is the anchor.** A center
         // standing at rung I with default doctrine sits exactly on the knee of
         // the rate curve, where a berth runs at `fab_cap / 2`. Since R-O88 that
         // is a *per-berth* statement and `fab_cap` is the per-berth ceiling, so
@@ -10387,12 +10887,12 @@ mod tests {
         }
         assert!(
             (sim.berth_rate(yard) - sim.config.fab_cap / 2.0).abs() < 1e-12,
-            "a rung-I centre sits on the knee, so a berth runs at half the ceiling; got {}",
+            "a rung-I center sits on the knee, so a berth runs at half the ceiling; got {}",
             sim.berth_rate(yard)
         );
         // **§3.3's schedule is the limit, not a value any yard reaches** — T-69
         // is what made that distinction real. Before slips, `t_build` was
-        // `t_lead + m/F` and a rung-I centre hit 2.2 / 3.0 / 12.0 on the nose.
+        // `t_lead + m/F` and a rung-I center hit 2.2 / 3.0 / 12.0 on the nose.
         // Slips divide the throughput, so the table is now the **asymptote**
         // the curve descends toward and every real yard sits above it. Assert
         // the schedule as what it is — the two constants, composed — and assert
@@ -10453,7 +10953,7 @@ mod tests {
     /// every yard, however rich — equivalently, per-berth throughput stays
     /// strictly *under* `F_slip` and climbs toward it. The reciprocal is what
     /// makes it easy to get backwards, and getting it backwards is not a
-    /// cosmetic error: dropping the `1 +` from `slips` lets a rung-II centre
+    /// cosmetic error: dropping the `1 +` from `slips` lets a rung-II center
     /// build a Medium hull in 2.55 yr against a 3.0 yr floor, which deletes the
     /// design property while still passing any number-by-number schedule test.
     /// So this asserts the inequality, and the schedule test below asserts the
@@ -10472,7 +10972,7 @@ mod tests {
         for step in 0..400 {
             let u = per_slip * (step as f64) * 0.125;
             let n = slips(u, &cfg);
-            assert!(n >= 1, "a centre always has a berth, u={u} gave {n}");
+            assert!(n >= 1, "a center always has a berth, u={u} gave {n}");
             assert!(n >= last_slips, "concurrency must not fall as the stock rises at u={u}");
             last_slips = n;
         }
@@ -10689,7 +11189,7 @@ mod tests {
         assert_eq!(poisoned.k(), Band::new(0.5), "and so does a habitability strike");
     }
 
-    /// The unit fix, stated as behaviour: eating the biosphere must not lower
+    /// The unit fix, stated as behavior: eating the biosphere must not lower
     /// the world's ceiling. Under `K = min(hab, bio, infra)` a drawn-down
     /// standing stock cut `K` directly — a mass compared against two levels —
     /// and the population it could hold fell with it.
@@ -10725,7 +11225,7 @@ mod tests {
         // isolates the question the test is asking — *does a razed biosphere
         // come back* — from the one it is not: with a live `K` the population
         // simply outruns the regrowth and eats the recovery as it happens,
-        // which is correct behaviour and a different test.
+        // which is correct behavior and a different test.
         let bio_max = Band::new(4.0).in_kilotons();
         let start = bio_max * 0.125;
         sim.world.factors.insert(home, Factors::new(Band::new(4.0), start, bio_max, Price::ZERO));
@@ -10817,7 +11317,7 @@ mod tests {
     ///
     /// **R-O75 (new, open):** whether the discrete logistic should be replaced
     /// by one that cannot overshoot downward (a saturating step, or the
-    /// closed-form solution over the interval). It is a real modelling artifact
+    /// closed-form solution over the interval). It is a real modeling artifact
     /// — nothing in the design says an overfull world should lose three
     /// quarters of its people in fifty years — but it is on the hottest path in
     /// the engine and every ratified growth number was measured with it, so it
@@ -11029,7 +11529,7 @@ mod tests {
         // became tests of `limited_fleet_size` at stage 3b.
         //
         // Since T-87 there is no crew knob to pin: the crew is derived from the
-        // founding centre's unmet demand, and a fresh homeworld with a full
+        // founding center's unmet demand, and a fresh homeworld with a full
         // starting bank has none, so it opens an outpost with one hull. The
         // assertion below states that rather than assuming it.
         let doctrine = Doctrine::default();
@@ -11125,7 +11625,7 @@ mod tests {
     /// made it a bad idea anyway, and T-96 removed that.
     ///
     /// What this pins is not *which* hull — that is a measured default and will
-    /// move — but that **the decision reads the world**: the same centre picks
+    /// move — but that **the decision reads the world**: the same center picks
     /// differently for a thin rock and a rich one, and it stops scaling up when
     /// the destination cannot fabricate what arrives. A constant passes neither
     /// half.
@@ -11191,7 +11691,7 @@ mod tests {
         let dead_band = cfg.density_floor / cfg.outpost_mining_fraction * 0.9;
         assert!(dead_band > cfg.density_floor, "the test needs a value the old predicate would have called alive");
         {
-            // The field's colours are Bands since T-62, so a target *mass* is
+            // The field's colors are Bands since T-62, so a target *mass* is
             // set by reading it back onto the ladder rather than assigned.
             let each = Kilotons::new(dead_band / 3.0);
             let d = sim.world.density.get_mut(outpost).unwrap();
@@ -11227,10 +11727,10 @@ mod tests {
     ///
     /// This is the atomicity, removed and then asserted. A hold is filled from
     /// `outpost_stock[(player, rock)]` — one map entry — and a rock is one
-    /// colour (mean dominant share 0.789 over 6,725 sources), so before this
-    /// every delivery in the engine was mono-coloured *by construction* and a
-    /// works bill is a conjunction over three colours (T-73). Two piles, two
-    /// colours, one voyage.
+    /// color (mean dominant share 0.789 over 6,725 sources), so before this
+    /// every delivery in the engine was mono-colored *by construction* and a
+    /// works bill is a conjunction over three colors (T-73). Two piles, two
+    /// colors, one voyage.
     ///
     /// The same setup at `max_pickup_stops = 1` is the second half of the test,
     /// and it is the one that pins the default: one stop is the pre-T-91 engine,
@@ -11247,8 +11747,8 @@ mod tests {
             let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
             let (a, b) = (sim.planet_entity[11], sim.planet_entity[12]);
 
-            // An empty bank makes the centre short of the whole rung, which is
-            // what `colour_deficit` reads. The piles are each one colour, which
+            // An empty bank makes the center short of the whole rung, which is
+            // what `color_deficit` reads. The piles are each one color, which
             // is the galaxy's own condition made exact.
             *sim.world.stockpile.get_mut(center).unwrap() = Minerals::default();
             sim.outpost_stock.insert((0, a.0), Minerals { cyan: 50.0, ..Default::default() });
@@ -11266,7 +11766,7 @@ mod tests {
             (sim, f, b)
         };
 
-        // Two stops: the first pile cannot close a three-colour bill on its own,
+        // Two stops: the first pile cannot close a three-color bill on its own,
         // so the hauler goes on rather than delivering what it has.
         let (mut sim, f, b) = bed(2);
         sim.sys_freighter_arrive(f);
@@ -11275,26 +11775,26 @@ mod tests {
         assert_eq!(sh.stops, 1, "one stop spent");
         assert_eq!(sh.outpost, b, "and the next pile is the one holding what is still missing");
         let after_one = *sim.world.cargo.get(f).unwrap();
-        assert!(after_one.cyan > 0.0 && after_one.magenta == 0.0, "one colour so far: {after_one:?}");
+        assert!(after_one.cyan > 0.0 && after_one.magenta == 0.0, "one color so far: {after_one:?}");
 
-        // Arrive at the second pile: it turns for the centre with both colours.
+        // Arrive at the second pile: it turns for the center with both colors.
         let there = *sim.world.position.get(b).unwrap();
         sim.park(f, there);
         sim.sys_freighter_arrive(f);
         let sh = *sim.world.shuttle.get(f).unwrap();
-        assert!(!sh.outbound, "laden and heading for a centre");
+        assert!(!sh.outbound, "laden and heading for a center");
         let laden = *sim.world.cargo.get(f).unwrap();
-        assert!(laden.cyan > 0.0 && laden.magenta > 0.0, "a two-coloured hold: {laden:?}");
+        assert!(laden.cyan > 0.0 && laden.magenta > 0.0, "a two-colored hold: {laden:?}");
 
         // One stop is the shipped default and the engine as it was: the same
-        // hauler on the same pile delivers a single colour.
+        // hauler on the same pile delivers a single color.
         let (mut sim, f, _) = bed(1);
         sim.sys_freighter_arrive(f);
         let sh = *sim.world.shuttle.get(f).unwrap();
         assert!(!sh.outbound, "no detour at one stop");
         assert_eq!(sh.stops, 0, "and nothing to count");
         let laden = *sim.world.cargo.get(f).unwrap();
-        assert!(laden.cyan > 0.0 && laden.magenta == 0.0 && laden.yellow == 0.0, "mono-coloured: {laden:?}");
+        assert!(laden.cyan > 0.0 && laden.magenta == 0.0 && laden.yellow == 0.0, "mono-colored: {laden:?}");
     }
 
     #[test]
@@ -11389,26 +11889,26 @@ mod tests {
 
     /// **T-81: a hauler goes where its cargo is what is missing.**
     ///
-    /// Routing scored need on a *total* — how broke a centre was overall — and
-    /// carried no colour term at all. T-73 made that binding: a works bill is
-    /// payable in named colours, T-62 made the field log-normal per colour, and
-    /// together they left banks holding one colour and traces of the others,
+    /// Routing scored need on a *total* — how broke a center was overall — and
+    /// carried no color term at all. T-73 made that binding: a works bill is
+    /// payable in named colors, T-62 made the field log-normal per color, and
+    /// together they left banks holding one color and traces of the others,
     /// with deepening down 94.5%.
     ///
-    /// Two centres, equally broke, needing opposite colours. A Yellow-laden
+    /// Two centers, equally broke, needing opposite colors. A Yellow-laden
     /// hauler must pick the Yellow-short one — and the same hauler carrying
     /// Magenta must pick the other. Asserting *both* directions is the point: a
-    /// routing rule that always picked the same centre would pass a one-sided
+    /// routing rule that always picked the same center would pass a one-sided
     /// test whatever it was keying on.
     #[test]
-    fn a_hauler_routes_to_the_colour_that_is_missing() {
+    fn a_hauler_routes_to_the_color_that_is_missing() {
         let galaxy = test_galaxy(2, 3);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(3));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let here = *sim.world.position.get(home).unwrap();
 
         // Two colonies, co-located with home so the λ discount cannot decide
-        // this — the colour term has to.
+        // this — the color term has to.
         let (a, b) = (sim.planet_entity[15], sim.planet_entity[16]);
         for &e in &[a, b] {
             sim.world.owner.insert(e, PlayerId(0));
@@ -11443,7 +11943,7 @@ mod tests {
         assert_eq!(
             sim.best_delivery_center(PlayerId(0), here, &yellow),
             Some(a),
-            "a Yellow-laden hauler must go to the Yellow-short centre"
+            "a Yellow-laden hauler must go to the Yellow-short center"
         );
         assert_eq!(
             sim.best_delivery_center(PlayerId(0), here, &magenta),
@@ -11452,9 +11952,9 @@ mod tests {
         );
 
         // **And it concentrates** (R-IND17), which is the property T-81's relief
-        // term did not have. A third centre needing *everything* must score
+        // term did not have. A third center needing *everything* must score
         // strictly lower on the same Yellow cargo than one needing only Yellow,
-        // or ore scatters by colour and a three-colour bill is never assembled
+        // or ore scatters by color and a three-color bill is never assembled
         // anywhere.
         let empty = sim.planet_entity[17];
         sim.world.owner.insert(empty, PlayerId(0));
@@ -11472,13 +11972,13 @@ mod tests {
 
         let near = sim.bill_completion(a, PlayerId(0), &yellow);
         let far = sim.bill_completion(empty, PlayerId(0), &yellow);
-        assert!((near - 1.0).abs() < 1e-12, "a centre missing only Yellow is completed by Yellow: {near}");
+        assert!((near - 1.0).abs() < 1e-12, "a center missing only Yellow is completed by Yellow: {near}");
         assert!(far > 0.0 && far < near, "and one missing everything scores strictly less: {far} vs {near}");
-        assert_eq!(sim.bill_completion(a, PlayerId(0), &magenta), 0.0, "the wrong colour completes nothing");
+        assert_eq!(sim.bill_completion(a, PlayerId(0), &magenta), 0.0, "the wrong color completes nothing");
         assert_eq!(
             sim.best_delivery_center(PlayerId(0), here, &yellow),
             Some(a),
-            "so the hauler goes to the centre it can finish, not the emptiest"
+            "so the hauler goes to the center it can finish, not the emptiest"
         );
     }
 
@@ -11539,12 +12039,12 @@ mod tests {
     ///
     /// This is design law #11 reaching the one quantity that was exempt from
     /// it. `spawn_courier` used to write `pop_cargo` and debit nothing, so
-    /// every coloniser launched created mass — and it was not a rounding
+    /// every colonizer launched created mass — and it was not a rounding
     /// error: the policy that shipped the biggest seed measured **+13.97%
     /// colony-years** on an identical colony count, which was a measurement of
     /// the violation rather than of the policy (`Hyades_industry.md` §1.6).
     ///
-    /// Asserted as a **balance**, not as two magnitudes. The founding centre
+    /// Asserted as a **balance**, not as two magnitudes. The founding center
     /// loses exactly what the ship carries, the new world gains exactly what
     /// the ship carried, and the ship lands empty — which is the only form of
     /// the claim that a later change cannot half-satisfy.
@@ -11583,7 +12083,7 @@ mod tests {
         assert!(endowment > Price::ZERO, "and filled the rest of its hold out of the bank");
 
         // **The hold is one budget.** Settlers and minerals mass the same
-        // (R-O32), so what left the centre is exactly what the hull can hold —
+        // (R-O32), so what left the center is exactly what the hull can hold —
         // no more, and not two independent allowances.
         let hold = HullType::GeneralSystems.colony_seed_capacity(&sim.config);
         let carried = settlers + endowment.on_scale::<units::Mass>();
@@ -11594,12 +12094,12 @@ mod tests {
         let bank_after = sim.world.stockpile.get(home).unwrap().basic_total();
         assert!(
             ((pop_before - pop_after) - settlers).kilotons().abs() < 1e-9,
-            "the centre lost {} people for a seed of {settlers}",
+            "the center lost {} people for a seed of {settlers}",
             pop_before - pop_after
         );
         assert!(
             ((bank_before - bank_after) - endowment).kilotons().abs() < 1e-9,
-            "the centre lost {} minerals for an endowment of {endowment}",
+            "the center lost {} minerals for an endowment of {endowment}",
             bank_before - bank_after
         );
 
@@ -11654,7 +12154,7 @@ mod tests {
         for fill in [0.05, 0.2, 0.5, 0.9, 1.0] {
             sim.world.population.insert(home, k * fill);
             let got = sim.settler_target(home, target, hold);
-            assert!(got > Kilotons::ZERO, "an origin at {fill} of its ceiling must still colonise, got {got}");
+            assert!(got > Kilotons::ZERO, "an origin at {fill} of its ceiling must still colonize, got {got}");
             assert!(got <= k * fill * 0.5 + Kilotons::new(1e-9), "and must not be stripped: {got} of {}", k * fill);
         }
 
@@ -11677,7 +12177,7 @@ mod tests {
 
     /// **The hull is chosen against what will actually be loaded.**
     ///
-    /// The coloniser hull decision reads `Candidate::settlers_by_hull`; the
+    /// The colonizer hull decision reads `Candidate::settlers_by_hull`; the
     /// launch reads `colony_seed_for`. Those are two call sites of one rule, and
     /// this asserts they agree for every hull and every candidate — because the
     /// failure mode if they drift is silent and expensive: a General hull bought
@@ -11719,11 +12219,11 @@ mod tests {
         }
     }
 
-    /// **A centre cannot crew a hull it has no people for.**    /// **A centre cannot crew a hull it has no people for.**    /// **A centre cannot crew a hull it has no people for.**
+    /// **A center cannot crew a hull it has no people for.**    /// **A center cannot crew a hull it has no people for.**    /// **A center cannot crew a hull it has no people for.**
     ///
     /// Whatever the policy says is worth sending, the hold is still a ceiling and
     /// the origin is still a floor — so the same General hull delivers a full
-    /// hold from a big centre and a fraction of one from a small centre. This is
+    /// hold from a big center and a fraction of one from a small center. This is
     /// what makes the hull choice a real question again: before conservation a
     /// hold was a promise, and "settlers per mineral" could always be paid.
     #[test]
@@ -11745,14 +12245,14 @@ mod tests {
         );
         sim.world.population.insert(home, units::population_mass(Band::new(4.0)));
         let full = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();
-        assert!((full - hold).kilotons().abs() < 1e-9, "a rich centre fills the hold: {full} vs {hold}");
+        assert!((full - hold).kilotons().abs() < 1e-9, "a rich center fills the hold: {full} vs {hold}");
 
         // Poor: the origin binds, and the hull flies part-laden.
         sim.world.population.insert(home, hold * 2.0);
         let got = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();
-        assert!(got < hold, "a small centre cannot fill a General hold: {got} vs {hold}");
+        assert!(got < hold, "a small center cannot fill a General hold: {got} vs {hold}");
 
-        // **The floor is absolute.** A centre with nothing to spare ships
+        // **The floor is absolute.** A center with nothing to spare ships
         // nobody — a world emptied of people has no logistic left to regrow on.
         sim.world.population.insert(home, units::POPULATION_SEED_FLOOR);
         assert_eq!(sim.colony_seed_for(HullType::GeneralSystems, home, target), Some(Kilotons::ZERO));

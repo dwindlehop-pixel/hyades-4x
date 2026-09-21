@@ -9,7 +9,7 @@ retracted.*
 
 ## 0. Why this file exists, and how to use it
 
-`CLAUDE.md` §6 splits a spec into **decisions the engine must honour** and
+`CLAUDE.md` §6 splits a spec into **decisions the engine must honor** and
 **decisions still open**, and sends everything else here. The reason is that the
 two kinds of statement decay differently:
 
@@ -54,7 +54,7 @@ Three candidates on `Doctrine::survey_strategy`: `GlobalPool` (no heading bias
 ever), `OpeningSectors` (the six bootstrap craft keep a soft cube-face
 preference for their whole hop chain; every later paid Scout pools globally),
 `PersistentSectors` (later Scouts also inherit a heading, outward from home
-through the centre that built them).
+through the center that built them).
 
 **All three land within 2 SE of each other** — 2,765–2,865 yr mean. No
 significant difference.
@@ -62,7 +62,7 @@ significant difference.
 **Why, diagnosed rather than assumed** (`examples/colonization_ramp_trace.rs`):
 a homeworld crosses the medium-hull gate at t≈200 yr (seed 1), and known
 candidates already vastly outnumber what the treasury can afford that cycle — 98
-candidates by t=200, 151 by t=400, against a coloniser costing ~0.22 minerals
+candidates by t=200, 151 by t=400, against a colonizer costing ~0.22 minerals
 out of a ~1.5-mineral stockpile. **Survey was never the binding constraint at
 any point measured.** A survey-targeting knob has no lever to pull in a regime
 where the map is not the scarce resource.
@@ -134,7 +134,7 @@ there anything left to explore". Those coincide early and diverge permanently,
 and nothing in the types could tell them apart — both are `usize`.
 
 `candidate_count` goes to zero the moment everything *scanned* is owned or
-already targeted, which in a colonised galaxy is the common case. So both survey
+already targeted, which in a colonized galaxy is the common case. So both survey
 paths fired almost always: the `candidates.is_empty()` **pre-emption** (justified
 in the code by "no candidates means every other branch returns Idle" — false, and
 load-bearing, because the branch it pre-empted was the `outward == None` deepen
@@ -162,7 +162,7 @@ objective does not move when that stops — colony count is *identical* and
 colony-years differ by **+0.007%**. What moves is throughput (5.6×) and depth
 (infrastructure builds ×17.5).
 
-**Before optimising a hot path, check what fraction of the work it does produces
+**Before optimizing a hot path, check what fraction of the work it does produces
 nothing.** No amount of profiling would have found this: every one of those
 builds genuinely ran. The tell was a count that did not reconcile.
 
@@ -190,7 +190,7 @@ optimum should look like, and an independent confirmation of that step.
 
 > **Context added later:** every flat mineral-side result in this project —
 > these knobs, both crew policies, and the Exchange — turned out to be downstream
-> of one thing, freight not moving colour (R-O89/R-O92, §B.4 and
+> of one thing, freight not moving color (R-O89/R-O92, §B.4 and
 > `Hyades_industry.md` §6.19c–6.20). Re-measuring any of them before that landed
 > measured the same wall again.
 
@@ -211,7 +211,7 @@ match: **not one freighter of 2,655 ever reached its stand-down branch.**
 **Resolution:** `SimConfig::recycle_mining_pairs` — an exhausted pair goes to
 Reserve (which is what roles §4.6 already says a *standing* mission that ends
 does, as against the *completable* mission of an exhausted Scout, which scraps)
-and the next centre ordering a pair takes the reserved hulls nearest its target.
+and the next center ordering a pair takes the reserved hulls nearest its target.
 
 | bed | measurement | SE | verdict |
 |---|---|---|---|
@@ -232,7 +232,7 @@ which is why four seeds could not resolve it.
   39% → 40% and made the change look inert.
 - **The decision was pricing a pair it was not going to buy.**
   `ProductionContext::mining_pair_cost` quoted the full price even when hulls sat
-  in Reserve, so a centre too poor for a new pair sat Idle beside hulls it
+  in Reserve, so a center too poor for a new pair sat Idle beside hulls it
   already owned.
 - **The freighter fix is inert on its own** — with recycling off, the corrected
   predicate reproduces 49.11% to the digit. What it *buys* is the freighter half
@@ -287,7 +287,7 @@ seed that were scanned and not reached in time**.
 **Diminishing returns are visible and the cause is known:** +23.9, then +11.0,
 then +2.3 points across three ratifications. `growth_rate` (+2.31 alone) and
 mining-pair recycling (+1.19 alone) combine to **+2.53, not +3.50** — two
-independent, individually-real improvements mostly cancelling because they
+independent, individually-real improvements mostly canceling because they
 compete for headroom that is not economic.
 
 ## A.9 R-O66 — the unit fix cost 178 colonies, and the obvious explanation was wrong
@@ -303,7 +303,7 @@ defaults, so it cannot be paying for anything.
 
 **The actual cause is policy, not physics.** `k_potential` is the deepening
 guard, and under the old expression it eroded as a world's population ate its own
-biosphere — so centres ran out of deepening headroom and spent minerals on
+biosphere — so centers ran out of deepening headroom and spent minerals on
 expansion instead. Correcting the units gives them real headroom and they take
 it: seed 1, 3,426 → 3,227 colonies, mean infra 1.420 → 1.443, mean `K`
 1.418 → 1.430. **Fewer colonies, deeper ones** — a deepen-versus-expand
@@ -324,11 +324,11 @@ the left, `rank`'s unbounded weighted score on the right. Measured
 max 12.16, and the branch compares against the *maximum*, so depth won only at
 `b ≳ 0.8`. A step function wearing a dial's clothes.
 
-**Resolving it moved the diagnosis rather than the behaviour.** Both sides are now
+**Resolving it moved the diagnosis rather than the behavior.** Both sides are now
 `rank` score per kilotonne committed. Measured (`examples/deepen_census`, seeds 1
 and 7) the run is **bit-identical below `b = 0.96`**, and the branch is **still
 cold at the shipped 0.5** — because an infra rung above the founding one costs
-0.9 kt against a Medium coloniser's 0.10 kt, so expansion returns 24–49× per
+0.9 kt against a Medium colonizer's 0.10 kt, so expansion returns 24–49× per
 kilotonne and *ought* to win.
 
 **The dead branch was the right answer reached for a wrong reason.** Had the fix
@@ -339,7 +339,7 @@ have been to tune a dial toward a decision the economics say is bad.
 
 Work-years is `∫ Σ_p infra_p dt`, and the two things `reinvest_bias` chooses
 between are worth the same to it: deepening bills `infra_step_price / eta_works`
-and raises works by `infra_step_price`, while founding bills the coloniser's
+and raises works by `infra_step_price`, while founding bills the colonizer's
 price and the new colony's stock is `founding_infra = hull_cost` — the recycled
 hull's minerals *are* the stock, because a hull's mass is its cost. At the
 card-free `eta_works = 1` those are identical to the last bit, at every rung.
@@ -349,7 +349,7 @@ Measured to match: **+0.32% ± 1.42 over eight seeds** at 4,000 yr.
 **And the replication is why that number is trusted.** The standard four-seed bed
 gave `b = 0.972` at **+2.33% ± 0.96 with 4/4 seeds positive** — 2.4 SE *and* a
 1-in-16 sign test. On seeds 2, 3, 5, 11 it scores **−1.70% ± 2.42**, 1/4 positive.
-Neighbours swing the full magnitude in both directions (0.968 → −0.20% ± 0.76,
+Neighbors swing the full magnitude in both directions (0.968 → −0.20% ± 0.76,
 0.975 → +2.24% ± 2.08), which is a chaotic reordering of a compounding run rather
 than a gradient.
 
@@ -364,12 +364,12 @@ Band(m_c)` with `scarcity_c` written once at game start from the homeworld
 archetype and never again — so outpost selection could say *mine more* and never
 *mine Cyan*. A real defect, visible in the code.
 
-Replacing it with the deciding centre's live shortfall moved the mechanism check
+Replacing it with the deciding center's live shortfall moved the mechanism check
 from **0.043 to 0.043**, cost **−3.30% ± 0.49 colony-years on 0/4 seeds**, and
 was reverted.
 
 **The premise was refutable before a line was written.** The empire's outpost
-holdings are **957k / 905k / 626k kt** across the three colours — already
+holdings are **957k / 905k / 626k kt** across the three colors — already
 balanced. The decision was blind and had nothing to see. Swept across an order of
 magnitude (0 / 1 / 4 / 16) the payable fraction reads 0.043 / 0.043 / 0.057 /
 0.045 and the dead share is 99.7% at every one, which is what separates "no
@@ -400,7 +400,7 @@ approach could.
 reported **+58.6% work-years**, and the tell was that it was too good.
 `growth_rate` is documented `1/cycle` and the logistic stepped it once per tick
 **regardless of how long the tick was** — as did `biosphere_regen_rate` and the
-centre's mining fraction. Shrinking the tick did not integrate the same economy
+center's mining fraction. Shrinking the tick did not integrate the same economy
 more finely, it ran a fifty-times-faster one.
 
 **The fix was re-denomination, not retuning.** `tick_scale` multiplies each rate
@@ -425,7 +425,7 @@ wrong to — which is how the distinction got found.
 **Closed form versus finer step, decomposed.** Exact at the *coarse* tick beats
 Euler at the coarse tick by **+33% work-years at the same cost** — real accuracy.
 But it is still **29% below** exact at the fine tick, which says the step size was
-never only an integration step: it also quantises when a centre mines, crosses a
+never only an integration step: it also quantises when a center mines, crosses a
 band edge and re-decides. **Refining a step that carries more than one job
 improves all of them; fixing the integrator pays for one.**
 
@@ -475,7 +475,7 @@ interior scores consolidation higher on all three pairs. It is still wrong for a
 reserved core of 0.194**, so its hold is entirely spoken for and its cargo is
 zero. Scoring a warship by its hold scores it by the one thing a warship does not
 have — and design law #8 wants LOUs to be *useful*, not to score zero. The shell
-is armour, not waste, and `r³` counts it.
+is armor, not waste, and `r³` counts it.
 
 **The decomposition is exact**, verified to 1e-12 for every hull:
 
@@ -522,10 +522,10 @@ spec had reached 1,125 lines, roughly half of it implementation history.*
 ## B.1 R-P2 — λ, and a trade mechanism that paid for itself before trade existed
 
 The transit burn was proposed as a `$` sink that happened to give the
-travel-time behaviour the brief asked for. The ratification condition was
+travel-time behavior the brief asked for. The ratification condition was
 stronger: it had to also be *the* solution to freighter routing.
 
-Before it, a laden freighter picked the highest-pressure owned centre with **no
+Before it, a laden freighter picked the highest-pressure owned center with **no
 distance term at all** (`most_needed_center`), so it would cross the galaxy for a
 marginally needier destination. `λ = 0` reduces exactly to `most_needed_center`,
 which is also the oracle design law #5 keeps for single-supply matching — one
@@ -548,7 +548,7 @@ than the entire five-parameter doctrine search produced.
 **The scale is physically sensible rather than merely fitted:** a laden hop of
 10–30 ly at 1 g takes 20–45 years, so a 69-year half-life discriminates exactly at
 the range real hauls happen. Below that the discount is too sharp and freighters
-stop serving genuinely needy distant centres; above it, need swamps distance again
+stop serving genuinely needy distant centers; above it, need swamps distance again
 and the rule degenerates toward `most_needed_center`.
 
 **Three seeds is thin for a ratified constant.** Direction and order of magnitude
@@ -585,14 +585,14 @@ bodies is not poorer, and a pop-only faucet would say it was.
 **Bed:** 3 seats, 4,000 yr.
 
 Contracts clear, price, escrow, deliver into the buyer's pile at the shared rock,
-default when the seller's bank is short the colour it owes, and conserve mass.
+default when the seller's bank is short the color it owes, and conserve mass.
 **64,642 contracts settled and 3,484 defaulted** (seed 1); **64,553 and 3,905**
 (seed 7). Only *geography* rejected anything — 47 and 31 fills out of ~68,000
 found no shared rock.
 
 **Yellow dominates the flow, which is the design goal arriving:**
 
-| colour | seed 1 delivered | seed 7 delivered | share |
+| color | seed 1 delivered | seed 7 delivered | share |
 |---|---|---|---|
 | **Yellow** | **15,416.6 kt** | **14,380.5 kt** | **52%** |
 | Cyan | 9,188.0 kt | 9,204.6 kt | 31% |
@@ -636,7 +636,7 @@ symmetric. The seller's ore leaves its bank *immediately* at settlement, where i
 was spendable; the buyer's ore lands in an **outpost pile** and stays there until
 the buyer's own freighter happens to call. If collection lags delivery, trade is
 a machine for moving minerals out of banks and into piles — strictly worse than
-not trading, regardless of which colour moves where.
+not trading, regardless of which color moves where.
 
 That is checkable and must be checked before anything is tuned: compare banked
 against piled holdings over time, and measure the dwell between a contract
@@ -649,8 +649,8 @@ number is the shape of every measurement artifact in this project.** Carried as
 | # | Stage | Predicted | Actual |
 |---|---|---|---|
 | 1 | `$` ledger + faucet | neutral | neutral, bit-identical |
-| 2 | `Commodity` gains colour; `Offer` gains an owner | neutral | neutral, bit-identical |
-| 3 | Cross-empire book; centres post `wtp` | neutral | neutral, bit-identical |
+| 2 | `Commodity` gains color; `Offer` gains an owner | neutral | neutral, bit-identical |
+| 3 | Cross-empire book; centers post `wtp` | neutral | neutral, bit-identical |
 | 4 | Clearing at the barrier → contracts + escrow | **the risky one** | **inert** |
 | 5 | The freight leg; escrow settles on arrival | — | **the risky one: −4.4% work-years** |
 
@@ -690,7 +690,7 @@ branch. Colony-years stays as a *side-effect* read, never as the verdict.
 ## B.6 R-P17 — the venue question was wrong, not merely unanswered
 
 **The question as framed:** which outpost do buyer and seller settle at, when
-they share more than one? The answer written first minimised the two parties'
+they share more than one? The answer written first minimized the two parties'
 *summed* transit.
 
 **The author's ruling made the question disappear.** A contract has **two drops,
@@ -715,7 +715,7 @@ performing that sweep.
 ## B.8 R-P8 — a question dissolved by a better representation
 
 "Is `Diplomacy::excluded` an exception to design law #13 (no categorical
-classification co-extensive with a colour domain)?" The earlier draft carried a
+classification co-extensive with a color domain)?" The earlier draft carried a
 `Vec<PlayerId>` of counterparties to refuse, which was a per-player categorical.
 
 **There is no list now.** Refusal is `conduct[Foe].clears_directly == false` — a
@@ -731,10 +731,10 @@ carries the working rules; this is the case list.*
 
 | # | What was measured | What it actually was | Entry |
 |---|---|---|---|
-| 1 | `medium_fleet_size = 8` optimal, 12 a "cliff" | the capacity normaliser going to zero | — |
+| 1 | `medium_fleet_size = 8` optimal, 12 a "cliff" | the capacity normalizer going to zero | — |
 | 2 | `coverage_trace`: this knob "DID move it" | two of three sample points degenerate | — |
-| 3 | `coverage_time`: cheaper colonisers at 6.0 | a General hull holding ~700× a Medium's | — |
-| 4 | coverage "wants" a cheaper Medium hull | `cap_Medium` pinned by a live normaliser | — |
+| 3 | `coverage_time`: cheaper colonizers at 6.0 | a General hull holding ~700× a Medium's | — |
+| 4 | coverage "wants" a cheaper Medium hull | `cap_Medium` pinned by a live normalizer | — |
 | 5 | `survey_reserve` is "significant" at −23.8 ± 10.1 | a ±10% probe on a plateau, clearing 2 SE by luck | A.3 |
 | 6 | time-to-10% and coverage disagree on a knob's sign | two gradients taken at different operating points | A.2 |
 | 7 | a dwell metric *rose* under the policy that founds colonies 399 yr earlier | the mix moved: hull-first share 55.0% → 97.4%, both components fell | — |

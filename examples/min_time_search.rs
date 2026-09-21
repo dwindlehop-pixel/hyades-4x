@@ -37,7 +37,7 @@
 //! bars, no common-random-numbers pairing, and no significance test, and it
 //! produced this project's first two measurement artifacts — a phantom
 //! optimum at `medium_fleet_size = 8` and a "cliff" at 12 that was a
-//! normalisation bug, not economics (see Round 1's comment below). Every
+//! normalization bug, not economics (see Round 1's comment below). Every
 //! knob it swept in isolation is now covered better, and *checkably*, by
 //! `examples/gradient_probe.rs` (elasticity + standard error) and
 //! `examples/gradient_step.rs` (a verified line search along the measured
@@ -243,9 +243,9 @@ fn main() {
     // default) and read 12.0's collapse to 0.3% as a cliff. Coordinate descent
     // has no error bars, so nothing caught it. (2) The fix at the time —
     // `SimConfig::hull_ladder_fault` refusing `r_M < 1.25` — was *itself* an
-    // artifact: capacity was normalised against the live Medium radius, so the
+    // artifact: capacity was normalized against the live Medium radius, so the
     // "explosion" was a denominator going to zero, not an economic finding.
-    // Normalising against a fixed reference (see the doc comment on
+    // Normalizing against a fixed reference (see the doc comment on
     // `hull_ladder_fault`) removed the false bound; only a genuinely inverted
     // ladder (`medium_fleet_size >= limited_fleet_size`) is refused now.
     //

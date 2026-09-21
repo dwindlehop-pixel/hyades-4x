@@ -167,7 +167,7 @@ fn main() {
     // Mediums the same minerals buy, so every column is GSV ÷ MSV and `1.00` is
     // parity. Today's row is the thing to beat on turnaround and to not lose on
     // throughput.
-    println!("\nGSV against an equal-cost MSV fleet  (>1 favours the General hull)");
+    println!("\nGSV against an equal-cost MSV fleet  (>1 favors the General hull)");
     println!("{:>7} {:>9} {:>12} {:>12} {:>12} {:>12}", "phi", "k", "a_laden", "round trip", "kt/yr/kt$", "cost x");
     println!(
         "{:>7} {:>9} {:>12.3} {:>12.3} {:>12.3} {:>12.3}",

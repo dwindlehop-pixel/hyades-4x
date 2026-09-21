@@ -28,7 +28,7 @@ fn fresh_short(players: usize, seed: u64, horizon_years: f64) -> Simulation {
 /// be comparable to each other. A test that asserts *"no entity moves faster
 /// than c"* is asserting a property of `math::position_along`; it needs ships
 /// in flight and nothing else. Running it on the standard bed makes it pay for
-/// a colonisation economy, a mineral field and thousands of planets it never
+/// a colonization economy, a mineral field and thousands of planets it never
 /// reads — and then the only lever left when the bed gets more expensive is to
 /// cut the horizon, which eventually cuts the mechanism out too.
 ///
@@ -83,7 +83,7 @@ fn full_run_reports_are_bit_identical() {
     // point of the floor. `cycle_years` 50 → 5 makes the economy tick ten times
     // as often, so dividing every horizon by ten looked right and left the
     // 2-seat arm on **450 events**: event count is not linear in the horizon
-    // here, because the early game has one centre and the tick multiplier has
+    // here, because the early game has one center and the tick multiplier has
     // almost nothing to multiply. Measured instead, these horizons buy each arm
     // ~1,500 events — against the 1,800–3,000 the old ones
     // bought — and take the target from 267 s back under budget.
@@ -161,7 +161,7 @@ fn positions_never_exceed_lightspeed() {
     // **The scenery came out, not the timeline.** This asserts a property of
     // `math::position_along` — no entity moves faster than c — which needs
     // *ships in flight* and reads nothing else: no economy, no mineral field,
-    // no colonisation. On the standard bed it paid for all three, and it was
+    // no colonization. On the standard bed it paid for all three, and it was
     // **97 s of a 102 s target**, so the only lever left each time the bed got
     // more expensive was to cut the horizon. Cut it far enough and there is
     // nothing flying and the test passes vacuously.

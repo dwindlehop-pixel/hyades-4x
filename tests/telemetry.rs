@@ -19,7 +19,7 @@
 //! than precise**, with three deliberate choices:
 //!
 //! - **Interleaved arms.** Runs alternate off/on/off/on rather than doing all of
-//!   one arm then all of the other, so CPU frequency drift, a noisy neighbour
+//!   one arm then all of the other, so CPU frequency drift, a noisy neighbor
 //!   and container throttling land on both arms equally. This is common random
 //!   numbers applied to wall-clock: the *difference* is what is wanted, and
 //!   pairing cancels the shared noise.
@@ -43,7 +43,7 @@ const PLAYERS: usize = 3;
 const HORIZON: f64 = 600.0;
 /// **Nine, and five was measured to be too few.** At five this test flaked at
 /// **1.069** on an unloaded machine. The per-pair ratios span **0.948 to
-/// 1.067** — a +/-6% spread on a sub-second run — and the two arms are minimised
+/// 1.067** — a +/-6% spread on a sub-second run — and the two arms are minimized
 /// *independently*, so a small sample can pair a lucky bare run against an
 /// unlucky logged one and manufacture an overhead that is not there. At nine the
 /// same bed reports **1.001**.
@@ -75,7 +75,7 @@ const REPEATS: usize = 9;
 ///
 /// The ratio is also stable across a 10x range of event counts, which is the
 /// evidence that it is measuring a per-event property and not a fixed startup
-/// cost being amortised differently.
+/// cost being amortized differently.
 const MAX_OVERHEAD: f64 = 1.05;
 
 fn timed(seed: u64, filter: Option<LogFilter>) -> (f64, u64) {

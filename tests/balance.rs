@@ -8,7 +8,7 @@
 //! ordered event queue, no clock and no OS entropy — and the numbers below were
 //! observed bit-identical on two unrelated machines (a local x86-64 box and a
 //! GitHub `ubuntu-latest` runner). So the table is pinned exactly rather than
-//! bounded loosely: any drift at all is a real behavioural change and should be
+//! bounded loosely: any drift at all is a real behavioral change and should be
 //! looked at, not absorbed by a tolerance. If you retune combat on purpose,
 //! update the constants here in the same commit — that diff is the record of
 //! what your change did to the balance.
@@ -97,7 +97,7 @@ fn tuned_matchup_is_unchanged() {
     }
 
     // The design intent behind those numbers (MIGRATION.md): missiles are
-    // favoured when the fleets are closing, lasers when at rest or receding.
+    // favored when the fleets are closing, lasers when at rest or receding.
     // Asserted separately from the golden table so a failure says which of the
     // two broke.
     let tally_at = |v: f64| table.iter().find(|(rel_v, _)| *rel_v == v).expect("velocity present in table").1;
@@ -105,19 +105,19 @@ fn tuned_matchup_is_unchanged() {
     let (closing_laser, closing_missile, _) = tally_at(-0.002);
     assert!(
         closing_missile > closing_laser,
-        "design intent broken: missiles should be favoured closing at -0.002c, got laser={closing_laser} missile={closing_missile}"
+        "design intent broken: missiles should be favored closing at -0.002c, got laser={closing_laser} missile={closing_missile}"
     );
 
     let (rest_laser, rest_missile, _) = tally_at(0.0);
     assert!(
         rest_laser > rest_missile,
-        "design intent broken: lasers should be favoured at rest, got laser={rest_laser} missile={rest_missile}"
+        "design intent broken: lasers should be favored at rest, got laser={rest_laser} missile={rest_missile}"
     );
 
     let (receding_laser, receding_missile, _) = tally_at(0.002);
     assert!(
         receding_laser > receding_missile,
-        "design intent broken: lasers should be favoured receding at +0.002c, got laser={receding_laser} missile={receding_missile}"
+        "design intent broken: lasers should be favored receding at +0.002c, got laser={receding_laser} missile={receding_missile}"
     );
 }
 

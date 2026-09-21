@@ -9,7 +9,7 @@ dependency-free, presentation-free, deterministic, and WASM-targetable.
 
 - **Design specs** live in [`docs/`](docs/) and are authoritative.
 - **[`CLAUDE.md`](CLAUDE.md)** is the standing working agreement: design laws,
-  open R-codes, and guardrails. Read it before changing engine behaviour.
+  open R-codes, and guardrails. Read it before changing engine behavior.
 - **[`MIGRATION.md`](MIGRATION.md)** records how this tree was assembled and
   which propulsion helpers are reconstructed placeholders.
 
@@ -67,6 +67,6 @@ The `wasm` job exists because `src/lib.rs` claims the engine never touches the
 clock, filesystem, network, threads, or OS RNG. Compiling for
 `wasm32-unknown-unknown` is what keeps that claim honest.
 
-## Licence
+## License
 
 Apache-2.0 — see [`LICENSE`](LICENSE).

@@ -112,7 +112,7 @@
 //! appends one TSV row **per (knob, arm, seed)** carrying all five tree
 //! integrals and the operating point that produced them. Elasticities, standard
 //! errors and rankings are all recoverable from that; the reverse is not true,
-//! and it lets a later reader re-analyse under a *different* objective without
+//! and it lets a later reader re-analyze under a *different* objective without
 //! re-running — which matters, because this project has changed its objective
 //! twice already.
 //!
@@ -127,7 +127,7 @@ use std::io::Write;
 
 /// **Raw per-evaluation record** (T-50). One row per `(knob, arm, seed)`, with
 /// the operating point beside the numbers — *an elasticity without its operating
-/// point is not a measurement, it is a rumour.*
+/// point is not a measurement, it is a rumor.*
 ///
 /// Appended, never overwritten, so chunked runs accumulate into one dataset and
 /// a killed container loses nothing already written. Zero dependencies and
@@ -225,7 +225,7 @@ fn run(seed: u64, horizon: f64, cfg: SimConfig, doctrine: Doctrine) -> Trees {
             })
             .collect()
     };
-    let w = neighbour_weights(&homes);
+    let w = neighbor_weights(&homes);
 
     let mut acc = [0.0f64; 5];
     let mut prev = [0.0f64; 5];
@@ -287,14 +287,14 @@ fn run(seed: u64, horizon: f64, cfg: SimConfig, doctrine: Doctrine) -> Trees {
     acc
 }
 
-/// `w_ij ∝ 1 / (1 + d_ij / λ_w)`, normalised so `Σ_{j≠i} w_ij = 1` (§2.3.2).
+/// `w_ij ∝ 1 / (1 + d_ij / λ_w)`, normalized so `Σ_{j≠i} w_ij = 1` (§2.3.2).
 ///
 /// **`λ_w` is R-TREE2 and unset**, so this uses the bed's own median pairwise
 /// homeworld distance as the length scale. That is a harness choice, not a
 /// ratification, and it is deliberately scale-free: it cannot import a galaxy
 /// size as a hidden constant, and it makes the weights comparable across seeds
 /// whose galaxies differ in extent.
-fn neighbour_weights(homes: &[Vec3]) -> Vec<Vec<f64>> {
+fn neighbor_weights(homes: &[Vec3]) -> Vec<Vec<f64>> {
     let n = homes.len();
     let mut pair: Vec<f64> = Vec::new();
     for i in 0..n {

@@ -5,7 +5,7 @@
 //! as a sink for minerals. **Final coverage is a horizon artifact.** A survey
 //! fleet that finishes the galaxy at year 3,000 and one that finishes at year
 //! 800 both report 100%, and the second one is worth vastly more: a world
-//! scanned earlier can be colonised earlier, and colony-years is an integral.
+//! scanned earlier can be colonized earlier, and colony-years is an integral.
 //!
 //! So this measures **when**, against scout count:
 //!
@@ -15,7 +15,7 @@
 //! - **colony-years**, to say whether earlier scanning is worth anything
 //!   downstream or merely happens.
 //!
-//! `Doctrine::survey_reserve` is the knob: the frontier size a centre keeps
+//! `Doctrine::survey_reserve` is the knob: the frontier size a center keeps
 //! stocked, so it sets how many scouts exist. `CLAUDE.md` §2 records it as a
 //! *false positive* in the gradient probe — a plateau at 1,024 with a cliff
 //! below — but that was measured against **coverage**, which saturates. Against

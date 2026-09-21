@@ -300,7 +300,7 @@ pub struct GalaxyConfig {
     pub hotspot_ring_frac: f64,
     /// Gaussian width of each hue hotspot, as a fraction of the mean XY radius.
     pub hotspot_sigma_frac: f64,
-    /// **Peak tier-1 richness at a hotspot centre, as a Band — `Band IV`,
+    /// **Peak tier-1 richness at a hotspot center, as a Band — `Band IV`,
     /// ratified** (R-O82).
     ///
     /// Since T-62 the §4.3 Gaussian is over *Bands*, so this is the top of the
@@ -316,8 +316,8 @@ pub struct GalaxyConfig {
     /// hauling is the engine's largest single cost (`examples/haul_census`:
     /// freighter transfers ×6.81 where vehicles rose ×1.20), and it is what puts
     /// the 12-seat × 8-kyr corner under T-24's throughput floor. **That is now an
-    /// optimisation problem, not a tuning one** (T-66) — `CLAUDE.md` §7 is
-    /// explicit that approaching the floor is the trigger to optimise rather
+    /// optimization problem, not a tuning one** (T-66) — `CLAUDE.md` §7 is
+    /// explicit that approaching the floor is the trigger to optimize rather
     /// than to shrink the scenario, and the scale is no longer available to
     /// shrink.
     pub mineral_peak: f64,
@@ -536,9 +536,9 @@ impl Galaxy {
     /// exactly `N/6 + 1.5`, so the branch was the third term of the family, not
     /// a stray — the list was simply truncated one term early.
     ///
-    /// **Balance targets the 2-neighbour configurations** — 3, 6, 12, 18 — where
+    /// **Balance targets the 2-neighbor configurations** — 3, 6, 12, 18 — where
     /// every seat borders exactly two others. **N=2 is supported but is not a
-    /// balance target**: the domino gives each player *one* neighbour, and the
+    /// balance target**: the domino gives each player *one* neighbor, and the
     /// `p % 3` archetype cycle leaves it with Blue and Red and no Green (R-O9).
     /// Both are accepted consequences of a configuration nothing is tuned
     /// around, not defects to fix.
@@ -624,10 +624,10 @@ impl Galaxy {
             // §4.4 anticorrelation: normalize richness, depress habitability.
             //
             // **The reading is the mean Band, not the Band of the total mass**
-            // — i.e. the *geometric* mean of the three colours rather than the
+            // — i.e. the *geometric* mean of the three colors rather than the
             // arithmetic one. Both are legitimate classifications and they are
             // wildly different on a log ladder: the total-mass reading is
-            // dominated by whichever colour is richest, so a world at
+            // dominated by whichever color is richest, so a world at
             // `(II, I, Empty)` reads ~`II` instead of ~`I`, and at
             // `anticorrelation = 0.6` that is a whole extra Band of
             // habitability burned off every such world. Measured: routing
@@ -637,7 +637,7 @@ impl Galaxy {
             //
             // The mean Band is also the reading that *survives* T-62 — it is
             // the same expression the old linear one computed, over the same
-            // per-colour numbers — so what remains of the habitability shift
+            // per-color numbers — so what remains of the habitability shift
             // is the noise model (below), not the distribution.
             let norm_met = (band_sum / (3.0 * config.mineral_peak)).clamp(0.0, 1.0);
             let habitability =
@@ -741,7 +741,7 @@ mod tests {
 
     #[test]
     fn eighteen_seats_generate_a_symmetric_ring() {
-        // R-O12: 18 is a 2-neighbour configuration and must place like one.
+        // R-O12: 18 is a 2-neighbor configuration and must place like one.
         let g = Galaxy::generate(GalaxyConfig::new(18, 1)).expect("18 is a fair count");
         assert_eq!(g.homeworlds.len(), 18);
         let hw: Vec<_> = g.homeworlds.iter().map(|&id| g.planet(id).position).collect();
