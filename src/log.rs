@@ -28,7 +28,7 @@ use core::fmt;
 use crate::autopilot::BuildOrder;
 use crate::galaxy::PlanetId;
 use crate::math::Vec3;
-use crate::sim::{Entity, Role};
+use crate::sim::{Entity, HullType, Role};
 use crate::units::BandTier;
 
 /// Which subsystem a record came from. Independently toggleable in a
@@ -206,7 +206,22 @@ pub enum LogEvent {
     /// derivable from the hull — and that split is the only way to tell which of
     /// the three caps was binding (hull, destination, or origin) without
     /// reaching into engine internals. `examples/endowment` reads it.
-    VehicleSpawned { player: u32, vehicle: Entity, role: Role, from: Vec3, to: PlanetId, settlers: f64, endowment: f64 },
+    VehicleSpawned {
+        player: u32,
+        vehicle: Entity,
+        role: Role,
+        /// **The hull it was built on** (T-116). Carried because `role` and
+        /// `hull` are not recoverable from each other in either direction: a
+        /// Medium Systems hull is a colonizer *or* a freighter, and a colony
+        /// ship rides a Medium, a General or — under the Warfare card's Design
+        /// write — a General Contact hull. Counting colony ships off
+        /// `BuildApplied`'s hull alone silently counts freight.
+        hull: HullType,
+        from: Vec3,
+        to: PlanetId,
+        settlers: f64,
+        endowment: f64,
+    },
     /// A vehicle reached its destination and is holding station / idle there —
     /// the resting state for every non-contact role (autopilot-doc post-arrival
     /// behavior: systems vehicles return, offensive units hold station).

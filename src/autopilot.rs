@@ -387,6 +387,37 @@ pub struct Doctrine {
     ///
     /// **Placeholder, default false** (R-WAR8) — the card sets it.
     pub picket_intercepts: bool,
+    /// **The General colonizer is a Contact hull, not a Systems hull** (T-116).
+    ///
+    /// This is §8.2's Design write — *"switch the colony ship role from Systems
+    /// vehicles to Contact vehicles"* — and it is a **substitution inside the
+    /// option set, not a replacement of it**: the Medium Systems hull stays on
+    /// the menu, so a centre that cannot afford a General hull colonises
+    /// exactly as it did.
+    ///
+    /// Read off the ladder rather than asserted (`examples/hull_compare`), the
+    /// trade is what §8 says it is:
+    ///
+    /// | | GSV | GCV |
+    /// |---|---|---|
+    /// | cost = dry mass | 1.3154 kt | **1.0995 kt** |
+    /// | colony seed hold | 31.62 kt | **12.04 kt** |
+    /// | settlers per kt of cost | 24.04 | **10.95** |
+    /// | empty acceleration | 5.22 | 2.56 |
+    ///
+    /// So it is **cheaper and much worse at carrying people** — a Contact hull
+    /// reserves 15% of its volume for what makes it armed, and carries a
+    /// thicker shell to survive using it. Its settlers-per-mineral (10.95) is
+    /// still above a Medium hull's (9.16), so it is not dominated; it is a
+    /// middle rung the ladder did not have.
+    ///
+    /// **A colonizer built this way carries `Class::Unnamed`**, which is how
+    /// `assign_role` tells it from a scout on the same hull — the same
+    /// class-as-design rule [`Self::scout_hull_offensive`] uses, and for the
+    /// same reason.
+    ///
+    /// **Placeholder, default false** (R-WAR4) — the card sets it.
+    pub colonizer_general_contact: bool,
     /// **Share of a colonizer's mineral endowment erected as infrastructure on
     /// arrival**, rather than banked (T-113).
     ///
@@ -555,6 +586,7 @@ impl Default for Doctrine {
             picket_claims_target: false,
             scout_hull_offensive: false,
             picket_intercepts: false,
+            colonizer_general_contact: false,
             founding_infra_share: 0.0,
             survey_strategy: SurveyStrategy::OpeningSectors,
             base_value: [1.0; 3],
@@ -1042,6 +1074,18 @@ impl Autopilot for BaselineAutopilot {
         match hull {
             // A Contact hull scouts. It needs no target here — `launch_survey`
             // picks the nearest unvisited world from the survey frontier.
+            //
+            // **Unless it is this doctrine's General colonizer** (T-116). The
+            // card mounts the colony role on a Contact hull, so the hull alone
+            // stops saying which errand it was laid down for and the class has
+            // to — a scout is a `Tor` (`scout_order`), a colonizer is not. The
+            // arm below picks the world.
+            HullType::GeneralContactVehicle
+                if class != Class::Tor && general_colonizer_hull(doctrine) == HullType::GeneralContactVehicle =>
+            {
+                colonize(doctrine, candidates)
+            }
+
             HullType::LimitedContactVehicle
             | HullType::LimitedContactUnit
             | HullType::GeneralContactVehicle
@@ -1053,33 +1097,7 @@ impl Autopilot for BaselineAutopilot {
             // here because T-56 stage 4 lets doctrine order one; without this
             // arm a General colonizer would be built and then find no mission,
             // and `apply_build` would refund nothing.
-            HullType::MediumSystems | HullType::GeneralSystems => {
-                let (a, b) = match doctrine.expand_bias {
-                    ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
-                    ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
-                };
-                // **Settle the ground the pickets are holding, first** (T-113).
-                //
-                // A world this empire holds is one a rival's colonizer turns
-                // back from, so the race for it is already won and the voyage
-                // cannot be wasted on a claim someone else got to first. That is
-                // what makes a picket worth its hull: not the colony a rival
-                // does not found, which §8.6 measured as a losing trade, but the
-                // one *this* empire does.
-                //
-                // Ahead of the class preference rather than folded into `rank`:
-                // holding is a fact about the board, not a score, and mixing it
-                // into the weighted sum would make it tradeable against
-                // mineral richness at some exchange rate nobody has ratified.
-                let held = |want: PlanetClass| {
-                    candidates.iter().filter(|c| c.held_by_me && c.ranked.class == want).max_by(score_then_id)
-                };
-                held(a)
-                    .or_else(|| held(b))
-                    .or_else(|| best(a))
-                    .or_else(|| best(b))
-                    .map(|c| Tasking { role: Role::Colonizer, target: Some(c.ranked.id) })
-            }
+            HullType::MediumSystems | HullType::GeneralSystems => colonize(doctrine, candidates),
 
             // A Limited Systems hull mines; the freighter that hauls for it is
             // produced alongside (roles §5 — the center produces both).
@@ -1305,7 +1323,7 @@ impl Autopilot for BaselineAutopilot {
                 };
                 let options = [
                     (HullType::MediumSystems, ctx.colonizer_cost, col.settlers_by_hull[0]),
-                    (HullType::GeneralSystems, ctx.general_colonizer_cost, col.settlers_by_hull[1]),
+                    (general_colonizer_hull(doctrine), ctx.general_colonizer_cost, col.settlers_by_hull[1]),
                 ];
                 // **Only hulls this center can pay for today.** The score picks
                 // between real options; it does not pick an option and then
@@ -1506,8 +1524,67 @@ impl Autopilot for BaselineAutopilot {
 /// The class is always `Tor` — the survey design — whatever shell it is mounted
 /// on, and that is what distinguishes a scouting LOU from a picketing one.
 fn scout_order(doctrine: &Doctrine) -> BuildOrder {
-    let hull = if doctrine.scout_hull_offensive { HullType::LimitedOffensive } else { HullType::LimitedContactVehicle };
-    BuildOrder::Hull { hull_type: hull, class: Class::Tor }
+    BuildOrder::Hull { hull_type: scout_hull(doctrine), class: Class::Tor }
+}
+
+/// **The hull this doctrine sends out to survey** — the hull alone, where
+/// [`scout_order`] wraps it in the build order and its class.
+///
+/// Public because `launch_survey` needs it at game start, where there is no
+/// build order to read it off: the seed scouts are spawned rather than bought.
+pub fn scout_hull(doctrine: &Doctrine) -> HullType {
+    if doctrine.scout_hull_offensive {
+        HullType::LimitedOffensive
+    } else {
+        HullType::LimitedContactVehicle
+    }
+}
+
+/// **Pick a colonization target**, shared by every hull that can found.
+///
+/// Extracted at T-116 because the card mounts the colony role on a Contact hull
+/// as well as on the two Systems hulls, and three copies of a preference order
+/// is how one of them comes to be a different preference order.
+fn colonize(doctrine: &Doctrine, candidates: &[Candidate]) -> Option<Tasking> {
+    let best = |want: PlanetClass| candidates.iter().filter(|c| c.ranked.class == want).max_by(score_then_id);
+    let (a, b) = match doctrine.expand_bias {
+        ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
+        ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
+    };
+    // **Settle the ground the pickets are holding, first** (T-113).
+    //
+    // A world this empire holds is one a rival's colonizer turns back from, so
+    // the race for it is already won and the voyage cannot be wasted on a claim
+    // someone else got to first. That is what makes a picket worth its hull:
+    // not the colony a rival does not found, which §8.6 measured as a losing
+    // trade, but the one *this* empire does.
+    //
+    // Ahead of the class preference rather than folded into `rank`: holding is
+    // a fact about the board, not a score, and mixing it into the weighted sum
+    // would make it tradeable against mineral richness at some exchange rate
+    // nobody has ratified.
+    let held =
+        |want: PlanetClass| candidates.iter().filter(|c| c.held_by_me && c.ranked.class == want).max_by(score_then_id);
+    held(a)
+        .or_else(|| held(b))
+        .or_else(|| best(a))
+        .or_else(|| best(b))
+        .map(|c| Tasking { role: Role::Colonizer, target: Some(c.ranked.id) })
+}
+
+/// **The General-tier hull this doctrine colonizes with** (T-116).
+///
+/// One function, for the same reason `scout_order` is one: the option set, the
+/// price the context carries and `assign_role` all have to name the same hull,
+/// and three readings of one doctrine write is how they come to disagree.
+///
+/// The Medium hull is untouched — this substitutes *within* the option set.
+pub fn general_colonizer_hull(doctrine: &Doctrine) -> HullType {
+    if doctrine.colonizer_general_contact {
+        HullType::GeneralContactVehicle
+    } else {
+        HullType::GeneralSystems
+    }
 }
 
 /// A build order for `hull`, taking whichever class this policy names for it.
@@ -1784,6 +1861,89 @@ mod tests {
 
         let as_picket = ap.assign_role(&armed, HullType::LimitedOffensive, Class::Unnamed, &cands).unwrap();
         assert_eq!(as_picket.role, Role::Picket, "the same hull without the survey design still holds ground");
+    }
+
+    /// **The General colonizer is unreachable under `CheapestViable`, and that
+    /// is algebra rather than a magnitude** (T-116).
+    ///
+    /// `production_choice` filters the hull options to those the centre can pay
+    /// for *and* that would deliver settlers, then takes the max by policy key.
+    /// Under `CheapestViable` the key is the negated price, and a Medium hull
+    /// costs **0.1092 kt against any General hull's ~1.1–1.3** — so the General
+    /// option wins only if the Medium is filtered out, i.e. delivers zero.
+    ///
+    /// It cannot. `sim::settler_target` takes
+    /// `hi = hold.min(k_target).min(pop − floor)` and returns zero exactly when
+    /// `hi ≤ 0`, `k_origin ≤ 0` or `k_target ≤ floor` — **none of which
+    /// mentions the hold beyond it being positive.** So the two options are
+    /// admitted together or not at all, and the cheaper one always wins.
+    ///
+    /// This is why `Doctrine::colonizer_general_contact` is inert on its own:
+    /// the card's Design write substitutes a hull into a slot the shipped
+    /// policy never selects (`Hyades_warfare_tree.md` §8.10).
+    #[test]
+    fn the_cheapest_viable_policy_never_names_a_general_colonizer() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        assert_eq!(doctrine.colonizer_policy, ColonizerPolicy::CheapestViable, "the shipped policy");
+        let cands = one_colony_candidate(&ap, &doctrine);
+        // Rich enough for either hull, so affordability is not what decides.
+        let mut ctx = prod_ctx(BandTier::III, 3.0, 500.0);
+        ctx.colonizer_cost = Price::new(0.1092);
+        ctx.general_colonizer_cost = Price::new(1.0995);
+        let order = ap.production_choice(&doctrine, &ctx, &cands);
+        assert!(
+            matches!(order, BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }),
+            "the cheap hull wins whatever sits in the General slot, got {order:?}"
+        );
+
+        // And substituting the Contact hull into that slot changes nothing —
+        // the *same* order comes back, which is the inert verdict.
+        let gcv = Doctrine { colonizer_general_contact: true, ..Doctrine::default() };
+        assert_eq!(
+            general_colonizer_hull(&gcv),
+            HullType::GeneralContactVehicle,
+            "the write must actually name the Contact hull"
+        );
+        assert_eq!(ap.production_choice(&gcv, &ctx, &cands), order, "substituting into a dead slot is a no-op");
+    }
+
+    /// **Under `SettlersPerMineral` the substitution bites, and it is a
+    /// downgrade** (T-116) — which is the card's price, paid where §8.2 says.
+    ///
+    /// Settlers per kilotonne of cost, off the ladder
+    /// (`examples/hull_compare`): MSV **9.16**, GCV **10.95**, GSV **24.04**.
+    /// So a General Systems hull is far and away the best deal, a Contact hull
+    /// on the same rung is less than half of it, and the Contact hull still
+    /// beats the Medium — it is a middle rung, not a dominated one.
+    #[test]
+    fn under_settlers_per_mineral_the_contact_hull_is_chosen_and_is_worse() {
+        let ap = BaselineAutopilot::default();
+        let base = Doctrine { colonizer_policy: ColonizerPolicy::SettlersPerMineral, ..Doctrine::default() };
+        let gcv = Doctrine { colonizer_general_contact: true, ..base };
+        let cands = one_colony_candidate(&ap, &base);
+        let mut ctx = prod_ctx(BandTier::III, 3.0, 500.0);
+        ctx.colonizer_cost = Price::new(0.1092);
+        ctx.general_colonizer_cost = Price::new(1.0995);
+        // The candidate's per-hull settler figures stand in for `settler_target`;
+        // the point is the *ranking*, so they carry the ladder's proportions.
+        let mut rich = cands.clone();
+        rich[0].settlers_by_hull = [Kilotons::new(1.0), Kilotons::new(12.0358)];
+
+        assert!(
+            matches!(
+                ap.production_choice(&base, &ctx, &rich),
+                BuildOrder::Hull { hull_type: HullType::GeneralSystems, .. }
+            ),
+            "per-mineral picks the General hull when it carries more per kilotonne"
+        );
+        assert!(
+            matches!(
+                ap.production_choice(&gcv, &ctx, &rich),
+                BuildOrder::Hull { hull_type: HullType::GeneralContactVehicle, .. }
+            ),
+            "and the write substitutes the Contact hull into that same slot"
+        );
     }
 
     /// One `Candidate` a mature center would happily colonize.

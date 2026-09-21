@@ -55,8 +55,8 @@ use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use crate::autopilot::{
-    Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext, Ranked,
-    SurveyStrategy, SurveyView, Tasking,
+    scout_hull, Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext,
+    RankContext, Ranked, SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
 use crate::combat::{CombatConfig, Combatant, FleetTrajectory, StationKeeping};
@@ -2176,6 +2176,21 @@ pub struct SimConfig {
     /// per-player and is what a Warfare card writes
     /// (`Hyades_warfare_tree.md` §7.2). Both must be on for a shot to be fired.
     pub engagements_enabled: bool,
+    /// **An ablation, and it is wrong on purpose** (T-116).
+    ///
+    /// Under `Doctrine::picket_after_founding` a colonizer keeps its hull, so
+    /// the colony it founds gets no recycled stock and starts at the ladder's
+    /// floor instead of `founding_infra(hull)` — a factor of about **5.5** on
+    /// a Medium hull (0.020 kt against 0.109). That is conservation being
+    /// correct (R-O57, design law #11): the minerals flew away.
+    ///
+    /// Setting this restores the rung anyway, which **violates conservation**
+    /// and must never ship. It exists so the card's measured `W_0` can be
+    /// attributed: `examples/warfare_why` runs the card with and without it,
+    /// and if the loss goes, the founding rung is the cause. `CLAUDE.md` §2 —
+    /// ablation is the only method that can refute, and a mechanism nobody
+    /// removed is a story rather than a cause.
+    pub ablate_picket_founding_cost: bool,
     /// How long a resolved engagement is simulated for, in years.
     ///
     /// **Placeholder magnitude (R-WAR5).** `resolve_engagement` walks `dt`-sized
@@ -2483,6 +2498,7 @@ impl SimConfig {
             // Off: the mechanic is unratified and every measured number in the
             // tree was taken without it. See the field doc.
             engagements_enabled: false,
+            ablate_picket_founding_cost: false,
             engagement_horizon_years: 0.5,
             engagement_dt_years: 0.0005,
             engagement_volley_period_years: 0.05,
@@ -2923,7 +2939,7 @@ impl Simulation {
                 };
                 // Bootstrap craft are *seeded*, not built — no yard made them,
                 // so they leave at once (autopilot-doc §2).
-                self.launch_survey(p, home_pos, heading, 0, 0.0);
+                self.launch_survey(p, home_pos, heading, 0, 0.0, scout_hull(&doctrine_here));
             }
         }
 
@@ -3300,7 +3316,19 @@ impl Simulation {
                 // its minerals in the hull, so it has none to leave here — and
                 // what it leaves instead is whatever the hold was loaded with,
                 // credited just below.
-                let founded_at = if self.picket_doctrine(p) { Price::ZERO } else { self.founding_infra(hull) };
+                // **Ablation knob, not a design option** (T-116,
+                // `SimConfig::ablate_picket_founding_cost`). Conservation says
+                // a hull that flies on leaves nothing (R-O57, design law #11),
+                // so charging the rung is the *correct* model and this switch
+                // is wrong on purpose. It exists because the card's measured
+                // `W_0` has to be attributed to something, and the only way to
+                // show the founding rung is the cause is to remove it and watch
+                // the effect go (`CLAUDE.md` §2: ablation refutes).
+                let founded_at = if self.picket_doctrine(p) && !self.config.ablate_picket_founding_cost {
+                    Price::ZERO
+                } else {
+                    self.founding_infra(hull)
+                };
                 let f = self.world.factors.get_mut(target).unwrap();
                 f.infra = f.infra.max(founded_at);
             }
@@ -4862,6 +4890,12 @@ impl Simulation {
         // independent of scan order. `candidate_count` still carries the true
         // count, because `survey_reserve` is a threshold on the size of the
         // frontier and not on the size of this slice.
+        // **The General-tier colonizer is a doctrine read, not a constant**
+        // (T-116). Bound once here because four separate places downstream have
+        // to agree about it — the two settler figures, the price the context
+        // carries, and the founding rung — and `general_colonizer_hull` is the
+        // same function `production_choice` names the hull with.
+        let general_hull = crate::autopilot::general_colonizer_hull(&doctrine);
         let mut count = 0usize;
         // **Six slots, not three: the per-class winner and the per-class winner
         // among held ground** (T-113).
@@ -4944,7 +4978,7 @@ impl Simulation {
                     // is exactly what makes that affordable (R-O70).
                     let settlers_by_hull = [
                         self.settler_target(center, e, HullType::MediumSystems.colony_seed_capacity(&self.config)),
-                        self.settler_target(center, e, HullType::GeneralSystems.colony_seed_capacity(&self.config)),
+                        self.settler_target(center, e, general_hull.colony_seed_capacity(&self.config)),
                     ];
                     let mining_crew = self.mining_crew_for(center, e);
                     let cand = Candidate { view, ranked, settlers_by_hull, mining_crew, held_by_me, claim_inbound };
@@ -4974,11 +5008,11 @@ impl Simulation {
             infra_bill,
             stockpile_by_color,
             colonizer_cost: hull_cost(HullType::MediumSystems, &self.config),
-            general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
+            general_colonizer_cost: hull_cost(general_hull, &self.config),
             medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
-            general_seed_capacity: HullType::GeneralSystems.colony_seed_capacity(&self.config),
+            general_seed_capacity: general_hull.colony_seed_capacity(&self.config),
             medium_founding_infra: self.founding_infra_band(HullType::MediumSystems),
-            general_founding_infra: self.founding_infra_band(HullType::GeneralSystems),
+            general_founding_infra: self.founding_infra_band(general_hull),
             // The *true* price of a pair to this center right now. With
             // recycling on, a half that comes out of Reserve is not bought, and
             // the context has to say so or the decision is made on a price the
@@ -5431,7 +5465,7 @@ impl Simulation {
                             }
                             SurveyStrategy::GlobalPool | SurveyStrategy::OpeningSectors => Vec3::ZERO,
                         };
-                        self.launch_survey(p, center_pos, heading, 0, launch_delay)
+                        self.launch_survey(p, center_pos, heading, 0, launch_delay, hull_type)
                     }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
@@ -5771,6 +5805,7 @@ impl Simulation {
                 player: p as u32,
                 vehicle: e,
                 role: Role::Miner,
+                hull: self.world.hull_type.get(e).copied().unwrap_or(role_hull_type(Role::Miner)),
                 from,
                 to: target_pid,
                 settlers: 0.0,
@@ -5798,6 +5833,7 @@ impl Simulation {
                 player: p as u32,
                 vehicle: e,
                 role: Role::Freighter,
+                hull: self.world.hull_type.get(e).copied().unwrap_or(role_hull_type(Role::Freighter)),
                 from,
                 to: outpost_pid,
                 settlers: 0.0,
@@ -6275,6 +6311,7 @@ impl Simulation {
                 player: p as u32,
                 vehicle: e,
                 role,
+                hull,
                 from,
                 to: target_pid,
                 settlers: settlers.kilotons(),
@@ -6310,6 +6347,7 @@ impl Simulation {
                 player: p as u32,
                 vehicle: e,
                 role: Role::Freighter,
+                hull: self.world.hull_type.get(e).copied().unwrap_or(role_hull_type(Role::Freighter)),
                 from,
                 to: outpost_pid,
                 settlers: 0.0,
@@ -6318,7 +6356,17 @@ impl Simulation {
         );
     }
 
-    fn launch_survey(&mut self, p: usize, from: Vec3, heading: Vec3, hops: usize, launch_delay: f64) {
+    /// Dispatch a survey craft. `hull` is **the hull the yard actually built**
+    /// (T-116).
+    ///
+    /// It used to be `role_hull_type(Role::Scout)`, hardcoded — so
+    /// `apply_build_with` debited a centre for one hull and this spawned a
+    /// different one, discarding what was paid for. Invisible until now only
+    /// because every Limited hull shares a price and a mass (§8.9.7), so the
+    /// substitution was free in both directions; it is still the yard's output
+    /// being thrown away, and it is the third independent reason
+    /// `Doctrine::scout_hull_offensive` measured inert.
+    fn launch_survey(&mut self, p: usize, from: Vec3, heading: Vec3, hops: usize, launch_delay: f64, hull: HullType) {
         let mut cands = core::mem::take(&mut self.survey_scratch);
         self.fill_survey_candidates(p, &mut cands);
         let bias = if heading == Vec3::ZERO { None } else { Some(heading) };
@@ -6333,7 +6381,7 @@ impl Simulation {
             let e = self.world.spawn();
             self.world.owner.insert(e, PlayerId(p as u32));
             self.world.role.insert(e, Role::Scout);
-            self.world.hull_type.insert(e, role_hull_type(Role::Scout));
+            self.world.hull_type.insert(e, hull);
             self.world.voyage.insert(e, Voyage { target, heading_bias: bias, hops });
             self.world.cargo.insert(e, Minerals::default());
             let arrive = self.set_leg(e, from, dest, accel, launch_delay);
@@ -6341,6 +6389,7 @@ impl Simulation {
             self.log.push(
                 self.clock,
                 LogEvent::VehicleSpawned {
+                    hull,
                     player: p as u32,
                     vehicle: e,
                     role: Role::Scout,

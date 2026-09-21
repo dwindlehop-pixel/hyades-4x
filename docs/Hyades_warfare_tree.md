@@ -1286,6 +1286,130 @@ how often the inference is wrong. It does **not** need the reachability cone
 (R-O31/T-05) or a deep-space engagement site, which is what this subsection
 originally claimed.
 
+### 8.10 Why `W_0` is negative — it is one cost, and it compounds (T-116)
+
+**`OPEN` as a design question; the mechanism is closed.** Six arms across §8.6–8.9
+agreed on the sign and none of them said why. `examples/warfare_why` decomposes
+it, and the answer is a single term.
+
+#### The decomposition
+
+`W_0 = C_0 − mean_j C_j` moves for two reasons a single number cannot separate:
+the card's player founds fewer colonies, and its neighbors found more. Those are
+not independent — colonizable worlds are a shared pool, so a world seat 0 does
+not take is one somebody else can — so the harness reports **the transfer
+ratio** `Δneighbors / −Δown` beside the total. At 1.0 the card is a pure
+handover; below it, some of the loss is worlds nobody takes.
+
+4 CRN seeds, 3 seats, 800 yr, seat 0 alone playing. Per-seed means in colonies;
+`MSV`/`Gen` are seat 0's hull builds over the whole bed.
+
+| arm | own | neighbors | `W_0` | MSV | Gen | founded | transfer |
+|---|---|---|---|---|---|---|---|
+| peace | — | — | — | 6,889 | **0** | 3,562 | — |
+| Design write alone | +0.0 | +0.0 | **+0.0** | 6,889 | **0** | 3,562 | — |
+| `SettlersPerMineral` alone | +287.8 | −107.1 | **+394.9** | 8,836 | 469 | 4,713 | — |
+| …+ the Design write | +220.0 | −93.1 | **+313.1** | 7,415 | 639 | 4,442 | — |
+| **Doctrine write alone** | **−197.2** | **+90.5** | **−287.8** | 5,665 | 0 | 2,773 | **0.46** |
+| …with the founding rung restored *(ablation)* | −1.0 | +1.0 | **−2.0** | 6,492 | 0 | 3,558 | 1.00 |
+| the card as §8.2 specifies it | −197.2 | +90.5 | −287.8 | 5,665 | 0 | 2,773 | 0.46 |
+| **both halves, both live** | **−337.5** | **+153.6** | **−491.1** | 4,162 | 637 | 2,212 | 0.46 |
+
+The card as §8.2 specifies it reproduces the Doctrine write **to every printed
+digit**, which is the first row saying the same thing: at the shipped policy the
+card *is* its Doctrine half.
+
+#### The cause, by ablation
+
+**Restoring the founding rung takes the Doctrine write from −287.8 to −2.0.**
+That is `SimConfig::ablate_picket_founding_cost`, which violates conservation and
+must never ship — its only job is to remove the suspected cause and watch the
+effect go, which is the one method that can refute (`CLAUDE.md` §2).
+
+So the chain is:
+
+```text
+colonizer keeps its hull
+  → the colony gets no recycled stock: floor rung 0.020 kt, not 0.109  (5.5x)
+  → that colony produces less, forever
+  → the empire builds 18% fewer colony ships   (6,889 → 5,665)
+  → it founds 22% fewer colonies               (3,562 → 2,773)
+  → neighbors pick up 46% of them              (transfer 0.46)
+  → W_0 = −(1 + 0.46) x the loss
+```
+
+**Everything else the card does is worth about two colonies.** Pickets,
+engagements, diversions and kills are all still present in the ablation arm —
+5,000-odd pickets, 20,000-odd kills — and with the founding rung restored the
+whole apparatus nets −2.0. The denial mechanic is not *losing* the objective; it
+is not *touching* it.
+
+#### Which corrects §8.6's arithmetic in the direction that matters
+
+§8.6 bounded a 1:1 denial as `ΔW_0 = −k(1 − w_0A)` and concluded the card loses
+at any table wider than two seats. That bound assumed the card **denies**.
+Measured, the card's neighbors *gain* 0.46 colonies per colony it costs itself —
+so the realised form is `ΔW_0 = −k(1 + t)` with `t = 0.46`, and there is no
+denial term in it at all. The card is not a bad trade; it is **not a trade**.
+
+#### What this says about where a Warfare card's price can go
+
+Warfare's objective is a *difference*, so a price that compounds against your own
+expansion is charged twice — once in your own count and once in everybody
+else's. **A card whose cost is a permanent reduction in every colony's starting
+stock cannot win it**, whatever the mechanic on the other side buys, because the
+loss grows with the thing the objective measures.
+
+The same finding arrives from the other side in §8.9: a picket bought with a
+**dedicated LOU** costs −2.87% of own colonies where one bought with a
+colonizer's founding stock costs −21.46%. Same mechanic, price moved, an order
+of magnitude less damage.
+
+**R-WAR11 (`OPEN`)**: the card's price should be paid **once**, at play, rather
+than per-colony forever. That is a card-cost mechanism the engine does not have —
+`cards.rs` applies effects and charges nothing — and it is what §8's card needs
+before its magnitudes are worth tuning.
+
+#### The two halves are multiplicatively bad together, and that is the same term again
+
+`+313.1` and `−287.8` should compose to about `+25`. Measured together they are
+**−491.1** — an interaction of **−516**, larger than either half.
+
+One line explains it. `founding_infra(hull)` **is** `hull_cost(hull)` (T-70,
+R-O57: the recycled hull's minerals *are* the stock), so the price the Doctrine
+write charges is the mass of whatever hull the colony ship happens to be. The
+Design write mounts the colony role on a hull costing **1.0995 kt against a
+Medium's 0.1092 — 10.07x** — so the same mechanic forfeits ten times as much.
+
+**The card's price is proportional to the thing its other half makes bigger.**
+That is not a tuning collision, it is the two writes reading the same quantity
+with opposite intent, and it is why the whole card is worse than either piece.
+
+#### And the Design write is not the problem — it is `+313`
+
+The armed colonizer costs what §8.2 says it should and **wins `W_0` anyway**:
++313.1 against the +394.9 of the policy change it rides on, so the GCV gives up
+**67.8 colonies** of that gain — a price, paid, with the objective still far
+positive. **The negative `W_0` this document has been tracking since §8.6 comes
+entirely from the Doctrine half.**
+
+#### Two things the same run says that are not about this card
+
+- **The Design write is unreachable at the shipped colonizer policy.**
+  `CheapestViable` keys on negated price and a Medium hull costs 0.1092 kt
+  against any General hull's ~1.1–1.3, so the General slot is selected only if
+  the Medium is filtered out for delivering zero settlers — which
+  `sim::settler_target` cannot do independently of the hold (its zero cases are
+  `hi ≤ 0`, `k_origin ≤ 0`, `k_target ≤ floor`, none of which mention the hold
+  beyond it being positive). Measured: **zero General colonizers built across
+  four seeds**, and the arm is bit-identical to peace.
+  `the_cheapest_viable_policy_never_names_a_general_colonizer` pins the algebra.
+  **The Contact ladder has no Medium rung** — `HullType` runs Limited and
+  General only for Contact — so a card that mounts the colony role on a Contact
+  hull is forced to the General tier, which is the tier nothing selects.
+- **`SettlersPerMineral` is worth more than any card measured so far**, at
+  **+394.9 `W_0`** unilaterally. See **R-IND11** below.
+
 ---
 
 ## 9. Register
@@ -1307,6 +1431,8 @@ originally claimed.
 | — | **only Warfare may carry a population-lethal Doctrine write** (card contract §10), enforced in the card layer rather than by authoring convention |
 | — | the wreck roll is the only stochastic beat, bounded in (0, 1) |
 | **R-WAR9** | **the colonization leg is flown at the rate its own load implies** — `spawn_courier` read `civilian_accel_g · G` before the hold was loaded, so a colony ship flew like an empty hull and R-O32 was closed for the arena but not for this dispatcher. A laden Medium colonizer makes **0.241 ly/yr² against 2.446 empty**. It **invalidates every transit-dependent magnitude measured before it**, §8.6–8.8's arms included (§8.9.6) |
+| **T-116** | **the card's negative `W_0` is one cost and it compounds** — the forfeited founding rung. Ablated, the Doctrine write goes −287.8 → **−2.0**, so pickets, engagements and kills are together worth about two colonies (§8.10) |
+| **T-116** | **`founding_infra` is `hull_cost`**, so the Doctrine write's price scales with the hull the Design write enlarges — 10.07× on a GCV — which is why the whole card (−491.1) is worse than either half or their sum (§8.10) |
 | **T-115** | **there are two responders to a picket, not one** — the home center issues an order and the crew notices, and light reaches a closing hull sooner than a standing observer. Because light outruns a colony ship, *whether the warning arrives* stopped discriminating; **turnover** replaces it, and it is kinematics rather than a constant (§8.9.1–8.9.2) |
 | **T-115** | **a picket whose world is colonized returns to the frontier**, off station and off the books in one function — which is the situation T-113's held-ground preference creates (§8.9.3) |
 | **T-113** | the per-class candidate reduction (R-O70) is exact only for a consumer reading the argmax of a **class**; a consumer reading the argmax of a *subset* needs its own slot, and got one (§8.8) |
@@ -1320,6 +1446,8 @@ originally claimed.
 | Code | Question | What would settle it |
 |---|---|---|
 | ~~**T-30**~~ | ~~no accept/decline site exists~~ — **closed as stated (T-111).** The round layer had already landed and the engine was producing ~4,200 co-locations per run unremarked; `sys_engagement` now resolves them. R-AC13 and posture cards are **not** unblocked: both need a decision at *range* | done; see §3.4 and §7 |
+| **R-WAR11** | **a Warfare card's price must be payable once, at play.** The card's whole measured `W_0` is one recurring cost — the founding rung a departing colonizer forfeits — and a cost that recurs per colony is charged twice against a *difference* objective: once in your count and once in everybody else's (§8.10). `cards.rs` applies effects and charges nothing, so there is nowhere to put a one-off price | a card-cost mechanism, then a re-measure of §8.2's card against it |
+| **R-IND11** | **`SettlersPerMineral` is worth +394.9 `W_0` unilaterally** on the 4-seed asymmetric bed — more than any card measured so far. `Hyades_industry.md` §1.6 records the policy as *"blocked on R-O74"*, the conjured-settlers violation, and **R-O74 closed at §1.7**. So the block is lifted and the answer may have flipped | a **symmetric** re-measure — this one is competitive, not global, and a default is a global question |
 | **R-WAR10** | **a picket is handed the colony ship's destination**, not its trajectory. Light delivers a departure, a time and a heading; a destination is an *inference* from those, and inferring it wrong is what makes a feint possible. **Meeting the ship on its path instead is refuted** — the window is back-loaded, so a mid-track intercept tolerates a 1.95 ly offset against the destination's 4.96 (§8.9.8) | a heading-based candidate set in place of the true target, and a measure of how often the inference is wrong |
 | **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is **bit-identically inert** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |
 | **R-WAR7** | **a colonizer's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |

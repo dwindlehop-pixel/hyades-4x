@@ -163,6 +163,93 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-116. Why `W_0` is negative — one cost, measured by ablation
+
+**The question T-112 through T-115 kept not answering.** Six arms agreed on the
+sign; none said why. `examples/warfare_why` (new) decomposes it. Full write-up
+in `Hyades_warfare_tree.md` §8.10.
+
+#### The table (4 CRN seeds, 3 seats, 800 yr, seat 0 alone playing)
+
+| arm | own | neighbors | `W_0` | MSV | Gen | founded | transfer |
+|---|---|---|---|---|---|---|---|
+| peace | — | — | — | 6,889 | **0** | 3,562 | — |
+| Design write alone | +0.0 | +0.0 | **+0.0** | 6,889 | **0** | 3,562 | — |
+| `SettlersPerMineral` alone | +287.8 | −107.1 | **+394.9** | 8,836 | 469 | 4,713 | — |
+| …+ the Design write | +220.0 | −93.1 | **+313.1** | 7,415 | 639 | 4,442 | — |
+| **Doctrine write alone** | −197.2 | +90.5 | **−287.8** | 5,665 | 0 | 2,773 | **0.46** |
+| …founding rung restored *(ablation)* | −1.0 | +1.0 | **−2.0** | 6,492 | 0 | 3,558 | 1.00 |
+| the card as §8.2 specifies it | −197.2 | +90.5 | −287.8 | 5,665 | 0 | 2,773 | 0.46 |
+| **both halves, both live** | −337.5 | +153.6 | **−491.1** | 4,162 | 637 | 2,212 | 0.46 |
+
+#### The answer
+
+**One cost.** Restoring the founding rung takes the Doctrine write from −287.8
+to **−2.0** — so pickets, engagements, diversions and kills are together worth
+about two colonies. The chain:
+
+```text
+colonizer keeps its hull
+  → colony starts at the floor rung, 0.020 kt not 0.109        (5.5x)
+  → it produces less, forever
+  → the empire builds 18% fewer colony ships   (6,889 → 5,665)
+  → founds 22% fewer colonies                  (3,562 → 2,773)
+  → neighbors pick up 46% of them              (transfer 0.46)
+  → W_0 = −(1 + 0.46) x the loss
+```
+
+**And it corrects §8.6's arithmetic in the direction that matters.** That bound
+(`ΔW_0 = −k(1 − w_0A)`) assumed the card *denies*. It does not: neighbors
+**gain** 0.46 per colony it costs its own player, so the realized form is
+`−k(1 + t)` and there is no denial term at all. The card is not a bad trade, it
+is not a trade.
+
+**The two halves are multiplicatively bad**: +313.1 and −287.8 compose to −491.1,
+an interaction of −516. `founding_infra(hull)` **is** `hull_cost(hull)` (T-70,
+R-O57), so the Doctrine write's price is the mass of whatever hull the colony
+ship is — and the Design write mounts it on one costing **10.07x** a Medium.
+**The card's price is proportional to the thing its other half makes bigger.**
+
+**R-WAR11**: a Warfare card's price has to be payable **once, at play**. A cost
+that recurs per colony is charged twice against a difference objective.
+`cards.rs` charges nothing, so there is nowhere to put a one-off price yet.
+
+#### Two findings that are not about this card
+
+- **The Design write is unreachable at the shipped colonizer policy.**
+  `CheapestViable` keys on negated price, a Medium hull costs 0.1092 kt against
+  any General hull's ~1.1–1.3, and `settler_target`'s zero cases do not depend
+  on the hold — so the two options are admitted together and the cheap one
+  always wins. **Zero General colonizers across four seeds.** Pinned by
+  `the_cheapest_viable_policy_never_names_a_general_colonizer`. And the
+  **Contact ladder has no Medium rung**, so a card mounting the colony role on
+  a Contact hull is forced to the tier nothing selects.
+- **R-IND11 is unblocked and may have flipped.** `SettlersPerMineral` is
+  **+394.9 `W_0`** unilaterally — more than any card measured. `Hyades_industry.md`
+  §1.6 blocks it on R-O74 (conjured settlers); **R-O74 closed at §1.7.** The
+  measurement here is *competitive* (seat 0 alone changes policy), and a default
+  is a global question, so the missing measurement is a symmetric re-run.
+
+#### Also landed
+
+`GeneralContactVehicle` is plumbed as a colonizer option
+(`Doctrine::colonizer_general_contact`), substituting **within** the option set
+so the Medium hull stays. Ladder read out by `examples/hull_compare`: cost
+1.0995 vs the GSV's 1.3154 kt, seed hold **12.04 vs 31.62**, settlers per
+kilotonne **10.95 vs 24.04** — cheaper and much worse at carrying people, which
+is §8.2's stated trade. Its 10.95 still beats a Medium's 9.16, so it is a middle
+rung rather than a dominated one.
+
+**And a plumbing defect fixed on the way**: `launch_survey` spawned a fresh
+entity with a hardcoded `role_hull_type(Role::Scout)`, discarding the hull
+`apply_build_with` had just charged for. Invisible only because every Limited
+hull shares a price and a mass (§8.9.7) — it is the third independent reason
+`scout_hull_offensive` measured inert. `LogEvent::VehicleSpawned` now carries
+the hull, because `role` and `hull` are not recoverable from each other in
+either direction.
+
+---
+
 ### T-115. Two responders, a moving picket, an armed scout — and a mechanic priced before it was believed
 
 **Built, gated off, measured.** Full write-up in `Hyades_warfare_tree.md` §8.9.
