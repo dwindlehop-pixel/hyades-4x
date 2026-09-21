@@ -56,7 +56,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use crate::autopilot::{
     scout_hull, Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext,
-    RankContext, Ranked, SurveyStrategy, SurveyView, Tasking,
+    RankContext, Ranked, Standing, SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
 use crate::combat::{CombatConfig, Combatant, FleetTrajectory, StationKeeping};
@@ -1333,6 +1333,50 @@ fn pay_bill(bank: &mut Minerals, bill: &[Price; 3]) {
         let have = bank.get_basic(c);
         bank.add_basic(c, -(bill[i].kilotons().min(have)));
     }
+}
+
+/// **How much infrastructure a hold of minerals can actually be erected into**
+/// (T-117) — and it is a **conjunction over the three colors**, not a total.
+///
+/// A rung is billed by color: `works_bill` splits it by `works.mix_share(c)`
+/// and `can_pay_bill` tests every color separately. So minerals standing in a
+/// hold erect only as much as their **scarcest** color allows, in ratio:
+///
+/// ```text
+/// erectable = eta_works · min over c of ( aboard[c] / mix_share(c) )
+/// ```
+///
+/// A hold that is all Cyan erects **nothing**, however much of it there is —
+/// which is the same conjunction `Hyades_industry.md` §6.19c measured as the
+/// mineral economy's binding constraint, applied at founding instead of at a
+/// production decision. Treating the hold as a scalar total was the version
+/// this replaces, and it let a single-color hold become infrastructure that no
+/// centre could have bought with the same minerals.
+///
+/// Returns what can be erected and what it consumes, so the caller can bank the
+/// remainder. Mass is conserved: `consumed + remainder == aboard`.
+fn erectable_from(aboard: &Minerals, works: &cards::Works) -> (Price, Minerals) {
+    let mut limit = f64::INFINITY;
+    for &c in Basic::ALL.iter() {
+        let share = works.mix_share(c);
+        if share <= 1e-12 {
+            // A color the works do not want is not a constraint, and not a
+            // contribution either — it stays in the bank.
+            continue;
+        }
+        limit = limit.min(aboard.get_basic(c) / share);
+    }
+    if !limit.is_finite() || limit <= 0.0 {
+        return (Price::ZERO, Minerals::default());
+    }
+    let mut consumed = Minerals::default();
+    for &c in Basic::ALL.iter() {
+        let want = limit * works.mix_share(c);
+        consumed.add_basic(c, want.min(aboard.get_basic(c)).max(0.0));
+    }
+    // `eta_works` is what a Production card buys: the same minerals stand up as
+    // more works. `works_bill` divides by it, so erecting multiplies.
+    (Price::new(limit * works.eta_works.max(1e-12)), consumed)
 }
 
 /// The minerals it takes to *stand at* whole infrastructure rung `n`.
@@ -3324,11 +3368,9 @@ impl Simulation {
                 // `W_0` has to be attributed to something, and the only way to
                 // show the founding rung is the cause is to remove it and watch
                 // the effect go (`CLAUDE.md` §2: ablation refutes).
-                let founded_at = if self.picket_doctrine(p) && !self.config.ablate_picket_founding_cost {
-                    Price::ZERO
-                } else {
-                    self.founding_infra(hull)
-                };
+                let recycles = Standing::of(&self.doctrine_of(p)).recycles_on_founding()
+                    || self.config.ablate_picket_founding_cost;
+                let founded_at = if recycles { self.founding_infra(hull) } else { Price::ZERO };
                 let f = self.world.factors.get_mut(target).unwrap();
                 f.infra = f.infra.max(founded_at);
             }
@@ -3368,16 +3410,35 @@ impl Simulation {
                 //
                 // Default share is 0.0, so the shipped galaxy banks all of it
                 // exactly as before.
+                // **The hold adds to the hull's credit; it does not compete
+                // with it** (T-117). This was a `max`, so a colony that
+                // recycled its hull *and* landed minerals got whichever was
+                // bigger and the other vanished — which is not conservation,
+                // it is a comparison standing where a sum belongs.
+                //
+                // **And the hold erects in ratio, not in total.** A rung is
+                // billed per color (`works_bill`), so minerals standing in a
+                // hold are worth only what their scarcest color allows:
+                // `erectable_from` is that conjunction, and it hands back what
+                // it consumed so the rest can be banked rather than lost.
+                //
+                // Default share is 0.0, so the shipped galaxy banks all of it.
                 let share = self.doctrine_of(p).founding_infra_share.clamp(0.0, 1.0);
-                let total = endowment.basic_total();
-                let erected = total * share;
                 let mut remaining = endowment;
-                let banked = take_basics(&mut remaining, total - erected);
+                let offered = take_basics(&mut remaining, endowment.basic_total() * share);
+                let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
+                let (erected, consumed) = erectable_from(&offered, &works);
+                // Whatever the ratio could not use goes to the bank with the
+                // rest — it is still the colony's, just not standing up yet.
+                let mut to_bank = remaining;
+                for &c in Basic::ALL.iter() {
+                    to_bank.add_basic(c, (offered.get_basic(c) - consumed.get_basic(c)).max(0.0));
+                }
                 if let Some(bank) = self.world.stockpile.get_mut(target) {
-                    bank.add_basics(&banked);
+                    bank.add_basics(&to_bank);
                 }
                 let f = self.world.factors.get_mut(target).unwrap();
-                f.infra = f.infra.max(erected);
+                f.infra += erected;
                 self.world.cargo.insert(vehicle, Minerals::default());
             }
             // **The floor, applied once and unconditionally** (§8.7).

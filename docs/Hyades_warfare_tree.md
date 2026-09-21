@@ -1410,6 +1410,94 @@ entirely from the Doctrine half.**
 - **`SettlersPerMineral` is worth more than any card measured so far**, at
   **+394.9 `W_0`** unilaterally. See **R-IND11** below.
 
+### 8.11 The standing layer answers; it is not switched on (T-117)
+
+**Ratified as architecture, not as a magnitude.** Three card landings in a row
+(T-113, T-115, T-116) each added a Doctrine write, and each added the *same
+three branches* to carry it: one in the build order, one in the price the
+production context reads, and one in `assign_role`'s match on hull type. Three
+readings of one write is how they come to disagree — and twice in this document
+they did, silently.
+
+#### What replaced them
+
+`autopilot::Standing` is a borrowed reading of Design and Doctrine that answers
+questions instead of exposing flags:
+
+| call | answers |
+|---|---|
+| `design_for(role)` | the hull **and class** this layer lays down for a role |
+| `colonizer_ladder()` | the colonizer rungs, cheapest first |
+| `mounts(role, hull)` | whether this layer puts that role on that hull |
+| `role_of(hull, class)` | **the inverse** — what a finished design is for |
+| `recycles_on_founding()` | whether a colony ship is consumed by its colony |
+
+The load-bearing property is that **`role_of` is derived from `design_for`
+rather than written out**, in three passes: an exact design match, then the hull
+alone for a class the layer has not named, then a **competence table** (R-O44)
+for a hull no write has claimed. So a card that mounts the colony role on a
+Contact hull changes one function and `assign_role` follows with no edit.
+`role_of_inverts_design_for_every_role` pins it across every combination of the
+writes that move a design — they compose, and a resolver correct one write at a
+time is not one.
+
+#### What it caught
+
+- **`assign_role` was not total.** A Rapid or General Offensive hull matched
+  `_ => None`, so a hull the yard had already been charged for could come back
+  with no mission. The same shape had already cost the engine real work twice:
+  `launch_survey` discarding a paid-for hull (T-116), and `apply_build_with`
+  spending minerals on objects that never existed (R-O86).
+  `every_hull_has_a_role_under_every_doctrine` requires totality.
+- **A `max` standing where a sum belonged.** A colony credited its founding
+  stock from the recycled hull and *then* from the hold with
+  `f.infra = f.infra.max(erected)` — so a colony that recycled a hull **and**
+  landed minerals got whichever was larger and the other vanished. It is `+=`
+  now. Mass is conserved either way only because the shipped
+  `founding_infra_share` is 0.0 and the second term was always zero.
+
+#### The hold erects in ratio, not in total — `R-IND20`
+
+**An infrastructure rung is billed per color** (`works_bill` splits it by
+`works.mix_share(c)`; `can_pay_bill` tests each color separately), so minerals
+standing in a colony ship's hold are worth only what their **scarcest** color
+allows:
+
+```text
+erectable = eta_works · min over c of ( aboard[c] / mix_share(c) )
+```
+
+`sim::erectable_from` is that conjunction. A hold that is all Cyan erects
+**nothing**, however much of it there is — which is the same conjunction
+`Hyades_industry.md` §6.19c measured as the mineral economy's binding
+constraint, arriving at founding instead of at a production decision. What the
+ratio cannot use is banked rather than lost, so `consumed + remainder == aboard`
+exactly.
+
+The version this replaces treated the hold as a scalar total, which let a
+single-color hold stand up as infrastructure **no centre could have bought with
+the same minerals** — a rung obtainable by arriving that was not obtainable by
+paying for it.
+
+**`eta_works` multiplies here because `works_bill` divides by it**, which is
+what makes a Production card's works efficiency reach a founding as well as a
+build.
+
+#### What it cost, measured
+
+**Nothing.** Colonies and total population reproduce **bit-identically on all
+four CRN seeds** against the pre-refactor binary (2,946 / 2,849 / 2,861 / 2,955
+colonies; 4,788,955 / 9,786,675 / 8,831,325 / 9,456,757 kt). Two configurations
+resolve differently than the switch did — a `Tor`-classed Limited Offensive hull
+with the scout write *off* now reads as a picket, and the two large Offensive
+hulls read as pickets where the switch returned `None` — and **nothing builds
+either pairing today**, which is why the bed does not move.
+
+**R-IND20 (`OPEN`)**: whether founding should erect from the hold at all is a
+magnitude question (`founding_infra_share`, default 0.0, measured flat at
+§8.8 because a colony ship's hold is nearly all settlers, R-WAR7). The *rule*
+— that whatever it erects respects the works mix — is ratified here.
+
 ---
 
 ## 9. Register
@@ -1431,6 +1519,8 @@ entirely from the Doctrine half.**
 | — | **only Warfare may carry a population-lethal Doctrine write** (card contract §10), enforced in the card layer rather than by authoring convention |
 | — | the wreck roll is the only stochastic beat, bounded in (0, 1) |
 | **R-WAR9** | **the colonization leg is flown at the rate its own load implies** — `spawn_courier` read `civilian_accel_g · G` before the hold was loaded, so a colony ship flew like an empty hull and R-O32 was closed for the arena but not for this dispatcher. A laden Medium colonizer makes **0.241 ly/yr² against 2.446 empty**. It **invalidates every transit-dependent magnitude measured before it**, §8.6–8.8's arms included (§8.9.6) |
+| **T-117** | **the standing layer answers; it is not switched on.** `Standing::role_of` is *derived* from `design_for`, so a card that moves a role to a different hull needs no edit in `assign_role` — pinned by `role_of_inverts_design_for_every_role` across every combination of the writes (§8.11). Bit-identical on four seeds |
+| **T-117** | **a hold erects infrastructure in the works mix, not in total** — `erectable = eta_works · min_c(aboard[c] / mix_share(c))`, the same per-color conjunction `works_bill` charges a rung with, so a single-color hold erects nothing (§8.11) |
 | **T-116** | **the card's negative `W_0` is one cost and it compounds** — the forfeited founding rung. Ablated, the Doctrine write goes −287.8 → **−2.0**, so pickets, engagements and kills are together worth about two colonies (§8.10) |
 | **T-116** | **`founding_infra` is `hull_cost`**, so the Doctrine write's price scales with the hull the Design write enlarges — 10.07× on a GCV — which is why the whole card (−491.1) is worse than either half or their sum (§8.10) |
 | **T-115** | **there are two responders to a picket, not one** — the home center issues an order and the crew notices, and light reaches a closing hull sooner than a standing observer. Because light outruns a colony ship, *whether the warning arrives* stopped discriminating; **turnover** replaces it, and it is kinematics rather than a constant (§8.9.1–8.9.2) |
@@ -1446,6 +1536,7 @@ entirely from the Doctrine half.**
 | Code | Question | What would settle it |
 |---|---|---|
 | ~~**T-30**~~ | ~~no accept/decline site exists~~ — **closed as stated (T-111).** The round layer had already landed and the engine was producing ~4,200 co-locations per run unremarked; `sys_engagement` now resolves them. R-AC13 and posture cards are **not** unblocked: both need a decision at *range* | done; see §3.4 and §7 |
+| **R-IND20** | **whether founding should erect from the hold at all** is a magnitude (`founding_infra_share`, default 0.0, measured flat at §8.8 because a colony ship's hold is nearly all settlers — R-WAR7). The *rule*, that whatever it erects respects the works mix, is ratified at T-117 | a `settler_target` that reserves mineral volume (R-WAR7), then the same census |
 | **R-WAR11** | **a Warfare card's price must be payable once, at play.** The card's whole measured `W_0` is one recurring cost — the founding rung a departing colonizer forfeits — and a cost that recurs per colony is charged twice against a *difference* objective: once in your count and once in everybody else's (§8.10). `cards.rs` applies effects and charges nothing, so there is nowhere to put a one-off price | a card-cost mechanism, then a re-measure of §8.2's card against it |
 | **R-IND11** | **`SettlersPerMineral` is worth +394.9 `W_0` unilaterally** on the 4-seed asymmetric bed — more than any card measured so far. `Hyades_industry.md` §1.6 records the policy as *"blocked on R-O74"*, the conjured-settlers violation, and **R-O74 closed at §1.7**. So the block is lifted and the answer may have flipped | a **symmetric** re-measure — this one is competitive, not global, and a default is a global question |
 | **R-WAR10** | **a picket is handed the colony ship's destination**, not its trajectory. Light delivers a departure, a time and a heading; a destination is an *inference* from those, and inferring it wrong is what makes a feint possible. **Meeting the ship on its path instead is refuted** — the window is back-loaded, so a mid-track intercept tolerates a 1.95 ly offset against the destination's 4.96 (§8.9.8) | a heading-based candidate set in place of the true target, and a measure of how often the inference is wrong |

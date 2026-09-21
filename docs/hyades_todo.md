@@ -163,6 +163,64 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-117. The standing layer answers; it is not switched on
+
+**Architecture, verified behavior-neutral.** T-113, T-115 and T-116 each added a
+Doctrine write and each added the *same three branches* to carry it — the build
+order, the price the production context reads, and `assign_role`'s match on hull
+type. Full write-up in `Hyades_warfare_tree.md` §8.11.
+
+`autopilot::Standing` is a borrowed reading of Design and Doctrine that answers
+instead of exposing flags: `design_for(role)`, `colonizer_ladder()`,
+`mounts(role, hull)`, `role_of(hull, class)`, `recycles_on_founding()`.
+`ProductionContext::price_of(hull)` replaces picking the right price field by
+re-deriving the write.
+
+**`role_of` is derived from `design_for`, not written out** — an exact design
+match, then the hull alone for a class the layer has not named, then a
+competence table (R-O44) for a hull no write has claimed. So a card that mounts
+the colony role on a Contact hull changes one function.
+`role_of_inverts_design_for_every_role` pins it across every combination of the
+writes; they compose, and a resolver correct one write at a time is not one.
+
+#### What it caught
+
+- **`assign_role` was not total** — the two large Offensive hulls hit
+  `_ => None`, so a hull the yard had been charged for could come back with no
+  mission. That shape has already cost real work twice (`launch_survey` at
+  T-116, `apply_build_with` at R-O86).
+  `every_hull_has_a_role_under_every_doctrine` requires totality now.
+- **A `max` standing where a sum belonged** — a colony credited its founding
+  stock from the recycled hull and *then* from the hold with `max`, so one of
+  the two vanished. It is `+=` now; the shipped `founding_infra_share = 0.0`
+  is why nothing moved.
+
+#### The hold erects in ratio — R-IND20
+
+A rung is billed per color (`works_bill` splits by `works.mix_share(c)`), so
+minerals in a colony ship's hold are worth what their **scarcest** color allows:
+
+```text
+erectable = eta_works · min over c of ( aboard[c] / mix_share(c) )
+```
+
+`sim::erectable_from`. A hold that is all Cyan erects **nothing** — the same
+conjunction `Hyades_industry.md` §6.19c measured as the mineral economy's
+binding constraint, arriving at founding rather than at a production decision.
+What the ratio cannot use is banked, so `consumed + remainder == aboard`. The
+scalar-total version it replaces let a single-color hold stand up as
+infrastructure **no centre could have bought with the same minerals**.
+
+#### Cost
+
+**Bit-identical on four CRN seeds** against the pre-refactor binary — 2,946 /
+2,849 / 2,861 / 2,955 colonies and 4,788,955 / 9,786,675 / 8,831,325 /
+9,456,757 kt. Two configurations resolve differently than the switch did (a
+`Tor`-classed LOU with the scout write off; the two large Offensive hulls) and
+nothing builds either pairing today, which is why the bed does not move.
+
+---
+
 ### T-116. Why `W_0` is negative — one cost, measured by ablation
 
 **The question T-112 through T-115 kept not answering.** Six arms agreed on the

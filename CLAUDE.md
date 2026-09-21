@@ -1801,6 +1801,31 @@ one, stop and flag it.
 
   The one exception is **flavor text, which is the author's own** (below) — do
   not respell it either way.
+- **The standing layer answers questions; it is not switched on** (T-117).
+  Design and Doctrine are state written by cards, and a consumer **asks**
+  `autopilot::Standing` what is currently active — `design_for(role)`,
+  `colonizer_ladder()`, `role_of(hull, class)`, `recycles_on_founding()` —
+  rather than branching on the write. Do not add `if doctrine.some_flag { A }
+  else { B }` at a call site; add the case to the resolver and let the call
+  site keep reading one function.
+
+  The reason is not tidiness. A write that moves a role onto a different hull
+  is read in at least three places — the build order, the price the production
+  context carries, and the role a finished hull is tasked with — and three
+  readings of one write is how they come to disagree. Three landings in a row
+  added a write and added those three branches; twice they diverged silently,
+  and once (`launch_survey`, T-116) the engine paid for a hull and then
+  discarded it because the build site and the spawn site disagreed about which
+  hull the role was on.
+
+  **The property that makes it a layer is that the inverse is derived.**
+  `role_of` is not a second table — it is `design_for` searched, narrowest
+  first, falling through to a competence table (R-O44) for a hull no write has
+  claimed. `role_of_inverts_design_for_every_role` checks it across every
+  combination of the writes, because they compose and a resolver correct one
+  write at a time is not one. A second property is worth asserting beside it:
+  the resolver must be **total**, because a hull with no mission is a hull the
+  yard was already charged for.
 - **Flavor text is the author's own.** Never silently overwrite it.
 - Direct, technical register. Concrete decisions over hedging.
 - **Never force-push a designated feature branch — not even `--force-with-lease`

@@ -886,6 +886,29 @@ pub struct ProductionContext {
     pub survey_frontier: usize,
 }
 
+impl ProductionContext {
+    /// **What this centre would pay for `hull`, today.**
+    ///
+    /// The context carries prices for the hulls the policy can name, and until
+    /// T-117 each caller picked the right field by branching on the same
+    /// Doctrine write the hull came from — so a write that moved a role to a
+    /// different hull had to be remembered in two places. This is the lookup
+    /// instead: name the hull, get its price.
+    ///
+    /// Unknown hulls fall back to the General colonizer's price, which is the
+    /// dearest thing the context carries — a decision made on a price that is
+    /// too high declines, where one made on a price that is too low commits to
+    /// a build the yard then cannot pay for.
+    pub fn price_of(&self, hull: HullType) -> Price {
+        match hull {
+            HullType::LimitedContactVehicle | HullType::LimitedContactUnit => self.light_vehicle_cost,
+            HullType::LimitedOffensive => self.picket_cost,
+            HullType::MediumSystems => self.colonizer_cost,
+            _ => self.general_colonizer_cost,
+        }
+    }
+}
+
 /// The swappable per-seat decision **algorithm** (`Hyades_vehicle_roles.md`
 /// §9 — confirmed this conversation: "autopilot isn't a resource because
 /// these are just components and systems"). An implementor is stateless
@@ -1066,63 +1089,44 @@ impl Autopilot for BaselineAutopilot {
         class: Class,
         candidates: &[Candidate],
     ) -> Option<Tasking> {
-        // Eligibility is **permissive with varying competence** (R-O44): any
-        // hull may take any role. What differs is how well it does the job, so
-        // this picks the competent assignment for each hull rather than the
-        // only legal one.
+        // **Ask the standing layer what this design is for; do not switch on
+        // the hull** (T-117). `Standing::role_of` inverts `design_for`, so a
+        // Doctrine write that moves a role onto a different hull is answered
+        // here with no edit — which is what makes the layer a layer, and what
+        // T-115 and T-116 each added three branches instead of.
+        //
+        // Eligibility is permissive with varying competence (R-O44): any hull
+        // may take any role, and `role_of` falls through to a competence table
+        // for a hull no write has claimed. What is *capability* rather than
+        // competence — a Limited hull has no cargo hold, so a Limited
+        // colonizer founds nothing — shows up as the target search returning
+        // `None`, which is a decline rather than a refusal by hull type.
+        let standing = Standing::of(doctrine);
         let best = |want: PlanetClass| candidates.iter().filter(|c| c.ranked.class == want).max_by(score_then_id);
-        match hull {
-            // A Contact hull scouts. It needs no target here — `launch_survey`
-            // picks the nearest unvisited world from the survey frontier.
-            //
-            // **Unless it is this doctrine's General colonizer** (T-116). The
-            // card mounts the colony role on a Contact hull, so the hull alone
-            // stops saying which errand it was laid down for and the class has
-            // to — a scout is a `Tor` (`scout_order`), a colonizer is not. The
-            // arm below picks the world.
-            HullType::GeneralContactVehicle
-                if class != Class::Tor && general_colonizer_hull(doctrine) == HullType::GeneralContactVehicle =>
-            {
-                colonize(doctrine, candidates)
-            }
+        match standing.role_of(hull, class)? {
+            // A scout needs no target here — `launch_survey` picks the nearest
+            // unvisited world from the survey frontier.
+            Role::Scout => Some(Tasking { role: Role::Scout, target: None }),
 
-            HullType::LimitedContactVehicle
-            | HullType::LimitedContactUnit
-            | HullType::GeneralContactVehicle
-            | HullType::GeneralContactUnit => Some(Tasking { role: Role::Scout, target: None }),
+            Role::Colonizer => colonize(doctrine, candidates),
 
-            // A Systems hull above the Limited tier settles, preferring
-            // whichever class doctrine leads with — the same order
-            // `production_choice` weighed. The General hull joins the Medium
-            // here because T-56 stage 4 lets doctrine order one; without this
-            // arm a General colonizer would be built and then find no mission,
-            // and `apply_build` would refund nothing.
-            HullType::MediumSystems | HullType::GeneralSystems => colonize(doctrine, candidates),
-
-            // A Limited Systems hull mines; the freighter that hauls for it is
+            // A miner takes the best rock; the freighter that hauls for it is
             // produced alongside (roles §5 — the center produces both).
-            HullType::LimitedSystems => {
+            Role::Miner => {
                 best(PlanetClass::MiningOutpost).map(|c| Tasking { role: Role::Miner, target: Some(c.ranked.id) })
             }
 
-            // **A Limited Offensive hull holds ground** (T-113, design law #8:
-            // not force projection, but harass-and-hold). It takes the best
-            // world on the candidate list — the same ranking a *rival's*
-            // colonizer would be reading, which is the point: denial is only
-            // worth anything on ground somebody else wants.
+            // **A picket holds ground** (T-113, design law #8: not force
+            // projection, but harass-and-hold). It takes the best world on the
+            // candidate list — the same ranking a *rival's* colonizer would be
+            // reading, which is the point: denial is only worth anything on
+            // ground somebody else wants.
             //
             // That is a third placement rule, and the first two were both
             // refuted (§8.6): nearest-to-own-founding threatens nobody, and
             // nearest-to-rival finds nothing unclaimed to stand on. Ranking by
             // *value* rather than by geometry is the remaining axis.
-            // **A Tor is a survey design whatever shell it is on** (T-115).
-            // `Doctrine::scout_hull_offensive` puts the armed hull in the
-            // survey branch, and the class is what says which errand this one
-            // was laid down for — the build and this arm read the same write
-            // through `scout_order`.
-            HullType::LimitedOffensive if class == Class::Tor => Some(Tasking { role: Role::Scout, target: None }),
-
-            HullType::LimitedOffensive => {
+            Role::Picket => {
                 let (a, b) = match doctrine.expand_bias {
                     ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
                     ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
@@ -1130,8 +1134,9 @@ impl Autopilot for BaselineAutopilot {
                 best(a).or_else(|| best(b)).map(|c| Tasking { role: Role::Picket, target: Some(c.ranked.id) })
             }
 
-            // Nothing else is produced yet; hold rather than invent a mission.
-            _ => None,
+            // Nothing else is tasked from a finished hull; hold rather than
+            // invent a mission.
+            Role::Freighter | Role::Reserve | Role::Scrapped => None,
         }
     }
 
@@ -1190,7 +1195,7 @@ impl Autopilot for BaselineAutopilot {
         // `scout_hull_offensive` the survey branch builds the armed hull, and
         // `picket_cost` is already that price, so the affordability test needs
         // no new context field — it needs to read the other one it has.
-        let scout_cost = if doctrine.scout_hull_offensive { ctx.picket_cost } else { ctx.light_vehicle_cost };
+        let scout_cost = ctx.price_of(Standing::of(doctrine).design_for(Role::Scout).0);
         let can_afford_light = ctx.stockpile_total + Price::new(1e-9) >= scout_cost;
 
         // Between the limited and medium tiers, survey is the only outward move.
@@ -1537,6 +1542,144 @@ pub fn scout_hull(doctrine: &Doctrine) -> HullType {
         HullType::LimitedOffensive
     } else {
         HullType::LimitedContactVehicle
+    }
+}
+
+/// **The standing layer, resolved** — Design and Doctrine composed into one
+/// answer per question (`Hyades_standing_layer_and_observation.md` §1).
+///
+/// **Ask it; do not branch on the writes.** Every Doctrine write that moves a
+/// role onto a different hull used to add a condition in three places — the
+/// build order, the price the context carries, and `assign_role`'s match — and
+/// three readings of one write is how they come to disagree. T-115 and T-116
+/// each added a write and each added those three branches; this is what they
+/// should have added instead.
+///
+/// The load-bearing property is that **[`Self::role_of`] is the inverse of
+/// [`Self::design_for`]**, derived rather than written out. A card that mounts
+/// the colony role on a Contact hull changes `design_for`, and `role_of`
+/// follows with no edit — which is the difference between a standing layer and
+/// a switch statement. `role_of_inverts_design_for_every_role` pins it.
+///
+/// Borrowed rather than owned because it is constructed per decision, on the
+/// engine's hottest path, and holds no state of its own: it is a *reading* of
+/// the two writes, the way a `Band` is a reading of a mass (§4).
+#[derive(Clone, Copy, Debug)]
+pub struct Standing<'a> {
+    /// The Doctrine half. The Design half is `Roster`, which does not yet gate
+    /// anything (`SimConfig::enforce_roster` defaults off, T-25), so it is not
+    /// a field until it is one.
+    pub doctrine: &'a Doctrine,
+}
+
+/// The roles `assign_role` can hand a finished hull. `Freighter` is absent on
+/// purpose — it is produced alongside a `Miner` rather than tasked (roles §5) —
+/// and so are `Reserve` and `Scrapped`, which are terminal states.
+const ASSIGNABLE: [Role; 4] = [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket];
+
+impl<'a> Standing<'a> {
+    /// Read the standing layer for one player.
+    pub fn of(doctrine: &'a Doctrine) -> Self {
+        Self { doctrine }
+    }
+
+    /// **The design this layer lays down for `role`** — the hull *and* the
+    /// class, because the class is what distinguishes two roles sharing a hull
+    /// (a scouting LOU from a picketing one, T-115).
+    pub fn design_for(&self, role: Role) -> (HullType, Class) {
+        match role {
+            Role::Scout => (scout_hull(self.doctrine), Class::Tor),
+            Role::Colonizer => (HullType::MediumSystems, Class::Unnamed),
+            Role::Miner => (HullType::LimitedSystems, Class::Meadow),
+            Role::Picket => (HullType::LimitedOffensive, Class::Unnamed),
+            // **Not assignable, and the design collides with the colonizer's
+            // on purpose** — a freighter rides the same Medium Systems hull
+            // (roles §4.4). It is safe only because `ASSIGNABLE` excludes it,
+            // so `role_of` can never return it; adding it there would make
+            // `(MediumSystems, Unnamed)` ambiguous and silently task colony
+            // ships as freight. The same holds for the two terminal states.
+            Role::Freighter | Role::Reserve | Role::Scrapped => (HullType::MediumSystems, Class::Unnamed),
+        }
+    }
+
+    /// **The colonizer ladder, cheapest rung first.**
+    ///
+    /// Two rungs because the Contact ladder has no Medium tier, so a card that
+    /// arms the colony ship is forced to the General one (T-116). Substituting
+    /// happens *inside* this array — the Medium rung is not the card's to take.
+    pub fn colonizer_ladder(&self) -> [HullType; 2] {
+        [HullType::MediumSystems, general_colonizer_hull(self.doctrine)]
+    }
+
+    /// **Does this layer mount `role` on `hull`?**
+    ///
+    /// Eligibility is permissive with varying competence (R-O44): any hull may
+    /// take any role, and this asks the narrower question of whether *this*
+    /// standing layer would put that role on that hull.
+    pub fn mounts(&self, role: Role, hull: HullType) -> bool {
+        match role {
+            Role::Colonizer => self.colonizer_ladder().contains(&hull),
+            _ => self.design_for(role).0 == hull,
+        }
+    }
+
+    /// **What a finished design is for** — the inverse of [`Self::design_for`].
+    ///
+    /// Resolved in three passes, narrowest first: an exact design match, then
+    /// the hull alone for a class this layer has not named, then competence
+    /// (R-O44) for a hull it mounts nothing on at all. `None` means the hull
+    /// has no mission this layer can give it, which is "hold" rather than an
+    /// error.
+    ///
+    /// **Two configurations resolve differently than the switch it replaced,
+    /// and both are unreachable today.** A `Tor` on a Limited Offensive hull
+    /// with [`Doctrine::scout_hull_offensive`] *off* now reads as a picket
+    /// rather than a scout — nothing builds that pairing, because only
+    /// `scout_order` stamps `Tor` and it names the armed hull only when the
+    /// write is on. And a Rapid or General Offensive hull now reads as a
+    /// picket where the switch returned `None`; nothing builds those either.
+    /// Both moves make the resolver *total*, which
+    /// `every_hull_has_a_role_under_every_doctrine` requires and the switch
+    /// did not satisfy.
+    pub fn role_of(&self, hull: HullType, class: Class) -> Option<Role> {
+        ASSIGNABLE
+            .iter()
+            .copied()
+            .find(|&r| self.design_for(r) == (hull, class))
+            .or_else(|| ASSIGNABLE.iter().copied().find(|&r| self.mounts(r, hull)))
+            .or_else(|| competent_role(hull))
+    }
+
+    /// **Is a colonizer consumed by the colony it founds?**
+    ///
+    /// The one question the Warfare card's Doctrine half turns on, and T-116
+    /// measured it as the card's entire cost: a hull that is not consumed
+    /// leaves no recycled stock, and that compounds
+    /// (`Hyades_warfare_tree.md` §8.10).
+    pub fn recycles_on_founding(&self) -> bool {
+        !self.doctrine.picket_after_founding
+    }
+}
+
+/// **What a hull is good for when the standing layer mounts nothing on it.**
+///
+/// The permissive rule (R-O44, roles §4): any hull may take any role, and what
+/// differs is how well it does the job. This is the competence table — not an
+/// eligibility restriction — and it is the last resort in
+/// [`Standing::role_of`], reached only for a hull no Doctrine write has claimed.
+fn competent_role(hull: HullType) -> Option<Role> {
+    match hull {
+        // A Systems hull above the Limited tier has a hold, so it can found.
+        HullType::MediumSystems | HullType::GeneralSystems => Some(Role::Colonizer),
+        // A Contact hull scouts; that is what its sensors are.
+        HullType::LimitedContactVehicle
+        | HullType::LimitedContactUnit
+        | HullType::GeneralContactVehicle
+        | HullType::GeneralContactUnit => Some(Role::Scout),
+        // A Limited Systems hull mines.
+        HullType::LimitedSystems => Some(Role::Miner),
+        // An Offensive hull holds ground (design law #8: harass-and-hold).
+        HullType::LimitedOffensive | HullType::RapidOffensive | HullType::GeneralOffensive => Some(Role::Picket),
     }
 }
 
@@ -1944,6 +2087,88 @@ mod tests {
             ),
             "and the write substitutes the Contact hull into that same slot"
         );
+    }
+
+    /// **`role_of` inverts `design_for`, for every role and every doctrine**
+    /// (T-117) — the property that makes `Standing` a layer rather than a
+    /// second switch statement.
+    ///
+    /// If it holds, a card that moves a role onto a different hull is answered
+    /// by `assign_role` with no edit. If it stops holding, some hull is being
+    /// built for one errand and tasked to another, which is how the engine
+    /// spent three landings paying for hulls it then discarded
+    /// (`launch_survey`, T-116).
+    ///
+    /// Checked across the writes that move a design, in every combination —
+    /// which is the point: they compose, and a resolver that is only correct
+    /// one write at a time is not one.
+    #[test]
+    fn role_of_inverts_design_for_every_role() {
+        for scout_armed in [false, true] {
+            for colonizer_contact in [false, true] {
+                let d = Doctrine {
+                    scout_hull_offensive: scout_armed,
+                    colonizer_general_contact: colonizer_contact,
+                    ..Doctrine::default()
+                };
+                let st = Standing::of(&d);
+                for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
+                    let (hull, class) = st.design_for(role);
+                    assert_eq!(
+                        st.role_of(hull, class),
+                        Some(role),
+                        "design_for({role:?}) = ({hull:?}, {class:?}) must resolve back \
+                         (scout_armed={scout_armed}, colonizer_contact={colonizer_contact})"
+                    );
+                    assert!(st.mounts(role, hull), "and the layer must agree it mounts it there");
+                }
+                // Every rung of the colonizer ladder resolves to a colonizer,
+                // not only the one `design_for` names — otherwise the General
+                // rung would be built and then tasked as something else.
+                for hull in st.colonizer_ladder() {
+                    assert_eq!(st.role_of(hull, Class::Unnamed), Some(Role::Colonizer), "{hull:?} is a colonizer rung");
+                }
+            }
+        }
+    }
+
+    /// **Every hull resolves to something, under every doctrine** (T-117).
+    ///
+    /// `assign_role` returning `None` means "hold rather than invent a
+    /// mission", which is legitimate — but a hull the engine *builds* and then
+    /// cannot task is a hull the yard was charged for and threw away, and that
+    /// defect has now happened twice. The permissive rule (R-O44) says any hull
+    /// may take any role, so the competence table must be total.
+    #[test]
+    fn every_hull_has_a_role_under_every_doctrine() {
+        use HullType::*;
+        let all = [
+            LimitedSystems,
+            MediumSystems,
+            GeneralSystems,
+            LimitedContactVehicle,
+            LimitedContactUnit,
+            GeneralContactVehicle,
+            GeneralContactUnit,
+            LimitedOffensive,
+            RapidOffensive,
+            GeneralOffensive,
+        ];
+        for scout_armed in [false, true] {
+            for colonizer_contact in [false, true] {
+                let d = Doctrine {
+                    scout_hull_offensive: scout_armed,
+                    colonizer_general_contact: colonizer_contact,
+                    ..Doctrine::default()
+                };
+                let st = Standing::of(&d);
+                for hull in all {
+                    for class in [Class::Unnamed, Class::Tor, Class::Meadow] {
+                        assert!(st.role_of(hull, class).is_some(), "{hull:?}/{class:?} has no mission");
+                    }
+                }
+            }
+        }
     }
 
     /// One `Candidate` a mature center would happily colonize.
