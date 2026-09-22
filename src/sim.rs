@@ -3370,9 +3370,44 @@ impl Simulation {
                 // the effect go (`CLAUDE.md` §2: ablation refutes).
                 let recycles = Standing::of(&self.doctrine_of(p)).recycles_on_founding()
                     || self.config.ablate_picket_founding_cost;
-                let founded_at = if recycles { self.founding_infra(hull) } else { Price::ZERO };
+                // **What the ceiling turns away is banked, not burned**
+                // (T-118, design law #11). `founding_infra` clamps the recycled
+                // hull to the top playable rung's price, and the clamped-off
+                // remainder used to vanish — the mass ledger found it as
+                // exactly one hull's worth of ore going missing at the first
+                // founding (a 0.10921 kt Medium hull crediting 0.0892 of
+                // infrastructure, the 0.0200 difference gone). It is still
+                // minerals; it just cannot stand up here, so it lands in the
+                // new colony's stockpile like any other ore.
+                let (founded_at, overflow) = if recycles {
+                    let raw = hull_cost(hull, &self.config).max(Price::ZERO);
+                    let capped = self.founding_infra(hull);
+                    (capped, (raw - capped).max(Price::ZERO))
+                } else {
+                    (Price::ZERO, Price::ZERO)
+                };
+                if overflow > Price::ZERO {
+                    // Split evenly, because a hull is not made of one color and
+                    // nothing in the ladder says which it favors. **R-IND21**:
+                    // whether a hull carries its own mineral composition through
+                    // its life is open, and this is where it would first be read.
+                    let each = overflow.kilotons() / 3.0;
+                    if let Some(bank) = self.world.stockpile.get_mut(target) {
+                        bank.cyan += each;
+                        bank.magenta += each;
+                        bank.yellow += each;
+                    }
+                }
+                // **Added to what is already standing, not `max`'d over it**
+                // (T-118). A wild world is generated with some infrastructure,
+                // and `max` threw it away whenever the recycled hull was worth
+                // more — the ledger found it as one hull's worth of ore going
+                // missing at the first founding (hulls −0.10921, infrastructure
+                // only +0.0892, the 0.0200 already on the world gone). This is
+                // the same `max`-where-a-sum-belongs defect T-117 fixed on the
+                // hold, on the other credit of the same line.
                 let f = self.world.factors.get_mut(target).unwrap();
-                f.infra = f.infra.max(founded_at);
+                f.infra += founded_at;
             }
             // Seed population from the pop *carried as cargo*
             // (`Hyades_vehicle_roles.md` §4.2/R-V9 — confirmed, not a flat
@@ -3498,7 +3533,16 @@ impl Simulation {
             if self.picket_doctrine(p) {
                 self.dispatch_picket(p, vehicle, target);
             } else {
-                self.park(vehicle, here); // recycled hull, now inert infrastructure
+                // **Recycled: the hull *became* the infrastructure**, so it
+                // leaves the fleet (T-118). It used to be parked and keep its
+                // role and hull type, which counted its dry mass twice — once
+                // as a live hull and once as the `founding_infra` credited from
+                // it just above. `Role::Scrapped` is the engine's retirement
+                // marker (`destroy_free_hulls` uses the same one) and nothing
+                // re-tasks a parked colonizer, so this retires an object that
+                // was already inert and stops the double count.
+                self.park(vehicle, here);
+                self.world.role.insert(vehicle, Role::Scrapped);
             }
         } else {
             // Contested (R-AC8): a systems vehicle returns home, carried pop
@@ -4478,15 +4522,40 @@ impl Simulation {
     /// completable mission is genuinely done). Marked `Role::Scrapped`, not
     /// removed — entities never despawn (this conversation's origin point);
     /// the entity ID stays resolvable, it just stops being tasked.
+    /// **A hull stands down and is broken up.** Mass is conserved across it
+    /// (design law #11, T-118).
+    ///
+    /// Two things here used to leak, and the ledger found both:
+    ///
+    /// - **The recovered fraction was priced off `Role::Scout`**, whatever hull
+    ///   actually scrapped. Every hull that was not a scout credited the wrong
+    ///   mass — too little for a big one, too much for a small one — which is
+    ///   the anti-pattern T-117's standing layer exists to remove: read the
+    ///   hull off the thing in front of you.
+    /// - **The rest of the hull simply vanished.** `scrap_recovery_fraction` is
+    ///   0.5, so half of every scrapped hull left the ledger. Design law #11 is
+    ///   explicit that *wastage degrades to slag rather than vanishing*, so the
+    ///   unrecovered half is now slag at the site — inert, conserved, and not a
+    ///   salvage yield (R-O59).
+    ///
+    /// And when there is nowhere to deliver salvage to, the **whole** hull
+    /// becomes slag rather than the whole hull disappearing.
     fn sys_scrap_arrive(&mut self, vehicle: Entity) {
         let here = self.position_at(vehicle, self.clock).unwrap_or(Vec3::ZERO);
         let owner = self.world.owner.get(vehicle).copied();
+        let hull = self.world.hull_type.get(vehicle).copied().unwrap_or(HullType::LimitedContactVehicle);
+        let dry = hull_dry_mass(hull, &self.config);
         self.world.role.insert(vehicle, Role::Scrapped);
         self.park(vehicle, here);
 
-        if let Some(dest_e) = self.nearest_owned_planet(owner.map(|o| o.0 as usize).unwrap_or(0), here) {
-            let recovered = role_cost(Role::Scout, &self.config) * self.config.scrap_recovery_fraction;
-            let colors = recovered.kilotons() / 3.0;
+        let dest = self.nearest_owned_planet(owner.map(|o| o.0 as usize).unwrap_or(0), here);
+        let recovered = match dest {
+            Some(_) => dry * self.config.scrap_recovery_fraction.clamp(0.0, 1.0),
+            // Nowhere to take it: nothing is recovered and all of it is slag.
+            None => Kilotons::ZERO,
+        };
+        if let Some(dest_e) = dest {
+            let colors = recovered.on_scale::<units::Cost>().kilotons() / 3.0;
             let stock = self.world.stockpile.get_mut(dest_e).unwrap();
             stock.cyan += colors;
             stock.magenta += colors;
@@ -4497,6 +4566,18 @@ impl Simulation {
                     self.clock,
                     LogEvent::VehicleScrapped { player: o.0, vehicle, at: pid, recovered: recovered.kilotons() },
                 );
+            }
+        }
+        // **The remainder is slag, and it is left where the breaking happened.**
+        // Deposited on the nearest owned world when there is one, because slag
+        // is a per-planet store and a hull in open space has no site of its own;
+        // that is a modelling choice the ledger makes visible rather than hides.
+        let wasted = dry - recovered;
+        if wasted > Kilotons::ZERO {
+            let site = dest.or_else(|| self.nearest_owned_planet(owner.map(|o| o.0 as usize).unwrap_or(0), here));
+            if let Some(site) = site {
+                let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + wasted;
+                self.world.slag.insert(site, total);
             }
         }
     }
@@ -5499,6 +5580,13 @@ impl Simulation {
                 // a per-ship time that could drift from the occupancy. Hulls
                 // taken from Reserve are already built and leave at once.
                 let launch_delay = self.build_time(center, cost);
+                // Snapshot before the debit, so a dispatch that produces no
+                // object can put the bank back *exactly* (T-118).
+                // `try_spend_total` removes proportionally across the three
+                // colors, so a flat refund would change the mix — and the mix
+                // is the mineral economy's binding constraint (§6.19c).
+                // Nothing else touches this bank between here and the dispatch.
+                let bank_before = *self.world.stockpile.get(center).unwrap();
                 if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
@@ -5526,7 +5614,19 @@ impl Simulation {
                             }
                             SurveyStrategy::GlobalPool | SurveyStrategy::OpeningSectors => Vec3::ZERO,
                         };
-                        self.launch_survey(p, center_pos, heading, 0, launch_delay, hull_type)
+                        // **Refund a survey craft that never launched**
+                        // (T-118). The bank was debited above, before the
+                        // object exists; `launch_survey` spawns nothing when
+                        // `choose_survey_target` finds nowhere to go, and the
+                        // minerals used to simply vanish. R-O86 removed most of
+                        // this path by refusing to *order* a scout with an
+                        // empty frontier — the residue is the frontier going
+                        // empty between the order and the dispatch, which the
+                        // mass ledger found as 8 hulls' worth of ore in a
+                        // 200-year bed.
+                        if !self.launch_survey(p, center_pos, heading, 0, launch_delay, hull_type) {
+                            *self.world.stockpile.get_mut(center).unwrap() = bank_before;
+                        }
                     }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
@@ -6427,7 +6527,15 @@ impl Simulation {
     /// substitution was free in both directions; it is still the yard's output
     /// being thrown away, and it is the third independent reason
     /// `Doctrine::scout_hull_offensive` measured inert.
-    fn launch_survey(&mut self, p: usize, from: Vec3, heading: Vec3, hops: usize, launch_delay: f64, hull: HullType) {
+    fn launch_survey(
+        &mut self,
+        p: usize,
+        from: Vec3,
+        heading: Vec3,
+        hops: usize,
+        launch_delay: f64,
+        hull: HullType,
+    ) -> bool {
         let mut cands = core::mem::take(&mut self.survey_scratch);
         self.fill_survey_candidates(p, &mut cands);
         let bias = if heading == Vec3::ZERO { None } else { Some(heading) };
@@ -6460,6 +6568,9 @@ impl Simulation {
                     endowment: 0.0,
                 },
             );
+            true
+        } else {
+            false
         }
     }
 
@@ -7502,6 +7613,57 @@ impl Simulation {
 
     /// A read-only picture for the presentation / command layer at the current
     /// instant, including every ship's exact position.
+    /// **Weigh the whole simulation** (T-118, design law #11).
+    ///
+    /// Walks every mass-bearing store once. Not on any hot path — it is for
+    /// tests, censuses and the netcode digest — so it reads clearly rather than
+    /// incrementally, and a full walk cannot drift out of step with the state
+    /// the way a running total would.
+    pub fn mass_ledger(&self) -> MassLedger {
+        let mut m = MassLedger::default();
+        for &e in &self.planet_entity {
+            if let Some(d) = self.world.density.get(e) {
+                m.in_ground += d.total_mass().kilotons();
+            }
+            if let Some(s) = self.world.stockpile.get(e) {
+                m.banked += s.basic_total().on_scale::<units::Mass>().kilotons();
+            }
+            if let Some(f) = self.world.factors.get(e) {
+                m.infrastructure += f.infra.on_scale::<units::Mass>().kilotons();
+                m.biomass += f.biomass.kilotons();
+            }
+            if let Some(p) = self.world.population.get(e) {
+                m.population += p.kilotons();
+            }
+            if let Some(s) = self.world.slag.get(e) {
+                m.slag += s.kilotons();
+            }
+        }
+        for stock in self.outpost_stock.values() {
+            m.at_outposts += stock.basic_total().on_scale::<units::Mass>().kilotons();
+        }
+        // Vehicles. `role` is the liveness test: `Role::Scrapped` is how the
+        // engine retires a hull, and a scrapped hull's mass has already gone
+        // somewhere else (slag, or back into a bank), so counting it here would
+        // double it.
+        for i in 0..self.world.next {
+            let e = Entity(i);
+            if self.world.role.get(e).copied() == Some(Role::Scrapped) {
+                continue;
+            }
+            if let Some(&h) = self.world.hull_type.get(e) {
+                m.hulls += hull_dry_mass(h, &self.config).kilotons();
+            }
+            if let Some(c) = self.world.cargo.get(e) {
+                m.in_cargo += c.basic_total().on_scale::<units::Mass>().kilotons();
+            }
+            if let Some(p) = self.world.pop_cargo.get(e) {
+                m.settlers += p.kilotons();
+            }
+        }
+        m
+    }
+
     pub fn snapshot(&self) -> Snapshot {
         let planets = self
             .planet_entity
@@ -7837,6 +7999,78 @@ fn flatten_candidate_slots(best: &[Option<Candidate>; 6]) -> Vec<Candidate> {
         }
     }
     v
+}
+
+/// **Every kilotonne the simulation is holding, broken out by where it stands**
+/// (T-118, design law #11).
+///
+/// Mass conservation is the engine's most load-bearing invariant and it was
+/// asserted in prose. This is the reading that makes it checkable: sum it, run,
+/// sum again, and the difference is a leak unless something accounted for it.
+///
+/// Broken out rather than totalled because a single number that has moved tells
+/// you nothing about *which* path leaked, and every conservation defect this
+/// project has found was a specific transfer with one end missing — settlers
+/// written into a hold with nothing debited (R-O74), a hull massing 30x more as
+/// hull than as cargo (R-O57), a `max` where a sum belonged (T-117).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MassLedger {
+    /// Undug minerals, still in the ground.
+    pub in_ground: f64,
+    /// Minerals banked at a center.
+    pub banked: f64,
+    /// Minerals mined and standing at an outpost, not yet hauled.
+    pub at_outposts: f64,
+    /// Minerals in a hold, in flight or parked.
+    pub in_cargo: f64,
+    /// Minerals standing as infrastructure — infrastructure **is** the minerals
+    /// in it (T-70, R-O57), so this is mass and not a level.
+    pub infrastructure: f64,
+    /// Hull dry mass of every vehicle that still exists. Cost *is* dry mass
+    /// (R-O57), so a fleet is a mineral holding that happens to fly.
+    pub hulls: f64,
+    /// People living on a world. Population is biosphere (design law #11).
+    pub population: f64,
+    /// Settlers riding in a hold.
+    pub settlers: f64,
+    /// Standing biomass that is not people.
+    pub biomass: f64,
+    /// Wreckage, inert and at the site that made it (R-O59).
+    pub slag: f64,
+}
+
+impl MassLedger {
+    /// Every store summed. The quantity design law #11 says cannot change
+    /// except through a channel that accounts for it.
+    pub fn total(&self) -> f64 {
+        self.in_ground
+            + self.banked
+            + self.at_outposts
+            + self.in_cargo
+            + self.infrastructure
+            + self.hulls
+            + self.population
+            + self.settlers
+            + self.biomass
+            + self.slag
+    }
+
+    /// Per-store differences, for saying *where* a leak is rather than that
+    /// there is one.
+    pub fn delta(&self, other: &MassLedger) -> MassLedger {
+        MassLedger {
+            in_ground: other.in_ground - self.in_ground,
+            banked: other.banked - self.banked,
+            at_outposts: other.at_outposts - self.at_outposts,
+            in_cargo: other.in_cargo - self.in_cargo,
+            infrastructure: other.infrastructure - self.infrastructure,
+            hulls: other.hulls - self.hulls,
+            population: other.population - self.population,
+            settlers: other.settlers - self.settlers,
+            biomass: other.biomass - self.biomass,
+            slag: other.slag - self.slag,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -8885,9 +9119,16 @@ mod tests {
             assert_eq!(pa.colonies, pb.colonies);
             assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
         }
-        // And nothing was destroyed: no slag anywhere.
-        let total: f64 = (0..a.planet_entity.len()).map(|i| a.slag_at(PlanetId(i as u32)).kilotons()).sum();
-        assert_eq!(total, 0.0, "combat is off and {total} kt of wreckage appeared");
+        // **Nothing was destroyed *by combat*, which is no longer the same
+        // claim as "no slag"** (T-118). Slag is what mass degrades into rather
+        // than vanishing (design law #11), and scrapping a hull now leaves the
+        // unrecovered half there — so a peaceful galaxy accumulates slag from
+        // ordinary retirement. The assertion that still means something is that
+        // **no engagement resolved**, which is what the gate is for.
+        assert!(
+            !a.log().iter().any(|r| matches!(r.event, crate::log::LogEvent::EngagementResolved { .. })),
+            "combat is off and an engagement resolved anyway"
+        );
     }
 
     /// A bed where two empires have actually grown into each other.
@@ -8954,10 +9195,16 @@ mod tests {
             }
         }
         assert!(kills > 0, "nothing died, so this asserts nothing");
+        // **Combat is no longer the only thing that makes slag** (T-118), so
+        // this is an inequality now: design law #11 says wastage *degrades*
+        // rather than vanishing, and the unrecovered half of every scrapped
+        // hull lands here too. What still has to hold exactly is that every
+        // kilotonne combat destroyed is standing somewhere — nothing combat
+        // wrecked may go missing.
         let standing: f64 = (0..sim.planet_entity.len()).map(|i| sim.slag_at(PlanetId(i as u32)).kilotons()).sum();
         assert!(
-            (standing - logged_slag).abs() < 1e-9,
-            "slag standing on the board is {standing} kt but {logged_slag} kt was destroyed"
+            standing >= logged_slag - 1e-9,
+            "combat destroyed {logged_slag} kt but only {standing} kt is standing on the board"
         );
         // Every miner is a Limited Systems hull, so the mass is exactly the
         // count times its price — the reconciliation `CLAUDE.md` §2 asks for
@@ -9137,6 +9384,96 @@ mod tests {
         // And the root is a root: the light has travelled exactly the hull's range.
         let range = sim.position_at(ship, sim.clock + lag).unwrap().distance(world_pos);
         assert!((lag - range).abs() < 1e-9, "light travelled {lag}, hull range {range}");
+    }
+
+    /// **Mass is conserved** (design law #11, T-118).
+    ///
+    /// The engine's most load-bearing invariant, asserted in prose until now.
+    /// `mass_ledger` weighs every store; with the one legitimate *source*
+    /// switched off — biosphere regrowth, the only renewable stock — the total
+    /// must not move at all.
+    ///
+    /// Broken out per store on failure, because "mass changed" says nothing
+    /// about which transfer lost an end, and every conservation defect this
+    /// project has found was exactly that: settlers written into a hold with
+    /// nothing debited (R-O74), a hull massing 30x more as hull than as cargo
+    /// (R-O57), a `max` standing where a sum belonged (T-117).
+    #[test]
+    fn mass_is_conserved_with_regrowth_off() {
+        // Several seats and seeds, because every leak this found was on a path
+        // that only some runs walk: the first was in scrapping, which needs a
+        // scout to exhaust; the second in founding, which needs a colony.
+        for (seats, seed) in [(2usize, 4u64), (3, 11), (3, 7), (6, 2)] {
+            let mut cfg = test_cfg(seed);
+            cfg.horizon_years = 200.0;
+            cfg.biosphere_regen_rate = 0.0;
+            let mut sim = Simulation::with_baseline(test_galaxy(seats, seed), cfg);
+            let before = sim.mass_ledger();
+            assert!(before.total() > 0.0, "the bed must hold some mass for this to say anything");
+            sim.run();
+            let after = sim.mass_ledger();
+            let d = before.delta(&after);
+            // The mechanism has to have fired, or this passes vacuously on a
+            // simulation that did nothing (`CLAUDE.md` §2's trim guard).
+            assert!(d.hulls.abs() > 0.0, "{seats} seats / seed {seed}: no hull was ever built or retired");
+            let drift = (after.total() - before.total()).abs() / before.total();
+            assert!(
+                drift < 1e-9,
+                "{seats} seats / seed {seed}: mass is not conserved: {:.6} -> {:.6} ({:+.6} absolute)\n  {d:#?}",
+                before.total(),
+                after.total(),
+                after.total() - before.total()
+            );
+        }
+    }
+
+    /// **Mass is conserved when the card is played too** (T-118).
+    ///
+    /// The paths the default galaxy never walks are the ones that move mass
+    /// most violently: hulls destroyed in an engagement, a colonizer that keeps
+    /// its hull, settlers dying with the ship that carried them. All three are
+    /// the Warfare card's, and all three are `engagements_enabled`.
+    ///
+    /// **The floor rung is the one accounted exception and it is asserted, not
+    /// waived.** A colony founded below `Band Empty` is raised to it, because
+    /// zero infrastructure is an absorbing state rather than a small number
+    /// (§8.7) — so this bed may *gain* mass, never lose it, and never more than
+    /// one floor rung per colony founded.
+    #[test]
+    fn mass_is_conserved_under_the_warfare_card() {
+        let mut cfg = test_cfg(5);
+        cfg.horizon_years = 200.0;
+        cfg.biosphere_regen_rate = 0.0;
+        cfg.engagements_enabled = true;
+        let galaxy = test_galaxy(3, 5);
+        let autopilots: Vec<Box<dyn Autopilot>> = (0..3)
+            .map(|i| {
+                let d = Doctrine { engage_neutrals: i == 0, picket_after_founding: i == 0, ..Doctrine::default() };
+                Box::new(BaselineAutopilot::new(d)) as Box<dyn Autopilot>
+            })
+            .collect();
+        let mut sim = Simulation::new(galaxy, cfg, autopilots);
+        let before = sim.mass_ledger();
+        sim.run();
+        let after = sim.mass_ledger();
+        let d = before.delta(&after);
+        let floor = infra_rung_price(0, &sim.config).max(Price::new(1e-9)).kilotons();
+        let colonies: usize = sim.report().players.iter().map(|p| p.colonies).sum();
+        let allowance = floor * colonies as f64;
+        // **Non-vacuity.** Every assertion below holds trivially on a run where
+        // the card never fired, and this bed is small — so the paths that move
+        // mass violently have to be shown to have happened.
+        assert!(
+            !sim.picket.is_empty() || d.slag > 0.0,
+            "the card never fielded a picket and nothing was ever wrecked, so this proves nothing"
+        );
+        let change = after.total() - before.total();
+        assert!(change >= -1e-6, "mass was destroyed, which nothing here is allowed to do: {change:+.6}\n  {d:#?}");
+        assert!(
+            change <= allowance + 1e-6,
+            "mass was created beyond the floor-rung allowance ({colonies} colonies x {floor:.4} = \
+             {allowance:.4}): {change:+.6}\n  {d:#?}"
+        );
     }
 
     /// **A picket whose world gets colonized goes back to the frontier**

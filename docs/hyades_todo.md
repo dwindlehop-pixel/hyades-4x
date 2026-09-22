@@ -163,6 +163,83 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-118. Mass conservation is enforced, and it was leaking in three places
+
+**Design law #11 is the engine's most load-bearing invariant and it was asserted
+in prose.** `Simulation::mass_ledger` weighs every store — in-ground, banked, at
+outposts, in cargo, infrastructure, hulls, population, settlers, biomass, slag —
+and `mass_is_conserved_with_regrowth_off` runs with the one legitimate source
+(biosphere regrowth) switched off and asserts the total does not move.
+
+It found three leaks on the first run, on a 200-year 3-seat bed. The ledger is
+broken out per store rather than totalled because "mass changed" says nothing
+about which transfer lost an end — and each of these was exactly that.
+
+#### 1. Half of every scrapped hull vanished
+
+`sys_scrap_arrive` credited `role_cost(Role::Scout) * scrap_recovery_fraction`
+to a bank and **dropped the rest**. Two defects in one line: the recovered
+amount was priced off the *Scout* hull whatever actually scrapped, and
+`scrap_recovery_fraction = 0.5` meant half of every hull left the ledger. Design
+law #11 is explicit that *wastage degrades to slag rather than vanishing*; the
+unrecovered half is slag at the site now, and a hull broken up with nowhere to
+deliver salvage becomes slag entirely rather than disappearing.
+
+#### 2. A recycled colonizer was counted twice
+
+The hull that founds a colony *becomes* its infrastructure, and the comment at
+that line already said "recycled hull, now inert infrastructure" — but the
+entity was only parked, keeping its role and hull type. So its dry mass stood as
+a live hull **and** as the `founding_infra` credited from it. It is
+`Role::Scrapped` now, the engine's existing retirement marker, which retires an
+object that was already inert.
+
+#### 3. Founding overwrote the infrastructure already standing
+
+`f.infra = f.infra.max(founded_at)` — so a wild world's existing infrastructure
+was **thrown away** whenever the recycled hull was worth more. Localized in time
+by running the same seed to increasing horizons: at 38→40 yr, hulls fell
+**0.10921** (one Medium hull retiring) while infrastructure rose only
+**0.0892**, and the 0.0200 already on the world was gone. It is `+=` now — the
+same `max`-where-a-sum-belongs defect T-117 fixed on the other credit of the
+same line, which is twice in two landings and is why the ledger exists.
+
+#### What it cost
+
+Four CRN seeds, 3 seats, 800 yr: colonies **+0.37%** (2,946→2,949, 2,849→2,851,
+2,861→2,898, 2,955→2,954) and population **+1.1%**, 3/4 and 2/4 seeds positive
+— inside noise at four seeds. `ns/event` flat. Colonies start marginally richer
+because founding no longer discards what was already there.
+
+#### The one remaining exception, filed rather than hidden
+
+**R-IND22**: the floor rung *creates* mass. A colony founded below `Band Empty`
+is raised to it because zero infrastructure is an absorbing state (§8.7), so
+mass appears from nowhere — bounded by one floor rung per colony, and binding
+only under the picket doctrine. `mass_is_conserved_under_the_warfare_card`
+**asserts that bound** rather than waiving it: that bed may gain mass, never
+lose it, and never more than `colonies × floor`. The conservative alternative is
+for the founding center to pay the top-up out of its own bank, making it a
+transfer.
+
+**R-IND21**: a hull has no mineral composition. Cost is one scalar (R-O57), so
+when a hull's minerals return to a bank — scrap salvage, the founding ceiling's
+overflow — the engine splits them evenly across the three colors because nothing
+records what it was built from. That is a guess in the one dimension the mineral
+economy is actually constrained by (§6.19c).
+
+#### Two tests changed meaning, and both were right to
+
+`combat_off_is_bit_identical` asserted "no slag anywhere" as a proxy for "no
+combat". Slag is now what *any* mass degrades into, so a peaceful galaxy
+accumulates it from ordinary retirement; the assertion that still means
+something is that no engagement resolved.
+`slag_conserves_the_mass_of_what_it_destroyed` asserted standing slag **equals**
+what combat logged; it is `>=` now, with the exact reconciliation kept on the
+combat portion.
+
+---
+
 ### T-117. The standing layer answers; it is not switched on
 
 **Architecture, verified behavior-neutral.** T-113, T-115 and T-116 each added a
@@ -268,9 +345,18 @@ R-O57), so the Doctrine write's price is the mass of whatever hull the colony
 ship is — and the Design write mounts it on one costing **10.07x** a Medium.
 **The card's price is proportional to the thing its other half makes bigger.**
 
-**R-WAR11**: a Warfare card's price has to be payable **once, at play**. A cost
-that recurs per colony is charged twice against a difference objective.
-`cards.rs` charges nothing, so there is nowhere to put a one-off price yet.
+**R-WAR11 (restated at T-118 — the first version was wrong).** It said the
+engine cannot charge a card a price. It can: `apply_orders` checks
+`empire_can_afford` and calls `empire_spend(p, c.cost)`. The gap is that **a card
+has two costs and only one is priceable** — `Card::cost`, bounded, and the
+mechanic's own, which here is every colony founded afterwards starting 5.5x
+thinner forever. The second cannot be priced because its size depends on how
+much the player goes on to expand, and a difference objective charges it twice.
+Not Warfare-specific; it belongs in the card contract.
+
+Note also that §8.10's arms set Doctrine fields directly rather than playing the
+card through `apply_orders`, so `Card::cost` was never charged: the measured
+`W_0` is the effect **without** its price.
 
 #### Two findings that are not about this card
 

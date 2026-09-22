@@ -1365,10 +1365,35 @@ The same finding arrives from the other side in §8.9: a picket bought with a
 colonizer's founding stock costs −21.46%. Same mechanic, price moved, an order
 of magnitude less damage.
 
-**R-WAR11 (`OPEN`)**: the card's price should be paid **once**, at play, rather
-than per-colony forever. That is a card-cost mechanism the engine does not have —
-`cards.rs` applies effects and charges nothing — and it is what §8's card needs
-before its magnitudes are worth tuning.
+**R-WAR11 (`OPEN`) — restated, because the first version of it was wrong.** It
+claimed the engine has no way to charge a card a price. It has one:
+`sim::apply_orders` checks `empire_can_afford` and calls `empire_spend(p,
+c.cost)`, so `Card::cost` is a real one-off mineral charge against the whole
+empire (design law #7's macro grain). The gap is not a missing mechanism.
+
+The gap is that **a card has two costs and only one of them is priceable.**
+
+| | what it is | bounded? |
+|---|---|---|
+| `Card::cost` | a one-off mineral charge at play | yes, by the number in the table |
+| the mechanic's own cost | here, every colony founded afterwards starts 5.5x thinner, forever | **no** |
+
+The second one cannot be priced, because its size depends on how much the
+player goes on to expand. Whatever number sits in `Card::cost`, the card is
+cheap for a seat that was going to stall and ruinous for one that was going to
+compound — and under a *difference* objective it is charged twice, once in your
+own count and once in everybody else's.
+
+So the open decision is **whether a Doctrine write may impose a recurring cost
+that scales with its holder's own activity at all**, or whether a card's total
+cost must be bounded at play time. It is not Warfare-specific: any write that
+degrades a per-unit economic rate has this shape, so it belongs in the card
+contract rather than here.
+
+**And note what the measurements in §8.10 did *not* include**: they set the
+Doctrine fields directly rather than playing the card through `apply_orders`,
+so `Card::cost` was never charged. The measured `W_0` is the effect **without**
+its price. Charging it makes the card worse, not better.
 
 #### The two halves are multiplicatively bad together, and that is the same term again
 
@@ -1537,7 +1562,9 @@ magnitude question (`founding_infra_share`, default 0.0, measured flat at
 |---|---|---|
 | ~~**T-30**~~ | ~~no accept/decline site exists~~ — **closed as stated (T-111).** The round layer had already landed and the engine was producing ~4,200 co-locations per run unremarked; `sys_engagement` now resolves them. R-AC13 and posture cards are **not** unblocked: both need a decision at *range* | done; see §3.4 and §7 |
 | **R-IND20** | **whether founding should erect from the hold at all** is a magnitude (`founding_infra_share`, default 0.0, measured flat at §8.8 because a colony ship's hold is nearly all settlers — R-WAR7). The *rule*, that whatever it erects respects the works mix, is ratified at T-117 | a `settler_target` that reserves mineral volume (R-WAR7), then the same census |
-| **R-WAR11** | **a Warfare card's price must be payable once, at play.** The card's whole measured `W_0` is one recurring cost — the founding rung a departing colonizer forfeits — and a cost that recurs per colony is charged twice against a *difference* objective: once in your count and once in everybody else's (§8.10). `cards.rs` applies effects and charges nothing, so there is nowhere to put a one-off price | a card-cost mechanism, then a re-measure of §8.2's card against it |
+| **R-IND21** | **a hull has no mineral composition.** Cost is one scalar (R-O57), so when a hull's minerals are returned to a bank — scrap salvage, the founding ceiling's overflow — the engine splits them evenly across the three colors because nothing records what it was built from. That is a guess in the one dimension the mineral economy is actually constrained by (§6.19c) | a per-hull `Minerals` at build time, weighed against the memory it costs on tens of thousands of entities |
+| **R-IND22** | **the floor rung creates mass**, and it is the only remaining exception to design law #11. A colony founded below `Band Empty` is raised to it because zero infrastructure is an absorbing state (§8.7) — so mass appears from nowhere, bounded by one floor rung per colony. It binds only under the picket doctrine today. The conservative alternative is for the founding center to pay for the top-up out of its own bank, making it a transfer | a decision: document the exception, or charge the founder |
+| **R-WAR11** | **may a Doctrine write impose a cost that scales with its holder's own activity?** A card has two costs: `Card::cost`, a bounded one-off the engine already charges, and the mechanic's own — here, every colony founded afterwards starting 5.5x thinner, forever. The second cannot be priced, because its size depends on how much the player goes on to expand, and a difference objective charges it twice (§8.10). **Not Warfare-specific**, so it belongs in the card contract | a decision on whether a card's total cost must be bounded at play time |
 | **R-IND11** | **`SettlersPerMineral` is worth +394.9 `W_0` unilaterally** on the 4-seed asymmetric bed — more than any card measured so far. `Hyades_industry.md` §1.6 records the policy as *"blocked on R-O74"*, the conjured-settlers violation, and **R-O74 closed at §1.7**. So the block is lifted and the answer may have flipped | a **symmetric** re-measure — this one is competitive, not global, and a default is a global question |
 | **R-WAR10** | **a picket is handed the colony ship's destination**, not its trajectory. Light delivers a departure, a time and a heading; a destination is an *inference* from those, and inferring it wrong is what makes a feint possible. **Meeting the ship on its path instead is refuted** — the window is back-loaded, so a mid-track intercept tolerates a 1.95 ly offset against the destination's 4.96 (§8.9.8) | a heading-based candidate set in place of the true target, and a measure of how often the inference is wrong |
 | **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is **bit-identically inert** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |

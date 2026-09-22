@@ -1801,6 +1801,36 @@ one, stop and flag it.
 
   The one exception is **flavor text, which is the author's own** (below) — do
   not respell it either way.
+- **Weigh the whole simulation before you trust a transfer** (T-118, design
+  law #11). `Simulation::mass_ledger` sums every mass-bearing store and
+  `mass_is_conserved_with_regrowth_off` asserts the total does not move with the
+  one legitimate source switched off. Run it after touching anything that moves
+  mass between stores.
+
+  It found **three** leaks on its first run, all of the same shape: a transfer
+  with one end missing. Half of every scrapped hull vanished
+  (`scrap_recovery_fraction` was a *discard*, not a split, where law #11 says
+  wastage degrades to slag). A recycled colonizer was counted as a live hull
+  **and** as the infrastructure it became. And founding did
+  `f.infra = f.infra.max(credit)`, throwing away whatever was already standing.
+
+  Three habits from it:
+
+  - **Break the ledger out per store.** "Mass changed" names no path; `hulls`
+    falling by exactly one hull's mass while `infrastructure` rose by less
+    names one immediately.
+  - **Localize in time by re-running to increasing horizons.** The run is
+    deterministic, so drift is a function of time: the third leak appeared
+    between 38 and 40 years, which pointed at the first colony founding without
+    any guessing. Two hypotheses had already been wrong by then.
+  - **A `max` is where a sum belongs, twice in two landings.** T-117 fixed one
+    on the hold and T-118 found the other on the hull credit, in the same
+    expression. When two things credit the same field, `max` silently drops
+    one — and nothing in the types objects.
+
+  Exceptions are **asserted, not waived**: the absorbing-zero floor genuinely
+  creates mass (§8.7), so the warfare-bed test bounds it at `colonies × floor`
+  and requires the run to gain rather than lose.
 - **The standing layer answers questions; it is not switched on** (T-117).
   Design and Doctrine are state written by cards, and a consumer **asks**
   `autopilot::Standing` what is currently active — `design_for(role)`,
