@@ -238,17 +238,39 @@ impl Minerals {
     /// proportion to how much is held. Returns `false` (and spends nothing) if
     /// the pool is short. Vehicle/infra costs flow through here.
     pub fn try_spend_total(&mut self, amount: Price) -> bool {
+        self.try_take_total(amount).is_some()
+    }
+
+    /// As [`Self::try_spend_total`], but **hands back what it actually took**.
+    ///
+    /// A hull is built out of specific minerals and carries that composition for
+    /// the rest of its life (R-IND21), so the thing that pays for it has to say
+    /// what it paid with. Returning the withdrawal rather than recomputing it
+    /// from the ratio afterwards is the difference between a record and a
+    /// reconstruction — and the bank's mix moves the instant this returns, so a
+    /// reconstruction would already be reading the wrong proportions.
+    ///
+    /// Supers and apex are untouched here: nothing spends them on a hull yet.
+    /// When something does, this is the one place the composition is captured
+    /// and every downstream credit follows it without further change.
+    pub fn try_take_total(&mut self, amount: Price) -> Option<Minerals> {
         if amount <= Price::ZERO {
-            return true;
+            return Some(Minerals::default());
         }
         let total = self.basic_total();
         if total + Price::new(1e-9) < amount {
-            return false;
+            return None;
         }
         let f = amount / total;
-        self.cyan -= self.cyan * f;
-        self.magenta -= self.magenta * f;
-        self.yellow -= self.yellow * f;
-        true
+        let taken = Minerals { cyan: self.cyan * f, magenta: self.magenta * f, yellow: self.yellow * f, ..*self };
+        let mut taken = taken;
+        taken.red = 0.0;
+        taken.green = 0.0;
+        taken.blue = 0.0;
+        taken.apex = 0.0;
+        self.cyan -= taken.cyan;
+        self.magenta -= taken.magenta;
+        self.yellow -= taken.yellow;
+        Some(taken)
     }
 }

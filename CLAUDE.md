@@ -1828,9 +1828,20 @@ one, stop and flag it.
     expression. When two things credit the same field, `max` silently drops
     one — and nothing in the types objects.
 
-  Exceptions are **asserted, not waived**: the absorbing-zero floor genuinely
-  creates mass (§8.7), so the warfare-bed test bounds it at `colonies × floor`
-  and requires the run to gain rather than lose.
+  **There are no exceptions left** (T-119). The absorbing-zero floor (§8.7) was
+  the last one, and it is a *transfer* now — the founding center is billed for
+  the top-up, and a parent too poor to pay leaves its child thin. A guard that
+  degrades is worth more than a guard that conjures, because the conjuring is
+  what a search finds and calls a strategy (law #11's own warning).
+
+  **And a quantity that comes back has to come back as what it was.** Cost is
+  one scalar (R-O57), so a hull's mass returning to a bank — salvage, wreckage,
+  a ceiling's overflow — used to be split evenly across the colors, a guess in
+  the one dimension the economy is constrained by (§6.19c). `hull_minerals`
+  records what the bank handed over; `Minerals::try_take_total` is the capture
+  point, because **the bank's mix moves the instant it returns** and a
+  reconstruction afterwards reads the wrong proportions. Record the withdrawal,
+  do not re-derive it.
 - **The standing layer answers questions; it is not switched on** (T-117).
   Design and Doctrine are state written by cards, and a consumer **asks**
   `autopilot::Standing` what is currently active — `design_for(role)`,

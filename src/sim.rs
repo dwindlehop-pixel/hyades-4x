@@ -1581,6 +1581,22 @@ struct World {
     // vehicle components
     role: ComponentStore<Role>,
     hull_type: ComponentStore<HullType>,
+    /// **What this hull is made of** (R-IND21, T-119).
+    ///
+    /// Cost is dry mass (R-O57) and cost was one scalar, so every path that
+    /// returned a hull's minerals to the world — scrap salvage, wreckage, the
+    /// founding ceiling's overflow — had to *guess* a color split, in the one
+    /// dimension the mineral economy is actually constrained by (§6.19c). This
+    /// is the record instead: whatever the bank paid at build time, carried for
+    /// the hull's life and handed back in the same proportions.
+    ///
+    /// A `Minerals`, not three floats, because a hull built from supers or apex
+    /// then drops supers or apex with no further change here — the composition
+    /// is whatever bought it, and better material makes better salvage.
+    ///
+    /// Absent for a hull nobody paid for (the seed scouts at game start), which
+    /// `composition_of` reads as the ladder's own even split.
+    hull_minerals: ComponentStore<Minerals>,
     motion: ComponentStore<Motion>,
     voyage: ComponentStore<Voyage>,
     cargo: ComponentStore<Minerals>,
@@ -1769,6 +1785,7 @@ impl World {
             owner: ComponentStore::new(),
             role: ComponentStore::new(),
             hull_type: ComponentStore::new(),
+            hull_minerals: ComponentStore::new(),
             motion: ComponentStore::new(),
             voyage: ComponentStore::new(),
             cargo: ComponentStore::new(),
@@ -2746,6 +2763,30 @@ pub struct Simulation {
     inert_card_plays: u64,
 }
 
+/// **A hull as it leaves the yard** — the type, and the minerals that bought it
+/// (R-IND21, T-119).
+///
+/// One value rather than two parameters because they are one fact: a hull's
+/// composition is meaningless without knowing which hull it is (the mass it
+/// scales to comes from the type), and a type without a composition is the
+/// guess this replaces. Every dispatcher takes it whole.
+#[derive(Clone, Copy, Debug)]
+struct BuiltHull {
+    hull: HullType,
+    /// What the bank actually handed over. Scaled to the hull's own dry mass by
+    /// `stamp_composition`, so a withdrawal that paid for several hulls splits
+    /// by mass rather than being counted once per hull.
+    mix: Minerals,
+}
+
+impl BuiltHull {
+    /// A hull nobody paid for — the seed scouts the galaxy is generated with.
+    /// `composition_of` reads the absent record as an even split and says so.
+    fn unpaid(hull: HullType) -> Self {
+        Self { hull, mix: Minerals::default() }
+    }
+}
+
 impl Simulation {
     /// Build a simulation, ingesting a generated [`Galaxy`] into the ECS world.
     pub fn new(galaxy: Galaxy, config: SimConfig, autopilots: Vec<Box<dyn Autopilot>>) -> Self {
@@ -2983,7 +3024,7 @@ impl Simulation {
                 };
                 // Bootstrap craft are *seeded*, not built — no yard made them,
                 // so they leave at once (autopilot-doc §2).
-                self.launch_survey(p, home_pos, heading, 0, 0.0, scout_hull(&doctrine_here));
+                self.launch_survey(p, home_pos, heading, 0, 0.0, BuiltHull::unpaid(scout_hull(&doctrine_here)));
             }
         }
 
@@ -3387,15 +3428,17 @@ impl Simulation {
                     (Price::ZERO, Price::ZERO)
                 };
                 if overflow > Price::ZERO {
-                    // Split evenly, because a hull is not made of one color and
-                    // nothing in the ladder says which it favors. **R-IND21**:
-                    // whether a hull carries its own mineral composition through
-                    // its life is open, and this is where it would first be read.
-                    let each = overflow.kilotons() / 3.0;
+                    // **In the hull's own composition** (R-IND21, T-119) — the
+                    // ceiling turns away minerals, and which minerals it turns
+                    // away is a fact about what the hull was built from rather
+                    // than an even split nobody chose.
+                    let spill = self.composition_of(vehicle, overflow);
                     if let Some(bank) = self.world.stockpile.get_mut(target) {
-                        bank.cyan += each;
-                        bank.magenta += each;
-                        bank.yellow += each;
+                        bank.add_basics(&spill);
+                        bank.red += spill.red;
+                        bank.green += spill.green;
+                        bank.blue += spill.blue;
+                        bank.apex += spill.apex;
                     }
                 }
                 // **Added to what is already standing, not `max`'d over it**
@@ -3489,10 +3532,40 @@ impl Simulation {
             // catches *any* route to zero — a hull that left, a hold that was
             // empty, a share of nothing — instead of the one that happened to
             // be found first. **Placeholder rung (R-WAR6).**
+            // **And the founding center pays for it** (R-IND22, resolved).
+            //
+            // The top-up used to appear from nowhere, which was the last
+            // exception to design law #11 left in the engine. It is a
+            // *transfer* now: the parent center that dispatched the colonizer
+            // is billed for whatever the floor costs above what the colony
+            // already has, exactly as it was billed for the settlers and the
+            // endowment (R-O74). A parent too poor to pay leaves its child at
+            // whatever it could afford — so the guard degrades rather than
+            // conjuring, and a bankrupt empire cannot found its way to free
+            // infrastructure.
             let founding_stock = {
                 let floor = infra_rung_price(0, &self.config).max(Price::new(1e-9));
+                let standing = self.world.factors.get(target).map(|f| f.infra).unwrap_or(Price::ZERO);
+                let shortfall = (floor - standing).max(Price::ZERO);
+                let paid = if shortfall > Price::ZERO {
+                    let home = self.world.home_center.get(vehicle).copied();
+                    match home.and_then(|h| self.world.stockpile.get_mut(h)) {
+                        Some(bank) => {
+                            let take = shortfall.kilotons().min(bank.basic_total().kilotons());
+                            let p = Price::new(take);
+                            if bank.try_spend_total(p) {
+                                p
+                            } else {
+                                Price::ZERO
+                            }
+                        }
+                        None => Price::ZERO,
+                    }
+                } else {
+                    Price::ZERO
+                };
                 let f = self.world.factors.get_mut(target).unwrap();
-                f.infra = f.infra.max(floor);
+                f.infra += paid;
                 f.infra
             };
             let pid = *self.world.planet_id.get(target).unwrap();
@@ -3648,6 +3721,66 @@ impl Simulation {
     /// actually there by flying into it.
     fn picket_blocks(&self, world: Entity, seat: u32) -> bool {
         self.picket.get(&world.0).is_some_and(|&(holder, _, _)| holder != seat)
+    }
+
+    /// **What a hull is made of, and what it gives back** (R-IND21, T-119).
+    ///
+    /// Scaled to `want` — so the same record answers "what does half of this
+    /// hull recover" and "what does all of it slag" without a second store.
+    ///
+    /// A hull nobody paid for falls back to an even split across the three
+    /// basics. That is a guess, and it is confined to the seed scouts the
+    /// galaxy is generated with: everything the engine *builds* carries what
+    /// the bank actually handed over.
+    fn composition_of(&self, vehicle: Entity, want: Price) -> Minerals {
+        if want <= Price::ZERO {
+            return Minerals::default();
+        }
+        let built = self.world.hull_minerals.get(vehicle).copied();
+        let total = built.map(|m| m.basic_total() + Price::new(m.red + m.green + m.blue + m.apex));
+        match (built, total) {
+            (Some(m), Some(t)) if t > Price::new(1e-12) => {
+                let f = want.kilotons() / t.kilotons();
+                Minerals {
+                    cyan: m.cyan * f,
+                    magenta: m.magenta * f,
+                    yellow: m.yellow * f,
+                    red: m.red * f,
+                    green: m.green * f,
+                    blue: m.blue * f,
+                    apex: m.apex * f,
+                }
+            }
+            _ => {
+                let each = want.kilotons() / 3.0;
+                Minerals { cyan: each, magenta: each, yellow: each, ..Minerals::default() }
+            }
+        }
+    }
+
+    /// **Record what a hull was built from**, scaled to its own dry mass.
+    ///
+    /// One build can lay down several hulls out of one withdrawal (a mining
+    /// crew and its freighter), so the *mix* is what is shared and each hull
+    /// takes its own mass in that mix.
+    fn stamp_composition(&mut self, vehicle: Entity, hull: HullType, mix: &Minerals) {
+        let paid = mix.basic_total() + Price::new(mix.red + mix.green + mix.blue + mix.apex);
+        if paid <= Price::new(1e-12) {
+            return;
+        }
+        let f = hull_cost(hull, &self.config).kilotons() / paid.kilotons();
+        self.world.hull_minerals.insert(
+            vehicle,
+            Minerals {
+                cyan: mix.cyan * f,
+                magenta: mix.magenta * f,
+                yellow: mix.yellow * f,
+                red: mix.red * f,
+                green: mix.green * f,
+                blue: mix.blue * f,
+                apex: mix.apex * f,
+            },
+        );
     }
 
     /// **Take a picket off station and off the books**, returning the seat that
@@ -4555,11 +4688,16 @@ impl Simulation {
             None => Kilotons::ZERO,
         };
         if let Some(dest_e) = dest {
-            let colors = recovered.on_scale::<units::Cost>().kilotons() / 3.0;
+            // **Salvage comes back as what the hull was made of** (R-IND21).
+            // A hull built from supers returns supers; the even split it used
+            // to credit was a guess in the one dimension that binds (§6.19c).
+            let salvage = self.composition_of(vehicle, recovered.on_scale::<units::Cost>());
             let stock = self.world.stockpile.get_mut(dest_e).unwrap();
-            stock.cyan += colors;
-            stock.magenta += colors;
-            stock.yellow += colors;
+            stock.add_basics(&salvage);
+            stock.red += salvage.red;
+            stock.green += salvage.green;
+            stock.blue += salvage.blue;
+            stock.apex += salvage.apex;
             if let Some(o) = owner {
                 let pid = *self.world.planet_id.get(dest_e).unwrap();
                 self.log.push(
@@ -5587,7 +5725,7 @@ impl Simulation {
                 // is the mineral economy's binding constraint (§6.19c).
                 // Nothing else touches this bank between here and the dispatch.
                 let bank_before = *self.world.stockpile.get(center).unwrap();
-                if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
+                let Some(build_mix) = self.world.stockpile.get_mut(center).unwrap().try_take_total(cost) else {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
                     for e in reused_miners {
@@ -5597,7 +5735,7 @@ impl Simulation {
                         self.reserve_freighters[p].push(e);
                     }
                     return None;
-                }
+                };
                 match (role, target) {
                     (Role::Scout, _) => {
                         // Under `PersistentSectors` (R-AC3), a paid-for replenishment
@@ -5624,7 +5762,14 @@ impl Simulation {
                         // empty between the order and the dispatch, which the
                         // mass ledger found as 8 hulls' worth of ore in a
                         // 200-year bed.
-                        if !self.launch_survey(p, center_pos, heading, 0, launch_delay, hull_type) {
+                        if !self.launch_survey(
+                            p,
+                            center_pos,
+                            heading,
+                            0,
+                            launch_delay,
+                            BuiltHull { hull: hull_type, mix: build_mix },
+                        ) {
                             *self.world.stockpile.get_mut(center).unwrap() = bank_before;
                         }
                     }
@@ -5636,7 +5781,14 @@ impl Simulation {
                         for _ in 0..crew {
                             match reused.next() {
                                 Some(e) => self.retask_miner(e, p, center, te),
-                                None => self.spawn_courier(p, r, hull_type, center, te, launch_delay),
+                                None => self.spawn_courier(
+                                    p,
+                                    r,
+                                    BuiltHull { hull: hull_type, mix: build_mix },
+                                    center,
+                                    te,
+                                    launch_delay,
+                                ),
                             }
                         }
                         if paired_freighter {
@@ -6382,11 +6534,12 @@ impl Simulation {
         &mut self,
         p: usize,
         role: Role,
-        hull: HullType,
+        built: BuiltHull,
         center: Entity,
         target: Entity,
         launch_delay: f64,
     ) {
+        let hull = built.hull;
         // The launch point *is* the center — it was passed in alongside it until
         // T-68 needed a seventh argument, and the two were always the same read.
         let from = *self.world.position.get(center).unwrap();
@@ -6395,6 +6548,7 @@ impl Simulation {
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, role);
         self.world.hull_type.insert(e, hull);
+        self.stamp_composition(e, hull, &built.mix);
         self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
         // A Colonizer carries its founding population as cargo, consumed on
         // arrival (`Hyades_vehicle_roles.md` §4.2), and **how much is what the
@@ -6534,7 +6688,7 @@ impl Simulation {
         heading: Vec3,
         hops: usize,
         launch_delay: f64,
-        hull: HullType,
+        built: BuiltHull,
     ) -> bool {
         let mut cands = core::mem::take(&mut self.survey_scratch);
         self.fill_survey_candidates(p, &mut cands);
@@ -6550,7 +6704,8 @@ impl Simulation {
             let e = self.world.spawn();
             self.world.owner.insert(e, PlayerId(p as u32));
             self.world.role.insert(e, Role::Scout);
-            self.world.hull_type.insert(e, hull);
+            self.world.hull_type.insert(e, built.hull);
+            self.stamp_composition(e, built.hull, &built.mix);
             self.world.voyage.insert(e, Voyage { target, heading_bias: bias, hops });
             self.world.cargo.insert(e, Minerals::default());
             let arrive = self.set_leg(e, from, dest, accel, launch_delay);
@@ -6558,7 +6713,7 @@ impl Simulation {
             self.log.push(
                 self.clock,
                 LogEvent::VehicleSpawned {
-                    hull,
+                    hull: built.hull,
                     player: p as u32,
                     vehicle: e,
                     role: Role::Scout,
@@ -9370,7 +9525,7 @@ mod tests {
                 p(a).partial_cmp(&p(b)).unwrap().then(a.0.cmp(&b.0))
             })
             .expect("a distant unclaimed world");
-        sim.spawn_courier(0, Role::Colonizer, HullType::MediumSystems, home, target, 0.0);
+        sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home, target, 0.0);
         let ship = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
 
         let world_pos = *sim.world.position.get(target).unwrap();
@@ -9457,9 +9612,6 @@ mod tests {
         sim.run();
         let after = sim.mass_ledger();
         let d = before.delta(&after);
-        let floor = infra_rung_price(0, &sim.config).max(Price::new(1e-9)).kilotons();
-        let colonies: usize = sim.report().players.iter().map(|p| p.colonies).sum();
-        let allowance = floor * colonies as f64;
         // **Non-vacuity.** Every assertion below holds trivially on a run where
         // the card never fired, and this bed is small — so the paths that move
         // mass violently have to be shown to have happened.
@@ -9467,13 +9619,68 @@ mod tests {
             !sim.picket.is_empty() || d.slag > 0.0,
             "the card never fielded a picket and nothing was ever wrecked, so this proves nothing"
         );
-        let change = after.total() - before.total();
-        assert!(change >= -1e-6, "mass was destroyed, which nothing here is allowed to do: {change:+.6}\n  {d:#?}");
+        let drift = (after.total() - before.total()).abs() / before.total();
         assert!(
-            change <= allowance + 1e-6,
-            "mass was created beyond the floor-rung allowance ({colonies} colonies x {floor:.4} = \
-             {allowance:.4}): {change:+.6}\n  {d:#?}"
+            drift < 1e-9,
+            "mass is not conserved under the card: {:.6} -> {:.6} ({:+.6} absolute)\n  {d:#?}",
+            before.total(),
+            after.total(),
+            after.total() - before.total()
         );
+    }
+
+    /// **A hull is made of specific minerals and gives them back** (R-IND21,
+    /// T-119).
+    ///
+    /// Cost is one scalar (R-O57), so every path that returned a hull's mass to
+    /// the world used to guess an even color split — in the one dimension the
+    /// mineral economy is actually constrained by (§6.19c). A hull records what
+    /// the bank handed over and returns it in the same proportions.
+    ///
+    /// **And better material makes better salvage**: the composition is
+    /// whatever bought the hull, so one built from supers or apex drops supers
+    /// or apex with no further rule. Asserted here directly, because nothing
+    /// spends supers on a hull yet and an emergent test would sit at zero.
+    #[test]
+    fn a_hull_returns_the_minerals_it_was_built_from() {
+        let mut cfg = test_cfg(3);
+        cfg.horizon_years = 10.0;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let hull = HullType::MediumSystems;
+        let price = hull_cost(hull, &sim.config);
+
+        // A lopsided hull: two parts Cyan to one part Yellow, no Magenta.
+        let lopsided = sim.world.spawn();
+        sim.world.hull_type.insert(lopsided, hull);
+        let paid = Minerals { cyan: 2.0, yellow: 1.0, ..Minerals::default() };
+        sim.stamp_composition(lopsided, hull, &paid);
+        let back = sim.composition_of(lopsided, price);
+        assert!((back.basic_total() - price).kilotons().abs() < 1e-12, "it gives back exactly its cost");
+        assert_eq!(back.magenta, 0.0, "it was not built from Magenta and does not invent any");
+        assert!((back.cyan - 2.0 * back.yellow).abs() < 1e-12, "and the two-to-one ratio survives");
+
+        // Half of it recovers half of each, which is what scrapping reads.
+        let half = sim.composition_of(lopsided, price * 0.5);
+        assert!((half.cyan - back.cyan * 0.5).abs() < 1e-12);
+        assert!((half.yellow - back.yellow * 0.5).abs() < 1e-12);
+
+        // **Better material, better loot.** A hull bought with supers and apex
+        // returns them; nothing else in the engine has to know.
+        let rich = sim.world.spawn();
+        sim.world.hull_type.insert(rich, hull);
+        sim.stamp_composition(rich, hull, &Minerals { red: 1.0, apex: 1.0, ..Minerals::default() });
+        let loot = sim.composition_of(rich, price);
+        assert!(loot.red > 0.0 && loot.apex > 0.0, "a super/apex hull drops supers and apex, got {loot:?}");
+        assert_eq!(loot.basic_total(), Price::ZERO, "and no basics it was never made of");
+        assert!((loot.red + loot.apex - price.kilotons()).abs() < 1e-12, "still exactly its cost");
+
+        // A hull nobody paid for falls back to an even split, and says so.
+        let free = sim.world.spawn();
+        sim.world.hull_type.insert(free, hull);
+        let split = sim.composition_of(free, price);
+        assert!((split.cyan - split.magenta).abs() < 1e-12 && (split.magenta - split.yellow).abs() < 1e-12);
+        let _ = home;
     }
 
     /// **A picket whose world gets colonized goes back to the frontier**
@@ -9527,7 +9734,7 @@ mod tests {
             }
         }
 
-        sim.spawn_courier(0, Role::Colonizer, HullType::MediumSystems, home, target, 0.0);
+        sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home, target, 0.0);
         sim.run();
 
         assert!(sim.world.owner.contains(target), "the colony should have been founded");
@@ -9576,7 +9783,7 @@ mod tests {
                 d(a).partial_cmp(&d(b)).unwrap().then(a.0.cmp(&b.0))
             })
             .expect("an unclaimed world");
-        sim.spawn_courier(0, Role::Colonizer, HullType::MediumSystems, home, target, 0.0);
+        sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home, target, 0.0);
         let ship = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
 
         // It is carrying something — otherwise this test says nothing.
@@ -9663,7 +9870,7 @@ mod tests {
         let colony_reach = math::ship_travel_years(home1_pos.distance(contested_pos), accel);
         assert!(t_reach < colony_reach, "constructed race must be winnable: {t_reach:.3} vs {colony_reach:.3}");
 
-        sim.spawn_courier(1, Role::Colonizer, HullType::MediumSystems, home1, contested, 0.0);
+        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, contested, 0.0);
 
         assert!(
             !sim.picket.contains_key(&station.0),
@@ -9712,7 +9919,7 @@ mod tests {
                 da.partial_cmp(&db).unwrap().then(a.0.cmp(&b.0))
             })
             .expect("an unclaimed world");
-        sim.spawn_courier(1, Role::Colonizer, HullType::MediumSystems, home1, target, 0.0);
+        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, target, 0.0);
         let colonizer = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
 
         // Seat 0 is already holding it, as of now.
@@ -12521,7 +12728,7 @@ mod tests {
         let bank_before = sim.world.stockpile.get(home).unwrap().basic_total();
         let there_before = *sim.world.population.get(target).unwrap();
 
-        sim.spawn_courier(0, Role::Colonizer, HullType::GeneralSystems, home, target, 0.0);
+        sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::GeneralSystems), home, target, 0.0);
         let ship = Entity(sim.world.entity_count() as u64 - 1);
 
         let settlers = *sim.world.pop_cargo.get(ship).unwrap();

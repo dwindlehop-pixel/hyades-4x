@@ -163,6 +163,71 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-119. A hull is made of something, and the founder pays for the floor
+
+**Both ratified by the author, both closing T-118's open exceptions.** Design
+law #11 now holds **with no exceptions**, card played or not.
+
+#### R-IND22 — the founding center pays the top-up
+
+The absorbing-zero floor (§8.7) used to raise a thin colony to `Band Empty` out
+of nothing, which was the last place the engine created mass. It is a
+**transfer** now: the parent center that dispatched the colonizer is billed for
+the shortfall out of its own bank, exactly as it is billed for the settlers and
+the endowment (R-O74).
+
+A parent too poor to pay leaves its child at whatever it could afford — **the
+guard degrades rather than conjuring**, so a bankrupt empire cannot found its
+way to free infrastructure. `mass_is_conserved_under_the_warfare_card` asserts
+an *equality* now where it carried a `colonies × floor` allowance.
+
+#### R-IND21 — a hull carries its own composition
+
+Cost is one scalar (R-O57), so every path that returned a hull's mass to the
+world guessed an even color split — in the one dimension the mineral economy is
+actually constrained by (§6.19c).
+
+`World::hull_minerals` records what the bank handed over.
+`Minerals::try_take_total` is the capture point: it is `try_spend_total` that
+**returns the withdrawal** rather than discarding it, because the bank's mix
+moves the instant it returns and a reconstruction afterwards reads the wrong
+proportions. `composition_of(vehicle, want)` scales the record to any amount, so
+one store answers "what does half of this hull recover" and "what does all of it
+slag".
+
+**Better material makes better loot, with no rule beyond the composition.** A
+hull bought with supers or apex returns supers or apex, because that is what it
+is made of. Nothing spends supers on a hull yet, so
+`a_hull_returns_the_minerals_it_was_built_from` asserts it directly — an
+emergent test would sit at zero.
+
+Three consumers read it: scrap salvage, the founding ceiling's overflow, and
+(through the same helper) anything that wrecks a hull. A hull nobody paid for —
+the seed scouts the galaxy is generated with — falls back to an even split, and
+`BuiltHull::unpaid` names that case rather than letting it be the default.
+
+#### What it cost
+
+Four CRN seeds, 3 seats, 800 yr, against T-118: colonies 2,949 / 2,851 / 2,898 /
+2,954 → 2,949 / 2,848 / 2,890 / 2,961, a mean of **−0.25** with 2/4 seeds down,
+and population identical to five significant figures. **Flat**, and it should
+be: the default bed has no picket doctrine so the floor almost never binds, and
+every hull is bought with basics either way — the composition record differs
+from an even split only by however lopsided the paying bank happened to be.
+
+The changes are for correctness and for what they unblock, not for the
+objective. What they unblock is supers and apex meaning something when a hull is
+built from them.
+
+#### A dispatcher takes a hull whole
+
+`BuiltHull { hull, mix }` replaces passing the two separately. They are one
+fact: a composition is meaningless without the type it scales to, and a type
+without a composition is the guess this replaces. It also kept `spawn_courier`
+and `launch_survey` inside clippy's argument limit without an `allow`.
+
+---
+
 ### T-118. Mass conservation is enforced, and it was leaking in three places
 
 **Design law #11 is the engine's most load-bearing invariant and it was asserted
