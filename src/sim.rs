@@ -1351,7 +1351,7 @@ fn pay_bill(bank: &mut Minerals, bill: &[Price; 3]) {
 /// mineral economy's binding constraint, applied at founding instead of at a
 /// production decision. Treating the hold as a scalar total was the version
 /// this replaces, and it let a single-color hold become infrastructure that no
-/// centre could have bought with the same minerals.
+/// center could have bought with the same minerals.
 ///
 /// Returns what can be erected and what it consumes, so the caller can bank the
 /// remainder. Mass is conserved: `consumed + remainder == aboard`.
@@ -1891,6 +1891,17 @@ enum EventKind {
     ColonyDivert { vehicle: Entity },
     /// A picket reaches the world it is to hold and takes station (T-112).
     PicketArrive { vehicle: Entity },
+    /// **A picket takes a second look at the ship it is chasing** (R-WAR10,
+    /// T-120).
+    ///
+    /// An interception is a *guess*: light delivers a departure point, a time
+    /// and a bearing, and the destination is inferred from them. The guess can
+    /// be wrong — and a colony ship that launches on a bearing it does not
+    /// intend to keep is running a feint, which is yomi content rather than a
+    /// modeling gap. This is the picket re-reading the trajectory when fresh
+    /// light reaches it, and re-aiming if the quarry is no longer going where
+    /// it looked like going.
+    PicketReassess { picket: Entity, quarry: Entity },
     /// **The round barrier** (`Hyades_netcode.md` §1) — the protocol clock's
     /// only tick. Cards are played here and nowhere else.
     ///
@@ -2252,6 +2263,30 @@ pub struct SimConfig {
     /// ablation is the only method that can refute, and a mechanism nobody
     /// removed is a story rather than a cause.
     pub ablate_picket_founding_cost: bool,
+    /// **How wide a cone a picket will guess into** (R-WAR10, T-120), in
+    /// radians of half-angle off the observed bearing.
+    ///
+    /// Light delivers a direction, not a destination, so every world within
+    /// some angle of that direction is a candidate. The angle is what decides
+    /// whether the guess is easy or hard: at zero a picket only backs a world
+    /// exactly on the line and almost never finds one, and at π it backs the
+    /// nearest scanned world regardless of where the ship is pointing, which is
+    /// not inference at all.
+    ///
+    /// **Placeholder, 0.15 rad ≈ 8.6°** (R-WAR12). It is a *legibility* knob
+    /// rather than a physical one — it sets how much a feint is worth, because
+    /// a wider cone makes a decoy bearing likelier to catch the world the ship
+    /// actually wants.
+    pub intercept_cone_radians: f64,
+    /// **How often a picket takes another look** (R-WAR10, T-120), in years.
+    ///
+    /// An interception is a guess made on one observation; this is the cadence
+    /// at which fresh light lets the picket revise it. Shorter makes deception
+    /// harder to sustain and costs events; longer makes a feint durable.
+    ///
+    /// **Placeholder, 25 yr** (R-WAR12) — roughly a third of a colony ship's
+    /// 25-ly crossing, so a chase gets two or three looks.
+    pub intercept_reassess_years: f64,
     /// How long a resolved engagement is simulated for, in years.
     ///
     /// **Placeholder magnitude (R-WAR5).** `resolve_engagement` walks `dt`-sized
@@ -2560,6 +2595,8 @@ impl SimConfig {
             // tree was taken without it. See the field doc.
             engagements_enabled: false,
             ablate_picket_founding_cost: false,
+            intercept_cone_radians: 0.15,
+            intercept_reassess_years: 25.0,
             engagement_horizon_years: 0.5,
             engagement_dt_years: 0.0005,
             engagement_volley_period_years: 0.05,
@@ -3111,7 +3148,17 @@ impl Simulation {
     /// Total basic minerals across an empire's holdings. Cards are paid from
     /// the empire, not from one center — design law #7 puts cards at
     /// empire/macro scale, so a per-center purse would be the wrong grain.
-    fn empire_can_afford(&self, p: usize, cost: Price) -> bool {
+    ///
+    /// **Public because "earliest legal play" is a measurable moment.**
+    /// `Hyades_trees_and_card_value.md` §2.4 reads a card's value at the first
+    /// instant its owner can pay for it, and an order that fails this predicate
+    /// coerces to a *pass* rather than erroring — so a harness that assumes a
+    /// card landed measures its absence while looking like a measurement.
+    /// Today the tier-0 prices sit below the seeded homeworld bank, so that
+    /// instant is round 0; `a_tier_zero_card_is_affordable_at_round_zero` pins
+    /// the dependency, because it holds between two magnitudes that were never
+    /// reconciled with each other.
+    pub fn empire_can_afford(&self, p: usize, cost: Price) -> bool {
         let me = PlayerId(p as u32);
         let mut total = Price::ZERO;
         for &e in &self.planet_entity {
@@ -3277,6 +3324,7 @@ impl Simulation {
             EventKind::Engagement { site } => self.sys_engagement(site),
             EventKind::ColonyDivert { vehicle } => self.sys_colony_divert(vehicle),
             EventKind::PicketArrive { vehicle } => self.sys_picket_arrive(vehicle),
+            EventKind::PicketReassess { picket, quarry } => self.sys_picket_reassess(picket, quarry),
             EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
         true
@@ -3900,27 +3948,48 @@ impl Simulation {
     /// What it does *not* get is a re-decision when the colony ship changes
     /// course — it committed on what it saw, and arriving at a world nobody
     /// comes to is the cost of having guessed.
-    fn offer_interception(
-        &mut self,
-        launcher: usize,
-        from_center: Entity,
-        target: Entity,
-        depart: f64,
-        colony_arrival: f64,
-    ) {
+    /// **Guess where a colony ship is going, from the light that reaches you**
+    /// (R-WAR10, T-120).
+    ///
+    /// Called once per colony-ship launch. The picket is **not told the
+    /// destination** — light delivers a departure point, a departure time and a
+    /// **bearing**, and everything else is inference. That is design law #10
+    /// taken at its word: acceleration is the observable, intent is not.
+    ///
+    /// ```text
+    /// t_see   = depart + |origin − station|              // light, c = 1
+    /// bearing = the direction the hull is actually moving
+    /// guess   = a world this picket has scanned, within `intercept_cone` of
+    ///           that bearing, that it can be standing on before the ship
+    /// ```
+    ///
+    /// **The guess can be wrong, and that is the mechanic.** Two worlds close
+    /// together on the same bearing are indistinguishable at range, so a picket
+    /// backs one; and a colony ship that launches on a bearing it does not
+    /// intend to keep — diverting later — has spent nothing to put a picket in
+    /// the wrong place. [`Self::sys_picket_reassess`] is the other side of it:
+    /// the picket re-reads the trajectory as fresh light arrives.
+    ///
+    /// **Candidates come from the picketing empire's own `scanned` set**, not
+    /// from the board. A world it has never surveyed is not a world it can
+    /// guess at, which keeps the inference inside what this player knows
+    /// (design law #15).
+    fn offer_interception(&mut self, launcher: usize, from_center: Entity, ship: Entity, depart: f64) {
         if self.picket.is_empty() || !self.config.engagements_enabled {
             return;
         }
-        if self.world.owner.contains(target) || self.picket.contains_key(&target.0) {
+        let Some(&origin_pos) = self.world.position.get(from_center) else { return };
+        let Some(motion) = self.world.motion.get(ship).copied() else { return };
+        let bearing = motion.dest.sub(motion.origin).normalized();
+        if bearing.norm() <= 0.0 {
             return;
         }
-        let Some(&dest) = self.world.position.get(target) else { return };
-        // The light leaves the **center that dispatched it**, not the capital:
-        // that is where the hull was built and lit its drive.
-        let Some(&origin_pos) = self.world.position.get(from_center) else { return };
-        let mut best: Option<(f64, Entity, Entity, f64)> = None;
+        let colony_arrival = motion.arrive;
+
+        let mut best: Option<(f64, Entity, Entity, Entity, f64)> = None;
         for (&w, &(seat, hull, _)) in self.picket.iter() {
-            if seat as usize == launcher || !self.doctrine_of(seat as usize).picket_intercepts {
+            let seat = seat as usize;
+            if seat == launcher || !self.doctrine_of(seat).picket_intercepts {
                 continue;
             }
             // The map is keyed by the world **entity** id, not by `PlanetId` —
@@ -3929,29 +3998,25 @@ impl Simulation {
             let from = Entity(w);
             let Some(&station) = self.world.position.get(from) else { continue };
             let t_see = depart + origin_pos.distance(station);
-            // Priced at the acceleration this hull will actually fly at — the
-            // same `laden_accel` `launch_picket` will read — so the decision and
-            // the leg cannot disagree about who wins the race.
             let accel = self.laden_accel(hull, self.config.civilian_accel_g);
-            let t_reach = t_see + math::ship_travel_years(station.distance(dest), accel);
+            let Some((guess, t_reach)) = self.guess_destination(seat, origin_pos, bearing, station, accel, t_see)
+            else {
+                continue;
+            };
             if t_reach >= colony_arrival {
                 continue;
             }
             // Deterministic argmin over a sorted map: earliest on the ground,
             // ties broken by the world it is leaving.
-            if best.is_none_or(|(bt, _, _, _)| t_reach < bt) {
-                // The delay is measured from *now*, and `depart` may be in the
-                // future, so the picket waits out the yard time too — it has
-                // not seen anything yet either.
-                best = Some((t_reach, hull, from, t_see - self.clock));
+            if best.is_none_or(|(bt, ..)| t_reach < bt) {
+                best = Some((t_reach, hull, from, guess, t_see - self.clock));
             }
         }
-        let Some((t_reach, hull, from, delay)) = best else { return };
-        let Some((seat, ship)) = self.vacate_picket(from) else { return };
-        debug_assert_eq!(ship, hull);
+        let Some((t_reach, hull, from, guess, delay)) = best else { return };
+        let Some((seat, _)) = self.vacate_picket(from) else { return };
         let station = *self.world.position.get(from).unwrap();
-        self.launch_picket(hull, station, target, delay);
-        let pid = *self.world.planet_id.get(target).unwrap();
+        self.launch_picket(hull, station, guess, delay);
+        let pid = *self.world.planet_id.get(guess).unwrap();
         self.log.push(
             self.clock,
             LogEvent::PicketIntercept {
@@ -3961,9 +4026,125 @@ impl Simulation {
                 margin: colony_arrival - t_reach,
             },
         );
+        // **Look again when the next light gets here.** The picket committed on
+        // one observation; the quarry has the whole voyage to make that
+        // observation wrong.
+        self.schedule(
+            delay.max(0.0) + self.config.intercept_reassess_years,
+            EventKind::PicketReassess { picket: hull, quarry: ship },
+        );
     }
 
-    /// A picket reaches its world and takes station.
+    /// **Which world on this bearing the picket backs.**
+    ///
+    /// Among worlds this seat has scanned, unowned and unheld: those within
+    /// `intercept_cone` of the observed bearing, and reachable before the
+    /// deadline. Ties go to the one **nearest the origin along the bearing** —
+    /// a colony ship is a slow, expensive object and the near world on a line
+    /// is the cheaper errand, so it is the better prior. It is a prior, not
+    /// knowledge, which is the whole point.
+    fn guess_destination(
+        &self,
+        seat: usize,
+        origin: Vec3,
+        bearing: Vec3,
+        station: Vec3,
+        accel: f64,
+        t_see: f64,
+    ) -> Option<(Entity, f64)> {
+        let cos_cone = self.config.intercept_cone_radians.clamp(0.0, core::f64::consts::PI).cos();
+        let scanned: Vec<PlanetId> =
+            self.world.knowledge.get(self.player_entity[seat])?.scanned.iter().copied().collect();
+        let mut best: Option<(f64, Entity, f64)> = None;
+        for pid in scanned {
+            let Some(&e) = self.planet_entity.get(pid.0 as usize) else { continue };
+            if self.world.owner.contains(e) || self.picket.contains_key(&e.0) {
+                continue;
+            }
+            let Some(&pos) = self.world.position.get(e) else { continue };
+            let along = pos.sub(origin);
+            let range = along.norm();
+            if range <= 0.0 {
+                continue;
+            }
+            // Inside the cone the observed bearing sweeps out.
+            if along.normalized().dot(bearing) < cos_cone {
+                continue;
+            }
+            let t_reach = t_see + math::ship_travel_years(station.distance(pos), accel);
+            // Deterministic argmin: nearest along the bearing, ties by id.
+            if best.is_none_or(|(br, be, _)| range < br || (range == br && e.0 < be.0)) {
+                best = Some((range, e, t_reach));
+            }
+        }
+        best.map(|(_, e, t)| (e, t))
+    }
+
+    /// **The picket re-reads the trajectory, and re-aims if it was wrong**
+    /// (R-WAR10, T-120).
+    ///
+    /// What it sees is where the quarry *was* when the light left it, which is
+    /// the whole reason a feint works: a ship that has already turned still
+    /// looks, for `distance` years, like it is going where it was going.
+    ///
+    /// Three outcomes, and the second is the interesting one:
+    /// the quarry is gone or landed and the picket holds its course; the
+    /// bearing now points at a different world and the picket re-aims; or the
+    /// guess still stands and nothing happens but another look.
+    fn sys_picket_reassess(&mut self, picket: Entity, quarry: Entity) {
+        if self.world.role.get(picket).copied() != Some(Role::Picket) {
+            return;
+        }
+        let Some(&owner) = self.world.owner.get(picket) else { return };
+        let seat = owner.0 as usize;
+        let Some(&voyage) = self.world.voyage.get(picket) else { return };
+        let Some(here) = self.position_at(picket, self.clock) else { return };
+        // Still chasing something? A quarry that has landed, turned back or
+        // been destroyed stops being a reason to keep looking.
+        if self.world.role.get(quarry).copied() != Some(Role::Colonizer) {
+            return;
+        }
+        let Some(qm) = self.world.motion.get(quarry).copied() else { return };
+        if qm.arrive <= self.clock {
+            return;
+        }
+        // **Light-lagged**: read the quarry where it was when this light left.
+        let lag = self.position_at(quarry, self.clock).map(|p| p.distance(here)).unwrap_or(0.0);
+        let seen_at = (self.clock - lag).max(qm.depart);
+        let Some(seen) = self.position_at(quarry, seen_at) else { return };
+        let bearing = qm.dest.sub(qm.origin).normalized();
+        if bearing.norm() <= 0.0 {
+            return;
+        }
+        let accel = self.laden_accel(picket, self.config.civilian_accel_g);
+        if let Some((guess, t_reach)) = self.guess_destination(seat, seen, bearing, here, accel, self.clock) {
+            if guess != voyage.target && t_reach < qm.arrive {
+                // **Re-aim.** The leg is replaced from where the picket is now,
+                // so the distance already flown is not refunded — a picket that
+                // took the feint has paid for it.
+                if let Some(n) = self.picket_inbound.get_mut(&voyage.target.0) {
+                    *n = n.saturating_sub(1);
+                    if *n == 0 {
+                        self.picket_inbound.remove(&voyage.target.0);
+                    }
+                }
+                self.launch_picket(picket, here, guess, 0.0);
+                let pid = *self.world.planet_id.get(guess).unwrap();
+                self.log.push(
+                    self.clock,
+                    LogEvent::PicketIntercept {
+                        player: seat as u32,
+                        vehicle: picket,
+                        target: pid,
+                        margin: qm.arrive - t_reach,
+                    },
+                );
+            }
+        }
+        // Keep looking until the chase resolves one way or the other.
+        self.schedule(self.config.intercept_reassess_years, EventKind::PicketReassess { picket, quarry });
+    }
+
     fn sys_picket_arrive(&mut self, vehicle: Entity) {
         let Some(&voyage) = self.world.voyage.get(vehicle) else { return };
         let world = voyage.target;
@@ -4709,7 +4890,7 @@ impl Simulation {
         // **The remainder is slag, and it is left where the breaking happened.**
         // Deposited on the nearest owned world when there is one, because slag
         // is a per-planet store and a hull in open space has no site of its own;
-        // that is a modelling choice the ledger makes visible rather than hides.
+        // that is a modeling choice the ledger makes visible rather than hides.
         let wasted = dry - recovered;
         if wasted > Kilotons::ZERO {
             let site = dest.or_else(|| self.nearest_owned_planet(owner.map(|o| o.0 as usize).unwrap_or(0), here));
@@ -6616,7 +6797,10 @@ impl Simulation {
             // finishes the paperwork: `launch_delay` is part of `depart`
             // (`set_leg`), and a picket that read `now` would be reacting to a
             // hull that has not moved yet.
-            self.offer_interception(p, center, target, self.clock + launch_delay, arrive);
+            // **The ship, not its destination** (R-WAR10). A picket is handed
+            // the hull it can see and infers the rest; passing `target` here
+            // was the engine telling it where the ship was going.
+            self.offer_interception(p, center, e, self.clock + launch_delay);
         }
         self.schedule_at(arrive, ev);
         let target_pid = *self.world.planet_id.get(target).unwrap();
@@ -7774,6 +7958,29 @@ impl Simulation {
     /// tests, censuses and the netcode digest — so it reads clearly rather than
     /// incrementally, and a full walk cannot drift out of step with the state
     /// the way a running total would.
+    /// **One player's tree stocks, for card valuation** (T-120).
+    ///
+    /// Returns `(colonies, infrastructure kt)`. Expansion's stock is the colony
+    /// count and Growth's interim stock is infrastructure in kilotons
+    /// (R-TREE3, until works exist) — and Warfare's is built from the first of
+    /// these across seats, since `W_i = C_i − Σ_j w_ij C_j` is a *difference*
+    /// and has no store of its own.
+    pub fn tree_stock(&self, p: usize) -> (usize, f64) {
+        let me = PlayerId(p as u32);
+        let mut colonies = 0usize;
+        let mut infra = 0.0;
+        for &e in &self.planet_entity {
+            if self.world.owner.get(e).copied() != Some(me) {
+                continue;
+            }
+            colonies += 1;
+            if let Some(f) = self.world.factors.get(e) {
+                infra += f.infra.on_scale::<units::Mass>().kilotons();
+            }
+        }
+        (colonies, infra)
+    }
+
     pub fn mass_ledger(&self) -> MassLedger {
         let mut m = MassLedger::default();
         for &e in &self.planet_entity {
@@ -9051,6 +9258,43 @@ mod tests {
     }
 
     #[test]
+    fn a_tier_zero_card_is_affordable_at_round_zero() {
+        // **T-120.** `apply_orders` coerces an unaffordable card to a *pass*
+        // rather than failing, so a bed that issues its orders and then runs
+        // cannot tell "the card did nothing" from "the card was never played".
+        // What makes round 0 legal is `bootstrap` seeding the homeworld with
+        // `homeworld_start_minerals`, a magnitude that has never been
+        // reconciled against `Card::cost`.
+        //
+        // Pinned in both directions so a future price rise, or a smaller
+        // starting bank, fails here instead of silently emptying a card bed.
+        let galaxy = test_galaxy(3, 1);
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
+        let card = cards::card(cards::CardId(3)).unwrap();
+        assert!(card.cost > 0.0, "a free card would make this question vacuous");
+        assert!(sim.empire_can_afford(0, Price::new(card.cost)), "the seeded homeworld bank must cover it");
+
+        let before = sim.world.doctrine.get(sim.player_entity[0]).unwrap().growth_rate;
+        sim.apply_orders(0, &[Order { seat: PlayerId(0), card: Some(cards::CardId(3)), target: Target::None }]);
+        assert!(
+            sim.world.doctrine.get(sim.player_entity[0]).unwrap().growth_rate > before,
+            "the write must land, not coerce to a pass"
+        );
+
+        // And the coercion is real: a price above the whole empire's holdings
+        // leaves the doctrine where it is.
+        let sim2 = Simulation::with_baseline(test_galaxy(3, 1), test_cfg(1));
+        assert!(!sim2.empire_can_afford(0, Price::new(1e9)));
+        let g0 = sim2.world.doctrine.get(sim2.player_entity[0]).unwrap().growth_rate;
+        assert_eq!(
+            Order { seat: PlayerId(0), card: Some(cards::CardId(3)), target: Target::None }.coerce(false).card,
+            None,
+            "an unaffordable order is a pass"
+        );
+        assert_eq!(sim2.world.doctrine.get(sim2.player_entity[0]).unwrap().growth_rate, g0);
+    }
+
+    #[test]
     fn a_politics_card_publishes_a_rivals_scans_without_asking() {
         // politics §5.3 / §6 — disclosure is the attack, and it is not opt-in.
         // Player 0 publishes player 1's scan record; player 2, who is not
@@ -9683,6 +9927,72 @@ mod tests {
         let _ = home;
     }
 
+    /// **A picket guesses, and a feint makes it guess wrong** (R-WAR10, T-120).
+    ///
+    /// The picket is handed a *bearing*, not a destination. Two worlds on the
+    /// same bearing are indistinguishable at range, so it backs the nearer one
+    /// — and a colony ship aimed at the far one has spent nothing to put a
+    /// picket in the wrong place.
+    ///
+    /// That is the whole deception channel, and it exists because the inference
+    /// is real: an engine that told the picket where the ship was going could
+    /// not be feinted, whatever else it modelled.
+    #[test]
+    fn a_picket_backs_the_near_world_on_a_bearing_and_can_be_feinted() {
+        let mut cfg = test_cfg(606);
+        cfg.horizon_years = 5.0;
+        cfg.engagements_enabled = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 606), cfg);
+        {
+            let d = sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap();
+            d.picket_intercepts = true;
+        }
+        let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let home1_pos = *sim.world.position.get(home1).unwrap();
+
+        // Two unclaimed worlds on one bearing out of seat 1's home: a decoy
+        // near, the real prize far. Constructed, because a bed this size will
+        // not offer a collinear pair (§8.9.5's geometry note).
+        let free: Vec<Entity> = sim
+            .planet_entity
+            .iter()
+            .copied()
+            .filter(|&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .take(3)
+            .collect();
+        assert!(free.len() >= 3, "need a decoy, a prize and somewhere to stand");
+        let (decoy, prize, station) = (free[0], free[1], free[2]);
+        let out = Vec3::new(1.0, 0.0, 0.0);
+        sim.world.position.insert(decoy, home1_pos.add(out.scale(20.0)));
+        sim.world.position.insert(prize, home1_pos.add(out.scale(40.0)));
+        // The picket sits beside the decoy, so it can reach either in time.
+        sim.world.position.insert(station, home1_pos.add(out.scale(20.5)));
+
+        let picket = sim.world.spawn();
+        sim.world.owner.insert(picket, PlayerId(0));
+        sim.world.role.insert(picket, Role::Picket);
+        sim.world.hull_type.insert(picket, HullType::LimitedOffensive);
+        sim.picket.insert(station.0, (0, picket, sim.clock));
+        sim.picket_count[0] += 1;
+        {
+            let k = sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap();
+            for e in [decoy, prize] {
+                k.scanned.insert(*sim.world.planet_id.get(e).unwrap());
+            }
+        }
+
+        // Seat 1 sends a colonizer at the *far* world. Same bearing as the
+        // decoy, so the picket cannot tell them apart.
+        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, prize, 0.0);
+
+        assert!(!sim.picket.contains_key(&station.0), "the picket should have broken for the bearing");
+        assert_eq!(
+            sim.world.voyage.get(picket).map(|v| v.target),
+            Some(decoy),
+            "it backs the *near* world on the bearing — which is the wrong one, and is the point"
+        );
+    }
+
     /// **A picket whose world gets colonized goes back to the frontier**
     /// (T-115). Its product is a colony somebody does not found, and this world
     /// now has one — so a hull left parked there is a hull doing nothing, and
@@ -9869,6 +10179,16 @@ mod tests {
         let t_reach = t_see + math::ship_travel_years(sp.distance(contested_pos), accel);
         let colony_reach = math::ship_travel_years(home1_pos.distance(contested_pos), accel);
         assert!(t_reach < colony_reach, "constructed race must be winnable: {t_reach:.3} vs {colony_reach:.3}");
+
+        // **The picket can only guess at worlds it has surveyed** (R-WAR10).
+        // It is not told the destination any more — it reads a bearing and
+        // backs a world of its own that lies along it — so seat 0 has to know
+        // this world exists. Without this the test asserts the *absence* of an
+        // interception, which is a different claim.
+        {
+            let pid = *sim.world.planet_id.get(contested).unwrap();
+            sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap().scanned.insert(pid);
+        }
 
         sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, contested, 0.0);
 
@@ -11174,6 +11494,32 @@ mod tests {
             assert!(r.has(HullType::LimitedContactVehicle, Class::Tor));
             assert!(!r.has_hull(HullType::MediumSystems), "MSV must not be unlocked at start");
         }
+    }
+
+    #[test]
+    fn the_first_warfare_card_is_a_price_and_not_yet_an_effect() {
+        // **T-120.** `TIER0[15]` — the Warfare Inscrutable slot, and the card
+        // `examples/card_table` costs against the first Growth card — writes
+        // `UnlockDesign(LimitedOffensive, _)` and nothing else. `roster_permits`
+        // is the Roster's only consumer outside tests, and it returns `true`
+        // unconditionally while `enforce_roster` is off, which is the shipped
+        // default (T-25, blocked on the very unlock path cards are meant to be).
+        //
+        // So the write reaches no decision and the card is *strictly* a price.
+        // Pinned here so it stops being true the moment enforcement lands, and
+        // the head-to-head is re-measured rather than carried forward.
+        let galaxy = test_galaxy(3, 1);
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
+        let c = cards::card(cards::CardId(15)).expect("the Warfare Inscrutable slot is published");
+        assert_eq!(c.tree, cards::Tree::Warfare);
+        assert!(matches!(c.effect, cards::CardEffect::UnlockDesign(HullType::LimitedOffensive, _)));
+        assert!(c.cost > 0.0, "the card has a price, which is the whole of what it does today");
+
+        // Buildable before the card and buildable after it: the write is a
+        // no-op at the only site that reads it.
+        assert!(sim.roster_permits(0, HullType::LimitedOffensive));
+        sim.world.roster.get_mut(sim.player_entity[0]).unwrap().unlock(HullType::LimitedOffensive, Class::Unnamed);
+        assert!(sim.roster_permits(0, HullType::LimitedOffensive));
     }
 
     #[test]

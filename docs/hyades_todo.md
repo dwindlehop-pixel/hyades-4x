@@ -163,6 +163,100 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-120. A picket guesses, and can be feinted (R-WAR10, resolved)
+
+§8.9.8 left `offer_interception` being *handed* the colony ship's destination,
+which is not what a picket can see. Light delivers a departure point, a
+departure time and a **bearing**; the destination is an inference. Full write-up
+in `Hyades_warfare_tree.md` §8.12.
+
+#### The guess
+
+```text
+t_see   = depart + |origin − station|
+bearing = the direction the hull is actually moving
+guess   = a world this picket has scanned, within `intercept_cone` of that
+          bearing, reachable before the ship arrives
+```
+
+Candidates come from the picketing empire's **own `scanned` set** — a world it
+never surveyed is not a world it can guess at (design law #15). It backs the
+world **nearest the origin along the bearing**, because a colony ship is slow
+and expensive and the near world on a line is the cheaper errand. A prior, not
+knowledge.
+
+#### Deception is a move now, not a wish
+
+Two worlds on one bearing are indistinguishable at range, so a colony ship aimed
+at the far one puts a picket on the near one for **free**.
+`a_picket_backs_the_near_world_on_a_bearing_and_can_be_feinted` constructs that
+and asserts the picket takes the bait.
+
+`EventKind::PicketReassess` is the other half: every
+`intercept_reassess_years` the picket re-reads the trajectory at the
+**light-lagged** position — what it sees is where the quarry was when the light
+left it, which is why a ship that has already turned still looks, for
+`distance` years, like it is going where it was going. Re-aiming happens from
+where the picket is, so the distance already flown is not refunded: a picket
+that took the feint has paid for it.
+
+#### Two magnitudes, both placeholders — R-WAR12
+
+`intercept_cone_radians` (0.15 rad ≈ 8.6°) and `intercept_reassess_years`
+(25 yr). Neither is physical. The cone is a **legibility** knob — wider makes a
+decoy bearing likelier to catch the world the ship actually wants — and the
+cadence sets how long a feint stays bought. They are the first magnitudes in
+this tree whose job is to price a **bluff**, so they want a bed on which the
+yomi channel is readable rather than `W_0`, which a bluff does not move
+directly.
+
+#### What it does not do
+
+`BaselineAutopilot` aims at the world it wants; nothing in the engine chooses a
+deceptive bearing. The channel exists and no policy uses it — which is the
+right order (mechanism before policy) and is stated so the absence is not read
+as a measurement.
+
+#### Part 2 — the head-to-head, and the card has nothing to tune
+
+`examples/card_table` is §8.4's bed: 12 seats, three arms (`Pass`,
+`GrowthOnly`, `Both`), cards at earliest legal play, `g` fitted by least
+squares on `ln X(t)` over `[150, 600]` yr as trees §2.4 requires. Each card is
+read against the arm differing from it by that card alone. Full write-up in
+`Hyades_warfare_tree.md` §8.13.
+
+| quantity | value | n | mean `R²` |
+|---|---|---|---|
+| Growth card value, `1 − t½ ratio` | **+0.1134 ± 0.0592** | 18 | 0.911 |
+| Warfare card value, `1 − t½ ratio` | **−0.0371 ± 0.1609** | 9 | 0.791 |
+| Warfare `ΔW_i` at 600 yr, colonies | −32.879 ± 46.075 | 18 | — |
+
+Estimates, not bounds. `n` counts seat-seeds and six seats share one galaxy, so
+independent replicates number **3**; and `W_i` has no logarithm where it is
+negative, so the Warfare row is computed on a subset selected by the quantity
+being measured.
+
+**The Warfare card reaches no decision, proved in the code rather than
+inferred from the numbers.** `TIER0[15]` writes
+`UnlockDesign(LimitedOffensive, Unnamed)`; the Roster's only consumer outside
+tests is `roster_permits`, which returns `true` before the lookup while
+`enforce_roster` is off; and `role_hull_type(Role::Picket)` already hands that
+hull to everyone. The card's whole channel is its 0.5 kt price.
+
+So the answer to *"tune it to match Growth"* is that there is no magnitude to
+move — the card needs an **effect** first, which is a design decision. Two new
+open codes came out of it: **R-WAR13** (the tree has no playable card doing what
+§8 specifies — `DoctrineWrite` has no Warfare variant) and **R-WAR14**
+(`inert_card_plays` counts `NotYetImplemented` only, so a write into a
+component with no live consumer reads as working).
+
+Two traps the bed exposed, both pinned as tests:
+`a_tier_zero_card_is_affordable_at_round_zero` (an unaffordable order coerces
+to a pass **silently**, so a bed cannot tell "did nothing" from "never
+played"), and `the_first_warfare_card_is_a_price_and_not_yet_an_effect`.
+
+---
+
 ### T-119. A hull is made of something, and the founder pays for the floor
 
 **Both ratified by the author, both closing T-118's open exceptions.** Design
@@ -351,7 +445,7 @@ conjunction `Hyades_industry.md` §6.19c measured as the mineral economy's
 binding constraint, arriving at founding rather than at a production decision.
 What the ratio cannot use is banked, so `consumed + remainder == aboard`. The
 scalar-total version it replaces let a single-color hold stand up as
-infrastructure **no centre could have bought with the same minerals**.
+infrastructure **no center could have bought with the same minerals**.
 
 #### Cost
 

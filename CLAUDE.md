@@ -1023,6 +1023,79 @@ fight.
   names its own next action — the write goes live when R-O64/R-L0 give hull
   types differentiated cost, not when it is tuned.
 
+### An inference is a mechanic; being told the answer is not
+
+**T-120 is the worked example.** `offer_interception` was *handed* the colony
+ship's destination, so a picket could not be wrong — and a mechanic that cannot
+be wrong cannot be deceived. The engine had light-lag, bearings and a full
+observation model, and one function reaching into the ship's `voyage.target`
+deleted the whole yomi channel that sat on top of them.
+
+Reading the *trajectory* instead — a departure point, a time and a bearing, with
+the destination inferred from worlds the picket has itself scanned — is a few
+lines, and it creates a move that did not exist: two worlds on one bearing are
+indistinguishable at range, so a ship aimed at the far one puts a picket on the
+near one **for free**.
+
+- **Ask what a decision is allowed to read, not just what it decides.** Every
+  design-law-#15 violation in this project has this shape: `Knowledge` storing
+  membership rather than observations (T-33), colonization filtering on
+  instantaneous global ownership (T-34), and this one. The decision was fine;
+  its inputs were ground truth.
+- **A guess needs a way to be revised, or it is a commitment.** The second half
+  of the mechanic is re-reading the trajectory as fresh light arrives, at the
+  *lagged* position — a ship that has already turned still looks, for `distance`
+  years, like it is going where it was going. That delay is the thing a feint is
+  actually buying.
+- **Mechanism before policy, and say which you built.** Nothing in the engine
+  chooses a deceptive bearing; `BaselineAutopilot` aims at the world it wants.
+  The channel exists and no policy uses it. Write that down, or the absence gets
+  read as a measurement that bluffing does not work.
+
+### Count the consumers of a write, not the writes
+
+**T-120's second half is the worked example.** The first Warfare card writes
+`UnlockDesign(LimitedOffensive, _)` into the per-player `Roster` — a real write,
+into real replicated state, through the real card path, charged the real price.
+The engine counts it as an implemented card. It reaches **no decision**: the
+Roster's only consumer outside tests is `roster_permits`, which returns `true`
+before it looks anything up whenever `enforce_roster` is off, and that is the
+shipped default.
+
+So a twelve-seat head-to-head measured the card at **−0.0371 ± 0.1609**, inside
+one standard error of zero, and the number was never the finding. Three habits:
+
+- **Before measuring a feature, grep its state for readers and check what
+  guards them.** One `grep` for `roster` returned six lines, one of which was a
+  gate defaulting to off. That settles the question in a minute, where the bed
+  cost 10 and answers it weakly — a wide error bar looks the same whether the
+  effect is zero or merely unresolved.
+- **A "did I implement it" counter measures the wrong thing.**
+  `Sim::inert_card_plays` increments only on `CardEffect::NotYetImplemented`, so
+  it tells you which match arm ran and not whether the write landed anywhere
+  live. The honest predicate is about the *consumer*, and it is the one nobody
+  writes because the write is the part you just finished.
+- **Check whether the thing you are measuring is the thing the spec
+  describes.** The Warfare spec's first card is one Design write plus three
+  Doctrine writes; `DoctrineWrite` has four variants and **none of them is a
+  Warfare write**, so every arm the spec had measured was reached by setting
+  `Doctrine` fields directly — bypassing the card table and the price both. The
+  published card and the specified card were different objects, and nothing in
+  either document said so.
+
+This is §4's *"a behavioral change that reproduces the baseline exactly is inert
+or unreachable"* moved one step earlier: there the tell was a bit-identical run,
+here there was no need to run anything at all.
+
+**And a second trap from the same bed, which would have made any card
+measurement vacuous without looking wrong.** `apply_orders` checks
+affordability and `Order::coerce` turns a failure into a **pass** rather than an
+error, so a bed that issues orders and then runs cannot distinguish *the card
+did nothing* from *the card was never played*. Whether round 0 is legal is a
+relation between `Card::cost` and a homeworld's seeded bank — two magnitudes
+nobody reconciled. **Record when a card actually landed, and assert the
+precondition in both directions**, rather than assuming the play took.
+
 ### Never leave an identified symptom without a proven mechanism
 
 **A number is a symptom. Stop only when you can name the line of code that
@@ -2063,7 +2136,7 @@ changes how you *work*, not what is left to do:
   reach more — and a simulation with fewer colonies is doing less work, not
   less work per unit. `ns/event` is flat against the pre-fix bed, which is the
   first row of the reading table: *the simulation is doing less, each unit costs
-  the same.* **Nothing was optimised and nothing regressed.**
+  the same.* **Nothing was optimized and nothing regressed.**
 
   **T-88's last row is the one to read, and it is `ns/event` that says why.**
   Per-event cost went from ~174,000 ns at T-87 to **22,394** — not because any

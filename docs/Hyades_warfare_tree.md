@@ -1500,7 +1500,7 @@ ratio cannot use is banked rather than lost, so `consumed + remainder == aboard`
 exactly.
 
 The version this replaces treated the hold as a scalar total, which let a
-single-color hold stand up as infrastructure **no centre could have bought with
+single-color hold stand up as infrastructure **no center could have bought with
 the same minerals** — a rung obtainable by arriving that was not obtainable by
 paying for it.
 
@@ -1522,6 +1522,182 @@ either pairing today**, which is why the bed does not move.
 magnitude question (`founding_infra_share`, default 0.0, measured flat at
 §8.8 because a colony ship's hold is nearly all settlers, R-WAR7). The *rule*
 — that whatever it erects respects the works mix — is ratified here.
+
+### 8.12 A picket guesses, and can be feinted (R-WAR10, resolved — T-120)
+
+**Ratified.** §8.9.8 left `offer_interception` being *handed* the colony ship's
+destination, which is not what a picket can see. Light delivers a departure
+point, a departure time and a **bearing**; the destination is an inference from
+them, and design law #10 already says acceleration is the observable and intent
+is not.
+
+#### What a picket now knows
+
+```text
+t_see   = depart + |origin − station|          // light, c = 1
+bearing = the direction the hull is actually moving
+guess   = a world this picket has scanned, within `intercept_cone` of that
+          bearing, that it can stand on before the ship arrives
+```
+
+**Candidates come from the picketing empire's own `scanned` set.** A world it
+has never surveyed is not a world it can guess at, which keeps the inference
+inside what this player knows rather than inside what the board holds (design
+law #15). It backs the world **nearest the origin along the bearing**: a colony
+ship is slow and expensive, so the near world on a line is the cheaper errand
+and the better prior. It is a prior, not knowledge.
+
+#### Which makes deception a move rather than a wish
+
+Two worlds on one bearing are indistinguishable at range. A colony ship aimed at
+the far one has spent **nothing** to put a picket on the near one —
+`a_picket_backs_the_near_world_on_a_bearing_and_can_be_feinted` constructs
+exactly that and asserts the picket takes the bait.
+
+And the second half is what makes the feint cost something to sustain.
+`EventKind::PicketReassess` has the picket re-read the trajectory every
+`intercept_reassess_years`, at the light-lagged position — **what it sees is
+where the quarry was when the light left it**, which is why a ship that has
+already turned still looks, for `distance` years, like it is going where it was
+going. If the bearing now points at a different world the picket re-aims from
+where it is; the distance already flown is not refunded, so a picket that took
+the feint has paid for it.
+
+#### Two magnitudes, both placeholders — `R-WAR12`
+
+| knob | default | what it sets |
+|---|---|---|
+| `intercept_cone_radians` | 0.15 rad ≈ 8.6° | how wide a guess is allowed to be |
+| `intercept_reassess_years` | 25 yr | how often the guess is revised |
+
+Neither is physical. The cone is a **legibility** knob: wider makes a decoy
+bearing likelier to catch the world the ship actually wants, so it sets what a
+feint is worth. The cadence sets how long one stays bought. They are the first
+two magnitudes in this tree whose job is to price a *bluff* rather than a
+kinetic outcome, and they should be tuned against the yomi channel rather than
+against `W_0`.
+
+#### What it does not do
+
+The picket commits on the bearing it saw and cannot ask the ship anything. There
+is no model of a ship *choosing* a deceptive bearing — the autopilot aims at the
+world it wants, and a feint is available to a human or a future policy, not to
+`BaselineAutopilot`. So the channel exists and nothing in the engine currently
+uses it; that is the correct order (mechanism before policy) and it is stated
+here so the absence is not read as a measurement.
+
+---
+
+### 8.13 The head-to-head, and the card has nothing to tune (T-120)
+
+*§8.4 asks for the first Warfare card costed against the first Growth card on
+one bed. `examples/card_table` is that bed. **The comparison is well-posed and
+the Warfare side of it is empty**, for a reason that is structural rather than
+statistical and was settled in the code before the runs finished.*
+
+#### The bed
+
+Twelve seats, three arms, cards played at earliest legal play (§2.4 of
+`Hyades_trees_and_card_value.md`), three CRN seeds. Seats alternate so neither
+tree sits systematically nearer the middle of the galaxy.
+
+| arm | even seats | odd seats |
+|---|---|---|
+| `Pass` | — | — |
+| `GrowthOnly` | — | Growth card (`TIER0[3]`) |
+| `Both` | Warfare card (`TIER0[15]`) | Growth card |
+
+Each card's effect is read against the arm that differs from it by that card
+alone — Growth is `GrowthOnly − Pass`, Warfare is `Both − GrowthOnly`. Landing
+both against `Pass` would charge each card with the other's effect on the same
+galaxy.
+
+`g` is fitted by **least squares on `ln X(t)`** over `[150, 600]` yr at a 25-yr
+stride, which §2.4 requires and an endpoint pair does not satisfy; `R²` is
+reported so a badly chosen window shows as curvature rather than hiding.
+
+#### What it measures
+
+| quantity | value | n | mean `R²` |
+|---|---|---|---|
+| Growth card value, `1 − t½ ratio` | **+0.1134 ± 0.0592** | 18 | 0.911 |
+| Growth work stock at 600 yr | +1.3405 ± 0.9150 | 18 | — |
+| Warfare card value, `1 − t½ ratio` | **−0.0371 ± 0.1609** | 9 | 0.791 |
+| Warfare `ΔW_i` at 600 yr, colonies | −32.879 ± 46.075 | 18 | — |
+
+**These are estimates, not bounds, and three caveats bound how far they go.**
+`n` counts **seat-seeds**, and the six seats inside one galaxy share that
+galaxy, so the independent replicate count is **3**, not 18 — every standard
+error above is optimistic by an unmeasured factor. `W_i` is a difference and has
+no logarithm where it is negative (R-TREE9), so the Warfare row is computed on
+the **9 of 18 seat-seeds whose contrast was positive at both ends** — a set
+selected by the quantity being measured, which is §2's mix rule and is the
+reason the raw `ΔW_i` row is printed beside it. And the Growth row's `R²` of
+0.911 says the window is in the exponential regime; Warfare's 0.791 on a
+difference says rather less.
+
+**Inference: the Growth card reduces its own tree's doubling time by about a
+tenth, and the Warfare card does not measurably move `W_0` in either
+direction.** Warfare's −0.0371 is inside one standard error of zero on this bed
+and the raw `ΔW_i` is inside one standard error of zero as well.
+
+#### The Warfare card reaches no decision, and that is not a statistical claim
+
+**`TIER0[15]` is `UnlockDesign(HullType::LimitedOffensive, Class::Unnamed)`, and
+the Roster has exactly one consumer outside tests.** `Sim::roster_permits`
+returns `true` before it looks the roster up whenever `enforce_roster` is
+false — which is the shipped default, and item 10 of the standing-layer roadmap
+records why: with no unlock path, enforcement forbids every expansion build
+permanently. So the card's write lands in a component nothing reads.
+
+**A second, independent confirmation:** `role_hull_type(Role::Picket)` returns
+`LimitedOffensive` unconditionally (T-113). The hull the card unlocks is one the
+engine already hands to anybody who builds a picket. There is no state in which
+this card is what makes an LOU available.
+
+**So the card's only channel to the simulation is `Card::cost` — 0.5 kt, debited
+from the empire at play.** That is a pure price with nothing bought, which is
+why the arm does not reproduce `GrowthOnly` exactly and why the sign of
+`ΔW_i` is negative. `the_first_warfare_card_is_a_price_and_not_yet_an_effect`
+pins both halves, so this stops being true the moment enforcement lands.
+
+#### Which answers both halves of the question asked
+
+- **Is there a yomi-legible effect on `W_0`?** No, and not because the effect is
+  small. Design law #9 makes legibility σ read from the other side; a write that
+  reaches no decision changes no acceleration signature, no build order and no
+  board state, so there is nothing on the other side to read. A card with no
+  effect surface cannot carry a slant.
+- **Can it be tuned to match Growth's +0.1134?** Not by moving a magnitude,
+  because the card has no magnitude. Matching requires giving the card an effect
+  first, and that is a design decision rather than a tuning one — §8.10 measured
+  the effect the spec names for this slot (the denial doctrine) at **−287.8
+  `W_0`**, so the obvious candidate is known to point the wrong way.
+
+**`TIER0[15]` and the card §8.2 specifies are different objects, and this is the
+first measurement that makes the gap concrete.** §8.2's card is one Design write
+plus three Doctrine writes; `DoctrineWrite` carries four variants
+(`GrowthRate`, `SurveyVehicles`, `BiosphereRegen`, `ReinvestBias`) and **none of
+them is a Warfare write**. Everything §8.6 through §8.11 measured was reached by
+setting `Doctrine` fields directly, which bypasses both `TIER0` and
+`Card::cost`. The Warfare tree therefore has **no playable card that does what
+§8 describes** — `R-WAR13`.
+
+#### Two traps this bed exposed, worth having before the next card measurement
+
+- **An unaffordable order coerces to a pass, silently.** `apply_orders` checks
+  `empire_can_afford` and `Order::coerce` turns a failure into a pass rather
+  than an error, so a bed that issues orders and then runs **cannot distinguish
+  a card that did nothing from a card that was never played**. Round 0 happens
+  to be legal today because `bootstrap` seeds each homeworld above every tier-0
+  price, but that is a relation between two magnitudes nobody reconciled —
+  `a_tier_zero_card_is_affordable_at_round_zero` pins it in both directions, and
+  the harness records when each card actually landed (3.4 yr, mean over seats
+  and seeds) rather than assuming.
+- **`Sim::inert_card_plays` counts the wrong thing.** It increments only on
+  `CardEffect::NotYetImplemented`, so a card that writes real state into a
+  component with no live consumer is counted as working. It measures which match
+  arm ran, not whether the write reached a decision — **`R-WAR14`**.
 
 ---
 
@@ -1546,6 +1722,9 @@ magnitude question (`founding_infra_share`, default 0.0, measured flat at
 | **R-WAR9** | **the colonization leg is flown at the rate its own load implies** — `spawn_courier` read `civilian_accel_g · G` before the hold was loaded, so a colony ship flew like an empty hull and R-O32 was closed for the arena but not for this dispatcher. A laden Medium colonizer makes **0.241 ly/yr² against 2.446 empty**. It **invalidates every transit-dependent magnitude measured before it**, §8.6–8.8's arms included (§8.9.6) |
 | **R-IND21** | **a hull carries the minerals it was built from** and hands them back in the same proportions — scrap salvage, wreckage, the founding ceiling's overflow. So a hull built from supers or apex drops supers or apex, with no rule beyond the composition itself. `World::hull_minerals`, captured by `Minerals::try_take_total` at the moment the bank pays (T-119) |
 | **R-IND22** | **the founding center pays the floor-rung top-up**, so the absorbing-zero guard (§8.7) is a *transfer* rather than mass appearing from nowhere. A parent too poor to pay leaves its child at whatever it could afford — the guard degrades rather than conjuring. **Design law #11 now holds with no exceptions**, card played or not |
+| **T-120** | **`TIER0[15]` — the first Warfare card — reaches no decision.** Its `UnlockDesign(LimitedOffensive, _)` write lands in the Roster, whose only consumer outside tests is `roster_permits`, which returns `true` unconditionally while `enforce_roster` is off; and `role_hull_type(Role::Picket)` already returns that hull to everyone. The card's whole channel is its 0.5 kt price (§8.13) |
+| **T-120** | **the head-to-head bed §8.4 asked for exists** — `examples/card_table`, 12 seats, three arms, cards at earliest legal play, `g` fitted by least squares on `ln X(t)` as §2.4 requires. Growth card value **+0.1134 ± 0.0592** (n=18 seat-seeds over 3 independent seeds, mean `R²` 0.911); Warfare **−0.0371 ± 0.1609**, inside one SE of zero (§8.13) |
+| **R-WAR10** | **a picket guesses its target from the observed bearing**, out of worlds *it* has scanned, and re-reads the trajectory as fresh light arrives. Two worlds on one bearing are indistinguishable at range, so a colony ship aimed at the far one puts a picket on the near one for free — **deception is a move now, not a wish** (§8.12) |
 | **T-117** | **the standing layer answers; it is not switched on.** `Standing::role_of` is *derived* from `design_for`, so a card that moves a role to a different hull needs no edit in `assign_role` — pinned by `role_of_inverts_design_for_every_role` across every combination of the writes (§8.11). Bit-identical on four seeds |
 | **T-117** | **a hold erects infrastructure in the works mix, not in total** — `erectable = eta_works · min_c(aboard[c] / mix_share(c))`, the same per-color conjunction `works_bill` charges a rung with, so a single-color hold erects nothing (§8.11) |
 | **T-116** | **the card's negative `W_0` is one cost and it compounds** — the forfeited founding rung. Ablated, the Doctrine write goes −287.8 → **−2.0**, so pickets, engagements and kills are together worth about two colonies (§8.10) |
@@ -1567,7 +1746,9 @@ magnitude question (`founding_infra_share`, default 0.0, measured flat at
 
 | **R-WAR11** | **may a Doctrine write impose a cost that scales with its holder's own activity?** A card has two costs: `Card::cost`, a bounded one-off the engine already charges, and the mechanic's own — here, every colony founded afterwards starting 5.5x thinner, forever. The second cannot be priced, because its size depends on how much the player goes on to expand, and a difference objective charges it twice (§8.10). **Not Warfare-specific**, so it belongs in the card contract | a decision on whether a card's total cost must be bounded at play time |
 | **R-IND11** | **`SettlersPerMineral` is worth +394.9 `W_0` unilaterally** on the 4-seed asymmetric bed — more than any card measured so far. `Hyades_industry.md` §1.6 records the policy as *"blocked on R-O74"*, the conjured-settlers violation, and **R-O74 closed at §1.7**. So the block is lifted and the answer may have flipped | a **symmetric** re-measure — this one is competitive, not global, and a default is a global question |
-| **R-WAR10** | **a picket is handed the colony ship's destination**, not its trajectory. Light delivers a departure, a time and a heading; a destination is an *inference* from those, and inferring it wrong is what makes a feint possible. **Meeting the ship on its path instead is refuted** — the window is back-loaded, so a mid-track intercept tolerates a 1.95 ly offset against the destination's 4.96 (§8.9.8) | a heading-based candidate set in place of the true target, and a measure of how often the inference is wrong |
+| **R-WAR13** | **the Warfare tree has no playable card that does what §8 specifies.** §8.2's card is one Design write plus three Doctrine writes; `DoctrineWrite` carries four variants and none of them is a Warfare write, so every arm in §8.6–§8.11 was reached by setting `Doctrine` fields directly — bypassing `TIER0` and `Card::cost` both. Until a Warfare `DoctrineWrite` exists, `TIER0[15]` is the tree's only playable card and it is a price (§8.13) | a `DoctrineWrite` variant for the picket/denial writes, then re-run `examples/card_table` |
+| **R-WAR14** | **`Sim::inert_card_plays` counts `NotYetImplemented` only**, so a card writing real state into a component with no live consumer reads as working. It measures which match arm ran, not whether the write reached a decision (§8.13) | a definition of "reached a decision" that a counter can test — the candidate is whether the written component is read on a live path |
+| **R-WAR12** | **the two guess magnitudes** — `intercept_cone_radians` (0.15 rad) and `intercept_reassess_years` (25 yr). Neither is physical: the cone sets how wide a guess may be and therefore what a feint is worth, and the cadence sets how long one stays bought. They are the first magnitudes in this tree whose job is to price a **bluff** rather than a kinetic outcome | a bed on which the yomi channel is readable — not `W_0`, which a bluff does not move directly |
 | **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is **bit-identically inert** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |
 | **R-WAR7** | **a colonizer's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
 | **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole colonizer loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
