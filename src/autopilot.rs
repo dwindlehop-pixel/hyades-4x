@@ -852,13 +852,19 @@ pub struct ProductionContext {
     /// Mineral cost of a Miner + its paired Freighter (an LSV + an MSV),
     /// bundled since they're built together (§4.4).
     pub mining_pair_cost: Price,
-    /// Mineral cost of one Scout (an LCV) — the survey craft the limited tier
-    /// unlocks. Bootstrap hands each seat `survey_vehicles` of these free
-    /// (autopilot-doc §2); every later one is paid for out of a center's
-    /// stockpile like any other build.
+    /// Mineral cost of one Scout — an **LSV** by default, and an LCV once the
+    /// Warfare card arms the frontier (T-121). Bootstrap hands each seat
+    /// `survey_vehicles` of these free (autopilot-doc §2); every later one is
+    /// paid for out of a center's stockpile like any other build.
     pub light_vehicle_cost: Price,
-    /// Mineral cost of one picket — a **Limited Offensive** hull, the cheapest
-    /// armed thing in the ladder (T-113).
+    /// Mineral cost of one picket — a **Limited Contact Vehicle** (T-113,
+    /// rebased at T-121).
+    ///
+    /// Numerically equal to [`Self::light_vehicle_cost`] whenever the scout is
+    /// also a Limited hull, because `cost_fraction` gives the whole Limited
+    /// tier one price. It is a separate field anyway: the equality is a
+    /// property of today's cost ladder, not of the two roles, and R-O64/R-L0
+    /// are open on giving hull types differentiated cost.
     pub picket_cost: Price,
     /// How many worlds this empire is already holding, against
     /// [`Doctrine::picket_reserve`].
@@ -901,8 +907,10 @@ impl ProductionContext {
     /// a build the yard then cannot pay for.
     pub fn price_of(&self, hull: HullType) -> Price {
         match hull {
-            HullType::LimitedContactVehicle | HullType::LimitedContactUnit => self.light_vehicle_cost,
-            HullType::LimitedOffensive => self.picket_cost,
+            // The survey hull under either standing layer — LSV unarmed, LCV
+            // armed (T-121) — plus the two Limited hulls nothing mounts.
+            HullType::LimitedSystems | HullType::LimitedContactVehicle => self.light_vehicle_cost,
+            HullType::LimitedContactUnit | HullType::LimitedOffensive => self.picket_cost,
             HullType::MediumSystems => self.colonizer_cost,
             _ => self.general_colonizer_cost,
         }
@@ -1191,10 +1199,10 @@ impl Autopilot for BaselineAutopilot {
         // above the whole range of the thing it thresholds.
         let wants_survey = ctx.survey_frontier > 0 && ctx.candidate_count < doctrine.survey_reserve;
         // **Price the hull this doctrine will actually lay down** (T-115).
-        // `light_vehicle_cost` is the Limited Contact Vehicle's; under
-        // `scout_hull_offensive` the survey branch builds the armed hull, and
-        // `picket_cost` is already that price, so the affordability test needs
-        // no new context field — it needs to read the other one it has.
+        // The standing layer answers which hull that is — LSV unarmed, LCV once
+        // the Warfare card is played — and `price_of` turns it into a price, so
+        // the affordability test needs no new context field and no branch on
+        // the write.
         let scout_cost = ctx.price_of(Standing::of(doctrine).design_for(Role::Scout).0);
         let can_afford_light = ctx.stockpile_total + Price::new(1e-9) >= scout_cost;
 
@@ -1208,7 +1216,7 @@ impl Autopilot for BaselineAutopilot {
                 return BuildOrder::UpgradeInfrastructure;
             }
             return if wants_survey && can_afford_light && !deepen_possible {
-                scout_order(doctrine)
+                Standing::of(doctrine).scout_order()
             } else {
                 BuildOrder::Idle
             };
@@ -1238,7 +1246,7 @@ impl Autopilot for BaselineAutopilot {
         // 3,334 → 3,336 / 2,608,344.6 → 2,609,993.2). Strictly better, which is
         // what a wasted build should look like when it stops.
         if candidates.is_empty() && can_afford_light && ctx.survey_frontier > 0 {
-            return scout_order(doctrine);
+            return Standing::of(doctrine).scout_order();
         }
 
         // Find the best colony target and outpost.
@@ -1469,9 +1477,9 @@ impl Autopilot for BaselineAutopilot {
         let wants_picket = ctx.pickets_held < doctrine.picket_reserve;
         let can_afford_picket = ctx.stockpile_total + Price::new(1e-9) >= ctx.picket_cost;
         let survey_fallback = if wants_survey && can_afford_light {
-            scout_order(doctrine)
+            Standing::of(doctrine).scout_order()
         } else if wants_picket && can_afford_picket {
-            hull_order(HullType::LimitedOffensive)
+            Standing::of(doctrine).order_for(Role::Picket)
         } else {
             BuildOrder::Idle
         };
@@ -1492,7 +1500,7 @@ impl Autopilot for BaselineAutopilot {
             && !colony_target_claimed
             && colony_target.is_some()
         {
-            hull_order(HullType::LimitedOffensive)
+            Standing::of(doctrine).order_for(Role::Picket)
         } else {
             survey_fallback
         };
@@ -1519,29 +1527,21 @@ impl Autopilot for BaselineAutopilot {
     }
 }
 
-/// **The hull this doctrine sends out to survey** (T-115).
+/// **The hull the armed frontier writes survey onto** — the one branch
+/// [`Standing::design_for`] takes for [`Role::Scout`], and the only place the
+/// `scout_hull_offensive` write is read.
 ///
-/// One function, because the build branch and `assign_role` have to agree about
-/// it: the build lays down a hull, and the role is derived from the hull and
-/// class afterwards (R-O29). Two independent readings of the same doctrine
-/// write is the shape `mining_pair_cost` carries a comment about.
-///
-/// The class is always `Tor` — the survey design — whatever shell it is mounted
-/// on, and that is what distinguishes a scouting LOU from a picketing one.
-fn scout_order(doctrine: &Doctrine) -> BuildOrder {
-    BuildOrder::Hull { hull_type: scout_hull(doctrine), class: Class::Tor }
-}
-
-/// **The hull this doctrine sends out to survey** — the hull alone, where
-/// [`scout_order`] wraps it in the build order and its class.
-///
-/// Public because `launch_survey` needs it at game start, where there is no
-/// build order to read it off: the seed scouts are spawned rather than bought.
-pub fn scout_hull(doctrine: &Doctrine) -> HullType {
+/// Private on purpose (T-121). Everything outside this module asks
+/// [`Standing::design_for`] or [`Standing::scout_order`], which are derived
+/// from this one answer rather than repeating it — the build branch,
+/// `assign_role` and `launch_survey` used to read the write separately, and
+/// three readings of one write is how they come to disagree (T-116's
+/// `launch_survey` paid for a hull and discarded it).
+fn scout_hull(doctrine: &Doctrine) -> HullType {
     if doctrine.scout_hull_offensive {
-        HullType::LimitedOffensive
-    } else {
         HullType::LimitedContactVehicle
+    } else {
+        HullType::LimitedSystems
     }
 }
 
@@ -1575,7 +1575,16 @@ pub struct Standing<'a> {
 /// The roles `assign_role` can hand a finished hull. `Freighter` is absent on
 /// purpose — it is produced alongside a `Miner` rather than tasked (roles §5) —
 /// and so are `Reserve` and `Scrapped`, which are terminal states.
-const ASSIGNABLE: [Role; 4] = [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket];
+///
+/// **The order is load-bearing since T-121.** [`Standing::role_of`]'s second
+/// pass takes the first role that *mounts* the hull, and the unarmed default
+/// puts Scout and Miner on the same Limited Systems hull — so a `LimitedSystems`
+/// carrying a class neither has named resolves to whichever comes first here.
+/// Miner precedes Scout because that is what [`competent_role`] says a bare LSV
+/// is for, and the two answers should not disagree. Nothing production-built
+/// reaches that pass — every build stamps a class — but
+/// `every_hull_has_a_role_under_every_doctrine` does.
+const ASSIGNABLE: [Role; 4] = [Role::Colonizer, Role::Miner, Role::Scout, Role::Picket];
 
 impl<'a> Standing<'a> {
     /// Read the standing layer for one player.
@@ -1584,14 +1593,17 @@ impl<'a> Standing<'a> {
     }
 
     /// **The design this layer lays down for `role`** — the hull *and* the
-    /// class, because the class is what distinguishes two roles sharing a hull
-    /// (a scouting LOU from a picketing one, T-115).
+    /// class, because the class is what distinguishes two roles sharing a hull.
+    /// Two pairs share one today: a scouting Limited Contact Vehicle (`Tor`)
+    /// against a picketing one (`Unnamed`) once the Warfare card is played, and
+    /// a scouting Limited Systems hull (`Tor`) against a mining one (`Meadow`)
+    /// before it (T-115, T-121).
     pub fn design_for(&self, role: Role) -> (HullType, Class) {
         match role {
             Role::Scout => (scout_hull(self.doctrine), Class::Tor),
             Role::Colonizer => (HullType::MediumSystems, Class::Unnamed),
             Role::Miner => (HullType::LimitedSystems, Class::Meadow),
-            Role::Picket => (HullType::LimitedOffensive, Class::Unnamed),
+            Role::Picket => (HullType::LimitedContactVehicle, Class::Unnamed),
             // **Not assignable, and the design collides with the colonizer's
             // on purpose** — a freighter rides the same Medium Systems hull
             // (roles §4.4). It is safe only because `ASSIGNABLE` excludes it,
@@ -1600,6 +1612,31 @@ impl<'a> Standing<'a> {
             // ships as freight. The same holds for the two terminal states.
             Role::Freighter | Role::Reserve | Role::Scrapped => (HullType::MediumSystems, Class::Unnamed),
         }
+    }
+
+    /// **The build order that produces a hull this layer will task as
+    /// `role`** — `design_for` turned into a `BuildOrder`, so the hull the
+    /// yard is charged for and the role `role_of` reads back are the same
+    /// answer to the same question.
+    ///
+    /// **This is not `hull_order(some_hull)` and the difference bites** (T-121).
+    /// A free function mapping a hull to a class cannot know which *role* the
+    /// yard meant: a picket and an armed scout share the Limited Contact hull,
+    /// and `hull_order` stamps that hull's one class — so ordering a picket by
+    /// naming its hull produced a scout. That is T-116's defect exactly, a yard
+    /// paying for one thing and receiving another, and the fix is the same:
+    /// ask for the role, not the shell.
+    pub fn order_for(&self, role: Role) -> BuildOrder {
+        let (hull_type, class) = self.design_for(role);
+        BuildOrder::Hull { hull_type, class }
+    }
+
+    /// The survey craft's build order. The class is always `Tor` — the survey
+    /// design — whatever shell it is mounted on, and that is what
+    /// distinguishes a scouting hull from the mining or picketing one it
+    /// shares a shell with.
+    pub fn scout_order(&self) -> BuildOrder {
+        self.order_for(Role::Scout)
     }
 
     /// **The colonizer ladder, cheapest rung first.**
@@ -1635,7 +1672,7 @@ impl<'a> Standing<'a> {
     /// and both are unreachable today.** A `Tor` on a Limited Offensive hull
     /// with [`Doctrine::scout_hull_offensive`] *off* now reads as a picket
     /// rather than a scout — nothing builds that pairing, because only
-    /// `scout_order` stamps `Tor` and it names the armed hull only when the
+    /// `Standing::scout_order` stamps `Tor` and it names the armed hull only when the
     /// write is on. And a Rapid or General Offensive hull now reads as a
     /// picket where the switch returned `None`; nothing builds those either.
     /// Both moves make the resolver *total*, which
@@ -1717,7 +1754,7 @@ fn colonize(doctrine: &Doctrine, candidates: &[Candidate]) -> Option<Tasking> {
 
 /// **The General-tier hull this doctrine colonizes with** (T-116).
 ///
-/// One function, for the same reason `scout_order` is one: the option set, the
+/// One function, for the same reason `Standing::scout_order` is one: the option set, the
 /// price the context carries and `assign_role` all have to name the same hull,
 /// and three readings of one doctrine write is how they come to disagree.
 ///
@@ -1731,8 +1768,13 @@ pub fn general_colonizer_hull(doctrine: &Doctrine) -> HullType {
 }
 
 /// A build order for `hull`, taking whichever class this policy names for it.
-/// Classes are seeded by the roster (R-O42); until Design cards author more,
-/// the two starting designs are the only named ones.
+///
+/// **Use [`Standing::order_for`] whenever the caller knows the role**, which is
+/// almost always. This maps a *shell* to a class and therefore cannot express
+/// two roles sharing one — ordering a picket through here returned an armed
+/// scout (T-121), which is the T-116 defect again. It survives for the mining
+/// pair and the colonizer ladder, where the caller is choosing a hull by price
+/// and the role is not in question.
 fn hull_order(hull: HullType) -> BuildOrder {
     let class = match hull {
         HullType::LimitedSystems => Class::Meadow,
@@ -1975,35 +2017,95 @@ mod tests {
     /// **The class is what tells a scouting LOU from a picketing one** (T-115).
     ///
     /// `Doctrine::scout_hull_offensive` puts the armed hull in the survey
-    /// branch, so both branches lay down `LimitedOffensive` and the hull alone
-    /// can no longer say which errand it was built for. `scout_order` stamps
-    /// the survey design on it and `assign_role` reads that back — one write,
-    /// read in two places, which is the property worth pinning.
+    /// branch, so both the survey branch and the picket branch lay down a
+    /// `LimitedContactVehicle` and the hull alone can no longer say which
+    /// errand it was built for. `Standing::scout_order` stamps the survey design on it
+    /// and `assign_role` reads that back — one write, read in two places,
+    /// which is the property worth pinning.
+    ///
+    /// **T-121 rebased the armed hull from `LimitedOffensive` to
+    /// `LimitedContactVehicle`** and made the *unarmed* scout an LSV, so the
+    /// class now disambiguates on both sides of the write rather than only the
+    /// armed one: unarmed it separates a scouting LSV (`Tor`) from a mining one
+    /// (`Meadow`), armed it separates a scouting LCV from a picketing one.
+    /// **Every build order round-trips to the role that asked for it** (T-121).
+    ///
+    /// `Standing::order_for` and `Standing::role_of` are the two halves of one
+    /// question, and they only agree by construction if the order carries the
+    /// *class* the design names. Ordering by shell does not: a picket and an
+    /// armed scout share the Limited Contact hull, so `hull_order` stamped
+    /// `Tor` on a picket order and the yard received a scout — T-116's defect,
+    /// a build paid for and tasked as something else.
+    ///
+    /// Asserted under both standing layers, because the collision only exists
+    /// under one of them and a test run on the default would not see it.
     #[test]
-    fn an_offensive_hull_scouts_as_a_tor_and_pickets_otherwise() {
+    fn a_build_order_round_trips_to_the_role_that_asked_for_it() {
+        for doctrine in [Doctrine::default(), Doctrine { scout_hull_offensive: true, ..Doctrine::default() }] {
+            let st = Standing::of(&doctrine);
+            for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
+                let BuildOrder::Hull { hull_type, class } = st.order_for(role) else {
+                    panic!("{role:?} must order a hull");
+                };
+                assert_eq!(
+                    st.role_of(hull_type, class),
+                    Some(role),
+                    "ordering a {role:?} laid down {hull_type:?}/{class:?}, which reads back as something else"
+                );
+            }
+        }
+
+        // And the defect itself, pinned rather than described: ordering a
+        // picket by naming its *shell* does not round-trip once the armed write
+        // puts the scout on the same shell. If this ever starts round-tripping,
+        // the collision is gone and the rule above has lost its reason.
+        let armed = Doctrine { scout_hull_offensive: true, ..Doctrine::default() };
+        let st = Standing::of(&armed);
+        let by_shell = hull_order(st.design_for(Role::Picket).0);
+        let BuildOrder::Hull { hull_type, class } = by_shell else { panic!() };
+        assert_eq!(
+            st.role_of(hull_type, class),
+            Some(Role::Scout),
+            "a picket ordered by shell must still read back as the armed scout it collides with"
+        );
+    }
+
+    #[test]
+    fn a_contact_hull_scouts_as_a_tor_and_pickets_otherwise() {
         let ap = BaselineAutopilot::default();
         let plain = Doctrine::default();
         let armed = Doctrine { scout_hull_offensive: true, ..Doctrine::default() };
         assert!(!plain.scout_hull_offensive, "the write must ship unplayed");
 
         assert_eq!(
-            scout_order(&armed),
-            BuildOrder::Hull { hull_type: HullType::LimitedOffensive, class: Class::Tor },
+            Standing::of(&armed).scout_order(),
+            BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, class: Class::Tor },
             "the armed survey hull carries the survey design"
         );
         assert_eq!(
-            scout_order(&plain),
-            BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, class: Class::Tor },
+            Standing::of(&plain).scout_order(),
+            BuildOrder::Hull { hull_type: HullType::LimitedSystems, class: Class::Tor },
             "and so does the unarmed one, so the class means the same thing either way"
         );
 
         let cands = one_colony_candidate(&ap, &armed);
-        let as_scout = ap.assign_role(&armed, HullType::LimitedOffensive, Class::Tor, &cands).unwrap();
+        let hull = HullType::LimitedContactVehicle;
+        let as_scout = ap.assign_role(&armed, hull, Class::Tor, &cands).unwrap();
         assert_eq!(as_scout.role, Role::Scout);
         assert_eq!(as_scout.target, None, "a scout picks its own world from the frontier");
 
-        let as_picket = ap.assign_role(&armed, HullType::LimitedOffensive, Class::Unnamed, &cands).unwrap();
+        let as_picket = ap.assign_role(&armed, hull, Class::Unnamed, &cands).unwrap();
         assert_eq!(as_picket.role, Role::Picket, "the same hull without the survey design still holds ground");
+
+        // And the same disambiguation holds on the unarmed side, where the
+        // scout shares its hull with the miner instead. Asserted on `role_of`
+        // rather than `assign_role`, because the latter also requires a viable
+        // target and this fixture carries no mining candidate — a decline
+        // there would say nothing about which role the design resolves to.
+        let st = Standing::of(&plain);
+        let lsv = HullType::LimitedSystems;
+        assert_eq!(st.role_of(lsv, Class::Tor), Some(Role::Scout));
+        assert_eq!(st.role_of(lsv, Class::Meadow), Some(Role::Miner));
     }
 
     /// **The General colonizer is unreachable under `CheapestViable`, and that
@@ -2291,7 +2393,7 @@ mod tests {
         assert!(
             matches!(
                 ap.production_choice(&doctrine, &ctx, &[]),
-                BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+                BuildOrder::Hull { hull_type, .. } if hull_type == Standing::of(&doctrine).design_for(Role::Scout).0
             ),
             "with galaxy left to explore, an empty candidate list must still buy a scout"
         );
@@ -2370,7 +2472,7 @@ mod tests {
         ctx.k_potential = 3.0;
         assert!(matches!(
             ap.production_choice(&doctrine, &ctx, &[]),
-            BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+            BuildOrder::Hull { hull_type, .. } if hull_type == Standing::of(&doctrine).design_for(Role::Scout).0
         ));
     }
 
@@ -2411,7 +2513,7 @@ mod tests {
         let cands = one_colony_candidate(&ap, &doctrine);
         assert!(matches!(
             ap.production_choice(&doctrine, &ctx, &cands),
-            BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+            BuildOrder::Hull { hull_type, .. } if hull_type == Standing::of(&doctrine).design_for(Role::Scout).0
         ));
     }
 

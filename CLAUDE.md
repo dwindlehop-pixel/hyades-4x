@@ -1096,6 +1096,68 @@ relation between `Card::cost` and a homeworld's seeded bank — two magnitudes
 nobody reconciled. **Record when a card actually landed, and assert the
 precondition in both directions**, rather than assuming the play took.
 
+### A default that is not the ratified default is a contradiction nobody filed
+
+**T-121 is the worked example, and the spec had been right the whole time.**
+`Hyades_standing_layer_and_observation.md` §7.1 says *"Default doctrine: 100%
+LSV in the Scout role"* and has said it since R-O42. The engine surveyed with a
+Limited **Contact** hull. Neither document was wrong about itself and nothing
+flagged the gap, because the spec described a default and the code implemented
+a different one, and no test compared them.
+
+That is how a card meant to *sell* the armed family ended up selling nothing
+(§8.13): the Doctrine half of the standing layer defaulted unarmed and the
+Design half defaulted armed, so a seat flew Contact hulls whether or not it
+bought the right to. The asymmetry is invisible from either side alone.
+
+- **When a spec states a default, assert the default — not the mechanism that
+  produces it.** The tests here pinned the *build branch* and the *role map*,
+  both of which agreed with the code and neither of which had read §7.1.
+- **A lock needs both halves closed, and the tell is to enumerate rather than
+  spot-check.** `the_warfare_card_is_the_only_key_to_the_contact_family` walks
+  every assignable role, the colonizer ladder and the seeded roster and asserts
+  no Contact hull appears in any of them — then plays the card and asserts every
+  Contact hull the armed layer mounts is one the card unlocked. A test that only
+  asserted the second half would pass while the default was armed too.
+- **"Locked behind X" is a claim about the default, not about X.** It is
+  tempting to check that the key works. The failure mode is a door that was
+  never shut.
+
+**And the cheapest fix for a duplicated read is to derive one from the other.**
+`scout_hull` was public and read in three places — the build branch, the
+affordability test, and `launch_survey` — which is the shape §6's standing-layer
+rule names and T-116 had already paid for once. `Standing::scout_order()` is now
+`design_for(Role::Scout)` wrapped in a `BuildOrder`, so the hull the yard is
+charged for and the hull `role_of` reads back are the same call. Two of the
+three call sites disappeared rather than being kept in agreement.
+
+**Watch for a resolver whose tie-breaks become load-bearing when you merge two
+cases onto one hull.** Scout and Miner now share `LimitedSystems`, so
+`role_of`'s "first role that mounts this hull" pass went from unambiguous to
+order-dependent — a silent semantic choice sitting in the order of a `const`
+array. Making `ASSIGNABLE` agree with the competence table costs one comment;
+noticing that it *had* to was the work.
+
+**The same merge broke a build order, and no test could have caught it.**
+Ordering a picket by *naming its hull* worked for as long as no other role used
+that hull; once the picket and the armed scout shared one, the hull→class map
+stamped the scout's class and the yard received a scout. That is T-116 again —
+paid for one thing, given another. The branch sits behind two doctrine fields
+that both default off and neither of which the new card writes, **so the suite
+was green across the change and every bed reached zero of it.**
+
+- **When you move a hull, grep the hull, not the behavior.** The defect was
+  three call sites naming `HullType::LimitedOffensive`. Nothing was failing and
+  nothing would have.
+- **A function keyed on a shell cannot answer a question about a role.**
+  `hull_order(hull)` and `Standing::order_for(role)` look interchangeable and
+  are not, for exactly as long as two roles share a shell — which is a
+  condition a card can create at runtime.
+- **Pin the defect, not only the fix.** The round-trip test asserts both that
+  `order_for` round-trips *and* that shell-ordering a picket still reads back as
+  the armed scout. If that collision ever disappears, the rule loses its reason
+  visibly instead of quietly becoming cargo.
+
 ### Never leave an identified symptom without a proven mechanism
 
 **A number is a symptom. Stop only when you can name the line of code that

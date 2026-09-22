@@ -163,6 +163,91 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-121. The default is unarmed, and the Warfare card is the key (R-WAR13, resolved)
+
+Author's specification. Full write-up in `Hyades_warfare_tree.md` §8.14.
+
+| role | before | after |
+|---|---|---|
+| Scout | LCV / `Tor` | **LSV / `Tor`** |
+| Picket | LOU / `Unnamed` | **LCV / `Unnamed`** |
+| Colonizer, both rungs | MSV, GSV | unchanged — already unarmed |
+| seeded roster | LSV(Meadow) + LCV(Tor) | **LSV(Meadow)** |
+
+Every Warfare `Doctrine` field already defaulted off, so the *Doctrine* half was
+unarmed and the *Design* half was not — which is exactly why §8.13 measured the
+card as a price. **R-O42 / standing-layer §7.1 had already ratified "100% LSV in
+the Scout role" and the engine had never implemented it**, so the doctrine half
+of this is a correction rather than a change.
+
+#### The card is a bundle now
+
+`Card::effect` → `Card::effects: &'static [CardEffect]`, applied in slice order,
+which is what §8.2's *"one Design write, three Doctrine writes"* describes.
+`TIER0[15]` carries `UnlockDesign(LCV, Tor)`, `UnlockDesign(GCV, Unnamed)` and
+`WriteDoctrine(ArmedFrontier)`. The new write sets `scout_hull_offensive` and
+`colonizer_general_contact` together — one decision, because splitting them
+would let a player buy the cheap half of a slant (design law #9).
+
+§8.2's third write, `picket_after_founding`, is **out**: §8.10 measured it at
+−287.8 `W_0`, so it is R-WAR6's design question.
+
+#### What it contradicts
+
+**R-O42 / §7.1's roster half** — LSV + LCV becomes LSV alone. §7.1's own
+argument (the opening fleet must be one indistinct object at range) survives and
+is better served by one design than two. Recorded in both specs.
+
+#### Three duplications removed
+
+`scout_hull` was public and read in three places — the build branch, the
+affordability test, `launch_survey` — the shape T-117 named and T-116 paid for.
+It is private; `Standing::scout_order()` is *derived* from `design_for`;
+`launch_survey` asks `design_for`; `price_of` maps the Limited tier explicitly
+and says why `picket_cost` and `light_vehicle_cost` are equal today.
+
+#### Re-measured, and three seeds cannot resolve either card
+
+`examples/card_table`, same arms and fit as T-120, re-run against the armed card:
+
+| quantity | T-120 | T-121 |
+|---|---|---|
+| Growth card value | +0.1134 ± 0.0592 (n=18) | **−0.0705 ± 0.1447** (n=18) |
+| Warfare card value | −0.0371 ± 0.1609 (n=9) | **−0.4961 ± 0.2842** (n=8) |
+| Warfare `ΔW_i`, colonies | −32.879 ± 46.075 | −29.364 ± 39.010 |
+
+Estimates, not bounds; `n` counts seat-seeds over **3 independent seeds**.
+Against 2 SE this bed resolves neither card — Warfare is 1.7 SE from zero, its
+raw `ΔW_i` 0.75 SE, Growth 0.5 SE. The missing measurement is seed count.
+
+**The columns are different beds** (the default Design moved), so they must not
+be differenced; only the within-column comparison is paired. **R-WAR15** is
+open on which of the card's three writes reaches the simulation, and it wants
+an ablation per write rather than a story.
+
+#### One build order broke, and no test could have caught it
+
+Merging the picket and the armed scout onto one shell broke ordering a picket by
+*naming its hull*: `hull_order(LCV)` stamps `Tor` and `role_of` reads that back
+as a scout — T-116's defect, a yard paying for one thing and getting another.
+`Standing::order_for(role)` replaces it, derived from `design_for`;
+`scout_order` is one line of it.
+
+The branch sits behind `picket_reserve > 0` or `picket_claims_target`, both
+default off and neither written by `ArmedFrontier`, so the suite stayed green
+across the change. Found by enumerating the call sites of the hull that moved.
+`a_build_order_round_trips_to_the_role_that_asked_for_it` now pins both the
+round trip and the defect.
+
+#### `ASSIGNABLE`'s order is load-bearing now
+
+Scout and Miner both mount `LimitedSystems`, so `role_of`'s second pass —
+first role that *mounts* the hull — is what resolves a class neither has named.
+Miner precedes Scout, matching `competent_role`, so the two cannot disagree.
+Nothing production-built reaches that pass; the totality test does.
+
+---
+
 ### T-120. A picket guesses, and can be feinted (R-WAR10, resolved)
 
 §8.9.8 left `offer_interception` being *handed* the colony ship's destination,

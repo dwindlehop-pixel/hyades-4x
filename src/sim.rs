@@ -55,8 +55,8 @@ use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use crate::autopilot::{
-    scout_hull, Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext,
-    RankContext, Ranked, Standing, SurveyStrategy, SurveyView, Tasking,
+    Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext, Ranked,
+    Standing, SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
 use crate::combat::{CombatConfig, Combatant, FleetTrajectory, StationKeeping};
@@ -535,10 +535,16 @@ impl Role {
 /// a Component, fixed at build (changes only via docking to refit, not
 /// modeled yet). Orthogonal to [`Role`]: a hull type is what a ship *is*; a
 /// role is what it's currently *doing*. Only the types the baseline autopilot
-/// actually builds are wired to a role below (§ `role_hull_type`); Contact
-/// Units and Offensive types exist in the enum for completeness (the spec's
-/// full ten-type roster) but nothing spawns them yet — no militarization or
-/// combat exists in the engine.
+/// actually builds are wired to a role below (§ `role_hull_type`).
+///
+/// **Four are unreachable as of T-121** — the two Contact *Units*, and the
+/// Rapid and General Offensive hulls. The three **Offensive** types in
+/// particular have no role at all: T-121 moved the picket onto
+/// `LimitedContactVehicle`, so the armed family a card can open is the Contact
+/// family and nothing mounts an Offensive hull. They keep their geometry rows,
+/// their `competent_role` entry and their place in the spec's full ten-type
+/// roster; the arena still spawns them, because spawning ships outside
+/// production is what the arena is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HullType {
     LimitedSystems,
@@ -973,7 +979,8 @@ impl HullType {
 /// Which [`HullType`] the baseline autopilot builds for each [`Role`]
 /// (`Hyades_vehicle_roles.md` §4's eligibility notes) — a concrete,
 /// flagged-placeholder choice among what's *eligible*, not dictated by spec:
-/// Scout → LCV (matches the confirmed LCV-scraps-on-exhaustion case, §4.1);
+/// Scout → LSV, **unarmed by default** (T-121 — the armed Contact hull is
+/// locked behind the Warfare card, so no seat flies one unless it is played);
 /// Colonizer → MSV (cheapest hull that clears the confirmed 1-pop-cargo
 /// floor, §4.2/R-V9); Miner → LSV (spec: "any Systems Vehicle," and the
 /// engine already deposits extraction into the outpost's own stockpile, so a
@@ -981,19 +988,24 @@ impl HullType {
 /// picking the cheaper).
 pub fn role_hull_type(role: Role) -> HullType {
     match role {
-        Role::Scout => HullType::LimitedContactVehicle,
+        Role::Scout => HullType::LimitedSystems,
         Role::Colonizer => HullType::MediumSystems,
         Role::Miner => HullType::LimitedSystems,
         Role::Freighter => HullType::MediumSystems,
-        // **The cheapest armed hull in the game** (T-113). §8.6 measured why
-        // this matters more than anything else about a picket: denial bought
-        // with a *colonizer* loses under Warfare's own objective by arithmetic
-        // — `ΔW = −k(1 − w_0A)` with `Σ_j w_0j = 1` — whatever the placement.
-        // An LOU costs `1/limited_fleet_size` of a General hull against a
-        // Medium colonizer's `1/medium_fleet_size`, so the trade stops being
-        // one-for-one and starts being one-for-many. Design law #8 already says
-        // what an LOU is for: not force projection, but harass-and-hold.
-        Role::Picket => HullType::LimitedOffensive,
+        // **The cheapest Contact hull** (T-113, rebased at T-121). §8.6
+        // measured why this matters more than anything else about a picket:
+        // denial bought with a *colonizer* loses under Warfare's own objective
+        // by arithmetic — `ΔW = −k(1 − w_0A)` with `Σ_j w_0j = 1` — whatever
+        // the placement. An LCV costs `1/limited_fleet_size` of a General hull
+        // against a Medium colonizer's `1/medium_fleet_size`, so the trade
+        // stops being one-for-one and starts being one-for-many.
+        //
+        // It was `LimitedOffensive` until T-121. The two share a cost tier
+        // (`cost_fraction`), so the price the §8.6 arithmetic runs on did not
+        // move; what changed is that the whole Contact family is now one
+        // locked family with one key — the Warfare card — where an Offensive
+        // hull sitting beside an unarmed default was a second, keyless door.
+        Role::Picket => HullType::LimitedContactVehicle,
         Role::Reserve | Role::Scrapped => HullType::LimitedSystems, // inert; value unused
     }
 }
@@ -3019,20 +3031,26 @@ impl Simulation {
             // from here on (`Hyades_vehicle_roles.md` §9).
             self.world.doctrine.insert(pe, self.autopilots[p].default_doctrine());
 
-            // Seed this seat's Design roster (R-O42, §7.1). The ratified
-            // starting state is **LSV and LCV only, one class each** — so at
-            // turn 0 a scout, a settler and a hauler are literally the same
-            // object, and the long-range observable carries almost no
-            // information because every empire's fleet looks identical.
+            // Seed this seat's Design roster. **One design: LSV(Meadow)**, so
+            // at turn 0 a scout, a settler and a hauler are literally the same
+            // object and the long-range observable carries almost no
+            // information, because every empire's fleet looks identical.
             // Inscrutability early is total *by construction* rather than by
             // card design, and legibility grows as rosters diverge.
             //
+            // **This contradicts R-O42 / standing-layer §7.1, which ratified
+            // LSV + LCV (T-121).** The Contact family is now the armed family
+            // and the Warfare card is its only key, so seeding an LCV would
+            // hand every seat the thing the card is supposed to sell. The
+            // §7.1 argument — that the opening roster must be one indistinct
+            // object — is *better* served by one design than by two.
+            //
             // See `roster_permits` for why this does not yet *restrict* what
-            // production may build: with no card system there is no unlock
-            // path, so enforcing the roster would halt colonization outright.
+            // production may build: `enforce_roster` defaults off, because the
+            // Medium hull every colonizer rides still has no unlock path
+            // outside the Technology tree (T-25).
             let mut roster = Roster::default();
             roster.unlock(HullType::LimitedSystems, Class::Meadow);
-            roster.unlock(HullType::LimitedContactVehicle, Class::Tor);
             self.world.roster.insert(pe, roster);
             self.world.works.insert(pe, cards::Works::default());
             self.world.works_writes.insert(pe, Vec::new());
@@ -3061,7 +3079,8 @@ impl Simulation {
                 };
                 // Bootstrap craft are *seeded*, not built — no yard made them,
                 // so they leave at once (autopilot-doc §2).
-                self.launch_survey(p, home_pos, heading, 0, 0.0, BuiltHull::unpaid(scout_hull(&doctrine_here)));
+                let survey_hull = Standing::of(&doctrine_here).design_for(Role::Scout).0;
+                self.launch_survey(p, home_pos, heading, 0, 0.0, BuiltHull::unpaid(survey_hull));
             }
         }
 
@@ -3198,8 +3217,19 @@ impl Simulation {
         }
     }
 
+    /// Lay down every write in a card's bundle, in slice order (`Card::effects`).
+    /// The order is fixed at compile time, so two clients applying the same card
+    /// apply the same writes in the same sequence — which matters for the same
+    /// reason `WriteWorks` folds in `CardId` order rather than play order.
     fn apply_card_effect(&mut self, p: usize, c: &cards::Card, target: Target, round: u32) {
-        match c.effect {
+        for &effect in c.effects {
+            self.apply_one_write(p, c, effect, target);
+        }
+        self.log.push(self.clock, LogEvent::CardPlayed { player: p as u32, card: c.id.0, round });
+    }
+
+    fn apply_one_write(&mut self, p: usize, c: &cards::Card, effect: CardEffect, target: Target) {
+        match effect {
             CardEffect::WriteDoctrine(w) => {
                 let pe = self.player_entity[p];
                 cards::apply_doctrine_write(self.world.doctrine.get_mut(pe).unwrap(), w);
@@ -3247,7 +3277,6 @@ impl Simulation {
                 self.inert_card_plays += 1;
             }
         }
-        self.log.push(self.clock, LogEvent::CardPlayed { player: p as u32, card: c.id.0, round });
     }
 
     /// The protocol round this run has reached. Presentation-readable.
@@ -5499,7 +5528,7 @@ impl Simulation {
                 let pair = best.map(|c| (center, self.planet_entity[c.ranked.id.0 as usize]));
                 self.mining_pair_price(p, crew, pair)
             },
-            picket_cost: hull_cost(HullType::LimitedOffensive, &self.config),
+            picket_cost: hull_cost(HullType::LimitedContactVehicle, &self.config),
             pickets_held: self.picket_count[p] as usize,
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
@@ -8470,7 +8499,11 @@ mod tests {
         // Fund it well past a scout's price so the decline cannot be poverty.
         sim.world.stockpile.get_mut(home).unwrap().add_basic(Basic::Cyan, 1_000.0);
 
-        let order = BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, class: Class::Tor };
+        // The hull the *default* standing layer surveys with, read rather than
+        // named: naming one would make this test fail whenever a Doctrine write
+        // moves the role, which is a different fact than the one it asserts.
+        let doctrine = *sim.world.doctrine.get(sim.player_entity[0]).unwrap();
+        let order = Standing::of(&doctrine).scout_order();
         let bank = |sim: &Simulation| sim.world.stockpile.get(home).unwrap().basic_total();
         let vehicles = |sim: &Simulation| sim.world.role.items.iter().filter(|r| **r == Some(Role::Scout)).count();
 
@@ -9103,12 +9136,15 @@ mod tests {
     #[test]
     fn playing_works_cards_in_any_order_leaves_the_same_empire_state() {
         use cards::{Card, CardId, Employment, Slant, Tree, WorksWrite};
+        // `Card::effects` is a `'static` slice because `TIER0` is a const, so a
+        // fixture built from runtime values leaks one array per card. Six of
+        // them, once, in one test.
         let card = |i: u16, w: WorksWrite| Card {
             id: CardId(i),
             tree: Tree::Production,
             slant: Slant::Balanced,
             cost: 0.8,
-            effect: CardEffect::WriteWorks(w),
+            effects: Box::leak(Box::new([CardEffect::WriteWorks(w)])),
             needs_subject: false,
         };
         // Multiplicative *and* additive writes, with factors chosen so the
@@ -9124,9 +9160,9 @@ mod tests {
         ];
         let guard: f64 = deck
             .iter()
-            .filter_map(|c| match c.effect {
-                CardEffect::WriteWorks(WorksWrite::Cap(_, f)) => Some(f),
-                CardEffect::WriteWorks(WorksWrite::EtaWorks(f)) => Some(f),
+            .filter_map(|c| match c.sole_effect() {
+                Some(CardEffect::WriteWorks(WorksWrite::Cap(_, f))) => Some(f),
+                Some(CardEffect::WriteWorks(WorksWrite::EtaWorks(f))) => Some(f),
                 _ => None,
             })
             .product();
@@ -10692,7 +10728,7 @@ mod tests {
         for (hull, role) in [
             (HullType::MediumSystems, Role::Colonizer),
             (HullType::LimitedSystems, Role::Miner),
-            (HullType::LimitedContactVehicle, Role::Scout),
+            (HullType::LimitedSystems, Role::Scout),
         ] {
             assert_eq!(role_hull_type(role), hull, "{role:?} still maps back to {hull:?}");
             assert!((role_cost(role, &cfg) - hull_cost(hull, &cfg)).abs() < Price::new(1e-12));
@@ -11482,44 +11518,91 @@ mod tests {
     }
 
     #[test]
-    fn seats_start_with_the_ratified_lsv_plus_lcv_roster() {
-        // R-O42/§7.1: LSV and LCV only, one class each — at turn 0 a scout, a
-        // settler and a hauler are the same object.
+    fn seats_start_with_one_unarmed_design() {
+        // **T-121 — and this contradicts R-O42 / standing-layer §7.1**, which
+        // ratified LSV(Meadow) + LCV(Tor). The Contact family is the armed
+        // family now and `TIER0[15]` is its only key, so seeding an LCV would
+        // hand every seat the thing that card is meant to sell.
+        //
+        // §7.1's own argument survives the change and is better served by it:
+        // the opening roster exists to make every empire's fleet look
+        // identical at range, so that inscrutability early is structural
+        // rather than bought. One design does that more completely than two.
         let galaxy = test_galaxy(3, 1);
         let sim = Simulation::with_baseline(galaxy, test_cfg(1));
         for p in 0..3 {
             let r = sim.world.roster.get(sim.player_entity[p]).expect("every seat has a roster");
-            assert_eq!(r.len(), 2, "seat {p} roster should hold exactly the two seeded designs");
+            assert_eq!(r.len(), 1, "seat {p} roster should hold exactly the one seeded design");
             assert!(r.has(HullType::LimitedSystems, Class::Meadow));
-            assert!(r.has(HullType::LimitedContactVehicle, Class::Tor));
             assert!(!r.has_hull(HullType::MediumSystems), "MSV must not be unlocked at start");
+            assert!(!r.has_hull(HullType::LimitedContactVehicle), "the armed family is the Warfare card's to open");
         }
     }
 
     #[test]
-    fn the_first_warfare_card_is_a_price_and_not_yet_an_effect() {
-        // **T-120.** `TIER0[15]` — the Warfare Inscrutable slot, and the card
-        // `examples/card_table` costs against the first Growth card — writes
-        // `UnlockDesign(LimitedOffensive, _)` and nothing else. `roster_permits`
-        // is the Roster's only consumer outside tests, and it returns `true`
-        // unconditionally while `enforce_roster` is off, which is the shipped
-        // default (T-25, blocked on the very unlock path cards are meant to be).
+    fn the_warfare_card_is_the_only_key_to_the_contact_family() {
+        // **T-121, and it supersedes T-120's `..._is_a_price_and_not_yet_an_effect`.**
+        // The default standing layer is unarmed at every role, so a seat that
+        // never plays `TIER0[15]` never flies a Contact hull: survey rides
+        // `LimitedSystems`, colonization rides `MediumSystems`, and the
+        // colonizer ladder's upper rung is `GeneralSystems`.
         //
-        // So the write reaches no decision and the card is *strictly* a price.
-        // Pinned here so it stops being true the moment enforcement lands, and
-        // the head-to-head is re-measured rather than carried forward.
+        // The card is what changes that, and this asserts both halves — that
+        // the default is closed, and that the card opens it. A test asserting
+        // only the second would still pass if the default were armed too,
+        // which is exactly the state this landing corrected.
         let galaxy = test_galaxy(3, 1);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
         let c = cards::card(cards::CardId(15)).expect("the Warfare Inscrutable slot is published");
         assert_eq!(c.tree, cards::Tree::Warfare);
-        assert!(matches!(c.effect, cards::CardEffect::UnlockDesign(HullType::LimitedOffensive, _)));
-        assert!(c.cost > 0.0, "the card has a price, which is the whole of what it does today");
 
-        // Buildable before the card and buildable after it: the write is a
-        // no-op at the only site that reads it.
-        assert!(sim.roster_permits(0, HullType::LimitedOffensive));
-        sim.world.roster.get_mut(sim.player_entity[0]).unwrap().unlock(HullType::LimitedOffensive, Class::Unnamed);
-        assert!(sim.roster_permits(0, HullType::LimitedOffensive));
+        let unarmed = Doctrine::default();
+        let st = crate::autopilot::Standing::of(&unarmed);
+        for role in [Role::Scout, Role::Colonizer, Role::Miner] {
+            let (hull, _) = st.design_for(role);
+            assert!(!is_contact_hull(hull), "{role:?} rides {hull:?} by default, which is a Contact hull");
+        }
+        assert!(
+            !st.colonizer_ladder().iter().copied().any(is_contact_hull),
+            "the default colonizer ladder must be all Systems hulls"
+        );
+
+        // And the seeded roster carries no Contact design either, so the lock
+        // is real the moment `enforce_roster` can be switched on (T-25).
+        let r = sim.world.roster.get(sim.player_entity[0]).unwrap();
+        assert!(!HullType::ALL.iter().copied().filter(|&h| is_contact_hull(h)).any(|h| r.has_hull(h)));
+
+        // Play it: the Doctrine write moves survey and the colonizer ladder
+        // onto the Contact family, and the two Design writes unlock what they
+        // now ride.
+        sim.apply_orders(0, &[Order { seat: PlayerId(0), card: Some(cards::CardId(15)), target: Target::None }]);
+        let armed = *sim.world.doctrine.get(sim.player_entity[0]).unwrap();
+        let st = crate::autopilot::Standing::of(&armed);
+        assert_eq!(st.design_for(Role::Scout).0, HullType::LimitedContactVehicle);
+        assert!(st.colonizer_ladder().contains(&HullType::GeneralContactVehicle));
+        let r = sim.world.roster.get(sim.player_entity[0]).unwrap();
+        assert!(r.has(HullType::LimitedContactVehicle, Class::Tor));
+        assert!(r.has(HullType::GeneralContactVehicle, Class::Unnamed));
+
+        // Every hull the armed layer now mounts must be one the card unlocked,
+        // or the Design half does not cover the Doctrine half — which is the
+        // failure mode `launch_survey` hit at T-116, paid for and discarded.
+        for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
+            let (hull, class) = st.design_for(role);
+            if is_contact_hull(hull) {
+                assert!(r.has_hull(hull), "{role:?} rides {hull:?}/{class:?}, which the card did not unlock");
+            }
+        }
+    }
+
+    fn is_contact_hull(h: HullType) -> bool {
+        matches!(
+            h,
+            HullType::LimitedContactVehicle
+                | HullType::LimitedContactUnit
+                | HullType::GeneralContactVehicle
+                | HullType::GeneralContactUnit
+        )
     }
 
     #[test]
@@ -11535,9 +11618,11 @@ mod tests {
         cfg.enforce_roster = true;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
 
-        // Seeded roster: the Limited pair is buildable, the Medium hull is not.
+        // Seeded roster: the one Limited Systems design is buildable, and
+        // nothing else is — the Medium hull the colonizer rides, and the
+        // Contact hull the Warfare card opens, are both forbidden (T-121).
         assert!(sim.roster_permits(0, HullType::LimitedSystems));
-        assert!(sim.roster_permits(0, HullType::LimitedContactVehicle));
+        assert!(!sim.roster_permits(0, HullType::LimitedContactVehicle), "the armed family needs its card");
         assert!(!sim.roster_permits(0, HullType::MediumSystems), "MSV must be forbidden by the seeded roster");
 
         // Unlocking it is the only thing that changes the answer, so the gate is

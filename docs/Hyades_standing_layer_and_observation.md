@@ -477,22 +477,39 @@ scouts badly — slow, no dedicated sensor fit — but legally.
 
 ### 7.1 Starting state (R-O42)
 
-> **Engine status.** The roster component exists (R-O28 resolved: `sim::Roster`,
-> a per-player set of `(HullType, Class)` written only by tree cards) and seats
-> are seeded with exactly LSV(Meadow) + LCV(Tor). **Enforcement is off by
-> default**, because there is no card system yet and therefore no unlock path:
-> the colonizer and freighter ride on the Medium hull, which this starting
-> roster excludes, so enforcing it forbids every expansion build for the whole
-> game. Measured on seed 1 over 4,000 years, enforcement takes the run from
-> 1,183 colonies and 4,778 vehicles to **3 colonies and 18 vehicles** — the
-> homeworlds and the bootstrap scouts, nothing else.
+> **Engine status (rev T-121).** The roster component exists (R-O28 resolved:
+> `sim::Roster`, a per-player set of `(HullType, Class)` written only by tree
+> cards).
 >
-> That is not an argument against §7.1; it is the ordering constraint it
-> implies. **The starting roster cannot bind until Design cards can unlock the
-> Medium hull.** Flip `SimConfig::enforce_roster` on together with that layer.
+> **The doctrine half is implemented now and was not before.** This section has
+> said *"100% LSV in the Scout role"* since R-O42; the engine surveyed with an
+> LCV until T-121, so the ratified default and the shipped default disagreed for
+> the whole intervening period. `Standing::design_for(Role::Scout)` returns
+> `(LimitedSystems, Tor)` under the default doctrine, and the Contact hull it
+> used to return is now locked behind the first Warfare card
+> (`Hyades_warfare_tree.md` §8.14).
+>
+> **The roster half is amended: seats are seeded with LSV(Meadow) alone.** The
+> Contact family is the armed family and `TIER0[15]` is its only key, so seeding
+> an LCV hands every seat the thing that card is meant to sell. The argument
+> below survives the amendment and is better served by it — one design makes
+> every empire's opening fleet identical more completely than two do. What is
+> lost is `Tor` as a *seeded* class name; it is authored by the card that
+> unlocks the hull carrying it.
+>
+> **Enforcement is still off by default**, because the colonizer and freighter
+> ride on the Medium hull, which the starting roster excludes, so enforcing it
+> forbids every expansion build for the whole game. Measured on seed 1 over
+> 4,000 years, enforcement takes the run from 1,183 colonies and 4,778 vehicles
+> to **3 colonies and 18 vehicles** — the homeworlds and the bootstrap scouts,
+> nothing else. That is not an argument against §7.1; it is the ordering
+> constraint it implies. **The starting roster cannot bind until Design cards
+> can unlock the Medium hull** — `TIER0[12]` is that card, and T-25 is the
+> switch. Flip `SimConfig::enforce_roster` on together with that layer.
 
-- **Roster at game start: LSV and LCV only, one class each.**
-- **Default doctrine: 100% LSV in the Scout role.**
+- ~~**Roster at game start: LSV and LCV only, one class each.**~~ **Amended at
+  T-121: LSV(Meadow) alone**, for the reason in the status block above.
+- **Default doctrine: 100% LSV in the Scout role.** *(Implemented at T-121.)*
 - Class names follow the Banks convention already in `Hulls & classes`, which
   scales the landform to the hull (Ocean/Plate/System at GSV; Desert/Steppe/
   Plains at MSV; Delta/Escarpment/Mountain/Ridge/River for Contact). Limited
@@ -1105,7 +1122,7 @@ is why exotic synthesis is pair production (§9.6).
 | 7 | ~~Route intercept and sim §4 accept/decline through **believed `a_max`**~~ **half done** — `src/belief.rs` has the one-sided estimator and the accept/decline predicate with the surprise-attack property asserted; the sim-level wiring is blocked on the round layer (T-30), and harvesting `a` from trajectories is item 4 | R-O41 |
 | 8 | ~~Rewrite roles §4 eligibility lists as **permissive with competence**~~ **done** — roles §4 now opens with the permissive rule and every per-role list reads "Competent:", with capability-zero (a Limited hull's absent cargo hold) distinguished from a forbidden assignment. `Autopilot::assign_role` matches: it declines on *no viable target*, never on hull type | R-O44 **resolved** |
 | 9 | `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12]` and rejects 18, while galaxy §2 lists 6r (12, 18) as fair and `starting_hex_radius` already carries an `18 => 4.5` branch | R-O12 |
-| 10 | Seed the starting roster: LSV + LCV, one class each; default doctrine 100% LSV Scout | R-O42 |
+| 10 | Seed the starting roster (**amended at T-121 to LSV alone**); default doctrine 100% LSV Scout (**implemented at T-121**) | R-O42 |
 | 11 | ~~**Derive `hull_dry_mass` from mineral cost** — delete it as an independent field~~ **done** — see the §9.1 engine-status block. `SimConfig::dry_mass` and `cargo_mass_per_unit` deleted with it | R-O57 **resolved** |
 | 12 | ~~Re-base hull mass on **surface area** (shell), contents on volume; verify the 1 : 2.2 : 4 radius prediction~~ **done, landed with 11** — see the §9.2 R-O58b block. Radius is derived from the cost ladder, capacity from usable shell interior; the 1 : 2.2 : 4 prediction becomes a cost-ladder tuning target (`limited_fleet_size = 16`, `medium_fleet_size = 3.31`) rather than a claim to check | R-O58 **resolved**, R-O58b **resolved** |
 | 13 | Track **slag** as a bank entry: inert by default, refinable once the tier-1 card is played | R-O59 |

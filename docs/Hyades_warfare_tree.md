@@ -517,7 +517,7 @@ crucially — **it is not consumed when it founds**.
 
 | half | write | engine surface | status |
 |---|---|---|---|
-| **Design** | unlock a Contact colonizer class: `(GeneralContactVehicle, Class)` | `CardEffect::UnlockDesign`, and a per-`Class` drive fraction | `UnlockDesign` **exists**; per-`Class` `φ` is **T-97**, blocked on T-08 |
+| **Design** | unlock a Contact colonizer class: `(GeneralContactVehicle, Class)` | `CardEffect::UnlockDesign`, and a per-`Class` drive fraction | **shipped (T-121)** — `TIER0[15]` unlocks it, and `DoctrineWrite::ArmedFrontier` puts the colonizer ladder on it; per-`Class` `φ` is still **T-97**, blocked on T-08 |
 | **Doctrine** | unladen Contact Vehicles engage nearby enemies | an engagement-posture field on `Doctrine` | **absent** — no such field, and no combat in the sim loop (T-52) |
 | **Doctrine** | a Neutral empire is an Enemy empire | a diplomatic stance default on `Doctrine` | **absent** — R-O27/T-11, the field list has never been specified |
 | **Doctrine** | a Contact colonizer patrols instead of scrapping itself | `Doctrine::picket_after_founding`, `Role::Picket`, `EventKind::ColonyDivert` | **built (T-112)**, and **measured to do the opposite of what it is for** — §8.6 |
@@ -1590,6 +1590,13 @@ here so the absence is not read as a measurement.
 
 ### 8.13 The head-to-head, and the card has nothing to tune (T-120)
 
+> **Superseded in its conclusion by §8.14 (T-121), and correct as a record of
+> the engine that produced it.** Everything below about *why* the card reached
+> no decision is why §8.14 exists; the card now carries a Doctrine write and two
+> Design unlocks, and the default standing layer is unarmed, so **the Warfare
+> row of the table below no longer describes a playable card.** The Growth row
+> and the bed itself carry forward. `R-WAR13`, opened here, is resolved there.
+
 *§8.4 asks for the first Warfare card costed against the first Growth card on
 one bed. `examples/card_table` is that bed. **The comparison is well-posed and
 the Warfare side of it is empty**, for a reason that is structural rather than
@@ -1701,6 +1708,171 @@ setting `Doctrine` fields directly, which bypasses both `TIER0` and
 
 ---
 
+### 8.14 The default is unarmed, and the card is the key (T-121)
+
+*§8.13 measured `TIER0[15]` as a price with no effect surface. This closes that
+by making the card the only way into the Contact family, and by making the
+card-free standing layer unarmed at every role. It is the author's
+specification, and it resolves **R-WAR13**.*
+
+#### What the default standing layer lays down now
+
+| role | before | after | why |
+|---|---|---|---|
+| Scout | `LimitedContactVehicle` / `Tor` | **`LimitedSystems` / `Tor`** | a Contact hull is armed; the default is not |
+| Colonizer | `MediumSystems` / `Unnamed` | unchanged | already unarmed |
+| Colonizer, upper rung | `GeneralSystems` | unchanged | ditto |
+| Miner | `LimitedSystems` / `Meadow` | unchanged | — |
+| Picket | `LimitedOffensive` / `Unnamed` | **`LimitedContactVehicle` / `Unnamed`** | one armed family, one key |
+| seeded roster | LSV(Meadow) + LCV(Tor) | **LSV(Meadow)** | see the contradiction below |
+
+Every Warfare `Doctrine` field already defaulted to `false` or `0`, so the
+**Doctrine** half was unarmed before this change and the **Design** half was
+not. That asymmetry is what made the card a price: a seat flew Contact hulls
+whether or not it bought the right to.
+
+#### `LimitedOffensive` is no longer a role's hull, and nothing was priced away
+
+The whole Limited tier shares one `cost_fraction`, so `hull_cost(LOU)` equals
+`hull_cost(LCV)` exactly and §8.6's denial arithmetic — `ΔW = −k(1 − w_0A)`
+with `Σ_j w_0j = 1` — runs on the same price it did. **Two things do move**, and
+both follow from geometry rather than from tuning: an LCV has a nonzero hold
+where an Offensive hull's is identically zero (§2.3's `b` term), and
+`hull_thrust_to_mass` reads 1.4 against 2.0, which `arena` and `combat` read and
+civilian motion does not.
+
+`HullType::LimitedOffensive` keeps its place in the enum, its geometry row and
+its entry in `competent_role`. No role mounts it.
+
+#### The card carries three writes, and a card is a bundle now
+
+`Card::effect` is `Card::effects: &'static [CardEffect]`, applied in slice
+order. §8.2 specifies this card as *"one Design write, three Doctrine writes"* —
+a card is a bundle of writes, and the Design/Doctrine pairing is the design
+position (R-O37: opposite timing profiles, so the pair's value distribution is
+the **narrower** of the two rather than the wider). Seventeen cards carry a
+one-element bundle and read identically.
+
+`TIER0[15]` is now:
+
+```text
+UnlockDesign(LimitedContactVehicle, Tor)      — Design, permanent
+UnlockDesign(GeneralContactVehicle, Unnamed)  — Design, permanent
+WriteDoctrine(ArmedFrontier)                  — Doctrine, revisable
+```
+
+`DoctrineWrite::ArmedFrontier` sets `scout_hull_offensive` and
+`colonizer_general_contact` **together**, because they are one decision: an
+empire that arms what it sends out has armed what it sends out, and splitting
+them would let a player buy the cheap half of a slant (design law #9).
+
+**§8.2's third Doctrine write is deliberately absent.** A colonizer that patrols
+instead of recycling is `picket_after_founding`, which §8.10 measured at
+**−287.8 `W_0`**. Bundling it would make the card strictly worse than passing,
+which is R-WAR6's design question rather than a magnitude for this card.
+
+#### What it contradicts — R-O42 and standing-layer §7.1
+
+Those ratified the opening roster as **LSV(Meadow) + LCV(Tor)**. It is now
+**LSV(Meadow) alone**, because the Contact family is the armed family and this
+card is its only key — seeding an LCV hands every seat the thing the card is
+meant to sell.
+
+**§7.1's own argument survives and is better served.** The opening roster exists
+so that at turn 0 a scout, a settler and a hauler are literally the same object
+and the long-range observable carries almost no information; inscrutability
+early is then structural rather than bought. One design does that more
+completely than two. What is lost is `Class::Tor` as a *seeded* name — it is now
+authored by the card that unlocks the hull carrying it.
+
+#### Re-measured on §8.13's bed, and three seeds cannot resolve either card
+
+`examples/card_table`, same three arms and same fit, re-run against the armed
+card:
+
+| quantity | T-120 (card was a price) | T-121 (card has writes) |
+|---|---|---|
+| Growth card value, `1 − t½ ratio` | +0.1134 ± 0.0592 (n=18, `R²` 0.911) | **−0.0705 ± 0.1447** (n=18, `R²` 0.937) |
+| Growth work stock at 600 yr | +1.3405 ± 0.9150 | +0.9117 ± 0.8141 |
+| Warfare card value, `1 − t½ ratio` | −0.0371 ± 0.1609 (n=9, `R²` 0.791) | **−0.4961 ± 0.2842** (n=8, `R²` 0.755) |
+| Warfare `ΔW_i` at 600 yr, colonies | −32.879 ± 46.075 (n=18) | −29.364 ± 39.010 (n=18) |
+
+All estimates, not bounds. **`n` counts seat-seeds over 3 independent seeds**,
+six seats sharing each galaxy, so every standard error here is optimistic by an
+unmeasured factor — and the Warfare row is computed on the 8 of 18 seat-seeds
+whose contrast was positive at both ends, a set selected by the quantity being
+measured (R-TREE9).
+
+**Read against 2 SE, this bed resolves neither card.** Warfare's −0.4961 is
+1.7 SE from zero and its raw `ΔW_i` is 0.75 SE; Growth's −0.0705 is 0.5 SE
+while its work stock is 1.1 SE positive. The specific missing measurement is
+seed count: three independent replicates against error bars this wide.
+
+**The two columns are not the same bed and must not be differenced.** The
+default Design moved in this landing, so the `Pass` and `GrowthOnly` arms both
+moved with it; only the within-column comparison is paired. The Growth row
+changing sign across the columns is that, not a result about the Growth card.
+
+**The card's writes reach the simulation, and by what path is `R-WAR15`.** Two
+of the three have a reason to be nearly inert: an LSV and an LCV share a
+`cost_fraction` so the survey hull's *price* is unchanged, a scout carries no
+cargo so the hold geometry does not bind, and `hull_thrust_to_mass` is read only
+by `arena`/`combat` — while §8.3 already established that the General Contact
+colonizer rung is unreachable under `CheapestViable`, because a Medium hull
+always wins on price. No mechanism is established here and none is asserted.
+
+#### Three duplications this removed, because they are the failure mode
+
+`scout_hull` was public and read in three places — the build branch, the
+affordability test, and `launch_survey` — which is the shape T-117 named and
+T-116 paid for (the engine bought a hull and discarded it because the build site
+and the spawn site disagreed). It is private now, and:
+
+- **`Standing::scout_order()` is derived from `design_for(Role::Scout)`** rather
+  than written beside it, so the hull the yard is charged for and the hull
+  `role_of` reads back are the same answer to the same question.
+- **`launch_survey` asks `design_for`** instead of the write.
+- **`ProductionContext::price_of` maps the whole Limited tier explicitly**, and
+  says in a comment that `picket_cost` and `light_vehicle_cost` are numerically
+  equal only because today's ladder gives the tier one price (R-O64/R-L0 open).
+
+#### The same merge broke a build order, and the fix is the same shape
+
+Ordering a picket by **naming its hull** — `hull_order(HullType::...)` — stopped
+working the moment the picket and the armed scout came to share a shell:
+`hull_order` maps a hull to the one class this policy names for it, stamps
+`Tor`, and `role_of` reads that back as a **scout**. A yard paying for one thing
+and receiving another is T-116's defect exactly.
+
+`Standing::order_for(role)` is the fix, derived from `design_for` the same way
+`scout_order` is, and `scout_order` is now one line of it.
+`a_build_order_round_trips_to_the_role_that_asked_for_it` asserts the round trip
+under both standing layers **and pins the defect itself** — that ordering a
+picket by shell still reads back as the armed scout — so if the collision ever
+disappears the rule loses its reason visibly rather than silently.
+
+`hull_order` survives for the mining pair and the colonizer ladder, where the
+caller is choosing a hull by price and the role is not in question. Its doc
+comment now says so.
+
+**Found by enumeration, not by a test failing.** The defect sits behind
+`picket_reserve > 0` or `picket_claims_target`, both of which default off and
+neither of which `DoctrineWrite::ArmedFrontier` writes — so no bed reaches it
+and the suite was green across the change.
+
+#### And the class now disambiguates on both sides of the write
+
+Before, the class separated a scouting hull from a picketing one **only** when
+the armed write was on. Now it works unarmed as well: a scouting LSV is `Tor`
+and a mining LSV is `Meadow`. That makes `ASSIGNABLE`'s **order** load-bearing —
+`role_of`'s second pass takes the first role that *mounts* the hull, and two
+roles now mount `LimitedSystems`. Miner precedes Scout, matching
+`competent_role`, so the two resolutions cannot disagree. Nothing
+production-built reaches that pass (every build stamps a class);
+`every_hull_has_a_role_under_every_doctrine` does.
+
+---
+
 ## 9. Register
 
 ### Ratified
@@ -1722,6 +1894,10 @@ setting `Doctrine` fields directly, which bypasses both `TIER0` and
 | **R-WAR9** | **the colonization leg is flown at the rate its own load implies** — `spawn_courier` read `civilian_accel_g · G` before the hold was loaded, so a colony ship flew like an empty hull and R-O32 was closed for the arena but not for this dispatcher. A laden Medium colonizer makes **0.241 ly/yr² against 2.446 empty**. It **invalidates every transit-dependent magnitude measured before it**, §8.6–8.8's arms included (§8.9.6) |
 | **R-IND21** | **a hull carries the minerals it was built from** and hands them back in the same proportions — scrap salvage, wreckage, the founding ceiling's overflow. So a hull built from supers or apex drops supers or apex, with no rule beyond the composition itself. `World::hull_minerals`, captured by `Minerals::try_take_total` at the moment the bank pays (T-119) |
 | **R-IND22** | **the founding center pays the floor-rung top-up**, so the absorbing-zero guard (§8.7) is a *transfer* rather than mass appearing from nowhere. A parent too poor to pay leaves its child at whatever it could afford — the guard degrades rather than conjuring. **Design law #11 now holds with no exceptions**, card played or not |
+| **R-WAR13** | **resolved (T-121)** — `DoctrineWrite::ArmedFrontier` is the Warfare write, and `TIER0[15]` carries it alongside the two Design unlocks. §8.2's *third* write, `picket_after_founding`, stays out: §8.10 measured it at −287.8 `W_0`, so it is R-WAR6's question (§8.14) |
+| **T-121** | **the default standing layer is unarmed at every role, and `TIER0[15]` is the only key to the Contact family.** Scout rides `LimitedSystems`, colonization `MediumSystems`/`GeneralSystems`, and the seeded roster carries one design. The card unlocks LCV(Tor) and GCV(Unnamed) and writes `DoctrineWrite::ArmedFrontier`, which moves survey and the colonizer ladder onto them together (§8.14) |
+| **T-121** | **the picket rides `LimitedContactVehicle`**, not `LimitedOffensive`. The Limited tier shares one `cost_fraction`, so §8.6's denial arithmetic runs on an unchanged price; what moves is a nonzero hold and `hull_thrust_to_mass` 2.0 → 1.4. No role mounts an Offensive hull (§8.14) |
+| **T-121** | **a card is a bundle of writes** — `Card::effects: &'static [CardEffect]`, applied in slice order — which is what §8.2's *"one Design write, three Doctrine writes"* describes. Seventeen cards carry a one-element bundle (§8.14) |
 | **T-120** | **`TIER0[15]` — the first Warfare card — reaches no decision.** Its `UnlockDesign(LimitedOffensive, _)` write lands in the Roster, whose only consumer outside tests is `roster_permits`, which returns `true` unconditionally while `enforce_roster` is off; and `role_hull_type(Role::Picket)` already returns that hull to everyone. The card's whole channel is its 0.5 kt price (§8.13) |
 | **T-120** | **the head-to-head bed §8.4 asked for exists** — `examples/card_table`, 12 seats, three arms, cards at earliest legal play, `g` fitted by least squares on `ln X(t)` as §2.4 requires. Growth card value **+0.1134 ± 0.0592** (n=18 seat-seeds over 3 independent seeds, mean `R²` 0.911); Warfare **−0.0371 ± 0.1609**, inside one SE of zero (§8.13) |
 | **R-WAR10** | **a picket guesses its target from the observed bearing**, out of worlds *it* has scanned, and re-reads the trajectory as fresh light arrives. Two worlds on one bearing are indistinguishable at range, so a colony ship aimed at the far one puts a picket on the near one for free — **deception is a move now, not a wish** (§8.12) |
@@ -1746,7 +1922,7 @@ setting `Doctrine` fields directly, which bypasses both `TIER0` and
 
 | **R-WAR11** | **may a Doctrine write impose a cost that scales with its holder's own activity?** A card has two costs: `Card::cost`, a bounded one-off the engine already charges, and the mechanic's own — here, every colony founded afterwards starting 5.5x thinner, forever. The second cannot be priced, because its size depends on how much the player goes on to expand, and a difference objective charges it twice (§8.10). **Not Warfare-specific**, so it belongs in the card contract | a decision on whether a card's total cost must be bounded at play time |
 | **R-IND11** | **`SettlersPerMineral` is worth +394.9 `W_0` unilaterally** on the 4-seed asymmetric bed — more than any card measured so far. `Hyades_industry.md` §1.6 records the policy as *"blocked on R-O74"*, the conjured-settlers violation, and **R-O74 closed at §1.7**. So the block is lifted and the answer may have flipped | a **symmetric** re-measure — this one is competitive, not global, and a default is a global question |
-| **R-WAR13** | **the Warfare tree has no playable card that does what §8 specifies.** §8.2's card is one Design write plus three Doctrine writes; `DoctrineWrite` carries four variants and none of them is a Warfare write, so every arm in §8.6–§8.11 was reached by setting `Doctrine` fields directly — bypassing `TIER0` and `Card::cost` both. Until a Warfare `DoctrineWrite` exists, `TIER0[15]` is the tree's only playable card and it is a price (§8.13) | a `DoctrineWrite` variant for the picket/denial writes, then re-run `examples/card_table` |
+| **R-WAR15** | **by what path does the armed card reach the simulation?** It measures non-inert and the three obvious channels each have a reason not to bind: LSV and LCV share a `cost_fraction`, a scout carries no cargo, `hull_thrust_to_mass` is combat-only, and §8.3 makes the General Contact colonizer rung unreachable under `CheapestViable`. Three seeds put the effect inside 2 SE either way (§8.14) | an ablation per write — the two `UnlockDesign`s and `ArmedFrontier` separately — on a bed with enough independent seeds to resolve 2 SE |
 | **R-WAR14** | **`Sim::inert_card_plays` counts `NotYetImplemented` only**, so a card writing real state into a component with no live consumer reads as working. It measures which match arm ran, not whether the write reached a decision (§8.13) | a definition of "reached a decision" that a counter can test — the candidate is whether the written component is read on a live path |
 | **R-WAR12** | **the two guess magnitudes** — `intercept_cone_radians` (0.15 rad) and `intercept_reassess_years` (25 yr). Neither is physical: the cone sets how wide a guess may be and therefore what a feint is worth, and the cadence sets how long one stays bought. They are the first magnitudes in this tree whose job is to price a **bluff** rather than a kinetic outcome | a bed on which the yomi channel is readable — not `W_0`, which a bluff does not move directly |
 | **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is **bit-identically inert** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |

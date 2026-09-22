@@ -223,8 +223,8 @@ fn main() {
         window_end(),
         seeds().len()
     );
-    println!("  Warfare card {WARFARE_CARD}: {:?}", cards::card(CardId(WARFARE_CARD)).map(|c| c.effect));
-    println!("  Growth   card {GROWTH_CARD}: {:?}", cards::card(CardId(GROWTH_CARD)).map(|c| c.effect));
+    println!("  Warfare card {WARFARE_CARD}: {:?}", cards::card(CardId(WARFARE_CARD)).map(|c| c.effects));
+    println!("  Growth   card {GROWTH_CARD}: {:?}", cards::card(CardId(GROWTH_CARD)).map(|c| c.effects));
     let _ = std::io::stdout().flush();
 
     let mut growth_val = Vec::new();
@@ -273,7 +273,17 @@ fn main() {
                 }
             }
         }
-        println!("  seed {seed} done in {:.0} s", t0.elapsed().as_secs_f64());
+        // **Print the running total after every seed**, not only at the end.
+        // This harness has been killed mid-run twice by an ephemeral container,
+        // and a partial result you can read beats a complete one you lost.
+        let (gm, gse, gn) = stat(&growth_val);
+        let (wm, wse, wn) = stat(&warfare_val);
+        let (wrm, wrse, _) = stat(&warfare_raw);
+        println!(
+            "  seed {seed} done in {:.0} s | running: growth {gm:+.4} ± {gse:.4} (n={gn}), \
+             warfare {wm:+.4} ± {wse:.4} (n={wn}), ΔW_i {wrm:+.2} ± {wrse:.2}",
+            t0.elapsed().as_secs_f64()
+        );
         let _ = std::io::stdout().flush();
     }
 
