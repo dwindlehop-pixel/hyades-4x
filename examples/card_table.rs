@@ -61,7 +61,11 @@ use std::io::Write;
 const SEATS: usize = 12;
 const WARFARE_CARD: u16 = 15;
 const GROWTH_CARD: u16 = 3;
-const SEEDS: [u64; 3] = [1, 7, 42];
+/// The standard eight (`examples/card_probe`) and three more, so the table
+/// has eleven independent galaxies. `--seeds a,b,c` overrides it, which is how
+/// a run killed by an ephemeral container is resumed: the seeds that finished
+/// have already printed their `ROW` lines.
+const SEEDS: [u64; 11] = [1, 7, 42, 31337, 2, 3, 5, 11, 13, 17, 19];
 /// The compounding window, and the sampling stride inside it. The fit starts at
 /// the round-0 barrier, where the cards land — before it both arms are the same
 /// run to the last bit — and runs 600 years past it.
@@ -75,11 +79,16 @@ const SAMPLE_YEARS: f64 = 25.0;
 fn smoke() -> bool {
     std::env::args().any(|a| a == "--smoke")
 }
-fn seeds() -> &'static [u64] {
+fn seeds() -> Vec<u64> {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--seeds") {
+        let list = args.get(i + 1).expect("--seeds takes a comma-separated list");
+        return list.split(',').map(|x| x.trim().parse().expect("a seed is a u64")).collect();
+    }
     if smoke() {
-        &SEEDS[..1]
+        SEEDS[..1].to_vec()
     } else {
-        &SEEDS
+        SEEDS.to_vec()
     }
 }
 fn window_end() -> f64 {
@@ -236,6 +245,9 @@ fn main() {
         window_end(),
         seeds().len()
     );
+    println!("  ROW columns: seed, galaxy-mean Growth ΔlnG (odd seats), galaxy-mean Warfare ΔW_i at the horizon");
+    println!("  (colonies), galaxy-mean Warfare ∫ΔW_i dt over the window (colony-years). Galaxies are the");
+    println!("  independent unit: the twelve seats of one galaxy share it, so standard errors are over galaxies.");
     println!("  Warfare card {WARFARE_CARD}: {:?}", cards::card(CardId(WARFARE_CARD)).map(|c| c.effects));
     println!("  Growth   card {GROWTH_CARD}: {:?}", cards::card(CardId(GROWTH_CARD)).map(|c| c.effects));
     let _ = std::io::stdout().flush();
@@ -254,8 +266,10 @@ fn main() {
     let mut w_total = 0usize;
     let mut play_times = Vec::new();
     let mut identical = true;
+    // One value per galaxy — the independent unit.
+    let (mut gal_dlng, mut gal_dw, mut gal_dwint) = (Vec::new(), Vec::new(), Vec::new());
 
-    for &seed in seeds() {
+    for seed in seeds() {
         let t0 = std::time::Instant::now();
         let p = run(seed, Arm::Pass);
         let g = run(seed, Arm::GrowthOnly);
@@ -267,6 +281,7 @@ fn main() {
             play_times.push(*t);
         }
 
+        let (mut seed_dlng, mut seed_dw, mut seed_dwint) = (Vec::new(), Vec::new(), Vec::new());
         for i in 0..SEATS {
             if i.is_multiple_of(2) {
                 // Warfare seat: `Both` against the same seat under
@@ -275,6 +290,8 @@ fn main() {
                 let wg = contrast(&g, i);
                 w_total += 1;
                 warfare_raw.push(wb[wb.len() - 1] - wg[wg.len() - 1]);
+                seed_dw.push(wb[wb.len() - 1] - wg[wg.len() - 1]);
+                seed_dwint.push(integral(&b.t, &wb) - integral(&g.t, &wg));
                 if let (Some((a, r2)), Some((c, _))) = (half_life(&b.t, &wb), half_life(&g.t, &wg)) {
                     warfare_val.push(1.0 - a / c);
                     warfare_r2.push(r2);
@@ -285,12 +302,23 @@ fn main() {
                 let last = g.infra[i].len() - 1;
                 growth_raw.push(g.infra[i][last] / p.infra[i][last] - 1.0);
                 growth_dlng.push((integral(&g.t, &g.infra[i]) / integral(&p.t, &p.infra[i])).ln());
+                seed_dlng.push(*growth_dlng.last().unwrap());
                 if let (Some((a, r2)), Some((c, _))) = (half_life(&g.t, &g.infra[i]), half_life(&p.t, &p.infra[i])) {
                     growth_val.push(1.0 - a / c);
                     growth_r2.push(r2);
                 }
             }
         }
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        gal_dlng.push(mean(&seed_dlng));
+        gal_dw.push(mean(&seed_dw));
+        gal_dwint.push(mean(&seed_dwint));
+        println!(
+            "ROW {seed} {:+.6} {:+.4} {:+.2}",
+            gal_dlng.last().unwrap(),
+            gal_dw.last().unwrap(),
+            gal_dwint.last().unwrap()
+        );
         // **Print the running total after every seed**, not only at the end.
         // This harness has been killed mid-run twice by an ephemeral container,
         // and a partial result you can read beats a complete one you lost.
@@ -322,4 +350,17 @@ fn main() {
     println!("  Warfare W_i defined on {w_defined} of {w_total} seat-seeds");
     println!("  Warfare ΔW_i at {} yr, colonies: {wrm:+.3} ± {wrse:.3}  (n={wrn})", window_end());
     println!("\n  Warfare arm reproduces the Growth-only arm exactly: {}", if identical { "YES" } else { "no" });
+
+    // The confirmation: one value per galaxy, so the standard error is over
+    // independent galaxies and not over seats that share one.
+    println!("\n  over {} galaxies (the independent unit):", gal_dlng.len());
+    for (name, v) in [
+        ("Growth  ΔlnG, work-years", &gal_dlng),
+        ("Warfare ΔW_i at horizon, colonies", &gal_dw),
+        ("Warfare ∫ΔW_i dt, colony-years", &gal_dwint),
+    ] {
+        let (m, se, n) = stat(v);
+        let pos = v.iter().filter(|&&x| x > 0.0).count();
+        println!("    {name:<36} {m:+12.4} ± {se:10.4}  t {:+6.2}  ({pos}/{n} galaxies positive)", m / se);
+    }
 }

@@ -299,12 +299,44 @@ fn hold_ground_wide(d: &mut Doctrine) {
     d.picket_reserve = 32;
 }
 
+/// **Strike colony ships at the rival's port** (T-123, R-WAR16): pickets go to
+/// the rival center this empire has seen launch the most, and meet what leaves
+/// it at range zero. Supply is the hold-ground posture's.
+fn blockade(d: &mut Doctrine) {
+    hold_ground(d);
+    d.picket_intercepts = false;
+    d.picket_blockades = true;
+}
+/// The same, on the fallback supply alone — no claim-the-target branch — which
+/// T-113 measured as almost never firing.
+fn blockade_fallback(d: &mut Doctrine) {
+    blockade(d);
+    d.picket_claims_target = false;
+}
+fn blockade_wide(d: &mut Doctrine) {
+    blockade(d);
+    d.picket_reserve = 32;
+}
+
 fn oracle(c: &mut SimConfig) {
     c.ablate_oracle_intercept = true;
 }
 
 fn arms() -> Vec<Arm> {
     vec![
+        Arm { label: "warfare / blockade", card: Some(WARFARE_CARD), engine: no_engine, card_only: blockade },
+        Arm {
+            label: "warfare / blockade, fallback supply",
+            card: Some(WARFARE_CARD),
+            engine: no_engine,
+            card_only: blockade_fallback,
+        },
+        Arm {
+            label: "warfare / blockade, wide",
+            card: Some(WARFARE_CARD),
+            engine: no_engine,
+            card_only: blockade_wide,
+        },
         Arm {
             label: "warfare / hold ground, oracle",
             card: Some(WARFARE_CARD),
@@ -379,6 +411,7 @@ fn main() {
         let (mut u_pass, mut u_card) = (vec![], vec![]);
         let (mut pk, mut dv, mut ic) = (vec![], vec![], vec![]);
         let (mut idle_g, mut idle_c) = (vec![], vec![]);
+        let mut drival = vec![];
         for &seed in &SEEDS {
             let p = run(seed, arm, false);
             let c = run(seed, arm, true);
@@ -387,6 +420,8 @@ fn main() {
             dw.push(integral(&c.t, &contrast0(&c)) - integral(&p.t, &contrast0(&p)));
             dpop.push((c.pop0 / p.pop0).ln());
             dcol.push(c.colonies[0].last().unwrap() - p.colonies[0].last().unwrap());
+            let rivals = |s: &Sample| (1..SEATS).map(|i| *s.colonies[i].last().unwrap()).sum::<f64>();
+            drival.push(rivals(&c) - rivals(&p));
             let start = SimConfig::new(seed).years_to_first_round;
             if let (Some(a), Some(b)) = (growth_rate(&c.t, &c.infra0, start), growth_rate(&p.t, &p.infra0, start)) {
                 rate_ratio_g.push(a / b - 1.0);
@@ -416,6 +451,7 @@ fn main() {
         println!("  ΔW   (colony-years)    {}", fmt(&dw));
         println!("  Δln pop                {}", fmt(&dpop));
         println!("  Δcolonies at horizon   {}", fmt(&dcol));
+        println!("  Δrival colonies        {}  (seats 1.., summed, at horizon)", fmt(&drival));
         if !rate_ratio_g.is_empty() {
             println!("  g_card / g_pass − 1     {}  n={}", fmt(&rate_ratio_g), rate_ratio_g.len());
         }

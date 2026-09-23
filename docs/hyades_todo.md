@@ -163,6 +163,65 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-124. A rung bill that destroyed mass — and the Growth card it was carrying
+
+**Closed.** `infra_step_price` billed the width of the rung a stock *rounds* to
+and the purchase set the stock to the next rung, so a stock founded above its
+rung paid 0.0292 kt per purchase that was never erected (design law #11). Now it
+bills what the stock is short of the next rung. Found by T-123's conservation
+test on a run **with no card played**; localized by re-running to increasing
+horizons (zero drift through 240 yr, equal quanta after) and then diffing the
+ledger per event. `an_off_rung_upgrade_erects_what_it_bills` pins both
+directions and fails on the old bill. Appendix §D.3.
+
+- **The default bed is inside noise:** colony-years +0.0021 ± 0.0028,
+  work-years +0.0064 ± 0.0122 (8 seeds).
+- **The first Growth card is not.** Its work-years effect was **+0.133 → −0.014**,
+  and a one-sided ablation reproduces each end bit-identically: the overcharge
+  on above-rung stocks carried it. **T-122's Growth result is retracted.** Why a
+  3% overcharge produced a +0.13 advantage for a population card is not
+  established.
+- **What the card needs now is R-IND23:** population reaches work-years only
+  with staffing on (T-107) **and** the per-color conjunction lifted — +0.121 ±
+  0.015 (t 8.2) with both, +0.056 ± 0.062 with staffing alone. Both are
+  ratified or default-off rules, so the author decides.
+
+### T-123. The port strike — armed hulls meet colony ships where they launch (R-WAR16, resolved)
+
+**Closed.** The author chose "armed hulls strike colony ships"; the census chose
+the site. `examples/launch_census` found a seat's launches spread over a mean of
+213.6 origins with 25.5% through its busiest eight, where a destination is one
+of thousands — so the meeting site is the rival's **port**. Warfare §8.16;
+appendix §D.2.
+
+**Landed:**
+
+- `Doctrine::picket_blockades` — a picket goes to the rival port its seat has
+  **seen** launch the most (`EventKind::LaunchSeen`, `distance / c` after the
+  drive lights), holds it, and strikes each colony ship launched there at range
+  zero (`strike_at_port`). Counted against `picket_reserve`.
+- `fight_at` — the one fight between hulls at a site, extracted from
+  `resolve_picket_fight` and shared by the port strike; bit-identical.
+- `DoctrineWrite::ArmedFrontier` writes the blockade, the claim-target supply and
+  `picket_reserve ≥ ARMED_FRONTIER_BLOCKADERS = 8` (placeholder).
+- Tests: `a_blockader_strikes_the_colony_ship_leaving_its_port` (the strike, its
+  ledger, the light-lagged sighting, the placement rule) and
+  `mass_is_conserved_through_the_blockade` (a whole run, non-vacuous — 36
+  strikes by 300 yr).
+- `examples/card_table` takes `--seeds`, prints one `ROW` per galaxy and reports
+  the standard error over **galaxies**, which are the independent unit.
+
+**Measured, card as shipped, asymmetric bed:** ΔW **+24,024 ± 8,509
+colony-years (t 2.82, 7/8)**, rival colonies −102.6 ± 25.8 (t −3.98), 306 ± 84
+colony ships struck, none lost. **Twelve-seat table, 11 galaxies: `ΔW_i` +28.26
+± 5.37 colonies (t 5.26), `∫ΔW_i dt` +8,817 ± 1,713 (t 5.15), 11/11** — the
+3-SE confirmation the author asked for. Growth on the same table: +0.014 ± 0.042
+(t 0.33).
+
+**Opened:** R-WAR17 (a strike forfeits the rival's target, because `targeted`
+is monotone); R-WAR18 (placement has no recency — written from `t = 0` the same
+writes score t 4.06–5.57).
+
 ### T-122. Where each first card's effect goes — and the largest constraint was the bed
 
 Isolate what stands between each first card and its own tree's metric, then
@@ -184,10 +243,11 @@ pure-price control — and at the round-0 barrier it is invisible. **Both
 harnesses now play at the barrier**, and T-120/T-121's tables are marked as
 measured inside the opening.
 
-**Growth — passes as shipped.** Played legally, `TIER0[3]` moves work-years
-**+0.133 ± 0.032, t 4.18, 8/8 seeds**. Infrastructure's fitted growth rate
-rises **+2.8% ± 0.7%**, so the "double the rate" reading is far off. No engine
-change was needed; T-107 staffing (below) adds colonies, not work-years.
+~~**Growth — passes as shipped.** Played legally, `TIER0[3]` moves work-years
+**+0.133 ± 0.032, t 4.18, 8/8 seeds**.~~ **Retracted at T-124:** that result
+was carried by a rung bill that destroyed mass, and on the conserving engine
+the card reads **−0.014 ± 0.023** (appendix §D.3). Growth is open again under
+R-IND23.
 
 **Warfare — no path to `W`.** At legal play `TIER0[15]` is inert (ΔW −103 ±
 314). Four gates in series, each closed by ablation (warfare §8.15): arming
@@ -212,7 +272,7 @@ ceiling" (0.0000 is); "the color conjunction throttles Growth" (it multiplies
 the standard error by ~4 and leaves the mean alone); "the picket guesses the
 wrong world" (the oracle does no better).
 
-**Open:** R-WAR16 (the mechanic); R-IND22 (`u`'s shape); T-108 (the
+**Open:** ~~R-WAR16 (the mechanic)~~ resolved at T-123; R-IND22 (`u`'s shape); T-108 (the
 profitability test — with staffing on, 70% of standing stock is idle at 600 yr).
 
 ---

@@ -387,12 +387,36 @@ pub struct Doctrine {
     ///
     /// **Placeholder, default false** (R-WAR8) — the card sets it.
     pub picket_intercepts: bool,
+    /// **A picket stands at a rival's port and strikes the colony ships it
+    /// launches** (T-123, R-WAR16, `Hyades_warfare_tree.md` §8.16).
+    ///
+    /// T-122 closed every way the first Warfare card reached `W` and found
+    /// that the one fight it can win never happens at a *destination*: a colony
+    /// ship picks one of thousands of worlds, a picket guesses from a bearing,
+    /// and handing it the true destination still produced no fights. The
+    /// *origin* is different in kind. Every colony ship launches from one of a
+    /// rival's production centers, so a hull standing there meets it at zero
+    /// range, with nothing to guess and no light-lag to lose to.
+    ///
+    /// **Placement reads only what light has delivered.** Each launch is seen
+    /// by this empire's capital at `depart + distance(port, capital)`, and a
+    /// blockader goes to the rival port this empire has *seen* launch the most
+    /// that it does not already hold. `examples/launch_census` priced the
+    /// reach: a seat launches from a mean of 213.6 origins, and its eight
+    /// busiest carry 25.5% of launches in hindsight — an upper bound on what
+    /// eight blockaders per rival could meet.
+    ///
+    /// Supply is [`Self::picket_reserve`]'s, and the build branch is unchanged:
+    /// this write moves where a picket goes, not whether one is built.
+    ///
+    /// **Placeholder, default false** (R-WAR16) — the card sets it.
+    pub picket_blockades: bool,
     /// **The General colonizer is a Contact hull, not a Systems hull** (T-116).
     ///
     /// This is §8.2's Design write — *"switch the colony ship role from Systems
     /// vehicles to Contact vehicles"* — and it is a **substitution inside the
     /// option set, not a replacement of it**: the Medium Systems hull stays on
-    /// the menu, so a centre that cannot afford a General hull colonises
+    /// the menu, so a center that cannot afford a General hull colonizes
     /// exactly as it did.
     ///
     /// Read off the ladder rather than asserted (`examples/hull_compare`), the
@@ -586,6 +610,7 @@ impl Default for Doctrine {
             picket_claims_target: false,
             scout_hull_offensive: false,
             picket_intercepts: false,
+            picket_blockades: false,
             colonizer_general_contact: false,
             founding_infra_share: 0.0,
             survey_strategy: SurveyStrategy::OpeningSectors,
@@ -893,7 +918,7 @@ pub struct ProductionContext {
 }
 
 impl ProductionContext {
-    /// **What this centre would pay for `hull`, today.**
+    /// **What this center would pay for `hull`, today.**
     ///
     /// The context carries prices for the hulls the policy can name, and until
     /// T-117 each caller picked the right field by branching on the same
@@ -2111,7 +2136,7 @@ mod tests {
     /// **The General colonizer is unreachable under `CheapestViable`, and that
     /// is algebra rather than a magnitude** (T-116).
     ///
-    /// `production_choice` filters the hull options to those the centre can pay
+    /// `production_choice` filters the hull options to those the center can pay
     /// for *and* that would deliver settlers, then takes the max by policy key.
     /// Under `CheapestViable` the key is the negated price, and a Medium hull
     /// costs **0.1092 kt against any General hull's ~1.1–1.3** — so the General

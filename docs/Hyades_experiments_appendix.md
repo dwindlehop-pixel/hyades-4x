@@ -787,7 +787,13 @@ Re-run at the round-0 barrier (**the bed from here on**), the pure-price control
 reads **Δcolonies −0.1 ± 0.1** and ΔW **+3 ± 4**: a tier-0 price is invisible
 at legal play.
 
-### The Growth card, played legally, already clears 3 SE
+### ~~The Growth card, played legally, already clears 3 SE~~ — retracted at T-124 (§D.3)
+
+**Superseded.** Every Growth figure in this entry was measured on a rung bill
+that destroyed 0.0292 kt per purchase on stocks founded above their rung, and
+the card's work-years effect was carried by that defect: with the bill
+conserving mass the same arm reads **−0.014 ± 0.023**. The table is kept as the
+record of that engine.
 
 800 yr, card at 200 yr, 600 yr of play after it:
 
@@ -866,7 +872,170 @@ Treating seat-seeds as independent, 3 SE at this mean needs ~64 seat-seeds, or
 ~11 galaxies at ~5 min each — over the ~10-minute ceiling `CLAUDE.md` §2 sets
 for an ephemeral container, so it is a by-hand run. The asymmetric bed is the
 one that answers the per-card question; this one answers how the cards read
-beside each other.
+beside each other. *(Run at T-123 over 11 galaxies, with the standard error
+taken over galaxies: §D.2.)*
+
+## D.2 T-123 — the port strike: armed hulls meet colony ships where they launch
+
+**Supports:** `Hyades_warfare_tree.md` §8.16 (R-WAR16 resolved, R-WAR17/18
+opened) and the T-123 entry in `hyades_todo.md`. Same bed and symbols as §D.1,
+on the T-124 engine unless marked.
+
+### Pricing the meeting site before building it
+
+`examples/launch_census`: 3 seats, 800 yr, the eight seeds, no cards. Colony-ship
+launches grouped by exact origin position (a system is a fixed point, so one
+center is one position), counted after the round-0 barrier. Mean over 24
+seat-seeds (estimates; the top-`k` shares are **upper bounds** on what `k`
+blockaders could meet, because the ranking is taken in hindsight):
+
+| quantity | mean | range over seat-seeds |
+|---|---|---|
+| launches after 200 yr, per seat | ~1,780 | 1,093–2,654 |
+| distinct origins, per seat | 213.6 | 58–327 |
+| homeworld's share | 6.4% | 0.0–16.4% |
+| busiest 3 origins' share | 13.7% | 7.8–29.8% |
+| busiest 8 origins' share | 25.5% | 16.9–52.0% |
+
+So a destination is one of thousands of worlds and an origin is one of about two
+hundred, with a quarter of the traffic through eight of them. That is what made
+the port the site and not a place on the route.
+
+### The arms
+
+Asymmetric bed, 8 seeds, 800 yr. "Written from `t = 0`" arms seed seat 0's
+Doctrine at bootstrap (the card still plays at 200 yr and charges its price); the
+card arms write it at the round-0 barrier, which is the game.
+
+| arm | engine | ΔW (colony-years) | t | seeds > 0 | rival colonies at 800 yr | kills |
+|---|---|---|---|---|---|---|
+| blockade, reserve 8, written from `t = 0` | T-123 | +51,169 ± 12,603 | 4.06 | 7/8 | −121.4 ± 32.1 | 321 ± 74 |
+| … without the claim-target supply | T-123 | +21,545 ± 8,114 | 2.66 | 8/8 | −84.9 ± 30.0 | 253 ± 82 |
+| … reserve 32 | T-123 | +73,002 ± 13,102 | 5.57 | 8/8 | −228.0 ± 46.3 | 637 ± 118 |
+| **card as shipped, reserve 8** | T-123 | +18,755 ± 7,573 | 2.48 | 7/8 | −89.3 ± 30.6 | 277 ± 83 |
+| card as shipped, reserve 16 | T-123 | +19,147 ± 7,923 | 2.42 | 7/8 | −94.8 ± 32.5 | 294 ± 85 |
+| card as shipped, reserve 32 | T-123 | +18,993 ± 7,690 | 2.47 | 7/8 | −97.0 ± 32.8 | 323 ± 97 |
+| **card as shipped, reserve 8** | **T-124** | **+24,024 ± 8,509** | **2.82** | 7/8 | **−102.6 ± 25.8** | 306 ± 84 |
+
+Seat 0 lost **no hull** in any arm: R-WAR5's convention gives the fight to the
+hull on station. The card's own work-years move −0.040 ± 0.034 (t −1.18).
+
+**What the table decides.** Played at the barrier, the reserve is not what binds
+— 8, 16 and 32 are within a tenth of a standard error. Written from `t = 0`,
+more hulls do help, and the whole card is worth two to three times as much. The
+inference, stated as one: hulls placed early stand at the ports that launch
+first, and a cumulative launch count keeps later hulls on ports whose traffic has
+moved on. That is R-WAR18; it is not established which of placement lag and
+recency binds.
+
+**The refactor is bit-identical.** `fight_at` was extracted from
+`resolve_picket_fight`; the as-shipped arm before the blockade was wired into the
+card reproduced T-122's per-seed ΔW on all eight seeds.
+
+### On the twelve-seat table
+
+`examples/card_table`, 12 seats, three arms, cards at the round-0 barrier,
+800 yr, **11 independent galaxies** (1, 7, 42, 31337, 2, 3, 5, 11, 13, 17, 19),
+T-124 engine. Each galaxy contributes **one** value — the mean over its six card
+seats — so the standard error is over galaxies, the independent unit. §D.1's
+table counted seat-seeds and was optimistic by an unmeasured factor; this one is
+not. Per-galaxy `ROW` lines are printed as each finishes, so a killed run resumes
+with `--seeds`.
+
+| quantity | mean ± SE over 11 galaxies | t | galaxies > 0 |
+|---|---|---|---|
+| **Warfare `ΔW_i` at 800 yr**, colonies | **+28.26 ± 5.37** | **5.26** | **11/11** |
+| **Warfare `∫ΔW_i dt`**, colony-years | **+8,817 ± 1,713** | **5.15** | **11/11** |
+| Growth `ΔlnG`, work-years | +0.014 ± 0.042 | 0.33 | 5/11 |
+
+| seed | Growth `ΔlnG` | Warfare `ΔW_i` at 800 yr | Warfare `∫ΔW_i dt` |
+|---|---|---|---|
+| 1 | −0.0749 | +67.00 | +23,102 |
+| 7 | +0.0438 | +7.82 | +4,734 |
+| 42 | −0.0611 | +24.64 | +6,655 |
+| 31337 | −0.0020 | +54.73 | +14,053 |
+| 2 | +0.2186 | +22.18 | +9,977 |
+| 3 | +0.0503 | +20.82 | +4,814 |
+| 5 | −0.2730 | +21.00 | +9,057 |
+| 11 | +0.2227 | +9.91 | +1,949 |
+| 13 | +0.0667 | +26.27 | +7,074 |
+| 17 | −0.0368 | +23.09 | +7,868 |
+| 19 | −0.0028 | +33.45 | +7,701 |
+
+**The Warfare card clears 3 SE on the twelve-seat table** in both readings, on
+every galaxy. **The Growth card does not move work-years** there either, which
+agrees with the asymmetric bed on the conserving engine (§D.3). The fitted
+doubling-time value (`1 − t½ ratio`) is printed by the harness and not used:
+`W_i` has no logarithm on 11 of every 24 Warfare seat-seeds (R-TREE9).
+
+## D.3 T-124 — a rung bill that destroyed mass, and the Growth card it was carrying
+
+**Supports:** `Hyades_industry.md` §1.8 and R-IND23, the `infra_step_price` doc
+comment, and the T-124 entry in `hyades_todo.md`.
+
+### Found by the blockade's conservation test, on a run with no card
+
+`mass_is_conserved_through_the_blockade` failed at 300 yr. The same bed with no
+card played drifted too, and the drift was **exactly zero through 240 yr**, then
+fell by **0.02921 kt** between 240 and 260 yr and by twice that between 280 and
+300 — equal quanta, so one transfer and not rounding. Stepping the run and
+diffing the ledger per event named it: an `UpgradeInfrastructure` on a stock at
+Band **1.1113** billed **0.9 kt** (the I → II width) and raised infrastructure by
+**0.87079 kt**, because the purchase sets the stock to exactly rung II.
+
+`infra_step_price` rounded the stock to a rung and billed that rung's width. A
+stock above its rung paid for mass it never received; one below would have
+received mass it never paid for. `founding_infra` is a hull's cost, so colonies
+start between rungs routinely.
+
+**Fix:** bill `infra_rung_price(at + 1) − stock`. Identical for a stock on a
+rung. `an_off_rung_upgrade_erects_what_it_bills` asserts both directions and
+fails on the old bill with −0.02921 kt.
+
+### The default bed barely moves
+
+8 seeds, 3 seats, 800 yr, no cards, T-122 engine against T-124:
+
+| quantity | Δln, T-124 − T-122 | t | seeds > 0 |
+|---|---|---|---|
+| colony-years, all seats | +0.0021 ± 0.0028 | 0.76 | 3/8 |
+| work-years, all seats | +0.0064 ± 0.0122 | 0.52 | 4/8 |
+
+### The Growth card moves a great deal, and a one-sided ablation says which half
+
+The card's work-years effect went from **+0.1328 ± 0.0318** to **−0.0143 ±
+0.0226**. Two variants of the bill, each keeping one half of the old error:
+
+| variant | Growth card ΔlnG | reproduces |
+|---|---|---|
+| below-rung stocks still topped up for free | −0.0143 ± 0.0226 | T-124, **bit-identically** |
+| above-rung stocks still overcharged | +0.1328 ± 0.0318 | T-122, **bit-identically** |
+
+So no below-rung stock is ever upgraded in play, and the whole T-122 Growth
+result rode on the overcharge. The line is named; **why** a 3% overcharge on
+off-rung colonies turns into a +0.13 advantage for a population card is not
+established, and no mechanism is claimed for it.
+
+### What the Growth card does on the conserving engine
+
+| arm | ΔlnG | t | Δln pop | Δcolonies | `u` pass → card |
+|---|---|---|---|---|---|
+| card as shipped | −0.014 ± 0.023 | −0.63 | +0.745 ± 0.071 | +46.4 ± 5.3 | — |
+| card, staffing on (T-107) | +0.056 ± 0.062 | 0.90 | +0.746 ± 0.069 | +57.5 ± 7.6 | 0.634 → 0.686 |
+| card, color conjunction ablated | +0.039 ± 0.013 | 2.94 | +0.810 ± 0.035 | +84.9 ± 23.3 | — |
+| card, staffing on, conjunction ablated | **+0.121 ± 0.015** | **8.17** | +0.666 ± 0.021 | +171.4 ± 24.1 | 0.108 → 0.122 |
+| write alone (no price), staffing on | +0.151 ± 0.067 | 2.25 | +0.847 ± 0.054 | +99.6 ± 23.2 | 0.634 → 0.686 |
+| write alone, staffing on, conjunction ablated | +0.188 ± 0.026 | 7.13 | +0.771 ± 0.029 | +209.8 ± 29.4 | 0.108 → 0.124 |
+
+The card moves population by three quarters of a log unit on every arm. Work-years
+follow only when population staffs industry **and** a rung is not gated on the
+bank holding every color at once. That is R-IND23, and both halves of it are rules
+the author has to decide, not magnitudes.
+
+**T-122's refutation of "the color conjunction throttles the Growth card"** was
+measured on the overcharging bill and does not transfer: there the ablation left
+the mean alone; here, with staffing on, it takes the card from +0.056 ± 0.062 to
++0.121 ± 0.015.
 
 ---
 

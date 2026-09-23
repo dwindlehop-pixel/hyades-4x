@@ -1408,9 +1408,18 @@ pub fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
 /// Takes the **stock** rather than a Band since T-70, so the rung is derived
 /// here rather than at every call site — one reading, one place it can be taken
 /// on the wrong ladder.
+///
+/// **The bill is what the stock is short of the next rung, not the width of
+/// the rung it rounds to** (T-124, design law #11). The purchase moves the
+/// stock to exactly `infra_rung_price(at + 1)`, so any other bill makes or
+/// destroys mass: a stock founded between rungs — `founding_infra` is a hull's
+/// cost, which lands anywhere — paid the full rung width and was then snapped
+/// up by less, and the difference left the ledger. Measured at 0.0292 kt per
+/// such purchase on the 3-seat unit bed, starting at 250 yr. Identical for a
+/// stock that stands on a rung, which every homeworld does.
 fn infra_step_price(from: Price, cfg: &SimConfig) -> Price {
     let at = infra_rung_of(from, cfg);
-    infra_rung_price(at + 1, cfg) - infra_rung_price(at, cfg)
+    infra_rung_price(at + 1, cfg) - from
 }
 
 /// The whole rung an infrastructure stock stands at.
@@ -1903,6 +1912,11 @@ enum EventKind {
     ColonyDivert { vehicle: Entity },
     /// A picket reaches the world it is to hold and takes station (T-112).
     PicketArrive { vehicle: Entity },
+    /// **The light of a colony-ship launch reaches a watching capital**
+    /// (T-123). Scheduled at `depart + distance(port, capital)` and only for a
+    /// seat whose Doctrine blockades, so a run nobody plays the card in
+    /// raises none.
+    LaunchSeen { observer: u32, center: Entity },
     /// **A picket takes a second look at the ship it is chasing** (R-WAR10,
     /// T-120).
     ///
@@ -2805,6 +2819,26 @@ pub struct Simulation {
     /// hundreds of entries on a run that plays the card — §4's locality rule
     /// forbids that on a decision path.
     picket_count: Vec<u32>,
+    /// **Who is standing at each rival port** (T-123, R-WAR16) —
+    /// `(center, seat) → hull`.
+    ///
+    /// Kept apart from [`Self::picket`] because the two answer different
+    /// questions: a picket holds *unclaimed* ground against a colony ship's
+    /// arrival, a blockader stands on a rival's *owned* center against its
+    /// departure. Keyed center-first so the launch path finds every hull
+    /// standing at one port with a range read.
+    blockade: BTreeMap<(u64, u32), Entity>,
+    /// **Blockaders in flight**, `(seat, center)`, so a port already being
+    /// covered is not chosen again. Cleared on `PicketArrive`, the only exit.
+    blockade_bound: BTreeSet<(u32, u64)>,
+    /// **The rival launches each seat has seen**, per port (T-123):
+    /// `center → count`, indexed by observing seat.
+    ///
+    /// Written by [`EventKind::LaunchSeen`], which lands at the observer's
+    /// capital `distance / c` after the drive lit. This is the store a
+    /// blockader's placement reads, and it holds nothing light has not
+    /// delivered (design law #15).
+    launches_seen: Vec<BTreeMap<u64, u32>>,
     /// **Colonizers currently flying at each world**, target planet id → hulls.
     ///
     /// Maintained at launch and cleared on arrival or diversion. It exists so a
@@ -2987,6 +3021,9 @@ impl Simulation {
             picket: BTreeMap::new(),
             picket_inbound: BTreeMap::new(),
             picket_count: vec![0; n],
+            blockade: BTreeMap::new(),
+            blockade_bound: BTreeSet::new(),
+            launches_seen: vec![BTreeMap::new(); n],
             inbound_colonizers: BTreeMap::new(),
             outpost_stock: BTreeMap::new(),
             exchange: Exchange::default(),
@@ -3415,6 +3452,9 @@ impl Simulation {
             EventKind::Engagement { site } => self.sys_engagement(site),
             EventKind::ColonyDivert { vehicle } => self.sys_colony_divert(vehicle),
             EventKind::PicketArrive { vehicle } => self.sys_picket_arrive(vehicle),
+            EventKind::LaunchSeen { observer, center } => {
+                *self.launches_seen[observer as usize].entry(center.0).or_insert(0) += 1;
+            }
             EventKind::PicketReassess { picket, quarry } => self.sys_picket_reassess(picket, quarry),
             EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
@@ -3851,6 +3891,12 @@ impl Simulation {
         self.config.engagements_enabled && self.doctrine_of(seat).picket_after_founding
     }
 
+    /// Does this seat blockade rival ports (T-123)? Gated by the same master
+    /// switch as every other Warfare posture.
+    fn blockade_doctrine(&self, seat: usize) -> bool {
+        self.config.engagements_enabled && self.doctrine_of(seat).picket_blockades
+    }
+
     /// Is an unclaimed world held against `seat` right now?
     ///
     /// Ground truth, and it is read **only** at the moment of arrival — where
@@ -4253,6 +4299,22 @@ impl Simulation {
         let Some(here) = self.position_at(world, self.clock) else { return };
         let pid = *self.world.planet_id.get(world).unwrap();
         self.park(vehicle, here);
+        // A blockader takes station on a rival's port rather than on open
+        // ground (T-123), and is counted against the same reserve.
+        if self.blockade_bound.remove(&(owner.0, world.0)) {
+            let rival_port = self.world.owner.get(world).is_some_and(|o| o.0 != owner.0);
+            if rival_port && !self.blockade.contains_key(&(world.0, owner.0)) {
+                self.blockade.insert((world.0, owner.0), vehicle);
+                self.picket_count[owner.0 as usize] += 1;
+                self.log.push(
+                    self.clock,
+                    LogEvent::VehicleParked { player: owner.0, vehicle, role: Role::Picket, at: pid },
+                );
+            } else {
+                self.release_to_reserve(vehicle, Role::Picket, pid);
+            }
+            return;
+        }
         // First to arrive holds it; a second picket adds no denial.
         if self.picket.contains_key(&world.0) || self.world.owner.contains(world) {
             self.release_to_reserve(vehicle, Role::Picket, pid);
@@ -4411,6 +4473,83 @@ impl Simulation {
         }
     }
 
+    // --- The port strike (T-123, R-WAR16) ------------------------------------
+
+    /// **Send the light of a colony-ship launch to every capital that is
+    /// watching for it.**
+    ///
+    /// Only seats whose Doctrine blockades are watching, so a run in which
+    /// nobody plays the card schedules nothing here. `depart` is when the drive
+    /// lights; the capital sees it `distance / c` later.
+    fn report_launch(&mut self, launcher: usize, center: Entity, depart_in: f64) {
+        let port = *self.world.position.get(center).unwrap();
+        for q in 0..self.player_entity.len() {
+            if q == launcher || !self.blockade_doctrine(q) {
+                continue;
+            }
+            let home = self.world.player_info.get(self.player_entity[q]).unwrap().home;
+            let capital = *self.world.position.get(home).unwrap();
+            // c = 1, distance in light-years, time in years (`math`).
+            self.schedule(depart_in + port.distance(capital), EventKind::LaunchSeen { observer: q as u32, center });
+        }
+    }
+
+    /// **The rival port this seat has seen launch the most that it does not
+    /// already cover** — standing or in flight. Ties go to the lower entity id.
+    ///
+    /// `O(ports seen)`, which is bounded by the rivals' center count and read
+    /// once per picket built, not per event (§4).
+    fn blockade_target(&self, p: usize) -> Option<Entity> {
+        let seat = p as u32;
+        let mut best: Option<(u64, u32)> = None;
+        for (&c, &n) in &self.launches_seen[p] {
+            if self.blockade.contains_key(&(c, seat)) || self.blockade_bound.contains(&(seat, c)) {
+                continue;
+            }
+            if best.is_none_or(|(_, bn)| n > bn) {
+                best = Some((c, n));
+            }
+        }
+        best.map(|(c, _)| Entity(c))
+    }
+
+    /// **A hostile blockader standing at `center`**, as `(seat, hull)` — the
+    /// lowest seat first, for determinism.
+    fn hostile_blockader(&self, center: Entity, launcher: u32) -> Option<(u32, Entity)> {
+        if self.blockade.is_empty() {
+            return None;
+        }
+        self.blockade
+            .range((center.0, 0)..=(center.0, u32::MAX))
+            .find(|(&(_, s), _)| s != launcher)
+            .map(|(&(_, s), &h)| (s, h))
+    }
+
+    /// **Strike a colony ship at the port it is leaving.** Returns whether it
+    /// was destroyed.
+    ///
+    /// Range zero, so there is nothing lagged to decide on: the blockader is
+    /// standing where the hull is. It takes the defender's side because it is
+    /// the one on station — the same convention as a picket's defense (R-WAR5),
+    /// and the one that decides the outcome.
+    ///
+    /// **The destroyed ship's destination stays marked** in its owner's
+    /// `targeted` set, because that set is monotone by construction (T-101's
+    /// prune depends on it) — so a strike also withdraws one world from the
+    /// launcher's candidate list. A colonizer that dies at a picket already
+    /// did the same.
+    fn strike_at_port(&mut self, launcher: usize, center: Entity, ship: Entity) -> bool {
+        let Some((seat, hull)) = self.hostile_blockader(center, launcher as u32) else { return false };
+        let Some((def_lost, att_lost)) = self.fight_at(center, seat, &[hull], launcher, &[ship]) else {
+            return false;
+        };
+        if def_lost > 0 {
+            self.blockade.remove(&(center.0, seat));
+            self.picket_count[seat as usize] = self.picket_count[seat as usize].saturating_sub(1);
+        }
+        att_lost > 0
+    }
+
     /// **A colonizer that flew in anyway fights the picket holding the world.**
     ///
     /// Same resolver as everything else (T-111). The picket takes the laser side
@@ -4418,8 +4557,6 @@ impl Simulation {
     /// which is R-WAR5's placeholder convention and decides outcomes.
     fn resolve_picket_fight(&mut self, world: Entity, arriving_seat: usize) {
         let Some(&(holder, picket_ship, _)) = self.picket.get(&world.0) else { return };
-        let Some(pos) = self.position_at(world, self.clock) else { return };
-        let pid = *self.world.planet_id.get(world).unwrap();
         let attackers: Vec<Entity> = self
             .inbound_colonizers
             .get(&world.0)
@@ -4430,15 +4567,43 @@ impl Simulation {
                     .collect()
             })
             .unwrap_or_default();
-        let defenders = vec![picket_ship];
+        let defenders = [picket_ship];
         if attackers.is_empty() {
             return;
         }
+        let Some((def_lost, att_lost)) = self.fight_at(world, holder, &defenders, arriving_seat, &attackers) else {
+            return;
+        };
+        if def_lost > 0 {
+            self.vacate_picket(world);
+        }
+        for &dead in &attackers[..att_lost] {
+            self.clear_inbound(world, dead);
+        }
+    }
 
+    /// **One fight between hulls standing at `site`**, resolved, wrecked and
+    /// logged — the part a picket's defense and a port strike share (T-123).
+    ///
+    /// The defenders take the laser side and the attackers the missile side,
+    /// which is R-WAR5's placeholder convention and decides outcomes. The
+    /// destroyed hulls, their crews and their cargo become slag at the site
+    /// (design law #11). Returns `(defenders lost, attackers lost)`; the caller
+    /// owns whatever index the dead were standing in.
+    fn fight_at(
+        &mut self,
+        site: Entity,
+        defender_seat: u32,
+        defenders: &[Entity],
+        attacker_seat: usize,
+        attackers: &[Entity],
+    ) -> Option<(usize, usize)> {
+        let pos = self.position_at(site, self.clock)?;
+        let pid = *self.world.planet_id.get(site).unwrap();
         let fleets = [FleetTrajectory { origin: pos, velocity: Vec3::ZERO }; 2];
-        let mut rng = self.rng.fork(self.seq ^ world.0.wrapping_mul(0x9E37_79B9));
-        let def_ships = self.combatants(&defenders, 0, &mut rng);
-        let att_ships = self.combatants(&attackers, 1, &mut rng);
+        let mut rng = self.rng.fork(self.seq ^ site.0.wrapping_mul(0x9E37_79B9));
+        let def_ships = self.combatants(defenders, 0, &mut rng);
+        let att_ships = self.combatants(attackers, 1, &mut rng);
         let committed = crate::belief::resolve_engagement_choice(
             att_ships[0].max_accel(&self.config),
             def_ships[0].max_accel(&self.config),
@@ -4460,22 +4625,18 @@ impl Simulation {
 
         let mut slag = Kilotons::ZERO;
         if def_lost > 0 {
-            self.vacate_picket(world);
             slag += self.destroy_free_hulls(&defenders[..def_lost]);
         }
-        for &dead in &attackers[..att_lost] {
-            self.clear_inbound(world, dead);
-        }
         slag += self.destroy_free_hulls(&attackers[..att_lost]);
-        let total = *self.world.slag.get(world).unwrap_or(&Kilotons::ZERO) + slag;
-        self.world.slag.insert(world, total);
+        let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + slag;
+        self.world.slag.insert(site, total);
 
         self.log.push(
             self.clock,
             LogEvent::EngagementResolved {
                 site: pid,
-                attacker: arriving_seat as u32,
-                defender: holder,
+                attacker: attacker_seat as u32,
+                defender: defender_seat,
                 attacker_ships: attackers.len() as u32,
                 defender_ships: defenders.len() as u32,
                 losses_attacker: att_lost as u32,
@@ -4484,6 +4645,7 @@ impl Simulation {
                 slag: slag.kilotons(),
             },
         );
+        Some((def_lost, att_lost))
     }
 
     /// Destroy hulls that are not in a crew index (pickets and colonizers).
@@ -6104,7 +6266,15 @@ impl Simulation {
                         }
                     }
                     (r, Some(t)) => {
-                        let te = self.planet_entity[t.0 as usize];
+                        let mut te = self.planet_entity[t.0 as usize];
+                        // **A blockading picket goes to a rival port instead**
+                        // (T-123), when this empire has seen one launch.
+                        if r == Role::Picket && self.blockade_doctrine(p) {
+                            if let Some(port) = self.blockade_target(p) {
+                                te = port;
+                                self.blockade_bound.insert((p as u32, port.0));
+                            }
+                        }
                         // A crew, not an operator (T-57). Reserved hulls first —
                         // they are already paid for — then newly built ones.
                         let mut reused = reused_miners.into_iter();
@@ -6927,6 +7097,27 @@ impl Simulation {
         // so this also stops the leg pretending every hull has the same thrust.
         let accel = self.laden_accel(e, self.config.civilian_accel_g);
         self.world.home_center.insert(e, center);
+        let target_pid = *self.world.planet_id.get(target).unwrap();
+        let spawned = LogEvent::VehicleSpawned {
+            player: p as u32,
+            vehicle: e,
+            role,
+            hull,
+            from,
+            to: target_pid,
+            settlers: settlers.kilotons(),
+            endowment: endowment.basic_total().kilotons(),
+        };
+        // **A blockader at the port meets it here** (T-123) — before the leg
+        // is scheduled, so a ship that dies at the yard has no arrival left
+        // to fire. Its launch is still seen: the light left before the fight.
+        if role == Role::Colonizer {
+            self.report_launch(p, center, launch_delay);
+            if self.strike_at_port(p, center, e) {
+                self.log.push(self.clock, spawned);
+                return;
+            }
+        }
         let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         let ev = match role {
             Role::Colonizer => EventKind::ColonyArrive { vehicle: e },
@@ -6952,20 +7143,7 @@ impl Simulation {
             self.offer_interception(p, center, e, self.clock + launch_delay);
         }
         self.schedule_at(arrive, ev);
-        let target_pid = *self.world.planet_id.get(target).unwrap();
-        self.log.push(
-            self.clock,
-            LogEvent::VehicleSpawned {
-                player: p as u32,
-                vehicle: e,
-                role,
-                hull,
-                from,
-                to: target_pid,
-                settlers: settlers.kilotons(),
-                endowment: endowment.basic_total().kilotons(),
-            },
-        );
+        self.log.push(self.clock, spawned);
     }
 
     fn spawn_freighter(
@@ -7008,7 +7186,7 @@ impl Simulation {
     /// (T-116).
     ///
     /// It used to be `role_hull_type(Role::Scout)`, hardcoded — so
-    /// `apply_build_with` debited a centre for one hull and this spawned a
+    /// `apply_build_with` debited a center for one hull and this spawned a
     /// different one, discarding what was paid for. Invisible until now only
     /// because every Limited hull shares a price and a mass (§8.9.7), so the
     /// substitution was free in both directions; it is still the yard's output
@@ -10095,6 +10273,74 @@ mod tests {
         );
     }
 
+    /// **A rung bought from between rungs erects exactly what it bills**
+    /// (T-124, design law #11).
+    ///
+    /// `founding_infra` is a hull's cost, so a colony's stock starts wherever
+    /// that lands on the ladder. The purchase sets the stock to the next rung;
+    /// the bill used to be the width of the rung the stock *rounds* to, so a
+    /// stock above its rung lost the difference and one below it gained it.
+    /// Found by the blockade's conservation test at 250 yr, on a run with no
+    /// card played. Both directions are asserted.
+    #[test]
+    fn an_off_rung_upgrade_erects_what_it_bills() {
+        let cfg = test_cfg(5);
+        for offset in [0.1113, -0.3] {
+            let mut sim = Simulation::with_baseline(test_galaxy(2, 5), cfg);
+            let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+            let home_pos = *sim.world.position.get(home).unwrap();
+            let rung = Band::new(1.0 + offset);
+            let stock = Price::at_band_from(rung, cost_anchor(&sim.config));
+            sim.world.factors.get_mut(home).unwrap().infra = stock;
+            let bank = sim.world.stockpile.get_mut(home).unwrap();
+            bank.cyan += 50.0;
+            bank.magenta += 50.0;
+            bank.yellow += 50.0;
+            let before = sim.mass_ledger();
+            let paid = sim.apply_build_with(0, home, home_pos, BuildOrder::UpgradeInfrastructure, &[]);
+            assert!(paid.is_some(), "offset {offset}: the upgrade must land for this to say anything");
+            let after = sim.mass_ledger();
+            let drift = after.total() - before.total();
+            assert!(drift.abs() < 1e-9 * before.total(), "offset {offset}: the upgrade moved {drift:+e} kt");
+        }
+    }
+
+    /// **Mass is conserved through the port strike, over a whole run**
+    /// (T-123). The constructed test above pins one strike; this one lets the
+    /// blockade find its own ports and asserts it struck something, so the
+    /// ledger is checked on the path the card actually walks.
+    #[test]
+    fn mass_is_conserved_through_the_blockade() {
+        let mut cfg = test_cfg(5);
+        cfg.horizon_years = 300.0;
+        cfg.biosphere_regen_rate = 0.0;
+        cfg.engagements_enabled = true;
+        let autopilots: Vec<Box<dyn Autopilot>> = (0..3)
+            .map(|i| {
+                let mut d = Doctrine::default();
+                if i == 0 {
+                    crate::cards::apply_doctrine_write(&mut d, crate::cards::DoctrineWrite::ArmedFrontier);
+                }
+                Box::new(BaselineAutopilot::new(d)) as Box<dyn Autopilot>
+            })
+            .collect();
+        let mut sim = Simulation::new(test_galaxy(3, 5), cfg, autopilots);
+        sim.set_log_filter(LogFilter::none().with(crate::log::LogCategory::Combat));
+        let before = sim.mass_ledger();
+        sim.run();
+        let after = sim.mass_ledger();
+        let strikes = sim
+            .log()
+            .iter()
+            .filter(|r| matches!(r.event, LogEvent::EngagementResolved { defender: 0, losses_attacker: 1.., .. }))
+            .count();
+        // Non-vacuity (`CLAUDE.md` §2's trim guard): a blockade that never
+        // struck leaves this passing on a run that proved nothing.
+        assert!(strikes > 0, "no blockader ever struck a colony ship");
+        let drift = (after.total() - before.total()).abs() / before.total();
+        assert!(drift < 1e-9, "mass is not conserved through {strikes} strikes: {:#?}", before.delta(&after));
+    }
+
     /// **A hull is made of specific minerals and gives them back** (R-IND21,
     /// T-119).
     ///
@@ -10158,7 +10404,7 @@ mod tests {
     ///
     /// That is the whole deception channel, and it exists because the inference
     /// is real: an engine that told the picket where the ship was going could
-    /// not be feinted, whatever else it modelled.
+    /// not be feinted, whatever else it modeled.
     #[test]
     fn a_picket_backs_the_near_world_on_a_bearing_and_can_be_feinted() {
         let (sim, picket, decoy, _) = feint_fixture(false);
@@ -10475,6 +10721,76 @@ mod tests {
         assert!(m.depart > sim.clock, "it cannot leave before the light gets there: {} vs {}", m.depart, sim.clock);
         let colony_arrival = sim.world.motion.get(sim.inbound_colonizers[&contested.0][0]).unwrap().arrive;
         assert!(m.arrive < colony_arrival, "and it only goes if it wins: {} vs {colony_arrival}", m.arrive);
+    }
+
+    /// **A blockader at a rival's port destroys the colony ship leaving it,
+    /// and the people and cargo aboard become slag** (T-123, R-WAR16).
+    ///
+    /// Constructed rather than waited for, like the picket tests beside it: the
+    /// assertion is about the strike and the ledger, and how often the real
+    /// field offers a blockade is `examples/card_probe`'s question.
+    #[test]
+    fn a_blockader_strikes_the_colony_ship_leaving_its_port() {
+        let mut cfg = test_cfg(909);
+        cfg.horizon_years = 10.0;
+        cfg.engagements_enabled = true;
+        cfg.biosphere_regen_rate = 0.0;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
+        sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap().picket_blockades = true;
+        assert!(!Doctrine::default().picket_blockades, "the write must ship unplayed");
+
+        let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let target = *sim
+            .planet_entity
+            .iter()
+            .find(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .expect("the bed needs an unclaimed world");
+        let blockader = sim.world.spawn();
+        sim.world.owner.insert(blockader, PlayerId(0));
+        sim.world.role.insert(blockader, Role::Picket);
+        sim.world.hull_type.insert(blockader, HullType::LimitedContactVehicle);
+        sim.blockade.insert((home1.0, 0), blockader);
+        sim.picket_count[0] += 1;
+
+        let pop_before = *sim.world.population.get(home1).unwrap();
+        let before = sim.mass_ledger();
+        let ship = Entity(sim.world.next);
+        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, target, 0.0);
+        let after = sim.mass_ledger();
+
+        assert!(*sim.world.population.get(home1).unwrap() < pop_before, "settlers must have boarded");
+        assert_eq!(sim.world.role.get(ship).copied(), Some(Role::Scrapped), "the colony ship dies at the yard");
+        assert!(!sim.inbound_colonizers.contains_key(&target.0), "and never flies");
+        assert_eq!(sim.blockade.get(&(home1.0, 0)), Some(&blockader), "the blockader holds (R-WAR5's defender)");
+        assert!(sim.world.slag.get(home1).is_some_and(|s| s.kilotons() > 0.0), "the wreck is at the port");
+        // An unpaid hull is the one thing created here; everything it carried
+        // was debited from the port and has to reappear as slag.
+        let hull = hull_dry_mass(HullType::MediumSystems, &sim.config).kilotons();
+        let drift = after.total() - before.total() - hull;
+        assert!(drift.abs() < 1e-9 * before.total(), "mass must be conserved through the strike: {drift:+e}");
+
+        // **Nothing is scheduled to arrive**: the run carries on with no
+        // `ColonyArrive` for a scrapped hull. And the strike's launch was
+        // still *seen* — by seat 0 only, and not before the light could reach
+        // its capital.
+        let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let lag = sim.world.position.get(home1).unwrap().distance(*sim.world.position.get(home0).unwrap());
+        sim.config.horizon_years = lag + 1.0;
+        while sim.step() {
+            if sim.launches_seen[0].contains_key(&home1.0) {
+                break;
+            }
+        }
+        assert!(sim.clock >= lag - 1e-9, "seen at {} before its light arrived at {lag}", sim.clock);
+        assert!(sim.launches_seen[0].contains_key(&home1.0), "the launch must be seen within {lag} yr");
+        assert!(sim.launches_seen[1].is_empty(), "a seat that does not blockade watches nothing");
+
+        // Placement reads that store: the port seen launching is the target,
+        // unless this seat already stands there or has a hull on the way.
+        sim.blockade.clear();
+        assert_eq!(sim.blockade_target(0), Some(home1), "the port it has seen launch");
+        sim.blockade_bound.insert((0, home1.0));
+        assert_eq!(sim.blockade_target(0), None, "not a port it is already sending a hull to");
     }
 
     /// **A picket holds ground and a rival colonizer turns back from it**
@@ -11810,6 +12126,11 @@ mod tests {
         // now ride.
         sim.apply_orders(0, &[Order { seat: PlayerId(0), card: Some(cards::CardId(15)), target: Target::None }]);
         let armed = *sim.world.doctrine.get(sim.player_entity[0]).unwrap();
+        // The blockade is the card's reach into `W` (T-123), and the default
+        // must not blockade — the other half of the lock.
+        assert!(armed.picket_blockades && armed.picket_claims_target, "the card must write the blockade");
+        assert!(armed.picket_reserve >= cards::ARMED_FRONTIER_BLOCKADERS, "and supply it");
+        assert!(!Doctrine::default().picket_blockades && Doctrine::default().picket_reserve == 0);
         let st = crate::autopilot::Standing::of(&armed);
         assert_eq!(st.design_for(Role::Scout).0, HullType::LimitedContactVehicle);
         assert!(st.colonizer_ladder().contains(&HullType::GeneralContactVehicle));

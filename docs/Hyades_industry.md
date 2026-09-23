@@ -525,7 +525,7 @@ autopilot prefers it.
 | symbol | name | unit | where it comes from |
 |---|---|---|---|
 | `I` | the center's infrastructure stock | kt | `Factors::infra` |
-| `ΔI` | the next rung's step | kt | `infra_step_price`, geometric in `I` (§6.19c) |
+| `ΔI` | the next rung's step — **what the stock is short of the next whole rung** (T-124), which is the rung's width only for a stock standing on a rung | kt | `infra_step_price`, geometric in `I` (§6.19c) |
 | `b_c` | the rung's bill in color `c` | kt | `ProductionContext::infra_bill`, a **conjunction** over C/M/Y |
 | `P` | the center's population | kt | `World::population` (`src/sim.rs:1429`) — **not read by any production path today** |
 | `Y(I, P)` | the center's output at that stock and that population | kt/yr | §4.3 extraction plus §3.2 fabrication |
@@ -564,12 +564,16 @@ develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
 >   homeworld at `t = 0` is exactly staffed and nothing moves at the reference
 >   state; `a_homeworld_starts_exactly_staffed_and_losing_people_unstaffs_it`
 >   pins it. **`u`'s shape (linear, clamped) stays open under R-IND22.**
-> - **Why off:** measured at legal play, it does not change the first Growth
->   card's effect on work-years (+0.133 ± 0.032 without, +0.126 ± 0.028 with),
->   while it moves every baseline — stock-weighted `u` averages 0.63–0.68 on the
->   bed. It **does** double that card's effect on colonies, and it is the
->   prerequisite a population strike needs (warfare §8.15, R-WAR16). Appendix
->   §D.1.
+> - **Why off:** it moves every baseline — stock-weighted `u` averages
+>   0.63–0.68 on the bed — and on its own it does not give the first Growth card
+>   a path to work-years. ~~T-122's reading, "+0.133 ± 0.032 without, +0.126 ±
+>   0.028 with"~~, **is retracted (T-124)**: both figures were carried by a rung
+>   bill that destroyed mass (appendix §D.3). On the conserving engine the card
+>   reads **−0.014 ± 0.023** unstaffed and **+0.056 ± 0.062** staffed; staffed
+>   **with the color conjunction ablated** it reads **+0.121 ± 0.015 (t 8.2)**.
+>   So population reaches work-years only when both this switch and the
+>   per-color bill let it — **`OPEN` (R-IND23)**, because both are ratified or
+>   default-off rules rather than magnitudes.
 > - **§1.8's profitability test (T-108) is still unwritten.** With the switch
 >   on the autopilot deepens without regard to staffing, and at 600 yr 70%
 >   of standing stock is idle.
@@ -2225,7 +2229,7 @@ work-years, `∫ Σ_p infra_p dt`.
 
 | route | what it bills | works it adds | works per mineral |
 |---|---|---|---|
-| **deepen** | `infra_step_price / eta_works` | `infra_step_price` (the stock moves to the next rung) | `eta_works` |
+| **deepen** | `infra_step_price / eta_works` | `infra_step_price` (the stock moves to the next rung) — **exactly, since T-124**; before it the bill was the rounded rung's width, so a stock founded above its rung paid 0.0292 kt per purchase that was never erected | `eta_works` |
 | **found** | `hull_cost(colonizer)` | `founding_infra = hull_cost` | **1** |
 
 The second row is design law #11 arriving somewhere nobody was looking for it.
@@ -3611,6 +3615,7 @@ artifact in place contaminates every later measurement.
 | ~~R-O85, as originally framed~~ | ~~Infrastructure is priced as if it were the scarce thing.~~ The step above the founding rung costs nine colonizers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
 | **R-IND22** | **The development profitability test's three unknowns** (§1.8, T-108/T-107): the staffing factor `u`'s shape, the population one unit of stock needs `P_req(I)`, and the payback horizon `τ_pay` the policy will accept. The *form* is proposed — `I_worked = I · u(P / P_req(I))` with `u ≤ 1`, so the first landing is an ablation against a known baseline — and nothing about its size is measured. Distinct from §4.3's `β`: crowding is sublinearity in workers on a fixed deposit, this is whether there are workers at all. | §1.8 |
+| **R-IND23** | **Does population reach work-years, and through which gate?** On the conserving engine (T-124) the first Growth card moves population **+0.745 ± 0.071** in log and work-years **not at all** (−0.014 ± 0.023). Two rules stand between them, and they are in series: population staffs nothing unless `population_staffs_industry` is on (T-107, default off), and a rung is bought only when the bank holds every color of the bill (T-73). Either alone leaves the card small or noisy (+0.056 ± 0.062 staffed, +0.039 ± 0.013 with the conjunction ablated); both lifted give **+0.121 ± 0.015 (t 8.2, 8/8)**. Appendix §D.3 | the author's decision on staffing's default and on whether the per-color conjunction binds a Growth-driven rung; each is a ratified or default-off rule, not a magnitude | §1.8 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding center's population and the rest of the hold is loaded from its bank; a contested colonizer unloads both halves back home. | §1.7 |
 | **R-IND12** | How much a colonizer carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |

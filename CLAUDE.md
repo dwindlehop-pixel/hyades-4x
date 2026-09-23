@@ -1168,7 +1168,8 @@ its price out of the 3 kt bootstrap bank — a state no game reaches — and tha
 price was **the largest effect either first card had**: ~550 colonies on one
 seed, reproduced exactly by an inert card of the same price. At the barrier the
 same price is invisible, and the Growth card, which had read as flat, clears
-**t 4.18** with no engine change.
+**t 4.18** with no engine change. *(Retracted at T-124: that t 4.18 was carried
+by a rung bill that destroyed mass. See the next section.)*
 
 - **"Earliest legal play" is a protocol fact, not an affordability fact.** I
   had checked `empire_can_afford` and a test even pinned "round 0 is legal" —
@@ -1191,6 +1192,37 @@ picket the true destination produced 18 intercepts and still zero fights — so
 information was never the constraint, and the time that would have gone into a
 better guess went nowhere. When a hypothesis is "the agent lacks information",
 give it the answer and see whether anything moves.
+
+### A defect the baseline cannot see can be the whole of a treatment effect
+
+**T-124 is the worked example.** A conservation test written for a new Warfare
+mechanic failed on a run **with no card played**: `infra_step_price` billed the
+width of the rung a stock rounds to, the purchase snapped the stock to the next
+rung, and a colony founded between rungs paid 0.0292 kt per purchase that was
+never built. On the default bed, fixing it moves colony-years **+0.0021 ±
+0.0028**, inside noise. It also moved the first Growth card from **+0.133 ±
+0.032 (t 4.18, 8/8 seeds)** to **−0.014 ± 0.023**, a result T-122 had recorded
+as the card passing with no engine change needed.
+
+- **A card's value is a difference, and a defect can sit entirely inside it.**
+  "The baseline barely moved" says nothing about a paired difference: a 3% price
+  error on off-rung colonies was invisible in the aggregate and was the whole of
+  a treatment effect. Re-measure every card result after a conservation fix.
+- **Zero drift then equal steps means a transfer, not rounding.** Re-running to
+  increasing horizons gave 0 through 240 yr, then −0.0292 twice over. Equal
+  quanta name a discrete event. Diffing the ledger per event then named the
+  line in one run.
+- **Ablate a two-sided error one side at a time.** The old bill both overcharged
+  stocks above their rung and topped up stocks below it. Keeping each half alone
+  reproduced the old and new engines **bit-identically**. So below-rung
+  upgrades never happen in play, and the overcharge alone carried the card.
+
+**And price the meeting site before building the fight (T-123).** A colony ship
+picks one of thousands of destinations, and T-122 showed a picket cannot meet it
+there even when handed the answer. Its origin is one of ~214 ports, and 25.5% of
+launches leave from a seat's busiest eight. One census of launch origins chose
+the mechanic's site before any engine code was written. **When an interaction
+never happens, look for the place the other side cannot avoid being.**
 
 ### Never leave an identified symptom without a proven mechanism
 

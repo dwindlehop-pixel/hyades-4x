@@ -1349,7 +1349,7 @@ is not *touching* it.
 §8.6 bounded a 1:1 denial as `ΔW_0 = −k(1 − w_0A)` and concluded the card loses
 at any table wider than two seats. That bound assumed the card **denies**.
 Measured, the card's neighbors *gain* 0.46 colonies per colony it costs itself —
-so the realised form is `ΔW_0 = −k(1 + t)` with `t = 0.46`, and there is no
+so the realized form is `ΔW_0 = −k(1 + t)` with `t = 0.46`, and there is no
 denial term in it at all. The card is not a bad trade; it is **not a trade**.
 
 #### What this says about where a Warfare card's price can go
@@ -1926,13 +1926,76 @@ gate it removes, and they are different games:
   through the rival's slowed expansion.
 
 **What would settle it:** the author's choice of mechanic, then the same
-asymmetric bed (appendix §D.1) with the card carrying it.
+asymmetric bed (appendix §D.1) with the card carrying it. **Settled at T-123:
+armed hulls strike colony ships, at the port (§8.16).**
 
 **Decided — two ablation knobs, never design options.**
 `SimConfig::ablate_oracle_intercept` hands a picket the true destination (a
 design-law-#15 violation on purpose); `SimConfig::ablate_color_conjunction`
 bills a rung in the paying bank's own mix. Each is pinned by a test asserting
 it changes exactly the one thing it names.
+
+### 8.16 The port strike — armed hulls meet colony ships where they launch (T-123, R-WAR16 resolved)
+
+*The measurements are appendix §D.2. This section carries what they decide.*
+
+**Decided — the meeting site is the rival's port, not the colony ship's
+destination.** A colony ship picks one of thousands of worlds, and §8.15 showed a
+picket cannot meet it there even when handed the answer. Its *origin* is one of
+the rival's production centers, and a hull standing there meets it at range
+zero: nothing to guess, no light-lag to lose to, and no window to be too slow
+for. `examples/launch_census` priced the reach before anything was built — a
+seat launches from a mean of **213.6** origins after the round-0 barrier, and
+its **eight busiest carry 25.5%** in hindsight (appendix §D.2), which bounds
+what eight well-placed hulls per rival could meet.
+
+**Decided — the mechanism** (`Doctrine::picket_blockades`, `src/sim.rs`):
+
+| step | what happens | reads |
+|---|---|---|
+| see | every colony-ship launch is seen at a blockading seat's capital `distance / c` after the drive lights (`EventKind::LaunchSeen`) | light only — design law #15 |
+| place | a picket built under the write goes to the rival port this seat has **seen launch the most**, excluding ports it already holds or has a hull flying to (`blockade_target`) | `launches_seen`, its own store |
+| hold | on arrival at a port the rival still owns, the hull stands there and counts against `picket_reserve` | — |
+| strike | a colony ship launched from a port with a hostile hull standing at it fights that hull at the yard, before its leg is scheduled (`strike_at_port`) | range zero |
+
+The fight is the picket's own (`fight_at`, shared with `resolve_picket_fight`):
+the blockader is on station and takes the defender's side, which **R-WAR5's
+convention decides** — the arriver always loses. The hull, its settlers and its
+cargo become slag at the port (design law #11; `mass_is_conserved_through_the_blockade`).
+
+**Decided — `TIER0[15]` carries it.** `DoctrineWrite::ArmedFrontier` now also
+writes `picket_blockades`, `picket_claims_target` (the supply branch that lets a
+center saving for a world build a picket ahead of survey, §8.8) and
+`picket_reserve ≥ ARMED_FRONTIER_BLOCKADERS`. **8 is a placeholder magnitude**:
+played at the round-0 barrier, 8, 16 and 32 score within a tenth of a standard
+error of each other, so the reserve is not what binds (appendix §D.2).
+
+**Measured — the card reaches `W`.** On the asymmetric bed, played at the
+round-0 barrier: **ΔW +24,024 ± 8,509 colony-years (t 2.82, 7/8 seeds)**; rival
+colonies at the horizon **−102.6 ± 25.8 (t −3.98)**; seat 0 kills **306 ± 84**
+colony ships and loses none. **On the twelve-seat table, over 11 independent
+galaxies: `ΔW_i` at 800 yr +28.26 ± 5.37 colonies (t 5.26), `∫ΔW_i dt` +8,817 ±
+1,713 colony-years (t 5.15), positive on 11/11** (appendix §D.2).
+
+**`OPEN` — three things the mechanism does, stated so they are not mistaken
+for tuning:**
+
+- **A struck ship's destination stays marked** in its owner's `targeted` set,
+  because that set is monotone by construction (T-101's candidate-scan prune
+  depends on it). So a strike also withdraws one world from the launcher's
+  candidate list for good. A colonizer that dies at a picket already did the
+  same. Whether a kill should forfeit the target is a design question
+  (**R-WAR17**); the measurement cannot separate the two effects today.
+- **Placement counts every launch ever seen, with no recency.** Launch origins
+  move as colonies become centers, so a cumulative count favors old ports. Written
+  from `t = 0` instead of at the barrier the same writes score **t 4.06** (reserve
+  8) and **t 5.57** (reserve 32), which says the hulls placed early — at the ports
+  that launched first — are worth more than the ones placed late. A recency rule
+  needs a constant, and the engine has no ratified one (**R-WAR18**).
+- **The rival has no response.** Nothing in the engine lets a center decline to
+  launch past a blockader, or send anything to lift one. Mechanism before policy:
+  the channel exists and no policy uses it, so a flat result for a defensive
+  card later must not be read as proof that a blockade cannot be answered.
 
 ---
 
@@ -1958,6 +2021,8 @@ it changes exactly the one thing it names.
 | **R-IND21** | **a hull carries the minerals it was built from** and hands them back in the same proportions — scrap salvage, wreckage, the founding ceiling's overflow. So a hull built from supers or apex drops supers or apex, with no rule beyond the composition itself. `World::hull_minerals`, captured by `Minerals::try_take_total` at the moment the bank pays (T-119) |
 | **R-IND22** | **the founding center pays the floor-rung top-up**, so the absorbing-zero guard (§8.7) is a *transfer* rather than mass appearing from nowhere. A parent too poor to pay leaves its child at whatever it could afford — the guard degrades rather than conjuring. **Design law #11 now holds with no exceptions**, card played or not |
 | **R-WAR13** | **resolved (T-121)** — `DoctrineWrite::ArmedFrontier` is the Warfare write, and `TIER0[15]` carries it alongside the two Design unlocks. §8.2's *third* write, `picket_after_founding`, stays out: §8.10 measured it at −287.8 `W_0`, so it is R-WAR6's question (§8.14) |
+| **T-123** | **a blockader strikes the colony ships its rival launches from a port it stands at**, at range zero, as the defender (R-WAR5). Placement reads only launches whose light has reached the seat's capital. `DoctrineWrite::ArmedFrontier` writes it, with the claim-target supply and a reserve floor of `ARMED_FRONTIER_BLOCKADERS = 8` (placeholder) (§8.16) |
+| **T-123** | **`fight_at` is the one fight between hulls standing at a site** — a picket's defense and a port strike both call it, and it is bit-identical to the picket fight it was extracted from (the as-shipped arm reproduces T-122 per seed) |
 | **T-121** | **the default standing layer is unarmed at every role, and `TIER0[15]` is the only key to the Contact family.** Scout rides `LimitedSystems`, colonization `MediumSystems`/`GeneralSystems`, and the seeded roster carries one design. The card unlocks LCV(Tor) and GCV(Unnamed) and writes `DoctrineWrite::ArmedFrontier`, which moves survey and the colonizer ladder onto them together (§8.14) |
 | **T-121** | **the picket rides `LimitedContactVehicle`**, not `LimitedOffensive`. The Limited tier shares one `cost_fraction`, so §8.6's denial arithmetic runs on an unchanged price; what moves is a nonzero hold and `hull_thrust_to_mass` 2.0 → 1.4. No role mounts an Offensive hull (§8.14) |
 | **T-121** | **a card is a bundle of writes** — `Card::effects: &'static [CardEffect]`, applied in slice order — which is what §8.2's *"one Design write, three Doctrine writes"* describes. Seventeen cards carry a one-element bundle (§8.14) |
@@ -1985,7 +2050,9 @@ it changes exactly the one thing it names.
 
 | **R-WAR11** | **may a Doctrine write impose a cost that scales with its holder's own activity?** A card has two costs: `Card::cost`, a bounded one-off the engine already charges, and the mechanic's own — here, every colony founded afterwards starting 5.5x thinner, forever. The second cannot be priced, because its size depends on how much the player goes on to expand, and a difference objective charges it twice (§8.10). **Not Warfare-specific**, so it belongs in the card contract | a decision on whether a card's total cost must be bounded at play time |
 | **R-IND11** | **`SettlersPerMineral` is worth +394.9 `W_0` unilaterally** on the 4-seed asymmetric bed — more than any card measured so far. `Hyades_industry.md` §1.6 records the policy as *"blocked on R-O74"*, the conjured-settlers violation, and **R-O74 closed at §1.7**. So the block is lifted and the answer may have flipped | a **symmetric** re-measure — this one is competitive, not global, and a default is a global question |
-| **R-WAR16** | **which mechanic gives the first Warfare card a path to `W`.** At legal play the card is inert behind four gates in series (§8.15); weapons-follow-hull, armed hulls striking colony ships, and a population strike each remove different gates and make different games | the author's choice, then the asymmetric bed in appendix §D.1 |
+| ~~**R-WAR16**~~ | ~~which mechanic gives the first Warfare card a path to `W`~~ **Resolved (T-123): armed hulls strike colony ships at the port they launch from** (§8.16). The author chose the mechanic; the census chose the site. `TIER0[15]` carries it; ΔW **+24,024 ± 8,509 (t 2.82)** on the asymmetric bed, appendix §D.2 | — |
+| **R-WAR17** | **does a colony ship struck at its port forfeit its destination?** Today it does, because `targeted` is monotone and T-101's prune depends on that; so a kill costs the launcher a hull, its settlers and a world (§8.16) | a decision; if no, a non-monotone mark and a re-measure of the prune |
+| **R-WAR18** | **blockade placement has no recency.** It counts every launch ever seen, and origins move; written from `t = 0` the card scores t 4.06–5.57 where written at the barrier it scores t 2.82 (§8.16) | a ratified time constant for "recent", then the asymmetric bed |
 | ~~**R-WAR15**~~ | ~~by what path does the armed card reach the simulation?~~ **Resolved (T-122): at legal play it does not.** The effect §8.14 measured was the 0.5 kt price, paid inside the card-free opening; a pure-price control reproduces it and vanishes at the round-0 barrier. The per-write ablation it asked for was run: the colonizer write is bit-identical on 8/8 seeds, the scout write is noise (appendix §D.1). Superseded by R-WAR16 | — |
 | **R-WAR14** | **`Sim::inert_card_plays` counts `NotYetImplemented` only**, so a card writing real state into a component with no live consumer reads as working. It measures which match arm ran, not whether the write reached a decision (§8.13) | a definition of "reached a decision" that a counter can test — the candidate is whether the written component is read on a live path |
 | **R-WAR12** | **the two guess magnitudes** — `intercept_cone_radians` (0.15 rad) and `intercept_reassess_years` (25 yr). Neither is physical: the cone sets how wide a guess may be and therefore what a feint is worth, and the cadence sets how long one stays bought. They are the first magnitudes in this tree whose job is to price a **bluff** rather than a kinetic outcome | a bed on which the yomi channel is readable — not `W_0`, which a bluff does not move directly |

@@ -169,12 +169,25 @@ pub enum DoctrineWrite {
     /// a slant (design law #9 — a card's slant *is* how much it would only be
     /// worth playing if you meant it).
     ///
+    /// **And it blockades** (T-123, R-WAR16): pickets stand at the rival
+    /// ports this empire has seen launch the most and strike the colony ships
+    /// leaving them. That is the fight the armed family exists for — the one
+    /// place a colony ship can be met with nothing to guess — and the card
+    /// reached `W` through no other path (T-122). It carries its own supply:
+    /// a reserve of [`ARMED_FRONTIER_BLOCKADERS`] hulls, and the claim branch
+    /// that lets a center saving for a world build one ahead of survey.
+    ///
     /// **It does not touch `picket_after_founding`.** That write is §8.2's
     /// third half and T-116 measured it at **−287.8 `W_0`**; bundling it here
     /// would make this card strictly worse than passing, which is a design
     /// question (R-WAR6) rather than a magnitude.
     ArmedFrontier,
 }
+
+/// **How many hulls the armed frontier keeps on blockade** (T-123) —
+/// **placeholder magnitude** (R-WAR16). A floor on `picket_reserve`, not a
+/// set, so a later write that asks for more is not undone.
+pub const ARMED_FRONTIER_BLOCKADERS: usize = 8;
 
 /// A card's target. The closed set card §1 requires, and the reason the wire
 /// protocol can be fixed-width (net §0).
@@ -369,6 +382,9 @@ pub fn apply_doctrine_write(d: &mut Doctrine, w: DoctrineWrite) {
         DoctrineWrite::ArmedFrontier => {
             d.scout_hull_offensive = true;
             d.colonizer_general_contact = true;
+            d.picket_blockades = true;
+            d.picket_claims_target = true;
+            d.picket_reserve = d.picket_reserve.max(ARMED_FRONTIER_BLOCKADERS);
         }
     }
 }
