@@ -1037,6 +1037,168 @@ measured on the overcharging bill and does not transfer: there the ablation left
 the mean alone; here, with staffing on, it takes the card from +0.056 ± 0.062 to
 +0.121 ± 0.015.
 
+## D.4 T-125 — weapons as a Design, the author's 1.5–2.0x target, and where each card stands
+
+**Supports:** `Hyades_warfare_tree.md` §8.17 (weapons are a Design; stacking;
+the blockade's supply; R-WAR20), `Hyades_trees_and_card_value.md` §4.2 (the
+target), `Hyades_industry.md` R-IND23 (staffing on), and the T-125 entry in
+`hyades_todo.md`. Asymmetric bed as §D.1 unless marked: 3 seats, 8 independent
+seeds, 800 yr, card at the round-0 barrier, mean ± standard error over seeds.
+Every figure is an estimate.
+
+| symbol | meaning | unit |
+|---|---|---|
+| `ΔlnG` | `ln(G_card / G_pass)`, `G = ∫ infra dt` (Growth's metric) | — |
+| `ΔlnS` | `ln(S_card / S_pass)`, `S = ∫ C_0 / mean_{j≠0} C_j dt` (Warfare's metric, the author's reading) | — |
+| P92 | the 92nd percentile of the per-seat ratio | — |
+
+### The Growth card, staffing on
+
+| multiplier | `ΔlnG` | per-seed P92 (ratio) | Δln pop | staffing `u`, card seat |
+|---|---|---|---|---|
+| ×1.15 (T-124 card) | +0.056 ± 0.062 | — | +0.746 | 0.686 |
+| ×2 | +0.203 ± 0.076 | 0.509 (1.66x) | +3.54 | 0.892 |
+| ×4 | +0.343 ± 0.111 | 0.771 (2.16x) | +4.37 | 0.978 |
+| ×8 | +0.318 ± 0.091 | — | +4.51 | 0.984 |
+
+The effect saturates past ×4 as staffing does. On the twelve-seat bed ×2 read
+**P92 2.19** over 4 galaxies (median 1.18), so the card ships at **×1.6**.
+
+**One pathology, located and not fully explained.** On seed 31337 (12 seats,
+×2) seat 1's work-years fell to **0.039** of its counterfactual: its
+infrastructure stops at 4.03 from year ~400 while the pass arm reaches 209. The
+decision log shows why it builds nothing — **7,800 of its decisions saw an empty
+candidate list with nothing left to survey**, and deepening failed the
+per-color bill — so it idles. Which seats took its worlds is not established.
+It is in the lower tail and does not move P92.
+
+### The Warfare card — every lever, in the order tried
+
+`ΔlnS`, card as shipped at the barrier:
+
+| engine | reserve 8 | 32 | 128 | 512 |
+|---|---|---|---|---|
+| beams from Design, blockade as T-123 | +0.038 ± 0.011 | +0.043 ± 0.013 | +0.044 ± 0.013 | — |
+| + recency and reassessment | +0.036 ± 0.011 | +0.040 ± 0.012 | +0.040 ± 0.012 | — |
+| + recall of launches already seen | +0.041 ± 0.012 | +0.044 ± 0.013 | — | — |
+| + **blockade built first** (`picket_first`) | +0.061 ± 0.013 | +0.092 ± 0.009 | **+0.116 ± 0.015** | +0.118 ± 0.015 |
+| + stacks, allocated by launches per hull | — | — | +0.059 ± 0.007 | — |
+| + stacks, recently active ports covered first | — | — | +0.066 ± 0.009 | — |
+| + stacks, every seen port covered first | — | — | +0.068 ± 0.010 | — |
+| + stacks, and building ahead only to cover a port (**shipped**) | — | — | **+0.094 ± 0.015** | — |
+
+Kills per run rise with the reserve (300 → 408 before `picket_first`, 246 → 678
+after); seat 0 lost no hull in any arm.
+
+**The coverage oracle** (`ablate_strike_fraction`, strikes a fixed share of
+rival launches from the barrier with no hull): **+0.265 ± 0.021 at 25%, +0.567
+± 0.044 at 50%, +2.61 ± 0.20 at 100%**. So the target band needs ~30–45% of
+rival launches struck.
+
+**The census** (`examples/blockade_census`, pooled over the 8 seeds; top-k is
+the share of that century's rival launches from its `k` busiest ports, `k` the
+mean hulls on station — an upper bound, hindsight and lag-free):
+
+| century | rival launches | struck | coverage | on station | in flight | top-k |
+|---|---|---|---|---|---|---|
+| *reserve 8, fallback supply* | | | | | | |
+| 200–300 | 1,563 | 0 | 0.0% | 0.0 | 0.1 | — |
+| 300–400 | 9,569 | 185 | 1.9% | 1.2 | 10.8 | 10.1% |
+| 400–500 | 8,528 | 1,324 | 15.5% | 19.9 | 12.2 | 46.1% |
+| *reserve 128, blockade first* | | | | | | |
+| 200–300 | 1,563 | 109 | 7.0% | 0.2 | 2.1 | — |
+| 300–400 | 9,429 | 1,014 | 10.8% | 3.8 | 14.9 | 17.8% |
+| 400–500 | 8,810 | 2,518 | 28.6% | 36.5 | 43.4 | 66.5% |
+| 500–600 | 5,442 | 1,236 | 22.7% | 69.7 | 48.1 | 88.0% |
+
+The rivals' expansion peaks in 300–400 yr and the blockade's hulls are mostly
+still in flight then. The inference, stated as one: **the binding constraint is
+transit latency** — a light-crossing to see a port and a flight to reach it,
+against an expansion clock that starts 100 years after the card is legal.
+
+### The twelve-seat table (the author's bed)
+
+`examples/card_table`, 11 galaxies, 66 card seats per tree, Growth ×1.6,
+`ARMED_FRONTIER_BLOCKADERS = 128`; P92 interval 90%, bootstrapped over galaxies:
+
+| card | median | **P92 [90%]** | P98 | min | against 1.5–2.0x |
+|---|---|---|---|---|---|
+| Growth | 1.161 | **1.753 [1.583, 1.932]** | 5.654 | 0.182 | **inside** |
+| Warfare | 1.070 | **1.204 [1.164, 1.226]** | 1.235 | 0.972 | **below** (R-WAR20) |
+
+### Consequences of loadouts that are not about either card
+
+- **Rock fights kill nothing.** Every miner is a Systems hull and unarmed;
+  `engage_neutrals` makes contact but neither side can shoot. T-122's
+  "hostility costs its player −1.79 work-years" was R-WAR5's convention arming
+  the arriver with missiles it never built, and does not describe this engine.
+- `slag_conserves_the_mass_of_what_it_destroyed` now draws its kills from a seat
+  carrying the card's writes, and bounds slag below by the lightest hull rather
+  than equating it to miners, because what dies is colony ships with settlers
+  and cargo aboard.
+
+## D.5 T-126 — release-binary throughput on the combat bed: compiler knobs, then the profile
+
+**Supports:** the T-126 entry in `hyades_todo.md` and `CLAUDE.md` §7's
+throughput table. `examples/combat_bench`: the twelve-seat card bed with both
+cards played at the barrier and engagements on, run to 400 yr (200 years past
+the barrier; 1,038 and 1,357 fights on seeds 1 and 7), not to completion. Every
+variant produced **the same event count and fight count** as the base binary,
+so each comparison is of one bit-identical run.
+
+### Compiler knobs — none beats the shipped profile
+
+The shipped `[profile.release]` is already `opt-level = 3`, `lto = true`,
+`codegen-units = 1`, `panic = "abort"`. Seven variants, two seeds × two rounds
+interleaved; `±` is the half-range of the four runs (an estimate of the
+run-to-run spread, not a standard error):
+
+| variant | yr/s | vs base |
+|---|---|---|
+| **base** | **14.61 ± 0.23** | — |
+| `lto = "thin"` | 14.62 ± 0.27 | +0.1% |
+| `lto = false`, 16 codegen units | 14.47 ± 0.06 | −1.0% |
+| `opt-level = 2` | 14.47 ± 0.12 | −1.0% |
+| `-C target-cpu=x86-64-v3` | 14.76 ± 0.10 | +1.0% |
+| `-C target-cpu=native` | 14.76 ± 0.23 | +1.0% |
+| PGO (`llvm-profdata`, trained on seed 3) | 14.60 ± 0.33 | −0.1% |
+
+Every difference is inside the spread. Nothing is checked in: the `target-cpu`
+rows would also make the binary unportable for a gain four runs cannot resolve.
+
+### The profile — one logarithm per planet per survey decision
+
+Callgrind on a 260-yr run: **`log` from libm was ~41% of all instructions, and
+`fill_survey_candidates` most of the rest (~85% together).** The scan walks every
+unvisited planet on each survey decision and read each world's biosphere Band as
+`f.bio_max.in_bands()` — a fresh `ln` — while `Factors::bio_max_band` holds the
+same value, cached and kept in step by `set_bio_max`. Reading the cache:
+
+| binary | seed 1 yr/s | seed 7 yr/s | ns/event |
+|---|---|---|---|
+| base | 14.67, 14.93 | 14.76, 14.63 | 118,286–127,283 |
+| **cached Band** | **30.87, 31.21** | **29.82, 30.10** | **58,013–60,481** |
+
+**2.07x, bit-identical.** `CLAUDE.md` §4 already names this pattern ("convert at
+the edges — never inside a loop over entities"), and `bio_max_band` was written
+for exactly this reason (R-O70) — at a different call site.
+
+**Then the walk itself.** A second profile put the scan's loop and its `Vec`
+pushes at ~60% of what remained. `visited` only grows, so each seat now keeps its
+unvisited worlds in planet order and prunes them with a stable `retain` on every
+call — T-101's compaction, bit-identical for the same reason:
+
+| binary | seed 1 yr/s | seed 7 yr/s | ns/event |
+|---|---|---|---|
+| cached Band | 31.46, 30.21 | 30.01, 29.34 | 58,180–61,799 |
+| **+ compacted scan** | **37.42, 37.07** | **35.65, 35.45** | **48,989–50,356** |
+
+**Cumulative: 14.61 → 36.40 yr/s (2.49x) on the combat bed**, same events and
+fights on both seeds. What is left in the scan is materializing a `SurveyView`
+per unvisited world for a policy that keeps one of them (`CLAUDE.md` §4, "do not
+materialize a collection you only `min_by` over"); removing it changes the
+`Autopilot::choose_survey_target` interface and is not done here.
+
 ---
 
 ## References

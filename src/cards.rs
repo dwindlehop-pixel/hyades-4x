@@ -177,17 +177,21 @@ pub enum DoctrineWrite {
     /// a reserve of [`ARMED_FRONTIER_BLOCKADERS`] hulls, and the claim branch
     /// that lets a center saving for a world build one ahead of survey.
     ///
-    /// **It does not touch `picket_after_founding`.** That write is §8.2's
-    /// third half and T-116 measured it at **−287.8 `W_0`**; bundling it here
-    /// would make this card strictly worse than passing, which is a design
-    /// question (R-WAR6) rather than a magnitude.
+    /// **And an armed colonizer holds the frontier after it founds** (T-125,
+    /// author's specification): `picket_after_founding`, §8.2's third write. It
+    /// reaches only hulls whose Design mounts weapons — the General Contact
+    /// colonizer — so a Medium Systems colonizer still becomes its colony's
+    /// stock. T-116 measured this write at −287.8 `W_0` on a bed where every
+    /// colonizer kept its hull and nothing could be struck; that measurement
+    /// is superseded rather than answered (warfare §8.17).
     ArmedFrontier,
 }
 
 /// **How many hulls the armed frontier keeps on blockade** (T-123) —
-/// **placeholder magnitude** (R-WAR16). A floor on `picket_reserve`, not a
-/// set, so a later write that asks for more is not undone.
-pub const ARMED_FRONTIER_BLOCKADERS: usize = 8;
+/// **placeholder magnitude** (R-WAR19). A floor on `picket_reserve`, not a
+/// set, so a later write that asks for more is not undone. 128 since T-125:
+/// the card's effect rose from 8 to 128 and stopped (appendix §D.4).
+pub const ARMED_FRONTIER_BLOCKADERS: usize = 128;
 
 /// A card's target. The closed set card §1 requires, and the reason the wire
 /// protocol can be fixed-width (net §0).
@@ -274,7 +278,11 @@ pub const TIER0: [Card; 18] = {
         c(1, Politics, Balanced, 0.8, &[DiscloseScans], true),
         c(2, Politics, LessGuarded, 1.2, &[DiscloseScans], true),
         // Growth — writes the population and ecology levers.
-        c(3, Growth, Inscrutable, 0.5, &[WriteDoctrine(DoctrineWrite::GrowthRate(1.15))], false),
+        // **×1.6 is tuned, not ratified** (T-125): the author's target is
+        // 1.5–2.0x work-years at P92 on the twelve-seat bed, and ×1.6 reads
+        // P92 1.753 [1.583, 1.932] over 11 galaxies (appendix §D.4). ×1.15 was
+        // flat once staffing was on and the rung bill conserved mass.
+        c(3, Growth, Inscrutable, 0.5, &[WriteDoctrine(DoctrineWrite::GrowthRate(1.6))], false),
         c(4, Growth, Balanced, 0.8, &[WriteDoctrine(DoctrineWrite::GrowthRate(1.35))], false),
         c(5, Growth, LessGuarded, 1.2, &[WriteDoctrine(DoctrineWrite::BiosphereRegen(1.5))], false),
         // Expansion — writes the survey levers.
@@ -383,6 +391,8 @@ pub fn apply_doctrine_write(d: &mut Doctrine, w: DoctrineWrite) {
             d.scout_hull_offensive = true;
             d.colonizer_general_contact = true;
             d.picket_blockades = true;
+            d.picket_first = true;
+            d.picket_after_founding = true;
             d.picket_claims_target = true;
             d.picket_reserve = d.picket_reserve.max(ARMED_FRONTIER_BLOCKADERS);
         }

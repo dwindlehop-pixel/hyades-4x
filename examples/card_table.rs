@@ -1,6 +1,7 @@
-//! **A twelve-seat table where every seat plays exactly one card** (T-120) —
-//! the head-to-head `Hyades_warfare_tree.md` §8.4 asks for, costing the first
-//! Warfare card against the first Growth card on one shared bed.
+//! **The standard twelve-seat card bed** (T-120, reshaped at T-125) — every
+//! seat plays exactly one card at earliest legal play, and each card is scored
+//! against the author's design target: **1.5x to 2.0x its own tree's metric at
+//! the 92nd percentile** (`Hyades_trees_and_card_value.md` §4.2).
 //!
 //! Three arms, because a mixed table alone cannot separate the two cards:
 //!
@@ -10,46 +11,33 @@
 //! | `GrowthOnly` | — | Growth card |
 //! | `Both` | Warfare card | Growth card |
 //!
-//! The Growth card's effect is `GrowthOnly − Pass` read on odd seats; the
-//! Warfare card's is `Both − GrowthOnly` read on even seats. Landing both at
+//! The Growth card's effect is `GrowthOnly` against `Pass` on odd seats; the
+//! Warfare card's is `Both` against `GrowthOnly` on even seats. Landing both at
 //! once and differencing against `Pass` would charge each card with the other's
 //! effect on the same galaxy (CLAUDE.md: *ablate them apart before you believe
 //! either*).
 //!
-//! **`g` is fitted by least squares on `ln X(t)` across the window**, not read
-//! from two endpoints — `Hyades_trees_and_card_value.md` §2.4 asks for that
-//! explicitly, because an endpoint pair is dominated by whichever end is
-//! noisier and hides saturation instead of exposing it. One run per arm
-//! carries the whole window, so this is also half the runs of an endpoint
-//! design.
+//! **One sample per card seat, as a ratio card / counterfactual:**
 //!
-//! ```text
-//! ln X(t) ≈ a + g·t   over t in [WINDOW_START, WINDOW_END]
-//! t½ = ln 2 / g
-//! value = 1 − t½(card) / t½(counterfactual)
-//! ```
+//! | tree | metric | symbol |
+//! |---|---|---|
+//! | Growth | work-years, `∫₀ᵀ infra_i dt` (R-TREE3's interim stock) | `G_i` |
+//! | Warfare | the integral of the seat's colonies over the rival mean, `∫₀ᵀ C_i / mean_{j≠i} C_j dt` — the author's reading of "1.5x" for a tree whose `W_i` is a difference | `S_i` |
 //!
-//! `R²` is printed beside every fit. A window in the exponential regime fits a
-//! line; curvature is the signal that the window was chosen wrong, and it is
-//! the reason to print it rather than to assume it.
+//! Six seats per tree per galaxy, eleven galaxies, so 66 samples a tree. **P92
+//! is read over those samples, and its 90% interval is bootstrapped over
+//! galaxies** — the twelve seats of one galaxy share it, so resampling seats
+//! would count them as independent. Median and P98 are printed beside it as
+//! the floor and blow-out reads §4.2 names.
 //!
-//! **Cards are played at earliest legal play** (§2.4, §4.4), which is the
-//! **round-0 barrier at `years_to_first_round`** — 200 yr by default. The
-//! opening is card-free by protocol (`Hyades_netcode.md` §1). Until T-122 this
-//! harness played at `t ≈ 0`, inside that opening, paying each card's price
-//! out of the 3 kt bootstrap bank; the T-120 and T-121 tables were measured
-//! that way and are superseded. The harness still checks `empire_can_afford`
-//! and records when each card actually landed, because an order that cannot
-//! be paid for coerces to a *pass* and a bed cannot otherwise tell that from a
-//! card that did nothing.
+//! **Cards are played at earliest legal play**, the round-0 barrier at
+//! `years_to_first_round` (200 yr). The harness checks `empire_can_afford` and
+//! records when each card actually landed, because an unaffordable order
+//! coerces to a *pass*.
 //!
-//! **Warfare's stock is a difference and can be negative** (R-TREE9), so it has
-//! no logarithm and no doubling time wherever `W_i <= 0`. The harness reports
-//! raw `ΔW_i` in colonies there rather than inventing a value.
-//!
-//! `w_ij` is **uniform over the other eleven seats** — a stated placeholder,
-//! because R-WAR3 leaves the weighting unset. It sums to 1 over `j != i`, which
-//! §2.3.2 requires and an unweighted mean including self does not.
+//! One `SEAT` line is printed per card seat as each galaxy finishes, so a run
+//! killed by an ephemeral container resumes with `--seeds` and the lines
+//! already printed are kept.
 
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
 use hyades_engine::cards::{self, CardId, Order, Target};
@@ -179,61 +167,81 @@ fn run(seed: u64, arm: Arm) -> Trace {
     tr
 }
 
-/// Least-squares slope of `ln x` on `t` over the window, with `R²`. `None`
-/// where fewer than three samples are positive — a stock that is zero, or a
-/// difference that is negative, has no logarithm (R-TREE9).
-fn fit(t: &[f64], x: &[f64]) -> Option<(f64, f64)> {
-    let pts: Vec<(f64, f64)> = t
-        .iter()
-        .zip(x)
-        .filter(|&(&ti, &xi)| (WINDOW_START..=window_end()).contains(&ti) && xi > 0.0)
-        .map(|(&ti, &xi)| (ti, xi.ln()))
-        .collect();
-    if pts.len() < 3 {
-        return None;
-    }
-    let n = pts.len() as f64;
-    let mt = pts.iter().map(|p| p.0).sum::<f64>() / n;
-    let my = pts.iter().map(|p| p.1).sum::<f64>() / n;
-    let sxx = pts.iter().map(|p| (p.0 - mt).powi(2)).sum::<f64>();
-    let sxy = pts.iter().map(|p| (p.0 - mt) * (p.1 - my)).sum::<f64>();
-    let syy = pts.iter().map(|p| (p.1 - my).powi(2)).sum::<f64>();
-    if sxx <= 0.0 || syy <= 0.0 {
-        return None;
-    }
-    Some((sxy / sxx, sxy * sxy / (sxx * syy)))
-}
-
-/// Doubling time from a fitted rate, or `None` where the stock is not growing
-/// and `ln 2 / g` is not a time.
-fn half_life(t: &[f64], x: &[f64]) -> Option<(f64, f64)> {
-    let (g, r2) = fit(t, x)?;
-    (g > 0.0).then(|| (std::f64::consts::LN_2 / g, r2))
-}
-
 /// Trapezoidal `∫ x dt` over the sampled timeline.
 fn integral(t: &[f64], x: &[f64]) -> f64 {
     t.windows(2).zip(x.windows(2)).map(|(tw, xw)| 0.5 * (xw[0] + xw[1]) * (tw[1] - tw[0])).sum()
 }
 
-/// `W_i(t) = C_i − Σ_{j≠i} w_ij C_j` with `w_ij` uniform over the other seats.
-fn contrast(tr: &Trace, i: usize) -> Vec<f64> {
+/// `S_i(t) = C_i / mean_{j≠i} C_j` — this seat's colonies over the rival mean.
+/// A rival field with no colonies yet (the first samples) reads as parity.
+fn share(tr: &Trace, i: usize) -> Vec<f64> {
     (0..tr.t.len())
         .map(|k| {
-            let others: f64 = (0..SEATS).filter(|&j| j != i).map(|j| tr.colonies[j][k]).sum();
-            tr.colonies[i][k] - others / (SEATS - 1) as f64
+            let others: f64 =
+                (0..SEATS).filter(|&j| j != i).map(|j| tr.colonies[j][k]).sum::<f64>() / (SEATS - 1) as f64;
+            if others > 0.0 {
+                tr.colonies[i][k] / others
+            } else {
+                1.0
+            }
         })
         .collect()
 }
 
-fn stat(v: &[f64]) -> (f64, f64, usize) {
-    if v.is_empty() {
-        return (f64::NAN, f64::NAN, 0);
+/// Linear-interpolated quantile of `v` at `q` in `[0, 1]`.
+fn quantile(v: &[f64], q: f64) -> f64 {
+    let mut s = v.to_vec();
+    s.sort_by(f64::total_cmp);
+    let pos = q * (s.len() - 1) as f64;
+    let (lo, hi) = (pos.floor() as usize, pos.ceil() as usize);
+    s[lo] + (s[hi] - s[lo]) * (pos - lo as f64)
+}
+
+/// **P92 with a 90% interval bootstrapped over galaxies.** Each replicate draws
+/// galaxies with replacement and keeps every seat of each draw together.
+/// Deterministic: a fixed splitmix stream, so a rerun prints the same interval.
+fn p92_interval(by_galaxy: &[Vec<f64>]) -> (f64, f64) {
+    let mut state: u64 = 0x5EED_0092;
+    let mut next = || {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    };
+    let g = by_galaxy.len();
+    let mut reps: Vec<f64> = (0..2000)
+        .map(|_| {
+            let pooled: Vec<f64> =
+                (0..g).flat_map(|_| by_galaxy[(next() % g as u64) as usize].iter().copied()).collect();
+            quantile(&pooled, 0.92)
+        })
+        .collect();
+    reps.sort_by(f64::total_cmp);
+    (quantile(&reps, 0.05), quantile(&reps, 0.95))
+}
+
+fn report(name: &str, by_galaxy: &[Vec<f64>]) {
+    let all: Vec<f64> = by_galaxy.iter().flatten().copied().collect();
+    if all.is_empty() {
+        return;
     }
-    let n = v.len() as f64;
-    let m = v.iter().sum::<f64>() / n;
-    let var = v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (n - 1.0).max(1.0);
-    (m, (var / n).sqrt(), v.len())
+    let (lo, hi) = if by_galaxy.len() > 1 { p92_interval(by_galaxy) } else { (f64::NAN, f64::NAN) };
+    let p92 = quantile(&all, 0.92);
+    let verdict = if (1.5..=2.0).contains(&p92) {
+        "in the 1.5-2.0x target"
+    } else if p92 < 1.5 {
+        "below target"
+    } else {
+        "above target"
+    };
+    println!(
+        "  {name:<34} median {:.3}  P92 {p92:.3} [{lo:.3}, {hi:.3}]  P98 {:.3}  (n={} seats, {} galaxies) — {verdict}",
+        quantile(&all, 0.5),
+        quantile(&all, 0.98),
+        all.len(),
+        by_galaxy.len()
+    );
 }
 
 fn main() {
@@ -241,126 +249,44 @@ fn main() {
         println!("*** --smoke: one seed, quarter window. A shape check, not a measurement. ***");
     }
     println!(
-        "{SEATS} seats, three arms, fit on ln X over [{WINDOW_START}, {}] yr every {SAMPLE_YEARS} yr, {} seeds",
-        window_end(),
-        seeds().len()
+        "{SEATS} seats, three arms, {} galaxies, horizon {} yr, cards at the round-0 barrier",
+        seeds().len(),
+        window_end()
     );
-    println!("  ROW columns: seed, galaxy-mean Growth ΔlnG (odd seats), galaxy-mean Warfare ΔW_i at the horizon");
-    println!("  (colonies), galaxy-mean Warfare ∫ΔW_i dt over the window (colony-years). Galaxies are the");
-    println!("  independent unit: the twelve seats of one galaxy share it, so standard errors are over galaxies.");
     println!("  Warfare card {WARFARE_CARD}: {:?}", cards::card(CardId(WARFARE_CARD)).map(|c| c.effects));
     println!("  Growth   card {GROWTH_CARD}: {:?}", cards::card(CardId(GROWTH_CARD)).map(|c| c.effects));
+    println!("  SEAT columns: seed, seat, tree, ratio card/counterfactual of the tree's metric");
     let _ = std::io::stdout().flush();
 
-    let mut growth_val = Vec::new();
-    let mut growth_raw = Vec::new();
-    // `ln(G_card / G_pass)` with `G = ∫ infra dt` — Growth's work-years interim
-    // (R-TREE3), paired per seat. Lower-variance than the fitted doubling-time
-    // ratio, and the same metric `examples/card_probe` reports.
-    let mut growth_dlng = Vec::new();
-    let mut growth_r2 = Vec::new();
-    let mut warfare_val = Vec::new();
-    let mut warfare_raw = Vec::new();
-    let mut warfare_r2 = Vec::new();
-    let mut w_defined = 0usize;
-    let mut w_total = 0usize;
-    let mut play_times = Vec::new();
-    let mut identical = true;
-    // One value per galaxy — the independent unit.
-    let (mut gal_dlng, mut gal_dw, mut gal_dwint) = (Vec::new(), Vec::new(), Vec::new());
-
+    let (mut growth, mut warfare) = (Vec::new(), Vec::new());
+    let (mut late_plays, mut never_played) = (0usize, 0usize);
     for seed in seeds() {
         let t0 = std::time::Instant::now();
         let p = run(seed, Arm::Pass);
         let g = run(seed, Arm::GrowthOnly);
         let b = run(seed, Arm::Both);
-        if b.colonies != g.colonies || b.infra != g.infra {
-            identical = false;
-        }
-        for t in b.played_at.iter().flatten() {
-            play_times.push(*t);
-        }
-
-        let (mut seed_dlng, mut seed_dw, mut seed_dwint) = (Vec::new(), Vec::new(), Vec::new());
+        late_plays += b.played_at.iter().flatten().filter(|&&t| t > WINDOW_START + SAMPLE_YEARS).count();
+        never_played += b.played_at.iter().filter(|p| p.is_none()).count();
+        let (mut gs, mut ws) = (Vec::new(), Vec::new());
         for i in 0..SEATS {
             if i.is_multiple_of(2) {
-                // Warfare seat: `Both` against the same seat under
-                // `GrowthOnly`, which is that seat passing.
-                let wb = contrast(&b, i);
-                let wg = contrast(&g, i);
-                w_total += 1;
-                warfare_raw.push(wb[wb.len() - 1] - wg[wg.len() - 1]);
-                seed_dw.push(wb[wb.len() - 1] - wg[wg.len() - 1]);
-                seed_dwint.push(integral(&b.t, &wb) - integral(&g.t, &wg));
-                if let (Some((a, r2)), Some((c, _))) = (half_life(&b.t, &wb), half_life(&g.t, &wg)) {
-                    warfare_val.push(1.0 - a / c);
-                    warfare_r2.push(r2);
-                    w_defined += 1;
-                }
+                let r = integral(&b.t, &share(&b, i)) / integral(&g.t, &share(&g, i));
+                println!("SEAT {seed} {i} warfare {r:.6}");
+                ws.push(r);
             } else {
-                // Growth seat: work stock under `GrowthOnly` against `Pass`.
-                let last = g.infra[i].len() - 1;
-                growth_raw.push(g.infra[i][last] / p.infra[i][last] - 1.0);
-                growth_dlng.push((integral(&g.t, &g.infra[i]) / integral(&p.t, &p.infra[i])).ln());
-                seed_dlng.push(*growth_dlng.last().unwrap());
-                if let (Some((a, r2)), Some((c, _))) = (half_life(&g.t, &g.infra[i]), half_life(&p.t, &p.infra[i])) {
-                    growth_val.push(1.0 - a / c);
-                    growth_r2.push(r2);
-                }
+                let r = integral(&g.t, &g.infra[i]) / integral(&p.t, &p.infra[i]);
+                println!("SEAT {seed} {i} growth {r:.6}");
+                gs.push(r);
             }
         }
-        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
-        gal_dlng.push(mean(&seed_dlng));
-        gal_dw.push(mean(&seed_dw));
-        gal_dwint.push(mean(&seed_dwint));
-        println!(
-            "ROW {seed} {:+.6} {:+.4} {:+.2}",
-            gal_dlng.last().unwrap(),
-            gal_dw.last().unwrap(),
-            gal_dwint.last().unwrap()
-        );
-        // **Print the running total after every seed**, not only at the end.
-        // This harness has been killed mid-run twice by an ephemeral container,
-        // and a partial result you can read beats a complete one you lost.
-        let (gm, gse, gn) = stat(&growth_val);
-        let (wm, wse, wn) = stat(&warfare_val);
-        let (wrm, wrse, _) = stat(&warfare_raw);
-        println!(
-            "  seed {seed} done in {:.0} s | running: growth {gm:+.4} ± {gse:.4} (n={gn}), \
-             warfare {wm:+.4} ± {wse:.4} (n={wn}), ΔW_i {wrm:+.2} ± {wrse:.2}",
-            t0.elapsed().as_secs_f64()
-        );
+        growth.push(gs);
+        warfare.push(ws);
+        println!("  seed {seed} done in {:.0} s", t0.elapsed().as_secs_f64());
         let _ = std::io::stdout().flush();
     }
-
-    let (gm, gse, gn) = stat(&growth_val);
-    let (grm, grse, _) = stat(&growth_raw);
-    let (gdm, gdse, gdn) = stat(&growth_dlng);
-    let (gr2, ..) = stat(&growth_r2);
-    let (wm, wse, wn) = stat(&warfare_val);
-    let (wrm, wrse, wrn) = stat(&warfare_raw);
-    let (wr2, ..) = stat(&warfare_r2);
-    let (pm, _, pn) = stat(&play_times);
-
-    println!("\n  earliest legal play: {pm:.1} yr, mean over seats and seeds (n={pn})");
-    println!("\n  Growth  card value (1 - t½ ratio):  {gm:+.4} ± {gse:.4}  (n={gn}, mean R² {gr2:.4})");
-    println!("  Growth  work stock at {} yr:  {grm:+.4} ± {grse:.4}", window_end());
-    println!("  Growth  ΔlnG, work-years:           {gdm:+.4} ± {gdse:.4}  (n={gdn} seat-seeds)");
-    println!("\n  Warfare card value (1 - t½ ratio):  {wm:+.4} ± {wse:.4}  (n={wn}, mean R² {wr2:.4})");
-    println!("  Warfare W_i defined on {w_defined} of {w_total} seat-seeds");
-    println!("  Warfare ΔW_i at {} yr, colonies: {wrm:+.3} ± {wrse:.3}  (n={wrn})", window_end());
-    println!("\n  Warfare arm reproduces the Growth-only arm exactly: {}", if identical { "YES" } else { "no" });
-
-    // The confirmation: one value per galaxy, so the standard error is over
-    // independent galaxies and not over seats that share one.
-    println!("\n  over {} galaxies (the independent unit):", gal_dlng.len());
-    for (name, v) in [
-        ("Growth  ΔlnG, work-years", &gal_dlng),
-        ("Warfare ΔW_i at horizon, colonies", &gal_dw),
-        ("Warfare ∫ΔW_i dt, colony-years", &gal_dwint),
-    ] {
-        let (m, se, n) = stat(v);
-        let pos = v.iter().filter(|&&x| x > 0.0).count();
-        println!("    {name:<36} {m:+12.4} ± {se:10.4}  t {:+6.2}  ({pos}/{n} galaxies positive)", m / se);
-    }
+    println!(
+        "\n  cards landing after the first sample past the barrier: {late_plays}; never landed: {never_played} (both 0 means every play was on time)"
+    );
+    report("Growth, G_card / G_pass", &growth);
+    report("Warfare, S_card / S_pass", &warfare);
 }

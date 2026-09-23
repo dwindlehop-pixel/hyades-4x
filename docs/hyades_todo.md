@@ -163,6 +163,72 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-126. Release throughput on the combat bed — the knobs were already right; the profile was not
+
+**Closed.** Author's request: experiment with compiler knobs and check in any
+that raise yr/s on the standard bed with shots fired. `examples/combat_bench`
+(12 seats, both cards at the barrier, 400 yr). Appendix §D.5.
+
+- **Knobs: none checked in.** Thin/no LTO, opt-level 2, `target-cpu`
+  x86-64-v3 and native, and PGO all landed inside the base binary's ±2%
+  run-to-run spread, every one bit-identical. The shipped profile (fat LTO, one
+  codegen unit, abort, O3) stays.
+- **Profile: 2.49x, bit-identical.** Callgrind put ~41% of instructions in libm
+  `log`, all from `fill_survey_candidates` reading `bio_max.in_bands()` per
+  planet per survey decision while `Factors::bio_max_band` held the same value.
+  Reading the cache: 14.6 → 30.3 yr/s. Then a per-seat unvisited list, pruned by
+  stable `retain`: → 36.4 yr/s. Determinism target 56.5 → 48.2 s.
+- **Open:** the scan still builds a `SurveyView` per unvisited world for a policy
+  that keeps one; removing it changes `Autopilot::choose_survey_target`.
+
+### T-125. Weapons are a Design; the author's 1.5–2.0x target; Growth in the band, Warfare below it
+
+**Closed (engine), advanced (Warfare's magnitude).** Author's specifications,
+each landed: loadout is a function of the Design fixed at construction; lasers
+only, for the Warfare card only; armed colonizers go to the frontier as pickets
+after founding; pickets stack like miners; staffing on by default; every card at
+**1.5–2.0x its tree's metric at P92** on the twelve-seat bed. Warfare §8.17;
+appendix §D.4.
+
+**Landed:**
+
+- `combat::Loadout`, `Armed`, `hull_hp_kj`, `resolve_beam_engagement` —
+  simultaneous fire, damage in kJ against structure (dry mass × 1,000 kJ/kt),
+  unarmed ships deal nothing. `design_loadout(hull, class)`: Systems hulls
+  unarmed, Contact/Offensive mount beams slot-organically. Stamped once at
+  construction (`World::loadout`). Every simulation fight uses it; the arena
+  keeps its tuned resolver. `SimConfig::engagement_volley_period_years` deleted
+  (only the sim's missile path read it).
+- `ArmedFrontier` also writes `picket_after_founding` and `picket_first`;
+  `stays_armed_after_founding` is the one predicate for credit and dispatch, and
+  is true only for armed hulls.
+- Stacks: held ground and blockades hold several hulls; cover every seen port
+  before stacking; build ahead of expansion only to cover a port.
+- Blockade supply and timing: `picket_first`, `recall_seen_launches`, recency
+  ranking with `BlockadeReassess` (reusing `intercept_reassess_years`), in-flight
+  hulls counted against the reserve. `ARMED_FRONTIER_BLOCKADERS` 8 → 128.
+- `population_staffs_industry` on by default (R-IND23 resolved by the author).
+- Growth card `GrowthRate(1.15)` → **(1.6)**, tuned on the twelve-seat bed.
+- `examples/card_table` reports per-seat ratios with P92 and a bootstrap over
+  galaxies; `examples/blockade_census`; `card_probe` reports `ΔlnS` and has
+  coverage-oracle arms (`SimConfig::ablate_strike_fraction`, ablation only).
+- Tests: `a_ship_fires_what_its_design_mounts_and_nothing_else`,
+  `a_shot_weaker_than_the_hull_does_not_kill_it`,
+  `only_the_warfare_card_arms_a_hull`, `pickets_stack_on_held_ground_like_a_crew`,
+  `a_new_blockader_recalls_only_launches_whose_light_has_arrived`,
+  `the_blockade_is_built_first_only_while_a_port_is_uncovered`.
+
+**Measured, twelve seats, 11 galaxies:** Growth **P92 1.753 [1.583, 1.932]** —
+inside the band. Warfare **P92 1.204 [1.164, 1.226]** — below it. The coverage
+oracle says the mechanic reaches the band at ~30–45% of rival launches struck;
+the census says the blockade reaches ~10% in the rivals' expansion peak because
+its hulls are still in flight (**R-WAR20**, the author's choice).
+
+**Opened:** R-WAR19 (beam and structure magnitudes), R-WAR20 (Warfare below
+target, latency-bound). **Resolved:** R-WAR5 (for the simulation), R-WAR18
+(implemented, null), R-IND23. **Open, not coded:** the Growth-seat collapse on
+seed 31337 (appendix §D.4) — which seats took its worlds.
+
 ### T-124. A rung bill that destroyed mass — and the Growth card it was carrying
 
 **Closed.** `infra_step_price` billed the width of the rung a stock *rounds* to

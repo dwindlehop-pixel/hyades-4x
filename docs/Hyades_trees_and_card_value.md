@@ -582,6 +582,22 @@ were played at random, which no card ever is. P92 asks *"how good is this when i
 is working?"*, which is the case that decides whether a card warps the game. P98
 is the blow-out check; the median is the floor check.
 
+**Decided — the magnitude (author, T-125): every card moves its own tree's
+metric by 1.5x to 2.0x at P92 on the standard twelve-seat bed.** Read as a
+ratio, card against the same seat passing, one sample per card seat, P92 over
+seats with its interval bootstrapped over galaxies (`examples/card_table`).
+*"2.8% growth rate is insufficient. Every card must have a significant effect
+on gameplay."* Two readings the ratio needs, both the author's:
+
+| tree | metric the ratio is taken on |
+|---|---|
+| Growth | work-years, `∫ infra dt` (R-TREE3's interim) |
+| Warfare | `S_i = ∫ C_i / mean_{j≠i} C_j dt` — the seat's colonies over the rival mean, because `W_i` is a difference and has no ratio |
+
+This supersedes the doubling-time reading above for the purpose of setting a
+card's magnitude; §4.1's definition stays the analytic one. Where each card
+stands is `Hyades_warfare_tree.md` §8.17.6 and appendix §D.4.
+
 ### 4.3 Tier equality, and the dispersion constraint
 
 Two requirements, and they are not the same requirement:

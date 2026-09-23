@@ -1224,6 +1224,30 @@ launches leave from a seat's busiest eight. One census of launch origins chose
 the mechanic's site before any engine code was written. **When an interaction
 never happens, look for the place the other side cannot avoid being.**
 
+### Find the lever's ceiling with an oracle before tuning the lever (T-125)
+
+**The Warfare card sat ten times below the author's target, and five
+plausible fixes moved it by less than their error bars** — more hulls, recency,
+recalling what light had delivered, stacking, reassessment. What settled the
+question in one run was an ablation that **struck a fixed share of rival
+launches with no hull at all**: 25% gives 1.30x, 50% gives 1.76x. So the
+mechanic *can* reach the target, the target needs ~30–45% coverage, and every
+fix was a question about how to get coverage.
+
+- **Build the oracle for the quantity the mechanic delivers**, not for the
+  mechanic. A perfect blockade is a coverage fraction; handing the harness the
+  fraction directly separates "the idea cannot work" from "the implementation
+  does not reach it", which want opposite next steps.
+- **Then split the gap by time.** A census of coverage per century showed 1.2
+  hulls on station and 10.8 in flight during the rivals' expansion peak. That is
+  latency — a light-crossing to see a port and a flight to reach it — and no
+  magnitude of the card moves it. Aggregates over the whole run said "coverage is
+  low"; the per-century split said *when*, which named the cause.
+- **A compiler flag cannot fix what a profile has not found.** Seven release
+  profiles (thin/fat/no LTO, opt-level 2, two `target-cpu` levels, PGO) landed
+  within the base binary's own ±2% run-to-run spread on the combat bed, and every
+  one produced a bit-identical run. At ~120 µs per event the cost is in the code.
+
 ### Never leave an identified symptom without a proven mechanism
 
 **A number is a symptom. Stop only when you can name the line of code that
@@ -2256,6 +2280,8 @@ changes how you *work*, not what is left to do:
   | **T-101 (the candidate scan prunes what it has rejected)** — interleaved against T-100 in one session: **96.4 → 106.6** and **99.4 → 111.2 yr/s** | ~40,900 | **+11%** | — |
   | **R-WAR9 (the colonization leg is flown laden)**, 3 seats, 800 yr, 4 seeds | — | **83.8–90.0 yr/s**, `ns/event` 25,423–29,206 | **34–36×** |
   | **T-102 (`exp` is a polynomial)** — interleaved, 6 seeds, 800 yr: **104.9 → 107.8**, **109.4 → 112.4**, **107.3 → 110.6**, **114.5 → 118.3**, **120.1 → 123.0**, **108.6 → 110.1 yr/s** | ~40,900 | **+2.7%** | — |
+  | T-125 combat bed (`examples/combat_bench`: 12 seats, both cards at the barrier, 400 yr, ~1,000–1,400 fights) — `ns/event` ~118,000–127,000 | — | 14.6 yr/s | 5.8× |
+  | **T-126 (the survey scan reads the cached Band, and walks only unvisited worlds), same bed — `ns/event` ~49,000–50,000** | — | **36.4 yr/s** | **15×** |
 
   **R-WAR9's row is a case where the workload changed and the columns must be
   read that way** (§2's T-111 caveat). Flying colony ships at the rate their

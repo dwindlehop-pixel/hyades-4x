@@ -1991,11 +1991,178 @@ for tuning:**
   from `t = 0` instead of at the barrier the same writes score **t 4.06** (reserve
   8) and **t 5.57** (reserve 32), which says the hulls placed early — at the ports
   that launched first — are worth more than the ones placed late. A recency rule
-  needs a constant, and the engine has no ratified one (**R-WAR18**).
+  needs a constant, and the engine has no ratified one (**R-WAR18** — implemented
+  at T-125 with the picket's reassessment cadence, and measured null, §8.17.5).
 - **The rival has no response.** Nothing in the engine lets a center decline to
   launch past a blockader, or send anything to lift one. Mechanism before policy:
   the channel exists and no policy uses it, so a flat result for a defensive
   card later must not be read as proof that a blockade cannot be answered.
+
+### 8.17 Weapons are a Design, not a side (T-125)
+
+*Author's specification: "Load out is a function of a Design and fixed at ship
+construction. Lasers versus missiles has nothing to do with aggression."*
+
+**Decided — a hull's weapons are part of its Design and are fixed when it is
+built.** `design_loadout(hull, class)` is read once, at construction, and
+stamped on the hull (`World::loadout`); nothing re-reads it afterward (design
+law #12, no retroactive refits). Which side arrived first, which side is on
+station, and which side started the fight decide **nothing** about what either
+ship can shoot. **This retires R-WAR5's convention for every fight the
+simulation resolves** — the rock fight, the picket's defense and the port
+strike all call `combat::resolve_beam_engagement`, in which each ship fires what
+it mounts. The arena keeps its laser-side-vs-missile-side resolver, because that
+is the sweep `CombatConfig`'s tuned constants were calibrated on and
+`tests/balance.rs` pins it bit-for-bit.
+
+**Decided — structure is mass, and damage accumulates.** A hull's structure is
+its dry mass times `CombatConfig::hull_hp_kj_per_kt`, in kJ: the shell *is* the
+mass (R-O57, §2.3's `τ`), so a thicker-skinned hull is harder to kill with no
+second armor constant. A shot delivers its energy; a hull dies when the energy
+it has absorbed reaches its structure. Fire within a tick is **simultaneous** —
+every shooter aims at the ships standing at the start of the tick — so neither
+side shoots first by index (§2.3, no initiative).
+
+#### 8.17.1 The Design space — what a weapons Design specifies
+
+| family | field | unit | what it sets | engine |
+|---|---|---|---|---|
+| all | **structure** | kJ | dry mass × `hull_hp_kj_per_kt` | **built** — placeholder `1,000 kJ/kt` (R-WAR19) |
+| **beam** | **mounts** | count | `b_role · V` over one Limited Contact hull's, floored, at least one — design law #2's slot-organic count | **built** — LCV 1 |
+| beam | **shot energy** | kJ | damage per hit | **built** — placeholder `50 kJ` (R-WAR19) |
+| beam | **fire-control error** | ly | the tolerance `laser_hit_check` compares predicted against actual target position; smaller is more accurate | **built** — reads `CombatConfig::laser_hit_tolerance` (tuned), not a second copy |
+| beam | **fire rate** | shots per mount per tick | how many shots a mount takes each `dt` | **built** — reads `laser_shots_per_tick` (tuned) |
+| beam | range falloff | kJ per ly | §2.4's "weak at long range" | `OPEN` — every simulation fight today is at range zero |
+| beam | point defense | — | whether a beam may target an in-flight missile | arena only; `OPEN` for the simulation |
+| **missile** | tubes | count | slot-organic, as beams | `OPEN` |
+| missile | **acceleration** | multiple of the carrier's, or absolute ly/yr² | how fast it closes | arena only (`missile_accel_multiplier`, tuned) |
+| missile | fuel | yr | guided burn time | arena only |
+| missile | launch Δv | ly/yr | separation at release | arena only |
+| missile | warhead | kJ | damage per hit | `OPEN` — arena missiles kill on contact |
+| missile | magazine | count, and its mass | expendable rounds; expended ordnance leaves the fleet lighter (design law #11) | `OPEN` — R-O60/T-04 |
+| missile | burst, guidance cap | count | salvo shape; channel limit on missiles in flight | arena only |
+| **torpedo** | as missile, heavier warhead, arming distance | kJ, ly | §2.4's long-range heavy hit, weak close | `OPEN` |
+| **pulse** | burst energy, knife range | kJ, ly | §2.4's point-blank burst | `OPEN` |
+
+**Only the beam family is built, and only the Warfare card builds it.** A
+Systems hull's payload fraction is zero — cargo *is* its payload — so every hull
+an empire builds without the card is **unarmed**, structurally rather than by a
+flag: `only_the_warfare_card_arms_a_hull` walks every role and the colonizer
+ladder of the default standing layer and finds no mount, then plays the card's
+writes and finds beams on the scout and the picket.
+
+**Consequence, stated so it is not read as a regression:** every miner is a
+Systems hull, so a rock fight between two empires is now two unarmed crews and
+kills nothing, hostile doctrine or not. The T-122 measurement that hostility
+cost its own player −1.79 work-years was R-WAR5's convention handing the
+arriver missiles it never built.
+
+#### 8.17.2 The Doctrine space — how a Design's weapons are used
+
+Doctrine decides **when and where** an armed hull fights; it never changes what
+it mounts.
+
+| write | decides | engine |
+|---|---|---|
+| `engage_neutrals` | hostility — whether a neutral is an enemy at a shared rock | built |
+| `picket_blockades` | posture — stand at the rival port seen launching most, strike what leaves | built (§8.16) |
+| `picket_after_founding` | an **armed** colonizer keeps its hull after founding and goes to the frontier as a picket; an unarmed one still becomes its colony's stock | built (§8.17.3) |
+| `picket_intercepts` | race a seen launch to the guessed destination | built (§8.12) |
+| `picket_claims_target`, `picket_reserve` | supply — how many armed hulls to keep on station | built; reserve a placeholder |
+| target priority | which enemy a shooter takes first | built as *nearest not already doomed*; alternatives `OPEN` |
+| disengage | break off on believed kinematics (R-O41) | computed and logged, not acted on (T-10) |
+
+#### 8.17.3 Armed colonizers hold the frontier after founding
+
+*Author's specification: "Armed Colonizers after founding a colony should move
+to the frontier in a picket role."*
+
+**Decided.** `DoctrineWrite::ArmedFrontier` now writes `picket_after_founding`.
+One predicate, `stays_armed_after_founding`, decides both halves — whether the
+hull is credited as the colony's stock and whether it is dispatched — and it is
+true only for a hull whose Design mounts weapons. So a General Contact colonizer
+keeps its hull and leaves the colony founded without its recycled stock (the
+§8.10 cost, now paid only by armed hulls), and a Medium Systems colonizer still
+recycles.
+
+**Decided — the frontier is the rival's port once one has been seen, and the
+edge of the empire's own expansion before that.** A freed armed hull goes where
+a new blockader would (§8.16's placement); with no port seen yet, it goes to the
+nearest unclaimed world its empire has scanned (§8.6's rule).
+
+T-116's −287.8 `W_0` for this write was measured with every colonizer keeping
+its hull and nothing able to be struck; it is superseded, not answered. The
+twelve-seat measurement is appendix §D.4.
+
+#### 8.17.4 Pickets stack, like mining crews
+
+*Author's specification: "Pickets can accumulate at more than one per site,
+like miners."*
+
+**Decided.** Held ground is `world → (holder seat, stack, since)` and a blockade
+is `(port, seat) → stack`. Every hull in a stack fights; a rival's hull cannot
+join ground another seat holds; an interception or a move takes one hull and
+leaves the rest (`detach_picket`, `leave_blockade`); the reserve counts hulls,
+not sites (`pickets_stack_on_held_ground_like_a_crew`).
+
+**Decided — cover every seen port before stacking.** One armed hull destroys any
+unarmed colony ship, so a second at the same port adds nothing against what most
+ports launch. A new blockader therefore goes to an **uncovered** port this seat
+has seen launch, ranked by launches seen in the last `intercept_reassess_years`
+and then by all launches; only when every seen port is covered does it stack, on
+the port with the most recent launches per committed hull. And the blockade-first
+branch below builds ahead of expansion **only while a seen port is uncovered**.
+Both rules were measured against the alternatives (appendix §D.4): allocating
+purely by launches per hull halved the card, and building the reserve out past
+coverage cost it 42%.
+
+#### 8.17.5 The blockade's supply and timing
+
+**Decided — three writes and one recall, each with a measured reason** (appendix
+§D.4's census, which splits coverage by century):
+
+| rule | what it does | why |
+|---|---|---|
+| `picket_first` (Doctrine, the card sets it) | a center builds a picket **before** any other order while its empire's pickets — standing *and* in flight — are short of the reserve and a seen port is uncovered | as a fallback the blockade had **no hull on station for the first century** after the card, through the rivals' fastest expansion |
+| `recall_seen_launches` | a seat that starts to blockade records every launch whose light has already reached its capital, and schedules the rest | a record that starts empty at the barrier waits a light-crossing before it can place anything; everything recalled is something light had delivered (design law #15) |
+| recency (`BlockadeReassess`) | ports rank by launches seen in the last `intercept_reassess_years` (reused, R-WAR12); a blockader whose port launched nothing seen in that window moves to the best uncovered one | origins move as colonies become centers. **Measured null** — kept because it costs no constant and is the rule the census says should matter once latency is shorter |
+| the reserve counts hulls in flight | `pickets_held` adds `blockaders_in_flight` | otherwise the blockade-first branch builds one hull per decision while the first is still traveling |
+
+**`ARMED_FRONTIER_BLOCKADERS` is 128** (placeholder, R-WAR19): the card's effect
+rose from reserve 8 to 128 and stopped (8 → 32 → 128 → 512 read +0.061 / +0.092
+/ +0.116 / +0.118 on the asymmetric bed before stacking).
+
+#### 8.17.6 Where the card stands against the author's target — `OPEN` (R-WAR20)
+
+*Author's target: 1.5x to 2.0x the key tree metric at P92 on the standard
+twelve-seat bed. For Warfare the metric is the integral of the seat's colonies
+over the rival mean, `S_i = ∫ C_i / mean_{j≠i} C_j dt`, card against pass.*
+
+**Measured: the card does not reach it**, and the reason is measured rather than
+guessed. Twelve-seat result in appendix §D.4.
+
+- **The mechanic can reach it at sufficient coverage.** A coverage oracle
+  (`SimConfig::ablate_strike_fraction`, ablation only) that destroys a fixed
+  fraction of rival launches from the barrier on gives `ln S` **+0.265 at 25%,
+  +0.567 at 50%, +2.61 at 100%** on the asymmetric bed — so roughly **30–45% of
+  rival launches struck** is the band the target asks for.
+- **The port strike reaches ~10% in the century that matters.** Rival expansion
+  peaks at 300–400 yr; the card lands at 200 yr; a blockader must see a port
+  (light, `distance` years), be built, and fly there (`distance` years again).
+  At reserve 128 the census reads **10.8% coverage in 300–400 yr with 3.8 hulls
+  on station and 14.9 in flight**, then 28.6% in 400–500 yr, after the peak.
+  Hull count, placement recency and the pre-card record each moved the result
+  by less than its standard error; supply priority moved it by a quarter.
+- **So the binding constraint is transit latency against the expansion clock**,
+  which is physics (`c = 1`) and protocol (`years_to_first_round = 200`), not a
+  magnitude of this card.
+
+**What would settle it — the author's choice** among changes that are not this
+card's to make: an earlier first barrier (R-P12, `years_to_first_round`); a
+strike that reaches a colony ship somewhere other than its port or its
+destination; a Warfare metric or target that accounts for a card whose effect
+cannot begin until a light-crossing after it is played; or accepting this card
+below the band.
 
 ---
 
@@ -2052,14 +2219,16 @@ for tuning:**
 | **R-IND11** | **`SettlersPerMineral` is worth +394.9 `W_0` unilaterally** on the 4-seed asymmetric bed — more than any card measured so far. `Hyades_industry.md` §1.6 records the policy as *"blocked on R-O74"*, the conjured-settlers violation, and **R-O74 closed at §1.7**. So the block is lifted and the answer may have flipped | a **symmetric** re-measure — this one is competitive, not global, and a default is a global question |
 | ~~**R-WAR16**~~ | ~~which mechanic gives the first Warfare card a path to `W`~~ **Resolved (T-123): armed hulls strike colony ships at the port they launch from** (§8.16). The author chose the mechanic; the census chose the site. `TIER0[15]` carries it; ΔW **+24,024 ± 8,509 (t 2.82)** on the asymmetric bed, appendix §D.2 | — |
 | **R-WAR17** | **does a colony ship struck at its port forfeit its destination?** Today it does, because `targeted` is monotone and T-101's prune depends on that; so a kill costs the launcher a hull, its settlers and a world (§8.16) | a decision; if no, a non-monotone mark and a re-measure of the prune |
-| **R-WAR18** | **blockade placement has no recency.** It counts every launch ever seen, and origins move; written from `t = 0` the card scores t 4.06–5.57 where written at the barrier it scores t 2.82 (§8.16) | a ratified time constant for "recent", then the asymmetric bed |
 | ~~**R-WAR15**~~ | ~~by what path does the armed card reach the simulation?~~ **Resolved (T-122): at legal play it does not.** The effect §8.14 measured was the 0.5 kt price, paid inside the card-free opening; a pure-price control reproduces it and vanishes at the round-0 barrier. The per-write ablation it asked for was run: the colonizer write is bit-identical on 8/8 seeds, the scout write is noise (appendix §D.1). Superseded by R-WAR16 | — |
 | **R-WAR14** | **`Sim::inert_card_plays` counts `NotYetImplemented` only**, so a card writing real state into a component with no live consumer reads as working. It measures which match arm ran, not whether the write reached a decision (§8.13) | a definition of "reached a decision" that a counter can test — the candidate is whether the written component is read on a live path |
 | **R-WAR12** | **the two guess magnitudes** — `intercept_cone_radians` (0.15 rad) and `intercept_reassess_years` (25 yr). Neither is physical: the cone sets how wide a guess may be and therefore what a feint is worth, and the cadence sets how long one stays bought. They are the first magnitudes in this tree whose job is to price a **bluff** rather than a kinetic outcome | a bed on which the yomi channel is readable — not `W_0`, which a bluff does not move directly |
 | **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is **bit-identically inert** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |
 | **R-WAR7** | **a colonizer's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
 | **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole colonizer loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
-| **R-WAR5** | **which side carries which weapon.** `resolve_engagement` is laser-side-vs-missile-side because that is the sweep it was tuned on; the sim gives the defender the lasers and the arriver the missiles, and `carrier_accel` reads the laser side's first hull whatever the attacker flies. A convention that decides outcomes | R-L0's per-hull slot tables, then the arena |
+| ~~**R-WAR5**~~ | ~~which side carries which weapon~~ **Resolved for the simulation (T-125): a ship carries what its Design mounts** (§8.17). Every simulation fight uses `resolve_beam_engagement`. The convention survives only in the arena's laser-side-vs-missile-side sweep, where `carrier_accel` still reads the laser side's first hull — kept because it is what `tests/balance.rs`'s goldens were tuned on | — |
+| **R-WAR20** | **the first Warfare card is below the author's 1.5–2.0x P92 target**, bound by transit latency: coverage of rival launches must reach ~30–45% and the port strike reaches ~10% in the expansion peak (§8.17.6) | the author's choice among an earlier first barrier, a different meeting site, a latency-aware Warfare target, or accepting the card below the band |
+| ~~**R-WAR18**~~ | ~~blockade placement has no recency~~ **Implemented (T-125), measured null**: ranking by launches seen in the last `intercept_reassess_years` and moving a blockader off a port that went quiet changed `ln S` by less than its standard error, because latency, not placement, binds (§8.17.5) | — |
+| **R-WAR19** | **the beam and structure magnitudes** — `beam_shot_energy_kj = 50`, `hull_hp_kj_per_kt = 1,000`. Neither is physical, and together they set how many hits each hull takes (a Medium colonizer three, a General Contact colonizer twenty-two) | the arena, once it can seed a beam-versus-beam fight between loadouts rather than sides |
 | **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |
 | R-MC9c / T-12 | HP pools, weapon count, missile AoE, magazines | engine work, then the arena |
 | R-L0 | per-hull slot tables | the arena |

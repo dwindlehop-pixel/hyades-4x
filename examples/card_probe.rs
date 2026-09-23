@@ -201,6 +201,21 @@ fn run(seed: u64, arm: &Arm, play: bool) -> Sample {
     s
 }
 
+/// `S_0(t) = C_0 / mean_{j≠0} C_j` — Warfare's ratio metric (T-125): seat 0's
+/// colonies over the rival mean. Parity before any rival has a colony.
+fn share0(s: &Sample) -> Vec<f64> {
+    (0..s.t.len())
+        .map(|k| {
+            let others = (1..SEATS).map(|j| s.colonies[j][k]).sum::<f64>() / (SEATS - 1) as f64;
+            if others > 0.0 {
+                s.colonies[0][k] / others
+            } else {
+                1.0
+            }
+        })
+        .collect()
+}
+
 /// Trapezoidal `∫ x dt` over the sampled timeline.
 fn integral(t: &[f64], x: &[f64]) -> f64 {
     t.windows(2).zip(x.windows(2)).map(|(tw, xw)| 0.5 * (xw[0] + xw[1]) * (tw[1] - tw[0])).sum()
@@ -318,12 +333,31 @@ fn blockade_wide(d: &mut Doctrine) {
     d.picket_reserve = 32;
 }
 
+/// The coverage oracle (T-125): strike this fraction of rival launches outright.
+fn strike_quarter(c: &mut SimConfig) {
+    c.ablate_strike_fraction = 0.25;
+}
+fn strike_half(c: &mut SimConfig) {
+    c.ablate_strike_fraction = 0.5;
+}
+fn strike_all(c: &mut SimConfig) {
+    c.ablate_strike_fraction = 1.0;
+}
+
 fn oracle(c: &mut SimConfig) {
     c.ablate_oracle_intercept = true;
 }
 
 fn arms() -> Vec<Arm> {
     vec![
+        Arm {
+            label: "warfare / coverage 0.25",
+            card: Some(WARFARE_CARD),
+            engine: strike_quarter,
+            card_only: no_doctrine,
+        },
+        Arm { label: "warfare / coverage 0.50", card: Some(WARFARE_CARD), engine: strike_half, card_only: no_doctrine },
+        Arm { label: "warfare / coverage 1.00", card: Some(WARFARE_CARD), engine: strike_all, card_only: no_doctrine },
         Arm { label: "warfare / blockade", card: Some(WARFARE_CARD), engine: no_engine, card_only: blockade },
         Arm {
             label: "warfare / blockade, fallback supply",
@@ -412,6 +446,7 @@ fn main() {
         let (mut pk, mut dv, mut ic) = (vec![], vec![], vec![]);
         let (mut idle_g, mut idle_c) = (vec![], vec![]);
         let mut drival = vec![];
+        let mut dlns = vec![];
         for &seed in &SEEDS {
             let p = run(seed, arm, false);
             let c = run(seed, arm, true);
@@ -422,6 +457,7 @@ fn main() {
             dcol.push(c.colonies[0].last().unwrap() - p.colonies[0].last().unwrap());
             let rivals = |s: &Sample| (1..SEATS).map(|i| *s.colonies[i].last().unwrap()).sum::<f64>();
             drival.push(rivals(&c) - rivals(&p));
+            dlns.push((integral(&c.t, &share0(&c)) / integral(&p.t, &share0(&p))).ln());
             let start = SimConfig::new(seed).years_to_first_round;
             if let (Some(a), Some(b)) = (growth_rate(&c.t, &c.infra0, start), growth_rate(&p.t, &p.infra0, start)) {
                 rate_ratio_g.push(a / b - 1.0);
@@ -448,6 +484,7 @@ fn main() {
             let _ = std::io::stdout().flush();
         }
         println!("  ΔlnG (work-years)      {}", fmt(&dlng));
+        println!("  ΔlnS (share of rivals) {}  — Warfare's ratio metric, ln(S_card/S_pass)", fmt(&dlns));
         println!("  ΔW   (colony-years)    {}", fmt(&dw));
         println!("  Δln pop                {}", fmt(&dpop));
         println!("  Δcolonies at horizon   {}", fmt(&dcol));

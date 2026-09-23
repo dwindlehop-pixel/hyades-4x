@@ -706,6 +706,15 @@ pub struct CombatConfig {
     pub laser_shots_per_tick: usize,
     /// Missiles per burst; bursts are desynchronized and released one per tick.
     pub burst_count: usize,
+    /// **Energy one beam shot delivers, kJ** (T-125). A Design quantity in the
+    /// weapons space (`Hyades_warfare_tree.md` §8.17); the one beam Design the
+    /// engine builds reads it from here. **Placeholder** (R-WAR19) — the arena
+    /// does not read it, so the tuned laser-vs-missile balance is untouched.
+    pub beam_shot_energy_kj: f64,
+    /// **Structure per kilotonne of dry mass, kJ/kt** (T-125) — a hull's hit
+    /// points are its dry mass times this. Mass is the armor statement because
+    /// the shell *is* the mass (R-O57, §2.3's `τ`). **Placeholder** (R-WAR19).
+    pub hull_hp_kj_per_kt: f64,
 }
 
 impl Default for CombatConfig {
@@ -724,6 +733,10 @@ impl Default for CombatConfig {
             max_missiles_per_shooter: 30,
             laser_shots_per_tick: 40,
             burst_count: 4,
+            // Placeholders (R-WAR19): a Medium colonizer (0.109 kt) takes three
+            // shots, a General Contact colonizer (1.10 kt) twenty-two.
+            beam_shot_energy_kj: 50.0,
+            hull_hp_kj_per_kt: 1_000.0,
         }
     }
 }
@@ -741,6 +754,134 @@ pub struct EngagementOutcome {
     pub winner: Winner,
     pub laser_survivors: usize,
     pub missile_survivors: usize,
+}
+
+// ===========================================================================
+// Loadouts and the beam resolver (T-125) — the simulation's fights
+// ===========================================================================
+
+/// **What a hull's Design mounts, fixed when the hull is built** (T-125,
+/// `Hyades_warfare_tree.md` §8.17).
+///
+/// A loadout is a property of the **Design**, never of the fight: which side
+/// arrived first, or who started it, does not change what either ship can
+/// shoot. That replaces R-WAR5's convention — defender on the lasers, arriver
+/// on the missiles — for every fight the simulation resolves. The arena keeps
+/// its own laser-side-vs-missile-side resolver, because that is the sweep its
+/// tuned constants were calibrated on.
+///
+/// Only the **beam** family is built. Pulse, torpedo and missile mounts are
+/// specified (§8.17) and have no field here until a card builds one.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Loadout {
+    /// Beam mounts. **Zero is unarmed**, and unarmed is the default for every
+    /// hull the Warfare card has not unlocked.
+    pub beams: u32,
+    /// Energy one shot delivers, kJ.
+    pub shot_energy_kj: f64,
+    /// Fire-control error bound, ly — the tolerance [`laser_hit_check`]
+    /// compares predicted against actual target position.
+    pub fire_control_ly: f64,
+    /// Shots per mount per tick (fire rate).
+    pub shots_per_tick: u32,
+}
+
+impl Loadout {
+    /// No weapons at all.
+    pub const UNARMED: Loadout = Loadout { beams: 0, shot_energy_kj: 0.0, fire_control_ly: 0.0, shots_per_tick: 0 };
+
+    /// Whether this Design can damage anything.
+    pub fn is_armed(&self) -> bool {
+        self.beams > 0 && self.shots_per_tick > 0 && self.shot_energy_kj > 0.0
+    }
+}
+
+/// **A hull's structure, kJ** — dry mass times [`CombatConfig::hull_hp_kj_per_kt`].
+pub fn hull_hp_kj(hull: HullType, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f64 {
+    hull_dry_mass(hull, sim_cfg).kilotons() * cfg.hull_hp_kj_per_kt
+}
+
+/// One ship in a simulation fight: where it is, what it mounts, and how much
+/// it can take.
+#[derive(Clone, Copy, Debug)]
+pub struct Armed {
+    pub ship: Combatant,
+    pub loadout: Loadout,
+    pub hp_kj: f64,
+}
+
+/// **Resolve a fight in which each ship fires what its Design mounts** (T-125).
+///
+/// Returns, per side, which ships are still standing. Three properties are the
+/// design and are tested:
+///
+/// - **An unarmed ship deals no damage**, so a fight between two unarmed sides
+///   ends before it starts, with no losses.
+/// - **Fire is simultaneous within a tick.** Every shooter aims at the ships
+///   standing at the start of the tick and damage lands at its end, so neither
+///   side shoots first by index order — §2.3's "no tick-based initiative".
+/// - **Damage accumulates in kJ against structure.** A hull dies when the energy
+///   it has absorbed reaches its structure; a shot is not a kill.
+///
+/// Each shot goes to the nearest enemy not already doomed by damage landing this
+/// tick, so a battery does not spend a tick killing one ship forty times.
+pub fn resolve_beam_engagement(
+    fleets: &[FleetTrajectory; 2],
+    sides: [&[Armed]; 2],
+    horizon: f64,
+    dt: f64,
+) -> [Vec<bool>; 2] {
+    let mut alive: [Vec<bool>; 2] = [vec![true; sides[0].len()], vec![true; sides[1].len()]];
+    let mut damage: [Vec<f64>; 2] = [vec![0.0; sides[0].len()], vec![0.0; sides[1].len()]];
+    let armed_alive =
+        |alive: &[Vec<bool>; 2], s: usize| sides[s].iter().zip(&alive[s]).any(|(a, &l)| l && a.loadout.is_armed());
+    let mut t = 0.0;
+    while t < horizon {
+        if !alive[0].iter().any(|&a| a) || !alive[1].iter().any(|&a| a) {
+            break;
+        }
+        if !armed_alive(&alive, 0) && !armed_alive(&alive, 1) {
+            break;
+        }
+        let mut pending: [Vec<f64>; 2] = [vec![0.0; sides[0].len()], vec![0.0; sides[1].len()]];
+        for s in 0..2 {
+            let e = 1 - s;
+            for (i, shooter) in sides[s].iter().enumerate() {
+                if !alive[s][i] || !shooter.loadout.is_armed() {
+                    continue;
+                }
+                let at = shooter.ship.position_at(fleets, t);
+                // Enemies standing at the start of the tick, nearest first;
+                // ties by index, so the order is total.
+                let mut targets: Vec<(f64, usize)> = (0..sides[e].len())
+                    .filter(|&j| alive[e][j])
+                    .map(|j| (sides[e][j].ship.position_at(fleets, t).distance(at), j))
+                    .collect();
+                targets.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+                let shots = shooter.loadout.beams * shooter.loadout.shots_per_tick;
+                for _ in 0..shots {
+                    let Some(&(_, j)) =
+                        targets.iter().find(|&&(_, j)| damage[e][j] + pending[e][j] < sides[e][j].hp_kj)
+                    else {
+                        break;
+                    };
+                    if laser_hit_check(at, &sides[e][j].ship, fleets, t, shooter.loadout.fire_control_ly) {
+                        pending[e][j] += shooter.loadout.shot_energy_kj;
+                    }
+                }
+            }
+        }
+        for s in 0..2 {
+            for j in 0..sides[s].len() {
+                damage[s][j] += pending[s][j];
+                if damage[s][j] >= sides[s][j].hp_kj {
+                    alive[s][j] = false;
+                }
+            }
+        }
+        t += dt;
+    }
+    alive
 }
 
 /// Who a laser targets this shot — a ship, or an in-flight missile

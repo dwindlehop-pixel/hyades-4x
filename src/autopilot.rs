@@ -411,6 +411,21 @@ pub struct Doctrine {
     ///
     /// **Placeholder, default false** (R-WAR16) — the card sets it.
     pub picket_blockades: bool,
+    /// **Build the blockade before expanding** (T-125). With this on, a center
+    /// whose empire holds fewer than [`Self::picket_reserve`] pickets —
+    /// counting hulls already flying to a port — and has a seen rival port to
+    /// send one to builds a picket ahead of every other order.
+    ///
+    /// The fallback rule [`Self::picket_reserve`] records exists because a
+    /// picket that pre-empted survey once cost its player 24.5% of its
+    /// colonies while denying nothing. A blockader strikes, and the census in
+    /// appendix §D.4 measured the fallback as the blockade's binding
+    /// constraint: **no hull on station for the first century after the card**,
+    /// through the rivals' fastest expansion. The reserve bounds what this can
+    /// cost.
+    ///
+    /// **Placeholder, default false** (R-WAR18) — the card sets it.
+    pub picket_first: bool,
     /// **The General colonizer is a Contact hull, not a Systems hull** (T-116).
     ///
     /// This is §8.2's Design write — *"switch the colony ship role from Systems
@@ -611,6 +626,7 @@ impl Default for Doctrine {
             scout_hull_offensive: false,
             picket_intercepts: false,
             picket_blockades: false,
+            picket_first: false,
             colonizer_general_contact: false,
             founding_infra_share: 0.0,
             survey_strategy: SurveyStrategy::OpeningSectors,
@@ -894,6 +910,9 @@ pub struct ProductionContext {
     /// How many worlds this empire is already holding, against
     /// [`Doctrine::picket_reserve`].
     pub pickets_held: usize,
+    /// Whether this empire has a seen rival port it does not yet cover — the
+    /// only state in which a blockading picket has somewhere to go (T-125).
+    pub blockade_ready: bool,
     /// Known, unclaimed, non-Barren worlds this empire could still expand to.
     /// The autopilot builds survey craft to keep this above
     /// [`Doctrine::survey_reserve`] — expansion consumes candidates, so without
@@ -1164,7 +1183,15 @@ impl Autopilot for BaselineAutopilot {
                     ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
                     ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
                 };
-                best(a).or_else(|| best(b)).map(|c| Tasking { role: Role::Picket, target: Some(c.ranked.id) })
+                let ground = best(a).or_else(|| best(b)).map(|c| c.ranked.id);
+                // **A blockader's target is a rival port, which is not on this
+                // list** (T-125): the engine picks the port, so the hull is worth
+                // building with no unclaimed world in view.
+                if doctrine.picket_blockades {
+                    Some(Tasking { role: Role::Picket, target: ground })
+                } else {
+                    ground.map(|t| Tasking { role: Role::Picket, target: Some(t) })
+                }
             }
 
             // Nothing else is tasked from a finished hull; hold rather than
@@ -1501,6 +1528,12 @@ impl Autopilot for BaselineAutopilot {
         // sat *ahead* of survey and cost its own player 24.5% of its colonies.
         let wants_picket = ctx.pickets_held < doctrine.picket_reserve;
         let can_afford_picket = ctx.stockpile_total + Price::new(1e-9) >= ctx.picket_cost;
+        // **The blockade first, bounded by the reserve** (T-125,
+        // [`Doctrine::picket_first`]).
+        if doctrine.picket_first && doctrine.picket_blockades && ctx.blockade_ready && wants_picket && can_afford_picket
+        {
+            return Standing::of(doctrine).order_for(Role::Picket);
+        }
         let survey_fallback = if wants_survey && can_afford_light {
             Standing::of(doctrine).scout_order()
         } else if wants_picket && can_afford_picket {
@@ -1906,6 +1939,33 @@ mod tests {
         SurveyView { industrial_signature: true, ..survey_view(id, pos) }
     }
 
+    /// **The blockade first — only while it has a port to cover and the
+    /// reserve is short** (T-125). Each precondition is removed in turn and
+    /// the branch must fall through; with all of them the order is a picket,
+    /// ahead of the colonizer the same context would otherwise buy.
+    #[test]
+    fn the_blockade_is_built_first_only_while_a_port_is_uncovered() {
+        let ap = BaselineAutopilot::default();
+        let mut d = Doctrine::default();
+        crate::cards::apply_doctrine_write(&mut d, crate::cards::DoctrineWrite::ArmedFrontier);
+        let mut ctx = prod_ctx(BandTier::III, 2.0, 50.0);
+        // Nothing left to survey, so the empty-list scout return (which comes
+        // first, and should — a seat that knows no worlds needs to find some)
+        // stays out of the way.
+        ctx.survey_frontier = 0;
+        ctx.blockade_ready = true;
+        ctx.pickets_held = 0;
+        let picket = Standing::of(&d).order_for(Role::Picket);
+        assert_eq!(ap.production_choice(&d, &ctx, &[]), picket, "all preconditions hold");
+        let off = Doctrine { picket_first: false, ..d };
+        assert_ne!(ap.production_choice(&off, &ctx, &[]), picket, "without the write it is a fallback again");
+        let covered = ProductionContext { blockade_ready: false, ..ctx };
+        assert_ne!(ap.production_choice(&d, &covered, &[]), picket, "nowhere to send it");
+        let full = ProductionContext { pickets_held: d.picket_reserve, ..ctx };
+        assert_ne!(ap.production_choice(&d, &full, &[]), picket, "the reserve is met");
+        assert!(!Doctrine::default().picket_first, "the write must ship unplayed");
+    }
+
     #[test]
     fn survey_prefers_nearest() {
         let ap = BaselineAutopilot::default();
@@ -1934,6 +1994,7 @@ mod tests {
             // the branch never fires and these tests stay about deepen/expand.
             picket_cost: Price::new(0.02),
             pickets_held: 0,
+            blockade_ready: false,
             infra_cost: Price::new(infra + 1.0),
             // Even thirds against a bank of even thirds: these cases are about
             // the deepen/expand branch, not about color scarcity, and
