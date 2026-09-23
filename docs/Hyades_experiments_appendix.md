@@ -747,6 +747,129 @@ population, and the sign it reported was the opposite of the mechanism.
 
 ---
 
+# §D. Cards — where a card's effect goes
+
+## D.1 T-122 — isolating the constraints on the first Growth and Warfare cards
+
+**Supports:** `Hyades_warfare_tree.md` §8.15, `Hyades_industry.md` §1.8 (T-107),
+`Hyades_trees_and_card_value.md` §2.4 (earliest legal play), and the T-122
+entry in `hyades_todo.md`.
+
+**Bed.** `examples/card_probe`: 3 seats, **asymmetric** (R-TREE8/R-TREE12) —
+seat 0 plays, every other seat passes, and the counterfactual is the same seed
+with seat 0 passing too. Eight **independent** seeds (1, 7, 42, 31337, 2, 3, 5,
+11), so each seed is one paired difference and the standard error counts
+galaxies, not seats. Engagements on. Every figure is an **estimate** (mean ±
+standard error over the eight), not a bound.
+
+| symbol | meaning | unit |
+|---|---|---|
+| `ΔlnG` | `ln(G_card / G_pass)`, `G = ∫ infra dt` for seat 0 — Growth's work-years interim (R-TREE3) | dimensionless |
+| `ΔW` | `W_card − W_pass`, `W = ∫ [C_0 − mean_{j≠0} C_j] dt` with `w` uniform (R-WAR3 open) | colony-years |
+| `u` | stock-weighted staffing factor `I_worked / I` (T-107) | dimensionless |
+
+### The first bed played cards inside the card-free opening, and that was the largest single effect measured
+
+`card_probe`'s first version, and `examples/card_table` behind T-120 and T-121,
+played cards at `t ≈ 0`. **The opening is card-free by protocol**
+(`Hyades_netcode.md` §1): the first round barrier is at `years_to_first_round`,
+200 yr. So those beds charged each card's 0.5 kt out of the 3 kt bootstrap bank
+— a state no game reaches — and the price dominated both cards:
+
+| arm, played at `t ≈ 0` (**superseded**) | pays 0.5 kt? | Δcolonies, seed 31337 | Δcolonies, mean of 8 |
+|---|---|---|---|
+| Warfare card as shipped | yes | −534 | −119 ± 62 (8/8 negative) |
+| pure-price control (`TIER0[12]`, inert, same price) | yes | −554 | −94 ± 67 |
+| Warfare scout write alone, no card | **no** | **+23** | −23 ± 36 |
+| Growth card as shipped | yes | −274 | +33 ± 70 |
+
+Re-run at the round-0 barrier (**the bed from here on**), the pure-price control
+reads **Δcolonies −0.1 ± 0.1** and ΔW **+3 ± 4**: a tier-0 price is invisible
+at legal play.
+
+### The Growth card, played legally, already clears 3 SE
+
+800 yr, card at 200 yr, 600 yr of play after it:
+
+| arm | ΔlnG | t | Δcolonies | Δln pop |
+|---|---|---|---|---|
+| **Growth card as shipped** | **+0.133 ± 0.032** | **4.18** | +57 ± 12 | +0.755 ± 0.067 |
+| … with population staffing on (T-107) | +0.126 ± 0.028 | 4.48 | +123 ± 25 | +0.657 ± 0.020 |
+
+Positive on **8/8 seeds**. The fitted growth rate of seat 0's infrastructure
+rises **+2.8% ± 0.7%** (t 3.85), so on the "double the rate" reading of the
+target the card is far short; on the 3-SE reading it passes as shipped.
+Staffing adds colonies (Δcolonies doubles) and no work-years.
+
+### Refuted on the way, kept because each was plausible
+
+All measured on the `t ≈ 0` bed unless marked, which is why the first two are
+refuted *as inferences* rather than as measurements:
+
+- **"Population is not a factor of production, so the Growth card cannot reach
+  work-years."** The lever moved (Δln pop **+0.632 ± 0.043**, t 14.7) and
+  work-years did not (**−0.005 ± 0.099**) — true on that bed. A low-noise arm
+  with the color conjunction ablated put the unstaffed card at **+0.003 ±
+  0.040**, which read as proof that staffing was necessary. **It was
+  confounded:** that arm also paid the price at `t ≈ 0`, which the write-alone
+  arm (no card, no price, staffed) measured at **−0.24** in `ΔlnG`
+  (+0.271 ± 0.133 against +0.034 ± 0.135 with the price). At legal play the
+  unstaffed card is **+0.133 ± 0.032**.
+- **"The idle stock sits on worlds at their population ceiling, where a rate
+  card cannot reach."** The split at the horizon puts **0.0000** of standing
+  stock idle on worlds at `P ≥ 0.95 K`, and **70%** idle on worlds still
+  growing (`Simulation::staffing_split`).
+- **"The per-color bill (T-73) throttles the Growth card."** Ablated
+  (`SimConfig::ablate_color_conjunction`), the staffed write-alone arm moves
+  **+0.271 ± 0.133 → +0.267 ± 0.032**: the same mean, a quarter of the standard
+  error. The conjunction is a **variance amplifier** — it reorders a compounding
+  run — and not a throttle on this card.
+- **"The picket guesses the wrong world" (round-0 bed).** With pickets fielded
+  (278 parked, 497 intercepts per run), zero fights and zero diversions. Handed
+  the true destination (`SimConfig::ablate_oracle_intercept`), feasible
+  intercepts fall to **18 per run** and still produce **0.1 diversions and 0
+  fights**; ΔW **−955 ± 9,607**. The guess is not what binds.
+
+### The Warfare card has no path to `W`, and each route was measured closed
+
+Round-0 bed:
+
+| arm | ΔW (colony-years) | t | engagements | kills / losses |
+|---|---|---|---|---|
+| card as shipped | −103 ± 314 | −0.33 | 0 | 0 / 0 |
+| colonizer write alone (`t ≈ 0` bed) | **exactly 0.0 on 8/8 seeds** | — | 0 | 0 / 0 |
+| + hostility (`engage_neutrals`) | −9,928 ± 4,961 | −2.00 | +1,955 ± 57 | **+0.6 / +2,960** |
+| + hold ground (pickets, intercepts, claim target) | −520 ± 9,779 | −0.05 | 0 | 0 / 0 |
+| + hold ground, `picket_reserve` 8 → 32 | **bit-identical** to the row above | — | 0 | 0 / 0 |
+| + hold ground, oracle intercept | −955 ± 9,607 | −0.10 | 0 | 0 / 0 |
+
+Work-years under hostility: **−1.79 ± 0.07 (t −25)** — seat 0 spends its mining
+fleet in fights it cannot win. The mechanism for each closed route is in
+`Hyades_warfare_tree.md` §8.15; the numbers are here.
+
+### On the twelve-seat table
+
+`examples/card_table`, cards at the round-0 barrier, 800 yr, 3 seeds (1, 7,
+42). Seat-seeds are **not** independent — six share a galaxy — so every
+standard error below is optimistic by an unmeasured factor:
+
+| quantity | value | n |
+|---|---|---|
+| Growth `ΔlnG`, work-years | +0.199 ± 0.126 | 18 seat-seeds |
+| Growth card value, `1 − t½ ratio` | +0.016 ± 0.066 | 18 |
+| Warfare `ΔW_i` at 800 yr, colonies | +2.667 ± 1.489 | 18 |
+| Warfare card value, `1 − t½ ratio` | −0.004 ± 0.007 | 11 of 18 defined |
+
+The Growth point estimate is larger than the asymmetric bed's (+0.199 against
++0.133) and **three galaxies cannot resolve it**: t 1.6 on an optimistic SE.
+Treating seat-seeds as independent, 3 SE at this mean needs ~64 seat-seeds, or
+~11 galaxies at ~5 min each — over the ~10-minute ceiling `CLAUDE.md` §2 sets
+for an ephemeral container, so it is a by-hand run. The asymmetric bed is the
+one that answers the per-card question; this one answers how the cards read
+beside each other.
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the

@@ -552,6 +552,28 @@ develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
 
 #### Population is not a factor of production today, and that is the blocker (T-107)
 
+> **Implemented as a switch, off by default (T-122).**
+> `SimConfig::population_staffs_industry` routes every output path — extraction,
+> per-berth throughput, berth count — through one `worked_infra`, `I · u`, with
+> `u = min(1, P / P_req(I))`.
+>
+> - **`P_req` is decided, as a placeholder with a reason:** the people mass at
+>   the stock's own Band reading — one Band of people staffs one Band of
+>   infrastructure. That is the relation galaxy generation already writes into
+>   every homeworld (population and infrastructure both at Band 2), so a
+>   homeworld at `t = 0` is exactly staffed and nothing moves at the reference
+>   state; `a_homeworld_starts_exactly_staffed_and_losing_people_unstaffs_it`
+>   pins it. **`u`'s shape (linear, clamped) stays open under R-IND22.**
+> - **Why off:** measured at legal play, it does not change the first Growth
+>   card's effect on work-years (+0.133 ± 0.032 without, +0.126 ± 0.028 with),
+>   while it moves every baseline — stock-weighted `u` averages 0.63–0.68 on the
+>   bed. It **does** double that card's effect on colonies, and it is the
+>   prerequisite a population strike needs (warfare §8.15, R-WAR16). Appendix
+>   §D.1.
+> - **§1.8's profitability test (T-108) is still unwritten.** With the switch
+>   on the autopilot deepens without regard to staffing, and at 600 yr 70%
+>   of standing stock is idle.
+
 `Sim::extraction_rate` (`src/sim.rs:4157`) and `Sim::berth_rate`
 (`src/sim.rs:4055`) each read exactly two things: `Factors::infra` and the
 owner's `Works`. `Sim::fabrication_rate` is `slips × berth_rate`. **No output

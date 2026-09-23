@@ -33,11 +33,15 @@
 //! line; curvature is the signal that the window was chosen wrong, and it is
 //! the reason to print it rather than to assume it.
 //!
-//! **Cards are played at earliest legal play** (§2.4, §4.4), which is round 0:
-//! `bootstrap` seeds each homeworld above every tier-0 price. The harness
-//! checks `empire_can_afford` anyway and records when each card actually
-//! landed, because an order that cannot be paid for coerces to a *pass* and a
-//! bed cannot otherwise tell that from a card that did nothing.
+//! **Cards are played at earliest legal play** (§2.4, §4.4), which is the
+//! **round-0 barrier at `years_to_first_round`** — 200 yr by default. The
+//! opening is card-free by protocol (`Hyades_netcode.md` §1). Until T-122 this
+//! harness played at `t ≈ 0`, inside that opening, paying each card's price
+//! out of the 3 kt bootstrap bank; the T-120 and T-121 tables were measured
+//! that way and are superseded. The harness still checks `empire_can_afford`
+//! and records when each card actually landed, because an order that cannot
+//! be paid for coerces to a *pass* and a bed cannot otherwise tell that from a
+//! card that did nothing.
 //!
 //! **Warfare's stock is a difference and can be negative** (R-TREE9), so it has
 //! no logarithm and no doubling time wherever `W_i <= 0`. The harness reports
@@ -58,11 +62,11 @@ const SEATS: usize = 12;
 const WARFARE_CARD: u16 = 15;
 const GROWTH_CARD: u16 = 3;
 const SEEDS: [u64; 3] = [1, 7, 42];
-/// The compounding window, and the sampling stride inside it. The run goes to
-/// `WINDOW_END`; the fit starts at `WINDOW_START` so the opening survey
-/// fan-out, which is not compounding, is outside it.
-const WINDOW_START: f64 = 150.0;
-const WINDOW_END: f64 = 600.0;
+/// The compounding window, and the sampling stride inside it. The fit starts at
+/// the round-0 barrier, where the cards land — before it both arms are the same
+/// run to the last bit — and runs 600 years past it.
+const WINDOW_START: f64 = 200.0;
+const WINDOW_END: f64 = 800.0;
 const SAMPLE_YEARS: f64 = 25.0;
 
 /// `--smoke` runs one seed over a quarter of the window: a few seconds, enough
@@ -122,6 +126,7 @@ fn run(seed: u64, arm: Arm) -> Trace {
     // The same bed in every arm. Gating the engagement layer on the arm would
     // put its own effect inside the Warfare card's measured value.
     cfg.engagements_enabled = true;
+    let play_at = cfg.years_to_first_round;
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
 
     let mut tr = Trace {
@@ -142,7 +147,7 @@ fn run(seed: u64, arm: Arm) -> Trace {
 
     while sim.step() {
         for (i, slot) in tr.played_at.iter_mut().enumerate() {
-            if slot.is_some() {
+            if slot.is_some() || sim.clock() < play_at {
                 continue;
             }
             let Some(id) = card_for(i, arm) else { continue };
@@ -150,7 +155,10 @@ fn run(seed: u64, arm: Arm) -> Trace {
             if !sim.empire_can_afford(i, Price::new(c.cost)) {
                 continue;
             }
-            sim.apply_orders(0, &[Order { seat: PlayerId(i as u32), card: Some(id), target: Target::None }]);
+            sim.apply_orders(
+                sim.current_round(),
+                &[Order { seat: PlayerId(i as u32), card: Some(id), target: Target::None }],
+            );
             *slot = Some(sim.clock());
         }
         if sim.clock() >= next_sample {
@@ -194,6 +202,11 @@ fn half_life(t: &[f64], x: &[f64]) -> Option<(f64, f64)> {
     (g > 0.0).then(|| (std::f64::consts::LN_2 / g, r2))
 }
 
+/// Trapezoidal `∫ x dt` over the sampled timeline.
+fn integral(t: &[f64], x: &[f64]) -> f64 {
+    t.windows(2).zip(x.windows(2)).map(|(tw, xw)| 0.5 * (xw[0] + xw[1]) * (tw[1] - tw[0])).sum()
+}
+
 /// `W_i(t) = C_i − Σ_{j≠i} w_ij C_j` with `w_ij` uniform over the other seats.
 fn contrast(tr: &Trace, i: usize) -> Vec<f64> {
     (0..tr.t.len())
@@ -229,6 +242,10 @@ fn main() {
 
     let mut growth_val = Vec::new();
     let mut growth_raw = Vec::new();
+    // `ln(G_card / G_pass)` with `G = ∫ infra dt` — Growth's work-years interim
+    // (R-TREE3), paired per seat. Lower-variance than the fitted doubling-time
+    // ratio, and the same metric `examples/card_probe` reports.
+    let mut growth_dlng = Vec::new();
     let mut growth_r2 = Vec::new();
     let mut warfare_val = Vec::new();
     let mut warfare_raw = Vec::new();
@@ -267,6 +284,7 @@ fn main() {
                 // Growth seat: work stock under `GrowthOnly` against `Pass`.
                 let last = g.infra[i].len() - 1;
                 growth_raw.push(g.infra[i][last] / p.infra[i][last] - 1.0);
+                growth_dlng.push((integral(&g.t, &g.infra[i]) / integral(&p.t, &p.infra[i])).ln());
                 if let (Some((a, r2)), Some((c, _))) = (half_life(&g.t, &g.infra[i]), half_life(&p.t, &p.infra[i])) {
                     growth_val.push(1.0 - a / c);
                     growth_r2.push(r2);
@@ -289,6 +307,7 @@ fn main() {
 
     let (gm, gse, gn) = stat(&growth_val);
     let (grm, grse, _) = stat(&growth_raw);
+    let (gdm, gdse, gdn) = stat(&growth_dlng);
     let (gr2, ..) = stat(&growth_r2);
     let (wm, wse, wn) = stat(&warfare_val);
     let (wrm, wrse, wrn) = stat(&warfare_raw);
@@ -298,6 +317,7 @@ fn main() {
     println!("\n  earliest legal play: {pm:.1} yr, mean over seats and seeds (n={pn})");
     println!("\n  Growth  card value (1 - t½ ratio):  {gm:+.4} ± {gse:.4}  (n={gn}, mean R² {gr2:.4})");
     println!("  Growth  work stock at {} yr:  {grm:+.4} ± {grse:.4}", window_end());
+    println!("  Growth  ΔlnG, work-years:           {gdm:+.4} ± {gdse:.4}  (n={gdn} seat-seeds)");
     println!("\n  Warfare card value (1 - t½ ratio):  {wm:+.4} ± {wse:.4}  (n={wn}, mean R² {wr2:.4})");
     println!("  Warfare W_i defined on {w_defined} of {w_total} seat-seeds");
     println!("  Warfare ΔW_i at {} yr, colonies: {wrm:+.3} ± {wrse:.3}  (n={wrn})", window_end());

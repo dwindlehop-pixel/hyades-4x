@@ -1158,6 +1158,40 @@ was green across the change and every bed reached zero of it.**
   the armed scout. If that collision ever disappears, the rule loses its reason
   visibly instead of quietly becoming cargo.
 
+### A bed that plays outside the protocol measures a game nobody plays
+
+**T-122 is the worked example, and the defect was in my own harness for three
+landings.** `card_table` and `card_probe` played cards at `t ≈ 0` and called it
+"earliest legal play". The protocol says otherwise: the opening is card-free and
+the first round barrier is at `years_to_first_round`, 200 yr. So every card paid
+its price out of the 3 kt bootstrap bank — a state no game reaches — and that
+price was **the largest effect either first card had**: ~550 colonies on one
+seed, reproduced exactly by an inert card of the same price. At the barrier the
+same price is invisible, and the Growth card, which had read as flat, clears
+**t 4.18** with no engine change.
+
+- **"Earliest legal play" is a protocol fact, not an affordability fact.** I
+  had checked `empire_can_afford` and a test even pinned "round 0 is legal" —
+  while reading *round 0* as *t = 0*. Affordability answers whether a play can
+  land; the round layer answers when. Read the config that schedules the
+  barrier before writing the loop that plays at it.
+- **A pure-price control is the cheapest ablation a card bed has.** An inert
+  card at the same cost (`TIER0[12]` while `enforce_roster` is off) separates
+  what a card *does* from what it *costs* in one arm, and it is what exposed
+  this.
+- **A confounded arm can produce a tight zero.** One arm read **+0.003 ±
+  0.040** and looked like proof that a mechanism was necessary. It carried the
+  same price defect, and a narrow error bar around a confounded mean is still a
+  confounded mean. Before reading a precise null as a mechanism, ask what else
+  that arm changed.
+
+**And an oracle ablation that does not help is a strong refutation.** "The
+picket guesses the wrong world" explained zero fights perfectly. Handing the
+picket the true destination produced 18 intercepts and still zero fights — so
+information was never the constraint, and the time that would have gone into a
+better guess went nowhere. When a hypothesis is "the agent lacks information",
+give it the answer and see whether anything moves.
+
 ### Never leave an identified symptom without a proven mechanism
 
 **A number is a symptom. Stop only when you can name the line of code that

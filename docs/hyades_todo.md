@@ -163,6 +163,60 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-122. Where each first card's effect goes — and the largest constraint was the bed
+
+Isolate what stands between each first card and its own tree's metric, then
+remove it. Target: an effect at ≥ 3 standard errors on the tree's metric (the
+"double the rate" reading is reported beside it). Measurements in appendix
+§D.1; decisions in warfare §8.15, industry §1.8, trees §2.4.
+
+**The bed.** `examples/card_probe`: asymmetric (seat 0 plays, others pass),
+paired against the same seed passing, **8 independent seeds** — so the standard
+error counts galaxies. On the twelve-seat table six seats shared a galaxy and
+were counted as six replicates. Arms are ablations: an engine change on both
+halves, or a Doctrine write on the card half.
+
+**The first constraint was mine.** Both harnesses played cards at `t ≈ 0`,
+inside the card-free opening (`years_to_first_round` = 200 yr, netcode §1),
+charging the 0.5 kt price to the 3 kt bootstrap bank. That price was the
+largest effect either card had — ~550 colonies on seed 31337, reproduced by a
+pure-price control — and at the round-0 barrier it is invisible. **Both
+harnesses now play at the barrier**, and T-120/T-121's tables are marked as
+measured inside the opening.
+
+**Growth — passes as shipped.** Played legally, `TIER0[3]` moves work-years
+**+0.133 ± 0.032, t 4.18, 8/8 seeds**. Infrastructure's fitted growth rate
+rises **+2.8% ± 0.7%**, so the "double the rate" reading is far off. No engine
+change was needed; T-107 staffing (below) adds colonies, not work-years.
+
+**Warfare — no path to `W`.** At legal play `TIER0[15]` is inert (ΔW −103 ±
+314). Four gates in series, each closed by ablation (warfare §8.15): arming
+changes no fight; the initiator always loses (R-WAR5); rock fights cannot move
+`W` even when won (§7.3); held-ground fights never happen — not because the
+guess is wrong (an oracle arm changes nothing). **Removing them needs a new
+mechanic, and which one is the author's call: R-WAR16.**
+
+**Landed:**
+
+- `SimConfig::population_staffs_industry` — **T-107, off by default**, with
+  `P_req` anchored to the homeworld's generated Band-for-Band staffing (industry
+  §1.8). Instruments `Simulation::staffing` and `staffing_split`.
+- Two ablation knobs, each pinned by a test that it changes only what it names:
+  `ablate_color_conjunction` and `ablate_oracle_intercept`.
+- `Sighting` bundles what a picket observed, so the oracle could be threaded
+  without an eighth argument.
+
+**Refuted on the way, recorded in §D.1:** "staffing is necessary for the Growth
+card" (confounded by the `t ≈ 0` price); "the idle stock is on worlds at their
+ceiling" (0.0000 is); "the color conjunction throttles Growth" (it multiplies
+the standard error by ~4 and leaves the mean alone); "the picket guesses the
+wrong world" (the oracle does no better).
+
+**Open:** R-WAR16 (the mechanic); R-IND22 (`u`'s shape); T-108 (the
+profitability test — with staffing on, 70% of standing stock is idle at 600 yr).
+
+---
+
 ### T-121. The default is unarmed, and the Warfare card is the key (R-WAR13, resolved)
 
 Author's specification. Full write-up in `Hyades_warfare_tree.md` §8.14.
@@ -1227,6 +1281,10 @@ raiding and R-AC13's "if pressed" all still need an engagement at *range*.
 ---
 
 ### T-107. Population is not a factor of production — `Y` must read `P`
+
+> **Advanced at T-122:** implemented as `SimConfig::population_staffs_industry`,
+> off by default, with `P_req` anchored (industry §1.8). Not closed — `u`'s
+> shape is R-IND22 and the switch is not on in the shipped bed.
 
 **The prerequisite under T-108 and under the whole Warfare tree**, and it is a
 statement about call signatures rather than a measurement.

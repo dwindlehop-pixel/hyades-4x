@@ -420,6 +420,14 @@ Two consequences follow immediately and both are load-bearing:
   *forces* early evaluation, because that is the only window where a gradient is
   defined.
 
+> **"Earliest legal play" is the round-0 barrier, not `t = 0` (T-122).** The
+> opening is card-free by protocol (`Hyades_netcode.md` §1), and the first
+> barrier fires at `SimConfig::years_to_first_round` — 200 yr by default. A
+> harness that plays at `t = 0` charges the card's price to the bootstrap bank,
+> which no game can do, and on the asymmetric bed that price alone was the
+> largest effect measured for either first card (appendix §D.1). This is a
+> clarification of the rule, not a change to it.
+
 **There is a second, cheaper route to commensurability, and it does not replace
 this one.** For *tuning* rather than card costing, what is wanted is one number
 per configuration rather than one per card, and the ratio to the shipped default

@@ -1590,6 +1590,12 @@ here so the absence is not read as a measurement.
 
 ### 8.13 The head-to-head, and the card has nothing to tune (T-120)
 
+> **Measured inside the card-free opening (T-122).** `examples/card_table`
+> played cards at `t ≈ 0`, before the round-0 barrier at 200 yr, so every card
+> here paid its price out of the bootstrap bank. The mechanism reasoning below
+> stands; the numbers describe no legal game. Re-measured at legal play in
+> appendix §D.1.
+>
 > **Superseded in its conclusion by §8.14 (T-121), and correct as a record of
 > the engine that produced it.** Everything below about *why* the card reached
 > no decision is why §8.14 exists; the card now carries a Doctrine write and two
@@ -1787,6 +1793,10 @@ authored by the card that unlocks the hull carrying it.
 
 #### Re-measured on §8.13's bed, and three seeds cannot resolve either card
 
+> **Measured inside the card-free opening (T-122)** — same defect as §8.13.
+> At legal play the card is inert (ΔW −103 ± 314) and the price is invisible;
+> appendix §D.1. `R-WAR15` is resolved there.
+
 `examples/card_table`, same three arms and same fit, re-run against the armed
 card:
 
@@ -1873,6 +1883,59 @@ production-built reaches that pass (every build stamps a class);
 
 ---
 
+### 8.15 At legal play the first Warfare card has no path to `W` (T-122)
+
+*The measurements are appendix §D.1. This section carries what they decide.*
+
+**Decided — the card is inert at legal play.** Played at the round-0 barrier
+(`years_to_first_round`, 200 yr — the opening is card-free by protocol),
+`TIER0[15]` moves `W_0` by an amount indistinguishable from zero, and the
+0.5 kt price is invisible. The effect §8.13 and §8.14 measured was the price,
+paid inside the opening where no game plays a card.
+
+**Decided — the reason is structural, and it is four gates in series.** Each
+was closed by ablation, not argued:
+
+| # | gate | where | measured |
+|---|---|---|---|
+| 1 | **Arming changes no fight.** Only two things ever reach combat: miners sharing a rock (`hostile_contact_at` walks `mine_crew`) and a picket defending held ground (`resolve_picket_fight`). A scout, a colony ship or an armed LCV in transit never does | `sim.rs` | the colonizer write is bit-identical on 8/8 seeds; the scout write is noise |
+| 2 | **The initiator always loses** (R-WAR5). Every engagement is the arena's ROU duel with the defender on the lasers | `sys_engagement` | with hostility: +1,955 engagements, **+2,960 hulls lost, +0.6 killed**; work-years −1.79 ± 0.07 |
+| 3 | **Rock fights cannot move `W` even when won.** Miners do not bind expansion (§7.3: an empire loses its mining fleet several times over and does not notice) | the economy | — |
+| 4 | **Held-ground fights never happen.** Pickets are fielded (278 per run) and intercept (497 per run); no enemy colony ship ever reaches ground they hold. Not the guess — handed the true destination, pickets find 18 feasible intercepts and still cause no fight | `offer_interception` | 0 fights, 0.1 diversions, oracle or not |
+
+**So a Warfare card that moves `W` substantially needs a mechanic the engine
+does not have.** Tuning cannot reach it: every magnitude on the paths above
+was varied, and `picket_reserve` 8 → 32 is bit-identical.
+
+**`OPEN` — which mechanic (`R-WAR16`).** Three candidates, each named by the
+gate it removes, and they are different games:
+
+- **Weapons follow the hull (gate 2).** A Systems hull reserves no payload
+  (§2.3's `b = 0`), so it cannot fire; an armed hull fighting an unarmed one
+  wins. Slot-organic (design law #2) and uses geometry already ratified. Alone
+  it moves only rock fights, which gate 3 says do not matter.
+- **Armed hulls strike colony ships (gates 1 and 4).** The expansion loop's
+  input is the colony ship; a Contact hull that meets one takes it. Needs a
+  meeting site the engine lacks — §8.9.5 found in-transit interception
+  *narrower* than racing to the destination, so this is a posture question
+  (where the armed hull stands), not a kinematic one.
+- **Population strike (Warfare's license, card contract §10).** T-107's
+  staffing factor now exists (`SimConfig::population_staffs_industry`, off by
+  default), so killing a colony's people finally costs its owner output —
+  the prerequisite §8.1 named. `W` counts colonies, so this reaches it only
+  through the rival's slowed expansion.
+
+**What would settle it:** the author's choice of mechanic, then the same
+asymmetric bed (appendix §D.1) with the card carrying it.
+
+**Decided — two ablation knobs, never design options.**
+`SimConfig::ablate_oracle_intercept` hands a picket the true destination (a
+design-law-#15 violation on purpose); `SimConfig::ablate_color_conjunction`
+bills a rung in the paying bank's own mix. Each is pinned by a test asserting
+it changes exactly the one thing it names.
+
+---
+
 ## 9. Register
 
 ### Ratified
@@ -1922,7 +1985,8 @@ production-built reaches that pass (every build stamps a class);
 
 | **R-WAR11** | **may a Doctrine write impose a cost that scales with its holder's own activity?** A card has two costs: `Card::cost`, a bounded one-off the engine already charges, and the mechanic's own — here, every colony founded afterwards starting 5.5x thinner, forever. The second cannot be priced, because its size depends on how much the player goes on to expand, and a difference objective charges it twice (§8.10). **Not Warfare-specific**, so it belongs in the card contract | a decision on whether a card's total cost must be bounded at play time |
 | **R-IND11** | **`SettlersPerMineral` is worth +394.9 `W_0` unilaterally** on the 4-seed asymmetric bed — more than any card measured so far. `Hyades_industry.md` §1.6 records the policy as *"blocked on R-O74"*, the conjured-settlers violation, and **R-O74 closed at §1.7**. So the block is lifted and the answer may have flipped | a **symmetric** re-measure — this one is competitive, not global, and a default is a global question |
-| **R-WAR15** | **by what path does the armed card reach the simulation?** It measures non-inert and the three obvious channels each have a reason not to bind: LSV and LCV share a `cost_fraction`, a scout carries no cargo, `hull_thrust_to_mass` is combat-only, and §8.3 makes the General Contact colonizer rung unreachable under `CheapestViable`. Three seeds put the effect inside 2 SE either way (§8.14) | an ablation per write — the two `UnlockDesign`s and `ArmedFrontier` separately — on a bed with enough independent seeds to resolve 2 SE |
+| **R-WAR16** | **which mechanic gives the first Warfare card a path to `W`.** At legal play the card is inert behind four gates in series (§8.15); weapons-follow-hull, armed hulls striking colony ships, and a population strike each remove different gates and make different games | the author's choice, then the asymmetric bed in appendix §D.1 |
+| ~~**R-WAR15**~~ | ~~by what path does the armed card reach the simulation?~~ **Resolved (T-122): at legal play it does not.** The effect §8.14 measured was the 0.5 kt price, paid inside the card-free opening; a pure-price control reproduces it and vanishes at the round-0 barrier. The per-write ablation it asked for was run: the colonizer write is bit-identical on 8/8 seeds, the scout write is noise (appendix §D.1). Superseded by R-WAR16 | — |
 | **R-WAR14** | **`Sim::inert_card_plays` counts `NotYetImplemented` only**, so a card writing real state into a component with no live consumer reads as working. It measures which match arm ran, not whether the write reached a decision (§8.13) | a definition of "reached a decision" that a counter can test — the candidate is whether the written component is read on a live path |
 | **R-WAR12** | **the two guess magnitudes** — `intercept_cone_radians` (0.15 rad) and `intercept_reassess_years` (25 yr). Neither is physical: the cone sets how wide a guess may be and therefore what a feint is worth, and the cadence sets how long one stays bought. They are the first magnitudes in this tree whose job is to price a **bluff** rather than a kinetic outcome | a bed on which the yomi channel is readable — not `W_0`, which a bluff does not move directly |
 | **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is **bit-identically inert** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |

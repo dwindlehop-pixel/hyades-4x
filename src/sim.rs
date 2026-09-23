@@ -2260,6 +2260,50 @@ pub struct SimConfig {
     /// per-player and is what a Warfare card writes
     /// (`Hyades_warfare_tree.md` §7.2). Both must be on for a shot to be fired.
     pub engagements_enabled: bool,
+    /// **Population staffs industry** (T-107, `Hyades_industry.md` §1.8).
+    ///
+    /// When on, every output path reads the *worked* stock rather than the
+    /// standing one:
+    ///
+    /// ```text
+    /// I_worked = I · u,    u = min(1, P / P_req(I))
+    /// ```
+    ///
+    /// | symbol | name | unit | set by |
+    /// |---|---|---|---|
+    /// | `I` | the center's infrastructure stock | kt (cost ladder) | `Factors::infra` |
+    /// | `P` | the center's population | kt (mass ladder) | `World::population` |
+    /// | `P_req(I)` | the population that stock needs to be fully worked | kt (mass ladder) | the people mass at `I`'s Band reading |
+    /// | `u` | the staffing factor | dimensionless, `[0, 1]` | this switch |
+    ///
+    /// **`P_req` is not a new magnitude: one Band of people staffs one Band of
+    /// infrastructure.** That is the relation galaxy generation already writes
+    /// into every homeworld — population and infrastructure both at Band 2,
+    /// annotated *"K = min = 2"* from when infrastructure was a term in `K` —
+    /// so a homeworld at `t = 0` is exactly fully staffed and nothing moves at
+    /// the reference state. `u`'s **shape** (linear, clamped) is the simplest
+    /// monotone form the spec admits, and it is a placeholder: **R-IND22**.
+    ///
+    /// `u ≤ 1`, so the switch can only remove output — the property §1.8 asks
+    /// of the first landing, because it makes the measurement an ablation
+    /// against a known baseline.
+    pub population_staffs_industry: bool,
+    /// **Ablation only — never a design option** (T-122). When on, a rung is
+    /// billed in proportion to the paying bank's *own* color mix, so any bank
+    /// holding the total can pay it: the per-color conjunction T-73 ratified is
+    /// removed. It exists to answer one question — is the color conjunction
+    /// what stands between more output and more infrastructure? — and the
+    /// answer is read from whether a card's effect on work-years appears with
+    /// it on. Design law #11 still holds: the bank pays the full total.
+    pub ablate_color_conjunction: bool,
+    /// **Ablation only — a design-law-#15 violation on purpose** (T-122). When
+    /// on, an intercepting picket is handed the colony ship's true destination
+    /// instead of guessing it from the bearing (T-120). It answers one
+    /// question: is the guess what stands between pickets on station and
+    /// pickets meeting colony ships? Never a design option — a picket that
+    /// knows the answer cannot be deceived (`CLAUDE.md`, "an inference is a
+    /// mechanic").
+    pub ablate_oracle_intercept: bool,
     /// **An ablation, and it is wrong on purpose** (T-116).
     ///
     /// Under `Doctrine::picket_after_founding` a colonizer keeps its hull, so
@@ -2606,6 +2650,9 @@ impl SimConfig {
             // Off: the mechanic is unratified and every measured number in the
             // tree was taken without it. See the field doc.
             engagements_enabled: false,
+            population_staffs_industry: false,
+            ablate_color_conjunction: false,
+            ablate_oracle_intercept: false,
             ablate_picket_founding_cost: false,
             intercept_cone_radians: 0.15,
             intercept_reassess_years: 25.0,
@@ -2810,6 +2857,19 @@ pub struct Simulation {
     current_round: u32,
     /// Count of card plays whose effect is not implemented yet.
     inert_card_plays: u64,
+}
+
+/// **What a picket saw of a colony ship** — the one observation its guess is
+/// made from (R-WAR10, T-120). Bundled because the guess reads all four and
+/// nothing else: where the ship left from, which way it is moving, when that
+/// light reached the picket, and the ship itself — the last read *only* by the
+/// oracle ablation (`SimConfig::ablate_oracle_intercept`), never by the guess.
+#[derive(Clone, Copy, Debug)]
+struct Sighting {
+    origin: Vec3,
+    bearing: Vec3,
+    t_see: f64,
+    quarry: Entity,
 }
 
 /// **A hull as it leaves the yard** — the type, and the minerals that bought it
@@ -3168,15 +3228,17 @@ impl Simulation {
     /// the empire, not from one center — design law #7 puts cards at
     /// empire/macro scale, so a per-center purse would be the wrong grain.
     ///
-    /// **Public because "earliest legal play" is a measurable moment.**
-    /// `Hyades_trees_and_card_value.md` §2.4 reads a card's value at the first
-    /// instant its owner can pay for it, and an order that fails this predicate
-    /// coerces to a *pass* rather than erroring — so a harness that assumes a
-    /// card landed measures its absence while looking like a measurement.
-    /// Today the tier-0 prices sit below the seeded homeworld bank, so that
-    /// instant is round 0; `a_tier_zero_card_is_affordable_at_round_zero` pins
-    /// the dependency, because it holds between two magnitudes that were never
-    /// reconciled with each other.
+    /// **Public because a harness has to know whether a play took.** An order
+    /// that fails this predicate coerces to a *pass* rather than erroring, so a
+    /// harness that assumes a card landed measures its absence while looking
+    /// like a measurement.
+    ///
+    /// Earliest legal play is the **round-0 barrier**, at
+    /// `years_to_first_round` (200 yr by default) — the opening is card-free by
+    /// protocol (`Hyades_netcode.md` §1). T-120 and T-121 measured cards played
+    /// at `t ≈ 0` instead, paying the price out of the bootstrap bank, and
+    /// T-122 found that alone cost ~550 colonies on one seed. `t = 0` is not a
+    /// state a real game reaches with a card in hand.
     pub fn empire_can_afford(&self, p: usize, cost: Price) -> bool {
         let me = PlayerId(p as u32);
         let mut total = Price::ZERO;
@@ -4028,8 +4090,8 @@ impl Simulation {
             let Some(&station) = self.world.position.get(from) else { continue };
             let t_see = depart + origin_pos.distance(station);
             let accel = self.laden_accel(hull, self.config.civilian_accel_g);
-            let Some((guess, t_reach)) = self.guess_destination(seat, origin_pos, bearing, station, accel, t_see)
-            else {
+            let seen = Sighting { origin: origin_pos, bearing, t_see, quarry: ship };
+            let Some((guess, t_reach)) = self.guess_destination(seat, seen, station, accel) else {
                 continue;
             };
             if t_reach >= colony_arrival {
@@ -4072,15 +4134,16 @@ impl Simulation {
     /// a colony ship is a slow, expensive object and the near world on a line
     /// is the cheaper errand, so it is the better prior. It is a prior, not
     /// knowledge, which is the whole point.
-    fn guess_destination(
-        &self,
-        seat: usize,
-        origin: Vec3,
-        bearing: Vec3,
-        station: Vec3,
-        accel: f64,
-        t_see: f64,
-    ) -> Option<(Entity, f64)> {
+    fn guess_destination(&self, seat: usize, seen: Sighting, station: Vec3, accel: f64) -> Option<(Entity, f64)> {
+        let Sighting { origin, bearing, t_see, quarry } = seen;
+        if self.config.ablate_oracle_intercept {
+            let target = self.world.voyage.get(quarry)?.target;
+            if self.world.owner.contains(target) || self.picket.contains_key(&target.0) {
+                return None;
+            }
+            let pos = *self.world.position.get(target)?;
+            return Some((target, t_see + math::ship_travel_years(station.distance(pos), accel)));
+        }
         let cos_cone = self.config.intercept_cone_radians.clamp(0.0, core::f64::consts::PI).cos();
         let scanned: Vec<PlanetId> =
             self.world.knowledge.get(self.player_entity[seat])?.scanned.iter().copied().collect();
@@ -4146,7 +4209,8 @@ impl Simulation {
             return;
         }
         let accel = self.laden_accel(picket, self.config.civilian_accel_g);
-        if let Some((guess, t_reach)) = self.guess_destination(seat, seen, bearing, here, accel, self.clock) {
+        let sighting = Sighting { origin: seen, bearing, t_see: self.clock, quarry };
+        if let Some((guess, t_reach)) = self.guess_destination(seat, sighting, here, accel) {
             if guess != voyage.target && t_reach < qm.arrive {
                 // **Re-aim.** The leg is replaced from where the picket is now,
                 // so the distance already flown is not refunded — a picket that
@@ -5298,8 +5362,8 @@ impl Simulation {
         // bank both go into the context.
         let target_level = infra_step_price(infra, &self.config);
         let works = self.world.works.get(pe).copied().unwrap_or_default();
-        let infra_bill = works_bill(target_level, &works);
         let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
+        let infra_bill = self.rung_bill(target_level, &works, &bank);
         let stockpile_by_color = [
             Price::new(bank.get_basic(Basic::Cyan)),
             Price::new(bank.get_basic(Basic::Magenta)),
@@ -5607,11 +5671,66 @@ impl Simulation {
         self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / per_berth
     }
 
+    /// **The infrastructure this center can actually work** — the stock times
+    /// the staffing factor `u` when `population_staffs_industry` is on, and the
+    /// standing stock otherwise (T-107).
+    ///
+    /// The one place output reads infrastructure. Every rate — extraction,
+    /// per-berth throughput, berth count — goes through here, so population
+    /// reaches all three together or none of them; a staffing rule applied at
+    /// one call site and forgotten at another would let an understaffed world
+    /// build at full speed while mining at a trickle.
+    fn worked_infra(&self, center: Entity) -> Price {
+        let Some(f) = self.world.factors.get(center) else { return Price::ZERO };
+        if !self.config.population_staffs_industry {
+            return f.infra;
+        }
+        f.infra * self.staffing(center)
+    }
+
+    /// **The color-split bill for a rung, as this engine bills it.** T-73's
+    /// `works_bill` unless the conjunction is ablated, in which case the total
+    /// is split by the paying bank's own mix (see
+    /// [`SimConfig::ablate_color_conjunction`]).
+    fn rung_bill(&self, step: Price, works: &cards::Works, bank: &Minerals) -> [Price; 3] {
+        let bill = works_bill(step, works);
+        if !self.config.ablate_color_conjunction {
+            return bill;
+        }
+        let total: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
+        let held = bank.basic_total();
+        if held <= Price::ZERO {
+            return bill;
+        }
+        let mut out = [Price::ZERO; 3];
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            out[i] = total * (bank.get_basic(c) / held.kilotons());
+        }
+        out
+    }
+
+    /// **`u = min(1, P / P_req(I))`** — the fraction of a center's standing
+    /// infrastructure its people can work (T-107, R-IND22). See
+    /// [`SimConfig::population_staffs_industry`] for why `P_req` is the people
+    /// mass at the stock's own Band reading rather than a new constant.
+    pub fn staffing(&self, center: Entity) -> f64 {
+        let Some(f) = self.world.factors.get(center) else { return 0.0 };
+        if f.infra <= Price::ZERO {
+            return 1.0;
+        }
+        let p = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
+        let p_req = Kilotons::at_band(f.infra_band(&self.config));
+        if p_req <= Kilotons::ZERO {
+            return 1.0;
+        }
+        (p.kilotons() / p_req.kilotons()).clamp(0.0, 1.0)
+    }
+
     /// **The fabrication share of this center's infrastructure stock, kt** — the
-    /// quantity both yard axes are bought with (R-O88).
+    /// quantity both yard axes are bought with (R-O88). Worked stock, not
+    /// standing stock (T-107).
     fn fabrication_stock(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
-        employment_stock(infra, &self.works_of(center), cards::Employment::Fabrication)
+        employment_stock(self.worked_infra(center), &self.works_of(center), cards::Employment::Fabrication)
     }
 
     /// **One berth's throughput, kt/yr — the *quality* axis** (T-74's curve,
@@ -5619,7 +5738,7 @@ impl Simulation {
     /// `fab_cap`: Production raises the ceiling, Growth and Expansion lower the
     /// knee. See [`slips`] for the quantity axis this is paired with.
     fn berth_rate(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        let infra = self.worked_infra(center);
         employment_rate(
             infra,
             &self.works_of(center),
@@ -5721,7 +5840,7 @@ impl Simulation {
     /// the knee buys more work per kilotonne, which is Growth and Expansion's
     /// signature.
     fn extraction_rate(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        let infra = self.worked_infra(center);
         let works = self
             .world
             .owner
@@ -5769,8 +5888,9 @@ impl Simulation {
                 // **Pay the color bill, not the total** (T-73). Same
                 // `works_bill` the decision was made against.
                 let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
-                let bill = works_bill(target, &works);
-                let payable = self.world.stockpile.get(center).map(|b| can_pay_bill(b, &bill)).unwrap_or(false);
+                let bank_now = self.world.stockpile.get(center).copied().unwrap_or_default();
+                let bill = self.rung_bill(target, &works, &bank_now);
+                let payable = can_pay_bill(&bank_now, &bill);
                 // What was actually committed is the bill, not the ladder step:
                 // `eta_works` divides the total, so an efficiency card makes the
                 // rung genuinely cheaper — and the yard is held for what was
@@ -7820,8 +7940,8 @@ impl Simulation {
         };
         let step = infra_step_price(f.infra, &self.config);
         let works = self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default();
-        let bill = works_bill(step, &works);
         let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
+        let bill = self.rung_bill(step, &works, &bank);
         let mut out = [Price::ZERO; 3];
         for (i, &c) in Basic::ALL.iter().enumerate() {
             out[i] = (bill[i] - Price::new(bank.get_basic(c))).max(Price::ZERO);
@@ -7994,6 +8114,35 @@ impl Simulation {
     /// (R-TREE3, until works exist) — and Warfare's is built from the first of
     /// these across seats, since `W_i = C_i − Σ_j w_ij C_j` is a *difference*
     /// and has no store of its own.
+    /// **Where the unworked stock sits** (T-107/T-122), kt, as
+    /// `(worked, idle_on_growing_worlds, idle_on_capped_worlds)`.
+    ///
+    /// The split is by whether the world's population can still rise: a world
+    /// at `P ≥ 0.95 K` has reached its ceiling, and a card that speeds growth
+    /// cannot staff anything there — only a change to `K` can. The 0.95 is a
+    /// reading threshold for an instrument, not a model magnitude.
+    pub fn staffing_split(&self, p: usize) -> (f64, f64, f64) {
+        let me = PlayerId(p as u32);
+        let (mut worked, mut idle_growing, mut idle_capped) = (0.0, 0.0, 0.0);
+        for &e in &self.planet_entity {
+            if self.world.owner.get(e).copied() != Some(me) {
+                continue;
+            }
+            let Some(f) = self.world.factors.get(e) else { continue };
+            let standing = f.infra.kilotons();
+            let u = self.staffing(e);
+            worked += standing * u;
+            let idle = standing * (1.0 - u);
+            let pop = self.world.population.get(e).copied().unwrap_or(Kilotons::ZERO);
+            if pop.kilotons() >= 0.95 * self.capacity_of(e).kilotons() {
+                idle_capped += idle;
+            } else {
+                idle_growing += idle;
+            }
+        }
+        (worked, idle_growing, idle_capped)
+    }
+
     pub fn tree_stock(&self, p: usize) -> (usize, f64) {
         let me = PlayerId(p as u32);
         let mut colonies = 0usize;
@@ -9294,16 +9443,53 @@ mod tests {
     }
 
     #[test]
-    fn a_tier_zero_card_is_affordable_at_round_zero() {
-        // **T-120.** `apply_orders` coerces an unaffordable card to a *pass*
-        // rather than failing, so a bed that issues its orders and then runs
-        // cannot tell "the card did nothing" from "the card was never played".
-        // What makes round 0 legal is `bootstrap` seeding the homeworld with
-        // `homeworld_start_minerals`, a magnitude that has never been
-        // reconciled against `Card::cost`.
+    fn a_homeworld_starts_exactly_staffed_and_losing_people_unstaffs_it() {
+        // **T-107's anchor, pinned.** `P_req` is the people mass at the stock's
+        // own Band reading, and galaxy generation writes every homeworld at
+        // population Band 2 and infrastructure Band 2 — so at `t = 0` the
+        // staffing factor is exactly 1 and switching the rule on moves nothing
+        // at the reference state. If generation or either ladder's anchor ever
+        // moves, this fails before a measurement silently starts from an
+        // understaffed homeworld.
+        let mut cfg = test_cfg(1);
+        cfg.population_staffs_industry = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(3, 1), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let u0 = sim.staffing(home);
+        assert!((u0 - 1.0).abs() < 1e-9, "a homeworld starts fully staffed, got u = {u0}");
+
+        // Half the people work half the stock — `u` is linear below 1.
+        let p = *sim.world.population.get(home).unwrap();
+        sim.world.population.insert(home, p * 0.5);
+        let u_half = sim.staffing(home);
+        assert!((u_half - 0.5).abs() < 1e-9, "half the people should staff half the stock, got {u_half}");
+
+        // And it reaches output: extraction and a berth both fall with it.
+        let staffed = {
+            sim.world.population.insert(home, p);
+            (sim.extraction_rate(home), sim.berth_rate(home))
+        };
+        sim.world.population.insert(home, p * 0.5);
+        let thin = (sim.extraction_rate(home), sim.berth_rate(home));
+        assert!(thin.0 < staffed.0, "extraction must read the worked stock");
+        assert!(thin.1 < staffed.1, "a berth must read the worked stock");
+
+        // Off, population is not an argument — the pre-T-107 engine exactly.
+        sim.config.population_staffs_industry = false;
+        assert_eq!(sim.extraction_rate(home), staffed.0);
+    }
+
+    #[test]
+    fn an_unaffordable_card_is_a_pass_and_an_affordable_one_lands() {
+        // **T-120, reframed at T-122.** `apply_orders` coerces an unaffordable
+        // card to a *pass* rather than failing, so a bed that issues its orders
+        // and then runs cannot tell "the card did nothing" from "the card was
+        // never played". Pinned in both directions.
         //
-        // Pinned in both directions so a future price rise, or a smaller
-        // starting bank, fails here instead of silently emptying a card bed.
+        // This test is about the predicate, not about *when* a card is legal.
+        // It plays at construction because that is the cheapest state with a
+        // known bank; earliest legal play is the round-0 barrier at
+        // `years_to_first_round`, and the opening before it is card-free.
         let galaxy = test_galaxy(3, 1);
         let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
         let card = cards::card(cards::CardId(3)).unwrap();
@@ -9975,9 +10161,36 @@ mod tests {
     /// not be feinted, whatever else it modelled.
     #[test]
     fn a_picket_backs_the_near_world_on_a_bearing_and_can_be_feinted() {
+        let (sim, picket, decoy, _) = feint_fixture(false);
+        assert_eq!(
+            sim.world.voyage.get(picket).map(|v| v.target),
+            Some(decoy),
+            "it backs the *near* world on the bearing — which is the wrong one, and is the point"
+        );
+    }
+
+    /// **The oracle ablation means exactly "told the answer"** (T-122).
+    ///
+    /// The same scene as the feint, with `ablate_oracle_intercept` on: the
+    /// picket backs the world the ship is actually going to. Pinned because an
+    /// ablation is only worth its measurement if it changes the one thing it
+    /// names — T-122 read "the guess is not what binds" off this switch, and
+    /// that reading is void if the switch did something else.
+    #[test]
+    fn the_oracle_ablation_backs_the_true_destination() {
+        let (sim, picket, _, prize) = feint_fixture(true);
+        assert_eq!(sim.world.voyage.get(picket).map(|v| v.target), Some(prize));
+    }
+
+    /// Two unclaimed worlds on one bearing out of seat 1's home — a decoy near,
+    /// the prize far — a seat-0 picket standing beside the decoy, and seat 1's
+    /// colonizer launched at the prize. Returns `(sim, picket, decoy, prize)`
+    /// after the launch, so the picket has already chosen.
+    fn feint_fixture(oracle: bool) -> (Simulation, Entity, Entity, Entity) {
         let mut cfg = test_cfg(606);
         cfg.horizon_years = 5.0;
         cfg.engagements_enabled = true;
+        cfg.ablate_oracle_intercept = oracle;
         let mut sim = Simulation::with_baseline(test_galaxy(2, 606), cfg);
         {
             let d = sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap();
@@ -9986,9 +10199,8 @@ mod tests {
         let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
         let home1_pos = *sim.world.position.get(home1).unwrap();
 
-        // Two unclaimed worlds on one bearing out of seat 1's home: a decoy
-        // near, the real prize far. Constructed, because a bed this size will
-        // not offer a collinear pair (§8.9.5's geometry note).
+        // Constructed, because a bed this size will not offer a collinear pair
+        // (§8.9.5's geometry note).
         let free: Vec<Entity> = sim
             .planet_entity
             .iter()
@@ -10001,13 +10213,14 @@ mod tests {
         let out = Vec3::new(1.0, 0.0, 0.0);
         sim.world.position.insert(decoy, home1_pos.add(out.scale(20.0)));
         sim.world.position.insert(prize, home1_pos.add(out.scale(40.0)));
-        // The picket sits beside the decoy, so it can reach either in time.
+        // Beside the decoy, so it can reach either in time.
         sim.world.position.insert(station, home1_pos.add(out.scale(20.5)));
 
+        // The picket rides the Limited Contact hull since T-121.
         let picket = sim.world.spawn();
         sim.world.owner.insert(picket, PlayerId(0));
         sim.world.role.insert(picket, Role::Picket);
-        sim.world.hull_type.insert(picket, HullType::LimitedOffensive);
+        sim.world.hull_type.insert(picket, HullType::LimitedContactVehicle);
         sim.picket.insert(station.0, (0, picket, sim.clock));
         sim.picket_count[0] += 1;
         {
@@ -10017,16 +10230,36 @@ mod tests {
             }
         }
 
-        // Seat 1 sends a colonizer at the *far* world. Same bearing as the
-        // decoy, so the picket cannot tell them apart.
+        // Same bearing as the decoy, so a guessing picket cannot tell them apart.
         sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, prize, 0.0);
-
         assert!(!sim.picket.contains_key(&station.0), "the picket should have broken for the bearing");
-        assert_eq!(
-            sim.world.voyage.get(picket).map(|v| v.target),
-            Some(decoy),
-            "it backs the *near* world on the bearing — which is the wrong one, and is the point"
-        );
+        (sim, picket, decoy, prize)
+    }
+
+    #[test]
+    fn the_color_conjunction_ablation_bills_the_same_total_in_the_banks_mix() {
+        // **T-122.** The ablation removes *which colors* a rung needs and
+        // nothing else: the total billed is unchanged (so design law #11 holds
+        // and `eta_works` still means what it did), and the split follows the
+        // paying bank, so any bank holding the total can pay. A lopsided bank
+        // that fails the ratified per-color test must pass the ablated one.
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), test_cfg(3));
+        let works = cards::Works::default();
+        let step = Price::new(0.9);
+        let mut bank = Minerals::default();
+        bank.add_basic(Basic::Cyan, 2.0);
+        bank.add_basic(Basic::Magenta, 0.05);
+
+        let ratified = sim.rung_bill(step, &works, &bank);
+        assert_eq!(ratified, works_bill(step, &works), "off, the bill is T-73's");
+        assert!(!can_pay_bill(&bank, &ratified), "a one-color bank cannot pay a three-color rung");
+
+        sim.config.ablate_color_conjunction = true;
+        let ablated = sim.rung_bill(step, &works, &bank);
+        let total = |b: &[Price; 3]| b.iter().fold(Price::ZERO, |a, &x| a + x).kilotons();
+        assert!((total(&ablated) - total(&ratified)).abs() < 1e-12, "the total is the same bill");
+        assert_eq!(ablated[2], Price::ZERO, "no Yellow is asked of a bank that holds none");
+        assert!(can_pay_bill(&bank, &ablated), "and the bank that holds the total now pays it");
     }
 
     /// **A picket whose world gets colonized goes back to the frontier**
