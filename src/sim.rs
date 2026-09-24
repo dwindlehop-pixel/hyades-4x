@@ -4933,9 +4933,8 @@ impl Simulation {
 
     /// **A colonizer that flew in anyway fights the picket holding the world.**
     ///
-    /// Same resolver as everything else (T-111). The picket takes the laser side
-    /// — it is the one on station — and the arriving colonizer the missile side,
-    /// which is R-WAR5's placeholder convention and decides outcomes.
+    /// Same resolver as everything else (T-111). Each side fires what its Design
+    /// mounts (T-125); being on station decides nothing about who is armed.
     fn resolve_picket_fight(&mut self, world: Entity, arriving_seat: usize) {
         let Some((holder, stack, _)) = self.picket.get(&world.0) else { return };
         let (holder, defenders) = (*holder, stack.clone());
@@ -4966,9 +4965,8 @@ impl Simulation {
     /// **One fight between hulls standing at `site`**, resolved, wrecked and
     /// logged — the part a picket's defense and a port strike share (T-123).
     ///
-    /// The defenders take the laser side and the attackers the missile side,
-    /// which is R-WAR5's placeholder convention and decides outcomes. The
-    /// destroyed hulls, their crews and their cargo become slag at the site
+    /// Each side fires what its Design mounts (T-125, retiring R-WAR5's
+    /// laser-side and missile-side convention). The destroyed hulls, their crews and their cargo become slag at the site
     /// (design law #11). Returns `(defenders lost, attackers lost)`; the caller
     /// owns whatever index the dead were standing in.
     fn fight_at(

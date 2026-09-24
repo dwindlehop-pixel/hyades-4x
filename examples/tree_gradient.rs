@@ -51,7 +51,7 @@
 //! | Production | `∫ F dt`, in **volume** | **measured** — needs `VehicleSnapshot::volume` |
 //! | Warfare | `∫ [C_i − Σ w_ij C_j] dt` | **computed and excluded** — see below |
 //! | Politics | `∫ [C_i + κ Σ φ_ij C_j] dt` | **degenerate** — `φ_ij ≡ 0` |
-//! | Technology | `∫ Q dt` | **undefined** — R-TREE4 |
+//! | Technology | `∫ Q dt` | **specified, not built** — T-131 |
 //!
 //! **Warfare sums to exactly zero on the 3-seat bed, and the reason is the
 //! galaxy generator, not the autopilot.** The obvious explanation — every seat
@@ -84,9 +84,12 @@
 //! last bit. Including it would silently double Expansion's weight in the
 //! geomean, so it is printed and excluded.
 //!
-//! **Technology has no definition to implement.** §2.3.5's power mean needs `ρ`,
-//! per-axis weights and reference values, all flagged placeholders (R-TREE4),
-//! and two of its three axes need combat reach the engine does not model.
+//! **Technology has no table to read.** `Hyades_technology_tree.md` §4 rates each
+//! Design statically, head-to-head in one bed per role, and `Q` is a lookup into
+//! that table — which does not exist yet (T-131). Two things would still make it
+//! uninformative once it does: the combat beds tie every armed Design at the
+//! current lethality (R-TECH14), and no build decision reads the roster, so a
+//! Technology card builds nothing new (R-TECH18).
 //!
 //! ## Method
 //!

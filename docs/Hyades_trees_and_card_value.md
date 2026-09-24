@@ -169,7 +169,7 @@ Defined before use (`CLAUDE.md` §6), because §3 and §4 both index on them.
 | `C_i(t)` | colonies owned by `i` at time `t` | count | `SimReport::players[i].colonies` |
 | `V_i(t)` | works owned by `i` | kt of works | `Hyades_industry.md` §5 — **not yet built** |
 | `F_i(t)` | fleet **enclosed volume** owned by `i` | hull units³ | `HullType::hull_volume` summed over owned hulls (R-PROD5) |
-| `Q_i(t)` | capability of `i` | dimensionless | §2.3.5, **proposed here** |
+| `Q_i(t)` | capability of `i` | kt of anchor-equivalent capability | §2.3.5; Technology spec §4 |
 | `w_ij` | Warfare's neighbor weight of `j` from `i`'s view | dimensionless, `Σ_j w_ij = 1` | §2.3.2, fixed at game start |
 | `φ_ij(t)` | share of `j`'s output accruing to `i` | dimensionless, `Σ_i φ_ij ≤ 1` | §2.3.6, from delivered freight |
 | `κ` | Politics coupling constant | dimensionless, `0 < κ < 1` | §2.3.6, placeholder |
@@ -317,43 +317,31 @@ number while keeping its authority. **R-PROD5** carries the re-measurement.
 #### 2.3.5 Technology — capability-years
 
 ```text
-T_i = ∫₀^T Q_i(t) dt
+T_i = ∫₀^T Q_i(t) dt        Q_i(t) = Σ_{h owned by i}  m_h · c(d_h)
 ```
 
-`Q_i` is the metric the author left open. **Proposed definition, and the
-reasoning matters more than the constants:**
+**Specified by the author (T-131); the full decision and its open parts are
+`Hyades_technology_tree.md` §4.** Capability is rated **statically**: every
+possible Design plays every other, at equal mineral spend, head-to-head in one
+competitive test bed per role — colonizers colonize, miners mine and refine,
+pickets intercept less heavily armed targets, offensive fleets fight a pitched
+battle starting at a distance (long range) or point blank (short range) — and
+the outcomes are fitted to an **Elo** rating. `c(d)` is that rating turned into
+a strength and normalized across roles; `m_h` is the hull's dry mass, because
+the rating was earned at equal spend.
 
-Capability is *not* fleet mass — that is Production. It is what a fleet **can
-do**, so it is a per-mass effectiveness times the mass, and Technology raises the
-first factor. It is naturally a **vector** over the axes the author named:
+Capability is *not* fleet mass — that is Production — and the rating is what
+separates them: `Q_i` is fleet mass times a mass-weighted mean strength, and
+Technology moves the second factor.
 
-| axis | meaning | measurable as |
-|---|---|---|
-| projection | deliverable combat mass at range | combat mass × reach under `a_max` within a response window |
-| defense | combat mass within response time of owned colonies | same, evaluated against own holdings |
-| acquisition | ore delivered per year | freighter deliveries — **already logged** |
+**Not measurable today**, for three reasons that are each an `OPEN` item in the
+Technology spec: the table has not been computed (R-TECH1); the combat beds tie
+every armed Design at the current placeholder lethality (R-TECH14); and no build
+decision reads the roster, so a Technology card builds nothing new (R-TECH18).
 
-**Aggregate them with a power mean, not a sum and not a hard minimum**
-(**R-TREE4**):
-
-```text
-Q = ( Σ_a  s_a · (q_a / q_ref,a)^ρ  ) ^ (1/ρ)
-```
-
-- A **sum** (`ρ = 1`) lets Technology farm whichever axis is cheapest and ignore
-  the rest.
-- A **hard Liebig minimum** (`ρ → −∞`) matches the economic thesis — the best war
-  machine needs all three basics and all three supers, which is a minimum — and
-  forces the cross-tree engagement design law #7 requires.
-- But a hard minimum makes a Technology card's value depend entirely on whether
-  it happens to raise the *currently weakest* axis, which is enormous variance.
-  §4.3 requires tier-1 cards to have the **lowest** dispersion of any tier, and a
-  Liebig capability may make that impossible for Technology specifically.
-
-So `ρ` is a **measured knob**, and "how Liebig is capability" becomes one number
-to ratify rather than a binary to argue about. Start near `ρ = −1` (harmonic
-mean: strongly penalises a weak axis without zeroing the card that missed it).
-Weights `s_a`, references `q_ref,a` and `ρ` are all placeholders.
+The power-mean proposal this section used to carry — three axes aggregated with
+an exponent `ρ` (R-TREE4) — was never ratified and is superseded; appendix §D.9
+says what it was and why it is replaced.
 
 #### 2.3.6 Politics — own colony-years plus an earned share of others'
 
@@ -461,7 +449,7 @@ world?* — applied to all six before any of them is used:
 | Warfare | **only if `w_ij` is live** | frozen at setup (§2.3.2) |
 | Growth | no, once works exist | works must be bought with minerals |
 | Production | **yes, if counted in hulls** | counted in mass (§2.3.4) |
-| Technology | **yes, if aggregated by sum** | power mean with `ρ < 1` (§2.3.5) |
+| Technology | **yes, if a hull carries its current role's rating** | its Design's best role (Technology §4.7.3); the full audit is Technology §4.8 |
 | Politics | **yes, if `φ` keys on pacts** | `φ` is delivered freight (§2.3.6) |
 
 Four of the six had a live farm in their obvious formulation. That ratio is the
@@ -546,7 +534,7 @@ sampling would weight the series by activity, which is exactly what the metric i
 trying to measure.
 
 Three of the six are measurable today (`C`, `F`, and the freight flows `φ` needs);
-`V` waits on works (T-73/T-74) and `Q` on the capability definition (R-TREE4).
+`V` waits on works (T-73/T-74) and `Q` on the capability definition (R-TREE4, superseded by T-131).
 
 **Updated: `V` has landed and `φ` has not.** Works exist since T-73/T-75, so
 Growth is measured directly rather than through R-TREE3's infrastructure proxy.
@@ -555,7 +543,7 @@ is the one this section claimed was — **inter-player delivered freight is not
 accounted anywhere**, so `φ_ij` cannot be read and Politics has no objective
 distinct from Expansion (§2.3.6). So the count today is **three measurable**
 (`E`, `G`, `P`), one algebraically dead on the standard bed (`W`, R-TREE8), one
-blocked on freight accounting (`Pol`), and one undefined (`Q`, R-TREE4).
+blocked on freight accounting (`Pol`), and one specified and not built (`Q`, T-131).
 
 ---
 
@@ -666,7 +654,7 @@ Stated so it is not discovered as a surprise:
 | **R-TREE1** | The end-of-game chronicle: generated from real events, in the empire's register, with the euphemism derived from the act. Scope and surface. | §1.2 |
 | **R-TREE2** | `λ_w`, Warfare's neighbor length scale — and whether centroid distance at setup is the right proximity measure. | §2.3.2 |
 | **R-TREE3** | Growth's interim stock until works exist. Infrastructure in kilotons is proposed; confirm or replace when T-73/T-74 land. | §2.3.3 |
-| **R-TREE4** | Capability: the axis set, the reference scales `q_ref,a`, the weights `s_a`, and above all `ρ` — how Liebig capability is. | §2.3.5 |
+| ~~**R-TREE4**~~ | ~~Capability: the axis set, the reference scales `q_ref,a`, the weights `s_a`, and above all `ρ`.~~ **Superseded (T-131)** by the author's static per-role rating; the open parts moved to R-TECH5–R-TECH18 in the Technology spec. | §2.3.5 |
 | **R-TREE5** | Politics' coupling `κ`, and whether delivered freight is the whole of `φ_ij` or only its economic half (shared intelligence is the other candidate). | §2.3.6 |
 | **R-TREE6** | Dispersion measure for the tier-1 constraint. MAD proposed over variance; and the numeric bound for "similar P92". | §4.3 |
 | **R-TREE7** | Whether all six trees need the full horizon, or only those whose stock has not saturated. Answered by T-78. The horizon itself is settled at **3,000 yr** (§3.1). | §3.2 |

@@ -163,6 +163,57 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-131. The Technology objective — a static rating of every Design, earned head-to-head per role
+
+**Open, Band B: specified, not built.** Author's specification, quoted in full
+in `Hyades_technology_tree.md` §4: rate every possible Design by Elo from
+head-to-head matches at a fleet size set by hull size (10–1,000), one
+competitive test bed per role judged by its task; long-range offensive roles
+start at a distance and short-range ones at point blank; the tree's stock is
+that rating as capability, integrated over the whole fleet, every year.
+Supersedes R-TREE4. Measurements in appendix §D.9.
+
+**Landed in this entry (spec and probe, no engine change):** Technology §4
+rewritten, trees §2.3.5 and §2.5 amended, `examples/capability_probe` added.
+
+**Measured before building anything** (`examples/capability_probe`):
+
+- **The pool is seven Designs**, not ten: LCV, LCU and LOU are identical in
+  every field a bed reads, and so are GCV and GCU (R-TECH17).
+- **Equal spend at ten General hulls fields 10–658 hulls a side**, inside the
+  author's range (R-TECH11).
+- **A 500-a-side combat match costs 0.032–0.049 s over three runs** — a lower bound, because
+  every measured fight ended immediately.
+- **The short-range bed ties every armed Design today**: 49 of 49 matches
+  destroyed both fleets (R-TECH14, blocked on R-WAR19).
+- **Beams stop reaching between 1e-3 and 1e-1 ly** on stationary fleets, so a
+  long-range bed whose fleets do not close is a draw for every beam Design
+  (R-TECH12).
+
+**Found by reading:** no build decision reads the roster —
+`Standing::design_for` reads Doctrine only, and `roster_permits` returns `true`
+while `enforce_roster` is off — so every Technology card builds nothing new and
+is worth exactly zero on this objective whatever the table says (R-TECH18).
+
+**Stages, in order:**
+
+1. The author ratifies or overrides the recommendations (R-TECH5–R-TECH11,
+   R-TECH13, R-TECH16, R-TECH17).
+2. R-WAR19's lethality set so an equal-spend fight lasts many ticks (R-TECH14),
+   and a closing long-range bed (R-TECH12).
+3. `VehicleSnapshot` carries the hull type and class, so `Q_i` is computable
+   from a run.
+4. A bed seeder: equal-spend fleets spawned into a `Simulation` with no
+   production, running the engine's own role systems (`bed → sim`, as
+   `arena → combat`).
+5. The five beds (colonizer, miner, picket, short-range, long-range), then the
+   rating harness: Bradley–Terry maximum likelihood with a virtual-draw prior,
+   the intransitivity report (R-TECH7), and the table in `data/` with its
+   configuration stamp (R-TECH15).
+6. `Q_i` in `examples/tree_gradient`, then its saturation (R-TECH2, T-78).
+7. A Design resolver that reads the roster (R-TECH18) — the step that lets a
+   Technology card move its own metric.
+
 ### T-130. `exp` and `ln` on the run path: four-multiply minimax polynomials
 
 **Closed.** Author's direction: *"Replace exp and ln with the best polynomial
@@ -1469,10 +1520,12 @@ than leaving it inside three separate documents.
 - **Production is measurable today.** Fleet-years in mass, and
   `VehicleSnapshot::dry_mass` exists. What it lacks is a saturation measurement
   (**R-PROD3**) and any card that writes `Works` (**R-PROD1**).
-- **Technology has no objective at all.** `Q_i` is a proposal with three
-  candidate axes and an unratified aggregator exponent `ρ` (**R-TREE4**), so
-  `examples/tree_gradient` **excludes** Technology from its composite and says
-  so. **R-TECH1** is the prerequisite for measuring a single Technology card.
+- **Technology's objective is specified and not built (T-131).** The author
+  replaced R-TREE4's power mean with a static per-role Elo rating of every
+  Design; `examples/tree_gradient` still **excludes** Technology, because the
+  table does not exist yet. **R-TECH1** is the prerequisite for measuring a
+  single Technology card, and **R-TECH18** (no build reads the roster) is the
+  prerequisite for one to score anything.
 - **Warfare is an algebraic zero on the 3-seat bed** — and **the reason given
   here was wrong (T-111).** This said *"because nothing fights, and it cannot
   fight until T-30 gives the engine an accept/decline site."* The round layer had

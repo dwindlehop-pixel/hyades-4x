@@ -1558,6 +1558,100 @@ both exact. The `veins` power (`10^y`) goes through `log2_fast` and
 
 ---
 
+## D.9 T-131 — the Technology objective: pricing a static per-role rating, and the proposal it replaces
+
+*Supports `Hyades_technology_tree.md` §4. Harness: `examples/capability_probe`,
+release build, `SimConfig::new(1)`, `CombatConfig::default()`, beam family only
+(the one built). Deterministic apart from the wall times.*
+
+### The pool at equal spend
+
+Budget `B` = ten General Systems hulls' price (13.154 kt). `N = round(B / m)`.
+
+| hull | dry kt | beams | structure kJ | `N` |
+|---|---|---|---|---|
+| LSV | 0.0201 | 0 | 20.1 | 654 |
+| MSV | 0.1092 | 0 | 109.2 | 120 |
+| GSV | 1.3154 | 0 | 1,315.4 | 10 |
+| LCV | 0.0200 | 1 | 20.0 | 658 |
+| LCU | 0.0200 | 1 | 20.0 | 658 |
+| GCV | 1.0995 | 317 | 1,099.5 | 12 |
+| GCU | 1.0995 | 317 | 1,099.5 | 12 |
+| LOU | 0.0200 | 1 | 20.0 | 658 |
+| ROU | 0.1000 | 12 | 100.0 | 132 |
+| GOU | 1.0219 | 440 | 1,021.9 | 13 |
+
+LCV, LCU and LOU are one object in every field a bed reads, and so are GCV and
+GCU: ten hull names, **seven distinct Designs** (three unarmed, four armed).
+`design_loadout` ignores the class, so no class adds a candidate.
+
+### Cost of one combat match
+
+Point blank, LCV against LCV, `N` a side: 0.000 s (10), 0.000 s (50), 0.002 s
+(100), 0.008–0.009 s (250), **0.032–0.049 s (500)** — three runs. Every one of
+these fights ended with both sides destroyed, so the figures are a **lower
+bound** on what a fight that runs the whole 0.5-yr engagement horizon (1,000
+ticks at `dt = 0.0005`) costs.
+
+### Beam reach, stationary fleets
+
+Ten LCVs a side, fleets not closing, mean over seeds 1–3:
+
+| separation ly | 0 | 1e-4 | 3e-4 | 1e-3 | 3e-3 | 1e-2 | 1e-1 |
+|---|---|---|---|---|---|---|---|
+| survivors of 20 | 0.00 | 0.00 | 0.00 | 0.00 | 3.00 | 15.33 | 20.00 |
+
+A beam's hit test compares a light-time extrapolation of the target against
+where it actually is, and station-keeping bends the path away from the
+extrapolation, so hits thin out with range and vanish by 0.1 ly. Three seeds; the
+transition sits between 1e-3 and 1e-1 ly and is not resolved more finely than the
+sampled points.
+
+### The short-range round robin
+
+Every armed Design against every armed Design (4 distinct, 7 names, 49
+matches), point blank, seed 1: **every share is 0.500, and surviving dry mass
+summed over all 49 matches is 0.0000 kt.** Each match destroyed both fleets.
+Whole round robin: 0.6–0.7 s over three runs.
+
+The mechanism is inferred from the magnitudes and not instrumented: one mount
+delivers 40 shots × 50 kJ = 2,000 kJ per tick, a hundred times a Limited hull's
+structure, and fire is simultaneous (warfare §8.17), so each side's first tick
+of fire exceeds the other's whole structure.
+
+### Superseded: the power-mean proposal (R-TREE4)
+
+*Carried in `Hyades_trees_and_card_value.md` §2.3.5 and Technology §4.2 through
+Rev 1; never ratified.*
+
+Capability was proposed as a vector over three axes measured in situ —
+**projection** (deliverable combat mass at range), **defense** (combat mass
+within response time of owned colonies) and **acquisition** (ore delivered per
+year) — aggregated by a power mean `Q = (Σ_a s_a (q_a / q_ref,a)^ρ)^(1/ρ)`, with
+`ρ` measured to decide how strongly a weak axis should dominate (`ρ = 1` a sum
+that farms the cheapest axis, `ρ → −∞` a hard minimum with high card-value
+variance, `ρ = −1` recommended as a start).
+
+**What it was wrong about, or left unanswered, relative to its replacement:**
+
+- **It measured capability against the live game.** Projection and defense were
+  functions of where the rival was and what it flew, so a Technology card's
+  value would have carried the variance of the matchup. The static rating
+  removes the opponent from the stock entirely.
+- **It needed four sets of placeholders** — the axes, their weights `s_a`, their
+  references `q_ref,a`, and `ρ` — before one number could be read. The static
+  rating has one scale (Elo) and one anchor per role.
+- **Two of its three axes needed combat reach the engine did not model**, so it
+  could not be built even as a proposal.
+
+**What carries over:** its aggregation argument. A plain sum over hulls could
+still farm whichever role is cheapest to be good at; the replacement answers it
+with per-role anchors (every strength reads "multiples of the anchor Design in
+this role") and leaves role weighting open rather than assuming a sum is safe
+(Technology §4.7).
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the
