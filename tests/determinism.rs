@@ -28,7 +28,7 @@ fn fresh_short(players: usize, seed: u64, horizon_years: f64) -> Simulation {
 /// be comparable to each other. A test that asserts *"no entity moves faster
 /// than c"* is asserting a property of `math::position_along`; it needs ships
 /// in flight and nothing else. Running it on the standard bed makes it pay for
-/// a colonisation economy, a mineral field and thousands of planets it never
+/// a colonization economy, a mineral field and thousands of planets it never
 /// reads — and then the only lever left when the bed gets more expensive is to
 /// cut the horizon, which eventually cuts the mechanism out too.
 ///
@@ -44,76 +44,104 @@ fn tiny_galaxy(players: usize, seed: u64, planets: usize, horizon_years: f64) ->
     Simulation::with_baseline(galaxy, cfg)
 }
 
-#[test]
-fn full_run_reports_are_bit_identical() {
-    // Every fair seat count, 18 included (R-NET14). `Hyades_netcode.md` §6 makes
-    // bit-reproducibility a *network* property, not only an MC one: a divergence
-    // at any seat count is a desync, and 18 is the count the protocol is now
-    // specified for.
-    //
-    // **Full-size galaxies, and the horizon is now per seat count.** This is the
-    // one test `CLAUDE.md` §2 says must *keep* the scenery: an ordering fault in
-    // a large collection only shows at scale. So the lever is duration — and
-    // bit-identity is an arithmetic identity, which needs no horizon at all
-    // beyond enough of one that the mechanism has fired.
-    //
-    // A *uniform* horizon was the wrong shape. Cost goes as events, which go as
-    // seats × years, so 100 yr for everybody made the 18-seat arm pay for the
-    // whole target while the 2-seat arm ran only **812 events** — the thinnest
-    // coverage sat where the budget was not being spent. Opening the build-wide
-    // axis (R-O88) tripled the hulls in the water by any given year and took
-    // this target 30 s → 58 s, which is what forced the question.
-    //
-    // Equalising instead — each seat count gets the horizon that buys it a
-    // comparable number of events — is **cheaper and covers more**: the target
-    // comes back under budget *and* the worst-covered arm goes from 812 events
-    // to ~1,900. Measured events per arm at these horizons: 2,761 / 2,7xx /
-    // 3,0xx / ~1,800 / ~1,900.
-    //
-    // **Re-scaled again at T-98**, and this time event count went *down* for a
-    // change that made the simulation do more: sizing a hauler's hull to its
-    // rock means **fewer, bigger trips** for the same tonnage, so every arm lost
-    // roughly a third of its events at a fixed horizon and three of the five
-    // dropped under the floor. Re-measured: 2,381 / 1,853 / 1,775 / 1,930 /
-    // 2,152 events at the horizons below. That is the `yr/s`-versus-`ns/event`
-    // distinction (`CLAUDE.md` §2) showing up in a test budget — the work per
-    // event rose, the event count fell, and only one of those is visible here.
-    //
-    // **Re-scaled at T-88**, and the first attempt overshot — which is the
-    // point of the floor. `cycle_years` 50 → 5 makes the economy tick ten times
-    // as often, so dividing every horizon by ten looked right and left the
-    // 2-seat arm on **450 events**: event count is not linear in the horizon
-    // here, because the early game has one centre and the tick multiplier has
-    // almost nothing to multiply. Measured instead, these horizons buy each arm
-    // ~1,500 events — against the 1,800–3,000 the old ones
-    // bought — and take the target from 267 s back under budget.
-    // The rule `CLAUDE.md` §2 states is the one being followed — when a change
-    // raises event count, check the test horizons *in the same commit* — and
-    // the floor below is what says the trim did not go too far.
-    //
-    // The `events_processed` floor below is what stops any future trim going
-    // vacuous — the same guard, and for the same reason, as `moving` in
-    // `positions_never_exceed_lightspeed`. It fired on the first attempt here
-    // too, at a uniform 50 yr.
-    for &(n, seed, horizon) in &[(2usize, 1u64, 90.0), (3, 7, 60.0), (6, 13, 40.0), (12, 99, 26.0), (18, 4, 20.0)] {
-        let mut a = fresh_short(n, seed, horizon);
-        let mut b = fresh_short(n, seed, horizon);
-        let ra = a.run();
-        let rb = b.run();
-        assert!(
-            ra.events_processed > 1_000,
-            "n={n} seed={seed} processed only {} events — the horizon has been cut past the point where              this test asserts anything",
-            ra.events_processed
-        );
-        assert_eq!(ra.events_processed, rb.events_processed, "events n={n} seed={seed}");
-        assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
-        for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
-            assert_eq!(pa.planets_owned, pb.planets_owned);
-            assert_eq!(pa.colonies, pb.colonies);
-            assert_eq!(pa.mining_outposts, pb.mining_outposts);
-            assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
-        }
+/// **One seat count per test** (T-127). The five arms were one test that ran
+/// them in sequence, and it was the whole determinism target's critical path —
+/// **64.9 s** on its own on the T-127 machine, against a 60-second budget, on
+/// the old binary as on the new. As five tests the harness runs them in
+/// parallel; every assertion and every galaxy is unchanged.
+///
+/// Every fair seat count, 18 included (R-NET14). `Hyades_netcode.md` §6 makes
+/// bit-reproducibility a *network* property, not only an MC one: a divergence
+/// at any seat count is a desync, and 18 is the count the protocol is now
+/// specified for.
+///
+/// **Full-size galaxies, and the horizon is now per seat count.** This is the
+/// one test `CLAUDE.md` §2 says must *keep* the scenery: an ordering fault in
+/// a large collection only shows at scale. So the lever is duration — and
+/// bit-identity is an arithmetic identity, which needs no horizon at all
+/// beyond enough of one that the mechanism has fired.
+///
+/// A *uniform* horizon was the wrong shape. Cost goes as events, which go as
+/// seats × years, so 100 yr for everybody made the 18-seat arm pay for the
+/// whole target while the 2-seat arm ran only **812 events** — the thinnest
+/// coverage sat where the budget was not being spent. Opening the build-wide
+/// axis (R-O88) tripled the hulls in the water by any given year and took
+/// this target 30 s → 58 s, which is what forced the question.
+///
+/// Equalising instead — each seat count gets the horizon that buys it a
+/// comparable number of events — is **cheaper and covers more**: the target
+/// comes back under budget *and* the worst-covered arm goes from 812 events
+/// to ~1,900. Measured events per arm at these horizons: 2,761 / 2,7xx /
+/// 3,0xx / ~1,800 / ~1,900.
+///
+/// **Re-scaled again at T-98**, and this time event count went *down* for a
+/// change that made the simulation do more: sizing a hauler's hull to its
+/// rock means **fewer, bigger trips** for the same tonnage, so every arm lost
+/// roughly a third of its events at a fixed horizon and three of the five
+/// dropped under the floor. Re-measured: 2,381 / 1,853 / 1,775 / 1,930 /
+/// 2,152 events at the horizons below. That is the `yr/s`-versus-`ns/event`
+/// distinction (`CLAUDE.md` §2) showing up in a test budget — the work per
+/// event rose, the event count fell, and only one of those is visible here.
+///
+/// **Re-scaled at T-88**, and the first attempt overshot — which is the
+/// point of the floor. `cycle_years` 50 → 5 makes the economy tick ten times
+/// as often, so dividing every horizon by ten looked right and left the
+/// 2-seat arm on **450 events**: event count is not linear in the horizon
+/// here, because the early game has one center and the tick multiplier has
+/// almost nothing to multiply. Measured instead, these horizons buy each arm
+/// ~1,500 events — against the 1,800–3,000 the old ones
+/// bought — and take the target from 267 s back under budget.
+/// The rule `CLAUDE.md` §2 states is the one being followed — when a change
+/// raises event count, check the test horizons *in the same commit* — and
+/// the floor below is what says the trim did not go too far.
+///
+/// The `events_processed` floor below is what stops any future trim going
+/// vacuous — the same guard, and for the same reason, as `moving` in
+/// `positions_never_exceed_lightspeed`. It fired on the first attempt here
+/// too, at a uniform 50 yr.
+fn full_run_reports_are_bit_identical(n: usize, seed: u64, horizon: f64) {
+    let mut a = fresh_short(n, seed, horizon);
+    let mut b = fresh_short(n, seed, horizon);
+    let ra = a.run();
+    let rb = b.run();
+    assert!(
+        ra.events_processed > 1_000,
+        "n={n} seed={seed} processed only {} events — the horizon has been cut past the point where              this test asserts anything",
+        ra.events_processed
+    );
+    assert_eq!(ra.events_processed, rb.events_processed, "events n={n} seed={seed}");
+    assert_eq!(ra.planets_scanned_total, rb.planets_scanned_total);
+    for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
+        assert_eq!(pa.planets_owned, pb.planets_owned);
+        assert_eq!(pa.colonies, pb.colonies);
+        assert_eq!(pa.mining_outposts, pb.mining_outposts);
+        assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
     }
+}
+
+#[test]
+fn full_run_reports_are_bit_identical_2_seats() {
+    full_run_reports_are_bit_identical(2, 1, 90.0);
+}
+
+#[test]
+fn full_run_reports_are_bit_identical_3_seats() {
+    full_run_reports_are_bit_identical(3, 7, 60.0);
+}
+
+#[test]
+fn full_run_reports_are_bit_identical_6_seats() {
+    full_run_reports_are_bit_identical(6, 13, 40.0);
+}
+
+#[test]
+fn full_run_reports_are_bit_identical_12_seats() {
+    full_run_reports_are_bit_identical(12, 99, 26.0);
+}
+
+#[test]
+fn full_run_reports_are_bit_identical_18_seats() {
+    full_run_reports_are_bit_identical(18, 4, 20.0);
 }
 
 #[test]
@@ -161,7 +189,7 @@ fn positions_never_exceed_lightspeed() {
     // **The scenery came out, not the timeline.** This asserts a property of
     // `math::position_along` — no entity moves faster than c — which needs
     // *ships in flight* and reads nothing else: no economy, no mineral field,
-    // no colonisation. On the standard bed it paid for all three, and it was
+    // no colonization. On the standard bed it paid for all three, and it was
     // **97 s of a 102 s target**, so the only lever left each time the bed got
     // more expensive was to cut the horizon. Cut it far enough and there is
     // nothing flying and the test passes vacuously.

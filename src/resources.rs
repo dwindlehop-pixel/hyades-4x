@@ -17,7 +17,7 @@ use crate::units::{Band, Kilotons, Measure, Price};
 // `Ord` so `Basic` can key a deterministic ordering — `matching::Commodity`
 // carries one (T-83) and `Commodity` must be `Ord` for the Exchange's books to
 // have a canonical order. The variant order is the `Basic::ALL` order and is
-// what every colour-indexed array in the engine already assumes.
+// what every color-indexed array in the engine already assumes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Basic {
     Cyan,
@@ -92,7 +92,7 @@ impl Archetype {
 /// Per-planet **density** of each tier-1 basic (the mineable field, §4.3). Not a
 /// stockpile — a rate-determining ground truth a close scan reveals.
 ///
-/// **One number per colour: the ore in the ground, in kilotons.** A Band is a
+/// **One number per color: the ore in the ground, in kilotons.** A Band is a
 /// *reading* of that number — a log shorthand for talking about it — never a
 /// second thing to store, and this field stores no Bands. That matters here
 /// because the field **depletes**: hold a Band and write it back after each
@@ -158,7 +158,7 @@ impl MineralField {
     }
 
     /// Extract up to `amount` of ore, **depleting** the field (density falls as
-    /// minerals are mined out). Draws from each colour in proportion to its
+    /// minerals are mined out). Draws from each color in proportion to its
     /// remaining mass and returns what was actually extracted as a cargo bank.
     /// A field mines out toward zero and then yields nothing.
     pub fn extract(&mut self, amount: Kilotons) -> Minerals {
@@ -238,17 +238,39 @@ impl Minerals {
     /// proportion to how much is held. Returns `false` (and spends nothing) if
     /// the pool is short. Vehicle/infra costs flow through here.
     pub fn try_spend_total(&mut self, amount: Price) -> bool {
+        self.try_take_total(amount).is_some()
+    }
+
+    /// As [`Self::try_spend_total`], but **hands back what it actually took**.
+    ///
+    /// A hull is built out of specific minerals and carries that composition for
+    /// the rest of its life (R-IND21), so the thing that pays for it has to say
+    /// what it paid with. Returning the withdrawal rather than recomputing it
+    /// from the ratio afterwards is the difference between a record and a
+    /// reconstruction — and the bank's mix moves the instant this returns, so a
+    /// reconstruction would already be reading the wrong proportions.
+    ///
+    /// Supers and apex are untouched here: nothing spends them on a hull yet.
+    /// When something does, this is the one place the composition is captured
+    /// and every downstream credit follows it without further change.
+    pub fn try_take_total(&mut self, amount: Price) -> Option<Minerals> {
         if amount <= Price::ZERO {
-            return true;
+            return Some(Minerals::default());
         }
         let total = self.basic_total();
         if total + Price::new(1e-9) < amount {
-            return false;
+            return None;
         }
         let f = amount / total;
-        self.cyan -= self.cyan * f;
-        self.magenta -= self.magenta * f;
-        self.yellow -= self.yellow * f;
-        true
+        let taken = Minerals { cyan: self.cyan * f, magenta: self.magenta * f, yellow: self.yellow * f, ..*self };
+        let mut taken = taken;
+        taken.red = 0.0;
+        taken.green = 0.0;
+        taken.blue = 0.0;
+        taken.apex = 0.0;
+        self.cyan -= taken.cyan;
+        self.magenta -= taken.magenta;
+        self.yellow -= taken.yellow;
+        Some(taken)
     }
 }

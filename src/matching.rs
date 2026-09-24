@@ -28,27 +28,27 @@ pub type Entity = u64;
 
 /// What is being exchanged. One `Book` per (owner, commodity) for the
 /// intra-empire haulage books; **one book per commodity globally** for the
-/// cross-empire Exchange (`Hyades_politics_trade_and_intelligence.md` §3.1).
+/// cross-empire Exchange (`Hyades_politics_trade_and_intelligence.md` §2.10).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Commodity {
     /// Basic-mineral haulage: bids are production centers (price =
     /// `mineral_pressure_of`), asks are laden/loading freighters.
     ///
-    /// **Colour-blind, and that is correct for haulage** — an intra-empire
+    /// **Color-blind, and that is correct for haulage** — an intra-empire
     /// freighter moves whatever its origin has toward whoever needs most, and
     /// R-IND17 already scores that leg by *bill completion* rather than by
-    /// colour. The colour axis below is for the Exchange, where the two sides
-    /// are different empires and the whole point is which colour moves.
+    /// color. The color axis below is for the Exchange, where the two sides
+    /// are different empires and the whole point is which color moves.
     Minerals,
-    /// **One basic colour, priced in `$`** (T-83). This is the Exchange's
+    /// **One basic color, priced in `$`** (T-83). This is the Exchange's
     /// commodity and the reason `Commodity` needed an axis at all.
     ///
-    /// §5.1 made works bills colour-payable and T-73 measured what that costs
-    /// on a log-normal per-colour field: **1,494 of 1,515 banks are
-    /// single-coloured**, mean dominant share 0.789, and every works ratio
-    /// except `1:0:0` demands all three. A colour-blind market cannot fix
+    /// §5.1 made works bills color-payable and T-73 measured what that costs
+    /// on a log-normal per-color field: **1,494 of 1,515 banks are
+    /// single-colored**, mean dominant share 0.789, and every works ratio
+    /// except `1:0:0` demands all three. A color-blind market cannot fix
     /// that — moving "minerals" from a Yellow-rich empire to a Yellow-poor one
-    /// is not a trade anyone can express without naming the colour.
+    /// is not a trade anyone can express without naming the color.
     Basic(Basic),
     /// Exploitation targets: bids are unexploited planets (price = rank,
     /// posted on scan / card re-rank events), asks are production centers
@@ -187,9 +187,9 @@ impl Book {
     /// **A wave that refuses to pair an empire with itself** (T-77).
     ///
     /// The Exchange's books are **cross-empire by construction** (§3.1): every
-    /// empire posts both sides of every colour, because a centre is short one
-    /// colour and long another at the same time (T-73 measured 1,494 of 1,515
-    /// banks single-coloured). An owner-blind matcher on such a book spends most
+    /// empire posts both sides of every color, because a center is short one
+    /// color and long another at the same time (T-73 measured 1,494 of 1,515
+    /// banks single-colored). An owner-blind matcher on such a book spends most
     /// of its capacity pairing an empire with itself.
     ///
     /// **Measured before this existed: 608 of 942 fills were self-trades** —
@@ -200,7 +200,7 @@ impl Book {
     ///
     /// The intra-empire haulage books (`Commodity::Minerals`, `BuildTarget`)
     /// are per-owner and *want* same-owner pairings, which is why this is a
-    /// parameter and not a change to the matcher's one behaviour.
+    /// parameter and not a change to the matcher's one behavior.
     pub fn match_wave_cross_empire(&mut self) -> Vec<Fill> {
         self.match_wave_with(true)
     }
@@ -355,7 +355,7 @@ mod tests {
     /// The intra-empire books never needed this — one book per owner meant the
     /// owner *was* the book. A cross-empire book has both sides in it, and
     /// escrow has to be debited from one purse and credited to another
-    /// (`Hyades_politics_trade_and_intelligence.md` §3.3). A `Fill` that names
+    /// (`Hyades_politics_trade_and_intelligence.md` §2.6). A `Fill` that names
     /// two entities and no counterparties cannot settle.
     #[test]
     fn a_fill_carries_its_counterparties() {
@@ -369,7 +369,7 @@ mod tests {
         assert_ne!(f[0].buyer, f[0].seller, "this is what makes it a trade rather than haulage");
     }
 
-    /// **The colour axis exists and orders canonically** (T-83).
+    /// **The color axis exists and orders canonically** (T-83).
     ///
     /// `Commodity` keys the Exchange's books and §10.5 clears per round, which
     /// requires the book set to have a *canonical order* — that is the whole
@@ -378,7 +378,7 @@ mod tests {
     /// that tie-break differently clear at different prices, which is a desync.
     /// So `Ord` here is load-bearing, not a convenience.
     #[test]
-    fn the_colour_axis_orders_canonically() {
+    fn the_color_axis_orders_canonically() {
         use crate::resources::Basic;
         let mut v = vec![
             Commodity::BuildTarget,
@@ -393,14 +393,14 @@ mod tests {
         w.sort();
         assert_eq!(v, w, "the ordering must not depend on the order it was built in");
 
-        // Every colour is a distinct commodity — the point of the axis. A
-        // colour-blind market cannot express "move Yellow to the Yellow-poor",
+        // Every color is a distinct commodity — the point of the axis. A
+        // color-blind market cannot express "move Yellow to the Yellow-poor",
         // which is what T-73 measured the need for: 1,494 of 1,515 banks are
-        // single-coloured and every works ratio but 1:0:0 wants all three.
+        // single-colored and every works ratio but 1:0:0 wants all three.
         let all: Vec<Commodity> = Basic::ALL.iter().map(|&c| Commodity::Basic(c)).collect();
         for (i, a) in all.iter().enumerate() {
             for (j, b) in all.iter().enumerate() {
-                assert_eq!(i == j, a == b, "colours must be distinct commodities");
+                assert_eq!(i == j, a == b, "colors must be distinct commodities");
             }
         }
     }
@@ -426,7 +426,7 @@ mod tests {
         assert_eq!(cross[0].seller, PlayerId(7), "a cross-empire wave must reach past its own ask");
         assert_ne!(cross[0].buyer, cross[0].seller);
         // The intra-empire books still want same-owner pairing, which is why
-        // this is a second method and not a change to the one behaviour.
+        // this is a second method and not a change to the one behavior.
         assert_eq!(plain.len(), 1);
     }
 }

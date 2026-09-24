@@ -52,13 +52,14 @@
 //! [`Simulation::log`] to see exactly what each `sys_*` system did and why.
 
 use std::cmp::{Ordering, Reverse};
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 
 use crate::autopilot::{
     Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext, RankContext, Ranked,
-    SurveyStrategy, SurveyView, Tasking,
+    Standing, SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
+use crate::combat::{CombatConfig, Combatant, FleetTrajectory, StationKeeping};
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
 use crate::matching;
@@ -66,6 +67,7 @@ use crate::math::{self, Vec3, G};
 use crate::resources::{Archetype, Basic, MineralField, Minerals};
 use crate::rng::Rng;
 use crate::snapshot::{PlanetSnapshot, PlayerSnapshot, Snapshot, VehicleKind, VehicleSnapshot};
+use crate::transcendental;
 use crate::units::{self, Band, BandTier, Kilotons, Length, Measure, Price, Volume};
 
 // =====================================================================
@@ -140,6 +142,11 @@ struct Homeworld;
 #[derive(Clone, Copy, Debug)]
 struct Factors {
     hab: Band,
+    /// [`Self::hab`] as the population mass it admits, `population_mass(hab)` —
+    /// **translated once, where the world is built** (T-129), so the carrying
+    /// capacity is a minimum of two masses and no decision converts a Band.
+    /// Write habitability through [`Self::set_hab`], which keeps the two in step.
+    hab_mass: Kilotons,
     /// **Standing biological mass, in kilotons** — the same unit as minerals
     /// and hull dry mass, which is what makes the exchange between them exact.
     ///
@@ -164,7 +171,8 @@ struct Factors {
     /// [`Self::bio_max`] read back onto the Band ladder — **cached, because it
     /// is on the hottest path in the engine.**
     ///
-    /// `Kilotons::in_bands` is a `ln`, `k_potential` needs it, and
+    /// `Kilotons::in_bands` was a `ln` when this cache was written (a
+    /// polynomial reading since T-129, still not free), `k_potential` needs it, and
     /// `k_potential` is evaluated once per *scanned planet* per production
     /// decision. That is a transcendental in a loop that runs tens of millions
     /// of times a run, for a quantity nothing has changed since galaxy
@@ -189,7 +197,29 @@ impl Factors {
     /// Build a set of factors, deriving the cached Band reading of `bio_max`.
     #[inline]
     fn new(hab: Band, biomass: Kilotons, bio_max: Kilotons, infra: Price) -> Factors {
-        Factors { hab, biomass, bio_max, bio_max_band: bio_max.in_bands(), infra }
+        Factors {
+            hab,
+            hab_mass: units::population_mass(hab),
+            biomass,
+            bio_max,
+            bio_max_band: bio_max.in_bands(),
+            infra,
+        }
+    }
+
+    /// The only way to move habitability. Keeps [`Self::hab_mass`] in step, for
+    /// the same reason [`Self::set_bio_max`] keeps its reading in step.
+    #[inline]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no card mutates habitability yet; the setter exists so the first one cannot desynchronise the mass"
+        )
+    )]
+    fn set_hab(&mut self, hab: Band) {
+        self.hab = hab;
+        self.hab_mass = units::population_mass(hab);
     }
 
     /// The only way to move the pristine ceiling. Keeps the cached Band reading
@@ -248,7 +278,7 @@ impl Factors {
     ///
     /// **Identical to [`Self::k`] since T-67**, and kept as a separate name
     /// because the autopilot's deepening staircase means something different by
-    /// it: `k` is what population may reach, `k_potential` is what a centre is
+    /// it: `k` is what population may reach, `k_potential` is what a center is
     /// still allowed to build. They coincide today; they are not the same
     /// question, and the industrial ramp (`Hyades_industry.md` §6) will give
     /// the second one its own answer.
@@ -263,12 +293,29 @@ impl Factors {
         self.k()
     }
 
+    /// **`K` as the population mass it admits** — `population_mass(k())`,
+    /// without the reading (T-129).
+    ///
+    /// `population_mass` is monotone, so it commutes with the minimum:
+    /// `KT(min(hab, band(bio_max)))` is `min(KT(hab), KT(band(bio_max)))`, and
+    /// `KT(band(bio_max))` is `bio_max` itself — the mass the reading was taken
+    /// of. The one place the round trip was not the identity is the floor: a
+    /// pristine biosphere at or below the ladder's bottom rung reads Band zero,
+    /// and zero people is no mass (`units::population_mass`), so it admits none.
+    #[inline]
+    fn k_mass(&self) -> Kilotons {
+        if self.bio_max.kilotons() <= Kilotons::rung(0) {
+            return Kilotons::ZERO;
+        }
+        self.hab_mass.min(self.bio_max)
+    }
+
     /// **The infrastructure rung, read off the stock** — the one place the
     /// Cost-ladder reading is taken (T-70).
     ///
-    /// `infra` is stored as the minerals standing in it, so the rung is a `ln`
-    /// away. That is a conversion and conversions are not free (`CLAUDE.md` §4:
-    /// `band()` is 2.2x an arithmetic op), so call it at the **edges** — a
+    /// `infra` is stored as the minerals standing in it, so the rung is a
+    /// reading away. That is a conversion and conversions are not free, so call
+    /// it at the **edges** — a
     /// production decision, a log line, a view — and never inside a loop over
     /// entities.
     #[inline]
@@ -499,6 +546,14 @@ pub enum Role {
     Colonizer,
     Miner,
     Freighter,
+    /// **Denial.** A hull holding an *unclaimed* world so nobody else founds
+    /// there (`Hyades_warfare_tree.md` §8, T-112).
+    ///
+    /// The one role whose product is something that does **not** happen. It
+    /// occupies no ground it owns, extracts nothing and builds nothing; its
+    /// whole output is the colony a rival did not plant. A standing mission
+    /// under roles §4.6, so it never auto-scraps.
+    Picket,
     /// Standing, re-taskable, never auto-scrapped
     /// (`Hyades_vehicle_roles.md` §4.6 — confirmed for e.g. ROU; applied here
     /// to any non-Scout entity with nothing left to do).
@@ -515,6 +570,7 @@ impl Role {
             Role::Colonizer => VehicleKind::Colonizer,
             Role::Miner => VehicleKind::Miner,
             Role::Freighter => VehicleKind::Freighter,
+            Role::Picket => VehicleKind::Picket,
             Role::Reserve => VehicleKind::Reserve,
             Role::Scrapped => VehicleKind::Scrapped,
         }
@@ -525,10 +581,16 @@ impl Role {
 /// a Component, fixed at build (changes only via docking to refit, not
 /// modeled yet). Orthogonal to [`Role`]: a hull type is what a ship *is*; a
 /// role is what it's currently *doing*. Only the types the baseline autopilot
-/// actually builds are wired to a role below (§ `role_hull_type`); Contact
-/// Units and Offensive types exist in the enum for completeness (the spec's
-/// full ten-type roster) but nothing spawns them yet — no militarization or
-/// combat exists in the engine.
+/// actually builds are wired to a role below (§ `role_hull_type`).
+///
+/// **Four are unreachable as of T-121** — the two Contact *Units*, and the
+/// Rapid and General Offensive hulls. The three **Offensive** types in
+/// particular have no role at all: T-121 moved the picket onto
+/// `LimitedContactVehicle`, so the armed family a card can open is the Contact
+/// family and nothing mounts an Offensive hull. They keep their geometry rows,
+/// their `competent_role` entry and their place in the spec's full ten-type
+/// roster; the arena still spawns them, because spawning ships outside
+/// production is what the arena is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HullType {
     LimitedSystems,
@@ -643,7 +705,7 @@ pub struct HullGeometry {
     pub shape_efficiency: f64,
     /// **`τ`** — absolute shell thickness. Rises `Limited < Medium < General`
     /// within a role and by role `Systems < Contact < Offensive`, the second
-    /// being the armour statement expressed as geometry rather than as a combat
+    /// being the armor statement expressed as geometry rather than as a combat
     /// constant (design law #2).
     pub shell_thickness: Length,
     /// **`a_role`** — the absolute engine/crew/avionics core every hull of this
@@ -652,7 +714,7 @@ pub struct HullGeometry {
     /// special case.
     pub reserved_core: Volume,
     /// **`b_role`** — the role's own volume-proportional payload: weapons,
-    /// magazines, armour backing, sensor arrays. It is what stops an Offensive
+    /// magazines, armor backing, sensor arrays. It is what stops an Offensive
     /// hull becoming a freighter simply by being large.
     pub reserved_payload_fraction: f64,
 }
@@ -697,7 +759,7 @@ impl HullType {
 
     /// This hull's ratified geometry (§2.3). The table is written out rather
     /// than computed so that every one of the ten hulls is greppable and a new
-    /// variant cannot inherit a neighbour's shell by accident.
+    /// variant cannot inherit a neighbor's shell by accident.
     pub const fn geometry(self) -> HullGeometry {
         use HullType::*;
         let (eta, tau, core, payload) = match self {
@@ -792,6 +854,37 @@ impl HullType {
         self.hold_radius(cfg).cubed()
     }
 
+    /// **The whole enclosed volume, `r³`** — shell plus interior, and the stock
+    /// Production's objective integrates (`Hyades_production_tree.md` §6.1,
+    /// R-PROD5).
+    ///
+    /// **Why the whole object and not the hold.** Fleet-years used to be taken
+    /// in *mass*, and since R-O57 dry mass **is** mineral cost — so the metric
+    /// was "minerals committed to hulls, integrated", which is exactly
+    /// indifferent between one General hull and the ten Mediums its minerals
+    /// would buy. **A metric that cannot tell those apart cannot express design
+    /// law #3**, which is a claim about that very ratio. Volume can: measured on
+    /// the shipped ladder (`examples/volume_ladder`), an equal-cost General
+    /// fleet encloses **2.47×** a Medium one (Systems), **3.49×** (Offensive)
+    /// and **1.90×** for Medium over Limited, where mass scores all three at
+    /// 1.000 by construction.
+    ///
+    /// The *hold* would also work directionally and score consolidation higher
+    /// still (2.63 / 5.19 / 2.06), and it is the wrong reading for a fleet:
+    /// a Limited Offensive hull's interior is 0.0066 against a reserved core of
+    /// 0.194, so its hold is entirely spoken for and its cargo is zero.
+    /// **Scoring a warship by its hold scores it by the one thing a warship does
+    /// not have.** The shell is armor, not waste, and `r³` counts it.
+    ///
+    /// The decomposition is exact and worth keeping in view:
+    /// `r³ = η · shell_mass + hold`. The first term is the ladder price times a
+    /// shape efficiency — i.e. the old mass objective's basis — and the second
+    /// is the part that grows as `cost^(3/2)`. **Volume-years is mass-years plus
+    /// the interior.**
+    pub fn hull_volume(self, cfg: &SimConfig) -> Volume {
+        self.hull_radius(cfg).cubed()
+    }
+
     /// The **shell's** volume, `r³ − (r − τ)³` — the material actually bought,
     /// and therefore (L6/R-O57) the hull's cost and its dry mass.
     ///
@@ -874,7 +967,7 @@ impl HullType {
     ///   prize crews — so "Offensive has little to zero cargo" is size-dependent
     ///   rather than a flat zero.
     ///
-    /// **The normaliser is gone.** Capacity used to be `(r − 1)³` scaled against
+    /// **The normalizer is gone.** Capacity used to be `(r − 1)³` scaled against
     /// a fixed reference radius `√3`, which made `cargo_unit_size` the hold of a
     /// hull no ladder actually produced and put a derived quantity in a
     /// denominator — the shape of four of the measurement artifacts in
@@ -932,7 +1025,8 @@ impl HullType {
 /// Which [`HullType`] the baseline autopilot builds for each [`Role`]
 /// (`Hyades_vehicle_roles.md` §4's eligibility notes) — a concrete,
 /// flagged-placeholder choice among what's *eligible*, not dictated by spec:
-/// Scout → LCV (matches the confirmed LCV-scraps-on-exhaustion case, §4.1);
+/// Scout → LSV, **unarmed by default** (T-121 — the armed Contact hull is
+/// locked behind the Warfare card, so no seat flies one unless it is played);
 /// Colonizer → MSV (cheapest hull that clears the confirmed 1-pop-cargo
 /// floor, §4.2/R-V9); Miner → LSV (spec: "any Systems Vehicle," and the
 /// engine already deposits extraction into the outpost's own stockpile, so a
@@ -940,10 +1034,24 @@ impl HullType {
 /// picking the cheaper).
 pub fn role_hull_type(role: Role) -> HullType {
     match role {
-        Role::Scout => HullType::LimitedContactVehicle,
+        Role::Scout => HullType::LimitedSystems,
         Role::Colonizer => HullType::MediumSystems,
         Role::Miner => HullType::LimitedSystems,
         Role::Freighter => HullType::MediumSystems,
+        // **The cheapest Contact hull** (T-113, rebased at T-121). §8.6
+        // measured why this matters more than anything else about a picket:
+        // denial bought with a *colonizer* loses under Warfare's own objective
+        // by arithmetic — `ΔW = −k(1 − w_0A)` with `Σ_j w_0j = 1` — whatever
+        // the placement. An LCV costs `1/limited_fleet_size` of a General hull
+        // against a Medium colonizer's `1/medium_fleet_size`, so the trade
+        // stops being one-for-one and starts being one-for-many.
+        //
+        // It was `LimitedOffensive` until T-121. The two share a cost tier
+        // (`cost_fraction`), so the price the §8.6 arithmetic runs on did not
+        // move; what changed is that the whole Contact family is now one
+        // locked family with one key — the Warfare card — where an Offensive
+        // hull sitting beside an unarmed default was a second, keyless door.
+        Role::Picket => HullType::LimitedContactVehicle,
         Role::Reserve | Role::Scrapped => HullType::LimitedSystems, // inert; value unused
     }
 }
@@ -951,11 +1059,11 @@ pub fn role_hull_type(role: Role) -> HullType {
 // The two constants this block used to hold — `REFERENCE_MEDIUM_RADIUS` (√3)
 // and `UNIT_SHELL_THICKNESS` (1.0) — are **deleted by T-56 stage 3c.** Both
 // were consequences of a geometry that no longer exists: capacity was
-// `(r − 1)³` normalised against a fixed reference radius, so the shell
+// `(r − 1)³` normalized against a fixed reference radius, so the shell
 // thickness was a literal `1` and `cargo_unit_size` was the hold of a hull no
 // ladder actually produced. Thickness is now a ratified per-hull quantity
 // (`HullType::geometry`) and capacity is a volume times a density, so there is
-// no normaliser left to put a derived quantity in a denominator — which is
+// no normalizer left to put a derived quantity in a denominator — which is
 // what four of the measurement artifacts in `CLAUDE.md` §2 had in common.
 
 // `FOUNDING_INFRA_AT_MEDIUM` is **deleted (R-O77 closed)**. It was the anchor a
@@ -1032,7 +1140,7 @@ fn veins(deposit: Kilotons, cfg: &SimConfig) -> f64 {
     // becomes a NaN in one subtraction. Clamped at the edge rather than checked
     // at every call site.
     let per_band = cfg.veins_per_band.max(1.0);
-    per_band.powf(band - 1.0).clamp(1.0, MAX_VEINS)
+    transcendental::pow_fast(per_band, band - 1.0).clamp(1.0, MAX_VEINS)
 }
 
 /// Ceiling on the vein count, and therefore on any crew derived from it.
@@ -1075,7 +1183,7 @@ fn extraction_work(capacity: f64, deposit: Kilotons, cfg: &SimConfig) -> f64 {
         return 0.0;
     }
     let beta = cfg.crowding_beta;
-    n_veins.powf(1.0 - beta) * n.powf(beta)
+    transcendental::pow_fast(n_veins, 1.0 - beta) * transcendental::pow_fast(n, beta)
 }
 
 /// **The share of a deposit's veins a crew effectively works** — `W(n,S)/N(S)`,
@@ -1089,7 +1197,7 @@ fn extraction_work(capacity: f64, deposit: Kilotons, cfg: &SimConfig) -> f64 {
 /// the opposite of §4.3's own "output tracks the stock, so a body depletes
 /// asymptotically rather than cliff-edging".
 ///
-/// **Every ratio §4.3 asserts survives the normalisation**, because dividing by
+/// **Every ratio §4.3 asserts survives the normalization**, because dividing by
 /// `N` is a change of scale that `ε` absorbs, and §4.3's claims are all about
 /// ratios:
 ///
@@ -1131,7 +1239,7 @@ fn miner_equivalent(cfg: &SimConfig) -> f64 {
 /// slips(u) = 1 + floor(u / infra_per_slip)
 /// ```
 ///
-/// where `u` is the **fabrication share of the centre's infrastructure stock**.
+/// where `u` is the **fabrication share of the center's infrastructure stock**.
 /// Linear in the stock and therefore genuinely unbounded — which is what §3.2
 /// asks for and what the engine did not do until now.
 ///
@@ -1149,7 +1257,7 @@ fn miner_equivalent(cfg: &SimConfig) -> f64 {
 /// is `slips × berth_rate`, unbounded in the stock, exactly as "an empire scales
 /// by holding more worlds *and* by building more yard" requires.
 ///
-/// **The `1 +` is still load-bearing**, for the same reason as before: a centre
+/// **The `1 +` is still load-bearing**, for the same reason as before: a center
 /// always has at least one berth, and `t_build` is floored by `t_lead + m /
 /// fab_cap` rather than divided down by a berth count that could reach zero.
 fn slips(fabrication_stock: f64, cfg: &SimConfig) -> usize {
@@ -1169,7 +1277,7 @@ fn slips(fabrication_stock: f64, cfg: &SimConfig) -> usize {
 /// one.
 ///
 /// **Placeholder anchor** (R-O88): the *form* is the ratified part, the choice
-/// of the Limited hull as the unit is not. It is picked so a rung-I centre keeps
+/// of the Limited hull as the unit is not. It is picked so a rung-I center keeps
 /// exactly the two berths it had before this landed.
 #[inline]
 fn infra_per_slip(cfg: &SimConfig) -> f64 {
@@ -1181,7 +1289,7 @@ fn infra_per_slip(cfg: &SimConfig) -> f64 {
 ///
 /// `infra_rung_price(1)` is what standing at rung I costs — the same number a
 /// Medium hull costs (R-O80) — and a default allocation splits the stock three
-/// ways. So a rung-I centre with no works cards played has `u = half` in every
+/// ways. So a rung-I center with no works cards played has `u = half` in every
 /// employment, sits exactly at half its ceiling, and reproduces the flat
 /// constants T-68 and the mining model shipped.
 ///
@@ -1236,7 +1344,7 @@ fn employment_rate(infra: Price, works: &cards::Works, e: cards::Employment, bas
     cap * u / (u + half)
 }
 
-/// **The works bill for a centre's next rung, split by colour** (T-73,
+/// **The works bill for a center's next rung, split by color** (T-73,
 /// `Hyades_industry.md` §5.1/§6.3).
 ///
 /// ```text
@@ -1246,13 +1354,13 @@ fn employment_rate(infra: Price, works: &cards::Works, e: cards::Employment, bas
 ///
 /// **This is the mechanism that makes the galaxy's mineral distribution bite on
 /// development.** Until now the field bit only on card costs, and T-62 made it
-/// log-normal — so which colours a homeworld sits near was an enormous, almost
-/// unexpressed fact about a game. A works bill is payable *in named colours*, so
+/// log-normal — so which colors a homeworld sits near was an enormous, almost
+/// unexpressed fact about a game. A works bill is payable *in named colors*, so
 /// a Yellow-poor empire genuinely cannot take the Yellow route however rich it
 /// is in total.
 ///
 /// **A mix card can never lower the total** (§5.4/§6.4): `mix_w` is a *share* of
-/// a bill only `eta_works` sets, so moving weight between colours moves where
+/// a bill only `eta_works` sets, so moving weight between colors moves where
 /// the bill lands and nothing else. The orthogonality is structural — not a rule
 /// anyone has to remember in review — and `a_mix_card_cannot_change_the_total`
 /// asserts it.
@@ -1270,14 +1378,14 @@ fn works_bill(step: Price, works: &cards::Works) -> [Price; 3] {
     bill
 }
 
-/// Can this bank pay a colour-split bill? **Every colour, not the total** —
+/// Can this bank pay a color-split bill? **Every color, not the total** —
 /// which is the whole content of T-73.
 fn can_pay_bill(bank: &Minerals, bill: &[Price; 3]) -> bool {
     Basic::ALL.iter().enumerate().all(|(i, &c)| Price::new(bank.get_basic(c)) + Price::new(1e-9) >= bill[i])
 }
 
-/// Pay a colour-split bill. Assumes [`can_pay_bill`]; clamps at zero so a
-/// rounding crumb cannot drive a colour negative.
+/// Pay a color-split bill. Assumes [`can_pay_bill`]; clamps at zero so a
+/// rounding crumb cannot drive a color negative.
 fn pay_bill(bank: &mut Minerals, bill: &[Price; 3]) {
     for (i, &c) in Basic::ALL.iter().enumerate() {
         let have = bank.get_basic(c);
@@ -1285,10 +1393,90 @@ fn pay_bill(bank: &mut Minerals, bill: &[Price; 3]) {
     }
 }
 
+/// **How much infrastructure a hold of minerals can actually be erected into**
+/// (T-117) — and it is a **conjunction over the three colors**, not a total.
+///
+/// A rung is billed by color: `works_bill` splits it by `works.mix_share(c)`
+/// and `can_pay_bill` tests every color separately. So minerals standing in a
+/// hold erect only as much as their **scarcest** color allows, in ratio:
+///
+/// ```text
+/// erectable = eta_works · min over c of ( aboard[c] / mix_share(c) )
+/// ```
+///
+/// A hold that is all Cyan erects **nothing**, however much of it there is —
+/// which is the same conjunction `Hyades_industry.md` §6.19c measured as the
+/// mineral economy's binding constraint, applied at founding instead of at a
+/// production decision. Treating the hold as a scalar total was the version
+/// this replaces, and it let a single-color hold become infrastructure that no
+/// center could have bought with the same minerals.
+///
+/// Returns what can be erected and what it consumes, so the caller can bank the
+/// remainder. Mass is conserved: `consumed + remainder == aboard`.
+fn erectable_from(aboard: &Minerals, works: &cards::Works) -> (Price, Minerals) {
+    let mut limit = f64::INFINITY;
+    for &c in Basic::ALL.iter() {
+        let share = works.mix_share(c);
+        if share <= 1e-12 {
+            // A color the works do not want is not a constraint, and not a
+            // contribution either — it stays in the bank.
+            continue;
+        }
+        limit = limit.min(aboard.get_basic(c) / share);
+    }
+    if !limit.is_finite() || limit <= 0.0 {
+        return (Price::ZERO, Minerals::default());
+    }
+    let mut consumed = Minerals::default();
+    for &c in Basic::ALL.iter() {
+        let want = limit * works.mix_share(c);
+        consumed.add_basic(c, want.min(aboard.get_basic(c)).max(0.0));
+    }
+    // `eta_works` is what a Production card buys: the same minerals stand up as
+    // more works. `works_bill` divides by it, so erecting multiplies.
+    (Price::new(limit * works.eta_works.max(1e-12)), consumed)
+}
+
 /// The minerals it takes to *stand at* whole infrastructure rung `n`.
+///
+/// Public because rung 0 is the **floor** a colony is founded at when nothing
+/// else sets its stock, and zero there is an absorbing state rather than a small
+/// number (`Hyades_warfare_tree.md` §8.7) — so a harness asking whether a
+/// Doctrine write aimed at the founding stock does anything has to compare
+/// against this exact quantity rather than a reconstruction of it.
 #[inline]
-fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
+pub fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
     Price::new(Price::rung_from(n, cost_anchor(cfg)))
+}
+
+/// **The weapons a Design mounts** (T-125, `Hyades_warfare_tree.md` §8.17).
+///
+/// A loadout is a function of the Design and nothing else. Systems hulls mount
+/// nothing — their payload fraction is zero, cargo *is* their payload — so every
+/// hull an empire builds without the Warfare card is unarmed. Contact and
+/// Offensive hulls mount **beams**, as many as their payload volume holds:
+/// `b_role · V` (§2.3) divided by one Limited Contact hull's, floored, at least
+/// one. That is design law #2's slot-organic count; nothing here is a combat
+/// constant tuned per hull. The class does not yet change the loadout — every
+/// armed Design the engine builds is the Warfare card's — and it is in the
+/// signature because the Design is `(hull, class)`.
+///
+/// Energy per shot and hull structure are **placeholders** (R-WAR19); fire
+/// control and fire rate read the arena's tuned values rather than defining
+/// second copies of them.
+pub fn design_loadout(hull: HullType, _class: Class, cfg: &SimConfig, combat: &CombatConfig) -> crate::combat::Loadout {
+    let payload = |h: HullType| h.hull_radius(cfg).cubed() * h.geometry().reserved_payload_fraction;
+    let own = payload(hull);
+    if own <= Volume::ZERO {
+        return crate::combat::Loadout::UNARMED;
+    }
+    let mounts = (own / payload(HullType::LimitedContactVehicle) + 1e-9).floor().max(1.0) as u32;
+    crate::combat::Loadout {
+        beams: mounts,
+        shot_energy_kj: combat.beam_shot_energy_kj,
+        fire_control_ly: combat.laser_hit_tolerance,
+        shots_per_tick: combat.laser_shots_per_tick as u32,
+    }
 }
 
 /// Minerals to raise infrastructure from the stock `from` to the next whole rung.
@@ -1296,15 +1484,24 @@ fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
 /// Takes the **stock** rather than a Band since T-70, so the rung is derived
 /// here rather than at every call site — one reading, one place it can be taken
 /// on the wrong ladder.
+///
+/// **The bill is what the stock is short of the next rung, not the width of
+/// the rung it rounds to** (T-124, design law #11). The purchase moves the
+/// stock to exactly `infra_rung_price(at + 1)`, so any other bill makes or
+/// destroys mass: a stock founded between rungs — `founding_infra` is a hull's
+/// cost, which lands anywhere — paid the full rung width and was then snapped
+/// up by less, and the difference left the ledger. Measured at 0.0292 kt per
+/// such purchase on the 3-seat unit bed, starting at 250 yr. Identical for a
+/// stock that stands on a rung, which every homeworld does.
 fn infra_step_price(from: Price, cfg: &SimConfig) -> Price {
     let at = infra_rung_of(from, cfg);
-    infra_rung_price(at + 1, cfg) - infra_rung_price(at, cfg)
+    infra_rung_price(at + 1, cfg) - from
 }
 
 /// The whole rung an infrastructure stock stands at.
 #[inline]
 fn infra_rung_of(stock: Price, cfg: &SimConfig) -> usize {
-    stock.band_from(cost_anchor(cfg)).round().bands().max(0.0) as usize
+    stock.nearest_rung_from(cost_anchor(cfg))
 }
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
@@ -1427,6 +1624,19 @@ struct World {
     density: ComponentStore<MineralField>,
     stockpile: ComponentStore<Minerals>,
     population: ComponentStore<Kilotons>,
+    /// **Wreckage standing at a site, in kilotons** (R-O59, T-03).
+    ///
+    /// A hull destroyed in an engagement does not leave the ledger — design law
+    /// #11 has no exclusions, and "the loser's ships vanish" would be the
+    /// largest mass leak in the engine on the one path Warfare runs on. Its dry
+    /// mass (which R-O57 makes its mineral cost exactly) lands here.
+    ///
+    /// **Inert by design, and that is R-O59's own answer**: slag is useless by
+    /// default and a tier-1 card makes it refinable. Nothing reads this yet, so
+    /// it is a conserved tally rather than an economy — which is the whole
+    /// point, because a salvage yield would be a Warfare *reward* nobody has
+    /// ratified. `slag_conserves_the_mass_of_what_it_destroyed` pins the sum.
+    slag: ComponentStore<Kilotons>,
     planet_id: ComponentStore<PlanetId>,
     homeworld: ComponentStore<Homeworld>,
     archetype: ComponentStore<Archetype>,
@@ -1437,29 +1647,29 @@ struct World {
     /// yard for `build_years` and the next decision is taken when it clears.
     /// Presence is the whole state — the economy tick skips an occupied center,
     /// and [`EventKind::BuildDecision`] removes it on arrival.
-    /// **Occupied berths at a centre — completion times, ascending** (T-69,
+    /// **Occupied berths at a center — completion times, ascending** (T-69,
     /// `Hyades_industry.md` §3.2).
     ///
     /// Was one `f64`: a yard held exactly one build. Slips make concurrency
-    /// linear in fabrication throughput, so a rich centre runs several builds
+    /// linear in fabrication throughput, so a rich center runs several builds
     /// at once and this is the list of when each clears.
     ///
     /// It stays presence-as-state — an empty list means an idle yard — for the
     /// same reason R-O69 needed a store that can vacate.
     berths: ComponentStore<Vec<f64>>,
-    /// **Earliest clock at which a saving centre asks again** (T-88).
+    /// **Earliest clock at which a saving center asks again** (T-88).
     ///
     /// `cycle_years` was doing two unrelated jobs, and they want opposite
     /// values: the economic integration step (mine, grow, mint — every one a
     /// *rate over an interval*) wants to be **small** for fidelity, while a
-    /// saving centre's retry wants to be large, or better, not a cadence at
+    /// saving center's retry wants to be large, or better, not a cadence at
     /// all. They were the same number because `sys_production_tick` called
     /// `sys_build_decision` inline, so dropping the tick to 1/yr for
     /// granularity would have multiplied decisions 50x with it — and the
     /// decision half is what costs throughput.
     ///
     /// This is the separation. Absent means "ask on the next tick", which is
-    /// what a freshly-founded or freshly-woken centre wants.
+    /// what a freshly-founded or freshly-woken center wants.
     decision_after: ComponentStore<f64>,
 
     // shared
@@ -1468,6 +1678,26 @@ struct World {
     // vehicle components
     role: ComponentStore<Role>,
     hull_type: ComponentStore<HullType>,
+    /// **What this hull is made of** (R-IND21, T-119).
+    ///
+    /// Cost is dry mass (R-O57) and cost was one scalar, so every path that
+    /// returned a hull's minerals to the world — scrap salvage, wreckage, the
+    /// founding ceiling's overflow — had to *guess* a color split, in the one
+    /// dimension the mineral economy is actually constrained by (§6.19c). This
+    /// is the record instead: whatever the bank paid at build time, carried for
+    /// the hull's life and handed back in the same proportions.
+    ///
+    /// A `Minerals`, not three floats, because a hull built from supers or apex
+    /// then drops supers or apex with no further change here — the composition
+    /// is whatever bought it, and better material makes better salvage.
+    ///
+    /// Absent for a hull nobody paid for (the seed scouts at game start), which
+    /// `composition_of` reads as the ladder's own even split.
+    hull_minerals: ComponentStore<Minerals>,
+    /// **What this hull's Design mounts** (T-125), stamped when it is built and
+    /// never changed after (design law #12: no retroactive refits). Absent is
+    /// unarmed, which is every hull the Warfare card has not unlocked.
+    loadout: ComponentStore<crate::combat::Loadout>,
     motion: ComponentStore<Motion>,
     voyage: ComponentStore<Voyage>,
     cargo: ComponentStore<Minerals>,
@@ -1524,8 +1754,8 @@ struct World {
     purse: ComponentStore<f64>,
 }
 
-/// **The cross-empire Exchange — one book per basic colour**
-/// (`Hyades_politics_trade_and_intelligence.md` §3.1, T-84).
+/// **The cross-empire Exchange — one book per basic color**
+/// (`Hyades_politics_trade_and_intelligence.md` §2.10, T-84).
 ///
 /// A `Resource` in the ECS sense, like the event queue: the Exchange never
 /// mutates world state, it produces `Fill`s and the caller turns those into
@@ -1551,7 +1781,7 @@ struct Exchange {
     settled: u64,
     defaulted: u64,
     burned: f64,
-    /// **Cumulative offers posted per colour**, `(bids, asks)` — the census
+    /// **Cumulative offers posted per color**, `(bids, asks)` — the census
     /// §10.8 asks for, and the only way to see the book's *depth* once clearing
     /// drains it. Live depth after a wave is the unmatched remainder, which
     /// answers a different question.
@@ -1567,7 +1797,7 @@ struct Exchange {
     rejected: [u64; 4],
     /// Fills the matcher produced, before any filter.
     fills: u64,
-    /// Kilotons actually delivered, per colour — the volume the market moved.
+    /// Kilotons actually delivered, per color — the volume the market moved.
     /// Without it a census can only say trade *happened*, not whether it
     /// happened at a scale that could move anything.
     traded: [f64; 3],
@@ -1585,12 +1815,12 @@ struct Exchange {
 struct Contract {
     buyer: PlayerId,
     seller: PlayerId,
-    /// **The centre that owes the ore.** Recorded at match rather than looked
+    /// **The center that owes the ore.** Recorded at match rather than looked
     /// up at settlement, because §3.3's default case turns on *this* bank being
-    /// short — re-deriving "some centre of the seller's" at settlement would
+    /// short — re-deriving "some center of the seller's" at settlement would
     /// make a default impossible to express.
-    seller_centre: Entity,
-    colour: Basic,
+    seller_center: Entity,
+    color: Basic,
     /// Kilotons of ore the seller owes.
     qty: f64,
     /// `$` locked from the buyer's purse at match (§2.3's `E`).
@@ -1604,7 +1834,7 @@ struct Contract {
     /// A contract has **two locations, not one** (author's ruling): *leave
     /// Yellow at X in exchange for Magenta at Y*. The two legs need not meet at
     /// the same rock, and each is chosen by **the party making that delivery**,
-    /// minimising *its own* transit — which supersedes R-P17's symmetric
+    /// minimizing *its own* transit — which supersedes R-P17's symmetric
     /// "minimum summed transit". A shipper pays for its own leg, so a shipper
     /// picks its own drop; a single compromise venue would make each side pay
     /// for the other's geography, and §7.1's default transaction is *balanced*.
@@ -1647,6 +1877,7 @@ impl World {
             density: ComponentStore::new(),
             stockpile: ComponentStore::new(),
             population: ComponentStore::new(),
+            slag: ComponentStore::new(),
             planet_id: ComponentStore::new(),
             homeworld: ComponentStore::new(),
             archetype: ComponentStore::new(),
@@ -1655,6 +1886,8 @@ impl World {
             owner: ComponentStore::new(),
             role: ComponentStore::new(),
             hull_type: ComponentStore::new(),
+            hull_minerals: ComponentStore::new(),
+            loadout: ComponentStore::new(),
             motion: ComponentStore::new(),
             voyage: ComponentStore::new(),
             cargo: ComponentStore::new(),
@@ -1738,6 +1971,48 @@ enum EventKind {
     /// An exhausted Scout reaches a friendly colony and scraps
     /// (`Hyades_vehicle_roles.md` §4.1/§4.6 — confirmed, LCV only).
     ScrapArrive { vehicle: Entity },
+    /// **Two empires' hulls are standing on the same rock** (T-111).
+    ///
+    /// Raised by [`Simulation::sys_mining_arrive`] when a miner parks at an
+    /// outpost another empire is already working — the arrival *is* the moment
+    /// the situation changed, which is §4's rule, and mining is non-exclusive by
+    /// default (roles §4.3) so this is a legal board state and not an error.
+    ///
+    /// It carries the site and nothing else: who is present is read from
+    /// `mine_crew` at resolution time, because a hull can leave between the
+    /// arrival and the shot and an event that cached the crew would fight with
+    /// ships that are no longer there.
+    Engagement { site: Entity },
+    /// **A picket's light has reached an inbound colonizer's empire** (T-112).
+    ///
+    /// Scheduled at `established_at + distance(world, the colonizer's home
+    /// center)`, which is the earliest instant the order to turn back could
+    /// physically have been given. If that lands after the colonizer's own
+    /// arrival the news is simply too late and this never fires — which is the
+    /// light-lag counterplay window doing its job rather than a special case.
+    ColonyDivert { vehicle: Entity },
+    /// A picket reaches the world it is to hold and takes station (T-112).
+    PicketArrive { vehicle: Entity },
+    /// **The light of a colony-ship launch reaches a watching capital**
+    /// (T-123). Scheduled at `depart + distance(port, capital)` and only for a
+    /// seat whose Doctrine blockades, so a run nobody plays the card in
+    /// raises none.
+    LaunchSeen { observer: u32, center: Entity },
+    /// **A blockader asks whether its port is still worth standing at**
+    /// (T-125, R-WAR18) — every [`SimConfig::intercept_reassess_years`] after
+    /// it takes station, the same cadence a picket re-reads a trajectory on.
+    BlockadeReassess { vehicle: Entity },
+    /// **A picket takes a second look at the ship it is chasing** (R-WAR10,
+    /// T-120).
+    ///
+    /// An interception is a *guess*: light delivers a departure point, a time
+    /// and a bearing, and the destination is inferred from them. The guess can
+    /// be wrong — and a colony ship that launches on a bearing it does not
+    /// intend to keep is running a feint, which is yomi content rather than a
+    /// modeling gap. This is the picket re-reading the trajectory when fresh
+    /// light reaches it, and re-aiming if the quarry is no longer going where
+    /// it looked like going.
+    PicketReassess { picket: Entity, quarry: Entity },
     /// **The round barrier** (`Hyades_netcode.md` §1) — the protocol clock's
     /// only tick. Cards are played here and nowhere else.
     ///
@@ -1782,13 +2057,13 @@ impl Ord for Event {
 #[derive(Clone, Copy, Debug)]
 pub struct SimConfig {
     pub horizon_years: f64,
-    /// **The economic integration step** — how often a centre mines, grows its
+    /// **The economic integration step** — how often a center mines, grows its
     /// population, regrows its biosphere and mints `$`. Every one of those is a
     /// rate over an interval, so this is an Euler step and smaller is more
     /// faithful; 50 years is a *coarse* step on a logistic.
     ///
     /// Since T-88 it is **only** that. It used to double as the retry cadence
-    /// for a saving centre's build decision, which is why it could not be
+    /// for a saving center's build decision, which is why it could not be
     /// lowered: the fidelity argument wants 1 yr and the decision count is what
     /// costs throughput. See [`SimConfig::decision_retry_years`].
     ///
@@ -1810,10 +2085,10 @@ pub struct SimConfig {
     /// than stepping along an old direction — `CLAUDE.md` §2 has recorded this
     /// trap twice already.
     pub cycle_years: f64,
-    /// **How long a saving centre waits before asking again** (T-88) — the
+    /// **How long a saving center waits before asking again** (T-88) — the
     /// second job [`SimConfig::cycle_years`] used to do.
     ///
-    /// A centre that declined its last build has no `BuildDecision` pending, so
+    /// A center that declined its last build has no `BuildDecision` pending, so
     /// something has to bring it back. Two things do, and this is the slower
     /// one: the fast path is minerals arriving (see `wake_on_minerals`), and
     /// this is the floor under it — the catch-all for a situation that changed
@@ -1908,11 +2183,11 @@ pub struct SimConfig {
     /// **How many piles one outbound leg may draw from** (T-91).
     ///
     /// A hold is filled from `outpost_stock[(player, rock)]` — one map entry —
-    /// and a rock is one colour (mean dominant share **0.789** over 6,725
-    /// sources). So at `1` every delivery in the engine is mono-coloured *by
-    /// construction*, a bank is a sum of mono-coloured lumps, and **99.7% of
+    /// and a rock is one color (mean dominant share **0.789** over 6,725
+    /// sources). So at `1` every delivery in the engine is mono-colored *by
+    /// construction*, a bank is a sum of mono-colored lumps, and **99.7% of
     /// banked ore cannot pay a balanced rung at any price** (`Hyades_industry.md`
-    /// §6.23). A works bill is a conjunction over three colours (T-73), so that
+    /// §6.23). A works bill is a conjunction over three colors (T-73), so that
     /// is the whole of the mineral economy's remaining constraint.
     ///
     /// Three routing and selection fixes failed against it and the reason is
@@ -1930,7 +2205,7 @@ pub struct SimConfig {
     /// Work-years against the standard bed: `1` 184,338 · **`2` 284,199** ·
     /// `3` 261,395 · `4` 235,971 · `6` 190,465. Every extra stop is a detour
     /// paid in transit the hold is not earning, and past two the hauler is
-    /// shopping for colours the destination is no longer short of.
+    /// shopping for colors the destination is no longer short of.
     ///
     /// **`1` is the pre-T-91 engine, bit-identically** — one stop means the
     /// first stop is also the last, so the hauler loads exactly as it did.
@@ -1962,7 +2237,7 @@ pub struct SimConfig {
     ///
     /// **0.2 → 0.1, and that is a re-denomination rather than a retune.** The
     /// old code divided a planet-wide `F` by `slips`, which was always exactly
-    /// 2 at every rung a centre can occupy, so halving the ceiling reproduces
+    /// 2 at every rung a center can occupy, so halving the ceiling reproduces
     /// the old per-berth rate **bit-for-bit** — pinned by
     /// `turnaround_is_unchanged_and_only_the_berth_count_opened`. It also makes
     /// §3.3's approved turnaround schedule read off this constant directly:
@@ -2018,7 +2293,7 @@ pub struct SimConfig {
     /// **Measured before adopting** (`examples/hull_ladder`, the standard
     /// four-seed CRN bed, 4,000 yr), because T-56's acceptance test is that
     /// making General hulls *relatively more expensive* must not slow
-    /// colonisation down:
+    /// colonization down:
     ///
     /// | | colony-years | vs shipped | doubling |
     /// |---|---|---|---|
@@ -2069,6 +2344,129 @@ pub struct SimConfig {
     /// is measurable) but not yet binding. Flip this on with the card layer, or
     /// with a doctrine that can unlock designs.
     pub enforce_roster: bool,
+    /// **Does the simulation resolve engagements at all?** (T-111.)
+    ///
+    /// The master gate on `sys_engagement`, and it **defaults off** for the same
+    /// reason [`Self::enforce_roster`] does: the mechanic is real and none of its
+    /// magnitudes are ratified. Every coverage, colony-year and work-year figure
+    /// this project has measured was taken on a galaxy where nothing fights, so
+    /// turning combat on by default would consume the entire measurement corpus
+    /// in one landing (`CLAUDE.md` §6). Off, the run is **bit-identical** —
+    /// `combat_off_is_bit_identical` pins it.
+    ///
+    /// It is a *master* switch, not the design's own answer to "who fights".
+    /// That is [`crate::autopilot::Doctrine::engage_neutrals`], which is
+    /// per-player and is what a Warfare card writes
+    /// (`Hyades_warfare_tree.md` §7.2). Both must be on for a shot to be fired.
+    pub engagements_enabled: bool,
+    /// **Population staffs industry** (T-107, `Hyades_industry.md` §1.8).
+    ///
+    /// When on, every output path reads the *worked* stock rather than the
+    /// standing one:
+    ///
+    /// ```text
+    /// I_worked = I · u,    u = min(1, P / P_req(I))
+    /// ```
+    ///
+    /// | symbol | name | unit | set by |
+    /// |---|---|---|---|
+    /// | `I` | the center's infrastructure stock | kt (cost ladder) | `Factors::infra` |
+    /// | `P` | the center's population | kt (mass ladder) | `World::population` |
+    /// | `P_req(I)` | the population that stock needs to be fully worked | kt (mass ladder) | the people mass at `I`'s Band reading |
+    /// | `u` | the staffing factor | dimensionless, `[0, 1]` | this switch |
+    ///
+    /// **`P_req` is not a new magnitude: one Band of people staffs one Band of
+    /// infrastructure.** That is the relation galaxy generation already writes
+    /// into every homeworld — population and infrastructure both at Band 2,
+    /// annotated *"K = min = 2"* from when infrastructure was a term in `K` —
+    /// so a homeworld at `t = 0` is exactly fully staffed and nothing moves at
+    /// the reference state. `u`'s **shape** (linear, clamped) is the simplest
+    /// monotone form the spec admits, and it is a placeholder: **R-IND22**.
+    ///
+    /// `u ≤ 1`, so the switch can only remove output — the property §1.8 asks
+    /// of the first landing, because it makes the measurement an ablation
+    /// against a known baseline.
+    ///
+    /// **Default on (T-125, R-IND23 resolved by the author).** Off, a Growth
+    /// card moves population and nothing else: measured at T-124, the first
+    /// Growth card raised population +0.745 in log and work-years −0.014.
+    pub population_staffs_industry: bool,
+    /// **Ablation only — never a design option** (T-122). When on, a rung is
+    /// billed in proportion to the paying bank's *own* color mix, so any bank
+    /// holding the total can pay it: the per-color conjunction T-73 ratified is
+    /// removed. It exists to answer one question — is the color conjunction
+    /// what stands between more output and more infrastructure? — and the
+    /// answer is read from whether a card's effect on work-years appears with
+    /// it on. Design law #11 still holds: the bank pays the full total.
+    pub ablate_color_conjunction: bool,
+    /// **Ablation only — a design-law-#15 violation on purpose** (T-122). When
+    /// on, an intercepting picket is handed the colony ship's true destination
+    /// instead of guessing it from the bearing (T-120). It answers one
+    /// question: is the guess what stands between pickets on station and
+    /// pickets meeting colony ships? Never a design option — a picket that
+    /// knows the answer cannot be deceived (`CLAUDE.md`, "an inference is a
+    /// mechanic").
+    pub ablate_oracle_intercept: bool,
+    /// **Ablation only — a coverage oracle** (T-125). When positive, a colony
+    /// ship launched by a seat that does not blockade is destroyed at its port
+    /// with this probability whenever any seat does blockade, whether or not a
+    /// blockader is standing there. It answers one question: **what fraction of
+    /// rival launches must the port strike reach** for the Warfare card to move
+    /// its metric by the author's target? Never a design option — it strikes
+    /// without a hull, a meeting or light-lag. Default `0.0`, inert.
+    pub ablate_strike_fraction: f64,
+    /// **An ablation, and it is wrong on purpose** (T-116).
+    ///
+    /// Under `Doctrine::picket_after_founding` a colonizer keeps its hull, so
+    /// the colony it founds gets no recycled stock and starts at the ladder's
+    /// floor instead of `founding_infra(hull)` — a factor of about **5.5** on
+    /// a Medium hull (0.020 kt against 0.109). That is conservation being
+    /// correct (R-O57, design law #11): the minerals flew away.
+    ///
+    /// Setting this restores the rung anyway, which **violates conservation**
+    /// and must never ship. It exists so the card's measured `W_0` can be
+    /// attributed: `examples/warfare_why` runs the card with and without it,
+    /// and if the loss goes, the founding rung is the cause. `CLAUDE.md` §2 —
+    /// ablation is the only method that can refute, and a mechanism nobody
+    /// removed is a story rather than a cause.
+    pub ablate_picket_founding_cost: bool,
+    /// **How wide a cone a picket will guess into** (R-WAR10, T-120), in
+    /// radians of half-angle off the observed bearing.
+    ///
+    /// Light delivers a direction, not a destination, so every world within
+    /// some angle of that direction is a candidate. The angle is what decides
+    /// whether the guess is easy or hard: at zero a picket only backs a world
+    /// exactly on the line and almost never finds one, and at π it backs the
+    /// nearest scanned world regardless of where the ship is pointing, which is
+    /// not inference at all.
+    ///
+    /// **Placeholder, 0.15 rad ≈ 8.6°** (R-WAR12). It is a *legibility* knob
+    /// rather than a physical one — it sets how much a feint is worth, because
+    /// a wider cone makes a decoy bearing likelier to catch the world the ship
+    /// actually wants.
+    pub intercept_cone_radians: f64,
+    /// **How often a picket takes another look** (R-WAR10, T-120), in years.
+    ///
+    /// An interception is a guess made on one observation; this is the cadence
+    /// at which fresh light lets the picket revise it. Shorter makes deception
+    /// harder to sustain and costs events; longer makes a feint durable.
+    ///
+    /// **Placeholder, 25 yr** (R-WAR12) — roughly a third of a colony ship's
+    /// 25-ly crossing, so a chase gets two or three looks.
+    pub intercept_reassess_years: f64,
+    /// How long a resolved engagement is simulated for, in years.
+    ///
+    /// **Placeholder magnitude (R-WAR5).** `resolve_engagement` walks `dt`-sized
+    /// steps to this horizon, so it is the per-engagement cost knob as well as a
+    /// balance one; 0.5 yr is what `examples/laser_vs_missile` sweeps at.
+    pub engagement_horizon_years: f64,
+    /// Integration step inside an engagement, in years.
+    ///
+    /// **Not a tuning knob: `dt = 0.0005` (~0.18 days) is a numerical
+    /// requirement.** At the old `dt = 0.006` missiles scored *zero* hits
+    /// against a dodging target (§8, warfare §2.6). Raising it does not make
+    /// combat cheaper, it makes it wrong.
+    pub engagement_dt_years: f64,
     /// Fraction of a center's local density mined into its stockpile per cycle.
     pub center_mining_fraction: f64,
     /// Logistic regrowth rate of planetary **biosphere mass** per production
@@ -2101,7 +2499,7 @@ pub struct SimConfig {
     ///
     /// **MC-ratified at 0.238** by a verified gradient step (`gradient_probe`
     /// then `gradient_step`): elasticity +14.5 ± 5.8 points per ln, moved α = 0.5 along
-    /// the normalised gradient and confirmed on the same CRN seeds. The step as
+    /// the normalized gradient and confirmed on the same CRN seeds. The step as
     /// a whole bought **+10.99 ± 1.86 points** of coverage, 38.26% → 49.25%.
     /// Not a solo optimum — one component of a joint move, and it should be
     /// re-derived jointly if any of the other three changes.
@@ -2137,14 +2535,14 @@ pub struct SimConfig {
     ///
     /// ~~What a Medium hull carries~~ — **it is the hold of a hull at the
     /// reference radius √3, which the Medium hull only has when
-    /// `medium_fleet_size == 3`.** The normaliser is a constant on purpose (see
+    /// `medium_fleet_size == 3`.** The normalizer is a constant on purpose (see
     /// [`REFERENCE_MEDIUM_RADIUS`]); it is this doc line that was stale.
     ///
     /// **Ratified at 1.0 — `KT(I)`, one kiloton** (§2.6, R-MC15), where the
     /// spec puts `Band I` for every quantity on the mass ladder. At the
     /// ratified cost ladder the Medium radius is `√5` and a Medium hull carries
     /// **4.81 kt**, so this field and the hull's real hold still differ by the
-    /// normaliser; making them the same number needs the per-`(role, size)`
+    /// normalizer; making them the same number needs the per-`(role, size)`
     /// thickness and `η` of §2.3 (T-56 stage 3c).
     ///
     /// **Adopting it was free, and provably so.** On top of the ratified cost
@@ -2184,7 +2582,7 @@ pub struct SimConfig {
 
     /// **Transit discount rate `λ`, per year** — how fast the value of a
     /// delivery decays with time in flight
-    /// (`Hyades_politics_trade_and_intelligence.md` §2.3).
+    /// (`Hyades_politics_trade_and_intelligence.md` §1.3).
     ///
     /// One constant with two jobs, which is the whole reason it is a single
     /// number: on the Exchange it is the travel-time discount *and* the `$`
@@ -2219,7 +2617,7 @@ pub struct SimConfig {
     /// ten-seed bed (T-44).
     pub trade_decay_lambda: f64,
     /// **The `$` faucet rate** — `$` minted per kilotonne of fabrication capacity
-    /// per year (`Hyades_politics_trade_and_intelligence.md` §2.3, T-82).
+    /// per year (`Hyades_politics_trade_and_intelligence.md` §1.5, T-82).
     ///
     /// `$_income = base · production`, with **production the works fabrication
     /// rate**, which is what R-P3 ratified: income tracks what an empire can
@@ -2271,7 +2669,7 @@ pub struct SimConfig {
 /// It is by a wide margin the largest effect available on this surface, which
 /// says more about the surface than about the effect: five of the six mining
 /// *knobs* cannot be told from noise at all
-/// (`Hyades_autopilot_colonization_growth.md` §5b). Tuning was exhausted; this
+/// (`Hyades_experiments_appendix.md` §A.5). Tuning was exhausted; this
 /// is a term.
 pub const RECYCLE_MINING_PAIRS_DEFAULT: bool = true;
 
@@ -2301,11 +2699,11 @@ impl SimConfig {
     ///
     /// **There is no "too close" soft bound**, and the reason is worth keeping.
     /// An earlier version refused `r_M < 1.25` because the General : Medium
-    /// capacity ratio blew up there — an artifact of normalising capacity
+    /// capacity ratio blew up there — an artifact of normalizing capacity
     /// against the *live* Medium radius, i.e. dividing by a quantity that goes
-    /// to zero. There is no normaliser at all now. A narrow ladder just means
+    /// to zero. There is no normalizer at all now. A narrow ladder just means
     /// the Medium hull is nearly all shell and hauls nearly nothing, which is a
-    /// real economic consequence rather than a modelling failure.
+    /// real economic consequence rather than a modeling failure.
     pub fn hull_ladder_fault(&self) -> Option<&'static str> {
         if self.medium_fleet_size >= self.limited_fleet_size {
             return Some(
@@ -2357,6 +2755,21 @@ impl SimConfig {
             limited_fleet_size: 50.0,
             homeworld_start_minerals: 3.0,
             enforce_roster: false,
+            // Off: the mechanic is unratified and every measured number in the
+            // tree was taken without it. See the field doc.
+            engagements_enabled: false,
+            // **On by default since T-125 — the author's decision** (R-IND23):
+            // without it population is not a factor of production and no
+            // Growth card can reach its own tree's stock.
+            population_staffs_industry: true,
+            ablate_color_conjunction: false,
+            ablate_oracle_intercept: false,
+            ablate_strike_fraction: 0.0,
+            ablate_picket_founding_cost: false,
+            intercept_cone_radians: 0.15,
+            intercept_reassess_years: 25.0,
+            engagement_horizon_years: 0.5,
+            engagement_dt_years: 0.0005,
             recycle_mining_pairs: RECYCLE_MINING_PAIRS_DEFAULT,
             center_mining_fraction: 0.15,
             biosphere_regen_rate: 0.127,
@@ -2419,6 +2832,13 @@ pub struct Simulation {
     /// Reused buffer for `fill_survey_candidates` — see that method. Not state:
     /// cleared on every use, so it never affects results.
     survey_scratch: Vec<SurveyView>,
+    /// **Each seat's unvisited worlds, in planet order, pruned as they are
+    /// visited** (T-126). `visited` only grows, so a world dropped from this
+    /// list never needs to come back, and a stable `retain` keeps the ascending
+    /// order the survey scan has always walked in — the same compaction T-101
+    /// used on the production scan, and bit-identical for the same reason.
+    /// Filled lazily on a seat's first survey.
+    survey_unvisited: Vec<Option<Vec<Entity>>>,
     bands: PopBands,
 
     planet_entity: Vec<Entity>,
@@ -2428,7 +2848,7 @@ pub struct Simulation {
     /// and a store and carries no borrow flag.
     mineral_band_cache: Vec<core::cell::Cell<([f64; 3], [f64; 3])>>,
     player_entity: Vec<Entity>,
-    /// Memoised holdings centroid per seat; `None` means "recompute".
+    /// Memoized holdings centroid per seat; `None` means "recompute".
     /// Invalidated only by [`Simulation::claim_planet`] — see
     /// [`Simulation::holdings_centroid`] for why this is a memo and not a
     /// running sum.
@@ -2456,6 +2876,100 @@ pub struct Simulation {
     /// outpost" was not a value anyone could tune — there was no term in the
     /// model for it.
     mine_crew: BTreeMap<(u32, u64), Vec<Entity>>,
+    /// **The tuned combat surface** (T-111) — the same `CombatConfig` the arena
+    /// sweeps with, held here so the simulation resolves fights with the engine's
+    /// one fighting model rather than a second set of constants.
+    ///
+    /// Everything in it is globally Monte-Carlo-tuned and may not be changed
+    /// silently (the working agreement). It is not part of `SimConfig` because
+    /// `SimConfig` is the *economy*'s surface and these are weapons; keeping them
+    /// apart is what lets `tests/balance.rs` hold its goldens while the economy
+    /// moves underneath. Override with [`Simulation::set_combat_config`].
+    combat: CombatConfig,
+    /// **Who is holding each unclaimed world, and since when** (T-112).
+    ///
+    /// Planet id → `(seat, hull, established_at)`. One picket per world: a
+    /// second adds no denial, so the first to arrive holds it and later
+    /// arrivals are redundant.
+    ///
+    /// `established_at` is not bookkeeping — it is the **light-lag origin**. A
+    /// rival learns of the picket no earlier than `established_at +
+    /// distance / c`, and that gap is the whole counterplay window (card
+    /// contract §2: *"a reaction to a detected fleet is scheduled by the
+    /// distance to the responder"*).
+    ///
+    /// **Several hulls may hold one world** (T-125, author's specification:
+    /// "pickets can accumulate at more than one per site, like miners"). The
+    /// holder is one seat; the stack is every hull that seat has standing
+    /// there, oldest first, and all of them defend it.
+    picket: BTreeMap<u64, (u32, Vec<Entity>, f64)>,
+    /// **Pickets in flight, per world** (T-113) — how many hulls this empire
+    /// has already dispatched to hold a world that nobody holds yet.
+    ///
+    /// Needed because [`Doctrine::picket_claims_target`] fires on a *state*
+    /// (the world is not held) that a hull already under way is on its way to
+    /// change. Without it a center lays down a fresh picket every decision for
+    /// the whole voyage, which is waste rather than a runaway — `picket_reserve`
+    /// still bounds the empire — but it is waste on the expansion loop's own
+    /// budget.
+    ///
+    /// Marking the world held at *dispatch* would be the cheaper index and is
+    /// wrong: `picket` is what `picket_blocks` reads to turn a rival colonizer
+    /// back, so an entry written before the hull arrives would deny at a
+    /// distance with no light-lag — the exact instant global state change
+    /// design law #15 exists to rule out.
+    ///
+    /// Leak-free because the only exit from "in flight" is `PicketArrive`,
+    /// which `spawn_courier` schedules unconditionally, and an in-flight hull
+    /// is at no site so no engagement can destroy it.
+    picket_inbound: BTreeMap<u64, u32>,
+    /// **How many worlds each seat is holding**, so the build decision can ask
+    /// in `O(1)`. Derivable from [`Self::picket`] by scanning it, which is
+    /// hundreds of entries on a run that plays the card — §4's locality rule
+    /// forbids that on a decision path.
+    picket_count: Vec<u32>,
+    /// **Who is standing at each rival port** (T-123, R-WAR16) —
+    /// `(center, seat) → hull`.
+    ///
+    /// Kept apart from [`Self::picket`] because the two answer different
+    /// questions: a picket holds *unclaimed* ground against a colony ship's
+    /// arrival, a blockader stands on a rival's *owned* center against its
+    /// departure. Keyed center-first so the launch path finds every hull
+    /// standing at one port with a range read.
+    ///
+    /// **A stack, like a mining crew** (T-125): several of one seat's hulls
+    /// may stand at one port, and all of them fight what leaves it.
+    blockade: BTreeMap<(u64, u32), Vec<Entity>>,
+    /// **Blockaders in flight**, `(seat, center)`, so a port already being
+    /// covered is not chosen again. Cleared on `PicketArrive`, the only exit.
+    blockade_bound: BTreeMap<(u32, u64), u32>,
+    /// **The rival launches each seat has seen**, per port (T-123):
+    /// `center → count`, indexed by observing seat.
+    ///
+    /// Written by [`EventKind::LaunchSeen`], which lands at the observer's
+    /// capital `distance / c` after the drive lit. This is the store a
+    /// blockader's placement reads, and it holds nothing light has not
+    /// delivered (design law #15).
+    launches_seen: Vec<BTreeMap<u64, u32>>,
+    /// **The same sightings, in the order they arrived, for recency** (T-125,
+    /// R-WAR18): `(seen_at, port)` per observing seat, pruned to the last
+    /// [`SimConfig::intercept_reassess_years`]. Launch origins move as colonies
+    /// become centers, so a cumulative count parks hulls on ports whose traffic
+    /// has gone elsewhere; this window is what placement ranks by.
+    launches_recent: Vec<VecDeque<(f64, u64)>>,
+    /// **Every colony-ship launch, in order** (T-125): `(depart, port,
+    /// launcher)`. A launch is an event whose light reaches every capital in
+    /// time whether or not anyone is watching; this is what a seat that starts
+    /// blockading mid-game recalls — only the launches whose light has already
+    /// arrived (`recall_seen_launches`).
+    launch_history: Vec<(f64, u64, u32)>,
+    /// **Colonizers currently flying at each world**, target planet id → hulls.
+    ///
+    /// Maintained at launch and cleared on arrival or diversion. It exists so a
+    /// newly established picket can notify exactly the ships it threatens in
+    /// `O(inbound)` instead of scanning the fleet — §4's locality rule, on a
+    /// path that fires once per founding.
+    inbound_colonizers: BTreeMap<u64, Vec<Entity>>,
     /// Ore an outpost has extracted **for one player**, awaiting a freighter.
     ///
     /// Keyed by `(player, outpost)`, and that is the correction: the rock's
@@ -2503,6 +3017,45 @@ pub struct Simulation {
     inert_card_plays: u64,
 }
 
+/// **What a picket saw of a colony ship** — the one observation its guess is
+/// made from (R-WAR10, T-120). Bundled because the guess reads all four and
+/// nothing else: where the ship left from, which way it is moving, when that
+/// light reached the picket, and the ship itself — the last read *only* by the
+/// oracle ablation (`SimConfig::ablate_oracle_intercept`), never by the guess.
+#[derive(Clone, Copy, Debug)]
+struct Sighting {
+    origin: Vec3,
+    bearing: Vec3,
+    t_see: f64,
+    quarry: Entity,
+}
+
+/// **A hull as it leaves the yard** — the type, and the minerals that bought it
+/// (R-IND21, T-119).
+///
+/// One value rather than two parameters because they are one fact: a hull's
+/// composition is meaningless without knowing which hull it is (the mass it
+/// scales to comes from the type), and a type without a composition is the
+/// guess this replaces. Every dispatcher takes it whole.
+#[derive(Clone, Copy, Debug)]
+struct BuiltHull {
+    hull: HullType,
+    /// The Design's class — with the hull, what the loadout is read from.
+    class: Class,
+    /// What the bank actually handed over. Scaled to the hull's own dry mass by
+    /// `stamp_composition`, so a withdrawal that paid for several hulls splits
+    /// by mass rather than being counted once per hull.
+    mix: Minerals,
+}
+
+impl BuiltHull {
+    /// A hull nobody paid for — the seed scouts the galaxy is generated with.
+    /// `composition_of` reads the absent record as an even split and says so.
+    fn unpaid(hull: HullType) -> Self {
+        Self { hull, class: Class::Unnamed, mix: Minerals::default() }
+    }
+}
+
 impl Simulation {
     /// Build a simulation, ingesting a generated [`Galaxy`] into the ECS world.
     pub fn new(galaxy: Galaxy, config: SimConfig, autopilots: Vec<Box<dyn Autopilot>>) -> Self {
@@ -2510,7 +3063,7 @@ impl Simulation {
         // where nothing can carry cargo still *runs* — it produces numbers, and
         // they look like an economy's — which is exactly why this must be loud.
         // Design law #14's rule against benchmarking a broken configuration
-        // only helps if the broken configuration is recognisable.
+        // only helps if the broken configuration is recognizable.
         if let Some(why) = config.hull_ladder_fault() {
             panic!("degenerate hull ladder: {why}");
         }
@@ -2575,6 +3128,7 @@ impl Simulation {
             world,
             config,
             survey_scratch: Vec::new(),
+            survey_unvisited: vec![None; n],
             bands: galaxy.bands,
             mineral_band_cache: (0..planet_entity.len())
                 .map(|_| core::cell::Cell::new(([f64::NAN; 3], [0.0; 3])))
@@ -2590,6 +3144,16 @@ impl Simulation {
             events_processed: 0,
             active_mines: BTreeSet::new(),
             mine_crew: BTreeMap::new(),
+            combat: CombatConfig::default(),
+            picket: BTreeMap::new(),
+            picket_inbound: BTreeMap::new(),
+            picket_count: vec![0; n],
+            blockade: BTreeMap::new(),
+            blockade_bound: BTreeMap::new(),
+            launches_seen: vec![BTreeMap::new(); n],
+            launches_recent: vec![VecDeque::new(); n],
+            launch_history: Vec::new(),
+            inbound_colonizers: BTreeMap::new(),
             outpost_stock: BTreeMap::new(),
             exchange: Exchange::default(),
             exchange_posting: true,
@@ -2632,6 +3196,23 @@ impl Simulation {
     /// on `Production` only for the window you're interrogating, then turn it
     /// back off. Does not affect simulation outcomes (see
     /// `tests::logging_does_not_affect_outcomes`).
+    /// Replace the tuned combat surface used by [`Self::sys_engagement`].
+    ///
+    /// For the arena and for sweeps. **Changing any of it is a ratification**
+    /// (the working agreement), not a tuning convenience.
+    pub fn set_combat_config(&mut self, cfg: CombatConfig) {
+        self.combat = cfg;
+    }
+
+    /// Wreckage standing at a planet, in kilotons — inert (R-O59, T-03).
+    pub fn slag_at(&self, planet: PlanetId) -> Kilotons {
+        self.planet_entity
+            .get(planet.0 as usize)
+            .and_then(|&e| self.world.slag.get(e))
+            .copied()
+            .unwrap_or(Kilotons::ZERO)
+    }
+
     pub fn set_log_filter(&mut self, filter: LogFilter) {
         self.log.set_filter(filter);
     }
@@ -2676,20 +3257,26 @@ impl Simulation {
             // from here on (`Hyades_vehicle_roles.md` §9).
             self.world.doctrine.insert(pe, self.autopilots[p].default_doctrine());
 
-            // Seed this seat's Design roster (R-O42, §7.1). The ratified
-            // starting state is **LSV and LCV only, one class each** — so at
-            // turn 0 a scout, a settler and a hauler are literally the same
-            // object, and the long-range observable carries almost no
-            // information because every empire's fleet looks identical.
+            // Seed this seat's Design roster. **One design: LSV(Meadow)**, so
+            // at turn 0 a scout, a settler and a hauler are literally the same
+            // object and the long-range observable carries almost no
+            // information, because every empire's fleet looks identical.
             // Inscrutability early is total *by construction* rather than by
             // card design, and legibility grows as rosters diverge.
             //
+            // **This contradicts R-O42 / standing-layer §7.1, which ratified
+            // LSV + LCV (T-121).** The Contact family is now the armed family
+            // and the Warfare card is its only key, so seeding an LCV would
+            // hand every seat the thing the card is supposed to sell. The
+            // §7.1 argument — that the opening roster must be one indistinct
+            // object — is *better* served by one design than by two.
+            //
             // See `roster_permits` for why this does not yet *restrict* what
-            // production may build: with no card system there is no unlock
-            // path, so enforcing the roster would halt colonization outright.
+            // production may build: `enforce_roster` defaults off, because the
+            // Medium hull every colonizer rides still has no unlock path
+            // outside the Technology tree (T-25).
             let mut roster = Roster::default();
             roster.unlock(HullType::LimitedSystems, Class::Meadow);
-            roster.unlock(HullType::LimitedContactVehicle, Class::Tor);
             self.world.roster.insert(pe, roster);
             self.world.works.insert(pe, cards::Works::default());
             self.world.works_writes.insert(pe, Vec::new());
@@ -2718,7 +3305,8 @@ impl Simulation {
                 };
                 // Bootstrap craft are *seeded*, not built — no yard made them,
                 // so they leave at once (autopilot-doc §2).
-                self.launch_survey(p, home_pos, heading, 0, 0.0);
+                let survey_hull = Standing::of(&doctrine_here).design_for(Role::Scout).0;
+                self.launch_survey(p, home_pos, heading, 0, 0.0, BuiltHull::unpaid(survey_hull));
             }
         }
 
@@ -2805,7 +3393,19 @@ impl Simulation {
     /// Total basic minerals across an empire's holdings. Cards are paid from
     /// the empire, not from one center — design law #7 puts cards at
     /// empire/macro scale, so a per-center purse would be the wrong grain.
-    fn empire_can_afford(&self, p: usize, cost: Price) -> bool {
+    ///
+    /// **Public because a harness has to know whether a play took.** An order
+    /// that fails this predicate coerces to a *pass* rather than erroring, so a
+    /// harness that assumes a card landed measures its absence while looking
+    /// like a measurement.
+    ///
+    /// Earliest legal play is the **round-0 barrier**, at
+    /// `years_to_first_round` (200 yr by default) — the opening is card-free by
+    /// protocol (`Hyades_netcode.md` §1). T-120 and T-121 measured cards played
+    /// at `t ≈ 0` instead, paying the price out of the bootstrap bank, and
+    /// T-122 found that alone cost ~550 colonies on one seed. `t = 0` is not a
+    /// state a real game reaches with a card in hand.
+    pub fn empire_can_afford(&self, p: usize, cost: Price) -> bool {
         let me = PlayerId(p as u32);
         let mut total = Price::ZERO;
         for &e in &self.planet_entity {
@@ -2845,11 +3445,26 @@ impl Simulation {
         }
     }
 
+    /// Lay down every write in a card's bundle, in slice order (`Card::effects`).
+    /// The order is fixed at compile time, so two clients applying the same card
+    /// apply the same writes in the same sequence — which matters for the same
+    /// reason `WriteWorks` folds in `CardId` order rather than play order.
     fn apply_card_effect(&mut self, p: usize, c: &cards::Card, target: Target, round: u32) {
-        match c.effect {
+        for &effect in c.effects {
+            self.apply_one_write(p, c, effect, target);
+        }
+        self.log.push(self.clock, LogEvent::CardPlayed { player: p as u32, card: c.id.0, round });
+    }
+
+    fn apply_one_write(&mut self, p: usize, c: &cards::Card, effect: CardEffect, target: Target) {
+        match effect {
             CardEffect::WriteDoctrine(w) => {
                 let pe = self.player_entity[p];
+                let was = self.blockade_doctrine(p);
                 cards::apply_doctrine_write(self.world.doctrine.get_mut(pe).unwrap(), w);
+                if !was && self.blockade_doctrine(p) {
+                    self.recall_seen_launches(p);
+                }
             }
             CardEffect::UnlockDesign(hull, class) => {
                 let pe = self.player_entity[p];
@@ -2894,7 +3509,6 @@ impl Simulation {
                 self.inert_card_plays += 1;
             }
         }
-        self.log.push(self.clock, LogEvent::CardPlayed { player: p as u32, card: c.id.0, round });
     }
 
     /// The protocol round this run has reached. Presentation-readable.
@@ -2968,6 +3582,15 @@ impl Simulation {
             EventKind::BuildDecision { center } => self.sys_build_decision(center),
             EventKind::ContractDue { id } => self.sys_contract_due(id),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
+            EventKind::Engagement { site } => self.sys_engagement(site),
+            EventKind::ColonyDivert { vehicle } => self.sys_colony_divert(vehicle),
+            EventKind::PicketArrive { vehicle } => self.sys_picket_arrive(vehicle),
+            EventKind::LaunchSeen { observer, center } => {
+                *self.launches_seen[observer as usize].entry(center.0).or_insert(0) += 1;
+                self.launches_recent[observer as usize].push_back((self.clock, center.0));
+            }
+            EventKind::BlockadeReassess { vehicle } => self.sys_blockade_reassess(vehicle),
+            EventKind::PicketReassess { picket, quarry } => self.sys_picket_reassess(picket, quarry),
             EventKind::RoundBoundary { round } => self.sys_round_boundary(round),
         }
         true
@@ -3052,6 +3675,31 @@ impl Simulation {
         let target = voyage.target;
         let here = self.position_at(target, self.clock).unwrap();
         let target_pid = *self.world.planet_id.get(target).unwrap();
+        self.clear_inbound(target, vehicle);
+
+        // **A hostile picket is standing here** (T-112). The news did not reach
+        // this empire in time — light-lag — so the ship arrived anyway and is
+        // now in a fight it did not choose.
+        //
+        // **Resolved inline rather than scheduled.** Scheduling an engagement
+        // and re-queuing this arrival would loop forever whenever both sides
+        // survive; the outcome is needed *here*, to decide between founding and
+        // turning back. Three outcomes, and the middle one is why a picket is
+        // not an absolute veto:
+        //
+        // - the colonizer dies → nothing founds, and nothing returns;
+        // - the picket dies → the ground is clear and it founds normally;
+        // - both live → it turns back with its people, as if contested (R-AC8).
+        if self.picket_blocks(target, owner.0) {
+            self.resolve_picket_fight(target, p);
+            if self.world.role.get(vehicle).copied() == Some(Role::Scrapped) {
+                return; // destroyed on arrival
+            }
+            if self.picket_blocks(target, owner.0) {
+                self.bounce_colonizer(vehicle, target, here, p, target_pid);
+                return;
+            }
+        }
 
         if !self.world.owner.contains(target) {
             // Found the colony; recycle the vehicle's hull into level-1 infra.
@@ -3062,16 +3710,67 @@ impl Simulation {
                 // a courier constructed without one is a test fixture, not a
                 // build, and the Medium hull is the baseline colonizer.
                 let hull = self.world.hull_type.get(vehicle).copied().unwrap_or(HullType::MediumSystems);
-                let founded_at = self.founding_infra(hull);
+                // **Only a hull that is actually consumed becomes the stock**
+                // (roles §4.2, T-113). A colonizer that flies on to picket keeps
+                // its minerals in the hull, so it has none to leave here — and
+                // what it leaves instead is whatever the hold was loaded with,
+                // credited just below.
+                // **Ablation knob, not a design option** (T-116,
+                // `SimConfig::ablate_picket_founding_cost`). Conservation says
+                // a hull that flies on leaves nothing (R-O57, design law #11),
+                // so charging the rung is the *correct* model and this switch
+                // is wrong on purpose. It exists because the card's measured
+                // `W_0` has to be attributed to something, and the only way to
+                // show the founding rung is the cause is to remove it and watch
+                // the effect go (`CLAUDE.md` §2: ablation refutes).
+                let recycles = !self.stays_armed_after_founding(p, vehicle) || self.config.ablate_picket_founding_cost;
+                // **What the ceiling turns away is banked, not burned**
+                // (T-118, design law #11). `founding_infra` clamps the recycled
+                // hull to the top playable rung's price, and the clamped-off
+                // remainder used to vanish — the mass ledger found it as
+                // exactly one hull's worth of ore going missing at the first
+                // founding (a 0.10921 kt Medium hull crediting 0.0892 of
+                // infrastructure, the 0.0200 difference gone). It is still
+                // minerals; it just cannot stand up here, so it lands in the
+                // new colony's stockpile like any other ore.
+                let (founded_at, overflow) = if recycles {
+                    let raw = hull_cost(hull, &self.config).max(Price::ZERO);
+                    let capped = self.founding_infra(hull);
+                    (capped, (raw - capped).max(Price::ZERO))
+                } else {
+                    (Price::ZERO, Price::ZERO)
+                };
+                if overflow > Price::ZERO {
+                    // **In the hull's own composition** (R-IND21, T-119) — the
+                    // ceiling turns away minerals, and which minerals it turns
+                    // away is a fact about what the hull was built from rather
+                    // than an even split nobody chose.
+                    let spill = self.composition_of(vehicle, overflow);
+                    if let Some(bank) = self.world.stockpile.get_mut(target) {
+                        bank.add_basics(&spill);
+                        bank.red += spill.red;
+                        bank.green += spill.green;
+                        bank.blue += spill.blue;
+                        bank.apex += spill.apex;
+                    }
+                }
+                // **Added to what is already standing, not `max`'d over it**
+                // (T-118). A wild world is generated with some infrastructure,
+                // and `max` threw it away whenever the recycled hull was worth
+                // more — the ledger found it as one hull's worth of ore going
+                // missing at the first founding (hulls −0.10921, infrastructure
+                // only +0.0892, the 0.0200 already on the world gone). This is
+                // the same `max`-where-a-sum-belongs defect T-117 fixed on the
+                // hold, on the other credit of the same line.
                 let f = self.world.factors.get_mut(target).unwrap();
-                f.infra = f.infra.max(founded_at);
+                f.infra += founded_at;
             }
             // Seed population from the pop *carried as cargo*
             // (`Hyades_vehicle_roles.md` §4.2/R-V9 — confirmed, not a flat
             // constant applied on arrival regardless of what was brought).
             //
             // **Credited, not assigned** (R-O74). These people were debited from
-            // the founding centre at launch, so they are *added* to whatever the
+            // the founding center at launch, so they are *added* to whatever the
             // world holds rather than `max`'d into place. An unowned world holds
             // zero (`galaxy.rs`), so the two agreed until settlers had to come
             // from somewhere — at which point `max` would have destroyed the
@@ -3086,31 +3785,175 @@ impl Simulation {
             // was "no mineral seed for colonies, homeworlds only" — superseded:
             // a hold may carry any mix of settlers and minerals, and the
             // minerals jumpstart production (`Hyades_industry.md` §1.7). This
-            // is not a new grant, it is the endowment the founding centre
+            // is not a new grant, it is the endowment the founding center
             // already paid for out of its own bank at launch.
             let endowment = self.world.cargo.get(vehicle).copied().unwrap_or_default();
             if endowment.basic_total() > Price::ZERO {
-                if let Some(bank) = self.world.stockpile.get_mut(target) {
-                    bank.add_basics(&endowment);
+                // **Part of the hold is erected rather than banked** (T-113).
+                //
+                // A colony whose hull did not recycle has a full bank and no
+                // way to spend it: `employment_rate` is exactly `0.0` at a
+                // stock of zero, so nothing mines and nothing builds (§8.7).
+                // Erecting a share of the endowment *as* the stock is not a
+                // grant — infrastructure **is** the minerals standing in it
+                // (T-70, R-O57), so this is the same kilotons on the same
+                // ladder, placed rather than stored.
+                //
+                // Default share is 0.0, so the shipped galaxy banks all of it
+                // exactly as before.
+                // **The hold adds to the hull's credit; it does not compete
+                // with it** (T-117). This was a `max`, so a colony that
+                // recycled its hull *and* landed minerals got whichever was
+                // bigger and the other vanished — which is not conservation,
+                // it is a comparison standing where a sum belongs.
+                //
+                // **And the hold erects in ratio, not in total.** A rung is
+                // billed per color (`works_bill`), so minerals standing in a
+                // hold are worth only what their scarcest color allows:
+                // `erectable_from` is that conjunction, and it hands back what
+                // it consumed so the rest can be banked rather than lost.
+                //
+                // Default share is 0.0, so the shipped galaxy banks all of it.
+                let share = self.doctrine_of(p).founding_infra_share.clamp(0.0, 1.0);
+                let mut remaining = endowment;
+                let offered = take_basics(&mut remaining, endowment.basic_total() * share);
+                let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
+                let (erected, consumed) = erectable_from(&offered, &works);
+                // Whatever the ratio could not use goes to the bank with the
+                // rest — it is still the colony's, just not standing up yet.
+                let mut to_bank = remaining;
+                for &c in Basic::ALL.iter() {
+                    to_bank.add_basic(c, (offered.get_basic(c) - consumed.get_basic(c)).max(0.0));
                 }
+                if let Some(bank) = self.world.stockpile.get_mut(target) {
+                    bank.add_basics(&to_bank);
+                }
+                let f = self.world.factors.get_mut(target).unwrap();
+                f.infra += erected;
                 self.world.cargo.insert(vehicle, Minerals::default());
             }
+            // **The floor, applied once and unconditionally** (§8.7).
+            //
+            // Zero infrastructure is not a small stock, it is an absorbing
+            // state: `employment_rate` returns exactly `0.0` there and
+            // `fabrication_rate` is `slips × berth_rate`, so a colony founded at
+            // zero can never mine, never build and never recover. Measured
+            // before this existed, a card that left colonies at zero took its
+            // own player from 769 colonies to **10**.
+            //
+            // A `max` rather than a `min`, and outside the picket branch: it
+            // catches *any* route to zero — a hull that left, a hold that was
+            // empty, a share of nothing — instead of the one that happened to
+            // be found first. **Placeholder rung (R-WAR6).**
+            // **And the founding center pays for it** (R-IND22, resolved).
+            //
+            // The top-up used to appear from nowhere, which was the last
+            // exception to design law #11 left in the engine. It is a
+            // *transfer* now: the parent center that dispatched the colonizer
+            // is billed for whatever the floor costs above what the colony
+            // already has, exactly as it was billed for the settlers and the
+            // endowment (R-O74). A parent too poor to pay leaves its child at
+            // whatever it could afford — so the guard degrades rather than
+            // conjuring, and a bankrupt empire cannot found its way to free
+            // infrastructure.
+            let founding_stock = {
+                let floor = infra_rung_price(0, &self.config).max(Price::new(1e-9));
+                let standing = self.world.factors.get(target).map(|f| f.infra).unwrap_or(Price::ZERO);
+                let shortfall = (floor - standing).max(Price::ZERO);
+                let paid = if shortfall > Price::ZERO {
+                    let home = self.world.home_center.get(vehicle).copied();
+                    match home.and_then(|h| self.world.stockpile.get_mut(h)) {
+                        Some(bank) => {
+                            let take = shortfall.kilotons().min(bank.basic_total().kilotons());
+                            let p = Price::new(take);
+                            if bank.try_spend_total(p) {
+                                p
+                            } else {
+                                Price::ZERO
+                            }
+                        }
+                        None => Price::ZERO,
+                    }
+                } else {
+                    Price::ZERO
+                };
+                let f = self.world.factors.get_mut(target).unwrap();
+                f.infra += paid;
+                f.infra
+            };
             let pid = *self.world.planet_id.get(target).unwrap();
             self.world.knowledge.get_mut(self.player_entity[p]).unwrap().scanned.insert(pid);
             self.schedule(self.config.cycle_years, EventKind::ProductionTick { center: target });
-            self.log.push(self.clock, LogEvent::ColonyFounded { player: p as u32, vehicle, planet: target_pid });
-            self.park(vehicle, here); // recycled hull, now inert infrastructure
+            self.log.push(
+                self.clock,
+                LogEvent::ColonyFounded {
+                    player: p as u32,
+                    vehicle,
+                    planet: target_pid,
+                    infra: founding_stock.kilotons(),
+                },
+            );
+            // **The hull either becomes the colony or holds the next world**
+            // (T-112). Under `picket_after_founding` it is not recycled — it
+            // flies on and denies somewhere. The infrastructure credited above
+            // is the same either way, which is deliberate and is the card's
+            // price: roles §4.2 makes `founding_infra` the *recycled hull*, so
+            // a colony founded by a ship that leaves is a colony whose starting
+            // stock walked away. Charging it here rather than skipping the
+            // credit keeps `founding_infra` one expression.
+            // **A picket standing here has nothing left to deny** (T-115).
+            //
+            // Its whole product is a colony somebody does not found, and this
+            // world now has one. Leaving it parked would be a hull doing
+            // nothing for the rest of the run — and the empire's `picket_count`
+            // would keep counting it, so `picket_reserve` would throttle the
+            // replacements it should be buying. It goes back to the frontier.
+            //
+            // Ordered after the founding rather than before it, because
+            // `dispatch_picket` refuses any world that is already owned and
+            // this one has just become so — the pass that re-aims it must see
+            // the board as it now is.
+            if let Some((seat, hulls)) = self.vacate_picket(target) {
+                for hull in hulls {
+                    self.dispatch_picket(seat, hull, target);
+                }
+            }
+            if self.stays_armed_after_founding(p, vehicle) {
+                self.dispatch_picket(p, vehicle, target);
+            } else {
+                // **Recycled: the hull *became* the infrastructure**, so it
+                // leaves the fleet (T-118). It used to be parked and keep its
+                // role and hull type, which counted its dry mass twice — once
+                // as a live hull and once as the `founding_infra` credited from
+                // it just above. `Role::Scrapped` is the engine's retirement
+                // marker (`destroy_free_hulls` uses the same one) and nothing
+                // re-tasks a parked colonizer, so this retires an object that
+                // was already inert and stops the double count.
+                self.park(vehicle, here);
+                self.world.role.insert(vehicle, Role::Scrapped);
+            }
         } else {
             // Contested (R-AC8): a systems vehicle returns home, carried pop
             // and all — nothing is lost, it's available to re-task
             // (`Hyades_vehicle_roles.md` §4.2).
-            let home = *self.world.home_center.get(vehicle).unwrap_or(&target);
-            let home_pos = *self.world.position.get(home).unwrap();
-            let accel = self.config.civilian_accel_g * G;
-            let arrive = self.set_leg(vehicle, here, home_pos, accel, 0.0);
-            self.schedule_at(arrive, EventKind::ReturnArrive { vehicle });
-            self.log.push(self.clock, LogEvent::ColonyContested { player: p as u32, vehicle, planet: target_pid });
+            self.bounce_colonizer(vehicle, target, here, p, target_pid);
         }
+    }
+
+    /// Turn a colonizer around, people and endowment intact (R-AC8, roles §4.2).
+    ///
+    /// One expression for the two reasons a ship gives up on a world: someone
+    /// claimed it first, or someone is **standing on it** (T-112). The second
+    /// was written as a copy of the first before it was factored out, which is
+    /// the shape of a divergence waiting to happen — the unload-on-return rule
+    /// lives in `sys_return_arrive` and only works if both paths reach it.
+    fn bounce_colonizer(&mut self, vehicle: Entity, target: Entity, here: Vec3, p: usize, target_pid: PlanetId) {
+        let home = *self.world.home_center.get(vehicle).unwrap_or(&target);
+        let home_pos = *self.world.position.get(home).unwrap();
+        let accel = self.config.civilian_accel_g * G;
+        let arrive = self.set_leg(vehicle, here, home_pos, accel, 0.0);
+        self.schedule_at(arrive, EventKind::ReturnArrive { vehicle });
+        self.log.push(self.clock, LogEvent::ColonyContested { player: p as u32, vehicle, planet: target_pid });
     }
 
     fn sys_mining_arrive(&mut self, vehicle: Entity) {
@@ -3129,6 +3972,1260 @@ impl Simulation {
         if self.active_mines.insert(outpost.0) {
             self.schedule(self.config.mining_tick_years, EventKind::MiningTick { outpost });
         }
+        // **Contact.** Mining is non-exclusive (roles §4.3), so this arrival may
+        // have just put two empires' hulls on the same rock — the one place in
+        // the shipped engine where that legally happens, and it happens a lot:
+        // 68-75% of occupied sites end up shared and a 1,500-year run produces
+        // ~4,200 contacts (`examples/contact_census`). The arrival *is* the
+        // moment the situation changed (§4), so the check belongs here and
+        // nowhere else.
+        if self.hostile_contact_at(outpost).is_some() {
+            self.schedule(0.0, EventKind::Engagement { site: outpost });
+        }
+    }
+
+    /// **Is there a fight at this outpost, and who starts it?**
+    ///
+    /// Returns `(attacker_seat, defender_seat)` for the first hostile pairing in
+    /// seat order, or `None`. The attacker is the empire whose Doctrine says a
+    /// neutral is an enemy; the defender is the lowest-numbered seat it is
+    /// standing next to. Deliberately **not symmetric**: hostility is a property
+    /// of one side's doctrine, and being shot at is not a choice
+    /// (`Doctrine::engage_neutrals`).
+    ///
+    /// `O(seats²)` at worst, with seats ≤ 18 and no allocation — the locality
+    /// rule §4 requires of anything on an arrival path. `mine_crew` is already
+    /// keyed `(seat, outpost)`, so this reads the index rather than scanning.
+    fn hostile_contact_at(&self, outpost: Entity) -> Option<(usize, usize)> {
+        if !self.config.engagements_enabled {
+            return None;
+        }
+        let mut present: Vec<usize> = Vec::new();
+        for (&(seat, site), crew) in self.mine_crew.range((0u32, outpost.0)..=(u32::MAX, outpost.0)) {
+            if site == outpost.0 && !crew.is_empty() {
+                present.push(seat as usize);
+            }
+        }
+        if present.len() < 2 {
+            return None;
+        }
+        for &a in &present {
+            if self.doctrine_of(a).engage_neutrals {
+                if let Some(&d) = present.iter().find(|&&d| d != a) {
+                    return Some((a, d));
+                }
+            }
+        }
+        None
+    }
+
+    // --- Denial: pickets, light-lagged warning, and diversion (T-112) --------
+
+    /// **Does this colonizer keep its hull and go to the frontier after
+    /// founding?** (T-112, T-125.) One predicate for both halves of the
+    /// decision — whether the hull is credited as the colony's stock and
+    /// whether it is dispatched — because two readings of one write is how they
+    /// come to disagree (`CLAUDE.md` §6's standing-layer rule).
+    ///
+    /// Yes only when the hull is **armed** — a picket that cannot shoot denies
+    /// nothing — and Doctrine says hold ground, under the engagement master
+    /// switch. An unarmed colonizer always becomes its colony's stock.
+    fn stays_armed_after_founding(&self, seat: usize, vehicle: Entity) -> bool {
+        self.config.engagements_enabled
+            && self.world.loadout.get(vehicle).is_some_and(|l| l.is_armed())
+            && !Standing::of(&self.doctrine_of(seat)).recycles_on_founding()
+    }
+
+    /// Does this seat blockade rival ports (T-123)? Gated by the same master
+    /// switch as every other Warfare posture.
+    fn blockade_doctrine(&self, seat: usize) -> bool {
+        self.config.engagements_enabled && self.doctrine_of(seat).picket_blockades
+    }
+
+    /// Is an unclaimed world held against `seat` right now?
+    ///
+    /// Ground truth, and it is read **only** at the moment of arrival — where
+    /// the range is zero and there is nothing left to be lagged about. The
+    /// *decision* to turn back is taken on light-lagged news
+    /// ([`Self::notify_inbound`]); this is the ship discovering what is
+    /// actually there by flying into it.
+    fn picket_blocks(&self, world: Entity, seat: u32) -> bool {
+        self.picket.get(&world.0).is_some_and(|&(holder, _, _)| holder != seat)
+    }
+
+    /// **What a hull is made of, and what it gives back** (R-IND21, T-119).
+    ///
+    /// Scaled to `want` — so the same record answers "what does half of this
+    /// hull recover" and "what does all of it slag" without a second store.
+    ///
+    /// A hull nobody paid for falls back to an even split across the three
+    /// basics. That is a guess, and it is confined to the seed scouts the
+    /// galaxy is generated with: everything the engine *builds* carries what
+    /// the bank actually handed over.
+    fn composition_of(&self, vehicle: Entity, want: Price) -> Minerals {
+        if want <= Price::ZERO {
+            return Minerals::default();
+        }
+        let built = self.world.hull_minerals.get(vehicle).copied();
+        let total = built.map(|m| m.basic_total() + Price::new(m.red + m.green + m.blue + m.apex));
+        match (built, total) {
+            (Some(m), Some(t)) if t > Price::new(1e-12) => {
+                let f = want.kilotons() / t.kilotons();
+                Minerals {
+                    cyan: m.cyan * f,
+                    magenta: m.magenta * f,
+                    yellow: m.yellow * f,
+                    red: m.red * f,
+                    green: m.green * f,
+                    blue: m.blue * f,
+                    apex: m.apex * f,
+                }
+            }
+            _ => {
+                let each = want.kilotons() / 3.0;
+                Minerals { cyan: each, magenta: each, yellow: each, ..Minerals::default() }
+            }
+        }
+    }
+
+    /// **Record what a hull was built from**, scaled to its own dry mass.
+    ///
+    /// One build can lay down several hulls out of one withdrawal (a mining
+    /// crew and its freighter), so the *mix* is what is shared and each hull
+    /// takes its own mass in that mix.
+    /// **Mount the Design's weapons** (T-125). Once, at construction.
+    fn stamp_loadout(&mut self, vehicle: Entity, built: BuiltHull) {
+        let l = design_loadout(built.hull, built.class, &self.config, &self.combat);
+        if l.is_armed() {
+            self.world.loadout.insert(vehicle, l);
+        }
+    }
+
+    fn stamp_composition(&mut self, vehicle: Entity, hull: HullType, mix: &Minerals) {
+        let paid = mix.basic_total() + Price::new(mix.red + mix.green + mix.blue + mix.apex);
+        if paid <= Price::new(1e-12) {
+            return;
+        }
+        let f = hull_cost(hull, &self.config).kilotons() / paid.kilotons();
+        self.world.hull_minerals.insert(
+            vehicle,
+            Minerals {
+                cyan: mix.cyan * f,
+                magenta: mix.magenta * f,
+                yellow: mix.yellow * f,
+                red: mix.red * f,
+                green: mix.green * f,
+                blue: mix.blue * f,
+                apex: mix.apex * f,
+            },
+        );
+    }
+
+    /// **Take a picket off station and off the books**, returning the seat that
+    /// held it and the hull that was standing there.
+    ///
+    /// One function because the count and the map have to move together: every
+    /// other path that removes a `picket` entry has to decrement
+    /// `picket_count`, and the one place that forgot would give the empire a
+    /// permanent phantom holding that `picket_reserve` throttles against.
+    fn vacate_picket(&mut self, world: Entity) -> Option<(usize, Vec<Entity>)> {
+        let (seat, hulls, _) = self.picket.remove(&world.0)?;
+        self.picket_count[seat as usize] = self.picket_count[seat as usize].saturating_sub(hulls.len() as u32);
+        Some((seat as usize, hulls))
+    }
+
+    /// **Take one hull off a stack** — the world stays held while any remain.
+    fn detach_picket(&mut self, world: Entity, hull: Entity) -> Option<usize> {
+        let (seat, stack, _) = self.picket.get_mut(&world.0)?;
+        let seat = *seat;
+        let before = stack.len();
+        stack.retain(|&h| h != hull);
+        if stack.len() == before {
+            return None;
+        }
+        self.picket_count[seat as usize] = self.picket_count[seat as usize].saturating_sub(1);
+        if stack.is_empty() {
+            self.picket.remove(&world.0);
+        }
+        Some(seat as usize)
+    }
+
+    /// **Send a just-freed colonizer to hold the best nearby unclaimed world.**
+    ///
+    /// The target is the nearest unclaimed, unpicketed world this empire has
+    /// scanned — *nearest*, not best, because denial is about being there and a
+    /// picket that is still in transit denies nothing. The scan is over this
+    /// player's own `scanned` set, which is the fleet-bounded collection §4's
+    /// locality rule allows, and it runs once per founding.
+    fn dispatch_picket(&mut self, p: usize, vehicle: Entity, from: Entity) {
+        let origin = *self.world.position.get(from).unwrap();
+        // **The frontier is the rival's port, once one has been seen** (T-125).
+        // A blockading seat sends a freed armed hull where it would send a new
+        // picket: the port it has seen launch the most and does not yet cover.
+        if self.blockade_doctrine(p) {
+            if let Some(port) = self.blockade_target(p) {
+                self.bind(p as u32, port.0);
+                self.launch_picket(vehicle, origin, port, 0.0);
+                return;
+            }
+        }
+        // **Placement is the mechanism, and both rules tried are refuted**
+        // (T-112, `Hyades_warfare_tree.md` §8.6).
+        //
+        // *Nearest to the founding* — this one — squats on the picketing
+        // empire's **own** frontier, so it threatens nobody: measured at
+        // **493–793 pickets for 3–12 diversions per run**, one to two percent
+        // utilization. *Nearest to the closest rival homeworld* is worse, and
+        // for the opposite reason: **24–32 pickets and zero diversions**,
+        // because a world this empire has scanned and a rival has not yet
+        // claimed barely exists — near a rival, everything visible is already
+        // owned. There is no contested frontier to stand on.
+        //
+        // The simpler rule is kept because it at least fields pickets. Neither
+        // is a design that works; see the write-up.
+        let aim = origin;
+        let mut best: Option<(Entity, f64)> = None;
+        let scanned: Vec<PlanetId> =
+            self.world.knowledge.get(self.player_entity[p]).unwrap().scanned.iter().copied().collect();
+        for pid in scanned {
+            let Some(&e) = self.planet_entity.get(pid.0 as usize) else { continue };
+            if self.world.owner.contains(e) || self.picket.contains_key(&e.0) || e == from {
+                continue;
+            }
+            let d = self.world.position.get(e).unwrap().distance(aim);
+            // Deterministic argmin: distance, tie-broken by planet id.
+            if best.is_none_or(|(be, bd)| d < bd || (d == bd && e.0 < be.0)) {
+                best = Some((e, d));
+            }
+        }
+        let Some((world, _)) = best else {
+            // Nowhere to hold. The hull stands down rather than vanishing.
+            let at = *self.world.planet_id.get(from).unwrap();
+            self.release_to_reserve(vehicle, Role::Colonizer, at);
+            return;
+        };
+        self.launch_picket(vehicle, origin, world, 0.0);
+    }
+
+    /// **Put a hull on a picket leg**, from wherever it is to `world`, departing
+    /// `delay` years from now.
+    ///
+    /// The one place a picket leg is created, because three callers now make
+    /// them — a colonizer that kept its hull, a picket whose world was
+    /// colonized out from under it, and an interception — and each has to book
+    /// the same in-flight ledger. `spawn_courier` books one for every
+    /// `Role::Picket` it launches and none of these go through it, so a world
+    /// with a picket already on its way would otherwise read as unclaimed to
+    /// [`Doctrine::picket_claims_target`] and buy a second hull for ground that
+    /// is already spoken for. One ledger, every dispatcher.
+    ///
+    /// Returns the arrival time.
+    fn launch_picket(&mut self, vehicle: Entity, origin: Vec3, world: Entity, delay: f64) -> f64 {
+        self.world.role.insert(vehicle, Role::Picket);
+        self.world.voyage.insert(vehicle, Voyage { target: world, heading_bias: None, hops: 0 });
+        let dest = *self.world.position.get(world).unwrap();
+        // The hull's own empty acceleration, not a flat constant (R-WAR9). An
+        // LOU mounts a small drive and makes **0.94 ly/yr²** where an empty
+        // Medium hull makes 2.45 — which is what decides whether it wins the
+        // race in `offer_interception`, so the flat figure was answering that
+        // question with a number belonging to no hull in particular.
+        let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
+        let arrive = self.set_leg(vehicle, origin, dest, accel, delay);
+        *self.picket_inbound.entry(world.0).or_default() += 1;
+        self.schedule_at(arrive, EventKind::PicketArrive { vehicle });
+        arrive
+    }
+
+    /// **A picket that can see this launch and beat it there goes** (T-115,
+    /// [`Doctrine::picket_intercepts`]).
+    ///
+    /// Called once per colony-ship launch, on the *launching* seat's target.
+    /// `from_center` is the yard the hull left — the light a picket sees comes
+    /// from there and not from the empire's capital — and `depart` is when its
+    /// drive lit, which `spawn_courier`'s `launch_delay` can put in the future.
+    /// Every standing picket is a candidate; the one that can be on the ground
+    /// earliest, and still before the colony ship, leaves station.
+    ///
+    /// ```text
+    /// t_see   = depart + distance(origin, station)      // light, c = 1
+    /// t_reach = t_see  + ship_travel_years(station → world)
+    /// feasible iff t_reach < t_arrive(colony ship)
+    /// ```
+    ///
+    /// **Cost is `O(pickets held)`, not `O(galaxy)`** (§4). `picket` is a
+    /// fleet-bounded map — `picket_reserve` bounds it per empire — and in a
+    /// galaxy where nobody plays the card it is empty, so the whole feature is
+    /// one `is_empty()` on the launch path.
+    ///
+    /// **It reads no more than light delivers.** The launch time, the origin
+    /// and the destination are all properties of an event the picket sees at
+    /// `t_see`; the arrival time it is racing is one its own crew can compute
+    /// from the observed acceleration, which is design law #10's observable.
+    /// What it does *not* get is a re-decision when the colony ship changes
+    /// course — it committed on what it saw, and arriving at a world nobody
+    /// comes to is the cost of having guessed.
+    /// **Guess where a colony ship is going, from the light that reaches you**
+    /// (R-WAR10, T-120).
+    ///
+    /// Called once per colony-ship launch. The picket is **not told the
+    /// destination** — light delivers a departure point, a departure time and a
+    /// **bearing**, and everything else is inference. That is design law #10
+    /// taken at its word: acceleration is the observable, intent is not.
+    ///
+    /// ```text
+    /// t_see   = depart + |origin − station|              // light, c = 1
+    /// bearing = the direction the hull is actually moving
+    /// guess   = a world this picket has scanned, within `intercept_cone` of
+    ///           that bearing, that it can be standing on before the ship
+    /// ```
+    ///
+    /// **The guess can be wrong, and that is the mechanic.** Two worlds close
+    /// together on the same bearing are indistinguishable at range, so a picket
+    /// backs one; and a colony ship that launches on a bearing it does not
+    /// intend to keep — diverting later — has spent nothing to put a picket in
+    /// the wrong place. [`Self::sys_picket_reassess`] is the other side of it:
+    /// the picket re-reads the trajectory as fresh light arrives.
+    ///
+    /// **Candidates come from the picketing empire's own `scanned` set**, not
+    /// from the board. A world it has never surveyed is not a world it can
+    /// guess at, which keeps the inference inside what this player knows
+    /// (design law #15).
+    fn offer_interception(&mut self, launcher: usize, from_center: Entity, ship: Entity, depart: f64) {
+        if self.picket.is_empty() || !self.config.engagements_enabled {
+            return;
+        }
+        let Some(&origin_pos) = self.world.position.get(from_center) else { return };
+        let Some(motion) = self.world.motion.get(ship).copied() else { return };
+        let bearing = motion.dest.sub(motion.origin).normalized();
+        if bearing.norm() <= 0.0 {
+            return;
+        }
+        let colony_arrival = motion.arrive;
+
+        let mut best: Option<(f64, Entity, Entity, Entity, f64)> = None;
+        for (&w, (seat, stack, _)) in self.picket.iter() {
+            let seat = *seat as usize;
+            let Some(&hull) = stack.last() else { continue };
+            if seat == launcher || !self.doctrine_of(seat).picket_intercepts {
+                continue;
+            }
+            // The map is keyed by the world **entity** id, not by `PlanetId` —
+            // they index different arrays and the engine has no total order
+            // between them.
+            let from = Entity(w);
+            let Some(&station) = self.world.position.get(from) else { continue };
+            let t_see = depart + origin_pos.distance(station);
+            let accel = self.laden_accel(hull, self.config.civilian_accel_g);
+            let seen = Sighting { origin: origin_pos, bearing, t_see, quarry: ship };
+            let Some((guess, t_reach)) = self.guess_destination(seat, seen, station, accel) else {
+                continue;
+            };
+            if t_reach >= colony_arrival {
+                continue;
+            }
+            // Deterministic argmin over a sorted map: earliest on the ground,
+            // ties broken by the world it is leaving.
+            if best.is_none_or(|(bt, ..)| t_reach < bt) {
+                best = Some((t_reach, hull, from, guess, t_see - self.clock));
+            }
+        }
+        let Some((t_reach, hull, from, guess, delay)) = best else { return };
+        let Some(seat) = self.detach_picket(from, hull) else { return };
+        let station = *self.world.position.get(from).unwrap();
+        self.launch_picket(hull, station, guess, delay);
+        let pid = *self.world.planet_id.get(guess).unwrap();
+        self.log.push(
+            self.clock,
+            LogEvent::PicketIntercept {
+                player: seat as u32,
+                vehicle: hull,
+                target: pid,
+                margin: colony_arrival - t_reach,
+            },
+        );
+        // **Look again when the next light gets here.** The picket committed on
+        // one observation; the quarry has the whole voyage to make that
+        // observation wrong.
+        self.schedule(
+            delay.max(0.0) + self.config.intercept_reassess_years,
+            EventKind::PicketReassess { picket: hull, quarry: ship },
+        );
+    }
+
+    /// **Which world on this bearing the picket backs.**
+    ///
+    /// Among worlds this seat has scanned, unowned and unheld: those within
+    /// `intercept_cone` of the observed bearing, and reachable before the
+    /// deadline. Ties go to the one **nearest the origin along the bearing** —
+    /// a colony ship is a slow, expensive object and the near world on a line
+    /// is the cheaper errand, so it is the better prior. It is a prior, not
+    /// knowledge, which is the whole point.
+    fn guess_destination(&self, seat: usize, seen: Sighting, station: Vec3, accel: f64) -> Option<(Entity, f64)> {
+        let Sighting { origin, bearing, t_see, quarry } = seen;
+        if self.config.ablate_oracle_intercept {
+            let target = self.world.voyage.get(quarry)?.target;
+            if self.world.owner.contains(target) || self.picket.contains_key(&target.0) {
+                return None;
+            }
+            let pos = *self.world.position.get(target)?;
+            return Some((target, t_see + math::ship_travel_years(station.distance(pos), accel)));
+        }
+        let cos_cone = transcendental::cos(self.config.intercept_cone_radians.clamp(0.0, core::f64::consts::PI));
+        let scanned: Vec<PlanetId> =
+            self.world.knowledge.get(self.player_entity[seat])?.scanned.iter().copied().collect();
+        let mut best: Option<(f64, Entity, f64)> = None;
+        for pid in scanned {
+            let Some(&e) = self.planet_entity.get(pid.0 as usize) else { continue };
+            if self.world.owner.contains(e) || self.picket.contains_key(&e.0) {
+                continue;
+            }
+            let Some(&pos) = self.world.position.get(e) else { continue };
+            let along = pos.sub(origin);
+            let range = along.norm();
+            if range <= 0.0 {
+                continue;
+            }
+            // Inside the cone the observed bearing sweeps out.
+            if along.normalized().dot(bearing) < cos_cone {
+                continue;
+            }
+            let t_reach = t_see + math::ship_travel_years(station.distance(pos), accel);
+            // Deterministic argmin: nearest along the bearing, ties by id.
+            if best.is_none_or(|(br, be, _)| range < br || (range == br && e.0 < be.0)) {
+                best = Some((range, e, t_reach));
+            }
+        }
+        best.map(|(_, e, t)| (e, t))
+    }
+
+    /// **The picket re-reads the trajectory, and re-aims if it was wrong**
+    /// (R-WAR10, T-120).
+    ///
+    /// What it sees is where the quarry *was* when the light left it, which is
+    /// the whole reason a feint works: a ship that has already turned still
+    /// looks, for `distance` years, like it is going where it was going.
+    ///
+    /// Three outcomes, and the second is the interesting one:
+    /// the quarry is gone or landed and the picket holds its course; the
+    /// bearing now points at a different world and the picket re-aims; or the
+    /// guess still stands and nothing happens but another look.
+    fn sys_picket_reassess(&mut self, picket: Entity, quarry: Entity) {
+        if self.world.role.get(picket).copied() != Some(Role::Picket) {
+            return;
+        }
+        let Some(&owner) = self.world.owner.get(picket) else { return };
+        let seat = owner.0 as usize;
+        let Some(&voyage) = self.world.voyage.get(picket) else { return };
+        let Some(here) = self.position_at(picket, self.clock) else { return };
+        // Still chasing something? A quarry that has landed, turned back or
+        // been destroyed stops being a reason to keep looking.
+        if self.world.role.get(quarry).copied() != Some(Role::Colonizer) {
+            return;
+        }
+        let Some(qm) = self.world.motion.get(quarry).copied() else { return };
+        if qm.arrive <= self.clock {
+            return;
+        }
+        // **Light-lagged**: read the quarry where it was when this light left.
+        let lag = self.position_at(quarry, self.clock).map(|p| p.distance(here)).unwrap_or(0.0);
+        let seen_at = (self.clock - lag).max(qm.depart);
+        let Some(seen) = self.position_at(quarry, seen_at) else { return };
+        let bearing = qm.dest.sub(qm.origin).normalized();
+        if bearing.norm() <= 0.0 {
+            return;
+        }
+        let accel = self.laden_accel(picket, self.config.civilian_accel_g);
+        let sighting = Sighting { origin: seen, bearing, t_see: self.clock, quarry };
+        if let Some((guess, t_reach)) = self.guess_destination(seat, sighting, here, accel) {
+            if guess != voyage.target && t_reach < qm.arrive {
+                // **Re-aim.** The leg is replaced from where the picket is now,
+                // so the distance already flown is not refunded — a picket that
+                // took the feint has paid for it.
+                if let Some(n) = self.picket_inbound.get_mut(&voyage.target.0) {
+                    *n = n.saturating_sub(1);
+                    if *n == 0 {
+                        self.picket_inbound.remove(&voyage.target.0);
+                    }
+                }
+                self.launch_picket(picket, here, guess, 0.0);
+                let pid = *self.world.planet_id.get(guess).unwrap();
+                self.log.push(
+                    self.clock,
+                    LogEvent::PicketIntercept {
+                        player: seat as u32,
+                        vehicle: picket,
+                        target: pid,
+                        margin: qm.arrive - t_reach,
+                    },
+                );
+            }
+        }
+        // Keep looking until the chase resolves one way or the other.
+        self.schedule(self.config.intercept_reassess_years, EventKind::PicketReassess { picket, quarry });
+    }
+
+    fn sys_picket_arrive(&mut self, vehicle: Entity) {
+        let Some(&voyage) = self.world.voyage.get(vehicle) else { return };
+        let world = voyage.target;
+        // Off the in-flight ledger before any early return below, so a picket
+        // that arrives second and stands down still clears its reservation.
+        if let Some(n) = self.picket_inbound.get_mut(&world.0) {
+            *n -= 1;
+            if *n == 0 {
+                self.picket_inbound.remove(&world.0);
+            }
+        }
+        let Some(&owner) = self.world.owner.get(vehicle) else { return };
+        let Some(here) = self.position_at(world, self.clock) else { return };
+        let pid = *self.world.planet_id.get(world).unwrap();
+        self.park(vehicle, here);
+        // A blockader takes station on a rival's port rather than on open
+        // ground (T-123), and is counted against the same reserve.
+        if self.take_bound(owner.0, world.0) {
+            let rival_port = self.world.owner.get(world).is_some_and(|o| o.0 != owner.0);
+            if rival_port {
+                self.blockade.entry((world.0, owner.0)).or_default().push(vehicle);
+                self.picket_count[owner.0 as usize] += 1;
+                self.schedule(self.config.intercept_reassess_years, EventKind::BlockadeReassess { vehicle });
+                self.log.push(
+                    self.clock,
+                    LogEvent::VehicleParked { player: owner.0, vehicle, role: Role::Picket, at: pid },
+                );
+            } else {
+                self.release_to_reserve(vehicle, Role::Picket, pid);
+            }
+            return;
+        }
+        // **The holder's hulls stack** (T-125); a rival's hull cannot share
+        // ground another seat holds, and an owned world is nobody's to hold.
+        let held_by_other = self.picket.get(&world.0).is_some_and(|&(h, _, _)| h != owner.0);
+        if held_by_other || self.world.owner.contains(world) {
+            self.release_to_reserve(vehicle, Role::Picket, pid);
+            return;
+        }
+        if let Some((_, stack, _)) = self.picket.get_mut(&world.0) {
+            stack.push(vehicle);
+            self.picket_count[owner.0 as usize] += 1;
+            self.log
+                .push(self.clock, LogEvent::VehicleParked { player: owner.0, vehicle, role: Role::Picket, at: pid });
+            return;
+        }
+        self.picket.insert(world.0, (owner.0, vec![vehicle], self.clock));
+        self.picket_count[owner.0 as usize] += 1;
+        self.log.push(self.clock, LogEvent::VehicleParked { player: owner.0, vehicle, role: Role::Picket, at: pid });
+        self.notify_inbound(world);
+    }
+
+    /// **Tell every threatened colony ship, at the speed of light — twice.**
+    ///
+    /// There are two responders and they are not the same responder, which is
+    /// the correction T-115 makes to T-112.
+    ///
+    /// **The home center**, at `now + distance(world, home center)`. That is
+    /// card contract §2's rule verbatim — *a reaction to a detected fleet is
+    /// scheduled by the distance to the responder* — and it is the channel that
+    /// carries an *order*.
+    ///
+    /// **The ship itself**, at the instant the light actually overtakes it.
+    /// A hull flying toward the world is closing on the source, so the news
+    /// reaches it sooner than it reaches anything behind it, and it does not
+    /// need anyone's permission to notice a picket. Leaving this channel out
+    /// made every diversion a round trip through an empire's capital, which is
+    /// not what the observation model says and not what a crew would do.
+    ///
+    /// Both are scheduled; [`Self::sys_colony_divert`] is idempotent and guards
+    /// against a stale wake, so whichever lands first is the one that decides.
+    fn notify_inbound(&mut self, world: Entity) {
+        let Some(inbound) = self.inbound_colonizers.get(&world.0).cloned() else { return };
+        let Some(&(holder, _, _)) = self.picket.get(&world.0) else { return };
+        let world_pos = *self.world.position.get(world).unwrap();
+        for v in inbound {
+            if self.world.owner.get(v).copied().map(|o| o.0) == Some(holder) {
+                continue;
+            }
+            if let Some(&home) = self.world.home_center.get(v) {
+                if let Some(&home_pos) = self.world.position.get(home) {
+                    // c = 1, distance in light-years, time in years (`math`).
+                    self.schedule(world_pos.distance(home_pos), EventKind::ColonyDivert { vehicle: v });
+                }
+            }
+            if let Some(lag) = self.light_overtakes(v, world_pos) {
+                self.schedule(lag, EventKind::ColonyDivert { vehicle: v });
+            }
+        }
+    }
+
+    /// **When does light leaving `source` now catch up with a moving hull?**
+    ///
+    /// Returns the delay in years, or `None` if the hull has no position.
+    ///
+    /// A stationary observer at distance `d` is reached at `d`. A hull *closing*
+    /// on the source is reached sooner, and by how much depends on the whole
+    /// trajectory, so the answer is the root of
+    ///
+    /// ```text
+    /// f(t) = (t − now) − |p(t) − source|
+    /// ```
+    ///
+    /// which is where the light's travelled distance equals the hull's current
+    /// range. `f(now) = −d₀ ≤ 0`, and at `now + d₀` the hull is no farther than
+    /// it was (it is closing, and past arrival `position_at` pins it at the
+    /// destination), so `f ≥ 0` there and a root is bracketed. Bisection, 48
+    /// halvings, which is exact to the last bits of a double over any bracket
+    /// this engine produces.
+    ///
+    /// **Bisection rather than a closed form on purpose.** The trajectory is a
+    /// relativistic 1 g brachistochrone with a departure delay
+    /// (`math::position_along`), so `|p(t) − source|` has no elementary
+    /// inverse — and a root found by halving uses only comparison, addition and
+    /// `sqrt`, all exactly specified by IEEE 754, where a fitted approximation
+    /// would be a per-platform divergence in replicated state (design law #16,
+    /// and the reason `transcendental` forbids `mul_add`).
+    fn light_overtakes(&self, vehicle: Entity, source: Vec3) -> Option<f64> {
+        let now = self.clock;
+        let d0 = self.position_at(vehicle, now)?.distance(source);
+        if d0 <= 0.0 {
+            return Some(0.0);
+        }
+        let range_at = |t: f64| self.position_at(vehicle, t).map(|p| p.distance(source)).unwrap_or(0.0);
+        let (mut lo, mut hi) = (0.0f64, d0);
+        for _ in 0..48 {
+            let mid = 0.5 * (lo + hi);
+            if mid - range_at(now + mid) < 0.0 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        Some(hi)
+    }
+
+    /// **The warning arrived in time: turn back.**
+    ///
+    /// Guarded three ways, because the event was scheduled against a world state
+    /// that may have moved on: the ship may have already landed, the picket may
+    /// be gone, and the ship may no longer be a colonizer. A stale wake is the
+    /// normal case, not an error.
+    fn sys_colony_divert(&mut self, vehicle: Entity) {
+        if self.world.role.get(vehicle).copied() != Some(Role::Colonizer) {
+            return;
+        }
+        let Some(&voyage) = self.world.voyage.get(vehicle) else { return };
+        let target = voyage.target;
+        let Some(&owner) = self.world.owner.get(vehicle) else { return };
+        if !self.picket_blocks(target, owner.0) {
+            return;
+        }
+        // Still inbound? If the arrival already fired it is off the index.
+        let still_flying = self.inbound_colonizers.get(&target.0).is_some_and(|v| v.contains(&vehicle));
+        if !still_flying {
+            return;
+        }
+        // **Past turnover the ship is committed, and that is kinematics rather
+        // than a rule** (T-115).
+        //
+        // Now that the hull hears the news itself and not only through its
+        // capital, the warning *always* beats it there: light leaves the world
+        // the picket took, and the hull is closing on that world below `c`. So
+        // "did the warning arrive in time" stopped discriminating, and without
+        // a second question every picket would turn every ship back and the
+        // arrival fight would never happen again.
+        //
+        // The question that replaces it costs no constant. A leg is a
+        // relativistic 1 g brachistochrone (`math`), so the hull accelerates to
+        // the midpoint and decelerates from it; **before turnover its velocity
+        // still points somewhere it can choose, after turnover it is shedding
+        // the velocity it already spent and arrives whatever it decides.** The
+        // midpoint in time is `(depart + arrive) / 2`.
+        //
+        // So the counterplay window is a *margin* rather than a race, and both
+        // channels still matter: the ship's own sighting is early and the
+        // order from home may or may not land before the hull is past turning.
+        let Some(&motion) = self.world.motion.get(vehicle) else { return };
+        if self.clock >= 0.5 * (motion.depart + motion.arrive) {
+            return;
+        }
+        let Some(here) = self.position_at(vehicle, self.clock) else { return };
+        let pid = *self.world.planet_id.get(target).unwrap();
+        let holder = self.picket.get(&target.0).map(|&(h, _, _)| h).unwrap_or(owner.0);
+        self.clear_inbound(target, vehicle);
+        self.log.push(self.clock, LogEvent::ColonyDiverted { player: owner.0, vehicle, planet: pid, holder });
+        self.bounce_colonizer(vehicle, target, here, owner.0 as usize, pid);
+    }
+
+    /// Drop a colonizer from the inbound index.
+    fn clear_inbound(&mut self, target: Entity, vehicle: Entity) {
+        if let Some(v) = self.inbound_colonizers.get_mut(&target.0) {
+            v.retain(|&e| e != vehicle);
+            if v.is_empty() {
+                self.inbound_colonizers.remove(&target.0);
+            }
+        }
+    }
+
+    // --- The port strike (T-123, R-WAR16) ------------------------------------
+
+    /// **Send the light of a colony-ship launch to every capital that is
+    /// watching for it.**
+    ///
+    /// Only seats whose Doctrine blockades are watching, so a run in which
+    /// nobody plays the card schedules nothing here. `depart` is when the drive
+    /// lights; the capital sees it `distance / c` later.
+    fn report_launch(&mut self, launcher: usize, center: Entity, depart_in: f64) {
+        self.launch_history.push((self.clock + depart_in, center.0, launcher as u32));
+        let port = *self.world.position.get(center).unwrap();
+        for q in 0..self.player_entity.len() {
+            if q == launcher || !self.blockade_doctrine(q) {
+                continue;
+            }
+            let home = self.world.player_info.get(self.player_entity[q]).unwrap().home;
+            let capital = *self.world.position.get(home).unwrap();
+            // c = 1, distance in light-years, time in years (`math`).
+            self.schedule(depart_in + port.distance(capital), EventKind::LaunchSeen { observer: q as u32, center });
+        }
+    }
+
+    /// Blockaders this seat has on station now (T-125 census accessor).
+    pub fn blockaders_on_station(&self, seat: usize) -> usize {
+        self.blockade.iter().filter(|&(&(_, s), _)| s as usize == seat).map(|(_, v)| v.len()).sum()
+    }
+
+    /// Distinct ports this seat has a hull standing at or flying to.
+    fn ports_covered(&self, seat: usize) -> usize {
+        let s = seat as u32;
+        let standing = self.blockade.keys().filter(|&&(_, q)| q == s).map(|&(c, _)| c);
+        let flying = self.blockade_bound.range((s, 0)..=(s, u64::MAX)).map(|(&(_, c), _)| c);
+        standing.chain(flying).collect::<BTreeSet<u64>>().len()
+    }
+
+    /// Hulls this seat has in flight to a port (T-125 census accessor).
+    pub fn blockaders_in_flight(&self, seat: usize) -> usize {
+        self.blockade_bound.range((seat as u32, 0)..=(seat as u32, u64::MAX)).map(|(_, &n)| n as usize).sum()
+    }
+
+    /// **What a seat has already seen, at the moment it starts to blockade**
+    /// (T-125). Launches are light, and light reaches a capital whether or not
+    /// its empire was watching for it; a seat whose Doctrine turns to the
+    /// blockade mid-game records every launch whose light has already arrived,
+    /// and schedules the rest to arrive when they would. Nothing here is read
+    /// before light could deliver it (design law #15).
+    ///
+    /// Without it the blockade starts from an empty record at the round-0
+    /// barrier and reaches station a century later, after the rivals' fastest
+    /// expansion (appendix §D.4's census: 1.2 blockaders on station against
+    /// 9,569 rival launches in 300–400 yr).
+    fn recall_seen_launches(&mut self, p: usize) {
+        let home = self.world.player_info.get(self.player_entity[p]).unwrap().home;
+        let capital = *self.world.position.get(home).unwrap();
+        let mut arrived: Vec<(f64, u64)> = Vec::new();
+        for i in 0..self.launch_history.len() {
+            let (depart, c, launcher) = self.launch_history[i];
+            if launcher as usize == p {
+                continue;
+            }
+            let port = *self.world.position.get(Entity(c)).unwrap();
+            let seen_at = depart + port.distance(capital);
+            if seen_at <= self.clock {
+                arrived.push((seen_at, c));
+            } else {
+                self.schedule(seen_at - self.clock, EventKind::LaunchSeen { observer: p as u32, center: Entity(c) });
+            }
+        }
+        arrived.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        for (t, c) in arrived {
+            *self.launches_seen[p].entry(c).or_insert(0) += 1;
+            self.launches_recent[p].push_back((t, c));
+        }
+    }
+
+    /// **Where this seat's next blockader goes** (T-123, stacked at T-125).
+    ///
+    /// **Cover first, then stack.** One armed hull destroys any unarmed colony
+    /// ship, so a second hull at a port adds nothing against the ships most
+    /// ports launch — measured: allocating by launches per committed hull
+    /// halved the card's effect, and covering only *recently* active ports
+    /// first still cost 44% of it (appendix §D.4). So every uncovered port this
+    /// seat has seen launch wins over any stack; only once every one is covered
+    /// does a hull stack, on the port with the most recent launches per hull already
+    /// committed there (the author's "like miners"). Recent launches first,
+    /// all-time launches to break a tie, then the lower entity id; `exclude`
+    /// keeps a moving hull from choosing the port it is leaving.
+    ///
+    /// `O(ports seen)`, read once per picket built or moved, not per event (§4).
+    fn blockade_target_excluding(&mut self, p: usize, exclude: Option<u64>) -> Option<Entity> {
+        let seat = p as u32;
+        let recent = self.recent_launches(p);
+        let mut best: Option<(u64, bool, u64, u64, u64)> = None; // (port, open, recent, total, hulls + 1)
+        for (&c, &n) in &self.launches_seen[p] {
+            if Some(c) == exclude {
+                continue;
+            }
+            let k = self.blockade.get(&(c, seat)).map_or(0, |v| v.len() as u64)
+                + self.blockade_bound.get(&(seat, c)).copied().unwrap_or(0) as u64
+                + 1;
+            let r = recent.get(&c).copied().unwrap_or(0) as u64;
+            let n = n as u64;
+            let open = k == 1;
+            // An open port beats any stack; within a class compare r/k then n/k
+            // by cross-multiplying — exact, no division.
+            let better = match best {
+                None => true,
+                Some((_, bo, br, bn, bk)) => (open, r * bk, n * bk) > (bo, br * k, bn * k),
+            };
+            if better {
+                best = Some((c, open, r, n, k));
+            }
+        }
+        best.map(|(c, ..)| Entity(c))
+    }
+
+    fn blockade_target(&mut self, p: usize) -> Option<Entity> {
+        self.blockade_target_excluding(p, None)
+    }
+
+    /// Book one hull in flight to a port.
+    fn bind(&mut self, seat: u32, port: u64) {
+        *self.blockade_bound.entry((seat, port)).or_insert(0) += 1;
+    }
+
+    /// Take one hull off the in-flight book on arrival; false if none was bound.
+    fn take_bound(&mut self, seat: u32, port: u64) -> bool {
+        match self.blockade_bound.get_mut(&(seat, port)) {
+            Some(n) if *n > 1 => {
+                *n -= 1;
+                true
+            }
+            Some(_) => {
+                self.blockade_bound.remove(&(seat, port));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// **Launches this seat has seen in the last reassessment window, per
+    /// port** (R-WAR18). Prunes the window as it reads it, so the log stays the
+    /// size of one window's traffic.
+    fn recent_launches(&mut self, p: usize) -> BTreeMap<u64, u32> {
+        let cutoff = self.clock - self.config.intercept_reassess_years;
+        let log = &mut self.launches_recent[p];
+        while log.front().is_some_and(|&(t, _)| t < cutoff) {
+            log.pop_front();
+        }
+        let mut out = BTreeMap::new();
+        for &(_, c) in log.iter() {
+            *out.entry(c).or_insert(0u32) += 1;
+        }
+        out
+    }
+
+    /// **Move a blockader off a port that has gone quiet** (T-125, R-WAR18).
+    ///
+    /// If its port launched nothing this seat saw in the last window, and some
+    /// port it does not cover did, it leaves for that one; otherwise it stays
+    /// and asks again one window later. Reads only what light has delivered to
+    /// its capital.
+    fn sys_blockade_reassess(&mut self, vehicle: Entity) {
+        let Some((center, seat)) = self.blockade.iter().find(|(_, stack)| stack.contains(&vehicle)).map(|(&k, _)| k)
+        else {
+            return; // struck, or already moved
+        };
+        let p = seat as usize;
+        let recent = self.recent_launches(p);
+        if recent.get(&center).copied().unwrap_or(0) == 0 {
+            if let Some(port) = self.blockade_target_excluding(p, Some(center)) {
+                if recent.get(&port.0).copied().unwrap_or(0) > 0 {
+                    self.leave_blockade(center, seat, vehicle);
+                    self.bind(seat, port.0);
+                    let origin = *self.world.position.get(Entity(center)).unwrap();
+                    self.launch_picket(vehicle, origin, port, 0.0);
+                    return;
+                }
+            }
+        }
+        self.schedule(self.config.intercept_reassess_years, EventKind::BlockadeReassess { vehicle });
+    }
+
+    /// Take one hull off a port's stack and off the books.
+    fn leave_blockade(&mut self, center: u64, seat: u32, hull: Entity) {
+        if let Some(stack) = self.blockade.get_mut(&(center, seat)) {
+            let before = stack.len();
+            stack.retain(|&h| h != hull);
+            if stack.len() < before {
+                self.picket_count[seat as usize] = self.picket_count[seat as usize].saturating_sub(1);
+            }
+            if stack.is_empty() {
+                self.blockade.remove(&(center, seat));
+            }
+        }
+    }
+
+    /// **The hostile stack standing at `center`**, as `(seat, hulls)` — the
+    /// lowest hostile seat first, for determinism.
+    fn hostile_blockade(&self, center: Entity, launcher: u32) -> Option<(u32, Vec<Entity>)> {
+        if self.blockade.is_empty() {
+            return None;
+        }
+        self.blockade
+            .range((center.0, 0)..=(center.0, u32::MAX))
+            .find(|(&(_, s), stack)| s != launcher && !stack.is_empty())
+            .map(|(&(_, s), stack)| (s, stack.clone()))
+    }
+
+    /// **The coverage oracle** ([`SimConfig::ablate_strike_fraction`]): destroy
+    /// this launch with the configured probability if any other seat
+    /// blockades. Deterministic in the ship's entity id.
+    fn oracle_strike(&mut self, launcher: usize, center: Entity, ship: Entity) -> bool {
+        let f = self.config.ablate_strike_fraction;
+        if f <= 0.0 || self.blockade_doctrine(launcher) {
+            return false;
+        }
+        let Some(striker) = (0..self.player_entity.len()).find(|&q| q != launcher && self.blockade_doctrine(q)) else {
+            return false;
+        };
+        if Rng::new(self.config.seed ^ ship.0.wrapping_mul(0x9E37_79B9_7F4A_7C15)).unit() >= f {
+            return false;
+        }
+        let slag = self.destroy_free_hulls(&[ship]);
+        let total = *self.world.slag.get(center).unwrap_or(&Kilotons::ZERO) + slag;
+        self.world.slag.insert(center, total);
+        let pid = *self.world.planet_id.get(center).unwrap();
+        self.log.push(
+            self.clock,
+            LogEvent::EngagementResolved {
+                site: pid,
+                attacker: launcher as u32,
+                defender: striker as u32,
+                attacker_ships: 1,
+                defender_ships: 0,
+                losses_attacker: 1,
+                losses_defender: 0,
+                committed: true,
+                slag: slag.kilotons(),
+            },
+        );
+        true
+    }
+
+    /// **Strike a colony ship at the port it is leaving.** Returns whether it
+    /// was destroyed.
+    ///
+    /// Range zero, so there is nothing lagged to decide on: the blockader is
+    /// standing where the hull is. It takes the defender's side because it is
+    /// the one on station — the same convention as a picket's defense (R-WAR5),
+    /// and the one that decides the outcome.
+    ///
+    /// **The destroyed ship's destination stays marked** in its owner's
+    /// `targeted` set, because that set is monotone by construction (T-101's
+    /// prune depends on it) — so a strike also withdraws one world from the
+    /// launcher's candidate list. A colonizer that dies at a picket already
+    /// did the same.
+    fn strike_at_port(&mut self, launcher: usize, center: Entity, ship: Entity) -> bool {
+        let Some((seat, stack)) = self.hostile_blockade(center, launcher as u32) else { return false };
+        let Some((def_dead, att_dead)) = self.fight_at(center, seat, &stack, launcher, &[ship]) else {
+            return false;
+        };
+        for dead in def_dead {
+            self.leave_blockade(center.0, seat, dead);
+        }
+        !att_dead.is_empty()
+    }
+
+    /// **A colonizer that flew in anyway fights the picket holding the world.**
+    ///
+    /// Same resolver as everything else (T-111). The picket takes the laser side
+    /// — it is the one on station — and the arriving colonizer the missile side,
+    /// which is R-WAR5's placeholder convention and decides outcomes.
+    fn resolve_picket_fight(&mut self, world: Entity, arriving_seat: usize) {
+        let Some((holder, stack, _)) = self.picket.get(&world.0) else { return };
+        let (holder, defenders) = (*holder, stack.clone());
+        let attackers: Vec<Entity> = self
+            .inbound_colonizers
+            .get(&world.0)
+            .map(|v| {
+                v.iter()
+                    .copied()
+                    .filter(|&e| self.world.owner.get(e).copied().map(|o| o.0 as usize) == Some(arriving_seat))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if attackers.is_empty() {
+            return;
+        }
+        let Some((def_dead, att_dead)) = self.fight_at(world, holder, &defenders, arriving_seat, &attackers) else {
+            return;
+        };
+        for dead in def_dead {
+            self.detach_picket(world, dead);
+        }
+        for dead in att_dead {
+            self.clear_inbound(world, dead);
+        }
+    }
+
+    /// **One fight between hulls standing at `site`**, resolved, wrecked and
+    /// logged — the part a picket's defense and a port strike share (T-123).
+    ///
+    /// The defenders take the laser side and the attackers the missile side,
+    /// which is R-WAR5's placeholder convention and decides outcomes. The
+    /// destroyed hulls, their crews and their cargo become slag at the site
+    /// (design law #11). Returns `(defenders lost, attackers lost)`; the caller
+    /// owns whatever index the dead were standing in.
+    fn fight_at(
+        &mut self,
+        site: Entity,
+        defender_seat: u32,
+        defenders: &[Entity],
+        attacker_seat: usize,
+        attackers: &[Entity],
+    ) -> Option<(Vec<Entity>, Vec<Entity>)> {
+        let pos = self.position_at(site, self.clock)?;
+        let pid = *self.world.planet_id.get(site).unwrap();
+        let fleets = [FleetTrajectory { origin: pos, velocity: Vec3::ZERO }; 2];
+        let mut rng = self.rng.fork(self.seq ^ site.0.wrapping_mul(0x9E37_79B9));
+        let def_ships = self.armed(defenders, 0, &mut rng);
+        let att_ships = self.armed(attackers, 1, &mut rng);
+        let committed = crate::belief::resolve_engagement_choice(
+            att_ships[0].ship.max_accel(&self.config),
+            def_ships[0].ship.max_accel(&self.config),
+        ) == crate::belief::Engagement::Committed;
+
+        // **Each side fires what its Design mounts** (T-125). Which side is on
+        // station no longer decides who is armed.
+        let [def_alive, att_alive] = crate::combat::resolve_beam_engagement(
+            &fleets,
+            [&def_ships, &att_ships],
+            self.config.engagement_horizon_years,
+            self.config.engagement_dt_years,
+        );
+        let dead = |hulls: &[Entity], alive: &[bool]| -> Vec<Entity> {
+            hulls.iter().zip(alive).filter(|&(_, &a)| !a).map(|(&e, _)| e).collect()
+        };
+        let def_dead = dead(defenders, &def_alive);
+        let att_dead = dead(attackers, &att_alive);
+
+        let mut slag = Kilotons::ZERO;
+        slag += self.destroy_free_hulls(&def_dead);
+        slag += self.destroy_free_hulls(&att_dead);
+        let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + slag;
+        self.world.slag.insert(site, total);
+
+        self.log.push(
+            self.clock,
+            LogEvent::EngagementResolved {
+                site: pid,
+                attacker: attacker_seat as u32,
+                defender: defender_seat,
+                attacker_ships: attackers.len() as u32,
+                defender_ships: defenders.len() as u32,
+                losses_attacker: att_dead.len() as u32,
+                losses_defender: def_dead.len() as u32,
+                committed,
+                slag: slag.kilotons(),
+            },
+        );
+        Some((def_dead, att_dead))
+    }
+
+    /// Destroy hulls that are not in a crew index (pickets and colonizers).
+    fn destroy_free_hulls(&mut self, dead: &[Entity]) -> Kilotons {
+        let mut mass = Kilotons::ZERO;
+        for &e in dead {
+            let hull = *self.world.hull_type.get(e).unwrap_or(&HullType::LimitedSystems);
+            mass += hull_dry_mass(hull, &self.config);
+            // **The people aboard die with it** (design law #11). A colonizer's
+            // settlers were debited from its origin at launch (R-O74), so
+            // dropping the hull without them would put the mass back into the
+            // ledger as a gain. This is the one path in the engine where
+            // population is destroyed rather than moved, and it is Warfare's.
+            let pop = self.world.pop_cargo.get(e).copied().unwrap_or(Kilotons::ZERO);
+            mass += pop;
+            mass += self.world.cargo.get(e).copied().unwrap_or_default().basic_total().on_scale::<units::Mass>();
+            self.world.pop_cargo.insert(e, Kilotons::ZERO);
+            self.world.cargo.insert(e, Minerals::default());
+            self.world.role.insert(e, Role::Scrapped);
+            self.world.motion.remove(e);
+        }
+        mass
+    }
+
+    /// This seat's standing Doctrine.
+    fn doctrine_of(&self, seat: usize) -> Doctrine {
+        *self.world.doctrine.get(self.player_entity[seat]).unwrap()
+    }
+
+    /// **Resolve one engagement at a shared site** (T-111) — the call
+    /// `combat.rs`'s own doc comment has named `sys_engagement` since the combat
+    /// refactor, and the thing whose absence blocks R-AC13, the belief wiring
+    /// and every posture card (`Hyades_warfare_tree.md` §3.4).
+    ///
+    /// Four steps, and the middle two are the design rather than the plumbing:
+    ///
+    /// 1. **Re-read who is present.** The event carries the site only — a hull
+    ///    can leave between the arrival that raised it and this call.
+    /// 2. **Accept/decline on believed kinematics** (R-O41, warfare §5.5). At a
+    ///    shared rock the two fleets are *co-located*, so the range is zero and
+    ///    so is the light-lag: the observation available now is current, and
+    ///    belief equals truth. That is not a hole in design law #15, it is the
+    ///    degenerate case of it — §5.4 already exempts close range for exactly
+    ///    this reason. **The interesting half of `belief.rs` is still unwired**:
+    ///    a surprise attack needs an engagement decided *at range* against a
+    ///    stale observation, which needs T-33's observation store.
+    /// 3. **Fight** through `combat::resolve_engagement` — the same function the
+    ///    arena calls, which is the whole point of the combat/arena split.
+    /// 4. **Conserve the wreckage.** Destroyed hulls become slag at the site.
+    ///
+    /// **Which side carries which weapon is a placeholder (R-WAR5).**
+    /// `resolve_engagement` is laser-side-vs-missile-side because that is the
+    /// sweep it was tuned on, and per-hull slot tables do not exist (R-L0).
+    /// The defender holds station and takes the laser side; the arriving
+    /// attacker takes the missile side. That is a *convention*, it decides the
+    /// outcome, and it is not ratified.
+    fn sys_engagement(&mut self, site: Entity) {
+        let Some((attacker, defender)) = self.hostile_contact_at(site) else { return };
+        let Some(pid) = self.world.planet_id.get(site).copied() else { return };
+        let Some(pos) = self.position_at(site, self.clock) else { return };
+
+        let att_hulls = self.crew_hulls(attacker, site);
+        let def_hulls = self.crew_hulls(defender, site);
+        if att_hulls.is_empty() || def_hulls.is_empty() {
+            return;
+        }
+
+        // Both fleets sit on the rock, so both trajectories are the site's own
+        // and the separation is the station-keeping spread alone.
+        let fleets = [FleetTrajectory { origin: pos, velocity: Vec3::ZERO }; 2];
+        let mut rng = self.rng.fork(self.seq ^ site.0.wrapping_mul(0x9E37_79B9));
+        let def_ships = self.armed(&def_hulls, 0, &mut rng);
+        let att_ships = self.armed(&att_hulls, 1, &mut rng);
+
+        // Step 2: can the attacker break off if this goes badly? Zero range, so
+        // the belief is a fresh observation and cannot be stale.
+        let own = att_ships[0].ship.max_accel(&self.config);
+        let theirs = def_ships[0].ship.max_accel(&self.config);
+        let choice = crate::belief::resolve_engagement_choice(own, theirs);
+        let committed = choice == crate::belief::Engagement::Committed;
+
+        // Step 3: each side fires what its Design mounts (T-125). Two unarmed
+        // crews — every miner is a Systems hull — cannot hurt each other.
+        let [def_alive, att_alive] = crate::combat::resolve_beam_engagement(
+            &fleets,
+            [&def_ships, &att_ships],
+            self.config.engagement_horizon_years,
+            self.config.engagement_dt_years,
+        );
+
+        // Step 4: the dead are exactly the hulls whose structure ran out.
+        let dead = |hulls: &[Entity], alive: &[bool]| -> Vec<Entity> {
+            hulls.iter().zip(alive).filter(|&(_, &a)| !a).map(|(&e, _)| e).collect()
+        };
+        let def_dead = dead(&def_hulls, &def_alive);
+        let att_dead = dead(&att_hulls, &att_alive);
+        let (def_lost, att_lost) = (def_dead.len(), att_dead.len());
+        let mut slag = Kilotons::ZERO;
+        slag += self.destroy_hulls(defender, site, &def_dead);
+        slag += self.destroy_hulls(attacker, site, &att_dead);
+        let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + slag;
+        self.world.slag.insert(site, total);
+
+        self.log.push(
+            self.clock,
+            LogEvent::EngagementResolved {
+                site: pid,
+                attacker: attacker as u32,
+                defender: defender as u32,
+                attacker_ships: att_hulls.len() as u32,
+                defender_ships: def_hulls.len() as u32,
+                losses_attacker: att_lost as u32,
+                losses_defender: def_lost as u32,
+                committed,
+                slag: slag.kilotons(),
+            },
+        );
+    }
+
+    /// One seat's hulls standing at `site`, in arrival order.
+    fn crew_hulls(&self, seat: usize, site: Entity) -> Vec<Entity> {
+        self.mine_crew.get(&(seat as u32, site.0)).cloned().unwrap_or_default()
+    }
+
+    /// Turn stationed hulls into [`Combatant`]s — the sim's own spawn path.
+    ///
+    /// Deliberately **not** `arena::spawn_fleet`: the arena exists to spawn
+    /// outside production and the dependency runs `arena → combat`, never
+    /// `sim → arena`. These ships are the opposite — they were paid for, they
+    /// have a real hull, and their acceleration is whatever that hull gives.
+    /// Each hull as it will fight: the Design's loadout and its structure.
+    fn armed(&self, hulls: &[Entity], fleet: usize, rng: &mut Rng) -> Vec<crate::combat::Armed> {
+        self.combatants(hulls, fleet, rng)
+            .into_iter()
+            .zip(hulls)
+            .map(|(ship, e)| crate::combat::Armed {
+                ship,
+                loadout: self.world.loadout.get(*e).copied().unwrap_or(crate::combat::Loadout::UNARMED),
+                hp_kj: crate::combat::hull_hp_kj(ship.hull, &self.config, &self.combat),
+            })
+            .collect()
+    }
+
+    fn combatants(&self, hulls: &[Entity], fleet: usize, rng: &mut Rng) -> Vec<Combatant> {
+        hulls
+            .iter()
+            .enumerate()
+            .map(|(i, &e)| {
+                let hull = *self.world.hull_type.get(e).unwrap_or(&HullType::LimitedSystems);
+                let role = *self.world.role.get(e).unwrap_or(&Role::Reserve);
+                // **The fleet index has to be in the label.** `Rng::fork` takes
+                // `&self` and does not advance, so forking on `i` alone hands
+                // the two fleets bit-identical draws ship-for-ship: attacker 0
+                // and defender 0 get the same `thrust_factor`, `own == theirs`,
+                // and `can_disengage` — a strict `>` — is false forever. The
+                // census read **100% committed across 8,127 engagements**,
+                // which is what a degenerate draw looks like from the outside.
+                let mut ship_rng = rng.fork(((fleet as u64) << 32) | i as u64);
+                let (lo, hi) = hull_thrust_multiplier_range(hull);
+                Combatant {
+                    role,
+                    hull,
+                    thrust_factor: ship_rng.range(lo, hi),
+                    fleet,
+                    station: StationKeeping::draw(
+                        &mut ship_rng,
+                        crate::arena::ROU_STATION_RADIUS,
+                        crate::arena::ROU_STATION_PERIOD,
+                    ),
+                    maneuver_velocity: Vec3::ZERO,
+                    maneuver_start: 0.0,
+                    maneuver_origin_offset: Vec3::ZERO,
+                }
+            })
+            .collect()
+    }
+
+    /// Remove destroyed hulls from the crew index and return the mass they were.
+    ///
+    /// A hull's dry mass **is** its mineral cost (R-O57), so this is the exact
+    /// quantity that has to reappear as slag for design law #11 to hold.
+    fn destroy_hulls(&mut self, seat: usize, site: Entity, dead: &[Entity]) -> Kilotons {
+        if dead.is_empty() {
+            return Kilotons::ZERO;
+        }
+        let mut mass = Kilotons::ZERO;
+        for &e in dead {
+            let hull = *self.world.hull_type.get(e).unwrap_or(&HullType::LimitedSystems);
+            mass += hull_dry_mass(hull, &self.config);
+            // Terminal: the hull is gone. `Role::Scrapped` is the engine's
+            // existing "this entity is finished" marker and nothing re-tasks it.
+            self.world.role.insert(e, Role::Scrapped);
+            self.world.motion.remove(e);
+        }
+        if let Some(crew) = self.mine_crew.get_mut(&(seat as u32, site.0)) {
+            crew.retain(|e| !dead.contains(e));
+            if crew.is_empty() {
+                self.mine_crew.remove(&(seat as u32, site.0));
+            }
+        }
+        mass
     }
 
     fn sys_freighter_arrive(&mut self, vehicle: Entity) {
@@ -3163,11 +5260,11 @@ impl Simulation {
             // room for the piles still ahead.
             let last_stop = sh.stops as usize + 1 >= self.config.max_pickup_stops;
             if load > Price::ZERO {
-                // **Load against what the centre this hauler serves is short
+                // **Load against what the center this hauler serves is short
                 // of** (R-O89), rather than in the ratio this rock happens to
-                // hold. `destination` is the centre it delivered to last, so the
+                // hold. `destination` is the center it delivered to last, so the
                 // pairing is a standing relationship and not a lookup: serve a
-                // centre, learn what it lacks, fetch that. `O(1)`, where reading
+                // center, learn what it lacks, fetch that. `O(1)`, where reading
                 // the empire's aggregate deficit would be `O(owned planets)` on
                 // one of the hottest paths in the engine (§4).
                 //
@@ -3176,8 +5273,8 @@ impl Simulation {
                 // is **-52.3%** — see [`take_for_deficit`] and §6.20.
                 //
                 // **Net of what is already aboard** (T-91): an earlier stop on
-                // this leg may already have covered a colour, and a want that
-                // does not subtract it makes the run fetch the same colour
+                // this leg may already have covered a color, and a want that
+                // does not subtract it makes the run fetch the same color
                 // twice and still land short in the third.
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
                 let fill = if last_stop { Fill::Hold } else { Fill::Shortfall };
@@ -3262,7 +5359,7 @@ impl Simulation {
             // (R-P2) not across the galaxy to a marginally needier one either.
             // At `trade_decay_lambda = 0` this reduces exactly to
             // `most_needed_center`; the shipped value is 0.01, so the discounted
-            // path is live. Since T-81 the need term is **per colour** and reads
+            // path is live. Since T-81 the need term is **per color** and reads
             // the cargo actually aboard, so a hauler carrying Yellow goes where
             // Yellow is what is missing. Falls back to the outpost's own paired
             // home center only if this owner holds no production center at all
@@ -3303,10 +5400,10 @@ impl Simulation {
                     },
                 );
             }
-            // **The centre's situation just changed, so it decides now** (T-88).
+            // **The center's situation just changed, so it decides now** (T-88).
             //
             // This is the mechanism the retry floor is only a backstop for. A
-            // saving centre is waiting for exactly one thing — minerals — and
+            // saving center is waiting for exactly one thing — minerals — and
             // ore landing in its bank is the event that changes whether it can
             // buy anything. Before this it waited out the economy tick, so a
             // delivery arriving one year after a tick sat unspent for the next
@@ -3354,7 +5451,7 @@ impl Simulation {
         // separately in `sys_contact_arrive`.
         self.world.role.insert(vehicle, Role::Reserve);
         // **Unload before parking** (R-O74). A bounced Colonizer is carrying
-        // people and minerals that were debited from its home centre, and this
+        // people and minerals that were debited from its home center, and this
         // is where "nothing is lost" stops being a comment and becomes an
         // entry: park it still laden and the endowment sits in a hold forever,
         // which is a slow leak rather than an obvious one.
@@ -3386,25 +5483,67 @@ impl Simulation {
     /// completable mission is genuinely done). Marked `Role::Scrapped`, not
     /// removed — entities never despawn (this conversation's origin point);
     /// the entity ID stays resolvable, it just stops being tasked.
+    /// **A hull stands down and is broken up.** Mass is conserved across it
+    /// (design law #11, T-118).
+    ///
+    /// Two things here used to leak, and the ledger found both:
+    ///
+    /// - **The recovered fraction was priced off `Role::Scout`**, whatever hull
+    ///   actually scrapped. Every hull that was not a scout credited the wrong
+    ///   mass — too little for a big one, too much for a small one — which is
+    ///   the anti-pattern T-117's standing layer exists to remove: read the
+    ///   hull off the thing in front of you.
+    /// - **The rest of the hull simply vanished.** `scrap_recovery_fraction` is
+    ///   0.5, so half of every scrapped hull left the ledger. Design law #11 is
+    ///   explicit that *wastage degrades to slag rather than vanishing*, so the
+    ///   unrecovered half is now slag at the site — inert, conserved, and not a
+    ///   salvage yield (R-O59).
+    ///
+    /// And when there is nowhere to deliver salvage to, the **whole** hull
+    /// becomes slag rather than the whole hull disappearing.
     fn sys_scrap_arrive(&mut self, vehicle: Entity) {
         let here = self.position_at(vehicle, self.clock).unwrap_or(Vec3::ZERO);
         let owner = self.world.owner.get(vehicle).copied();
+        let hull = self.world.hull_type.get(vehicle).copied().unwrap_or(HullType::LimitedContactVehicle);
+        let dry = hull_dry_mass(hull, &self.config);
         self.world.role.insert(vehicle, Role::Scrapped);
         self.park(vehicle, here);
 
-        if let Some(dest_e) = self.nearest_owned_planet(owner.map(|o| o.0 as usize).unwrap_or(0), here) {
-            let recovered = role_cost(Role::Scout, &self.config) * self.config.scrap_recovery_fraction;
-            let colors = recovered.kilotons() / 3.0;
+        let dest = self.nearest_owned_planet(owner.map(|o| o.0 as usize).unwrap_or(0), here);
+        let recovered = match dest {
+            Some(_) => dry * self.config.scrap_recovery_fraction.clamp(0.0, 1.0),
+            // Nowhere to take it: nothing is recovered and all of it is slag.
+            None => Kilotons::ZERO,
+        };
+        if let Some(dest_e) = dest {
+            // **Salvage comes back as what the hull was made of** (R-IND21).
+            // A hull built from supers returns supers; the even split it used
+            // to credit was a guess in the one dimension that binds (§6.19c).
+            let salvage = self.composition_of(vehicle, recovered.on_scale::<units::Cost>());
             let stock = self.world.stockpile.get_mut(dest_e).unwrap();
-            stock.cyan += colors;
-            stock.magenta += colors;
-            stock.yellow += colors;
+            stock.add_basics(&salvage);
+            stock.red += salvage.red;
+            stock.green += salvage.green;
+            stock.blue += salvage.blue;
+            stock.apex += salvage.apex;
             if let Some(o) = owner {
                 let pid = *self.world.planet_id.get(dest_e).unwrap();
                 self.log.push(
                     self.clock,
                     LogEvent::VehicleScrapped { player: o.0, vehicle, at: pid, recovered: recovered.kilotons() },
                 );
+            }
+        }
+        // **The remainder is slag, and it is left where the breaking happened.**
+        // Deposited on the nearest owned world when there is one, because slag
+        // is a per-planet store and a hull in open space has no site of its own;
+        // that is a modeling choice the ledger makes visible rather than hides.
+        let wasted = dry - recovered;
+        if wasted > Kilotons::ZERO {
+            let site = dest.or_else(|| self.nearest_owned_planet(owner.map(|o| o.0 as usize).unwrap_or(0), here));
+            if let Some(site) = site {
+                let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + wasted;
+                self.world.slag.insert(site, total);
             }
         }
     }
@@ -3438,7 +5577,7 @@ impl Simulation {
             let amt = {
                 let d = self.world.density.get(outpost).unwrap();
                 // A fraction of the ore actually present — a **mass**, since
-                // T-62 made the field's colours Bands and only their masses add.
+                // T-62 made the field's colors Bands and only their masses add.
                 //
                 // **Crowding, scaled to the deposit** (§4.3, T-71). Extraction is
                 // `ε · S · W(n, S)` with `n` the crew in miner-equivalents — one
@@ -3503,7 +5642,7 @@ impl Simulation {
         // 0) **The `$` faucet** (§2.3, T-82). Income accrues where production
         // happens, on the cadence a rate needs — the economy tick is an
         // interval, and `$_income = base · production · dt` is a rate over one.
-        // No new cadence and no per-player sweep: summing over centres *is* the
+        // No new cadence and no per-player sweep: summing over centers *is* the
         // empire's production.
         //
         // **Nothing reads the purse yet**, which is the point of this stage: the
@@ -3517,7 +5656,7 @@ impl Simulation {
             let d = self.world.density.get(center).unwrap();
             let stock = d.total_mass();
             // **Same law as an outpost's crew, different way of buying `n`**
-            // (§4.4, T-71). `extraction_rate` returns the centre's capacity in
+            // (§4.4, T-71). `extraction_rate` returns the center's capacity in
             // miner-equivalents; the deposit decides what that capacity is worth.
             let work = crowding_factor(self.extraction_rate(center), stock, &self.config);
             // Scaled with the tick for the same reason as growth above — this
@@ -3571,6 +5710,7 @@ impl Simulation {
         let growth = doctrine.growth_rate * dt;
         let regen = self.config.biosphere_regen_rate * doctrine.biosphere_regen_bonus * dt;
         let k = self.world.factors.get(center).unwrap().k();
+        let k_mass = self.world.factors.get(center).unwrap().k_mass();
         {
             let pop_now = *self.world.population.get(center).unwrap();
             // **The logistic runs on the people, not on their Band** (T-64).
@@ -3590,7 +5730,7 @@ impl Simulation {
             // textbook one. `growth_rate` finally means what its name says —
             // the fraction a small population adds per cycle — and its ratified
             // value is re-measured rather than carried across (T-64 step 5).
-            let cap = units::population_mass(k);
+            let cap = k_mass;
             // The logistic has a fixed point at zero, so a founding population
             // needs a floor to grow off. The floor moves the *population*; the
             // mass baseline below stays at the true prior value, so the bump is
@@ -3699,7 +5839,7 @@ impl Simulation {
         // what costs throughput.
         //
         // The gate is a *floor*, not the mechanism. The mechanism is
-        // `wake_on_minerals`, which asks the moment the thing a saving centre
+        // `wake_on_minerals`, which asks the moment the thing a saving center
         // was short of actually lands; this is the catch-all underneath it for
         // a situation that changed somewhere no wake site watches — a newly
         // scanned candidate, a population level crossing, a hull returning to
@@ -3720,7 +5860,7 @@ impl Simulation {
     /// applies the build immediately — `apply_build_with` is unchanged, so a
     /// vehicle's launch delay and arrival time are exactly what they were — and
     /// then holds the yard for `build_years` before the next decision. **The
-    /// only behavioural change is the cadence of decisions**, from
+    /// only behavioral change is the cadence of decisions**, from
     /// `cycle_years` to `build_years` for a center that keeps finding things to
     /// buy.
     fn sys_build_decision(&mut self, center: Entity) {
@@ -3741,7 +5881,7 @@ impl Simulation {
         // and none of its benefit, which would measure as a regression for a
         // reason that has nothing to do with the mechanism. The loop terminates
         // because each commit takes a berth and `commit_one_build` returns
-        // `false` the moment the centre cannot or will not buy anything more.
+        // `false` the moment the center cannot or will not buy anything more.
         while self.free_berths(center) > 0 {
             if !self.commit_one_build(center) {
                 break;
@@ -3766,26 +5906,26 @@ impl Simulation {
         let (infra, infra_band, k_potential) = {
             let f = self.world.factors.get(center).unwrap();
             // One reading, taken at the edge — the decision and the log line
-            // both want the rung, and `band_from` is a `ln` (`CLAUDE.md` §4).
+            // both want the rung, and `band_from` is a conversion (`CLAUDE.md` §4).
             (f.infra, f.infra_band(&self.config), f.k_potential())
         };
         let level = self.bands.level(*self.world.population.get(center).unwrap());
         let center_pos = *self.world.position.get(center).unwrap();
         let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
         // Minerals to buy the next whole level, from the stock standing there —
-        // and since T-73 the bill is payable *in colours*, so the split and the
+        // and since T-73 the bill is payable *in colors*, so the split and the
         // bank both go into the context.
         let target_level = infra_step_price(infra, &self.config);
         let works = self.world.works.get(pe).copied().unwrap_or_default();
-        let infra_bill = works_bill(target_level, &works);
         let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
-        let stockpile_by_colour = [
+        let infra_bill = self.rung_bill(target_level, &works, &bank);
+        let stockpile_by_color = [
             Price::new(bank.get_basic(Basic::Cyan)),
             Price::new(bank.get_basic(Basic::Magenta)),
             Price::new(bank.get_basic(Basic::Yellow)),
         ];
 
-        // **A centre too poor to buy anything does not need to look at the
+        // **A center too poor to buy anything does not need to look at the
         // galaxy first** (T-88 / T-52).
         //
         // Measured on the standard bed, **79.8% of production decisions return
@@ -3796,13 +5936,13 @@ impl Simulation {
         //
         // The guard is a *necessary* condition for any commit, not a re-
         // implementation of the policy: every order the autopilot can return
-        // costs at least `floor` in total, and per-colour affordability implies
+        // costs at least `floor` in total, and per-color affordability implies
         // affordability of the total, so a bank below it cannot buy anything the
         // scan could propose. `mining_pair_price` is priced at a crew of one,
         // which is its minimum, so the bound stays below the real price rather
         // than guessing it.
         //
-        // Behaviour is unchanged by construction — the skipped decisions are
+        // Behavior is unchanged by construction — the skipped decisions are
         // exactly the ones whose `apply_build_with` would have declined — and
         // the log still records the decision, with `candidates_seen = 0`
         // meaning *scanned*, which for this branch is the honest number.
@@ -3859,9 +5999,37 @@ impl Simulation {
         // independent of scan order. `candidate_count` still carries the true
         // count, because `survey_reserve` is a threshold on the size of the
         // frontier and not on the size of this slice.
+        // **The General-tier colonizer is a doctrine read, not a constant**
+        // (T-116). Bound once here because four separate places downstream have
+        // to agree about it — the two settler figures, the price the context
+        // carries, and the founding rung — and `general_colonizer_hull` is the
+        // same function `production_choice` names the hull with.
+        let general_hull = crate::autopilot::general_colonizer_hull(&doctrine);
         let mut count = 0usize;
-        let mut best: [Option<Candidate>; 3] = [None, None, None];
+        // **Six slots, not three: the per-class winner and the per-class winner
+        // among held ground** (T-113).
+        //
+        // The reduction above is exact for a consumer that reads the argmax of a
+        // class. `assign_role`'s colonizer arm reads the argmax of a *subset* —
+        // the worlds this empire's pickets are standing on — and the maximum of
+        // a set does not carry the maximum of its subsets, so a three-slot
+        // reduction hands that consumer nothing to choose over: a held world
+        // survives to the list only when it already won its class outright, and
+        // the preference is then a no-op by construction. Measured that way
+        // (`examples/denial_census`, 8 seeds): the held-ground arm reproduced the
+        // arm without it to every printed digit.
+        //
+        // Cost is one extra comparison per survivor and one extra `Candidate`
+        // construction per improvement *within* the held subset, which is empty
+        // in every galaxy where no player has the Warfare doctrine — see
+        // `any_pickets` below. The slice stays `O(1)` in memory and the walk
+        // stays sequential, which is what §4's locality rule is actually about.
+        let mut best: [Option<Candidate>; 6] = [None; 6];
         let survey_frontier = self.survey_frontier(p);
+        // Hoisted so the shipped default bed pays one bool for this whole
+        // feature: with no picket anywhere on the board there is no held subset
+        // to reduce, and the per-survivor map probe never runs.
+        let any_pickets = !self.picket.is_empty() || !self.picket_inbound.is_empty();
         {
             // **Walk the live pool and compact it in the same pass** (T-101).
             //
@@ -3900,26 +6068,41 @@ impl Simulation {
                     PlanetClass::Barren => continue,
                 };
                 count += 1;
-                let better = match &best[slot] {
+                let beats = |cur: &Option<Candidate>| match cur {
                     None => true,
-                    Some(cur) => Ranked::score_then_id(&ranked, &cur.ranked).is_gt(),
+                    Some(c) => Ranked::score_then_id(&ranked, &c.ranked).is_gt(),
                 };
-                if better {
-                    // The per-hull settler figure is computed for the three
-                    // reduced winners only, not for every scanned world — the
-                    // reduction is exactly what makes that affordable (R-O70).
+                let held_by_me =
+                    any_pickets && self.picket.get(&e.0).is_some_and(|&(holder, _, _)| holder as usize == p);
+                // A hull already on its way counts for the *claim* decision and
+                // not for the *settle* one: a picket in flight is a
+                // reservation, and a world is only safe to send a colonizer to
+                // once the hull is standing on it.
+                let claim_inbound = any_pickets && self.picket_inbound.contains_key(&e.0);
+                let wins_class = beats(&best[slot]);
+                let wins_held = held_by_me && beats(&best[HELD + slot]);
+                if wins_class || wins_held {
+                    // The per-hull settler figure is computed for the reduced
+                    // winners only, not for every scanned world — the reduction
+                    // is exactly what makes that affordable (R-O70).
                     let settlers_by_hull = [
                         self.settler_target(center, e, HullType::MediumSystems.colony_seed_capacity(&self.config)),
-                        self.settler_target(center, e, HullType::GeneralSystems.colony_seed_capacity(&self.config)),
+                        self.settler_target(center, e, general_hull.colony_seed_capacity(&self.config)),
                     ];
                     let mining_crew = self.mining_crew_for(center, e);
-                    best[slot] = Some(Candidate { view, ranked, settlers_by_hull, mining_crew });
+                    let cand = Candidate { view, ranked, settlers_by_hull, mining_crew, held_by_me, claim_inbound };
+                    if wins_class {
+                        best[slot] = Some(cand);
+                    }
+                    if wins_held {
+                        best[HELD + slot] = Some(cand);
+                    }
                 }
             }
             live.truncate(keep);
             self.world.knowledge.get_mut(pe).unwrap().scanned.live = live;
         }
-        let cands: Vec<Candidate> = best.into_iter().flatten().collect();
+        let cands: Vec<Candidate> = flatten_candidate_slots(&best);
         // Built after `cands`, so the survey decision can see how much frontier
         // this empire has left to aim at.
         let ctx = ProductionContext {
@@ -3932,13 +6115,13 @@ impl Simulation {
             limited_min_level: self.config.limited_min_level,
             infra_cost: target_level,
             infra_bill,
-            stockpile_by_colour,
+            stockpile_by_color,
             colonizer_cost: hull_cost(HullType::MediumSystems, &self.config),
-            general_colonizer_cost: hull_cost(HullType::GeneralSystems, &self.config),
+            general_colonizer_cost: hull_cost(general_hull, &self.config),
             medium_seed_capacity: HullType::MediumSystems.colony_seed_capacity(&self.config),
-            general_seed_capacity: HullType::GeneralSystems.colony_seed_capacity(&self.config),
+            general_seed_capacity: general_hull.colony_seed_capacity(&self.config),
             medium_founding_infra: self.founding_infra_band(HullType::MediumSystems),
-            general_founding_infra: self.founding_infra_band(HullType::GeneralSystems),
+            general_founding_infra: self.founding_infra_band(general_hull),
             // The *true* price of a pair to this center right now. With
             // recycling on, a half that comes out of Reserve is not bought, and
             // the context has to say so or the decision is made on a price the
@@ -3964,6 +6147,16 @@ impl Simulation {
                 let pair = best.map(|c| (center, self.planet_entity[c.ranked.id.0 as usize]));
                 self.mining_pair_price(p, crew, pair)
             },
+            picket_cost: hull_cost(HullType::LimitedContactVehicle, &self.config),
+            // Hulls already flying to a port count against the reserve, or
+            // the blockade-first branch builds one per decision while they
+            // travel (T-125).
+            pickets_held: self.picket_count[p] as usize + self.blockaders_in_flight(p),
+            // **Build ahead of expansion only to cover a port** (T-125). Hulls
+            // may stack, but a stack buys nothing against an unarmed colony
+            // ship; building the reserve out past coverage cost the card 42%
+            // of its effect (appendix §D.4).
+            blockade_ready: self.blockade_doctrine(p) && self.launches_seen[p].len() > self.ports_covered(p),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
             survey_frontier,
@@ -3997,7 +6190,7 @@ impl Simulation {
         let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) else {
             // The yard stays free and the next economy tick retries, which is
             // the right cadence for a center whose situation only changes as it
-            // mines. Returning `false` also ends the fill loop — a centre that
+            // mines. Returning `false` also ends the fill loop — a center that
             // declined this order will decline it again at the same instant.
             return false;
         };
@@ -4041,11 +6234,66 @@ impl Simulation {
         self.config.build_lead_years + mass.on_scale::<units::Mass>().kilotons().max(0.0) / per_berth
     }
 
-    /// **The fabrication share of this centre's infrastructure stock, kt** — the
-    /// quantity both yard axes are bought with (R-O88).
+    /// **The infrastructure this center can actually work** — the stock times
+    /// the staffing factor `u` when `population_staffs_industry` is on, and the
+    /// standing stock otherwise (T-107).
+    ///
+    /// The one place output reads infrastructure. Every rate — extraction,
+    /// per-berth throughput, berth count — goes through here, so population
+    /// reaches all three together or none of them; a staffing rule applied at
+    /// one call site and forgotten at another would let an understaffed world
+    /// build at full speed while mining at a trickle.
+    fn worked_infra(&self, center: Entity) -> Price {
+        let Some(f) = self.world.factors.get(center) else { return Price::ZERO };
+        if !self.config.population_staffs_industry {
+            return f.infra;
+        }
+        f.infra * self.staffing(center)
+    }
+
+    /// **The color-split bill for a rung, as this engine bills it.** T-73's
+    /// `works_bill` unless the conjunction is ablated, in which case the total
+    /// is split by the paying bank's own mix (see
+    /// [`SimConfig::ablate_color_conjunction`]).
+    fn rung_bill(&self, step: Price, works: &cards::Works, bank: &Minerals) -> [Price; 3] {
+        let bill = works_bill(step, works);
+        if !self.config.ablate_color_conjunction {
+            return bill;
+        }
+        let total: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
+        let held = bank.basic_total();
+        if held <= Price::ZERO {
+            return bill;
+        }
+        let mut out = [Price::ZERO; 3];
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            out[i] = total * (bank.get_basic(c) / held.kilotons());
+        }
+        out
+    }
+
+    /// **`u = min(1, P / P_req(I))`** — the fraction of a center's standing
+    /// infrastructure its people can work (T-107, R-IND22). See
+    /// [`SimConfig::population_staffs_industry`] for why `P_req` is the people
+    /// mass at the stock's own Band reading rather than a new constant.
+    pub fn staffing(&self, center: Entity) -> f64 {
+        let Some(f) = self.world.factors.get(center) else { return 0.0 };
+        if f.infra <= Price::ZERO {
+            return 1.0;
+        }
+        let p = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
+        let p_req = f.infra.mass_at_same_band_from(cost_anchor(&self.config));
+        if p_req <= Kilotons::ZERO {
+            return 1.0;
+        }
+        (p.kilotons() / p_req.kilotons()).clamp(0.0, 1.0)
+    }
+
+    /// **The fabrication share of this center's infrastructure stock, kt** — the
+    /// quantity both yard axes are bought with (R-O88). Worked stock, not
+    /// standing stock (T-107).
     fn fabrication_stock(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
-        employment_stock(infra, &self.works_of(center), cards::Employment::Fabrication)
+        employment_stock(self.worked_infra(center), &self.works_of(center), cards::Employment::Fabrication)
     }
 
     /// **One berth's throughput, kt/yr — the *quality* axis** (T-74's curve,
@@ -4053,7 +6301,7 @@ impl Simulation {
     /// `fab_cap`: Production raises the ceiling, Growth and Expansion lower the
     /// knee. See [`slips`] for the quantity axis this is paired with.
     fn berth_rate(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        let infra = self.worked_infra(center);
         employment_rate(
             infra,
             &self.works_of(center),
@@ -4063,10 +6311,10 @@ impl Simulation {
         )
     }
 
-    /// **This centre's total fabrication throughput, kt/yr** — `slips ×
+    /// **This center's total fabrication throughput, kt/yr** — `slips ×
     /// berth_rate`, so it is unbounded in the stock (R-O88).
     ///
-    /// This is the *demand* figure — what the centre can consume — and it is
+    /// This is the *demand* figure — what the center can consume — and it is
     /// what `mining_crew_for` and the `$` faucet read. It is **not** what
     /// [`Self::build_time`] reads: a hull sits in one berth, so its turnaround
     /// is the berth's rate and not the yard's.
@@ -4074,7 +6322,7 @@ impl Simulation {
         slips(self.fabrication_stock(center), &self.config) as f64 * self.berth_rate(center)
     }
 
-    /// This centre's owner's works, or the card-free default if it is unowned.
+    /// This center's owner's works, or the card-free default if it is unowned.
     fn works_of(&self, center: Entity) -> cards::Works {
         self.world
             .owner
@@ -4084,17 +6332,17 @@ impl Simulation {
             .unwrap_or_default()
     }
 
-    /// **How many berths this centre has spare** (T-69). Zero means every slip
+    /// **How many berths this center has spare** (T-69). Zero means every slip
     /// is busy and the yard cannot commit again until one clears.
     /// **Minerals landed here — decide now, floor or no floor** (T-88).
     ///
     /// Deliberately bypasses [`Self::decision_is_due`]. The floor exists to stop
-    /// a centre re-asking a question nothing has answered; a delivery *is* the
+    /// a center re-asking a question nothing has answered; a delivery *is* the
     /// answer, so gating it behind the floor would reinstate the cadence this
     /// task exists to remove. Re-arms the floor, so it means "50 years since
     /// the last decision" rather than "since the last tick".
     ///
-    /// A centre with no free berth is skipped: its decision already has a
+    /// A center with no free berth is skipped: its decision already has a
     /// `BuildDecision` pending for when the yard clears, and the minerals will
     /// still be there.
     fn wake_on_minerals(&mut self, center: Entity) {
@@ -4115,7 +6363,7 @@ impl Simulation {
         self.config.cycle_years / self.config.rate_reference_years.max(1e-12)
     }
 
-    /// Has this centre's retry floor elapsed? (T-88.)
+    /// Has this center's retry floor elapsed? (T-88.)
     ///
     /// Absent means "never asked, or woken deliberately" — both want an
     /// immediate decision, so absence reads as due.
@@ -4135,7 +6383,7 @@ impl Simulation {
         total.saturating_sub(busy)
     }
 
-    /// **This centre's extraction capacity, in miner-equivalents** (T-71).
+    /// **This center's extraction capacity, in miner-equivalents** (T-71).
     ///
     /// ~~The fraction of its own density it works per cycle~~ — T-74 shipped that
     /// as a Michaelis–Menten curve on infrastructure, and §4.3a retired the form:
@@ -4155,7 +6403,7 @@ impl Simulation {
     /// the knee buys more work per kilotonne, which is Growth and Expansion's
     /// signature.
     fn extraction_rate(&self, center: Entity) -> f64 {
-        let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
+        let infra = self.worked_infra(center);
         let works = self
             .world
             .owner
@@ -4200,11 +6448,12 @@ impl Simulation {
             BuildOrder::Idle => None,
             BuildOrder::UpgradeInfrastructure => {
                 let target = infra_step_price(self.world.factors.get(center).unwrap().infra, &self.config);
-                // **Pay the colour bill, not the total** (T-73). Same
+                // **Pay the color bill, not the total** (T-73). Same
                 // `works_bill` the decision was made against.
                 let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
-                let bill = works_bill(target, &works);
-                let payable = self.world.stockpile.get(center).map(|b| can_pay_bill(b, &bill)).unwrap_or(false);
+                let bank_now = self.world.stockpile.get(center).copied().unwrap_or_default();
+                let bill = self.rung_bill(target, &works, &bank_now);
+                let payable = can_pay_bill(&bank_now, &bill);
                 // What was actually committed is the bill, not the ladder step:
                 // `eta_works` divides the total, so an efficiency card makes the
                 // rung genuinely cheaper — and the yard is held for what was
@@ -4267,6 +6516,16 @@ impl Simulation {
                 if role == Role::Scout && self.survey_frontier(p) == 0 {
                     return None;
                 }
+
+                // **A blockading picket goes to a rival port** (T-123), chosen
+                // here, before the bill, so a hull with nowhere to go is never
+                // paid for (T-125: `assign_role` hands a blockader no world).
+                let blockade_port =
+                    if role == Role::Picket && self.blockade_doctrine(p) { self.blockade_target(p) } else { None };
+                if role == Role::Picket && target.is_none() && blockade_port.is_none() {
+                    return None;
+                }
+                let target = blockade_port.map(|e| *self.world.planet_id.get(e).unwrap()).or(target);
 
                 // A Miner is produced together with the Freighter that hauls for
                 // it (roles §5: the nearest center produces both), so the pair is
@@ -4340,8 +6599,20 @@ impl Simulation {
                     cost += hull_cost(hauler, &self.config);
                 }
 
+                // **A picket does not claim the world it holds** (T-113).
+                //
+                // `targeted` means *a colonizer of ours is already flying
+                // there*, and it is never cleared — so marking it for a picket
+                // permanently deletes that world from this empire's own
+                // candidate list. `assign_role` sends pickets to the
+                // *highest-ranked* world, so at `picket_reserve = 128` the card
+                // was burning its own 128 best targets. A picket denies rivals
+                // (`picket_blocks` tests `holder != seat`); it must not deny
+                // its owner.
                 if let Some(t) = target {
-                    self.mark_targeted(p, t);
+                    if role != Role::Picket {
+                        self.mark_targeted(p, t);
+                    }
                 }
                 // **The whole order occupies one yard, so it launches as one
                 // unit** (T-68). The delay every hull in this order waits out is
@@ -4350,7 +6621,14 @@ impl Simulation {
                 // a per-ship time that could drift from the occupancy. Hulls
                 // taken from Reserve are already built and leave at once.
                 let launch_delay = self.build_time(center, cost);
-                if !self.world.stockpile.get_mut(center).unwrap().try_spend_total(cost) {
+                // Snapshot before the debit, so a dispatch that produces no
+                // object can put the bank back *exactly* (T-118).
+                // `try_spend_total` removes proportionally across the three
+                // colors, so a flat refund would change the mix — and the mix
+                // is the mineral economy's binding constraint (§6.19c).
+                // Nothing else touches this bank between here and the dispatch.
+                let bank_before = *self.world.stockpile.get(center).unwrap();
+                let Some(build_mix) = self.world.stockpile.get_mut(center).unwrap().try_take_total(cost) else {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
                     for e in reused_miners {
@@ -4360,7 +6638,7 @@ impl Simulation {
                         self.reserve_freighters[p].push(e);
                     }
                     return None;
-                }
+                };
                 match (role, target) {
                     (Role::Scout, _) => {
                         // Under `PersistentSectors` (R-AC3), a paid-for replenishment
@@ -4377,17 +6655,46 @@ impl Simulation {
                             }
                             SurveyStrategy::GlobalPool | SurveyStrategy::OpeningSectors => Vec3::ZERO,
                         };
-                        self.launch_survey(p, center_pos, heading, 0, launch_delay)
+                        // **Refund a survey craft that never launched**
+                        // (T-118). The bank was debited above, before the
+                        // object exists; `launch_survey` spawns nothing when
+                        // `choose_survey_target` finds nowhere to go, and the
+                        // minerals used to simply vanish. R-O86 removed most of
+                        // this path by refusing to *order* a scout with an
+                        // empty frontier — the residue is the frontier going
+                        // empty between the order and the dispatch, which the
+                        // mass ledger found as 8 hulls' worth of ore in a
+                        // 200-year bed.
+                        if !self.launch_survey(
+                            p,
+                            center_pos,
+                            heading,
+                            0,
+                            launch_delay,
+                            BuiltHull { hull: hull_type, class, mix: build_mix },
+                        ) {
+                            *self.world.stockpile.get_mut(center).unwrap() = bank_before;
+                        }
                     }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
+                        if let Some(port) = blockade_port {
+                            self.bind(p as u32, port.0);
+                        }
                         // A crew, not an operator (T-57). Reserved hulls first —
                         // they are already paid for — then newly built ones.
                         let mut reused = reused_miners.into_iter();
                         for _ in 0..crew {
                             match reused.next() {
                                 Some(e) => self.retask_miner(e, p, center, te),
-                                None => self.spawn_courier(p, r, hull_type, center, te, launch_delay),
+                                None => self.spawn_courier(
+                                    p,
+                                    r,
+                                    BuiltHull { hull: hull_type, class, mix: build_mix },
+                                    center,
+                                    te,
+                                    launch_delay,
+                                ),
                             }
                         }
                         if paired_freighter {
@@ -4443,18 +6750,18 @@ impl Simulation {
     ///
     /// So the crew *falls out* of demand. There is no knob.
     ///
-    /// **Demand**, in kilotons per year, is what the founding centre can
+    /// **Demand**, in kilotons per year, is what the founding center can
     /// actually consume and currently cannot get:
     ///
     /// ```text
-    /// D = fabrication_rate(centre) · mineral_pressure(centre)
+    /// D = fabrication_rate(center) · mineral_pressure(center)
     /// ```
     ///
     /// Both terms already exist and both already run on this decision path.
     /// `fabrication_rate` is the rate the yard turns minerals into mass — the
     /// only sink that consumes ore — and `mineral_pressure` is `1.0` when the
-    /// centre is broke for its next rung and `0.0` when it is comfortable. A
-    /// centre with a full bank has no unmet demand and opens a mine with one
+    /// center is broke for its next rung and `0.0` when it is comfortable. A
+    /// center with a full bank has no unmet demand and opens a mine with one
     /// hull; a starved one crews to its throughput.
     ///
     /// **Supply** is §4.3's law read forwards, so the crew is that law inverted:
@@ -4471,11 +6778,11 @@ impl Simulation {
     /// gets richer. Under a flat fraction it rose. That inversion is why this is
     /// a model change and not a retuning.
     ///
-    /// **R-IND20: demand is read at the founding centre, not empire-wide.** An
+    /// **R-IND20: demand is read at the founding center, not empire-wide.** An
     /// outpost feeds the whole empire through freight, so the correct demand is
     /// the empire's unmet total; that is an `O(planets)` scan on a decision path
     /// (`CLAUDE.md` §4) and would need the `holdings_centroid` memo treatment.
-    /// The centre that pays for the pair is the defensible local proxy, and the
+    /// The center that pays for the pair is the defensible local proxy, and the
     /// difference is what R-IND20 is for.
     fn mining_crew_for(&self, center: Entity, planet: Entity) -> usize {
         let stock = self.world.density.get(planet).map(|d| d.total_mass()).unwrap_or(Kilotons::ZERO);
@@ -4494,7 +6801,7 @@ impl Simulation {
         let full_crew_rate = self.config.outpost_mining_fraction * ore / self.config.mining_tick_years.max(1e-12);
         let share = (demand / full_crew_rate.max(1e-12)).clamp(0.0, 1.0);
         let beta = self.config.crowding_beta.max(1e-6);
-        let want = n_veins * share.powf(1.0 / beta);
+        let want = n_veins * transcendental::pow_fast(share, 1.0 / beta);
         (want.round().clamp(1.0, n_veins.min(MAX_VEINS)) as usize).max(1)
     }
 
@@ -4526,10 +6833,10 @@ impl Simulation {
     ///   forward.
     /// - **Demand** is what the destination can turn into objects, which is its
     ///   fabrication throughput (`slips × berth_rate`). Minerals arriving faster
-    ///   than a centre can fabricate are minerals that sit in a bank.
+    ///   than a center can fabricate are minerals that sit in a bank.
     ///
     /// **`min` is the point.** A thin rock cannot fill a big hold however hungry
-    /// the centre, and a centre at one berth cannot spend a rich rock however
+    /// the center, and a center at one berth cannot spend a rich rock however
     /// fast it yields — so the hull is sized to the *bottleneck*, and the
     /// decision says "small hull here, large hull there" rather than picking a
     /// global winner. Below the crossover `load` is `flow · round_trip` for every
@@ -4543,14 +6850,14 @@ impl Simulation {
     /// empty leg does not move.
     ///
     /// **Cost, stated rather than discovered later.** This is `O(1)` in galaxy
-    /// size — it reads one deposit, one centre and one distance — but it is three
+    /// size — it reads one deposit, one center and one distance — but it is three
     /// hulls × two passes × two travel solves, so ~12 square roots per mining-pair
     /// build. Builds are orders of magnitude rarer than arrivals, which is the
     /// budget `CLAUDE.md` §4 actually sets.
     ///
     /// **What the demand term is not.** It is a *ceiling*, not this hauler's
-    /// share: a centre served by ten pairs can absorb its fabrication rate once,
-    /// not ten times. Turning it into a share needs a per-centre hauler census,
+    /// share: a center served by ten pairs can absorb its fabrication rate once,
+    /// not ten times. Turning it into a share needs a per-center hauler census,
     /// which is not `O(1)` from here — carried as **T-99**. The supply term has
     /// no such caveat: it is exactly this rock's yield to this player.
     fn freighter_hull(&self, p: usize, center: Entity, outpost: Entity, crew: usize) -> HullType {
@@ -4574,7 +6881,7 @@ impl Simulation {
         // throughput rule cannot see. The score below is a *rate*: it says what a
         // hull returns per mineral once it is flying, and says nothing about the
         // years spent saving for it. A General hauler returns 2.86x a Medium's
-        // and costs **12x**, so a centre whose bank is thin buys one big hull
+        // and costs **12x**, so a center whose bank is thin buys one big hull
         // instead of twelve cheap ones and stops expanding while it saves.
         //
         // Measured without this term: **+60.2% work-years and −9.3%
@@ -4582,7 +6889,7 @@ impl Simulation {
         // founding nothing in forty years. The development gain was real and it
         // was being paid for out of the expansion loop.
         //
-        // So the candidate set is what this centre could pay for **now**,
+        // So the candidate set is what this center could pay for **now**,
         // alongside the crew it is buying. No new constant: the budget is the
         // bank, which is the constraint the decision already lives under. Early,
         // banks are thin and the cheap hull wins because it is the only one
@@ -4601,11 +6908,11 @@ impl Simulation {
             if cap <= 0.0 || cost <= 0.0 {
                 continue;
             }
-            // **A total, not a per-colour, reading.** The real payment still goes
-            // through the per-colour conjunction — this is a forecast input and
+            // **A total, not a per-color, reading.** The real payment still goes
+            // through the per-color conjunction — this is a forecast input and
             // reconstructing a conjunction from a total is the mistake §6.19c
             // records (44.7% "outbid" against a true 0.9%). Here it only has to
-            // rank, and it is deliberately permissive: quoting a hull the centre
+            // rank, and it is deliberately permissive: quoting a hull the center
             // then cannot pay for costs a declined build, not a wrong one.
             if best.is_some() && hull_cost(hull, &self.config) > budget {
                 continue;
@@ -4640,10 +6947,10 @@ impl Simulation {
     }
 
     /// **Priced for the hull that will actually be built** (T-98). `pair` is the
-    /// `(centre, rock)` the freighter would serve; `None` prices the *floor* —
+    /// `(center, rock)` the freighter would serve; `None` prices the *floor* —
     /// the cheapest hauler that exists — which is what the skip-scan guard wants
     /// and what a quote for an unchosen rock has to be, since a floor that
-    /// overestimates skips a build the centre could afford.
+    /// overestimates skips a build the center could afford.
     fn mining_pair_price(&self, p: usize, crew: usize, pair: Option<(Entity, Entity)>) -> Price {
         let full_miner = role_cost(Role::Miner, &self.config);
         let full_freighter = match pair {
@@ -4717,6 +7024,7 @@ impl Simulation {
                 player: p as u32,
                 vehicle: e,
                 role: Role::Miner,
+                hull: self.world.hull_type.get(e).copied().unwrap_or(role_hull_type(Role::Miner)),
                 from,
                 to: target_pid,
                 settlers: 0.0,
@@ -4744,6 +7052,7 @@ impl Simulation {
                 player: p as u32,
                 vehicle: e,
                 role: Role::Freighter,
+                hull: self.world.hull_type.get(e).copied().unwrap_or(role_hull_type(Role::Freighter)),
                 from,
                 to: outpost_pid,
                 settlers: 0.0,
@@ -4838,7 +7147,7 @@ impl Simulation {
         // whole job. R-O76's "seed depth does not pay" measured the mismatch
         // between what a hull carried and what the colony could hold, and there
         // is no mismatch left to measure.
-        units::population_mass(f.k_potential())
+        f.k_mass()
     }
 
     /// **The founding population a colony ship of this hull carries** — the
@@ -4871,7 +7180,7 @@ impl Simulation {
     /// biosphere for the people put aboard, which was already a design law #11
     /// violation at `Band I` and is a bigger one at `Band II`. It is recorded
     /// rather than fixed here because drawing the seed from the origin is a
-    /// behaviour change that would dominate the measurement stage 4 exists to
+    /// behavior change that would dominate the measurement stage 4 exists to
     /// take — and mixing the two is exactly the confound this staging avoids.
     fn colony_seed_for(&self, hull: HullType, origin: Entity, target: Entity) -> Option<Kilotons> {
         // **R-V9 is enforced on the hold, and since T-67 it has to be.**
@@ -4889,7 +7198,7 @@ impl Simulation {
         // full `colony_seed_pop`. A Medium hull's hold is `Band I` exactly and a
         // Limited hull's is `Band Empty`, so the ratified rule and the geometry
         // now agree without either propping the other up.
-        let floor = units::population_mass(self.config.colony_seed_pop.band());
+        let floor = units::population_mass_at_tier(self.config.colony_seed_pop);
         let hold = hull.colony_seed_capacity(&self.config);
         if hold < floor * (1.0 - 1e-9) {
             return None;
@@ -4898,13 +7207,13 @@ impl Simulation {
         // one R-O74 was missing. The **world** caps it, because a seed above `K`
         // would crash rather than settle. The **hold** caps it, because that is
         // capability. And the **origin** decides it — not as a share of what it
-        // has, but as the split that maximises the growth of the combined
+        // has, but as the split that maximizes the growth of the combined
         // origin-plus-colony system under a travel discount (R-IND12; see
         // `settler_target`, which also defines every symbol it uses).
         Some(hold.min(self.founding_capacity(target)).min(self.settler_target(origin, target, hold)))
     }
 
-    /// **How many settlers a centre sends, and where the number comes from
+    /// **How many settlers a center sends, and where the number comes from
     /// (R-IND12).**
     ///
     /// Every symbol, before any of them is used:
@@ -4938,7 +7247,7 @@ impl Simulation {
     ///            -- the time the seed saves the child, floor -> S
     /// cost(S)  = T_p(S) = S / g(x_p − S, K_p)
     ///            -- the time the origin needs to regrow what it gave away
-    /// maximise   delta · T_c(S) − T_p(S)
+    /// maximize   delta · T_c(S) − T_p(S)
     /// ```
     ///
     /// **`r` cancels.** Both terms carry `1/r`, so the split is independent of
@@ -4951,7 +7260,7 @@ impl Simulation {
     ///
     /// - *Marginal next-cycle rate*, `g(x_p − S) + delta·g(S)`: closed form, and
     ///   it ships **nothing at all** whenever the origin is below `K_p/2` and the
-    ///   target is far. That is precisely the early game, when colonising matters
+    ///   target is far. That is precisely the early game, when colonizing matters
     ///   most, so it would have stalled expansion by construction.
     /// - *Sum of fill times*: strips a full origin to 99% of itself at zero
     ///   distance, and ships nothing from one at its ceiling when the target is
@@ -4992,29 +7301,16 @@ impl Simulation {
             return hi.min(k_c);
         }
         let delta = self.travel_discount(center, target);
-        let (xp, kp, kc, x0) = (x_p.kilotons(), k_p.kilotons(), k_c.kilotons(), x_0.kilotons());
-        let head = (kc - x0) / x0;
-
-        let mut best = (f64::NEG_INFINITY, 0.0);
-        for i in 1..=Self::ENDOWMENT_GRID {
-            let s = hi.kilotons() * (i as f64) / (Self::ENDOWMENT_GRID as f64);
-            if s >= kc || s >= xp {
-                break;
-            }
-            // Time the seed saves the child: floor -> S on its own logistic.
-            let t_c = ((s / (kc - s)) * head).ln();
-            // Time the origin needs to regrow it. An origin already at or over
-            // its ceiling has no headroom to regrow *into*, and its people are
-            // surplus rather than growth — so the gift costs it nothing.
-            let left = xp - s;
-            let rate = left * (1.0 - left / kp);
-            let t_p = if rate > 1e-15 { s / rate } else { 0.0 };
-            let score = delta * t_c - t_p;
-            if score > best.0 {
-                best = (score, s);
-            }
-        }
-        Kilotons::new(best.1).min(hi)
+        Kilotons::new(best_endowment(
+            hi.kilotons(),
+            x_p.kilotons(),
+            k_p.kilotons(),
+            k_c.kilotons(),
+            x_0.kilotons(),
+            delta,
+            Self::ENDOWMENT_GRID,
+        ))
+        .min(hi)
     }
 
     /// Grid resolution for [`Self::settler_target`]. Stated as a constant
@@ -5026,7 +7322,7 @@ impl Simulation {
     /// A planet's carrying capacity as a **mass** — `population_mass(k())`,
     /// which since T-67 is `min(hab, bio_max)` and has no infrastructure term.
     fn capacity_of(&self, planet: Entity) -> Kilotons {
-        self.world.factors.get(planet).map(|f| units::population_mass(f.k())).unwrap_or(Kilotons::ZERO)
+        self.world.factors.get(planet).map(|f| f.k_mass()).unwrap_or(Kilotons::ZERO)
     }
 
     /// `delta = 1 / (1 + tau / cycle_years)` — see [`Self::settler_target`] for
@@ -5047,7 +7343,7 @@ impl Simulation {
         1.0 / (1.0 + tau / self.config.cycle_years.max(1e-9))
     }
 
-    /// **The minerals a centre sends with the settlers — sized by what the
+    /// **The minerals a center sends with the settlers — sized by what the
     /// destination will build, not by what the origin happens to hold.**
     ///
     /// Terms:
@@ -5071,7 +7367,7 @@ impl Simulation {
     /// **The demand is the intended build-out**, `E = min(H − S, C(I_0 →
     /// I_star), bank)`. Sending more than the destination will spend is freight
     /// for ore that then sits in a stockpile; sending less means it waits on a
-    /// freighter for something the coloniser had room for.
+    /// freighter for something the colonizer had room for.
     ///
     /// **`I_star` is where works value enters, and works are superadditive in
     /// `K` and `D`** (§5, author's ruling: *"Works have higher value on high K
@@ -5131,20 +7427,22 @@ impl Simulation {
         &mut self,
         p: usize,
         role: Role,
-        hull: HullType,
+        built: BuiltHull,
         center: Entity,
         target: Entity,
         launch_delay: f64,
     ) {
-        // The launch point *is* the centre — it was passed in alongside it until
+        let hull = built.hull;
+        // The launch point *is* the center — it was passed in alongside it until
         // T-68 needed a seventh argument, and the two were always the same read.
         let from = *self.world.position.get(center).unwrap();
         let dest = *self.world.position.get(target).unwrap();
-        let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, role);
         self.world.hull_type.insert(e, hull);
+        self.stamp_composition(e, hull, &built.mix);
+        self.stamp_loadout(e, built);
         self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
         // A Colonizer carries its founding population as cargo, consumed on
         // arrival (`Hyades_vehicle_roles.md` §4.2), and **how much is what the
@@ -5170,26 +7468,76 @@ impl Simulation {
         };
         self.world.cargo.insert(e, endowment);
         self.world.pop_cargo.insert(e, settlers);
+        // **Read the acceleration *after* the hold is loaded** (R-WAR9,
+        // standing-layer item 5 / R-O32).
+        //
+        // This line used to be `civilian_accel_g · G`, computed before the
+        // settlers and the endowment went aboard and never re-read — so the
+        // colonization leg was flown at the empty-hull rate while every
+        // `laden_accel` call site in the engine was freight. R-O32 is recorded
+        // as having closed exactly that: *"it was massless, so a laden colony
+        // ship flew like an empty hull"*. It had closed it for the arena's
+        // `laden_accel` and not for this dispatcher.
+        //
+        // It is not a small correction. A Medium colonizer under a full hold
+        // accelerates at **0.241 ly/yr² against 2.446 empty**, a 10.2x swing,
+        // which is design law #3's load-state broadcast (§9.2) finally applying
+        // to the hull it was written about. Downstream, a colony ship's travel
+        // time exceeds light's by **~8.1 years** rather than 1.92, and that
+        // overhead is the entire window an interceptor has to work in
+        // (`Hyades_warfare_tree.md` §8.9.5).
+        //
+        // `laden_accel` reads the hull's own drive as well as its load (T-96),
+        // so this also stops the leg pretending every hull has the same thrust.
+        let accel = self.laden_accel(e, self.config.civilian_accel_g);
         self.world.home_center.insert(e, center);
+        let target_pid = *self.world.planet_id.get(target).unwrap();
+        let spawned = LogEvent::VehicleSpawned {
+            player: p as u32,
+            vehicle: e,
+            role,
+            hull,
+            from,
+            to: target_pid,
+            settlers: settlers.kilotons(),
+            endowment: endowment.basic_total().kilotons(),
+        };
+        // **A blockader at the port meets it here** (T-123) — before the leg
+        // is scheduled, so a ship that dies at the yard has no arrival left
+        // to fire. Its launch is still seen: the light left before the fight.
+        if role == Role::Colonizer {
+            self.report_launch(p, center, launch_delay);
+            if self.strike_at_port(p, center, e) || self.oracle_strike(p, center, e) {
+                self.log.push(self.clock, spawned);
+                return;
+            }
+        }
         let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         let ev = match role {
             Role::Colonizer => EventKind::ColonyArrive { vehicle: e },
+            Role::Picket => EventKind::PicketArrive { vehicle: e },
             _ => EventKind::MiningArrive { vehicle: e },
         };
+        if role == Role::Colonizer {
+            // Index it so a picket established while it is in flight can find
+            // it without scanning the fleet (T-112).
+            self.inbound_colonizers.entry(target.0).or_default().push(e);
+        }
+        if role == Role::Picket {
+            *self.picket_inbound.entry(target.0).or_default() += 1;
+        }
+        if role == Role::Colonizer {
+            // The light leaves when the drive lights, not when the yard
+            // finishes the paperwork: `launch_delay` is part of `depart`
+            // (`set_leg`), and a picket that read `now` would be reacting to a
+            // hull that has not moved yet.
+            // **The ship, not its destination** (R-WAR10). A picket is handed
+            // the hull it can see and infers the rest; passing `target` here
+            // was the engine telling it where the ship was going.
+            self.offer_interception(p, center, e, self.clock + launch_delay);
+        }
         self.schedule_at(arrive, ev);
-        let target_pid = *self.world.planet_id.get(target).unwrap();
-        self.log.push(
-            self.clock,
-            LogEvent::VehicleSpawned {
-                player: p as u32,
-                vehicle: e,
-                role,
-                from,
-                to: target_pid,
-                settlers: settlers.kilotons(),
-                endowment: endowment.basic_total().kilotons(),
-            },
-        );
+        self.log.push(self.clock, spawned);
     }
 
     fn spawn_freighter(
@@ -5219,6 +7567,7 @@ impl Simulation {
                 player: p as u32,
                 vehicle: e,
                 role: Role::Freighter,
+                hull: self.world.hull_type.get(e).copied().unwrap_or(role_hull_type(Role::Freighter)),
                 from,
                 to: outpost_pid,
                 settlers: 0.0,
@@ -5227,7 +7576,25 @@ impl Simulation {
         );
     }
 
-    fn launch_survey(&mut self, p: usize, from: Vec3, heading: Vec3, hops: usize, launch_delay: f64) {
+    /// Dispatch a survey craft. `hull` is **the hull the yard actually built**
+    /// (T-116).
+    ///
+    /// It used to be `role_hull_type(Role::Scout)`, hardcoded — so
+    /// `apply_build_with` debited a center for one hull and this spawned a
+    /// different one, discarding what was paid for. Invisible until now only
+    /// because every Limited hull shares a price and a mass (§8.9.7), so the
+    /// substitution was free in both directions; it is still the yard's output
+    /// being thrown away, and it is the third independent reason
+    /// `Doctrine::scout_hull_offensive` measured inert.
+    fn launch_survey(
+        &mut self,
+        p: usize,
+        from: Vec3,
+        heading: Vec3,
+        hops: usize,
+        launch_delay: f64,
+        built: BuiltHull,
+    ) -> bool {
         let mut cands = core::mem::take(&mut self.survey_scratch);
         self.fill_survey_candidates(p, &mut cands);
         let bias = if heading == Vec3::ZERO { None } else { Some(heading) };
@@ -5242,7 +7609,9 @@ impl Simulation {
             let e = self.world.spawn();
             self.world.owner.insert(e, PlayerId(p as u32));
             self.world.role.insert(e, Role::Scout);
-            self.world.hull_type.insert(e, role_hull_type(Role::Scout));
+            self.world.hull_type.insert(e, built.hull);
+            self.stamp_composition(e, built.hull, &built.mix);
+            self.stamp_loadout(e, built);
             self.world.voyage.insert(e, Voyage { target, heading_bias: bias, hops });
             self.world.cargo.insert(e, Minerals::default());
             let arrive = self.set_leg(e, from, dest, accel, launch_delay);
@@ -5250,6 +7619,7 @@ impl Simulation {
             self.log.push(
                 self.clock,
                 LogEvent::VehicleSpawned {
+                    hull: built.hull,
                     player: p as u32,
                     vehicle: e,
                     role: Role::Scout,
@@ -5259,6 +7629,9 @@ impl Simulation {
                     endowment: 0.0,
                 },
             );
+            true
+        } else {
+            false
         }
     }
 
@@ -5374,14 +7747,13 @@ impl Simulation {
         self.planet_entity.len().saturating_sub(visited.len())
     }
 
-    fn fill_survey_candidates(&self, p: usize, out: &mut Vec<SurveyView>) {
+    fn fill_survey_candidates(&mut self, p: usize, out: &mut Vec<SurveyView>) {
         out.clear();
+        let mut worlds = self.survey_unvisited[p].take().unwrap_or_else(|| self.planet_entity.clone());
         let visited = &self.world.knowledge.get(self.player_entity[p]).unwrap().visited;
-        for &e in &self.planet_entity {
+        worlds.retain(|&e| !visited.contains(*self.world.planet_id.get(e).unwrap()));
+        for &e in &worlds {
             let pid = *self.world.planet_id.get(e).unwrap();
-            if visited.contains(pid) {
-                continue;
-            }
             // Remote tier only (autopilot-doc §1): position plus the K-ceiling
             // factors, which spectroscopy reads at interstellar range.
             //
@@ -5407,17 +7779,25 @@ impl Simulation {
                 id: pid,
                 position: *self.world.position.get(e).unwrap(),
                 habitability: f.hab,
-                biosphere: f.bio_max.in_bands(),
+                // **The cached reading, not a fresh `ln`** (T-126). This scan
+                // walks every unvisited planet per survey decision, and at twelve
+                // seats this one conversion was ~40% of all instructions on the
+                // combat bed (callgrind). `bio_max_band` is kept in step by
+                // `set_bio_max`, so the value is the same `f64` and the run is
+                // bit-identical.
+                biosphere: f.bio_max_band,
                 industrial_signature,
             });
         }
+        self.survey_unvisited[p] = Some(worlds);
     }
 
-    /// **The three per-colour Band readings of a planet's minerals, memoised**
+    /// **The three per-color Band readings of a planet's minerals, memoized**
     /// (T-100) — the single largest cost in the engine before this landed.
     ///
     /// `BaselineAutopilot::rank` scores a world's ore as
-    /// `Σ_c scarcity_c · Band(m_c)`, and `Band(·)` is a `ln`. The production
+    /// `Σ_c scarcity_c · Band(m_c)`, and `Band(·)` was a `ln` (a polynomial
+    /// since T-129). The production
     /// candidate scan reaches `rank` **45.4 M times** over an 800-year
     /// three-seat run (T-52), so that is ~136 M logarithms for a quantity that
     /// changes only when the rock is mined. Ablated — replacing the three
@@ -5479,7 +7859,7 @@ impl Simulation {
         }
     }
 
-    /// Centroid of player `p`'s holdings — **memoised, because it only moves
+    /// Centroid of player `p`'s holdings — **memoized, because it only moves
     /// when a colony is founded** (R-O70).
     ///
     /// The computation is a full walk of `planet_entity`, and it ran once per
@@ -5533,7 +7913,7 @@ impl Simulation {
     ///
     /// Ownership is what moves [`Self::holdings_centroid`], so the cache is
     /// invalidated here and nowhere else. Writing `world.owner` directly for a
-    /// *planet* leaves every subsequent rank reading a stale centre of mass —
+    /// *planet* leaves every subsequent rank reading a stale center of mass —
     /// silently, and only on some seeds. The `debug_assert` in
     /// `holdings_centroid`'s caller-facing test build catches exactly that.
     fn claim_planet(&mut self, planet: Entity, owner: PlayerId) {
@@ -5541,11 +7921,11 @@ impl Simulation {
         self.centroid_cache[owner.0 as usize] = None;
     }
 
-    /// **What a centre will pay for one kilotonne of a colour, in `$`/kt**
+    /// **What a center will pay for one kilotonne of a color, in `$`/kt**
     /// (politics §3.2, T-84).
     ///
     /// ```text
-    /// wtp = base_value[c] · doctrine_demand[c] · mineral_pressure(centre)
+    /// wtp = base_value[c] · doctrine_demand[c] · mineral_pressure(center)
     /// ```
     ///
     /// The fourth term §3.2 names — `risk_discount(counterparty)` — is not here
@@ -5556,8 +7936,8 @@ impl Simulation {
     /// is the engine's, and the two Doctrine fields default to the works mix
     /// (`Hyades_industry.md` §6.10) rather than to a second independent
     /// statement of what an empire wants.
-    fn willingness_to_pay(&self, center: Entity, colour: Basic, doctrine: &Doctrine) -> f64 {
-        let i = colour as usize;
+    fn willingness_to_pay(&self, center: Entity, color: Basic, doctrine: &Doctrine) -> f64 {
+        let i = color as usize;
         doctrine.base_value[i] * doctrine.doctrine_demand[i] * self.mineral_pressure_of(center)
     }
 
@@ -5569,12 +7949,12 @@ impl Simulation {
     /// which is the event-ordering dependence per-round clearing exists to
     /// avoid.
     ///
-    /// **A centre bids for what it is short of and asks with what it is long
+    /// **A center bids for what it is short of and asks with what it is long
     /// of**, both read off the same place — its own bank against its own next
     /// works bill. That is what makes this move Yellow from the Yellow-rich to
     /// the Yellow-poor rather than shuffling mass at random: T-73 measured
-    /// 1,494 of 1,515 banks single-coloured, so nearly every centre is
-    /// simultaneously long one colour and short the other two.
+    /// 1,494 of 1,515 banks single-colored, so nearly every center is
+    /// simultaneously long one color and short the other two.
     ///
     /// **Nothing clears yet.** This stage is inert by construction (§10.7
     /// stages 1–3) and the guard is a bit-identical bed.
@@ -5593,7 +7973,7 @@ impl Simulation {
                 if self.world.owner.get(e).copied() != Some(owner) {
                     continue;
                 }
-                let deficit = self.colour_deficit(e, owner);
+                let deficit = self.color_deficit(e, owner);
                 let bank = self.world.stockpile.get(e).copied().unwrap_or_default();
                 let pos = *self.world.position.get(e).unwrap();
                 let at = [pos.x, pos.y, pos.z];
@@ -5613,7 +7993,7 @@ impl Simulation {
                         }
                     } else {
                         // Long: whatever this bill does not claim is sellable.
-                        // A centre with no bill to pay is long everything it
+                        // A center with no bill to pay is long everything it
                         // holds, which is exactly the Yellow-rich empire the
                         // Yellow-poor one needs to reach.
                         let spare = bank.get_basic(c);
@@ -5644,12 +8024,12 @@ impl Simulation {
     }
 
     /// **Where two empires can hand goods over** — a rock they both work
-    /// (`Hyades_politics_trade_and_intelligence.md` §10.6, T-85).
+    /// (`Hyades_politics_trade_and_intelligence.md` §2.3, T-85).
     ///
     /// **R-P17, decided — and not as it was first framed.** The venue is the
     /// shared rock nearest **the party making this delivery**, because a
     /// contract has *two* drops and each side ships its own (see
-    /// [`Contract::buyer_drop`]). The first formulation minimised the two
+    /// [`Contract::buyer_drop`]). The first formulation minimized the two
     /// parties' *summed* transit, which is the right answer only if there is one
     /// venue for both legs — and there is not.
     ///
@@ -5661,7 +8041,7 @@ impl Simulation {
         let (mine, theirs) = (self.worked_outposts(a), self.worked_outposts(b));
         let mut best: Option<(f64, u64)> = None;
         // Both lists are id-sorted, so this is a linear merge rather than a
-        // nested scan — a centre can work thousands of rocks (§4.5).
+        // nested scan — a center can work thousands of rocks (§4.5).
         let (mut i, mut j) = (0usize, 0usize);
         while i < mine.len() && j < theirs.len() {
             match mine[i].cmp(&theirs[j]) {
@@ -5685,7 +8065,7 @@ impl Simulation {
         best.map(|(_, o)| Entity(o))
     }
 
-    /// **Clear every colour book into escrowed contracts** (§10.5, T-85).
+    /// **Clear every color book into escrowed contracts** (§10.5, T-85).
     ///
     /// The first stage of the Exchange that is **not** inert, and §10.7 says to
     /// expect it to move the bed rather than assume it will not — it is the same
@@ -5729,7 +8109,7 @@ impl Simulation {
             };
             // The buyer's side is `$` in the default transaction, and `$` has no
             // location. A goods counter-leg is the buyer's own contract on
-            // another colour's book, with its own drop — which is how "leave
+            // another color's book, with its own drop — which is how "leave
             // Yellow at X in exchange for Magenta at Y" is expressed.
             let buyer_drop = None;
             let _ = b_at;
@@ -5757,10 +8137,10 @@ impl Simulation {
             self.credit(pe, -escrow);
 
             // **The freight leg.** The obligation was instant; the ore is not.
-            // Transit is the seller's centre to its own drop, at civilian
+            // Transit is the seller's center to its own drop, at civilian
             // acceleration — the same `ship_travel_years` every other voyage in
             // the engine uses, so a trade is priced in the same geometry as a
-            // colonisation or a haul (§8.1: a trade is a voyage).
+            // colonization or a haul (§8.1: a trade is a voyage).
             let drop_at = *self.world.position.get(seller_drop).unwrap();
             let t = math::ship_travel_years(s_at.distance(drop_at), self.config.civilian_accel_g * G);
             let id = self.exchange.next_id;
@@ -5770,8 +8150,8 @@ impl Simulation {
                 Contract {
                     buyer: f.buyer,
                     seller: f.seller,
-                    seller_centre: ask_e,
-                    colour: Basic::ALL[i],
+                    seller_center: ask_e,
+                    color: Basic::ALL[i],
                     qty,
                     escrow,
                     seller_drop,
@@ -5810,26 +8190,26 @@ impl Simulation {
     /// nothing and forfeits the sale.
     ///
     /// Default here is *inability*, not malice — the bank is short because the
-    /// centre spent the ore, or lost the world. Deliberate default is a card
+    /// center spent the ore, or lost the world. Deliberate default is a card
     /// (§7.2), and interdiction is T-86.
     fn sys_contract_due(&mut self, id: u64) {
         let Some(c) = self.exchange.contracts.remove(&id) else {
             return; // already settled or cancelled
         };
         let t = (self.clock - c.struck).max(0.0);
-        let keep = (-self.config.trade_decay_lambda * t).exp();
+        let keep = transcendental::exp_in_minus_0_8_to_0(-self.config.trade_decay_lambda * t);
         let paid = c.escrow * keep;
         let burn = c.escrow - paid;
 
-        // Does the seller still have it? `get_basic` is the colour the contract
-        // names, not the bank total — a centre rich in Cyan cannot settle a
-        // Yellow contract, which is the whole point of the colour axis.
-        let held = self.world.stockpile.get(c.seller_centre).map_or(0.0, |b| b.get_basic(c.colour));
-        let delivered = held + 1e-9 >= c.qty && self.world.owner.get(c.seller_centre).copied() == Some(c.seller);
+        // Does the seller still have it? `get_basic` is the color the contract
+        // names, not the bank total — a center rich in Cyan cannot settle a
+        // Yellow contract, which is the whole point of the color axis.
+        let held = self.world.stockpile.get(c.seller_center).map_or(0.0, |b| b.get_basic(c.color));
+        let delivered = held + 1e-9 >= c.qty && self.world.owner.get(c.seller_center).copied() == Some(c.seller);
 
         if delivered {
-            if let Some(bank) = self.world.stockpile.get_mut(c.seller_centre) {
-                match c.colour {
+            if let Some(bank) = self.world.stockpile.get_mut(c.seller_center) {
+                match c.color {
                     Basic::Cyan => bank.cyan -= c.qty,
                     Basic::Magenta => bank.magenta -= c.qty,
                     Basic::Yellow => bank.yellow -= c.qty,
@@ -5841,7 +8221,7 @@ impl Simulation {
             // all. The buyer's hauler picks the ore up on the route it was
             // flying anyway, which is the amendment's whole claim made literal.
             let pile = self.outpost_stock.entry((c.buyer.0, c.seller_drop.0)).or_default();
-            match c.colour {
+            match c.color {
                 Basic::Cyan => pile.cyan += c.qty,
                 Basic::Magenta => pile.magenta += c.qty,
                 Basic::Yellow => pile.yellow += c.qty,
@@ -5849,7 +8229,7 @@ impl Simulation {
             let se = self.player_entity[c.seller.0 as usize];
             self.credit(se, paid);
             self.exchange.settled += 1;
-            self.exchange.traded[c.colour as usize] += c.qty;
+            self.exchange.traded[c.color as usize] += c.qty;
         } else {
             let be = self.player_entity[c.buyer.0 as usize];
             self.credit(be, paid);
@@ -5864,7 +8244,7 @@ impl Simulation {
         (self.exchange.contracts.len(), self.exchange.settled, self.exchange.burned)
     }
 
-    /// Contracts that **defaulted** — the seller's bank was short the colour it
+    /// Contracts that **defaulted** — the seller's bank was short the color it
     /// owed, or it had lost the world, when the freight came due (§3.3).
     pub fn exchange_defaults(&self) -> u64 {
         self.exchange.defaulted
@@ -5873,37 +8253,37 @@ impl Simulation {
     /// Turn the whole Exchange off — posting, clearing and settlement (T-77).
     ///
     /// The ablation `CLAUDE.md` §2 puts first among the three kinds of proof:
-    /// "trade narrowed colour dispersion" is only a claim if there is a run
+    /// "trade narrowed color dispersion" is only a claim if there is a run
     /// without trade to compare against.
     pub fn set_exchange_enabled(&mut self, on: bool) {
         self.exchange_posting = on;
         self.exchange_settlement = on;
     }
 
-    /// Kilotons delivered per colour, in `Basic::ALL` order.
+    /// Kilotons delivered per color, in `Basic::ALL` order.
     pub fn exchange_traded(&self) -> [f64; 3] {
         self.exchange.traded
     }
 
-    /// **What an empire's centres want and cannot afford**, per colour (kt).
+    /// **What an empire's centers want and cannot afford**, per color (kt).
     ///
-    /// The sum of `colour_deficit` over every centre it owns — each centre's
-    /// shortfall against its **next** infrastructure rung, in the colours that
+    /// The sum of `color_deficit` over every center it owns — each center's
+    /// shortfall against its **next** infrastructure rung, in the colors that
     /// rung is billed in. This is demand in the only sense the engine has one:
-    /// a purchase a centre would make and cannot.
+    /// a purchase a center would make and cannot.
     ///
     /// Paired with [`Self::outpost_holdings`] it answers the question that
     /// matters about the mineral economy: **is ore sitting idle at outposts
-    /// while centres are short of it?** If both are large at once, the binding
+    /// while centers are short of it?** If both are large at once, the binding
     /// constraint is *transport*, not extraction — and no amount of mining or
     /// trading fixes it.
-    pub fn unmet_colour_demand(&self, p: PlayerId) -> [Price; 3] {
+    pub fn unmet_color_demand(&self, p: PlayerId) -> [Price; 3] {
         let mut out = [Price::ZERO; 3];
         for &e in &self.planet_entity {
             if self.world.owner.get(e).copied() != Some(p) {
                 continue;
             }
-            let d = self.colour_deficit(e, p);
+            let d = self.color_deficit(e, p);
             for i in 0..3 {
                 out[i] += d[i];
             }
@@ -5916,7 +8296,7 @@ impl Simulation {
     /// Delivered ore lands here, not in a bank (§10.6) — so a census that reads
     /// only planet stockpiles **cannot see what the Exchange moved**. That is
     /// the metric-blindness `CLAUDE.md` §2 keeps warning about, and it made the
-    /// first colour-flow reading look like trade changed nothing.
+    /// first color-flow reading look like trade changed nothing.
     pub fn outpost_holdings(&self, p: PlayerId) -> Minerals {
         let mut out = Minerals::default();
         for ((owner, _), m) in self.outpost_stock.iter() {
@@ -5933,7 +8313,7 @@ impl Simulation {
         (self.exchange.fills, self.exchange.rejected)
     }
 
-    /// Cumulative `(bids, asks)` posted per colour, in `Basic::ALL` order.
+    /// Cumulative `(bids, asks)` posted per color, in `Basic::ALL` order.
     pub fn exchange_posted(&self) -> [(u64, u64); 3] {
         self.exchange.posted
     }
@@ -5941,11 +8321,11 @@ impl Simulation {
     /// **Who is contracted to move what, and where** — the Exchange census
     /// (§10.8, T-85).
     ///
-    /// Returns one row per contract in flight: `(buyer, seller, colour,
+    /// Returns one row per contract in flight: `(buyer, seller, color,
     /// kilotons, escrow, seller_drop, buyer_drop, struck)`. §10.8 is explicit
     /// that the guard for Exchange work is a **census** and not colony-years,
     /// because colony-years is inverted for anything that changes how minerals
-    /// are spent — so the state has to be readable, not just summarised.
+    /// are spent — so the state has to be readable, not just summarized.
     ///
     /// It is also what answers the design's actual question: **does Yellow move
     /// from Yellow-rich empires to Yellow-poor ones?** That is a claim about
@@ -5958,12 +8338,12 @@ impl Simulation {
             .map(|c| {
                 let drop = *self.world.planet_id.get(c.seller_drop).unwrap();
                 let pay = c.buyer_drop.and_then(|e| self.world.planet_id.get(e).copied());
-                (c.buyer, c.seller, c.colour, c.qty, c.escrow, drop, pay, c.struck)
+                (c.buyer, c.seller, c.color, c.qty, c.escrow, drop, pay, c.struck)
             })
             .collect()
     }
 
-    /// How many offers stand on each colour's book. Diagnostic — the interim
+    /// How many offers stand on each color's book. Diagnostic — the interim
     /// guard for Exchange work is a census, not colony-years (§10.8).
     pub fn exchange_depth(&self) -> [(usize, usize); 3] {
         [self.exchange.books[0].len(), self.exchange.books[1].len(), self.exchange.books[2].len()]
@@ -6039,14 +8419,14 @@ impl Simulation {
     /// `score = mineral_pressure(center) · exp(−λ · t_transit)`
     ///
     /// This is the *same* `λ` the Exchange discounts a trade by
-    /// (`Hyades_politics_trade_and_intelligence.md` §2.3), and that is the
+    /// (`Hyades_politics_trade_and_intelligence.md` §1.3), and that is the
     /// claim R-P2 conditions its ratification on: one constant should price a
     /// delivery whether the counterparty is your own colony or a rival's.
     /// Internal haulage is just a trade you clear with yourself, so if the
     /// discount is right for one it should be right for the other.
     ///
     /// **`λ = 0` reduces exactly to [`most_needed_center`]**, which is the
-    /// shipped default and keeps this behaviour-neutral until it is ratified.
+    /// shipped default and keeps this behavior-neutral until it is ratified.
     /// That degeneracy is also why design law #5 keeps `most_needed_center`
     /// permanently: it was already the oracle for single-supply matching, and
     /// it is now the oracle for zero-discount routing too — the same function
@@ -6064,7 +8444,7 @@ impl Simulation {
             }
             let d = from.distance(*self.world.position.get(e).unwrap());
             let t = math::ship_travel_years(d, accel);
-            let score = self.bill_completion(e, owner, cargo) * (-lambda * t).exp();
+            let score = self.bill_completion(e, owner, cargo) * transcendental::exp_fast(-lambda * t);
             // Entity id breaks ties so the choice is total and deterministic.
             let better = match best {
                 None => true,
@@ -6088,16 +8468,16 @@ impl Simulation {
     ///
     /// **This replaces T-81's `relief`, which was measured counterproductive.**
     /// That version scored the fraction of the *cargo* that landed on a
-    /// deficit, which sends each colour to wherever that colour is scarcest —
-    /// by construction a different centre per colour. Paying a three-colour
-    /// bill needs ore to **converge**, so scattering it by colour is the
+    /// deficit, which sends each color to wherever that color is scarcest —
+    /// by construction a different center per color. Paying a three-color
+    /// bill needs ore to **converge**, so scattering it by color is the
     /// opposite of what the bill wants: measured, infrastructure builds fell
     /// 57 → 31 and bank composition did not move at all.
     ///
-    /// **The denominator is the centre's remaining shortfall, not the bill.**
+    /// **The denominator is the center's remaining shortfall, not the bill.**
     /// That distinction is the whole mechanism and it is easy to get wrong — the
     /// first written form of R-IND17 divided by `Σ bill`, and worked out on
-    /// paper that ties a centre needing only Yellow against one needing
+    /// paper that ties a center needing only Yellow against one needing
     /// everything, both scoring `0.5` for the same Yellow delivery. No
     /// concentration at all. Dividing by what is left to find instead:
     ///
@@ -6108,19 +8488,19 @@ impl Simulation {
     /// | needs everything | 0.500 | 0.500 |
     /// | needs only Magenta | 0.000 | 0.000 |
     ///
-    /// So a centre holding two colours and missing the third pulls the third
+    /// So a center holding two colors and missing the third pulls the third
     /// hardest, and ore concentrates where it can actually be spent.
     ///
     /// Still a dimensionless fraction in `[0, 1]`, because `exp(−λ·t)`
     /// multiplies it — R-O68 is the standing lesson on mixed-unit comparisons.
     ///
-    /// **What it cannot do.** No routing rule can give an empire a colour its
-    /// own ground does not hold, and the supply is single-coloured: 6,725
-    /// sources measured at a mean dominant-colour share of **0.789**, 38% of
-    /// them ≥95% one colour. That is §8.1's subject and the Exchange's job
+    /// **What it cannot do.** No routing rule can give an empire a color its
+    /// own ground does not hold, and the supply is single-colored: 6,725
+    /// sources measured at a mean dominant-color share of **0.789**, 38% of
+    /// them ≥95% one color. That is §8.1's subject and the Exchange's job
     /// (T-77), with design law #1's counter-graph as the other half.
     fn bill_completion(&self, center: Entity, owner: PlayerId, cargo: &Minerals) -> f64 {
-        let deficit = self.colour_deficit(center, owner);
+        let deficit = self.color_deficit(center, owner);
         let short_before = deficit.iter().fold(Price::ZERO, |a, &b| a + b);
         if short_before <= Price::ZERO {
             return 0.0;
@@ -6132,16 +8512,16 @@ impl Simulation {
         (short_before - short_after) / short_before
     }
 
-    /// A centre's per-colour shortfall against its **next works bill** — the
+    /// A center's per-color shortfall against its **next works bill** — the
     /// quantity T-73 made meaningful and nothing was measuring.
-    fn colour_deficit(&self, center: Entity, owner: PlayerId) -> [Price; 3] {
+    fn color_deficit(&self, center: Entity, owner: PlayerId) -> [Price; 3] {
         let Some(f) = self.world.factors.get(center) else {
             return [Price::ZERO; 3];
         };
         let step = infra_step_price(f.infra, &self.config);
         let works = self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default();
-        let bill = works_bill(step, &works);
         let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
+        let bill = self.rung_bill(step, &works, &bank);
         let mut out = [Price::ZERO; 3];
         for (i, &c) in Basic::ALL.iter().enumerate() {
             out[i] = (bill[i] - Price::new(bank.get_basic(c))).max(Price::ZERO);
@@ -6152,15 +8532,15 @@ impl Simulation {
     /// **What a hauler standing on a pile should still be looking for** — the
     /// destination's shortfall, net of the cargo already in the hold (T-91).
     ///
-    /// [`Self::colour_deficit`] answers "what is this centre short of", which
+    /// [`Self::color_deficit`] answers "what is this center short of", which
     /// is the right question for the *first* pile of a leg and the wrong one
     /// for the second: ore already aboard is ore that is going to land there.
-    /// Without the subtraction a milk run tops up the colour it just loaded and
-    /// arrives as mono-coloured as before, having spent an extra transit to do
-    /// it. Reduces to `colour_deficit` on an empty hold, which is every stop at
+    /// Without the subtraction a milk run tops up the color it just loaded and
+    /// arrives as mono-colored as before, having spent an extra transit to do
+    /// it. Reduces to `color_deficit` on an empty hold, which is every stop at
     /// `max_pickup_stops = 1`.
     fn wanted_here(&self, center: Entity, owner: PlayerId, aboard: &Minerals) -> [Price; 3] {
-        let mut want = self.colour_deficit(center, owner);
+        let mut want = self.color_deficit(center, owner);
         for (i, &c) in Basic::ALL.iter().enumerate() {
             want[i] = (want[i] - Price::new(aboard.get_basic(c))).max(Price::ZERO);
         }
@@ -6176,9 +8556,9 @@ impl Simulation {
     /// ```
     ///
     /// `useful` is a **conjunction-aware** quantity and that is the whole point
-    /// of the function: it counts only ore in a colour the destination is short
-    /// of, so a rock holding a mountain of the colour already aboard scores
-    /// zero however close it is. A works bill pays when every colour clears
+    /// of the function: it counts only ore in a color the destination is short
+    /// of, so a rock holding a mountain of the color already aboard scores
+    /// zero however close it is. A works bill pays when every color clears
     /// (T-73), and the census that opened T-91 found **99.7% of banked ore
     /// unable to pay a rung** precisely because tonnage and usefulness had come
     /// apart (`Hyades_industry.md` §6.23).
@@ -6224,7 +8604,7 @@ impl Simulation {
                 continue;
             };
             let t = math::ship_travel_years(from.distance(pos), accel);
-            let score = useful.kilotons() * (-lambda * t).exp();
+            let score = useful.kilotons() * transcendental::exp_fast(-lambda * t);
             let better = match best {
                 None => true,
                 Some((be, bs)) => score > bs || (score == bs && e.0 < be.0),
@@ -6301,6 +8681,109 @@ impl Simulation {
 
     /// A read-only picture for the presentation / command layer at the current
     /// instant, including every ship's exact position.
+    /// **Weigh the whole simulation** (T-118, design law #11).
+    ///
+    /// Walks every mass-bearing store once. Not on any hot path — it is for
+    /// tests, censuses and the netcode digest — so it reads clearly rather than
+    /// incrementally, and a full walk cannot drift out of step with the state
+    /// the way a running total would.
+    /// **One player's tree stocks, for card valuation** (T-120).
+    ///
+    /// Returns `(colonies, infrastructure kt)`. Expansion's stock is the colony
+    /// count and Growth's interim stock is infrastructure in kilotons
+    /// (R-TREE3, until works exist) — and Warfare's is built from the first of
+    /// these across seats, since `W_i = C_i − Σ_j w_ij C_j` is a *difference*
+    /// and has no store of its own.
+    /// **Where the unworked stock sits** (T-107/T-122), kt, as
+    /// `(worked, idle_on_growing_worlds, idle_on_capped_worlds)`.
+    ///
+    /// The split is by whether the world's population can still rise: a world
+    /// at `P ≥ 0.95 K` has reached its ceiling, and a card that speeds growth
+    /// cannot staff anything there — only a change to `K` can. The 0.95 is a
+    /// reading threshold for an instrument, not a model magnitude.
+    pub fn staffing_split(&self, p: usize) -> (f64, f64, f64) {
+        let me = PlayerId(p as u32);
+        let (mut worked, mut idle_growing, mut idle_capped) = (0.0, 0.0, 0.0);
+        for &e in &self.planet_entity {
+            if self.world.owner.get(e).copied() != Some(me) {
+                continue;
+            }
+            let Some(f) = self.world.factors.get(e) else { continue };
+            let standing = f.infra.kilotons();
+            let u = self.staffing(e);
+            worked += standing * u;
+            let idle = standing * (1.0 - u);
+            let pop = self.world.population.get(e).copied().unwrap_or(Kilotons::ZERO);
+            if pop.kilotons() >= 0.95 * self.capacity_of(e).kilotons() {
+                idle_capped += idle;
+            } else {
+                idle_growing += idle;
+            }
+        }
+        (worked, idle_growing, idle_capped)
+    }
+
+    pub fn tree_stock(&self, p: usize) -> (usize, f64) {
+        let me = PlayerId(p as u32);
+        let mut colonies = 0usize;
+        let mut infra = 0.0;
+        for &e in &self.planet_entity {
+            if self.world.owner.get(e).copied() != Some(me) {
+                continue;
+            }
+            colonies += 1;
+            if let Some(f) = self.world.factors.get(e) {
+                infra += f.infra.on_scale::<units::Mass>().kilotons();
+            }
+        }
+        (colonies, infra)
+    }
+
+    pub fn mass_ledger(&self) -> MassLedger {
+        let mut m = MassLedger::default();
+        for &e in &self.planet_entity {
+            if let Some(d) = self.world.density.get(e) {
+                m.in_ground += d.total_mass().kilotons();
+            }
+            if let Some(s) = self.world.stockpile.get(e) {
+                m.banked += s.basic_total().on_scale::<units::Mass>().kilotons();
+            }
+            if let Some(f) = self.world.factors.get(e) {
+                m.infrastructure += f.infra.on_scale::<units::Mass>().kilotons();
+                m.biomass += f.biomass.kilotons();
+            }
+            if let Some(p) = self.world.population.get(e) {
+                m.population += p.kilotons();
+            }
+            if let Some(s) = self.world.slag.get(e) {
+                m.slag += s.kilotons();
+            }
+        }
+        for stock in self.outpost_stock.values() {
+            m.at_outposts += stock.basic_total().on_scale::<units::Mass>().kilotons();
+        }
+        // Vehicles. `role` is the liveness test: `Role::Scrapped` is how the
+        // engine retires a hull, and a scrapped hull's mass has already gone
+        // somewhere else (slag, or back into a bank), so counting it here would
+        // double it.
+        for i in 0..self.world.next {
+            let e = Entity(i);
+            if self.world.role.get(e).copied() == Some(Role::Scrapped) {
+                continue;
+            }
+            if let Some(&h) = self.world.hull_type.get(e) {
+                m.hulls += hull_dry_mass(h, &self.config).kilotons();
+            }
+            if let Some(c) = self.world.cargo.get(e) {
+                m.in_cargo += c.basic_total().on_scale::<units::Mass>().kilotons();
+            }
+            if let Some(p) = self.world.pop_cargo.get(e) {
+                m.settlers += p.kilotons();
+            }
+        }
+        m
+    }
+
     pub fn snapshot(&self) -> Snapshot {
         let planets = self
             .planet_entity
@@ -6313,8 +8796,9 @@ impl Simulation {
                     position: *self.world.position.get(e).unwrap(),
                     habitability: f.hab,
                     biosphere: f.biomass.in_bands(),
-                    bio_max: f.bio_max.in_bands(),
+                    bio_max: f.bio_max_band,
                     biomass: f.biomass,
+                    bio_max_mass: f.bio_max,
                     infrastructure: f.infra_band(&self.config),
                     works: f.infra,
                     k: f.k(),
@@ -6341,6 +8825,7 @@ impl Simulation {
                     position: self.position_at(e, self.clock).unwrap(),
                     cargo: *self.world.cargo.get(e).unwrap_or(&Minerals::default()),
                     dry_mass: hull_dry_mass(hull, &self.config),
+                    volume: hull.hull_volume(&self.config),
                     in_flight: m.arrive > self.clock,
                 });
             }
@@ -6431,6 +8916,49 @@ fn take_basics(bank: &mut Minerals, amount: Price) -> Minerals {
     out
 }
 
+/// **The settler split [`Simulation::settler_target`] picks**, as a pure
+/// function of the kilotons involved: the best of `grid` evenly spaced seeds
+/// `s ∈ (0, hi]` by `delta · ln(s/(kc − s) · (kc − x0)/x0) − s / (left·(1 −
+/// left/kp))`, `left = xp − s` — the child's saved growth time, discounted by
+/// the voyage, against the origin's regrowth time. Symbols as in
+/// `settler_target`; `delta ∈ (0, 1]`.
+///
+/// **The logarithm is `log2_fast`, four multiplies** (T-130), with `ln 2`
+/// folded into `delta` once per call — `delta · ln a = (delta · ln 2) · log₂ a`
+/// — so the budget buys a degree-4 polynomial rather than a degree-3 one plus a
+/// scaling multiply. Absolute error in `ln a` at most 6.1e-5, against measured
+/// arguments `a ∈ [13.8, 5.7e6]` whose logarithms run 2.6 to 15.6. This is the
+/// engine's largest logarithm site: 4.9–14.1 million calls per run on the
+/// measured beds.
+///
+/// T-127's tangent-bound prune is gone with the exact logarithm. It relied on
+/// `ln` being concave, which an approximation holds only up to its error, and
+/// the bound itself cost a division — more than the four multiplies it saved.
+fn best_endowment(hi: f64, xp: f64, kp: f64, kc: f64, x0: f64, delta: f64, grid: usize) -> f64 {
+    let head = (kc - x0) / x0;
+    let delta_ln2 = delta * core::f64::consts::LN_2;
+    let mut best = (f64::NEG_INFINITY, 0.0);
+    for i in 1..=grid {
+        let s = hi * (i as f64) / (grid as f64);
+        if s >= kc || s >= xp {
+            break;
+        }
+        // Time the seed saves the child: floor -> S on its own logistic.
+        let log2_saved = transcendental::log2_fast((s / (kc - s)) * head);
+        // Time the origin needs to regrow it. An origin already at or over
+        // its ceiling has no headroom to regrow *into*, and its people are
+        // surplus rather than growth — so the gift costs it nothing.
+        let left = xp - s;
+        let rate = left * (1.0 - left / kp);
+        let t_p = if rate > 1e-15 { s / rate } else { 0.0 };
+        let score = delta_ln2 * log2_saved - t_p;
+        if score > best.0 {
+            best = (score, s);
+        }
+    }
+    best.1
+}
+
 /// **Advance the population logistic across one tick — exactly, not by an Euler
 /// step** (T-94).
 ///
@@ -6476,13 +9004,13 @@ fn take_basics(bank: &mut Minerals, amount: Price) -> Minerals {
 /// monotonically. That is the case a razed biosphere or a card-written
 /// population reaches.
 ///
-/// **Cost: one `exp` per centre per tick.** Netcode §6 H4 settles the
-/// portability question — transcendentals ship *inside* the WASM module, so
-/// they are bit-reproducible where a platform libm would not be. Measured, the
-/// call is under the run-to-run noise; the tick is dominated by everything
-/// around it.
+/// **Cost: one `exp` per center per tick**, and it is
+/// [`crate::transcendental::exp`] — built from IEEE-exact operations, so the
+/// step is bit-identical native and wasm32 (T-127; the host libm's `exp`
+/// disagrees with the wasm32 build's on ~10% of inputs). Measured, the call is
+/// under the run-to-run noise; the tick is dominated by everything around it.
 fn logistic_step(x: f64, k: f64, r_dt: f64) -> f64 {
-    let denom = x + (k - x) * (-r_dt).exp();
+    let denom = x + (k - x) * transcendental::exp_in_minus_0_2_to_0(-r_dt);
     // Design law #16: a non-finite denominator is a fatal value, not a number
     // to divide by. It is unreachable for finite inputs — the denominator is
     // bounded below by `min(x, K) > 0` — so this is the invariant written down,
@@ -6500,13 +9028,13 @@ fn logistic_step(x: f64, k: f64, r_dt: f64) -> f64 {
 /// pile is the only one this leg will see, so a hauler that would otherwise fly
 /// home light overshoots along the destination's deficit ratio and then tops up
 /// with bulk. [`Fill::Shortfall`] is the intermediate stop: the room is owed to
-/// the piles still ahead, and spending it here on a colour the destination is
-/// not short of would land the same mono-coloured hold one stop later.
+/// the piles still ahead, and spending it here on a color the destination is
+/// not short of would land the same mono-colored hold one stop later.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Fill {
     /// Fill the hold: overshoot along the deficit ratio, then top up with bulk.
     Hold,
-    /// Take at most the stated shortfall, colour by colour, and leave the rest
+    /// Take at most the stated shortfall, color by color, and leave the rest
     /// of the room for the next stop.
     Shortfall,
 }
@@ -6514,28 +9042,28 @@ enum Fill {
 /// **Fill a hold against the destination's shortfall, not in proportion to the
 /// pile** (R-O89, T-76).
 ///
-/// [`take_basics`] splits a load across colours in whatever ratio the pile
+/// [`take_basics`] splits a load across colors in whatever ratio the pile
 /// happens to hold. That is the right rule for "move some ore" and the wrong one
 /// for "move what is needed": since T-73 a works bill is payable in **named
-/// colours**, and the galaxy's supply is single-coloured (6,725 sources, mean
-/// dominant share **0.789**, 38% at >=95% one colour, T-81). So a hauler standing
-/// on a rock that holds the Magenta a centre is short of would load 79% Yellow
+/// colors**, and the galaxy's supply is single-colored (6,725 sources, mean
+/// dominant share **0.789**, 38% at >=95% one color, T-81). So a hauler standing
+/// on a rock that holds the Magenta a center is short of would load 79% Yellow
 /// and close nothing — while the Magenta stayed in the dirt.
 ///
 /// **This is the term the pickup leg never had.** T-81/R-IND17 gave the
-/// *delivery* leg a colour term — where a full hold goes. Nothing gave the
+/// *delivery* leg a color term — where a full hold goes. Nothing gave the
 /// *load* one: what went into the hold was decided by geology. Measured over
 /// eight seeds at 1,500 yr, adding it is **+8.40% ± 1.86 work-years, 8/8
 /// positive** (`Hyades_industry.md` §6.20) on **the same tonnage** — 20,259 →
 /// 20,292 kt delivered over 26,800 → 26,746 trips. The fleet did not haul more;
 /// it hauled the right thing.
 ///
-/// **The split is the deficit's own ratio, not neediest-colour-first.** A bill is
-/// a *conjunction* — the rung pays only when every colour clears — so what
+/// **The split is the deficit's own ratio, not neediest-color-first.** A bill is
+/// a *conjunction* — the rung pays only when every color clears — so what
 /// matters is `min_c bank[c]/bill[c]`, not the sum of anything. Filling the
-/// neediest colour first maximises that sum and lands mono-coloured loads, and
+/// neediest color first maximizes that sum and lands mono-colored loads, and
 /// `try_spend_total` drains a bank **proportionally** for every hull, so the one
-/// colour a hauler carefully accumulated is diluted before the other two arrive.
+/// color a hauler carefully accumulated is diluted before the other two arrive.
 /// Measured head-to-head on the standard bed, proportional beats neediest-first
 /// by **+3.84% ± 0.20, 4/4 seeds** — a tiny error bar next to the ±3.06 either
 /// scores against baseline, which is CRN pairing doing its job.
@@ -6546,13 +9074,13 @@ enum Fill {
 /// and ore banked in the right proportion is ore the following bill can spend.
 ///
 /// **Then it tops up.** If the pile cannot supply the wanted direction — the
-/// colour is simply not in this rock — the remaining room loads proportionally,
+/// color is simply not in this rock — the remaining room loads proportionally,
 /// because a half-empty hull has spent the same transit for less and banked ore
-/// still buys hulls even when it buys no rung. A centre that is short of nothing
+/// still buys hulls even when it buys no rung. A center that is short of nothing
 /// skips the first pass entirely and this reduces to [`take_basics`].
 ///
 /// **Both of those are [`Fill::Hold`].** Under [`Fill::Shortfall`] neither
-/// happens: each colour is capped at what is wanted, and unspent room is left
+/// happens: each color is capped at what is wanted, and unspent room is left
 /// for the next pile on the run.
 fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price, fill: Fill) -> Minerals {
     let mut out = Minerals::default();
@@ -6565,10 +9093,10 @@ fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price, 
         // An intermediate stop on a milk run (T-91). The hold is a *shared*
         // resource across the remaining stops, so filling it here with whatever
         // this rock holds is exactly the atomicity the milk run exists to break:
-        // one pile taking all the room re-creates the mono-coloured load one
+        // one pile taking all the room re-creates the mono-colored load one
         // stop later.
         //
-        // So each colour is capped **twice** — at what is wanted, and at its
+        // So each color is capped **twice** — at what is wanted, and at its
         // proportional share of the hold. The second cap is the one that does
         // the work, and it is not belt-and-braces: the infrastructure ladder is
         // geometric, so a rung's bill outgrows a hold, and past that point
@@ -6601,6 +9129,112 @@ fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price, 
         out.add_basics(&extra);
     }
     out
+}
+
+/// **Where the held-ground half of the candidate reduction starts** (T-113).
+///
+/// Slots `0..HELD` are the per-class winners and `HELD..2*HELD` the per-class
+/// winners among held ground, so this is both the number of `PlanetClass`
+/// values the scan keeps and the offset between the two halves. One definition,
+/// because the scan and `flatten_candidate_slots` have to agree about it and a
+/// constant with two definitions is an edit waiting to go wrong.
+const HELD: usize = 3;
+
+/// **Flatten the six-slot candidate reduction into the list the policy reads**
+/// (T-113).
+///
+/// Slots `0..3` are the per-class winners; slots `3..6` are the per-class
+/// winners *among worlds this empire's pickets hold*. The held winner of a
+/// class is dropped when it already **is** that class's winner, so no world
+/// appears twice.
+///
+/// Every consumer reads the list through `filter(..).max_by(score_then_id)`,
+/// which a duplicate would not disturb — but a list that names a world twice is
+/// one a future consumer can miscount, and the guard costs one comparison.
+/// Extracted from the scan so that guard is testable without standing up a
+/// simulation.
+fn flatten_candidate_slots(best: &[Option<Candidate>; 6]) -> Vec<Candidate> {
+    let mut v: Vec<Candidate> = best[..HELD].iter().flatten().copied().collect();
+    for slot in 0..HELD {
+        if let Some(h) = best[HELD + slot] {
+            if best[slot].is_none_or(|c| c.ranked.id != h.ranked.id) {
+                v.push(h);
+            }
+        }
+    }
+    v
+}
+
+/// **Every kilotonne the simulation is holding, broken out by where it stands**
+/// (T-118, design law #11).
+///
+/// Mass conservation is the engine's most load-bearing invariant and it was
+/// asserted in prose. This is the reading that makes it checkable: sum it, run,
+/// sum again, and the difference is a leak unless something accounted for it.
+///
+/// Broken out rather than totalled because a single number that has moved tells
+/// you nothing about *which* path leaked, and every conservation defect this
+/// project has found was a specific transfer with one end missing — settlers
+/// written into a hold with nothing debited (R-O74), a hull massing 30x more as
+/// hull than as cargo (R-O57), a `max` where a sum belonged (T-117).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MassLedger {
+    /// Undug minerals, still in the ground.
+    pub in_ground: f64,
+    /// Minerals banked at a center.
+    pub banked: f64,
+    /// Minerals mined and standing at an outpost, not yet hauled.
+    pub at_outposts: f64,
+    /// Minerals in a hold, in flight or parked.
+    pub in_cargo: f64,
+    /// Minerals standing as infrastructure — infrastructure **is** the minerals
+    /// in it (T-70, R-O57), so this is mass and not a level.
+    pub infrastructure: f64,
+    /// Hull dry mass of every vehicle that still exists. Cost *is* dry mass
+    /// (R-O57), so a fleet is a mineral holding that happens to fly.
+    pub hulls: f64,
+    /// People living on a world. Population is biosphere (design law #11).
+    pub population: f64,
+    /// Settlers riding in a hold.
+    pub settlers: f64,
+    /// Standing biomass that is not people.
+    pub biomass: f64,
+    /// Wreckage, inert and at the site that made it (R-O59).
+    pub slag: f64,
+}
+
+impl MassLedger {
+    /// Every store summed. The quantity design law #11 says cannot change
+    /// except through a channel that accounts for it.
+    pub fn total(&self) -> f64 {
+        self.in_ground
+            + self.banked
+            + self.at_outposts
+            + self.in_cargo
+            + self.infrastructure
+            + self.hulls
+            + self.population
+            + self.settlers
+            + self.biomass
+            + self.slag
+    }
+
+    /// Per-store differences, for saying *where* a leak is rather than that
+    /// there is one.
+    pub fn delta(&self, other: &MassLedger) -> MassLedger {
+        MassLedger {
+            in_ground: other.in_ground - self.in_ground,
+            banked: other.banked - self.banked,
+            at_outposts: other.at_outposts - self.at_outposts,
+            in_cargo: other.in_cargo - self.in_cargo,
+            infrastructure: other.infrastructure - self.infrastructure,
+            hulls: other.hulls - self.hulls,
+            population: other.population - self.population,
+            settlers: other.settlers - self.settlers,
+            biomass: other.biomass - self.biomass,
+            slag: other.slag - self.slag,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -6638,7 +9272,11 @@ mod tests {
         // Fund it well past a scout's price so the decline cannot be poverty.
         sim.world.stockpile.get_mut(home).unwrap().add_basic(Basic::Cyan, 1_000.0);
 
-        let order = BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, class: Class::Tor };
+        // The hull the *default* standing layer surveys with, read rather than
+        // named: naming one would make this test fail whenever a Doctrine write
+        // moves the role, which is a different fact than the one it asserts.
+        let doctrine = *sim.world.doctrine.get(sim.player_entity[0]).unwrap();
+        let order = Standing::of(&doctrine).scout_order();
         let bank = |sim: &Simulation| sim.world.stockpile.get(home).unwrap().basic_total();
         let vehicles = |sim: &Simulation| sim.world.role.items.iter().filter(|r| **r == Some(Role::Scout)).count();
 
@@ -6650,7 +9288,7 @@ mod tests {
         assert_eq!(vehicles(&sim), before.1 + 1, "and an object came out");
 
         // Dispatch a craft at every world, so `choose_survey_target` has nothing
-        // left to pick — the state a colonised galaxy reaches and then stays in.
+        // left to pick — the state a colonized galaxy reaches and then stays in.
         let pids: Vec<PlanetId> = sim.planet_entity.iter().map(|&e| *sim.world.planet_id.get(e).unwrap()).collect();
         {
             let k = sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap();
@@ -6670,7 +9308,7 @@ mod tests {
     /// the decisions** (T-88).
     ///
     /// `cycle_years` was doing two unrelated jobs — the integration step for
-    /// every rate in the economy, and the retry cadence for a saving centre's
+    /// every rate in the economy, and the retry cadence for a saving center's
     /// build decision — because `sys_production_tick` called
     /// `sys_build_decision` inline. So the fidelity argument for a 1-year step
     /// was unaffordable: it multiplied the *decision* count with it, and a
@@ -6773,7 +9411,7 @@ mod tests {
         let hi = pops.iter().copied().fold(0.0f64, f64::max);
         assert!(lo > 0.0, "the bed must grow a population to compare: {pops:?}");
         // The residual spread is the expansion loop, not the integrator: this
-        // bed also colonises, and which worlds it reaches by year 300 moves with
+        // bed also colonizes, and which worlds it reaches by year 300 moves with
         // the tick for reasons that have nothing to do with the logistic (T-95).
         // 1.5 leaves five times the observed margin and is still far below the
         // 10x a missing `tick_scale` would produce.
@@ -6851,18 +9489,18 @@ mod tests {
         );
     }
 
-    /// **A hold fetches the colours the destination is short of, and only the
+    /// **A hold fetches the colors the destination is short of, and only the
     /// slack goes to bulk** (R-O89).
     ///
     /// The rule this pins is not "carry the deficit" but *how* the deficit is
-    /// split: **along the deficit vector**, so all three colours advance
-    /// together toward a bill that pays only when every colour clears. The
-    /// obvious alternative — neediest colour first — maximises tonnage against
-    /// the largest single shortfall and lands mono-coloured loads, and it
+    /// split: **along the deficit vector**, so all three colors advance
+    /// together toward a bill that pays only when every color clears. The
+    /// obvious alternative — neediest color first — maximizes tonnage against
+    /// the largest single shortfall and lands mono-colored loads, and it
     /// measures **-3.84% ± 0.20 work-years, 4/4 seeds** (`Hyades_industry.md`
     /// §6.20). Nothing in the types distinguishes the two, so this is the guard.
     ///
-    /// The third case is the one that keeps a hauler honest: a centre short of
+    /// The third case is the one that keeps a hauler honest: a center short of
     /// nothing must still fill up, because banked ore buys hulls even when it
     /// buys no rung.
     #[test]
@@ -6898,7 +9536,7 @@ mod tests {
         let got = take_for_deficit(&mut lopsided, &[kt(1.0), kt(1.0), kt(0.0)], kt(4.0), Fill::Hold);
         assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must still fill");
         assert!(got.yellow > 0.0, "the top-up is proportional, so Yellow rides along: {}", got.yellow);
-        assert!(got.cyan > got.yellow, "but the wanted colour still leads");
+        assert!(got.cyan > got.yellow, "but the wanted color still leads");
 
         // No deficit at all: identical to the proportional rule it replaces.
         let mut a = pile();
@@ -6931,7 +9569,7 @@ mod tests {
         let kt = Price::new;
         let cyan_only = || Minerals { cyan: 100.0, ..Default::default() };
 
-        // An even three-colour want over a 6 kt hold gives Cyan a 2 kt share.
+        // An even three-color want over a 6 kt hold gives Cyan a 2 kt share.
         // The pile holds nothing else, so 4 kt of room survives the stop.
         let mut pile = cyan_only();
         let got = take_for_deficit(&mut pile, &[kt(3.0), kt(3.0), kt(3.0)], kt(6.0), Fill::Shortfall);
@@ -6956,7 +9594,7 @@ mod tests {
     ///
     /// Work-years is `∫ Σ_p infra_p dt` — the Growth tree's objective
     /// (`Hyades_trees_and_card_value.md` §2.3.3) — and `reinvest_bias` is the
-    /// knob that chooses between the only two things a centre can spend
+    /// knob that chooses between the only two things a center can spend
     /// minerals on. The natural expectation is that turning it up buys works.
     /// It does not, and the reason is an identity rather than a tuning
     /// accident:
@@ -6964,7 +9602,7 @@ mod tests {
     /// - **Deepen.** The bill is `infra_step_price / eta_works` and the stock
     ///   moves to exactly the next rung, so works rise by `infra_step_price`.
     ///   Works per mineral = `eta_works`.
-    /// - **Found.** The bill is the coloniser's price, and the new colony's
+    /// - **Found.** The bill is the colonizer's price, and the new colony's
     ///   stock is `founding_infra = hull_cost` — the recycled hull's minerals
     ///   *are* the stock (T-70), because a hull's mass is its cost (R-O57,
     ///   design law #11). Works per mineral = **1**.
@@ -6975,22 +9613,22 @@ mod tests {
     /// **This is an identity about *stock*, and it is only half the argument —
     /// the half about *flow* runs the other way.** A colony is founded with a
     /// recycled hull and cannot keep improving that way, so what the two routes
-    /// buy *afterwards* is not symmetric: deepening raises this centre's build
+    /// buy *afterwards* is not symmetric: deepening raises this center's build
     /// rate forever. Priced off the engine's own functions, rung I → II is
-    /// **+29.0% hull/yr for 0.90 kt — nine colonisers — and pays itself back in
+    /// **+29.0% hull/yr for 0.90 kt — nine colonizers — and pays itself back in
     /// 62 years** against a 1,500-year horizon. That should dominate, and the
     /// reason it does not is three separate facts, none of them this identity
     /// (`Hyades_industry.md` §6.19a, `examples/founding_tree`):
     ///
     /// 1. **Homeworlds are generated at `Band 2.0`** (`galaxy.rs`), which is
     ///    exactly where fabrication saturates, so the rung worth +29% is one
-    ///    they already have. Rung II → III costs 19 kt — 190 colonisers — for
+    ///    they already have. Rung II → III costs 19 kt — 190 colonizers — for
     ///    **+3.2%**.
     /// 2. **`slips` never grows.** `1 + ⌊F / slip_throughput⌋` with
     ///    `F < fab_cap = 0.2` and `slip_throughput = 0.1` is **2 berths at every
     ///    rung** (R-O85).
     /// 3. **Build rate governs a fifth of the timeline.** Measured at a
-    ///    homeworld: yard utilisation **18.8%**, and the gap from one decision
+    ///    homeworld: yard utilization **18.8%**, and the gap from one decision
     ///    to the next is **1.5 yr after a committed build against 29.6 yr after
     ///    an `Idle`**, because `commit_one_build` returning `None` schedules
     ///    nothing and the next attempt is the economy tick at
@@ -7010,7 +9648,7 @@ mod tests {
         let works = cards::Works::default();
         assert_eq!(works.eta_works, 1.0, "the card-free baseline is what this identity is about");
 
-        // Found: what the coloniser costs, against the works its hull becomes.
+        // Found: what the colonizer costs, against the works its hull becomes.
         let hull = hull_cost(HullType::MediumSystems, &cfg);
         assert_eq!(
             sim.founding_infra(HullType::MediumSystems),
@@ -7018,7 +9656,7 @@ mod tests {
             "a recycled hull's minerals are the colony's works stock"
         );
 
-        // Deepen, at every rung a centre can actually stand on: what the bill
+        // Deepen, at every rung a center can actually stand on: what the bill
         // costs, against the works the rung adds.
         for n in 0..BandTier::MAX_PLAYABLE.band().bands() as usize {
             let stand = infra_rung_price(n, &cfg);
@@ -7060,7 +9698,7 @@ mod tests {
     /// **What this test is for is the claim that the change is surgical.**
     /// `fab_cap` went 0.2 → 0.1, which is a re-denomination and not a retune:
     /// the old code divided a planet-wide rate by a `slips` that was *always
-    /// exactly 2* at every rung a centre can occupy, so halving the ceiling
+    /// exactly 2* at every rung a center can occupy, so halving the ceiling
     /// reproduces the old per-berth rate bit-for-bit. Turnaround is therefore
     /// **unchanged at every playable rung**, and the only thing that moved is
     /// how many hulls a yard can have in the water at once.
@@ -7154,7 +9792,7 @@ mod tests {
     ///
     /// **Pinned at 120 yr, and it has now had to move twice for the same
     /// reason.** T-68 made `t_build` track mass (a Medium hull 10 yr → 3.0), so
-    /// a centre decides three times as often and 600 yr became 250. R-O88 opened
+    /// a center decides three times as often and 600 yr became 250. R-O88 opened
     /// the build-wide axis, so a yard has berths instead of two, and 250 became
     /// 120: the two paired tests were **35.5 s and 25.4 s of a 54 s target**
     /// between them. The identity is unchanged both times; only the bill was.
@@ -7189,11 +9827,11 @@ mod tests {
         // R-O58 coupled the cost ladder to the capacity ladder, so
         // `medium_fleet_size` is not just a price — it also sets how much
         // bigger a Medium hull is than a Limited one. Capacity used to be
-        // normalised against the *live* Medium radius, i.e. divided by a
+        // normalized against the *live* Medium radius, i.e. divided by a
         // quantity that goes to zero as the ladder narrows, which made the
         // General : Medium ratio appear to diverge. That looked like a physical
         // absurdity and got a guard (`r_M < 1.25`). It was an artifact of the
-        // normaliser. Against a fixed reference nothing diverges and narrow
+        // normalizer. Against a fixed reference nothing diverges and narrow
         // ladders are perfectly meaningful, so the guard is gone.
         //
         // **Pins both legs of the ladder**, rather than varying one against
@@ -7219,7 +9857,7 @@ mod tests {
         // set by the price and the hull's own thickness, so a Medium hull
         // priced like a Limited one simply *has a Limited hull's hold*: the two
         // converge instead of collapsing. Same conclusion — a narrow ladder is
-        // a real economic statement, not a modelling failure — reached by
+        // a real economic statement, not a modeling failure — reached by
         // arithmetic that no longer has a denominator in it.
         cfg.medium_fleet_size = 8.0;
         assert!(cfg.hull_ladder_fault().is_none(), "a narrow ladder is meaningful, not a fault");
@@ -7271,12 +9909,15 @@ mod tests {
     #[test]
     fn playing_works_cards_in_any_order_leaves_the_same_empire_state() {
         use cards::{Card, CardId, Employment, Slant, Tree, WorksWrite};
+        // `Card::effects` is a `'static` slice because `TIER0` is a const, so a
+        // fixture built from runtime values leaks one array per card. Six of
+        // them, once, in one test.
         let card = |i: u16, w: WorksWrite| Card {
             id: CardId(i),
             tree: Tree::Production,
             slant: Slant::Balanced,
             cost: 0.8,
-            effect: CardEffect::WriteWorks(w),
+            effects: Box::leak(Box::new([CardEffect::WriteWorks(w)])),
             needs_subject: false,
         };
         // Multiplicative *and* additive writes, with factors chosen so the
@@ -7292,9 +9933,9 @@ mod tests {
         ];
         let guard: f64 = deck
             .iter()
-            .filter_map(|c| match c.effect {
-                CardEffect::WriteWorks(WorksWrite::Cap(_, f)) => Some(f),
-                CardEffect::WriteWorks(WorksWrite::EtaWorks(f)) => Some(f),
+            .filter_map(|c| match c.sole_effect() {
+                Some(CardEffect::WriteWorks(WorksWrite::Cap(_, f))) => Some(f),
+                Some(CardEffect::WriteWorks(WorksWrite::EtaWorks(f))) => Some(f),
                 _ => None,
             })
             .product();
@@ -7342,7 +9983,7 @@ mod tests {
     }
 
     #[test]
-    fn the_round_layer_is_behaviour_neutral_while_everyone_passes() {
+    fn the_round_layer_is_behavior_neutral_while_everyone_passes() {
         // The baseline autopilot's `choose_card` returns `None`, so adding the
         // round layer must move *nothing*. This is what keeps every coverage
         // number in the tree — and the offline search resting on them — valid
@@ -7423,6 +10064,80 @@ mod tests {
         );
 
         assert_eq!(sim.world.doctrine.get(sim.player_entity[0]).unwrap().growth_rate, before);
+    }
+
+    #[test]
+    fn a_homeworld_starts_exactly_staffed_and_losing_people_unstaffs_it() {
+        // **T-107's anchor, pinned.** `P_req` is the people mass at the stock's
+        // own Band reading, and galaxy generation writes every homeworld at
+        // population Band 2 and infrastructure Band 2 — so at `t = 0` the
+        // staffing factor is exactly 1 and switching the rule on moves nothing
+        // at the reference state. If generation or either ladder's anchor ever
+        // moves, this fails before a measurement silently starts from an
+        // understaffed homeworld.
+        let mut cfg = test_cfg(1);
+        cfg.population_staffs_industry = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(3, 1), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let u0 = sim.staffing(home);
+        assert!((u0 - 1.0).abs() < 1e-9, "a homeworld starts fully staffed, got u = {u0}");
+
+        // Half the people work half the stock — `u` is linear below 1.
+        let p = *sim.world.population.get(home).unwrap();
+        sim.world.population.insert(home, p * 0.5);
+        let u_half = sim.staffing(home);
+        assert!((u_half - 0.5).abs() < 1e-9, "half the people should staff half the stock, got {u_half}");
+
+        // And it reaches output: extraction and a berth both fall with it.
+        let staffed = {
+            sim.world.population.insert(home, p);
+            (sim.extraction_rate(home), sim.berth_rate(home))
+        };
+        sim.world.population.insert(home, p * 0.5);
+        let thin = (sim.extraction_rate(home), sim.berth_rate(home));
+        assert!(thin.0 < staffed.0, "extraction must read the worked stock");
+        assert!(thin.1 < staffed.1, "a berth must read the worked stock");
+
+        // Off, population is not an argument — the pre-T-107 engine exactly.
+        sim.config.population_staffs_industry = false;
+        assert_eq!(sim.extraction_rate(home), staffed.0);
+    }
+
+    #[test]
+    fn an_unaffordable_card_is_a_pass_and_an_affordable_one_lands() {
+        // **T-120, reframed at T-122.** `apply_orders` coerces an unaffordable
+        // card to a *pass* rather than failing, so a bed that issues its orders
+        // and then runs cannot tell "the card did nothing" from "the card was
+        // never played". Pinned in both directions.
+        //
+        // This test is about the predicate, not about *when* a card is legal.
+        // It plays at construction because that is the cheapest state with a
+        // known bank; earliest legal play is the round-0 barrier at
+        // `years_to_first_round`, and the opening before it is card-free.
+        let galaxy = test_galaxy(3, 1);
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
+        let card = cards::card(cards::CardId(3)).unwrap();
+        assert!(card.cost > 0.0, "a free card would make this question vacuous");
+        assert!(sim.empire_can_afford(0, Price::new(card.cost)), "the seeded homeworld bank must cover it");
+
+        let before = sim.world.doctrine.get(sim.player_entity[0]).unwrap().growth_rate;
+        sim.apply_orders(0, &[Order { seat: PlayerId(0), card: Some(cards::CardId(3)), target: Target::None }]);
+        assert!(
+            sim.world.doctrine.get(sim.player_entity[0]).unwrap().growth_rate > before,
+            "the write must land, not coerce to a pass"
+        );
+
+        // And the coercion is real: a price above the whole empire's holdings
+        // leaves the doctrine where it is.
+        let sim2 = Simulation::with_baseline(test_galaxy(3, 1), test_cfg(1));
+        assert!(!sim2.empire_can_afford(0, Price::new(1e9)));
+        let g0 = sim2.world.doctrine.get(sim2.player_entity[0]).unwrap().growth_rate;
+        assert_eq!(
+            Order { seat: PlayerId(0), card: Some(cards::CardId(3)), target: Target::None }.coerce(false).card,
+            None,
+            "an unaffordable order is a pass"
+        );
+        assert_eq!(sim2.world.doctrine.get(sim2.player_entity[0]).unwrap().growth_rate, g0);
     }
 
     #[test]
@@ -7627,6 +10342,1166 @@ mod tests {
         assert!(quiet.log().is_empty());
     }
 
+    /// **Combat off reproduces the galaxy bit-for-bit** (T-111).
+    ///
+    /// The property the whole gate exists for. Every coverage, colony-year and
+    /// work-year figure this project has measured was taken before anything
+    /// fought, and the offline search rests on them; a mechanic that perturbed
+    /// the default run would consume that corpus on the day it landed. So the
+    /// engagement path must be *unreachable* rather than merely quiet, and this
+    /// asserts it against a run built before the code existed.
+    #[test]
+    fn combat_off_is_bit_identical() {
+        let mk = || Simulation::with_baseline(test_galaxy(3, 2024), paired_cfg(2024));
+        let mut a = mk();
+        let mut b = mk();
+        let ra = a.run();
+        let rb = b.run();
+        paired_mechanism_fired(&ra);
+        assert!(!a.config.engagements_enabled, "the gate must ship closed");
+        assert_eq!(ra.events_processed, rb.events_processed);
+        for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
+            assert_eq!(pa.colonies, pb.colonies);
+            assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
+        }
+        // **Nothing was destroyed *by combat*, which is no longer the same
+        // claim as "no slag"** (T-118). Slag is what mass degrades into rather
+        // than vanishing (design law #11), and scrapping a hull now leaves the
+        // unrecovered half there — so a peaceful galaxy accumulates slag from
+        // ordinary retirement. The assertion that still means something is that
+        // **no engagement resolved**, which is what the gate is for.
+        assert!(
+            !a.log().iter().any(|r| matches!(r.event, crate::log::LogEvent::EngagementResolved { .. })),
+            "combat is off and an engagement resolved anyway"
+        );
+    }
+
+    /// A bed where two empires have actually grown into each other.
+    ///
+    /// **The horizon is the whole content of this helper.** `paired_cfg`'s
+    /// 120 yr produces 12 occupied sites and **zero** shared ones — the seats
+    /// are still expanding into empty space and have not met. Measured on this
+    /// galaxy: 120 yr gives 0 shared sites and 0 fights, 400 yr gives 76 and
+    /// 141. So a combat test at 120 yr passes or fails on whether anyone has
+    /// *met*, which is not what it is asking. `CLAUDE.md` §2's rule about
+    /// horizons cut past the point a mechanism fires, arrived at from the other
+    /// side: this one had to go **up**.
+    fn contact_cfg(seed: u64) -> SimConfig {
+        let mut cfg = SimConfig::new(seed);
+        cfg.horizon_years = 400.0;
+        cfg.engagements_enabled = true;
+        cfg
+    }
+
+    /// Three seats whose doctrine says a neutral is an enemy, and one of which
+    /// carries the Warfare card's writes — **since T-125 a fight needs a
+    /// Design that mounts weapons**, and only that card's hulls do, so a table
+    /// of hostile but unarmed empires fights and kills nothing.
+    fn belligerents(galaxy: Galaxy, cfg: SimConfig) -> Simulation {
+        let autopilots: Vec<Box<dyn Autopilot>> = (0..3)
+            .map(|i| {
+                let mut d = Doctrine { engage_neutrals: true, ..Doctrine::default() };
+                if i == 0 {
+                    crate::cards::apply_doctrine_write(&mut d, crate::cards::DoctrineWrite::ArmedFrontier);
+                }
+                Box::new(BaselineAutopilot::new(d)) as Box<_>
+            })
+            .collect();
+        Simulation::new(galaxy, cfg, autopilots)
+    }
+
+    /// **The gate is what closes it, not the absence of contact** (T-111).
+    ///
+    /// Two runs that differ only in `engagements_enabled` + `engage_neutrals`
+    /// must differ, or the mechanic is inert and the test above proves nothing.
+    /// `examples/contact_census` measured the upstream side — 68-75% of occupied
+    /// sites end up shared — and this is the same claim from inside the engine.
+    #[test]
+    fn combat_on_actually_fights() {
+        let mut sim = belligerents(test_galaxy(3, 2024), contact_cfg(2024));
+        sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
+        sim.run();
+
+        let fights =
+            sim.log().iter().filter(|r| matches!(r.event, crate::log::LogEvent::EngagementResolved { .. })).count();
+        assert!(fights > 0, "combat is on and nothing fought — the trigger never fired");
+    }
+
+    /// **Slag conserves the mass of what it destroyed** (design law #11, R-O59).
+    ///
+    /// Mass has no exclusions, and "the loser's ships vanish" would be a leak on
+    /// the one path Warfare runs on. A hull's dry mass *is* its mineral cost
+    /// (R-O57), so the wreckage standing at a site must equal the summed cost of
+    /// the hulls that died there — reconciled from the log, which records both
+    /// counts and mass independently.
+    #[test]
+    fn slag_conserves_the_mass_of_what_it_destroyed() {
+        let mut sim = belligerents(test_galaxy(3, 2024), contact_cfg(2024));
+        sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
+        sim.run();
+
+        let mut logged_slag = 0.0;
+        let mut kills = 0u32;
+        for r in sim.log().iter() {
+            if let crate::log::LogEvent::EngagementResolved { slag, losses_attacker, losses_defender, .. } = r.event {
+                logged_slag += slag;
+                kills += losses_attacker + losses_defender;
+            }
+        }
+        assert!(kills > 0, "nothing died, so this asserts nothing");
+        // **Combat is no longer the only thing that makes slag** (T-118), so
+        // this is an inequality now: design law #11 says wastage *degrades*
+        // rather than vanishing, and the unrecovered half of every scrapped
+        // hull lands here too. What still has to hold exactly is that every
+        // kilotonne combat destroyed is standing somewhere — nothing combat
+        // wrecked may go missing.
+        let standing: f64 = (0..sim.planet_entity.len()).map(|i| sim.slag_at(PlanetId(i as u32)).kilotons()).sum();
+        assert!(
+            standing >= logged_slag - 1e-9,
+            "combat destroyed {logged_slag} kt but only {standing} kt is standing on the board"
+        );
+        // **Since T-125 the dead are colony ships, not miners**: unarmed miners
+        // cannot hurt each other, and what dies is what an armed Design meets —
+        // hulls carrying settlers and cargo, all of which become slag. So the
+        // count bounds the mass from below rather than fixing it; the exact
+        // per-kill accounting is `mass_is_conserved_through_the_blockade`'s,
+        // which weighs the whole board.
+        let lightest = HullType::ALL.iter().map(|&h| hull_dry_mass(h, &sim.config).kilotons()).fold(f64::MAX, f64::min);
+        assert!(
+            logged_slag >= kills as f64 * lightest - 1e-9,
+            "{kills} hulls died but only {logged_slag} kt was logged, below {lightest} kt apiece"
+        );
+    }
+
+    /// Two ships a hair apart, for the beam resolver's tests.
+    fn beam_duel(a: crate::combat::Loadout, b: crate::combat::Loadout, hull: HullType) -> [Vec<bool>; 2] {
+        let cfg = test_cfg(1);
+        let combat = CombatConfig::default();
+        let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }; 2];
+        let mut rng = Rng::new(7);
+        let ship = |fleet: usize, rng: &mut Rng| Combatant {
+            role: Role::Picket,
+            hull,
+            thrust_factor: 1.0,
+            fleet,
+            station: StationKeeping::draw(rng, crate::arena::ROU_STATION_RADIUS, crate::arena::ROU_STATION_PERIOD),
+            maneuver_velocity: Vec3::ZERO,
+            maneuver_start: 0.0,
+            maneuver_origin_offset: Vec3::ZERO,
+        };
+        let hp = crate::combat::hull_hp_kj(hull, &cfg, &combat);
+        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: a, hp_kj: hp }];
+        let s1 = [crate::combat::Armed { ship: ship(1, &mut rng), loadout: b, hp_kj: hp }];
+        crate::combat::resolve_beam_engagement(
+            &fleets,
+            [&s0, &s1],
+            cfg.engagement_horizon_years,
+            cfg.engagement_dt_years,
+        )
+    }
+
+    /// **Each side fires what its Design mounts** (T-125). Three properties,
+    /// each the claim the resolver's doc comment makes:
+    ///
+    /// - two unarmed ships cannot hurt each other;
+    /// - an armed ship kills an unarmed one whichever side it is on — who is on
+    ///   station no longer decides who carries weapons (R-WAR5 retired);
+    /// - two identical armed ships trade simultaneously — neither side shoots
+    ///   first by index, so both die.
+    #[test]
+    fn a_ship_fires_what_its_design_mounts_and_nothing_else() {
+        let cfg = test_cfg(1);
+        let beams = design_loadout(HullType::LimitedContactVehicle, Class::Unnamed, &cfg, &CombatConfig::default());
+        let none = crate::combat::Loadout::UNARMED;
+        let hull = HullType::LimitedContactVehicle;
+        assert_eq!(beam_duel(none, none, hull), [vec![true], vec![true]], "unarmed against unarmed");
+        assert_eq!(beam_duel(beams, none, hull), [vec![true], vec![false]], "armed on side 0 wins");
+        assert_eq!(beam_duel(none, beams, hull), [vec![false], vec![true]], "armed on side 1 wins too");
+        assert_eq!(beam_duel(beams, beams, hull), [vec![false], vec![false]], "fire is simultaneous");
+    }
+
+    /// **Damage is energy against structure, not one shot one kill** (T-125).
+    /// A single shot too weak to finish the hull leaves it standing.
+    #[test]
+    fn a_shot_weaker_than_the_hull_does_not_kill_it() {
+        let cfg = test_cfg(1);
+        let combat = CombatConfig::default();
+        let hull = HullType::GeneralContactVehicle;
+        let hp = crate::combat::hull_hp_kj(hull, &cfg, &combat);
+        let one_shot = crate::combat::Loadout {
+            beams: 1,
+            shot_energy_kj: hp / 3.0,
+            fire_control_ly: combat.laser_hit_tolerance,
+            shots_per_tick: 1,
+        };
+        // One shot per tick: the first leaves it standing, the third kills it.
+        let cfg1 = SimConfig { engagement_horizon_years: 1.5 * cfg.engagement_dt_years, ..cfg };
+        let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }; 2];
+        let mut rng = Rng::new(3);
+        let ship = |fleet: usize, rng: &mut Rng| Combatant {
+            role: Role::Picket,
+            hull,
+            thrust_factor: 1.0,
+            fleet,
+            station: StationKeeping::draw(rng, crate::arena::ROU_STATION_RADIUS, crate::arena::ROU_STATION_PERIOD),
+            maneuver_velocity: Vec3::ZERO,
+            maneuver_start: 0.0,
+            maneuver_origin_offset: Vec3::ZERO,
+        };
+        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: one_shot, hp_kj: hp }];
+        let s1 =
+            [crate::combat::Armed { ship: ship(1, &mut rng), loadout: crate::combat::Loadout::UNARMED, hp_kj: hp }];
+        let short = crate::combat::resolve_beam_engagement(
+            &fleets,
+            [&s0, &s1],
+            cfg1.engagement_horizon_years,
+            cfg1.engagement_dt_years,
+        );
+        assert_eq!(short[1], vec![true], "at most two shots cannot finish a hull that takes three");
+        let long = crate::combat::resolve_beam_engagement(
+            &fleets,
+            [&s0, &s1],
+            cfg.engagement_horizon_years,
+            cfg.engagement_dt_years,
+        );
+        assert_eq!(long[1], vec![false], "given time, the damage adds up");
+    }
+
+    /// **Only the Warfare card arms a hull** (T-125). Every Design the default
+    /// standing layer builds is unarmed; after the card's writes, every role
+    /// that moved onto the Contact family mounts beams.
+    #[test]
+    fn only_the_warfare_card_arms_a_hull() {
+        let cfg = test_cfg(1);
+        let combat = CombatConfig::default();
+        let plain = Doctrine::default();
+        let mut armed = Doctrine::default();
+        crate::cards::apply_doctrine_write(&mut armed, crate::cards::DoctrineWrite::ArmedFrontier);
+        for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Freighter] {
+            let (hull, class) = crate::autopilot::Standing::of(&plain).design_for(role);
+            assert!(!design_loadout(hull, class, &cfg, &combat).is_armed(), "{role:?} on {hull:?} is armed by default");
+        }
+        for h in crate::autopilot::Standing::of(&plain).colonizer_ladder() {
+            assert!(!design_loadout(h, Class::Unnamed, &cfg, &combat).is_armed(), "colonizer {h:?} armed by default");
+        }
+        for role in [Role::Scout, Role::Picket] {
+            let (hull, class) = crate::autopilot::Standing::of(&armed).design_for(role);
+            assert!(
+                design_loadout(hull, class, &cfg, &combat).is_armed(),
+                "{role:?} on {hull:?} unarmed under the card"
+            );
+        }
+        let gcv = design_loadout(HullType::GeneralContactVehicle, Class::Unnamed, &cfg, &combat);
+        let lcv = design_loadout(HullType::LimitedContactVehicle, Class::Unnamed, &cfg, &combat);
+        assert_eq!(lcv.beams, 1, "the Limited Contact hull is the unit mount");
+        assert!(gcv.beams > lcv.beams, "a bigger payload mounts more beams (design law #2): {} vs 1", gcv.beams);
+    }
+
+    /// **An empty side is a walkover, not a panic** (T-111).
+    ///
+    /// `laser_ships[0]` was an arena assumption — a scenario always seeds both
+    /// fleets. The simulation reaches the empty case legitimately (a crew that
+    /// left between the arrival and the shot), and a panic in the event loop on
+    /// a legal board state is a crash, not a rule.
+    #[test]
+    fn an_engagement_with_one_empty_side_is_a_walkover() {
+        let cfg = SimConfig::new(1);
+        let combat = CombatConfig::default();
+        let mut rng = Rng::new(1);
+        let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }; 2];
+        let one = crate::arena::spawn_fleet(
+            &mut rng,
+            0,
+            3,
+            Role::Miner,
+            HullType::LimitedSystems,
+            crate::combat::STATION_RADIUS,
+            crate::combat::STATION_PERIOD,
+        );
+        let none: Vec<Combatant> = Vec::new();
+
+        let a = crate::combat::resolve_engagement(&cfg, &combat, &mut rng, &fleets, &one, &none, 0.1, 0.0005, 0.05);
+        assert_eq!(a.laser_survivors, 3);
+        assert_eq!(a.missile_survivors, 0);
+        let b = crate::combat::resolve_engagement(&cfg, &combat, &mut rng, &fleets, &none, &one, 0.1, 0.0005, 0.05);
+        assert_eq!(b.laser_survivors, 0);
+        assert_eq!(b.missile_survivors, 3);
+    }
+
+    /// **Denial off reproduces the galaxy bit-for-bit** (T-112).
+    ///
+    /// Same property and same reason as `combat_off_is_bit_identical`: the card
+    /// is measured to be *harmful to its own player*, so it must be
+    /// unreachable by default or every number in the tree moves.
+    #[test]
+    fn picketing_off_is_bit_identical() {
+        let mk = || Simulation::with_baseline(test_galaxy(3, 2024), paired_cfg(2024));
+        let mut a = mk();
+        let mut b = mk();
+        let ra = a.run();
+        let rb = b.run();
+        paired_mechanism_fired(&ra);
+        assert!(!Doctrine::default().picket_after_founding, "the card must ship unplayed");
+        assert_eq!(ra.events_processed, rb.events_processed);
+        assert!(a.picket.is_empty(), "nobody played the card and {} worlds are held", a.picket.len());
+    }
+
+    /// **A colony founded by a departing picket is never a multiplicative
+    /// zero** (T-112, R-WAR6).
+    ///
+    /// The defect this pins is the one that cost 57% of the card-player's
+    /// colonies: `employment_rate` returns exactly `0.0` for a stock of zero
+    /// and `fabrication_rate` is `slips × berth_rate`, so a colony founded at
+    /// infra 0 can never mine, never build and never recover. The hull walking
+    /// away is a price; zero is an absorbing state.
+    /// **The six-slot reduction carries held ground and never names a world
+    /// twice** (T-113).
+    ///
+    /// The three-slot reduction it replaced was exact for a consumer reading
+    /// the argmax of a *class*; `assign_role`'s colonizer arm reads the argmax
+    /// of a **subset** of a class, and the maximum of a set does not carry the
+    /// maxima of its subsets. With three slots a held world reached the policy
+    /// only when it already won its class outright, so the preference was a
+    /// no-op by construction — which is how it measured
+    /// (`examples/denial_census`: the arm reproduced the arm without it to
+    /// every printed digit).
+    #[test]
+    fn the_candidate_reduction_carries_held_ground_without_duplicating_it() {
+        let c = |id: u32, score: f64, class: PlanetClass, held: bool| Candidate {
+            view: PlanetView {
+                id: PlanetId(id),
+                position: Vec3::ZERO,
+                habitability: Band::new(1.0),
+                biosphere: Band::new(1.0),
+                mineral_bands: [1.0; 3],
+                owner: None,
+                pop_level: BandTier::I,
+            },
+            ranked: Ranked { id: PlanetId(id), score, class },
+            settlers_by_hull: [Kilotons::ZERO; 2],
+            mining_crew: 1,
+            held_by_me: held,
+            claim_inbound: false,
+        };
+        let winner = c(1, 9.0, PlanetClass::Colony, false);
+        let held = c(2, 4.0, PlanetClass::Colony, true);
+
+        // A held world that is *not* its class winner survives the reduction —
+        // this is the whole point, and the three-slot form dropped it.
+        let mut slots: [Option<Candidate>; 6] = [None; 6];
+        slots[1] = Some(winner);
+        slots[4] = Some(held);
+        let out = flatten_candidate_slots(&slots);
+        assert_eq!(out.len(), 2, "both the class winner and the held winner must reach the policy");
+        assert!(out.iter().any(|x| x.ranked.id == held.ranked.id && x.held_by_me));
+
+        // When the held world *is* the class winner there is one world, and the
+        // list must say so once.
+        let both = c(3, 9.0, PlanetClass::Colony, true);
+        let mut same: [Option<Candidate>; 6] = [None; 6];
+        same[1] = Some(both);
+        same[4] = Some(both);
+        let out = flatten_candidate_slots(&same);
+        assert_eq!(out.len(), 1, "a world that wins its class and is held is still one world");
+
+        // And an empty held subset reproduces the old three-slot list exactly.
+        let mut plain: [Option<Candidate>; 6] = [None; 6];
+        plain[1] = Some(winner);
+        let out = flatten_candidate_slots(&plain);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].ranked.id, winner.ranked.id);
+    }
+
+    #[test]
+    fn a_picketed_founding_still_leaves_a_workable_colony() {
+        let cfg = SimConfig::new(1);
+        let floor = infra_rung_price(0, &cfg);
+        assert!(floor > Price::ZERO, "the floor rung must be a real quantity, got {floor:?}");
+        // The thing that would break: an employment rate of exactly zero.
+        let works = cards::Works::default();
+        let rate = employment_rate(floor, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg));
+        assert!(rate > 0.0, "a colony at the floor rung must still fabricate, got {rate}");
+        let dead = employment_rate(Price::ZERO, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg));
+        assert_eq!(dead, 0.0, "zero must still be the absorbing state this floor exists to avoid");
+    }
+
+    /// **The hull hears the picket before its capital does** (T-115).
+    ///
+    /// The correction T-115 makes to T-112 is that there are two responders,
+    /// and this pins the one that was missing: a ship closing on the world the
+    /// picket took is reached by that light *sooner* than a stationary
+    /// observer at its launch range, because it is flying into the wavefront.
+    ///
+    /// Asserted as an inequality against the two bounds that bracket it rather
+    /// than against a golden number, so it stays true under any change to the
+    /// flight model.
+    #[test]
+    fn the_light_overtakes_a_closing_hull_sooner_than_a_standing_one() {
+        let mut cfg = test_cfg(4242);
+        cfg.horizon_years = 200.0;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 4242), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let target = *sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .max_by(|&&a, &&b| {
+                let p = |e| sim.world.position.get(e).unwrap().distance(*sim.world.position.get(home).unwrap());
+                p(a).partial_cmp(&p(b)).unwrap().then(a.0.cmp(&b.0))
+            })
+            .expect("a distant unclaimed world");
+        sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home, target, 0.0);
+        let ship = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
+
+        let world_pos = *sim.world.position.get(target).unwrap();
+        let d0 = sim.position_at(ship, sim.clock).unwrap().distance(world_pos);
+        assert!(d0 > 0.0, "the ship has to be somewhere else for this to say anything");
+
+        let lag = sim.light_overtakes(ship, world_pos).expect("the ship has a position");
+        assert!(lag > 0.0, "light does not arrive instantly, got {lag}");
+        assert!(lag < d0, "a closing hull is reached sooner than a standing one: {lag} vs {d0}");
+
+        // And the root is a root: the light has travelled exactly the hull's range.
+        let range = sim.position_at(ship, sim.clock + lag).unwrap().distance(world_pos);
+        assert!((lag - range).abs() < 1e-9, "light travelled {lag}, hull range {range}");
+    }
+
+    /// **Mass is conserved** (design law #11, T-118).
+    ///
+    /// The engine's most load-bearing invariant, asserted in prose until now.
+    /// `mass_ledger` weighs every store; with the one legitimate *source*
+    /// switched off — biosphere regrowth, the only renewable stock — the total
+    /// must not move at all.
+    ///
+    /// Broken out per store on failure, because "mass changed" says nothing
+    /// about which transfer lost an end, and every conservation defect this
+    /// project has found was exactly that: settlers written into a hold with
+    /// nothing debited (R-O74), a hull massing 30x more as hull than as cargo
+    /// (R-O57), a `max` standing where a sum belonged (T-117).
+    #[test]
+    fn mass_is_conserved_with_regrowth_off() {
+        // Several seats and seeds, because every leak this found was on a path
+        // that only some runs walk: the first was in scrapping, which needs a
+        // scout to exhaust; the second in founding, which needs a colony.
+        for (seats, seed) in [(2usize, 4u64), (3, 11), (3, 7), (6, 2)] {
+            let mut cfg = test_cfg(seed);
+            cfg.horizon_years = 200.0;
+            cfg.biosphere_regen_rate = 0.0;
+            let mut sim = Simulation::with_baseline(test_galaxy(seats, seed), cfg);
+            let before = sim.mass_ledger();
+            assert!(before.total() > 0.0, "the bed must hold some mass for this to say anything");
+            sim.run();
+            let after = sim.mass_ledger();
+            let d = before.delta(&after);
+            // The mechanism has to have fired, or this passes vacuously on a
+            // simulation that did nothing (`CLAUDE.md` §2's trim guard).
+            assert!(d.hulls.abs() > 0.0, "{seats} seats / seed {seed}: no hull was ever built or retired");
+            let drift = (after.total() - before.total()).abs() / before.total();
+            assert!(
+                drift < 1e-9,
+                "{seats} seats / seed {seed}: mass is not conserved: {:.6} -> {:.6} ({:+.6} absolute)\n  {d:#?}",
+                before.total(),
+                after.total(),
+                after.total() - before.total()
+            );
+        }
+    }
+
+    /// **Mass is conserved when the card is played too** (T-118).
+    ///
+    /// The paths the default galaxy never walks are the ones that move mass
+    /// most violently: hulls destroyed in an engagement, a colonizer that keeps
+    /// its hull, settlers dying with the ship that carried them. All three are
+    /// the Warfare card's, and all three are `engagements_enabled`.
+    ///
+    /// **The floor rung is the one accounted exception and it is asserted, not
+    /// waived.** A colony founded below `Band Empty` is raised to it, because
+    /// zero infrastructure is an absorbing state rather than a small number
+    /// (§8.7) — so this bed may *gain* mass, never lose it, and never more than
+    /// one floor rung per colony founded.
+    #[test]
+    fn mass_is_conserved_under_the_warfare_card() {
+        let mut cfg = test_cfg(5);
+        cfg.horizon_years = 200.0;
+        cfg.biosphere_regen_rate = 0.0;
+        cfg.engagements_enabled = true;
+        let galaxy = test_galaxy(3, 5);
+        let autopilots: Vec<Box<dyn Autopilot>> = (0..3)
+            .map(|i| {
+                let d = Doctrine { engage_neutrals: i == 0, picket_after_founding: i == 0, ..Doctrine::default() };
+                Box::new(BaselineAutopilot::new(d)) as Box<dyn Autopilot>
+            })
+            .collect();
+        let mut sim = Simulation::new(galaxy, cfg, autopilots);
+        let before = sim.mass_ledger();
+        sim.run();
+        let after = sim.mass_ledger();
+        let d = before.delta(&after);
+        // **Non-vacuity.** Every assertion below holds trivially on a run where
+        // the card never fired, and this bed is small — so the paths that move
+        // mass violently have to be shown to have happened.
+        assert!(
+            !sim.picket.is_empty() || d.slag > 0.0,
+            "the card never fielded a picket and nothing was ever wrecked, so this proves nothing"
+        );
+        let drift = (after.total() - before.total()).abs() / before.total();
+        assert!(
+            drift < 1e-9,
+            "mass is not conserved under the card: {:.6} -> {:.6} ({:+.6} absolute)\n  {d:#?}",
+            before.total(),
+            after.total(),
+            after.total() - before.total()
+        );
+    }
+
+    /// **A rung bought from between rungs erects exactly what it bills**
+    /// (T-124, design law #11).
+    ///
+    /// `founding_infra` is a hull's cost, so a colony's stock starts wherever
+    /// that lands on the ladder. The purchase sets the stock to the next rung;
+    /// the bill used to be the width of the rung the stock *rounds* to, so a
+    /// stock above its rung lost the difference and one below it gained it.
+    /// Found by the blockade's conservation test at 250 yr, on a run with no
+    /// card played. Both directions are asserted.
+    #[test]
+    fn an_off_rung_upgrade_erects_what_it_bills() {
+        let cfg = test_cfg(5);
+        for offset in [0.1113, -0.3] {
+            let mut sim = Simulation::with_baseline(test_galaxy(2, 5), cfg);
+            let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+            let home_pos = *sim.world.position.get(home).unwrap();
+            let rung = Band::new(1.0 + offset);
+            let stock = Price::at_band_from(rung, cost_anchor(&sim.config));
+            sim.world.factors.get_mut(home).unwrap().infra = stock;
+            let bank = sim.world.stockpile.get_mut(home).unwrap();
+            bank.cyan += 50.0;
+            bank.magenta += 50.0;
+            bank.yellow += 50.0;
+            let before = sim.mass_ledger();
+            let paid = sim.apply_build_with(0, home, home_pos, BuildOrder::UpgradeInfrastructure, &[]);
+            assert!(paid.is_some(), "offset {offset}: the upgrade must land for this to say anything");
+            let after = sim.mass_ledger();
+            let drift = after.total() - before.total();
+            assert!(drift.abs() < 1e-9 * before.total(), "offset {offset}: the upgrade moved {drift:+e} kt");
+        }
+    }
+
+    /// **Mass is conserved through the port strike, over a whole run**
+    /// (T-123). The constructed test above pins one strike; this one lets the
+    /// blockade find its own ports and asserts it struck something, so the
+    /// ledger is checked on the path the card actually walks.
+    #[test]
+    fn mass_is_conserved_through_the_blockade() {
+        let mut cfg = test_cfg(5);
+        cfg.horizon_years = 300.0;
+        cfg.biosphere_regen_rate = 0.0;
+        cfg.engagements_enabled = true;
+        let autopilots: Vec<Box<dyn Autopilot>> = (0..3)
+            .map(|i| {
+                let mut d = Doctrine::default();
+                if i == 0 {
+                    crate::cards::apply_doctrine_write(&mut d, crate::cards::DoctrineWrite::ArmedFrontier);
+                }
+                Box::new(BaselineAutopilot::new(d)) as Box<dyn Autopilot>
+            })
+            .collect();
+        let mut sim = Simulation::new(test_galaxy(3, 5), cfg, autopilots);
+        sim.set_log_filter(LogFilter::none().with(crate::log::LogCategory::Combat));
+        let before = sim.mass_ledger();
+        sim.run();
+        let after = sim.mass_ledger();
+        let strikes = sim
+            .log()
+            .iter()
+            .filter(|r| matches!(r.event, LogEvent::EngagementResolved { defender: 0, losses_attacker: 1.., .. }))
+            .count();
+        // Non-vacuity (`CLAUDE.md` §2's trim guard): a blockade that never
+        // struck leaves this passing on a run that proved nothing.
+        assert!(strikes > 0, "no blockader ever struck a colony ship");
+        let drift = (after.total() - before.total()).abs() / before.total();
+        assert!(drift < 1e-9, "mass is not conserved through {strikes} strikes: {:#?}", before.delta(&after));
+    }
+
+    /// **A hull is made of specific minerals and gives them back** (R-IND21,
+    /// T-119).
+    ///
+    /// Cost is one scalar (R-O57), so every path that returned a hull's mass to
+    /// the world used to guess an even color split — in the one dimension the
+    /// mineral economy is actually constrained by (§6.19c). A hull records what
+    /// the bank handed over and returns it in the same proportions.
+    ///
+    /// **And better material makes better salvage**: the composition is
+    /// whatever bought the hull, so one built from supers or apex drops supers
+    /// or apex with no further rule. Asserted here directly, because nothing
+    /// spends supers on a hull yet and an emergent test would sit at zero.
+    #[test]
+    fn a_hull_returns_the_minerals_it_was_built_from() {
+        let mut cfg = test_cfg(3);
+        cfg.horizon_years = 10.0;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let hull = HullType::MediumSystems;
+        let price = hull_cost(hull, &sim.config);
+
+        // A lopsided hull: two parts Cyan to one part Yellow, no Magenta.
+        let lopsided = sim.world.spawn();
+        sim.world.hull_type.insert(lopsided, hull);
+        let paid = Minerals { cyan: 2.0, yellow: 1.0, ..Minerals::default() };
+        sim.stamp_composition(lopsided, hull, &paid);
+        let back = sim.composition_of(lopsided, price);
+        assert!((back.basic_total() - price).kilotons().abs() < 1e-12, "it gives back exactly its cost");
+        assert_eq!(back.magenta, 0.0, "it was not built from Magenta and does not invent any");
+        assert!((back.cyan - 2.0 * back.yellow).abs() < 1e-12, "and the two-to-one ratio survives");
+
+        // Half of it recovers half of each, which is what scrapping reads.
+        let half = sim.composition_of(lopsided, price * 0.5);
+        assert!((half.cyan - back.cyan * 0.5).abs() < 1e-12);
+        assert!((half.yellow - back.yellow * 0.5).abs() < 1e-12);
+
+        // **Better material, better loot.** A hull bought with supers and apex
+        // returns them; nothing else in the engine has to know.
+        let rich = sim.world.spawn();
+        sim.world.hull_type.insert(rich, hull);
+        sim.stamp_composition(rich, hull, &Minerals { red: 1.0, apex: 1.0, ..Minerals::default() });
+        let loot = sim.composition_of(rich, price);
+        assert!(loot.red > 0.0 && loot.apex > 0.0, "a super/apex hull drops supers and apex, got {loot:?}");
+        assert_eq!(loot.basic_total(), Price::ZERO, "and no basics it was never made of");
+        assert!((loot.red + loot.apex - price.kilotons()).abs() < 1e-12, "still exactly its cost");
+
+        // A hull nobody paid for falls back to an even split, and says so.
+        let free = sim.world.spawn();
+        sim.world.hull_type.insert(free, hull);
+        let split = sim.composition_of(free, price);
+        assert!((split.cyan - split.magenta).abs() < 1e-12 && (split.magenta - split.yellow).abs() < 1e-12);
+        let _ = home;
+    }
+
+    /// **A picket guesses, and a feint makes it guess wrong** (R-WAR10, T-120).
+    ///
+    /// The picket is handed a *bearing*, not a destination. Two worlds on the
+    /// same bearing are indistinguishable at range, so it backs the nearer one
+    /// — and a colony ship aimed at the far one has spent nothing to put a
+    /// picket in the wrong place.
+    ///
+    /// That is the whole deception channel, and it exists because the inference
+    /// is real: an engine that told the picket where the ship was going could
+    /// not be feinted, whatever else it modeled.
+    #[test]
+    fn a_picket_backs_the_near_world_on_a_bearing_and_can_be_feinted() {
+        let (sim, picket, decoy, _) = feint_fixture(false);
+        assert_eq!(
+            sim.world.voyage.get(picket).map(|v| v.target),
+            Some(decoy),
+            "it backs the *near* world on the bearing — which is the wrong one, and is the point"
+        );
+    }
+
+    /// **The oracle ablation means exactly "told the answer"** (T-122).
+    ///
+    /// The same scene as the feint, with `ablate_oracle_intercept` on: the
+    /// picket backs the world the ship is actually going to. Pinned because an
+    /// ablation is only worth its measurement if it changes the one thing it
+    /// names — T-122 read "the guess is not what binds" off this switch, and
+    /// that reading is void if the switch did something else.
+    #[test]
+    fn the_oracle_ablation_backs_the_true_destination() {
+        let (sim, picket, _, prize) = feint_fixture(true);
+        assert_eq!(sim.world.voyage.get(picket).map(|v| v.target), Some(prize));
+    }
+
+    /// Two unclaimed worlds on one bearing out of seat 1's home — a decoy near,
+    /// the prize far — a seat-0 picket standing beside the decoy, and seat 1's
+    /// colonizer launched at the prize. Returns `(sim, picket, decoy, prize)`
+    /// after the launch, so the picket has already chosen.
+    fn feint_fixture(oracle: bool) -> (Simulation, Entity, Entity, Entity) {
+        let mut cfg = test_cfg(606);
+        cfg.horizon_years = 5.0;
+        cfg.engagements_enabled = true;
+        cfg.ablate_oracle_intercept = oracle;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 606), cfg);
+        {
+            let d = sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap();
+            d.picket_intercepts = true;
+        }
+        let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let home1_pos = *sim.world.position.get(home1).unwrap();
+
+        // Constructed, because a bed this size will not offer a collinear pair
+        // (§8.9.5's geometry note).
+        let free: Vec<Entity> = sim
+            .planet_entity
+            .iter()
+            .copied()
+            .filter(|&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .take(3)
+            .collect();
+        assert!(free.len() >= 3, "need a decoy, a prize and somewhere to stand");
+        let (decoy, prize, station) = (free[0], free[1], free[2]);
+        let out = Vec3::new(1.0, 0.0, 0.0);
+        sim.world.position.insert(decoy, home1_pos.add(out.scale(20.0)));
+        sim.world.position.insert(prize, home1_pos.add(out.scale(40.0)));
+        // Beside the decoy, so it can reach either in time.
+        sim.world.position.insert(station, home1_pos.add(out.scale(20.5)));
+
+        // The picket rides the Limited Contact hull since T-121.
+        let picket = sim.world.spawn();
+        sim.world.owner.insert(picket, PlayerId(0));
+        sim.world.role.insert(picket, Role::Picket);
+        sim.world.hull_type.insert(picket, HullType::LimitedContactVehicle);
+        sim.picket.insert(station.0, (0, vec![picket], sim.clock));
+        sim.picket_count[0] += 1;
+        {
+            let k = sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap();
+            for e in [decoy, prize] {
+                k.scanned.insert(*sim.world.planet_id.get(e).unwrap());
+            }
+        }
+
+        // Same bearing as the decoy, so a guessing picket cannot tell them apart.
+        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, prize, 0.0);
+        assert!(!sim.picket.contains_key(&station.0), "the picket should have broken for the bearing");
+        (sim, picket, decoy, prize)
+    }
+
+    #[test]
+    fn the_color_conjunction_ablation_bills_the_same_total_in_the_banks_mix() {
+        // **T-122.** The ablation removes *which colors* a rung needs and
+        // nothing else: the total billed is unchanged (so design law #11 holds
+        // and `eta_works` still means what it did), and the split follows the
+        // paying bank, so any bank holding the total can pay. A lopsided bank
+        // that fails the ratified per-color test must pass the ablated one.
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), test_cfg(3));
+        let works = cards::Works::default();
+        let step = Price::new(0.9);
+        let mut bank = Minerals::default();
+        bank.add_basic(Basic::Cyan, 2.0);
+        bank.add_basic(Basic::Magenta, 0.05);
+
+        let ratified = sim.rung_bill(step, &works, &bank);
+        assert_eq!(ratified, works_bill(step, &works), "off, the bill is T-73's");
+        assert!(!can_pay_bill(&bank, &ratified), "a one-color bank cannot pay a three-color rung");
+
+        sim.config.ablate_color_conjunction = true;
+        let ablated = sim.rung_bill(step, &works, &bank);
+        let total = |b: &[Price; 3]| b.iter().fold(Price::ZERO, |a, &x| a + x).kilotons();
+        assert!((total(&ablated) - total(&ratified)).abs() < 1e-12, "the total is the same bill");
+        assert_eq!(ablated[2], Price::ZERO, "no Yellow is asked of a bank that holds none");
+        assert!(can_pay_bill(&bank, &ablated), "and the bank that holds the total now pays it");
+    }
+
+    /// **A picket whose world gets colonized goes back to the frontier**
+    /// (T-115). Its product is a colony somebody does not found, and this world
+    /// now has one — so a hull left parked there is a hull doing nothing, and
+    /// worse, one `picket_reserve` keeps counting against the replacements it
+    /// should be buying.
+    #[test]
+    fn a_picket_leaves_a_world_that_has_been_colonized() {
+        let mut cfg = test_cfg(77);
+        cfg.horizon_years = 50.0;
+        cfg.engagements_enabled = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 77), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let home_pos = *sim.world.position.get(home).unwrap();
+        let target = *sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .min_by(|&&a, &&b| {
+                let d = |e| sim.world.position.get(e).unwrap().distance(home_pos);
+                d(a).partial_cmp(&d(b)).unwrap().then(a.0.cmp(&b.0))
+            })
+            .expect("an unclaimed world");
+
+        // Seat 0 holds it, and seat 0 then settles it — the held-ground
+        // preference T-113 added is exactly what produces this situation.
+        let picket = sim.world.spawn();
+        sim.world.owner.insert(picket, PlayerId(0));
+        sim.world.role.insert(picket, Role::Picket);
+        sim.world.hull_type.insert(picket, HullType::LimitedOffensive);
+        sim.picket.insert(target.0, (0, vec![picket], sim.clock));
+        sim.picket_count[0] += 1;
+
+        // Somewhere for it to go. `dispatch_picket` re-aims within this seat's
+        // own scanned set — the fleet-bounded collection §4 allows — so without
+        // a second known world the honest outcome is Reserve and the test would
+        // be asserting on an empty frontier rather than on the re-aim.
+        let elsewhere: Vec<PlanetId> = sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| e != target && !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .take(4)
+            .map(|&e| *sim.world.planet_id.get(e).unwrap())
+            .collect();
+        assert!(!elsewhere.is_empty(), "the bed needs at least one other unclaimed world");
+        {
+            let k = sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap();
+            for pid in &elsewhere {
+                k.scanned.insert(*pid);
+            }
+        }
+
+        sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home, target, 0.0);
+        sim.run();
+
+        assert!(sim.world.owner.contains(target), "the colony should have been founded");
+        assert!(!sim.picket.contains_key(&target.0), "nothing is left to deny on a world that is now a colony");
+        assert_eq!(sim.picket_count[0], 0, "and the empire must stop counting it as ground held");
+        // The hull is re-tasked, not parked and not destroyed.
+        assert_eq!(sim.world.role.get(picket).copied(), Some(Role::Picket), "it is still a picket");
+        assert_ne!(
+            sim.world.voyage.get(picket).map(|v| v.target),
+            Some(target),
+            "aimed somewhere new, not at the world it just left"
+        );
+    }
+
+    /// **The colonization leg is flown laden** (R-WAR9 resolved, standing-layer
+    /// item 5 / R-O32).
+    ///
+    /// `spawn_courier` used to read `civilian_accel_g · G` **before** the hold
+    /// was loaded and never re-read it, so the leg flew at the empty-hull rate
+    /// while every `laden_accel` call site in the engine was freight — even
+    /// though `CLAUDE.md` §7 records R-O32 as having closed exactly that
+    /// (*"it was massless, so a laden colony ship flew like an empty hull"*).
+    ///
+    /// It was found by needing the number for something else: an interceptor's
+    /// whole window is the colony ship's travel time minus light's, which is
+    /// **1.92 years** for an empty hull and **~8.1** for a laden one
+    /// (`Hyades_warfare_tree.md` §8.9.5). Four times the window, and it is the
+    /// difference between a mechanic that fires on a tenth of the field and one
+    /// that fires on half of it.
+    ///
+    /// Asserted as the identity rather than against a golden acceleration, so
+    /// it survives any retune of `civilian_accel_g` or the drive ladder.
+    #[test]
+    fn the_colonization_leg_is_flown_at_the_rate_its_own_load_implies() {
+        let mut cfg = test_cfg(31);
+        cfg.horizon_years = 5.0;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 31), cfg);
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let home_pos = *sim.world.position.get(home).unwrap();
+        let target = *sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .min_by(|&&a, &&b| {
+                let d = |e| sim.world.position.get(e).unwrap().distance(home_pos);
+                d(a).partial_cmp(&d(b)).unwrap().then(a.0.cmp(&b.0))
+            })
+            .expect("an unclaimed world");
+        sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home, target, 0.0);
+        let ship = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
+
+        // It is carrying something — otherwise this test says nothing.
+        let pop = sim.world.pop_cargo.get(ship).copied().unwrap_or(Kilotons::ZERO);
+        assert!(pop > Kilotons::ZERO, "the hull must actually be laden for the comparison to bite");
+
+        let flown = sim.world.motion.get(ship).expect("under way").accel;
+        let empty = sim.config.civilian_accel_g * G;
+        let laden = sim.laden_accel(ship, sim.config.civilian_accel_g);
+        assert!(laden < empty, "a laden hull is the slower one, or there is nothing to check");
+        assert_eq!(flown, laden, "R-O32: the leg flies at the rate its own load implies");
+        assert_ne!(flown, empty, "R-WAR9: and not at the empty-hull rate it used to");
+    }
+
+    /// **A picket leaves station to head off a colony ship it can beat there**
+    /// (T-115). The race is run under light-lag and is allowed to be lost: the
+    /// launch is seen at `depart + distance(origin, station)`, the flight takes
+    /// what it takes, and the interception is attempted only when the sum lands
+    /// before the colony ship does.
+    ///
+    /// Placed directly rather than waited for, for the reason §8.6 gives about
+    /// the diversion test: on the standard bed the contested-frontier event is
+    /// a one-in-a-hundred occurrence, so an emergent test would sit at zero.
+    #[test]
+    fn a_picket_intercepts_a_colony_ship_it_can_beat_there() {
+        let mut cfg = test_cfg(909);
+        cfg.horizon_years = 10.0;
+        cfg.engagements_enabled = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
+        {
+            let d = sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap();
+            d.picket_intercepts = true;
+        }
+        assert!(!Doctrine::default().picket_intercepts, "the write must ship unplayed");
+
+        let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+
+        // **The geometry is constructed rather than searched for**, and that is
+        // a statement about this 200-planet bed and not about the mechanic
+        // (`examples/intercept_probe`). A laden colony ship's flight-time
+        // overhead over light **saturates at ≈8.14 years**, in which an empty
+        // LOU covers **6.29 ly** — against a median nearest-neighbor spacing of
+        // **6.16 ly** on the shipped field, so about half of it is
+        // interceptable. The unit bed is a twentieth of that field and its
+        // spacing is correspondingly wider, so placing the station keeps this
+        // test about the criterion, the departure delay and the argmin, and
+        // leaves how often the real field offers such a pair to the census.
+        let accel = sim.config.civilian_accel_g * G;
+        let free: Vec<Entity> = sim
+            .planet_entity
+            .iter()
+            .copied()
+            .filter(|&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .collect();
+        assert!(free.len() >= 2, "the bed needs two unclaimed worlds");
+        let home1_pos = *sim.world.position.get(home1).unwrap();
+        let contested = *free
+            .iter()
+            .max_by(|&&a, &&b| {
+                let d = |e| sim.world.position.get(e).unwrap().distance(home1_pos);
+                d(a).partial_cmp(&d(b)).unwrap().then(a.0.cmp(&b.0))
+            })
+            .unwrap();
+        let station = *free.iter().find(|&&e| e != contested).unwrap();
+        let contested_pos = *sim.world.position.get(contested).unwrap();
+        let out = contested_pos.sub(home1_pos).normalized();
+        // **Between the launcher and the prize, not behind it.** A station 0.5 ly
+        // *beyond* the contested world pays 0.5 ly of extra light to hear the
+        // launch and loses the race by 0.05 yr; the same 0.5 ly on the near
+        // side wins it by about a year. Forward deployment is the whole
+        // geometry of interception, and the sign of one term is what says so.
+        sim.world.position.insert(station, contested_pos.sub(out.scale(0.5)));
+        let picket = sim.world.spawn();
+        sim.world.owner.insert(picket, PlayerId(0));
+        sim.world.role.insert(picket, Role::Picket);
+        sim.world.hull_type.insert(picket, HullType::LimitedOffensive);
+        sim.picket.insert(station.0, (0, vec![picket], sim.clock));
+        sim.picket_count[0] += 1;
+
+        // Diagnostic in the message, so a failure says which term missed.
+        let sp = *sim.world.position.get(station).unwrap();
+        let t_see = home1_pos.distance(sp);
+        let t_reach = t_see + math::ship_travel_years(sp.distance(contested_pos), accel);
+        let colony_reach = math::ship_travel_years(home1_pos.distance(contested_pos), accel);
+        assert!(t_reach < colony_reach, "constructed race must be winnable: {t_reach:.3} vs {colony_reach:.3}");
+
+        // **The picket can only guess at worlds it has surveyed** (R-WAR10).
+        // It is not told the destination any more — it reads a bearing and
+        // backs a world of its own that lies along it — so seat 0 has to know
+        // this world exists. Without this the test asserts the *absence* of an
+        // interception, which is a different claim.
+        {
+            let pid = *sim.world.planet_id.get(contested).unwrap();
+            sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap().scanned.insert(pid);
+        }
+
+        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, contested, 0.0);
+
+        assert!(
+            !sim.picket.contains_key(&station.0),
+            "it should have left the world nobody was racing for: reach {t_reach:.3} vs {colony_reach:.3}"
+        );
+        assert_eq!(sim.picket_count[0], 0, "and come off the books while it is in flight");
+        assert_eq!(
+            sim.world.voyage.get(picket).map(|v| v.target),
+            Some(contested),
+            "aimed at the world the colony ship is going to"
+        );
+        let m = sim.world.motion.get(picket).expect("it is under way");
+        assert!(m.depart > sim.clock, "it cannot leave before the light gets there: {} vs {}", m.depart, sim.clock);
+        let colony_arrival = sim.world.motion.get(sim.inbound_colonizers[&contested.0][0]).unwrap().arrive;
+        assert!(m.arrive < colony_arrival, "and it only goes if it wins: {} vs {colony_arrival}", m.arrive);
+    }
+
+    /// **A seat that starts to blockade recalls what light has already
+    /// delivered, and nothing more** (T-125, design law #15). A launch whose
+    /// light has reached the capital is recorded at once; one still in transit
+    /// is scheduled to arrive when it would.
+    #[test]
+    fn a_new_blockader_recalls_only_launches_whose_light_has_arrived() {
+        let mut cfg = test_cfg(909);
+        cfg.engagements_enabled = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
+        let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let lag = sim.world.position.get(home1).unwrap().distance(*sim.world.position.get(home0).unwrap());
+        assert!(lag > 1.0, "the bed needs the capitals apart");
+        // Seat 1 launched twice from its homeworld: long ago, and just now.
+        sim.launch_history.push((sim.clock - lag - 1.0, home1.0, 1));
+        sim.launch_history.push((sim.clock, home1.0, 1));
+        // And seat 0's own launch, which it does not record against itself.
+        sim.launch_history.push((sim.clock - lag - 1.0, home0.0, 0));
+        sim.recall_seen_launches(0);
+        assert_eq!(sim.launches_seen[0].get(&home1.0), Some(&1), "only the launch whose light has arrived");
+        assert!(!sim.launches_seen[0].contains_key(&home0.0), "a seat does not blockade itself");
+        // The second arrives when its light does.
+        sim.config.horizon_years = sim.clock + lag + 1.0;
+        while sim.step() {
+            if sim.launches_seen[0].get(&home1.0) == Some(&2) {
+                break;
+            }
+        }
+        assert_eq!(sim.launches_seen[0].get(&home1.0), Some(&2), "the in-transit launch lands");
+        assert!(sim.clock >= lag - 1e-9, "and not before its light could: {} < {lag}", sim.clock);
+    }
+
+    /// **Pickets stack like a mining crew** (T-125, author's specification).
+    /// Two of one seat's hulls arriving at one world both stand on it and both
+    /// count against the reserve; a rival's hull cannot share ground another
+    /// seat holds; and taking one hull off leaves the world held.
+    #[test]
+    fn pickets_stack_on_held_ground_like_a_crew() {
+        let mut cfg = test_cfg(909);
+        cfg.engagements_enabled = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
+        let world = *sim
+            .planet_entity
+            .iter()
+            .find(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .expect("the bed needs an unclaimed world");
+        let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let from = *sim.world.position.get(home0).unwrap();
+        let hull = |sim: &mut Simulation, seat: u32| {
+            let e = sim.world.spawn();
+            sim.world.owner.insert(e, PlayerId(seat));
+            sim.world.hull_type.insert(e, HullType::LimitedContactVehicle);
+            sim.launch_picket(e, from, world, 0.0);
+            e
+        };
+        let (a, b, rival) = (hull(&mut sim, 0), hull(&mut sim, 0), hull(&mut sim, 1));
+        sim.sys_picket_arrive(a);
+        sim.sys_picket_arrive(b);
+        sim.sys_picket_arrive(rival);
+        assert_eq!(sim.picket.get(&world.0).map(|(s, v, _)| (*s, v.clone())), Some((0, vec![a, b])), "a stack of two");
+        assert_eq!(sim.picket_count[0], 2, "both count against the reserve");
+        assert_eq!(sim.picket_count[1], 0, "a rival cannot stand on held ground");
+        assert_eq!(sim.world.role.get(rival).copied(), Some(Role::Reserve), "it stands down instead");
+        assert_eq!(sim.detach_picket(world, b), Some(0));
+        assert!(sim.picket.contains_key(&world.0), "one hull still holds it");
+        assert_eq!(sim.picket_count[0], 1);
+    }
+
+    /// **A blockader at a rival's port destroys the colony ship leaving it,
+    /// and the people and cargo aboard become slag** (T-123, R-WAR16).
+    ///
+    /// Constructed rather than waited for, like the picket tests beside it: the
+    /// assertion is about the strike and the ledger, and how often the real
+    /// field offers a blockade is `examples/card_probe`'s question.
+    #[test]
+    fn a_blockader_strikes_the_colony_ship_leaving_its_port() {
+        let mut cfg = test_cfg(909);
+        cfg.horizon_years = 10.0;
+        cfg.engagements_enabled = true;
+        cfg.biosphere_regen_rate = 0.0;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
+        sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap().picket_blockades = true;
+        assert!(!Doctrine::default().picket_blockades, "the write must ship unplayed");
+
+        let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let target = *sim
+            .planet_entity
+            .iter()
+            .find(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .expect("the bed needs an unclaimed world");
+        let blockader = sim.world.spawn();
+        sim.world.owner.insert(blockader, PlayerId(0));
+        sim.world.role.insert(blockader, Role::Picket);
+        sim.world.hull_type.insert(blockader, HullType::LimitedContactVehicle);
+        let beams = design_loadout(HullType::LimitedContactVehicle, Class::Unnamed, &sim.config, &sim.combat);
+        assert!(beams.is_armed(), "the Warfare card's picket Design mounts beams");
+        sim.world.loadout.insert(blockader, beams);
+        sim.blockade.insert((home1.0, 0), vec![blockader]);
+        sim.picket_count[0] += 1;
+
+        let pop_before = *sim.world.population.get(home1).unwrap();
+        let before = sim.mass_ledger();
+        let ship = Entity(sim.world.next);
+        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, target, 0.0);
+        let after = sim.mass_ledger();
+
+        assert!(*sim.world.population.get(home1).unwrap() < pop_before, "settlers must have boarded");
+        assert_eq!(sim.world.role.get(ship).copied(), Some(Role::Scrapped), "the colony ship dies at the yard");
+        assert!(!sim.inbound_colonizers.contains_key(&target.0), "and never flies");
+        assert_eq!(
+            sim.blockade.get(&(home1.0, 0)),
+            Some(&vec![blockader]),
+            "the armed blockader holds against an unarmed ship"
+        );
+        assert!(sim.world.slag.get(home1).is_some_and(|s| s.kilotons() > 0.0), "the wreck is at the port");
+        // An unpaid hull is the one thing created here; everything it carried
+        // was debited from the port and has to reappear as slag.
+        let hull = hull_dry_mass(HullType::MediumSystems, &sim.config).kilotons();
+        let drift = after.total() - before.total() - hull;
+        assert!(drift.abs() < 1e-9 * before.total(), "mass must be conserved through the strike: {drift:+e}");
+
+        // **Nothing is scheduled to arrive**: the run carries on with no
+        // `ColonyArrive` for a scrapped hull. And the strike's launch was
+        // still *seen* — by seat 0 only, and not before the light could reach
+        // its capital.
+        let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let lag = sim.world.position.get(home1).unwrap().distance(*sim.world.position.get(home0).unwrap());
+        sim.config.horizon_years = lag + 1.0;
+        while sim.step() {
+            if sim.launches_seen[0].contains_key(&home1.0) {
+                break;
+            }
+        }
+        assert!(sim.clock >= lag - 1e-9, "seen at {} before its light arrived at {lag}", sim.clock);
+        assert!(sim.launches_seen[0].contains_key(&home1.0), "the launch must be seen within {lag} yr");
+        assert!(sim.launches_seen[1].is_empty(), "a seat that does not blockade watches nothing");
+
+        // Placement reads that store: the port seen launching is the target,
+        // unless this seat already stands there or has a hull on the way.
+        sim.blockade.clear();
+        assert_eq!(sim.blockade_target(0), Some(home1), "the port it has seen launch");
+        sim.bind(0, home1.0);
+        assert_eq!(sim.blockade_target(0), Some(home1), "hulls stack at a port like a mining crew (T-125)");
+    }
+
+    /// **A picket holds ground and a rival colonizer turns back from it**
+    /// (T-112) — the mechanism check, built rather than waited for.
+    ///
+    /// **It has to be constructed, and that is itself the finding.** On the
+    /// standard bed the whole card produces **3–12 diversions per 800-year
+    /// run** against 493–793 pickets, so an emergent test would be asserting
+    /// on a one-in-a-hundred event and would sit at zero on a small galaxy.
+    /// This places the picket and the rival colonizer directly, so the path is
+    /// pinned even though the card almost never walks it in play.
+    #[test]
+    fn a_picket_turns_a_rival_colonizer_back() {
+        let mut cfg = test_cfg(2024);
+        cfg.horizon_years = 400.0;
+        cfg.engagements_enabled = true;
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 2024), cfg);
+
+        // Seat 1 sends a colonizer at the nearest unclaimed world to its own
+        // homeworld: the warning travels the same distance the ship does, and
+        // the ship is slower than light, so the margin is real but small.
+        let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let home1_pos = *sim.world.position.get(home1).unwrap();
+        let target = *sim
+            .planet_entity
+            .iter()
+            .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+            .min_by(|&&a, &&b| {
+                let da = sim.world.position.get(a).unwrap().distance(home1_pos);
+                let db = sim.world.position.get(b).unwrap().distance(home1_pos);
+                da.partial_cmp(&db).unwrap().then(a.0.cmp(&b.0))
+            })
+            .expect("an unclaimed world");
+        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, target, 0.0);
+        let colonizer = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
+
+        // Seat 0 is already holding it, as of now.
+        let picket_hull = sim.world.spawn();
+        sim.world.owner.insert(picket_hull, PlayerId(0));
+        sim.world.role.insert(picket_hull, Role::Picket);
+        sim.world.hull_type.insert(picket_hull, HullType::GeneralContactVehicle);
+        sim.picket.insert(target.0, (0, vec![picket_hull], sim.clock));
+        sim.notify_inbound(target);
+
+        sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
+        sim.run();
+
+        let diverted =
+            sim.log().iter().filter(|r| matches!(r.event, crate::log::LogEvent::ColonyDiverted { .. })).count();
+        assert_eq!(diverted, 1, "the colonizer should have turned back exactly once");
+        // And it did not found: the world is still unowned.
+        assert!(!sim.world.owner.contains(target), "a diverted colonizer must not have founded");
+        assert_ne!(sim.world.role.get(colonizer).copied(), Some(Role::Colonizer), "it should be re-tasked");
+    }
+
     #[test]
     fn a_logged_vehicle_entity_resolves_back_to_a_position() {
         // The point of logging Entity (not just PlanetId) on vehicle events is
@@ -7715,6 +11590,62 @@ mod tests {
         assert!(sim2.laden_accel(big, base) > a_laden);
     }
 
+    /// **Production's objective must be able to express design law #3, and in
+    /// mass it provably cannot** (R-PROD5).
+    ///
+    /// The law says consolidation wins under geometry alone: cost is surface
+    /// area, value is volume. Since R-O57 dry mass *is* mineral cost, so
+    /// fleet-years in mass is "minerals committed to hulls, integrated" — and
+    /// that is **exactly indifferent** between one General hull and the fleet of
+    /// Mediums its minerals would buy. This pins both halves: mass scores the
+    /// comparison at 1.0 to within rounding, and volume does not.
+    ///
+    /// The mass half is the one that matters. It is not a property anybody would
+    /// think to check, and without it a future change back to mass would lose
+    /// law #3 silently — which is exactly how the law came to be false in the
+    /// engine the first time (R-O58: cost and capacity were each individually
+    /// ratified, and nothing asserted the ratio).
+    #[test]
+    fn fleet_years_in_volume_expresses_consolidation_and_in_mass_cannot() {
+        let cfg = SimConfig::new(1);
+        use HullType::*;
+
+        // `r³` decomposes exactly into what was bought and what it encloses.
+        for hull in [LimitedSystems, MediumSystems, GeneralSystems, LimitedOffensive, GeneralOffensive] {
+            let whole = hull.hull_volume(&cfg).hull_units_cubed();
+            let parts = hull.shell_volume(&cfg).hull_units_cubed() + hull.hold_volume(&cfg).hull_units_cubed();
+            assert!((whole - parts).abs() < 1e-12, "{hull:?}: r³ {whole} != shell + hold {parts}");
+        }
+
+        // Volume bought per kilotonne spent rises strictly with size, within
+        // every family. This is the whole content of the objective change.
+        for family in
+            [[LimitedSystems, MediumSystems, GeneralSystems], [LimitedOffensive, RapidOffensive, GeneralOffensive]]
+        {
+            let per_kt = |h: HullType| h.hull_volume(&cfg).hull_units_cubed() / hull_dry_mass(h, &cfg).kilotons();
+            assert!(per_kt(family[0]) < per_kt(family[1]), "{:?} -> {:?}", family[0], family[1]);
+            assert!(per_kt(family[1]) < per_kt(family[2]), "{:?} -> {:?}", family[1], family[2]);
+        }
+
+        // At **equal mineral spend**, the larger hull encloses strictly more —
+        // and masses exactly the same, by construction.
+        for (big, small) in [(GeneralSystems, MediumSystems), (GeneralOffensive, RapidOffensive)] {
+            let (cb, cs) = (hull_dry_mass(big, &cfg).kilotons(), hull_dry_mass(small, &cfg).kilotons());
+            let n = cb / cs; // small hulls the big one's minerals buy
+
+            let vol_ratio = big.hull_volume(&cfg).hull_units_cubed() / (n * small.hull_volume(&cfg).hull_units_cubed());
+            assert!(vol_ratio > 1.5, "{big:?} vs {small:?}: volume ratio {vol_ratio} — consolidation not expressed");
+
+            // The mass arm. `n · cs` *is* `cb`, so this is 1.0 by construction
+            // and the assertion is the point: mass cannot see the law.
+            let mass_ratio = cb / (n * cs);
+            assert!(
+                (mass_ratio - 1.0).abs() < 1e-12,
+                "{big:?} vs {small:?}: mass ratio {mass_ratio} — if this is no longer 1, re-read R-PROD5"
+            );
+        }
+    }
+
     #[test]
     fn shell_model_ladders_are_derived_not_tuned() {
         // R-O58. The radius ladder falls out of the cost ladder (cost ∝ area),
@@ -7779,6 +11710,55 @@ mod tests {
         assert!(per_kt(g) < per_kt(m), "bigger hull must be cheaper per kt hauled");
     }
 
+    /// **The empty-to-laden acceleration swing *is* the hull's cargo efficiency
+    /// (R-O95).**
+    ///
+    /// Since T-96 thrust is a property of the mounted drive and does not depend
+    /// on the load, and since R-O57 a hull's cost *is* its dry mass. So
+    ///
+    /// ```text
+    /// a_dry / a_laden = (T / M_dry) / (T / (M_dry + C)) = 1 + C / M_dry
+    /// ```
+    ///
+    /// and `C / M_dry` is cargo capacity per kilotonne of price — the quantity
+    /// design law #3 is a claim about. The two readings are the same number.
+    ///
+    /// **What it forbids is worth more than what it states.**
+    /// `Hyades_standing_layer_and_observation.md` §9.2 reads the swing as the
+    /// load-state broadcast: a large hull announces whether it is laden and a
+    /// small one does not. This says the broadcast's *width* cannot be designed
+    /// separately from the hold — a hull made worse at freight is thereby made
+    /// quieter, and no Design write can lower laden acceleration while raising
+    /// empty acceleration and cutting cargo efficiency at the same time. That
+    /// triple is over-determined by one constraint (`Hyades_warfare_tree.md` §7.3).
+    ///
+    /// Asserted across a 10x span of `drive_volume_fraction` so it is a property
+    /// of the law rather than of the shipped magnitude.
+    #[test]
+    fn the_acceleration_swing_is_the_cargo_efficiency() {
+        for phi in [0.01, 0.02, 0.05, 0.1] {
+            let mut cfg = SimConfig::new(1);
+            cfg.drive_volume_fraction = phi;
+            for hull in [
+                HullType::LimitedSystems,
+                HullType::MediumSystems,
+                HullType::GeneralSystems,
+                HullType::GeneralContactVehicle,
+                HullType::GeneralOffensive,
+            ] {
+                let dry = hull_dry_mass(hull, &cfg).kilotons();
+                let cargo = hull.cargo_capacity(&cfg).kilotons();
+                let thrust = cfg.drive_specific_thrust * hull.drive_mass(&cfg).kilotons();
+                let swing = (thrust / dry) / (thrust / (dry + cargo));
+                assert!(
+                    (swing - (1.0 + cargo / dry)).abs() < 1e-12,
+                    "{hull:?} at phi={phi}: swing {swing} != 1 + {}",
+                    cargo / dry
+                );
+            }
+        }
+    }
+
     /// **R-O71 closed: the hold ladder *is* the mass ladder, tied to the cost
     /// ladder by `F_mass = F_cost^(3/2)`.**
     ///
@@ -7786,7 +11766,7 @@ mod tests {
     /// pinned a disagreement between two ratified specs — §2.6 demanded one
     /// step factor in `[4, 8]` for every Band-laddered quantity, cargo capacity
     /// named among them, while the shell model stepped Medium → General by
-    /// ~106×. R-MC15 resolved it in the geometry's favour: the `[4, 8]` window
+    /// ~106×. R-MC15 resolved it in the geometry's favor: the `[4, 8]` window
     /// is withdrawn, capacity sits on the **mass** ladder rather than the cost
     /// one, and the `3/2` exponent is what makes those one geometry instead of
     /// two scales. The old test's failure message asked for exactly this
@@ -7816,7 +11796,7 @@ mod tests {
             // Tolerances are loose because `η` varies across the three sizes by
             // design (§2.2) — the steps are hit to within a couple of percent,
             // not to the bit.
-            let want = cost_step.powf(1.5);
+            let want = transcendental::pow(cost_step, 1.5);
             assert!((hold_step / want - 1.0).abs() < 0.05, "hold step {hold_step} vs {cost_step}^1.5 = {want}");
         }
 
@@ -7894,8 +11874,8 @@ mod tests {
         assert!(l.shell_thickness() < m.shell_thickness());
         assert!(m.shell_thickness() < g.shell_thickness());
 
-        // **And with armour**, at every size: Offensive > Contact > Systems.
-        // The armour statement as geometry rather than as a combat constant,
+        // **And with armor**, at every size: Offensive > Contact > Systems.
+        // The armor statement as geometry rather than as a combat constant,
         // which is what keeps design law #2 intact.
         assert!(l.shell_thickness() < HullType::LimitedContactVehicle.shell_thickness());
         assert!(HullType::LimitedContactVehicle.shell_thickness() < HullType::LimitedOffensive.shell_thickness());
@@ -7911,10 +11891,13 @@ mod tests {
         let step_lo = m.hold_volume(&cfg) / l.hold_volume(&cfg);
         let step_hi = g.hold_volume(&cfg) / m.hold_volume(&cfg);
         assert!(
-            (step_lo - (cfg.limited_fleet_size / cfg.medium_fleet_size).powf(1.5)).abs() < 0.2,
+            (step_lo - transcendental::pow(cfg.limited_fleet_size / cfg.medium_fleet_size, 1.5)).abs() < 0.2,
             "Limited→Medium hold step {step_lo}"
         );
-        assert!((step_hi - cfg.medium_fleet_size.powf(1.5)).abs() < 0.5, "Medium→General hold step {step_hi}");
+        assert!(
+            (step_hi - transcendental::pow(cfg.medium_fleet_size, 1.5)).abs() < 0.5,
+            "Medium→General hold step {step_hi}"
+        );
 
         // **Capability, not competence** (roles §4, R-O44). A Limited Contact
         // or Offensive hull and a Rapid Offensive one reserve more than their
@@ -7953,7 +11936,7 @@ mod tests {
         for (hull, role) in [
             (HullType::MediumSystems, Role::Colonizer),
             (HullType::LimitedSystems, Role::Miner),
-            (HullType::LimitedContactVehicle, Role::Scout),
+            (HullType::LimitedSystems, Role::Scout),
         ] {
             assert_eq!(role_hull_type(role), hull, "{role:?} still maps back to {hull:?}");
             assert!((role_cost(role, &cfg) - hull_cost(hull, &cfg)).abs() < Price::new(1e-12));
@@ -7978,7 +11961,7 @@ mod tests {
     fn a_colony_ship_carries_up_to_the_targets_capacity_and_no_more() {
         let mut sim = Simulation::with_baseline(test_galaxy(3, 1), test_cfg(1));
         // **A third cap joined the two this test is about** (R-O74): settlers
-        // come out of the origin's population. Give this centre people to
+        // come out of the origin's population. Give this center people to
         // spare so the hold-vs-world question stays readable;
         // `settlers_are_drawn_from_a_real_population` pins the origin case.
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
@@ -8114,12 +12097,12 @@ mod tests {
     ///
     /// The interesting assertion is **two-sidedness**. §10.8 says the guard for
     /// Exchange work is a census rather than colony-years, and this is that
-    /// census at its smallest: if every empire were short the same colours, the
+    /// census at its smallest: if every empire were short the same colors, the
     /// books would be all bids and no asks and there would be no trade to make.
     /// T-73 measured why they are not — 1,494 of 1,515 banks are
-    /// single-coloured, so nearly every centre is simultaneously **long one
-    /// colour and short the other two**, which is precisely the condition that
-    /// makes a colour market worth having.
+    /// single-colored, so nearly every center is simultaneously **long one
+    /// color and short the other two**, which is precisely the condition that
+    /// makes a color market worth having.
     #[test]
     fn the_exchange_books_fill_on_both_sides() {
         let run = |post: bool| {
@@ -8143,14 +12126,14 @@ mod tests {
 
         assert_eq!(depth_off, [(0, 0); 3], "posting disabled must post nothing");
 
-        // **Both sides, on at least one colour.** A one-sided book is a market
+        // **Both sides, on at least one color.** A one-sided book is a market
         // with nothing to match.
         let (bids, asks): (u64, u64) = depth_on.iter().fold((0, 0), |(b, a), &(x, y)| (b + x, a + y));
-        assert!(bids > 0, "no centre bid for anything it was short of: {depth_on:?}");
-        assert!(asks > 0, "no centre offered anything it was long of: {depth_on:?}");
+        assert!(bids > 0, "no center bid for anything it was short of: {depth_on:?}");
+        assert!(asks > 0, "no center offered anything it was long of: {depth_on:?}");
         assert!(
             depth_on.iter().any(|&(b, a)| b > 0 && a > 0),
-            "no single colour has both sides, so nothing could ever match: {depth_on:?}"
+            "no single color has both sides, so nothing could ever match: {depth_on:?}"
         );
 
         // **Nothing clears.** Same seed, same run, to the bit.
@@ -8199,7 +12182,7 @@ mod tests {
         assert_eq!(st_off.0, 0, "posting disabled must strike no contracts");
         assert!(
             st_on.0 > 0,
-            "no contract was struck: either no colour had both sides, or no two empires shared an outpost"
+            "no contract was struck: either no color had both sides, or no two empires shared an outpost"
         );
         assert_eq!(st_on.1, 0, "settlement was disabled, so nothing may have settled");
 
@@ -8227,12 +12210,12 @@ mod tests {
     #[test]
     fn settlement_moves_ore_to_the_buyers_pile_and_conserves_mass() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 71), test_cfg(71));
-        let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let seller_center = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
         let rock = sim.planet_entity[30];
         for p in 0..2u32 {
             sim.mine_crew.insert((p, rock.0), vec![sim.world.spawn()]);
         }
-        sim.world.stockpile.get_mut(seller_centre).unwrap().yellow = 100.0;
+        sim.world.stockpile.get_mut(seller_center).unwrap().yellow = 100.0;
         sim.credit(sim.player_entity[0], 500.0);
 
         let total_yellow = |s: &Simulation| -> f64 {
@@ -8249,8 +12232,8 @@ mod tests {
             Contract {
                 buyer: PlayerId(0),
                 seller: PlayerId(1),
-                seller_centre,
-                colour: Basic::Yellow,
+                seller_center,
+                color: Basic::Yellow,
                 qty: 40.0,
                 escrow: 80.0,
                 seller_drop: rock,
@@ -8266,7 +12249,7 @@ mod tests {
         assert_eq!(sim.exchange_state().1, 1, "the contract must have settled");
         assert_eq!(sim.exchange_defaults(), 0);
         assert!(
-            (sim.world.stockpile.get(seller_centre).unwrap().yellow - 60.0).abs() < 1e-9,
+            (sim.world.stockpile.get(seller_center).unwrap().yellow - 60.0).abs() < 1e-9,
             "the seller's bank must be debited"
         );
         assert!(
@@ -8287,11 +12270,11 @@ mod tests {
     #[test]
     fn a_seller_that_cannot_deliver_defaults_and_both_sides_pay() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 73), test_cfg(73));
-        let seller_centre = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let seller_center = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
         let rock = sim.planet_entity[30];
-        // The bank is short the colour it owes — rich in Cyan, owing Yellow.
+        // The bank is short the color it owes — rich in Cyan, owing Yellow.
         {
-            let b = sim.world.stockpile.get_mut(seller_centre).unwrap();
+            let b = sim.world.stockpile.get_mut(seller_center).unwrap();
             b.yellow = 1.0;
             b.cyan = 9_999.0;
         }
@@ -8302,8 +12285,8 @@ mod tests {
             Contract {
                 buyer: PlayerId(0),
                 seller: PlayerId(1),
-                seller_centre,
-                colour: Basic::Yellow,
+                seller_center,
+                color: Basic::Yellow,
                 qty: 40.0,
                 escrow: 80.0,
                 seller_drop: rock,
@@ -8315,15 +12298,15 @@ mod tests {
 
         sim.sys_contract_due(id);
 
-        assert_eq!(sim.exchange_defaults(), 1, "a bank short the named colour must default");
+        assert_eq!(sim.exchange_defaults(), 1, "a bank short the named color must default");
         assert_eq!(sim.exchange_state().1, 0, "a default is not a settlement");
         let refunded = sim.purse_of(PlayerId(0)) - buyer_before;
         assert!(refunded > 0.0 && refunded < 80.0, "the buyer is refunded minus the burn, got {refunded}");
         assert_eq!(sim.purse_of(PlayerId(1)), seller_before, "the seller gains nothing by defaulting");
         assert!(sim.exchange_state().2 > 0.0, "the burn is the sink (§2.3)");
-        // **A rich bank in the wrong colour does not help**, which is what the
-        // colour axis is for.
-        assert!(sim.world.stockpile.get(seller_centre).unwrap().cyan > 9_000.0, "the wrong colour was never touched");
+        // **A rich bank in the wrong color does not help**, which is what the
+        // color axis is for.
+        assert!(sim.world.stockpile.get(seller_center).unwrap().cyan > 9_000.0, "the wrong color was never touched");
     }
 
     /// **A trade needs a rock both parties work** (§10.6, T-85).
@@ -8373,7 +12356,7 @@ mod tests {
     /// §10.7 stages 1–3 land the Exchange **inert**, for the reason
     /// `Hyades_industry.md` §6.7's stages 3–5 did: a system that lands neutral
     /// can be verified against a bit-identical bed before anything switches on,
-    /// so the first stage that *does* change behaviour is measured against a
+    /// so the first stage that *does* change behavior is measured against a
     /// known baseline instead of against a moving one. That plan was not met at
     /// industry stage 5, and the stage that broke it was the one that changed
     /// what a purchase costs — which is stage 4 here.
@@ -8469,7 +12452,7 @@ mod tests {
     /// `veins_per_band`, all placeholders (R-IND18). What has to hold whatever
     /// they become:
     ///
-    /// - **No unmet demand, one hull.** A centre that can already afford what it
+    /// - **No unmet demand, one hull.** A center that can already afford what it
     ///   wants does not buy a mine, it buys a mine's minimum.
     /// - **A richer rock wants a *smaller* crew.** This is the inversion. Both
     ///   retired policies made crew rise with richness — a flat count was
@@ -8490,7 +12473,7 @@ mod tests {
             }
         };
 
-        // **A comfortable centre has no unmet demand.** `mineral_pressure` is
+        // **A comfortable center has no unmet demand.** `mineral_pressure` is
         // zero while the bank covers the next rung, so `D = 0` whatever the
         // yard could fabricate.
         {
@@ -8500,7 +12483,7 @@ mod tests {
             bank.yellow = 10_000.0;
         }
         set_ore(&mut sim, 3.0);
-        assert_eq!(sim.mining_crew_for(center, rock), 1, "a centre that can afford its rung wants one hull");
+        assert_eq!(sim.mining_crew_for(center, rock), 1, "a center that can afford its rung wants one hull");
 
         // Starve it: pressure goes to 1 and the crew is whatever meets the
         // yard's throughput.
@@ -8514,7 +12497,7 @@ mod tests {
             let f = sim.world.factors.get_mut(center).unwrap();
             f.infra = infra_rung_price(1, &sim.config);
         }
-        assert!(sim.mineral_pressure_of(center) > 0.99, "a broke centre must read full pressure");
+        assert!(sim.mineral_pressure_of(center) > 0.99, "a broke center must read full pressure");
 
         // **The crew never exceeds the body's veins**, at any richness. This is
         // the constraint that binds at the bottom of the ladder and it is why
@@ -8565,8 +12548,8 @@ mod tests {
     /// The design's numbers, not the implementation's: a decade of veins per
     /// Band, and on `Band IV` a thousand miners lift **31.6x** what one does.
     /// That second figure is the one §4.3 uses to argue a large crew on a rich
-    /// rock is rational, and it is the figure `crowding_factor`'s normalisation
-    /// had to preserve (R-IND19) — so it is asserted through the normalised
+    /// rock is rational, and it is the figure `crowding_factor`'s normalization
+    /// had to preserve (R-IND19) — so it is asserted through the normalized
     /// form, which is what the engine actually multiplies by.
     #[test]
     fn veins_are_a_decade_per_band_and_crowding_pays_at_scale() {
@@ -8574,8 +12557,9 @@ mod tests {
         for (rung, want) in [(1.0, 1.0), (2.0, 10.0), (3.0, 100.0), (4.0, 1000.0)] {
             let mass = units::Kilotons::at_band(Band::new(rung));
             let got = veins(mass, &cfg);
+            // Within `pow_fast`'s bound at `y ≤ 3`: 7.5e-5 + 6.1e-5·3 (T-130).
             assert!(
-                (got / want - 1.0).abs() < 1e-6,
+                (got / want - 1.0).abs() < 2.6e-4,
                 "Band {rung} holds {mass:?} and should have {want} veins, got {got}"
             );
         }
@@ -8599,7 +12583,7 @@ mod tests {
         );
 
         // A full crew takes the same share of any body, which is the
-        // normalisation that stops output going as richness squared.
+        // normalization that stops output going as richness squared.
         for rung in [1.0, 2.0, 3.0, 4.0] {
             let mass = units::Kilotons::at_band(Band::new(rung));
             let n = veins(mass, &cfg);
@@ -8663,7 +12647,7 @@ mod tests {
         // The exponent is exactly what β says, on a body with veins to spare.
         // 3 kt of ore reads well above `Band I`, so `N` is not the binding
         // constraint at these crew sizes and the pure `n^β` shows through.
-        let want = 2f64.powf(cfg.crowding_beta);
+        let want = transcendental::pow(2.0, cfg.crowding_beta);
         assert!((two / one - want).abs() < 1e-9, "two miners: {} want {want}", two / one);
 
         // **And a body saturates at its own vein count, not at a crew size.**
@@ -8692,9 +12676,9 @@ mod tests {
             assert!(crowding_factor(3.0, mass, &bad).is_finite(), "crowding diverged at Band {rung}");
         }
 
-        // A full crew takes exactly `ε` of the body — the normalisation that
+        // A full crew takes exactly `ε` of the body — the normalization that
         // keeps a rich seam finite (`crowding_factor`, R-IND19).
-        // Three colours at 1 kt each — the same body `deposit` names above.
+        // Three colors at 1 kt each — the same body `deposit` names above.
         let before = deposit.kilotons();
         assert!(
             (extracted(full) / before - cfg.outpost_mining_fraction).abs() < 1e-9,
@@ -8743,18 +12727,96 @@ mod tests {
     }
 
     #[test]
-    fn seats_start_with_the_ratified_lsv_plus_lcv_roster() {
-        // R-O42/§7.1: LSV and LCV only, one class each — at turn 0 a scout, a
-        // settler and a hauler are the same object.
+    fn seats_start_with_one_unarmed_design() {
+        // **T-121 — and this contradicts R-O42 / standing-layer §7.1**, which
+        // ratified LSV(Meadow) + LCV(Tor). The Contact family is the armed
+        // family now and `TIER0[15]` is its only key, so seeding an LCV would
+        // hand every seat the thing that card is meant to sell.
+        //
+        // §7.1's own argument survives the change and is better served by it:
+        // the opening roster exists to make every empire's fleet look
+        // identical at range, so that inscrutability early is structural
+        // rather than bought. One design does that more completely than two.
         let galaxy = test_galaxy(3, 1);
         let sim = Simulation::with_baseline(galaxy, test_cfg(1));
         for p in 0..3 {
             let r = sim.world.roster.get(sim.player_entity[p]).expect("every seat has a roster");
-            assert_eq!(r.len(), 2, "seat {p} roster should hold exactly the two seeded designs");
+            assert_eq!(r.len(), 1, "seat {p} roster should hold exactly the one seeded design");
             assert!(r.has(HullType::LimitedSystems, Class::Meadow));
-            assert!(r.has(HullType::LimitedContactVehicle, Class::Tor));
             assert!(!r.has_hull(HullType::MediumSystems), "MSV must not be unlocked at start");
+            assert!(!r.has_hull(HullType::LimitedContactVehicle), "the armed family is the Warfare card's to open");
         }
+    }
+
+    #[test]
+    fn the_warfare_card_is_the_only_key_to_the_contact_family() {
+        // **T-121, and it supersedes T-120's `..._is_a_price_and_not_yet_an_effect`.**
+        // The default standing layer is unarmed at every role, so a seat that
+        // never plays `TIER0[15]` never flies a Contact hull: survey rides
+        // `LimitedSystems`, colonization rides `MediumSystems`, and the
+        // colonizer ladder's upper rung is `GeneralSystems`.
+        //
+        // The card is what changes that, and this asserts both halves — that
+        // the default is closed, and that the card opens it. A test asserting
+        // only the second would still pass if the default were armed too,
+        // which is exactly the state this landing corrected.
+        let galaxy = test_galaxy(3, 1);
+        let mut sim = Simulation::with_baseline(galaxy, test_cfg(1));
+        let c = cards::card(cards::CardId(15)).expect("the Warfare Inscrutable slot is published");
+        assert_eq!(c.tree, cards::Tree::Warfare);
+
+        let unarmed = Doctrine::default();
+        let st = crate::autopilot::Standing::of(&unarmed);
+        for role in [Role::Scout, Role::Colonizer, Role::Miner] {
+            let (hull, _) = st.design_for(role);
+            assert!(!is_contact_hull(hull), "{role:?} rides {hull:?} by default, which is a Contact hull");
+        }
+        assert!(
+            !st.colonizer_ladder().iter().copied().any(is_contact_hull),
+            "the default colonizer ladder must be all Systems hulls"
+        );
+
+        // And the seeded roster carries no Contact design either, so the lock
+        // is real the moment `enforce_roster` can be switched on (T-25).
+        let r = sim.world.roster.get(sim.player_entity[0]).unwrap();
+        assert!(!HullType::ALL.iter().copied().filter(|&h| is_contact_hull(h)).any(|h| r.has_hull(h)));
+
+        // Play it: the Doctrine write moves survey and the colonizer ladder
+        // onto the Contact family, and the two Design writes unlock what they
+        // now ride.
+        sim.apply_orders(0, &[Order { seat: PlayerId(0), card: Some(cards::CardId(15)), target: Target::None }]);
+        let armed = *sim.world.doctrine.get(sim.player_entity[0]).unwrap();
+        // The blockade is the card's reach into `W` (T-123), and the default
+        // must not blockade — the other half of the lock.
+        assert!(armed.picket_blockades && armed.picket_claims_target, "the card must write the blockade");
+        assert!(armed.picket_reserve >= cards::ARMED_FRONTIER_BLOCKADERS, "and supply it");
+        assert!(!Doctrine::default().picket_blockades && Doctrine::default().picket_reserve == 0);
+        let st = crate::autopilot::Standing::of(&armed);
+        assert_eq!(st.design_for(Role::Scout).0, HullType::LimitedContactVehicle);
+        assert!(st.colonizer_ladder().contains(&HullType::GeneralContactVehicle));
+        let r = sim.world.roster.get(sim.player_entity[0]).unwrap();
+        assert!(r.has(HullType::LimitedContactVehicle, Class::Tor));
+        assert!(r.has(HullType::GeneralContactVehicle, Class::Unnamed));
+
+        // Every hull the armed layer now mounts must be one the card unlocked,
+        // or the Design half does not cover the Doctrine half — which is the
+        // failure mode `launch_survey` hit at T-116, paid for and discarded.
+        for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
+            let (hull, class) = st.design_for(role);
+            if is_contact_hull(hull) {
+                assert!(r.has_hull(hull), "{role:?} rides {hull:?}/{class:?}, which the card did not unlock");
+            }
+        }
+    }
+
+    fn is_contact_hull(h: HullType) -> bool {
+        matches!(
+            h,
+            HullType::LimitedContactVehicle
+                | HullType::LimitedContactUnit
+                | HullType::GeneralContactVehicle
+                | HullType::GeneralContactUnit
+        )
     }
 
     #[test]
@@ -8770,9 +12832,11 @@ mod tests {
         cfg.enforce_roster = true;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
 
-        // Seeded roster: the Limited pair is buildable, the Medium hull is not.
+        // Seeded roster: the one Limited Systems design is buildable, and
+        // nothing else is — the Medium hull the colonizer rides, and the
+        // Contact hull the Warfare card opens, are both forbidden (T-121).
         assert!(sim.roster_permits(0, HullType::LimitedSystems));
-        assert!(sim.roster_permits(0, HullType::LimitedContactVehicle));
+        assert!(!sim.roster_permits(0, HullType::LimitedContactVehicle), "the armed family needs its card");
         assert!(!sim.roster_permits(0, HullType::MediumSystems), "MSV must be forbidden by the seeded roster");
 
         // Unlocking it is the only thing that changes the answer, so the gate is
@@ -8977,7 +13041,7 @@ mod tests {
             // `k_potential = min(hab, bio_max)` cannot exceed the top rung. So
             // nothing in a shipped run ever reaches the difference.
             //
-            // This is the better behaviour of the two — an unbounded
+            // This is the better behavior of the two — an unbounded
             // infrastructure Band was a quantity with no meaning past `Band IV`
             // — but it is a change, and it is the reason to keep the gate.
             let over = infra_rung_price(top + 3, cfg);
@@ -8989,7 +13053,7 @@ mod tests {
         }
     }
 
-    /// **T-73/§6.4: a mix card moves the colour mix and never lowers the total.**
+    /// **T-73/§6.4: a mix card moves the color mix and never lowers the total.**
     ///
     /// `eta_works` is multiplicative on the total; `mix_w` is a *share* of that
     /// total. So the two are orthogonal **by construction**, which is what makes
@@ -9002,7 +13066,7 @@ mod tests {
         let sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
 
-        // Every mix a card could reach, including the sole-colour `1:0:0` that
+        // Every mix a card could reach, including the sole-color `1:0:0` that
         // §5.1 allows works and forbids card costs, and degenerate weights.
         let mixes: [[f64; 3]; 6] =
             [[1.0, 1.0, 1.0], [4.0, 2.0, 1.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [5.0, 4.0, 3.0], [1e-6, 1.0, 1e6]];
@@ -9015,7 +13079,7 @@ mod tests {
                 "mix {m:?} changed the bill: {total} against a step of {step}"
             );
             for b in bill {
-                assert!(b >= Price::ZERO, "mix {m:?} produced a negative colour share");
+                assert!(b >= Price::ZERO, "mix {m:?} produced a negative color share");
             }
         }
 
@@ -9036,27 +13100,27 @@ mod tests {
         }
     }
 
-    /// **T-73: a colour-poor centre cannot buy the rung, however rich it is.**
+    /// **T-73: a color-poor center cannot buy the rung, however rich it is.**
     ///
     /// This is the whole point of the stage, and the thing no total-based
     /// affordability test can express. `Minerals::try_spend_total` debits
     /// *proportional to holdings*, so before this a bank of pure Cyan could buy
     /// anything; now a bill naming Yellow needs Yellow. That is §5.1's *"the
     /// mechanism that makes the galaxy's mineral distribution bite on
-    /// development"* — and T-62 made the field log-normal, so which colours a
+    /// development"* — and T-62 made the field log-normal, so which colors a
     /// homeworld sits near is an enormous fact that until now went almost
     /// entirely unexpressed.
     ///
     /// Both halves are asserted, because only the pair is meaningful: the poor
-    /// centre is refused, and a centre with the *same total* spread across the
-    /// colours the bill names is not.
+    /// center is refused, and a center with the *same total* spread across the
+    /// colors the bill names is not.
     #[test]
-    fn a_colour_poor_centre_cannot_buy_the_rung() {
+    fn a_color_poor_center_cannot_buy_the_rung() {
         let step = Price::new(9.0);
         let works = cards::Works::default(); // even thirds: 3.0 of each
         let bill = works_bill(step, &works);
 
-        // A hundred times the bill, and all the wrong colour.
+        // A hundred times the bill, and all the wrong color.
         let hoard = Minerals { cyan: 900.0, ..Default::default() };
         assert!(!can_pay_bill(&hoard, &bill), "a pure-Cyan hoard must not buy a bill that names Magenta and Yellow");
 
@@ -9068,15 +13132,15 @@ mod tests {
             yellow: bill[2].kilotons(),
             ..Default::default()
         };
-        assert!(can_pay_bill(&spread, &bill), "exactly the bill, in the right colours, must pay");
+        assert!(can_pay_bill(&spread, &bill), "exactly the bill, in the right colors, must pay");
         assert!(spread.basic_total() < hoard.basic_total(), "and it is the *poorer* bank that can afford it");
 
-        // Paying takes each colour's share and nothing else.
+        // Paying takes each color's share and nothing else.
         pay_bill(&mut spread, &bill);
         assert!(spread.basic_total().kilotons().abs() < 1e-9, "the bill should have emptied it exactly");
 
-        // A sole-colour work — `1:0:0`, which §5.1 allows works and forbids card
-        // costs — is payable only by an empire that has that colour.
+        // A sole-color work — `1:0:0`, which §5.1 allows works and forbids card
+        // costs — is payable only by an empire that has that color.
         let yellow_only = cards::Works { mix_w: [0.0, 0.0, 1.0], ..cards::Works::default() };
         let y_bill = works_bill(step, &yellow_only);
         assert!(!can_pay_bill(&hoard, &y_bill), "Production's route is closed to a Yellow-poor empire");
@@ -9095,7 +13159,7 @@ mod tests {
     ///
     /// Pins the **approved starting schedule** of §3.3 — 2.2 / 3.0 / 12.0 yr —
     /// which is where the design wants it: a scout is a season's work, a
-    /// coloniser is quick enough to spam, and a General hull is a twelve-year
+    /// colonizer is quick enough to spam, and a General hull is a twelve-year
     /// commitment an opponent has time to notice and answer. These are approved
     /// values, **not MC-ratified**; the name says placeholder and so does §3.3.
     ///
@@ -9103,14 +13167,14 @@ mod tests {
     /// divide a yard's throughput, so those three numbers are `t_lead +
     /// m/F_slip` — the limit an arbitrarily industrialised yard descends
     /// toward and never reaches. What T-74 pins here instead is the *anchor*:
-    /// a rung-I centre with default doctrine fabricates at exactly the flat
+    /// a rung-I center with default doctrine fabricates at exactly the flat
     /// rate T-68 and the mining model shipped, so the rate curve pivots about
     /// a configuration that was already ratified.
     #[test]
     fn build_time_is_lead_plus_mass_over_throughput() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         // **T-74 made `t_build` a property of the yard, so the schedule needs a
-        // yard to be read at — and the one it holds at is the anchor.** A centre
+        // yard to be read at — and the one it holds at is the anchor.** A center
         // standing at rung I with default doctrine sits exactly on the knee of
         // the rate curve, where a berth runs at `fab_cap / 2`. Since R-O88 that
         // is a *per-berth* statement and `fab_cap` is the per-berth ceiling, so
@@ -9122,12 +13186,12 @@ mod tests {
         }
         assert!(
             (sim.berth_rate(yard) - sim.config.fab_cap / 2.0).abs() < 1e-12,
-            "a rung-I centre sits on the knee, so a berth runs at half the ceiling; got {}",
+            "a rung-I center sits on the knee, so a berth runs at half the ceiling; got {}",
             sim.berth_rate(yard)
         );
         // **§3.3's schedule is the limit, not a value any yard reaches** — T-69
         // is what made that distinction real. Before slips, `t_build` was
-        // `t_lead + m/F` and a rung-I centre hit 2.2 / 3.0 / 12.0 on the nose.
+        // `t_lead + m/F` and a rung-I center hit 2.2 / 3.0 / 12.0 on the nose.
         // Slips divide the throughput, so the table is now the **asymptote**
         // the curve descends toward and every real yard sits above it. Assert
         // the schedule as what it is — the two constants, composed — and assert
@@ -9188,7 +13252,7 @@ mod tests {
     /// every yard, however rich — equivalently, per-berth throughput stays
     /// strictly *under* `F_slip` and climbs toward it. The reciprocal is what
     /// makes it easy to get backwards, and getting it backwards is not a
-    /// cosmetic error: dropping the `1 +` from `slips` lets a rung-II centre
+    /// cosmetic error: dropping the `1 +` from `slips` lets a rung-II center
     /// build a Medium hull in 2.55 yr against a 3.0 yr floor, which deletes the
     /// design property while still passing any number-by-number schedule test.
     /// So this asserts the inequality, and the schedule test below asserts the
@@ -9207,7 +13271,7 @@ mod tests {
         for step in 0..400 {
             let u = per_slip * (step as f64) * 0.125;
             let n = slips(u, &cfg);
-            assert!(n >= 1, "a centre always has a berth, u={u} gave {n}");
+            assert!(n >= 1, "a center always has a berth, u={u} gave {n}");
             assert!(n >= last_slips, "concurrency must not fall as the stock rises at u={u}");
             last_slips = n;
         }
@@ -9242,6 +13306,13 @@ mod tests {
                 let f = sim.world.factors.get_mut(yard).unwrap();
                 f.infra = infra_rung_price(rung, &sim.config);
             }
+            // **Staffed for the rung it stands at** (T-125: staffing is on by
+            // default). The claim is about the stock-to-rate curve of a worked
+            // yard; a richer yard with the same people is an understaffed one,
+            // which is `u`'s question and not this test's.
+            let band = sim.world.factors.get(yard).unwrap().infra_band(&sim.config);
+            sim.world.population.insert(yard, Kilotons::at_band(band));
+            assert!((sim.staffing(yard) - 1.0).abs() < 1e-9, "the yard must be fully staffed at rung {rung}");
             let t = sim.build_time(yard, mass);
             assert!(t > floor, "rung {rung} builds in {t} yr, under the floor {floor}");
             assert!(t < prev, "a richer yard must not turn a hull around more slowly: {prev} -> {t}");
@@ -9420,11 +13491,11 @@ mod tests {
         cratered.set_bio_max(Band::new(1.0).in_kilotons());
         assert_eq!(cratered.k(), Band::new(1.0), "a biosphere strike still lowers K");
         let mut poisoned = developed;
-        poisoned.hab = Band::new(0.5);
+        poisoned.set_hab(Band::new(0.5));
         assert_eq!(poisoned.k(), Band::new(0.5), "and so does a habitability strike");
     }
 
-    /// The unit fix, stated as behaviour: eating the biosphere must not lower
+    /// The unit fix, stated as behavior: eating the biosphere must not lower
     /// the world's ceiling. Under `K = min(hab, bio, infra)` a drawn-down
     /// standing stock cut `K` directly — a mass compared against two levels —
     /// and the population it could hold fell with it.
@@ -9446,7 +13517,11 @@ mod tests {
         // ceiling reading the old world.
         let mut cratered = full;
         cratered.set_bio_max(Band::new(1.5).in_kilotons());
-        assert_eq!(cratered.k(), Band::new(1.5));
+        // Within the reading's bound (T-129: the Band reading is approximate,
+        // 3e-7 Band), and the mass the ceiling admits is the new pristine mass
+        // exactly.
+        assert!((cratered.k().bands() - 1.5).abs() < 3e-7, "K reads {}", cratered.k());
+        assert_eq!(cratered.k_mass(), Band::new(1.5).in_kilotons());
     }
 
     #[test]
@@ -9460,7 +13535,7 @@ mod tests {
         // isolates the question the test is asking — *does a razed biosphere
         // come back* — from the one it is not: with a live `K` the population
         // simply outruns the regrowth and eats the recovery as it happens,
-        // which is correct behaviour and a different test.
+        // which is correct behavior and a different test.
         let bio_max = Band::new(4.0).in_kilotons();
         let start = bio_max * 0.125;
         sim.world.factors.insert(home, Factors::new(Band::new(4.0), start, bio_max, Price::ZERO));
@@ -9552,7 +13627,7 @@ mod tests {
     ///
     /// **R-O75 (new, open):** whether the discrete logistic should be replaced
     /// by one that cannot overshoot downward (a saturating step, or the
-    /// closed-form solution over the interval). It is a real modelling artifact
+    /// closed-form solution over the interval). It is a real modeling artifact
     /// — nothing in the design says an overfull world should lose three
     /// quarters of its people in fifty years — but it is on the hottest path in
     /// the engine and every ratified growth number was measured with it, so it
@@ -9669,7 +13744,11 @@ mod tests {
     /// seed noise.
     #[test]
     fn refining_the_logistic_step_changes_nothing() {
-        let (k, r_total) = (1_000.0, 0.873 * 6.0);
+        // Two of the engine's own ticks (`r·Δ = 0.0873` each), so every step
+        // stays inside the range `exp_in_minus_0_2_to_0` is fitted on (T-130).
+        // The step's relative sensitivity to `e^(−rΔ)` is below one, so `n`
+        // steps compose to within `n` times the fit's 5.2e-9.
+        let (k, r_total) = (1_000.0, 0.0873 * 2.0);
         let once = logistic_step(3.0, k, r_total);
         for splits in [2, 5, 10, 100, 1_000] {
             let mut x = 3.0;
@@ -9677,7 +13756,7 @@ mod tests {
                 x = logistic_step(x, k, r_total / splits as f64);
             }
             assert!(
-                (x / once - 1.0).abs() < 1e-9,
+                (x / once - 1.0).abs() < (splits + 1) as f64 * 5.3e-9,
                 "{splits} steps of dt/{splits} gave {x}, one step of dt gave {once} — the closed form must compose"
             );
         }
@@ -9764,7 +13843,7 @@ mod tests {
         // became tests of `limited_fleet_size` at stage 3b.
         //
         // Since T-87 there is no crew knob to pin: the crew is derived from the
-        // founding centre's unmet demand, and a fresh homeworld with a full
+        // founding center's unmet demand, and a fresh homeworld with a full
         // starting bank has none, so it opens an outpost with one hull. The
         // assertion below states that rather than assuming it.
         let doctrine = Doctrine::default();
@@ -9816,6 +13895,8 @@ mod tests {
             ranked: Ranked { id: pid, score: 9.0, class: PlanetClass::MiningOutpost },
             settlers_by_hull: [Kilotons::ZERO; 2],
             mining_crew: 1,
+            held_by_me: false,
+            claim_inbound: false,
         }];
         let center_pos = *sim.world.position.get(center).unwrap();
         sim.apply_build_with(
@@ -9858,7 +13939,7 @@ mod tests {
     /// made it a bad idea anyway, and T-96 removed that.
     ///
     /// What this pins is not *which* hull — that is a measured default and will
-    /// move — but that **the decision reads the world**: the same centre picks
+    /// move — but that **the decision reads the world**: the same center picks
     /// differently for a thin rock and a rich one, and it stops scaling up when
     /// the destination cannot fabricate what arrives. A constant passes neither
     /// half.
@@ -9924,7 +14005,7 @@ mod tests {
         let dead_band = cfg.density_floor / cfg.outpost_mining_fraction * 0.9;
         assert!(dead_band > cfg.density_floor, "the test needs a value the old predicate would have called alive");
         {
-            // The field's colours are Bands since T-62, so a target *mass* is
+            // The field's colors are Bands since T-62, so a target *mass* is
             // set by reading it back onto the ladder rather than assigned.
             let each = Kilotons::new(dead_band / 3.0);
             let d = sim.world.density.get_mut(outpost).unwrap();
@@ -9960,10 +14041,10 @@ mod tests {
     ///
     /// This is the atomicity, removed and then asserted. A hold is filled from
     /// `outpost_stock[(player, rock)]` — one map entry — and a rock is one
-    /// colour (mean dominant share 0.789 over 6,725 sources), so before this
-    /// every delivery in the engine was mono-coloured *by construction* and a
-    /// works bill is a conjunction over three colours (T-73). Two piles, two
-    /// colours, one voyage.
+    /// color (mean dominant share 0.789 over 6,725 sources), so before this
+    /// every delivery in the engine was mono-colored *by construction* and a
+    /// works bill is a conjunction over three colors (T-73). Two piles, two
+    /// colors, one voyage.
     ///
     /// The same setup at `max_pickup_stops = 1` is the second half of the test,
     /// and it is the one that pins the default: one stop is the pre-T-91 engine,
@@ -9980,8 +14061,8 @@ mod tests {
             let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
             let (a, b) = (sim.planet_entity[11], sim.planet_entity[12]);
 
-            // An empty bank makes the centre short of the whole rung, which is
-            // what `colour_deficit` reads. The piles are each one colour, which
+            // An empty bank makes the center short of the whole rung, which is
+            // what `color_deficit` reads. The piles are each one color, which
             // is the galaxy's own condition made exact.
             *sim.world.stockpile.get_mut(center).unwrap() = Minerals::default();
             sim.outpost_stock.insert((0, a.0), Minerals { cyan: 50.0, ..Default::default() });
@@ -9999,7 +14080,7 @@ mod tests {
             (sim, f, b)
         };
 
-        // Two stops: the first pile cannot close a three-colour bill on its own,
+        // Two stops: the first pile cannot close a three-color bill on its own,
         // so the hauler goes on rather than delivering what it has.
         let (mut sim, f, b) = bed(2);
         sim.sys_freighter_arrive(f);
@@ -10008,26 +14089,26 @@ mod tests {
         assert_eq!(sh.stops, 1, "one stop spent");
         assert_eq!(sh.outpost, b, "and the next pile is the one holding what is still missing");
         let after_one = *sim.world.cargo.get(f).unwrap();
-        assert!(after_one.cyan > 0.0 && after_one.magenta == 0.0, "one colour so far: {after_one:?}");
+        assert!(after_one.cyan > 0.0 && after_one.magenta == 0.0, "one color so far: {after_one:?}");
 
-        // Arrive at the second pile: it turns for the centre with both colours.
+        // Arrive at the second pile: it turns for the center with both colors.
         let there = *sim.world.position.get(b).unwrap();
         sim.park(f, there);
         sim.sys_freighter_arrive(f);
         let sh = *sim.world.shuttle.get(f).unwrap();
-        assert!(!sh.outbound, "laden and heading for a centre");
+        assert!(!sh.outbound, "laden and heading for a center");
         let laden = *sim.world.cargo.get(f).unwrap();
-        assert!(laden.cyan > 0.0 && laden.magenta > 0.0, "a two-coloured hold: {laden:?}");
+        assert!(laden.cyan > 0.0 && laden.magenta > 0.0, "a two-colored hold: {laden:?}");
 
         // One stop is the shipped default and the engine as it was: the same
-        // hauler on the same pile delivers a single colour.
+        // hauler on the same pile delivers a single color.
         let (mut sim, f, _) = bed(1);
         sim.sys_freighter_arrive(f);
         let sh = *sim.world.shuttle.get(f).unwrap();
         assert!(!sh.outbound, "no detour at one stop");
         assert_eq!(sh.stops, 0, "and nothing to count");
         let laden = *sim.world.cargo.get(f).unwrap();
-        assert!(laden.cyan > 0.0 && laden.magenta == 0.0 && laden.yellow == 0.0, "mono-coloured: {laden:?}");
+        assert!(laden.cyan > 0.0 && laden.magenta == 0.0 && laden.yellow == 0.0, "mono-colored: {laden:?}");
     }
 
     #[test]
@@ -10122,26 +14203,26 @@ mod tests {
 
     /// **T-81: a hauler goes where its cargo is what is missing.**
     ///
-    /// Routing scored need on a *total* — how broke a centre was overall — and
-    /// carried no colour term at all. T-73 made that binding: a works bill is
-    /// payable in named colours, T-62 made the field log-normal per colour, and
-    /// together they left banks holding one colour and traces of the others,
+    /// Routing scored need on a *total* — how broke a center was overall — and
+    /// carried no color term at all. T-73 made that binding: a works bill is
+    /// payable in named colors, T-62 made the field log-normal per color, and
+    /// together they left banks holding one color and traces of the others,
     /// with deepening down 94.5%.
     ///
-    /// Two centres, equally broke, needing opposite colours. A Yellow-laden
+    /// Two centers, equally broke, needing opposite colors. A Yellow-laden
     /// hauler must pick the Yellow-short one — and the same hauler carrying
     /// Magenta must pick the other. Asserting *both* directions is the point: a
-    /// routing rule that always picked the same centre would pass a one-sided
+    /// routing rule that always picked the same center would pass a one-sided
     /// test whatever it was keying on.
     #[test]
-    fn a_hauler_routes_to_the_colour_that_is_missing() {
+    fn a_hauler_routes_to_the_color_that_is_missing() {
         let galaxy = test_galaxy(2, 3);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(3));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let here = *sim.world.position.get(home).unwrap();
 
         // Two colonies, co-located with home so the λ discount cannot decide
-        // this — the colour term has to.
+        // this — the color term has to.
         let (a, b) = (sim.planet_entity[15], sim.planet_entity[16]);
         for &e in &[a, b] {
             sim.world.owner.insert(e, PlayerId(0));
@@ -10176,7 +14257,7 @@ mod tests {
         assert_eq!(
             sim.best_delivery_center(PlayerId(0), here, &yellow),
             Some(a),
-            "a Yellow-laden hauler must go to the Yellow-short centre"
+            "a Yellow-laden hauler must go to the Yellow-short center"
         );
         assert_eq!(
             sim.best_delivery_center(PlayerId(0), here, &magenta),
@@ -10185,9 +14266,9 @@ mod tests {
         );
 
         // **And it concentrates** (R-IND17), which is the property T-81's relief
-        // term did not have. A third centre needing *everything* must score
+        // term did not have. A third center needing *everything* must score
         // strictly lower on the same Yellow cargo than one needing only Yellow,
-        // or ore scatters by colour and a three-colour bill is never assembled
+        // or ore scatters by color and a three-color bill is never assembled
         // anywhere.
         let empty = sim.planet_entity[17];
         sim.world.owner.insert(empty, PlayerId(0));
@@ -10205,13 +14286,13 @@ mod tests {
 
         let near = sim.bill_completion(a, PlayerId(0), &yellow);
         let far = sim.bill_completion(empty, PlayerId(0), &yellow);
-        assert!((near - 1.0).abs() < 1e-12, "a centre missing only Yellow is completed by Yellow: {near}");
+        assert!((near - 1.0).abs() < 1e-12, "a center missing only Yellow is completed by Yellow: {near}");
         assert!(far > 0.0 && far < near, "and one missing everything scores strictly less: {far} vs {near}");
-        assert_eq!(sim.bill_completion(a, PlayerId(0), &magenta), 0.0, "the wrong colour completes nothing");
+        assert_eq!(sim.bill_completion(a, PlayerId(0), &magenta), 0.0, "the wrong color completes nothing");
         assert_eq!(
             sim.best_delivery_center(PlayerId(0), here, &yellow),
             Some(a),
-            "so the hauler goes to the centre it can finish, not the emptiest"
+            "so the hauler goes to the center it can finish, not the emptiest"
         );
     }
 
@@ -10272,12 +14353,12 @@ mod tests {
     ///
     /// This is design law #11 reaching the one quantity that was exempt from
     /// it. `spawn_courier` used to write `pop_cargo` and debit nothing, so
-    /// every coloniser launched created mass — and it was not a rounding
+    /// every colonizer launched created mass — and it was not a rounding
     /// error: the policy that shipped the biggest seed measured **+13.97%
     /// colony-years** on an identical colony count, which was a measurement of
     /// the violation rather than of the policy (`Hyades_industry.md` §1.6).
     ///
-    /// Asserted as a **balance**, not as two magnitudes. The founding centre
+    /// Asserted as a **balance**, not as two magnitudes. The founding center
     /// loses exactly what the ship carries, the new world gains exactly what
     /// the ship carried, and the ship lands empty — which is the only form of
     /// the claim that a later change cannot half-satisfy.
@@ -10307,7 +14388,7 @@ mod tests {
         let bank_before = sim.world.stockpile.get(home).unwrap().basic_total();
         let there_before = *sim.world.population.get(target).unwrap();
 
-        sim.spawn_courier(0, Role::Colonizer, HullType::GeneralSystems, home, target, 0.0);
+        sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::GeneralSystems), home, target, 0.0);
         let ship = Entity(sim.world.entity_count() as u64 - 1);
 
         let settlers = *sim.world.pop_cargo.get(ship).unwrap();
@@ -10316,7 +14397,7 @@ mod tests {
         assert!(endowment > Price::ZERO, "and filled the rest of its hold out of the bank");
 
         // **The hold is one budget.** Settlers and minerals mass the same
-        // (R-O32), so what left the centre is exactly what the hull can hold —
+        // (R-O32), so what left the center is exactly what the hull can hold —
         // no more, and not two independent allowances.
         let hold = HullType::GeneralSystems.colony_seed_capacity(&sim.config);
         let carried = settlers + endowment.on_scale::<units::Mass>();
@@ -10327,12 +14408,12 @@ mod tests {
         let bank_after = sim.world.stockpile.get(home).unwrap().basic_total();
         assert!(
             ((pop_before - pop_after) - settlers).kilotons().abs() < 1e-9,
-            "the centre lost {} people for a seed of {settlers}",
+            "the center lost {} people for a seed of {settlers}",
             pop_before - pop_after
         );
         assert!(
             ((bank_before - bank_after) - endowment).kilotons().abs() < 1e-9,
-            "the centre lost {} minerals for an endowment of {endowment}",
+            "the center lost {} minerals for an endowment of {endowment}",
             bank_before - bank_after
         );
 
@@ -10387,7 +14468,7 @@ mod tests {
         for fill in [0.05, 0.2, 0.5, 0.9, 1.0] {
             sim.world.population.insert(home, k * fill);
             let got = sim.settler_target(home, target, hold);
-            assert!(got > Kilotons::ZERO, "an origin at {fill} of its ceiling must still colonise, got {got}");
+            assert!(got > Kilotons::ZERO, "an origin at {fill} of its ceiling must still colonize, got {got}");
             assert!(got <= k * fill * 0.5 + Kilotons::new(1e-9), "and must not be stripped: {got} of {}", k * fill);
         }
 
@@ -10410,7 +14491,7 @@ mod tests {
 
     /// **The hull is chosen against what will actually be loaded.**
     ///
-    /// The coloniser hull decision reads `Candidate::settlers_by_hull`; the
+    /// The colonizer hull decision reads `Candidate::settlers_by_hull`; the
     /// launch reads `colony_seed_for`. Those are two call sites of one rule, and
     /// this asserts they agree for every hull and every candidate — because the
     /// failure mode if they drift is silent and expensive: a General hull bought
@@ -10452,11 +14533,11 @@ mod tests {
         }
     }
 
-    /// **A centre cannot crew a hull it has no people for.**    /// **A centre cannot crew a hull it has no people for.**    /// **A centre cannot crew a hull it has no people for.**
+    /// **A center cannot crew a hull it has no people for.**    /// **A center cannot crew a hull it has no people for.**    /// **A center cannot crew a hull it has no people for.**
     ///
     /// Whatever the policy says is worth sending, the hold is still a ceiling and
     /// the origin is still a floor — so the same General hull delivers a full
-    /// hold from a big centre and a fraction of one from a small centre. This is
+    /// hold from a big center and a fraction of one from a small center. This is
     /// what makes the hull choice a real question again: before conservation a
     /// hold was a promise, and "settlers per mineral" could always be paid.
     #[test]
@@ -10478,14 +14559,14 @@ mod tests {
         );
         sim.world.population.insert(home, units::population_mass(Band::new(4.0)));
         let full = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();
-        assert!((full - hold).kilotons().abs() < 1e-9, "a rich centre fills the hold: {full} vs {hold}");
+        assert!((full - hold).kilotons().abs() < 1e-9, "a rich center fills the hold: {full} vs {hold}");
 
         // Poor: the origin binds, and the hull flies part-laden.
         sim.world.population.insert(home, hold * 2.0);
         let got = sim.colony_seed_for(HullType::GeneralSystems, home, target).unwrap();
-        assert!(got < hold, "a small centre cannot fill a General hold: {got} vs {hold}");
+        assert!(got < hold, "a small center cannot fill a General hold: {got} vs {hold}");
 
-        // **The floor is absolute.** A centre with nothing to spare ships
+        // **The floor is absolute.** A center with nothing to spare ships
         // nobody — a world emptied of people has no logistic left to regrow on.
         sim.world.population.insert(home, units::POPULATION_SEED_FLOOR);
         assert_eq!(sim.colony_seed_for(HullType::GeneralSystems, home, target), Some(Kilotons::ZERO));

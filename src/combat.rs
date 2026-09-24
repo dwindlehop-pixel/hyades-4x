@@ -14,6 +14,7 @@
 use crate::math::Vec3;
 use crate::rng::Rng;
 use crate::sim::{hull_base_thrust, hull_dry_mass, HullType, Role, SimConfig};
+use crate::transcendental;
 use std::f64::consts::{PI, TAU};
 
 /// A fleet's reference trajectory — confirmed this conversation: *"the
@@ -84,7 +85,8 @@ impl StationKeeping {
         let cos_theta = rng.range(-1.0, 1.0);
         let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
         let phi = rng.range(0.0, TAU);
-        let axis = Vec3::new(sin_theta * phi.cos(), sin_theta * phi.sin(), cos_theta);
+        let (sin_phi, cos_phi) = transcendental::sin_cos(phi);
+        let axis = Vec3::new(sin_theta * cos_phi, sin_theta * sin_phi, cos_theta);
         let reference = arbitrary_perpendicular(axis);
 
         StationKeeping { radius, angular_velocity, phase, axis, reference }
@@ -113,7 +115,8 @@ impl StationKeeping {
 /// `v_rot = v·cos(θ) + (axis × v)·sin(θ)` when `v ⊥ axis` (the `(axis·v)
 /// axis (1−cos θ)` term of the general formula vanishes). See references.
 fn rotate_around_axis(v: Vec3, axis: Vec3, angle: f64) -> Vec3 {
-    v.scale(angle.cos()).add(axis.cross(v).scale(angle.sin()))
+    let (sin, cos) = transcendental::sin_cos(angle);
+    v.scale(cos).add(axis.cross(v).scale(sin))
 }
 
 /// Any unit vector perpendicular to `axis` (assumed already unit length) —
@@ -123,6 +126,21 @@ fn arbitrary_perpendicular(axis: Vec3) -> Vec3 {
     let seed = if axis.x.abs() < 0.9 { Vec3::new(1.0, 0.0, 0.0) } else { Vec3::new(0.0, 1.0, 0.0) };
     seed.sub(axis.scale(seed.dot(axis))).normalized()
 }
+
+/// **Station-keeping spread a fleet holds around its reference trajectory.**
+///
+/// Tuned on the ROU laser-vs-missile sweep and **MC-tuned surface**: changing
+/// either moves every engagement outcome, so it needs explicit ratification
+/// (the working agreement). They live here rather than in `arena.rs` because
+/// `arena` is a scenario seeder that owns no combat model, and since T-111 the
+/// *simulation* needs them too — `sim::Simulation::combatants` places stationed
+/// hulls with the same spread the arena does, and a second copy of a tuned
+/// number is an edit waiting to go wrong. `arena::ROU_STATION_RADIUS` and
+/// `ROU_STATION_PERIOD` are re-exports of these, so the names the sweep uses
+/// still resolve.
+pub const STATION_RADIUS: (f64, f64) = (0.00005, 0.0002);
+/// Station-keeping period range, in years. See [`STATION_RADIUS`].
+pub const STATION_PERIOD: (f64, f64) = (0.02, 0.08);
 
 /// A ship in the arena — hull/role (driving its max acceleration, per the
 /// propulsion model confirmed this conversation), which fleet it belongs
@@ -222,7 +240,7 @@ pub struct InterceptSolution {
 /// otherwise coast relative to the target — the standard result for this
 /// model (confirmed numerically solvable "through the solution of a
 /// quartic equation at each instant of time," Bakolas & Tsiotras-style
-/// analyses of the same model, e.g. Buzikov & Mayer, "Time-optimal feedback
+/// analyzes of the same model, e.g. Buzikov & Mayer, "Time-optimal feedback
 /// control for the game of two Isotropic Rockets," *Systems & Control
 /// Letters*, 2024). Rather than the closed-form quartic (which has
 /// numerically awkward degenerate cases), this solves the equivalent
@@ -691,6 +709,15 @@ pub struct CombatConfig {
     pub laser_shots_per_tick: usize,
     /// Missiles per burst; bursts are desynchronized and released one per tick.
     pub burst_count: usize,
+    /// **Energy one beam shot delivers, kJ** (T-125). A Design quantity in the
+    /// weapons space (`Hyades_warfare_tree.md` §8.17); the one beam Design the
+    /// engine builds reads it from here. **Placeholder** (R-WAR19) — the arena
+    /// does not read it, so the tuned laser-vs-missile balance is untouched.
+    pub beam_shot_energy_kj: f64,
+    /// **Structure per kilotonne of dry mass, kJ/kt** (T-125) — a hull's hit
+    /// points are its dry mass times this. Mass is the armor statement because
+    /// the shell *is* the mass (R-O57, §2.3's `τ`). **Placeholder** (R-WAR19).
+    pub hull_hp_kj_per_kt: f64,
 }
 
 impl Default for CombatConfig {
@@ -709,6 +736,10 @@ impl Default for CombatConfig {
             max_missiles_per_shooter: 30,
             laser_shots_per_tick: 40,
             burst_count: 4,
+            // Placeholders (R-WAR19): a Medium colonizer (0.109 kt) takes three
+            // shots, a General Contact colonizer (1.10 kt) twenty-two.
+            beam_shot_energy_kj: 50.0,
+            hull_hp_kj_per_kt: 1_000.0,
         }
     }
 }
@@ -726,6 +757,134 @@ pub struct EngagementOutcome {
     pub winner: Winner,
     pub laser_survivors: usize,
     pub missile_survivors: usize,
+}
+
+// ===========================================================================
+// Loadouts and the beam resolver (T-125) — the simulation's fights
+// ===========================================================================
+
+/// **What a hull's Design mounts, fixed when the hull is built** (T-125,
+/// `Hyades_warfare_tree.md` §8.17).
+///
+/// A loadout is a property of the **Design**, never of the fight: which side
+/// arrived first, or who started it, does not change what either ship can
+/// shoot. That replaces R-WAR5's convention — defender on the lasers, arriver
+/// on the missiles — for every fight the simulation resolves. The arena keeps
+/// its own laser-side-vs-missile-side resolver, because that is the sweep its
+/// tuned constants were calibrated on.
+///
+/// Only the **beam** family is built. Pulse, torpedo and missile mounts are
+/// specified (§8.17) and have no field here until a card builds one.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Loadout {
+    /// Beam mounts. **Zero is unarmed**, and unarmed is the default for every
+    /// hull the Warfare card has not unlocked.
+    pub beams: u32,
+    /// Energy one shot delivers, kJ.
+    pub shot_energy_kj: f64,
+    /// Fire-control error bound, ly — the tolerance [`laser_hit_check`]
+    /// compares predicted against actual target position.
+    pub fire_control_ly: f64,
+    /// Shots per mount per tick (fire rate).
+    pub shots_per_tick: u32,
+}
+
+impl Loadout {
+    /// No weapons at all.
+    pub const UNARMED: Loadout = Loadout { beams: 0, shot_energy_kj: 0.0, fire_control_ly: 0.0, shots_per_tick: 0 };
+
+    /// Whether this Design can damage anything.
+    pub fn is_armed(&self) -> bool {
+        self.beams > 0 && self.shots_per_tick > 0 && self.shot_energy_kj > 0.0
+    }
+}
+
+/// **A hull's structure, kJ** — dry mass times [`CombatConfig::hull_hp_kj_per_kt`].
+pub fn hull_hp_kj(hull: HullType, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f64 {
+    hull_dry_mass(hull, sim_cfg).kilotons() * cfg.hull_hp_kj_per_kt
+}
+
+/// One ship in a simulation fight: where it is, what it mounts, and how much
+/// it can take.
+#[derive(Clone, Copy, Debug)]
+pub struct Armed {
+    pub ship: Combatant,
+    pub loadout: Loadout,
+    pub hp_kj: f64,
+}
+
+/// **Resolve a fight in which each ship fires what its Design mounts** (T-125).
+///
+/// Returns, per side, which ships are still standing. Three properties are the
+/// design and are tested:
+///
+/// - **An unarmed ship deals no damage**, so a fight between two unarmed sides
+///   ends before it starts, with no losses.
+/// - **Fire is simultaneous within a tick.** Every shooter aims at the ships
+///   standing at the start of the tick and damage lands at its end, so neither
+///   side shoots first by index order — §2.3's "no tick-based initiative".
+/// - **Damage accumulates in kJ against structure.** A hull dies when the energy
+///   it has absorbed reaches its structure; a shot is not a kill.
+///
+/// Each shot goes to the nearest enemy not already doomed by damage landing this
+/// tick, so a battery does not spend a tick killing one ship forty times.
+pub fn resolve_beam_engagement(
+    fleets: &[FleetTrajectory; 2],
+    sides: [&[Armed]; 2],
+    horizon: f64,
+    dt: f64,
+) -> [Vec<bool>; 2] {
+    let mut alive: [Vec<bool>; 2] = [vec![true; sides[0].len()], vec![true; sides[1].len()]];
+    let mut damage: [Vec<f64>; 2] = [vec![0.0; sides[0].len()], vec![0.0; sides[1].len()]];
+    let armed_alive =
+        |alive: &[Vec<bool>; 2], s: usize| sides[s].iter().zip(&alive[s]).any(|(a, &l)| l && a.loadout.is_armed());
+    let mut t = 0.0;
+    while t < horizon {
+        if !alive[0].iter().any(|&a| a) || !alive[1].iter().any(|&a| a) {
+            break;
+        }
+        if !armed_alive(&alive, 0) && !armed_alive(&alive, 1) {
+            break;
+        }
+        let mut pending: [Vec<f64>; 2] = [vec![0.0; sides[0].len()], vec![0.0; sides[1].len()]];
+        for s in 0..2 {
+            let e = 1 - s;
+            for (i, shooter) in sides[s].iter().enumerate() {
+                if !alive[s][i] || !shooter.loadout.is_armed() {
+                    continue;
+                }
+                let at = shooter.ship.position_at(fleets, t);
+                // Enemies standing at the start of the tick, nearest first;
+                // ties by index, so the order is total.
+                let mut targets: Vec<(f64, usize)> = (0..sides[e].len())
+                    .filter(|&j| alive[e][j])
+                    .map(|j| (sides[e][j].ship.position_at(fleets, t).distance(at), j))
+                    .collect();
+                targets.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+                let shots = shooter.loadout.beams * shooter.loadout.shots_per_tick;
+                for _ in 0..shots {
+                    let Some(&(_, j)) =
+                        targets.iter().find(|&&(_, j)| damage[e][j] + pending[e][j] < sides[e][j].hp_kj)
+                    else {
+                        break;
+                    };
+                    if laser_hit_check(at, &sides[e][j].ship, fleets, t, shooter.loadout.fire_control_ly) {
+                        pending[e][j] += shooter.loadout.shot_energy_kj;
+                    }
+                }
+            }
+        }
+        for s in 0..2 {
+            for j in 0..sides[s].len() {
+                damage[s][j] += pending[s][j];
+                if damage[s][j] >= sides[s][j].hp_kj {
+                    alive[s][j] = false;
+                }
+            }
+        }
+        t += dt;
+    }
+    alive
 }
 
 /// Who a laser targets this shot — a ship, or an in-flight missile
@@ -754,7 +913,30 @@ pub fn resolve_engagement(
 ) -> EngagementOutcome {
     let n_lasers = laser_ships.len();
     let n_missiles = missile_ships.len();
-    let carrier_accel = laser_ships[0].max_accel(sim_cfg); // same hull both sides
+    // **An empty side is a legal input, and it used to panic.** `laser_ships[0]`
+    // is an arena assumption: a scenario always seeds both fleets, so the index
+    // could not fail. The *simulation* calls this with whoever happens to be
+    // standing on a rock (T-111), and "nobody" is a state it can reach — a crew
+    // that left between the arrival and the shot. Indexing there would be a
+    // panic in the event loop on a legal board state.
+    //
+    // It is also not a fight: with no shooter on one side nothing can be
+    // resolved, so the honest answer is the walkover rather than a zero-length
+    // loop that reports `Winner::Draw`.
+    if n_lasers == 0 || n_missiles == 0 {
+        return EngagementOutcome {
+            winner: if n_lasers == 0 { Winner::Missile } else { Winner::Laser },
+            laser_survivors: n_lasers,
+            missile_survivors: n_missiles,
+        };
+    }
+    // **`carrier_accel` reads ship 0 and calls it "same hull both sides".** True
+    // in the arena, which seeds one hull per trial; false in the simulation,
+    // where two empires bring whatever they built. Missile acceleration is
+    // therefore derived from the *laser* side's first hull whatever the attacker
+    // flies — a real approximation, carried as **R-WAR5** rather than silently
+    // fixed, because changing it moves every tuned outcome in `tests/balance.rs`.
+    let carrier_accel = laser_ships[0].max_accel(sim_cfg);
     let missile_accel = carrier_accel * cfg.missile_accel_multiplier;
 
     let mut laser_alive = vec![true; n_lasers];

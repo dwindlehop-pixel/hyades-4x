@@ -39,6 +39,7 @@ new §3.2.1 split between weighted **observer seats** (overlay members) and unwe
 > | H7 — RNG stream is a serialization point | **holds** — `Rng::fork(entity_index)`, drawn in index order |
 > | §8.1 — `f64` as `to_bits()` | **established** — the determinism suite already compares this way |
 > | WASM target | **gated in CI** — `cargo check --lib --target wasm32-unknown-unknown` |
+> | H4a — native against wasm32 | **clean since T-127** — the engine calls no host libm (`src/transcendental.rs`), enforced by `clippy::disallowed_methods`. Before T-127 it was **not** clean and this table did not say so: native and wasm32 runs of one seed diverged (appendix §D.6) |
 > | §2.1 — autopilot cannot read global state | **structurally enforced** — `Autopilot` takes `PlanetView`/`SurveyView`/`RankContext`/`ProductionContext` and is never handed `&Simulation` or `&World`. It *cannot* reach global state; the question is only what the views are filled with (B4/B5 below) |
 >
 > **Cleared while landing this spec:**
@@ -555,32 +556,47 @@ SIMD. Any NaN that reaches the state digest is a latent, intermittent, unreprodu
 desync. `matching.rs::upsert` already `debug_assert!`s finiteness; promote that discipline:
 **NaN entering hashed state is a fatal error, not a value.**
 
-**H4 · Transcendentals are fine — because they are in the module.** WASM has no
+**H4 · Transcendentals are fine wasm against wasm — because they are in the module.** WASM has no
 `sin`/`cos`/`exp`/`pow` instructions; for `wasm32-unknown-unknown` these are compiled into
 the binary. Under H1 that makes them bit-identical everywhere, which is *better* than the
 native-target situation where the platform libm varies. The corresponding rule: **no float
 may cross the JS boundary inbound.** `Math.*` in JS is engine-provided and not required to
 be correctly rounded.
 
-**H4a · The gap H4 does not close is native *against* wasm.** H4 establishes
-wasm-vs-wasm, and that is the property a lobby of browser clients needs. But
-`CLAUDE.md` §4 asks for more — *"same seed ⇒ bit-identical results, native and
-wasm32"* — and a platform libm's `exp` need not agree with the Rust libm compiled
-into the module, so every transcendental on a path that reaches hashed state is a
-standing exception to that line. The exceptions are not enumerated anywhere and
-should be, because a native headless server validating a browser client's run is
-exactly the deployment H4 does not cover.
+**H4a `RATIFIED` · Native against wasm32 is bit-identical, because the engine
+calls no host libm (T-127).** H4 covers wasm against wasm. `CLAUDE.md` §4 asks
+for more — *"same seed ⇒ bit-identical results, native and wasm32"* — and a
+native headless server validating a browser client's run needs exactly that.
+The platform libm and the Rust libm compiled into the module are different
+algorithms and disagree in the last bit on 2–10% of inputs, which was enough
+to make native and wasm32 runs of the same seed diverge. Rules:
 
-T-102 removed one of them rather than documenting it: the ranking hot path's
-`exp(−distance / centrality_scale)` is now `math::exp_decay`, a degree-7 minimax
-polynomial over the range the argument was *measured* to take, built from `+` and
-`*` only. Under H8 those are correctly rounded and identical on every target, so
-that call site is now bit-identical native-to-wasm by construction rather than by
-assumption. Two properties of the fix are load-bearing and easy to lose: it uses
-**no `mul_add`** (a fused multiply-add rounds once where a multiply and an add
-round twice, so mixing the two across targets reintroduces the divergence), and
-arguments outside the fitted interval fall back to `f64::exp` — correct
-everywhere, fast only where it was measured to matter.
+- **Every transcendental on a path that can reach replicated state is
+  `crate::transcendental`** — `ln`, `exp`, `pow`, `sin_cos` — built from
+  `+ − × ÷` and bit operations, which IEEE 754 specifies exactly. `sqrt`,
+  `floor`, `round` and `abs` are exact operations and stay on `std`.
+- **`clippy::disallowed_methods` rejects the host functions in the library**
+  (`clippy.toml`, denied in `src/lib.rs`), so the rule is enforced by CI rather
+  than by review. Examples and integration tests are exempt: their statistics
+  never reach replicated state.
+- **No `mul_add`** anywhere in the engine. It is a different operation from a
+  multiply and an add — one rounding instead of two — so exchanging one for the
+  other changes results, and core wasm has no scalar FMA instruction, so on
+  wasm32 it is a software routine. Keeping the engine to separate operations
+  keeps every expression the same operation on every target.
+- **A logarithm of a constant is evaluated by the compiler**
+  (`transcendental::ln_const`), whose float arithmetic is the same IEEE 754.
+
+- **On the run path, `exp` and `ln` are four-multiply minimax polynomials**
+  (T-130, author's budget): `exp_fast`, `log2_fast`, `pow_fast` and two
+  short-range `exp` fits, each within a stated bound over its call sites'
+  measured range. The accurate functions remain for galaxy generation, world
+  construction and compile time. Being polynomials of `+` and `×` on
+  bit-manipulated operands, both kinds are identical on every target.
+
+Evidence, the accuracy of each function against the host, and the throughput
+cost: appendix §D.6 and §D.8. T-102's `math::exp_decay` was the first site
+removed, and T-130 replaced it with `exp_fast`.
 
 **H5 · No host clock, no host entropy.** No `Date.now()`, `performance.now()`, or
 `Math.random()` inside the sim. Already satisfied (`log.rs` deliberately stamps with the

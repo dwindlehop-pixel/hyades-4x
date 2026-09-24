@@ -9,8 +9,8 @@
 //! other five trees**, and `examples/work_years` has already caught it scoring a
 //! development regression as an improvement four times running. But the six
 //! objectives are in six different units — colony-years cannot be added to
-//! kilotons of fleet-years — so a composite has to be built out of something
-//! dimensionless.
+//! hull-unit-cubed fleet-years — so a composite has to be built out of
+//! something dimensionless.
 //!
 //! **Ratio to the shipped default, geometrically averaged.** Each tree's stock
 //! integral is divided by its value at the default configuration, so the default
@@ -48,7 +48,7 @@
 //! |---|---|---|
 //! | Expansion | `∫ C dt` | **measured** |
 //! | Growth | `∫ V dt` | **measured** — works exist since T-73/T-75 |
-//! | Production | `∫ F dt`, in **mass** | **measured** — needs `VehicleSnapshot::dry_mass` |
+//! | Production | `∫ F dt`, in **volume** | **measured** — needs `VehicleSnapshot::volume` |
 //! | Warfare | `∫ [C_i − Σ w_ij C_j] dt` | **computed and excluded** — see below |
 //! | Politics | `∫ [C_i + κ Σ φ_ij C_j] dt` | **degenerate** — `φ_ij ≡ 0` |
 //! | Technology | `∫ Q dt` | **undefined** — R-TREE4 |
@@ -112,7 +112,7 @@
 //! appends one TSV row **per (knob, arm, seed)** carrying all five tree
 //! integrals and the operating point that produced them. Elasticities, standard
 //! errors and rankings are all recoverable from that; the reverse is not true,
-//! and it lets a later reader re-analyse under a *different* objective without
+//! and it lets a later reader re-analyze under a *different* objective without
 //! re-running — which matters, because this project has changed its objective
 //! twice already.
 //!
@@ -127,7 +127,7 @@ use std::io::Write;
 
 /// **Raw per-evaluation record** (T-50). One row per `(knob, arm, seed)`, with
 /// the operating point beside the numbers — *an elasticity without its operating
-/// point is not a measurement, it is a rumour.*
+/// point is not a measurement, it is a rumor.*
 ///
 /// Appended, never overwritten, so chunked runs accumulate into one dataset and
 /// a killed container loses nothing already written. Zero dependencies and
@@ -225,7 +225,7 @@ fn run(seed: u64, horizon: f64, cfg: SimConfig, doctrine: Doctrine) -> Trees {
             })
             .collect()
     };
-    let w = neighbour_weights(&homes);
+    let w = neighbor_weights(&homes);
 
     let mut acc = [0.0f64; 5];
     let mut prev = [0.0f64; 5];
@@ -249,10 +249,14 @@ fn run(seed: u64, horizon: f64, cfg: SimConfig, doctrine: Doctrine) -> Trees {
                 works[o as usize] += pl.works.kilotons();
             }
         }
-        // **Mass, never hull count** (§2.3.4). Counting hulls rewards
-        // fragmentation and contradicts design law #3 outright.
+        // **Volume, never hull count and never mass** (§2.3.4, R-PROD5).
+        // Counting hulls rewards fragmentation outright. Counting *mass* is the
+        // subtler error: dry mass is mineral cost, so mass-years scores one
+        // General hull and the ten Mediums its minerals buy exactly equally —
+        // silent on design law #3, which is a claim about that ratio. Volume is
+        // the law's own value basis.
         for v in snap.vehicles.iter() {
-            fleet[v.owner as usize] += v.dry_mass.kilotons();
+            fleet[v.owner as usize] += v.volume.hull_units_cubed();
         }
 
         let mut now = [0.0f64; 5];
@@ -283,14 +287,14 @@ fn run(seed: u64, horizon: f64, cfg: SimConfig, doctrine: Doctrine) -> Trees {
     acc
 }
 
-/// `w_ij ∝ 1 / (1 + d_ij / λ_w)`, normalised so `Σ_{j≠i} w_ij = 1` (§2.3.2).
+/// `w_ij ∝ 1 / (1 + d_ij / λ_w)`, normalized so `Σ_{j≠i} w_ij = 1` (§2.3.2).
 ///
 /// **`λ_w` is R-TREE2 and unset**, so this uses the bed's own median pairwise
 /// homeworld distance as the length scale. That is a harness choice, not a
 /// ratification, and it is deliberately scale-free: it cannot import a galaxy
 /// size as a hidden constant, and it makes the weights comparable across seeds
 /// whose galaxies differ in extent.
-fn neighbour_weights(homes: &[Vec3]) -> Vec<Vec<f64>> {
+fn neighbor_weights(homes: &[Vec3]) -> Vec<Vec<f64>> {
     let n = homes.len();
     let mut pair: Vec<f64> = Vec::new();
     for i in 0..n {

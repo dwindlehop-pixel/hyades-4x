@@ -5,7 +5,7 @@
 //! `CLAUDE.md` §2 says to read `yr/s` and `ns/event` together, and the row that
 //! matters here is "`yr/s` down, `ns/event` up": events got dearer. But that
 //! diagnosis stops one step short of actionable — it does not say *which*
-//! events. T-88 moved a saving centre's build decision off the economy tick and
+//! events. T-88 moved a saving center's build decision off the economy tick and
 //! onto the freight arrival that changes its situation; the scheduled-event
 //! count barely moved (−1.8%) while throughput fell 17%, because the decision
 //! is now done **inside** `FreighterArrive` and is charged to it.
@@ -83,7 +83,7 @@ fn main() {
                     } else if !deepen_possible {
                         2 // capped, above the tier: nothing outward was chosen
                     } else if !can_afford_infra {
-                        3 // wants to deepen, colour-short or broke
+                        3 // wants to deepen, color-short or broke
                     } else {
                         4 // could afford to deepen and still chose nothing
                     };

@@ -3,9 +3,9 @@
 //! `gradient_probe` gives a direction. A direction is not a destination: the
 //! elasticities are a *local* linear model, and `medium_fleet_size` at
 //! +32.7 pts/ln would predict +13 points from a 0.4 step in log space, which is
-//! certainly optimistic — the linearisation stops holding long before that.
+//! certainly optimistic — the linearization stops holding long before that.
 //!
-//! So this does a **line search along the normalised gradient**, evaluates each
+//! So this does a **line search along the normalized gradient**, evaluates each
 //! candidate on the same CRN bed as the baseline, and reports the paired
 //! per-seed improvement. Nothing is ratified that does not beat the baseline on
 //! the *same seeds*, which is the only comparison that is not mostly noise.
@@ -117,7 +117,7 @@ fn stderr(v: &[f64]) -> f64 {
     (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (n - 1.0) / n).sqrt()
 }
 
-/// Configuration `alpha` steps along the normalised gradient, in log space.
+/// Configuration `alpha` steps along the normalized gradient, in log space.
 ///
 /// The direction is two-dimensional, and under the corrected objective
 /// `biosphere_regen_rate` is now **86% of it** (`141.2 / √(141.2² + 73.8²)`) —
@@ -195,7 +195,7 @@ fn direction_is_still_live() -> bool {
 /// **`survey_reserve` sweep** (`--sweep-reserve`). The corrected objective
 /// promoted this knob from "flat" to a real lever (−23.8 ± 10.1), and unlike
 /// the two in the gradient direction it carries **no design cost** — it is a
-/// pure search-behaviour tunable, already documented as monotone by
+/// pure search-behavior tunable, already documented as monotone by
 /// construction (survey is a fallback, never a pre-emption). It is excluded
 /// from the log-space line search only because it is an integer.
 ///
@@ -238,7 +238,7 @@ fn main() {
         attribution(alpha);
         return;
     }
-    println!("Gradient step — line search along the normalised gradient, CRN bed of {} seeds.", SEEDS.len());
+    println!("Gradient step — line search along the normalized gradient, CRN bed of {} seeds.", SEEDS.len());
     println!("Direction re-measured at the *current* defaults; only knobs outside 2 SE move.");
     for why in EXCLUDED {
         println!("  excluded: {why}");

@@ -49,7 +49,7 @@ longer taxes breadth — which matters because cmd §4's balance law
 (*a winning strategy plays from more trees than it descends deeply*) was
 previously priced against itself.
 
-**Round-1 legal openings**, with 6 trees × 3 tier-0 cards, the colour filter
+**Round-1 legal openings**, with 6 trees × 3 tier-0 cards, the color filter
 leaving 4 affordable trees (n = 12 affordable tier-0 cards), branching 2 and
 ≈3 cards per tier-1 node:
 
@@ -125,7 +125,7 @@ total mineral cost — so σ is **continuous**, not quantised into three levels
 
 **The slant magnitude a rival reads is σ_kinetic, not mass and not hull count.**
 Acceleration is the long-range observable (§6.2); a hull census is not something
-anyone is handed. *"Those hulls are mining, not colonising"* is σ_vector: a
+anyone is handed. *"Those hulls are mining, not colonizing"* is σ_vector: a
 distribution over destinations needing several looks or proximity.
 
 **The convexity coupling (R-O30), re-derived on acceleration.** A fleet's
@@ -175,11 +175,11 @@ configuration: **532 legal round-1 openings, 35.3% elite.** The band is robust
 to the tier-1 σ value across the swept range 5.0–6.5, so **R-O22 is not
 load-bearing**.
 
-**Player-count dependence rides the same dial (R-O23).** Neighbour count is
+**Player-count dependence rides the same dial (R-O23).** Neighbor count is
 pinned at 2 for every fair count ≥ 3 by vertex-transitivity, but **adjacency
 share** `2/(N−1)` is not:
 
-| N | Neighbours | Adjacent share | Eliminations before a win |
+| N | Neighbors | Adjacent share | Eliminations before a win |
 |---|---|---|---|
 | 2 | 1 | 100% | 1 |
 | 3 | 2 | 100% | 2 |
@@ -236,23 +236,23 @@ only after trajectories resolve.
 
 **How writes compose — the layering algebra (`Hyades_industry.md` §6).** Once
 more than one card writes the same standing state, the composition rule has to be
-decided or the tree becomes unanalysable. Three write kinds, three algebras, each
+decided or the tree becomes unanalyzable. Three write kinds, three algebras, each
 chosen for a property rather than for convenience:
 
 | Write kind | Algebra | Bounded by |
 |---|---|---|
 | **Scalar coefficient** (Design efficiency, ceilings, knees) | `x = x_base · Π f_i` — **multiplicative** | nothing intrinsic; priced per tier |
-| **Simplex quantity** (Doctrine allocation, cost mix) | `share_j = w_j / Σ w` — **additive weights, normalised** | normalisation, with no clamp |
+| **Simplex quantity** (Doctrine allocation, cost mix) | `share_j = w_j / Σ w` — **additive weights, normalized** | normalization, with no clamp |
 
 **Two algebras, not three**, and the third was a defect worth recording: an
-earlier draft made the cost mix a *rotation* of the colour vector, and rotations
+earlier draft made the cost mix a *rotation* of the color vector, and rotations
 in three dimensions do not commute — which falsifies the very property this
 section exists to guarantee. A mix is not an orientation, it is a **share
 vector**, and it composes exactly as the allocation does.
 
 Products and sums both **commute**, so cards give the same result in any order —
-order-dependence in a permanent, tier-gated tree is unanalysable at Monte-Carlo
-scale and unlearnable at the table. Normalisation is **a bound without a clamp**,
+order-dependence in a permanent, tier-gated tree is unanalyzable at Monte-Carlo
+scale and unlearnable at the table. Normalization is **a bound without a clamp**,
 which matters because a clamp is exactly what let T-64's broken population
 logistic keep scoring well. And because a mix is a share of a total set
 elsewhere, a mix card moves the composition and never the bill — no card is a
@@ -260,6 +260,21 @@ discount.
 
 **Commutativity is the acceptance test**, and it belongs in the engine as a
 property test over the card list rather than as a claim here (R-IND4).
+
+**Which tree may write what — the capability partition (card contract §10).**
+§5 says Doctrine and Design are written *only* by tree cards; it does not say
+*which* tree, and one write kind now needs that said. **A standing-layer write
+whose realization can reduce a player's population may appear only on a Warfare
+card.** It is enforced in the card layer rather than by authoring convention,
+because nothing in `CardEffect` distinguishes a write that raises a ceiling from
+one that lowers it — both are an `f64` — so a mis-slotted card compiles and
+reports a plausible number. Card contract §10 carries the predicate, the two
+enforcement points and the boundary; **R-TREE11** carries what is open.
+
+This is *not* the lean rule two paragraphs up. R-O33 expresses a tree's lean as
+a **ratio of magnitudes**, deliberately, so that no archetype is locked out of a
+tree. A ratio cannot express a prohibition, so the partition is a separate
+mechanism with a separate enforcement point, and neither subsumes the other.
 
 **Politics has nothing to write to (R-O27).** The `Doctrine` struct has no
 diplomatic fields — no trade lanes, partners, or pact state. Same gap as
@@ -284,7 +299,7 @@ support. At least two further channels are expected and are not yet specified:
   should sit at the maximally-legible end by design.
 - **Economic** — mineral drawdown and exchange pressure. This is the leak
   channel that makes off-archetype commitments louder than on-archetype ones
-  (you must source your poor colour externally), and it is what turns R-MX1
+  (you must source your poor color externally), and it is what turns R-MX1
   ("does pressure ever surface diegetically?") from cosmetic into load-bearing.
 
 Nothing below should be read as a complete capability list. New channels are
@@ -297,14 +312,14 @@ range / latency / maskability profile rather than inheriting the kinetic one.
 | Kinetic — repeated observation over rounds | destination distribution → tasking | patience | by trajectory, until the cone narrows |
 | Kinetic — close scan | **fit, cargo, flight plan** | proximity — a Contact hull must go there | no |
 | **Structural** — infrastructure, orbitals | *to be specified* | *open* | likely **not** — static and persistent |
-| **Economic** — drawdown, exchange pressure | colour of spend → domain of commitment | *open* (R-MX1) | by trading, at a price |
+| **Economic** — drawdown, exchange pressure | color of spend → domain of commitment | *open* (R-MX1) | by trading, at a price |
 
 **A question the structural channel raises (R-O54).** If planetside development
 is *quieter* at long range than a burning fusion torch — which is physically
 plausible, since infrastructure is not self-luminous — then Growth and
 Production players are structurally more inscrutable than Warfare players,
 independent of any card choice. That is an asymmetry to price or design against,
-and it is not covered by L1 because it does not align with a colour domain.
+and it is not covered by L1 because it does not align with a color domain.
 
 **Scouting is the counter to inscrutability.** That makes Contact hulls a
 standing strategic investment rather than an early-game formality (Banks-
@@ -322,7 +337,7 @@ the burn.
 **Acceleration is a one-sided signal.** A ship may fly below peak; it may never
 fly above it. Observed `a` is therefore a **lower bound** on capability.
 Masking has a quantified price: under-burning means arriving later, the order
-realises later, and under D1 that costs `f(Δt)` — the separating condition of
+realizes later, and under D1 that costs `f(Δt)` — the separating condition of
 §2 with a physical unit attached.
 
 **The inverse problem is under-determined at range.** `a = total_thrust /
@@ -349,7 +364,7 @@ slab-allocated BSP tree.
 
 The cone narrows as the burn resolves, and light-lag guarantees you are
 watching the early, ambiguous phase. A hull bound for a metal-rich
-low-habitability world is mining; for a habitable one, colonising; for your
+low-habitability world is mining; for a habitable one, colonizing; for your
 homeworld, conquering — but the hypotheses do not separate until enough arc has
 arrived.
 
@@ -437,7 +452,7 @@ scanning.
 > production choice saw. The paired freighter of the old `MiningPair` is now a
 > consequence of assigning `Role::Miner` (roles §5), not of the order's name.
 >
-> The split is **behaviour-neutral** at the shipped defaults: seed 1, 3 seats,
+> The split is **behavior-neutral** at the shipped defaults: seed 1, 3 seats,
 > 4,000 yr gives 1,183 colonies / 1,594 miner taskings / 5,845 planets scanned /
 > 240 scouts both before and after. That is the intended outcome — this item
 > removes an observation leak, it does not change what gets built.
@@ -462,22 +477,39 @@ scouts badly — slow, no dedicated sensor fit — but legally.
 
 ### 7.1 Starting state (R-O42)
 
-> **Engine status.** The roster component exists (R-O28 resolved: `sim::Roster`,
-> a per-player set of `(HullType, Class)` written only by tree cards) and seats
-> are seeded with exactly LSV(Meadow) + LCV(Tor). **Enforcement is off by
-> default**, because there is no card system yet and therefore no unlock path:
-> the colonizer and freighter ride on the Medium hull, which this starting
-> roster excludes, so enforcing it forbids every expansion build for the whole
-> game. Measured on seed 1 over 4,000 years, enforcement takes the run from
-> 1,183 colonies and 4,778 vehicles to **3 colonies and 18 vehicles** — the
-> homeworlds and the bootstrap scouts, nothing else.
+> **Engine status (rev T-121).** The roster component exists (R-O28 resolved:
+> `sim::Roster`, a per-player set of `(HullType, Class)` written only by tree
+> cards).
 >
-> That is not an argument against §7.1; it is the ordering constraint it
-> implies. **The starting roster cannot bind until Design cards can unlock the
-> Medium hull.** Flip `SimConfig::enforce_roster` on together with that layer.
+> **The doctrine half is implemented now and was not before.** This section has
+> said *"100% LSV in the Scout role"* since R-O42; the engine surveyed with an
+> LCV until T-121, so the ratified default and the shipped default disagreed for
+> the whole intervening period. `Standing::design_for(Role::Scout)` returns
+> `(LimitedSystems, Tor)` under the default doctrine, and the Contact hull it
+> used to return is now locked behind the first Warfare card
+> (`Hyades_warfare_tree.md` §8.14).
+>
+> **The roster half is amended: seats are seeded with LSV(Meadow) alone.** The
+> Contact family is the armed family and `TIER0[15]` is its only key, so seeding
+> an LCV hands every seat the thing that card is meant to sell. The argument
+> below survives the amendment and is better served by it — one design makes
+> every empire's opening fleet identical more completely than two do. What is
+> lost is `Tor` as a *seeded* class name; it is authored by the card that
+> unlocks the hull carrying it.
+>
+> **Enforcement is still off by default**, because the colonizer and freighter
+> ride on the Medium hull, which the starting roster excludes, so enforcing it
+> forbids every expansion build for the whole game. Measured on seed 1 over
+> 4,000 years, enforcement takes the run from 1,183 colonies and 4,778 vehicles
+> to **3 colonies and 18 vehicles** — the homeworlds and the bootstrap scouts,
+> nothing else. That is not an argument against §7.1; it is the ordering
+> constraint it implies. **The starting roster cannot bind until Design cards
+> can unlock the Medium hull** — `TIER0[12]` is that card, and T-25 is the
+> switch. Flip `SimConfig::enforce_roster` on together with that layer.
 
-- **Roster at game start: LSV and LCV only, one class each.**
-- **Default doctrine: 100% LSV in the Scout role.**
+- ~~**Roster at game start: LSV and LCV only, one class each.**~~ **Amended at
+  T-121: LSV(Meadow) alone**, for the reason in the status block above.
+- **Default doctrine: 100% LSV in the Scout role.** *(Implemented at T-121.)*
 - Class names follow the Banks convention already in `Hulls & classes`, which
   scales the landform to the hull (Ocean/Plate/System at GSV; Desert/Steppe/
   Plains at MSV; Delta/Escarpment/Mountain/Ridge/River for Contact). Limited
@@ -493,7 +525,7 @@ the mix off 100% LSV.
 ### 7.2 The armament ladder (R-O43, R-O45)
 
 **LSV unarmed → LCV lightly armed → LCU modestly armed → LOU heavily armed and
-armoured.** This is a continuous ladder, not an armed/unarmed toggle, so
+armored.** This is a continuous ladder, not an armed/unarmed toggle, so
 Vehicle⇄Unit is **not** a free stand-down: **LCU is a roster-add (a Design
 unlock)**, after which toggling between forms may be free. *Resolves R-V8.*
 Consistent with `Hyades_loadout.md` §2 — a Systems Vehicle mounting a defensive
@@ -749,7 +781,7 @@ be checked against the sweep-tuned values before this is treated as settled.
 > hull is the unit, `r = 1`. That second part is the model's other half — **a
 > Limited hull is all shell and no hold**, which makes its zero capacity a
 > consequence of the geometry rather than a special case, and it is exactly the
-> §6 fact that R-V9 leans on. Capacity is then `(r − 1)³` normalised to the
+> §6 fact that R-V9 leans on. Capacity is then `(r − 1)³` normalized to the
 > Medium hull, so `cargo_unit_size` keeps its name, its default and its meaning
 > as the reference hold. Dry mass is the mineral cost. **No new tunable is
 > introduced and none is retuned; two are deleted** (`dry_mass`,
@@ -761,8 +793,8 @@ be checked against the sweep-tuned values before this is treated as settled.
 > optimal and read the collapse at 12.0 as an economic cliff; in fact at 8.0
 > against `limited_fleet_size = 9` a General hull holds ~36,000× a Medium's
 > load, and at 12.0 the Medium hull is *smaller* than the Limited one, so the
-> normaliser is zero and **every hull carries nothing**. It stayed invisible
-> because the freighter is an MSV and the Medium hull *is* the normalisation
+> normalizer is zero and **every hull carries nothing**. It stayed invisible
+> because the freighter is an MSV and the Medium hull *is* the normalization
 > unit, so the haul per trip never moved. `SimConfig::hull_ladder_fault` now
 > refuses such a configuration outright. **The cost ladder must be swept
 > jointly, or the radius ladder swept directly with cost derived from it**
@@ -794,6 +826,36 @@ the kinetic channel, **large hulls broadcast their load state and small ones do
 not.** Consolidation always wins under geometry alone and the counterweight has
 so far had to come from combat effects; this is a counterweight that is not
 combat at all — small fleets are harder to read.
+
+**The broadcast's width *is* the hull's cargo efficiency (R-O95).** Since T-96
+thrust is a property of the mounted drive rather than of the load, and since
+R-O57 a hull's cost is its dry mass, so for every hull at every configuration:
+
+```text
+a_empty / a_laden  =  (T / M_dry) / (T / (M_dry + C))  =  1 + C / M_dry
+```
+
+with `C / M_dry` cargo capacity per kilotonne of price — the quantity design
+law #3 is a claim about. `sim::tests::the_acceleration_swing_is_the_cargo_efficiency`
+asserts it to a residual below `1e-12` across five hull types and a ten-fold span
+of `drive_volume_fraction`, so it is a property of the law and not of the shipped
+magnitudes. The table above says the same thing in the pre-T-96 notation; this is
+the exact form, and it survived thrust moving off dry mass.
+
+**It is a design constraint, not a restatement.** The swing cannot be tuned
+separately from the hold: a hull made *worse* at freight is thereby made
+*quieter*, and no Design write can lower a hull's laden acceleration while
+raising its empty acceleration and cutting its cargo efficiency at the same
+time. That triple is over-determined by one constraint, which is how it refuted
+one third of the first Warfare card's stated intent
+(`Hyades_warfare_tree.md` §7.3).
+
+**Read it beside design law #10, not as a version of it.** The law says arming a
+fleet is loud unless you also buy thrust — a claim about the **level** of
+observed acceleration, which a bigger drive raises. This is about the **spread**
+between a hull's two load states, which a smaller hold narrows. Two readings of
+one observable, moving in opposite directions under the same card: the
+concealment combo the law describes, obtained from the cargo side.
 
 ### 9.3 Slag (R-O59)
 
@@ -990,9 +1052,9 @@ than inferring.
 ## 10. Design laws
 
 **L1 — The co-extension law (R-O34).** *No **categorical** strategic
-classification may be co-extensive with a colour domain.* Archetypes are
-defined by colour pairs, so any categorical classification aligned with the
-colour partition locks out exactly the archetype poor in that colour. The
+classification may be co-extensive with a color domain.* Archetypes are
+defined by color pairs, so any categorical classification aligned with the
+color partition locks out exactly the archetype poor in that color. The
 law binds *categorical* classifications only; continuous ones expressed as
 magnitude (such as the Doctrine/Design lean, §5) are exempt, which is why
 Warfare and Technology may both lean Design.
@@ -1053,14 +1115,14 @@ is why exotic synthesis is pair production (§9.6).
 |---|---|---|
 | 1 | ~~Split `BuildOrder::ColonyVehicle` (and mining/freighter builds) into `BuildOrder::Hull { hull_type, class }` + separate role assignment~~ **done** — see §7 | R-O29 **resolved** |
 | 2 | Add a **Design/roster component** — which hull types and classes a player has unlocked | **R-O28** (blocks σ_vector for Design entirely) |
-| 3 | Add **diplomatic fields** to `Doctrine` — trade lanes, partners, pact state | R-O27 / R-A3 |
+| 3 | Add **diplomatic fields** to `Doctrine` — trade lanes, partners, pact state, **and a stance default**, which the first Warfare card writes (*a Neutral empire is an Enemy empire*, `Hyades_warfare_tree.md` §7.2) | R-O27 / R-A3 |
 | 4 | Add a **throttle fraction** to `Doctrine`; derive observed acceleration from trajectory, not the stat block | R-O40 |
 | 5 | Equalise colony cargo mass and mineral cargo mass | R-O32 |
 | 6 | Expose `min_time_search` as a **reachability cone** query (same function, reverse direction); prune candidates via the existing BSP tree | R-O31 |
 | 7 | ~~Route intercept and sim §4 accept/decline through **believed `a_max`**~~ **half done** — `src/belief.rs` has the one-sided estimator and the accept/decline predicate with the surprise-attack property asserted; the sim-level wiring is blocked on the round layer (T-30), and harvesting `a` from trajectories is item 4 | R-O41 |
 | 8 | ~~Rewrite roles §4 eligibility lists as **permissive with competence**~~ **done** — roles §4 now opens with the permissive rule and every per-role list reads "Competent:", with capability-zero (a Limited hull's absent cargo hold) distinguished from a forbidden assignment. `Autopilot::assign_role` matches: it declines on *no viable target*, never on hull type | R-O44 **resolved** |
 | 9 | `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12]` and rejects 18, while galaxy §2 lists 6r (12, 18) as fair and `starting_hex_radius` already carries an `18 => 4.5` branch | R-O12 |
-| 10 | Seed the starting roster: LSV + LCV, one class each; default doctrine 100% LSV Scout | R-O42 |
+| 10 | Seed the starting roster (**amended at T-121 to LSV alone**); default doctrine 100% LSV Scout (**implemented at T-121**) | R-O42 |
 | 11 | ~~**Derive `hull_dry_mass` from mineral cost** — delete it as an independent field~~ **done** — see the §9.1 engine-status block. `SimConfig::dry_mass` and `cargo_mass_per_unit` deleted with it | R-O57 **resolved** |
 | 12 | ~~Re-base hull mass on **surface area** (shell), contents on volume; verify the 1 : 2.2 : 4 radius prediction~~ **done, landed with 11** — see the §9.2 R-O58b block. Radius is derived from the cost ladder, capacity from usable shell interior; the 1 : 2.2 : 4 prediction becomes a cost-ladder tuning target (`limited_fleet_size = 16`, `medium_fleet_size = 3.31`) rather than a claim to check | R-O58 **resolved**, R-O58b **resolved** |
 | 13 | Track **slag** as a bank entry: inert by default, refinable once the tier-1 card is played | R-O59 |
@@ -1079,7 +1141,7 @@ is why exotic synthesis is pair production (§9.6).
 | sim §5 — is the counter-graph a DAG or does it carry cycles? | **answered**: ladder at turn 0, player-authored cycles thereafter (R-O48) |
 | roles §4.1 — Scout eligible only for Contact hulls | **superseded** by permissive eligibility (R-O44) |
 | Opening-space rev 1 §4.2 — "81% of the space is strictly worse" | **retracted**; the no-descent block is the low-variance half of the elite set |
-| Opening-space rev 1 §7.1 — neighbour count carries no variation | **amended**: true of the count, false of adjacency share |
+| Opening-space rev 1 §7.1 — neighbor count carries no variation | **amended**: true of the count, false of adjacency share |
 | Opening-space rev 2 — the `3/n` selectivity ladder and gate-card predicate | **superseded** by E3 |
 | Common Act symmetry work (R-O7, R-O14, R-O15, R-O20) | **moot** — the class is deleted |
 | R-O1, R-O2 (Compass/Pattern menus), R-O18 (two-gate predicate) | **moot** — no such cards |
@@ -1147,6 +1209,7 @@ than a power spike.
 | **R-O52** | concealment-by-offset: cost the thrust-and-armament combo that holds `a` constant while σ_commit is large. Concealment is a combo property, not a card property |
 | **R-O53** | the observable-channel enumeration is **open**. Specify the structural channel (infrastructure, orbitals) and the economic channel (drawdown, exchange pressure), each with its own range / latency / maskability profile |
 | **R-O54** | is planetside development quieter at long range than a burn? If so, Growth and Production are structurally more inscrutable than Warfare, independent of card choice |
+| **R-O95** | ~~can a hull be worse at freight, faster empty and slower laden at once?~~ **Answered: no, and the answer is an identity** — `a_empty / a_laden = 1 + C / M_dry`, exactly, at every configuration (§9.2, pinned by `sim::tests::the_acceleration_swing_is_the_cargo_efficiency`). What stays open is the **magnitude** the first Warfare card should take: the Contact colonizer class's drive fraction `φ`, which is blocked on T-97 making `φ` per-`Class` at all. Carried as **R-WAR4** (`Hyades_warfare_tree.md` §7.3) |
 
 **Pre-existing, depended on:** R-5 (full clock math), R-7/R-9 (round-1 cost
 numbers — now the *sole* throttle on breadth), R-C1, R-C2, R-C5, R-C7,

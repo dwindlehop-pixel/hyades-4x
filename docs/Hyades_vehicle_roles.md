@@ -160,6 +160,19 @@ carries no such information itself.
   on the same role, not a different role (§7 explains the reasoning), unless
   §3's Vehicle⇄Unit hypothesis is confirmed, in which case "arming an LCV"
   may just mean "it becomes an LCU" rather than a same-type loadout change.
+- **The Warfare doctrine may scout on an LOU instead** (T-115,
+  `Doctrine::scout_hull_offensive`, **R-WAR8**, ships off). This is the
+  permissive rule above taken at its word: an LOU scouts, less well and at a
+  higher price, and in exchange a scout that reaches somewhere worth holding
+  can hold it. It is a *supply* fix — the picket's own build branch sits behind
+  a survey test that is almost always true, so the survey branch is where the
+  hulls actually are (`Hyades_warfare_tree.md` §8.9.4).
+
+  **The class is what says which errand it was built for.** A scout carries
+  `Class::Tor` whatever shell it is mounted on, so a Tor on an offensive hull is
+  a survey design on a fighting shell — which is what a Design write does
+  (R-O28/R-O42b) — and `assign_role` reads it back without a second piece of
+  state.
 
 ### 4.2 Colonizer — Systems
 
@@ -170,16 +183,16 @@ carries no such information itself.
   on founding — it becomes the colony's seed population, the same way the hull
   itself becomes the colony's level-1 infrastructure.
 - **The settlers come from a real world (R-O74, resolved —
-  `Hyades_industry.md` §1.7).** They are debited from the founding centre's
+  `Hyades_industry.md` §1.7).** They are debited from the founding center's
   population at launch, not created at it. Until this landed the engine
-  conjured them, and the size of the violation was measurable: the coloniser
+  conjured them, and the size of the violation was measurable: the colonizer
   policy that shipped the biggest seed scored **+13.97% colony-years** on an
   identical colony count, which was a measurement of the free mass rather than
   of the policy (§1.6). **How many is a demand-side question**, not a share of
   the parent: the seed is priced in time — what it saves the destination against
   what it costs the origin to regrow — discounted by the voyage (R-IND12).
 - **A hold may carry any mix of settlers and minerals.** Whatever volume the
-  people do not fill leaves with minerals out of the founding centre's own
+  people do not fill leaves with minerals out of the founding center's own
   bank, and lands in the new colony's stockpile to jumpstart production. Both
   halves mass the same (R-O32), so the mix is invisible from outside — which is
   the point, since acceleration must not read out cargo *type* (design law
@@ -194,12 +207,54 @@ carries no such information itself.
   owner per world; a second colonizer arriving at a claimed world is the
   contested case below. Cards may override this (e.g. shared/condominium
   worlds, forced co-settlement).
+- **A Warfare card moves this role onto the Contact family, and the arrival
+  behavior changes with it** (`Hyades_warfare_tree.md` §7.2,
+  **T-110**). The armed colonizer is a **GCV** — Contact has no Medium size
+  (§3), so the card is a 10× step in hull price, not a sidegrade — and it
+  **does not recycle on arrival**. Two consequences, and both are the card
+  rather than a defect:
+  - **The colony is founded thin.** `founding_infra = hull_cost` is the
+    recycled hull's own minerals (T-70, R-O57), so a colonizer that keeps its
+    hull leaves the new colony with only what the hold carried as endowment
+    (`Hyades_industry.md` §1.7). Mass is conserved either way; what moves is
+    *where the minerals stand*.
+  - **The hull becomes a picket** rather than infrastructure, under the same
+    card's Doctrine write: it flies to a nearby unclaimed world and holds it, so
+    nobody else founds there (`Role::Picket`, T-112). That is the exchange being
+    offered: a smaller colony now against a colony a rival does not get later.
+  - **Measured, the exchange is a bad one** — the neighbors expand **+4.40% ±
+    1.09** rather than less, and the card's own player loses 9.6% of its
+    colonies (`Hyades_warfare_tree.md` §8.6). It ships gated off.
+  - **"Thin" has a floor, and finding it cost 57% of a bed.** Founding at infra
+    *zero* is not a price but an absorbing state: `employment_rate` returns
+    exactly `0.0` there, so the colony can never mine or build. A departing
+    picket leaves the ladder's floor rung (§8.7, **R-WAR6**).
+  - **A picket whose world gets colonized returns to the frontier** (T-115).
+    Its product is a colony somebody does not found; once that world *is* a
+    colony there is nothing left to deny, and a hull left parked there is one
+    the empire keeps counting against `picket_reserve`. This is the situation
+    the held-ground colonization preference (T-113) deliberately creates.
+  - **And the floor is what it leaves, whatever the hold carried** (T-113).
+    `Doctrine::founding_infra_share` erects part of the endowment as the new
+    colony's stock rather than banking it, and measured it does nothing:
+    `examples/founding_stock` puts **0.0% of foundings above the floor at
+    share 0** — the maximum *is* the floor — and 21.0% at 0.5, with the median
+    unmoved at every share. A colonizer's hold is nearly all settlers, because
+    `settler_target` sizes the people to the destination's carrying capacity
+    (R-IND12) and minerals take whatever volume is left. Carrying a real
+    endowment is a **reservation against the hold**, which is a change to
+    `settler_target` (**R-WAR7**), not a share of the remainder.
+
+  **It is a Warfare card and it carries no population-lethal write** — its
+  lethality is to hulls. Card contract §10 licenses Warfare to carry such
+  writes; it does not require it.
+
 - **Contingent — contested** (R-AC8): target already claimed → returns
   toward home, then goes to Reserve (§4.6) like any entity with no further
   task. Because it still carries its pop, that pop returns with it (available
   to re-task at another target) rather than being lost. **Under conservation
   that sentence became an entry rather than a reassurance:** the ship unloads
-  settlers and endowment back into its home centre on arrival, because a hull
+  settlers and endowment back into its home center on arrival, because a hull
   parked while still laden would hold that mass out of the economy for good.
 
 ### 4.3 Miner — Systems
@@ -253,6 +308,23 @@ sacrificed."
   warfare-autopilot / counter-graph territory.
 
 ### 4.6 Reserve vs. Scrap — which applies when
+
+**There is a third terminal state since T-111: destroyed.** Reserve and Scrap are
+both *choices a hull's owner makes*; a hull lost in an engagement made none.
+`Hyades_warfare_tree.md` §7 is the mechanism; what belongs here is where the mass
+goes, because design law #11 has no exclusions and "the loser's ships vanish"
+would be the largest leak in the engine on the one path Warfare runs on.
+
+**A destroyed hull's dry mass becomes slag at the site** — `World::slag`, a
+per-planet kiloton tally. Since R-O57 dry mass *is* the hull's mineral cost, so
+the wreckage is exactly what was paid for it, and
+`slag_conserves_the_mass_of_what_it_destroyed` reconciles the two against the
+cost ladder rather than trusting either alone.
+
+**It is inert, and that is R-O59's own answer rather than a shortcut**: slag is
+useless by default and a tier-1 card makes it refinable. Nothing reads it. The
+alternative — wreckage salvaged by whoever holds the field — is a Warfare
+*reward*, and nobody has ratified one. Advances **T-03**.
 
 Rev 4 generalized "idle → never scrap" across every role from one example.
 Confirmed this conversation that's too strong: **LCV scraps** on mission

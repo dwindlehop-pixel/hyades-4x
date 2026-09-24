@@ -28,7 +28,7 @@ use core::fmt;
 use crate::autopilot::BuildOrder;
 use crate::galaxy::PlanetId;
 use crate::math::Vec3;
-use crate::sim::{Entity, Role};
+use crate::sim::{Entity, HullType, Role};
 use crate::units::BandTier;
 
 /// Which subsystem a record came from. Independently toggleable in a
@@ -53,16 +53,20 @@ pub enum LogCategory {
     Scanning,
     /// Round barriers and the cards played at them (the protocol clock).
     Cards,
+    /// Engagements resolved in the simulation loop and the hulls they destroyed
+    /// (`Hyades_warfare_tree.md` §7, T-111) — `EngagementResolved`.
+    Combat,
 }
 
 impl LogCategory {
-    pub const ALL: [LogCategory; 6] = [
+    pub const ALL: [LogCategory; 7] = [
         LogCategory::Production,
         LogCategory::Mining,
         LogCategory::Vehicles,
         LogCategory::Population,
         LogCategory::Scanning,
         LogCategory::Cards,
+        LogCategory::Combat,
     ];
 }
 
@@ -76,6 +80,7 @@ pub struct LogFilter {
     population: bool,
     scanning: bool,
     cards: bool,
+    combat: bool,
 }
 
 impl LogFilter {
@@ -88,7 +93,15 @@ impl LogFilter {
     /// Every category enabled — full interrogation, highest overhead. Good for
     /// a single re-run of one seed; not meant for a Monte-Carlo sweep.
     pub fn all() -> Self {
-        LogFilter { production: true, mining: true, vehicles: true, population: true, scanning: true, cards: true }
+        LogFilter {
+            production: true,
+            mining: true,
+            vehicles: true,
+            population: true,
+            scanning: true,
+            cards: true,
+            combat: true,
+        }
     }
 
     /// Builder-style: `LogFilter::none().with(LogCategory::Production)`.
@@ -105,6 +118,7 @@ impl LogFilter {
             LogCategory::Population => self.population = on,
             LogCategory::Scanning => self.scanning = on,
             LogCategory::Cards => self.cards = on,
+            LogCategory::Combat => self.combat = on,
         }
     }
 
@@ -117,12 +131,13 @@ impl LogFilter {
             LogCategory::Population => self.population,
             LogCategory::Scanning => self.scanning,
             LogCategory::Cards => self.cards,
+            LogCategory::Combat => self.combat,
         }
     }
 
     #[inline]
     pub fn any(&self) -> bool {
-        self.production || self.mining || self.vehicles || self.population || self.scanning
+        self.production || self.mining || self.vehicles || self.population || self.scanning || self.combat
     }
 }
 
@@ -157,15 +172,15 @@ pub enum LogEvent {
         mining_pair_cost: f64,
         mineral_pressure: f64,
         candidates_seen: u32,
-        /// **The decision's own per-colour affordability test** (T-73), not a
+        /// **The decision's own per-color affordability test** (T-73), not a
         /// total it can be reconstructed from.
         ///
-        /// A works bill is payable in *named colours*, and the galaxy's supply
-        /// is single-coloured (mean dominant-colour share 0.789, 38% of sources
-        /// ≥95% one colour), so "could this centre afford the rung" and "did
-        /// this centre hold enough ore" are different questions with different
+        /// A works bill is payable in *named colors*, and the galaxy's supply
+        /// is single-colored (mean dominant-color share 0.789, 38% of sources
+        /// ≥95% one color), so "could this center afford the rung" and "did
+        /// this center hold enough ore" are different questions with different
         /// answers. Reconstructing the first from `stockpile` and `infra_cost`
-        /// counts a colour-short centre as having *chosen* not to deepen, which
+        /// counts a color-short center as having *chosen* not to deepen, which
         /// is the opposite of what happened — so the predicate is logged rather
         /// than inferred.
         can_afford_infra: bool,
@@ -191,7 +206,22 @@ pub enum LogEvent {
     /// derivable from the hull — and that split is the only way to tell which of
     /// the three caps was binding (hull, destination, or origin) without
     /// reaching into engine internals. `examples/endowment` reads it.
-    VehicleSpawned { player: u32, vehicle: Entity, role: Role, from: Vec3, to: PlanetId, settlers: f64, endowment: f64 },
+    VehicleSpawned {
+        player: u32,
+        vehicle: Entity,
+        role: Role,
+        /// **The hull it was built on** (T-116). Carried because `role` and
+        /// `hull` are not recoverable from each other in either direction: a
+        /// Medium Systems hull is a colonizer *or* a freighter, and a colony
+        /// ship rides a Medium, a General or — under the Warfare card's Design
+        /// write — a General Contact hull. Counting colony ships off
+        /// `BuildApplied`'s hull alone silently counts freight.
+        hull: HullType,
+        from: Vec3,
+        to: PlanetId,
+        settlers: f64,
+        endowment: f64,
+    },
     /// A vehicle reached its destination and is holding station / idle there —
     /// the resting state for every non-contact role (autopilot-doc post-arrival
     /// behavior: systems vehicles return, offensive units hold station).
@@ -203,7 +233,23 @@ pub enum LogEvent {
     ContactArrived { player: u32, vehicle: Entity, planet: PlanetId, next: Option<PlanetId> },
     /// A colony vehicle founded a colony and was **recycled into its level-1
     /// infrastructure** — it does not return, scrap, or persist as a ship.
-    ColonyFounded { player: u32, vehicle: Entity, planet: PlanetId },
+    ///
+    /// `infra` is the founding stock in kilotons, *after* every term that can
+    /// set it: the recycled hull, the share of the hold erected on arrival, and
+    /// the floor rung. It is logged because zero there is an absorbing state
+    /// rather than a small number (`Hyades_warfare_tree.md` §8.7), so the
+    /// distribution of this one figure is what says whether a Doctrine write
+    /// aimed at it is doing anything — and reconstructing it from the hull type
+    /// would miss the other two terms.
+    ColonyFounded { player: u32, vehicle: Entity, planet: PlanetId, infra: f64 },
+    /// **A picket left station to head off a colony ship** (T-115).
+    ///
+    /// `margin` is how many years it expects to be on the ground before the
+    /// colony ship arrives — the slack the race is won by, which is the number
+    /// that says whether the mechanic is firing comfortably or on a knife edge.
+    /// Logged because the objective cannot distinguish an interception that
+    /// never happened from one that happened and did not matter.
+    PicketIntercept { player: u32, vehicle: Entity, target: PlanetId, margin: f64 },
     /// A colony vehicle arrived at a target someone else had already claimed
     /// (race under light-lag); it turns back rather than founding.
     ColonyContested { player: u32, vehicle: Entity, planet: PlanetId },
@@ -227,6 +273,35 @@ pub enum LogEvent {
     /// A card resolved at a round barrier. `card` is the [`crate::cards::CardId`]
     /// index; `round` is the protocol clock, not the sim clock.
     CardPlayed { player: u32, card: u16, round: u32 },
+
+    /// **A colonizer turned back because a rival is holding its target**
+    /// (T-112) — distinct from [`Self::ColonyContested`], which is losing a
+    /// *race*, and the distinction is load-bearing: the two were counted
+    /// together once and the combined figure read as ~33% of diverts being the
+    /// picketing seat's own, which is simply its share of the table and says
+    /// nothing about denial at all.
+    ColonyDiverted { player: u32, vehicle: Entity, planet: PlanetId, holder: u32 },
+
+    /// **An engagement was resolved in the simulation loop** (T-111) — the first
+    /// `LogEvent` that records something being destroyed.
+    ///
+    /// `attacker`/`defender` are seats; `attacker` is the empire whose Doctrine
+    /// started it. `committed` is the attacker's accept/decline
+    /// ([`crate::belief::Engagement`]) read as a bool: `true` when it could not
+    /// have broken off. `losses_*` are hull counts and `slag` is the mass they
+    /// became, so a census can reconcile the two against the cost ladder rather
+    /// than trusting either alone.
+    EngagementResolved {
+        site: PlanetId,
+        attacker: u32,
+        defender: u32,
+        attacker_ships: u32,
+        defender_ships: u32,
+        losses_attacker: u32,
+        losses_defender: u32,
+        committed: bool,
+        slag: f64,
+    },
 }
 
 impl LogEvent {
@@ -235,6 +310,7 @@ impl LogEvent {
         use LogEvent::*;
         match self {
             ProductionDecision { .. } | BuildApplied { .. } => LogCategory::Production,
+            PicketIntercept { .. } => LogCategory::Combat,
             MineralsExtracted { .. } | MiningExhausted { .. } | FreighterTransfer { .. } => LogCategory::Mining,
             VehicleSpawned { .. }
             | VehicleParked { .. }
@@ -245,6 +321,7 @@ impl LogEvent {
             PopulationStep { .. } => LogCategory::Population,
             ScanReceived { .. } => LogCategory::Scanning,
             CardPlayed { .. } => LogCategory::Cards,
+            EngagementResolved { .. } | ColonyDiverted { .. } => LogCategory::Combat,
         }
     }
 
@@ -253,6 +330,7 @@ impl LogEvent {
         use LogEvent::*;
         match *self {
             ProductionDecision { player, .. }
+            | PicketIntercept { player, .. }
             | BuildApplied { player, .. }
             | FreighterTransfer { player, .. }
             | VehicleSpawned { player, .. }
@@ -262,8 +340,12 @@ impl LogEvent {
             | ColonyContested { player, .. }
             | VehicleScrapped { player, .. }
             | ScanReceived { player, .. }
+            | ColonyDiverted { player, .. }
             | CardPlayed { player, .. } => Some(player),
-            MineralsExtracted { .. } | MiningExhausted { .. } | PopulationStep { .. } => None,
+            // An engagement is about two seats, so it belongs to neither.
+            MineralsExtracted { .. } | MiningExhausted { .. } | PopulationStep { .. } | EngagementResolved { .. } => {
+                None
+            }
         }
     }
 
@@ -277,6 +359,9 @@ impl LogEvent {
             | PopulationStep { planet, .. }
             | ScanReceived { planet, .. } => Some(planet),
             FreighterTransfer { at, .. } | VehicleParked { at, .. } | VehicleScrapped { at, .. } => Some(at),
+            EngagementResolved { site, .. } => Some(site),
+            ColonyDiverted { planet, .. } => Some(planet),
+            PicketIntercept { target, .. } => Some(target),
             VehicleSpawned { to, .. } => Some(to),
             ContactArrived { planet, .. } => Some(planet),
             ColonyFounded { planet, .. } | ColonyContested { planet, .. } => Some(planet),
@@ -290,6 +375,7 @@ impl LogEvent {
         use LogEvent::*;
         match *self {
             FreighterTransfer { vehicle, .. }
+            | PicketIntercept { vehicle, .. }
             | VehicleSpawned { vehicle, .. }
             | VehicleParked { vehicle, .. }
             | ContactArrived { vehicle, .. }
@@ -353,8 +439,11 @@ impl fmt::Display for LogEvent {
                 Some(n) => write!(f, "P{player} scout reached planet#{} -> on to planet#{}", planet.0, n.0),
                 None => write!(f, "P{player} scout reached planet#{} -> no targets left, holding", planet.0),
             },
-            ColonyFounded { player, planet, .. } => {
-                write!(f, "P{player} founded colony at planet#{} (vehicle recycled into infra-1)", planet.0)
+            PicketIntercept { player, target, margin, .. } => {
+                write!(f, "P{player} picket breaks for planet#{} ({margin:.2} yr ahead)", target.0)
+            }
+            ColonyFounded { player, planet, infra, .. } => {
+                write!(f, "P{player} founded colony at planet#{} (founding stock {infra:.6} kt)", planet.0)
             }
             ColonyContested { player, planet, .. } => {
                 write!(f, "P{player} colony ship found planet#{} already claimed, turning back", planet.0)
@@ -367,6 +456,25 @@ impl fmt::Display for LogEvent {
             }
             ScanReceived { player, planet } => write!(f, "P{player} scan of planet#{} received", planet.0),
             CardPlayed { player, card, round } => write!(f, "P{player} played card#{card} at round {round}"),
+            ColonyDiverted { player, planet, holder, .. } => {
+                write!(f, "P{player} turned back from {planet:?}: P{holder} is holding it")
+            }
+            EngagementResolved {
+                site,
+                attacker,
+                defender,
+                attacker_ships,
+                defender_ships,
+                losses_attacker,
+                losses_defender,
+                committed,
+                slag,
+            } => write!(
+                f,
+                "engagement at {site:?}: P{attacker} ({attacker_ships}) vs P{defender} ({defender_ships}) \
+                 -> -{losses_attacker}/-{losses_defender}, {}, {slag:.4} kt slag",
+                if *committed { "committed" } else { "could disengage" }
+            ),
         }
     }
 }

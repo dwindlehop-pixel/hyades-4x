@@ -110,7 +110,7 @@ impl Default for RankWeights {
     }
 }
 
-/// **How a centre picks the hull for a coloniser (R-IND11).**
+/// **How a center picks the hull for a colonizer (R-IND11).**
 ///
 /// This was `Doctrine::colonizer_hull` until T-56 stage 4c derived the hull
 /// instead, and T-67 reopened the question by taking infrastructure out of `K`:
@@ -145,10 +145,10 @@ pub enum ColonizerPolicy {
     /// seed to the General's hold and `CheapestViable` reproduces the entire
     /// gain **while building zero General hulls** (+14.35%); force every seed
     /// to the Medium's hold and this policy still buys General hulls for 91.9%
-    /// of its colonisers, pays 10x each, and lands back at baseline (-0.08%).
+    /// of its colonizers, pays 10x each, and lands back at baseline (-0.08%).
     ///
     /// Which makes it an exploit rather than a strategy: **R-O74** — the
-    /// settlers are conjured, with nothing debited from the founding centre —
+    /// settlers are conjured, with nothing debited from the founding center —
     /// so what this measures is how much free mass a policy can extract from an
     /// open design-law-#11 violation. R-IND11 is blocked on that, not on the
     /// industrial ramp.
@@ -160,7 +160,7 @@ pub enum ColonizerPolicy {
 /// (six-vehicle survey, 1 g, +20% productivity step).
 #[derive(Clone, Copy, Debug)]
 pub struct Doctrine {
-    /// Which hull a centre lays down for a coloniser (R-IND11, open).
+    /// Which hull a center lays down for a colonizer (R-IND11, open).
     pub colonizer_policy: ColonizerPolicy,
 
     // --- Exploit / Growth (the build cycle, autopilot-doc §6) ---
@@ -241,6 +241,242 @@ pub struct Doctrine {
     /// the shape of a card — one field, standing behavior, flipped when the
     /// right tech or board state is reached (`Hyades_card_contract.md` §5).
     pub survey_avoids_inhabited: bool,
+    /// **Is an empire you have no quarrel with a target?** (R-O27/T-11, T-111.)
+    ///
+    /// The first — and for now the only — diplomatic field on `Doctrine`. R-O27
+    /// has stood open since the standing layer shipped because nobody specified
+    /// the *list*; this adds the one field the design has a concrete consumer
+    /// for and leaves the rest of the list open, rather than inventing a
+    /// diplomatic model to hold it.
+    ///
+    /// **Default `false`, and that is the design's own default, not a safety
+    /// catch.** `Hyades_warfare_tree.md` §7.2 specifies the first Warfare card
+    /// as writing exactly this field — *"a Neutral empire is an Enemy empire"* —
+    /// which only means anything if neutrality is where everyone starts. So the
+    /// shipped galaxy is at peace and a card is what starts the shooting.
+    ///
+    /// **Hostility is not symmetric and is not negotiated.** If you set this and
+    /// your neighbor does not, you attack and they are attacked; declining is
+    /// not theirs to do. What they *can* do is outrun you, which is
+    /// [`crate::belief::can_disengage`] and is decided on kinematics rather than
+    /// on consent.
+    ///
+    /// Gated additionally by [`crate::sim::SimConfig::engagements_enabled`],
+    /// which is the master switch that keeps the measurement corpus valid.
+    pub engage_neutrals: bool,
+    /// **Do colonizers hold the ground they did not take?** (T-112.)
+    ///
+    /// The second half of the first Warfare card (`Hyades_warfare_tree.md` §8),
+    /// and the half that carries the card's actual intent. With this set, a
+    /// colonizer is **not consumed when it founds** — it flies on to a nearby
+    /// unclaimed world and sits there, and nobody else founds there while it
+    /// does.
+    ///
+    /// **The product of a picket is a colony that does not happen**, which is
+    /// the only thing in the engine whose output is a negative. That is what
+    /// makes it a Warfare card rather than an Expansion one: the tree's
+    /// objective is colony-years *relative to the table* (§0), so denying a
+    /// neighbor a world scores exactly what founding one does.
+    ///
+    /// **What it costs the player who plays it** is the recycled hull: roles
+    /// §4.2 turns a spent colonizer into the new colony's `Band I`
+    /// infrastructure, and a picket keeps its minerals in the hull instead. So
+    /// every colony this empire founds starts thinner, and that is the price of
+    /// the denial rather than a side effect.
+    ///
+    /// Separate from [`Self::engage_neutrals`] on purpose, so the two arms can
+    /// be ablated apart (`CLAUDE.md` §2's 2×2 rule). Denial and shooting are
+    /// different mechanisms and the card carries both.
+    pub picket_after_founding: bool,
+    /// **How many worlds this empire tries to keep held** (T-113).
+    ///
+    /// Pickets built as a *purpose* rather than as a colonizer's afterlife, on
+    /// the cheapest armed hull there is (`Role::Picket` → `LimitedOffensive`).
+    /// This is the fix §8.6's arithmetic pointed at: denial bought with a
+    /// colonizer loses under Warfare's objective by `ΔW = −k(1 − w_0A)`
+    /// whatever the placement, because `Σ_j w_0j = 1`. Denial bought with a
+    /// hull that costs a fraction of a colony does not.
+    ///
+    /// **A fallback, never a pre-emption**, for the reason
+    /// [`Self::survey_reserve`] records: an earlier survey rule that *did*
+    /// pre-empt made its own knob non-monotonic, because centers scouted every
+    /// cycle and never colonized. Raising this converts idle cycles into
+    /// pickets and can never starve expansion.
+    ///
+    /// The cost of that ordering is that the branch almost never runs — see
+    /// [`Self::picket_claims_target`], which is the one state where a picket
+    /// may go ahead of survey, and the measurement that says why it has to.
+    ///
+    /// **Placeholder magnitude, default 0** (R-WAR6) — the card sets it.
+    pub picket_reserve: usize,
+    /// **Claim the world this center is saving for** (T-113).
+    ///
+    /// [`Self::picket_reserve`] alone is a fallback behind survey, and measurement
+    /// says that is a fallback that almost never fires: `wants_survey` is
+    /// `survey_frontier > 0 && candidate_count < survey_reserve`, and R-O86
+    /// measured the second term a constant `true` (median `candidate_count` 0,
+    /// maximum 164, against a ratified reserve of 1024). So the picket branch is
+    /// reachable only once the frontier is exhausted, which on the 800-year bed
+    /// produced **100 pickets across eight seeds** — a supply too small for any
+    /// placement or preference rule to select over.
+    ///
+    /// This opens the one other state where a cheap hull is the best thing a
+    /// center can do with a cycle: it has **named an outward target and cannot
+    /// pay for it yet**. Those cycles are already spent saving, the world is
+    /// already the one this empire intends to settle, and a picket standing on
+    /// it is what makes the voyage safe to have committed to.
+    ///
+    /// Self-limiting per target rather than by a global reserve: the branch is
+    /// gated on the target *not already being held*, so a center lays down at
+    /// most one picket per world it is saving for, and stops the moment that
+    /// hull arrives. [`Self::picket_reserve`] still bounds the empire-wide
+    /// stock on top of that.
+    ///
+    /// **Placeholder, default false** (R-WAR6) — measured as its own ablation
+    /// arm in `examples/denial_census`, because it and [`Self::picket_reserve`]
+    /// address one diagnosis and landing them together would make either
+    /// unattributable (`CLAUDE.md` §2's 2×2 rule).
+    pub picket_claims_target: bool,
+    /// **The Limited Offensive hull scouts, in place of the Limited Contact
+    /// Vehicle** (T-115).
+    ///
+    /// Survey is what finds worlds to hold — [`Self::picket_reserve`] records
+    /// that a picket branch placed *ahead* of survey cost its own player 24.5%
+    /// of its colonies — so an empire that wants ground held is already
+    /// building the unarmed light hull in the slot where it could be building
+    /// an armed one. This write says: build the armed one. A scout that arrives
+    /// somewhere worth holding can hold it, and the survey cadence is untouched
+    /// because the *branch* has not moved, only the hull it names.
+    ///
+    /// **The price was expected to be paid at the yard, and there is none**:
+    /// under R-O57 cost *is* dry mass and `hull_dry_mass` reads the cost
+    /// *tier*, which groups every Limited hull — so an LOU and an LCV are the
+    /// same 0.020 kt object and this write is **bit-identically inert**. It is
+    /// kept because it goes live on two independent axes that are already
+    /// open: price, when hull types carry differentiated cost (R-O64, R-L0);
+    /// and speed, when `launch_survey` reads the hull it is flying instead of
+    /// a flat `survey_accel_g · G`, which is the same defect R-WAR9 closed for
+    /// the colonization and picket legs. `Hyades_warfare_tree.md` §8.9.7.
+    ///
+    /// **A scout built this way carries `Class::Tor`**, which is how
+    /// `assign_role` tells it from a picket built on the same hull. The class
+    /// *is* the design (R-O28/R-O42b), so a Tor on an offensive hull is a
+    /// survey design mounted on a fighting shell — exactly what a Design write
+    /// does — and it needs no second piece of state to disambiguate.
+    ///
+    /// **Placeholder, default false** (R-WAR8) — the card sets it.
+    pub scout_hull_offensive: bool,
+    /// **A picket leaves station to head off a colony ship it can beat there**
+    /// (T-115).
+    ///
+    /// §8.6 measured the standing picket's problem exactly: 493–793 hulls on
+    /// station produced **3–12 diversions per run**, because both placement
+    /// rules put them on ground nobody was racing for. A picket that waits is
+    /// betting that a rival picks the world it happens to be standing on; a
+    /// picket that moves is answering a launch it has actually seen.
+    ///
+    /// **It is a race under light-lag and it is allowed to lose.** The launch
+    /// is observed at `depart + distance(origin, station)`, the flight from
+    /// station to the contested world takes what it takes, and the interception
+    /// is attempted only when the sum lands before the colony ship does. Every
+    /// term is an existing quantity — no reaction time, no interception radius,
+    /// and nothing the picket knows that light has not delivered.
+    ///
+    /// The ground it leaves is ground nobody was taking, which is what makes
+    /// this cheap in a way the standing rule was not.
+    ///
+    /// **Placeholder, default false** (R-WAR8) — the card sets it.
+    pub picket_intercepts: bool,
+    /// **A picket stands at a rival's port and strikes the colony ships it
+    /// launches** (T-123, R-WAR16, `Hyades_warfare_tree.md` §8.16).
+    ///
+    /// T-122 closed every way the first Warfare card reached `W` and found
+    /// that the one fight it can win never happens at a *destination*: a colony
+    /// ship picks one of thousands of worlds, a picket guesses from a bearing,
+    /// and handing it the true destination still produced no fights. The
+    /// *origin* is different in kind. Every colony ship launches from one of a
+    /// rival's production centers, so a hull standing there meets it at zero
+    /// range, with nothing to guess and no light-lag to lose to.
+    ///
+    /// **Placement reads only what light has delivered.** Each launch is seen
+    /// by this empire's capital at `depart + distance(port, capital)`, and a
+    /// blockader goes to the rival port this empire has *seen* launch the most
+    /// that it does not already hold. `examples/launch_census` priced the
+    /// reach: a seat launches from a mean of 213.6 origins, and its eight
+    /// busiest carry 25.5% of launches in hindsight — an upper bound on what
+    /// eight blockaders per rival could meet.
+    ///
+    /// Supply is [`Self::picket_reserve`]'s, and the build branch is unchanged:
+    /// this write moves where a picket goes, not whether one is built.
+    ///
+    /// **Placeholder, default false** (R-WAR16) — the card sets it.
+    pub picket_blockades: bool,
+    /// **Build the blockade before expanding** (T-125). With this on, a center
+    /// whose empire holds fewer than [`Self::picket_reserve`] pickets —
+    /// counting hulls already flying to a port — and has a seen rival port to
+    /// send one to builds a picket ahead of every other order.
+    ///
+    /// The fallback rule [`Self::picket_reserve`] records exists because a
+    /// picket that pre-empted survey once cost its player 24.5% of its
+    /// colonies while denying nothing. A blockader strikes, and the census in
+    /// appendix §D.4 measured the fallback as the blockade's binding
+    /// constraint: **no hull on station for the first century after the card**,
+    /// through the rivals' fastest expansion. The reserve bounds what this can
+    /// cost.
+    ///
+    /// **Placeholder, default false** (R-WAR18) — the card sets it.
+    pub picket_first: bool,
+    /// **The General colonizer is a Contact hull, not a Systems hull** (T-116).
+    ///
+    /// This is §8.2's Design write — *"switch the colony ship role from Systems
+    /// vehicles to Contact vehicles"* — and it is a **substitution inside the
+    /// option set, not a replacement of it**: the Medium Systems hull stays on
+    /// the menu, so a center that cannot afford a General hull colonizes
+    /// exactly as it did.
+    ///
+    /// Read off the ladder rather than asserted (`examples/hull_compare`), the
+    /// trade is what §8 says it is:
+    ///
+    /// | | GSV | GCV |
+    /// |---|---|---|
+    /// | cost = dry mass | 1.3154 kt | **1.0995 kt** |
+    /// | colony seed hold | 31.62 kt | **12.04 kt** |
+    /// | settlers per kt of cost | 24.04 | **10.95** |
+    /// | empty acceleration | 5.22 | 2.56 |
+    ///
+    /// So it is **cheaper and much worse at carrying people** — a Contact hull
+    /// reserves 15% of its volume for what makes it armed, and carries a
+    /// thicker shell to survive using it. Its settlers-per-mineral (10.95) is
+    /// still above a Medium hull's (9.16), so it is not dominated; it is a
+    /// middle rung the ladder did not have.
+    ///
+    /// **A colonizer built this way carries `Class::Unnamed`**, which is how
+    /// `assign_role` tells it from a scout on the same hull — the same
+    /// class-as-design rule [`Self::scout_hull_offensive`] uses, and for the
+    /// same reason.
+    ///
+    /// **Placeholder, default false** (R-WAR4) — the card sets it.
+    pub colonizer_general_contact: bool,
+    /// **Share of a colonizer's mineral endowment erected as infrastructure on
+    /// arrival**, rather than banked (T-113).
+    ///
+    /// A colonizer's hold is already one kiloton budget carrying settlers *and*
+    /// minerals sized to the destination's build-out (R-O74,
+    /// `Hyades_industry.md` §1.7). Those minerals land in the new colony's
+    /// **stockpile** — and a colony whose hull did not recycle has no
+    /// infrastructure to spend them with, because `employment_rate` returns
+    /// exactly `0.0` at a stock of zero. The bank is full and the colony is
+    /// stillborn (§8.7).
+    ///
+    /// This erects part of the hold *as* the stock instead. It is not a grant:
+    /// the minerals were debited from the founding center at launch and
+    /// infrastructure **is** the minerals standing in it (T-70, R-O57), so the
+    /// conversion is an identity rather than a rate. What it buys is that a
+    /// colonizer which keeps its hull can still found something that works.
+    ///
+    /// **Placeholder magnitude, default 0.0** (R-WAR6) — inert until a card
+    /// sets it, so the shipped galaxy is untouched.
+    pub founding_infra_share: f64,
     /// Whether heading-bias discipline is global, opening-only, or persistent
     /// (R-AC3). See [`SurveyStrategy`].
     pub survey_strategy: SurveyStrategy,
@@ -266,12 +502,12 @@ pub struct Doctrine {
     /// accelerate a resource the empire is not short of.
     ///
     /// `Simulation::mining_crew_for` derives the crew from what the founding
-    /// centre can consume and cannot currently get — §4.3's extraction law
+    /// center can consume and cannot currently get — §4.3's extraction law
     /// inverted. See `Hyades_industry.md` §4.5. There is nothing here to tune.
 
-    /// **Floor price per basic colour, `$`/kt** (politics §3.2, §10.4, T-84).
+    /// **Floor price per basic color, `$`/kt** (politics §3.2, §10.4, T-84).
     ///
-    /// The first term of `wtp`. Colours start equal — at first a kilotonne of
+    /// The first term of `wtp`. Colors start equal — at first a kilotonne of
     /// Cyan is worth a kilotonne of Yellow — and diverge as the game develops,
     /// because **value is set by demand and demand is Doctrine**
     /// (`Hyades_industry.md` §7.1). This is the floor they diverge *from*.
@@ -280,7 +516,7 @@ pub struct Doctrine {
     /// price them.
     pub base_value: [f64; 3],
 
-    /// **How much this empire's policy wants each colour** (politics §3.2,
+    /// **How much this empire's policy wants each color** (politics §3.2,
     /// §10.4, T-84) — the term that turns the map's mineral geography into a
     /// market.
     ///
@@ -292,8 +528,8 @@ pub struct Doctrine {
     /// tree. §3.0's "value diverges from kilotons because demand is Doctrine",
     /// made mechanical.
     ///
-    /// **Defaults to the works mix**, which is not arbitrary: the colours an
-    /// empire wants to buy are the colours its bills are denominated in, and
+    /// **Defaults to the works mix**, which is not arbitrary: the colors an
+    /// empire wants to buy are the colors its bills are denominated in, and
     /// having two independent statements of that would be two copies of a rule
     /// that must agree with nothing checking that they do.
     pub doctrine_demand: [f64; 3],
@@ -311,7 +547,7 @@ pub struct Doctrine {
     ///
     /// Since R-O68 the two sides are `rank` score per kilotonne committed, so
     /// this is an **odds ratio**: depth wins when `b/(1 − b) ≥ expand/deepen`.
-    /// The crossover is state-dependent — a centre facing a cheap next rung and
+    /// The crossover is state-dependent — a center facing a cheap next rung and
     /// a mediocre candidate deepens where one facing an expensive rung and a hub
     /// does not — and on the shipped ladder it sits between **0.96 and 0.98**.
     ///
@@ -322,7 +558,7 @@ pub struct Doctrine {
     ///
     /// - deepening bills `infra_step_price / eta_works` and raises works by
     ///   `infra_step_price`, so works per mineral is `eta_works`;
-    /// - founding bills the coloniser's price and the new colony's stock is
+    /// - founding bills the colonizer's price and the new colony's stock is
     ///   `founding_infra = hull_cost` — the recycled hull's minerals *are* the
     ///   stock (T-70) because a hull's mass is its cost (R-O57, design law #11) —
     ///   so works per mineral is **1**.
@@ -332,10 +568,10 @@ pub struct Doctrine {
     ///
     /// **That identity is about stock and it is only half the argument.** On
     /// *flow* deepening wins: rung I → II is **+29.0% hull/yr for nine
-    /// colonisers**, paid back in 62 years. It still does not reach the
+    /// colonizers**, paid back in 62 years. It still does not reach the
     /// objective, for three reasons that are the engine's rather than the
     /// knob's — homeworlds start at rung II already, `slips` is pinned at 2 at
-    /// every rung, and **build rate governs only ~19% of a centre's timeline**
+    /// every rung, and **build rate governs only ~19% of a center's timeline**
     /// because a declined build waits out `cycle_years = 50` (T-88). See
     /// `Hyades_industry.md` §6.19a and `examples/founding_tree`.
     ///
@@ -344,7 +580,7 @@ pub struct Doctrine {
     /// **+2.33% ± 0.96 work-years on the standard four-seed bed, 4/4 seeds
     /// positive**, and **−1.70% ± 2.42 on four seeds it was not chosen
     /// against**. Pooled over all eight: **+0.32% ± 1.42, 0.22 SE, 5/8
-    /// positive.** Flat, as the identity says it must be. Neighbouring values
+    /// positive.** Flat, as the identity says it must be. Neighboring values
     /// swing the same magnitude in both directions (0.968 is −0.20%, 0.975 is
     /// +2.24%), which is the signature of a chaotic reordering rather than a
     /// gradient.
@@ -364,7 +600,7 @@ impl Default for Doctrine {
     fn default() -> Self {
         Doctrine {
             // Unmeasured as of T-67; `CheapestViable` is the *incumbent*
-            // behaviour, not a ratified answer. R-IND11 is the open question and
+            // behavior, not a ratified answer. R-IND11 is the open question and
             // `examples/colonizer_policy` is the harness.
             colonizer_policy: ColonizerPolicy::CheapestViable,
             productivity_step: 0.20,
@@ -381,9 +617,21 @@ impl Default for Doctrine {
             survey_reserve: 1024,
             // Off until a card or board state turns it on — see the field doc.
             survey_avoids_inhabited: false,
+            // Peace is the default (see the field doc): a Warfare card is what
+            // turns a neutral into an enemy.
+            engage_neutrals: false,
+            picket_after_founding: false,
+            picket_reserve: 0,
+            picket_claims_target: false,
+            scout_hull_offensive: false,
+            picket_intercepts: false,
+            picket_blockades: false,
+            picket_first: false,
+            colonizer_general_contact: false,
+            founding_infra_share: 0.0,
             survey_strategy: SurveyStrategy::OpeningSectors,
             base_value: [1.0; 3],
-            // The works mix, normalised — an empire wants to buy the colours its
+            // The works mix, normalized — an empire wants to buy the colors its
             // bills are denominated in. `WORKS_MIX_DEFAULT` is in `Basic` order
             // and is `3:2:1` Yellow : Cyan : Magenta (`Hyades_industry.md` §6.10).
             doctrine_demand: crate::cards::WORKS_MIX_DEFAULT,
@@ -409,10 +657,10 @@ pub struct PlanetView {
     /// decision is about the ceiling; the standing stock only sets how fast a
     /// colony fills toward it, and is not remotely legible anyway.
     pub biosphere: Band,
-    /// **The three per-colour Band readings, precomputed** (T-100). `rank`
+    /// **The three per-color Band readings, precomputed** (T-100). `rank`
     /// wants the *readings*, not the masses — `CLAUDE.md` §4's "hand a decision
     /// only the fields it reads" — and computing them here lets the engine
-    /// memoise a conversion that was 136 M logarithms per run.
+    /// memoize a conversion that was 136 M logarithms per run.
     ///
     /// **This replaces the `MineralField` the view used to carry.** Nothing in
     /// the seam read the masses; `rank` converted them and threw them away. A
@@ -460,7 +708,7 @@ pub struct SurveyView {
     /// not concealable from spectrometry, so an empire may reasonably conclude
     /// the world is taken without ever having gone there.
     ///
-    /// Pop-4 is the only occupancy signal modelled today, because it is the one
+    /// Pop-4 is the only occupancy signal modeled today, because it is the one
     /// that is exact: a threshold on realized population. The richer signal the
     /// design calls for — departure traffic, where repeated sightings of ships
     /// leaving raise confidence — needs accumulated light-lagged observations
@@ -502,7 +750,29 @@ pub struct Ranked {
 pub struct Candidate {
     pub view: PlanetView,
     pub ranked: Ranked,
-    /// **What a coloniser would actually land here, per hull** — Medium first,
+    /// **This empire already has a picket standing on this world** (T-113).
+    ///
+    /// Held ground is ground a rival's colonizer turns back from, so settling it
+    /// is the cheapest colony available: the race for it is already won. This
+    /// is what turns a picket from *denial* — which §8.6 measured as a losing
+    /// trade under Warfare's own objective — into **claiming**, where the hull
+    /// reserves a place in the queue rather than spending a colony to deny one.
+    ///
+    /// Read off the engine's own picket index, so it is ground truth about
+    /// *this* empire's own ships, not about a rival's — no light-lag question
+    /// arises (design law #15).
+    pub held_by_me: bool,
+    /// **This empire has a picket already on its way here** (T-113).
+    ///
+    /// Distinct from [`Self::held_by_me`] because the two answer different
+    /// questions. *Settling* held ground wants a hull that has **arrived** —
+    /// an inbound picket denies nobody yet, and a colonizer sent on the
+    /// strength of one is racing an empty world. *Claiming* wants to know
+    /// whether a hull is already committed, so a center saving for a world
+    /// lays down one picket for it rather than one per decision for the whole
+    /// voyage.
+    pub claim_inbound: bool,
+    /// **What a colonizer would actually land here, per hull** — Medium first,
     /// then General, in kilotons of settlers (R-IND12).
     ///
     /// Since R-O74 was closed a hold is not a promise: settlers come out of the
@@ -520,13 +790,13 @@ pub struct Candidate {
     /// **How many miners this body would be crewed with** (T-87).
     ///
     /// Derived, not chosen: §4.3's extraction law inverted against what the
-    /// founding centre can consume and cannot currently get
+    /// founding center can consume and cannot currently get
     /// (`Simulation::mining_crew_for`). It depends on the *pair* — which rock,
-    /// and which centre is buying — so it cannot be a doctrine field and cannot
+    /// and which center is buying — so it cannot be a doctrine field and cannot
     /// be recomputed from the view alone. It is precomputed here for the same reason
     /// `settlers_by_hull` is: the crew sets the pair's *price*, and a price the
     /// decision reads that differs from the price the build charges is how a
-    /// centre ends up sitting Idle next to hulls it can afford.
+    /// center ends up sitting Idle next to hulls it can afford.
     pub mining_crew: usize,
 }
 
@@ -586,20 +856,20 @@ pub struct ProductionContext {
     /// same schedule puts this at **2**, one tier below expansion.
     pub limited_min_level: BandTier,
     /// Mineral cost to raise infra by one level (= the target level). The
-    /// **total**, kept for magnitude comparisons; affordability is per colour.
+    /// **total**, kept for magnitude comparisons; affordability is per color.
     pub infra_cost: Price,
-    /// **The works bill for the next rung, split by colour** — Cyan, Magenta,
+    /// **The works bill for the next rung, split by color** — Cyan, Magenta,
     /// Yellow (T-73, `Hyades_industry.md` §5.1).
     ///
-    /// A work is payable *in named colours*, not out of a total, which is how
+    /// A work is payable *in named colors*, not out of a total, which is how
     /// the galaxy's mineral distribution finally bites on development rather
     /// than only on card costs. So the deepen branch cannot ask
-    /// `stockpile_total >= infra_cost` any more: a centre with plenty of ore and
-    /// none of the colour the bill names cannot buy the rung.
+    /// `stockpile_total >= infra_cost` any more: a center with plenty of ore and
+    /// none of the color the bill names cannot buy the rung.
     pub infra_bill: [Price; 3],
-    /// This centre's bank, by colour, in the same order — the other half of that
+    /// This center's bank, by color, in the same order — the other half of that
     /// comparison.
-    pub stockpile_by_colour: [Price; 3],
+    pub stockpile_by_color: [Price; 3],
     /// Mineral cost of a Colonizer on the **Medium** hull —
     /// `Hyades_vehicle_roles.md` §6's 1 CMY = 1 fleet model, not a flat
     /// placeholder anymore.
@@ -623,11 +893,26 @@ pub struct ProductionContext {
     /// Mineral cost of a Miner + its paired Freighter (an LSV + an MSV),
     /// bundled since they're built together (§4.4).
     pub mining_pair_cost: Price,
-    /// Mineral cost of one Scout (an LCV) — the survey craft the limited tier
-    /// unlocks. Bootstrap hands each seat `survey_vehicles` of these free
-    /// (autopilot-doc §2); every later one is paid for out of a center's
-    /// stockpile like any other build.
+    /// Mineral cost of one Scout — an **LSV** by default, and an LCV once the
+    /// Warfare card arms the frontier (T-121). Bootstrap hands each seat
+    /// `survey_vehicles` of these free (autopilot-doc §2); every later one is
+    /// paid for out of a center's stockpile like any other build.
     pub light_vehicle_cost: Price,
+    /// Mineral cost of one picket — a **Limited Contact Vehicle** (T-113,
+    /// rebased at T-121).
+    ///
+    /// Numerically equal to [`Self::light_vehicle_cost`] whenever the scout is
+    /// also a Limited hull, because `cost_fraction` gives the whole Limited
+    /// tier one price. It is a separate field anyway: the equality is a
+    /// property of today's cost ladder, not of the two roles, and R-O64/R-L0
+    /// are open on giving hull types differentiated cost.
+    pub picket_cost: Price,
+    /// How many worlds this empire is already holding, against
+    /// [`Doctrine::picket_reserve`].
+    pub pickets_held: usize,
+    /// Whether this empire has a seen rival port it does not yet cover — the
+    /// only state in which a blockading picket has somewhere to go (T-125).
+    pub blockade_ready: bool,
     /// Known, unclaimed, non-Barren worlds this empire could still expand to.
     /// The autopilot builds survey craft to keep this above
     /// [`Doctrine::survey_reserve`] — expansion consumes candidates, so without
@@ -640,7 +925,7 @@ pub struct ProductionContext {
     /// Distinct from [`Self::candidate_count`], and the distinction is
     /// load-bearing. `candidate_count` is *known and still available*: it falls
     /// to zero when everything scanned is owned or already targeted, which
-    /// happens constantly in a colonised galaxy and says nothing about whether
+    /// happens constantly in a colonized galaxy and says nothing about whether
     /// exploring would help. This is *unexplored*, and it is the only honest
     /// precondition for building a survey craft — at zero, `launch_survey` has
     /// nothing to pick and the hull flies nowhere.
@@ -649,6 +934,31 @@ pub struct ProductionContext {
     /// decision reads it (`CLAUDE.md` §4: per-decision work must be `O(what the
     /// decision reads)`).
     pub survey_frontier: usize,
+}
+
+impl ProductionContext {
+    /// **What this center would pay for `hull`, today.**
+    ///
+    /// The context carries prices for the hulls the policy can name, and until
+    /// T-117 each caller picked the right field by branching on the same
+    /// Doctrine write the hull came from — so a write that moved a role to a
+    /// different hull had to be remembered in two places. This is the lookup
+    /// instead: name the hull, get its price.
+    ///
+    /// Unknown hulls fall back to the General colonizer's price, which is the
+    /// dearest thing the context carries — a decision made on a price that is
+    /// too high declines, where one made on a price that is too low commits to
+    /// a build the yard then cannot pay for.
+    pub fn price_of(&self, hull: HullType) -> Price {
+        match hull {
+            // The survey hull under either standing layer — LSV unarmed, LCV
+            // armed (T-121) — plus the two Limited hulls nothing mounts.
+            HullType::LimitedSystems | HullType::LimitedContactVehicle => self.light_vehicle_cost,
+            HullType::LimitedContactUnit | HullType::LimitedOffensive => self.picket_cost,
+            HullType::MediumSystems => self.colonizer_cost,
+            _ => self.general_colonizer_cost,
+        }
+    }
 }
 
 /// The swappable per-seat decision **algorithm** (`Hyades_vehicle_roles.md`
@@ -687,7 +997,7 @@ pub trait Autopilot {
     ///
     /// The card layer's policy seam (`Hyades_netcode.md` §5, cards §). Default
     /// is `None` — **passing every round** — which is deliberate: the baseline
-    /// autopilot's behaviour must not change just because the round layer
+    /// autopilot's behavior must not change just because the round layer
     /// exists, or every coverage number in the tree moves at once and the
     /// offline search is invalidated. A policy that plays cards is a new
     /// `Autopilot`, not an edit to this one.
@@ -750,17 +1060,18 @@ impl Autopilot for BaselineAutopilot {
         // Reads the precomputed Band readings rather than converting three
         // masses here (T-100). Same values, same summation order, so the score
         // is bit-identical — the conversion simply moved to where it can be
-        // memoised across the 45.4 M times this runs.
+        // memoized across the 45.4 M times this runs.
         let base_mineral = view.mineral_bands.iter().zip(ctx.scarcity.iter()).map(|(b, w)| w * b).sum::<f64>();
         let mineral_value = base_mineral * (1.0 + w.mineral_pressure_gain * ctx.mineral_pressure);
 
-        // hub_value: high-K worlds near the empire's centre of mass are hubs.
+        // hub_value: high-K worlds near the empire's center of mass are hubs.
         let dist = view.position.distance(ctx.holdings_centroid);
-        // **A polynomial, not `exp`** (T-102). This is 45.4 M calls a run and
-        // the result is a classification *weight*; `math::exp_decay` is 2.7x the
-        // library function at 5.4e-7 relative error over the range this argument
-        // actually takes, which was histogrammed rather than assumed.
-        let centrality = crate::math::exp_decay(-dist / w.centrality_scale);
+        // **Four multiplies** (T-130): `exp_fast`, relative error 7.5e-5. This
+        // is 45.4 M calls a run and the result is a classification *weight*.
+        // It replaced T-102's degree-7 `math::exp_decay` (5.4e-7, eight
+        // multiplies in Estrin form) on the author's four-multiply budget; a
+        // single degree-4 fit over the measured `[−2, 0]` reaches only 5.0e-4.
+        let centrality = crate::transcendental::exp_fast(-dist / w.centrality_scale);
         // `Band` has no `Mul` since the units fix, and rightly: scaling a
         // position on a log ladder is not scaling a quantity. This is not a
         // quantity — it is a **classification score**, a `k_potential` reading
@@ -828,44 +1139,65 @@ impl Autopilot for BaselineAutopilot {
         &self,
         doctrine: &Doctrine,
         hull: HullType,
-        _class: Class,
+        class: Class,
         candidates: &[Candidate],
     ) -> Option<Tasking> {
-        // Eligibility is **permissive with varying competence** (R-O44): any
-        // hull may take any role. What differs is how well it does the job, so
-        // this picks the competent assignment for each hull rather than the
-        // only legal one.
+        // **Ask the standing layer what this design is for; do not switch on
+        // the hull** (T-117). `Standing::role_of` inverts `design_for`, so a
+        // Doctrine write that moves a role onto a different hull is answered
+        // here with no edit — which is what makes the layer a layer, and what
+        // T-115 and T-116 each added three branches instead of.
+        //
+        // Eligibility is permissive with varying competence (R-O44): any hull
+        // may take any role, and `role_of` falls through to a competence table
+        // for a hull no write has claimed. What is *capability* rather than
+        // competence — a Limited hull has no cargo hold, so a Limited
+        // colonizer founds nothing — shows up as the target search returning
+        // `None`, which is a decline rather than a refusal by hull type.
+        let standing = Standing::of(doctrine);
         let best = |want: PlanetClass| candidates.iter().filter(|c| c.ranked.class == want).max_by(score_then_id);
-        match hull {
-            // A Contact hull scouts. It needs no target here — `launch_survey`
-            // picks the nearest unvisited world from the survey frontier.
-            HullType::LimitedContactVehicle
-            | HullType::LimitedContactUnit
-            | HullType::GeneralContactVehicle
-            | HullType::GeneralContactUnit => Some(Tasking { role: Role::Scout, target: None }),
+        match standing.role_of(hull, class)? {
+            // A scout needs no target here — `launch_survey` picks the nearest
+            // unvisited world from the survey frontier.
+            Role::Scout => Some(Tasking { role: Role::Scout, target: None }),
 
-            // A Systems hull above the Limited tier settles, preferring
-            // whichever class doctrine leads with — the same order
-            // `production_choice` weighed. The General hull joins the Medium
-            // here because T-56 stage 4 lets doctrine order one; without this
-            // arm a General colonizer would be built and then find no mission,
-            // and `apply_build` would refund nothing.
-            HullType::MediumSystems | HullType::GeneralSystems => {
+            Role::Colonizer => colonize(doctrine, candidates),
+
+            // A miner takes the best rock; the freighter that hauls for it is
+            // produced alongside (roles §5 — the center produces both).
+            Role::Miner => {
+                best(PlanetClass::MiningOutpost).map(|c| Tasking { role: Role::Miner, target: Some(c.ranked.id) })
+            }
+
+            // **A picket holds ground** (T-113, design law #8: not force
+            // projection, but harass-and-hold). It takes the best world on the
+            // candidate list — the same ranking a *rival's* colonizer would be
+            // reading, which is the point: denial is only worth anything on
+            // ground somebody else wants.
+            //
+            // That is a third placement rule, and the first two were both
+            // refuted (§8.6): nearest-to-own-founding threatens nobody, and
+            // nearest-to-rival finds nothing unclaimed to stand on. Ranking by
+            // *value* rather than by geometry is the remaining axis.
+            Role::Picket => {
                 let (a, b) = match doctrine.expand_bias {
                     ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
                     ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
                 };
-                best(a).or_else(|| best(b)).map(|c| Tasking { role: Role::Colonizer, target: Some(c.ranked.id) })
+                let ground = best(a).or_else(|| best(b)).map(|c| c.ranked.id);
+                // **A blockader's target is a rival port, which is not on this
+                // list** (T-125): the engine picks the port, so the hull is worth
+                // building with no unclaimed world in view.
+                if doctrine.picket_blockades {
+                    Some(Tasking { role: Role::Picket, target: ground })
+                } else {
+                    ground.map(|t| Tasking { role: Role::Picket, target: Some(t) })
+                }
             }
 
-            // A Limited Systems hull mines; the freighter that hauls for it is
-            // produced alongside (roles §5 — the center produces both).
-            HullType::LimitedSystems => {
-                best(PlanetClass::MiningOutpost).map(|c| Tasking { role: Role::Miner, target: Some(c.ranked.id) })
-            }
-
-            // Nothing else is produced yet; hold rather than invent a mission.
-            _ => None,
+            // Nothing else is tasked from a finished hull; hold rather than
+            // invent a mission.
+            Role::Freighter | Role::Reserve | Role::Scrapped => None,
         }
     }
 
@@ -883,12 +1215,12 @@ impl Autopilot for BaselineAutopilot {
         let deepen_possible = ctx.infra < ctx.k_potential - 1e-9;
         // The epsilon is a price too — the whole comparison is on one ladder.
         let eps = Price::new(1e-9);
-        // **Every colour, not the total** (T-73). `works_bill` in `sim` produces
+        // **Every color, not the total** (T-73). `works_bill` in `sim` produces
         // both sides of this and the build spends against the same function, so
         // the decision and the purchase cannot drift — the failure
         // `mining_pair_cost` carries a comment about and `settlers_by_hull` was
         // written to end.
-        let can_afford_infra = (0..3).all(|i| ctx.stockpile_by_colour[i] + eps >= ctx.infra_bill[i]);
+        let can_afford_infra = (0..3).all(|i| ctx.stockpile_by_color[i] + eps >= ctx.infra_bill[i]);
 
         // Below even the limited tier there is nothing to build; deepen or save.
         if ctx.level < ctx.limited_min_level {
@@ -919,7 +1251,13 @@ impl Autopilot for BaselineAutopilot {
         // as noise, 512 / 256 / 64 fall off a cliff — as a threshold sitting
         // above the whole range of the thing it thresholds.
         let wants_survey = ctx.survey_frontier > 0 && ctx.candidate_count < doctrine.survey_reserve;
-        let can_afford_light = ctx.stockpile_total + Price::new(1e-9) >= ctx.light_vehicle_cost;
+        // **Price the hull this doctrine will actually lay down** (T-115).
+        // The standing layer answers which hull that is — LSV unarmed, LCV once
+        // the Warfare card is played — and `price_of` turns it into a price, so
+        // the affordability test needs no new context field and no branch on
+        // the write.
+        let scout_cost = ctx.price_of(Standing::of(doctrine).design_for(Role::Scout).0);
+        let can_afford_light = ctx.stockpile_total + Price::new(1e-9) >= scout_cost;
 
         // Between the limited and medium tiers, survey is the only outward move.
         if ctx.level < ctx.medium_min_level {
@@ -931,7 +1269,7 @@ impl Autopilot for BaselineAutopilot {
                 return BuildOrder::UpgradeInfrastructure;
             }
             return if wants_survey && can_afford_light && !deepen_possible {
-                hull_order(HullType::LimitedContactVehicle)
+                Standing::of(doctrine).scout_order()
             } else {
                 BuildOrder::Idle
             };
@@ -944,12 +1282,12 @@ impl Autopilot for BaselineAutopilot {
         // justification was false, and it was load-bearing: the branch it
         // pre-empts is the `outward == None` deepen fallback, which is the only
         // deepening path above `medium_min_level` that actually runs. So a
-        // centre with an empty frontier, a full bank and three Bands of headroom
+        // center with an empty frontier, a full bank and three Bands of headroom
         // built a scout, every time, forever.
         //
         // And `candidates.is_empty()` is not the exploration question. It goes to
         // zero the moment everything *scanned* is owned or targeted, which in a
-        // colonised galaxy is the common case — median `candidate_count` is **0**
+        // colonized galaxy is the common case — median `candidate_count` is **0**
         // on the standard bed. `survey_frontier` is the honest precondition:
         // worlds no craft has been dispatched to.
         //
@@ -961,7 +1299,7 @@ impl Autopilot for BaselineAutopilot {
         // 3,334 → 3,336 / 2,608,344.6 → 2,609,993.2). Strictly better, which is
         // what a wasted build should look like when it stops.
         if candidates.is_empty() && can_afford_light && ctx.survey_frontier > 0 {
-            return hull_order(HullType::LimitedContactVehicle);
+            return Standing::of(doctrine).scout_order();
         }
 
         // Find the best colony target and outpost.
@@ -975,6 +1313,11 @@ impl Autopilot for BaselineAutopilot {
             ExpandBias::ProductionCentersFirst => best_center.or(best_colony),
             ExpandBias::ColoniesFirst => best_colony.or(best_center),
         };
+        // Whether a picket is already standing on the world this center is
+        // aiming at. Read here rather than in the claim branch below because
+        // `colony_target` is the only place the *candidate* is in scope —
+        // `outward` reduces it to an order, a score and a price.
+        let colony_target_claimed = colony_target.is_some_and(|c| c.held_by_me || c.claim_inbound);
 
         // The best outward move (colony vs mining, by score).
         // What the center *wants* to reach still drives which hull it lays down —
@@ -1017,7 +1360,7 @@ impl Autopilot for BaselineAutopilot {
                 // which is R-O76's *finding* surviving even though R-O76's
                 // mechanism did not.
                 //
-                // **R-IND11 (open):** whether a General coloniser is ever worth
+                // **R-IND11 (open):** whether a General colonizer is ever worth
                 // it now that the hold is the only thing distinguishing the
                 // hulls. It cannot be answered yet — it turns on the industrial
                 // ramp (`Hyades_industry.md` §3), where a General hull is a
@@ -1026,14 +1369,14 @@ impl Autopilot for BaselineAutopilot {
                 // stages that have not landed.
                 // **What a hull delivers is the least of three things**, since
                 // R-O74 was closed: its hold, the target world's ceiling, and
-                // what this centre can actually spare. The third is new — a
+                // what this center can actually spare. The third is new — a
                 // hold used to be a promise because the settlers were conjured
                 // — and leaving it out would price a General hull for people
-                // the centre does not have.
+                // the center does not have.
                 // **What a hull delivers is decided per destination, not per
                 // hull** (R-IND12). `settlers_by_hull` is `sim::settler_target`
                 // evaluated for this candidate — the world's own ceiling, this
-                // centre's population, and the transit discount, already folded
+                // center's population, and the transit discount, already folded
                 // in. There is nothing left to `min` against here, and doing so
                 // would be the second copy of a rule this repo has been bitten
                 // by before.
@@ -1046,9 +1389,9 @@ impl Autopilot for BaselineAutopilot {
                 };
                 let options = [
                     (HullType::MediumSystems, ctx.colonizer_cost, col.settlers_by_hull[0]),
-                    (HullType::GeneralSystems, ctx.general_colonizer_cost, col.settlers_by_hull[1]),
+                    (general_colonizer_hull(doctrine), ctx.general_colonizer_cost, col.settlers_by_hull[1]),
                 ];
-                // **Only hulls this centre can pay for today.** The score picks
+                // **Only hulls this center can pay for today.** The score picks
                 // between real options; it does not pick an option and then
                 // discover it is unaffordable.
                 //
@@ -1075,7 +1418,7 @@ impl Autopilot for BaselineAutopilot {
                         key(a).partial_cmp(&key(b)).unwrap_or(core::cmp::Ordering::Equal).then(a.0.cmp(&b.0))
                     })
                     // Nothing affordable: name the cheapest that could found at
-                    // all, so `can_expand` refuses it and the centre saves
+                    // all, so `can_expand` refuses it and the center saves
                     // toward something real rather than toward nothing.
                     .or_else(|| options.iter().find(|(_, _, delivered)| *delivered > Kilotons::ZERO));
                 best.map(|&(hull, cost, _)| (hull_order(hull), col.ranked.score, cost))
@@ -1110,7 +1453,7 @@ impl Autopilot for BaselineAutopilot {
         // `w_k` is the weight `rank` already puts on one Band of `k_potential`
         // (autopilot-doc §3), and it is the right converter because the two
         // moves trade in one commodity: expansion **acquires** a world's Bands
-        // of ceiling, deepening **realises** a Band of them here. The `min(1, ·)`
+        // of ceiling, deepening **realizes** a Band of them here. The `min(1, ·)`
         // is what a rung actually delivers — `apply_build` steps to the next
         // whole rung whatever the headroom, so a last partial step pays a full
         // price for less than a Band.
@@ -1118,20 +1461,20 @@ impl Autopilot for BaselineAutopilot {
         // The comparison is then an odds ratio — depth wins when
         // `b/(1 − b) >= expand/deepen` — and that crossover is **state-
         // dependent**, which is the graded region the old form had nowhere: a
-        // centre facing a cheap next rung and a mediocre candidate deepens where
+        // center facing a cheap next rung and a mediocre candidate deepens where
         // one facing an expensive rung and a hub does not.
         //
         // **What it does not do is revive the branch at the shipped defaults,
         // and that is the finding rather than a shortfall.** The infra ladder
         // charges 0.9 kt for the rung above the founding one where a Medium
-        // coloniser costs 0.1 kt, so expansion buys tens of times the score per
+        // colonizer costs 0.1 kt, so expansion buys tens of times the score per
         // kilotonne and *ought* to win: the dead branch was the right answer
         // reached for a wrong reason.
         //
         // Measured (`examples/deepen_census`, 600 planets / 1,500 yr, seeds 1
         // and 7): the run is **bit-identical to the old form** everywhere below
         // `b = 0.96` — same build mix, same colony count, same colony-years to
-        // the decimal — so this is a units fix and not a behaviour change. What
+        // the decimal — so this is a units fix and not a behavior change. What
         // moved is the far end. The old form's cliff sat between 0.5 and 0.9
         // with **nothing working beyond it** (seed 1 `b = 0.9`: 70 colonies;
         // seed 7 `b = 0.95`: 3, i.e. the homeworlds alone). The new crossover is
@@ -1170,10 +1513,55 @@ impl Autopilot for BaselineAutopilot {
         // because centers scouted every cycle and never colonized at all. As a
         // fallback it is self-limiting: raising the reserve converts idle cycles
         // into survey and can never starve expansion.
+        //
+        // **The picket sits in front of survey in the same fallback** (T-113).
+        // Same self-limiting shape and the same reason: an idle cycle is the
+        // only thing either is allowed to spend, so neither can starve
+        // expansion however high its reserve is set. Ahead of survey because a
+        // held world is a standing asset and a scan is a one-off — and because
+        // `picket_reserve` is a *stock* target that converges, where
+        // `survey_reserve` is a frontier that refills.
+        // **Behind survey, not in front of it.** Survey is ratified and
+        // load-bearing — R-O86 showed a scout with nowhere to scout was 99% of
+        // all production, and `survey_reserve = 1024` is what keeps the map
+        // ahead of the expansion loop. A picket that pre-empts it starves the
+        // thing that finds worlds to picket. The first version of this branch
+        // sat *ahead* of survey and cost its own player 24.5% of its colonies.
+        let wants_picket = ctx.pickets_held < doctrine.picket_reserve;
+        let can_afford_picket = ctx.stockpile_total + Price::new(1e-9) >= ctx.picket_cost;
+        // **The blockade first, bounded by the reserve** (T-125,
+        // [`Doctrine::picket_first`]).
+        if doctrine.picket_first && doctrine.picket_blockades && ctx.blockade_ready && wants_picket && can_afford_picket
+        {
+            return Standing::of(doctrine).order_for(Role::Picket);
+        }
         let survey_fallback = if wants_survey && can_afford_light {
-            hull_order(HullType::LimitedContactVehicle)
+            Standing::of(doctrine).scout_order()
+        } else if wants_picket && can_afford_picket {
+            Standing::of(doctrine).order_for(Role::Picket)
         } else {
             BuildOrder::Idle
+        };
+        // **The saving-for-a-world fallback** (T-113,
+        // [`Doctrine::picket_claims_target`]). This is the one state where the
+        // picket goes *ahead* of survey, and the reason it may is that the
+        // center is not choosing between scouting and holding in the abstract:
+        // it has already named the world, and the cycle is already committed to
+        // waiting for it.
+        //
+        // It cannot run away, because it is gated on the target not yet being
+        // held — one hull per world, not one per cycle — as well as on the
+        // empire-wide reserve. The branch that *did* run away sat in front of
+        // survey in every arm and cost its own player 24.5% of its colonies.
+        let claim_fallback = if doctrine.picket_claims_target
+            && wants_picket
+            && can_afford_picket
+            && !colony_target_claimed
+            && colony_target.is_some()
+        {
+            Standing::of(doctrine).order_for(Role::Picket)
+        } else {
+            survey_fallback
         };
 
         if w_deepen >= w_expand && deepen_possible {
@@ -1188,7 +1576,7 @@ impl Autopilot for BaselineAutopilot {
             if can_expand {
                 order
             } else {
-                survey_fallback
+                claim_fallback
             }
         } else if deepen_possible && can_afford_infra {
             BuildOrder::UpgradeInfrastructure
@@ -1198,9 +1586,254 @@ impl Autopilot for BaselineAutopilot {
     }
 }
 
+/// **The hull the armed frontier writes survey onto** — the one branch
+/// [`Standing::design_for`] takes for [`Role::Scout`], and the only place the
+/// `scout_hull_offensive` write is read.
+///
+/// Private on purpose (T-121). Everything outside this module asks
+/// [`Standing::design_for`] or [`Standing::scout_order`], which are derived
+/// from this one answer rather than repeating it — the build branch,
+/// `assign_role` and `launch_survey` used to read the write separately, and
+/// three readings of one write is how they come to disagree (T-116's
+/// `launch_survey` paid for a hull and discarded it).
+fn scout_hull(doctrine: &Doctrine) -> HullType {
+    if doctrine.scout_hull_offensive {
+        HullType::LimitedContactVehicle
+    } else {
+        HullType::LimitedSystems
+    }
+}
+
+/// **The standing layer, resolved** — Design and Doctrine composed into one
+/// answer per question (`Hyades_standing_layer_and_observation.md` §1).
+///
+/// **Ask it; do not branch on the writes.** Every Doctrine write that moves a
+/// role onto a different hull used to add a condition in three places — the
+/// build order, the price the context carries, and `assign_role`'s match — and
+/// three readings of one write is how they come to disagree. T-115 and T-116
+/// each added a write and each added those three branches; this is what they
+/// should have added instead.
+///
+/// The load-bearing property is that **[`Self::role_of`] is the inverse of
+/// [`Self::design_for`]**, derived rather than written out. A card that mounts
+/// the colony role on a Contact hull changes `design_for`, and `role_of`
+/// follows with no edit — which is the difference between a standing layer and
+/// a switch statement. `role_of_inverts_design_for_every_role` pins it.
+///
+/// Borrowed rather than owned because it is constructed per decision, on the
+/// engine's hottest path, and holds no state of its own: it is a *reading* of
+/// the two writes, the way a `Band` is a reading of a mass (§4).
+#[derive(Clone, Copy, Debug)]
+pub struct Standing<'a> {
+    /// The Doctrine half. The Design half is `Roster`, which does not yet gate
+    /// anything (`SimConfig::enforce_roster` defaults off, T-25), so it is not
+    /// a field until it is one.
+    pub doctrine: &'a Doctrine,
+}
+
+/// The roles `assign_role` can hand a finished hull. `Freighter` is absent on
+/// purpose — it is produced alongside a `Miner` rather than tasked (roles §5) —
+/// and so are `Reserve` and `Scrapped`, which are terminal states.
+///
+/// **The order is load-bearing since T-121.** [`Standing::role_of`]'s second
+/// pass takes the first role that *mounts* the hull, and the unarmed default
+/// puts Scout and Miner on the same Limited Systems hull — so a `LimitedSystems`
+/// carrying a class neither has named resolves to whichever comes first here.
+/// Miner precedes Scout because that is what [`competent_role`] says a bare LSV
+/// is for, and the two answers should not disagree. Nothing production-built
+/// reaches that pass — every build stamps a class — but
+/// `every_hull_has_a_role_under_every_doctrine` does.
+const ASSIGNABLE: [Role; 4] = [Role::Colonizer, Role::Miner, Role::Scout, Role::Picket];
+
+impl<'a> Standing<'a> {
+    /// Read the standing layer for one player.
+    pub fn of(doctrine: &'a Doctrine) -> Self {
+        Self { doctrine }
+    }
+
+    /// **The design this layer lays down for `role`** — the hull *and* the
+    /// class, because the class is what distinguishes two roles sharing a hull.
+    /// Two pairs share one today: a scouting Limited Contact Vehicle (`Tor`)
+    /// against a picketing one (`Unnamed`) once the Warfare card is played, and
+    /// a scouting Limited Systems hull (`Tor`) against a mining one (`Meadow`)
+    /// before it (T-115, T-121).
+    pub fn design_for(&self, role: Role) -> (HullType, Class) {
+        match role {
+            Role::Scout => (scout_hull(self.doctrine), Class::Tor),
+            Role::Colonizer => (HullType::MediumSystems, Class::Unnamed),
+            Role::Miner => (HullType::LimitedSystems, Class::Meadow),
+            Role::Picket => (HullType::LimitedContactVehicle, Class::Unnamed),
+            // **Not assignable, and the design collides with the colonizer's
+            // on purpose** — a freighter rides the same Medium Systems hull
+            // (roles §4.4). It is safe only because `ASSIGNABLE` excludes it,
+            // so `role_of` can never return it; adding it there would make
+            // `(MediumSystems, Unnamed)` ambiguous and silently task colony
+            // ships as freight. The same holds for the two terminal states.
+            Role::Freighter | Role::Reserve | Role::Scrapped => (HullType::MediumSystems, Class::Unnamed),
+        }
+    }
+
+    /// **The build order that produces a hull this layer will task as
+    /// `role`** — `design_for` turned into a `BuildOrder`, so the hull the
+    /// yard is charged for and the role `role_of` reads back are the same
+    /// answer to the same question.
+    ///
+    /// **This is not `hull_order(some_hull)` and the difference bites** (T-121).
+    /// A free function mapping a hull to a class cannot know which *role* the
+    /// yard meant: a picket and an armed scout share the Limited Contact hull,
+    /// and `hull_order` stamps that hull's one class — so ordering a picket by
+    /// naming its hull produced a scout. That is T-116's defect exactly, a yard
+    /// paying for one thing and receiving another, and the fix is the same:
+    /// ask for the role, not the shell.
+    pub fn order_for(&self, role: Role) -> BuildOrder {
+        let (hull_type, class) = self.design_for(role);
+        BuildOrder::Hull { hull_type, class }
+    }
+
+    /// The survey craft's build order. The class is always `Tor` — the survey
+    /// design — whatever shell it is mounted on, and that is what
+    /// distinguishes a scouting hull from the mining or picketing one it
+    /// shares a shell with.
+    pub fn scout_order(&self) -> BuildOrder {
+        self.order_for(Role::Scout)
+    }
+
+    /// **The colonizer ladder, cheapest rung first.**
+    ///
+    /// Two rungs because the Contact ladder has no Medium tier, so a card that
+    /// arms the colony ship is forced to the General one (T-116). Substituting
+    /// happens *inside* this array — the Medium rung is not the card's to take.
+    pub fn colonizer_ladder(&self) -> [HullType; 2] {
+        [HullType::MediumSystems, general_colonizer_hull(self.doctrine)]
+    }
+
+    /// **Does this layer mount `role` on `hull`?**
+    ///
+    /// Eligibility is permissive with varying competence (R-O44): any hull may
+    /// take any role, and this asks the narrower question of whether *this*
+    /// standing layer would put that role on that hull.
+    pub fn mounts(&self, role: Role, hull: HullType) -> bool {
+        match role {
+            Role::Colonizer => self.colonizer_ladder().contains(&hull),
+            _ => self.design_for(role).0 == hull,
+        }
+    }
+
+    /// **What a finished design is for** — the inverse of [`Self::design_for`].
+    ///
+    /// Resolved in three passes, narrowest first: an exact design match, then
+    /// the hull alone for a class this layer has not named, then competence
+    /// (R-O44) for a hull it mounts nothing on at all. `None` means the hull
+    /// has no mission this layer can give it, which is "hold" rather than an
+    /// error.
+    ///
+    /// **Two configurations resolve differently than the switch it replaced,
+    /// and both are unreachable today.** A `Tor` on a Limited Offensive hull
+    /// with [`Doctrine::scout_hull_offensive`] *off* now reads as a picket
+    /// rather than a scout — nothing builds that pairing, because only
+    /// `Standing::scout_order` stamps `Tor` and it names the armed hull only when the
+    /// write is on. And a Rapid or General Offensive hull now reads as a
+    /// picket where the switch returned `None`; nothing builds those either.
+    /// Both moves make the resolver *total*, which
+    /// `every_hull_has_a_role_under_every_doctrine` requires and the switch
+    /// did not satisfy.
+    pub fn role_of(&self, hull: HullType, class: Class) -> Option<Role> {
+        ASSIGNABLE
+            .iter()
+            .copied()
+            .find(|&r| self.design_for(r) == (hull, class))
+            .or_else(|| ASSIGNABLE.iter().copied().find(|&r| self.mounts(r, hull)))
+            .or_else(|| competent_role(hull))
+    }
+
+    /// **Is a colonizer consumed by the colony it founds?**
+    ///
+    /// The one question the Warfare card's Doctrine half turns on, and T-116
+    /// measured it as the card's entire cost: a hull that is not consumed
+    /// leaves no recycled stock, and that compounds
+    /// (`Hyades_warfare_tree.md` §8.10).
+    pub fn recycles_on_founding(&self) -> bool {
+        !self.doctrine.picket_after_founding
+    }
+}
+
+/// **What a hull is good for when the standing layer mounts nothing on it.**
+///
+/// The permissive rule (R-O44, roles §4): any hull may take any role, and what
+/// differs is how well it does the job. This is the competence table — not an
+/// eligibility restriction — and it is the last resort in
+/// [`Standing::role_of`], reached only for a hull no Doctrine write has claimed.
+fn competent_role(hull: HullType) -> Option<Role> {
+    match hull {
+        // A Systems hull above the Limited tier has a hold, so it can found.
+        HullType::MediumSystems | HullType::GeneralSystems => Some(Role::Colonizer),
+        // A Contact hull scouts; that is what its sensors are.
+        HullType::LimitedContactVehicle
+        | HullType::LimitedContactUnit
+        | HullType::GeneralContactVehicle
+        | HullType::GeneralContactUnit => Some(Role::Scout),
+        // A Limited Systems hull mines.
+        HullType::LimitedSystems => Some(Role::Miner),
+        // An Offensive hull holds ground (design law #8: harass-and-hold).
+        HullType::LimitedOffensive | HullType::RapidOffensive | HullType::GeneralOffensive => Some(Role::Picket),
+    }
+}
+
+/// **Pick a colonization target**, shared by every hull that can found.
+///
+/// Extracted at T-116 because the card mounts the colony role on a Contact hull
+/// as well as on the two Systems hulls, and three copies of a preference order
+/// is how one of them comes to be a different preference order.
+fn colonize(doctrine: &Doctrine, candidates: &[Candidate]) -> Option<Tasking> {
+    let best = |want: PlanetClass| candidates.iter().filter(|c| c.ranked.class == want).max_by(score_then_id);
+    let (a, b) = match doctrine.expand_bias {
+        ExpandBias::ProductionCentersFirst => (PlanetClass::ProductionCenter, PlanetClass::Colony),
+        ExpandBias::ColoniesFirst => (PlanetClass::Colony, PlanetClass::ProductionCenter),
+    };
+    // **Settle the ground the pickets are holding, first** (T-113).
+    //
+    // A world this empire holds is one a rival's colonizer turns back from, so
+    // the race for it is already won and the voyage cannot be wasted on a claim
+    // someone else got to first. That is what makes a picket worth its hull:
+    // not the colony a rival does not found, which §8.6 measured as a losing
+    // trade, but the one *this* empire does.
+    //
+    // Ahead of the class preference rather than folded into `rank`: holding is
+    // a fact about the board, not a score, and mixing it into the weighted sum
+    // would make it tradeable against mineral richness at some exchange rate
+    // nobody has ratified.
+    let held =
+        |want: PlanetClass| candidates.iter().filter(|c| c.held_by_me && c.ranked.class == want).max_by(score_then_id);
+    held(a)
+        .or_else(|| held(b))
+        .or_else(|| best(a))
+        .or_else(|| best(b))
+        .map(|c| Tasking { role: Role::Colonizer, target: Some(c.ranked.id) })
+}
+
+/// **The General-tier hull this doctrine colonizes with** (T-116).
+///
+/// One function, for the same reason `Standing::scout_order` is one: the option set, the
+/// price the context carries and `assign_role` all have to name the same hull,
+/// and three readings of one doctrine write is how they come to disagree.
+///
+/// The Medium hull is untouched — this substitutes *within* the option set.
+pub fn general_colonizer_hull(doctrine: &Doctrine) -> HullType {
+    if doctrine.colonizer_general_contact {
+        HullType::GeneralContactVehicle
+    } else {
+        HullType::GeneralSystems
+    }
+}
+
 /// A build order for `hull`, taking whichever class this policy names for it.
-/// Classes are seeded by the roster (R-O42); until Design cards author more,
-/// the two starting designs are the only named ones.
+///
+/// **Use [`Standing::order_for`] whenever the caller knows the role**, which is
+/// almost always. This maps a *shell* to a class and therefore cannot express
+/// two roles sharing one — ordering a picket through here returned an armed
+/// scout (T-121), which is the T-116 defect again. It survives for the mining
+/// pair and the colonizer ladder, where the caller is choosing a hull by price
+/// and the role is not in question.
 fn hull_order(hull: HullType) -> BuildOrder {
     let class = match hull {
         HullType::LimitedSystems => Class::Meadow,
@@ -1307,6 +1940,33 @@ mod tests {
         SurveyView { industrial_signature: true, ..survey_view(id, pos) }
     }
 
+    /// **The blockade first — only while it has a port to cover and the
+    /// reserve is short** (T-125). Each precondition is removed in turn and
+    /// the branch must fall through; with all of them the order is a picket,
+    /// ahead of the colonizer the same context would otherwise buy.
+    #[test]
+    fn the_blockade_is_built_first_only_while_a_port_is_uncovered() {
+        let ap = BaselineAutopilot::default();
+        let mut d = Doctrine::default();
+        crate::cards::apply_doctrine_write(&mut d, crate::cards::DoctrineWrite::ArmedFrontier);
+        let mut ctx = prod_ctx(BandTier::III, 2.0, 50.0);
+        // Nothing left to survey, so the empty-list scout return (which comes
+        // first, and should — a seat that knows no worlds needs to find some)
+        // stays out of the way.
+        ctx.survey_frontier = 0;
+        ctx.blockade_ready = true;
+        ctx.pickets_held = 0;
+        let picket = Standing::of(&d).order_for(Role::Picket);
+        assert_eq!(ap.production_choice(&d, &ctx, &[]), picket, "all preconditions hold");
+        let off = Doctrine { picket_first: false, ..d };
+        assert_ne!(ap.production_choice(&off, &ctx, &[]), picket, "without the write it is a fallback again");
+        let covered = ProductionContext { blockade_ready: false, ..ctx };
+        assert_ne!(ap.production_choice(&d, &covered, &[]), picket, "nowhere to send it");
+        let full = ProductionContext { pickets_held: d.picket_reserve, ..ctx };
+        assert_ne!(ap.production_choice(&d, &full, &[]), picket, "the reserve is met");
+        assert!(!Doctrine::default().picket_first, "the write must ship unplayed");
+    }
+
     #[test]
     fn survey_prefers_nearest() {
         let ap = BaselineAutopilot::default();
@@ -1331,13 +1991,18 @@ mod tests {
             stockpile_total: Price::new(stockpile),
             medium_min_level: BandTier::III,
             limited_min_level: BandTier::II,
+            // Pickets are off in these fixtures: the reserve is 0 by default, so
+            // the branch never fires and these tests stay about deepen/expand.
+            picket_cost: Price::new(0.02),
+            pickets_held: 0,
+            blockade_ready: false,
             infra_cost: Price::new(infra + 1.0),
             // Even thirds against a bank of even thirds: these cases are about
-            // the deepen/expand branch, not about colour scarcity, and
-            // `a_colour_poor_centre_cannot_buy_the_rung` covers that
+            // the deepen/expand branch, not about color scarcity, and
+            // `a_color_poor_center_cannot_buy_the_rung` covers that
             // deliberately.
             infra_bill: [Price::new((infra + 1.0) / 3.0); 3],
-            stockpile_by_colour: [Price::new(stockpile / 3.0); 3],
+            stockpile_by_color: [Price::new(stockpile / 3.0); 3],
             colonizer_cost: Price::new(1.0),
             general_colonizer_cost: Price::new(10.0),
             medium_seed_capacity: Kilotons::at_tier(BandTier::I),
@@ -1384,9 +2049,315 @@ mod tests {
             ranked,
             settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
             mining_crew: 1,
+            held_by_me: false,
+            claim_inbound: false,
         }];
         let order = ap.production_choice(&doctrine, &ctx, &cands);
         assert!(matches!(order, BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }));
+    }
+
+    /// **A colonizer settles held ground over a better world nobody holds**
+    /// (T-113). This is the preference the six-slot reduction in
+    /// `sim::commit_one_build` exists to feed: with a three-slot reduction the
+    /// held world reaches the policy only when it already wins its class, so
+    /// the filter below has nothing to select and the arm is a no-op by
+    /// construction — which is exactly how it measured before the reduction was
+    /// widened (`examples/denial_census`: every printed digit unchanged).
+    ///
+    /// The ranking is asserted rather than assumed, so a future change to
+    /// `rank` cannot make this test pass by accident.
+    #[test]
+    fn a_colonizer_prefers_held_ground_to_a_better_unheld_world() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
+        let cand = |id: u32, hab: f64, held: bool| {
+            let v = view(id, Vec3::new(10.0, 0.0, 0.0), hab, hab, MineralField::default());
+            let ranked = ap.rank(&doctrine, &v, &rctx);
+            Candidate {
+                view: v,
+                ranked,
+                settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
+                mining_crew: 1,
+                held_by_me: held,
+                claim_inbound: false,
+            }
+        };
+        let better = cand(5, 3.5, false);
+        let held = cand(6, 3.3, true);
+        assert_eq!(better.ranked.class, held.ranked.class, "the two must be the same class for this to be a choice");
+        assert!(better.ranked.score > held.ranked.score, "the unheld world must be the one rank actually prefers");
+
+        let tasking = ap
+            .assign_role(&doctrine, HullType::MediumSystems, Class::Unnamed, &[better, held])
+            .expect("a Medium Systems hull should find a colonization mission");
+        assert_eq!(tasking.role, Role::Colonizer);
+        assert_eq!(tasking.target, Some(held.ranked.id), "held ground wins: the race for it is already over");
+
+        // And with nothing held, the ranking is untouched — the preference is a
+        // tie-break on a subset, not a new term in the score.
+        let neither =
+            ap.assign_role(&doctrine, HullType::MediumSystems, Class::Unnamed, &[better, cand(6, 3.3, false)]).unwrap();
+        assert_eq!(neither.target, Some(better.ranked.id), "without a picket the best world still wins");
+    }
+
+    /// **The class is what tells a scouting LOU from a picketing one** (T-115).
+    ///
+    /// `Doctrine::scout_hull_offensive` puts the armed hull in the survey
+    /// branch, so both the survey branch and the picket branch lay down a
+    /// `LimitedContactVehicle` and the hull alone can no longer say which
+    /// errand it was built for. `Standing::scout_order` stamps the survey design on it
+    /// and `assign_role` reads that back — one write, read in two places,
+    /// which is the property worth pinning.
+    ///
+    /// **T-121 rebased the armed hull from `LimitedOffensive` to
+    /// `LimitedContactVehicle`** and made the *unarmed* scout an LSV, so the
+    /// class now disambiguates on both sides of the write rather than only the
+    /// armed one: unarmed it separates a scouting LSV (`Tor`) from a mining one
+    /// (`Meadow`), armed it separates a scouting LCV from a picketing one.
+    /// **Every build order round-trips to the role that asked for it** (T-121).
+    ///
+    /// `Standing::order_for` and `Standing::role_of` are the two halves of one
+    /// question, and they only agree by construction if the order carries the
+    /// *class* the design names. Ordering by shell does not: a picket and an
+    /// armed scout share the Limited Contact hull, so `hull_order` stamped
+    /// `Tor` on a picket order and the yard received a scout — T-116's defect,
+    /// a build paid for and tasked as something else.
+    ///
+    /// Asserted under both standing layers, because the collision only exists
+    /// under one of them and a test run on the default would not see it.
+    #[test]
+    fn a_build_order_round_trips_to_the_role_that_asked_for_it() {
+        for doctrine in [Doctrine::default(), Doctrine { scout_hull_offensive: true, ..Doctrine::default() }] {
+            let st = Standing::of(&doctrine);
+            for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
+                let BuildOrder::Hull { hull_type, class } = st.order_for(role) else {
+                    panic!("{role:?} must order a hull");
+                };
+                assert_eq!(
+                    st.role_of(hull_type, class),
+                    Some(role),
+                    "ordering a {role:?} laid down {hull_type:?}/{class:?}, which reads back as something else"
+                );
+            }
+        }
+
+        // And the defect itself, pinned rather than described: ordering a
+        // picket by naming its *shell* does not round-trip once the armed write
+        // puts the scout on the same shell. If this ever starts round-tripping,
+        // the collision is gone and the rule above has lost its reason.
+        let armed = Doctrine { scout_hull_offensive: true, ..Doctrine::default() };
+        let st = Standing::of(&armed);
+        let by_shell = hull_order(st.design_for(Role::Picket).0);
+        let BuildOrder::Hull { hull_type, class } = by_shell else { panic!() };
+        assert_eq!(
+            st.role_of(hull_type, class),
+            Some(Role::Scout),
+            "a picket ordered by shell must still read back as the armed scout it collides with"
+        );
+    }
+
+    #[test]
+    fn a_contact_hull_scouts_as_a_tor_and_pickets_otherwise() {
+        let ap = BaselineAutopilot::default();
+        let plain = Doctrine::default();
+        let armed = Doctrine { scout_hull_offensive: true, ..Doctrine::default() };
+        assert!(!plain.scout_hull_offensive, "the write must ship unplayed");
+
+        assert_eq!(
+            Standing::of(&armed).scout_order(),
+            BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, class: Class::Tor },
+            "the armed survey hull carries the survey design"
+        );
+        assert_eq!(
+            Standing::of(&plain).scout_order(),
+            BuildOrder::Hull { hull_type: HullType::LimitedSystems, class: Class::Tor },
+            "and so does the unarmed one, so the class means the same thing either way"
+        );
+
+        let cands = one_colony_candidate(&ap, &armed);
+        let hull = HullType::LimitedContactVehicle;
+        let as_scout = ap.assign_role(&armed, hull, Class::Tor, &cands).unwrap();
+        assert_eq!(as_scout.role, Role::Scout);
+        assert_eq!(as_scout.target, None, "a scout picks its own world from the frontier");
+
+        let as_picket = ap.assign_role(&armed, hull, Class::Unnamed, &cands).unwrap();
+        assert_eq!(as_picket.role, Role::Picket, "the same hull without the survey design still holds ground");
+
+        // And the same disambiguation holds on the unarmed side, where the
+        // scout shares its hull with the miner instead. Asserted on `role_of`
+        // rather than `assign_role`, because the latter also requires a viable
+        // target and this fixture carries no mining candidate — a decline
+        // there would say nothing about which role the design resolves to.
+        let st = Standing::of(&plain);
+        let lsv = HullType::LimitedSystems;
+        assert_eq!(st.role_of(lsv, Class::Tor), Some(Role::Scout));
+        assert_eq!(st.role_of(lsv, Class::Meadow), Some(Role::Miner));
+    }
+
+    /// **The General colonizer is unreachable under `CheapestViable`, and that
+    /// is algebra rather than a magnitude** (T-116).
+    ///
+    /// `production_choice` filters the hull options to those the center can pay
+    /// for *and* that would deliver settlers, then takes the max by policy key.
+    /// Under `CheapestViable` the key is the negated price, and a Medium hull
+    /// costs **0.1092 kt against any General hull's ~1.1–1.3** — so the General
+    /// option wins only if the Medium is filtered out, i.e. delivers zero.
+    ///
+    /// It cannot. `sim::settler_target` takes
+    /// `hi = hold.min(k_target).min(pop − floor)` and returns zero exactly when
+    /// `hi ≤ 0`, `k_origin ≤ 0` or `k_target ≤ floor` — **none of which
+    /// mentions the hold beyond it being positive.** So the two options are
+    /// admitted together or not at all, and the cheaper one always wins.
+    ///
+    /// This is why `Doctrine::colonizer_general_contact` is inert on its own:
+    /// the card's Design write substitutes a hull into a slot the shipped
+    /// policy never selects (`Hyades_warfare_tree.md` §8.10).
+    #[test]
+    fn the_cheapest_viable_policy_never_names_a_general_colonizer() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        assert_eq!(doctrine.colonizer_policy, ColonizerPolicy::CheapestViable, "the shipped policy");
+        let cands = one_colony_candidate(&ap, &doctrine);
+        // Rich enough for either hull, so affordability is not what decides.
+        let mut ctx = prod_ctx(BandTier::III, 3.0, 500.0);
+        ctx.colonizer_cost = Price::new(0.1092);
+        ctx.general_colonizer_cost = Price::new(1.0995);
+        let order = ap.production_choice(&doctrine, &ctx, &cands);
+        assert!(
+            matches!(order, BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }),
+            "the cheap hull wins whatever sits in the General slot, got {order:?}"
+        );
+
+        // And substituting the Contact hull into that slot changes nothing —
+        // the *same* order comes back, which is the inert verdict.
+        let gcv = Doctrine { colonizer_general_contact: true, ..Doctrine::default() };
+        assert_eq!(
+            general_colonizer_hull(&gcv),
+            HullType::GeneralContactVehicle,
+            "the write must actually name the Contact hull"
+        );
+        assert_eq!(ap.production_choice(&gcv, &ctx, &cands), order, "substituting into a dead slot is a no-op");
+    }
+
+    /// **Under `SettlersPerMineral` the substitution bites, and it is a
+    /// downgrade** (T-116) — which is the card's price, paid where §8.2 says.
+    ///
+    /// Settlers per kilotonne of cost, off the ladder
+    /// (`examples/hull_compare`): MSV **9.16**, GCV **10.95**, GSV **24.04**.
+    /// So a General Systems hull is far and away the best deal, a Contact hull
+    /// on the same rung is less than half of it, and the Contact hull still
+    /// beats the Medium — it is a middle rung, not a dominated one.
+    #[test]
+    fn under_settlers_per_mineral_the_contact_hull_is_chosen_and_is_worse() {
+        let ap = BaselineAutopilot::default();
+        let base = Doctrine { colonizer_policy: ColonizerPolicy::SettlersPerMineral, ..Doctrine::default() };
+        let gcv = Doctrine { colonizer_general_contact: true, ..base };
+        let cands = one_colony_candidate(&ap, &base);
+        let mut ctx = prod_ctx(BandTier::III, 3.0, 500.0);
+        ctx.colonizer_cost = Price::new(0.1092);
+        ctx.general_colonizer_cost = Price::new(1.0995);
+        // The candidate's per-hull settler figures stand in for `settler_target`;
+        // the point is the *ranking*, so they carry the ladder's proportions.
+        let mut rich = cands.clone();
+        rich[0].settlers_by_hull = [Kilotons::new(1.0), Kilotons::new(12.0358)];
+
+        assert!(
+            matches!(
+                ap.production_choice(&base, &ctx, &rich),
+                BuildOrder::Hull { hull_type: HullType::GeneralSystems, .. }
+            ),
+            "per-mineral picks the General hull when it carries more per kilotonne"
+        );
+        assert!(
+            matches!(
+                ap.production_choice(&gcv, &ctx, &rich),
+                BuildOrder::Hull { hull_type: HullType::GeneralContactVehicle, .. }
+            ),
+            "and the write substitutes the Contact hull into that same slot"
+        );
+    }
+
+    /// **`role_of` inverts `design_for`, for every role and every doctrine**
+    /// (T-117) — the property that makes `Standing` a layer rather than a
+    /// second switch statement.
+    ///
+    /// If it holds, a card that moves a role onto a different hull is answered
+    /// by `assign_role` with no edit. If it stops holding, some hull is being
+    /// built for one errand and tasked to another, which is how the engine
+    /// spent three landings paying for hulls it then discarded
+    /// (`launch_survey`, T-116).
+    ///
+    /// Checked across the writes that move a design, in every combination —
+    /// which is the point: they compose, and a resolver that is only correct
+    /// one write at a time is not one.
+    #[test]
+    fn role_of_inverts_design_for_every_role() {
+        for scout_armed in [false, true] {
+            for colonizer_contact in [false, true] {
+                let d = Doctrine {
+                    scout_hull_offensive: scout_armed,
+                    colonizer_general_contact: colonizer_contact,
+                    ..Doctrine::default()
+                };
+                let st = Standing::of(&d);
+                for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
+                    let (hull, class) = st.design_for(role);
+                    assert_eq!(
+                        st.role_of(hull, class),
+                        Some(role),
+                        "design_for({role:?}) = ({hull:?}, {class:?}) must resolve back \
+                         (scout_armed={scout_armed}, colonizer_contact={colonizer_contact})"
+                    );
+                    assert!(st.mounts(role, hull), "and the layer must agree it mounts it there");
+                }
+                // Every rung of the colonizer ladder resolves to a colonizer,
+                // not only the one `design_for` names — otherwise the General
+                // rung would be built and then tasked as something else.
+                for hull in st.colonizer_ladder() {
+                    assert_eq!(st.role_of(hull, Class::Unnamed), Some(Role::Colonizer), "{hull:?} is a colonizer rung");
+                }
+            }
+        }
+    }
+
+    /// **Every hull resolves to something, under every doctrine** (T-117).
+    ///
+    /// `assign_role` returning `None` means "hold rather than invent a
+    /// mission", which is legitimate — but a hull the engine *builds* and then
+    /// cannot task is a hull the yard was charged for and threw away, and that
+    /// defect has now happened twice. The permissive rule (R-O44) says any hull
+    /// may take any role, so the competence table must be total.
+    #[test]
+    fn every_hull_has_a_role_under_every_doctrine() {
+        use HullType::*;
+        let all = [
+            LimitedSystems,
+            MediumSystems,
+            GeneralSystems,
+            LimitedContactVehicle,
+            LimitedContactUnit,
+            GeneralContactVehicle,
+            GeneralContactUnit,
+            LimitedOffensive,
+            RapidOffensive,
+            GeneralOffensive,
+        ];
+        for scout_armed in [false, true] {
+            for colonizer_contact in [false, true] {
+                let d = Doctrine {
+                    scout_hull_offensive: scout_armed,
+                    colonizer_general_contact: colonizer_contact,
+                    ..Doctrine::default()
+                };
+                let st = Standing::of(&d);
+                for hull in all {
+                    for class in [Class::Unnamed, Class::Tor, Class::Meadow] {
+                        assert!(st.role_of(hull, class).is_some(), "{hull:?}/{class:?} has no mission");
+                    }
+                }
+            }
+        }
     }
 
     /// One `Candidate` a mature center would happily colonize.
@@ -1399,6 +2370,8 @@ mod tests {
             ranked,
             settlers_by_hull: [Kilotons::at_tier(BandTier::I), Kilotons::at_tier(BandTier::II)],
             mining_crew: 1,
+            held_by_me: false,
+            claim_inbound: false,
         }]
     }
 
@@ -1413,7 +2386,7 @@ mod tests {
     /// form did not have anywhere, and it is what this pins.
     ///
     /// It also pins the sign of the shipped configuration, which the fix did
-    /// **not** change: an infra rung costs several colonisers, so expansion wins
+    /// **not** change: an infra rung costs several colonizers, so expansion wins
     /// at `b = 0.5` and the branch stays cold. That is now a statement about
     /// prices (R-O85) rather than about units.
     #[test]
@@ -1422,7 +2395,7 @@ mod tests {
         let mut doctrine = Doctrine::default();
         // A mature center with the most deepening headroom the ladder allows
         // (infra 1 against k_potential 4) and one ordinary colony candidate —
-        // i.e. the case most favourable to depth that can actually occur.
+        // i.e. the case most favorable to depth that can actually occur.
         let mut ctx = prod_ctx(BandTier::III, 1.0, 100.0);
         ctx.k_potential = 4.0;
         let cands = one_colony_candidate(&ap, &doctrine);
@@ -1449,11 +2422,11 @@ mod tests {
         );
 
         // 2. The shipped bias still expands, because a rung costs more than a
-        //    coloniser and buys less. Prices, not units.
+        //    colonizer and buys less. Prices, not units.
         doctrine.reinvest_bias = 0.5;
         assert!(
             crossover(&ctx) > 0.5,
-            "the shipped ladder must still favour expansion at b = 0.5 — if this has crossed, \
+            "the shipped ladder must still favor expansion at b = 0.5 — if this has crossed, \
              re-read R-O85 before ratifying"
         );
         assert!(
@@ -1466,7 +2439,7 @@ mod tests {
 
         // 3. Above the crossover the same state flips to depth — and the two
         //    crossovers differ, so there is a band of `b` where the cheap-rung
-        //    centre deepens and the dear-rung one does not. That band is the
+        //    center deepens and the dear-rung one does not. That band is the
         //    graded region.
         doctrine.reinvest_bias = (dear + 1.0) / 2.0;
         assert!(
@@ -1486,7 +2459,7 @@ mod tests {
 
     /// **A fully-explored empire deepens instead of scouting (R-O86).**
     ///
-    /// `candidates.is_empty()` used to send a centre straight to a survey hull,
+    /// `candidates.is_empty()` used to send a center straight to a survey hull,
     /// justified by "no candidates means every other branch below returns Idle."
     /// That is false: the branch it pre-empts is the `outward == None` deepen
     /// fallback, and that fallback is the only deepening path above
@@ -1494,7 +2467,7 @@ mod tests {
     ///
     /// So the two halves are pinned here. With frontier left, an empty candidate
     /// list still buys a scout — that is the mechanic restarting expansion, and
-    /// it must not regress. With the galaxy explored, the same centre deepens.
+    /// it must not regress. With the galaxy explored, the same center deepens.
     #[test]
     fn a_fully_explored_empire_deepens_instead_of_scouting() {
         let ap = BaselineAutopilot::default();
@@ -1507,7 +2480,7 @@ mod tests {
         assert!(
             matches!(
                 ap.production_choice(&doctrine, &ctx, &[]),
-                BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+                BuildOrder::Hull { hull_type, .. } if hull_type == Standing::of(&doctrine).design_for(Role::Scout).0
             ),
             "with galaxy left to explore, an empty candidate list must still buy a scout"
         );
@@ -1516,17 +2489,17 @@ mod tests {
         assert_eq!(
             ap.production_choice(&doctrine, &ctx, &[]),
             BuildOrder::UpgradeInfrastructure,
-            "with nothing left to survey, the same centre must spend on depth rather than on a hull \
+            "with nothing left to survey, the same center must spend on depth rather than on a hull \
              that would be tasked Scout and fly nowhere"
         );
 
         // And it must not deepen past the ceiling just because survey is shut:
-        // a capped centre with nothing to explore and nothing to take idles.
+        // a capped center with nothing to explore and nothing to take idles.
         ctx.infra = ctx.k_potential;
         assert_eq!(
             ap.production_choice(&doctrine, &ctx, &[]),
             BuildOrder::Idle,
-            "a capped centre with no frontier and no candidates has nothing to buy"
+            "a capped center with no frontier and no candidates has nothing to buy"
         );
     }
 
@@ -1586,7 +2559,7 @@ mod tests {
         ctx.k_potential = 3.0;
         assert!(matches!(
             ap.production_choice(&doctrine, &ctx, &[]),
-            BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+            BuildOrder::Hull { hull_type, .. } if hull_type == Standing::of(&doctrine).design_for(Role::Scout).0
         ));
     }
 
@@ -1627,7 +2600,7 @@ mod tests {
         let cands = one_colony_candidate(&ap, &doctrine);
         assert!(matches!(
             ap.production_choice(&doctrine, &ctx, &cands),
-            BuildOrder::Hull { hull_type: HullType::LimitedContactVehicle, .. }
+            BuildOrder::Hull { hull_type, .. } if hull_type == Standing::of(&doctrine).design_for(Role::Scout).0
         ));
     }
 
@@ -1713,7 +2686,7 @@ mod tests {
     }
 
     #[test]
-    fn survey_reserve_zero_restores_the_old_never_scout_behaviour() {
+    fn survey_reserve_zero_restores_the_old_never_scout_behavior() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine { survey_reserve: 0, ..Doctrine::default() };
         let mut ctx = prod_ctx_frontier(BandTier::III, 3.0, 0.3, 0);

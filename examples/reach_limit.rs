@@ -210,9 +210,9 @@ fn ceiling_curve(seed: u64) {
 }
 
 /// What `BaselineAutopilot::rank` compares against `mineral_high`, at unit
-/// scarcity and zero pressure: the **sum of the three colours' Band readings**,
+/// scarcity and zero pressure: the **sum of the three colors' Band readings**,
 /// not the Band of their total mass. The two differ by more than a Band on a
-/// world that is rich in one colour, and it is the per-colour sum the doctrine
+/// world that is rich in one color, and it is the per-color sum the doctrine
 /// threshold was tuned against.
 fn mineral_reading(m: &MineralField) -> f64 {
     Basic::ALL.iter().map(|&b| m.get(b).in_bands().bands()).sum()

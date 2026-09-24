@@ -36,6 +36,7 @@
 //! |---|---|---|
 //! | [`math`] | sim §1a | 3-vectors + relativistic 1 g flight & light-lag |
 //! | [`rng`] | — | deterministic seeded PRNG (reproducible MC) |
+//! | [`transcendental`] | netcode §6 H4a | `ln`/`exp`/`pow`/`sin_cos` without the host libm (bit-identical native and wasm32) |
 //! | [`resources`] | world-model §4 | CMY basics, RGB supers, apex, archetypes |
 //! | [`galaxy`] | world-model §2–5 | galaxy generation → continuous planet field |
 //! | [`autopilot`] | world-model §6, autopilot-doc | the policy interface + baseline |
@@ -45,7 +46,8 @@
 #![forbid(unsafe_code)]
 // Portability discipline: deny accidental reliance on the wider std surface that
 // is unavailable or nondeterministic under wasm32. (We still link std for
-// alloc/collections, which wasm32 supports.)
+// alloc/collections, which wasm32 supports.) The list is `clippy.toml`; until
+// T-127 it did not exist and this denied nothing.
 #![deny(clippy::disallowed_methods)]
 
 pub mod arena;
@@ -61,6 +63,7 @@ pub mod resources;
 pub mod rng;
 pub mod sim;
 pub mod snapshot;
+pub mod transcendental;
 pub mod units;
 
 /// Common imports for engine consumers.

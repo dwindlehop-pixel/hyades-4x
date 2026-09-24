@@ -1,4 +1,4 @@
-//! **R-IND11: is a General coloniser ever worth it? — measured, not argued.**
+//! **R-IND11: is a General colonizer ever worth it? — measured, not argued.**
 //!
 //! T-67 took infrastructure out of `K`, so both viable hulls now seed a colony
 //! to the *world's own* ceiling and the hold is the only thing separating them.
@@ -24,8 +24,8 @@
 //! two stories, and `CLAUDE.md` §2 forbids shipping the plausible one:
 //!
 //! - **Transit** — a deep seed becomes a *forward base* sooner, so later
-//!   colonisers launch from closer to the frontier. Signature: `mean_flight`
-//!   (coloniser spawn → founding) falls.
+//!   colonizers launch from closer to the frontier. Signature: `mean_flight`
+//!   (colonizer spawn → founding) falls.
 //! - **Gate-skipping** — a General hull seeds past the `PopBands` staircase the
 //!   pre-`medium_min_level` deepening loop otherwise has to climb, so the new
 //!   colony can build *at once*. Signature: `mean_dwell` (founding → that
@@ -50,7 +50,7 @@ struct Run {
     colony_years: f64,
     first: f64,
     mean_founding: f64,
-    /// Mean **flight** time of a colonising voyage, spawn to founding — the
+    /// Mean **flight** time of a colonizing voyage, spawn to founding — the
     /// transit hypothesis made measurable.
     mean_flight: f64,
     /// Mean **dwell**: founding of a colony to that colony's own first applied
@@ -69,8 +69,8 @@ struct Run {
     /// without it the aggregate is uninterpretable: both components can fall
     /// while the mean rises.
     hull_first_share: f64,
-    /// Share of coloniser builds that were General hulls. Mining pairs are
-    /// `LimitedSystems`, so the coloniser population is exactly the
+    /// Share of colonizer builds that were General hulls. Mining pairs are
+    /// `LimitedSystems`, so the colonizer population is exactly the
     /// Medium/General Systems builds.
     general_share: f64,
 }
@@ -86,7 +86,7 @@ fn run(seed: u64, policy: ColonizerPolicy) -> Run {
     sim.set_log_filter(LogFilter::none().with(LogCategory::Vehicles).with(LogCategory::Production));
     sim.run();
 
-    // Pass 1 — voyages, foundings, and each centre's first build.
+    // Pass 1 — voyages, foundings, and each center's first build.
     let mut spawn: HashMap<u64, f64> = HashMap::new();
     let mut founded_at: HashMap<u32, f64> = HashMap::new();
     // planet -> (time of first applied build, was it a hull rather than an upgrade)
@@ -94,7 +94,7 @@ fn run(seed: u64, policy: ColonizerPolicy) -> Run {
 
     let (mut colonies, mut colony_years, mut sum_t, mut first) = (0usize, 0.0, 0.0, f64::INFINITY);
     let (mut sum_flight, mut n_flight) = (0.0, 0usize);
-    let (mut general, mut colonisers) = (0usize, 0usize);
+    let (mut general, mut colonizers) = (0usize, 0usize);
 
     for r in sim.log().iter() {
         match r.event {
@@ -115,9 +115,9 @@ fn run(seed: u64, policy: ColonizerPolicy) -> Run {
             LogEvent::BuildApplied { center, order: BuildOrder::Hull { hull_type, .. }, .. } => {
                 first_build.entry(center.0).or_insert((r.time, true));
                 match hull_type {
-                    HullType::MediumSystems => colonisers += 1,
+                    HullType::MediumSystems => colonizers += 1,
                     HullType::GeneralSystems => {
-                        colonisers += 1;
+                        colonizers += 1;
                         general += 1;
                     }
                     _ => {}
@@ -162,12 +162,12 @@ fn run(seed: u64, policy: ColonizerPolicy) -> Run {
         mean_dwell_infra: mean(sum_infra, n_infra),
         mean_dwell_hull: mean(sum_hull, n_hull),
         hull_first_share: if n_dwell > 0 { n_hull as f64 / n_dwell as f64 } else { 0.0 },
-        general_share: if colonisers > 0 { general as f64 / colonisers as f64 } else { 0.0 },
+        general_share: if colonizers > 0 { general as f64 / colonizers as f64 } else { 0.0 },
     }
 }
 
 fn main() {
-    println!("R-IND11 — coloniser hull policy, CRN over {SEEDS:?}, {PLAYERS} seats, {HORIZON:.0} yr");
+    println!("R-IND11 — colonizer hull policy, CRN over {SEEDS:?}, {PLAYERS} seats, {HORIZON:.0} yr");
     println!("objective = colony COUNT; colony-years is the guard\n");
     println!(
         "{:<26}{:>10}{:>14}{:>9}{:>12}{:>10}{:>9}{:>9}{:>9}{:>9}{:>8}",

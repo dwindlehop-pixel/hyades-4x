@@ -2,7 +2,6 @@
 //! through its `Simulation`/`SimReport`/`Snapshot` surface — no internals).
 
 use hyades_engine::prelude::*;
-use hyades_engine::units::Measure;
 
 /// Shorter horizon than the default — galaxies are now thousands of planets
 /// at the default 10 ly hex (this conversation, benchmarked in
@@ -12,7 +11,7 @@ use hyades_engine::units::Measure;
 ///
 /// **500 → 300 yr at T-68**, for the reason `CLAUDE.md` §2 gives for watching
 /// test *targets* rather than test *asks*: `t_build` now tracks hull mass, so a
-/// Medium hull takes 3.0 yr instead of 10, centres decide three times as often,
+/// Medium hull takes 3.0 yr instead of 10, centers decide three times as often,
 /// and the entity count follows. Nothing here asks a long-run question — every
 /// assertion is an invariant that holds at any horizon where expansion has
 /// started — so the horizon is the part that was safe to cut.
@@ -30,7 +29,7 @@ use hyades_engine::units::Measure;
 /// this file is an invariant that holds at any horizon where expansion has
 /// started, so the horizon is the part that was safe to cut — the same argument
 /// that put it at 150 in the first place.
-const SMOKE_HORIZON: f64 = 40.0;
+const SMOKE_HORIZON: f64 = 60.0;
 
 fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimReport) {
     let galaxy = Galaxy::generate(GalaxyConfig::new(players, seed)).unwrap();
@@ -41,7 +40,7 @@ fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimR
     (sim, report)
 }
 
-/// **The horizon is 150 yr, and every assertion here is an invariant** — the
+/// **The horizon is `SMOKE_HORIZON`, and every assertion here is an invariant** — the
 /// seat count comes back, scanning happened, expansion happened. `CLAUDE.md`
 /// §2: an invariant needs the mechanism to have fired *once*, not a long run to
 /// accumulate in. 300 yr was inherited from when a simulated year was cheap;
@@ -51,6 +50,15 @@ fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimR
 /// `colonies > 0` is also the non-vacuity guard: shorten it too far and the
 /// assertion fails rather than passing on an empty galaxy, which is the property
 /// a trimmed horizon most needs to keep.
+///
+/// **And it fired, which is why 40 is now 60** (R-WAR9). Flying the
+/// colonization leg at the rate its load implies made a laden Medium colonizer
+/// 4x slower over a short hop, so at 40 yr the 2-seat arm founded **no
+/// colonies** — 5 and 3 mining outposts and nothing settled. Probed rather than
+/// guessed: **42 fails, 45 passes**, and 60 ships for about a third of headroom
+/// over where it actually breaks. The guard did exactly its job — a slower
+/// expansion loop is precisely the change that would otherwise have left this
+/// file green and testing nothing.
 #[test]
 fn all_fair_counts_run_and_expand() {
     for &n in &[2usize, 3, 6, 12] {
@@ -86,12 +94,16 @@ fn snapshot_is_consistent_with_report() {
         // `bio_max` regardless of them (design law #11, taken literally), so a
         // settled world legitimately carries more living mass than its pristine
         // stock alone. `K` is what caps population; this caps the stock.
+        //
+        // Compared as two masses (T-129). The snapshot's `bio_max` Band is an
+        // approximate reading, so reconstructing the ceiling from it would test
+        // the reading and not the stock; `bio_max_mass` is the ceiling itself.
         assert!(
-            p.biomass.kilotons() <= p.bio_max.in_kilotons().kilotons() + 1e-9,
+            p.biomass <= p.bio_max_mass,
             "planet {} holds {} of biomass against a {} ceiling",
             p.id.0,
             p.biomass,
-            p.bio_max.in_kilotons()
+            p.bio_max_mass
         );
         // And population never exceeds the Liebig ceiling it grows toward.
         assert!(

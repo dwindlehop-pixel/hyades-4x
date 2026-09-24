@@ -30,6 +30,29 @@
 //! coercing is how a lockstep system desyncs. [`Order::coerce`] is that rule,
 //! and it is the only place it lives.
 //!
+//! ## Write capability is partitioned by tree — specified, not yet enforced
+//!
+//! `Hyades_card_contract.md` §10: **a standing-layer write whose realization can
+//! reduce a player's population may appear only on a `Tree::Warfare` card.**
+//! Nothing below enforces that yet (**T-109**), and the gap is not cosmetic —
+//! nothing in [`CardEffect`] or [`DoctrineWrite`] distinguishes a write that
+//! raises a ceiling from one that lowers it, because both are an `f64`. So a
+//! mis-slotted card compiles, runs, and reports a plausible number.
+//!
+//! The predicate reads the write's **argument**, not its variant, and
+//! [`TIER0`]'s own card 5 is why: it is `Growth` carrying
+//! `BiosphereRegen(1.5)`, and that variant is population-lethal at any factor
+//! below `1.0` while `1.5` is harmless. Two enforcement points are specified —
+//! a `const` assertion over [`TIER0`] (static, fails the build) and a coercion
+//! in [`Order::coerce`] (for when the list becomes data). Legality is a pure
+//! function of `(card.tree, card.effect)`, which every client holds, so the
+//! coercion needs no message and cannot desync.
+//!
+//! **The license is currently worth nothing to its holder**, which is a separate
+//! work item: no output function in the engine reads population
+//! (`Hyades_industry.md` §1.8, **T-107**), so a population kill costs its target
+//! nothing per year.
+//!
 //! ## Politics cards are not opt-in
 //!
 //! `Hyades_politics_trade_and_intelligence.md` §6: an opponent may initiate
@@ -136,7 +159,39 @@ pub enum DoctrineWrite {
     BiosphereRegen(f64),
     /// Set `reinvest_bias` — Production's deepen-vs-expand dial.
     ReinvestBias(f64),
+    /// **Arm the frontier — Warfare's mouth, and the tree's only Doctrine
+    /// write** (`Hyades_warfare_tree.md` §8.2).
+    ///
+    /// Moves survey onto the Contact family and opens the General Contact rung
+    /// of the colonizer ladder, together. They are one write because they are
+    /// one decision: an empire that arms what it sends out has armed what it
+    /// sends out, and splitting them would let a player buy the cheap half of
+    /// a slant (design law #9 — a card's slant *is* how much it would only be
+    /// worth playing if you meant it).
+    ///
+    /// **And it blockades** (T-123, R-WAR16): pickets stand at the rival
+    /// ports this empire has seen launch the most and strike the colony ships
+    /// leaving them. That is the fight the armed family exists for — the one
+    /// place a colony ship can be met with nothing to guess — and the card
+    /// reached `W` through no other path (T-122). It carries its own supply:
+    /// a reserve of [`ARMED_FRONTIER_BLOCKADERS`] hulls, and the claim branch
+    /// that lets a center saving for a world build one ahead of survey.
+    ///
+    /// **And an armed colonizer holds the frontier after it founds** (T-125,
+    /// author's specification): `picket_after_founding`, §8.2's third write. It
+    /// reaches only hulls whose Design mounts weapons — the General Contact
+    /// colonizer — so a Medium Systems colonizer still becomes its colony's
+    /// stock. T-116 measured this write at −287.8 `W_0` on a bed where every
+    /// colonizer kept its hull and nothing could be struck; that measurement
+    /// is superseded rather than answered (warfare §8.17).
+    ArmedFrontier,
 }
+
+/// **How many hulls the armed frontier keeps on blockade** (T-123) —
+/// **placeholder magnitude** (R-WAR19). A floor on `picket_reserve`, not a
+/// set, so a later write that asks for more is not undone. 128 since T-125:
+/// the card's effect rose from 8 to 128 and stopped (appendix §D.4).
+pub const ARMED_FRONTIER_BLOCKADERS: usize = 128;
 
 /// A card's target. The closed set card §1 requires, and the reason the wire
 /// protocol can be fixed-width (net §0).
@@ -159,9 +214,41 @@ pub struct Card {
     /// Floor 5:4:3, Default 3:2:1, Peak 4:2:1) are the ratified shape, and
     /// these numbers do not yet implement them. R-P11.
     pub cost: f64,
-    pub effect: CardEffect,
+    /// **The writes this card lays down, applied in order.**
+    ///
+    /// A list rather than one effect because
+    /// `Hyades_warfare_tree.md` §8.2 specifies its first card as *"one Design
+    /// write, three Doctrine writes"* — a card is a bundle of writes, and the
+    /// pairing is the design position rather than an implementation detail.
+    /// Design is permanent and earlier-is-better while Doctrine is revisable
+    /// and best played informed (std §5, R-O37), so a card carrying both has
+    /// the **narrower** of the two value distributions, not the wider. That is
+    /// the reason to ship them as one card and it is a prediction §4's method
+    /// can check.
+    ///
+    /// Applied in slice order, which is fixed at compile time and therefore
+    /// identical on every client — the same requirement
+    /// [`CardEffect::WriteWorks`] meets by folding in `CardId` order.
+    pub effects: &'static [CardEffect],
     /// Whether the card needs a `Target::Player`. Checked in coercion.
     pub needs_subject: bool,
+}
+
+impl Card {
+    /// The card's single effect, for the fourteen cards that have exactly one.
+    /// `None` for a card carrying a bundle — a caller that needs to summarize
+    /// one of those must say so rather than silently reading the first write.
+    pub fn sole_effect(&self) -> Option<CardEffect> {
+        match self.effects {
+            [one] => Some(*one),
+            _ => None,
+        }
+    }
+
+    /// Does this card lay down `effect` anywhere in its bundle?
+    pub fn writes(&self, effect: CardEffect) -> bool {
+        self.effects.contains(&effect)
+    }
 }
 
 /// **The 18 tier-0 cards — 3 slants × 6 trees (std §1).**
@@ -171,8 +258,15 @@ pub struct Card {
 /// are placeholders. Flavour text is the author's own (CLAUDE.md §6) and none
 /// has been written — these carry no names at all rather than inventing them.
 pub const TIER0: [Card; 18] = {
-    const fn c(i: u16, tree: Tree, slant: Slant, cost: f64, effect: CardEffect, needs_subject: bool) -> Card {
-        Card { id: CardId(i), tree, slant, cost, effect, needs_subject }
+    const fn c(
+        i: u16,
+        tree: Tree,
+        slant: Slant,
+        cost: f64,
+        effects: &'static [CardEffect],
+        needs_subject: bool,
+    ) -> Card {
+        Card { id: CardId(i), tree, slant, cost, effects, needs_subject }
     }
     use CardEffect::*;
     use Slant::*;
@@ -180,31 +274,59 @@ pub const TIER0: [Card; 18] = {
     [
         // Politics — the only tree with all three slots implementable today,
         // because scan data is state the engine already keeps per player.
-        c(0, Politics, Inscrutable, 0.5, DiscloseScans, false),
-        c(1, Politics, Balanced, 0.8, DiscloseScans, true),
-        c(2, Politics, LessGuarded, 1.2, DiscloseScans, true),
+        c(0, Politics, Inscrutable, 0.5, &[DiscloseScans], false),
+        c(1, Politics, Balanced, 0.8, &[DiscloseScans], true),
+        c(2, Politics, LessGuarded, 1.2, &[DiscloseScans], true),
         // Growth — writes the population and ecology levers.
-        c(3, Growth, Inscrutable, 0.5, WriteDoctrine(DoctrineWrite::GrowthRate(1.15)), false),
-        c(4, Growth, Balanced, 0.8, WriteDoctrine(DoctrineWrite::GrowthRate(1.35)), false),
-        c(5, Growth, LessGuarded, 1.2, WriteDoctrine(DoctrineWrite::BiosphereRegen(1.5)), false),
+        // **×1.6 is tuned, not ratified** (T-125): the author's target is
+        // 1.5–2.0x work-years at P92 on the twelve-seat bed, and ×1.6 reads
+        // P92 1.753 [1.583, 1.932] over 11 galaxies (appendix §D.4). ×1.15 was
+        // flat once staffing was on and the rung bill conserved mass.
+        c(3, Growth, Inscrutable, 0.5, &[WriteDoctrine(DoctrineWrite::GrowthRate(1.6))], false),
+        c(4, Growth, Balanced, 0.8, &[WriteDoctrine(DoctrineWrite::GrowthRate(1.35))], false),
+        c(5, Growth, LessGuarded, 1.2, &[WriteDoctrine(DoctrineWrite::BiosphereRegen(1.5))], false),
         // Expansion — writes the survey levers.
-        c(6, Expansion, Inscrutable, 0.5, WriteDoctrine(DoctrineWrite::SurveyVehicles(2)), false),
-        c(7, Expansion, Balanced, 0.8, WriteDoctrine(DoctrineWrite::SurveyVehicles(4)), false),
-        c(8, Expansion, LessGuarded, 1.2, WriteDoctrine(DoctrineWrite::SurveyVehicles(8)), false),
+        c(6, Expansion, Inscrutable, 0.5, &[WriteDoctrine(DoctrineWrite::SurveyVehicles(2))], false),
+        c(7, Expansion, Balanced, 0.8, &[WriteDoctrine(DoctrineWrite::SurveyVehicles(4))], false),
+        c(8, Expansion, LessGuarded, 1.2, &[WriteDoctrine(DoctrineWrite::SurveyVehicles(8))], false),
         // Production — the deepen/expand dial.
-        c(9, Production, Inscrutable, 0.5, WriteDoctrine(DoctrineWrite::ReinvestBias(0.5)), false),
-        c(10, Production, Balanced, 0.8, WriteDoctrine(DoctrineWrite::ReinvestBias(0.9)), false),
-        c(11, Production, LessGuarded, 1.2, WriteDoctrine(DoctrineWrite::ReinvestBias(0.97)), false),
+        c(9, Production, Inscrutable, 0.5, &[WriteDoctrine(DoctrineWrite::ReinvestBias(0.5))], false),
+        c(10, Production, Balanced, 0.8, &[WriteDoctrine(DoctrineWrite::ReinvestBias(0.9))], false),
+        c(11, Production, LessGuarded, 1.2, &[WriteDoctrine(DoctrineWrite::ReinvestBias(0.97))], false),
         // Technology — Design writes. These are the ones that unblock roster
         // enforcement (T-25): the Medium hull has no unlock path without them.
-        c(12, Technology, Inscrutable, 0.5, UnlockDesign(HullType::MediumSystems, Class::Unnamed), false),
-        c(13, Technology, Balanced, 0.8, UnlockDesign(HullType::GeneralSystems, Class::Unnamed), false),
-        c(14, Technology, LessGuarded, 1.2, UnlockDesign(HullType::GeneralContactVehicle, Class::Unnamed), false),
-        // Warfare — nothing implementable: sim has no combat path at all
-        // (`combat::resolve_engagement` is never called from `sim`).
-        c(15, Warfare, Inscrutable, 0.5, NotYetImplemented, false),
-        c(16, Warfare, Balanced, 0.8, NotYetImplemented, true),
-        c(17, Warfare, LessGuarded, 1.2, NotYetImplemented, true),
+        c(12, Technology, Inscrutable, 0.5, &[UnlockDesign(HullType::MediumSystems, Class::Unnamed)], false),
+        c(13, Technology, Balanced, 0.8, &[UnlockDesign(HullType::GeneralSystems, Class::Unnamed)], false),
+        c(14, Technology, LessGuarded, 1.2, &[UnlockDesign(HullType::GeneralContactVehicle, Class::Unnamed)], false),
+        // Warfare — **the Inscrutable slot is the whole of §8.2's card that is
+        // buildable today**: two Design writes opening the Contact family, and
+        // the one Doctrine write that puts survey and the colonizer ladder onto
+        // it. It is the *key* to an otherwise locked Design — the default
+        // standing layer is unarmed at every role (T-121), so without this card
+        // no seat ever flies a Contact hull.
+        //
+        // It is the *inscrutable* slot on its merits: opening the Contact
+        // family says nothing about what you mean to do with it, since design
+        // law #8 makes the same hull chaff in a line battle and the whole point
+        // of an insurgency.
+        //
+        // §8.2's third Doctrine write — a colonizer that patrols instead of
+        // recycling — is deliberately **absent**: T-116 measured it at −287.8
+        // `W_0`, so it is R-WAR6's design question and not this card's.
+        c(
+            15,
+            Warfare,
+            Inscrutable,
+            0.5,
+            &[
+                UnlockDesign(HullType::LimitedContactVehicle, Class::Tor),
+                UnlockDesign(HullType::GeneralContactVehicle, Class::Unnamed),
+                WriteDoctrine(DoctrineWrite::ArmedFrontier),
+            ],
+            false,
+        ),
+        c(16, Warfare, Balanced, 0.8, &[NotYetImplemented], true),
+        c(17, Warfare, LessGuarded, 1.2, &[NotYetImplemented], true),
     ]
 };
 
@@ -265,6 +387,15 @@ pub fn apply_doctrine_write(d: &mut Doctrine, w: DoctrineWrite) {
         }
         DoctrineWrite::BiosphereRegen(f) => d.biosphere_regen_bonus *= f,
         DoctrineWrite::ReinvestBias(v) => d.reinvest_bias = v,
+        DoctrineWrite::ArmedFrontier => {
+            d.scout_hull_offensive = true;
+            d.colonizer_general_contact = true;
+            d.picket_blockades = true;
+            d.picket_first = true;
+            d.picket_after_founding = true;
+            d.picket_claims_target = true;
+            d.picket_reserve = d.picket_reserve.max(ARMED_FRONTIER_BLOCKADERS);
+        }
     }
 }
 
@@ -313,10 +444,10 @@ pub enum WorksWrite {
     /// Add weight to an employment's allocation share. Doctrine — revisable,
     /// free, and therefore *weak early and strong late* (R-O37).
     AllocWeight(Employment, f64),
-    /// Add weight to a colour's share of the works bill. Either layer.
+    /// Add weight to a color's share of the works bill. Either layer.
     ///
     /// **This can never lower the total** (§5.4/§6.4): `mix_w` is a share of a
-    /// bill `eta_works` alone sets, so a mix card moves *which colours* the bill
+    /// bill `eta_works` alone sets, so a mix card moves *which colors* the bill
     /// lands in and nothing else. The orthogonality is structural rather than a
     /// rule someone has to remember in review.
     MixWeight(Basic, f64),
@@ -339,7 +470,7 @@ pub struct Works {
     pub half: [f64; 3],
     /// Employment weights → `(w_ext, w_fab, w_ward)` — additive, base `(1,1,1)`.
     pub alloc_w: [f64; 3],
-    /// Colour weights → the works price split, in `Basic` order
+    /// Color weights → the works price split, in `Basic` order
     /// (Cyan, Magenta, Yellow) — additive, base [`WORKS_MIX_DEFAULT`].
     pub mix_w: [f64; 3],
 }
@@ -348,12 +479,12 @@ pub struct Works {
 /// the author; `Hyades_industry.md` §5.1's *Default* point).
 ///
 /// Stored in `Basic` order — Cyan, Magenta, Yellow — so the ratio reads
-/// `[2, 1, 3]` here and normalises to `C 0.333 / M 0.167 / Y 0.500`.
+/// `[2, 1, 3]` here and normalizes to `C 0.333 / M 0.167 / Y 0.500`.
 ///
 /// **Yellow-primary because Production is Yellow** (`Hyades_galaxy_and_autopilot.md`
 /// §4.8), so the ordinary cost of developing a world already leans toward the
-/// colour Production's tree is about, and every empire feels the pull of a
-/// colour it may not have. It is deliberately **not** `1:1:1`: §5.1 says a works
+/// color Production's tree is about, and every empire feels the pull of a
+/// color it may not have. It is deliberately **not** `1:1:1`: §5.1 says a works
 /// ratio is "never a true 1:1:1", and an even split was the placeholder the
 /// first implementation shipped rather than a ratified point.
 ///
@@ -373,7 +504,7 @@ pub struct Works {
 ///
 /// Diminishing returns are steep and `1:0:0` is never exactly reached. **So
 /// "Sole" is the deep end of a ladder rather than a discrete state**, which is
-/// the behaviour the ruling asks for without a special case anywhere. How much
+/// the behavior the ruling asks for without a special case anywhere. How much
 /// weight a deep Production card adds — and therefore how many layers "deep"
 /// is — is **R-IND16**, open.
 pub const WORKS_MIX_DEFAULT: [f64; 3] = [2.0, 1.0, 3.0];
@@ -426,7 +557,7 @@ impl Works {
 
     /// An employment's share of the stock — `alloc_w[e] / Σ alloc_w` (§6.3).
     ///
-    /// **Normalisation is the bound**, which is why no allocation can exceed the
+    /// **Normalization is the bound**, which is why no allocation can exceed the
     /// stock and why no clamp is needed: shares sum to one by construction, so
     /// no combination of Doctrine cards can conjure capacity (§2).
     #[inline]
@@ -439,7 +570,7 @@ impl Works {
         }
     }
 
-    /// A colour's share of the works bill — `mix_w[c] / Σ mix_w` (§6.3).
+    /// A color's share of the works bill — `mix_w[c] / Σ mix_w` (§6.3).
     #[inline]
     pub fn mix_share(&self, c: Basic) -> f64 {
         let total: f64 = self.mix_w.iter().sum();
@@ -550,10 +681,10 @@ mod tests {
             // Employment allocation *is* even by default — three equal weights.
             assert!((w.alloc_share(e) - 1.0 / 3.0).abs() < 1e-15);
         }
-        // The colour mix is **not**: `3:2:1` Y:C:M, because §5.1 says a works
+        // The color mix is **not**: `3:2:1` Y:C:M, because §5.1 says a works
         // ratio is never a true 1:1:1 and Production is Yellow.
         let total: f64 = Basic::ALL.iter().map(|&c| w.mix_share(c)).sum();
-        assert!((total - 1.0).abs() < 1e-15, "colour shares must sum to one, got {total}");
+        assert!((total - 1.0).abs() < 1e-15, "color shares must sum to one, got {total}");
         assert!((w.mix_share(Basic::Yellow) - 0.5).abs() < 1e-15, "Yellow is the 3 of 3:2:1");
         assert!((w.mix_share(Basic::Cyan) - 1.0 / 3.0).abs() < 1e-15, "Cyan is the 2");
         assert!((w.mix_share(Basic::Magenta) - 1.0 / 6.0).abs() < 1e-15, "Magenta is the 1");
@@ -577,7 +708,7 @@ mod tests {
         assert!(stacked(1e6) < 1.0, "and Sole is never exactly reached");
     }
 
-    /// **An allocation cannot exceed the stock** (§6.7's test 5): normalisation
+    /// **An allocation cannot exceed the stock** (§6.7's test 5): normalization
     /// is the bound, so this holds for *every* weight vector including
     /// degenerate ones — and the degenerate cases are what would tempt someone
     /// to add a clamp that quietly changes the model.
@@ -688,10 +819,17 @@ mod tests {
 
     #[test]
     fn every_unimplemented_effect_says_so_rather_than_doing_nothing_quietly() {
-        // The point of the variant: a run can count inert plays. Today that is
-        // Warfare's three, because `sim` never calls `combat::resolve_engagement`.
-        let inert: Vec<_> = TIER0.iter().filter(|c| c.effect == CardEffect::NotYetImplemented).collect();
-        assert_eq!(inert.len(), 3);
+        // The point of the variant: a run can count inert plays.
+        //
+        // **Warfare's three became two at T-113.** `sim` now calls
+        // `combat::resolve_engagement`, and the Inscrutable slot carries a real
+        // Design write — the `LimitedOffensive` roster entry the denial card is
+        // built on. The remaining two need effects the engine still lacks.
+        // This number is meant to fall; it is asserted so that it falls
+        // *deliberately* rather than because a variant was reassigned by
+        // accident.
+        let inert: Vec<_> = TIER0.iter().filter(|c| c.writes(CardEffect::NotYetImplemented)).collect();
+        assert_eq!(inert.len(), 2, "an inert card changed — say which effect it gained and why");
         assert!(inert.iter().all(|c| c.tree == Tree::Warfare));
     }
 
@@ -705,7 +843,8 @@ mod tests {
     /// deliberate change that has to edit this number.
     #[test]
     fn no_tier0_card_writes_works_yet_and_that_is_on_purpose() {
-        let works_cards = TIER0.iter().filter(|c| matches!(c.effect, CardEffect::WriteWorks(_))).count();
+        let works_cards =
+            TIER0.iter().filter(|c| c.effects.iter().any(|e| matches!(e, CardEffect::WriteWorks(_)))).count();
         assert_eq!(works_cards, 0, "a tier-0 card gained a works effect — re-measure the bed before landing it");
     }
 }

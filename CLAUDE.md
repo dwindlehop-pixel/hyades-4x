@@ -50,12 +50,28 @@ formulation (§2.5). Card value is the **fractional reduction in the doubling ti
 of its own tree's stock**, measured at earliest legal play, designed to the 92nd
 percentile.
 
-**`docs/Hyades_politics_trade_and_intelligence.md` (Rev 1)** specifies the two
-systems the Politics tree needs and neither of which exists: the Exchange with
-`$`, and granular shared intelligence. Its §0 is the organizing thesis and worth
-reading before touching anything in that tree — *eliminate the value of
-collusion by making the simulation-state effects of collusion available without
-a confederate*. That is why Politics cards are **not opt-in**.
+**`docs/Hyades_politics_trade_and_intelligence.md` (Rev 2)** specifies the two
+systems the Politics tree needs: the Exchange with `$`, and granular shared
+intelligence. Its §0 is the organizing thesis and worth reading before touching
+anything in that tree — *eliminate the value of collusion by making the
+simulation-state effects of collusion available without a confederate*. That is
+why Politics cards are **not opt-in**.
+
+**There is one spec per tree, and each carries only ratified and open
+decisions.** `Hyades_autopilot_colonization_growth.md` (Expansion + Growth,
+Rev 4), `Hyades_production_tree.md`, `Hyades_technology_tree.md`,
+`Hyades_warfare_tree.md` and the politics spec above. The three new ones are
+Rev 1 and are mostly `OPEN` **on purpose** — Technology has no objective at all
+until `Q_i` is instrumented, and Warfare is blocked on T-30's missing
+accept/decline site — so read their registers before assuming a question is
+unasked.
+
+**`docs/Hyades_experiments_appendix.md` is where the measurement record lives.**
+Nothing in it is normative. It holds the runs, the refuted hypotheses and the
+superseded design that used to be inlined in the specs, each linked from the
+decision it supports, and its §C collects all seven measurement-artifact shapes
+in one table. **Check it before re-opening a question** — several were closed by
+a measurement whose bed no longer exists, and the entry says so.
 
 ---
 
@@ -120,7 +136,7 @@ the duplicated seed-42 run reused, 61 s → 48 s. `coverage_time` was **removed*
 rather than trimmed, because trimming it would have preserved a comparison that
 no longer compares anything: its second bed moves `medium_fleet_size`, which
 T-56 stage 3c turned back into a pure price, and R-IND11's ablation B measured
-coloniser hull price at −0.08%. Both beds now print identical coverage.
+colonizer hull price at −0.08%. Both beds now print identical coverage.
 **Distinguish a check that got expensive from a check that stopped asking
 anything** — the first wants fewer samples, the second wants deleting.
 
@@ -130,8 +146,8 @@ hauling (`examples/haul_census`): the Banded mineral field multiplied ore-per-ro
 by three orders of magnitude against a fixed freighter hold, so the round trips
 multiplied from the first cycle. T-64 gave it back by taking the `ln`/`powf` out
 of the growth step. **T-68 made `t_build` track hull mass** — a Medium hull went
-from 10 yr to 3.0 — so centres decide three times as often and the entity count
-follows. **T-69 did it again** — filling every berth amortises `t_lead` across
+from 10 yr to 3.0 — so centers decide three times as often and the entity count
+follows. **T-69 did it again** — filling every berth amortizes `t_lead` across
 slips, so a yard produces ~1.8x the hulls — taking unit 79 s → 168 s and
 determinism 67 s → 102 s at once. The lesson every time: **when a test target
 moves, look at what the simulation started doing, not at what the tests are
@@ -162,6 +178,28 @@ answer was not where it looked:
   the run is not. **When you cut a horizon, assert that the mechanism still
   fires.**
 
+**R-WAR9 did it a sixth time, and the guard caught it rather than a target
+getting slow.** Flying the colonization leg at the rate its load implies (T-115)
+made a laden Medium colonizer **4x slower over a short hop**, so `tests/smoke.rs`
+at a 40-year horizon founded **no colonies at all** on the 2-seat arm — 5 and 3
+mining outposts and nothing settled. That is the `colonies > 0` non-vacuity
+guard doing exactly what it is for: **a change that slows the expansion loop is
+the one that would otherwise leave a trimmed file green and testing nothing.**
+Probed rather than guessed — **42 fails, 45 passes** — and 60 ships. Note the
+direction: this is the first entry in this list where a horizon had to go **up**,
+and the reason is that the mechanism got slower rather than the target getting
+expensive. **Ask which of the two it is before reaching for the lever.**
+
+**T-112 did it a fifth time and nobody checked**, which is the point of the
+habit rather than a new lesson: pickets that never scrap plus a live engagement
+layer put `tests/determinism.rs` at **69.08 s** against a 60-second budget, and
+it landed that way because the horizons were not looked at in the same commit.
+Measured at T-114 by building both revisions and timing the target on each —
+67.36 s with T-113 applied, so the breach is inherited and not new. **When a
+change raises entity count, time the test targets before you push, and time the
+old binary too** — otherwise the next landing inherits the breach and gets
+blamed for it.
+
 **T-88 did it a fourth time, and it moved every target at once** — unit 34 →
 110 s, determinism 37 → 267 s, smoke 22 → 149 s — because `cycle_years` 50 → 5
 makes a simulated year cost ~10x the events. The fix was horizons again, and two
@@ -171,7 +209,7 @@ things about *how* are worth keeping:
   caught it. `full_run_reports_are_bit_identical` got its per-arm horizons cut
   10x to match the 10x denser event stream, and the 2-seat arm landed on **450
   events** against a floor of 1,000: event count is not linear in the horizon,
-  because the early game has one centre and the tick multiplier has nothing to
+  because the early game has one center and the tick multiplier has nothing to
   multiply yet. Measured instead of scaled, the arms come to ~1,500 events each.
 - **A horizon written out at four call sites is an edit waiting to go wrong.**
   `tests/smoke.rs` had `150.0` in four places, one of them inside a paired
@@ -238,7 +276,7 @@ green while testing nothing. The `moving` guard in
 **The other lever is the scenario, and it is usually the right one.** Ask what
 the assertion actually *reads*. That test asserts a property of
 `math::position_along` — no entity moves faster than `c` — and reads ships in
-flight and nothing else: no economy, no mineral field, no colonisation. On the
+flight and nothing else: no economy, no mineral field, no colonization. On the
 standard bed it was paying for all three, and was **97 s of a 102 s target**.
 `GalaxyConfig::planet_count` is a plain override, so:
 
@@ -304,7 +342,7 @@ that this is a *bound* rather than an estimate.
 
 **It flaked once, at five repeats, and the fix was samples and not the
 threshold.** An unloaded machine ran the bed twice as fast, the per-pair ratios
-spread **0.948 to 1.067**, and because the two arms are minimised
+spread **0.948 to 1.067**, and because the two arms are minimized
 *independently* a small sample can pair a lucky bare run against an unlucky
 logged one — reporting 1.069 for a cost that is actually zero. Nine repeats give
 1.001 on the same bed. **A threshold widened to cover measurement noise stops
@@ -317,12 +355,21 @@ Read them together:
 |---|---|---|
 | down | flat | the simulation is doing **more**, each unit costs the same — a design change, not a regression |
 | down | up | the engine got **slower per unit** — this is the one to profile |
-| up | down | a real optimisation |
+| up | down | a real optimization |
 | flat | up | events got dearer and fewer; something moved in both directions and needs decomposing further |
 
 Only the second row is a performance bug. Treating the first as one is how an
-optimisation pass gets spent on code that was never the problem — which §4's
-"profile before you optimise" already says, one level up.
+optimization pass gets spent on code that was never the problem — which §4's
+"profile before you optimize" already says, one level up.
+
+**The table assumes a fixed workload, and T-111 is the case where that fails.**
+Wiring combat into the sim moved throughput **up on all eight seeds** (109→126 …
+124→137 yr/s) with `ns/event` **down** (20,556→18,060) — the third row, "a real
+optimization". Nothing was optimized: the change destroys 5,488–12,819 mining
+hulls per run, so there are fewer entities *and* a cheaper event mix, and the
+simulation is simply doing less. **Before reading either column, ask whether the
+change altered the amount of work rather than the cost of it** — a mechanic that
+removes entities improves both and has optimized nothing.
 
 The general form, worth having separately from the instances: **a test's horizon
 is a cost, not a strength.** Ask what the assertion actually needs — an identity
@@ -477,7 +524,7 @@ the real objective** — never ship a value the proxy alone chose.
 horizon is a fine ranker and a bad estimator, and a "+23%" read off one is not a
 result. Worse, the screen showed `r` as a **step function of itself** — 1.10 and
 1.35 scored bit-identically, as did 1.60 and 1.90, because growth reaches the
-objective only through how many 50-year cycles a centre takes to cross a
+objective only through how many 50-year cycles a center takes to cross a
 `PopBands` edge — and **those plateaus were gone at the objective.** Step
 structure is horizon-dependent, so a plateau map has to be run at the horizon
 you intend to ratify on.
@@ -547,7 +594,7 @@ plateau read noise and cleared 2 SE by luck.
 
 Two lessons, and the second is the more useful one. **A 2.4-SE reading on four
 seeds is not a finding, it is a coin landing on its edge** — the 2-SE bar is a
-floor for *considering* a knob, not a licence to move it. And **"screen, then
+floor for *considering* a knob, not a license to move it. And **"screen, then
 confirm on the objective" caught this**, which is the entire reason the rule
 exists: the screen proposed a direction, the confirmation refuted it, and no
 default moved. A correction to the metric fixes some readings and can
@@ -568,7 +615,7 @@ seeds; a fresh set does not. Make it the last step before moving any globally
 tuned default — `WY_SEEDS` in `examples/work_years` is the pattern.
 
 Two corroborations were available and both are cheap enough to be routine.
-**Sweep the neighbours**: `0.968` scored −0.20% ± 0.76 and `0.975` +2.24% ± 2.08
+**Sweep the neighbors**: `0.968` scored −0.20% ± 0.76 and `0.975` +2.24% ± 2.08
 on the same bed, so adjacent values swing the full magnitude of the "effect" in
 both directions — a chaotic reordering of a compounding run, not a gradient, and
 no point on it is a place to stand. And **ask whether the knob has a mechanism
@@ -580,12 +627,12 @@ exactly the same works per mineral — and it is true, and it is about **stock**
 The knob's actual channel is **flow**: a colony is founded with a recycled hull
 and cannot keep improving that way, so deepening buys build *rate* forever.
 Priced off the engine's own functions that is **+29.0% hull/yr for nine
-colonisers at rung I → II, paid back in 62 years** against a 1,500-year horizon.
+colonizers at rung I → II, paid back in 62 years** against a 1,500-year horizon.
 The flat result had nothing to do with the identity.
 
 **A flat objective means the knob's mechanism is throttled somewhere, and the
-thing to measure is the utilisation of whatever the knob buys.** Here the knob
-buys yard throughput, and a homeworld's yard runs at **18.8% utilisation**:
+thing to measure is the utilization of whatever the knob buys.** Here the knob
+buys yard throughput, and a homeworld's yard runs at **18.8% utilization**:
 the gap from one production decision to the next is **1.5 yr after a committed
 build and 29.6 yr after an `Idle`**, because a declined build schedules nothing
 and waits out `cycle_years = 50`. **81% of the timeline is retry-wait**, so build
@@ -596,7 +643,7 @@ two gaps*, which no aggregate carries.
 Three habits from it, and the first is the general one:
 
 - **Before concluding a knob is neutral, measure how much of the time the
-  resource it buys is even binding.** Utilisation is one division and it
+  resource it buys is even binding.** Utilization is one division and it
   distinguishes "this knob does nothing" from "this knob is fine and something
   else is in the way" — which want completely different next actions.
 - **Separate stock from flow when you write the mechanism down.** An identity
@@ -606,6 +653,24 @@ Three habits from it, and the first is the general one:
   6.7 yr and said nothing; the same data split by whether the previous decision
   built or idled gave 1.5 against 29.6 and named the mechanism outright.
 
+**A zero in a multiplicative chain is not a small number, it is an absorbing
+state (T-112).** A Warfare card was charged its honest price — a colonizer that
+keeps its hull leaves the colony without the recycled stock roles §4.2 makes its
+`Band I` infrastructure — by debiting the founding rung to zero. That took the
+card's own player from **769 colonies to 10** and *raised* its neighbors 20%.
+The line is `employment_rate`, which returns exactly `0.0` for a stock of zero,
+and `fabrication_rate` is `slips × berth_rate`: the colony could never mine,
+never build and never recover. **Before charging a cost against a stock, check
+whether the stock multiplies anything** — a price that can reach zero on a term
+that gates production is not a price, and the measurement it produces is of the
+player deleting itself rather than of the mechanic. The ladder's floor rung
+exists for this (design law #11/T-63).
+
+**And the tell was in the split, not the total.** The neighbors' gain tracked
+the card-player's loss one-for-one across three arms spanning 25 points — which
+is what says "self-harm", where either number alone reads as "the card works on
+somebody".
+
 **The general rule, which is the transferable part:** an objective must be
 invariant to everything the thing being optimized can change. Ask of any
 metric — *what could a card do to move this without moving the world?* If the
@@ -613,7 +678,7 @@ answer is not "nothing", the metric is a target, not a measurement. This joins
 the artifact list below as a fifth shape, and it is the only one that would
 have gotten worse rather than better with time.
 
-### Rank knobs against every tree, and normalise to the default
+### Rank knobs against every tree, and normalize to the default
 
 **Colony count is Expansion's objective and only Expansion's**
 (`Hyades_trees_and_card_value.md` §2.1). Every gradient in this file was ranked
@@ -729,7 +794,7 @@ work-years. It was mostly an artifact, and the tell was that it was too good.**
 
 `growth_rate` is documented `1/cycle`, and the logistic stepped it once per tick
 **regardless of how long the tick was** — as did `biosphere_regen_rate` and the
-centre's mining fraction. So shrinking the tick did not integrate the same
+center's mining fraction. So shrinking the tick did not integrate the same
 economy more finely, it ran a **fifty-times-faster one**. The sweep was measuring
 its own step size.
 
@@ -768,13 +833,13 @@ old tick and still **21% low** at the refined one. Two habits:
 
 - **Check whether the thing you are refining has an analytic solution before you
   spend event count on it.** The tell here was that the engine already contained
-  one: `settler_target` prices colonisation off the exact logistic's inverse, so
+  one: `settler_target` prices colonization off the exact logistic's inverse, so
   the policy and the economy were following different curves.
 - **A better integrator and a finer step are not substitutes, and the sweep says
   which you are buying.** Exact at the *coarse* tick beats Euler at the coarse
   tick by +33% work-years at the same cost — real accuracy. But it is still 29%
   below exact at the fine tick, which says the step size was never only an
-  integration step: it also quantises when a centre mines, crosses a band edge
+  integration step: it also quantises when a center mines, crosses a band edge
   and re-decides. **Refining a step that carries more than one job improves all
   of them, and fixing the integrator only pays for one.** Decompose before
   concluding the refinement is spent.
@@ -788,7 +853,7 @@ the homeworld archetype and never again — so outpost selection could say *mine
 more* and never *mine **Cyan***. That is a real defect, it is visible in the
 code, and it is **not** why 99.7% of banked ore cannot pay a rung.
 
-Replacing it with the deciding centre's live shortfall moved the mechanism check
+Replacing it with the deciding center's live shortfall moved the mechanism check
 from **0.043 to 0.043**, cost **−3.30% ± 0.49 colony-years on 0/4 seeds**, and
 was reverted. Three habits, and the last one is the general shape:
 
@@ -805,17 +870,26 @@ was reverted. Three habits, and the last one is the general shape:
   dead share is 99.7% at every one. Without that sweep the honest write-up would
   have had to say "possibly undertuned" forever.
 - **Check whether the thing upstream was ever short.** The premise was that
-  colour-blind selection mines the wrong mix. The empire's outpost holdings are
-  **957k / 905k / 626k kt** across the three colours — already balanced. *The
+  color-blind selection mines the wrong mix. The empire's outpost holdings are
+  **957k / 905k / 626k kt** across the three colors — already balanced. *The
   decision was blind and had nothing to see.* One census of the upstream stock
   would have refuted the diagnosis before a line was written, and it is the same
   question §2 already asks about knobs — measure whether the resource the change
   buys is even binding.
 
+  **Ask it of a blocker in `docs/`, not only of a knob (T-111).** The Warfare
+  spec said combat could not be wired in because there was no accept/decline
+  site and nothing ever met. The round layer had shipped, and one census showed
+  **68–75% of occupied sites already hosting more than one empire** at ~4,200
+  contacts per run — mining is non-exclusive, so the engine had been producing
+  co-locations since outposts existed. A blocker that has stood a long time is a
+  *claim about the engine*, and it decays exactly the way a measurement does;
+  the cost of re-checking one was a single run.
+
 **And the reason no routing fix reaches it is structural, not statistical.** A
 hold is filled from `outpost_stock[(player, rock)]` — one map entry — and a rock
-is one colour (0.789). So **every delivery is mono-coloured by construction**, and
-a bank is a sum of mono-coloured lumps. Which rock, and which centre the lump
+is one color (0.789). So **every delivery is mono-colored by construction**, and
+a bank is a sum of mono-colored lumps. Which rock, and which center the lump
 goes to, are both choices *over indivisible single-source loads*:
 
 > **If every unit of delivery is atomic in the dimension you need to mix, mixing
@@ -826,8 +900,32 @@ is exactly along this line: T-81 changed where a hold goes (banks did not mix),
 R-O89's pickup arm changed which rock it returns to (−52.3%), T-90 changed which
 rocks are mined (0.043 → 0.043) — while R-O89's *load* leg changed the
 composition **within** a hold and is the one that worked (+8.4%), bounded by what
-the single rock holds. **Before optimising a selection, check that the thing being
+the single rock holds. **Before optimizing a selection, check that the thing being
 selected among can express the property you want.**
+
+**The same question catches a *reduction*, not only a cargo hold (T-113).**
+`commit_one_build` reduces the scanned pool to the per-class argmax before the
+policy ever sees it (R-O70), and that reduction is **exact** for a consumer
+reading the argmax of a class — the comment above it says so, and names the
+consumers it was derived against. A new colonizer preference read the argmax of a
+**subset** of a class (the worlds this empire's pickets hold), and `max(S)` does
+not carry `max(S′)` for `S′ ⊂ S`: a held world reached the policy only when it
+already won its class outright. The preference was inert by construction and
+measured as inert — the arm reproduced the arm without it **to every printed
+digit**. Widening the reduction to six slots (per-class winner, plus per-class
+winner among held ground) moved it on the first run.
+
+Two habits, and the second is the cheap one:
+
+- **A reduction is exact only for the consumers it was derived against.
+  Re-derive it when you add one.** Nothing in the types distinguishes "the best
+  world" from "the best world with a property" — both are `Option<Candidate>`.
+- **A behavioral change that reproduces the baseline *exactly* is inert or
+  unreachable, not small.** An approximate match is a weak effect and wants more
+  seeds; a bit-identical one is a structural claim, and the place to look is the
+  **data the decision reads**, not the decision. This is §2's "exactly zero and
+  inside noise are different verdicts" one level up, and it cost one run to read
+  correctly instead of a bed.
 
 **And then remove the atomicity, because that is the move the framing points at
 and it produced the largest single result this project has measured.** T-91 let
@@ -840,7 +938,7 @@ mixing.
 Three things from it that generalise past freight:
 
 - **Cap a shared resource at its share, not at the need.** An intermediate stop
-  takes each colour capped at what is wanted **and** at its proportional share of
+  takes each color capped at what is wanted **and** at its proportional share of
   the hold. The second cap is worth **+10.2%** on its own, because the bill is
   geometric in the rung: past the point where a bill outgrows a hold,
   `min(want, room)` *is* `room` and the first pile takes everything — so the cap
@@ -853,11 +951,302 @@ Three things from it that generalise past freight:
 - **"Check whether the resource is binding" needs the word *which*.** Mass was
   plainly slack — the empire banks 360,000 kt it cannot spend — and freight
   carries **1.73%** of everything that ever enters a bank, the other 98.3% being
-  the centre mining its own single-coloured planet straight into its own bank. By
+  the center mining its own single-colored planet straight into its own bank. By
   the usual reading that channel is far too small to matter. It was worth +55%,
   because a **conjunction** makes the *minority* component the whole constraint:
   1.7% of the mass carried 100% of the scarcity. An aggregate that is slack can
   contain a component that is not, and a conjunction is the tell.
+
+### A signal that outruns what it warns about is not a race
+
+**T-115 is the worked example, and it invalidated a mechanic by implementing it
+correctly.** T-112 turned a colony ship back when a warning beat it to the
+target, and scheduled that warning by distance to the ship's *home center* —
+one responder. Adding the second responder the observation model implies (the
+crew notices the picket itself, and a closing hull meets the wavefront sooner
+than a standing observer) made the warning arrive **every time**, because light
+outruns a sub-light ship by construction. The question stopped discriminating,
+and left alone it would have turned every ship back and deleted the arrival
+fight.
+
+- **When you model a signal properly, check whether the predicate it feeds still
+  has two outcomes.** "Did the news arrive in time" is a real question only while
+  the news travels at a comparable speed. At `c` against anything sub-light it is
+  a foregone conclusion dressed as a race, and the gate has to move to what the
+  receiver can still *do* — here, whether it is past the turnover point of its own
+  brachistochrone, which costs no constant and is a property of the trajectory.
+- **Price a kinematic mechanic before building content on it.** A ship's travel
+  time exceeds light's by an amount that **saturates**, because it spends all but
+  the first stretch at nearly `c`, and that overhead is the entire window an
+  interceptor has. Measured: **8.14 years** for a laden Medium colonizer, in
+  which an empty LOU picket covers **6.29 ly** — against a median
+  nearest-neighbor spacing of **6.16 ly**, so about half the field is
+  interceptable and the margin at the median is 0.13 years.
+  `examples/intercept_probe` is four printed columns and it settles the
+  feasibility of a whole mechanic before any of it is tuned.
+- **A second consumer audits the first, again.** Implementing interception meant
+  needing the colony ship's speed, which is how `spawn_courier` turned out to fly
+  the colonization leg **unladen** — reading `civilian_accel_g · G` before the
+  hold was loaded and never re-reading it — while §7 records R-O32 as having
+  fixed exactly that. §3's *"a second caller is a cheap audit of the first"*
+  holds for physics as well as for panics.
+- **And then the probe was run against the defect anyway, which is the mistake
+  worth naming.** The first pass priced the colony ship at the *empty* rate — the
+  number the bug produces — and reported a 1.92-year window, an 1.86 ly radius,
+  and *"fewer than a tenth of worlds"*. Every figure was internally consistent
+  and the conclusion was backwards, because a laden hull's window is four times
+  as wide. **A probe inherits every assumption of the code it measures.** When
+  you have just found one of those assumptions to be wrong, the probe is part of
+  what has to be re-derived — finding a defect and then measuring around it is
+  worse than not having found it, because the measurement now carries the
+  defect's authority.
+- **And the sign of one term was the design.** A station 0.5 ly *beyond* the
+  contested world loses the race; the same 0.5 ly on the *near* side wins it,
+  because the far side pays the distance twice — once in light to hear the
+  launch, once in flight. That makes interception a **forward-deployment**
+  mechanic rather than a reaction one, which is a design statement no amount of
+  tuning would have produced.
+- **The window is back-loaded, and that refuted the obvious generalisation.**
+  *"Meet the ship anywhere on its path instead of racing it to a world"* sounds
+  strictly more capable and is **narrower**: the slack an interceptor lives on is
+  `t_ship(along) − along`, which accumulates as the hull decelerates through the
+  back half of a brachistochrone, so on a 25 ly voyage the tolerable
+  perpendicular offset runs **1.24 ly at an eighth of the track, 1.95 at half,
+  4.96 at the destination**. The destination is where the whole window is. One
+  probe, eight printed rows, and a feature that would have cost a week is
+  recorded as refuted instead of built.
+- **Two hulls with different names can be the same object.** The armed scout
+  write (`scout_hull_offensive`) reproduced its baseline **bit-identically**,
+  and the cause is `hull_dry_mass` reading the cost *tier*: every Limited hull
+  shares one, so an LOU and an LCV have the same 0.020 kt price and mass and the
+  simulation cannot tell them apart. That is the *exactly zero* verdict and it
+  names its own next action — the write goes live when R-O64/R-L0 give hull
+  types differentiated cost, not when it is tuned.
+
+### An inference is a mechanic; being told the answer is not
+
+**T-120 is the worked example.** `offer_interception` was *handed* the colony
+ship's destination, so a picket could not be wrong — and a mechanic that cannot
+be wrong cannot be deceived. The engine had light-lag, bearings and a full
+observation model, and one function reaching into the ship's `voyage.target`
+deleted the whole yomi channel that sat on top of them.
+
+Reading the *trajectory* instead — a departure point, a time and a bearing, with
+the destination inferred from worlds the picket has itself scanned — is a few
+lines, and it creates a move that did not exist: two worlds on one bearing are
+indistinguishable at range, so a ship aimed at the far one puts a picket on the
+near one **for free**.
+
+- **Ask what a decision is allowed to read, not just what it decides.** Every
+  design-law-#15 violation in this project has this shape: `Knowledge` storing
+  membership rather than observations (T-33), colonization filtering on
+  instantaneous global ownership (T-34), and this one. The decision was fine;
+  its inputs were ground truth.
+- **A guess needs a way to be revised, or it is a commitment.** The second half
+  of the mechanic is re-reading the trajectory as fresh light arrives, at the
+  *lagged* position — a ship that has already turned still looks, for `distance`
+  years, like it is going where it was going. That delay is the thing a feint is
+  actually buying.
+- **Mechanism before policy, and say which you built.** Nothing in the engine
+  chooses a deceptive bearing; `BaselineAutopilot` aims at the world it wants.
+  The channel exists and no policy uses it. Write that down, or the absence gets
+  read as a measurement that bluffing does not work.
+
+### Count the consumers of a write, not the writes
+
+**T-120's second half is the worked example.** The first Warfare card writes
+`UnlockDesign(LimitedOffensive, _)` into the per-player `Roster` — a real write,
+into real replicated state, through the real card path, charged the real price.
+The engine counts it as an implemented card. It reaches **no decision**: the
+Roster's only consumer outside tests is `roster_permits`, which returns `true`
+before it looks anything up whenever `enforce_roster` is off, and that is the
+shipped default.
+
+So a twelve-seat head-to-head measured the card at **−0.0371 ± 0.1609**, inside
+one standard error of zero, and the number was never the finding. Three habits:
+
+- **Before measuring a feature, grep its state for readers and check what
+  guards them.** One `grep` for `roster` returned six lines, one of which was a
+  gate defaulting to off. That settles the question in a minute, where the bed
+  cost 10 and answers it weakly — a wide error bar looks the same whether the
+  effect is zero or merely unresolved.
+- **A "did I implement it" counter measures the wrong thing.**
+  `Sim::inert_card_plays` increments only on `CardEffect::NotYetImplemented`, so
+  it tells you which match arm ran and not whether the write landed anywhere
+  live. The honest predicate is about the *consumer*, and it is the one nobody
+  writes because the write is the part you just finished.
+- **Check whether the thing you are measuring is the thing the spec
+  describes.** The Warfare spec's first card is one Design write plus three
+  Doctrine writes; `DoctrineWrite` has four variants and **none of them is a
+  Warfare write**, so every arm the spec had measured was reached by setting
+  `Doctrine` fields directly — bypassing the card table and the price both. The
+  published card and the specified card were different objects, and nothing in
+  either document said so.
+
+This is §4's *"a behavioral change that reproduces the baseline exactly is inert
+or unreachable"* moved one step earlier: there the tell was a bit-identical run,
+here there was no need to run anything at all.
+
+**And a second trap from the same bed, which would have made any card
+measurement vacuous without looking wrong.** `apply_orders` checks
+affordability and `Order::coerce` turns a failure into a **pass** rather than an
+error, so a bed that issues orders and then runs cannot distinguish *the card
+did nothing* from *the card was never played*. Whether round 0 is legal is a
+relation between `Card::cost` and a homeworld's seeded bank — two magnitudes
+nobody reconciled. **Record when a card actually landed, and assert the
+precondition in both directions**, rather than assuming the play took.
+
+### A default that is not the ratified default is a contradiction nobody filed
+
+**T-121 is the worked example, and the spec had been right the whole time.**
+`Hyades_standing_layer_and_observation.md` §7.1 says *"Default doctrine: 100%
+LSV in the Scout role"* and has said it since R-O42. The engine surveyed with a
+Limited **Contact** hull. Neither document was wrong about itself and nothing
+flagged the gap, because the spec described a default and the code implemented
+a different one, and no test compared them.
+
+That is how a card meant to *sell* the armed family ended up selling nothing
+(§8.13): the Doctrine half of the standing layer defaulted unarmed and the
+Design half defaulted armed, so a seat flew Contact hulls whether or not it
+bought the right to. The asymmetry is invisible from either side alone.
+
+- **When a spec states a default, assert the default — not the mechanism that
+  produces it.** The tests here pinned the *build branch* and the *role map*,
+  both of which agreed with the code and neither of which had read §7.1.
+- **A lock needs both halves closed, and the tell is to enumerate rather than
+  spot-check.** `the_warfare_card_is_the_only_key_to_the_contact_family` walks
+  every assignable role, the colonizer ladder and the seeded roster and asserts
+  no Contact hull appears in any of them — then plays the card and asserts every
+  Contact hull the armed layer mounts is one the card unlocked. A test that only
+  asserted the second half would pass while the default was armed too.
+- **"Locked behind X" is a claim about the default, not about X.** It is
+  tempting to check that the key works. The failure mode is a door that was
+  never shut.
+
+**And the cheapest fix for a duplicated read is to derive one from the other.**
+`scout_hull` was public and read in three places — the build branch, the
+affordability test, and `launch_survey` — which is the shape §6's standing-layer
+rule names and T-116 had already paid for once. `Standing::scout_order()` is now
+`design_for(Role::Scout)` wrapped in a `BuildOrder`, so the hull the yard is
+charged for and the hull `role_of` reads back are the same call. Two of the
+three call sites disappeared rather than being kept in agreement.
+
+**Watch for a resolver whose tie-breaks become load-bearing when you merge two
+cases onto one hull.** Scout and Miner now share `LimitedSystems`, so
+`role_of`'s "first role that mounts this hull" pass went from unambiguous to
+order-dependent — a silent semantic choice sitting in the order of a `const`
+array. Making `ASSIGNABLE` agree with the competence table costs one comment;
+noticing that it *had* to was the work.
+
+**The same merge broke a build order, and no test could have caught it.**
+Ordering a picket by *naming its hull* worked for as long as no other role used
+that hull; once the picket and the armed scout shared one, the hull→class map
+stamped the scout's class and the yard received a scout. That is T-116 again —
+paid for one thing, given another. The branch sits behind two doctrine fields
+that both default off and neither of which the new card writes, **so the suite
+was green across the change and every bed reached zero of it.**
+
+- **When you move a hull, grep the hull, not the behavior.** The defect was
+  three call sites naming `HullType::LimitedOffensive`. Nothing was failing and
+  nothing would have.
+- **A function keyed on a shell cannot answer a question about a role.**
+  `hull_order(hull)` and `Standing::order_for(role)` look interchangeable and
+  are not, for exactly as long as two roles share a shell — which is a
+  condition a card can create at runtime.
+- **Pin the defect, not only the fix.** The round-trip test asserts both that
+  `order_for` round-trips *and* that shell-ordering a picket still reads back as
+  the armed scout. If that collision ever disappears, the rule loses its reason
+  visibly instead of quietly becoming cargo.
+
+### A bed that plays outside the protocol measures a game nobody plays
+
+**T-122 is the worked example, and the defect was in my own harness for three
+landings.** `card_table` and `card_probe` played cards at `t ≈ 0` and called it
+"earliest legal play". The protocol says otherwise: the opening is card-free and
+the first round barrier is at `years_to_first_round`, 200 yr. So every card paid
+its price out of the 3 kt bootstrap bank — a state no game reaches — and that
+price was **the largest effect either first card had**: ~550 colonies on one
+seed, reproduced exactly by an inert card of the same price. At the barrier the
+same price is invisible, and the Growth card, which had read as flat, clears
+**t 4.18** with no engine change. *(Retracted at T-124: that t 4.18 was carried
+by a rung bill that destroyed mass. See the next section.)*
+
+- **"Earliest legal play" is a protocol fact, not an affordability fact.** I
+  had checked `empire_can_afford` and a test even pinned "round 0 is legal" —
+  while reading *round 0* as *t = 0*. Affordability answers whether a play can
+  land; the round layer answers when. Read the config that schedules the
+  barrier before writing the loop that plays at it.
+- **A pure-price control is the cheapest ablation a card bed has.** An inert
+  card at the same cost (`TIER0[12]` while `enforce_roster` is off) separates
+  what a card *does* from what it *costs* in one arm, and it is what exposed
+  this.
+- **A confounded arm can produce a tight zero.** One arm read **+0.003 ±
+  0.040** and looked like proof that a mechanism was necessary. It carried the
+  same price defect, and a narrow error bar around a confounded mean is still a
+  confounded mean. Before reading a precise null as a mechanism, ask what else
+  that arm changed.
+
+**And an oracle ablation that does not help is a strong refutation.** "The
+picket guesses the wrong world" explained zero fights perfectly. Handing the
+picket the true destination produced 18 intercepts and still zero fights — so
+information was never the constraint, and the time that would have gone into a
+better guess went nowhere. When a hypothesis is "the agent lacks information",
+give it the answer and see whether anything moves.
+
+### A defect the baseline cannot see can be the whole of a treatment effect
+
+**T-124 is the worked example.** A conservation test written for a new Warfare
+mechanic failed on a run **with no card played**: `infra_step_price` billed the
+width of the rung a stock rounds to, the purchase snapped the stock to the next
+rung, and a colony founded between rungs paid 0.0292 kt per purchase that was
+never built. On the default bed, fixing it moves colony-years **+0.0021 ±
+0.0028**, inside noise. It also moved the first Growth card from **+0.133 ±
+0.032 (t 4.18, 8/8 seeds)** to **−0.014 ± 0.023**, a result T-122 had recorded
+as the card passing with no engine change needed.
+
+- **A card's value is a difference, and a defect can sit entirely inside it.**
+  "The baseline barely moved" says nothing about a paired difference: a 3% price
+  error on off-rung colonies was invisible in the aggregate and was the whole of
+  a treatment effect. Re-measure every card result after a conservation fix.
+- **Zero drift then equal steps means a transfer, not rounding.** Re-running to
+  increasing horizons gave 0 through 240 yr, then −0.0292 twice over. Equal
+  quanta name a discrete event. Diffing the ledger per event then named the
+  line in one run.
+- **Ablate a two-sided error one side at a time.** The old bill both overcharged
+  stocks above their rung and topped up stocks below it. Keeping each half alone
+  reproduced the old and new engines **bit-identically**. So below-rung
+  upgrades never happen in play, and the overcharge alone carried the card.
+
+**And price the meeting site before building the fight (T-123).** A colony ship
+picks one of thousands of destinations, and T-122 showed a picket cannot meet it
+there even when handed the answer. Its origin is one of ~214 ports, and 25.5% of
+launches leave from a seat's busiest eight. One census of launch origins chose
+the mechanic's site before any engine code was written. **When an interaction
+never happens, look for the place the other side cannot avoid being.**
+
+### Find the lever's ceiling with an oracle before tuning the lever (T-125)
+
+**The Warfare card sat ten times below the author's target, and five
+plausible fixes moved it by less than their error bars** — more hulls, recency,
+recalling what light had delivered, stacking, reassessment. What settled the
+question in one run was an ablation that **struck a fixed share of rival
+launches with no hull at all**: 25% gives 1.30x, 50% gives 1.76x. So the
+mechanic *can* reach the target, the target needs ~30–45% coverage, and every
+fix was a question about how to get coverage.
+
+- **Build the oracle for the quantity the mechanic delivers**, not for the
+  mechanic. A perfect blockade is a coverage fraction; handing the harness the
+  fraction directly separates "the idea cannot work" from "the implementation
+  does not reach it", which want opposite next steps.
+- **Then split the gap by time.** A census of coverage per century showed 1.2
+  hulls on station and 10.8 in flight during the rivals' expansion peak. That is
+  latency — a light-crossing to see a port and a flight to reach it — and no
+  magnitude of the card moves it. Aggregates over the whole run said "coverage is
+  low"; the per-century split said *when*, which named the cause.
+- **A compiler flag cannot fix what a profile has not found.** Seven release
+  profiles (thin/fat/no LTO, opt-level 2, two `target-cpu` levels, PGO) landed
+  within the base binary's own ±2% run-to-run spread on the combat bed, and every
+  one produced a bit-identical run. At ~120 µs per event the cost is in the code.
 
 ### Never leave an identified symptom without a proven mechanism
 
@@ -914,7 +1303,7 @@ Two habits follow, and the second is the transferable one:
 
 - **Measure the fix against the old binary, not against the prediction.** Build
   both, run the same seeds, diff the numbers. Here it took one `git stash` and
-  two binaries, and it is the only reason "this is a units fix, not a behaviour
+  two binaries, and it is the only reason "this is a units fix, not a behavior
   change" is a statement rather than a hope.
 - **A dead branch can be the right answer reached for a wrong reason.** Before
   reviving one, price what it would have chosen. Expansion returns 24–49x per
@@ -949,14 +1338,14 @@ Three habits, and the last one is the one that would have saved the most time:
 ### The artifact pattern — four of them, one shape
 
 Four measurements in this project were wrong in the same way, and the shape is
-worth recognising because none of them looked wrong:
+worth recognizing because none of them looked wrong:
 
 | What was measured | What it actually was |
 |---|---|
-| `medium_fleet_size = 8` optimal, 12 a "cliff" | the capacity normaliser going to zero |
+| `medium_fleet_size = 8` optimal, 12 a "cliff" | the capacity normalizer going to zero |
 | `coverage_trace`: this knob "DID move it" | two of three sample points degenerate |
 | `coverage_time`: cheaper colonizers at 6.0 | a General hull holding ~700× a Medium's |
-| coverage "wants" a cheaper Medium hull | `cap_Medium` pinned by a live normaliser |
+| coverage "wants" a cheaper Medium hull | `cap_Medium` pinned by a live normalizer |
 
 Every one produced a plausible number from a broken configuration, and every one
 was invisible in the objective — because the quantity that broke was in a
@@ -1045,14 +1434,14 @@ there is anything to explain.
 refinement was the load-bearing one.** Sizing a hauler's hull to its rock scores
 **+51% work-years and −17% colony-years on 1/8 seeds** — a development gain
 bought out of the expansion loop, and the honest response to that is to revert.
-Adding a *liquidity* cap — only consider hulls the centre can pay for now — takes
+Adding a *liquidity* cap — only consider hulls the center can pay for now — takes
 it to **+170% and +9.5%, 8/8 and 7/8**. Same rule, same objective; the second
 term is the whole result.
 
 The mechanism is worth having because it recurs: a score of the form
 `value / cost` is a **rate**, true in steady state, and it says nothing about the
 years spent saving for an indivisible purchase. A General hauler returns 2.86×
-a Medium's per mineral and costs **12×**, so a thin-banked centre buys one and
+a Medium's per mineral and costs **12×**, so a thin-banked center buys one and
 stops expanding while it saves. **When a decision picks among lumpy purchases,
 price the wait as well as the return** — and note that the budget constraint was
 already there, so it cost no new constant.
@@ -1086,6 +1475,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 |---|---|
 | `src/units.rs` | **`Band` / `Kilotons` newtypes and the `Measure` trait** — the one place the two units meet, and the fix for a `min` that compared a mass against two levels (R-O66) |
 | `src/math.rs` | 3-vectors, relativistic 1 g flight, light-lag (`c = 1`, distance in ly, time in years) |
+| `src/transcendental.rs` | **the engine's `ln`, `exp`, `pow`, `sin_cos`** from `+ − × ÷` and bit operations (T-127), and the run path's four-multiply `exp_fast`/`log2_fast`/`pow_fast` (T-130). The host libm is banned in the library by `clippy.toml` — it disagrees with the wasm32 build's on 2–10% of inputs, and native and wasm32 runs of one seed diverged |
 | `src/rng.rs` | seeded splitmix64; `fork()` per entity for order-independent determinism |
 | `src/resources.rs` | CMY basics, RGB supers, apex, archetypes |
 | `src/galaxy.rs` | galaxy generation → continuous 3D planet field |
@@ -1093,7 +1483,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/belief.rs` | **believed kinematics** (R-O41) — one-sided `a_max` estimate from light-lagged observations, and the accept/decline predicate that runs on it |
 | `src/cards.rs` | the **card layer** — 18 tier-0 placeholders (3 slants × 6 trees), `Order`, and the coerce-never-reject rule |
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
-| `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement` |
+| `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement`, and the tuned station-keeping spread — **two callers since T-111**, the arena and `sim::sys_engagement` |
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |
 | `src/matching.rs` | the Exchange (order-book matching) — wired in at T-01; **it was never in the module list, so it did not compile as part of the crate and its tests never ran in CI** |
 | `src/log.rs` | optional diagnostic event log (the interrogation seam) |
@@ -1107,6 +1497,22 @@ constraints of Hyades production** (no economy, no mineral budget, no colonizati
 place them, and call `combat::resolve_engagement`. **The arena resolves no damage.**
 Dependency direction is `arena → combat`, never the reverse. Do not reintroduce
 combat logic into the arena or into an example.
+
+**Since T-111 the simulation is the second caller, and the rule extends rather
+than bends: `sim → combat`, never `sim → arena`.** `sys_engagement` builds its
+own `Combatant`s from hulls that were paid for; the arena's whole purpose is
+spawning ones that were not. Tuned constants live on the `combat` side of that
+line — the station-keeping spread moved there from `arena` when the sim needed
+it, with `arena::ROU_STATION_*` kept as re-exports, because **a Monte-Carlo-tuned
+number with two definitions is an edit waiting to go wrong.**
+
+**Wiring a second caller is also how you find out what the first one assumed.**
+Two arena assumptions had been invisible for as long as `resolve_engagement` had
+one caller: `laser_ships[0]` panics on an empty side (a scenario always seeds
+both fleets; the sim reaches "nobody left" legitimately), and `carrier_accel`
+reads ship 0 under a comment saying *"same hull both sides"* — true of a one-hull
+sweep, false of two empires bringing what they built. **A second caller is a
+cheap audit of the first**, and neither defect was findable by reading.
 
 ---
 
@@ -1133,6 +1539,19 @@ combat logic into the arena or into an example.
     arithmetic op and `at_band()` 3.8x. So convert at the *edges* — never inside
     a loop over entities. `Factors::bio_max_band` exists only because a `ln` got
     onto the hot path (R-O70); denominating the ceilings in mass deletes it.
+
+    **Since T-129 no threshold or rung on the run path is converted.** They
+    are translated into kilotons statically (`K` is a stored mass,
+    `nearest_rung_from` compares squared midpoints, `mass_at_same_band_from`
+    carries a position between ladders per segment), and where a Band is
+    consumed as a *value* — `rank`, views, the snapshot — `band()` is a
+    polynomial on the mantissa bits within 3e-7 Band, exact at every rung.
+    Two habits from it: **sort the sites into thresholds and values before
+    rewriting any** — a threshold translates exactly and a value does not, and
+    only the second needs an approximation or the author; and **check an
+    approximation at every named point, not only its maximum error** — the
+    first version met its bound everywhere and still read `Band IV` as
+    3.9999999977, because `IV` sat inside a segment.
   - **There are two ladders and the type is what keeps them apart.** R-MC15
     ratified `F_mass = F_cost^(3/2)` because cost tracks surface area and the
     hold tracks volume, so a General hull costs 10x a Medium while holding
@@ -1164,6 +1583,22 @@ combat logic into the arena or into an example.
   all time is the in-sim event clock in years. Iterate collections in deterministic
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`
   guards this — never weaken it to make a feature fit.
+
+  **The "and wasm32" half was false until T-127, and nothing here could have
+  said so.** The determinism suite runs one target, and at its horizons a
+  native and a wasm32 run agree on the report while their galaxies already
+  differ in the last bit; it took 300–800 simulated years for the host libm's
+  last-bit disagreements (1.9% of `ln` calls, 9.8% of `exp`) to reach an event
+  count. The engine now calls `crate::transcendental`, never the host
+  (`clippy.toml` enforces it). Two habits:
+
+  - **A claim about two targets needs a run on two targets.** The check was
+    one scratch crate and one node script (appendix §D.6, T-128); the claim
+    had stood for the whole project on reasoning alone.
+  - **A deny with nothing configured is not a guard.** `src/lib.rs` has denied
+    `clippy::disallowed_methods` since early on, and there was no
+    `clippy.toml`, so it denied nothing. When a lint names a list, check the
+    list exists.
 - **Zero dependencies.** Do not add crates to `Cargo.toml`.
 - **Entities evaluate on their own arrival events — never on a tick sweep, and never
   by rescanning the galaxy.** This is a discrete-event engine: a ship decides what to
@@ -1216,7 +1651,7 @@ combat logic into the arena or into an example.
     the steps deleted were two bitmap lookups apiece, so *iteration count is not
     cost*. Both halves of that are worth carrying: prune monotone filters, and do
     not expect the speedup to track the count you removed.
-  - **Memoise a scan whose answer only changes on an event** — but store the
+  - **Memoize a scan whose answer only changes on an event** — but store the
     *recomputed* value, not a running total. `holdings_centroid` walked every
     planet once per production decision (1.14 G iterations on seed 1) for a value
     that moves ~3,400 times a run. A running sum would have accumulated in claim
@@ -1227,7 +1662,9 @@ combat logic into the arena or into an example.
   - **Replace a library transcendental with a polynomial fitted to the range
     the argument actually takes.** `rank`'s `centrality` calls `exp` 45.4 M times
     a run for a *classification weight*; a degree-7 minimax fit on `[−2, 0]` is
-    **+2.7% throughput at 5.4e-7 relative error** (T-102, `math::exp_decay`).
+    **+2.7% throughput at 5.4e-7 relative error** (T-102, `math::exp_decay`
+    — *retired at T-130, when every run-path `exp` and `ln` became a
+    four-multiply minimax fit to its measured range; see below*).
     Four things about it generalise past this call site:
 
     - **Histogram the argument before you fit.** The measured span is
@@ -1251,6 +1688,15 @@ combat logic into the arena or into an example.
       colonies. **A cheap deliberate perturbation tells you what kind of change
       you are making, and it is the difference between reporting a disturbance
       and discovering one.**
+  - **Under a fixed operation budget, compare the schemes, not the degrees
+    (T-130).** Four multiplies buy a degree-4 fit directly or a range
+    reduction plus a degree-3 one, and which wins depends on the range: over
+    the freight scores' `[−3.6, 0]` the direct fit reaches 8.7e-3 and the
+    reduced one 7.5e-5; over the logistic step's `[−0.2, 0]` the direct fit
+    reaches 5.2e-9. Measure each site's range first — it is what chose. And a
+    per-call saving is not a per-event one: `exp` and `ln` got 45–68% cheaper
+    per call and the standard bed moved −0.84% in instructions per event at
+    400 yr.
   - **Pick the container for the access pattern, and check the siblings.**
     `Knowledge::visited` was converted from `BTreeSet` to a bitmap when one
     `contains` turned out to be 63% of engine instructions — and `targeted`, its
@@ -1259,13 +1705,13 @@ combat logic into the arena or into an example.
     than probed, wants a sorted `Vec`: same order, sequential reads instead of a
     pointer chase over boxed nodes. Together with the memo above, 3.3x (R-O70).
 
-  **Profile before you optimise, every time.** R-O70 began with two confident,
+  **Profile before you optimize, every time.** R-O70 began with two confident,
   plausible fixes to the production candidate scan — they were correct changes and
   bought **nothing measurable** (60 → 58 yr/s). Survey was then assumed to be the
   hot path on the strength of the worked example just above, and is an order of
   magnitude smaller than the two loops that actually mattered. One instrumented
   run counting loop iterations settled it. A slow program is a symptom; §2's rule
-  about mechanisms applies to performance exactly as it does to behaviour.
+  about mechanisms applies to performance exactly as it does to behavior.
 
 ---
 
@@ -1313,6 +1759,18 @@ one, stop and flag it.
    hull's 1.00 → 0.70. **Read a law about a ratio as a claim about the ratio** —
    "bigger is more efficient" was being paid for in a dimension nobody had
    checked, and checking it took one round-trip column.
+
+   **And the signature is not a free axis — it *is* this law's ratio (R-O95).**
+   Because T-96 made thrust independent of the load and R-O57 makes cost equal
+   dry mass, `a_empty / a_laden = 1 + C / M_dry` exactly, at every
+   configuration — the empty-to-laden swing and the cargo efficiency are one
+   number (`the_acceleration_swing_is_the_cargo_efficiency`). So a hull cannot
+   be made worse at freight, faster empty and slower laden at once; that triple
+   is over-determined, and it refuted a third of the first Warfare card's stated
+   intent before a line was written (`Hyades_warfare_tree.md` §7.3).
+   **Write a design intent down as algebra before measuring it** — three
+   plausible properties collapsed to two in one line, where a sweep would have
+   spent a bed discovering it.
 4. **The Ship Testing Arena is the required empirical harness** for setting per-class
    `r_eq`. These values cannot be derived analytically.
 5. **`most_needed_center` is retained permanently as a test oracle** (single-supply
@@ -1371,7 +1829,7 @@ one, stop and flag it.
    **Both of those are retired (T-94/R-O93): the step is now the closed form.**
    `x(t+Δ) = K·x / (x + (K − x)·e^(−rΔ))` — the ceiling is constant across a tick,
    so the step is autonomous and solvable, and `settler_target` had been pricing
-   colonisation off this solution's *inverse* since R-IND11. The `r < 2` ceiling
+   colonization off this solution's *inverse* since R-IND11. The `r < 2` ceiling
    was a property of the Euler map and not of the model: `e^(−rΔ) ∈ (0, 1)` at
    every positive `r`, so the map is monotone at any rate and the clamp can only
    fire on a last-bit rounding. What the closed form also removes is the
@@ -1385,13 +1843,13 @@ one, stop and flag it.
 
    **And population is conserved across space, not only across the biosphere
    (R-O74, `Hyades_industry.md` §1.7).** Growth draws people out of biomass;
-   *founding* moves people that already exist. Until this landed, a coloniser's
+   *founding* moves people that already exist. Until this landed, a colonizer's
    settlers were written into its hold with nothing debited anywhere — one
    exemption from this law, on the exact path the expansion loop runs on. It was
-   not small: the coloniser policy that shipped the biggest seed measured
+   not small: the colonizer policy that shipped the biggest seed measured
    **+13.97% colony-years on an identical colony count**, and two ablations put
    the entire effect on the seed mass rather than on the hull, its price or
-   transit. **An exemption from conservation is not a modelling shortcut, it is
+   transit. **An exemption from conservation is not a modeling shortcut, it is
    a free resource, and a search will find it and call it a strategy.**
 
    **The exchange is a mass difference, not a level difference (R-O66).** A
@@ -1412,9 +1870,9 @@ one, stop and flag it.
    instant global state change the light-lagged observation model exists to rule
    out. The recall is itself a signal, and it cannot be offset by a thrust write
    because what leaks is the movement, not the mass.
-13. **No categorical strategic classification may be co-extensive with a colour
+13. **No categorical strategic classification may be co-extensive with a color
    domain** (L1/R-O34) — it would lock out exactly the archetype poor in that
-   colour. Continuous classifications expressed as magnitude are exempt.
+   color. Continuous classifications expressed as magnitude are exempt.
 14. **The snowball is the design — simulate it, not the stalled baseline.** An empire
    that compounds until it has colonized every colonizable world is the intended
    arc, and the shipped defaults produce it (R-AC16/R-AC17). The configuration that
@@ -1468,7 +1926,7 @@ one, stop and flag it.
 
 - **Every PR updates `docs/` to match the design it lands.** `docs/` is the
   authoritative design source (see the header of this file), which only holds if
-  it describes the engine as it actually is. A PR that changes behaviour, adds or
+  it describes the engine as it actually is. A PR that changes behavior, adds or
   retires a parameter, resolves an R-code, or invalidates something a spec asserts
   is **not complete until the affected spec is updated in the same PR** — the code
   change and the doc change are one unit of work, not a change plus a follow-up.
@@ -1482,6 +1940,51 @@ one, stop and flag it.
 
   If a change genuinely touches no spec, say so explicitly in the PR body. Silence
   reads as an oversight, because usually it is one.
+- **A spec carries ratified decisions and open decisions. Nothing else.**
+  Every statement in a spec is one of exactly two things: **a decision that has
+  been ratified**, or **a decision that is still open**. Everything else — the
+  runs, the tables, the refuted hypotheses, the superseded design, the
+  measurement that turned out to be an artifact — belongs in
+  `docs/Hyades_experiments_appendix.md`, **linked from the decision it
+  supports**, never deleted.
+
+  **A proposal is an open decision, not a third category.** A recommendation
+  with nobody's ratification behind it is `OPEN` with a recommendation attached,
+  and it is labeled that way — the failure mode this rule exists to stop is a
+  proposal written in the present indicative for long enough that a later reader
+  takes it for settled. Mark the status explicitly on each item rather than
+  leaving it to the prose's confidence.
+
+  The reason is not tidiness, it is that the two kinds of statement **decay
+  differently**. A decision is true until something contradicts it and is
+  supposed to be read on every visit. A measurement is a record of a run on a
+  bed that no longer exists — `biosphere_regen_rate = +141.2 ± 18.1` is a true
+  record of the engine that measured it and is not a fact about this one — and
+  is supposed to be read once, when someone re-opens the question. Interleaving
+  them makes the spec grow without bound and, worse, makes a reader unable to
+  tell which sentences they still have to believe. Both of the specs this rule
+  was written for had passed 400 and 1,100 lines and were majority history;
+  neither could be read for what the engine must do.
+
+  Concretely, per claim, and the last one is the one that gets skipped:
+
+  - **A decision states what holds, its magnitude and units, and whether the
+    value is confirmed or a placeholder.** One line, plus a link.
+  - **The evidence is a link, not an inlined table.** `See appendix §A.3` with
+    the harness name, the bed, and the result in one clause — enough to decide
+    whether to go and read it.
+  - **An open decision states what would settle it**, which is the difference
+    between an R-code and a complaint.
+  - **Superseded design moves to the appendix under the decision that replaced
+    it, and says what it was wrong about.** A retracted claim that is merely
+    deleted takes its refutation with it, and the next reader re-derives the
+    same wrong idea — this project has done that at least twice. Strike it
+    through in place only when the correction is a *clarification* of the same
+    decision; move it when the decision itself changed.
+
+  **A spec section that is doing both jobs is the tell**, and the split is
+  mechanical: everything in the past tense with a number in it is appendix,
+  everything in the present tense saying what the engine does is spec.
 - **Every PR accounts for its T-codes and for every ratified decision it touches.**
   Two lists in the body, and the second is the one that matters:
 
@@ -1551,6 +2054,85 @@ one, stop and flag it.
     has already lost the argument the type system exists to win.
   - **Single letters are for quantities with a stated definition nearby**, never
     for a concept. If it takes a sentence to say what it is, it gets a name.
+- **American spelling, everywhere.** Code, comments, doc comments, specs, commit
+  messages, harness output. `color` not `color`, `center` not `center`,
+  `colonize`/`colonizer`/`colonization` not `colonize`/`colonizer`/`colonization`,
+  `behavior`, `optimize`, `normalize`, `utilization`, `analyze`, `modeling`,
+  `favor`, `honor`, `neighbor`, `meter`, `program`, `judgment`, `maneuver`.
+  Also `while` rather than `whilst`, `among` rather than `amongst`, `toward`
+  rather than `towards`. This is not a style preference to be weighed against
+  consistency with surrounding text — it applies to new text unconditionally,
+  and a file being half-and-half is a reason to fix the file, not a reason to
+  match its other half.
+
+  The one exception is **flavor text, which is the author's own** (below) — do
+  not respell it either way.
+- **Weigh the whole simulation before you trust a transfer** (T-118, design
+  law #11). `Simulation::mass_ledger` sums every mass-bearing store and
+  `mass_is_conserved_with_regrowth_off` asserts the total does not move with the
+  one legitimate source switched off. Run it after touching anything that moves
+  mass between stores.
+
+  It found **three** leaks on its first run, all of the same shape: a transfer
+  with one end missing. Half of every scrapped hull vanished
+  (`scrap_recovery_fraction` was a *discard*, not a split, where law #11 says
+  wastage degrades to slag). A recycled colonizer was counted as a live hull
+  **and** as the infrastructure it became. And founding did
+  `f.infra = f.infra.max(credit)`, throwing away whatever was already standing.
+
+  Three habits from it:
+
+  - **Break the ledger out per store.** "Mass changed" names no path; `hulls`
+    falling by exactly one hull's mass while `infrastructure` rose by less
+    names one immediately.
+  - **Localize in time by re-running to increasing horizons.** The run is
+    deterministic, so drift is a function of time: the third leak appeared
+    between 38 and 40 years, which pointed at the first colony founding without
+    any guessing. Two hypotheses had already been wrong by then.
+  - **A `max` is where a sum belongs, twice in two landings.** T-117 fixed one
+    on the hold and T-118 found the other on the hull credit, in the same
+    expression. When two things credit the same field, `max` silently drops
+    one — and nothing in the types objects.
+
+  **There are no exceptions left** (T-119). The absorbing-zero floor (§8.7) was
+  the last one, and it is a *transfer* now — the founding center is billed for
+  the top-up, and a parent too poor to pay leaves its child thin. A guard that
+  degrades is worth more than a guard that conjures, because the conjuring is
+  what a search finds and calls a strategy (law #11's own warning).
+
+  **And a quantity that comes back has to come back as what it was.** Cost is
+  one scalar (R-O57), so a hull's mass returning to a bank — salvage, wreckage,
+  a ceiling's overflow — used to be split evenly across the colors, a guess in
+  the one dimension the economy is constrained by (§6.19c). `hull_minerals`
+  records what the bank handed over; `Minerals::try_take_total` is the capture
+  point, because **the bank's mix moves the instant it returns** and a
+  reconstruction afterwards reads the wrong proportions. Record the withdrawal,
+  do not re-derive it.
+- **The standing layer answers questions; it is not switched on** (T-117).
+  Design and Doctrine are state written by cards, and a consumer **asks**
+  `autopilot::Standing` what is currently active — `design_for(role)`,
+  `colonizer_ladder()`, `role_of(hull, class)`, `recycles_on_founding()` —
+  rather than branching on the write. Do not add `if doctrine.some_flag { A }
+  else { B }` at a call site; add the case to the resolver and let the call
+  site keep reading one function.
+
+  The reason is not tidiness. A write that moves a role onto a different hull
+  is read in at least three places — the build order, the price the production
+  context carries, and the role a finished hull is tasked with — and three
+  readings of one write is how they come to disagree. Three landings in a row
+  added a write and added those three branches; twice they diverged silently,
+  and once (`launch_survey`, T-116) the engine paid for a hull and then
+  discarded it because the build site and the spawn site disagreed about which
+  hull the role was on.
+
+  **The property that makes it a layer is that the inverse is derived.**
+  `role_of` is not a second table — it is `design_for` searched, narrowest
+  first, falling through to a competence table (R-O44) for a hull no write has
+  claimed. `role_of_inverts_design_for_every_role` checks it across every
+  combination of the writes, because they compose and a resolver correct one
+  write at a time is not one. A second property is worth asserting beside it:
+  the resolver must be **total**, because a hull with no mission is a hull the
+  yard was already charged for.
 - **Flavor text is the author's own.** Never silently overwrite it.
 - Direct, technical register. Concrete decisions over hedging.
 - **Never force-push a designated feature branch — not even `--force-with-lease`
@@ -1638,16 +2220,16 @@ T-codes, and item 10 is blocked rather than open:
 
 | # | Item | R-code | Status |
 |---|---|---|---|
-| 5 | Colony cargo mass ≡ mineral cargo mass | R-O32 | **done** — `laden_accel` now masses `pop_cargo`; it was massless, so a laden colony ship flew like an empty hull and the burn read out cargo *type*, the one thing §6.2 exists to hide |
+| 5 | Colony cargo mass ≡ mineral cargo mass | R-O32 | **done** — `laden_accel` now masses `pop_cargo`; it was massless, so a laden colony ship flew like an empty hull and the burn read out cargo *type*, the one thing §6.2 exists to hide. **Completed at R-WAR9 (T-115):** this row was true of `laden_accel` and not of the dispatcher that flies colony ships — `spawn_courier` read `civilian_accel_g · G` *before* loading the hold and never re-read it, so the colonization leg was still an empty hull's. A laden Medium colonizer makes **0.241 ly/yr² against 2.446 empty**, and fixing it moved every transit-dependent magnitude in the corpus. **A row marked done is a claim about a code path, and this one named the wrong one for several landings.** |
 | 12 | Re-base hull mass on surface area (shell), contents on volume | R-O58/R-O58b | **done** — landed with 11; see below |
-| 1 | `BuildOrder::Hull { hull_type, class }` + role assigned after production | R-O29 | **done** — the three mission-named variants are gone; `Autopilot::assign_role` returns a `Tasking { role, target }` for the finished hull, and the old `MiningPair`'s freighter is now a consequence of assigning `Role::Miner`. **Behaviour-neutral**, verified by stashing the diff: seed 1 / 3 seats / 4 kyr gives 1,183 colonies, 1,594 miner taskings, 5,845 scanned, 240 scouts both with and without |
+| 1 | `BuildOrder::Hull { hull_type, class }` + role assigned after production | R-O29 | **done** — the three mission-named variants are gone; `Autopilot::assign_role` returns a `Tasking { role, target }` for the finished hull, and the old `MiningPair`'s freighter is now a consequence of assigning `Role::Miner`. **Behavior-neutral**, verified by stashing the diff: seed 1 / 3 seats / 4 kyr gives 1,183 colonies, 1,594 miner taskings, 5,845 scanned, 240 scouts both with and without |
 | 2 | Design/roster component | **R-O28** | **done** — `Roster` (a sorted, idempotent set of `(HullType, Class)`) is a per-player component written only by tree cards. Unblocks σ_vector for Design: the distance between pre- and post-card rosters is now computable. `Class` also introduces the Banks-convention design names (R-O42b: Meadow/Tor proposed, flavour subject to authorship) |
 | 3 | Diplomatic fields on `Doctrine` | R-O27/R-A3 | open — no field list specified yet (**T-11**) |
 | 4 | Throttle fraction; observe `a` from trajectory not the stat block | R-O40 | open (**T-09**) |
 | 6 | `min_time_search` as a reachability-cone query | R-O31 | open — same function, reverse direction (**T-05**) |
 | 7 | Route intercept and accept/decline through *believed* `a_max` | R-O41 | **half done** — `src/belief.rs` holds the one-sided estimator (belief is the *max* ever observed, because a ship never flies above peak) and the kinematic accept/decline. Belief is monotone, so masking is spend-once; a 4,851-case sweep pins that it errs only by optimism, which *is* the surprise attack. **Sim wiring blocked on T-30** — there is no accept/decline site in the engine yet (**T-10**) |
 | 8 | Permissive role eligibility with varying competence | R-O44 | **done** — roles §4 now states the permissive rule once and every per-role list reads "Competent:", separating *competence* (a degree — an LSV scouts badly) from *capability* (a fact — a Limited hull has no cargo hold, so a Limited Colonizer founds nothing). Engine matches: `assign_role` declines on no viable target, never on hull type |
-| 9 | `FAIR_COUNTS` rejects 18 while galaxy §2 lists it fair | R-O12 | **done** — now `[2, 3, 6, 12, 18]`. A radius-`r` hex ring holds `6r` cells, so the family is 6/12/18/24…; 9 and 15 are multiples of 3 but form no ring, so `% 3` would be the wrong predicate. The three ring radii were exactly `N/6 + 1.5`, so the existing `18 => 4.5` branch was the family's third term and the list was one term short — replaced by that closed form. **Balance targets the 2-neighbour configs (3/6/12/18); N=2 is supported but not a balance target**, which also settles R-O9's missing Green as accepted rather than open |
+| 9 | `FAIR_COUNTS` rejects 18 while galaxy §2 lists it fair | R-O12 | **done** — now `[2, 3, 6, 12, 18]`. A radius-`r` hex ring holds `6r` cells, so the family is 6/12/18/24…; 9 and 15 are multiples of 3 but form no ring, so `% 3` would be the wrong predicate. The three ring radii were exactly `N/6 + 1.5`, so the existing `18 => 4.5` branch was the family's third term and the list was one term short — replaced by that closed form. **Balance targets the 2-neighbor configs (3/6/12/18); N=2 is supported but not a balance target**, which also settles R-O9's missing Green as accepted rather than open |
 | 10 | Seed roster LSV+LCV; default doctrine 100% LSV Scout | R-O42 | **half done, half blocked.** Seats are seeded with exactly LSV(Meadow) + LCV(Tor) per §7.1, and `SimConfig::enforce_roster` gates production on it — but it **defaults off**, because the engine has no card system and therefore no unlock path. Colonizer and freighter ride on MSV, which the starting roster excludes, so enforcement forbids every expansion build permanently: measured over 4,000 yr, **3 colonies and 18 vehicles against 1,183 and 4,778**. Pinned as a test. Blocked on cards, not on engine work (**T-25**) |
 | 11 | Derive `hull_dry_mass` from mineral cost | R-O57 | **done** — landed with 12; see below |
 | 13 | Slag as a bank entry | R-O59 | open (**T-03**) |
@@ -1661,7 +2243,7 @@ The shell model is now the engine's, with **one geometric primitive and no new
 tunable**. Radius is *derived* from the cost ladder (cost ∝ surface area ⇒
 `r = sqrt(cost / cost_Limited)`), the Limited hull is the unit radius so it is
 all shell and no hold, and capacity is the usable interior `(r − 1)³`
-normalised to the Medium hull. Dry mass is the mineral cost. Two constants were
+normalized to the Medium hull. Dry mass is the mineral cost. Two constants were
 **deleted** (`SimConfig::dry_mass`, `cargo_mass_per_unit`) and none was retuned;
 `cargo_unit_size` keeps its name, default and meaning as the reference hold.
 
@@ -1727,7 +2309,7 @@ changes how you *work*, not what is left to do:
   | **T-87 (crew from demand)** | **23,258–24,801** | **8.5–9.0 yr/s** | **3.4–3.6×** |
   | R-O86 bed *(same machine, same session)*, before | — | 14.9 yr/s | 6.0× |
   | **R-O86 (a scout needs somewhere to scout), same pair** | — | **83–98 yr/s** | **33–39×** |
-  | R-O89 (freight loads by colour), 3 seats, 1.5 kyr | ~32,500 | 93.3 yr/s | 37× |
+  | R-O89 (freight loads by color), 3 seats, 1.5 kyr | ~32,500 | 93.3 yr/s | 37× |
   | **T-88 (`cycle_years` 50 → 5), 3 seats, 1.5 kyr** | ~35,400 | **71.1 yr/s** | **28×** |
   | **T-88, 3 seats, 4 kyr — `ns/event` 22,394** | 31,337 | **68.9 yr/s** | **28×** |
   | R-O92 off (`max_pickup_stops = 1`), 3 seats, 1.5 kyr — `ns/event` 26,494 | ~32,000 | 69.2 yr/s | 28× |
@@ -1735,9 +2317,25 @@ changes how you *work*, not what is left to do:
   | T-94 (logistic in closed form), 3 seats, 800 yr — `ns/event` 50,637 | ~34,700 | 50.4 yr/s | 20× |
   | **T-96 (the drive is a mass), same bed — `ns/event` 51,732** | ~35,100 | **48.0 yr/s** | **19×** |
   | **T-98 (the hauler's hull is a forecast), same bed — `ns/event` 27,812** | ~40,900 | **82.9 yr/s** | **33×** |
-  | **T-100 (the Band readings are memoised), same bed — `ns/event` 19,549** | ~40,900 | **114.4 yr/s** | **46×** |
+  | **T-100 (the Band readings are memoized), same bed — `ns/event` 19,549** | ~40,900 | **114.4 yr/s** | **46×** |
   | **T-101 (the candidate scan prunes what it has rejected)** — interleaved against T-100 in one session: **96.4 → 106.6** and **99.4 → 111.2 yr/s** | ~40,900 | **+11%** | — |
+  | **R-WAR9 (the colonization leg is flown laden)**, 3 seats, 800 yr, 4 seeds | — | **83.8–90.0 yr/s**, `ns/event` 25,423–29,206 | **34–36×** |
   | **T-102 (`exp` is a polynomial)** — interleaved, 6 seeds, 800 yr: **104.9 → 107.8**, **109.4 → 112.4**, **107.3 → 110.6**, **114.5 → 118.3**, **120.1 → 123.0**, **108.6 → 110.1 yr/s** | ~40,900 | **+2.7%** | — |
+  | T-125 combat bed (`examples/combat_bench`: 12 seats, both cards at the barrier, 400 yr, ~1,000–1,400 fights) — `ns/event` ~118,000–127,000 | — | 14.6 yr/s | 5.8× |
+  | **T-126 (the survey scan reads the cached Band, and walks only unvisited worlds), same bed — `ns/event` ~49,000–50,000** | — | **36.4 yr/s** | **15×** |
+  | T-127 (the engine's own transcendentals), same bed, interleaved against T-126 on this container: **63,185 → 62,174** and **60,970 → 61,439 `ns/event`** — the runs differ, the seeds disagree in sign | — | 29.6 → 30.0, 28.6 → 28.5 yr/s | ~12× |
+  | T-127, standard bed, 3 seats, **400 yr** (where old and new are nearly one run), min of 7: **30,197 → 30,642** and **25,443 → 26,177 `ns/event`** — fewer instructions (−0.56%), more time: a latency cost | — | **+1.5% / +2.9% per event** | — |
+  | **T-129 (no Band reading on the run path)**, same bed, min of 7, interleaved against T-127: **30,523 → 29,087** and **26,270 → 24,011 `ns/event`**, instructions per event −2.4% — faster than before T-127 on both seeds | — | **−4.7% / −8.6% per event** | — |
+  | T-130 (`exp`/`ln` as four-multiply polynomials), seed 7, 400 yr: instructions per event **−0.84%**; 15 paired rounds **0.986 ± 0.013** — not resolved; combat bed not resolved | — | — | — |
+
+  **R-WAR9's row is a case where the workload changed and the columns must be
+  read that way** (§2's T-111 caveat). Flying colony ships at the rate their
+  load implies makes every colonization leg longer, so an empire reaches fewer
+  worlds inside the same horizon — 2,849–2,955 colonies where the bed used to
+  reach more — and a simulation with fewer colonies is doing less work, not
+  less work per unit. `ns/event` is flat against the pre-fix bed, which is the
+  first row of the reading table: *the simulation is doing less, each unit costs
+  the same.* **Nothing was optimized and nothing regressed.**
 
   **T-88's last row is the one to read, and it is `ns/event` that says why.**
   Per-event cost went from ~174,000 ns at T-87 to **22,394** — not because any
@@ -1749,13 +2347,13 @@ changes how you *work*, not what is left to do:
   count compounding, and the economy tick does not compound.
 
   **R-O86's row is the largest speedup in this table and it came from deleting
-  work, not from optimising it** — which is why it is worth more than its
+  work, not from optimizing it** — which is why it is worth more than its
   multiple. At the 4,000-year horizon the engine was issuing **1,779,509 hull
   builds to produce 18,093 hulls**: `apply_build_with` debits the bank and holds
   the yard *before* dispatching the role, and `launch_survey` spawns nothing when
   the frontier is empty, so 99.0% of all production spent minerals and berth-time
   on an object that never existed. Colony count is *identical* across the fix
-  (3,340) and colony-years move **+0.007%**. **Before optimising a hot path, check
+  (3,340) and colony-years move **+0.007%**. **Before optimizing a hot path, check
   what fraction of the work it does is producing nothing** — no amount of profiling
   would have found this, because every one of those builds was genuinely running.
 
@@ -1792,7 +2390,7 @@ changes how you *work*, not what is left to do:
   duration (below), the 12-seat / 8-kyr corner is now **under the floor** rather
   than near it. That corner has still never been measured; extrapolating it
   again would be the third time this table has been wrong about a number nobody
-  ran. **Measure it (T-66), then optimise.**
+  ran. **Measure it (T-66), then optimize.**
 
   **`mineral_peak = Band IV` is ratified (R-O82), so this is now the first case
   where the scenario genuinely cannot be shrunk.** The 12-seat × 8-kyr corner
@@ -1846,7 +2444,7 @@ changes how you *work*, not what is left to do:
 
   **`growth_rate` is a step function of itself, and the gradient is recorded**
   (T-64/R-O84). It reaches the objective only through how many 50-year cycles a
-  centre takes to cross a `PopBands` edge — an integer — so the objective is
+  center takes to cross a `PopBands` edge — an integer — so the objective is
   piecewise constant in it and a coarse grid picks a plateau *edge* by accident.
   It stays at **0.873**; the measured surface, the `r < 2` bifurcation ceiling,
   and the six things a future search should not have to rediscover are in the
@@ -1867,7 +2465,7 @@ changes how you *work*, not what is left to do:
   `hull_radius` solves `cost·η = r³ − (r − τ)³` instead of square-rooting the
   cost ratio, so `medium_fleet_size` is a price again rather than a price *and*
   a hold. That coupling is what four of the artifacts in §2's table have in
-  common, and the `REFERENCE_MEDIUM_RADIUS` normaliser they all ran through is
+  common, and the `REFERENCE_MEDIUM_RADIUS` normalizer they all ran through is
   deleted. The correct geometry cost −0.31% against the cost ladder alone, so
   the artifact surface closed for free.
 
@@ -1943,7 +2541,7 @@ changes how you *work*, not what is left to do:
   Colony *count* at the horizon is a weak invariant for an optimization — a
   change that founds the same worlds a century later scores identically — while
   `∫ colonies dt` falls the moment anything slows down. Hold it fixed to the
-  decimal and a performance change is provably behaviour-preserving.
+  decimal and a performance change is provably behavior-preserving.
 
   **And the time constant now has a proven mechanism, not just a name (R-O68,
   T-51 — both now closed).** `production_choice` preferred depth when
@@ -1959,7 +2557,7 @@ changes how you *work*, not what is left to do:
   (R-O87).** Work-years is `∫ Σ_p infra_p dt`, and the two things
   `reinvest_bias` chooses between are worth the same to it: deepening bills
   `infra_step_price / eta_works` and raises works by `infra_step_price`, while
-  founding bills the coloniser's price and the new colony's stock is
+  founding bills the colonizer's price and the new colony's stock is
   `founding_infra = hull_cost` — the recycled hull's minerals *are* the stock
   (T-70) because a hull's mass is its cost (R-O57, design law #11). At the
   card-free `eta_works = 1` those are identical to the last bit, at every rung,
@@ -1976,7 +2574,7 @@ changes how you *work*, not what is left to do:
   is **bit-identical below `b = 0.96`** on both seeds (`examples/deepen_census`),
   the old cliff at 0.9 moved to 1.0, and **the branch is still cold at the
   shipped `0.5`**. The infra rung above the founding one costs 0.9 kt against a
-  Medium coloniser's 0.10 kt, `fabrication_rate` saturates by rung II, and
+  Medium colonizer's 0.10 kt, `fabrication_rate` saturates by rung II, and
   `slips` is pinned at 2 from rung I onward because `fab_cap / slip_throughput =
   2` — so expansion returns 24–49x per kilotonne and *should* win. **The dead
   branch was the right answer reached for a wrong reason**, and the cause moved
@@ -1988,7 +2586,7 @@ changes how you *work*, not what is left to do:
   two berths** — 10¹² kt of infrastructure still bought two — and homeworlds are
   *generated* past the only step it had. §6.3's reconciliation ("the bound is per
   yard, and an empire has many yards") answered a question about the empire
-  total, not about a centre's berth count, and is withdrawn.
+  total, not about a center's berth count, and is withdrawn.
 
   **The fix was to notice that one variable was doing two jobs.** `fab_cap` now
   bounds the rate **per berth** (quality) and `slips` reads the fabrication share
@@ -2009,7 +2607,7 @@ changes how you *work*, not what is left to do:
   - **A re-denomination is not a retune, and it is worth engineering for.**
     `fab_cap` 0.2 → 0.1 reproduces the old per-berth rate *bit-for-bit* because
     the old `slips` was always exactly 2, so turnaround did not move at all and
-    the only behavioural change in the landing is berth count. That is what makes
+    the only behavioral change in the landing is berth count. That is what makes
     the measurement readable.
   - **The cost landed in the test targets, not in throughput** — unit 19 → 54 s,
     determinism 30 → 58 s — exactly as §2 predicts, and both were fixed in the
@@ -2059,49 +2657,49 @@ changes how you *work*, not what is left to do:
   **0.7–0.9%** are outbid — so R-O68's crossover, which three sections of that
   document circled, is consulted in one decision per hundred and cannot have been
   causing anything — and **98.3% simply cannot pay the bill**, of which
-  **43.8–46.6% of *all* decisions hold the total and lack a colour.**
+  **43.8–46.6% of *all* decisions hold the total and lack a color.**
 
   **So the mineral economy's binding constraint is freight**, and the chain of
   four investigations that ended there is itself the lesson: units (R-O68),
   survey waste (R-O86), works identity (R-O87), the build-wide axis (R-O88) and
   the price ladder (R-O85) were each real and none was the cause. **What finally
   named it was logging the decision's own predicate instead of reconstructing
-  it**: `can_afford_infra` is a per-colour test, and inferring it from a *total*
+  it**: `can_afford_infra` is a per-color test, and inferring it from a *total*
   reported 44.7% "outbid" where the truth is 0.9%. A reconstruction that looks
   arithmetically equivalent is not, when the thing it reconstructs is a
-  conjunction over three colours.
+  conjunction over three colors.
 
   **So every flat mineral-side result this project has recorded is downstream of
   the same thing** — `outpost_mining_fraction`, both crew policies, and the
   Exchange. Two things follow and the second is the transferable one. **They were
-  blocked on freight moving colour (T-76), not on price or policy**, and
+  blocked on freight moving color (T-76), not on price or policy**, and
   re-measuring any of them before that landed measured the same wall again.
 
   **It has now landed, on the load leg (R-O89, `Hyades_industry.md` §6.20).** A
-  hauler fills against the destination's colour deficit instead of in proportion
+  hauler fills against the destination's color deficit instead of in proportion
   to the pile it happens to be standing on — **+8.40% ± 1.86 work-years, 8/8
   seeds, replicated on four the candidate was not chosen against** — and it does
   it on *the same tonnage*: 20,259 → 20,292 kt over 26,800 → 26,746 trips. Same
-  fleet, same trips, same round trip to two decimals; only the colours in the
+  fleet, same trips, same round trip to two decimals; only the colors in the
   hold changed. **That is the cleanest confirmation of a diagnosis this project
-  has produced** — the census said the constraint was colour composition, and a
-  change touching nothing but colour composition moved the objective. The block
+  has produced** — the census said the constraint was color composition, and a
+  change touching nothing but color composition moved the objective. The block
   above is lifted; each of those knobs is now its own re-measurement. And:
   **a metric that reads a decision's output cannot tell you what the decision
   declined to ask for** —
-  `unmet_colour_demand` summed each centre's shortfall against its *next* rung,
-  so a centre with three Bands of headroom it never tried to buy reported zero
+  `unmet_color_demand` summed each center's shortfall against its *next* rung,
+  so a center with three Bands of headroom it never tried to buy reported zero
   demand, and the first conclusion drawn from it ("the economy has no demand
   side") was exactly backwards.
 
   **And the pickup leg followed it (R-O92/T-91), for four times as much.** A hold
   was filled from one map entry — `outpost_stock[(player, rock)]` — so every
-  delivery was mono-coloured whatever the routing; letting one outbound leg visit
+  delivery was mono-colored whatever the routing; letting one outbound leg visit
   two piles is **+55.13% ± 4.65 work-years, 8/8 seeds**, and moves `bank_mix`'s
   payable fraction off the 0.043 it had held through three interventions. What it
   exposes is the next constraint and is worth knowing before the next freight
   idea: **freight is 1.73% of everything that ever enters a bank** — the rest is
-  `sys_production_tick` mining the centre's own single-coloured planet directly
+  `sys_production_tick` mining the center's own single-colored planet directly
   into the bank (T-92).
 
   **And T-98 moved that ceiling by building the right hull for the rock**:
@@ -2126,7 +2724,7 @@ changes how you *work*, not what is left to do:
   `growth_rate` (+2.31 alone) and mining-pair recycling (+1.19 alone on the
   standard four) combine to **+2.53, not +3.50** — recycling's marginal
   contribution on top of `growth_rate` is +0.22, inside the noise. Two
-  independent, individually-real improvements, mostly cancelling because they
+  independent, individually-real improvements, mostly canceling because they
   compete for headroom that is not economic. **Before tuning another economic
   knob, check whether the thing you are optimizing is what is actually
   scarce** — and note that both gains were measured on parallel branches
@@ -2149,9 +2747,9 @@ changes how you *work*, not what is left to do:
 - The **Lanchester aggregate model** is reserved for imperial-scale resolution; the
   individual-missile arena exists only to calibrate its parameters.
 - ~~**No mineral seed for colonies** (homeworlds only)~~ — **superseded
-  (R-O74/`Hyades_industry.md` §1.7).** A coloniser's hold is one kiloton budget
+  (R-O74/`Hyades_industry.md` §1.7).** A colonizer's hold is one kiloton budget
   carrying any mix of settlers and minerals: whatever volume the people do not
-  fill leaves with minerals **out of the founding centre's own bank** and lands
+  fill leaves with minerals **out of the founding center's own bank** and lands
   in the new colony's stockpile. That is not a grant, it is a transfer a parent
   paid for — which is the distinction the old rule was protecting. Mining
   outposts with need-based hauling are still how a colony feeds itself
@@ -2173,7 +2771,7 @@ changes how you *work*, not what is left to do:
   `Empty` rung, not zero, so the Gaussian's tail floors at a trace rather than
   decaying to nothing. And **"is this world rich?" has two readings that now differ by
   more than a Band**: `MineralField::abundance()` (the Band of the *total* mass,
-  dominated by the richest colour) and the per-colour Band sum that
+  dominated by the richest color) and the per-color Band sum that
   `BaselineAutopilot::rank` compares against `mineral_high`. Routing §4.4's
   anticorrelation through the wrong one cost **−52% colony-years** before it was
   caught; the correct reading there is the *mean* Band.

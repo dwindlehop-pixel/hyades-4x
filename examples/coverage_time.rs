@@ -22,7 +22,7 @@
 //! against a "past the optimum" 6.0, and that comparison **went vacuous**:
 //! T-56 stage 3c decoupled the cost ladder from the capacity ladder, so the
 //! knob is now a *price* and not also a hold, and R-IND11's ablation B measured
-//! that coloniser hull price is worth −0.08% — so both beds print identical
+//! that colonizer hull price is worth −0.08% — so both beds print identical
 //! coverage (3,336 / 3,349 on seeds 1 / 7). It also grew to ~8 minutes. A check
 //! that spends eight minutes printing a tautology is not a check.
 //!
@@ -175,7 +175,7 @@ fn main() {
     // exact knob). 6.0 is a further push the *same* way — nominally cheaper
     // colonizers still — and legal (`hull_ladder_fault` refuses only an
     // inverted ladder, `medium_fleet_size >= limited_fleet_size`; the earlier
-    // narrower bound was a normalisation artifact, see that function's doc
+    // narrower bound was a normalization artifact, see that function's doc
     // comment). But it is worse, not better: coverage drops from 3,348/3,452 at
     // the default to roughly half that here. This is the cliff the gradient
     // step deliberately stopped short of (`gradient_step`'s α=1.0 row collapses

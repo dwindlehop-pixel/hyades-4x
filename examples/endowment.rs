@@ -1,4 +1,4 @@
-//! **R-IND12: what a coloniser is worth carrying — measured on the objective.**
+//! **R-IND12: what a colonizer is worth carrying — measured on the objective.**
 //!
 //! The endowment used to be a *share of the parent* (`Doctrine::endowment_fraction`),
 //! and that model was retired by the author's ruling: a fraction is irrelevant.
@@ -91,7 +91,7 @@ fn census(seed: u64, horizon: f64) {
         }
     }
     let pct = |k: usize| if n > 0 { 100.0 * k as f64 / n as f64 } else { 0.0 };
-    println!("census — seed {seed}, {horizon:.0} yr, {n} colonisers launched");
+    println!("census — seed {seed}, {horizon:.0} yr, {n} colonizers launched");
     println!("  hold filled to capacity : {full_hold:>7}  ({:.1}%)", pct(full_hold));
     println!("  hold all settlers, no ore: {all_settlers:>7}  ({:.1}%)", pct(all_settlers));
     println!("  carried any minerals     : {carried_minerals:>7}  ({:.1}%)", pct(carried_minerals));

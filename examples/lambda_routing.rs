@@ -1,7 +1,7 @@
 //! **R-P2 verification: is the Exchange's transit discount `λ` also the right
 //! freighter-routing rule?**
 //!
-//! `Hyades_politics_trade_and_intelligence.md` §2.3 makes one constant do two
+//! `Hyades_politics_trade_and_intelligence.md` §1.3 makes one constant do two
 //! jobs — on the Exchange, `λ` is the travel-time discount *and* the `$` sink
 //! (`seller receives E·exp(−λt)`, the remainder burns). R-P2 ratifies that
 //! only on condition that the same constant demonstrably improves the engine's

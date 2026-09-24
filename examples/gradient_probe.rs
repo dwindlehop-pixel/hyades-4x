@@ -291,7 +291,7 @@ fn main() {
         "\nReading: elasticity is *colonies* per unit change in ln(knob), so +100 means a\n\
          10% increase in that knob buys ~10 more colonies. Signs say\n\
          which way is uphill *from here* — a gradient is local and cannot see a summit,\n\
-         a cliff, or a modelling artifact pointing the wrong way.\n\
+         a cliff, or a modeling artifact pointing the wrong way.\n\
          Anything within 2 SE of zero is not a result. Widen the seed bed before\n\
          believing it, or accept that the knob does not matter at this operating point."
     );
