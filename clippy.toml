@@ -1,0 +1,31 @@
+# The engine may not call the host libm (T-127, `src/transcendental.rs`): the
+# platform `ln`/`exp`/`powf`/`sin`/`cos` disagree with the wasm32 build's in the
+# last bit on 2-10% of inputs, which desyncs a native run from a browser run.
+# `src/lib.rs` denies this lint for the library; examples and integration tests
+# are offline harnesses and allow it (Cargo.toml `[lints]`).
+disallowed-methods = [
+    { path = "f64::ln", reason = "host libm; use transcendental::ln" },
+    { path = "f64::log", reason = "host libm; use transcendental::ln" },
+    { path = "f64::log2", reason = "host libm; use transcendental::ln" },
+    { path = "f64::log10", reason = "host libm; use transcendental::ln" },
+    { path = "f64::ln_1p", reason = "host libm; use transcendental::ln" },
+    { path = "f64::exp", reason = "host libm; use transcendental::exp" },
+    { path = "f64::exp2", reason = "host libm; use transcendental::exp" },
+    { path = "f64::exp_m1", reason = "host libm; use transcendental::exp" },
+    { path = "f64::powf", reason = "host libm; use transcendental::pow" },
+    { path = "f64::powi", reason = "precision unspecified by std; multiply explicitly" },
+    { path = "f64::cbrt", reason = "host libm" },
+    { path = "f64::sin", reason = "host libm; use transcendental::sin_cos" },
+    { path = "f64::cos", reason = "host libm; use transcendental::sin_cos" },
+    { path = "f64::sin_cos", reason = "host libm; use transcendental::sin_cos" },
+    { path = "f64::tan", reason = "host libm" },
+    { path = "f64::asin", reason = "host libm" },
+    { path = "f64::acos", reason = "host libm" },
+    { path = "f64::atan", reason = "host libm" },
+    { path = "f64::atan2", reason = "host libm" },
+    { path = "f64::sinh", reason = "host libm" },
+    { path = "f64::cosh", reason = "host libm" },
+    { path = "f64::tanh", reason = "host libm" },
+    { path = "f64::hypot", reason = "host libm; use sqrt of a sum of squares" },
+    { path = "f64::mul_add", reason = "one rounding where a multiply and an add have two, and a software routine on wasm32; write the multiply and the add" },
+]

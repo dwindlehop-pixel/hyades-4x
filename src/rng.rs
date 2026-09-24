@@ -56,7 +56,7 @@ impl Rng {
         // Guard the log against u1 == 0.
         let u1 = (self.unit()).max(1e-18);
         let u2 = self.unit();
-        (-2.0 * u1.ln()).sqrt() * (core::f64::consts::TAU * u2).cos()
+        (-2.0 * crate::transcendental::ln(u1)).sqrt() * crate::transcendental::cos(core::f64::consts::TAU * u2)
     }
 
     /// Derive an independent sub-stream tagged by `label`. Mixing the label into

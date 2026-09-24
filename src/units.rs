@@ -63,6 +63,7 @@
 //! below `Band I` the ladder keeps naming magnitudes, which is a per-quantity
 //! anchor under §2.6 — see [`KILOTONS_AT_BAND_EMPTY`].
 
+use crate::transcendental;
 use core::fmt;
 use core::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 
@@ -306,12 +307,21 @@ pub struct Band(f64);
 /// It travels as a **type parameter**, which is what keeps the arithmetic free:
 /// [`Qty`] is `#[repr(transparent)]` over one `f64` and the marker is
 /// zero-sized, so `Qty<Mass>` and `Qty<Cost>` have the codegen and the
-/// vectorisation of a bare `f64`. Only the Band *conversion* costs anything,
+/// vectorization of a bare `f64`. Only the Band *conversion* costs anything,
 /// and it is not on any hot path.
 pub trait Scale: Copy + 'static {
     /// Step factors between adjacent rungs, indexed the way [`BandTier::index`]
     /// indexes: `0 = Empty→I`, `1 = I→II`, `2 = II→III`, `3 = III→IV`.
     const STEPS: [f64; 4];
+    /// `ln` of each step, evaluated at compile time — the Band reading's
+    /// denominator and [`Qty::at_band`]'s exponent scale, so neither takes a
+    /// logarithm of a constant at run time (T-127).
+    const LN_STEPS: [f64; 4] = [
+        transcendental::ln_const(Self::STEPS[0]),
+        transcendental::ln_const(Self::STEPS[1]),
+        transcendental::ln_const(Self::STEPS[2]),
+        transcendental::ln_const(Self::STEPS[3]),
+    ];
     /// Kilotons at this scale's `Band I` — its anchor. §2.6: every quantity
     /// anchors its own `Band I`; only the ratios are shared.
     const BAND_I: f64;
@@ -508,7 +518,10 @@ impl<S: Scale> Qty<S> {
         } else {
             b.0.floor()
         };
-        Qty(Self::rung(n as usize) * S::STEPS[n as usize].powf(b.0 - n), core::marker::PhantomData)
+        Qty(
+            Self::rung(n as usize) * transcendental::exp((b.0 - n) * S::LN_STEPS[n as usize]),
+            core::marker::PhantomData,
+        )
     }
 
     /// The magnitude at whole rung `n` on a ladder whose `Band I` sits at
@@ -552,7 +565,7 @@ impl<S: Scale> Qty<S> {
         while n < 3 && self.0 >= Self::rung(n + 1) {
             n += 1;
         }
-        Band((n as f64 + (self.0 / Self::rung(n)).ln() / S::STEPS[n].ln()).max(BAND_FLOOR))
+        Band((n as f64 + transcendental::ln(self.0 / Self::rung(n)) / S::LN_STEPS[n]).max(BAND_FLOOR))
     }
 
     /// Read it as the rung it has reached.
@@ -689,10 +702,6 @@ impl Volume {
     #[inline]
     pub const fn hull_units_cubed(self) -> f64 {
         self.0
-    }
-    #[inline]
-    pub fn cbrt(self) -> Length {
-        Length(self.0.cbrt())
     }
     #[inline]
     pub fn max(self, o: Volume) -> Volume {
@@ -1337,7 +1346,7 @@ mod tests {
         // playable rungs — the floor is excluded for the same reason.
         for (n, cost_step) in [10.0_f64, 20.0, 40.0].into_iter().enumerate() {
             assert!(
-                (MASS_LADDER[n + 1] - cost_step.powf(1.5)).abs() < 1e-9,
+                (MASS_LADDER[n + 1] - transcendental::pow(cost_step, 1.5)).abs() < 1e-9,
                 "F_mass must be F_cost^(3/2) at rung {}",
                 n + 1
             );

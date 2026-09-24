@@ -14,6 +14,7 @@
 use crate::math::Vec3;
 use crate::rng::Rng;
 use crate::sim::{hull_base_thrust, hull_dry_mass, HullType, Role, SimConfig};
+use crate::transcendental;
 use std::f64::consts::{PI, TAU};
 
 /// A fleet's reference trajectory — confirmed this conversation: *"the
@@ -84,7 +85,8 @@ impl StationKeeping {
         let cos_theta = rng.range(-1.0, 1.0);
         let sin_theta = (1.0 - cos_theta * cos_theta).max(0.0).sqrt();
         let phi = rng.range(0.0, TAU);
-        let axis = Vec3::new(sin_theta * phi.cos(), sin_theta * phi.sin(), cos_theta);
+        let (sin_phi, cos_phi) = transcendental::sin_cos(phi);
+        let axis = Vec3::new(sin_theta * cos_phi, sin_theta * sin_phi, cos_theta);
         let reference = arbitrary_perpendicular(axis);
 
         StationKeeping { radius, angular_velocity, phase, axis, reference }
@@ -113,7 +115,8 @@ impl StationKeeping {
 /// `v_rot = v·cos(θ) + (axis × v)·sin(θ)` when `v ⊥ axis` (the `(axis·v)
 /// axis (1−cos θ)` term of the general formula vanishes). See references.
 fn rotate_around_axis(v: Vec3, axis: Vec3, angle: f64) -> Vec3 {
-    v.scale(angle.cos()).add(axis.cross(v).scale(angle.sin()))
+    let (sin, cos) = transcendental::sin_cos(angle);
+    v.scale(cos).add(axis.cross(v).scale(sin))
 }
 
 /// Any unit vector perpendicular to `axis` (assumed already unit length) —

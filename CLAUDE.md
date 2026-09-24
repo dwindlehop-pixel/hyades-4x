@@ -1475,6 +1475,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 |---|---|
 | `src/units.rs` | **`Band` / `Kilotons` newtypes and the `Measure` trait** — the one place the two units meet, and the fix for a `min` that compared a mass against two levels (R-O66) |
 | `src/math.rs` | 3-vectors, relativistic 1 g flight, light-lag (`c = 1`, distance in ly, time in years) |
+| `src/transcendental.rs` | **the engine's `ln`, `exp`, `pow`, `sin_cos`** from `+ − × ÷` and bit operations (T-127). The host libm is banned in the library by `clippy.toml` — it disagrees with the wasm32 build's on 2–10% of inputs, and native and wasm32 runs of one seed diverged |
 | `src/rng.rs` | seeded splitmix64; `fork()` per entity for order-independent determinism |
 | `src/resources.rs` | CMY basics, RGB supers, apex, archetypes |
 | `src/galaxy.rs` | galaxy generation → continuous 3D planet field |
@@ -1569,6 +1570,22 @@ cheap audit of the first**, and neither defect was findable by reading.
   all time is the in-sim event clock in years. Iterate collections in deterministic
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`
   guards this — never weaken it to make a feature fit.
+
+  **The "and wasm32" half was false until T-127, and nothing here could have
+  said so.** The determinism suite runs one target, and at its horizons a
+  native and a wasm32 run agree on the report while their galaxies already
+  differ in the last bit; it took 300–800 simulated years for the host libm's
+  last-bit disagreements (1.9% of `ln` calls, 9.8% of `exp`) to reach an event
+  count. The engine now calls `crate::transcendental`, never the host
+  (`clippy.toml` enforces it). Two habits:
+
+  - **A claim about two targets needs a run on two targets.** The check was
+    one scratch crate and one node script (appendix §D.6, T-128); the claim
+    had stood for the whole project on reasoning alone.
+  - **A deny with nothing configured is not a guard.** `src/lib.rs` has denied
+    `clippy::disallowed_methods` since early on, and there was no
+    `clippy.toml`, so it denied nothing. When a lint names a list, check the
+    list exists.
 - **Zero dependencies.** Do not add crates to `Cargo.toml`.
 - **Entities evaluate on their own arrival events — never on a tick sweep, and never
   by rescanning the galaxy.** This is a discrete-event engine: a ship decides what to
@@ -2282,6 +2299,8 @@ changes how you *work*, not what is left to do:
   | **T-102 (`exp` is a polynomial)** — interleaved, 6 seeds, 800 yr: **104.9 → 107.8**, **109.4 → 112.4**, **107.3 → 110.6**, **114.5 → 118.3**, **120.1 → 123.0**, **108.6 → 110.1 yr/s** | ~40,900 | **+2.7%** | — |
   | T-125 combat bed (`examples/combat_bench`: 12 seats, both cards at the barrier, 400 yr, ~1,000–1,400 fights) — `ns/event` ~118,000–127,000 | — | 14.6 yr/s | 5.8× |
   | **T-126 (the survey scan reads the cached Band, and walks only unvisited worlds), same bed — `ns/event` ~49,000–50,000** | — | **36.4 yr/s** | **15×** |
+  | T-127 (the engine's own transcendentals), same bed, interleaved against T-126 on this container: **63,185 → 62,174** and **60,970 → 61,439 `ns/event`** — the runs differ, the seeds disagree in sign | — | 29.6 → 30.0, 28.6 → 28.5 yr/s | ~12× |
+  | T-127, standard bed, 3 seats, **400 yr** (where old and new are nearly one run), min of 7: **30,197 → 30,642** and **25,443 → 26,177 `ns/event`** — fewer instructions (−0.56%), more time: a latency cost | — | **+1.5% / +2.9% per event** | — |
 
   **R-WAR9's row is a case where the workload changed and the columns must be
   read that way** (§2's T-111 caveat). Flying colony ships at the rate their

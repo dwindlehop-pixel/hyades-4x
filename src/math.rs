@@ -112,7 +112,7 @@ pub fn signal_delay_years(distance_ly: f64) -> f64 {
 }
 
 /// **The lower end of [`exp_decay`]'s fitted range.** Arguments below this fall
-/// back to `f64::exp`.
+/// back to [`crate::transcendental::exp`].
 ///
 /// Measured, not assumed: the only caller is the ranking hot path, where the
 /// argument is `−distance / centrality_scale`. Histogrammed over full runs it
@@ -171,17 +171,18 @@ const EXP_DECAY_C: [f64; 8] = [
 /// Estrin at degree 7 costs what Horner costs at degree 5 and is 220x more
 /// accurate, so the dependency chain — not the multiply count — was the price.
 ///
-/// **It is also more deterministic than the function it replaces**, which is the
-/// half worth keeping. `f64::exp` is the platform libm natively and a Rust libm
-/// on wasm32; `Hyades_netcode.md` §6 H4 accepts that because the transcendental
-/// ships *inside* the module, but the argument only covers wasm against wasm. A
-/// polynomial of `+` and `*` is exactly specified by IEEE 754 and identical
-/// everywhere by construction. **No `mul_add`**: a fused multiply-add rounds
-/// once where a separate multiply and add round twice, so mixing the two across
-/// targets would reintroduce exactly the divergence this removes.
+/// **It was also the first host transcendental the engine removed** (T-102):
+/// `f64::exp` is the platform libm natively and a Rust libm on wasm32, and the
+/// two disagree in the last bit. T-127 removed the rest
+/// ([`crate::transcendental`]), so determinism no longer depends on this
+/// function and it is kept for speed. A polynomial of `+` and `*` is exactly
+/// specified by IEEE 754 and identical everywhere by construction. **No
+/// `mul_add`**: a fused multiply-add rounds once where a separate multiply and
+/// add round twice, so mixing the two across targets reintroduces a
+/// divergence.
 ///
 /// Outside the fitted range — below [`EXP_DECAY_MIN`], above zero, or `NaN` —
-/// it defers to `f64::exp`, so the function is correct on all of `f64` and only
+/// it defers to [`crate::transcendental::exp`], so the function is correct on all of `f64` and only
 /// *fast* where it was measured to matter. The upper guard is not decoration:
 /// the polynomial is a minimax fit on a closed interval and says nothing at all
 /// about `x > 0`, where it passes 1% relative error by `x = 1`. The caller that
@@ -191,9 +192,9 @@ const EXP_DECAY_C: [f64; 8] = [
 #[inline]
 pub fn exp_decay(x: f64) -> f64 {
     // Written as a negated `in range` so a `NaN` argument falls through to
-    // `f64::exp` and propagates rather than indexing into the polynomial.
+    // `transcendental::exp` and propagates rather than indexing into the polynomial.
     if !(EXP_DECAY_MIN..=0.0).contains(&x) {
-        return x.exp();
+        return crate::transcendental::exp(x);
     }
     let c = &EXP_DECAY_C;
     let x2 = x * x;
@@ -225,7 +226,8 @@ pub fn exp_decay(x: f64) -> f64 {
 pub fn ship_travel_years(distance_ly: f64, accel: f64) -> f64 {
     debug_assert!(accel > 0.0, "acceleration must be positive");
     let d = distance_ly.max(0.0);
-    ((d / C).powi(2) + 4.0 * d / accel).sqrt()
+    let q = d / C;
+    (q * q + 4.0 * d / accel).sqrt()
 }
 
 /// Distance covered from rest under constant proper acceleration `accel` after
@@ -233,7 +235,8 @@ pub fn ship_travel_years(distance_ly: f64, accel: f64) -> f64 {
 #[inline]
 fn accel_leg_distance(accel: f64, tau: f64) -> f64 {
     let t = tau.max(0.0);
-    (C * C / accel) * ((1.0 + (accel * t / C).powi(2)).sqrt() - 1.0)
+    let q = accel * t / C;
+    (C * C / accel) * ((1.0 + q * q).sqrt() - 1.0)
 }
 
 /// Exact along-track distance covered at elapsed time `tau` into a symmetric
@@ -324,7 +327,7 @@ mod tests {
         let mut worst_at = 0.0f64;
         for i in 0..=STEPS {
             let x = EXP_DECAY_MIN * (f64::from(STEPS - i) / f64::from(STEPS));
-            let want = x.exp();
+            let want = crate::transcendental::exp(x);
             let rel = ((exp_decay(x) - want) / want).abs();
             if rel > worst {
                 worst = rel;
@@ -356,7 +359,7 @@ mod tests {
             700.0,
             f64::INFINITY,
         ] {
-            assert_eq!(exp_decay(x).to_bits(), x.exp().to_bits(), "x={x}");
+            assert_eq!(exp_decay(x).to_bits(), crate::transcendental::exp(x).to_bits(), "x={x}");
         }
         assert!(exp_decay(f64::NAN).is_nan());
     }

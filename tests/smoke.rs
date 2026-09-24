@@ -95,8 +95,16 @@ fn snapshot_is_consistent_with_report() {
         // `bio_max` regardless of them (design law #11, taken literally), so a
         // settled world legitimately carries more living mass than its pristine
         // stock alone. `K` is what caps population; this caps the stock.
+        //
+        // The ceiling arrives as a Band, so reading it back as a mass is a
+        // round trip through `ln` and `exp` and carries their rounding — about
+        // one part in 10^15 of the value. A world whose stock sits *at* its
+        // ceiling is compared against that reconstruction, so the tolerance is
+        // relative (T-127: an absolute 1e-9 kt passed by the host libm's
+        // rounding luck at 620,000 kt and failed with the engine's own).
+        let ceiling = p.bio_max.in_kilotons().kilotons();
         assert!(
-            p.biomass.kilotons() <= p.bio_max.in_kilotons().kilotons() + 1e-9,
+            p.biomass.kilotons() <= ceiling * (1.0 + 1e-12) + 1e-9,
             "planet {} holds {} of biomass against a {} ceiling",
             p.id.0,
             p.biomass,

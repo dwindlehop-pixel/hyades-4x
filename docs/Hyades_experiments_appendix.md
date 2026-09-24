@@ -1199,6 +1199,174 @@ per unvisited world for a policy that keeps one of them (`CLAUDE.md` §4, "do no
 materialize a collection you only `min_by` over"); removing it changes the
 `Autopilot::choose_survey_target` interface and is not done here.
 
+
+## D.6 T-127 — the host libm made native and wasm32 runs diverge; the engine's own transcendentals
+
+**Supports:** netcode §6 H4a, the T-127 entry in `hyades_todo.md`, and
+`src/transcendental.rs`. Author's request: remove the expensive math-library
+calls (`ln` and its siblings) from the simulation, and say why they are there.
+
+### What each transcendental was for (inventory at T-127)
+
+| call site | function | what it computes |
+|---|---|---|
+| `units::Qty::band` | `ln` | the Band reading of a mass — `n + ln(m / rung_n) / ln(step_n)`; a Band *is* a logarithm |
+| `units::Qty::at_band` | `powf` | its inverse, `rung_n · step_n^(b − n)` |
+| `Simulation::settler_target` | `ln` | the time a seed of `S` saves the child on its own logistic, `ln(S/(K − S) · (K − x₀)/x₀)` — the closed form's inverse — at up to 32 grid points per colonization decision |
+| `logistic_step` | `exp` | the closed-form logistic across one tick, `e^(−rΔ)` (T-94) |
+| `sys_contract_due`, two freight routing scores | `exp` | decay with elapsed or travel time, `e^(−λt)` |
+| `veins`, `crowding_factor`, `mining_crew_for` | `powf` | vein count geometric in Band; the crowding exponent β |
+| intercept cone | `cos` | cosine of the cone half-angle |
+| `combat::StationKeeping` | `sin`, `cos` | a random orbital plane and the orbit offset (Rodrigues rotation) — reached by every simulation fight |
+| `galaxy` generation | `ln`, `exp`, `sin`, `cos`, `powf` | exponential and Gamma radial draws, Gaussian hotspot density, ring positions, Weibull population-band quantiles |
+| `Rng::gaussian` | `ln`, `cos` | Box–Muller |
+| `math::exp_decay` fallback | `exp` | outside its fitted range (T-102) |
+| `math` flight kinematics | `powi(2)` | a square — now `q * q`, bit-identical |
+
+`sqrt` stays on `std`: IEEE 754 specifies it exactly, and wasm has it as an
+instruction. So do `floor`, `round` and `abs`.
+
+**Cost before T-127:** after T-126, libm was **0.74%** of instructions on the
+combat bed (callgrind, 12 seats, seed 1, 300 yr) and **~3.9%** on the standard
+three-seat bed (400 yr), nearly all of it `ln` from `settler_target`. T-126 had
+already removed the ~41% that the survey scan's `ln` cost.
+
+### Native against wasm32 — per function
+
+A scratch crate evaluated each function on 2,000,000 inputs built from exact
+arithmetic (so both targets see the same inputs), compiled natively (glibc) and
+for `wasm32-unknown-unknown` (Rust's libm, run under node 22), and compared the
+result bits:
+
+| function | inputs | results that differ | max difference |
+|---|---|---|---|
+| `ln` | `2^−30 … 2^31` | **1.92%** | 1 ulp |
+| `exp` | `[−30, 10]` | **9.76%** | 1 ulp |
+| `powf` | `x ∈ [0.5, 30.5]`, `y ∈ [−1, 3]` | **9.71%** | 1 ulp |
+| `sin` | `[0, 8π)` | **3.11%** | 1 ulp |
+| `cos` | `[0, 8π)` | **3.11%** | 1 ulp |
+
+### Native against wasm32 — whole runs
+
+The same scratch crate ran `Simulation::with_baseline` for one seed on both
+targets and compared two FNV-style digests: one over every planet's position,
+habitability, biosphere and mineral mass (the galaxy), one over the report
+(events, and per seat colonies, outposts and the population's bits). The combat
+arms play the Warfare card on even seats and Growth on odd seats at the barrier,
+with engagements on (`examples/combat_bench`'s bed).
+
+| seats | seed | horizon | before: galaxy | before: report | after: galaxy | after: report |
+|---|---|---|---|---|---|---|
+| 2 | 1 | 90 | differs | same | same | same |
+| 3 | 7 | 60 | differs | same | same | same |
+| 6 | 13 | 40 | differs | same | same | same |
+| 12 | 99 | 26 | differs | same | same | same |
+| 18 | 4 | 20 | differs | same | same | same |
+| 3 | 1 | 800 | differs | **differs** — 306,273 vs 305,951 events | same | same |
+| 3 | 7 | 800 | differs | **differs** — 360,348 vs 359,938 events; 2,874 vs 2,881 colonies | same | same |
+| 3 | 42 | 800 | differs | **differs** — 352,979 vs 353,068 events; 2,872 vs 2,879 colonies | same | same |
+| 12 | 1 | 300 | differs | **differs** — 105,798 vs 105,813 events | same | same |
+| 12 | 1 | 300, combat | — | — | same | same, 199 fights |
+| 12 | 7 | 300, combat | — | — | same | same, 255 fights |
+
+The short arms — the horizons `tests/determinism.rs` runs — agree on the report
+while their galaxies already differ in the last bit, so **the determinism suite
+could not have caught this** even had it run on both targets. It takes a few
+hundred simulated years for the last-bit differences to reach a count.
+
+### Accuracy against the host (`src/transcendental.rs` tests)
+
+| function | range | bound against the host |
+|---|---|---|
+| `ln` (table, run time) | 60 binades | ≤ 1 ulp |
+| `ln` | within 0.3 of 1 | ≤ 2 ulp (differs on ~24% of samples; the sum of `ln c` and `ln(1 + r)` loses up to one bit) |
+| `ln_const` (fdlibm, compile time) | 60 binades | ≤ 1 ulp |
+| `exp` | `[−40, 20]` | ≤ 1 ulp |
+| `sin`, `cos` | `[−60, 60]` | ≤ 1 ulp |
+| `pow` | `x ∈ [10^−3, 10^3]`, `y ∈ [−4, 4]` | ≤ `4 + 2·|y ln x|` ulp |
+
+Each is a bound over the sampled inputs, not a proof. The combat goldens
+(`tests/balance.rs`, release) pass unchanged.
+
+### Throughput
+
+Per call (min of 7 passes over 2,000,000 inputs, release, this container):
+
+| | host | engine |
+|---|---|---|
+| `ln` | 6.8 ns | **10.3 ns** (table); fdlibm form 11.3–11.8 ns |
+| `exp` | 7.2 ns | 14.8 ns |
+| `pow` | 20.5 ns | 17.2 ns |
+| `sin` + `cos` | 30.6 ns | 25.3 ns (one reduction for both) |
+
+The first run-time `ln` was fdlibm's, and replacing its division with a
+128-cell table bought **nothing** (11.8 → 12.1 ns). The saturating `as usize`
+conversion used to index the table cost ~2.5 ns per call: `1.5·2^52` rounding
+plus a 256-entry table, indexed by the low eight bits so the bounds check
+disappears, gave 10.3 ns.
+
+**Instruction count against wall time disagreed on the standard bed**, and the
+split was only resolved by timing where the two runs are the same run. At
+400 yr the old and new engines reach 431 colonies on seed 1 (population equal
+to six decimals) and 928 / 927 on seed 7; by 800 yr the last-bit differences
+have moved event counts by up to 0.3%, so an 800-yr comparison measures a
+different workload as well as a different cost.
+
+| standard bed, 3 seats | seed 1 | seed 7 |
+|---|---|---|
+| instructions, 400 yr (callgrind) | 10.251 G → 10.193 G (**−0.56%**) | — |
+| `ns/event`, 400 yr, min of 7, old | 30,197 | 25,443 |
+| engine transcendentals, no prune | 31,054 (**+2.8%**) | 26,750 (**+5.1%**) |
+| **+ the `settler_target` prune (below)** | **30,642 (+1.5%)** | **26,177 (+2.9%)** |
+
+Fewer instructions and more time is a latency cost: the engine's `ln` and `exp`
+are longer dependency chains than glibc's FMA-specialized routines
+(`__ieee754_log_fma`). **The ablation that located it:** the new engine with
+only `settler_target`'s `ln` pointed back at the host recovered 29% of the gap
+on seed 1 and 64% on seed 7 (800 yr, min of 5).
+
+**So the lever was the call count, not the call.** `settler_target` takes `ln`
+at every grid point to find an argmax. `ln` is concave, so its tangent at an
+earlier point bounds it from above, and a point whose bound cannot beat the
+best so far cannot win. Skipping those points takes **~48% fewer logarithms**
+(seed 1, 800 yr: 5.90 M taken, 5.44 M skipped) and is **bit-identical** — all
+eleven digests above reproduce, and
+`the_pruned_endowment_scan_picks_what_the_full_scan_picks` holds the pruned scan
+to the full one over 20,000 random inputs.
+
+**Combat bed** (`examples/combat_bench`, 12 seats, 400 yr), final engine against
+the old, three interleaved rounds, mean `ns/event`: seed 1 **63,185 → 62,174
+(−1.6%)**, seed 7 **60,970 → 61,439 (+0.8%)**; 29.55 → 30.02 and 28.64 → 28.48
+yr/s. The runs differ (1,038 → 1,028 and 1,357 → 1,386 fights), and the two
+seeds move in opposite directions, so the combat bed shows no cost that three
+rounds can resolve.
+
+### What the change did to the runs
+
+Every run's bits move (the galaxy is generated with the new functions), so this
+is a disturbance of the kind T-102 measured, not a behavior change. Standard
+bed, 800 yr, colonies, new minus old: **+4.5 ± 2.2 (mean ± SE, n = 8)**, 5 up,
+2 down, 1 tied; population moves by −0.31% to +0.30%. That is 2.0 SE on eight
+seeds and is not read as an effect: nothing in the change has a direction. The
+T-125 card table (appendix §D.4) was measured on the old bits and is not
+re-measured here.
+
+### Test budget
+
+`tests/determinism.rs` was **63.7–64.5 s on the old and new binaries alike**
+(two interleaved runs each) against the 60-second rule — an inherited breach, on
+this container, of a target T-126 measured at 48.2 s. One test,
+`full_run_reports_are_bit_identical`, was **64.9 s** of it on its own: five seat
+counts in sequence. Split into one test per seat count, the harness runs them in
+parallel and the target is **53.8 s**, with every assertion and every galaxy
+unchanged.
+
+`tests/smoke.rs::snapshot_is_consistent_with_report` compared a world's biomass
+against its ceiling read back from a Band with an absolute 1e-9 kt tolerance.
+At 620,113.69 kt that is ~8 ulp, and a Band round trip (`ln` then `exp`) carries
+~1 part in 10^15; the host libm's rounding had kept it inside. The tolerance is
+now relative (1e-12).
+
 ---
 
 ## References

@@ -23,3 +23,9 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"   # smaller wasm; the engine never relies on unwinding
+
+# `clippy.toml` bans the host libm; `src/lib.rs` denies that lint for the
+# engine. Examples and integration tests are offline harnesses whose
+# statistics never reach replicated state, so the package default is allow.
+[lints.clippy]
+disallowed_methods = "allow"

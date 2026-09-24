@@ -164,7 +164,10 @@ coverage in *both* directions. **R-AC17 resolved**; appendix §A.7, §A.2.
 **3.4 `RATIFIED` — centrality is evaluated by `math::exp_decay`, not
 `f64::exp`.** A degree-7 minimax polynomial over the measured argument range,
 built from `+` and `*` only, so the term is bit-identical native-to-wasm by
-construction rather than by assumption (T-102, netcode H4a).
+construction rather than by assumption (T-102, netcode H4a). Since T-127 every
+transcendental in the engine is (`src/transcendental.rs`), so determinism no
+longer depends on this choice; it stays for speed, and its out-of-range
+fallback is `transcendental::exp`.
 
 **3.5 `RATIFIED` — the mineral term reads Bands, memoized on the field's own
 bits.** `rank` scores ore as `Σ_c scarcity_c · Band(m_c)`; `PlanetView` carries

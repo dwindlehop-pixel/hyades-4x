@@ -163,6 +163,63 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-127. The engine calls no host libm — native and wasm32 runs had diverged
+
+**Closed.** Author's request: remove the expensive math-library calls such as
+`ln` from the simulation, and say why they are used. Appendix §D.6; netcode §6
+H4a.
+
+- **Why they are there:** a Band is a logarithm of a mass (`band`, `at_band`);
+  the closed-form logistic needs `e^(−rΔ)` and its inverse (`logistic_step`,
+  `settler_target`); decay with travel time (`e^(−λt)`); crowding and vein
+  exponents (`pow`); station-keeping orbits in every fight (`sin`, `cos`); and
+  galaxy generation and `Rng::gaussian` (exponential, Gamma, Box–Muller).
+- **The finding that mattered more than cost:** the host libm and the wasm32
+  build's libm disagree in the last bit on 1.9–9.8% of inputs, and native and
+  wasm32 runs of one seed **diverged** — on all four arms tried at 800 yr
+  (3 seats) and 300 yr (12 seats). `CLAUDE.md` §4's "native and wasm32" claim
+  was false, and the determinism suite's short horizons could not see it.
+- **Landed:** `src/transcendental.rs` — `ln` (division-free, 256-entry table
+  built at compile time), `ln_const` (fdlibm, `const fn`), `exp`, `pow`,
+  `sin_cos`, all from `+ − × ÷` and bit operations. Every call site moved;
+  `Scale::LN_STEPS` evaluates the ladder's logarithms at compile time.
+  `clippy.toml` bans the host functions and `mul_add`; `src/lib.rs` denies the
+  lint (it was denied before, with nothing configured). Eleven arms now
+  reproduce bit-for-bit native and wasm32, two of them combat beds.
+- **Cost:** `ns/event` +1.5% / +2.9% on the standard bed (400 yr, min of 7),
+  after a bit-identical prune of `settler_target`'s scan that takes ~48% fewer
+  logarithms. `Volume::cbrt` had no callers and is deleted.
+- **Also:** `tests/determinism.rs` was 64 s on the old binary too; its full-run
+  test is now one test per seat count (53.8 s). One smoke tolerance became
+  relative.
+- **Opened:** T-128, T-129.
+
+### T-128. A native-against-wasm32 parity check in CI
+
+**Open, Band A.** The clippy ban keeps new host calls out; it does not prove
+parity, and neither does the determinism suite (its horizons agree on the report
+while the galaxy digests already differ, appendix §D.6). The harness exists in
+the T-127 session's scratch space and is not checked in: a zero-dependency
+`cdylib` wrapper that runs a seed and returns galaxy and report digests, built
+for both targets, and a node script comparing them. To settle: add it under
+`tools/`, run one medium arm (3 seats × 800 yr is ~15 s under node) plus the
+galaxy digests of every seat count, and gate it in CI's slow job.
+
+### T-129. The Band readings still taken on hot paths
+
+**Open, Band B.** After T-127 the remaining run-time logarithms outside
+`settler_target` are Band readings of masses inside decisions — `staffing`
+(458 k calls), `color_deficit` (220 k), `mineral_pressure_of` (173 k) — about
+0.85 M per 400 yr on the standard bed (callgrind, seed 1), against 5.1 M in
+`settler_target` at the same horizon before its prune and about half that
+after. `capacity_of` reads `K` back as a mass
+through `at_band`, one `exp` per call (323 k). `CLAUDE.md` §4 already says to convert at the
+edges; each of these is a comparison that could be made in mass by converting
+its threshold once, which removes the logarithm rather than making it cheaper.
+What would settle it: a per-site census of how many readings each makes, then
+the mass-space form for the top ones, measured bit-identical or reported as a
+perturbation.
+
 ### T-126. Release throughput on the combat bed — the knobs were already right; the profile was not
 
 **Closed.** Author's request: experiment with compiler knobs and check in any

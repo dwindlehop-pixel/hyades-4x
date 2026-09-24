@@ -63,6 +63,7 @@
 use crate::math::Vec3;
 use crate::resources::{Archetype, Basic, MineralField};
 use crate::rng::Rng;
+use crate::transcendental;
 use crate::units::{Band, BandTier, Kilotons, Measure};
 
 /// `Γ(4/3)`, the mean-scaling constant for a Weibull(k=3) distribution — see
@@ -75,17 +76,18 @@ const GAMMA_4_3: f64 = 0.892_979_511_569_249;
 /// exponential-disk radial profile; Z via a plain two-sided `Exponential`
 /// at its own, independently-set `z_scale`.
 fn sample_flattened_field(rng: &mut Rng, xy_scale: f64, z_scale: f64) -> Vec3 {
-    let r = -xy_scale * (rng.unit().max(1e-12).ln() + rng.unit().max(1e-12).ln());
+    let r = -xy_scale * (transcendental::ln(rng.unit().max(1e-12)) + transcendental::ln(rng.unit().max(1e-12)));
     let theta = rng.range(0.0, core::f64::consts::TAU);
     let z = {
-        let mag = -z_scale * rng.unit().max(1e-12).ln();
+        let mag = -z_scale * transcendental::ln(rng.unit().max(1e-12));
         if rng.unit() < 0.5 {
             -mag
         } else {
             mag
         }
     };
-    Vec3::new(r * theta.cos(), r * theta.sin(), z)
+    let (sin, cos) = transcendental::sin_cos(theta);
+    Vec3::new(r * cos, r * sin, z)
 }
 
 /// Index of a planet within a [`Galaxy`].
@@ -216,7 +218,7 @@ impl PopBands {
     pub fn from_weibull(k: f64, top_edge: f64) -> Self {
         let q = [0.2, 0.4, 0.6, 0.8];
         // weibull quantile: λ · (−ln(1−p))^(1/k); solve λ so q(0.8) == top_edge.
-        let shape = |p: f64| (-(1.0 - p).ln()).powf(1.0 / k);
+        let shape = |p: f64| transcendental::pow(-transcendental::ln(1.0 - p), 1.0 / k);
         let lambda = top_edge / shape(0.8);
         let mut edges = [Kilotons::ZERO; 4];
         for (i, &p) in q.iter().enumerate() {
@@ -489,7 +491,15 @@ impl GalaxyConfig {
         let l_xy = self.xy_scale();
         let l_z = self.z_scale();
         let d = self.star_spacing_ly;
-        let n = 3.0 * l_xy * l_xy * l_z * core::f64::consts::E * (GAMMA_4_3 / d).powi(3) * CALIBRATION_CUBED;
+        let n = 3.0
+            * l_xy
+            * l_xy
+            * l_z
+            * core::f64::consts::E
+            * (GAMMA_4_3 / d)
+            * (GAMMA_4_3 / d)
+            * (GAMMA_4_3 / d)
+            * CALIBRATION_CUBED;
         (n.round() as usize).saturating_sub(self.players).max(10)
     }
 }
@@ -576,7 +586,8 @@ impl Galaxy {
         let phase = rng.range(0.0, core::f64::consts::TAU);
         let hotspot = |k: f64| {
             let a = phase + k * core::f64::consts::TAU / 3.0;
-            Vec3::new(hotspot_ring * a.cos(), hotspot_ring * a.sin(), 0.0)
+            let (sin, cos) = transcendental::sin_cos(a);
+            Vec3::new(hotspot_ring * cos, hotspot_ring * sin, 0.0)
         };
         let hotspots = Hotspots { cyan: hotspot(0.0), magenta: hotspot(1.0), yellow: hotspot(2.0) };
 
@@ -590,7 +601,7 @@ impl Galaxy {
 
             // tier-1 density: Gaussian(XY to hue hotspot) × exp(−|z|/H), §4.3 —
             // same flattened shape as the star field itself.
-            let z_decay = (-(position.z.abs()) / z_scale).exp();
+            let z_decay = transcendental::exp(-(position.z.abs()) / z_scale);
             let mut minerals = MineralField::default();
             let mut band_sum = 0.0;
             for b in Basic::ALL {
@@ -598,7 +609,7 @@ impl Galaxy {
                 let dx = position.x - h.x;
                 let dy = position.y - h.y;
                 let r2 = dx * dx + dy * dy;
-                let g = (-r2 / (2.0 * hotspot_sigma * hotspot_sigma)).exp();
+                let g = transcendental::exp(-r2 / (2.0 * hotspot_sigma * hotspot_sigma));
                 // **The Gaussian is over Bands (T-62).** Density is a position
                 // on the ladder, so the field is log-normal in mass: a
                 // `Band IV` seam holds ~715,000× a `Band I` one, where the old
@@ -665,7 +676,8 @@ impl Galaxy {
         let mut homeworlds = Vec::with_capacity(config.players);
         for p in 0..config.players {
             let a = (p as f64) * core::f64::consts::TAU / (config.players as f64);
-            let position = Vec3::new(homeworld_ring * a.cos(), homeworld_ring * a.sin(), 0.0);
+            let (sin, cos) = transcendental::sin_cos(a);
+            let position = Vec3::new(homeworld_ring * cos, homeworld_ring * sin, 0.0);
 
             // rotational archetype assignment: B-R-G cycling (§3).
             let archetype = Archetype::ALL[p % 3];
@@ -874,7 +886,7 @@ mod tests {
         let g = Galaxy::generate(GalaxyConfig::new(6, 55)).unwrap();
         let dists = nearest_neighbor_distances(&g.planets);
         let mean = dists.iter().sum::<f64>() / dists.len() as f64;
-        let var = dists.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / dists.len() as f64;
+        let var = dists.iter().map(|d| (d - mean) * (d - mean)).sum::<f64>() / dists.len() as f64;
         let stddev = var.sqrt();
         assert!(stddev > mean * 0.15, "suspiciously little spread: mean={mean:.2} sd={stddev:.2}");
         let min = dists.iter().cloned().fold(f64::INFINITY, f64::min);
@@ -896,7 +908,8 @@ mod tests {
         let g = Galaxy::generate(GalaxyConfig::new(6, 55)).unwrap();
         let wild: Vec<&Planet> = g.planets.iter().filter(|p| !p.is_homeworld).collect();
 
-        let mut xy: Vec<f64> = wild.iter().map(|p| (p.position.x.powi(2) + p.position.y.powi(2)).sqrt()).collect();
+        let mut xy: Vec<f64> =
+            wild.iter().map(|p| (p.position.x * p.position.x + p.position.y * p.position.y).sqrt()).collect();
         let mut z_abs: Vec<f64> = wild.iter().map(|p| p.position.z.abs()).collect();
         xy.sort_by(|a, b| a.partial_cmp(b).unwrap());
         z_abs.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -907,9 +920,10 @@ mod tests {
             "field isn't flattened: median |z|={median_z:.1} vs median xy-radius={median_xy:.1}"
         );
 
-        let xy_rms =
-            (wild.iter().map(|p| p.position.x.powi(2) + p.position.y.powi(2)).sum::<f64>() / wild.len() as f64).sqrt();
-        let z_rms = (wild.iter().map(|p| p.position.z.powi(2)).sum::<f64>() / wild.len() as f64).sqrt();
+        let xy_rms = (wild.iter().map(|p| p.position.x * p.position.x + p.position.y * p.position.y).sum::<f64>()
+            / wild.len() as f64)
+            .sqrt();
+        let z_rms = (wild.iter().map(|p| p.position.z * p.position.z).sum::<f64>() / wild.len() as f64).sqrt();
         assert!(z_rms < xy_rms, "RMS z-spread {z_rms:.1} should be less than RMS xy-spread {xy_rms:.1}");
     }
 
