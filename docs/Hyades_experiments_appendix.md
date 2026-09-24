@@ -1367,6 +1367,109 @@ At 620,113.69 kt that is ~8 ulp, and a Band round trip (`ln` then `exp`) carries
 ~1 part in 10^15; the host libm's rounding had kept it inside. The tolerance is
 now relative (1e-12).
 
+
+## D.7 T-129 — Band readings off the run path: static kilotons, and a reading without a logarithm
+
+**Supports:** `Hyades_mineral_cost_curve.md` §2.6's T-129 note and the T-129
+entry in `hyades_todo.md`. Author's direction: *"Band readings are not
+required. Translate statically into kt readings."* Asked which form each
+continuous consumer should take, the author answered: `rank` — *"do the math
+statically for each Band range in kt"*; `veins` and `i_star` — *"make no
+change"*; the snapshot — *"a cheaper approximation of Band readings that does
+not require a transcendental function"*.
+
+### Where the conversions were (counted, seed 1, 3 seats, 400 yr)
+
+A temporary `#[track_caller]` counter on every conversion, on T-127's engine
+(43,012 events):
+
+| calls | site | kind |
+|---|---|---|
+| 322,600 | `capacity_of`: `population_mass(K)` | round trip — `K` is a minimum of two masses |
+| 235,350 | `Factors::infra_band` | reading |
+| 228,890 | `staffing`: `at_band(infra_band)` | round trip cost → mass |
+| 203,342 | `infra_rung_of`: `round(band)` | threshold |
+| 54,443 | `veins` | reading (unchanged by instruction) |
+| 16,713 | `mineral_bands` memo misses | reading (`rank`) |
+| 12,082 | `founding_infra_band` | reading |
+| 8,444 | production tick: `population_mass(K)` | round trip |
+| 1,524 × 2 | seed floor; `population_mass(k_potential)` | constant; round trip |
+| 6,725 × 3 | world construction | static |
+
+After T-129 (43,149 events): `at_band` runs only at world construction;
+`staffing`'s map runs 227,359 times and the rung test 208,998 times, neither
+taking a reading; the remaining readings are `veins` (54,326), `mineral_bands`
+(16,698), `founding_infra_band` (12,002) and `infra_band` (6,446), all through
+the new reading.
+
+### The static translations
+
+- **`K` as a mass.** `population_mass` is monotone, so `KT(min(hab, band(bio_max)))
+  = min(KT(hab), bio_max)`; `KT(hab)` is stored when the world is built. The
+  one place the round trip was not the identity is the floor, and `k_mass`
+  keeps it: a `bio_max` at or below the bottom rung admits no people.
+- **The nearest rung.** A reading rounds up at a segment's geometric
+  midpoint, so the rung is the count of `x² ≥ rung_k² · F_k` that hold.
+  Against `round` of the exact reading over 200,000 amounts at a foreign
+  anchor: no disagreement (the test allows two, at a midpoint).
+- **Cost → mass at equal Band position.** `mass_n · (x / cost_n)^(3/2)` within
+  segment `n ≥ I`; against the exact round trip over 200,000 amounts, relative
+  difference `< 1e-12`. The `Empty` segment's exponent (`ln 1000 / ln 5`) goes
+  through `transcendental::pow`, and **it did not run**: over 800 yr on seeds 1
+  and 7, the segment counts were `[0, 895,188, 216,837, 49,813]` and
+  `[0, 957,301, 237,688, 47,092]`.
+
+### The reading
+
+`n + log₂(m / rung_n) · (1 / log₂ F_n)`, the per-segment constants evaluated at
+compile time, and `log₂` from the exponent bits plus `f · Q(f)` on the mantissa
+normalized to `[√½, √2)`. `Q` is a Chebyshev interpolant of `log₂(1 + f) / f`,
+fitted in plain Python (no numpy in the container). Maximum error over the
+interval, in `log₂`, and the worst case in Bands (the cost ladder's `F = 5`):
+
+| degree of `f·Q` | `log₂` | Band |
+|---|---|---|
+| 5 | 2.8e-5 | 1.2e-5 |
+| 6 | 4.2e-6 | 1.8e-6 |
+| **7 (shipped)** | **6.3e-7** | **2.7e-7** |
+| 8 | 9.6e-8 | 4.2e-8 |
+
+The `f · Q` form makes the reading exact at every rung. **The first version
+was not exact at `Band IV`**: a mass there sat inside segment III, where the
+ratio to its rung is `F₃ = 252.98` rather than a power of two, and it read
+3.9999999977. `IV` is now a segment start, extrapolated with `F₃` above it.
+Held against the exact reading over eighteen decades on both ladders: **within
+3e-7 Band**.
+
+### Cost and effect
+
+- **Instructions**, seed 1, 400 yr (callgrind): 10.060 G over 43,012 events →
+  9.845 G over 43,149, **233,891 → 228,172 per event (−2.4%)**.
+- **`ns/event`**, standard bed, 400 yr, min of 7 interleaved: seed 1 **30,523 →
+  29,087 (−4.7%)**, seed 7 **26,270 → 24,011 (−8.6%)** against T-127; against the
+  engine before T-127, 30,312 and 25,456, so both seeds are now faster than
+  with the host libm. Seed 1's run had diverged by 400 yr (447 colonies against
+  431), so its figure compares slightly different workloads.
+- **Combat bed**, 12 seats, 400 yr, three interleaved rounds: 61,935 → 63,167
+  and 61,556 → 61,838 `ns/event`, with a spread of up to 5% within each build —
+  no difference three rounds can resolve.
+- **The runs move**, because readings enter `rank` and the deepening headroom:
+  standard bed, 800 yr, colonies against T-127 **−2.75 ± 2.05 (mean ± SE,
+  n = 8)**, 3 up, 4 down, 1 tied; population −0.02% to +0.80%. 1.3 SE; not
+  read as an effect.
+- **Native against wasm32:** all eleven arms of §D.6 reproduce bit-for-bit. The
+  five short arms are bit-identical to T-127 as well; the six long arms move.
+
+### Tests that changed
+
+Five `units` tests asserted that a reading inverts `at_band` to 1e-9 Band or a
+tonne; they now assert the reading's bound, in Bands or as the relative mass
+error it implies (`3e-7 · ln 1000`). One `sim` test asserted a reading equal to
+1.5 exactly; it now asserts the bound and that `k_mass` is the new pristine
+mass exactly. `smoke::snapshot_is_consistent_with_report` compared biomass
+against a ceiling rebuilt from a Band; the snapshot now carries
+`bio_max_mass`, and the comparison is of two masses with **no tolerance**.
+
 ---
 
 ## References

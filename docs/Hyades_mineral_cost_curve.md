@@ -939,6 +939,29 @@ withdrawn — see the amendment note at the head of this section.*
 > the two cannot be collapsed back into one by anyone who has not read this
 > paragraph.
 
+> **T-129 `RATIFIED` — the simulation does not take Band readings on its run
+> path.** Author's direction: *"Band readings are not required. Translate
+> statically into kt readings."* What holds:
+>
+> - **State is kilotons, and every Band threshold is translated into kilotons
+>   statically** — at compile time or where the world is built. `K` is stored
+>   as the mass it admits; the rung an amount stands nearest is a comparison
+>   against squared geometric midpoints, `x² ≥ rung_k² · F_k`; a position
+>   carried from the cost ladder to the mass ladder is `mass_n · (x /
+>   cost_n)^(3/2)` within segment `n ≥ I` (R-MC15's `3/2` tie), with the
+>   `Empty` segment's exponent `ln 1000 / ln 5` a compile-time constant.
+> - **Where a Band is consumed as a value** — the autopilot's `rank` scores,
+>   the views, the presentation snapshot — the reading is computed per segment
+>   from static constants and a degree-7 polynomial on the mantissa bits, with
+>   **no logarithm**. It is **within 3e-7 Band** of `band(m) = n + log(m /
+>   rung_n) / log(F_n)`, which remains the reading's definition, and **exact at
+>   every rung**. Confirmed, measured over eighteen decades on both ladders.
+> - **Two sites take the reading as before, on the author's instruction:**
+>   `veins` and the deepening target `i_star`.
+>
+> Evidence — call counts per site, the instruction count, the throughput and
+> what the change did to the runs: appendix §D.7.
+
 **There are two `F` ladders, not one, and R-O71 is why.** The block above
 required a single `F₁`/`F₂` to govern population, infrastructure, biosphere,
 radiation, gravity, cargo capacity *and* hull cost. That is provably

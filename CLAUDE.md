@@ -1539,6 +1539,19 @@ cheap audit of the first**, and neither defect was findable by reading.
     arithmetic op and `at_band()` 3.8x. So convert at the *edges* — never inside
     a loop over entities. `Factors::bio_max_band` exists only because a `ln` got
     onto the hot path (R-O70); denominating the ceilings in mass deletes it.
+
+    **Since T-129 no threshold or rung on the run path is converted.** They
+    are translated into kilotons statically (`K` is a stored mass,
+    `nearest_rung_from` compares squared midpoints, `mass_at_same_band_from`
+    carries a position between ladders per segment), and where a Band is
+    consumed as a *value* — `rank`, views, the snapshot — `band()` is a
+    polynomial on the mantissa bits within 3e-7 Band, exact at every rung.
+    Two habits from it: **sort the sites into thresholds and values before
+    rewriting any** — a threshold translates exactly and a value does not, and
+    only the second needs an approximation or the author; and **check an
+    approximation at every named point, not only its maximum error** — the
+    first version met its bound everywhere and still read `Band IV` as
+    3.9999999977, because `IV` sat inside a segment.
   - **There are two ladders and the type is what keeps them apart.** R-MC15
     ratified `F_mass = F_cost^(3/2)` because cost tracks surface area and the
     hold tracks volume, so a General hull costs 10x a Medium while holding
@@ -2301,6 +2314,7 @@ changes how you *work*, not what is left to do:
   | **T-126 (the survey scan reads the cached Band, and walks only unvisited worlds), same bed — `ns/event` ~49,000–50,000** | — | **36.4 yr/s** | **15×** |
   | T-127 (the engine's own transcendentals), same bed, interleaved against T-126 on this container: **63,185 → 62,174** and **60,970 → 61,439 `ns/event`** — the runs differ, the seeds disagree in sign | — | 29.6 → 30.0, 28.6 → 28.5 yr/s | ~12× |
   | T-127, standard bed, 3 seats, **400 yr** (where old and new are nearly one run), min of 7: **30,197 → 30,642** and **25,443 → 26,177 `ns/event`** — fewer instructions (−0.56%), more time: a latency cost | — | **+1.5% / +2.9% per event** | — |
+  | **T-129 (no Band reading on the run path)**, same bed, min of 7, interleaved against T-127: **30,523 → 29,087** and **26,270 → 24,011 `ns/event`**, instructions per event −2.4% — faster than before T-127 on both seeds | — | **−4.7% / −8.6% per event** | — |
 
   **R-WAR9's row is a case where the workload changed and the columns must be
   read that way** (§2's T-111 caveat). Flying colony ships at the rate their

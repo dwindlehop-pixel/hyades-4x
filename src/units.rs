@@ -41,6 +41,17 @@
 //! fatal error rather than a value (design law #16), so it floors at
 //! [`BAND_FLOOR`].
 //!
+//! **Neither direction is on the simulation's run path** (T-129). A Band is a
+//! reading for design, thresholds and presentation, so the engine compares and
+//! computes in kilotons: `K` is a stored mass, a rung test compares against
+//! static squared midpoints ([`Qty::nearest_rung_from`]), and a position carried
+//! from the cost ladder to the mass ladder is a per-segment power law with
+//! static constants ([`Price::mass_at_same_band_from`]). Where a reading is
+//! still wanted — `rank`'s scores, a view, a log line — `band()` computes it
+//! without a logarithm, to within 3e-7 Band; the `log` above is its
+//! definition, not its implementation. The Band→mass direction runs where the
+//! world is built.
+//!
 //! ## Why the two constraints on population coincide
 //!
 //! A world's pristine biosphere `bio_max` is generated as a Band value and
@@ -322,6 +333,16 @@ pub trait Scale: Copy + 'static {
         transcendental::ln_const(Self::STEPS[2]),
         transcendental::ln_const(Self::STEPS[3]),
     ];
+    /// `1 / log₂(step)` for each segment, evaluated at compile time — the
+    /// factor that turns `log2_approx` of a ratio within the segment into a
+    /// fraction of a rung, so a reading needs no logarithm of a constant
+    /// (T-129).
+    const INV_LOG2_STEPS: [f64; 4] = [
+        core::f64::consts::LN_2 / transcendental::ln_const(Self::STEPS[0]),
+        core::f64::consts::LN_2 / transcendental::ln_const(Self::STEPS[1]),
+        core::f64::consts::LN_2 / transcendental::ln_const(Self::STEPS[2]),
+        core::f64::consts::LN_2 / transcendental::ln_const(Self::STEPS[3]),
+    ];
     /// Kilotons at this scale's `Band I` — its anchor. §2.6: every quantity
     /// anchors its own `Band I`; only the ratios are shared.
     const BAND_I: f64;
@@ -498,10 +519,15 @@ impl<S: Scale> Qty<S> {
         Self::at_band(Band(tier.index() as f64 + fraction))
     }
 
-    /// Write it as a whole rung.
+    /// Write it as a whole rung — the rung's own mass, a product of ladder
+    /// constants, so no exponential is taken (T-129). The sentinels `Zero` and
+    /// `V` are off the playable ladder and read through [`Self::at_band`].
     #[inline]
     pub fn at_tier(tier: BandTier) -> Self {
-        Self::at_band(tier.band())
+        match tier.index() {
+            i @ 0..=4 => Qty(Self::rung(i as usize), core::marker::PhantomData),
+            _ => Self::at_band(tier.band()),
+        }
     }
 
     /// Write it as a continuous ladder position.
@@ -556,16 +582,55 @@ impl<S: Scale> Qty<S> {
     /// number (design law #16). That is a statement about the *ladder*, not a
     /// claim that such an amount is zero — the amount is still there in the
     /// kilotons, which is why storage is never the reading.
+    ///
+    /// **No logarithm is taken** (T-129). Within a segment the reading is
+    /// `n + log₂(m / rung_n) / log₂(step_n)`; the rung and `1 / log₂(step_n)` are
+    /// static per segment, and `log2_approx` is the exponent bits plus a
+    /// degree-7 polynomial. It is an approximation with a stated bound: within
+    /// **3e-7 Band** of the exact reading (`the_band_reading_is_within_its_bound`),
+    /// and **exact at every rung**, so a mass standing on a rung reads a whole
+    /// number and a tier never flips at its own edge.
     #[inline]
     pub fn band(self) -> Band {
         if self.0 <= 0.0 {
             return Band(BAND_FLOOR);
         }
+        // Segments run to `IV`, and above it the top step extends; `IV` is a
+        // segment start of its own so that it, too, reads a whole number.
         let mut n = 0usize;
-        while n < 3 && self.0 >= Self::rung(n + 1) {
+        while n < 4 && self.0 >= Self::rung(n + 1) {
             n += 1;
         }
-        Band((n as f64 + transcendental::ln(self.0 / Self::rung(n)) / S::LN_STEPS[n]).max(BAND_FLOOR))
+        Band((n as f64 + log2_approx(self.0 / Self::rung(n)) * S::INV_LOG2_STEPS[n.min(3)]).max(BAND_FLOOR))
+    }
+
+    /// **The whole rung nearest this amount** on a ladder anchored at `band_i`
+    /// — `band_from(band_i).round()`, floored at zero, **without taking the
+    /// reading** (T-129).
+    ///
+    /// A reading rounds up from rung `k − 1` to `k` at the segment's geometric
+    /// midpoint `rung_{k−1} · √step_{k−1}`, so the rung is the count of
+    /// midpoints the amount has passed. Compared in squares, `x² ≥ rung² ·
+    /// step`, every threshold is a product of ladder constants: no root and no
+    /// logarithm. Above `Band IV` the top segment's step extends, as
+    /// [`Self::at_band`] extrapolates.
+    #[inline]
+    pub fn nearest_rung_from(self, band_i: f64) -> usize {
+        let x = self.0 * (S::BAND_I / band_i);
+        if x.is_nan() || x <= 0.0 {
+            return 0;
+        }
+        let x2 = x * x;
+        let mut k = 0usize;
+        let mut rung = Self::rung(0);
+        loop {
+            let step = S::STEPS[k.min(3)];
+            if x2 < rung * rung * step {
+                return k;
+            }
+            rung *= step;
+            k += 1;
+        }
     }
 
     /// Read it as the rung it has reached.
@@ -580,6 +645,72 @@ impl<S: Scale> Qty<S> {
         let b = self.band().0;
         b - b.floor()
     }
+}
+
+impl Price {
+    /// **The mass at the same Band position on the mass ladder** — what
+    /// `Kilotons::at_band(self.band_from(band_i))` computes, with neither the
+    /// reading nor the exponential (T-129).
+    ///
+    /// Above cost `Band I` the two ladders are tied by `F_mass = F_cost^(3/2)`
+    /// (R-MC15), so within segment `n` the map is `mass_n · (x / cost_n)^(3/2)`
+    /// — a ratio and one `sqrt`, which IEEE 754 specifies exactly. The `Empty`
+    /// segment is not tied (its width is set on its own, T-63): there the
+    /// exponent is `ln 1000 / ln 5`, a static constant, and the power goes
+    /// through [`transcendental::pow`]. Below cost `Band Empty` the reading
+    /// floors at zero, so the map returns the mass ladder's floor rung.
+    #[inline]
+    pub fn mass_at_same_band_from(self, band_i: f64) -> Kilotons {
+        let x = self.0 * (Cost::BAND_I / band_i);
+        if x < Price::rung(0) {
+            return Kilotons::new(Kilotons::rung(0));
+        }
+        let mut n = 0usize;
+        while n < 3 && x >= Price::rung(n + 1) {
+            n += 1;
+        }
+        let y = x / Price::rung(n);
+        let scaled = if n == 0 { transcendental::pow(y, EMPTY_SEGMENT_EXPONENT) } else { y * y.sqrt() };
+        Kilotons::new(Kilotons::rung(n) * scaled)
+    }
+}
+
+/// `ln(F_mass,0) / ln(F_cost,0)` — the exponent that carries a position within
+/// the cost ladder's `Empty` segment onto the mass ladder's, at compile time.
+const EMPTY_SEGMENT_EXPONENT: f64 = transcendental::ln_const(MASS_LADDER[0]) / transcendental::ln_const(COST_LADDER[0]);
+
+/// `log₂(1 + f) ≈ f · Q(f)` on `f ∈ [√½ − 1, √2 − 1]`, `Q` ascending. A degree-6
+/// Chebyshev interpolant of `log₂(1 + f) / f`, so the product vanishes exactly
+/// at `f = 0`; measured maximum error **6.3e-7** in `log₂` over the interval.
+const LOG2_Q: [f64; 7] = [
+    f64::from_bits(0x3ff7_1548_f308_9aed),
+    f64::from_bits(0xbfe7_1561_f0f3_dd10),
+    f64::from_bits(0x3fde_c25d_8dfb_ce23),
+    f64::from_bits(0xbfd7_0272_dc94_faf1),
+    f64::from_bits(0x3fd2_f39f_717e_616c),
+    f64::from_bits(0xbfd1_2651_ef17_8449),
+    f64::from_bits(0x3fc5_8723_6236_4922),
+];
+
+/// **`log₂ x` for a positive finite `x`, approximately and without a
+/// logarithm** (T-129): the exponent bits, and [`LOG2_Q`] on the mantissa
+/// normalized into `[√½, √2)`. Built from IEEE-exact operations, so it is the
+/// same bits on every target. Exact at every power of two.
+#[inline]
+fn log2_approx(x: f64) -> f64 {
+    let (x, bias) = if x < f64::MIN_POSITIVE { (x * f64::from_bits(0x4350_0000_0000_0000), 54) } else { (x, 0) };
+    let bits = x.to_bits();
+    let mut e = ((bits >> 52) & 0x7ff) as i64 - 1023 - bias;
+    let mut m = f64::from_bits((bits & 0x000f_ffff_ffff_ffff) | 0x3ff0_0000_0000_0000);
+    if m >= core::f64::consts::SQRT_2 {
+        m *= 0.5;
+        e += 1;
+    }
+    let f = m - 1.0;
+    let f2 = f * f;
+    let q = &LOG2_Q;
+    let poly = (q[0] + f * q[1]) + f2 * ((q[2] + f * q[3]) + f2 * ((q[4] + f * q[5]) + f2 * q[6]));
+    e as f64 + f * poly
 }
 
 impl<S: Scale> fmt::Display for Qty<S> {
@@ -879,6 +1010,19 @@ pub fn population_mass(pop: Band) -> Kilotons {
     }
 }
 
+/// The mass of a population standing on rung `t` — [`population_mass`] of a
+/// named rung, taken as the rung's own mass (a product of ladder constants)
+/// rather than through an exponential (T-129). `Zero` and `Empty` hold no people
+/// by the same rule as a Band at or below zero.
+#[inline]
+pub fn population_mass_at_tier(t: BandTier) -> Kilotons {
+    if t.index() <= 0 {
+        Kilotons::ZERO
+    } else {
+        Kilotons::at_tier(t)
+    }
+}
+
 /// **The floor a founding population grows off.**
 ///
 /// The logistic has a fixed point at zero, so a colony seeded at nothing stays
@@ -888,17 +1032,6 @@ pub fn population_mass(pop: Band) -> Kilotons {
 /// biosphere is actually charged for, so the bump is paid for like any other
 /// growth rather than conjured.
 pub const POPULATION_SEED_FLOOR: Kilotons = Kilotons::new(KILOTONS_AT_BAND_EMPTY);
-
-/// The population a world can stand at, given `mass` of biomass committed to
-/// people — the inverse of [`population_mass`].
-#[inline]
-pub fn population_at_mass(mass: Kilotons) -> Band {
-    if mass.0 <= 0.0 {
-        Band::ZERO
-    } else {
-        mass.in_bands()
-    }
-}
 
 /// **Arithmetic is on the kilotons, always.**
 ///
@@ -1075,6 +1208,20 @@ mod tests {
         assert!((a - b).abs() <= ONE_TONNE, "{what}: {a} vs {b} differs by more than a tonne");
     }
 
+    /// **The Band reading's bound** (T-129): the approximate reading is within
+    /// this many Bands of the exact one — `the_band_reading_is_within_its_bound`.
+    const READING_BOUND: f64 = 3e-7;
+
+    /// An amount that has been through a *reading* and back comes back within
+    /// the reading's bound, which in mass is a relative error of
+    /// `READING_BOUND · ln(step)` — largest on the mass ladder's `Empty`
+    /// segment, `ln 1000 ≈ 6.9`. Relative, because the absolute error of a
+    /// read-back grows with the amount.
+    fn close_read(a: f64, b: f64, what: &str) {
+        let rel = READING_BOUND * 7.0;
+        assert!((a - b).abs() <= rel * b.abs(), "{what}: {a} vs {b} differs by more than the reading's bound");
+    }
+
     /// **The two ways of writing an amount are the same amount** — the whole
     /// contract of the type, and the reason arithmetic never has to ask which
     /// end a term came from.
@@ -1093,7 +1240,7 @@ mod tests {
                 // every position the ladder actually names.
                 if (0.0..5.0).contains(&b) {
                     let split = Qty::<S>::at(by_band.tier(), by_band.fraction());
-                    close(split.kilotons(), by_band.kilotons(), S::NAME);
+                    close_read(split.kilotons(), by_band.kilotons(), S::NAME);
                 }
             }
         }
@@ -1101,7 +1248,7 @@ mod tests {
         check::<Cost>();
     }
 
-    /// The ladder is invertible to within a tonne **at or above its floor**,
+    /// The ladder is invertible to within the reading's bound **at or above its floor**,
     /// and deliberately not below it — which is the sharper half of the claim.
     ///
     /// `band(m)` diverges as `m → 0`, so the reading clamps at [`BAND_FLOOR`]
@@ -1120,7 +1267,7 @@ mod tests {
             for &b in &POSITIONS {
                 let q = Qty::<S>::at_band(Band::new(b));
                 if b >= BAND_FLOOR {
-                    close(Qty::<S>::at_band(q.band()).kilotons(), q.kilotons(), S::NAME);
+                    close_read(Qty::<S>::at_band(q.band()).kilotons(), q.kilotons(), S::NAME);
                 } else {
                     assert_eq!(q.band(), Band::new(BAND_FLOOR), "{}: below the floor must read the floor", S::NAME);
                     assert!(q.kilotons() < Qty::<S>::rung(0), "{}: and still hold its true amount", S::NAME);
@@ -1132,7 +1279,7 @@ mod tests {
             let floor = Qty::<S>::rung(0);
             for k in [1.0, 2.7, 50.0, 316.0, 2_828.0, 100_000.0, 715_541.0] {
                 let m = floor * k;
-                close(Qty::<S>::at_band(Qty::<S>::new(m).band()).kilotons(), m, S::NAME);
+                close_read(Qty::<S>::at_band(Qty::<S>::new(m).band()).kilotons(), m, S::NAME);
             }
         }
         check::<Mass>();
@@ -1285,7 +1432,7 @@ mod tests {
             for &b in &[0.0, 0.5, 1.0, 2.0, 3.5, 4.0] {
                 let q = Qty::<Cost>::at_band_from(Band::new(b), anchor);
                 assert!(
-                    (q.band_from(anchor).bands() - b).abs() < 1e-9,
+                    (q.band_from(anchor).bands() - b).abs() < READING_BOUND,
                     "anchored round trip at {b}: got {}",
                     q.band_from(anchor).bands()
                 );
@@ -1480,7 +1627,7 @@ mod tests {
     fn the_two_readings_round_trip() {
         for b in [0.25, 1.0, 1.5, 2.0, 3.25, 4.0] {
             let there_and_back = Band::new(b).in_kilotons().in_bands().bands();
-            assert!((there_and_back - b).abs() < 1e-9, "{b} round-tripped to {there_and_back}");
+            assert!((there_and_back - b).abs() < READING_BOUND, "{b} round-tripped to {there_and_back}");
         }
     }
 
@@ -1520,5 +1667,84 @@ mod tests {
     fn an_empty_world_carries_no_population_mass() {
         assert_eq!(population_mass(Band::ZERO), Kilotons::ZERO);
         assert!(population_mass(Band::new(1e-9)) > Kilotons::ZERO);
+    }
+
+    /// The exact reading the approximation replaced: `n + ln(m / rung_n) /
+    /// ln(step_n)`, floored at zero. The reference for the three tests below.
+    fn exact_band<S: Scale>(m: f64) -> f64 {
+        if m <= 0.0 {
+            return BAND_FLOOR;
+        }
+        let mut n = 0usize;
+        while n < 3 && m >= Qty::<S>::rung(n + 1) {
+            n += 1;
+        }
+        (n as f64 + transcendental::ln(m / Qty::<S>::rung(n)) / S::LN_STEPS[n]).max(BAND_FLOOR)
+    }
+
+    /// Masses log-uniform from a millionth of the floor rung to a thousand
+    /// times the top one — every segment, both extrapolations, and the floor.
+    fn sweep(n: usize) -> impl Iterator<Item = f64> {
+        let (lo, hi) = (transcendental::ln(1e-9), transcendental::ln(1e9));
+        (0..n).map(move |i| transcendental::exp(lo + (hi - lo) * (i as f64 + 0.5) / n as f64))
+    }
+
+    /// **T-129's reading has a bound, and this is it.** Held against the exact
+    /// reading on both ladders over eighteen decades.
+    #[test]
+    fn the_band_reading_is_within_its_bound() {
+        let mut worst: f64 = 0.0;
+        for m in sweep(400_000) {
+            worst = worst.max((Kilotons::new(m).band().bands() - exact_band::<Mass>(m)).abs());
+            worst = worst.max((Price::new(m).band().bands() - exact_band::<Cost>(m)).abs());
+        }
+        assert!(worst < 3e-7, "reading differs from the exact one by {worst:e} Band");
+        assert!(worst > 0.0, "the sweep never reached the approximation");
+    }
+
+    /// A rung reads its own number, exactly — so no tier flips at its own edge.
+    #[test]
+    fn a_rung_reads_a_whole_number() {
+        for n in 0..=4 {
+            assert_eq!(Kilotons::new(Kilotons::rung(n)).band().bands(), n as f64, "mass rung {n}");
+            assert_eq!(Price::new(Price::rung(n)).band().bands(), n as f64, "cost rung {n}");
+            assert_eq!(Kilotons::at_tier(BandTier::PLAYABLE[n]).kilotons(), Kilotons::rung(n));
+        }
+    }
+
+    /// `nearest_rung_from` is `band_from(..).round()` without the reading. The
+    /// two can only disagree for an amount within rounding of a geometric
+    /// midpoint, so the test counts disagreements rather than forbidding them,
+    /// and requires they sit at a midpoint.
+    #[test]
+    fn the_nearest_rung_is_the_rounded_reading_without_the_reading() {
+        let anchor = 0.37; // a runtime anchor unlike the scale's own
+        let mut disagree = 0;
+        for m in sweep(200_000) {
+            let exact = exact_band::<Cost>(m * (Cost::BAND_I / anchor)).round().max(0.0) as usize;
+            let fast = Price::new(m).nearest_rung_from(anchor);
+            if exact != fast {
+                disagree += 1;
+                let frac = exact_band::<Cost>(m * (Cost::BAND_I / anchor)).fract();
+                assert!((frac - 0.5).abs() < 1e-12, "m {m}: {fast} vs {exact}, fraction {frac}");
+            }
+        }
+        assert!(disagree <= 2, "{disagree} disagreements");
+        assert_eq!(Price::ZERO.nearest_rung_from(anchor), 0);
+    }
+
+    /// The cost-to-mass map at equal Band position, held against the round
+    /// trip it replaced (`at_band(band_from(..))`, both exact).
+    #[test]
+    fn the_cost_to_mass_map_is_the_round_trip_without_the_reading() {
+        let anchor = 1.0;
+        let mut worst: f64 = 0.0;
+        for m in sweep(200_000) {
+            let b = exact_band::<Cost>(m * (Cost::BAND_I / anchor));
+            let want = Kilotons::at_band(Band::new(b)).kilotons();
+            let got = Price::new(m).mass_at_same_band_from(anchor).kilotons();
+            worst = worst.max(((got - want) / want).abs());
+        }
+        assert!(worst < 1e-12, "relative difference {worst:e}");
     }
 }

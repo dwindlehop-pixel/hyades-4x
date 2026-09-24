@@ -192,7 +192,7 @@ H4a.
 - **Also:** `tests/determinism.rs` was 64 s on the old binary too; its full-run
   test is now one test per seat count (53.8 s). One smoke tolerance became
   relative.
-- **Opened:** T-128, T-129.
+- **Opened:** T-128, T-129 (closed since).
 
 ### T-128. A native-against-wasm32 parity check in CI
 
@@ -205,20 +205,31 @@ for both targets, and a node script comparing them. To settle: add it under
 `tools/`, run one medium arm (3 seats × 800 yr is ~15 s under node) plus the
 galaxy digests of every seat count, and gate it in CI's slow job.
 
-### T-129. The Band readings still taken on hot paths
+### T-129. Band readings off the run path — static kilotons, and a reading without a logarithm
 
-**Open, Band B.** After T-127 the remaining run-time logarithms outside
-`settler_target` are Band readings of masses inside decisions — `staffing`
-(458 k calls), `color_deficit` (220 k), `mineral_pressure_of` (173 k) — about
-0.85 M per 400 yr on the standard bed (callgrind, seed 1), against 5.1 M in
-`settler_target` at the same horizon before its prune and about half that
-after. `capacity_of` reads `K` back as a mass
-through `at_band`, one `exp` per call (323 k). `CLAUDE.md` §4 already says to convert at the
-edges; each of these is a comparison that could be made in mass by converting
-its threshold once, which removes the logarithm rather than making it cheaper.
-What would settle it: a per-site census of how many readings each makes, then
-the mass-space form for the top ones, measured bit-identical or reported as a
-perturbation.
+**Closed.** Author's direction: *"Band readings are not required. Translate
+statically into kt readings."* Mineral cost curve §2.6 (T-129 note); appendix
+§D.7.
+
+- **Static translations:** `K` is a stored mass (`Factors::k_mass`); the rung
+  test compares squared midpoints (`Qty::nearest_rung_from`); `staffing`'s
+  cost → mass map is a per-segment power law with the `3/2` tie
+  (`Price::mass_at_same_band_from`); the seed floor is a rung's own mass
+  (`units::population_mass_at_tier`). `at_band` now runs only where the world
+  is built.
+- **The reading** (`Qty::band`) has no logarithm: static per-segment constants
+  and a degree-7 polynomial on the mantissa bits, within 3e-7 Band, exact at
+  every rung. `rank`, the views and the snapshot read through it.
+- **Unchanged on the author's instruction:** `veins` (54 k readings and 54 k
+  `pow` calls per 400 yr on the standard bed — at run time, not in galaxy
+  generation) and `i_star`.
+- **Cost:** `ns/event` −4.7% / −8.6% against T-127 at 400 yr (min of 7),
+  instructions −2.4% per event. Runs move: colonies −2.75 ± 2.05 over 8 seeds.
+- `PlanetSnapshot::bio_max_mass` added; `units::population_at_mass` deleted (no
+  callers, before or after).
+- **Still transcendental at run time:** `settler_target`'s `ln` (the
+  logistic's inverse, pruned by half at T-127), `logistic_step`'s and the
+  freight scores' `exp`, and `veins`' `pow`. None is a Band reading.
 
 ### T-126. Release throughput on the combat bed — the knobs were already right; the profile was not
 

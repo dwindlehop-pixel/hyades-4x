@@ -49,6 +49,11 @@ pub struct PlanetSnapshot {
     /// The standing biosphere as the mass it actually is. The same quantity as
     /// [`Self::biosphere`], in the unit conservation is stated in.
     pub biomass: Kilotons,
+    /// **The pristine ceiling as the mass it actually is** — the same quantity
+    /// as [`Self::bio_max`]. Carried because a Band is an approximate reading
+    /// (T-129, within 3e-7 Band), so "the stock never exceeds its ceiling" is
+    /// a comparison of two masses, not of a mass and a reconstruction.
+    pub bio_max_mass: Kilotons,
     /// Built infrastructure, read back onto the **Cost** ladder as a rung.
     pub infrastructure: Band,
     /// **The same infrastructure as the mass it actually is** — the minerals

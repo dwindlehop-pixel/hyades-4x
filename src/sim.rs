@@ -142,6 +142,11 @@ struct Homeworld;
 #[derive(Clone, Copy, Debug)]
 struct Factors {
     hab: Band,
+    /// [`Self::hab`] as the population mass it admits, `population_mass(hab)` —
+    /// **translated once, where the world is built** (T-129), so the carrying
+    /// capacity is a minimum of two masses and no decision converts a Band.
+    /// Write habitability through [`Self::set_hab`], which keeps the two in step.
+    hab_mass: Kilotons,
     /// **Standing biological mass, in kilotons** — the same unit as minerals
     /// and hull dry mass, which is what makes the exchange between them exact.
     ///
@@ -166,7 +171,8 @@ struct Factors {
     /// [`Self::bio_max`] read back onto the Band ladder — **cached, because it
     /// is on the hottest path in the engine.**
     ///
-    /// `Kilotons::in_bands` is a `ln`, `k_potential` needs it, and
+    /// `Kilotons::in_bands` was a `ln` when this cache was written (a
+    /// polynomial reading since T-129, still not free), `k_potential` needs it, and
     /// `k_potential` is evaluated once per *scanned planet* per production
     /// decision. That is a transcendental in a loop that runs tens of millions
     /// of times a run, for a quantity nothing has changed since galaxy
@@ -191,7 +197,29 @@ impl Factors {
     /// Build a set of factors, deriving the cached Band reading of `bio_max`.
     #[inline]
     fn new(hab: Band, biomass: Kilotons, bio_max: Kilotons, infra: Price) -> Factors {
-        Factors { hab, biomass, bio_max, bio_max_band: bio_max.in_bands(), infra }
+        Factors {
+            hab,
+            hab_mass: units::population_mass(hab),
+            biomass,
+            bio_max,
+            bio_max_band: bio_max.in_bands(),
+            infra,
+        }
+    }
+
+    /// The only way to move habitability. Keeps [`Self::hab_mass`] in step, for
+    /// the same reason [`Self::set_bio_max`] keeps its reading in step.
+    #[inline]
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "no card mutates habitability yet; the setter exists so the first one cannot desynchronise the mass"
+        )
+    )]
+    fn set_hab(&mut self, hab: Band) {
+        self.hab = hab;
+        self.hab_mass = units::population_mass(hab);
     }
 
     /// The only way to move the pristine ceiling. Keeps the cached Band reading
@@ -265,12 +293,29 @@ impl Factors {
         self.k()
     }
 
+    /// **`K` as the population mass it admits** — `population_mass(k())`,
+    /// without the reading (T-129).
+    ///
+    /// `population_mass` is monotone, so it commutes with the minimum:
+    /// `KT(min(hab, band(bio_max)))` is `min(KT(hab), KT(band(bio_max)))`, and
+    /// `KT(band(bio_max))` is `bio_max` itself — the mass the reading was taken
+    /// of. The one place the round trip was not the identity is the floor: a
+    /// pristine biosphere at or below the ladder's bottom rung reads Band zero,
+    /// and zero people is no mass (`units::population_mass`), so it admits none.
+    #[inline]
+    fn k_mass(&self) -> Kilotons {
+        if self.bio_max.kilotons() <= Kilotons::rung(0) {
+            return Kilotons::ZERO;
+        }
+        self.hab_mass.min(self.bio_max)
+    }
+
     /// **The infrastructure rung, read off the stock** — the one place the
     /// Cost-ladder reading is taken (T-70).
     ///
-    /// `infra` is stored as the minerals standing in it, so the rung is a `ln`
-    /// away. That is a conversion and conversions are not free (`CLAUDE.md` §4:
-    /// `band()` is 2.2x an arithmetic op), so call it at the **edges** — a
+    /// `infra` is stored as the minerals standing in it, so the rung is a
+    /// reading away. That is a conversion and conversions are not free, so call
+    /// it at the **edges** — a
     /// production decision, a log line, a view — and never inside a loop over
     /// entities.
     #[inline]
@@ -1456,7 +1501,7 @@ fn infra_step_price(from: Price, cfg: &SimConfig) -> Price {
 /// The whole rung an infrastructure stock stands at.
 #[inline]
 fn infra_rung_of(stock: Price, cfg: &SimConfig) -> usize {
-    stock.band_from(cost_anchor(cfg)).round().bands().max(0.0) as usize
+    stock.nearest_rung_from(cost_anchor(cfg))
 }
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
@@ -5665,6 +5710,7 @@ impl Simulation {
         let growth = doctrine.growth_rate * dt;
         let regen = self.config.biosphere_regen_rate * doctrine.biosphere_regen_bonus * dt;
         let k = self.world.factors.get(center).unwrap().k();
+        let k_mass = self.world.factors.get(center).unwrap().k_mass();
         {
             let pop_now = *self.world.population.get(center).unwrap();
             // **The logistic runs on the people, not on their Band** (T-64).
@@ -5684,7 +5730,7 @@ impl Simulation {
             // textbook one. `growth_rate` finally means what its name says —
             // the fraction a small population adds per cycle — and its ratified
             // value is re-measured rather than carried across (T-64 step 5).
-            let cap = units::population_mass(k);
+            let cap = k_mass;
             // The logistic has a fixed point at zero, so a founding population
             // needs a floor to grow off. The floor moves the *population*; the
             // mass baseline below stays at the true prior value, so the bump is
@@ -5860,7 +5906,7 @@ impl Simulation {
         let (infra, infra_band, k_potential) = {
             let f = self.world.factors.get(center).unwrap();
             // One reading, taken at the edge — the decision and the log line
-            // both want the rung, and `band_from` is a `ln` (`CLAUDE.md` §4).
+            // both want the rung, and `band_from` is a conversion (`CLAUDE.md` §4).
             (f.infra, f.infra_band(&self.config), f.k_potential())
         };
         let level = self.bands.level(*self.world.population.get(center).unwrap());
@@ -6236,7 +6282,7 @@ impl Simulation {
             return 1.0;
         }
         let p = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
-        let p_req = Kilotons::at_band(f.infra_band(&self.config));
+        let p_req = f.infra.mass_at_same_band_from(cost_anchor(&self.config));
         if p_req <= Kilotons::ZERO {
             return 1.0;
         }
@@ -7101,7 +7147,7 @@ impl Simulation {
         // whole job. R-O76's "seed depth does not pay" measured the mismatch
         // between what a hull carried and what the colony could hold, and there
         // is no mismatch left to measure.
-        units::population_mass(f.k_potential())
+        f.k_mass()
     }
 
     /// **The founding population a colony ship of this hull carries** — the
@@ -7152,7 +7198,7 @@ impl Simulation {
         // full `colony_seed_pop`. A Medium hull's hold is `Band I` exactly and a
         // Limited hull's is `Band Empty`, so the ratified rule and the geometry
         // now agree without either propping the other up.
-        let floor = units::population_mass(self.config.colony_seed_pop.band());
+        let floor = units::population_mass_at_tier(self.config.colony_seed_pop);
         let hold = hull.colony_seed_capacity(&self.config);
         if hold < floor * (1.0 - 1e-9) {
             return None;
@@ -7279,7 +7325,7 @@ impl Simulation {
     /// A planet's carrying capacity as a **mass** — `population_mass(k())`,
     /// which since T-67 is `min(hab, bio_max)` and has no infrastructure term.
     fn capacity_of(&self, planet: Entity) -> Kilotons {
-        self.world.factors.get(planet).map(|f| units::population_mass(f.k())).unwrap_or(Kilotons::ZERO)
+        self.world.factors.get(planet).map(|f| f.k_mass()).unwrap_or(Kilotons::ZERO)
     }
 
     /// `delta = 1 / (1 + tau / cycle_years)` — see [`Self::settler_target`] for
@@ -7753,7 +7799,8 @@ impl Simulation {
     /// (T-100) — the single largest cost in the engine before this landed.
     ///
     /// `BaselineAutopilot::rank` scores a world's ore as
-    /// `Σ_c scarcity_c · Band(m_c)`, and `Band(·)` is a `ln`. The production
+    /// `Σ_c scarcity_c · Band(m_c)`, and `Band(·)` was a `ln` (a polynomial
+    /// since T-129). The production
     /// candidate scan reaches `rank` **45.4 M times** over an 800-year
     /// three-seat run (T-52), so that is ~136 M logarithms for a quantity that
     /// changes only when the rock is mined. Ablated — replacing the three
@@ -8754,6 +8801,7 @@ impl Simulation {
                     biosphere: f.biomass.in_bands(),
                     bio_max: f.bio_max_band,
                     biomass: f.biomass,
+                    bio_max_mass: f.bio_max,
                     infrastructure: f.infra_band(&self.config),
                     works: f.infra,
                     k: f.k(),
@@ -13510,7 +13558,7 @@ mod tests {
         cratered.set_bio_max(Band::new(1.0).in_kilotons());
         assert_eq!(cratered.k(), Band::new(1.0), "a biosphere strike still lowers K");
         let mut poisoned = developed;
-        poisoned.hab = Band::new(0.5);
+        poisoned.set_hab(Band::new(0.5));
         assert_eq!(poisoned.k(), Band::new(0.5), "and so does a habitability strike");
     }
 
@@ -13536,7 +13584,11 @@ mod tests {
         // ceiling reading the old world.
         let mut cratered = full;
         cratered.set_bio_max(Band::new(1.5).in_kilotons());
-        assert_eq!(cratered.k(), Band::new(1.5));
+        // Within the reading's bound (T-129: the Band reading is approximate,
+        // 3e-7 Band), and the mass the ceiling admits is the new pristine mass
+        // exactly.
+        assert!((cratered.k().bands() - 1.5).abs() < 3e-7, "K reads {}", cratered.k());
+        assert_eq!(cratered.k_mass(), Band::new(1.5).in_kilotons());
     }
 
     #[test]
