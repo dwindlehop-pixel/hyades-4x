@@ -163,6 +163,27 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-130. `exp` and `ln` on the run path: four-multiply minimax polynomials
+
+**Closed.** Author's direction: *"Replace exp and ln with the best polynomial
+approximation over the input range that can be achieved with a four multiply
+budget."* Appendix §D.8; autopilot §3.4; netcode H4a.
+
+- **Measured every run-path site's input range first**, then fitted by Remez
+  and kept the best scheme per site: `exp_fast` (range-reduced `2^f`, 7.5e-5
+  relative) for the freight scores and `rank`'s centrality; dedicated degree-4
+  fits for the logistic step (5.2e-9) and the contract decay (5.3e-6);
+  `log2_fast` (8.8e-5 absolute) for `settler_target`, with `ln 2` folded into
+  its own factor; `pow_fast` takes `y = ½` and `y = 2` exactly (`sqrt`, `x·x`).
+- `math::exp_decay` deleted (contradicts the old §3.4, now rewritten);
+  T-127's tangent-bound prune deleted.
+- **Cost:** per call 45–68% cheaper; per event −0.84% instructions, and wall
+  time not resolved (0.986 ± 0.013 over 15 paired rounds). Runs move: colonies
+  −0.25 ± 3.02 over 8 seeds. Native and wasm32 still identical.
+- **Still accurate, not on the run path:** galaxy generation, `Rng::gaussian`,
+  `Qty::at_band` at world construction, `ln_const`, and the cost ladder's
+  `Empty` segment in `mass_at_same_band_from` (measured never reached).
+
 ### T-127. The engine calls no host libm — native and wasm32 runs had diverged
 
 **Closed.** Author's request: remove the expensive math-library calls such as

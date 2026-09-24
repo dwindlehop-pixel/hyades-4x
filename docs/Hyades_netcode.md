@@ -587,9 +587,16 @@ to make native and wasm32 runs of the same seed diverge. Rules:
 - **A logarithm of a constant is evaluated by the compiler**
   (`transcendental::ln_const`), whose float arithmetic is the same IEEE 754.
 
+- **On the run path, `exp` and `ln` are four-multiply minimax polynomials**
+  (T-130, author's budget): `exp_fast`, `log2_fast`, `pow_fast` and two
+  short-range `exp` fits, each within a stated bound over its call sites'
+  measured range. The accurate functions remain for galaxy generation, world
+  construction and compile time. Being polynomials of `+` and `×` on
+  bit-manipulated operands, both kinds are identical on every target.
+
 Evidence, the accuracy of each function against the host, and the throughput
-cost: appendix §D.6. T-102's `math::exp_decay` was the first site removed; it
-is kept for speed.
+cost: appendix §D.6 and §D.8. T-102's `math::exp_decay` was the first site
+removed, and T-130 replaced it with `exp_fast`.
 
 **H5 · No host clock, no host entropy.** No `Date.now()`, `performance.now()`, or
 `Math.random()` inside the sim. Already satisfied (`log.rs` deliberately stamps with the

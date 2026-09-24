@@ -1470,6 +1470,92 @@ mass exactly. `smoke::snapshot_is_consistent_with_report` compared biomass
 against a ceiling rebuilt from a Band; the snapshot now carries
 `bio_max_mass`, and the comparison is of two masses with **no tolerance**.
 
+
+## D.8 T-130 — `exp` and `ln` on the run path as four-multiply minimax polynomials
+
+**Supports:** autopilot spec §3.4, netcode §6 H4a, the T-130 entry in
+`hyades_todo.md`, and the run-path section of `src/transcendental.rs`. Author's
+direction: *"Replace exp and ln with the best polynomial approximation over the
+input range that can be achieved with a four multiply budget."*
+
+**How multiplies are counted:** every floating-point multiply in the function,
+range reduction included. Additions, comparisons, bit operations and integer
+conversions are free; divisions are not used.
+
+### Measured input ranges (per call site)
+
+A temporary `#[track_caller]` recorder on `ln`, `exp` and `pow`, standard bed
+(3 seats, 800 yr, seeds 1 and 7) and combat bed (12 seats, both cards at the
+barrier, 400 yr, seeds 1 and 7):
+
+| site | function | calls per run | argument range (union) |
+|---|---|---|---|
+| freight routing scores (two sites) | `exp` | 1.6–40.3 M | [−3.60, −0.0114] |
+| `settler_target` | `ln` | 4.9–14.1 M | [13.8, 5.70e6] |
+| `veins` | `pow(10, y)` | 0.20–0.55 M | `y ∈ [−1, 3]`: `exp` of [−2.30, 6.91] |
+| `crowding_factor` | `pow(x, ½)` | 0.10–0.53 M | `x ∈ [0.40, 1000]`, `y = ½` always |
+| `mining_crew_for` | `pow(x, 2)` | 7 k–81 k | `y = 2` always |
+| `logistic_step` | `exp` | 30 k–200 k | −0.0873 and −0.1397 only |
+| contract decay | `exp` | 60–5 k | [−0.70, −0.0118] |
+| `math::exp_decay` fallback | `exp` | 2 | −2.0117, below its fitted −2 |
+| `Qty::at_band` | `exp` | 40 k–84 k | world construction only |
+
+### Candidates, by Remez exchange
+
+Fitted in plain Python (weighted Remez, exact rational solve), maximum error on a
+20,001-point grid:
+
+| scheme (≤ 4 multiplies) | interval | error |
+|---|---|---|
+| `2^f`, degree 3, after `t = x·log₂e` (1 multiply) | `f ∈ [−½, ½]`, any `x` | **7.48e-5** relative |
+| `eˣ` direct, degree 4 | freight `[−3.6, −0.0114]` | 8.66e-3 relative |
+| `eˣ` direct, degree 4 | centrality `[−2, 0]` | 5.03e-4 relative |
+| `eˣ` direct, degree 4 | contract `[−0.8, 0]` | **5.30e-6** relative |
+| `eˣ` direct, degree 4 | logistic `[−0.2, 0]` | **5.21e-9** relative |
+| `eˣ` direct, degree 4 | veins `[−2.31, 6.91]` | 0.476 relative |
+| `log₂(1+f)`, degree 4, exponent from bits, `ln 2` folded into the caller | `f ∈ [√½−1, √2−1]` | **8.76e-5** absolute |
+| `ln(1+f)`, degree 3, plus `e·ln 2` (1 multiply) | same | 4.42e-4 absolute |
+
+The best candidate per site, in bold, is what shipped: range-reduced `exp` for the
+freight scores and centrality; dedicated degree-4 fits for the logistic step
+and the contract decay; `log₂` with `ln 2` folded into `settler_target`'s own
+factor. Two sites needed no approximation: `x^½` is `sqrt` and `x²` is `x·x`,
+both exact. The `veins` power (`10^y`) goes through `log2_fast` and
+`exp2_fast`: about 2.6e-4 relative at `y = 3`.
+
+### Cost and effect
+
+- **Per call** (fastest of 9 passes over 2,000,000 inputs drawn from each site's
+  range): `exp` 10.98 ns (T-127) → **3.49 ns**; `ln` 7.63 ns → `log2_fast`
+  **4.23 ns**; the logistic `exp` 3.80 ns → **1.70 ns**. The host libm, for
+  reference: 5.66 and 5.38 ns.
+- **Instructions per event**, seed 7, 400 yr (callgrind): 176,258 → 174,786
+  (**−0.84%**), on 63,472 and 63,568 events.
+- **`ns/event`**, seed 7, 400 yr, 15 interleaved rounds: paired ratio
+  **0.986 ± 0.013** (mean ± SE), below 1 in 9 of 15 — not resolved. The
+  freight scores' call count grows later in a run (40.3 M at 800 yr on seed 7),
+  and no 800-yr comparison of cost was made, because by then the runs differ.
+- **Combat bed**, three interleaved rounds: 50,792 → 51,150 and 50,519 → 50,445
+  `ns/event` — not resolved.
+- **The runs move**: standard bed, 800 yr, colonies against T-129 **−0.25 ±
+  3.02 (mean ± SE, n = 8)**, 2 up, 5 down, 1 tied; population −0.85% to +0.66%.
+- **Native against wasm32:** all eleven arms of §D.6 reproduce bit-for-bit.
+
+### What was removed or restated
+
+- `math::exp_decay` (T-102's degree-7 polynomial, 5.4e-7) and its tests are
+  deleted; `rank`'s centrality calls `exp_fast`.
+- T-127's tangent-bound prune in `best_endowment` is deleted. It relied on the
+  logarithm being concave, which an approximation holds only to within its
+  error, and the bound cost a division.
+- `refining_the_logistic_step_changes_nothing` asserted composition to 1e-9
+  with a step argument of −5.24, outside the logistic fit's range; it now uses
+  the engine's own step and asserts composition within `n` times the fit's
+  5.2e-9 (the step's relative sensitivity to `e^(−rΔ)` is below one).
+- `veins_are_a_decade_per_band_and_crowding_pays_at_scale` asserted 1,000 veins
+  at `Band IV` to 1e-6; it now asserts `pow_fast`'s bound, 2.6e-4. Measured:
+  999.908.
+
 ---
 
 ## References

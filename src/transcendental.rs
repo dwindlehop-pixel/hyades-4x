@@ -311,6 +311,183 @@ pub fn pow(x: f64, y: f64) -> f64 {
     exp(y * ln(x))
 }
 
+// ---------------------------------------------------------------------------
+// Run-path approximations: four multiplies each (T-130).
+// ---------------------------------------------------------------------------
+//
+// Author's direction: *"Replace exp and ln with the best polynomial
+// approximation over the input range that can be achieved with a four
+// multiply budget."* Every floating-point multiply in the function counts,
+// range reduction included; additions, comparisons, bit operations and
+// integer conversions do not, and there is no division. Each polynomial is a
+// **minimax** fit (Remez exchange) over the range its call sites were
+// **measured** to take, and each error below is the fit's maximum over a
+// 40,001-point grid — a bound over the sample, restated by the tests.
+//
+// The accurate functions above stay where cost does not matter: galaxy
+// generation, world construction, and compile time.
+
+/// **`2^f` for `f ∈ [−½, ½]`**, degree 3, minimax relative error
+/// **7.48e-5**. Coefficients ascending.
+const EXP2_ON_HALF: [f64; 4] =
+    [b(0x3fef_ff69_28c6_8617), b(0x3fe6_2f31_a984_afee), b(0x3fcf_0de1_99bb_bb5f), b(0x3fac_3f76_0489_a6a6)];
+
+/// **`log₂(1 + f)` for `f ∈ [√½ − 1, √2 − 1]`**, degree 4, minimax absolute
+/// error **8.76e-5**. Coefficients ascending.
+const LOG2_ON_MANTISSA: [f64; 5] = [
+    b(0x3f08_f9e7_7494_2d63),
+    b(0x3ff7_10f3_a813_4fdb),
+    b(0xbfe7_3ab2_7b44_789c),
+    b(0x3fe0_9ab5_2fae_2c95),
+    b(0xbfd4_e4c6_0bff_30f9),
+];
+
+/// **`eˣ` for `x ∈ [−0.2, 0]`**, degree 4, minimax relative error
+/// **5.21e-9**. The logistic step's `e^(−rΔ)`, measured at −0.0873 and −0.1397
+/// (with and without the Growth card).
+const EXP_ON_M0_2: [f64; 5] = [
+    b(0x3fef_ffff_fd34_6bae),
+    b(0x3fef_fffd_5977_fa67),
+    b(0x3fdf_ff2f_65fd_ee0f),
+    b(0x3fc5_3ea9_5618_e70f),
+    b(0x3fa3_4b8f_64dd_17ed),
+];
+
+/// **`eˣ` for `x ∈ [−0.8, 0]`**, degree 4, minimax relative error
+/// **5.30e-6**. The contract decay's `e^(−λt)`, measured on [−0.70, −0.012].
+const EXP_ON_M0_8: [f64; 5] = [
+    b(0x3fef_fff4_e08d_e9d2),
+    b(0x3fef_fd96_de10_61e0),
+    b(0x3fdf_d2c1_671b_765e),
+    b(0x3fc4_1fb6_28d5_2f82),
+    b(0x3f9c_6904_a5b2_dd79),
+];
+
+/// Degree-4 Horner: four multiplies.
+#[inline(always)]
+fn horner4(c: &[f64; 5], x: f64) -> f64 {
+    c[0] + x * (c[1] + x * (c[2] + x * (c[3] + x * c[4])))
+}
+
+/// `1.5 · 2^52`: adding and subtracting it rounds to the nearest integer in
+/// IEEE round-to-nearest, with no conversion instruction and no multiply.
+const ROUND_MAGIC: f64 = 6_755_399_441_055_744.0;
+
+/// **`2^t`, three multiplies**, relative error **7.5e-5** at every `t`.
+///
+/// `t = k + f` with `k` the nearest integer, so `f ∈ [−½, ½]`; `2^f` is
+/// `EXP2_ON_HALF` and `2^k` is added to the exponent bits. Saturates to zero
+/// below `2^−1020` and to infinity above `2^1020`; `NaN` propagates.
+#[inline]
+pub fn exp2_fast(t: f64) -> f64 {
+    if t.is_nan() {
+        return t;
+    }
+    if t < -1020.0 {
+        return 0.0;
+    }
+    if t > 1020.0 {
+        return f64::INFINITY;
+    }
+    let r = (t + ROUND_MAGIC) - ROUND_MAGIC;
+    let f = t - r;
+    let c = &EXP2_ON_HALF;
+    let p = c[0] + f * (c[1] + f * (c[2] + f * c[3]));
+    f64::from_bits((p.to_bits() as i64).wrapping_add((r as i64) << 52) as u64)
+}
+
+/// **`eˣ`, four multiplies**: `2^(x · log₂e)` by [`exp2_fast`]. Relative error
+/// **7.5e-5** at every `x` — the best of the candidates for a range wider than
+/// about one unit (a single degree-4 fit over the freight scores' measured
+/// `[−3.6, −0.011]` reaches only 8.7e-3). Used by the freight routing scores
+/// and `rank`'s centrality.
+#[inline]
+pub fn exp_fast(x: f64) -> f64 {
+    exp2_fast(x * core::f64::consts::LOG2_E)
+}
+
+/// **`eˣ` for the logistic step**: `EXP_ON_M0_2` on `[−0.2, 0]`, four
+/// multiplies, relative error 5.2e-9; outside it, [`exp_fast`].
+#[inline]
+pub fn exp_in_minus_0_2_to_0(x: f64) -> f64 {
+    if (-0.2..=0.0).contains(&x) {
+        horner4(&EXP_ON_M0_2, x)
+    } else {
+        exp_fast(x)
+    }
+}
+
+/// **`eˣ` for the contract decay**: `EXP_ON_M0_8` on `[−0.8, 0]`, four
+/// multiplies, relative error 5.3e-6; outside it, [`exp_fast`].
+#[inline]
+pub fn exp_in_minus_0_8_to_0(x: f64) -> f64 {
+    if (-0.8..=0.0).contains(&x) {
+        horner4(&EXP_ON_M0_8, x)
+    } else {
+        exp_fast(x)
+    }
+}
+
+/// **`log₂ x`, four multiplies**, absolute error **8.8e-5** at every positive
+/// normal `x`.
+///
+/// The exponent comes from the bits; the mantissa is normalized into
+/// `[√½, √2)` by adjusting the exponent field (no multiply), and
+/// `LOG2_ON_MANTISSA` reads it. It returns `log₂` rather than `ln` because
+/// `ln x = ln 2 · log₂ x` costs a fifth multiply, and the one run-path caller
+/// (`settler_target`) scales the logarithm by its own factor anyway and folds
+/// `ln 2` into it — which buys a degree-4 polynomial instead of a degree-3 one
+/// (8.8e-5 against 4.4e-4). Same special values as a logarithm: `−∞` at zero,
+/// `NaN` below it, `+∞` at `+∞`.
+#[inline]
+pub fn log2_fast(x: f64) -> f64 {
+    if x.is_nan() || x <= 0.0 {
+        return if x == 0.0 { f64::NEG_INFINITY } else { f64::NAN };
+    }
+    if x == f64::INFINITY {
+        return x;
+    }
+    let (x, bias) = if x < f64::MIN_POSITIVE { (x * TWO54, 54) } else { (x, 0) };
+    let bits = x.to_bits();
+    let mut e = ((bits >> 52) & 0x7ff) as i64 - 1023 - bias;
+    let mut m = (bits & 0x000f_ffff_ffff_ffff) | 0x3ff0_0000_0000_0000;
+    if f64::from_bits(m) >= core::f64::consts::SQRT_2 {
+        m -= 1 << 52;
+        e += 1;
+    }
+    e as f64 + horner4(&LOG2_ON_MANTISSA, f64::from_bits(m) - 1.0)
+}
+
+/// **`x^y` on the run path**, for `x ≥ 0`.
+///
+/// The exponents the engine actually passes are mostly identities, and those
+/// are taken exactly: `y = ½` is `sqrt` (IEEE-exact) and `y = 2` is `x · x` —
+/// the crowding and crew exponents at the shipped `crowding_beta = ½`.
+/// Otherwise `2^(y · log₂ x)`: [`log2_fast`] (four multiplies), one for `y`,
+/// [`exp2_fast`] (three), relative error about `7.5e-5 + 6.1e-5·|y|`.
+#[inline]
+pub fn pow_fast(x: f64, y: f64) -> f64 {
+    if y == 0.0 || x == 1.0 {
+        return 1.0;
+    }
+    if y == 1.0 {
+        return x;
+    }
+    if y == 2.0 {
+        return x * x;
+    }
+    if x < 0.0 {
+        return f64::NAN;
+    }
+    if y == 0.5 {
+        return x.sqrt();
+    }
+    if x == 0.0 {
+        return if y > 0.0 { 0.0 } else { f64::INFINITY };
+    }
+    exp2_fast(y * log2_fast(x))
+}
+
 const S1: f64 = b(0xbfc5_5555_5555_5549);
 const S2: f64 = b(0x3f81_1111_1110_f8a6);
 const S3: f64 = b(0xbf2a_01a0_19c1_61d5);
@@ -519,6 +696,68 @@ mod tests {
             worst = worst.max(d);
         }
         assert!(worst > 0, "no sample differed — the comparison is not reaching the function");
+    }
+
+    /// Largest relative error of `ours` against the accurate `reference` over
+    /// `n` evenly spaced points of `[lo, hi]`.
+    fn worst_relative(lo: f64, hi: f64, n: usize, ours: fn(f64) -> f64, reference: fn(f64) -> f64) -> f64 {
+        (0..n)
+            .map(|i| lo + (hi - lo) * i as f64 / (n - 1) as f64)
+            .map(|x| ((ours(x) - reference(x)) / reference(x)).abs())
+            .fold(0.0, f64::max)
+    }
+
+    /// T-130's bounds, each the Remez fit's maximum plus a margin for the
+    /// evaluation's own rounding — and each required to be *reached*, within a
+    /// factor of two, so a wrong coefficient that happened to be more accurate
+    /// somewhere would still be noticed.
+    #[test]
+    fn the_four_multiply_exponentials_meet_their_fitted_bounds() {
+        let e2 = worst_relative(-40.0, 40.0, 400_001, exp2_fast, |t| exp(t * core::f64::consts::LN_2));
+        assert!(e2 < 7.5e-5 && e2 > 3.7e-5, "exp2_fast: {e2:e}");
+        let e = worst_relative(-30.0, 10.0, 400_001, exp_fast, exp);
+        assert!(e < 7.6e-5 && e > 3.7e-5, "exp_fast: {e:e}");
+        let s = worst_relative(-0.2, 0.0, 200_001, exp_in_minus_0_2_to_0, exp);
+        assert!(s < 5.3e-9 && s > 2.6e-9, "exp on [-0.2, 0]: {s:e}");
+        let m = worst_relative(-0.8, 0.0, 200_001, exp_in_minus_0_8_to_0, exp);
+        assert!(m < 5.4e-6 && m > 2.6e-6, "exp on [-0.8, 0]: {m:e}");
+        // Outside their fitted ranges the short-range forms are `exp_fast`.
+        assert_eq!(exp_in_minus_0_2_to_0(-3.0), exp_fast(-3.0));
+        assert_eq!(exp_in_minus_0_8_to_0(0.5), exp_fast(0.5));
+    }
+
+    #[test]
+    fn the_four_multiply_logarithm_meets_its_fitted_bound() {
+        let mut rng = Rng::new(0x130);
+        let mut worst: f64 = 0.0;
+        for _ in 0..400_000 {
+            let x = wide(&mut rng);
+            worst = worst.max((log2_fast(x) - ln(x) / core::f64::consts::LN_2).abs());
+        }
+        assert!(worst < 8.8e-5 && worst > 4.4e-5, "log2_fast: {worst:e}");
+        assert_eq!(log2_fast(0.0), f64::NEG_INFINITY);
+        assert!(log2_fast(-1.0).is_nan() && exp2_fast(f64::NAN).is_nan());
+    }
+
+    #[test]
+    fn pow_fast_takes_the_engines_exponents_exactly() {
+        for x in [0.4, 1.0, 7.3, 1000.0] {
+            assert_eq!(pow_fast(x, 0.5), x.sqrt());
+            assert_eq!(pow_fast(x, 2.0), x * x);
+            assert_eq!(pow_fast(x, 1.0), x);
+            assert_eq!(pow_fast(x, 0.0), 1.0);
+        }
+        // The general path: vein counts, `10^y` for `y ∈ [−1, 3]`.
+        let mut worst: f64 = 0.0;
+        for i in 0..=40_000 {
+            let y = -1.0 + 4.0 * i as f64 / 40_000.0;
+            let want = pow(10.0, y);
+            worst = worst.max(((pow_fast(10.0, y) - want) / want).abs());
+        }
+        // `log2_fast`'s 8.8e-5, times `|y| ≤ 3`, is an exponent error that
+        // `2^·` turns into `ln 2` times as much relative error; plus
+        // `exp2_fast`'s own 7.5e-5.
+        assert!(worst < 7.5e-5 + 8.8e-5 * core::f64::consts::LN_2 * 3.0, "pow_fast(10, y): {worst:e}");
     }
 
     #[test]

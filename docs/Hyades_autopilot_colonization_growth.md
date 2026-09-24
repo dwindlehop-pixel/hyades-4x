@@ -161,13 +161,13 @@ ecology. Appendix §A.9.
 **`k_high = 3.2` is confirmed and is a knife-edge, not a slope** — ±25% collapses
 coverage in *both* directions. **R-AC17 resolved**; appendix §A.7, §A.2.
 
-**3.4 `RATIFIED` — centrality is evaluated by `math::exp_decay`, not
-`f64::exp`.** A degree-7 minimax polynomial over the measured argument range,
-built from `+` and `*` only, so the term is bit-identical native-to-wasm by
-construction rather than by assumption (T-102, netcode H4a). Since T-127 every
-transcendental in the engine is (`src/transcendental.rs`), so determinism no
-longer depends on this choice; it stays for speed, and its out-of-range
-fallback is `transcendental::exp`.
+**3.4 `RATIFIED` — centrality is evaluated by `transcendental::exp_fast`,
+four multiplies, relative error 7.5e-5** (T-130, author's four-multiply
+budget). It supersedes T-102's `math::exp_decay` (degree 7, 5.4e-7, eight
+multiplies), which is deleted: under the budget a single degree-4 fit over the
+measured `[−2, 0]` reaches 5.0e-4, and the range-reduced `2^f` form reaches
+7.5e-5. Built from IEEE-exact operations, so bit-identical native and wasm32.
+Appendix §D.8.
 
 **3.5 `RATIFIED` — the mineral term reads Bands, memoized on the field's own
 bits.** `rank` scores ore as `Σ_c scarcity_c · Band(m_c)`; `PlanetView` carries

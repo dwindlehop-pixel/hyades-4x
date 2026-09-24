@@ -1140,7 +1140,7 @@ fn veins(deposit: Kilotons, cfg: &SimConfig) -> f64 {
     // becomes a NaN in one subtraction. Clamped at the edge rather than checked
     // at every call site.
     let per_band = cfg.veins_per_band.max(1.0);
-    transcendental::pow(per_band, band - 1.0).clamp(1.0, MAX_VEINS)
+    transcendental::pow_fast(per_band, band - 1.0).clamp(1.0, MAX_VEINS)
 }
 
 /// Ceiling on the vein count, and therefore on any crew derived from it.
@@ -1183,7 +1183,7 @@ fn extraction_work(capacity: f64, deposit: Kilotons, cfg: &SimConfig) -> f64 {
         return 0.0;
     }
     let beta = cfg.crowding_beta;
-    transcendental::pow(n_veins, 1.0 - beta) * transcendental::pow(n, beta)
+    transcendental::pow_fast(n_veins, 1.0 - beta) * transcendental::pow_fast(n, beta)
 }
 
 /// **The share of a deposit's veins a crew effectively works** — `W(n,S)/N(S)`,
@@ -4580,7 +4580,7 @@ impl Simulation {
     /// inverse — and a root found by halving uses only comparison, addition and
     /// `sqrt`, all exactly specified by IEEE 754, where a fitted approximation
     /// would be a per-platform divergence in replicated state (design law #16,
-    /// and the reason `math::exp_decay` forbids `mul_add`).
+    /// and the reason `transcendental` forbids `mul_add`).
     fn light_overtakes(&self, vehicle: Entity, source: Vec3) -> Option<f64> {
         let now = self.clock;
         let d0 = self.position_at(vehicle, now)?.distance(source);
@@ -6801,7 +6801,7 @@ impl Simulation {
         let full_crew_rate = self.config.outpost_mining_fraction * ore / self.config.mining_tick_years.max(1e-12);
         let share = (demand / full_crew_rate.max(1e-12)).clamp(0.0, 1.0);
         let beta = self.config.crowding_beta.max(1e-6);
-        let want = n_veins * transcendental::pow(share, 1.0 / beta);
+        let want = n_veins * transcendental::pow_fast(share, 1.0 / beta);
         (want.round().clamp(1.0, n_veins.min(MAX_VEINS)) as usize).max(1)
     }
 
@@ -7301,18 +7301,15 @@ impl Simulation {
             return hi.min(k_c);
         }
         let delta = self.travel_discount(center, target);
-        Kilotons::new(
-            best_endowment(
-                hi.kilotons(),
-                x_p.kilotons(),
-                k_p.kilotons(),
-                k_c.kilotons(),
-                x_0.kilotons(),
-                delta,
-                Self::ENDOWMENT_GRID,
-            )
-            .0,
-        )
+        Kilotons::new(best_endowment(
+            hi.kilotons(),
+            x_p.kilotons(),
+            k_p.kilotons(),
+            k_c.kilotons(),
+            x_0.kilotons(),
+            delta,
+            Self::ENDOWMENT_GRID,
+        ))
         .min(hi)
     }
 
@@ -8200,7 +8197,7 @@ impl Simulation {
             return; // already settled or cancelled
         };
         let t = (self.clock - c.struck).max(0.0);
-        let keep = transcendental::exp(-self.config.trade_decay_lambda * t);
+        let keep = transcendental::exp_in_minus_0_8_to_0(-self.config.trade_decay_lambda * t);
         let paid = c.escrow * keep;
         let burn = c.escrow - paid;
 
@@ -8447,7 +8444,7 @@ impl Simulation {
             }
             let d = from.distance(*self.world.position.get(e).unwrap());
             let t = math::ship_travel_years(d, accel);
-            let score = self.bill_completion(e, owner, cargo) * transcendental::exp(-lambda * t);
+            let score = self.bill_completion(e, owner, cargo) * transcendental::exp_fast(-lambda * t);
             // Entity id breaks ties so the choice is total and deterministic.
             let better = match best {
                 None => true,
@@ -8607,7 +8604,7 @@ impl Simulation {
                 continue;
             };
             let t = math::ship_travel_years(from.distance(pos), accel);
-            let score = useful.kilotons() * transcendental::exp(-lambda * t);
+            let score = useful.kilotons() * transcendental::exp_fast(-lambda * t);
             let better = match best {
                 None => true,
                 Some((be, bs)) => score > bs || (score == bs && e.0 < be.0),
@@ -8926,51 +8923,40 @@ fn take_basics(bank: &mut Minerals, amount: Price) -> Minerals {
 /// the voyage, against the origin's regrowth time. Symbols as in
 /// `settler_target`; `delta ∈ (0, 1]`.
 ///
-/// **Skip the logarithm where it cannot matter** (T-127). This scan is the
-/// engine's largest caller of `ln` — about five million calls per 400
-/// simulated years on the standard bed. `ln` is concave, so it lies below its
-/// tangent at any earlier point, `ln a ≤ ln a_k + a/a_k − 1`, and `delta > 0`:
-/// a point whose bound cannot beat the best so far cannot win, and its
-/// logarithm is never taken. The margin is seven orders of magnitude above
-/// the rounding of either side, so the chosen seed is the one the full scan
-/// picks, bit for bit — `the_pruned_endowment_scan_picks_what_the_full_scan_picks`
-/// holds it to that — and about half the calls are skipped on the standard bed.
+/// **The logarithm is `log2_fast`, four multiplies** (T-130), with `ln 2`
+/// folded into `delta` once per call — `delta · ln a = (delta · ln 2) · log₂ a`
+/// — so the budget buys a degree-4 polynomial rather than a degree-3 one plus a
+/// scaling multiply. Absolute error in `ln a` at most 6.1e-5, against measured
+/// arguments `a ∈ [13.8, 5.7e6]` whose logarithms run 2.6 to 15.6. This is the
+/// engine's largest logarithm site: 4.9–14.1 million calls per run on the
+/// measured beds.
 ///
-/// Returns the seed and how many logarithms the scan took.
-fn best_endowment(hi: f64, xp: f64, kp: f64, kc: f64, x0: f64, delta: f64, grid: usize) -> (f64, usize) {
+/// T-127's tangent-bound prune is gone with the exact logarithm. It relied on
+/// `ln` being concave, which an approximation holds only up to its error, and
+/// the bound itself cost a division — more than the four multiplies it saved.
+fn best_endowment(hi: f64, xp: f64, kp: f64, kc: f64, x0: f64, delta: f64, grid: usize) -> f64 {
     let head = (kc - x0) / x0;
-    let mut taken = 0;
+    let delta_ln2 = delta * core::f64::consts::LN_2;
     let mut best = (f64::NEG_INFINITY, 0.0);
-    // The last grid point whose logarithm was taken, as `(a, ln a)`.
-    let mut known: Option<(f64, f64)> = None;
     for i in 1..=grid {
         let s = hi * (i as f64) / (grid as f64);
         if s >= kc || s >= xp {
             break;
         }
+        // Time the seed saves the child: floor -> S on its own logistic.
+        let log2_saved = transcendental::log2_fast((s / (kc - s)) * head);
         // Time the origin needs to regrow it. An origin already at or over
         // its ceiling has no headroom to regrow *into*, and its people are
         // surplus rather than growth — so the gift costs it nothing.
         let left = xp - s;
         let rate = left * (1.0 - left / kp);
         let t_p = if rate > 1e-15 { s / rate } else { 0.0 };
-        // Time the seed saves the child: floor -> S on its own logistic, `ln a`.
-        let a = (s / (kc - s)) * head;
-        if let Some((a_k, ln_k)) = known {
-            let bound = delta * (ln_k + (a / a_k - 1.0)) - t_p;
-            if bound + 1e-9 * bound.abs().max(1.0) < best.0 {
-                continue;
-            }
-        }
-        let t_c = transcendental::ln(a);
-        taken += 1;
-        known = Some((a, t_c));
-        let score = delta * t_c - t_p;
+        let score = delta_ln2 * log2_saved - t_p;
         if score > best.0 {
             best = (score, s);
         }
     }
-    (best.1, taken)
+    best.1
 }
 
 /// **Advance the population logistic across one tick — exactly, not by an Euler
@@ -9024,7 +9010,7 @@ fn best_endowment(hi: f64, xp: f64, kp: f64, kc: f64, x0: f64, delta: f64, grid:
 /// disagrees with the wasm32 build's on ~10% of inputs). Measured, the call is
 /// under the run-to-run noise; the tick is dominated by everything around it.
 fn logistic_step(x: f64, k: f64, r_dt: f64) -> f64 {
-    let denom = x + (k - x) * transcendental::exp(-r_dt);
+    let denom = x + (k - x) * transcendental::exp_in_minus_0_2_to_0(-r_dt);
     // Design law #16: a non-finite denominator is a fatal value, not a number
     // to divide by. It is unreachable for finite inputs — the denominator is
     // bounded below by `min(x, K) > 0` — so this is the invariant written down,
@@ -10877,60 +10863,6 @@ mod tests {
     /// stock above its rung lost the difference and one below it gained it.
     /// Found by the blockade's conservation test at 250 yr, on a run with no
     /// card played. Both directions are asserted.
-    /// The tangent bound in [`best_endowment`] only ever skips a logarithm; it
-    /// never changes the answer. Held against the scan it replaced, over the
-    /// magnitudes a colonizer sees — worlds from a hundredth of a kiloton to a
-    /// million — and required to have skipped something, or it proves nothing.
-    #[test]
-    fn the_pruned_endowment_scan_picks_what_the_full_scan_picks() {
-        fn full_scan(hi: f64, xp: f64, kp: f64, kc: f64, x0: f64, delta: f64, grid: usize) -> f64 {
-            let head = (kc - x0) / x0;
-            let mut best = (f64::NEG_INFINITY, 0.0);
-            for i in 1..=grid {
-                let s = hi * (i as f64) / (grid as f64);
-                if s >= kc || s >= xp {
-                    break;
-                }
-                let t_c = transcendental::ln((s / (kc - s)) * head);
-                let left = xp - s;
-                let rate = left * (1.0 - left / kp);
-                let t_p = if rate > 1e-15 { s / rate } else { 0.0 };
-                let score = delta * t_c - t_p;
-                if score > best.0 {
-                    best = (score, s);
-                }
-            }
-            best.1
-        }
-        let mut rng = Rng::new(0x5E77);
-        let log_uniform = |r: &mut Rng, lo: f64, hi: f64| {
-            transcendental::exp(r.range(transcendental::ln(lo), transcendental::ln(hi)))
-        };
-        let x0 = units::POPULATION_SEED_FLOOR.kilotons();
-        let (mut taken, mut points) = (0, 0);
-        for _ in 0..20_000 {
-            let kc = log_uniform(&mut rng, 1e-2, 1e6);
-            let kp = log_uniform(&mut rng, 1e-2, 1e6);
-            let xp = kp * rng.range(0.05, 1.5);
-            let hi = kc.min(xp - x0).min(log_uniform(&mut rng, 1e-3, 1e6)) * rng.range(0.1, 1.0);
-            if hi <= 0.0 || kc <= x0 {
-                continue;
-            }
-            let delta = rng.range(0.05, 1.0);
-            let (pruned, n) = best_endowment(hi, xp, kp, kc, x0, delta, 32);
-            let full = full_scan(hi, xp, kp, kc, x0, delta, 32);
-            assert_eq!(pruned.to_bits(), full.to_bits(), "hi {hi} xp {xp} kp {kp} kc {kc} delta {delta}");
-            taken += n;
-            points += (1..=32)
-                .take_while(|&i| {
-                    let s = hi * (i as f64) / 32.0;
-                    s < kc && s < xp
-                })
-                .count();
-        }
-        assert!(taken < points, "the bound skipped nothing: {taken} logarithms for {points} points");
-    }
-
     #[test]
     fn an_off_rung_upgrade_erects_what_it_bills() {
         let cfg = test_cfg(5);
@@ -12625,8 +12557,9 @@ mod tests {
         for (rung, want) in [(1.0, 1.0), (2.0, 10.0), (3.0, 100.0), (4.0, 1000.0)] {
             let mass = units::Kilotons::at_band(Band::new(rung));
             let got = veins(mass, &cfg);
+            // Within `pow_fast`'s bound at `y ≤ 3`: 7.5e-5 + 6.1e-5·3 (T-130).
             assert!(
-                (got / want - 1.0).abs() < 1e-6,
+                (got / want - 1.0).abs() < 2.6e-4,
                 "Band {rung} holds {mass:?} and should have {want} veins, got {got}"
             );
         }
@@ -13811,7 +13744,11 @@ mod tests {
     /// seed noise.
     #[test]
     fn refining_the_logistic_step_changes_nothing() {
-        let (k, r_total) = (1_000.0, 0.873 * 6.0);
+        // Two of the engine's own ticks (`r·Δ = 0.0873` each), so every step
+        // stays inside the range `exp_in_minus_0_2_to_0` is fitted on (T-130).
+        // The step's relative sensitivity to `e^(−rΔ)` is below one, so `n`
+        // steps compose to within `n` times the fit's 5.2e-9.
+        let (k, r_total) = (1_000.0, 0.0873 * 2.0);
         let once = logistic_step(3.0, k, r_total);
         for splits in [2, 5, 10, 100, 1_000] {
             let mut x = 3.0;
@@ -13819,7 +13756,7 @@ mod tests {
                 x = logistic_step(x, k, r_total / splits as f64);
             }
             assert!(
-                (x / once - 1.0).abs() < 1e-9,
+                (x / once - 1.0).abs() < (splits + 1) as f64 * 5.3e-9,
                 "{splits} steps of dt/{splits} gave {x}, one step of dt gave {once} — the closed form must compose"
             );
         }

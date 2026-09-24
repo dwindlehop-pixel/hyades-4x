@@ -1475,7 +1475,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 |---|---|
 | `src/units.rs` | **`Band` / `Kilotons` newtypes and the `Measure` trait** — the one place the two units meet, and the fix for a `min` that compared a mass against two levels (R-O66) |
 | `src/math.rs` | 3-vectors, relativistic 1 g flight, light-lag (`c = 1`, distance in ly, time in years) |
-| `src/transcendental.rs` | **the engine's `ln`, `exp`, `pow`, `sin_cos`** from `+ − × ÷` and bit operations (T-127). The host libm is banned in the library by `clippy.toml` — it disagrees with the wasm32 build's on 2–10% of inputs, and native and wasm32 runs of one seed diverged |
+| `src/transcendental.rs` | **the engine's `ln`, `exp`, `pow`, `sin_cos`** from `+ − × ÷` and bit operations (T-127), and the run path's four-multiply `exp_fast`/`log2_fast`/`pow_fast` (T-130). The host libm is banned in the library by `clippy.toml` — it disagrees with the wasm32 build's on 2–10% of inputs, and native and wasm32 runs of one seed diverged |
 | `src/rng.rs` | seeded splitmix64; `fork()` per entity for order-independent determinism |
 | `src/resources.rs` | CMY basics, RGB supers, apex, archetypes |
 | `src/galaxy.rs` | galaxy generation → continuous 3D planet field |
@@ -1662,7 +1662,9 @@ cheap audit of the first**, and neither defect was findable by reading.
   - **Replace a library transcendental with a polynomial fitted to the range
     the argument actually takes.** `rank`'s `centrality` calls `exp` 45.4 M times
     a run for a *classification weight*; a degree-7 minimax fit on `[−2, 0]` is
-    **+2.7% throughput at 5.4e-7 relative error** (T-102, `math::exp_decay`).
+    **+2.7% throughput at 5.4e-7 relative error** (T-102, `math::exp_decay`
+    — *retired at T-130, when every run-path `exp` and `ln` became a
+    four-multiply minimax fit to its measured range; see below*).
     Four things about it generalise past this call site:
 
     - **Histogram the argument before you fit.** The measured span is
@@ -1686,6 +1688,15 @@ cheap audit of the first**, and neither defect was findable by reading.
       colonies. **A cheap deliberate perturbation tells you what kind of change
       you are making, and it is the difference between reporting a disturbance
       and discovering one.**
+  - **Under a fixed operation budget, compare the schemes, not the degrees
+    (T-130).** Four multiplies buy a degree-4 fit directly or a range
+    reduction plus a degree-3 one, and which wins depends on the range: over
+    the freight scores' `[−3.6, 0]` the direct fit reaches 8.7e-3 and the
+    reduced one 7.5e-5; over the logistic step's `[−0.2, 0]` the direct fit
+    reaches 5.2e-9. Measure each site's range first — it is what chose. And a
+    per-call saving is not a per-event one: `exp` and `ln` got 45–68% cheaper
+    per call and the standard bed moved −0.84% in instructions per event at
+    400 yr.
   - **Pick the container for the access pattern, and check the siblings.**
     `Knowledge::visited` was converted from `BTreeSet` to a bitmap when one
     `contains` turned out to be 63% of engine instructions — and `targeted`, its
@@ -2315,6 +2326,7 @@ changes how you *work*, not what is left to do:
   | T-127 (the engine's own transcendentals), same bed, interleaved against T-126 on this container: **63,185 → 62,174** and **60,970 → 61,439 `ns/event`** — the runs differ, the seeds disagree in sign | — | 29.6 → 30.0, 28.6 → 28.5 yr/s | ~12× |
   | T-127, standard bed, 3 seats, **400 yr** (where old and new are nearly one run), min of 7: **30,197 → 30,642** and **25,443 → 26,177 `ns/event`** — fewer instructions (−0.56%), more time: a latency cost | — | **+1.5% / +2.9% per event** | — |
   | **T-129 (no Band reading on the run path)**, same bed, min of 7, interleaved against T-127: **30,523 → 29,087** and **26,270 → 24,011 `ns/event`**, instructions per event −2.4% — faster than before T-127 on both seeds | — | **−4.7% / −8.6% per event** | — |
+  | T-130 (`exp`/`ln` as four-multiply polynomials), seed 7, 400 yr: instructions per event **−0.84%**; 15 paired rounds **0.986 ± 0.013** — not resolved; combat bed not resolved | — | — | — |
 
   **R-WAR9's row is a case where the workload changed and the columns must be
   read that way** (§2's T-111 caveat). Flying colony ships at the rate their
