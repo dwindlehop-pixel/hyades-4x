@@ -59,11 +59,13 @@ fn main() {
         // reason (T-133): what the event-loop fight model did.
         let (mut encounters, mut wrecked, mut colony_wrecks, mut retargets, mut withdrawals) =
             (0usize, 0usize, 0usize, 0usize, 0usize);
+        let mut by_role: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
         for r in sim.log().iter() {
             match r.event {
                 LogEvent::EncounterBegan { .. } => encounters += 1,
                 LogEvent::HullWrecked { role, .. } => {
                     wrecked += 1;
+                    *by_role.entry(format!("{role:?}")).or_insert(0usize) += 1;
                     if role == Role::Colonizer {
                         colony_wrecks += 1;
                     }
@@ -82,6 +84,7 @@ fn main() {
             events,
             s * 1e9 / events as f64
         );
+        println!("  wrecked by role: {by_role:?}");
         let _ = std::io::stdout().flush();
     }
 }

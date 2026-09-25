@@ -2082,8 +2082,8 @@ it mounts.
 | `picket_after_founding` | an **armed** colonizer keeps its hull after founding and goes to the frontier as a picket; an unarmed one still becomes its colony's stock | built (§8.17.3) |
 | `picket_intercepts` | race a seen launch to the guessed destination | built (§8.12) |
 | `picket_claims_target`, `picket_reserve` | supply — how many armed hulls to keep on station | built; reserve a placeholder |
-| target priority | which enemy a shooter takes first | built as *nearest not already doomed*; alternatives `OPEN` |
-| disengage | break off on believed kinematics (R-O41) | computed and logged, not acted on (T-10) |
+| target priority | which enemy a shooter takes first | built as *nearest hull in reach that has not absorbed its structure* (§8.19.3); alternatives `OPEN` (R-WAR37) |
+| disengage | break off on believed kinematics (R-O41) | built as a pitched battle's third ending (§8.19.6) |
 
 #### 8.17.3 Armed colonizers hold the frontier after founding
 
@@ -2683,6 +2683,7 @@ kill them before they can found a colony, they will seek a new destination."*
 | **R-WAR32** | **the stored fleet** — the fleet decides course adjustments (§8.19.7), which amends roles §5's "a query, not a stored thing". **Interim, built:** a mining crew at one rock, a picket stack at one world or port, or a single hull (`FleetKey`); hulls in flight are each their own fleet | the author: who joins and leaves a fleet, and when |
 | **R-WAR34** | **where a wreck in open space leaves its slag** — slag is a per-planet store (R-O59); interim, the nearer of the hull's destination and its home (§8.19.3) | a slag store off the planets, or the author's choice of site |
 | **R-WAR35** | **belief event A reads a course change before its light arrives** — a sighting is discarded when the shooter has changed course since, which its observers cannot yet know (design law #15) (§8.19.7) | a count of retargets decided on a sighting the lag would have kept |
+| **R-WAR37** | **target priority under fire anywhere** — nearest-first was harmless while fights happened only at sites; with fire wherever hulls are in reach, a blockader's shots go to what stands nearest it, and on the twelve-seat card bed **no colony ship was wrecked** on three seeds against 10,903–12,845 other hulls (appendix §D.16). The port strike's purpose (§8.16) is the colony ship | the author: a Doctrine priority by role (colony ships first for a blockader is the recommendation), then the card bed re-measured |
 | **R-WAR36** | **the arena against the harness ruling** — design law #4 makes the Ship Testing Arena the required harness for per-class `r_eq`, and it spawns and fights hulls outside the simulation; the author's T-133 ruling is that a harness carries no special sim code. `arena.rs` is a scenario seeder that calls `combat::resolve_engagement`, not the simulation's fire path, so the two are not yet in conflict — but a pitched-battle bed for the Technology rating (`Hyades_technology_tree.md` §4) cannot use it and stay within the ruling | the author: whether the arena keeps its own resolver, or seeds scenarios into the simulation and steps its event loop |
 | **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
 | ~~**R-WAR26**~~ | **what ends a pitched battle — ruled and built (T-133)**: all three, each on the event that raises it; R-L2 is answered as repeated passes (§8.19.6) | — |

@@ -2072,7 +2072,13 @@ the pairwise detection search, not the discharges. Three changes that leave
 every result identical — a bounding-box reject before the search, skipping the
 position fix for a target whose reference distance already exceeds the reach
 plus both station-keeping radii, and an unstable sort on unique keys — were
-checked against the binary before them: *(pending: measured later in this landing, and recorded here when it is.)*
+checked against the binary before them
+(`combat_bench 400`, seeds 1 / 7 / 42): every printed count is identical —
+4,904,545 / 7,005,020 / 5,204,808 events, 26,752 / 63,158 / 32,948
+encounters, 12,845 / 11,999 / 10,903 wrecks, 1,800 / 5,059 / 2,983 retargets,
+24,290 / 39,969 / 27,724 withdrawals, 2,018 / 2,214 / 2,531 colonies — and
+`ns/event` fell 8,797 → 6,662, 8,658 → 6,654 and 10,817 → 8,660 (−24%, −23%,
+−20%; one run each, so these are estimates).
 
 **After those changes:** *(pending: measured later in this landing, and recorded here when it is.)*
 
@@ -2080,7 +2086,26 @@ checked against the binary before them: *(pending: measured later in this landin
 binary, interleaved; the d99a790 binary runs the retired site model, so this
 compares two different mechanics on one protocol):
 
-*(pending: measured later in this landing, and recorded here when it is.)*
+| seed | d99a790: yr/s, events, `ns/event` | this landing: yr/s, events, `ns/event` |
+|---|---|---|
+| 1 | 34.43, 214,888, 54,067 | 12.24, 4,904,545, 6,662 |
+| 7 | 32.96, 228,354, 53,151 | 8.58, 7,005,020, 6,654 |
+| 42 | 33.99, 216,317, 54,396 | 8.87, 5,204,808, 8,660 |
+
+This is the first row of `CLAUDE.md` §2's reading table taken to an extreme:
+events rose 22.8–30.7× and the cost per event fell 6.3–8.1×, so the
+simulation is doing more work, each unit cheaper. Throughput stays 3.4–4.9×
+above T-24's floor of 2.5 yr/s on this bed.
+
+**Where the fire goes, and what it does not reach.** On all three seeds **no
+colony ship was wrecked** (0 of 12,845 / 11,999 / 10,903 wrecks), against
+1,055 / 1,312 / 1,800 colony ships struck per run under the retired site model.
+The wrecks and the 24,290–39,969 withdrawals are what the same log names as
+non-colonizer hulls. *Inference, not yet instrumented:* target priority is
+built as nearest-first (warfare §8.17.2), and a blockader standing on a rival
+port has that port's parked hulls nearer than a colony ship leaving it, so its
+fire goes to them. What would confirm it: the roles of the wrecked hulls and
+their distance from the shooter at the wreck, per event.
 
 **The determinism gate plays the shipped protocol.** `combat_runs_are_bit_identical`
 no longer pulls the first barrier to 60 yr. At the shipped 200 yr, six seats,
@@ -2089,8 +2114,11 @@ floor; 275 yr gives 380 and 326 encounters (5.7 s for both seeds twice); 300 yr
 gives 745 encounters, 47 wrecks and 466 course changes (seed 1) and 493, 53 and
 82 (seed 7), 12.7 s, and ships.
 
-**Test targets** (debug, `cargo test`, idle machine, the build of d99a790
-against this one): *(pending: measured later in this landing, and recorded here when it is.)*
+**Test targets** (debug, `cargo test`, idle machine, one run each, the build of
+d99a790 against this one): unit 3.24 → 4.53 s, determinism 48.69 → 50.83 s,
+smoke 33.56 → 34.42 s, telemetry 22.74 → 22.66 s. All inside the 60-second
+rule; the determinism target's +2.1 s is its combat arm running at the shipped
+barrier.
 
 **The Warfare card** (`card_table`, 11 galaxies, 800 yr): *(pending: measured later in this landing, and recorded here when it is.)*
 
