@@ -18,7 +18,7 @@ rather than in the prose.
 
 **Rev 2 changes:** §4 rewritten to the author's specification, replacing the
 power-mean proposal (R-TREE4, never ratified; appendix §D.9). §5.6 added — a
-Technology write reaches no build today. R-TECH5 through R-TECH18 opened.
+Technology write reaches no build today. R-TECH5 through R-TECH18 opened. **T-132** resolved R-TECH14 (the damage model).
 
 ---
 
@@ -279,8 +279,8 @@ thing. Every candidate plays every other candidate in the role's pool.
 | **Colonizer** | found colonies on a shared field of worlds; a world founded first is gone for the other side | colonies founded in the bed's horizon | symmetric home ports | the role system exists; the bed does not |
 | **Miner** | fly to outposts on a shared field of rocks, extract, and deliver ore to be refined into the bank; rocks deplete for both | ore banked | symmetric home ports | the role system exists; the bed does not |
 | **Picket** | each side has a port launching a fixed schedule of **reference** colony ships, less heavily armed than any picket; pickets strike the rival's launches and defend their own | rival launches destroyed | blockade stations at the rival port (warfare §8.16) | the strike exists; the bed does not |
-| **Short-range offensive** | a pitched battle | surviving dry mass | **point blank** — both fleets on one reference point | `resolve_beam_engagement`; degenerate at current magnitudes (§4.9) |
-| **Long-range offensive** | a pitched battle | surviving dry mass | **at a distance**, `D_long` apart | as above; beams alone do not reach (§4.9) |
+| **Short-range offensive** | a pitched battle | surviving dry mass | **point blank** — both fleets on one reference point | `resolve_beam_engagement`; discriminates since T-132 (§4.9) |
+| **Long-range offensive** | a pitched battle | surviving dry mass | **at a distance**, `D_long` apart | as above; beams alone do not reach (§4.4.2) |
 
 **4.4.1 `RATIFIED` — the starting geometry belongs to the role, never to the
 Design.** A short-range Design entered in the long-range bed starts at a
@@ -301,9 +301,10 @@ refute it once a second weapon family exists.
 fixed relative velocity**, so a match passes through every range from `D_long`
 to zero — the torpedo's advantage in warfare §2.3 is damage delivered *before*
 the brawler reaches beam range, which needs the brawler to be approaching.
-**Measured on stationary fleets, beams stop reaching:** ten LCVs a side destroy
-each other completely out to 1e-3 ly, survivors appear at 3e-3 ly, and at 0.1 ly
-no shot lands (appendix §D.9). So a long-range bed whose fleets do not close is
+**Measured on stationary fleets, beams stop reaching:** ten LCVs a side fight to
+a decision out to 3e-3 ly, and at 1e-2 ly and beyond the fight runs the whole
+engagement with almost nothing destroyed (appendix §D.10; §D.9 is the same sweep
+under the replaced damage model). So a long-range bed whose fleets do not close is
 a draw for every beam Design. `D_long` should sit beyond that measured beam
 reach; it is a placeholder until a ranged family exists. Ties to **R-L2**
 (single pass or repeated passes).
@@ -423,26 +424,20 @@ Idle hulls in `Reserve` count; scrapped hulls are not owned and do not.
 | build more hulls | yes, and the world moved | Production's axis inside the stock (§4.7.2) |
 | add a Design to the game (authoring, not play) | changes every rating | the table is per engine revision; dedup (§4.3.1, R-TECH17); Nash averaging if cyclic (§4.6.3) |
 
-### 4.9 `OPEN` — R-TECH14: the combat beds rate every armed Design equal today
+### 4.9 R-TECH14 — resolved (T-132): the combat beds tied every armed Design, and now discriminate
 
-**Measured** (`examples/capability_probe`, appendix §D.9): an equal-spend,
-point-blank round robin over the four distinct armed Designs — seven hull names —
-ends every one of its 49 matches with **both fleets destroyed**, surviving mass
-0.0000 kt summed over all of them. Every share is ½, so every rating is equal
-and the short-range bed cannot rank anything.
+Under the damage model T-132 replaced, an equal-spend, point-blank round robin
+over the armed Designs destroyed both fleets in every one of its 49 matches
+(appendix §D.9): one mount delivered a hundred Limited hulls' structure per
+tick. **Resolved by the author's damage model** (warfare §8.18): beam power over
+time, structure on hull volume. The same round robin now decides most pairings
+one way, with mirror fights lasting 28–82 ticks; one GOU beats 40 ROUs and loses
+to 50 (appendix §D.10).
 
-*Inference from the magnitudes, not an instrumented count:* one beam mount
-delivers `laser_shots_per_tick × beam_shot_energy_kj` = 40 × 50 = 2,000 kJ per
-tick against a Limited hull's 20 kJ of structure, and fire is simultaneous, so
-each side's first tick of fire exceeds the other side's whole structure and
-both die together. Confidence is high; a per-tick casualty count would confirm
-it, and a match that survived its first tick would refute it.
-
-**What would settle it:** R-WAR19's placeholders (shot energy, structure per
-kilotonne) set so that an equal-spend fight lasts many ticks — the condition
-under which design law #2's slot-organic supremacy can express at all — plus a
-closing long-range bed (§4.4.2). Until then the offensive ratings are all equal
-and add nothing that `m_h` does not.
+**What remains for the beds, and is not this item:** mirror matches are decided
+by station-keeping geometry rather than drawn, so a rating needs many seeds with
+sides swapped (R-TECH16); and the long-range bed still needs fleets that close
+(R-TECH12).
 
 ### 4.10 `OPEN` — R-TECH15: where the table lives and how it goes stale
 
@@ -452,11 +447,10 @@ digest of every configuration value the beds read; the harnesses that compute
 configuration. The engine does not read it: capability is a measurement, and no
 autopilot decision may consult it.
 
-**Cost, bounded from below:** a point-blank combat match at 500 hulls a side
-costs **0.032–0.049 s** over three runs on the current resolver, measured on a fight that ended at
-once; a fight that runs its whole 0.5-yr engagement horizon is 1,000 ticks and
-costs more. The round robin is `n(n − 1)/2` pairs per role times seeds — 21 pairs
-for seven Designs. The colonizer, miner and picket beds are short simulation
+**Cost:** a point-blank combat match at 500 Limited hulls a side costs **1.46 s**
+(68 ticks, one run) on the current resolver, and the seven-Design short-range
+round robin **17.1 s** per seed (appendix §D.10). The round robin is
+`n(n − 1)/2` pairs per role times seeds — 21 pairs for seven Designs. The colonizer, miner and picket beds are short simulation
 runs and are not yet priced.
 
 ### 4.11 `OPEN` — R-TECH2: does capability saturate on the measurement bed?
@@ -560,7 +554,7 @@ the measurement into the target (§4.10).
 | R-TECH11 | equal-spend budget `B` = ten General hulls — *recommended* | author |
 | R-TECH12 | `D_long`, and a closing long-range bed | a ranged family or beam falloff, then a sweep |
 | R-TECH13 | Scout and Freighter beds | author |
-| R-TECH14 | **combat beds tie every armed Design at current lethality** | R-WAR19 |
+| ~~R-TECH14~~ | ~~combat beds tie every armed Design~~ — **resolved by T-132**, warfare §8.18 | — |
 | R-TECH15 | the table's storage and staleness stamp | engine work |
 | R-TECH16 | beds hold Doctrine at the default and rate Design only — *recommended* | author |
 | R-TECH17 | the pool deduplicated by what the beds read — *recommended* | author |

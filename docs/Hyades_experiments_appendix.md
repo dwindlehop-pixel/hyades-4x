@@ -1652,6 +1652,128 @@ this role") and leaves role weighting open rather than assuming a sum is safe
 
 ---
 
+## D.10 T-132 — the damage model: beam power over time, structure on hull volume
+
+*Supports `Hyades_warfare_tree.md` §8.18 and resolves Technology R-TECH14.
+Harnesses: `examples/capability_probe` (`SimConfig::new(1)`, release) and
+`examples/combat_bench` (twelve seats, the Warfare card on even seats and the
+Growth card on odd seats at the round-0 barrier, engagements on, 450 yr). Old
+and new binaries built from the same tree with and without the change, same
+seeds.*
+
+### Superseded: per-tick shot energy and structure on dry mass
+
+*Warfare §8.17 and §8.17.1 through T-131.* A hull's structure was its dry mass
+times `hull_hp_kj_per_kt = 1,000` — **1 J per kilogram**, so a 20,000-tonne
+Limited hull had 20 kJ, the energy of a rifle round. A beam mount fired
+`laser_shots_per_tick = 40` shots of `beam_shot_energy_kj = 50` each tick
+(0.0005 yr, 4.4 hours), 2,000 kJ per tick: one hundred Limited hulls' structure
+per mount per tick.
+
+**What it got wrong:**
+
+- **The rate was denominated in the integration step.** Damage per tick means
+  damage per year scales with `1/dt`, so a numerical requirement set how fast
+  hulls died. `CLAUDE.md`'s "a rate is per *something*" in a new place.
+- **Every armed fight ended in its first tick.** 49 of 49 equal-spend
+  point-blank matches destroyed both fleets (§D.9), so no Design difference and
+  no hull difference could act.
+- **`laser_shots_per_tick` was the arena's point-defense rate** — tuned against
+  missiles in the laser-versus-missile sweep — reused as a hull-killing fire
+  rate it was never calibrated for.
+- **The structure magnitude had no stated derivation**, which is what the author
+  flagged.
+
+### The pool under the new model
+
+`P = 50 MW`, `σ = 10¹² kJ per hull unit³`, `H = 0.5 yr` (1,000 ticks of 0.18
+days). One-mount kill time is `S / P`.
+
+| hull | dry kt | `r³` | beams | structure TJ | one mount kills in | `N` at equal spend |
+|---|---|---|---|---|---|---|
+| LSV | 0.0201 | 0.1066 | 0 | 106.6 | 24.7 days | 654 |
+| MSV | 0.1092 | 1.0980 | 0 | 1,098.0 | 254.2 days | 120 |
+| GSV | 1.3154 | 32.6228 | 0 | 32,622.8 | 7,551.6 days | 10 |
+| LCV / LCU | 0.0200 | 0.0410 | 1 | 41.0 | 9.5 days | 658 |
+| GCV / GCU | 1.0995 | 12.9958 | 317 | 12,995.8 | 3,008.3 days | 12 |
+| LOU | 0.0200 | 0.0194 | 1 | 19.4 | 4.5 days | 658 |
+| ROU | 0.1000 | 0.1691 | 12 | 169.1 | 39.1 days | 132 |
+| GOU | 1.0219 | 6.0199 | 440 | 6,019.9 | 1,393.5 days | 13 |
+
+### The short-range round robin (seed 1, point blank, equal spend)
+
+Row's share of surviving dry mass against the column / fight length in ticks:
+
+| | LCV | LCU | GCV | GCU | LOU | ROU | GOU |
+|---|---|---|---|---|---|---|---|
+| **LCV** | 0.000/82 | 0.000/82 | 0.000/9 | 0.000/9 | 1.000/26 | 0.000/22 | 0.000/6 |
+| **GCV** | 1.000/9 | 1.000/9 | 0.000/74 | 0.000/74 | 1.000/5 | 1.000/8 | 1.000/30 |
+| **LOU** | 0.000/26 | 0.000/26 | 0.000/5 | 0.000/5 | 1.000/49 | 0.000/11 | 0.000/3 |
+| **ROU** | 1.000/22 | 1.000/22 | 0.000/8 | 0.000/8 | 1.000/11 | 0.000/32 | 0.000/5 |
+| **GOU** | 1.000/6 | 1.000/6 | 0.000/31 | 0.000/31 | 1.000/3 | 1.000/5 | 1.000/28 |
+
+(LCU and GCU rows equal LCV and GCV.) Order on seed 1: GCV > GOU > ROU > LCV >
+LOU, every pairing decided. Fights last 3–82 ticks; the mirror diagonal
+28–82. Surviving dry mass over all 49 matches: 515.5 kt. Wall time 17.1 s. One
+seed: the order is an estimate on one geometry, not a rating.
+
+**Mirror matches are decisive.** Identical LCV fleets, point blank, seed 1:
+survivors 0 / 8 at 10 a side, 0 / 16 at 50, 0 / 43 at 100, 0 / 28 at 250, 0 / 164
+at 500. Across seeds 1–3 at 10 a side, side 0 won one of three. *Inference:* the
+station-keeping draws decide which fleet the other side's fire control predicts
+worse, and the square law amplifies the difference; confidence moderate, and a
+per-ship hit-fraction count would confirm or refute it.
+
+### Design law #2 in the engine
+
+One large hull against `N` of a smaller one, point blank, wins out of seeds 1–3:
+
+| | N = 5 | 10 | 20 | 30 | 40 | 50 | 70 |
+|---|---|---|---|---|---|---|---|
+| 1 GOU vs N ROU | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 | 0/3 | 0/3 |
+
+| | N = 2 | 4 | 6 | 8 | 10 | 14 | 20 |
+|---|---|---|---|---|---|---|---|
+| 1 ROU vs N LOU | 3/3 | 3/3 | 3/3 | 3/3 | 3/3 | 0/3 | 0/3 |
+
+Crossovers: GOU/ROU between 40 and 50 (the square-law estimate from the hull
+table was 36), ROU/LOU between 10 and 14 (estimate 10.2). The law's target is
+6–45.
+
+### Beam reach, stationary fleets
+
+Ten LCVs a side, seeds 1–3: mean survivors of 20 / mean ticks — 7.00 / 59 at 0
+ly, 6.33 / 64 at 1e-4, 3.33 / 93 at 3e-4, 3.67 / 91 at 1e-3, 4.67 / 79 at 3e-3,
+**15.33 / 1,000 at 1e-2, 20.00 / 1,000 at 1e-1**.
+
+### Cost
+
+Point-blank LCV mirror, one run each: 0.001 s (10 a side, 57 ticks), 0.013 s
+(50, 71), 0.047 s (100, 66), 0.333 s (250, 84), **1.463 s (500, 68)**.
+
+### What it did to the twelve-seat card bed
+
+`combat_bench 450 1,7,42`, old binary against new:
+
+| seed | fights | hulls destroyed | colonies | yr/s | ns/event |
+|---|---|---|---|---|---|
+| 1 | 1,580 → 1,479 | 1,580 → **356** | 2,243 → 2,425 | 31.35 → 29.19 | 46,961 → 49,830 |
+| 7 | 2,030 → 1,941 | 2,030 → **127** | 2,368 → 2,618 | 27.85 → 25.29 | 48,352 → 52,611 |
+| 42 | 2,798 → 2,728 | 2,798 → **369** | 2,158 → 2,378 | 29.82 → 25.82 | 48,472 → 54,778 |
+
+Every destroyed hull on either binary was on the attacking side. Kills fell
+77–94% and colonies rose 8–11%. *Inference:* the lost kills are Medium colony
+ships a lone Limited blockader can no longer finish inside one engagement (one
+mount needs 254 days; the engagement is 183) — warfare R-WAR21. Confidence high
+on the direction, since `a_lone_limited_picket_cannot_finish_a_medium_colony_ship`
+pins the arithmetic; a per-fight tally by hull type would confirm the share.
+
+`ns/event` rose 6–13%: the workload changed (fights now run many ticks), so by
+`CLAUDE.md` §2's reading table this is more work per event, not a regression to
+profile — and the run carries 8–11% more colonies.
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the

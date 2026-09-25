@@ -709,15 +709,31 @@ pub struct CombatConfig {
     pub laser_shots_per_tick: usize,
     /// Missiles per burst; bursts are desynchronized and released one per tick.
     pub burst_count: usize,
-    /// **Energy one beam shot delivers, kJ** (T-125). A Design quantity in the
-    /// weapons space (`Hyades_warfare_tree.md` §8.17); the one beam Design the
-    /// engine builds reads it from here. **Placeholder** (R-WAR19) — the arena
-    /// does not read it, so the tuned laser-vs-missile balance is untouched.
-    pub beam_shot_energy_kj: f64,
-    /// **Structure per kilotonne of dry mass, kJ/kt** (T-125) — a hull's hit
-    /// points are its dry mass times this. Mass is the armor statement because
-    /// the shell *is* the mass (R-O57, §2.3's `τ`). **Placeholder** (R-WAR19).
-    pub hull_hp_kj_per_kt: f64,
+    /// **A beam mount's power, MW** (T-132) — the rate at which one mount on
+    /// target delivers energy, whatever the integration step. A Design quantity
+    /// in the weapons space (`Hyades_warfare_tree.md` §8.17); the one beam
+    /// Design the engine builds reads it from here. **Placeholder** (R-WAR19),
+    /// chosen for fight duration, not for realism (§8.18). The arena does not
+    /// read it, so the tuned laser-vs-missile balance is untouched.
+    pub beam_power_mw: f64,
+    /// **Structure per unit of hull volume, kJ per hull unit³** (T-132) — the
+    /// energy it takes to wreck a hull is this times its enclosed volume `r³`.
+    /// Volume, not mass, because durability is a *value* and design law #3
+    /// makes volume the value basis, as it already is for mounts and the hold.
+    /// **Placeholder** (R-WAR19); only its ratio to [`Self::beam_power_mw`]
+    /// reaches a fight's outcome.
+    pub structure_kj_per_hull_unit3: f64,
+}
+
+/// Seconds in a Julian year — the one conversion between a power in MW and the
+/// engine's clock in years.
+pub const SECONDS_PER_YEAR: f64 = 31_557_600.0;
+
+impl CombatConfig {
+    /// A beam mount's power in the engine's units, kJ per year.
+    pub fn beam_power_kj_per_year(&self) -> f64 {
+        self.beam_power_mw * 1_000.0 * SECONDS_PER_YEAR
+    }
 }
 
 impl Default for CombatConfig {
@@ -736,10 +752,11 @@ impl Default for CombatConfig {
             max_missiles_per_shooter: 30,
             laser_shots_per_tick: 40,
             burst_count: 4,
-            // Placeholders (R-WAR19): a Medium colonizer (0.109 kt) takes three
-            // shots, a General Contact colonizer (1.10 kt) twenty-two.
-            beam_shot_energy_kj: 50.0,
-            hull_hp_kj_per_kt: 1_000.0,
+            // Placeholders (R-WAR19, T-132), chosen together for how long a
+            // fight lasts (warfare §8.18): one 50 MW mount wrecks a Limited
+            // Contact hull (r³ = 0.041, 41 TJ) in about nine and a half days.
+            beam_power_mw: 50.0,
+            structure_kj_per_hull_unit3: 1.0e12,
         }
     }
 }
@@ -780,28 +797,28 @@ pub struct Loadout {
     /// Beam mounts. **Zero is unarmed**, and unarmed is the default for every
     /// hull the Warfare card has not unlocked.
     pub beams: u32,
-    /// Energy one shot delivers, kJ.
-    pub shot_energy_kj: f64,
+    /// Power one mount delivers while it is on target, kJ per year (T-132).
+    /// A rate, so a fight's outcome does not depend on the integration step.
+    pub beam_power_kj_per_year: f64,
     /// Fire-control error bound, ly — the tolerance [`laser_hit_check`]
     /// compares predicted against actual target position.
     pub fire_control_ly: f64,
-    /// Shots per mount per tick (fire rate).
-    pub shots_per_tick: u32,
 }
 
 impl Loadout {
     /// No weapons at all.
-    pub const UNARMED: Loadout = Loadout { beams: 0, shot_energy_kj: 0.0, fire_control_ly: 0.0, shots_per_tick: 0 };
+    pub const UNARMED: Loadout = Loadout { beams: 0, beam_power_kj_per_year: 0.0, fire_control_ly: 0.0 };
 
     /// Whether this Design can damage anything.
     pub fn is_armed(&self) -> bool {
-        self.beams > 0 && self.shots_per_tick > 0 && self.shot_energy_kj > 0.0
+        self.beams > 0 && self.beam_power_kj_per_year > 0.0
     }
 }
 
-/// **A hull's structure, kJ** — dry mass times [`CombatConfig::hull_hp_kj_per_kt`].
-pub fn hull_hp_kj(hull: HullType, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f64 {
-    hull_dry_mass(hull, sim_cfg).kilotons() * cfg.hull_hp_kj_per_kt
+/// **A hull's structure, kJ** — its enclosed volume `r³` times
+/// [`CombatConfig::structure_kj_per_hull_unit3`] (T-132).
+pub fn hull_structure_kj(hull: HullType, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f64 {
+    hull.hull_volume(sim_cfg).hull_units_cubed() * cfg.structure_kj_per_hull_unit3
 }
 
 /// One ship in a simulation fight: where it is, what it mounts, and how much
@@ -810,13 +827,23 @@ pub fn hull_hp_kj(hull: HullType, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f6
 pub struct Armed {
     pub ship: Combatant,
     pub loadout: Loadout,
-    pub hp_kj: f64,
+    pub structure_kj: f64,
+}
+
+/// What a beam engagement left standing, and when it stopped.
+#[derive(Clone, Debug)]
+pub struct BeamOutcome {
+    /// Per side, which ships survived.
+    pub alive: [Vec<bool>; 2],
+    /// Time from the first tick to the end of the fight, years — the horizon
+    /// if neither side was finished.
+    pub duration_years: f64,
 }
 
 /// **Resolve a fight in which each ship fires what its Design mounts** (T-125).
 ///
-/// Returns, per side, which ships are still standing. Three properties are the
-/// design and are tested:
+/// Returns which ships are still standing and how long the fight ran. Four
+/// properties are the design and are tested:
 ///
 /// - **An unarmed ship deals no damage**, so a fight between two unarmed sides
 ///   ends before it starts, with no losses.
@@ -824,16 +851,23 @@ pub struct Armed {
 ///   standing at the start of the tick and damage lands at its end, so neither
 ///   side shoots first by index order — §2.3's "no tick-based initiative".
 /// - **Damage accumulates in kJ against structure.** A hull dies when the energy
-///   it has absorbed reaches its structure; a shot is not a kill.
+///   it has absorbed reaches its structure.
+/// - **Damage is a power, not a per-tick quantum** (T-132). A mount on target
+///   delivers `power × dt` in a tick, so halving `dt` doubles the ticks and
+///   halves each one's damage, and a fight lasts the same time.
 ///
-/// Each shot goes to the nearest enemy not already doomed by damage landing this
-/// tick, so a battery does not spend a tick killing one ship forty times.
+/// Every mount aims at the nearest enemy not already doomed by damage landing
+/// this tick. A beam points one way, so a mount engages one target per tick; the
+/// fire-control test is a property of the shooter, the target and the time, so
+/// it is taken once per target and holds for every mount aimed there. A miss on
+/// the nearest undoomed target wastes the rest of the shooter's mounts that
+/// tick, as it did when each shot was tested on its own.
 pub fn resolve_beam_engagement(
     fleets: &[FleetTrajectory; 2],
     sides: [&[Armed]; 2],
     horizon: f64,
     dt: f64,
-) -> [Vec<bool>; 2] {
+) -> BeamOutcome {
     let mut alive: [Vec<bool>; 2] = [vec![true; sides[0].len()], vec![true; sides[1].len()]];
     let mut damage: [Vec<f64>; 2] = [vec![0.0; sides[0].len()], vec![0.0; sides[1].len()]];
     let armed_alive =
@@ -861,30 +895,42 @@ pub fn resolve_beam_engagement(
                     .map(|j| (sides[e][j].ship.position_at(fleets, t).distance(at), j))
                     .collect();
                 targets.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-                let shots = shooter.loadout.beams * shooter.loadout.shots_per_tick;
-                for _ in 0..shots {
-                    let Some(&(_, j)) =
-                        targets.iter().find(|&&(_, j)| damage[e][j] + pending[e][j] < sides[e][j].hp_kj)
-                    else {
+                let per_mount = shooter.loadout.beam_power_kj_per_year * dt;
+                let mut mounts = shooter.loadout.beams;
+                for &(_, j) in &targets {
+                    if mounts == 0 {
                         break;
-                    };
-                    if laser_hit_check(at, &sides[e][j].ship, fleets, t, shooter.loadout.fire_control_ly) {
-                        pending[e][j] += shooter.loadout.shot_energy_kj;
                     }
+                    let remaining = sides[e][j].structure_kj - damage[e][j] - pending[e][j];
+                    if remaining <= 0.0 {
+                        continue;
+                    }
+                    if !laser_hit_check(at, &sides[e][j].ship, fleets, t, shooter.loadout.fire_control_ly) {
+                        break;
+                    }
+                    // As many mounts as it takes to doom this target, and no more;
+                    // the second line covers a quotient that rounded down by an ulp.
+                    let mut needed = (remaining / per_mount).ceil();
+                    if needed * per_mount < remaining {
+                        needed += 1.0;
+                    }
+                    let used = (mounts as f64).min(needed) as u32;
+                    pending[e][j] += used as f64 * per_mount;
+                    mounts -= used;
                 }
             }
         }
         for s in 0..2 {
             for j in 0..sides[s].len() {
                 damage[s][j] += pending[s][j];
-                if damage[s][j] >= sides[s][j].hp_kj {
+                if damage[s][j] >= sides[s][j].structure_kj {
                     alive[s][j] = false;
                 }
             }
         }
         t += dt;
     }
-    alive
+    BeamOutcome { alive, duration_years: t }
 }
 
 /// Who a laser targets this shot — a ship, or an in-flight missile

@@ -163,6 +163,37 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-132. The damage model — beam power over time, structure on hull volume
+
+**Closed (engine); opened R-WAR21 and R-WAR22.** Author's specification, quoted
+in `Hyades_warfare_tree.md` §8.18: kilojoules; damage not per tick; a fight's
+duration scaled so Design improvements and hull distinctions can act; realism
+yields to fun; structure on **hull volume** (the author's choice between volume
+and dry mass). Appendix §D.10.
+
+- **The model:** a beam mount delivers power `P` while on target, `P · dt` per
+  tick, so a fight's length does not depend on the step (tested). Structure is
+  `σ · r³`. One target per mount per tick. The simulation's resolver no longer
+  reads the arena's `laser_shots_per_tick`; the arena is unchanged
+  (`tests/balance.rs` passes).
+- **Placeholders (R-WAR19):** `P = 50 MW`, `σ = 10¹² kJ per hull unit³` — one
+  mount wrecks a Limited Contact hull in 9.5 days. Chosen so equal-spend mirror
+  fights last 28–82 ticks and every fight between the smallest hulls ends inside
+  the 1,000-tick engagement.
+- **Measured:** the short-range round robin decides every pairing on seed 1
+  (it destroyed both fleets in all 49 before), resolving Technology R-TECH14;
+  one GOU beats 40 ROUs and loses to 50; one ROU beats 10 LOUs and loses to 14.
+- **What it cost the Warfare card:** a lone Limited picket cannot finish a
+  Medium colony ship in one engagement (254 days against 183), so on the
+  twelve-seat card bed hulls destroyed fell 77–94% and colonies rose 8–11%
+  (seeds 1, 7, 42). §8.17.4's covering rule lost its premise. **R-WAR21** is
+  the author's choice of remedy; **R-WAR20** needs re-measuring after it.
+- **Opened R-WAR22:** damage does not persist past an engagement, which was
+  invisible while every fight ended in one tick.
+- **Test budget:** determinism 47.1 s old against 46.9 s new, one uncontended
+  pair on this container (a second pair read 46.7 against 51.9 with the new run
+  overlapping other builds); smoke 33.3 s, telemetry 23.0 s, balance 50.6 s.
+
 ### T-131. The Technology objective — a static rating of every Design, earned head-to-head per role
 
 **Open, Band B: specified, not built.** Author's specification, quoted in full
@@ -184,8 +215,8 @@ rewritten, trees §2.3.5 and §2.5 amended, `examples/capability_probe` added.
   author's range (R-TECH11).
 - **A 500-a-side combat match costs 0.032–0.049 s over three runs** — a lower bound, because
   every measured fight ended immediately.
-- **The short-range bed ties every armed Design today**: 49 of 49 matches
-  destroyed both fleets (R-TECH14, blocked on R-WAR19).
+- **The short-range bed tied every armed Design**: 49 of 49 matches
+  destroyed both fleets (R-TECH14 — resolved by T-132's damage model).
 - **Beams stop reaching between 1e-3 and 1e-1 ly** on stationary fleets, so a
   long-range bed whose fleets do not close is a draw for every beam Design
   (R-TECH12).
@@ -199,8 +230,8 @@ is worth exactly zero on this objective whatever the table says (R-TECH18).
 
 1. The author ratifies or overrides the recommendations (R-TECH5–R-TECH11,
    R-TECH13, R-TECH16, R-TECH17).
-2. R-WAR19's lethality set so an equal-spend fight lasts many ticks (R-TECH14),
-   and a closing long-range bed (R-TECH12).
+2. ~~R-WAR19's lethality set so an equal-spend fight lasts many ticks
+   (R-TECH14)~~ — **done at T-132**; a closing long-range bed (R-TECH12) remains.
 3. `VehicleSnapshot` carries the hull type and class, so `Q_i` is computable
    from a run.
 4. A bed seeder: equal-spend fleets spawned into a `Simulation` with no

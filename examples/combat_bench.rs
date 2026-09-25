@@ -56,9 +56,18 @@ fn main() {
         }
         let s = t0.elapsed().as_secs_f64();
         let events = sim.report().events_processed;
-        let fights = sim.log().iter().filter(|r| matches!(r.event, LogEvent::EngagementResolved { .. })).count();
+        let (mut fights, mut lost_att, mut lost_def) = (0usize, 0u64, 0u64);
+        for r in sim.log().iter() {
+            if let LogEvent::EngagementResolved { losses_attacker, losses_defender, .. } = r.event {
+                fights += 1;
+                lost_att += losses_attacker as u64;
+                lost_def += losses_defender as u64;
+            }
+        }
+        let colonies: usize = sim.report().players.iter().map(|p| p.colonies).sum();
         println!(
-            "seed {seed}: {:>7.2} yr/s  {:>9} events  {:>7.0} ns/event  {fights} fights",
+            "seed {seed}: {:>7.2} yr/s  {:>9} events  {:>7.0} ns/event  {fights} fights  \
+             {lost_att} attackers and {lost_def} defenders lost  {colonies} colonies",
             h / s,
             events,
             s * 1e9 / events as f64

@@ -2015,23 +2015,22 @@ it mounts. The arena keeps its laser-side-vs-missile-side resolver, because that
 is the sweep `CombatConfig`'s tuned constants were calibrated on and
 `tests/balance.rs` pins it bit-for-bit.
 
-**Decided — structure is mass, and damage accumulates.** A hull's structure is
-its dry mass times `CombatConfig::hull_hp_kj_per_kt`, in kJ: the shell *is* the
-mass (R-O57, §2.3's `τ`), so a thicker-skinned hull is harder to kill with no
-second armor constant. A shot delivers its energy; a hull dies when the energy
-it has absorbed reaches its structure. Fire within a tick is **simultaneous** —
-every shooter aims at the ships standing at the start of the tick — so neither
-side shoots first by index (§2.3, no initiative).
+**Decided — damage accumulates against structure, and fire is simultaneous.**
+A hull dies when the energy it has absorbed reaches its structure. Every shooter
+aims at the ships standing at the start of the tick, so neither side shoots
+first by index (§2.3, no initiative). **How structure and damage are sized is
+§8.18 (T-132)**, which replaced "structure is dry mass" and a per-tick shot
+energy; the replaced model is appendix §D.10.
 
 #### 8.17.1 The Design space — what a weapons Design specifies
 
 | family | field | unit | what it sets | engine |
 |---|---|---|---|---|
-| all | **structure** | kJ | dry mass × `hull_hp_kj_per_kt` | **built** — placeholder `1,000 kJ/kt` (R-WAR19) |
+| all | **structure** | kJ | hull volume `r³` × `structure_kj_per_hull_unit3` (§8.18) | **built** — placeholder `10¹² kJ per hull unit³` (R-WAR19) |
 | **beam** | **mounts** | count | `b_role · V` over one Limited Contact hull's, floored, at least one — design law #2's slot-organic count | **built** — LCV 1 |
-| beam | **shot energy** | kJ | damage per hit | **built** — placeholder `50 kJ` (R-WAR19) |
+| beam | **power** | MW | energy per unit of time on target; a tick delivers `P · dt` (§8.18) | **built** — placeholder `50 MW` (R-WAR19) |
 | beam | **fire-control error** | ly | the tolerance `laser_hit_check` compares predicted against actual target position; smaller is more accurate | **built** — reads `CombatConfig::laser_hit_tolerance` (tuned), not a second copy |
-| beam | **fire rate** | shots per mount per tick | how many shots a mount takes each `dt` | **built** — reads `laser_shots_per_tick` (tuned) |
+| beam | targets per tick | count | one per mount — a beam points one way (§8.18.3) | **built**; the arena's `laser_shots_per_tick` is no longer read by the simulation |
 | beam | range falloff | kJ per ly | §2.4's "weak at long range" | `OPEN` — every simulation fight today is at range zero |
 | beam | point defense | — | whether a beam may target an in-flight missile | arena only; `OPEN` for the simulation |
 | **missile** | tubes | count | slot-organic, as beams | `OPEN` |
@@ -2107,7 +2106,9 @@ not sites (`pickets_stack_on_held_ground_like_a_crew`).
 
 **Decided — cover every seen port before stacking.** One armed hull destroys any
 unarmed colony ship, so a second at the same port adds nothing against what most
-ports launch. A new blockader therefore goes to an **uncovered** port this seat
+ports launch. **That premise is false since T-132** for Medium and General
+colony ships, which a lone Limited picket cannot finish in one engagement; the
+rule stands until R-WAR21 decides what replaces it (§8.18.6). A new blockader therefore goes to an **uncovered** port this seat
 has seen launch, ranked by launches seen in the last `intercept_reassess_years`
 and then by all launches; only when every seen port is covered does it stack, on
 the port with the most recent launches per committed hull. And the blockade-first
@@ -2163,6 +2164,120 @@ strike that reaches a colony ship somewhere other than its port or its
 destination; a Warfare metric or target that accounts for a card whose effect
 cannot begin until a light-crossing after it is played; or accepting this card
 below the band.
+
+### 8.18 The damage model — power over time, structure on volume (T-132)
+
+*Author's specification: "The damage model is broken and must be fixed. I think
+kilojoules is a reasonable unit. I think damage per tick is not reasonable…
+The duration needs to be scaled to allow for Design improvements and hull
+distinctions. Additionally, I don't understand the math behind the structure kJ
+rating. That is suspect. Realism is nice, and helps players develop intuition
+about the game, but it must yield to the requirements of fun. We have to change
+the damage model."* Asked what structure should scale with, the author chose
+**hull volume**.
+
+This replaces §8.17's "structure is mass" and the per-shot energy and fire rate
+in §8.17.1. What the old model was and what it got wrong is appendix §D.10.
+
+#### 8.18.1 Terms
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `P` | a beam mount's **power** while it is on target | MW; kJ/yr in the engine | `CombatConfig::beam_power_mw`, placeholder |
+| `σ` | **structure per unit of hull volume** | kJ per hull unit³ | `CombatConfig::structure_kj_per_hull_unit3`, placeholder |
+| `r³` | a hull's enclosed volume | hull unit³ | `HullType::hull_volume` (R-PROD5's quantity) |
+| `S` | a hull's **structure**, `σ · r³` — the energy that wrecks it | kJ | `combat::hull_structure_kj` |
+| `dt` | the engagement's integration step | yr | `engagement_dt_years`, 0.0005 — a numerical requirement (§2.6) |
+| `H` | the engagement horizon | yr | `engagement_horizon_years`, 0.5 — placeholder (R-WAR5) |
+| `τ_L` | time for one mount on target to wreck a Limited Contact hull, `σ · r³_LCV / P` | days | derived |
+
+#### 8.18.2 `RATIFIED` — the author's rulings
+
+- **Energy is in kilojoules.**
+- **Damage is not denominated per tick.** A mount's output is a power, and a tick
+  on target delivers `P · dt`. Halving `dt` halves each tick's damage and
+  doubles the ticks, so a fight lasts the same time
+  (`damage_is_a_power_and_the_kill_time_does_not_depend_on_the_step`). Under the
+  replaced model damage was per tick, so the fight's length in years was set by
+  the integration step.
+- **A fight's duration is scaled so Design improvements and hull distinctions
+  can act.** A fight decided in one tick cannot tell two Designs apart.
+- **Realism yields to fun.** The magnitudes are chosen for how a fight plays,
+  and are stated in physical units so players can build intuition from them.
+- **Structure scales with hull volume**, `S = σ · r³`. Durability is a value,
+  and design law #3 makes volume the value basis — as it already is for beam
+  mounts (payload volume) and for the hold.
+
+#### 8.18.3 Decided — how a tick resolves
+
+Every mount aims at the nearest enemy not already doomed by damage landing this
+tick, and engages one target per tick: a beam points one way. The fire-control
+test (`laser_hit_check`) depends on the shooter, the target and the time, so it
+is taken once per target per tick and holds for every mount aimed there; a miss
+on the nearest undoomed target wastes the shooter's remaining mounts that tick.
+Fire stays simultaneous (§2.3). The resolver reports how long the fight ran.
+**The arena's `laser_shots_per_tick` is no longer read by the simulation's
+resolver** — a per-tick rate is exactly the denomination this section removes —
+and the arena, which still reads it, is unchanged (`tests/balance.rs` passes).
+
+#### 8.18.4 `OPEN` — R-WAR19: the magnitudes
+
+**Placeholders:** `P = 50 MW`, `σ = 10¹² kJ per hull unit³`. A Limited Contact
+hull's structure is then 41 TJ and `τ_L` is **9.5 days**. Only `P / σ` reaches an
+outcome; `σ` is set so structures read in terajoules and the beam in megawatts.
+
+**The criterion they were chosen against, which is the part to ratify:** in the
+equal-spend, point-blank round robin (Technology §4), mirror fights last **28 to
+82 ticks** — room for a small Design difference to act — and the slowest fight
+between the smallest hulls ends well inside `H` (1,000 ticks). Measured in
+appendix §D.10.
+
+#### 8.18.5 What it does, measured (appendix §D.10)
+
+- **The short-range round robin discriminates**: most pairings are decided one
+  way, where every one used to destroy both fleets (Technology R-TECH14,
+  resolved).
+- **Design law #2 in the engine:** one GOU beats 40 ROUs and loses to 50 on all
+  three seeds; one ROU beats 10 LOUs and loses to 14. The law's target is 6–45
+  ROUs per GOU, so the crossover sits at or slightly past its upper end.
+- **Mirror matches are decisive, not draws.** Identical fleets end with one side
+  holding up to 164 of 500 hulls, decided by which fleet's station-keeping
+  geometry is easier to hit. A rating needs many seeds with sides swapped.
+- **A lone Limited picket cannot finish a Medium colony ship**: one mount needs
+  254 days against a 183-day engagement (R-WAR21). On the twelve-seat card bed
+  at 450 yr, hulls destroyed fell from **1,580 / 2,030 / 2,798 to 356 / 127 /
+  369** (seeds 1 / 7 / 42) and total colonies rose by **182 / 250 / 220**. The
+  first Warfare card's measured effect (§8.17.6) is from the replaced model and
+  has to be re-measured (R-WAR20).
+
+#### 8.18.6 `OPEN` — R-WAR21: the blockade against a Medium colony ship
+
+A Medium Systems hull encloses 26.8 times a Limited Contact hull's volume, so
+structure on volume makes it 26.8 times as hard to wreck while it costs 5.5
+times as much. The consequence is the blockade: **§8.17.4's rule "cover every
+seen port before stacking" rests on "one armed hull destroys any unarmed colony
+ship", and that is now false for every Medium and General colony ship.**
+Candidates, none chosen:
+
+- **Accept it.** A blockade must stack three Limited pickets to kill a Medium
+  colony ship in one engagement, and the covering rule is rewritten to stack to
+  a lethal count before covering the next port.
+- **A longer engagement.** At `H = 1 yr` one mount finishes a Medium colony ship
+  in 0.70 yr. `H` is also a cost: a fight nobody can finish runs to it.
+- **A stronger beam.** At `P ≳ 70 MW` one mount finishes it inside 0.5 yr with
+  every tick a hit — and every equal-spend fight shortens by the same factor,
+  which is the resolution §8.18.4 was chosen to buy.
+- **Structure on the hull less its hold.** Keeps armed hulls as they are and
+  makes cargo space not armor, which departs from "hull volume" as ruled.
+
+#### 8.18.7 `OPEN` — R-WAR22: damage does not persist past an engagement
+
+A hull that survives a fight leaves it undamaged: the resolver's damage is local
+to one call. Under the replaced model nearly every fight ended in its first tick,
+so this never showed; now a fight that runs out `H` discards partial damage, and
+a picket that cannot finish a hull in one engagement can never finish it. *A
+decision for the author:* persistent damage (and then repair) is new state on
+every hull.
 
 ---
 
@@ -2226,9 +2341,11 @@ below the band.
 | **R-WAR7** | **a colonizer's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
 | **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole colonizer loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
 | ~~**R-WAR5**~~ | ~~which side carries which weapon~~ **Resolved for the simulation (T-125): a ship carries what its Design mounts** (§8.17). Every simulation fight uses `resolve_beam_engagement`. The convention survives only in the arena's laser-side-vs-missile-side sweep, where `carrier_accel` still reads the laser side's first hull — kept because it is what `tests/balance.rs`'s goldens were tuned on | — |
-| **R-WAR20** | **the first Warfare card is below the author's 1.5–2.0x P92 target**, bound by transit latency: coverage of rival launches must reach ~30–45% and the port strike reaches ~10% in the expansion peak (§8.17.6) | the author's choice among an earlier first barrier, a different meeting site, a latency-aware Warfare target, or accepting the card below the band |
+| **R-WAR20** | **the first Warfare card is below the author's 1.5–2.0x P92 target** (measured on the damage model T-132 replaced; re-measure after R-WAR21), bound by transit latency: coverage of rival launches must reach ~30–45% and the port strike reaches ~10% in the expansion peak (§8.17.6) | the author's choice among an earlier first barrier, a different meeting site, a latency-aware Warfare target, or accepting the card below the band |
 | ~~**R-WAR18**~~ | ~~blockade placement has no recency~~ **Implemented (T-125), measured null**: ranking by launches seen in the last `intercept_reassess_years` and moving a blockader off a port that went quiet changed `ln S` by less than its standard error, because latency, not placement, binds (§8.17.5) | — |
-| **R-WAR19** | **the beam and structure magnitudes** — `beam_shot_energy_kj = 50`, `hull_hp_kj_per_kt = 1,000`. Neither is physical, and together they set how many hits each hull takes (a Medium colonizer three, a General Contact colonizer twenty-two) | the arena, once it can seed a beam-versus-beam fight between loadouts rather than sides. **At the current values every equal-spend point-blank fight destroys both fleets** (appendix §D.9), so Technology's short-range bed ties every armed Design until these move (R-TECH14) |
+| **R-WAR19** | **the beam and structure magnitudes** — `beam_power_mw = 50`, `structure_kj_per_hull_unit3 = 10¹²` (T-132; the per-tick `50 kJ` shot and `1,000 kJ/kt` structure they replace are appendix §D.10). Only `P / σ` reaches an outcome; one mount wrecks a Limited Contact hull in 9.5 days | ratify the duration criterion in §8.18.4 (mirror fights 28–82 ticks, every fight inside `H`), then the arena once it can seed beam-versus-beam fights between loadouts |
+| **R-WAR21** | **a lone Limited picket cannot finish a Medium colony ship** (254 days against a 183-day engagement), so §8.17.4's covering rule has lost its premise and the twelve-seat bed's kills fell 77–94% (§8.18.6) | the author's choice: accept and stack, a longer engagement, a stronger beam, or structure less the hold |
+| **R-WAR22** | **damage does not persist past an engagement** — a hull no single fight can finish is never finished (§8.18.7) | the author: persistent damage (and repair) is new per-hull state |
 | **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |
 | R-MC9c / T-12 | HP pools, weapon count, missile AoE, magazines | engine work, then the arena |
 | R-L0 | per-hull slot tables | the arena |

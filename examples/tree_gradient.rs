@@ -86,9 +86,8 @@
 //!
 //! **Technology has no table to read.** `Hyades_technology_tree.md` §4 rates each
 //! Design statically, head-to-head in one bed per role, and `Q` is a lookup into
-//! that table — which does not exist yet (T-131). Two things would still make it
-//! uninformative once it does: the combat beds tie every armed Design at the
-//! current lethality (R-TECH14), and no build decision reads the roster, so a
+//! that table — which does not exist yet (T-131). One thing would still make it
+//! uninformative once it does: no build decision reads the roster, so a
 //! Technology card builds nothing new (R-TECH18).
 //!
 //! ## Method

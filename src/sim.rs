@@ -1461,9 +1461,11 @@ pub fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
 /// armed Design the engine builds is the Warfare card's — and it is in the
 /// signature because the Design is `(hull, class)`.
 ///
-/// Energy per shot and hull structure are **placeholders** (R-WAR19); fire
-/// control and fire rate read the arena's tuned values rather than defining
-/// second copies of them.
+/// Beam power is a **placeholder** (R-WAR19, T-132), set for how long a fight
+/// lasts rather than for realism; fire control reads the arena's tuned value
+/// rather than defining a second copy of it. The arena's shots-per-tick is
+/// **not** read: damage is a power delivered over time (warfare §8.18), so a
+/// per-tick rate would tie a fight's outcome to the integration step.
 pub fn design_loadout(hull: HullType, _class: Class, cfg: &SimConfig, combat: &CombatConfig) -> crate::combat::Loadout {
     let payload = |h: HullType| h.hull_radius(cfg).cubed() * h.geometry().reserved_payload_fraction;
     let own = payload(hull);
@@ -1473,9 +1475,8 @@ pub fn design_loadout(hull: HullType, _class: Class, cfg: &SimConfig, combat: &C
     let mounts = (own / payload(HullType::LimitedContactVehicle) + 1e-9).floor().max(1.0) as u32;
     crate::combat::Loadout {
         beams: mounts,
-        shot_energy_kj: combat.beam_shot_energy_kj,
+        beam_power_kj_per_year: combat.beam_power_kj_per_year(),
         fire_control_ly: combat.laser_hit_tolerance,
-        shots_per_tick: combat.laser_shots_per_tick as u32,
     }
 }
 
@@ -4995,7 +4996,8 @@ impl Simulation {
             [&def_ships, &att_ships],
             self.config.engagement_horizon_years,
             self.config.engagement_dt_years,
-        );
+        )
+        .alive;
         let dead = |hulls: &[Entity], alive: &[bool]| -> Vec<Entity> {
             hulls.iter().zip(alive).filter(|&(_, &a)| !a).map(|(&e, _)| e).collect()
         };
@@ -5111,7 +5113,8 @@ impl Simulation {
             [&def_ships, &att_ships],
             self.config.engagement_horizon_years,
             self.config.engagement_dt_years,
-        );
+        )
+        .alive;
 
         // Step 4: the dead are exactly the hulls whose structure ran out.
         let dead = |hulls: &[Entity], alive: &[bool]| -> Vec<Entity> {
@@ -5161,7 +5164,7 @@ impl Simulation {
             .map(|(ship, e)| crate::combat::Armed {
                 ship,
                 loadout: self.world.loadout.get(*e).copied().unwrap_or(crate::combat::Loadout::UNARMED),
-                hp_kj: crate::combat::hull_hp_kj(ship.hull, &self.config, &self.combat),
+                structure_kj: crate::combat::hull_structure_kj(ship.hull, &self.config, &self.combat),
             })
             .collect()
     }
@@ -10487,15 +10490,16 @@ mod tests {
             maneuver_start: 0.0,
             maneuver_origin_offset: Vec3::ZERO,
         };
-        let hp = crate::combat::hull_hp_kj(hull, &cfg, &combat);
-        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: a, hp_kj: hp }];
-        let s1 = [crate::combat::Armed { ship: ship(1, &mut rng), loadout: b, hp_kj: hp }];
+        let structure = crate::combat::hull_structure_kj(hull, &cfg, &combat);
+        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: a, structure_kj: structure }];
+        let s1 = [crate::combat::Armed { ship: ship(1, &mut rng), loadout: b, structure_kj: structure }];
         crate::combat::resolve_beam_engagement(
             &fleets,
             [&s0, &s1],
             cfg.engagement_horizon_years,
             cfg.engagement_dt_years,
         )
+        .alive
     }
 
     /// **Each side fires what its Design mounts** (T-125). Three properties,
@@ -10518,22 +10522,24 @@ mod tests {
         assert_eq!(beam_duel(beams, beams, hull), [vec![false], vec![false]], "fire is simultaneous");
     }
 
-    /// **Damage is energy against structure, not one shot one kill** (T-125).
-    /// A single shot too weak to finish the hull leaves it standing.
+    /// **Damage is a power delivered over time, not a quantum per tick** (T-132).
+    ///
+    /// One mount against an unarmed hull: the hull dies after `structure / power`
+    /// of time on target, to within one tick, and halving the integration step
+    /// does not move that time. Under the per-tick model this replaced, halving
+    /// `dt` doubled the damage per year — the rate was denominated in the step.
     #[test]
-    fn a_shot_weaker_than_the_hull_does_not_kill_it() {
+    fn damage_is_a_power_and_the_kill_time_does_not_depend_on_the_step() {
         let cfg = test_cfg(1);
         let combat = CombatConfig::default();
         let hull = HullType::GeneralContactVehicle;
-        let hp = crate::combat::hull_hp_kj(hull, &cfg, &combat);
-        let one_shot = crate::combat::Loadout {
+        let structure = crate::combat::hull_structure_kj(hull, &cfg, &combat);
+        let one_mount = crate::combat::Loadout {
             beams: 1,
-            shot_energy_kj: hp / 3.0,
+            beam_power_kj_per_year: combat.beam_power_kj_per_year(),
             fire_control_ly: combat.laser_hit_tolerance,
-            shots_per_tick: 1,
         };
-        // One shot per tick: the first leaves it standing, the third kills it.
-        let cfg1 = SimConfig { engagement_horizon_years: 1.5 * cfg.engagement_dt_years, ..cfg };
+        let kill_years = structure / one_mount.beam_power_kj_per_year;
         let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }; 2];
         let mut rng = Rng::new(3);
         let ship = |fleet: usize, rng: &mut Rng| Combatant {
@@ -10546,23 +10552,43 @@ mod tests {
             maneuver_start: 0.0,
             maneuver_origin_offset: Vec3::ZERO,
         };
-        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: one_shot, hp_kj: hp }];
-        let s1 =
-            [crate::combat::Armed { ship: ship(1, &mut rng), loadout: crate::combat::Loadout::UNARMED, hp_kj: hp }];
-        let short = crate::combat::resolve_beam_engagement(
-            &fleets,
-            [&s0, &s1],
-            cfg1.engagement_horizon_years,
-            cfg1.engagement_dt_years,
-        );
-        assert_eq!(short[1], vec![true], "at most two shots cannot finish a hull that takes three");
-        let long = crate::combat::resolve_beam_engagement(
-            &fleets,
-            [&s0, &s1],
-            cfg.engagement_horizon_years,
-            cfg.engagement_dt_years,
-        );
-        assert_eq!(long[1], vec![false], "given time, the damage adds up");
+        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: one_mount, structure_kj: structure }];
+        let s1 = [crate::combat::Armed {
+            ship: ship(1, &mut rng),
+            loadout: crate::combat::Loadout::UNARMED,
+            structure_kj: structure,
+        }];
+        for dt in [cfg.engagement_dt_years, cfg.engagement_dt_years / 2.0] {
+            let short = crate::combat::resolve_beam_engagement(&fleets, [&s0, &s1], kill_years - 2.0 * dt, dt);
+            assert_eq!(short.alive[1], vec![true], "dt {dt}: the hull outlasts less than its kill time");
+            let long = crate::combat::resolve_beam_engagement(&fleets, [&s0, &s1], 2.0 * kill_years, dt);
+            assert_eq!(long.alive[1], vec![false], "dt {dt}: given its kill time, the damage adds up");
+            assert!(
+                (long.duration_years - kill_years).abs() <= 1.5 * dt,
+                "dt {dt}: died at {} yr, expected {kill_years} yr to within a tick",
+                long.duration_years
+            );
+        }
+    }
+
+    /// **A lone Limited picket cannot finish a Medium colony ship inside one
+    /// engagement, and three can** (T-132).
+    ///
+    /// Pins a consequence of structure on volume rather than a mechanism: the
+    /// Medium hull encloses 26.8 times a Limited Contact hull's volume, so one
+    /// mount needs 254 days on it against a 183-day engagement. If beam power,
+    /// structure or the engagement horizon moves, this is the test that says
+    /// the blockade changed character (`Hyades_warfare_tree.md` §8.18).
+    #[test]
+    fn a_lone_limited_picket_cannot_finish_a_medium_colony_ship() {
+        let cfg = SimConfig::new(1);
+        let combat = CombatConfig::default();
+        let mount = design_loadout(HullType::LimitedContactVehicle, Class::Unnamed, &cfg, &combat);
+        assert_eq!(mount.beams, 1);
+        let kill_years =
+            crate::combat::hull_structure_kj(HullType::MediumSystems, &cfg, &combat) / mount.beam_power_kj_per_year;
+        assert!(kill_years > cfg.engagement_horizon_years, "one mount finishes it in {kill_years} yr");
+        assert!(kill_years / 3.0 < cfg.engagement_horizon_years, "three mounts need {} yr", kill_years / 3.0);
     }
 
     /// **Only the Warfare card arms a hull** (T-125). Every Design the default
@@ -11370,12 +11396,16 @@ mod tests {
         assert_eq!(sim.picket_count[0], 1);
     }
 
-    /// **A blockader at a rival's port destroys the colony ship leaving it,
+    /// **A blockade at a rival's port destroys the colony ship leaving it,
     /// and the people and cargo aboard become slag** (T-123, R-WAR16).
     ///
     /// Constructed rather than waited for, like the picket tests beside it: the
     /// assertion is about the strike and the ledger, and how often the real
     /// field offers a blockade is `examples/card_probe`'s question.
+    ///
+    /// **Three hulls, not one, since T-132**: structure is volume, and a lone
+    /// Limited picket cannot finish a Medium colony ship inside one engagement
+    /// (`a_lone_limited_picket_cannot_finish_a_medium_colony_ship`).
     #[test]
     fn a_blockader_strikes_the_colony_ship_leaving_its_port() {
         let mut cfg = test_cfg(909);
@@ -11392,15 +11422,20 @@ mod tests {
             .iter()
             .find(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
             .expect("the bed needs an unclaimed world");
-        let blockader = sim.world.spawn();
-        sim.world.owner.insert(blockader, PlayerId(0));
-        sim.world.role.insert(blockader, Role::Picket);
-        sim.world.hull_type.insert(blockader, HullType::LimitedContactVehicle);
         let beams = design_loadout(HullType::LimitedContactVehicle, Class::Unnamed, &sim.config, &sim.combat);
         assert!(beams.is_armed(), "the Warfare card's picket Design mounts beams");
-        sim.world.loadout.insert(blockader, beams);
-        sim.blockade.insert((home1.0, 0), vec![blockader]);
-        sim.picket_count[0] += 1;
+        let stack: Vec<Entity> = (0..3)
+            .map(|_| {
+                let blockader = sim.world.spawn();
+                sim.world.owner.insert(blockader, PlayerId(0));
+                sim.world.role.insert(blockader, Role::Picket);
+                sim.world.hull_type.insert(blockader, HullType::LimitedContactVehicle);
+                sim.world.loadout.insert(blockader, beams);
+                blockader
+            })
+            .collect();
+        sim.blockade.insert((home1.0, 0), stack.clone());
+        sim.picket_count[0] += stack.len() as u32;
 
         let pop_before = *sim.world.population.get(home1).unwrap();
         let before = sim.mass_ledger();
@@ -11411,11 +11446,7 @@ mod tests {
         assert!(*sim.world.population.get(home1).unwrap() < pop_before, "settlers must have boarded");
         assert_eq!(sim.world.role.get(ship).copied(), Some(Role::Scrapped), "the colony ship dies at the yard");
         assert!(!sim.inbound_colonizers.contains_key(&target.0), "and never flies");
-        assert_eq!(
-            sim.blockade.get(&(home1.0, 0)),
-            Some(&vec![blockader]),
-            "the armed blockader holds against an unarmed ship"
-        );
+        assert_eq!(sim.blockade.get(&(home1.0, 0)), Some(&stack), "the armed blockade holds against an unarmed ship");
         assert!(sim.world.slag.get(home1).is_some_and(|s| s.kilotons() > 0.0), "the wreck is at the port");
         // An unpaid hull is the one thing created here; everything it carried
         // was debited from the port and has to reappear as slag.

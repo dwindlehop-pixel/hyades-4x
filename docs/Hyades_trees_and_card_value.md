@@ -335,9 +335,10 @@ separates them: `Q_i` is fleet mass times a mass-weighted mean strength, and
 Technology moves the second factor.
 
 **Not measurable today**, for three reasons that are each an `OPEN` item in the
-Technology spec: the table has not been computed (R-TECH1); the combat beds tie
-every armed Design at the current placeholder lethality (R-TECH14); and no build
-decision reads the roster, so a Technology card builds nothing new (R-TECH18).
+Technology spec: the table has not been computed (R-TECH1); the long-range bed
+needs fleets that close (R-TECH12); and no build decision reads the roster, so a
+Technology card builds nothing new (R-TECH18). The combat beds' tie (R-TECH14)
+was resolved by the damage model at T-132.
 
 The power-mean proposal this section used to carry — three axes aggregated with
 an exponent `ρ` (R-TREE4) — was never ratified and is superseded; appendix §D.9
