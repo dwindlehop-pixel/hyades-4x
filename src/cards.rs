@@ -295,9 +295,9 @@ pub const TIER0: [Card; 18] = {
         c(11, Production, LessGuarded, 1.2, &[WriteDoctrine(DoctrineWrite::ReinvestBias(0.97))], false),
         // Technology — Design writes. These are the ones that unblock roster
         // enforcement (T-25): the Medium hull has no unlock path without them.
-        c(12, Technology, Inscrutable, 0.5, &[UnlockDesign(HullType::MediumSystems, Class::Unnamed)], false),
-        c(13, Technology, Balanced, 0.8, &[UnlockDesign(HullType::GeneralSystems, Class::Unnamed)], false),
-        c(14, Technology, LessGuarded, 1.2, &[UnlockDesign(HullType::GeneralContactVehicle, Class::Unnamed)], false),
+        c(12, Technology, Inscrutable, 0.5, &[UnlockDesign(HullType::MediumSystems, Class::Delta)], false),
+        c(13, Technology, Balanced, 0.8, &[UnlockDesign(HullType::GeneralSystems, Class::Range)], false),
+        c(14, Technology, LessGuarded, 1.2, &[UnlockDesign(HullType::GeneralContactVehicle, Class::Scarp)], false),
         // Warfare — **the Inscrutable slot is the whole of §8.2's card that is
         // buildable today**: two Design writes opening the Contact family, and
         // the one Doctrine write that puts survey and the colonizer ladder onto
@@ -320,7 +320,8 @@ pub const TIER0: [Card; 18] = {
             0.5,
             &[
                 UnlockDesign(HullType::LimitedContactVehicle, Class::Tor),
-                UnlockDesign(HullType::GeneralContactVehicle, Class::Unnamed),
+                UnlockDesign(HullType::LimitedContactVehicle, Class::Cairn),
+                UnlockDesign(HullType::GeneralContactVehicle, Class::Scarp),
                 WriteDoctrine(DoctrineWrite::ArmedFrontier),
             ],
             false,

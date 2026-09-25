@@ -84,9 +84,14 @@ freighter ride on MSV, which the starting roster excludes, so enforcement forbid
 every expansion build permanently — measured, **3 colonies and 18 vehicles against
 1,183 and 4,778** over 4,000 yr. **Blocked on cards, not on engine work (T-25).**
 
-**1.6 `OPEN` — R-O42b: the class flavor names.** Meadow for the LSV and Tor for
-the LCV are proposed, scaling the Banks convention down to Limited sizes. Flavor
-text is the author's own; renaming is a one-line change.
+**1.6 `OPEN` — R-O42b: the class flavor names.** The author directed naming
+every Design the engine builds (T-133). Proposed, on R-O42b's landform
+convention (small landforms for Limited hulls, larger for larger): **Meadow**
+(miner, LSV), **Tor** (survey, LSV or LCV), **Cairn** (picket, LCV), **Delta**
+(Medium colonizer), **Range** (General colonizer; after the Banks GSV class),
+**Scarp** (armed General colonizer, GCV), **Ford** (freighter, any Systems
+size). Offensive hulls stay unnamed: nothing builds them. Flavor text is the
+author's own; renaming is one line per name.
 
 **1.7 `OPEN` — R-O47b / T-08: `on_refit` is specified and unbuilt.** Nothing in
 the engine stages a design change across transit today, so 1.4 is a law with no
@@ -266,7 +271,10 @@ duplicates:** `LimitedContactVehicle`, `LimitedContactUnit` and
 structure (20 kJ), and so are the two General Contact hulls (1.0995 kt, 317
 beams). Ten hull types are **seven** distinct Designs today — three unarmed
 Systems hulls and four armed ones (appendix §D.9). `design_loadout` ignores the
-class, so a class adds no candidate yet.
+class, **but structure does not since T-133** (`σ` is per Design class), so
+two classes on one hull are now two candidates wherever their `σ` differs — the
+survey Design (Tor) and the picket Design (Cairn) on the Limited Contact hull
+are the first such pair.
 
 ### 4.4 `RATIFIED` — one competitive test bed per role, two players, judged by task
 

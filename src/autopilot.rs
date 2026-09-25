@@ -19,6 +19,7 @@
 //! view structs rather than its internals.
 
 use crate::cards::Order;
+use crate::combat::Loadout;
 use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
 use crate::sim::{Class, HullType, Role};
@@ -1660,16 +1661,17 @@ impl<'a> Standing<'a> {
     pub fn design_for(&self, role: Role) -> (HullType, Class) {
         match role {
             Role::Scout => (scout_hull(self.doctrine), Class::Tor),
-            Role::Colonizer => (HullType::MediumSystems, Class::Unnamed),
+            Role::Colonizer => (HullType::MediumSystems, Class::Delta),
             Role::Miner => (HullType::LimitedSystems, Class::Meadow),
-            Role::Picket => (HullType::LimitedContactVehicle, Class::Unnamed),
-            // **Not assignable, and the design collides with the colonizer's
-            // on purpose** — a freighter rides the same Medium Systems hull
-            // (roles §4.4). It is safe only because `ASSIGNABLE` excludes it,
-            // so `role_of` can never return it; adding it there would make
-            // `(MediumSystems, Unnamed)` ambiguous and silently task colony
-            // ships as freight. The same holds for the two terminal states.
-            Role::Freighter | Role::Reserve | Role::Scrapped => (HullType::MediumSystems, Class::Unnamed),
+            Role::Picket => (HullType::LimitedContactVehicle, Class::Cairn),
+            // **Not assignable** — a freighter is produced beside a miner, not
+            // tasked (roles §5), so `ASSIGNABLE` excludes it. It shares the
+            // Medium Systems *hull* with the colonizer and not the Design:
+            // since T-133 the two classes differ (Ford, Delta), so a freighter
+            // can no longer read back as a colony ship. The two terminal
+            // states answer with the freighter's Design because they must
+            // answer something; nothing builds to them.
+            Role::Freighter | Role::Reserve | Role::Scrapped => (HullType::MediumSystems, Class::Ford),
         }
     }
 
@@ -1755,6 +1757,47 @@ impl<'a> Standing<'a> {
     pub fn recycles_on_founding(&self) -> bool {
         !self.doctrine.picket_after_founding
     }
+
+    /// **How this layer regards another empire** (T-133). There is no
+    /// diplomacy yet (T-11), so every other empire is neutral unless the
+    /// hostility write makes neutrals enemies — §8.2's *"a Neutral empire is an
+    /// Enemy empire"*.
+    pub fn regard(&self) -> Relation {
+        if self.doctrine.engage_neutrals {
+            Relation::Enemy
+        } else {
+            Relation::Neutral
+        }
+    }
+
+    /// **How far a hull in `role` carrying `loadout` fires on a hull it
+    /// regards as `toward`**, or `None` where it holds fire
+    /// (`Hyades_warfare_tree.md` §8.19, T-133).
+    ///
+    /// The distances are the Design's (`Loadout::fire_enemy_ly`,
+    /// `fire_neutral_ly`); Doctrine decides which it ignores, and ignoring one
+    /// holds fire at any range (the author's ruling). The default layer fires
+    /// on enemies and holds fire on neutrals — **except in the picket role**,
+    /// whose whole mission is denying a neutral's colony ships, which is what
+    /// the Warfare card's writes put hulls in that role to do.
+    pub fn fire_distance(&self, role: Role, loadout: &Loadout, toward: Relation) -> Option<f64> {
+        if !loadout.is_armed() {
+            return None;
+        }
+        match toward {
+            Relation::Enemy => Some(loadout.fire_enemy_ly),
+            Relation::Neutral if role == Role::Picket => Some(loadout.fire_neutral_ly),
+            Relation::Neutral => None,
+        }
+    }
+}
+
+/// How one empire regards another (T-133). Only the two the fire distances
+/// distinguish; the rest of the diplomatic list is T-11.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Relation {
+    Enemy,
+    Neutral,
 }
 
 /// **What a hull is good for when the standing layer mounts nothing on it.**
@@ -1838,6 +1881,9 @@ fn hull_order(hull: HullType) -> BuildOrder {
     let class = match hull {
         HullType::LimitedSystems => Class::Meadow,
         HullType::LimitedContactVehicle => Class::Tor,
+        HullType::MediumSystems => Class::Delta,
+        HullType::GeneralSystems => Class::Range,
+        HullType::GeneralContactVehicle => Class::Scarp,
         _ => Class::Unnamed,
     };
     BuildOrder::Hull { hull_type: hull, class }
@@ -2157,6 +2203,29 @@ mod tests {
         );
     }
 
+    /// **Fire distances, and Doctrine holding fire** (T-133, warfare §8.19):
+    /// an unarmed hull never fires; by default a picket fires on neutrals and
+    /// every other role holds fire on them; everyone fires on an enemy, and
+    /// the hostility write is what makes a neutral one.
+    #[test]
+    fn doctrine_holds_fire_on_neutrals_except_in_the_picket_role() {
+        let cfg = crate::sim::SimConfig::new(1);
+        let combat = crate::combat::CombatConfig::default();
+        let gun = crate::sim::design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &cfg, &combat);
+        let none = crate::combat::Loadout::UNARMED;
+        let peace = Doctrine::default();
+        let st = Standing::of(&peace);
+        assert_eq!(st.regard(), Relation::Neutral, "every other empire is neutral by default");
+        assert_eq!(st.fire_distance(Role::Picket, &none, Relation::Enemy), None, "unarmed never fires");
+        assert_eq!(st.fire_distance(Role::Picket, &gun, Relation::Neutral), Some(gun.fire_neutral_ly));
+        for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Freighter, Role::Reserve] {
+            assert_eq!(st.fire_distance(role, &gun, Relation::Neutral), None, "{role:?} holds fire on a neutral");
+            assert_eq!(st.fire_distance(role, &gun, Relation::Enemy), Some(gun.fire_enemy_ly));
+        }
+        let war = Doctrine { engage_neutrals: true, ..Doctrine::default() };
+        assert_eq!(Standing::of(&war).regard(), Relation::Enemy, "the hostility write makes a neutral an enemy");
+    }
+
     #[test]
     fn a_contact_hull_scouts_as_a_tor_and_pickets_otherwise() {
         let ap = BaselineAutopilot::default();
@@ -2181,7 +2250,7 @@ mod tests {
         assert_eq!(as_scout.role, Role::Scout);
         assert_eq!(as_scout.target, None, "a scout picks its own world from the frontier");
 
-        let as_picket = ap.assign_role(&armed, hull, Class::Unnamed, &cands).unwrap();
+        let as_picket = ap.assign_role(&armed, hull, Class::Cairn, &cands).unwrap();
         assert_eq!(as_picket.role, Role::Picket, "the same hull without the survey design still holds ground");
 
         // And the same disambiguation holds on the unarmed side, where the

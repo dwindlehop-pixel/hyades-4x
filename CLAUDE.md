@@ -2747,9 +2747,13 @@ changes how you *work*, not what is left to do:
   mount on target delivers `P · dt`, and a hull's structure is `σ · r³`. A new
   weapon family states its damage as a rate over time: `dt` is fixed by missile
   guidance, and a per-tick quantity lets it set how fast hulls die — which is
-  how every armed fight came to end in its first tick. Consequence to remember:
-  a lone Limited picket cannot finish a Medium colony ship in one engagement
-  (R-WAR21).
+  how every armed fight came to end in its first tick.
+- **There are no engagements and no fight sites** (T-133, warfare §8.19, the
+  author's ruling). A hull under fire keeps flying its mission; an encounter
+  ends in one wreck roll per hull past the damage threshold. `σ` is per Design
+  class, and every Design the engine builds has a class name. Interim: the
+  engine still looks for fire only at a blockaded port and a picketed world
+  (stage 4, detection along every trajectory, is not built).
 - Combat runs just-in-time for 60 fps with a **< 2 ms per-tick budget**; presentation
   time is decoupled from simulation tick duration.
 - The **Lanchester aggregate model** is reserved for imperial-scale resolution; the

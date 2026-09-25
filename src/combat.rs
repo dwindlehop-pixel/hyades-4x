@@ -13,7 +13,7 @@
 //! the engine, not in a harness.
 use crate::math::Vec3;
 use crate::rng::Rng;
-use crate::sim::{hull_base_thrust, hull_dry_mass, HullType, Role, SimConfig};
+use crate::sim::{hull_base_thrust, hull_dry_mass, Class, HullFamily, HullType, Role, SimConfig};
 use crate::transcendental;
 use std::f64::consts::{PI, TAU};
 
@@ -716,13 +716,78 @@ pub struct CombatConfig {
     /// chosen for fight duration, not for realism (§8.18). The arena does not
     /// read it, so the tuned laser-vs-missile balance is untouched.
     pub beam_power_mw: f64,
-    /// **Structure per unit of hull volume, kJ per hull unit³** (T-132) — the
-    /// energy it takes to wreck a hull is this times its enclosed volume `r³`.
-    /// Volume, not mass, because durability is a *value* and design law #3
-    /// makes volume the value basis, as it already is for mounts and the hold.
-    /// **Placeholder** (R-WAR19); only its ratio to [`Self::beam_power_mw`]
-    /// reaches a fight's outcome.
-    pub structure_kj_per_hull_unit3: f64,
+    /// **Structure per unit of hull volume, kJ per hull unit³, per Design
+    /// class** (T-132, T-133) — a hull's structure is this times its enclosed
+    /// volume `r³`. Volume, not mass, because durability is a *value* and
+    /// design law #3 makes volume the value basis. Per Design class (the
+    /// author's ruling) so that structure is a Design property a card can
+    /// write. **Placeholders** (R-WAR19); only their ratios to
+    /// [`Self::beam_power_mw`] reach an outcome.
+    pub structure_kj_per_hull_unit3: StructureByClass,
+    /// **Damage below which a hull takes no wreck roll**, as a fraction of its
+    /// structure (T-133, the author's ruling). **Placeholder** (R-WAR24).
+    pub wreck_threshold: f64,
+    /// **Wreck odds at the threshold** — the "barely-scratched ship can still be
+    /// lost" floor of `Hyades_warfare_tree.md` §2.2, now paid only past the
+    /// threshold. **Placeholder** (R-WAR24).
+    pub wreck_odds_at_threshold: f64,
+    /// **Damage at which the wreck roll is even odds**, as a fraction of
+    /// structure. **Placeholder** (R-WAR24).
+    pub wreck_even_odds_damage: f64,
+    /// **The farthest a beam Design fires, ly** — both the enemy and the neutral
+    /// distance of every beam Design the engine builds (T-133, R-WAR27).
+    /// **Placeholder**: where fire control's hits thin out (appendix §D.10).
+    pub beam_fire_distance_ly: f64,
+}
+
+/// **Structure per unit of hull volume for each named Design class**, kJ per
+/// hull unit³, and a default by hull class for a hull with no named Design.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StructureByClass {
+    pub meadow: f64,
+    pub tor: f64,
+    pub cairn: f64,
+    pub delta: f64,
+    pub range: f64,
+    pub scarp: f64,
+    pub ford: f64,
+    /// For [`Class::Unnamed`]: by the hull's taxonomy class.
+    pub unnamed: ByFamily,
+}
+
+impl StructureByClass {
+    /// The value for a Design: its class's, or its hull class's default.
+    pub fn of(&self, class: Class, family: HullFamily) -> f64 {
+        match class {
+            Class::Meadow => self.meadow,
+            Class::Tor => self.tor,
+            Class::Cairn => self.cairn,
+            Class::Delta => self.delta,
+            Class::Range => self.range,
+            Class::Scarp => self.scarp,
+            Class::Ford => self.ford,
+            Class::Unnamed => self.unnamed.of(family),
+        }
+    }
+}
+
+/// A quantity that differs by hull class (`HullFamily`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ByFamily {
+    pub systems: f64,
+    pub contact: f64,
+    pub offensive: f64,
+}
+
+impl ByFamily {
+    /// The value for one hull class.
+    pub fn of(&self, family: HullFamily) -> f64 {
+        match family {
+            HullFamily::Systems => self.systems,
+            HullFamily::Contact => self.contact,
+            HullFamily::Offensive => self.offensive,
+        }
+    }
 }
 
 /// Seconds in a Julian year — the one conversion between a power in MW and the
@@ -756,7 +821,25 @@ impl Default for CombatConfig {
             // fight lasts (warfare §8.18): one 50 MW mount wrecks a Limited
             // Contact hull (r³ = 0.041, 41 TJ) in about nine and a half days.
             beam_power_mw: 50.0,
-            structure_kj_per_hull_unit3: 1.0e12,
+            // Designs on Systems hulls at a tenth of the armed ones (T-133): a
+            // Delta colony ship then carries 2.7 times a Cairn picket's
+            // structure for 5.5 times its price, where on whole volume at one
+            // value it carried 26.8 times. The survey Design (Tor) is a
+            // civilian Design on either shell.
+            structure_kj_per_hull_unit3: StructureByClass {
+                meadow: 1.0e11,
+                tor: 1.0e11,
+                cairn: 1.0e12,
+                delta: 1.0e11,
+                range: 1.0e11,
+                scarp: 1.0e12,
+                ford: 1.0e11,
+                unnamed: ByFamily { systems: 1.0e11, contact: 1.0e12, offensive: 1.0e12 },
+            },
+            wreck_threshold: 0.25,
+            wreck_odds_at_threshold: 0.02,
+            wreck_even_odds_damage: 1.0,
+            beam_fire_distance_ly: 0.01,
         }
     }
 }
@@ -803,11 +886,22 @@ pub struct Loadout {
     /// Fire-control error bound, ly — the tolerance [`laser_hit_check`]
     /// compares predicted against actual target position.
     pub fire_control_ly: f64,
+    /// **Max distance to fire upon an enemy**, ly (T-133, the author's ruling).
+    /// Doctrine may ignore it, and ignoring it holds fire at any range.
+    pub fire_enemy_ly: f64,
+    /// **Max distance to fire upon a neutral**, ly. As above.
+    pub fire_neutral_ly: f64,
 }
 
 impl Loadout {
     /// No weapons at all.
-    pub const UNARMED: Loadout = Loadout { beams: 0, beam_power_kj_per_year: 0.0, fire_control_ly: 0.0 };
+    pub const UNARMED: Loadout = Loadout {
+        beams: 0,
+        beam_power_kj_per_year: 0.0,
+        fire_control_ly: 0.0,
+        fire_enemy_ly: 0.0,
+        fire_neutral_ly: 0.0,
+    };
 
     /// Whether this Design can damage anything.
     pub fn is_armed(&self) -> bool {
@@ -815,10 +909,32 @@ impl Loadout {
     }
 }
 
-/// **A hull's structure, kJ** — its enclosed volume `r³` times
-/// [`CombatConfig::structure_kj_per_hull_unit3`] (T-132).
-pub fn hull_structure_kj(hull: HullType, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f64 {
-    hull.hull_volume(sim_cfg).hull_units_cubed() * cfg.structure_kj_per_hull_unit3
+/// **A hull's structure, kJ** — its enclosed volume `r³` times its Design
+/// class's [`CombatConfig::structure_kj_per_hull_unit3`] (T-132, T-133).
+pub fn hull_structure_kj(hull: HullType, class: Class, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f64 {
+    hull.hull_volume(sim_cfg).hull_units_cubed() * cfg.structure_kj_per_hull_unit3.of(class, hull.family())
+}
+
+/// **The wreck roll's odds** for a hull that absorbed `damage_kj` against
+/// `structure_kj` (`Hyades_warfare_tree.md` §2.1–2.2, §8.19; T-133).
+///
+/// **Zero below the threshold** — a hull that has not taken
+/// [`CombatConfig::wreck_threshold`] of its structure is not defeated and takes
+/// no roll (the author's ruling). Past it, §2.2's logistic in closed form:
+/// `p₀ / (p₀ + (1 − p₀)·e^(−κ·(x − θ)))`, with `x = damage / structure`, `θ`
+/// the threshold, `p₀` the odds at the threshold and `κ` set so the odds are
+/// even at [`CombatConfig::wreck_even_odds_damage`]. Inside `(0, 1)` for every
+/// `x ≥ θ` in exact arithmetic; in `f64` it rounds to 1 once the exponential
+/// underflows, which is past twenty-odd structures.
+pub fn wreck_probability(damage_kj: f64, structure_kj: f64, cfg: &CombatConfig) -> f64 {
+    let x = damage_kj / structure_kj;
+    let theta = cfg.wreck_threshold;
+    if x.is_nan() || x < theta || damage_kj <= 0.0 {
+        return 0.0;
+    }
+    let p0 = cfg.wreck_odds_at_threshold;
+    let kappa = crate::transcendental::ln((1.0 - p0) / p0) / (cfg.wreck_even_odds_damage - theta);
+    p0 / (p0 + (1.0 - p0) * crate::transcendental::exp(-kappa * (x - theta)))
 }
 
 /// One ship in a simulation fight: where it is, what it mounts, and how much
@@ -931,6 +1047,139 @@ pub fn resolve_beam_engagement(
         t += dt;
     }
     BeamOutcome { alive, duration_years: t }
+}
+
+/// One side of a **pass** (T-133): hulls following a shared reference path,
+/// each with its own station-keeping offset, and how far each fires on the
+/// other side.
+pub struct PassSide<'a> {
+    pub ships: &'a [Armed],
+    /// The side's reference position at absolute time `t`, years.
+    pub path: &'a dyn Fn(f64) -> Vec3,
+    /// Per ship, the farthest it fires on the other side, ly; `None` holds
+    /// fire (Doctrine ignored both fire distances, or the hull is unarmed).
+    pub fire_ly: &'a [Option<f64>],
+}
+
+impl PassSide<'_> {
+    fn position(&self, i: usize, t: f64) -> Vec3 {
+        (self.path)(t).add(self.ships[i].ship.station.offset_at(t))
+    }
+
+    /// Velocity by a centered difference of the path, plus the station's own.
+    fn velocity(&self, i: usize, t: f64, h: f64) -> Vec3 {
+        let path = (self.path)(t + h).sub((self.path)(t - h)).scale(0.5 / h);
+        path.add(self.ships[i].ship.station.offset_velocity_at(t))
+    }
+}
+
+/// **Fire between two sides that keep moving** (T-133,
+/// `Hyades_warfare_tree.md` §8.19): the resolver for an encounter, where
+/// nobody stops to fight.
+///
+/// Walks `[t0, t1)` in steps of `dt` and returns, per side, the energy each
+/// hull absorbed. **Nobody dies inside it**: the outcome is the caller's wreck
+/// roll ([`wreck_probability`]), taken once per hull when the encounter ends —
+/// the author's ruling that the roll resolves combat and transport together.
+///
+/// Per tick, as [`resolve_beam_engagement`]: every mount of a hull that fires
+/// aims at the nearest enemy within its fire distance that has not yet
+/// absorbed its structure, delivers `power × dt` if fire control holds, and
+/// all damage lands at the end of the tick. Mounts left over once every target
+/// in reach is past its structure fire on the nearest, because past the
+/// structure more energy still moves the roll. Fire control is tested against the
+/// target's actual path: its position one light-crossing later against the
+/// straight-line prediction from its velocity now.
+///
+/// **It stops early once no roll can change**: when every hull that any
+/// shooter can reach has absorbed enough that [`wreck_probability`] is exactly
+/// 1.0 in `f64`. The curve is monotone, so more energy cannot move a roll that
+/// is already certain in the arithmetic the roll is taken in; the outcome is
+/// identical and the returned energies are smaller.
+pub fn resolve_pass(sides: [PassSide; 2], t0: f64, t1: f64, dt: f64, cfg: &CombatConfig) -> [Vec<f64>; 2] {
+    let mut absorbed: [Vec<f64>; 2] = [vec![0.0; sides[0].ships.len()], vec![0.0; sides[1].ships.len()]];
+    let fires = |s: usize| {
+        sides[s].ships.iter().zip(sides[s].fire_ly).any(|(a, reach)| reach.is_some() && a.loadout.is_armed())
+    };
+    let can_fire = [fires(0), fires(1)];
+    let settled = |absorbed: &[Vec<f64>; 2]| {
+        (0..2).all(|s| {
+            !can_fire[1 - s]
+                || sides[s]
+                    .ships
+                    .iter()
+                    .zip(&absorbed[s])
+                    .all(|(a, &took)| wreck_probability(took, a.structure_kj, cfg) == 1.0)
+        })
+    };
+    let mut t = t0;
+    while t < t1 {
+        if settled(&absorbed) {
+            break;
+        }
+        let mut pending: [Vec<f64>; 2] = [vec![0.0; sides[0].ships.len()], vec![0.0; sides[1].ships.len()]];
+        for s in 0..2 {
+            let (own, other) = (&sides[s], &sides[1 - s]);
+            for (i, shooter) in own.ships.iter().enumerate() {
+                let Some(reach) = own.fire_ly[i] else { continue };
+                if !shooter.loadout.is_armed() {
+                    continue;
+                }
+                let at = own.position(i, t);
+                let mut targets: Vec<(f64, usize)> = (0..other.ships.len())
+                    .map(|j| (other.position(j, t).distance(at), j))
+                    .filter(|&(d, _)| d <= reach)
+                    .collect();
+                targets.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+                let per_mount = shooter.loadout.beam_power_kj_per_year * dt;
+                let mut mounts = shooter.loadout.beams;
+                let hits = |j: usize, d: f64| {
+                    let predicted = other.position(j, t).add(other.velocity(j, t, dt).scale(d));
+                    predicted.distance(other.position(j, t + d)) <= shooter.loadout.fire_control_ly
+                };
+                let mut missed = false;
+                for &(d, j) in &targets {
+                    if mounts == 0 {
+                        break;
+                    }
+                    let remaining = other.ships[j].structure_kj - absorbed[1 - s][j] - pending[1 - s][j];
+                    if remaining <= 0.0 {
+                        continue;
+                    }
+                    if !hits(j, d) {
+                        missed = true;
+                        break;
+                    }
+                    let mut needed = (remaining / per_mount).ceil();
+                    if needed * per_mount < remaining {
+                        needed += 1.0;
+                    }
+                    let used = (mounts as f64).min(needed) as u32;
+                    pending[1 - s][j] += used as f64 * per_mount;
+                    mounts -= used;
+                }
+                // **Past everyone's structure, keep firing on the nearest.**
+                // Spreading fire is for when there is somewhere to spread it;
+                // with every target in reach already past its structure, more
+                // energy still raises the wreck odds, and §2.2 wants there
+                // always to be a reason to pile on force.
+                if mounts > 0 && !missed {
+                    if let Some(&(d, j)) = targets.first() {
+                        if hits(j, d) {
+                            pending[1 - s][j] += mounts as f64 * per_mount;
+                        }
+                    }
+                }
+            }
+        }
+        for s in 0..2 {
+            for j in 0..absorbed[s].len() {
+                absorbed[s][j] += pending[s][j];
+            }
+        }
+        t += dt;
+    }
+    absorbed
 }
 
 /// Who a laser targets this shot — a ship, or an in-flight missile

@@ -336,6 +336,52 @@ struct Motion {
     accel: f64,
 }
 
+impl Motion {
+    /// Where the hull is at absolute time `t`.
+    fn position_at(&self, t: f64) -> Vec3 {
+        math::position_along(self.origin, self.dest, self.depart, self.arrive, self.accel, t)
+    }
+
+    /// **The first time the hull is `reach` from where it set out**, or its
+    /// arrival if it never gets that far (T-133). Distance along the track is
+    /// monotone in time, so bisection is exact to the step it stops at.
+    fn leaving_by(&self, reach: f64) -> f64 {
+        let out = |t: f64| self.position_at(t).distance(self.origin);
+        if out(self.arrive) <= reach {
+            return self.arrive;
+        }
+        let (mut lo, mut hi) = (self.depart, self.arrive);
+        for _ in 0..64 {
+            let mid = 0.5 * (lo + hi);
+            if out(mid) < reach {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        hi
+    }
+
+    /// **The first time the hull is within `reach` of where it is going**, or
+    /// its departure if it starts that close (T-133).
+    fn entering_by(&self, reach: f64) -> f64 {
+        let left = |t: f64| self.position_at(t).distance(self.dest);
+        if left(self.depart) <= reach {
+            return self.depart;
+        }
+        let (mut lo, mut hi) = (self.depart, self.arrive);
+        for _ in 0..64 {
+            let mid = 0.5 * (lo + hi);
+            if left(mid) > reach {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        hi
+    }
+}
+
 /// A vehicle's semantic destination & survey state.
 #[derive(Clone, Copy, Debug)]
 struct Voyage {
@@ -605,6 +651,33 @@ pub enum HullType {
     GeneralOffensive,
 }
 
+/// **The hull taxonomy's class** (`Hyades_vehicle_roles.md` §3): what a hull
+/// is built for. Not [`Class`], which names a Design within a hull type — the
+/// word "class" means this in the taxonomy and that in the roster.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HullFamily {
+    /// Civilian hulls whose volume is mostly hold (LSV, MSV, GSV).
+    Systems,
+    /// Scouting and picketing hulls (LCV, LCU, GCV, GCU).
+    Contact,
+    /// Warships (LOU, ROU, GOU).
+    Offensive,
+}
+
+impl HullType {
+    /// Which taxonomy class this hull belongs to.
+    pub const fn family(self) -> HullFamily {
+        use HullType::*;
+        match self {
+            LimitedSystems | MediumSystems | GeneralSystems => HullFamily::Systems,
+            LimitedContactVehicle | LimitedContactUnit | GeneralContactVehicle | GeneralContactUnit => {
+                HullFamily::Contact
+            }
+            LimitedOffensive | RapidOffensive | GeneralOffensive => HullFamily::Offensive,
+        }
+    }
+}
+
 /// A named **design** within a hull type — the Banks-convention class name.
 ///
 /// Hull, class and role are three separate things (R-O29,
@@ -621,14 +694,31 @@ pub enum HullType {
 /// a one-line change and the author's call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Class {
-    /// LSV — proposed *Meadow*-class (alts: Fen, Holm, Croft, Hollow).
+    /// The mining Design, on the Limited Systems hull — proposed *Meadow*-class
+    /// (alts: Fen, Holm, Croft, Hollow).
     Meadow,
-    /// LCV — proposed *Tor*-class (alts: Spur, Cairn, Shoal, Gully).
+    /// The survey Design — proposed *Tor*-class (alts: Spur, Shoal, Gully).
+    /// Mounted on the Limited Systems hull by default and on the Limited
+    /// Contact hull once the Warfare card arms it.
     Tor,
-    /// A hull type whose classes are not yet authored. Everything the engine
-    /// builds beyond the two seeded designs uses this until Design cards give
-    /// it a name — it keeps the roster total rather than pretending the rest of
-    /// the taxonomy already exists.
+    /// The picket Design, on the Limited Contact hull — proposed *Cairn*-class,
+    /// a marker on held ground (T-133).
+    Cairn,
+    /// The Medium colonizer Design, on the Medium Systems hull — proposed
+    /// *Delta*-class (T-133).
+    Delta,
+    /// The General colonizer Design, on the General Systems hull — proposed
+    /// *Range*-class, after the Banks GSV class (T-133).
+    Range,
+    /// The armed General colonizer Design, on the General Contact hull —
+    /// proposed *Scarp*-class (T-133).
+    Scarp,
+    /// The freighter Design, on whichever Systems hull the rock calls for
+    /// (T-98) — proposed *Ford*-class (T-133).
+    Ford,
+    /// A hull with no authored Design: the Offensive hulls nothing builds, the
+    /// arena's spawns, and the seed hulls the galaxy is generated with. It
+    /// takes its hull class's default structure (`combat::StructureByClass`).
     Unnamed,
 }
 
@@ -1477,6 +1567,8 @@ pub fn design_loadout(hull: HullType, _class: Class, cfg: &SimConfig, combat: &C
         beams: mounts,
         beam_power_kj_per_year: combat.beam_power_kj_per_year(),
         fire_control_ly: combat.laser_hit_tolerance,
+        fire_enemy_ly: combat.beam_fire_distance_ly,
+        fire_neutral_ly: combat.beam_fire_distance_ly,
     }
 }
 
@@ -1699,6 +1791,9 @@ struct World {
     /// never changed after (design law #12: no retroactive refits). Absent is
     /// unarmed, which is every hull the Warfare card has not unlocked.
     loadout: ComponentStore<crate::combat::Loadout>,
+    /// **The Design class a hull was built to** (T-133), stamped once at
+    /// construction like its loadout. Absent reads as [`Class::Unnamed`].
+    design_class: ComponentStore<Class>,
     motion: ComponentStore<Motion>,
     voyage: ComponentStore<Voyage>,
     cargo: ComponentStore<Minerals>,
@@ -1889,6 +1984,7 @@ impl World {
             hull_type: ComponentStore::new(),
             hull_minerals: ComponentStore::new(),
             loadout: ComponentStore::new(),
+            design_class: ComponentStore::new(),
             motion: ComponentStore::new(),
             voyage: ComponentStore::new(),
             cargo: ComponentStore::new(),
@@ -3679,27 +3775,17 @@ impl Simulation {
         self.clear_inbound(target, vehicle);
 
         // **A hostile picket is standing here** (T-112). The news did not reach
-        // this empire in time — light-lag — so the ship arrived anyway and is
-        // now in a fight it did not choose.
+        // this empire in time — light-lag — so the ship flew in anyway.
         //
-        // **Resolved inline rather than scheduled.** Scheduling an engagement
-        // and re-queuing this arrival would loop forever whenever both sides
-        // survive; the outcome is needed *here*, to decide between founding and
-        // turning back. Three outcomes, and the middle one is why a picket is
-        // not an absolute veto:
-        //
-        // - the colonizer dies → nothing founds, and nothing returns;
-        // - the picket dies → the ground is clear and it founds normally;
-        // - both live → it turns back with its people, as if contested (R-AC8).
-        if self.picket_blocks(target, owner.0) {
-            self.resolve_picket_fight(target, p);
-            if self.world.role.get(vehicle).copied() == Some(Role::Scrapped) {
-                return; // destroyed on arrival
-            }
-            if self.picket_blocks(target, owner.0) {
-                self.bounce_colonizer(vehicle, target, here, p, target_pid);
-                return;
-            }
+        // **It does not stop to fight** (T-133, warfare §8.19). The picket
+        // fired on it over the stretch of its approach within fire distance,
+        // and the wreck roll decides the rest: wrecked, nothing founds;
+        // survived, it founds — whoever is standing here, because the colony
+        // ship's mission is to found before it is destroyed. A picket still
+        // on the world is then sent back to the frontier by the founding
+        // below, as any picket on a settled world is.
+        if self.picket_blocks(target, owner.0) && self.picket_encounter(target, vehicle) {
+            return; // wrecked on the approach
         }
 
         if !self.world.owner.contains(target) {
@@ -3987,16 +4073,15 @@ impl Simulation {
 
     /// **Is there a fight at this outpost, and who starts it?**
     ///
-    /// Returns `(attacker_seat, defender_seat)` for the first hostile pairing in
-    /// seat order, or `None`. The attacker is the empire whose Doctrine says a
-    /// neutral is an enemy; the defender is the lowest-numbered seat it is
-    /// standing next to. Deliberately **not symmetric**: hostility is a property
-    /// of one side's doctrine, and being shot at is not a choice
-    /// (`Doctrine::engage_neutrals`).
+    /// Returns `(attacker_seat, defender_seat)` — the two lowest-numbered seats
+    /// standing here whose Doctrine both say a neutral is an enemy
+    /// (`Doctrine::engage_neutrals`) — or `None`. **Symmetric since T-133**: a
+    /// pitched battle needs both sides, so one hostile crew beside a peaceful
+    /// one is not a fight (`Hyades_warfare_tree.md` §8.19).
     ///
-    /// `O(seats²)` at worst, with seats ≤ 18 and no allocation — the locality
-    /// rule §4 requires of anything on an arrival path. `mine_crew` is already
-    /// keyed `(seat, outpost)`, so this reads the index rather than scanning.
+    /// `O(seats)`, with seats ≤ 18 — the locality rule §4 requires of anything
+    /// on an arrival path. `mine_crew` is already keyed `(seat, outpost)`, so
+    /// this reads the index rather than scanning.
     fn hostile_contact_at(&self, outpost: Entity) -> Option<(usize, usize)> {
         if !self.config.engagements_enabled {
             return None;
@@ -4010,14 +4095,15 @@ impl Simulation {
         if present.len() < 2 {
             return None;
         }
-        for &a in &present {
-            if self.doctrine_of(a).engage_neutrals {
-                if let Some(&d) = present.iter().find(|&&d| d != a) {
-                    return Some((a, d));
-                }
-            }
+        // **A pitched battle needs both sides** (T-133, the author's ruling):
+        // two crews stand and fight only when each side's Doctrine is to kill
+        // the other's fleet. One hostile side is not enough — the other has not
+        // submitted to anything.
+        let hostile: Vec<usize> = present.iter().copied().filter(|&s| self.doctrine_of(s).engage_neutrals).collect();
+        match hostile.as_slice() {
+            [a, d, ..] => Some((*a, *d)),
+            _ => None,
         }
-        None
     }
 
     // --- Denial: pickets, light-lagged warning, and diversion (T-112) --------
@@ -4094,8 +4180,12 @@ impl Simulation {
     /// One build can lay down several hulls out of one withdrawal (a mining
     /// crew and its freighter), so the *mix* is what is shared and each hull
     /// takes its own mass in that mix.
-    /// **Mount the Design's weapons** (T-125). Once, at construction.
+    /// **Mount the Design's weapons and record its class** (T-125, T-133).
+    /// Once, at construction.
     fn stamp_loadout(&mut self, vehicle: Entity, built: BuiltHull) {
+        if built.class != Class::Unnamed {
+            self.world.design_class.insert(vehicle, built.class);
+        }
         let l = design_loadout(built.hull, built.class, &self.config, &self.combat);
         if l.is_armed() {
             self.world.loadout.insert(vehicle, l);
@@ -4908,123 +4998,144 @@ impl Simulation {
         true
     }
 
-    /// **Strike a colony ship at the port it is leaving.** Returns whether it
-    /// was destroyed.
+    /// **A colony ship leaving a blockaded port flies through the blockade's
+    /// fire** (T-123, T-133). Returns whether it was wrecked.
     ///
-    /// Range zero, so there is nothing lagged to decide on: the blockader is
-    /// standing where the hull is. It takes the defender's side because it is
-    /// the one on station — the same convention as a picket's defense (R-WAR5),
-    /// and the one that decides the outcome.
+    /// The ship does not stop: fire lands over the start of `leg`, the stretch
+    /// within the farthest fire distance either side applies, and one wreck
+    /// roll per damaged hull decides the rest (warfare §8.19). A survivor flies
+    /// on. **Interim:** the port is still a hardwired place to look for fire
+    /// until encounters are found along every trajectory (T-133 stage 4).
     ///
     /// **The destroyed ship's destination stays marked** in its owner's
     /// `targeted` set, because that set is monotone by construction (T-101's
     /// prune depends on it) — so a strike also withdraws one world from the
-    /// launcher's candidate list. A colonizer that dies at a picket already
-    /// did the same.
-    fn strike_at_port(&mut self, launcher: usize, center: Entity, ship: Entity) -> bool {
+    /// launcher's candidate list. A colonizer wrecked by a picket does the same.
+    fn strike_at_port(&mut self, launcher: usize, center: Entity, ship: Entity, leg: &Motion) -> bool {
         let Some((seat, stack)) = self.hostile_blockade(center, launcher as u32) else { return false };
-        let Some((def_dead, att_dead)) = self.fight_at(center, seat, &stack, launcher, &[ship]) else {
+        let Some((stack_wrecked, ship_wrecked)) = self.encounter_at(center, seat as usize, &stack, ship, leg, true)
+        else {
             return false;
         };
-        for dead in def_dead {
+        for dead in stack_wrecked {
             self.leave_blockade(center.0, seat, dead);
         }
-        !att_dead.is_empty()
+        ship_wrecked
     }
 
-    /// **A colonizer that flew in anyway fights the picket holding the world.**
-    ///
-    /// Same resolver as everything else (T-111). Each side fires what its Design
-    /// mounts (T-125); being on station decides nothing about who is armed.
-    fn resolve_picket_fight(&mut self, world: Entity, arriving_seat: usize) {
-        let Some((holder, stack, _)) = self.picket.get(&world.0) else { return };
-        let (holder, defenders) = (*holder, stack.clone());
-        let attackers: Vec<Entity> = self
-            .inbound_colonizers
-            .get(&world.0)
-            .map(|v| {
-                v.iter()
-                    .copied()
-                    .filter(|&e| self.world.owner.get(e).copied().map(|o| o.0 as usize) == Some(arriving_seat))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if attackers.is_empty() {
-            return;
-        }
-        let Some((def_dead, att_dead)) = self.fight_at(world, holder, &defenders, arriving_seat, &attackers) else {
-            return;
+    /// **A colony ship arriving at a picketed world flies in under the
+    /// pickets' fire** (T-112, T-133). Returns whether it was wrecked.
+    fn picket_encounter(&mut self, world: Entity, ship: Entity) -> bool {
+        let Some((holder, stack, _)) = self.picket.get(&world.0) else { return false };
+        let (holder, stack) = (*holder as usize, stack.clone());
+        let Some(leg) = self.world.motion.get(ship).copied() else { return false };
+        let Some((stack_wrecked, ship_wrecked)) = self.encounter_at(world, holder, &stack, ship, &leg, false) else {
+            return false;
         };
-        for dead in def_dead {
+        for dead in stack_wrecked {
             self.detach_picket(world, dead);
         }
-        for dead in att_dead {
-            self.clear_inbound(world, dead);
-        }
+        ship_wrecked
     }
 
-    /// **One fight between hulls standing at `site`**, resolved, wrecked and
-    /// logged — the part a picket's defense and a port strike share (T-123).
+    /// **An encounter between a stack standing at `site` and one hull flying
+    /// `leg`** (T-133, `Hyades_warfare_tree.md` §8.19).
     ///
-    /// Each side fires what its Design mounts (T-125, retiring R-WAR5's
-    /// laser-side and missile-side convention). The destroyed hulls, their crews and their cargo become slag at the site
-    /// (design law #11). Returns `(defenders lost, attackers lost)`; the caller
-    /// owns whatever index the dead were standing in.
-    fn fight_at(
+    /// Each side fires as far as its standing layer says
+    /// (`Standing::fire_distance`), over the part of the leg within the
+    /// farthest of those distances — its start when `leaving`, its end
+    /// otherwise. Nobody stops; `combat::resolve_pass` returns what each hull
+    /// absorbed, and each hull that absorbed energy takes one wreck roll. The
+    /// wrecked become slag at the site (design law #11). Returns the stack
+    /// hulls wrecked and whether the flying hull was, or `None` when neither
+    /// side fires on the other.
+    fn encounter_at(
         &mut self,
         site: Entity,
-        defender_seat: u32,
-        defenders: &[Entity],
-        attacker_seat: usize,
-        attackers: &[Entity],
-    ) -> Option<(Vec<Entity>, Vec<Entity>)> {
-        let pos = self.position_at(site, self.clock)?;
-        let pid = *self.world.planet_id.get(site).unwrap();
-        let fleets = [FleetTrajectory { origin: pos, velocity: Vec3::ZERO }; 2];
+        stack_seat: usize,
+        stack: &[Entity],
+        ship: Entity,
+        leg: &Motion,
+        leaving: bool,
+    ) -> Option<(Vec<Entity>, bool)> {
+        let ship_seat = self.world.owner.get(ship)?.0 as usize;
+        let site_pos = self.position_at(site, self.clock)?;
+        let pid = *self.world.planet_id.get(site)?;
+        let stack_fire = self.fire_distances(stack_seat, stack);
+        let ship_fire = self.fire_distances(ship_seat, &[ship]);
+        let reach = stack_fire.iter().chain(&ship_fire).flatten().fold(0.0f64, |a, &b| a.max(b));
+        if reach <= 0.0 {
+            return None;
+        }
+        let (t0, t1) = if leaving { (leg.depart, leg.leaving_by(reach)) } else { (leg.entering_by(reach), leg.arrive) };
+
         let mut rng = self.rng.fork(self.seq ^ site.0.wrapping_mul(0x9E37_79B9));
-        let def_ships = self.armed(defenders, 0, &mut rng);
-        let att_ships = self.armed(attackers, 1, &mut rng);
-        let committed = crate::belief::resolve_engagement_choice(
-            att_ships[0].ship.max_accel(&self.config),
-            def_ships[0].ship.max_accel(&self.config),
-        ) == crate::belief::Engagement::Committed;
-
-        // **Each side fires what its Design mounts** (T-125). Which side is on
-        // station no longer decides who is armed.
-        let [def_alive, att_alive] = crate::combat::resolve_beam_engagement(
-            &fleets,
-            [&def_ships, &att_ships],
-            self.config.engagement_horizon_years,
+        let stack_ships = self.armed(stack, 0, &mut rng);
+        let ship_ships = self.armed(&[ship], 1, &mut rng);
+        let flown = *leg;
+        let ship_path = move |t: f64| flown.position_at(t);
+        let stack_path = move |_: f64| site_pos;
+        let [stack_took, ship_took] = crate::combat::resolve_pass(
+            [
+                crate::combat::PassSide { ships: &stack_ships, path: &stack_path, fire_ly: &stack_fire },
+                crate::combat::PassSide { ships: &ship_ships, path: &ship_path, fire_ly: &ship_fire },
+            ],
+            t0,
+            t1,
             self.config.engagement_dt_years,
-        )
-        .alive;
-        let dead = |hulls: &[Entity], alive: &[bool]| -> Vec<Entity> {
-            hulls.iter().zip(alive).filter(|&(_, &a)| !a).map(|(&e, _)| e).collect()
-        };
-        let def_dead = dead(defenders, &def_alive);
-        let att_dead = dead(attackers, &att_alive);
+            &self.combat,
+        );
 
-        let mut slag = Kilotons::ZERO;
-        slag += self.destroy_free_hulls(&def_dead);
-        slag += self.destroy_free_hulls(&att_dead);
+        // **One wreck roll per hull that absorbed energy** (§2.1–2.2): none
+        // below the threshold, never certain past it.
+        let wrecked = |sim: &Self, e: Entity, took: f64, armed: &crate::combat::Armed| -> bool {
+            let odds = crate::combat::wreck_probability(took, armed.structure_kj, &sim.combat);
+            odds > 0.0 && sim.rng.fork(sim.seq ^ e.0.wrapping_mul(0xD1B5_4A32_D192_ED03)).unit() < odds
+        };
+        let stack_wrecked: Vec<Entity> = (0..stack.len())
+            .filter(|&i| wrecked(self, stack[i], stack_took[i], &stack_ships[i]))
+            .map(|i| stack[i])
+            .collect();
+        let ship_wrecked = wrecked(self, ship, ship_took[0], &ship_ships[0]);
+
+        let mut slag = self.destroy_free_hulls(&stack_wrecked);
+        if ship_wrecked {
+            slag += self.destroy_free_hulls(&[ship]);
+        }
         let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + slag;
         self.world.slag.insert(site, total);
-
         self.log.push(
             self.clock,
             LogEvent::EngagementResolved {
                 site: pid,
-                attacker: attacker_seat as u32,
-                defender: defender_seat,
-                attacker_ships: attackers.len() as u32,
-                defender_ships: defenders.len() as u32,
-                losses_attacker: att_dead.len() as u32,
-                losses_defender: def_dead.len() as u32,
-                committed,
+                attacker: ship_seat as u32,
+                defender: stack_seat as u32,
+                attacker_ships: 1,
+                defender_ships: stack.len() as u32,
+                losses_attacker: ship_wrecked as u32,
+                losses_defender: stack_wrecked.len() as u32,
+                // An encounter holds nobody in place.
+                committed: false,
                 slag: slag.kilotons(),
             },
         );
-        Some((def_dead, att_dead))
+        Some((stack_wrecked, ship_wrecked))
+    }
+
+    /// Per hull, how far it fires on the other side of an encounter, or `None`
+    /// where its standing layer holds fire (T-133).
+    fn fire_distances(&self, seat: usize, hulls: &[Entity]) -> Vec<Option<f64>> {
+        let doctrine = self.doctrine_of(seat);
+        let standing = Standing::of(&doctrine);
+        let toward = standing.regard();
+        hulls
+            .iter()
+            .map(|&h| {
+                let role = *self.world.role.get(h).unwrap_or(&Role::Reserve);
+                let loadout = self.world.loadout.get(h).copied().unwrap_or(crate::combat::Loadout::UNARMED);
+                standing.fire_distance(role, &loadout, toward)
+            })
+            .collect()
     }
 
     /// Destroy hulls that are not in a crew index (pickets and colonizers).
@@ -5164,7 +5275,12 @@ impl Simulation {
             .map(|(ship, e)| crate::combat::Armed {
                 ship,
                 loadout: self.world.loadout.get(*e).copied().unwrap_or(crate::combat::Loadout::UNARMED),
-                structure_kj: crate::combat::hull_structure_kj(ship.hull, &self.config, &self.combat),
+                structure_kj: crate::combat::hull_structure_kj(
+                    ship.hull,
+                    self.world.design_class.get(*e).copied().unwrap_or(Class::Unnamed),
+                    &self.config,
+                    &self.combat,
+                ),
             })
             .collect()
     }
@@ -7508,7 +7624,8 @@ impl Simulation {
         // to fire. Its launch is still seen: the light left before the fight.
         if role == Role::Colonizer {
             self.report_launch(p, center, launch_delay);
-            if self.strike_at_port(p, center, e) || self.oracle_strike(p, center, e) {
+            let leg = self.plan_leg(from, dest, accel, launch_delay);
+            if self.strike_at_port(p, center, e, &leg) || self.oracle_strike(p, center, e) {
                 self.log.push(self.clock, spawned);
                 return;
             }
@@ -7556,6 +7673,7 @@ impl Simulation {
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, Role::Freighter);
         self.world.hull_type.insert(e, hull);
+        self.world.design_class.insert(e, Class::Ford);
         self.world.cargo.insert(e, Minerals::default());
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { base: outpost, outpost, destination: center, outbound: true, stops: 0 });
@@ -7638,12 +7756,18 @@ impl Simulation {
 
     /// Set a vehicle's flight leg and return its arrival time.
     fn set_leg(&mut self, e: Entity, origin: Vec3, dest: Vec3, accel: f64, build_delay: f64) -> f64 {
+        let leg = self.plan_leg(origin, dest, accel, build_delay);
+        self.world.motion.insert(e, leg);
+        leg.arrive
+    }
+
+    /// The leg [`Self::set_leg`] would fly, without flying it — so a ship's
+    /// departure can be fired upon before its arrival is scheduled (T-133).
+    fn plan_leg(&self, origin: Vec3, dest: Vec3, accel: f64, build_delay: f64) -> Motion {
         let dist = origin.distance(dest);
         let travel = if dist > 0.0 { math::ship_travel_years(dist, accel) } else { 0.0 };
         let depart = self.clock + build_delay;
-        let arrive = depart + travel;
-        self.world.motion.insert(e, Motion { origin, dest, depart, arrive, accel });
-        arrive
+        Motion { origin, dest, depart, arrive: depart + travel, accel }
     }
 
     /// Acceleration (ly/yr²) for a vehicle setting out *now*, derated for the
@@ -10490,7 +10614,7 @@ mod tests {
             maneuver_start: 0.0,
             maneuver_origin_offset: Vec3::ZERO,
         };
-        let structure = crate::combat::hull_structure_kj(hull, &cfg, &combat);
+        let structure = crate::combat::hull_structure_kj(hull, Class::Unnamed, &cfg, &combat);
         let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: a, structure_kj: structure }];
         let s1 = [crate::combat::Armed { ship: ship(1, &mut rng), loadout: b, structure_kj: structure }];
         crate::combat::resolve_beam_engagement(
@@ -10533,11 +10657,13 @@ mod tests {
         let cfg = test_cfg(1);
         let combat = CombatConfig::default();
         let hull = HullType::GeneralContactVehicle;
-        let structure = crate::combat::hull_structure_kj(hull, &cfg, &combat);
+        let structure = crate::combat::hull_structure_kj(hull, Class::Unnamed, &cfg, &combat);
         let one_mount = crate::combat::Loadout {
             beams: 1,
             beam_power_kj_per_year: combat.beam_power_kj_per_year(),
             fire_control_ly: combat.laser_hit_tolerance,
+            fire_enemy_ly: combat.beam_fire_distance_ly,
+            fire_neutral_ly: combat.beam_fire_distance_ly,
         };
         let kill_years = structure / one_mount.beam_power_kj_per_year;
         let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }; 2];
@@ -10569,26 +10695,6 @@ mod tests {
                 long.duration_years
             );
         }
-    }
-
-    /// **A lone Limited picket cannot finish a Medium colony ship inside one
-    /// engagement, and three can** (T-132).
-    ///
-    /// Pins a consequence of structure on volume rather than a mechanism: the
-    /// Medium hull encloses 26.8 times a Limited Contact hull's volume, so one
-    /// mount needs 254 days on it against a 183-day engagement. If beam power,
-    /// structure or the engagement horizon moves, this is the test that says
-    /// the blockade changed character (`Hyades_warfare_tree.md` §8.18).
-    #[test]
-    fn a_lone_limited_picket_cannot_finish_a_medium_colony_ship() {
-        let cfg = SimConfig::new(1);
-        let combat = CombatConfig::default();
-        let mount = design_loadout(HullType::LimitedContactVehicle, Class::Unnamed, &cfg, &combat);
-        assert_eq!(mount.beams, 1);
-        let kill_years =
-            crate::combat::hull_structure_kj(HullType::MediumSystems, &cfg, &combat) / mount.beam_power_kj_per_year;
-        assert!(kill_years > cfg.engagement_horizon_years, "one mount finishes it in {kill_years} yr");
-        assert!(kill_years / 3.0 < cfg.engagement_horizon_years, "three mounts need {} yr", kill_years / 3.0);
     }
 
     /// **Only the Warfare card arms a hull** (T-125). Every Design the default
@@ -10650,6 +10756,99 @@ mod tests {
         let b = crate::combat::resolve_engagement(&cfg, &combat, &mut rng, &fleets, &none, &one, 0.1, 0.0005, 0.05);
         assert_eq!(b.laser_survivors, 0);
         assert_eq!(b.missile_survivors, 3);
+    }
+
+    /// **The wreck roll needs a threshold and is never certain within range**
+    /// (T-133, warfare §2.2, §8.19): no roll below the threshold, the floor at
+    /// it, even odds where the Design says, and strictly below one out to
+    /// twenty structures.
+    #[test]
+    fn the_wreck_roll_waits_for_its_threshold_and_is_never_certain() {
+        let c = CombatConfig::default();
+        let s = 1.0e9;
+        let p = |x: f64| crate::combat::wreck_probability(x * s, s, &c);
+        assert_eq!(p(0.0), 0.0, "an unscratched hull takes no roll");
+        assert_eq!(p(c.wreck_threshold * 0.999), 0.0, "and neither does one below the threshold");
+        assert!((p(c.wreck_threshold) - c.wreck_odds_at_threshold).abs() < 1e-12, "the floor is paid at it");
+        assert!((p(c.wreck_even_odds_damage) - 0.5).abs() < 1e-12, "even odds where the Design says");
+        let mut last = 0.0;
+        for i in 0..=80 {
+            let x = c.wreck_threshold + 0.25 * i as f64;
+            let now = p(x);
+            assert!(now >= last && now > 0.0, "monotone past the threshold: {x} gives {now}");
+            if x <= 5.0 {
+                assert!(now < 1.0, "never certain at {x} structures");
+            }
+            last = now;
+        }
+    }
+
+    /// **A pass fires only within fire distance, holds when told to, and kills
+    /// nobody itself** (T-133). One armed hull stands still; one unarmed hull
+    /// flies straight past it.
+    #[test]
+    fn a_pass_fires_within_its_distance_and_leaves_the_outcome_to_the_roll() {
+        let cfg = SimConfig::new(1);
+        let combat = CombatConfig::default();
+        let mut rng = Rng::new(9);
+        let mut ship = |hull: HullType, class: Class, loadout: crate::combat::Loadout| crate::combat::Armed {
+            ship: Combatant {
+                role: Role::Picket,
+                hull,
+                thrust_factor: 1.0,
+                fleet: 0,
+                station: StationKeeping::draw(&mut rng, crate::combat::STATION_RADIUS, crate::combat::STATION_PERIOD),
+                maneuver_velocity: Vec3::ZERO,
+                maneuver_start: 0.0,
+                maneuver_origin_offset: Vec3::ZERO,
+            },
+            loadout,
+            structure_kj: crate::combat::hull_structure_kj(hull, class, &cfg, &combat),
+        };
+        let gun = design_loadout(HullType::GeneralContactVehicle, Class::Scarp, &cfg, &combat);
+        let shooter = [ship(HullType::GeneralContactVehicle, Class::Scarp, gun)];
+        let target = [ship(HullType::MediumSystems, Class::Delta, crate::combat::Loadout::UNARMED)];
+        let still = |_: f64| Vec3::ZERO;
+        // Crosses the origin at t = 0.5 yr at 0.05 ly/yr: inside 0.01 ly from
+        // t = 0.3 to t = 0.7, and at least 0.0125 ly away before t = 0.25.
+        let flying = |t: f64| Vec3::new(0.05 * (t - 0.5), 0.0, 0.0);
+        let run = |reach: Option<f64>, t0: f64, t1: f64| {
+            crate::combat::resolve_pass(
+                [
+                    crate::combat::PassSide { ships: &shooter, path: &still, fire_ly: &[reach] },
+                    crate::combat::PassSide { ships: &target, path: &flying, fire_ly: &[None] },
+                ],
+                t0,
+                t1,
+                cfg.engagement_dt_years,
+                &combat,
+            )
+        };
+        let [_, took] = run(Some(0.01), 0.0, 1.0);
+        assert!(took[0] > 0.0, "a hull within fire distance is hit");
+        let [_, held] = run(None, 0.0, 1.0);
+        assert_eq!(held[0], 0.0, "a hull whose Doctrine holds fire delivers nothing");
+        let [_, out] = run(Some(0.01), 0.0, 0.25);
+        assert_eq!(out[0], 0.0, "and nothing lands while the target is beyond fire distance");
+        let [back, _] = run(Some(0.01), 0.0, 1.0);
+        assert_eq!(back[0], 0.0, "an unarmed hull fires nothing back");
+    }
+
+    /// **The leg arithmetic an encounter window is cut from** (T-133): the hull
+    /// is exactly `reach` from its origin when it leaves, and from its
+    /// destination when it enters.
+    #[test]
+    fn an_encounter_window_starts_and_ends_at_the_fire_distance() {
+        let m = Motion { origin: Vec3::ZERO, dest: Vec3::new(5.0, 0.0, 0.0), depart: 10.0, arrive: 0.0, accel: 0.241 };
+        let m = Motion { arrive: m.depart + math::ship_travel_years(5.0, m.accel), ..m };
+        for reach in [0.003, 0.01, 0.1] {
+            let out = m.position_at(m.leaving_by(reach)).distance(m.origin);
+            let left = m.position_at(m.entering_by(reach)).distance(m.dest);
+            assert!((out - reach).abs() < 1e-9, "leaving at {out}, not {reach}");
+            assert!((left - reach).abs() < 1e-9, "entering at {left}, not {reach}");
+        }
+        assert_eq!(m.leaving_by(10.0), m.arrive, "a leg shorter than the reach is in reach throughout");
+        assert_eq!(m.entering_by(10.0), m.depart);
     }
 
     /// **Denial off reproduces the galaxy bit-for-bit** (T-112).
@@ -11403,9 +11602,12 @@ mod tests {
     /// assertion is about the strike and the ledger, and how often the real
     /// field offers a blockade is `examples/card_probe`'s question.
     ///
-    /// **Three hulls, not one, since T-132**: structure is volume, and a lone
-    /// Limited picket cannot finish a Medium colony ship inside one engagement
-    /// (`a_lone_limited_picket_cannot_finish_a_medium_colony_ship`).
+    /// **Since T-133 the ship flies through the blockade's fire** and a wreck
+    /// roll decides it, so the blockader is a General Contact (Scarp) hull: its
+    /// 317 mounts deliver so many structures over the departure that the roll's
+    /// odds round to one, which keeps the ledger half of this test
+    /// deterministic. How often a lighter blockade wrecks a ship is a
+    /// measurement (appendix §D.11), not a unit test.
     #[test]
     fn a_blockader_strikes_the_colony_ship_leaving_its_port() {
         let mut cfg = test_cfg(909);
@@ -11422,14 +11624,15 @@ mod tests {
             .iter()
             .find(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
             .expect("the bed needs an unclaimed world");
-        let beams = design_loadout(HullType::LimitedContactVehicle, Class::Unnamed, &sim.config, &sim.combat);
-        assert!(beams.is_armed(), "the Warfare card's picket Design mounts beams");
-        let stack: Vec<Entity> = (0..3)
+        let beams = design_loadout(HullType::GeneralContactVehicle, Class::Scarp, &sim.config, &sim.combat);
+        assert!(beams.is_armed(), "the Warfare card's General Contact Design mounts beams");
+        let stack: Vec<Entity> = (0..1)
             .map(|_| {
                 let blockader = sim.world.spawn();
                 sim.world.owner.insert(blockader, PlayerId(0));
                 sim.world.role.insert(blockader, Role::Picket);
-                sim.world.hull_type.insert(blockader, HullType::LimitedContactVehicle);
+                sim.world.hull_type.insert(blockader, HullType::GeneralContactVehicle);
+                sim.world.design_class.insert(blockader, Class::Scarp);
                 sim.world.loadout.insert(blockader, beams);
                 blockader
             })
@@ -11488,6 +11691,9 @@ mod tests {
     /// This places the picket and the rival colonizer directly, so the path is
     /// pinned even though the card almost never walks it in play.
     #[test]
+    /// **The warning turns a colony ship back; the picket does not** (T-112,
+    /// T-115, T-133). The turn-back is the ship running from news it heard in
+    /// time — its own Doctrine, not a fight.
     fn a_picket_turns_a_rival_colonizer_back() {
         let mut cfg = test_cfg(2024);
         cfg.horizon_years = 400.0;
@@ -11526,9 +11732,14 @@ mod tests {
         let diverted =
             sim.log().iter().filter(|r| matches!(r.event, crate::log::LogEvent::ColonyDiverted { .. })).count();
         assert_eq!(diverted, 1, "the colonizer should have turned back exactly once");
-        // And it did not found: the world is still unowned.
-        assert!(!sim.world.owner.contains(target), "a diverted colonizer must not have founded");
         assert_ne!(sim.world.role.get(colonizer).copied(), Some(Role::Colonizer), "it should be re-tasked");
+        // **And the picket is not a veto** (T-133). This asserted the world
+        // stayed unowned for the whole run, because a later colony ship that
+        // was not warned in time met the picket in a stationary fight, and two
+        // hulls that could not hurt each other both survived and it turned
+        // back. Under an encounter nobody is held: this picket mounts nothing,
+        // fires nothing, and the next ship to arrive founds.
+        assert_eq!(sim.world.owner.get(target).copied(), Some(PlayerId(1)), "a later ship founds under it");
     }
 
     #[test]
@@ -12825,7 +13036,8 @@ mod tests {
         assert!(st.colonizer_ladder().contains(&HullType::GeneralContactVehicle));
         let r = sim.world.roster.get(sim.player_entity[0]).unwrap();
         assert!(r.has(HullType::LimitedContactVehicle, Class::Tor));
-        assert!(r.has(HullType::GeneralContactVehicle, Class::Unnamed));
+        assert!(r.has(HullType::GeneralContactVehicle, Class::Scarp));
+        assert!(r.has(HullType::LimitedContactVehicle, Class::Cairn));
 
         // Every hull the armed layer now mounts must be one the card unlocked,
         // or the Design half does not cover the Doctrine half — which is the
@@ -12833,7 +13045,7 @@ mod tests {
         for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
             let (hull, class) = st.design_for(role);
             if is_contact_hull(hull) {
-                assert!(r.has_hull(hull), "{role:?} rides {hull:?}/{class:?}, which the card did not unlock");
+                assert!(r.has(hull, class), "{role:?} rides {hull:?}/{class:?}, which the card did not unlock");
             }
         }
     }

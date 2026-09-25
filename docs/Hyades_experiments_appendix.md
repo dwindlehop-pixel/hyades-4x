@@ -1796,6 +1796,78 @@ the hull in 254.2 days (§D.10); wreck curve `p₀ = 0.02`, `x½ = 1` (placehold
 
 ---
 
+## D.12 T-133, second landing — named Designs, `σ` per Design class, the wreck roll and the pass
+
+*Supports `Hyades_warfare_tree.md` §8.19, §8.18.2; `Hyades_technology_tree.md`
+§1.6. Harnesses: `examples/build_digest`, `examples/capability_probe`,
+`examples/combat_bench`; release builds, same seeds, old binary against new.*
+
+### Naming every Design changed no behavior
+
+`build_digest 300 1,7` on the default configuration (combat off), before and
+after the class names: events 24,382 / 29,624, colonies 144 / 391 and the raw
+population bits `40ce889698d20e05` / `40cb70b8a4741cf6` identical on both seeds.
+The names reach only `role_of` and the roster, and every hull resolves to the
+role it resolved to before.
+
+### Structure under `σ` per Design class
+
+`10¹¹` kJ per hull unit³ for the Systems Designs, `10¹²` for the armed ones;
+one 50 MW mount's kill time: Meadow LSV 10.7 TJ, 2.5 days; Delta MSV 109.8 TJ,
+25.4 days; Range GSV 3,262.3 TJ, 755.2 days; Cairn LCV 41.0 TJ, 9.5 days; Scarp
+GCV 12,995.8 TJ, 3,008.3 days. The armed round robin and design law #2's
+crossovers (§D.10) are unchanged: armed `σ` did not move.
+
+### An encounter, priced (`capability_probe` section 6)
+
+A laden Delta colony ship (0.241 ly/yr², 6.16 ly leg) past `N` Cairn pickets,
+fire distance 0.01 ly, 105.3 days in reach either leaving or arriving; energy
+absorbed over structure and the wreck roll's odds, seeds 1 / 2 / 3:
+
+| | leaving a port | arriving at a world |
+|---|---|---|
+| N = 1 | 3.197 / 2.522 / 4.045, odds 1.000 | 3.197 / 2.450 / 3.995, odds 0.999–1.000 |
+| N = 2 | 6.395 / 5.051 / 7.839, odds 1.000 | 6.316 / 4.965 / 8.004, odds 1.000 |
+| N = 3 | stops at ≈ 8.1 (odds exactly 1.0) | stops at ≈ 8.1 |
+
+A lone mount delivering 2.45–4.05 structures over 105 days means fire control
+held on roughly 60–100% of ticks. **A first version of the resolver capped every
+case at 1.006 structures** — it stopped assigning mounts to a target past its
+structure even when there was no other target — which held the odds at ≈ 0.51
+whatever the stack. Fixed before landing: leftover mounts fire on the nearest.
+
+### The twelve-seat card bed (`combat_bench 450 1,7,42`)
+
+| seed | fights | hulls destroyed | colonies | ns/event: pre-T-132 → T-132 → now |
+|---|---|---|---|---|
+| 1 | 1,580 | 1,580 | 2,243 | 46,961 → 49,830 → 52,635 |
+| 7 | 2,030 | 2,030 | 2,368 | 48,352 → 52,611 → 53,531 |
+| 42 | 2,798 | 2,798 | 2,158 | 48,472 → 54,778 → 55,826 |
+
+Fights, kills, colonies and event counts are **identical to the pre-T-132
+binary**: every port strike on this bed wrecks its colony ship, as the old
+one-tick fight did. *Inference:* the wreck odds round to one in every strike at
+these placeholders, so the outcome counts cannot tell the two models apart; the
+difference is that a survivor is now possible and the time on target is
+kinematic. The workload is the same and `ns/event` is 12–15% higher than
+pre-T-132 — `CLAUDE.md` §2's second row, a per-unit cost: each pass integrates
+~580 ticks where the old fight ended in one. One run per seed. The pass stops
+once every reachable roll is exactly certain in `f64`, which needs about eight
+structures absorbed and so rarely fires here (seed 1: 54,510 → 52,635, one run
+each, inside run-to-run spread).
+
+### Test budget, and one flaky guard
+
+Determinism 34.8 s, smoke 25.2 s, unit 2.8 s. `tests/telemetry.rs` failed on
+this container 5 times in 11 on the new code and once in 11 on the committed
+code (ratios 0.931–1.087 committed, 0.964–1.162 new). **Instruction counts under
+callgrind say it is not this change:** full logging costs 0.072% of
+instructions on the committed binary and 0.067% on the new one (8,585,169,018
+→ 8,591,349,885 and 8,588,060,585 → 8,593,793,787), on the test's own bed. The
+threshold is unchanged; the guard's wall-clock samples are what flaked.
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the

@@ -177,26 +177,33 @@ hardwired sites — a shared rock (`sys_engagement`), a held world
 stationary resolver that holds both sides in place up to
 `engagement_horizon_years`, and a colony ship that survives turns back.
 
+**Where it stands (second landing):** stages 1–3 are built, and stage 5 in an
+interim form — the port and the held world still decide *where* the engine looks
+for fire, but nobody is held there any longer: a colony ship flies through the
+fire, takes a wreck roll, and flies on or founds. The author's answers are
+recorded (R-WAR24's threshold rule, R-WAR26's three endings, R-WAR27's hold
+fire, `σ` per Design class) and every Design the engine builds is named
+(R-O42b). Measurements in appendix §D.12.
+
 **Stages, in order, each measured before the next:**
 
-1. **The wreck roll** (§2.1–2.2): `P(wreck)` in closed form with its two
-   placeholders (R-WAR24), and a test that it is bounded, monotone and hits its
-   checkpoints.
-2. **The pass resolver** in `combat.rs`: fire between hulls on arbitrary
-   trajectories over an interval, returning energy absorbed per hull. Nothing
-   dies inside it; the roll decides.
-3. **Fire distances** (author's ruling): every Design/hull/class/role carries a
-   max distance to fire upon an enemy and upon a neutral, either or both
-   ignorable by Doctrine; `Standing::fire_distance` answers which applies, with
-   today's hostility and posture writes as its cases. Needs R-WAR27's reading of
-   "ignored".
+1. ~~**The wreck roll**~~ — **done**: no roll below the threshold, the
+   logistic past it, placeholders `θ = 0.25`, `p₀ = 0.02`, `x½ = 1`.
+2. ~~**The pass resolver**~~ — **done**: `combat::resolve_pass`, fire between
+   hulls on arbitrary paths, nothing dies inside it, and it stops once every
+   reachable roll is certain in `f64`.
+3. ~~**Fire distances**~~ — **done**: on every Design's loadout (`0.01` ly
+   placeholder), `Standing::fire_distance` holds fire where Doctrine ignores
+   one; default holds fire on neutrals except in the picket role.
 4. **Encounter detection**, arrival-driven: on every departure and every change
    of station, the intervals within `R` of hostile hulls that fire or are fired
    on; closed form for a stationary shooter, scheduled as events. Needs R-WAR23
    (`R`).
-5. **Retire the three sites** in favor of encounters; a surviving colony ship
-   founds. Pitched battles keep `resolve_beam_engagement` for fleets that both
-   stand, pending R-WAR26.
+5. **Retire the three sites** in favor of encounters — *interim done* at the
+   port and the held world (a survivor flies on or founds); the shared rock is
+   now a pitched battle only when both crews are hostile. What remains is
+   removing the sites as places to look, which is stage 4, and R-WAR26's three
+   endings in `resolve_beam_engagement`.
 6. **Re-measure** the Warfare card (R-WAR20, R-WAR21) and the throughput and test
    budgets.
 

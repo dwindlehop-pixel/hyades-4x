@@ -20,6 +20,9 @@
 //!    long cannot resolve a small Design difference.
 //! 5. **Design law #2 in the engine**: how many equal Designs of the smaller
 //!    hull one larger hull beats (target 6–45 ROUs per GOU).
+//! 6. **An encounter** (T-133): a laden Delta colony ship leaving a port, or
+//!    arriving at a world, past `N` Cairn pickets — energy absorbed over the
+//!    stretch within fire distance, and the wreck roll's odds.
 //!
 //! `capability_probe [beam_mw] [engagement_horizon_years]` — both default to the
 //! shipped values, so the probe can price a candidate before it ships.
@@ -57,7 +60,7 @@ fn fleet_size(hull: HullType, cfg: &SimConfig) -> usize {
 fn fleet(hull: HullType, n: usize, side: usize, seed: u64, cfg: &SimConfig, combat: &CombatConfig) -> Vec<Armed> {
     let mut rng = Rng::new(seed ^ (side as u64 + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15));
     let loadout = design_loadout(hull, Class::Unnamed, cfg, combat);
-    let structure = hull_structure_kj(hull, cfg, combat);
+    let structure = hull_structure_kj(hull, Class::Unnamed, cfg, combat);
     (0..n)
         .map(|_| Armed {
             ship: Combatant {
@@ -128,9 +131,10 @@ fn main() {
     let days = |yr: f64| yr * 365.25;
     let power = combat.beam_power_kj_per_year();
     println!(
-        "beam {} MW, structure {:e} kJ per hull unit^3, engagement {} yr = {:.0} ticks of {:.2} days",
+        "beam {} MW, structure {:e} (armed) / {:e} (Systems) kJ per hull unit^3, engagement {} yr = {:.0} ticks of {:.2} days",
         combat.beam_power_mw,
-        combat.structure_kj_per_hull_unit3,
+        combat.structure_kj_per_hull_unit3.unnamed.contact,
+        combat.structure_kj_per_hull_unit3.unnamed.systems,
         cfg.engagement_horizon_years,
         cfg.engagement_horizon_years / dt,
         days(dt)
@@ -145,7 +149,7 @@ fn main() {
     );
     for (name, h) in HULLS {
         let l = design_loadout(h, Class::Unnamed, &cfg, &combat);
-        let structure = hull_structure_kj(h, &cfg, &combat);
+        let structure = hull_structure_kj(h, Class::Unnamed, &cfg, &combat);
         println!(
             "{name:<5} {:>8.4} {:>8.4} {:>6} {:>12.1} {:>11.1} days {:>6}",
             hull_dry_mass(h, &cfg).kilotons(),
@@ -222,5 +226,79 @@ fn main() {
             out.flush().unwrap();
         }
         println!();
+    }
+    println!(
+        "\n== 6. encounters: a laden Delta colony ship (0.241 ly/yr^2, 6.16 ly leg) under N Cairn pickets, seeds 1-3"
+    );
+    println!(
+        "   fire distance {} ly; wreck threshold {} of structure",
+        combat.beam_fire_distance_ly, combat.wreck_threshold
+    );
+    let accel = 0.241;
+    let leg_ly = 6.16;
+    let travel = hyades_engine::math::ship_travel_years(leg_ly, accel);
+    let dest = Vec3::new(leg_ly, 0.0, 0.0);
+    let ship_path = move |t: f64| hyades_engine::math::position_along(Vec3::ZERO, dest, 0.0, travel, accel, t);
+    let gun = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &cfg, &combat);
+    let reach = combat.beam_fire_distance_ly;
+    // The window is where the ship is within `reach` of the stack: the first or
+    // last stretch of the leg, found by bisection on the monotone track.
+    let first = |target: f64, leaving: bool| {
+        let d = |t: f64| ship_path(t).distance(if leaving { Vec3::ZERO } else { dest });
+        let (mut lo, mut hi) = (0.0, travel);
+        for _ in 0..64 {
+            let mid = 0.5 * (lo + hi);
+            let inside = d(mid) <= target;
+            if inside == leaving {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        0.5 * (lo + hi)
+    };
+    for leaving in [true, false] {
+        let (t0, t1, site) =
+            if leaving { (0.0, first(reach, true), Vec3::ZERO) } else { (first(reach, false), travel, dest) };
+        println!(
+            "  {} ({:.1} days in reach)",
+            if leaving { "leaving a port" } else { "arriving at a world" },
+            (t1 - t0) * 365.25
+        );
+        for n in [1usize, 2, 3] {
+            print!("    N={n}:");
+            for seed in 1..=3u64 {
+                let stack: Vec<Armed> = fleet(HullType::LimitedContactVehicle, n, 0, seed, &cfg, &combat)
+                    .into_iter()
+                    .map(|a| Armed { loadout: gun, ..a })
+                    .collect();
+                let colony = fleet(HullType::MediumSystems, 1, 1, seed, &cfg, &combat);
+                let colony: Vec<Armed> = colony
+                    .into_iter()
+                    .map(|a| Armed {
+                        loadout: hyades_engine::combat::Loadout::UNARMED,
+                        structure_kj: hull_structure_kj(HullType::MediumSystems, Class::Delta, &cfg, &combat),
+                        ..a
+                    })
+                    .collect();
+                let still = move |_: f64| site;
+                let fire: Vec<Option<f64>> = vec![Some(reach); n];
+                let [_, took] = hyades_engine::combat::resolve_pass(
+                    [
+                        hyades_engine::combat::PassSide { ships: &stack, path: &still, fire_ly: &fire },
+                        hyades_engine::combat::PassSide { ships: &colony, path: &ship_path, fire_ly: &[None] },
+                    ],
+                    t0,
+                    t1,
+                    cfg.engagement_dt_years,
+                    &combat,
+                );
+                let x = took[0] / colony[0].structure_kj;
+                let p = hyades_engine::combat::wreck_probability(took[0], colony[0].structure_kj, &combat);
+                print!("   D/S {x:>6.3} P {p:.3}");
+            }
+            println!();
+            out.flush().unwrap();
+        }
     }
 }
