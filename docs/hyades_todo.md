@@ -163,6 +163,43 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-133. No engagements and no fight sites — encounters along trajectories, decided by Doctrine
+
+**Open, Band B: ruled by the author, not built.** `Hyades_warfare_tree.md` §8.19
+carries the rulings (no engagements; no hardwired fight sites; being fired upon
+is not consent; a pitched battle needs both sides' Doctrine; the wreck roll
+resolves combat and transport together; the colony ship tries to found before it
+is destroyed) and the recommended mechanism (R-WAR25). Priced in appendix §D.11.
+
+**What the engine does today, and has to stop doing:** it fights at three
+hardwired sites — a shared rock (`sys_engagement`), a held world
+(`resolve_picket_fight`) and a blockaded port (`strike_at_port`) — through a
+stationary resolver that holds both sides in place up to
+`engagement_horizon_years`, and a colony ship that survives turns back.
+
+**Stages, in order, each measured before the next:**
+
+1. **The wreck roll** (§2.1–2.2): `P(wreck)` in closed form with its two
+   placeholders (R-WAR24), and a test that it is bounded, monotone and hits its
+   checkpoints.
+2. **The pass resolver** in `combat.rs`: fire between hulls on arbitrary
+   trajectories over an interval, returning energy absorbed per hull. Nothing
+   dies inside it; the roll decides.
+3. **Fire distances** (author's ruling): every Design/hull/class/role carries a
+   max distance to fire upon an enemy and upon a neutral, either or both
+   ignorable by Doctrine; `Standing::fire_distance` answers which applies, with
+   today's hostility and posture writes as its cases. Needs R-WAR27's reading of
+   "ignored".
+4. **Encounter detection**, arrival-driven: on every departure and every change
+   of station, the intervals within `R` of hostile hulls that fire or are fired
+   on; closed form for a stationary shooter, scheduled as events. Needs R-WAR23
+   (`R`).
+5. **Retire the three sites** in favor of encounters; a surviving colony ship
+   founds. Pitched battles keep `resolve_beam_engagement` for fleets that both
+   stand, pending R-WAR26.
+6. **Re-measure** the Warfare card (R-WAR20, R-WAR21) and the throughput and test
+   budgets.
+
 ### T-132. The damage model — beam power over time, structure on hull volume
 
 **Closed (engine); opened R-WAR21 and R-WAR22.** Author's specification, quoted

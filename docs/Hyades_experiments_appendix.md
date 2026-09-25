@@ -1774,6 +1774,28 @@ profile — and the run carries 8–11% more colonies.
 
 ---
 
+## D.11 T-133 — pricing an encounter before building one
+
+*Supports `Hyades_warfare_tree.md` §8.19.4–8.19.5. Analytic, from the engine's
+flip-and-burn (`math::accel_leg_distance`) for a laden Medium colony ship at
+0.241 ly/yr² (R-WAR9); one 50 MW Limited mount on target every tick, which is an
+upper bound on damage because fire control misses some ticks; one mount wrecks
+the hull in 254.2 days (§D.10); wreck curve `p₀ = 0.02`, `x½ = 1` (placeholders).*
+
+| reach `R` | voyage | where | exposure | `D/S` | `P(wreck)` |
+|---|---|---|---|---|---|
+| 3e-3 ly | any | leaving a port or arriving at a world | 57.64 days | 0.2268 | 0.0470 |
+| 3e-3 ly | 6.16 ly (cruise 0.819 c) | mid-voyage pass through the shooter | 2.68 days | 0.0105 | 0.0208 |
+| 3e-3 ly | 25 ly (cruise 0.968 c) | mid-voyage pass | 2.26 days | 0.0089 | 0.0207 |
+| 1e-2 ly | any | leaving or arriving | 105.28 days | 0.4142 | 0.0928 |
+| 1e-2 ly | 6.16 ly | mid-voyage pass | 8.92 days | 0.0351 | 0.0229 |
+| 1e-2 ly | 25 ly | mid-voyage pass | 7.54 days | 0.0297 | 0.0224 |
+
+6.16 ly is the median nearest-neighbor spacing (T-115). Wreck curve checkpoints:
+`P(0⁺) = 0.020`, `P(0.5) = 0.125`, `P(1) = 0.5`, `P(2) = 0.98`.
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the

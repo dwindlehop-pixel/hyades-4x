@@ -377,6 +377,10 @@ a colonizer re-routing away from a detected threat. Blocked with T-30.
 
 ## 7. The engagement site — combat in the simulation loop (T-111)
 
+> **Superseded in direction by §8.19 (author's ruling, T-133): there are no
+> engagements and no fight sites.** This section describes what the engine
+> still does until T-133 lands, and stays as that record.
+
 **`RATIFIED` as a seam; every magnitude in it is a placeholder.** What is settled
 is that the simulation resolves fights through `combat::resolve_engagement` and
 that a destroyed hull's mass is conserved. What is not settled is any number.
@@ -2252,6 +2256,11 @@ appendix §D.10.
 
 #### 8.18.6 `OPEN` — R-WAR21: the blockade against a Medium colony ship
 
+> **Reframed by §8.19 (T-133).** The 183-day engagement this item measures
+> against is to be deleted; under an encounter the exposure is kinematic, and a
+> lone Limited mount wrecks an arriving Medium colony ship with 0.047–0.093
+> (§8.19.5, appendix §D.11). The question — how a blockade kills one — stands.
+
 A Medium Systems hull encloses 26.8 times a Limited Contact hull's volume, so
 structure on volume makes it 26.8 times as hard to wreck while it costs 5.5
 times as much. The consequence is the blockade: **§8.17.4's rule "cover every
@@ -2272,12 +2281,132 @@ Candidates, none chosen:
 
 #### 8.18.7 `OPEN` — R-WAR22: damage does not persist past an engagement
 
+> **Reframed by §8.19 (T-133):** an encounter ends in a wreck roll, so the
+> question becomes whether a hull that survives the roll carries its damage into
+> the next encounter.
+
 A hull that survives a fight leaves it undamaged: the resolver's damage is local
 to one call. Under the replaced model nearly every fight ended in its first tick,
 so this never showed; now a fight that runs out `H` discards partial damage, and
 a picket that cannot finish a hull in one engagement can never finish it. *A
 decision for the author:* persistent damage (and then repair) is new state on
 every hull.
+
+### 8.19 Fights happen where trajectories meet, and Doctrine decides them (T-133)
+
+*Author's specification: "Engagements are not part of the design, but rather
+cruft to be eliminated. Unless both sides have a Doctrine to kill the enemy
+fleet, pitched battles such as the engagement described are not the common
+outcome. An unarmed ship should be trying to run away or to complete its
+mission, not locked into an engagement for half a year. Just because a ship is
+fired upon doesn't mean it submitted to an engagement. The whole point of the
+wreck roll is to have combat and transport be resolved together. In the case of
+picket vs colony ship, they should be approaching the site at speed and the
+colony ship should try to colonize before destruction."* And: *"The point is
+fights can happen anywhere, depending on Doctrine. The sim cannot hardwire fight
+sites."* And: *"Each Design/hull/class/role should have a 'Max distance to fire
+upon an enemy' and a 'Max distance to fire upon a neutral'. Either or both may be
+ignored by Doctrine."*
+
+**The engine does not do this yet.** It still resolves fights at three
+hardwired sites (a shared rock, a held world, a blockaded port) through a
+stationary resolver capped at `engagement_horizon_years` (§7, §8.16, §8.18).
+T-133 is the build. This section is what that build must satisfy.
+
+#### 8.19.1 Terms
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| — | **encounter** | — | an interval during which a hull whose Doctrine fires on an enemy hull is within beam reach of it, each on its own trajectory |
+| `R` | **beam reach** — the separation beyond which a mount cannot hit | ly | `OPEN` (R-WAR23): fire control against station-keeping gives hits out to 3e-3 ly reliably and thinning by 1e-2 ly (appendix §D.10) |
+| `d_enemy` | **max distance to fire upon an enemy** | ly | per Design/hull/class/role; placeholder values `OPEN` (R-WAR27) |
+| `d_neutral` | **max distance to fire upon a neutral** | ly | per Design/hull/class/role; placeholder values `OPEN` (R-WAR27) |
+| `E` | **exposure** — the time an encounter lasts | yr | kinematics: both trajectories, and the smaller of `R` and the applicable fire distance |
+| `D` | energy a hull absorbed during the encounter | kJ | `P · dt` per mount per tick on target (§8.18) |
+| `S` | the hull's structure, `σ · r³` | kJ | §8.18 |
+| `p₀` | wreck odds of a barely-scratched hull | probability | placeholder, R-WAR24 |
+| `x½` | the damage ratio `D / S` at even odds | ratio | placeholder, R-WAR24 |
+| `P(wreck)` | `p₀ / (p₀ + (1 − p₀)·e^(−κ·D/S))`, with `κ = ln((1 − p₀)/p₀) / x½` | probability | §2.2's logistic, in closed form |
+
+#### 8.19.2 `RATIFIED` — the author's rulings
+
+- **There are no engagements.** A fight is not a place two fleets stop at and
+  not a span of time either side commits to.
+- **There are no fight sites.** Any hull can be fired upon anywhere its
+  trajectory takes it within reach of a hull whose Doctrine fires on it. The
+  engine may not decide *where* fights happen; Doctrine decides *whether*, and
+  trajectories decide *where and for how long*.
+- **Being fired upon is not consent.** A hull under fire keeps doing what its
+  mission says: flying its voyage, arriving, founding. An unarmed hull runs or
+  completes its mission; it is never held in place by a fight.
+- **A pitched battle needs both sides.** Two fleets stand and fight only when
+  both sides' Doctrine is to kill the other's fleet.
+- **The wreck roll resolves combat and transport together.** It is the outcome
+  of an encounter: the hull either continues its trajectory and mission, or is
+  wrecked where it is.
+- **Picket against colony ship:** both approach at speed; the colony ship tries
+  to found its colony before it is destroyed.
+- **Every Design/hull/class/role carries two fire distances**: a maximum
+  distance to fire upon an enemy (`d_enemy`) and a maximum distance to fire upon
+  a neutral (`d_neutral`). **Doctrine may ignore either or both.**
+
+#### 8.19.3 `OPEN` — R-WAR25: the encounter, as recommended
+
+- **Fire.** For every tick of an encounter, each mount whose Doctrine fires on
+  a hull within `R` aims at the nearest such hull not already past its
+  structure, and delivers `P · dt` if fire control holds against both hulls'
+  actual trajectories (§8.18.3's rule, with both ends moving).
+- **Resolution.** When the encounter ends — the target leaves `R`, arrives and
+  completes its mission, or the shooter leaves — every hull that absorbed energy
+  takes one wreck roll. Wrecked: destroyed where it is, its mass slag there
+  (law #11). Survived: continues its trajectory and mission unchanged.
+- **Founding is the end of the colonizer's encounter.** A colony ship that
+  survives the roll at arrival founds, whoever is on station — which removes the
+  turn-back on "both survive" (§8.9).
+- **Detection is arrival-driven** (`CLAUDE.md` §4). When a hull starts a
+  trajectory or takes station, the engine finds the intervals in which it comes
+  within `R` of a hostile hull that fires on it, or that it fires on, and
+  schedules an encounter event for each. A stationary shooter against a hull on
+  a straight voyage is a closed-form test — the distance from a point to a line,
+  then the flight-distance inverse for the times. Armed hulls are the few, so
+  the check is `O(armed hostile hulls)` per departure, not `O(hulls)`.
+- **Who fires on whom, and from how far, is one standing-layer question**
+  (`CLAUDE.md` §6): `Standing::fire_distance(hull, class, role, their standing)`
+  returns the applicable `d_enemy` or `d_neutral`, or nothing where Doctrine
+  ignores it. A hull fires on a target within the smaller of that distance and
+  the physical reach `R`. Today's scattered writes — `engage_neutrals`,
+  `picket_blockades`, `picket_intercepts` — become cases of it and of where
+  Doctrine sends armed hulls, not of where fights are allowed.
+- **A pitched battle** is an encounter in which both sides fire on each other
+  and both sides' Doctrine is to stand. It is the one case that keeps
+  `resolve_beam_engagement`, and what ends it is R-WAR26.
+
+#### 8.19.4 What the kinematics already say, before any of it is built
+
+A laden Medium colony ship stays within `R` for **58–105 days** leaving a port or
+arriving at a world, and for **2–9 days** passing at 0.82–0.97 c mid-voyage
+(appendix §D.11, analytic, one mount always on target as an upper bound).
+*Inference:* a slow hull is exposed 20–40 times longer than a fast one, so with
+no site hardwired, fights still concentrate where hulls are slow — at departures
+and arrivals. That is kinematics choosing the place, which is what the ruling
+asks for, and the same result T-115 found for interception.
+
+#### 8.19.5 `OPEN` — R-WAR24: the wreck curve's two magnitudes
+
+With placeholders `p₀ = 0.02` and `x½ = 1`, one Limited mount wrecks a laden
+Medium colony ship with probability **0.047** at arrival (`R` = 3e-3) and
+**0.021** on a mid-voyage pass. The mid-voyage figure is almost exactly `p₀`:
+**the floor dominates any short encounter**, so a graze is a 2% lottery whatever
+the weapon. §2.2 requires a floor ("a barely-scratched ship can still be lost");
+its size decides whether many armed hulls strewn along lanes are a strategy.
+
+#### 8.19.6 `OPEN` — R-WAR26: what ends a pitched battle
+
+With no engagement horizon, a battle between two sides that both stand needs a
+rule of its own. Candidates: until one side has no hull left standing; a wreck
+roll each time a hull passes its structure, survivors withdrawing; Doctrine's
+own break-off on believed kinematics (R-O41, §5). R-L2 (single pass or repeated
+passes) is the same question.
 
 ---
 
@@ -2345,6 +2474,11 @@ every hull.
 | ~~**R-WAR18**~~ | ~~blockade placement has no recency~~ **Implemented (T-125), measured null**: ranking by launches seen in the last `intercept_reassess_years` and moving a blockader off a port that went quiet changed `ln S` by less than its standard error, because latency, not placement, binds (§8.17.5) | — |
 | **R-WAR19** | **the beam and structure magnitudes** — `beam_power_mw = 50`, `structure_kj_per_hull_unit3 = 10¹²` (T-132; the per-tick `50 kJ` shot and `1,000 kJ/kt` structure they replace are appendix §D.10). Only `P / σ` reaches an outcome; one mount wrecks a Limited Contact hull in 9.5 days | ratify the duration criterion in §8.18.4 (mirror fights 28–82 ticks, every fight inside `H`), then the arena once it can seed beam-versus-beam fights between loadouts |
 | **R-WAR21** | **a lone Limited picket cannot finish a Medium colony ship** (254 days against a 183-day engagement), so §8.17.4's covering rule has lost its premise and the twelve-seat bed's kills fell 77–94% (§8.18.6) | the author's choice: accept and stack, a longer engagement, a stronger beam, or structure less the hold |
+| **R-WAR23** | **beam reach `R`** — the separation beyond which a mount cannot hit. It sets every encounter's length (§8.19). Fire control gives hits reliably to 3e-3 ly and thinning by 1e-2 ly | a derived bound from fire control and station-keeping, or a Design field of the beam family |
+| **R-WAR24** | **the wreck curve's `p₀` and `x½`** (placeholders 0.02 and 1). The floor `p₀` dominates any short encounter: a mid-voyage graze wrecks a Medium colony ship with 0.021 against 0.047 at arrival (§8.19.5) | the author: how much a graze should be worth |
+| **R-WAR25** | **the encounter** — fire along both trajectories, one wreck roll per damaged hull when it ends, arrival-driven detection, `Standing::fires_on` (§8.19.3) | ratify, then T-133 |
+| **R-WAR27** | **the fire distances `d_enemy` and `d_neutral`** (author's ruling, §8.19.2): their values per Design/hull/class/role, and what "ignored by Doctrine" means — **hold fire** at that class of target, or **fire at any range** fire control can reach (`R`) | the author, on the reading; then placeholder values per role |
+| **R-WAR26** | **what ends a pitched battle** once there is no engagement horizon (§8.19.6); includes R-L2 | the author |
 | **R-WAR22** | **damage does not persist past an engagement** — a hull no single fight can finish is never finished (§8.18.7) | the author: persistent damage (and repair) is new per-hull state |
 | **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |
 | R-MC9c / T-12 | HP pools, weapon count, missile AoE, magazines | engine work, then the arena |
