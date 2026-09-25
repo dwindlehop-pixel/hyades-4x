@@ -2139,7 +2139,27 @@ smoke 33.56 → 34.42 s, telemetry 22.74 → 22.66 s. All inside the 60-second
 rule; the determinism target's +2.1 s is its combat arm running at the shipped
 barrier.
 
-**The Warfare card** (`card_table`, 11 galaxies, 800 yr): *(pending: measured later in this landing, and recorded here when it is.)*
+**The Warfare card** (`card_table`, 11 galaxies, 800 yr):
+
+| card | median | **P92 [90%]** | P98 | mean `ln` ratio per galaxy | galaxies above 1 |
+|---|---|---|---|---|---|
+| Growth | 1.172 | **1.889 [1.742, 2.669]** | 3.749 | +0.150 ± 0.059 (t 2.54) | 10/11 |
+| Warfare | 1.087 | **1.334 [1.261, 1.410]** | 1.508 | +0.093 ± 0.019 (t 4.98) | 11/11 |
+
+Against §D.4's table (T-125, before T-132's damage model and this landing):
+Warfare's P92 1.204 [1.164, 1.226] → 1.334 [1.261, 1.410], the intervals
+disjoint; Growth's 1.753 [1.583, 1.932] → 1.889 [1.742, 2.669]. Every card
+landed at the barrier on every seat. Each galaxy took 791–965 s for its three
+arms, run as three parallel shards.
+
+*Inference:* the Warfare card still acts on its rivals, and no longer by
+wrecking colony ships (none were wrecked on the `combat_bench` seeds above).
+What remains is colony ships turned away from worlds and ports a rival holds
+under fire, and the rivals' idle hulls wrecked at their ports. Which of the two
+carries the ratio is not measured; a census of rival colony-years lost to
+retargets against minerals lost as wrecked hulls would split it. Two intervening
+changes (T-132's damage model and this landing) separate the two tables, so the
+difference is not attributable to this landing alone.
 
 ---
 
