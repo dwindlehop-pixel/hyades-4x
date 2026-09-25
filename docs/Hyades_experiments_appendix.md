@@ -2100,12 +2100,21 @@ above T-24's floor of 2.5 yr/s on this bed.
 **Where the fire goes, and what it does not reach.** On all three seeds **no
 colony ship was wrecked** (0 of 12,845 / 11,999 / 10,903 wrecks), against
 1,055 / 1,312 / 1,800 colony ships struck per run under the retired site model.
-The wrecks and the 24,290–39,969 withdrawals are what the same log names as
-non-colonizer hulls. *Inference, not yet instrumented:* target priority is
-built as nearest-first (warfare §8.17.2), and a blockader standing on a rival
-port has that port's parked hulls nearer than a colony ship leaving it, so its
-fire goes to them. What would confirm it: the roles of the wrecked hulls and
-their distance from the shooter at the wreck, per event.
+By role at the wreck (seed 1, `combat_bench` after the discharge change):
+**12,843 Reserve**, 1 Miner, 1 Scout, 0 Colonizer. A hull is Reserve when it
+has stood down or withdrawn under fire (§8.19.7), so the fire lands on idle and
+already-fleeing hulls, while 1,800 colony ships turned away on the news or a
+first hit and none was wrecked. *Inference:* target priority is nearest-first
+(warfare §8.17.2), and a blockader standing on a rival port has that port's
+parked hulls nearer than a colony ship leaving it, so its fire goes to them.
+The roles support it; the distance from the shooter at each wreck, which would
+confirm it, is not measured.
+
+**The discharge change** (position-only aiming, `(distance, entity)` keys, the
+nearest few selected lazily) reproduces every printed count on seeds 1 / 7 /
+42 against the build before it; `ns/event` 6,662 → 6,351, 6,654 → 6,099,
+8,660 → 7,971, measured beside the card-table runs on a loaded machine, so the
+instruction profile is the figure to read.
 
 **The determinism gate plays the shipped protocol.** `combat_runs_are_bit_identical`
 no longer pulls the first barrier to 60 yr. At the shipped 200 yr, six seats,
