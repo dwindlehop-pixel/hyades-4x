@@ -724,16 +724,20 @@ pub struct CombatConfig {
     /// write. **Placeholders** (R-WAR19); only their ratios to
     /// [`Self::beam_power_mw`] reach an outcome.
     pub structure_kj_per_hull_unit3: StructureByClass,
-    /// **Damage below which a hull takes no wreck roll**, as a fraction of its
-    /// structure (T-133, the author's ruling). **Placeholder** (R-WAR24).
-    pub wreck_threshold: f64,
-    /// **Wreck odds at the threshold** — the "barely-scratched ship can still be
-    /// lost" floor of `Hyades_warfare_tree.md` §2.2, now paid only past the
-    /// threshold. **Placeholder** (R-WAR24).
-    pub wreck_odds_at_threshold: f64,
-    /// **Damage at which the wreck roll is even odds**, as a fraction of
-    /// structure. **Placeholder** (R-WAR24).
-    pub wreck_even_odds_damage: f64,
+    /// **Where wreck points sit past the structure**, in structures (T-133,
+    /// `Hyades_warfare_tree.md` §8.19.5). The scale `x₀` of the Weibull
+    /// distribution a hull's wreck point is drawn from ([`wreck_point_kj`]):
+    /// 63.2% of hulls (`1 − 1/e`) are wrecked by the time they have absorbed
+    /// `1 + x₀` structures. **Placeholder** (R-WAR24).
+    pub wreck_scale: f64,
+    /// **How widely wreck points spread**, `γ`, the reciprocal of the Weibull
+    /// shape. Below 1 the odds of the next hit wrecking a hull rise with the
+    /// damage it already carries, which is the Super Smash Bros. behavior the
+    /// author asked for: a hull just past its structure usually survives a
+    /// hit, one far past it usually does not. `½` is shape 2, and is the value
+    /// [`crate::transcendental::pow_fast`] takes exactly, as a square root.
+    /// **Placeholder** (R-WAR24).
+    pub wreck_spread: f64,
     /// **The farthest a beam Design fires, ly** — both the enemy and the neutral
     /// distance of every beam Design the engine builds (T-133, R-WAR27).
     /// **Placeholder**: where fire control's hits thin out (appendix §D.10).
@@ -836,9 +840,8 @@ impl Default for CombatConfig {
                 ford: 1.0e11,
                 unnamed: ByFamily { systems: 1.0e11, contact: 1.0e12, offensive: 1.0e12 },
             },
-            wreck_threshold: 0.25,
-            wreck_odds_at_threshold: 0.02,
-            wreck_even_odds_damage: 1.0,
+            wreck_scale: 1.0,
+            wreck_spread: 0.5,
             beam_fire_distance_ly: 0.01,
         }
     }
@@ -915,26 +918,38 @@ pub fn hull_structure_kj(hull: HullType, class: Class, sim_cfg: &SimConfig, cfg:
     hull.hull_volume(sim_cfg).hull_units_cubed() * cfg.structure_kj_per_hull_unit3.of(class, hull.family())
 }
 
-/// **The wreck roll's odds** for a hull that absorbed `damage_kj` against
-/// `structure_kj` (`Hyades_warfare_tree.md` §2.1–2.2, §8.19; T-133).
+/// **A hull's wreck point, kJ**: the damage at which it is wrecked
+/// (`Hyades_warfare_tree.md` §8.19.5; T-133). `u` is a uniform draw in
+/// `[0, 1)` that belongs to the hull and never changes.
 ///
-/// **Zero below the threshold** — a hull that has not taken
-/// [`CombatConfig::wreck_threshold`] of its structure is not defeated and takes
-/// no roll (the author's ruling). Past it, §2.2's logistic in closed form:
-/// `p₀ / (p₀ + (1 − p₀)·e^(−κ·(x − θ)))`, with `x = damage / structure`, `θ`
-/// the threshold, `p₀` the odds at the threshold and `κ` set so the odds are
-/// even at [`CombatConfig::wreck_even_odds_damage`]. Inside `(0, 1)` for every
-/// `x ≥ θ` in exact arithmetic; in `f64` it rounds to 1 once the exponential
-/// underflows, which is past twenty-odd structures.
-pub fn wreck_probability(damage_kj: f64, structure_kj: f64, cfg: &CombatConfig) -> f64 {
-    let x = damage_kj / structure_kj;
-    let theta = cfg.wreck_threshold;
-    if x.is_nan() || x < theta || damage_kj <= 0.0 {
-        return 0.0;
-    }
-    let p0 = cfg.wreck_odds_at_threshold;
-    let kappa = crate::transcendental::ln((1.0 - p0) / p0) / (cfg.wreck_even_odds_damage - theta);
-    p0 / (p0 + (1.0 - p0) * crate::transcendental::exp(-kappa * (x - theta)))
+/// **Zero odds up to the structure**, which is a soft maximum of hit points
+/// (the author's ruling). Past it the wreck point sits `x₀ · E^γ` structures
+/// further on, with `E = −ln(1 − u)` an exponential draw — so the overdamage
+/// at which a hull is wrecked follows a Weibull distribution with scale
+/// [`CombatConfig::wreck_scale`] and shape `1 / γ`
+/// ([`CombatConfig::wreck_spread`]), and the odds of being wrecked by
+/// overdamage `x` (damage *above* the structure, in structures) are
+/// `1 − e^(−(x / x₀)^(1/γ))`.
+///
+/// **This is the wreck roll, repeated with every further damage.** Drawing
+/// the point once and comparing each hit's damage against it gives exactly
+/// the odds of rolling on every hit with the odds of the damage between that
+/// roll and the last — the inverse-transform method — and it makes the
+/// outcome independent of how the damage was divided into hits. A Design's
+/// firing rate changes how often a hull is checked, not whether it is
+/// wrecked, which is what lets fire control be coarse for performance
+/// (R-WAR29) without moving any outcome.
+///
+/// **Run-path arithmetic** (`src/transcendental.rs`, T-130): no division,
+/// [`crate::transcendental::log2_fast`] for the logarithm, and at the shipped
+/// `γ = ½` an exact square root. Computed once per hull per encounter; the
+/// per-hit test is a comparison.
+pub fn wreck_point_kj(structure_kj: f64, u: f64, cfg: &CombatConfig) -> f64 {
+    // `log2_fast(1.0)` is +4.8e-5, not zero (its error is absolute), so the
+    // lowest draws would give a negative `E` and a NaN root — a hull that no
+    // damage could wreck. They are the draws whose true `E` is below 3.3e-5.
+    let e = (-core::f64::consts::LN_2 * crate::transcendental::log2_fast(1.0 - u)).max(0.0);
+    structure_kj * (1.0 + cfg.wreck_scale * crate::transcendental::pow_fast(e, cfg.wreck_spread))
 }
 
 /// One ship in a simulation fight: where it is, what it mounts, and how much
@@ -944,6 +959,20 @@ pub struct Armed {
     pub ship: Combatant,
     pub loadout: Loadout,
     pub structure_kj: f64,
+    /// Energy this hull absorbed before this fight and survived, kJ (T-133).
+    /// Damage is carried from one encounter to the next.
+    pub damage_kj: f64,
+    /// The damage at which this hull is wrecked, kJ ([`wreck_point_kj`]).
+    /// `f64::INFINITY` for a hull that cannot be wrecked by the roll — the
+    /// pitched battle, which still ends at the structure, does not read it.
+    pub wreck_at_kj: f64,
+}
+
+impl Armed {
+    /// Whether absorbing `took` more kJ puts this hull at its wreck point.
+    pub fn wrecked_by(&self, took: f64) -> bool {
+        self.damage_kj + took >= self.wreck_at_kj
+    }
 }
 
 /// What a beam engagement left standing, and when it stopped.
@@ -967,7 +996,9 @@ pub struct BeamOutcome {
 ///   standing at the start of the tick and damage lands at its end, so neither
 ///   side shoots first by index order — §2.3's "no tick-based initiative".
 /// - **Damage accumulates in kJ against structure.** A hull dies when the energy
-///   it has absorbed reaches its structure.
+///   it has absorbed, counting what it carried in, reaches its structure. That
+///   is a hard limit where the encounter's wreck roll treats the structure as
+///   a soft one; the pitched battle moves onto the roll at T-133 stage 8.
 /// - **Damage is a power, not a per-tick quantum** (T-132). A mount on target
 ///   delivers `power × dt` in a tick, so halving `dt` doubles the ticks and
 ///   halves each one's damage, and a fight lasts the same time.
@@ -985,7 +1016,9 @@ pub fn resolve_beam_engagement(
     dt: f64,
 ) -> BeamOutcome {
     let mut alive: [Vec<bool>; 2] = [vec![true; sides[0].len()], vec![true; sides[1].len()]];
-    let mut damage: [Vec<f64>; 2] = [vec![0.0; sides[0].len()], vec![0.0; sides[1].len()]];
+    // A hull enters carrying what it survived before (T-133).
+    let carried = |s: usize| sides[s].iter().map(|a| a.damage_kj).collect::<Vec<f64>>();
+    let mut damage: [Vec<f64>; 2] = [carried(0), carried(1)];
     let armed_alive =
         |alive: &[Vec<bool>; 2], s: usize| sides[s].iter().zip(&alive[s]).any(|(a, &l)| l && a.loadout.is_armed());
     let mut t = 0.0;
@@ -1078,39 +1111,36 @@ impl PassSide<'_> {
 /// nobody stops to fight.
 ///
 /// Walks `[t0, t1)` in steps of `dt` and returns, per side, the energy each
-/// hull absorbed. **Nobody dies inside it**: the outcome is the caller's wreck
-/// roll ([`wreck_probability`]), taken once per hull when the encounter ends —
-/// the author's ruling that the roll resolves combat and transport together.
+/// hull absorbed in it. **Nobody stops**: a hull flies its path whatever it
+/// absorbs, and the wreck roll decides the outcome — the author's ruling that
+/// the roll resolves combat and transport together. The roll is taken on
+/// every hit, as a comparison against the hull's [`Armed::wreck_at_kj`]
+/// (drawn once, [`wreck_point_kj`]): a hull that reaches its wreck point at
+/// the end of a tick is wrecked from then on, fires no more and is no longer
+/// a target. The caller reads the same comparison off the returned energy
+/// ([`Armed::wrecked_by`]).
 ///
 /// Per tick, as [`resolve_beam_engagement`]: every mount of a hull that fires
 /// aims at the nearest enemy within its fire distance that has not yet
-/// absorbed its structure, delivers `power × dt` if fire control holds, and
-/// all damage lands at the end of the tick. Mounts left over once every target
-/// in reach is past its structure fire on the nearest, because past the
-/// structure more energy still moves the roll. Fire control is tested against the
-/// target's actual path: its position one light-crossing later against the
-/// straight-line prediction from its velocity now.
+/// absorbed its structure (counting what it carried in), delivers `power × dt`
+/// if fire control holds, and all damage lands at the end of the tick. Mounts
+/// left over once every target in reach is past its structure fire on the
+/// nearest, because past the structure more energy still moves it toward its
+/// wreck point, which the shooter cannot see. Fire control is tested against
+/// the target's actual path: its position one light-crossing later against
+/// the straight-line prediction from its velocity now.
 ///
-/// **It stops early once no roll can change**: when every hull that any
-/// shooter can reach has absorbed enough that [`wreck_probability`] is exactly
-/// 1.0 in `f64`. The curve is monotone, so more energy cannot move a roll that
-/// is already certain in the arithmetic the roll is taken in; the outcome is
-/// identical and the returned energies are smaller.
-pub fn resolve_pass(sides: [PassSide; 2], t0: f64, t1: f64, dt: f64, cfg: &CombatConfig) -> [Vec<f64>; 2] {
+/// **It stops early once no outcome can change**: when, for each side, the
+/// other side has no hull left that fires, or every hull on it is wrecked.
+pub fn resolve_pass(sides: [PassSide; 2], t0: f64, t1: f64, dt: f64) -> [Vec<f64>; 2] {
     let mut absorbed: [Vec<f64>; 2] = [vec![0.0; sides[0].ships.len()], vec![0.0; sides[1].ships.len()]];
-    let fires = |s: usize| {
-        sides[s].ships.iter().zip(sides[s].fire_ly).any(|(a, reach)| reach.is_some() && a.loadout.is_armed())
+    let wrecked = |absorbed: &[Vec<f64>; 2], s: usize, j: usize| sides[s].ships[j].wrecked_by(absorbed[s][j]);
+    let firing = |absorbed: &[Vec<f64>; 2], s: usize| {
+        (0..sides[s].ships.len())
+            .any(|i| sides[s].fire_ly[i].is_some() && sides[s].ships[i].loadout.is_armed() && !wrecked(absorbed, s, i))
     };
-    let can_fire = [fires(0), fires(1)];
     let settled = |absorbed: &[Vec<f64>; 2]| {
-        (0..2).all(|s| {
-            !can_fire[1 - s]
-                || sides[s]
-                    .ships
-                    .iter()
-                    .zip(&absorbed[s])
-                    .all(|(a, &took)| wreck_probability(took, a.structure_kj, cfg) == 1.0)
-        })
+        (0..2).all(|s| !firing(absorbed, 1 - s) || (0..sides[s].ships.len()).all(|j| wrecked(absorbed, s, j)))
     };
     let mut t = t0;
     while t < t1 {
@@ -1122,11 +1152,12 @@ pub fn resolve_pass(sides: [PassSide; 2], t0: f64, t1: f64, dt: f64, cfg: &Comba
             let (own, other) = (&sides[s], &sides[1 - s]);
             for (i, shooter) in own.ships.iter().enumerate() {
                 let Some(reach) = own.fire_ly[i] else { continue };
-                if !shooter.loadout.is_armed() {
+                if !shooter.loadout.is_armed() || wrecked(&absorbed, s, i) {
                     continue;
                 }
                 let at = own.position(i, t);
                 let mut targets: Vec<(f64, usize)> = (0..other.ships.len())
+                    .filter(|&j| !wrecked(&absorbed, 1 - s, j))
                     .map(|j| (other.position(j, t).distance(at), j))
                     .filter(|&(d, _)| d <= reach)
                     .collect();
@@ -1142,7 +1173,8 @@ pub fn resolve_pass(sides: [PassSide; 2], t0: f64, t1: f64, dt: f64, cfg: &Comba
                     if mounts == 0 {
                         break;
                     }
-                    let remaining = other.ships[j].structure_kj - absorbed[1 - s][j] - pending[1 - s][j];
+                    let target = &other.ships[j];
+                    let remaining = target.structure_kj - target.damage_kj - absorbed[1 - s][j] - pending[1 - s][j];
                     if remaining <= 0.0 {
                         continue;
                     }

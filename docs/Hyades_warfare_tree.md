@@ -93,12 +93,19 @@ is **wrecked** or **gets away** is a single weighted coin-flip. Retreat
 *direction* is not random — it follows the board, toward open or friendly space.
 **The randomness is only whether the ship survives to use it.**
 
-**2.2 `RATIFIED` — `P(wreck)` is bounded in the open interval (0, 1)** and rises
-with incoming damage on a saturating curve. **Never 0%, never 100%.** A
-barely-scratched ship can still be lost; an overwhelmed one can still slip away.
-So there is always a reason to pile on force and always a live hope for the
-cornered fleet. Same logistic form as population growth, which keeps the game's
-curved quantities mathematically consistent.
+*Amended by §8.19.5 (T-133):* the coin is not flipped once. Every hull has one
+**wreck point**, drawn once, and is checked against it with every hit it takes
+past its structure — which has exactly the odds of flipping a coin on every hit
+with the odds of that hit's damage.
+
+**2.2 `RATIFIED` — `P(wreck)` rises with incoming damage on a saturating curve,
+and never reaches 100%** at any finite damage: an overwhelmed ship can still slip
+away, so there is always a reason to pile on force and always a live hope for the
+cornered fleet. *Amended by §8.19.5 (T-133, the author's ruling):* **it is 0%
+until a hull has absorbed its structure**, which is a soft maximum of hit points,
+and the curve is a Weibull distribution over damage above the structure rather
+than a logistic. "Never 0%" and "a barely-scratched ship can still be lost" are
+superseded (appendix §D.14).
 
 **2.3 `RATIFIED` — there is no tick-based initiative.** No per-round turn order,
 no INIT stat deciding who fires first. Each weapon's reach and closing behavior
@@ -2313,10 +2320,11 @@ upon an enemy' and a 'Max distance to fire upon a neutral'. Either or both may b
 ignored by Doctrine."*
 
 **Built so far (T-133 stages 1–3, and an interim stage 5):** the wreck roll
-with its threshold, the pass resolver, the fire distances and hold-fire, and
+(§8.19.5), the pass resolver, the fire distances and hold-fire, and
 per-Design-class structure. A colony ship leaving a blockaded port or arriving
-at a picketed world now flies through the fire and takes a wreck roll; a
-survivor flies on, or founds. **Not built: stage 4, detection.** Those two
+at a picketed world now flies through the fire, checked against its wreck point
+on every hit; a survivor carries its damage. Leaving, it flies on; arriving, it
+leaves without founding if it was hit at all, and founds if it was not. **Not built: stage 4, detection.** Those two
 places are still where the engine looks for fire, and a shared rock is still a
 stationary pitched battle — now only when both crews' Doctrine is hostile.
 Until stage 4, fights happen nowhere else.
@@ -2330,11 +2338,14 @@ Until stage 4, fights happen nowhere else.
 | `d_enemy` | **max distance to fire upon an enemy** | ly | per Design/hull/class/role; placeholder values `OPEN` (R-WAR27) |
 | `d_neutral` | **max distance to fire upon a neutral** | ly | per Design/hull/class/role; placeholder values `OPEN` (R-WAR27) |
 | `E` | **exposure** — the time an encounter lasts | yr | kinematics: both trajectories, and the smaller of `R` and the applicable fire distance |
-| `D` | energy a hull absorbed during the encounter | kJ | `P · dt` per mount per tick on target (§8.18) |
-| `S` | the hull's structure, `σ · r³` | kJ | §8.18 |
-| `p₀` | wreck odds of a barely-scratched hull | probability | placeholder, R-WAR24 |
-| `x½` | the damage ratio `D / S` at even odds | ratio | placeholder, R-WAR24 |
-| `P(wreck)` | `p₀ / (p₀ + (1 − p₀)·e^(−κ·D/S))`, with `κ = ln((1 − p₀)/p₀) / x½` | probability | §2.2's logistic, in closed form |
+| `D` | energy a hull has absorbed and survived, carried across encounters | kJ | `P · dt` per mount per tick on target (§8.18); `Simulation`'s `hull_damage` |
+| `S` | the hull's structure, `σ · r³` — a soft maximum of hit points | kJ | §8.18 |
+| `x` | **overdamage** — damage above the structure, in structures: `(D − S) / S` | ratio | — |
+| `x₀` | **wreck scale** — the overdamage by which 63.2% (`1 − 1/e`) of hulls are wrecked | ratio | `CombatConfig::wreck_scale`, placeholder `1.0` (R-WAR24) |
+| `γ` | **wreck spread** — the reciprocal of the Weibull shape | ratio | `CombatConfig::wreck_spread`, placeholder `½` (R-WAR24) |
+| `u` | the hull's draw, uniform on `[0, 1)`, fixed for its life | — | a fork of the root generator on the hull's entity |
+| `W` | **wreck point** — the damage at which the hull is wrecked: `S · (1 + x₀ · (−ln(1 − u))^γ)` | kJ | `combat::wreck_point_kj` |
+| `P(wreck)` | `0` for `x ≤ 0`, else `1 − e^(−(x / x₀)^(1/γ))` | probability | the distribution `W` is drawn from |
 
 #### 8.19.2 `RATIFIED` — the author's rulings
 
@@ -2361,6 +2372,13 @@ Until stage 4, fights happen nowhere else.
   resolved).
 - **No wreck roll until a hull has sustained a threshold of damage**
   (R-WAR24, resolved in form). Below it the hull is not defeated and flies on.
+  **The threshold is the structure, a soft maximum of hit points.**
+- **The roll repeats with further damage, and its odds scale with damage above
+  the threshold** — not with multiples of it. More damage, higher odds; the
+  author's reference is the Super Smash Bros. series (§8.19.5).
+- **A colony ship that survives fire at its destination leaves** (R-WAR28,
+  resolved). Colonists are not suicidal: if they believe an enemy will kill
+  them before they can found, they seek a new destination (§8.19.7).
 - **A pitched battle ends by any of three rules** (R-WAR26, resolved in form):
   one side has no hull left; a hull past the threshold rolls, and survivors
   withdraw; a side's Doctrine breaks off on believed kinematics (§5).
@@ -2371,13 +2389,13 @@ Until stage 4, fights happen nowhere else.
   a hull within `R` aims at the nearest such hull not already past its
   structure, and delivers `P · dt` if fire control holds against both hulls'
   actual trajectories (§8.18.3's rule, with both ends moving).
-- **Resolution.** When the encounter ends — the target leaves `R`, arrives and
-  completes its mission, or the shooter leaves — every hull that absorbed energy
-  takes one wreck roll. Wrecked: destroyed where it is, its mass slag there
-  (law #11). Survived: continues its trajectory and mission unchanged.
-- **Founding is the end of the colonizer's encounter.** A colony ship that
-  survives the roll at arrival founds, whoever is on station — which removes the
-  turn-back on "both survive" (§8.9).
+- **Resolution.** Every hit past a hull's structure is checked against its
+  wreck point (§8.19.5). Wrecked: destroyed where it is, its mass slag there
+  (law #11), and it fires no more. Survived: continues its trajectory, carrying
+  its damage — and a colony ship that has been hit does not found (§8.19.2).
+  ~~Founding is the end of the colonizer's encounter; a colony ship that
+  survives the roll at arrival founds.~~ Superseded by the author's ruling that
+  it leaves (R-WAR28).
 - **Detection is arrival-driven** (`CLAUDE.md` §4). When a hull starts a
   trajectory or takes station, the engine finds the intervals in which it comes
   within `R` of a hostile hull that fires on it, or that it fires on, and
@@ -2406,22 +2424,52 @@ no site hardwired, fights still concentrate where hulls are slow — at departur
 and arrivals. That is kinematics choosing the place, which is what the ruling
 asks for, and the same result T-115 found for interception.
 
-#### 8.19.5 `OPEN` — R-WAR24: the wreck curve's magnitudes
+#### 8.19.5 The wreck roll: a wreck point per hull (R-WAR24 form ratified, magnitudes `OPEN`)
 
-**Decided (the author's ruling): a hull takes no roll below the threshold
-`θ`.** Past it, `P(wreck) = p₀ / (p₀ + (1 − p₀)·e^(−κ·(x − θ)))` with
-`x = D / S` and `κ = ln((1 − p₀)/p₀) / (x½ − θ)`, so the odds are `p₀` at the
-threshold and even at `x½`. **Placeholders:** `θ = 0.25`, `p₀ = 0.02`,
-`x½ = 1` (`CombatConfig::wreck_threshold`, `wreck_odds_at_threshold`,
-`wreck_even_odds_damage`). The floor that made a graze a 2% lottery (appendix
-§D.11) now applies only to a hull that has taken a quarter of its structure.
+*Author's specification: "The wreck roll odds should roll again with further
+damage suffered, should scale based on the damage suffered above the threshold,
+not multiple of the threshold. Below the threshold, 0% odds. Above the
+threshold, the more damage suffered, the higher the chance. The game series
+Super Smash Bros. has the right kind of feel to it for wreck rolls. The
+threshold is a soft HP maximum."* And: the hazard curve uses the run path's
+polynomial arithmetic — no division, a small number of multiplies.
 
-**Measured at these placeholders** (appendix §D.12): a lone Cairn picket
-delivers 2.45–4.05 structures to a Delta colony ship over the 105 days it is in
-reach, leaving or arriving, and the roll's odds round to 0.999–1.000. **A lone
-picket now kills a Medium colony ship nearly every time**, where under T-132's
-single `σ` it could not kill one at all. The lever is `σ_Delta` (and the fire
-distance): the author sets how lethal a lone picket is by setting them.
+**`RATIFIED`, and built:**
+- **The threshold is the structure `S`.** A hull that has absorbed less is not
+  checked at all.
+- **Every hull has a wreck point `W ≥ S`**, drawn once from its own `u` (§8.19.1)
+  and never redrawn. A hull is wrecked the moment the damage it carries reaches
+  `W`. Damage persists across encounters; nothing repairs it yet (R-WAR31).
+- **That is the repeated roll, exactly.** Checking one fixed point against every
+  hit has the same odds as rolling on every hit with the odds of that hit's
+  damage — the inverse-transform method (drawing one uniform number and mapping
+  it through the inverse of the odds curve reproduces that curve exactly). The
+  hazard (the per-unit-damage wreck rate given survival so far) is
+  `(1/γ)·x^(1/γ − 1)/x₀^(1/γ)`, which **rises with overdamage whenever `γ < 1`**:
+  a hull just past its structure usually survives the next hit, one far past it
+  usually does not.
+- **The outcome does not depend on how damage is divided into hits**, so a
+  Design's rate of fire changes how often a hull is checked and never whether it
+  is wrecked by a given energy — the property R-WAR29's discharge period relies
+  on.
+- **Run-path arithmetic** (`src/transcendental.rs`, T-130): `−ln(1 − u)` by
+  `log2_fast` and one multiply, `(·)^γ` by `pow_fast` — an exact square root at
+  `γ = ½` — and two more multiplies. No division. Computed once per hull per
+  encounter; the per-hit test is a comparison.
+- **A pitched battle does not read it yet**: `resolve_beam_engagement` still
+  ends a hull at `S`, a hard limit (stage 8).
+
+**`OPEN` — the magnitudes.** `x₀ = 1`, `γ = ½` (Weibull shape 2) are
+placeholders. At them the odds of a wreck are 22.1% at half a structure past `S`,
+63.2% at one, 98.2% at two.
+
+**Measured at these placeholders** (appendix §D.14): on the twelve-seat card bed
+at 400 yr, **97.4–98.5% of colony ships fired on are wrecked** (3 seeds), against
+100% under the logistic. The picket and blockade deliver 2.45–4.05 structures
+over an exposure (appendix §D.12), which is already past the curve's steep part.
+*Inference:* the curve's shape is not what sets lethality on this bed; the
+energy delivered is, and its levers are `σ` per Design class, beam power and
+the fire distance (R-WAR24, R-WAR27).
 
 #### 8.19.6 R-WAR26: what ends a pitched battle — all three, not yet built
 
@@ -2458,21 +2506,20 @@ concurrent. It stays only until discharge events replace it.
 | encounter begins | a hull comes within the farthest applicable fire distance of a hull that fires on it — found when either starts a trajectory or takes station (stage 4) | schedules the first discharge of every hull that fires |
 | **discharge** | every discharge period while the shooter is alive and a target is within its fire distance | fire control against the target's position *now*; `P ×` period of energy if it holds; then the next discharge |
 | **course adjustment** | when a hull's Doctrine responds to fire, or a defeated hull gets away (§2.1) | replaces the hull's trajectory from where it is and how it is moving; every encounter the old trajectory implied is re-derived |
-| wreck roll | R-WAR28 | wrecked, or gets away |
+| wreck check | on each discharge that lands, against the target's wreck point (§8.19.5) | wrecked, or carries the damage |
 
 A discharge reads positions at its own time, so a target that has already
 arrived, founded, turned back or been wrecked is simply not there; nothing is
 cancelled. Simultaneous events are ordered by the queue's existing `(time,
 sequence)` rule, so determinism is untouched.
 
-**`OPEN` — R-WAR28: when the wreck roll is taken, and what a survivor does.**
-The threshold rule says no roll below `θ`. If the roll is taken the moment
-damage crosses `θ`, the odds are exactly `p₀` (2% at the placeholder) every
-time, whatever the weapon — a hull is always rolled at the threshold, never
-after. Candidates: roll when the encounter ends (the damage then is all the
-damage); roll at each further multiple of `θ` with rising odds; roll at the
-crossing with odds from the damage rate. And §2.1 says a defeated ship that gets
-away *leaves*: does a colony ship that survives keep trying to found, or flee?
+**R-WAR28 — resolved (the author's ruling):** the roll is taken on every hit
+past the structure, with odds from the damage above it (§8.19.5), and a colony
+ship that survives fire leaves rather than founds. **Built** at the interim
+sites: arriving at a picketed world, a colony ship that was hit and survived
+turns for home (`bounce_colonizer`, logged `ColonyContested`). Where it goes
+next — home, or a new destination it believes it can reach — belongs to the
+course adjustment below. The superseded candidates are in appendix §D.14.
 
 **`OPEN` — R-WAR29: the discharge period.** A beam's output is continuous, so
 the period is a sampling rate as well as a rate of fire; one per day adds
@@ -2480,11 +2527,34 @@ the period is a sampling rate as well as a rate of fire; one per day adds
 days) about five and a half times that (appendix §D.13). *Recommend* a Design
 field, so a Technology write can raise a rate of fire.
 
-**`OPEN` — R-WAR30: course adjustment needs flight from a moving start.** The
-engine's only leg is rest to rest, and the one course change it makes today (a
-picket re-aiming, T-120) starts the new leg *from rest* at the current position —
-velocity dropped for free. A course adjustment that is not a free stop needs a
-trajectory from a nonzero velocity, which `math.rs` does not have.
+**R-WAR30 — course adjustment: rulings recorded, engine work `OPEN`.**
+*Author's specification: "trajectory from a moving ship and events based on
+belief: A, an enemy is moving to intercept, and B, an enemy has fired upon this
+ship's fleet. The fleet abstraction is going to be key for reducing the
+decisions per year. Colonists are not suicidal; if they believe an enemy will
+kill them before they can found a colony, they will seek a new destination."*
+
+- **`RATIFIED`: a course adjustment is a new trajectory from where the hull is
+  and how it is moving.** The engine's only leg is rest to rest, and the one
+  course change it makes today (a picket re-aiming, T-120) starts the new leg
+  *from rest* — velocity dropped for free. That is the defect this retires, and
+  it needs flight from a nonzero velocity, which `math.rs` does not have.
+- **`RATIFIED`: two belief events trigger one**, both read from light-lagged
+  observation (law #15), never from ground truth:
+  - **(A) an enemy is moving to intercept** — a hostile trajectory, as observed,
+    closes on this fleet's;
+  - **(B) an enemy has fired on this fleet** — a discharge landed on any hull in
+    it.
+- **`RATIFIED`: the fleet is the unit that decides.** One belief event raises
+  one decision for the fleet, not one per hull, which is what bounds decisions
+  per year as hull counts grow. *This amends `Hyades_vehicle_roles.md` §5*,
+  where a fleet is "a query, not a stored thing": it becomes the stored unit a
+  course adjustment is decided for. **`OPEN` (R-WAR32):** what a fleet is — who
+  joins and leaves one, and when.
+- **`RATIFIED`: colonists retarget on belief.** A colony ship whose belief says
+  an enemy will wreck it before it can found seeks a new destination. **`OPEN`:**
+  the belief test — believed `a_max` (R-O41, `src/belief.rs`) against the
+  remaining leg is the recommended one — and how a new destination is chosen.
 
 ---
 
@@ -2553,12 +2623,14 @@ trajectory from a nonzero velocity, which `math.rs` does not have.
 | **R-WAR19** | **the beam and structure magnitudes** — `beam_power_mw = 50`, and `σ` per Design class since T-133: `10¹¹` for Systems Designs, `10¹²` for armed ones (T-132; the per-tick `50 kJ` shot and `1,000 kJ/kt` structure they replace are appendix §D.10). Only `P / σ` reaches an outcome; one mount wrecks a Limited Contact hull in 9.5 days | ratify the duration criterion in §8.18.4 (mirror fights 28–82 ticks, every fight inside `H`), then the arena once it can seed beam-versus-beam fights between loadouts |
 | **R-WAR21** | **a lone Limited picket cannot finish a Medium colony ship** (254 days against a 183-day engagement), so §8.17.4's covering rule has lost its premise and the twelve-seat bed's kills fell 77–94% (§8.18.6) | the author's choice: accept and stack, a longer engagement, a stronger beam, or structure less the hold |
 | **R-WAR23** | **beam reach `R`** — the separation beyond which a mount cannot hit. It sets every encounter's length (§8.19). Fire control gives hits reliably to 3e-3 ly and thinning by 1e-2 ly | a derived bound from fire control and station-keeping, or a Design field of the beam family |
-| **R-WAR24** | **the wreck curve's magnitudes** — the threshold rule is ruled (no roll below `θ`); `θ = 0.25`, `p₀ = 0.02`, `x½ = 1` are placeholders. At them a lone Cairn picket wrecks a Delta colony ship 0.999–1.000 of the time (§8.19.5) | the author: how lethal a lone picket should be, set through `σ_Delta`, the fire distance and these |
+| **R-WAR24** | **the wreck curve's magnitudes** — the form is ruled and built (§8.19.5): threshold at the structure, a Weibull wreck point per hull, checked on every hit. `x₀ = 1`, `γ = ½` are placeholders; at them 97.4–98.5% of colony ships fired on are wrecked on the card bed | the author: how lethal a lone picket should be, set through `σ` per class, beam power, the fire distance and these |
 | **R-WAR25** | **the encounter** — fire along both trajectories, one wreck roll per damaged hull when it ends, arrival-driven detection, `Standing::fires_on` (§8.19.3) | ratify, then T-133 |
 | **R-WAR27** | **the fire distances' values** — "ignored by Doctrine" is ruled to mean **hold fire at any range**; every beam Design carries `0.01` ly for both, a placeholder | a value per Design |
-| **R-WAR28** | **when the wreck roll is taken, and what a survivor does** — at the threshold crossing the odds are exactly `p₀` every time (§8.19.7) | the author |
+| ~~**R-WAR28**~~ | **resolved** (the author's ruling): the roll is taken on every hit past the structure, with odds from the damage above it; a colony ship that survives fire leaves (§8.19.7) | — |
 | **R-WAR29** | **the discharge period** — rate of fire, sampling rate and event cost at once; *recommend* a Design field (§8.19.7) | the author, then a placeholder |
-| **R-WAR30** | **flight from a moving start** — course adjustment without a free stop needs new kinematics in `math.rs` (§8.19.7) | engine work |
+| **R-WAR30** | **course adjustment** — ruled: a trajectory from a moving start, triggered by belief events (A) an enemy moving to intercept and (B) an enemy firing on the fleet, decided per fleet; colonists retarget on believed lethality. Not built: moving-start flight in `math.rs`, the belief tests, the retarget choice (§8.19.7) | engine work |
+| **R-WAR31** | **repair** — a hull carries the damage it survived for the rest of its life (§8.19.5); nothing repairs it | the author: whether damage heals, where, and at what cost |
+| **R-WAR32** | **the stored fleet** — the fleet decides course adjustments (§8.19.7), which amends roles §5's "a query, not a stored thing"; membership and its changes are unspecified | the author |
 | **R-WAR26** | **what ends a pitched battle** — all three candidates, ruled; how they compose and R-L2 are open, and none is built (§8.19.6) | engine work, then a pitched-battle bed |
 | **R-WAR22** | **damage does not persist past an engagement** — a hull no single fight can finish is never finished (§8.18.7) | the author: persistent damage (and repair) is new per-hull state |
 | **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |

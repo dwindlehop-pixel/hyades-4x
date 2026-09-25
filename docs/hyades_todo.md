@@ -191,13 +191,24 @@ discharge and course adjustment** (warfare §8.19.7). That retires the pass
 resolver built in stage 2 as an off-clock integration. The stages below are
 re-cut accordingly; stages 1 and 3 stand.
 
+**Fourth landing: the author ruled the wreck roll, the survivor and the course
+adjustment** (warfare §8.19.2, §8.19.5, §8.19.7). The threshold is the structure,
+a soft maximum of hit points; the roll repeats with further damage, with odds
+from damage above it; a colony ship that survives fire leaves; course adjustment
+is flight from a moving start on belief events, decided per fleet; fire control
+may take at most 25% of run time (R-WAR29). Stage 1 is rebuilt to the ruling,
+the arriving survivor leaves, and the fire-control share is measured (appendix
+§D.14).
+
 **Stages, in order, each measured before the next:**
 
-1. ~~**The wreck roll**~~ — **done**: no roll below the threshold, the
-   logistic past it, placeholders `θ = 0.25`, `p₀ = 0.02`, `x½ = 1`.
+1. ~~**The wreck roll**~~ — **done, rebuilt at the fourth landing**: a Weibull
+   wreck point per hull past its structure (`combat::wreck_point_kj`), checked on
+   every hit, damage carried across encounters (`hull_damage`); run-path
+   arithmetic, no division. Placeholders `x₀ = 1`, `γ = ½` (R-WAR24).
 2. ~~**The pass resolver**~~ — **done**: `combat::resolve_pass`, fire between
-   hulls on arbitrary paths, nothing dies inside it, and it stops once every
-   reachable roll is certain in `f64`.
+   hulls on arbitrary paths; a hull at its wreck point stops firing and is no
+   longer a target, and the pass stops once no outcome can change.
 3. ~~**Fire distances**~~ — **done**: on every Design's loadout (`0.01` ly
    placeholder), `Standing::fire_distance` holds fire where Doctrine ignores
    one; default holds fire on neutrals except in the picket role.
@@ -206,14 +217,18 @@ re-cut accordingly; stages 1 and 3 stand.
    on; closed form for a stationary shooter, scheduled as events. Needs R-WAR23
    (`R`).
 5. **Retire the three sites** in favor of encounters — *interim done* at the
-   port and the held world (a survivor flies on or founds); the shared rock is
+   port and the held world (a survivor flies on; arriving, one that was hit
+   leaves and one that was not founds); the shared rock is
    now a pitched battle only when both crews are hostile. What remains is
    removing the sites as places to look, which is stage 4, and R-WAR26's three
    endings in `resolve_beam_engagement`.
 6. **Discharge events** replace `resolve_pass`: an encounter schedules each
-   shooter's discharges on the main loop (R-WAR29), and the wreck roll lands
-   when R-WAR28 says.
-7. **Course adjustment events**, on flight from a moving start (R-WAR30).
+   shooter's discharges on the main loop at its Design's period (R-WAR29), and
+   each discharge that lands is checked against the target's wreck point.
+7. **Course adjustment events**, on flight from a moving start, raised per
+   fleet by belief events (A) an enemy moving to intercept and (B) fire on the
+   fleet; a colony ship that believes it would be wrecked before founding
+   retargets (R-WAR30, R-WAR32).
 8. **Pitched battles through the same events**, with R-WAR26's three endings,
    retiring `resolve_beam_engagement` from the simulation (the Technology
    beds may keep it).

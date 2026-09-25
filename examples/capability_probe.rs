@@ -35,6 +35,7 @@ use hyades_engine::combat::{CombatConfig, STATION_PERIOD, STATION_RADIUS};
 use hyades_engine::math::Vec3;
 use hyades_engine::rng::Rng;
 use hyades_engine::sim::{design_loadout, hull_dry_mass, Class, HullType, Role, SimConfig};
+use hyades_engine::transcendental::{exp, pow};
 
 const HULLS: [(&str, HullType); 10] = [
     ("LSV", HullType::LimitedSystems),
@@ -75,6 +76,10 @@ fn fleet(hull: HullType, n: usize, side: usize, seed: u64, cfg: &SimConfig, comb
             },
             loadout,
             structure_kj: structure,
+            damage_kj: 0.0,
+            // The probe reads the energy delivered and prices the odds itself
+            // (section 6), so no hull here is ever wrecked by its roll.
+            wreck_at_kj: f64::INFINITY,
         })
         .collect()
 }
@@ -231,8 +236,8 @@ fn main() {
         "\n== 6. encounters: a laden Delta colony ship (0.241 ly/yr^2, 6.16 ly leg) under N Cairn pickets, seeds 1-3"
     );
     println!(
-        "   fire distance {} ly; wreck threshold {} of structure",
-        combat.beam_fire_distance_ly, combat.wreck_threshold
+        "   fire distance {} ly; wreck points Weibull past the structure, scale {} and spread {}",
+        combat.beam_fire_distance_ly, combat.wreck_scale, combat.wreck_spread
     );
     let accel = 0.241;
     let leg_ly = 6.16;
@@ -291,10 +296,12 @@ fn main() {
                     t0,
                     t1,
                     cfg.engagement_dt_years,
-                    &combat,
                 );
                 let x = took[0] / colony[0].structure_kj;
-                let p = hyades_engine::combat::wreck_probability(took[0], colony[0].structure_kj, &combat);
+                // The odds the wreck point is at or below `x`: the Weibull
+                // distribution `wreck_point_kj` draws from (§8.19.5).
+                let over = (x - 1.0).max(0.0) / combat.wreck_scale;
+                let p = 1.0 - exp(-pow(over, 1.0 / combat.wreck_spread));
                 print!("   D/S {x:>6.3} P {p:.3}");
             }
             println!();

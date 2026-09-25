@@ -2749,8 +2749,11 @@ changes how you *work*, not what is left to do:
   guidance, and a per-tick quantity lets it set how fast hulls die — which is
   how every armed fight came to end in its first tick.
 - **There are no engagements and no fight sites** (T-133, warfare §8.19, the
-  author's ruling). A hull under fire keeps flying its mission; an encounter
-  ends in one wreck roll per hull past the damage threshold. `σ` is per Design
+  author's ruling). A hull under fire keeps flying its mission, and is wrecked
+  when its carried damage reaches a **wreck point drawn once per hull** past its
+  structure (§8.19.5) — which is the roll repeated on every hit, and makes an
+  outcome independent of how the damage was divided. A colony ship that survives
+  fire at its destination leaves. `σ` is per Design
   class, and every Design the engine builds has a class name. Interim: the
   engine still looks for fire only at a blockaded port and a picketed world
   (stage 4, detection along every trajectory, is not built).

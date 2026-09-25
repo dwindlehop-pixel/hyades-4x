@@ -678,6 +678,25 @@ impl HullType {
     }
 }
 
+/// Fork label for each hull's wreck-point draw (T-133), XORed with a label
+/// from the entity so it cannot coincide with an encounter's fork.
+const WRECK_DRAW_LABEL: u64 = 0x5752_4543_4B5F_5054;
+
+/// **What one encounter did to the hull flying through it** (T-133).
+///
+/// Three states rather than a `bool` because a colony ship that was fired on
+/// and survived does not found (the author's ruling): colonists who have been
+/// shot at believe the next shot kills them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Fate {
+    /// Absorbed no energy, so took no roll.
+    Untouched,
+    /// Absorbed energy and survived its roll, carrying the damage.
+    Survived,
+    /// Lost its roll and is slag.
+    Wrecked,
+}
+
 /// A named **design** within a hull type — the Banks-convention class name.
 ///
 /// Hull, class and role are three separate things (R-O29,
@@ -1794,6 +1813,11 @@ struct World {
     /// **The Design class a hull was built to** (T-133), stamped once at
     /// construction like its loadout. Absent reads as [`Class::Unnamed`].
     design_class: ComponentStore<Class>,
+    /// **Energy a hull has absorbed and survived, kJ** (T-133, warfare
+    /// §8.19.5). Carried from one encounter to the next, so the wreck roll
+    /// repeats with further damage rather than starting over. Absent is
+    /// undamaged. Nothing repairs it yet (R-WAR31).
+    hull_damage: ComponentStore<f64>,
     motion: ComponentStore<Motion>,
     voyage: ComponentStore<Voyage>,
     cargo: ComponentStore<Minerals>,
@@ -1985,6 +2009,7 @@ impl World {
             hull_minerals: ComponentStore::new(),
             loadout: ComponentStore::new(),
             design_class: ComponentStore::new(),
+            hull_damage: ComponentStore::new(),
             motion: ComponentStore::new(),
             voyage: ComponentStore::new(),
             cargo: ComponentStore::new(),
@@ -3779,13 +3804,22 @@ impl Simulation {
         //
         // **It does not stop to fight** (T-133, warfare §8.19). The picket
         // fired on it over the stretch of its approach within fire distance,
-        // and the wreck roll decides the rest: wrecked, nothing founds;
-        // survived, it founds — whoever is standing here, because the colony
-        // ship's mission is to found before it is destroyed. A picket still
-        // on the world is then sent back to the frontier by the founding
+        // and the wreck roll decides the rest: wrecked, nothing founds.
+        // **Fired on and survived, it leaves** (the author's ruling) — the
+        // colonists are not suicidal, and a picket that has already hit them
+        // is one they believe will kill them before the colony stands. Not
+        // fired on (the picket holds fire, or missed), it founds, and a picket
+        // still on the world is sent back to the frontier by the founding
         // below, as any picket on a settled world is.
-        if self.picket_blocks(target, owner.0) && self.picket_encounter(target, vehicle) {
-            return; // wrecked on the approach
+        if self.picket_blocks(target, owner.0) {
+            match self.picket_encounter(target, vehicle) {
+                Fate::Wrecked => return,
+                Fate::Survived => {
+                    self.bounce_colonizer(vehicle, target, here, p, target_pid);
+                    return;
+                }
+                Fate::Untouched => {}
+            }
         }
 
         if !self.world.owner.contains(target) {
@@ -5013,29 +5047,28 @@ impl Simulation {
     /// launcher's candidate list. A colonizer wrecked by a picket does the same.
     fn strike_at_port(&mut self, launcher: usize, center: Entity, ship: Entity, leg: &Motion) -> bool {
         let Some((seat, stack)) = self.hostile_blockade(center, launcher as u32) else { return false };
-        let Some((stack_wrecked, ship_wrecked)) = self.encounter_at(center, seat as usize, &stack, ship, leg, true)
-        else {
+        let Some((stack_wrecked, fate)) = self.encounter_at(center, seat as usize, &stack, ship, leg, true) else {
             return false;
         };
         for dead in stack_wrecked {
             self.leave_blockade(center.0, seat, dead);
         }
-        ship_wrecked
+        fate == Fate::Wrecked
     }
 
     /// **A colony ship arriving at a picketed world flies in under the
-    /// pickets' fire** (T-112, T-133). Returns whether it was wrecked.
-    fn picket_encounter(&mut self, world: Entity, ship: Entity) -> bool {
-        let Some((holder, stack, _)) = self.picket.get(&world.0) else { return false };
+    /// pickets' fire** (T-112, T-133). Returns what became of the ship.
+    fn picket_encounter(&mut self, world: Entity, ship: Entity) -> Fate {
+        let Some((holder, stack, _)) = self.picket.get(&world.0) else { return Fate::Untouched };
         let (holder, stack) = (*holder as usize, stack.clone());
-        let Some(leg) = self.world.motion.get(ship).copied() else { return false };
-        let Some((stack_wrecked, ship_wrecked)) = self.encounter_at(world, holder, &stack, ship, &leg, false) else {
-            return false;
+        let Some(leg) = self.world.motion.get(ship).copied() else { return Fate::Untouched };
+        let Some((stack_wrecked, fate)) = self.encounter_at(world, holder, &stack, ship, &leg, false) else {
+            return Fate::Untouched;
         };
         for dead in stack_wrecked {
             self.detach_picket(world, dead);
         }
-        ship_wrecked
+        fate
     }
 
     /// **An encounter between a stack standing at `site` and one hull flying
@@ -5047,7 +5080,7 @@ impl Simulation {
     /// otherwise. Nobody stops; `combat::resolve_pass` returns what each hull
     /// absorbed, and each hull that absorbed energy takes one wreck roll. The
     /// wrecked become slag at the site (design law #11). Returns the stack
-    /// hulls wrecked and whether the flying hull was, or `None` when neither
+    /// hulls wrecked and the flying hull's [`Fate`], or `None` when neither
     /// side fires on the other.
     fn encounter_at(
         &mut self,
@@ -5057,7 +5090,7 @@ impl Simulation {
         ship: Entity,
         leg: &Motion,
         leaving: bool,
-    ) -> Option<(Vec<Entity>, bool)> {
+    ) -> Option<(Vec<Entity>, Fate)> {
         let ship_seat = self.world.owner.get(ship)?.0 as usize;
         let site_pos = self.position_at(site, self.clock)?;
         let pid = *self.world.planet_id.get(site)?;
@@ -5083,20 +5116,31 @@ impl Simulation {
             t0,
             t1,
             self.config.engagement_dt_years,
-            &self.combat,
         );
 
-        // **One wreck roll per hull that absorbed energy** (§2.1–2.2): none
-        // below the threshold, never certain past it.
-        let wrecked = |sim: &Self, e: Entity, took: f64, armed: &crate::combat::Armed| -> bool {
-            let odds = crate::combat::wreck_probability(took, armed.structure_kj, &sim.combat);
-            odds > 0.0 && sim.rng.fork(sim.seq ^ e.0.wrapping_mul(0xD1B5_4A32_D192_ED03)).unit() < odds
+        // **The wreck roll** (§8.19.5): a hull is wrecked if what it carried
+        // in plus what it absorbed reaches its wreck point, which is above
+        // its structure. A survivor carries its damage to its next encounter.
+        let roll = |sim: &mut Self, e: Entity, took: f64, armed: &crate::combat::Armed| -> bool {
+            if took <= 0.0 {
+                return false;
+            }
+            let wrecked = armed.wrecked_by(took);
+            if !wrecked {
+                sim.world.hull_damage.insert(e, armed.damage_kj + took);
+            }
+            wrecked
         };
         let stack_wrecked: Vec<Entity> = (0..stack.len())
-            .filter(|&i| wrecked(self, stack[i], stack_took[i], &stack_ships[i]))
+            .filter(|&i| roll(self, stack[i], stack_took[i], &stack_ships[i]))
             .map(|i| stack[i])
             .collect();
-        let ship_wrecked = wrecked(self, ship, ship_took[0], &ship_ships[0]);
+        let ship_wrecked = roll(self, ship, ship_took[0], &ship_ships[0]);
+        let fate = match (ship_wrecked, ship_took[0] > 0.0) {
+            (true, _) => Fate::Wrecked,
+            (false, true) => Fate::Survived,
+            (false, false) => Fate::Untouched,
+        };
 
         let mut slag = self.destroy_free_hulls(&stack_wrecked);
         if ship_wrecked {
@@ -5119,7 +5163,7 @@ impl Simulation {
                 slag: slag.kilotons(),
             },
         );
-        Some((stack_wrecked, ship_wrecked))
+        Some((stack_wrecked, fate))
     }
 
     /// Per hull, how far it fires on the other side of an encounter, or `None`
@@ -5156,6 +5200,7 @@ impl Simulation {
             self.world.cargo.insert(e, Minerals::default());
             self.world.role.insert(e, Role::Scrapped);
             self.world.motion.remove(e);
+            self.world.hull_damage.remove(e);
         }
         mass
     }
@@ -5272,15 +5317,26 @@ impl Simulation {
         self.combatants(hulls, fleet, rng)
             .into_iter()
             .zip(hulls)
-            .map(|(ship, e)| crate::combat::Armed {
-                ship,
-                loadout: self.world.loadout.get(*e).copied().unwrap_or(crate::combat::Loadout::UNARMED),
-                structure_kj: crate::combat::hull_structure_kj(
+            .map(|(ship, e)| {
+                let structure_kj = crate::combat::hull_structure_kj(
                     ship.hull,
                     self.world.design_class.get(*e).copied().unwrap_or(Class::Unnamed),
                     &self.config,
                     &self.combat,
-                ),
+                );
+                // **The hull's own draw, the same at every encounter** (T-133,
+                // §8.19.5). The root generator is only ever forked, never
+                // advanced, so a label from the entity alone gives each hull
+                // one uniform for its whole life — which is what makes the
+                // roll repeat with further damage rather than start over.
+                let u = self.rng.fork(e.0.wrapping_mul(0xD1B5_4A32_D192_ED03) ^ WRECK_DRAW_LABEL).unit();
+                crate::combat::Armed {
+                    ship,
+                    loadout: self.world.loadout.get(*e).copied().unwrap_or(crate::combat::Loadout::UNARMED),
+                    structure_kj,
+                    damage_kj: self.world.hull_damage.get(*e).copied().unwrap_or(0.0),
+                    wreck_at_kj: crate::combat::wreck_point_kj(structure_kj, u, &self.combat),
+                }
             })
             .collect()
     }
@@ -10615,8 +10671,15 @@ mod tests {
             maneuver_origin_offset: Vec3::ZERO,
         };
         let structure = crate::combat::hull_structure_kj(hull, Class::Unnamed, &cfg, &combat);
-        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: a, structure_kj: structure }];
-        let s1 = [crate::combat::Armed { ship: ship(1, &mut rng), loadout: b, structure_kj: structure }];
+        let armed = |ship, loadout| crate::combat::Armed {
+            ship,
+            loadout,
+            structure_kj: structure,
+            damage_kj: 0.0,
+            wreck_at_kj: f64::INFINITY,
+        };
+        let s0 = [armed(ship(0, &mut rng), a)];
+        let s1 = [armed(ship(1, &mut rng), b)];
         crate::combat::resolve_beam_engagement(
             &fleets,
             [&s0, &s1],
@@ -10678,12 +10741,15 @@ mod tests {
             maneuver_start: 0.0,
             maneuver_origin_offset: Vec3::ZERO,
         };
-        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: one_mount, structure_kj: structure }];
-        let s1 = [crate::combat::Armed {
-            ship: ship(1, &mut rng),
-            loadout: crate::combat::Loadout::UNARMED,
+        let armed = |ship, loadout| crate::combat::Armed {
+            ship,
+            loadout,
             structure_kj: structure,
-        }];
+            damage_kj: 0.0,
+            wreck_at_kj: f64::INFINITY,
+        };
+        let s0 = [armed(ship(0, &mut rng), one_mount)];
+        let s1 = [armed(ship(1, &mut rng), crate::combat::Loadout::UNARMED)];
         for dt in [cfg.engagement_dt_years, cfg.engagement_dt_years / 2.0] {
             let short = crate::combat::resolve_beam_engagement(&fleets, [&s0, &s1], kill_years - 2.0 * dt, dt);
             assert_eq!(short.alive[1], vec![true], "dt {dt}: the hull outlasts less than its kill time");
@@ -10758,33 +10824,104 @@ mod tests {
         assert_eq!(b.missile_survivors, 3);
     }
 
-    /// **The wreck roll needs a threshold and is never certain within range**
-    /// (T-133, warfare §2.2, §8.19): no roll below the threshold, the floor at
-    /// it, even odds where the Design says, and strictly below one out to
-    /// twenty structures.
+    /// **A wreck point is past the structure and follows its curve** (T-133,
+    /// warfare §8.19.5). No hull is wrecked within its structure, the point
+    /// rises with the hull's draw, and the draw maps onto the Weibull odds
+    /// `1 − e^(−(x / x₀)^(1/γ))` within the run-path arithmetic's error — at
+    /// the shipped spread, which takes the exact square root, and at one that
+    /// takes the general power.
     #[test]
-    fn the_wreck_roll_waits_for_its_threshold_and_is_never_certain() {
-        let c = CombatConfig::default();
+    fn a_wreck_point_is_past_the_structure_and_follows_its_curve() {
         let s = 1.0e9;
-        let p = |x: f64| crate::combat::wreck_probability(x * s, s, &c);
-        assert_eq!(p(0.0), 0.0, "an unscratched hull takes no roll");
-        assert_eq!(p(c.wreck_threshold * 0.999), 0.0, "and neither does one below the threshold");
-        assert!((p(c.wreck_threshold) - c.wreck_odds_at_threshold).abs() < 1e-12, "the floor is paid at it");
-        assert!((p(c.wreck_even_odds_damage) - 0.5).abs() < 1e-12, "even odds where the Design says");
-        let mut last = 0.0;
-        for i in 0..=80 {
-            let x = c.wreck_threshold + 0.25 * i as f64;
-            let now = p(x);
-            assert!(now >= last && now > 0.0, "monotone past the threshold: {x} gives {now}");
-            if x <= 5.0 {
-                assert!(now < 1.0, "never certain at {x} structures");
+        for spread in [0.5, 1.0 / 3.0] {
+            let c = CombatConfig { wreck_spread: spread, ..CombatConfig::default() };
+            assert_eq!(crate::combat::wreck_point_kj(s, 0.0, &c), s, "the lowest draw is wrecked at its structure");
+            for u in [1e-9, 1e-6, 3e-5] {
+                let at = crate::combat::wreck_point_kj(s, u, &c);
+                assert!(at.is_finite() && at >= s, "spread {spread}: a low draw at u = {u} is a wreck point, {at}");
             }
-            last = now;
+            let mut last = s;
+            for i in 1..1000 {
+                let u = i as f64 / 1000.0;
+                let at = crate::combat::wreck_point_kj(s, u, &c);
+                assert!(at > last, "spread {spread}: the wreck point rises with the draw, at u = {u}");
+                last = at;
+                // The odds of a wreck point at or below `at` are `u` itself.
+                let over = (at - s) / s / c.wreck_scale;
+                let odds = 1.0 - crate::transcendental::exp(-crate::transcendental::pow(over, 1.0 / spread));
+                assert!((odds - u).abs() < 2e-4, "spread {spread}: u = {u} maps to odds {odds}");
+            }
         }
     }
 
-    /// **A pass fires only within fire distance, holds when told to, and kills
-    /// nobody itself** (T-133). One armed hull stands still; one unarmed hull
+    /// **The roll is taken on every hit, and the outcome does not depend on how
+    /// the damage was divided** (T-133, §8.19.5). A hull under fire in a pass
+    /// is wrecked when it reaches its wreck point — within one tick of it —
+    /// and a hull that carries damage in reaches it that much sooner. Halving
+    /// the step divides the same damage into twice the hits and moves where
+    /// the fire stops by at most a tick's energy.
+    #[test]
+    fn a_pass_stops_at_the_wreck_point_whatever_the_step() {
+        let cfg = SimConfig::new(1);
+        let combat = CombatConfig::default();
+        let gun = design_loadout(HullType::GeneralContactVehicle, Class::Scarp, &cfg, &combat);
+        let mut rng = Rng::new(9);
+        let mut ship =
+            |hull: HullType, loadout: crate::combat::Loadout, damage_kj: f64, wreck_at_kj: f64| crate::combat::Armed {
+                ship: Combatant {
+                    role: Role::Picket,
+                    hull,
+                    thrust_factor: 1.0,
+                    fleet: 0,
+                    station: StationKeeping::draw(
+                        &mut rng,
+                        crate::combat::STATION_RADIUS,
+                        crate::combat::STATION_PERIOD,
+                    ),
+                    maneuver_velocity: Vec3::ZERO,
+                    maneuver_start: 0.0,
+                    maneuver_origin_offset: Vec3::ZERO,
+                },
+                loadout,
+                structure_kj: crate::combat::hull_structure_kj(hull, Class::Delta, &cfg, &combat),
+                damage_kj,
+                wreck_at_kj,
+            };
+        let shooter = [ship(HullType::GeneralContactVehicle, gun, 0.0, f64::INFINITY)];
+        let structure = crate::combat::hull_structure_kj(HullType::MediumSystems, Class::Delta, &cfg, &combat);
+        let wreck_at = 1.5 * structure;
+        let still = |_: f64| Vec3::ZERO;
+        let beside = |_: f64| Vec3::new(0.001, 0.0, 0.0);
+        let fresh = [ship(HullType::MediumSystems, crate::combat::Loadout::UNARMED, 0.0, wreck_at)];
+        let worn = [ship(HullType::MediumSystems, crate::combat::Loadout::UNARMED, 0.5 * structure, wreck_at)];
+        let pass = |target: &[crate::combat::Armed], dt: f64| {
+            let [_, took] = crate::combat::resolve_pass(
+                [
+                    crate::combat::PassSide { ships: &shooter, path: &still, fire_ly: &[Some(0.01)] },
+                    crate::combat::PassSide { ships: target, path: &beside, fire_ly: &[None] },
+                ],
+                0.0,
+                10.0,
+                dt,
+            );
+            took[0]
+        };
+        let tick = |dt: f64| gun.beams as f64 * gun.beam_power_kj_per_year * dt;
+        for dt in [cfg.engagement_dt_years, cfg.engagement_dt_years / 2.0] {
+            let took = pass(&fresh, dt);
+            assert!(fresh[0].wrecked_by(took), "dt {dt}: ten years under fire reaches the wreck point");
+            assert!(took < wreck_at + tick(dt), "dt {dt}: and the fire stops within a tick of it: {took}");
+            let worn_took = pass(&worn, dt);
+            assert!(worn[0].wrecked_by(worn_took), "dt {dt}: a worn hull is wrecked too");
+            assert!(
+                (worn_took - (wreck_at - 0.5 * structure)).abs() < tick(dt),
+                "dt {dt}: after absorbing only what it had left: {worn_took}"
+            );
+        }
+    }
+
+    /// **A pass fires only within fire distance and holds when told to**
+    /// (T-133). One armed hull stands still; one unarmed hull
     /// flies straight past it.
     #[test]
     fn a_pass_fires_within_its_distance_and_leaves_the_outcome_to_the_roll() {
@@ -10804,6 +10941,8 @@ mod tests {
             },
             loadout,
             structure_kj: crate::combat::hull_structure_kj(hull, class, &cfg, &combat),
+            damage_kj: 0.0,
+            wreck_at_kj: f64::INFINITY,
         };
         let gun = design_loadout(HullType::GeneralContactVehicle, Class::Scarp, &cfg, &combat);
         let shooter = [ship(HullType::GeneralContactVehicle, Class::Scarp, gun)];
@@ -10821,7 +10960,6 @@ mod tests {
                 t0,
                 t1,
                 cfg.engagement_dt_years,
-                &combat,
             )
         };
         let [_, took] = run(Some(0.01), 0.0, 1.0);
@@ -11740,6 +11878,78 @@ mod tests {
         // back. Under an encounter nobody is held: this picket mounts nothing,
         // fires nothing, and the next ship to arrive founds.
         assert_eq!(sim.world.owner.get(target).copied(), Some(PlayerId(1)), "a later ship founds under it");
+    }
+
+    /// **A colony ship fired on at its destination is wrecked or leaves; it
+    /// never founds** (T-133, warfare §8.19.5, the author's ruling). A single
+    /// armed picket takes the world after the ship is past turnover, so no
+    /// warning can turn it back and it flies in under fire. With the Cairn's
+    /// gun the ship is wrecked; with a thousandth of its power it is hit,
+    /// survives within its structure, and leaves carrying the damage.
+    #[test]
+    fn a_colony_ship_fired_on_at_its_world_is_wrecked_or_leaves() {
+        let arrive_under = |power_fraction: f64| {
+            let mut cfg = test_cfg(2024);
+            cfg.horizon_years = 400.0;
+            cfg.engagements_enabled = true;
+            let mut sim = Simulation::with_baseline(test_galaxy(2, 2024), cfg);
+            let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+            let home1_pos = *sim.world.position.get(home1).unwrap();
+            let target = *sim
+                .planet_entity
+                .iter()
+                .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
+                .min_by(|&&a, &&b| {
+                    let da = sim.world.position.get(a).unwrap().distance(home1_pos);
+                    let db = sim.world.position.get(b).unwrap().distance(home1_pos);
+                    da.partial_cmp(&db).unwrap().then(a.0.cmp(&b.0))
+                })
+                .expect("an unclaimed world");
+            sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, target, 0.0);
+            let ship = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
+            let leg = *sim.world.motion.get(ship).unwrap();
+
+            let mut gun = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &sim.config, &sim.combat);
+            gun.beam_power_kj_per_year *= power_fraction;
+            let picket = sim.world.spawn();
+            sim.world.owner.insert(picket, PlayerId(0));
+            sim.world.role.insert(picket, Role::Picket);
+            sim.world.hull_type.insert(picket, HullType::LimitedContactVehicle);
+            sim.world.design_class.insert(picket, Class::Cairn);
+            sim.world.loadout.insert(picket, gun);
+            sim.set_log_filter(
+                crate::log::LogFilter::none()
+                    .with(crate::log::LogCategory::Combat)
+                    .with(crate::log::LogCategory::Vehicles),
+            );
+            while sim.clock < 0.5 * (leg.depart + leg.arrive) && sim.step() {}
+            sim.picket.insert(target.0, (0, vec![picket], sim.clock));
+            while sim.clock < leg.arrive && sim.step() {}
+            sim.step();
+
+            assert!(sim.clock >= leg.arrive, "the ship must have arrived");
+            let fired_on = sim.log().iter().any(|r| matches!(r.event, crate::log::LogEvent::EngagementResolved { .. }));
+            assert!(fired_on, "power {power_fraction}: the picket must have fired on the approach");
+            assert_ne!(sim.world.owner.get(target).copied(), Some(PlayerId(1)), "a ship fired on never founds");
+            (sim, ship, target)
+        };
+
+        let (sim, ship, target) = arrive_under(1.0);
+        assert_eq!(sim.world.role.get(ship).copied(), Some(Role::Scrapped), "the Cairn's gun wrecks it");
+        assert!(sim.world.slag.get(target).is_some_and(|s| s.kilotons() > 0.0), "and it is slag at the world");
+
+        let (sim, ship, target) = arrive_under(1e-3);
+        assert_eq!(sim.world.role.get(ship).copied(), Some(Role::Colonizer), "a thousandth of it does not");
+        let carried = sim.world.hull_damage.get(ship).copied().unwrap_or(0.0);
+        let structure =
+            crate::combat::hull_structure_kj(HullType::MediumSystems, Class::Unnamed, &sim.config, &sim.combat);
+        assert!(carried > 0.0 && carried < structure, "it carries damage within its structure: {carried}");
+        assert!(!sim.inbound_colonizers.contains_key(&target.0), "and has left");
+        let contested = sim
+            .log()
+            .iter()
+            .any(|r| matches!(r.event, crate::log::LogEvent::ColonyContested { vehicle, .. } if vehicle == ship));
+        assert!(contested, "turned away from a contested world");
     }
 
     #[test]
