@@ -508,6 +508,14 @@ impl Simulation {
     }
 
     /// Where a hull actually is: its trajectory plus its station-keeping.
+    /// Where a hull actually is, without its velocity — what aiming reads.
+    /// The same expression as [`Self::fix`]'s position, so the two agree to
+    /// the last bit.
+    fn fix_position(&self, e: Entity, station: &StationKeeping, t: f64) -> Option<Vec3> {
+        let m = self.world.motion.get(e)?;
+        Some(m.position_at(t).add(station.offset_at(t)))
+    }
+
     fn fix(&self, e: Entity, station: &StationKeeping, t: f64) -> Option<(Vec3, Vec3)> {
         let m = self.world.motion.get(e)?;
         let pos = m.position_at(t).add(station.offset_at(t));
@@ -538,7 +546,7 @@ impl Simulation {
         let Some((at, _)) = self.fix(shooter, &own_station, now) else { return };
         let reference_at = self.position_at(shooter, now).unwrap_or(at);
         let listed: Vec<Entity> = self.in_reach.get(&shooter).map(|v| v.iter().copied().collect()).unwrap_or_default();
-        let mut aim: Vec<(f64, Entity, StationKeeping, f64)> = Vec::new();
+        let mut aim: Vec<(f64, Entity)> = Vec::new();
         let mut lost: Vec<Entity> = Vec::new();
         for t in listed {
             let reach = match (self.live_hull(t), self.fire_reach(shooter, t)) {
@@ -564,10 +572,10 @@ impl Simulation {
                 continue;
             }
             let st = self.station(t);
-            let Some((p, _)) = self.fix(t, &st, now) else { continue };
+            let Some(p) = self.fix_position(t, &st, now) else { continue };
             let d = p.distance(at);
             if d <= reach {
-                aim.push((d, t, st, reach));
+                aim.push((d, t));
             }
         }
         if let Some(set) = self.in_reach.get_mut(&shooter) {
@@ -585,23 +593,33 @@ impl Simulation {
             self.stop_firing(shooter);
             return;
         }
-        // Keys are unique (the entity breaks ties), so an unstable sort gives
-        // the stable sort's order.
-        aim.sort_unstable_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        // **Nearest first, extracted as needed.** Keys are unique (the entity
+        // breaks ties), so the order is total. A discharge usually spends its
+        // mounts on the first one or two, so the nearest few are selected in
+        // place and the rest sorted only if the walk gets that far.
+        let key = |a: &(f64, Entity), b: &(f64, Entity)| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1));
+        const SELECT_FIRST: usize = 8;
         let per_mount = loadout.beam_power_kj_per_year * loadout.discharge_years;
         let mut mounts = loadout.beams;
         let mut missed = false;
         let mut deliveries: Vec<(Entity, f64)> = Vec::new();
-        for (_, t, st, _) in aim.iter() {
-            let t = *t;
+        for i in 0..aim.len() {
             if mounts == 0 {
                 break;
             }
+            if i < SELECT_FIRST {
+                let (j, _) = aim[i..].iter().enumerate().min_by(|a, b| key(a.1, b.1)).unwrap();
+                aim.swap(i, i + j);
+            } else if i == SELECT_FIRST {
+                aim[i..].sort_unstable_by(key);
+            }
+            let t = aim[i].1;
+            let st = *self.world.station.get(t).unwrap();
             let remaining = self.structure_of(t) - self.world.hull_damage.get(t).copied().unwrap_or(0.0);
             if remaining <= 0.0 {
                 continue;
             }
-            if !self.fire_control_holds(at, t, st, now, loadout.fire_control_ly) {
+            if !self.fire_control_holds(at, t, &st, now, loadout.fire_control_ly) {
                 missed = true;
                 break;
             }
@@ -613,10 +631,13 @@ impl Simulation {
             deliveries.push((t, used as f64 * per_mount));
             mounts -= used;
         }
+        // Mounts left over fire on the nearest, which the walk has put first
+        // (it ran at least one selection whenever there was a target).
         if mounts > 0 && !missed {
-            if let Some((_, t, st, _)) = aim.first() {
-                if self.fire_control_holds(at, *t, st, now, loadout.fire_control_ly) {
-                    deliveries.push((*t, mounts as f64 * per_mount));
+            if let Some(&(_, t)) = aim.first() {
+                let st = *self.world.station.get(t).unwrap();
+                if self.fire_control_holds(at, t, &st, now, loadout.fire_control_ly) {
+                    deliveries.push((t, mounts as f64 * per_mount));
                 }
             }
         }
