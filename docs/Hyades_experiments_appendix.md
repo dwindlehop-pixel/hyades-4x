@@ -2080,7 +2080,17 @@ encounters, 12,845 / 11,999 / 10,903 wrecks, 1,800 / 5,059 / 2,983 retargets,
 `ns/event` fell 8,797 → 6,662, 8,658 → 6,654 and 10,817 → 8,660 (−24%, −23%,
 −20%; one run each, so these are estimates).
 
-**After those changes:** *(pending: measured later in this landing, and recorded here when it is.)*
+**After those changes, and the discharge change below** (same bed, seed 1,
+400 yr): the program total fell **266.4 G → 223.8 G → 201.0 G** instructions.
+Fire code is **16.5% exclusive** (a lower bound), and its inclusive rows —
+the fire handlers inlined into the event loop, 16.3%, plus detection
+(`track_changed`), 8.2%, which overlap where a course change re-runs
+detection — sum to **24.5%**, an upper estimate. The survey candidate scan is
+now the largest single cost at 30.7% (T-126's open item), production
+decisions 18.3%. *Inference:* fire control is inside the 25% budget on this bed
+at 400 yr, by a margin smaller than the estimate's own spread; one seed, one
+horizon, and instructions taken as a proxy for time. What would change it: a
+longer horizon or another seed putting the inclusive sum past 25%.
 
 **Throughput on the combat bed** (`combat_bench 400`, one run per seed per
 binary, interleaved; the d99a790 binary runs the retired site model, so this
