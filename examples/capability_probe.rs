@@ -235,17 +235,17 @@ fn main() {
     println!(
         "\n== 6. encounters: a laden Delta colony ship (0.241 ly/yr^2, 6.16 ly leg) under N Cairn pickets, seeds 1-3"
     );
+    let gun = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &cfg, &combat);
+    let reach = gun.fire_enemy_ly;
     println!(
-        "   fire distance {} ly; wreck points Weibull past the structure, scale {} and spread {}",
-        combat.beam_fire_distance_ly, combat.wreck_scale, combat.wreck_spread
+        "   Cairn accuracy {:e} ly, engagement range {reach:.3e} ly; wreck points Weibull past the structure, scale {} and spread {}",
+        gun.fire_control_ly, combat.wreck_scale, combat.wreck_spread
     );
     let accel = 0.241;
     let leg_ly = 6.16;
     let travel = hyades_engine::math::ship_travel_years(leg_ly, accel);
     let dest = Vec3::new(leg_ly, 0.0, 0.0);
     let ship_path = move |t: f64| hyades_engine::math::position_along(Vec3::ZERO, dest, 0.0, travel, accel, t);
-    let gun = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &cfg, &combat);
-    let reach = combat.beam_fire_distance_ly;
     // The window is where the ship is within `reach` of the stack: the first or
     // last stretch of the leg, found by bisection on the monotone track.
     let first = |target: f64, leaving: bool| {

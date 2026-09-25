@@ -723,7 +723,16 @@ pub struct CombatConfig {
     /// author's ruling) so that structure is a Design property a card can
     /// write. **Placeholders** (R-WAR19); only their ratios to
     /// [`Self::beam_power_mw`] reach an outcome.
-    pub structure_kj_per_hull_unit3: StructureByClass,
+    pub structure_kj_per_hull_unit3: ByClass,
+    /// **Fire-control accuracy per Design class, as a multiple of
+    /// [`Self::laser_hit_tolerance`]** (T-133, the author's ruling that
+    /// engagement range depends on weapon accuracy and is a function of the
+    /// Design). A Design's fire-control tolerance is this times the arena's
+    /// tuned tolerance, so that tuned number keeps one definition; smaller is
+    /// more accurate. A Design's engagement range is derived from it
+    /// ([`engagement_range_ly`]). **Placeholders**, all `1.0` — every beam
+    /// Design fires with the arena's accuracy (R-WAR27).
+    pub fire_control_by_class: ByClass,
     /// **Where wreck points sit past the structure**, in structures (T-133,
     /// `Hyades_warfare_tree.md` §8.19.5). The scale `x₀` of the Weibull
     /// distribution a hull's wreck point is drawn from ([`wreck_point_kj`]):
@@ -738,16 +747,13 @@ pub struct CombatConfig {
     /// [`crate::transcendental::pow_fast`] takes exactly, as a square root.
     /// **Placeholder** (R-WAR24).
     pub wreck_spread: f64,
-    /// **The farthest a beam Design fires, ly** — both the enemy and the neutral
-    /// distance of every beam Design the engine builds (T-133, R-WAR27).
-    /// **Placeholder**: where fire control's hits thin out (appendix §D.10).
-    pub beam_fire_distance_ly: f64,
 }
 
-/// **Structure per unit of hull volume for each named Design class**, kJ per
-/// hull unit³, and a default by hull class for a hull with no named Design.
+/// **A quantity per named Design class**, and a default by hull class for a
+/// hull with no named Design — structure per unit of hull volume, fire-control
+/// accuracy.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct StructureByClass {
+pub struct ByClass {
     pub meadow: f64,
     pub tor: f64,
     pub cairn: f64,
@@ -759,7 +765,7 @@ pub struct StructureByClass {
     pub unnamed: ByFamily,
 }
 
-impl StructureByClass {
+impl ByClass {
     /// The value for a Design: its class's, or its hull class's default.
     pub fn of(&self, class: Class, family: HullFamily) -> f64 {
         match class {
@@ -830,7 +836,7 @@ impl Default for CombatConfig {
             // structure for 5.5 times its price, where on whole volume at one
             // value it carried 26.8 times. The survey Design (Tor) is a
             // civilian Design on either shell.
-            structure_kj_per_hull_unit3: StructureByClass {
+            structure_kj_per_hull_unit3: ByClass {
                 meadow: 1.0e11,
                 tor: 1.0e11,
                 cairn: 1.0e12,
@@ -840,9 +846,18 @@ impl Default for CombatConfig {
                 ford: 1.0e11,
                 unnamed: ByFamily { systems: 1.0e11, contact: 1.0e12, offensive: 1.0e12 },
             },
+            fire_control_by_class: ByClass {
+                meadow: 1.0,
+                tor: 1.0,
+                cairn: 1.0,
+                delta: 1.0,
+                range: 1.0,
+                scarp: 1.0,
+                ford: 1.0,
+                unnamed: ByFamily { systems: 1.0, contact: 1.0, offensive: 1.0 },
+            },
             wreck_scale: 1.0,
             wreck_spread: 0.5,
-            beam_fire_distance_ly: 0.01,
         }
     }
 }
@@ -916,6 +931,56 @@ impl Loadout {
 /// class's [`CombatConfig::structure_kj_per_hull_unit3`] (T-132, T-133).
 pub fn hull_structure_kj(hull: HullType, class: Class, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f64 {
     hull.hull_volume(sim_cfg).hull_units_cubed() * cfg.structure_kj_per_hull_unit3.of(class, hull.family())
+}
+
+/// **A Design's fire-control tolerance, ly** — the arena's tuned
+/// [`CombatConfig::laser_hit_tolerance`] times the Design class's
+/// [`CombatConfig::fire_control_by_class`] (T-133). Smaller is more accurate.
+pub fn beam_accuracy_ly(class: Class, family: HullFamily, cfg: &CombatConfig) -> f64 {
+    cfg.laser_hit_tolerance * cfg.fire_control_by_class.of(class, family)
+}
+
+/// **The engagement range a fire-control tolerance supports, ly** (T-133,
+/// `Hyades_warfare_tree.md` §8.19.1; the author's ruling that engagement range
+/// depends on weapon accuracy).
+///
+/// Fire control predicts a target along its velocity for one light-crossing
+/// `d` and hits if the target's actual position is within `accuracy_ly` of the
+/// prediction ([`laser_hit_check`]). A hull holding station on a circle of
+/// radius `ρ` at angular rate `ω` drifts off its tangent by `ρ · g(ω d)` in
+/// that time, with `g(θ) = √((1 − cos θ)² + (θ − sin θ)²)` — independent of
+/// phase and plane, and increasing in `θ`. The range is the `d` at which that
+/// drift equals the tolerance, against the **reference target**: the midpoints
+/// of [`STATION_RADIUS`] and [`STATION_PERIOD`], the spread every hull the
+/// simulation places draws from. At the arena's tolerance that is 7.90e-3 ly;
+/// the median over the whole spread is 8.04e-3 (appendix §D.15).
+///
+/// Nearer targets are hit whatever their station-keeping; past the range, fire
+/// control holds only against the calmer part of the spread. Solved by
+/// bisection on `θ`, 64 halvings, with the engine's own `sin_cos` — once per
+/// Design built, not per shot.
+pub fn engagement_range_ly(accuracy_ly: f64) -> f64 {
+    let radius = 0.5 * (STATION_RADIUS.0 + STATION_RADIUS.1);
+    let omega = TAU / (0.5 * (STATION_PERIOD.0 + STATION_PERIOD.1));
+    let allowed = accuracy_ly / radius;
+    if allowed.is_nan() || allowed <= 0.0 {
+        return 0.0;
+    }
+    let drift_sq = |theta: f64| {
+        let (sin, cos) = transcendental::sin_cos(theta);
+        (1.0 - cos) * (1.0 - cos) + (theta - sin) * (theta - sin)
+    };
+    // g(θ) ≥ θ − sin θ ≥ θ − 1, so the drift has passed `allowed` by θ = allowed + 2.
+    let (mut lo, mut hi) = (0.0, allowed + 2.0);
+    for _ in 0..64 {
+        let mid = 0.5 * (lo + hi);
+        if drift_sq(mid) <= allowed * allowed {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    lo / omega
 }
 
 /// **A hull's wreck point, kJ**: the damage at which it is wrecked

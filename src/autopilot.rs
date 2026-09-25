@@ -1775,8 +1775,11 @@ impl<'a> Standing<'a> {
     /// (`Hyades_warfare_tree.md` §8.19, T-133).
     ///
     /// The distances are the Design's (`Loadout::fire_enemy_ly`,
-    /// `fire_neutral_ly`); Doctrine decides which it ignores, and ignoring one
-    /// holds fire at any range (the author's ruling). The default layer fires
+    /// `fire_neutral_ly`), both the engagement range its fire control supports
+    /// (`combat::engagement_range_ly`); Doctrine decides which it ignores, and
+    /// ignoring one holds fire at any range (the author's ruling). The author
+    /// also ruled that engagement range *sometimes* depends on role; this is
+    /// where a role would narrow it, and no role does yet (R-WAR33). The default layer fires
     /// on enemies and holds fire on neutrals — **except in the picket role**,
     /// whose whole mission is denying a neutral's colony ships, which is what
     /// the Warfare card's writes put hulls in that role to do.

@@ -318,3 +318,85 @@ fn no_nan_or_infinity_reaches_replicated_state() {
         }
     }
 }
+
+/// **Bit-identity with shots fired** (T-133). Every other test in this file
+/// runs with `engagements_enabled` off and no card played, so no combat code
+/// ran in the determinism gate: the wreck roll, the pass resolver, the carried
+/// damage, the port strike and the picket encounter were all outside it.
+///
+/// The bed is the card bed's protocol on a small galaxy — six seats, 600
+/// planets, the Warfare card on even seats and the Growth card on odd ones at
+/// the first round barrier, pulled forward to 60 yr so a 400-yr run reaches
+/// the fights. Measured in release: 152 fights with two survivors (seed 1) and
+/// 312 fights (seed 7). Two runs must agree on every combat record, to the
+/// last bit of its time and its slag, and on the report.
+///
+/// The floors say the mechanism fired: fights happened, and at least one
+/// encounter left its ship alive, so the survivor's path ran as well as the
+/// wreck's.
+fn combat_run(seed: u64) -> (SimReport, Vec<String>, Vec<(u32, u32)>) {
+    const SEATS: usize = 6;
+    let mut gcfg = GalaxyConfig::new(SEATS, seed);
+    gcfg.planet_count = 600;
+    let galaxy = Galaxy::generate(gcfg).unwrap();
+    let aps: Vec<Box<dyn Autopilot>> =
+        (0..SEATS).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
+    let mut cfg = SimConfig::new(seed);
+    cfg.horizon_years = 400.0;
+    cfg.engagements_enabled = true;
+    cfg.years_to_first_round = 60.0;
+    let play_at = cfg.years_to_first_round;
+    let mut sim = Simulation::new(galaxy, cfg, aps);
+    sim.set_log_filter(LogFilter::none().with(LogCategory::Combat));
+    let mut played = false;
+    while sim.step() {
+        if !played && sim.clock() >= play_at {
+            let orders: Vec<Order> = (0..SEATS)
+                .map(|i| Order {
+                    seat: PlayerId(i as u32),
+                    card: Some(CardId(if i % 2 == 0 { 15 } else { 3 })),
+                    target: Target::None,
+                })
+                .collect();
+            sim.apply_orders(sim.current_round(), &orders);
+            played = true;
+        }
+    }
+    // `{:?}` on an `f64` prints its shortest round-trip form, so equal strings
+    // are equal bits.
+    let log = sim.log().iter().map(|r| format!("{:?} {:?}", r.time.to_bits(), r.event)).collect();
+    let fights = sim
+        .log()
+        .iter()
+        .filter_map(|r| match r.event {
+            LogEvent::EngagementResolved { losses_attacker, attacker_ships, .. } => {
+                Some((losses_attacker, attacker_ships))
+            }
+            _ => None,
+        })
+        .collect();
+    (sim.report(), log, fights)
+}
+
+#[test]
+fn combat_runs_are_bit_identical() {
+    for seed in [1u64, 7] {
+        let (ra, la, fights) = combat_run(seed);
+        let (rb, lb, _) = combat_run(seed);
+        assert!(fights.len() >= 50, "seed {seed}: only {} fights — the bed no longer reaches combat", fights.len());
+        assert!(
+            fights.iter().any(|&(lost, ships)| lost < ships),
+            "seed {seed}: every encounter wrecked its ship, so the survivor's path never ran"
+        );
+        assert_eq!(la.len(), lb.len(), "seed {seed}: combat record count");
+        for (i, (a, b)) in la.iter().zip(&lb).enumerate() {
+            assert_eq!(a, b, "seed {seed}: combat record {i}");
+        }
+        assert_eq!(ra.events_processed, rb.events_processed, "seed {seed}: events");
+        for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
+            assert_eq!(pa.colonies, pb.colonies);
+            assert_eq!(pa.mining_outposts, pb.mining_outposts);
+            assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
+        }
+    }
+}

@@ -1964,6 +1964,58 @@ point makes the period otherwise immaterial to the outcome (§8.19.5).
 
 ---
 
+## D.15 T-133, fifth landing — engagement range from weapon accuracy
+
+*Supports `Hyades_warfare_tree.md` §8.19.1, §8.19.2 and §8.19.4 (R-WAR23
+resolved, R-WAR27, R-WAR29). Author's ruling: engagement range depends on weapon
+accuracy and is a function of Design/hull/class and sometimes role.*
+
+**The derivation, checked numerically before it was built.** Fire control hits a
+hull holding station on a circle of radius `ρ` at angular rate `ω` when
+`ρ · g(ω d) ≤ ε`, with `d` the light-crossing, `ε` the accuracy and
+`g(θ) = √((1 − cos θ)² + (θ − sin θ)²)` (monotone; checked on `θ ∈ (0, 10]`). Over
+the spread every simulated hull draws from — `ρ` uniform on 5e-5–2e-4 ly, period
+uniform on 0.02–0.08 yr, a 200 × 200 grid — at the arena's `ε = 6e-5` ly:
+
+| distance | share of targets fire control holds against |
+|---|---|
+| 1e-3 ly | 100% |
+| 3e-3 ly | 98.5% |
+| 5e-3 ly | 81.5% |
+| 1e-2 ly | 29.7% |
+| 3e-2 ly | 0% |
+
+Quantiles of the per-target reach: 5% 3.55e-3, 25% 5.63e-3, **median 8.04e-3**,
+75% 1.05e-2, 95% 1.48e-2 ly. Against the midpoint target (`ρ = 1.25e-4`, period
+0.05) the reach is **7.90e-3 ly**, which is what the engine uses. The median
+reach against accuracy: 3.93e-3 / 5.58e-3 / 7.95e-3 / 1.14e-2 / 1.69e-2 ly at
+`ε` = 1.5e-5 / 3e-5 / 6e-5 / 1.2e-4 / 2.4e-4 — about `ε^0.51`, the small-angle
+`θ ≈ √(2ε/ρ)`. This agrees with §D.10's measured beam reach between stationary
+fleets (fights resolve at 3e-3 ly and mostly fail at 1e-2).
+
+**Exposure at the derived range**, laden Medium colony ship at 0.241 ly/yr²:
+93.6 days leaving or arriving (`√(2R/a)`), 7.05 days passing on a 6.16 ly
+voyage and 5.96 days on a 25 ly one (`§D.11` scaled by `R`).
+
+**What it did, against the 0.01 ly placeholder** (`combat_bench 400 1,7,42`,
+one run per seed, consecutive builds): seed 1 fights 1,090 → 1,081, colony ships
+wrecked 1,062 → 1,055, colonies 1,448 → 1,449; seeds 7 and 42 reproduce every
+printed count (1,341 / 1,312 / 1,552 and 1,827 / 1,800 / 1,406). `capability_probe`
+section 6: one Cairn delivers 3.197 / 2.522 / 3.686 structures leaving a port,
+against 3.197 / 2.522 / 4.045 at 0.01 ly. *Inference:* the placeholder sat near
+the edge of where the arena's accuracy holds, so the extra reach delivered
+little energy; accuracy is now the lever that moves the range.
+
+**The determinism gate did not cover combat until this landing.** Every test in
+`tests/determinism.rs` ran with `engagements_enabled` off and no card played.
+`combat_runs_are_bit_identical` runs the card bed's protocol on six seats and 600
+planets, the first barrier pulled to 60 yr, 400 yr: 152 fights (150 wrecked) on
+seed 1 and 312 (310 wrecked) on seed 7 in release, 3.0 s for both seeds twice in
+debug. The target went 33.0 → 34.1 s. It compares two runs in one process on one
+target; native against wasm32 is still the one-off check of §D.6.
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the

@@ -199,9 +199,16 @@ is flight from a moving start on belief events, decided per fleet; fire control
 may take at most 25% of run time (R-WAR29). Stage 1 is rebuilt to the ruling,
 the arriving survivor leaves, and the fire-control share is measured: **0.77% of
 instructions** on the twelve-seat card bed, so at today's encounter count the
-budget admits any discharge period above 0.011 days; a 0.1–3 day range per
-Design is recommended, and the budget has to be re-measured once stage 4 sets
+budget admits any discharge period above 0.011 days; a period of at most 5%
+of the shortest exposure the Design must resolve is recommended (0.3–4.7 days
+at the arena's accuracy), and the budget has to be re-measured once stage 4 sets
 the encounter count (R-WAR29, appendix §D.14).
+
+**Fifth landing: engagement range depends on weapon accuracy** (the author's
+ruling, R-WAR23 resolved). Accuracy is per Design class, the range is derived
+from it against the reference target (7.90e-3 ly at the arena's accuracy), and
+the 0.01 ly placeholder is gone. Which roles narrow the range is R-WAR33
+(appendix §D.15).
 
 **Stages, in order, each measured before the next:**
 
@@ -212,13 +219,15 @@ the encounter count (R-WAR29, appendix §D.14).
 2. ~~**The pass resolver**~~ — **done**: `combat::resolve_pass`, fire between
    hulls on arbitrary paths; a hull at its wreck point stops firing and is no
    longer a target, and the pass stops once no outcome can change.
-3. ~~**Fire distances**~~ — **done**: on every Design's loadout (`0.01` ly
-   placeholder), `Standing::fire_distance` holds fire where Doctrine ignores
-   one; default holds fire on neutrals except in the picket role.
+3. ~~**Fire distances**~~ — **done**: on every Design's loadout, both the
+   engagement range derived from the Design's accuracy (7.90e-3 ly at the
+   arena's; R-WAR23 resolved, appendix §D.15); `Standing::fire_distance` holds
+   fire where Doctrine ignores one, and is where a role would narrow the range
+   (R-WAR33); default holds fire on neutrals except in the picket role.
 4. **Encounter detection**, arrival-driven: on every departure and every change
    of station, the intervals within `R` of hostile hulls that fire or are fired
-   on; closed form for a stationary shooter, scheduled as events. Needs R-WAR23
-   (`R`).
+   on; closed form for a stationary shooter, scheduled as events. `R` is each
+   Design's engagement range (R-WAR23, resolved).
 5. **Retire the three sites** in favor of encounters — *interim done* at the
    port and the held world (a survivor flies on; arriving, one that was hit
    leaves and one that was not founds); the shared rock is

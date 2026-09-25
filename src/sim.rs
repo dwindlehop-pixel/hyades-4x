@@ -737,7 +737,7 @@ pub enum Class {
     Ford,
     /// A hull with no authored Design: the Offensive hulls nothing builds, the
     /// arena's spawns, and the seed hulls the galaxy is generated with. It
-    /// takes its hull class's default structure (`combat::StructureByClass`).
+    /// takes its hull class's default structure (`combat::ByClass`).
     Unnamed,
 }
 
@@ -1566,28 +1566,35 @@ pub fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
 /// Offensive hulls mount **beams**, as many as their payload volume holds:
 /// `b_role · V` (§2.3) divided by one Limited Contact hull's, floored, at least
 /// one. That is design law #2's slot-organic count; nothing here is a combat
-/// constant tuned per hull. The class does not yet change the loadout — every
-/// armed Design the engine builds is the Warfare card's — and it is in the
-/// signature because the Design is `(hull, class)`.
+/// constant tuned per hull.
+///
+/// **Accuracy and engagement range are the Design's** (T-133, the author's
+/// ruling): fire control is the class's tolerance
+/// ([`crate::combat::beam_accuracy_ly`]), and both fire distances are the range
+/// that tolerance supports ([`crate::combat::engagement_range_ly`]). Doctrine
+/// may ignore either distance, and a role may narrow it through
+/// `Standing::fire_distance` (R-WAR33).
 ///
 /// Beam power is a **placeholder** (R-WAR19, T-132), set for how long a fight
 /// lasts rather than for realism; fire control reads the arena's tuned value
 /// rather than defining a second copy of it. The arena's shots-per-tick is
 /// **not** read: damage is a power delivered over time (warfare §8.18), so a
 /// per-tick rate would tie a fight's outcome to the integration step.
-pub fn design_loadout(hull: HullType, _class: Class, cfg: &SimConfig, combat: &CombatConfig) -> crate::combat::Loadout {
+pub fn design_loadout(hull: HullType, class: Class, cfg: &SimConfig, combat: &CombatConfig) -> crate::combat::Loadout {
     let payload = |h: HullType| h.hull_radius(cfg).cubed() * h.geometry().reserved_payload_fraction;
     let own = payload(hull);
     if own <= Volume::ZERO {
         return crate::combat::Loadout::UNARMED;
     }
     let mounts = (own / payload(HullType::LimitedContactVehicle) + 1e-9).floor().max(1.0) as u32;
+    let accuracy = crate::combat::beam_accuracy_ly(class, hull.family(), combat);
+    let range = crate::combat::engagement_range_ly(accuracy);
     crate::combat::Loadout {
         beams: mounts,
         beam_power_kj_per_year: combat.beam_power_kj_per_year(),
-        fire_control_ly: combat.laser_hit_tolerance,
-        fire_enemy_ly: combat.beam_fire_distance_ly,
-        fire_neutral_ly: combat.beam_fire_distance_ly,
+        fire_control_ly: accuracy,
+        fire_enemy_ly: range,
+        fire_neutral_ly: range,
     }
 }
 
@@ -10721,13 +10728,7 @@ mod tests {
         let combat = CombatConfig::default();
         let hull = HullType::GeneralContactVehicle;
         let structure = crate::combat::hull_structure_kj(hull, Class::Unnamed, &cfg, &combat);
-        let one_mount = crate::combat::Loadout {
-            beams: 1,
-            beam_power_kj_per_year: combat.beam_power_kj_per_year(),
-            fire_control_ly: combat.laser_hit_tolerance,
-            fire_enemy_ly: combat.beam_fire_distance_ly,
-            fire_neutral_ly: combat.beam_fire_distance_ly,
-        };
+        let one_mount = crate::combat::Loadout { beams: 1, ..design_loadout(hull, Class::Unnamed, &cfg, &combat) };
         let kill_years = structure / one_mount.beam_power_kj_per_year;
         let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }; 2];
         let mut rng = Rng::new(3);
@@ -10822,6 +10823,62 @@ mod tests {
         let b = crate::combat::resolve_engagement(&cfg, &combat, &mut rng, &fleets, &none, &one, 0.1, 0.0005, 0.05);
         assert_eq!(b.laser_survivors, 0);
         assert_eq!(b.missile_survivors, 3);
+    }
+
+    /// **A Design's engagement range is where its fire control stops holding**
+    /// (T-133, the author's ruling that engagement range depends on weapon
+    /// accuracy). Against the reference target — station-keeping at the
+    /// midpoints of the spread — `laser_hit_check` hits at 99% of the range and
+    /// misses at 101% of it, in every orbital plane and phase. A more accurate
+    /// Design reaches farther, and the range reaches the Design through its
+    /// loadout.
+    #[test]
+    fn engagement_range_is_where_fire_control_stops_holding() {
+        use crate::combat::{engagement_range_ly, laser_hit_check, STATION_PERIOD, STATION_RADIUS};
+        let combat = CombatConfig::default();
+        let accuracy = combat.laser_hit_tolerance;
+        let range = engagement_range_ly(accuracy);
+        assert!((7.8e-3..8.0e-3).contains(&range), "the arena's accuracy reaches {range} ly");
+        let radius = 0.5 * (STATION_RADIUS.0 + STATION_RADIUS.1);
+        let period = 0.5 * (STATION_PERIOD.0 + STATION_PERIOD.1);
+        let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }];
+        for seed in 1..=20u64 {
+            let mut rng = Rng::new(seed);
+            let target = Combatant {
+                role: Role::Colonizer,
+                hull: HullType::MediumSystems,
+                thrust_factor: 1.0,
+                fleet: 0,
+                station: StationKeeping::draw(&mut rng, (radius, radius), (period, period)),
+                maneuver_velocity: Vec3::ZERO,
+                maneuver_start: 0.0,
+                maneuver_origin_offset: Vec3::ZERO,
+            };
+            // The light-crossing is measured to the target's position, so place
+            // the shooter at the wanted distance from it, not from the fleet.
+            let at = |d: f64| target.position_at(&fleets, 0.0).add(Vec3::new(d, 0.0, 0.0));
+            assert!(laser_hit_check(at(0.99 * range), &target, &fleets, 0.0, accuracy), "seed {seed}: hit inside");
+            assert!(!laser_hit_check(at(1.01 * range), &target, &fleets, 0.0, accuracy), "seed {seed}: miss outside");
+        }
+        let mut last = 0.0;
+        for k in [0.25, 0.5, 1.0, 2.0, 4.0] {
+            let r = engagement_range_ly(k * accuracy);
+            assert!(r > last, "a more tolerant fire control reaches farther: {k} gives {r}");
+            last = r;
+        }
+        let cfg = test_cfg(1);
+        let cairn = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &cfg, &combat);
+        assert_eq!(cairn.fire_control_ly, accuracy, "the Cairn fires with its class's accuracy");
+        assert_eq!(cairn.fire_enemy_ly, range, "and its fire distances are that accuracy's range");
+        assert_eq!(cairn.fire_neutral_ly, range);
+        let sharp = CombatConfig {
+            fire_control_by_class: crate::combat::ByClass { cairn: 0.25, ..combat.fire_control_by_class },
+            ..combat
+        };
+        let sharp_cairn = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &cfg, &sharp);
+        assert!(sharp_cairn.fire_enemy_ly < range, "a class write moves its range, and only its own");
+        let scarp = design_loadout(HullType::GeneralContactVehicle, Class::Scarp, &cfg, &sharp);
+        assert_eq!(scarp.fire_enemy_ly, range);
     }
 
     /// **A wreck point is past the structure and follows its curve** (T-133,

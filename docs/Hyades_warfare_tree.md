@@ -2038,10 +2038,10 @@ energy; the replaced model is appendix §D.10.
 | family | field | unit | what it sets | engine |
 |---|---|---|---|---|
 | all | **structure** | kJ | hull volume `r³` × the Design class's `σ` (§8.18, T-133) | **built** — placeholders `10¹¹` (Systems Designs: Meadow, Tor, Delta, Range, Ford) and `10¹²` kJ per hull unit³ (Cairn, Scarp, unnamed armed hulls) (R-WAR19) |
-| all | **fire distances** | ly | max distance to fire upon an enemy and upon a neutral; Doctrine may hold fire on either (§8.19) | **built** — placeholder `0.01` for both (R-WAR27) |
+| all | **fire distances** | ly | max distance to fire upon an enemy and upon a neutral; Doctrine may hold fire on either (§8.19) | **built** — both are the Design's engagement range, derived from its fire-control accuracy (`combat::engagement_range_ly`, §8.19.1): 7.90e-3 ly at the arena's accuracy |
 | **beam** | **mounts** | count | `b_role · V` over one Limited Contact hull's, floored, at least one — design law #2's slot-organic count | **built** — LCV 1 |
 | beam | **power** | MW | energy per unit of time on target; a tick delivers `P · dt` (§8.18) | **built** — placeholder `50 MW` (R-WAR19) |
-| beam | **fire-control error** | ly | the tolerance `laser_hit_check` compares predicted against actual target position; smaller is more accurate | **built** — reads `CombatConfig::laser_hit_tolerance` (tuned), not a second copy |
+| beam | **fire-control error** (accuracy) | ly | the tolerance `laser_hit_check` compares predicted against actual target position; smaller is more accurate, and it sets the engagement range | **built** — per Design class, `CombatConfig::laser_hit_tolerance` (tuned) times `fire_control_by_class`, placeholders `1.0` (R-WAR27) |
 | beam | targets per tick | count | one per mount — a beam points one way (§8.18.3) | **built**; the arena's `laser_shots_per_tick` is no longer read by the simulation |
 | beam | range falloff | kJ per ly | §2.4's "weak at long range" | `OPEN` — every simulation fight today is at range zero |
 | beam | point defense | — | whether a beam may target an in-flight missile | arena only; `OPEN` for the simulation |
@@ -2334,9 +2334,10 @@ Until stage 4, fights happen nowhere else.
 | symbol | name | unit | where it is set |
 |---|---|---|---|
 | — | **encounter** | — | an interval during which a hull whose Doctrine fires on an enemy hull is within beam reach of it, each on its own trajectory |
-| `R` | **beam reach** — the separation beyond which a mount cannot hit | ly | `OPEN` (R-WAR23): fire control against station-keeping gives hits out to 3e-3 ly reliably and thinning by 1e-2 ly (appendix §D.10) |
-| `d_enemy` | **max distance to fire upon an enemy** | ly | per Design/hull/class/role; placeholder values `OPEN` (R-WAR27) |
-| `d_neutral` | **max distance to fire upon a neutral** | ly | per Design/hull/class/role; placeholder values `OPEN` (R-WAR27) |
+| `ε` | **accuracy** — a Design's fire-control tolerance | ly | the arena's tuned `laser_hit_tolerance` (6e-5) times the Design class's `fire_control_by_class`, placeholders `1.0` (R-WAR27) |
+| `R` | **engagement range** — the separation at which fire control stops holding against the reference target (station-keeping at the midpoints of its spread, radius 1.25e-4 ly, period 0.05 yr): the `d` solving `ρ · g(ω d) = ε`, `g(θ) = √((1 − cos θ)² + (θ − sin θ)²)` | ly | `combat::engagement_range_ly`; 7.90e-3 at `ε = 6e-5`, growing as about `ε^0.5` (R-WAR23, resolved; appendix §D.15) |
+| `d_enemy` | **max distance to fire upon an enemy** | ly | the Design's `R`; Doctrine may ignore it, and a role may narrow it (R-WAR33) |
+| `d_neutral` | **max distance to fire upon a neutral** | ly | as `d_enemy` |
 | `E` | **exposure** — the time an encounter lasts | yr | kinematics: both trajectories, and the smaller of `R` and the applicable fire distance |
 | `D` | energy a hull has absorbed and survived, carried across encounters | kJ | `P · dt` per mount per tick on target (§8.18); `Simulation`'s `hull_damage` |
 | `S` | the hull's structure, `σ · r³` — a soft maximum of hit points | kJ | §8.18 |
@@ -2370,6 +2371,10 @@ Until stage 4, fights happen nowhere else.
   a neutral (`d_neutral`). **Doctrine may ignore either or both, and ignoring
   one means holding fire on that kind of target at any range** (R-WAR27,
   resolved).
+- **Engagement range depends on weapon accuracy, and is a function of
+  Design/hull/class and sometimes role** (R-WAR23, resolved). Built: accuracy
+  is per Design class, the range is derived from it (§8.19.1), and both fire
+  distances are that range. Which roles narrow it is `OPEN` (R-WAR33).
 - **No wreck roll until a hull has sustained a threshold of damage**
   (R-WAR24, resolved in form). Below it the hull is not defeated and flies on.
   **The threshold is the structure, a soft maximum of hit points.**
@@ -2416,9 +2421,12 @@ Until stage 4, fights happen nowhere else.
 
 #### 8.19.4 What the kinematics already say, before any of it is built
 
-A laden Medium colony ship stays within `R` for **58–105 days** leaving a port or
-arriving at a world, and for **2–9 days** passing at 0.82–0.97 c mid-voyage
-(appendix §D.11, analytic, one mount always on target as an upper bound).
+At the engagement range the arena's accuracy supports (7.90e-3 ly, §8.19.1), a
+laden Medium colony ship stays within `R` for **93.6 days** leaving a port or
+arriving at a world, and for **6.0–7.1 days** passing at 0.82–0.97 c mid-voyage
+(appendix §D.11 at 3e-3 and 1e-2 ly, §D.15 at the derived range; analytic).
+Exposure grows as `√R` leaving or arriving and as `R` passing, so a more accurate
+Design is exposed to fire for longer.
 *Inference:* a slow hull is exposed 20–40 times longer than a fast one, so with
 no site hardwired, fights still concentrate where hulls are slow — at departures
 and arrivals. That is kinematics choosing the place, which is what the ruling
@@ -2536,10 +2544,12 @@ should be the vast majority of the yr/s budget."*
   0.18-day combat tick, and one discharge costs about 3,230 instructions
   (estimate). At that bed's 1,090 encounters the budget admits any period above
   0.011 days, and a 1-day period admits about 98,000 encounters per run.
-- **`OPEN`, recommended: a range of 0.1–3 days per Design.** The lower end is
-  what a Design needs to resolve a 2-day mid-voyage pass to within 5%; the
-  upper end resolves a 58-day departure or arrival to within 5%. Neither end is
-  set by the budget at today's encounter count. **What would settle it:** the
+- **`OPEN`, recommended: a period no longer than 5% of the shortest exposure
+  the Design must resolve**, so it follows the Design's engagement range
+  (§8.19.4). At the arena's accuracy that is **0.3 days** for a Design meant to
+  hit hulls passing mid-voyage (a 6.0-day pass) and **4.7 days** for one that
+  fires at departures and arrivals (93.6 days). Neither is set by the budget at
+  today's encounter count. **What would settle it:** the
   encounter count once stage 4 finds encounters along every trajectory — the
   budget binds when that count times `105.3 / τ × 3,230` passes a third of
   everything else, and it has not been measured.
@@ -2639,15 +2649,16 @@ kill them before they can found a colony, they will seek a new destination."*
 | ~~**R-WAR18**~~ | ~~blockade placement has no recency~~ **Implemented (T-125), measured null**: ranking by launches seen in the last `intercept_reassess_years` and moving a blockader off a port that went quiet changed `ln S` by less than its standard error, because latency, not placement, binds (§8.17.5) | — |
 | **R-WAR19** | **the beam and structure magnitudes** — `beam_power_mw = 50`, and `σ` per Design class since T-133: `10¹¹` for Systems Designs, `10¹²` for armed ones (T-132; the per-tick `50 kJ` shot and `1,000 kJ/kt` structure they replace are appendix §D.10). Only `P / σ` reaches an outcome; one mount wrecks a Limited Contact hull in 9.5 days | ratify the duration criterion in §8.18.4 (mirror fights 28–82 ticks, every fight inside `H`), then the arena once it can seed beam-versus-beam fights between loadouts |
 | **R-WAR21** | **a lone Limited picket cannot finish a Medium colony ship** (254 days against a 183-day engagement), so §8.17.4's covering rule has lost its premise and the twelve-seat bed's kills fell 77–94% (§8.18.6) | the author's choice: accept and stack, a longer engagement, a stronger beam, or structure less the hold |
-| **R-WAR23** | **beam reach `R`** — the separation beyond which a mount cannot hit. It sets every encounter's length (§8.19). Fire control gives hits reliably to 3e-3 ly and thinning by 1e-2 ly | a derived bound from fire control and station-keeping, or a Design field of the beam family |
+| ~~**R-WAR23**~~ | **resolved** (the author's ruling): engagement range depends on weapon accuracy and is a function of Design/hull/class and sometimes role. Derived from the Design's fire-control tolerance against the reference target (§8.19.1): 7.90e-3 ly at the arena's accuracy, against §D.10's measured reach (reliable to 3e-3, thinning by 1e-2) | — |
 | **R-WAR24** | **the wreck curve's magnitudes** — the form is ruled and built (§8.19.5): threshold at the structure, a Weibull wreck point per hull, checked on every hit. `x₀ = 1`, `γ = ½` are placeholders; at them 97.4–98.5% of colony ships fired on are wrecked on the card bed | the author: how lethal a lone picket should be, set through `σ` per class, beam power, the fire distance and these |
 | **R-WAR25** | **the encounter** — fire along both trajectories, one wreck roll per damaged hull when it ends, arrival-driven detection, `Standing::fires_on` (§8.19.3) | ratify, then T-133 |
-| **R-WAR27** | **the fire distances' values** — "ignored by Doctrine" is ruled to mean **hold fire at any range**; every beam Design carries `0.01` ly for both, a placeholder | a value per Design |
+| **R-WAR27** | **accuracy per Design** — "ignored by Doctrine" is ruled to mean **hold fire at any range**; both fire distances are the Design's engagement range, derived from its accuracy. Accuracy is per Design class as a multiple of the arena's tolerance, every class `1.0`, a placeholder | an accuracy per Design class |
 | ~~**R-WAR28**~~ | **resolved** (the author's ruling): the roll is taken on every hit past the structure, with odds from the damage above it; a colony ship that survives fire leaves (§8.19.7) | — |
-| **R-WAR29** | **the discharge period** — ruled a Design property under a budget: fire control at most 25% of run time. Measured at 0.77% of instructions today; *recommend* a 0.1–3 day range per Design (§8.19.7, appendix §D.14) | the author: a period per Design; the budget re-measured after stage 4 |
+| **R-WAR29** | **the discharge period** — ruled a Design property under a budget: fire control at most 25% of run time. Measured at 0.77% of instructions today; *recommend* a period of at most 5% of the shortest exposure the Design must resolve — 0.3 days mid-voyage, 4.7 days at departures and arrivals, at the arena's accuracy (§8.19.7, appendix §D.14–§D.15) | the author: a period per Design; the budget re-measured after stage 4 |
 | **R-WAR30** | **course adjustment** — ruled: a trajectory from a moving start, triggered by belief events (A) an enemy moving to intercept and (B) an enemy firing on the fleet, decided per fleet; colonists retarget on believed lethality. Not built: moving-start flight in `math.rs`, the belief tests, the retarget choice (§8.19.7) | engine work |
 | **R-WAR31** | **repair** — a hull carries the damage it survived for the rest of its life (§8.19.5); nothing repairs it | the author: whether damage heals, where, and at what cost |
 | **R-WAR32** | **the stored fleet** — the fleet decides course adjustments (§8.19.7), which amends roles §5's "a query, not a stored thing"; membership and its changes are unspecified | the author |
+| **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
 | **R-WAR26** | **what ends a pitched battle** — all three candidates, ruled; how they compose and R-L2 are open, and none is built (§8.19.6) | engine work, then a pitched-battle bed |
 | **R-WAR22** | **damage does not persist past an engagement** — a hull no single fight can finish is never finished (§8.18.7) | the author: persistent damage (and repair) is new per-hull state |
 | **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |

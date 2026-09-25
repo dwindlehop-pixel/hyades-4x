@@ -1583,7 +1583,11 @@ cheap audit of the first**, and neither defect was findable by reading.
 - **Determinism is a hard requirement.** All randomness flows from a seeded `Rng`;
   all time is the in-sim event clock in years. Iterate collections in deterministic
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`
-  guards this — never weaken it to make a feature fit.
+  guards this — never weaken it to make a feature fit. **Until T-133 no test in
+  it fired a shot** — `engagements_enabled` defaults off and none played a card
+  — so combat sat outside the gate; `combat_runs_are_bit_identical` plays the
+  card bed on a small galaxy and floors the fight count. A new mechanism behind
+  a default-off switch needs its own arm here.
 
   **The "and wasm32" half was false until T-127, and nothing here could have
   said so.** The determinism suite runs one target, and at its horizons a
@@ -2753,7 +2757,8 @@ changes how you *work*, not what is left to do:
   when its carried damage reaches a **wreck point drawn once per hull** past its
   structure (§8.19.5) — which is the roll repeated on every hit, and makes an
   outcome independent of how the damage was divided. A colony ship that survives
-  fire at its destination leaves. `σ` is per Design
+  fire at its destination leaves. Engagement range is derived from the
+  Design's fire-control accuracy (`combat::engagement_range_ly`). `σ` is per Design
   class, and every Design the engine builds has a class name. Interim: the
   engine still looks for fire only at a blockaded port and a picketed world
   (stage 4, detection along every trajectory, is not built).
