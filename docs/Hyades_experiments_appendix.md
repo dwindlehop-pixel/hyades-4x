@@ -1888,6 +1888,82 @@ for every weapon and every hull.
 
 ---
 
+## D.14 T-133, fourth landing — the wreck point, and what fire control costs
+
+*Supports `Hyades_warfare_tree.md` §2.2, §8.19.5 and §8.19.7 (R-WAR24, R-WAR28,
+R-WAR29).*
+
+**Superseded: the logistic past a fractional threshold** (T-133 second landing,
+§D.12). `P(wreck) = p₀ / (p₀ + (1 − p₀)·e^(−κ·(x − θ)))` with `x = D / S`,
+`θ = 0.25`, `p₀ = 0.02`, `x½ = 1`, rolled once per hull when an encounter ended.
+What it was wrong about, by the author's ruling: the threshold was a quarter of
+the structure where it is the structure; the odds scaled with damage as a
+multiple of the structure where they scale with damage above it; and the roll
+was taken once where it repeats with further damage. Priced before the ruling
+(§D.13): a roll taken at the threshold crossing would have had odds `p₀` every
+time, whatever the weapon. The candidates R-WAR28 listed — roll when the
+encounter ends, roll at each multiple of `θ`, roll at the crossing with odds
+from the damage rate — are all retired by the wreck point, which is the first
+candidate's odds taken on every hit.
+
+**The wreck point against the logistic, on the twelve-seat card bed**
+(`combat_bench 400 1,7,42`, one run per seed, old and new binaries built from
+consecutive commits):
+
+| seed | fights old → new | colony ships wrecked old → new | share wrecked, new | colonies old → new | `ns/event` old → new |
+|---|---|---|---|---|---|
+| 1 | 1,064 → 1,090 | 1,064 → 1,062 | 97.4% | 1,422 → 1,448 | 55,074 → 53,030 |
+| 7 | 1,367 → 1,341 | 1,367 → 1,312 | 97.8% | 1,549 → 1,552 | 52,416 → 52,770 |
+| 42 | 1,792 → 1,827 | 1,792 → 1,800 | 98.5% | 1,403 → 1,406 | 54,235 → 53,975 |
+
+The per-event cost moved −3.7% to +0.7%, one run each, which does not resolve a
+difference. `capability_probe` section 6 at the placeholders: one Cairn picket
+delivers 2.45–4.05 structures to a Delta colony ship over 105.3 days; the odds
+at those damages are 0.878–1.000.
+
+**What fire control costs today** (callgrind, `combat_bench 400 1`, release
+with symbols; instruction counts, a proxy for time that assumes fire control and
+the rest of the run retire instructions at the same rate — not measured):
+
+| quantity | value | kind |
+|---|---|---|
+| program total | 100.90 G instructions | measured |
+| `encounter_at`, inclusive (fire control, the roll, slag) | 0.774 G — **0.77%** | measured |
+| `resolve_pass`, inclusive | 0.763 G | measured |
+| combat ticks walked by `resolve_pass` (temporary counter, seeds 1 / 7 / 42) | 245,027 / 342,790 / 435,636 over 1,090 / 1,341 / 1,827 passes | measured |
+| instructions per tick of fire control, one shooter against one ship | ≈ 3,110 | estimate: the two rows above divided |
+| binary-heap work per event | ≈ 117 instructions | estimate: 25.1 M heap instructions over 214,887 events |
+| survey candidate scan (`fill_survey_candidates`), inclusive — the `SurveyView` per unvisited world left open under T-126 (§D.5) | 60.1% | measured |
+| production decisions (`sys_build_decision`), inclusive | 28.1% | measured |
+
+**The budget, as arithmetic.** Fire control may take at most a quarter of run
+time, so its instructions `F` may be at most a third of everything else `O`:
+`F ≤ O / 3 = 33.4 G` on this run. A discharge event costs `c_d ≈ 3,110 + 117 ≈
+3,230` instructions (estimate). An encounter lasts at most 105.3 days per
+shooter (§D.11, an upper bound), so with period `τ` days the run spends
+`N_enc · 105.3 / τ · c_d` on fire control, and the budget admits:
+
+| period `τ` | fire control's share at this bed's 1,090 encounters (bound) | encounters the budget admits |
+|---|---|---|
+| 0.011 days | 25% | 1,090 |
+| 0.18 days (the combat tick) | 2.0% | 17,900 |
+| 1 day | 0.37% | 98,100 |
+| 3 days | 0.12% | 294,000 |
+
+*Inference:* at this bed's encounter count the budget does not bind at any
+period above 0.011 days. What will set it is the encounter count once stage 4
+finds encounters along every trajectory, and that count is not measured.
+
+**What the upper end of the range is for.** An encounter's exposure is
+resolved to within one period, so a period `τ` misstates an exposure `E` by up
+to `τ / E`. The shortest exposures priced in §D.11 are 2–9 days for a hull
+passing mid-voyage at 0.82–0.97 c, and 58–105 days leaving or arriving: a 5%
+bound on that error puts `τ ≤ 0.1` days for a Design meant to hit passing hulls
+and `τ ≤ 2.9` days for one that fires at departures and arrivals. The wreck
+point makes the period otherwise immaterial to the outcome (§8.19.5).
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the

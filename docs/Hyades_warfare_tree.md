@@ -2521,11 +2521,28 @@ turns for home (`bounce_colonizer`, logged `ColonyContested`). Where it goes
 next — home, or a new destination it believes it can reach — belongs to the
 course adjustment below. The superseded candidates are in appendix §D.14.
 
-**`OPEN` — R-WAR29: the discharge period.** A beam's output is continuous, so
-the period is a sampling rate as well as a rate of fire; one per day adds
-~54–94% to the twelve-seat card bed's event count, one per combat tick (0.18
-days) about five and a half times that (appendix §D.13). *Recommend* a Design
-field, so a Technology write can raise a rate of fire.
+**R-WAR29 — the discharge period: the budget is ruled, the values are `OPEN`.**
+*Author's specification: "Realism has to give way before the exigencies of game
+design. Combat is happening concurrently across the galaxy at potentially
+hundreds of sites. We need a firing rate range (because it should vary by
+Design) that keeps the sim overhead small enough that yr/s spends at most 25% of
+its time in fire control. Thrust, heading, role selection, bids, decision making
+should be the vast majority of the yr/s budget."*
+
+- **`RATIFIED`: the discharge period is a Design property**, and fire control
+  may take at most 25% of run time.
+- **Measured** (appendix §D.14, callgrind, one seed, instruction counts): fire
+  control is **0.77%** of the twelve-seat card bed's instructions today, at the
+  0.18-day combat tick, and one discharge costs about 3,230 instructions
+  (estimate). At that bed's 1,090 encounters the budget admits any period above
+  0.011 days, and a 1-day period admits about 98,000 encounters per run.
+- **`OPEN`, recommended: a range of 0.1–3 days per Design.** The lower end is
+  what a Design needs to resolve a 2-day mid-voyage pass to within 5%; the
+  upper end resolves a 58-day departure or arrival to within 5%. Neither end is
+  set by the budget at today's encounter count. **What would settle it:** the
+  encounter count once stage 4 finds encounters along every trajectory — the
+  budget binds when that count times `105.3 / τ × 3,230` passes a third of
+  everything else, and it has not been measured.
 
 **R-WAR30 — course adjustment: rulings recorded, engine work `OPEN`.**
 *Author's specification: "trajectory from a moving ship and events based on
@@ -2627,7 +2644,7 @@ kill them before they can found a colony, they will seek a new destination."*
 | **R-WAR25** | **the encounter** — fire along both trajectories, one wreck roll per damaged hull when it ends, arrival-driven detection, `Standing::fires_on` (§8.19.3) | ratify, then T-133 |
 | **R-WAR27** | **the fire distances' values** — "ignored by Doctrine" is ruled to mean **hold fire at any range**; every beam Design carries `0.01` ly for both, a placeholder | a value per Design |
 | ~~**R-WAR28**~~ | **resolved** (the author's ruling): the roll is taken on every hit past the structure, with odds from the damage above it; a colony ship that survives fire leaves (§8.19.7) | — |
-| **R-WAR29** | **the discharge period** — rate of fire, sampling rate and event cost at once; *recommend* a Design field (§8.19.7) | the author, then a placeholder |
+| **R-WAR29** | **the discharge period** — ruled a Design property under a budget: fire control at most 25% of run time. Measured at 0.77% of instructions today; *recommend* a 0.1–3 day range per Design (§8.19.7, appendix §D.14) | the author: a period per Design; the budget re-measured after stage 4 |
 | **R-WAR30** | **course adjustment** — ruled: a trajectory from a moving start, triggered by belief events (A) an enemy moving to intercept and (B) an enemy firing on the fleet, decided per fleet; colonists retarget on believed lethality. Not built: moving-start flight in `math.rs`, the belief tests, the retarget choice (§8.19.7) | engine work |
 | **R-WAR31** | **repair** — a hull carries the damage it survived for the rest of its life (§8.19.5); nothing repairs it | the author: whether damage heals, where, and at what cost |
 | **R-WAR32** | **the stored fleet** — the fleet decides course adjustments (§8.19.7), which amends roles §5's "a query, not a stored thing"; membership and its changes are unspecified | the author |

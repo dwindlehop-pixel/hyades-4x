@@ -197,8 +197,11 @@ a soft maximum of hit points; the roll repeats with further damage, with odds
 from damage above it; a colony ship that survives fire leaves; course adjustment
 is flight from a moving start on belief events, decided per fleet; fire control
 may take at most 25% of run time (R-WAR29). Stage 1 is rebuilt to the ruling,
-the arriving survivor leaves, and the fire-control share is measured (appendix
-§D.14).
+the arriving survivor leaves, and the fire-control share is measured: **0.77% of
+instructions** on the twelve-seat card bed, so at today's encounter count the
+budget admits any discharge period above 0.011 days; a 0.1–3 day range per
+Design is recommended, and the budget has to be re-measured once stage 4 sets
+the encounter count (R-WAR29, appendix §D.14).
 
 **Stages, in order, each measured before the next:**
 
