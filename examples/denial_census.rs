@@ -117,7 +117,6 @@ fn run(seed: u64, arm: Card) -> Arm {
         .collect();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = HORIZON;
-    cfg.engagements_enabled = card;
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
     sim.set_log_filter(LogFilter::none().with(LogCategory::Combat).with(LogCategory::Vehicles));
     let report = sim.run();
@@ -126,12 +125,11 @@ fn run(seed: u64, arm: Card) -> Arm {
 
     for r in sim.log().iter() {
         match r.event {
-            LogEvent::EngagementResolved { losses_attacker, losses_defender, .. } => {
-                kills += (losses_attacker + losses_defender) as u64;
-            }
-            // **Only picket diversions count.** `ColonyContested` also fires
-            // for losing a race, which is a baseline behavior and swamps this.
-            LogEvent::ColonyDiverted { .. } => diverts += 1,
+            LogEvent::HullWrecked { .. } => kills += 1,
+            // **Only colony ships turned by fire or its news count** (T-133).
+            // `ColonyContested` also fires for losing a race, which is a
+            // baseline behavior and swamps this.
+            LogEvent::CourseChanged { role: Role::Colonizer, .. } => diverts += 1,
             LogEvent::VehicleParked { role: Role::Picket, .. } => pickets += 1,
             // **The mechanism check for `picket_intercepts`.** The objective
             // cannot tell an interception that never happened from one that

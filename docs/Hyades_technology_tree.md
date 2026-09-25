@@ -287,7 +287,7 @@ thing. Every candidate plays every other candidate in the role's pool.
 | **Colonizer** | found colonies on a shared field of worlds; a world founded first is gone for the other side | colonies founded in the bed's horizon | symmetric home ports | the role system exists; the bed does not |
 | **Miner** | fly to outposts on a shared field of rocks, extract, and deliver ore to be refined into the bank; rocks deplete for both | ore banked | symmetric home ports | the role system exists; the bed does not |
 | **Picket** | each side has a port launching a fixed schedule of **reference** colony ships, less heavily armed than any picket; pickets strike the rival's launches and defend their own | rival launches destroyed | blockade stations at the rival port (warfare §8.16) | the strike exists; the bed does not |
-| **Short-range offensive** | a pitched battle | surviving dry mass | **point blank** — both fleets on one reference point | `resolve_beam_engagement`; discriminates since T-132 (§4.9) |
+| **Short-range offensive** | a pitched battle | surviving dry mass | **point blank** — both fleets on one reference point | the simulation's discharge events (warfare §8.19.3); the bed does not exist, and under the T-133 harness ruling it must place both fleets through the engine and step its event loop rather than call a resolver (R-WAR36) |
 | **Long-range offensive** | a pitched battle | surviving dry mass | **at a distance**, `D_long` apart | as above; beams alone do not reach (§4.4.2) |
 
 **4.4.1 `RATIFIED` — the starting geometry belongs to the role, never to the
@@ -579,8 +579,9 @@ the measurement into the target (§4.10).
 - `Hyades_standing_layer_and_observation.md` §2 (concealment by vector), §5 (the
   asymmetric leak), §6.2 (acceleration as the observable), §7 (hull/class/role)
 - `Hyades_trees_and_card_value.md` §2.3.5 (capability-years), §2.5, §3.2, §4.3
-- `examples/capability_probe` — the pool, the per-match cost, beam reach, and the
-  short-range round robin (appendix §D.9)
+- `examples/capability_probe` (deleted at T-133: it called the retired resolvers
+  directly) — the pool, the per-match cost, beam reach, and the short-range round
+  robin (appendix §D.9)
 - Balduzzi, D., Tuyls, K., Pérolat, J. & Graepel, T. (2018). Re-evaluating
   evaluation. *Advances in Neural Information Processing Systems 31.* —
   intransitivity, redundant candidates, Nash averaging

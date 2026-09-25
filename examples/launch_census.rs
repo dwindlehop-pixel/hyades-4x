@@ -47,7 +47,6 @@ fn main() {
         let homes: Vec<Vec3> = galaxy.homeworlds.iter().map(|&h| galaxy.planet(h).position).collect();
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = HORIZON;
-        cfg.engagements_enabled = true;
         let mut sim = Simulation::with_baseline(galaxy, cfg);
         sim.set_log_filter(LogFilter::none().with(LogCategory::Vehicles));
         sim.run();

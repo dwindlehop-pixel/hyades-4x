@@ -261,9 +261,6 @@ pub struct Doctrine {
     /// not theirs to do. What they *can* do is outrun you, which is
     /// [`crate::belief::can_disengage`] and is decided on kinematics rather than
     /// on consent.
-    ///
-    /// Gated additionally by [`crate::sim::SimConfig::engagements_enabled`],
-    /// which is the master switch that keeps the measurement corpus valid.
     pub engage_neutrals: bool,
     /// **Do colonizers hold the ground they did not take?** (T-112.)
     ///
@@ -1783,6 +1780,43 @@ impl<'a> Standing<'a> {
     /// on enemies and holds fire on neutrals — **except in the picket role**,
     /// whose whole mission is denying a neutral's colony ships, which is what
     /// the Warfare card's writes put hulls in that role to do.
+    /// **What a fleet does when an enemy threatens or fires on it** (T-133,
+    /// warfare §8.19.2 and §8.19.7, the author's rulings).
+    ///
+    /// - A **colony ship** seeks a new destination: colonists who believe an
+    ///   enemy will kill them before they can found are not suicidal.
+    /// - A hull that **returns fire on an enemy** stands: that is a pitched
+    ///   battle, which needs both sides' Doctrine to kill. One that returns
+    ///   fire but regards the shooter only as a neutral breaks off when it
+    ///   believes it can outrun it (R-WAR26's third ending); otherwise it is
+    ///   committed and stands.
+    /// - A hull **holding a post** it cannot defend — a mining crew, a
+    ///   reserve — leaves: an unarmed ship runs or completes its mission, and
+    ///   its mission here is over while it is under fire.
+    /// - A hull **under way** completes its mission.
+    ///
+    /// A hull past its structure withdraws whatever this says (§2.1, R-WAR26's
+    /// second ending); that is decided per hull, not per fleet.
+    pub fn under_fire(
+        &self,
+        role: Role,
+        returns_fire: bool,
+        regards_enemy: bool,
+        under_way: bool,
+        may_disengage: bool,
+    ) -> UnderFire {
+        if role == Role::Colonizer {
+            return UnderFire::Retarget;
+        }
+        if returns_fire {
+            return if !regards_enemy && may_disengage { UnderFire::Withdraw } else { UnderFire::Continue };
+        }
+        if !under_way {
+            return UnderFire::Withdraw;
+        }
+        UnderFire::Continue
+    }
+
     pub fn fire_distance(&self, role: Role, loadout: &Loadout, toward: Relation) -> Option<f64> {
         if !loadout.is_armed() {
             return None;
@@ -1793,6 +1827,17 @@ impl<'a> Standing<'a> {
             Relation::Neutral => None,
         }
     }
+}
+
+/// **What a fleet does about a threat or a hit** (T-133, warfare §8.19.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnderFire {
+    /// Keep flying the mission — or stand and fight.
+    Continue,
+    /// A colony ship seeks a new destination.
+    Retarget,
+    /// Head home.
+    Withdraw,
 }
 
 /// How one empire regards another (T-133). Only the two the fire distances

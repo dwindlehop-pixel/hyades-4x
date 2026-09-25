@@ -165,7 +165,16 @@ description of the change.
 
 ### T-133. No engagements and no fight sites — encounters along trajectories, decided by Doctrine
 
-**Open, Band B: ruled by the author, not built.** `Hyades_warfare_tree.md` §8.19
+**Closed (sixth landing).** Every stage below is built and the harness-only
+sim code is gone (the author's ruling: *"Harnesses and test beds cannot have
+special sim code. The only thing that can vary is the galaxy generation."*).
+Opened R-WAR34 (the slag site of a wreck in open space), R-WAR35 (belief
+event A reads a course change before its light arrives) and R-WAR36 (the arena
+against the harness ruling); resolved R-WAR22, R-WAR25, R-WAR26, R-WAR30 and
+R-L2; R-WAR29's budget is measured with detection on every trajectory
+(appendix §D.16).
+
+*History, kept as the record of how it got here:* `Hyades_warfare_tree.md` §8.19
 carries the rulings (no engagements; no hardwired fight sites; being fired upon
 is not consent; a pitched battle needs both sides' Doctrine; the wreck roll
 resolves combat and transport together; the colony ship tries to found before it
@@ -224,28 +233,24 @@ the 0.01 ly placeholder is gone. Which roles narrow the range is R-WAR33
    arena's; R-WAR23 resolved, appendix §D.15); `Standing::fire_distance` holds
    fire where Doctrine ignores one, and is where a role would narrow the range
    (R-WAR33); default holds fire on neutrals except in the picket role.
-4. **Encounter detection**, arrival-driven: on every departure and every change
-   of station, the intervals within `R` of hostile hulls that fire or are fired
-   on; closed form for a stationary shooter, scheduled as events. `R` is each
-   Design's engagement range (R-WAR23, resolved).
-5. **Retire the three sites** in favor of encounters — *interim done* at the
-   port and the held world (a survivor flies on; arriving, one that was hit
-   leaves and one that was not founds); the shared rock is
-   now a pitched battle only when both crews are hostile. What remains is
-   removing the sites as places to look, which is stage 4, and R-WAR26's three
-   endings in `resolve_beam_engagement`.
-6. **Discharge events** replace `resolve_pass`: an encounter schedules each
-   shooter's discharges on the main loop at its Design's period (R-WAR29), and
+4. ~~**Encounter detection**~~ — **done**: on every trajectory change, the first
+   entry into fire distance against every rival that fires or is fired on —
+   closed form against a hull at rest, conservative advancement between two
+   moving hulls — scheduled as events (warfare §8.19.3).
+5. ~~**Retire the three sites**~~ — **done**: `sys_engagement`,
+   `resolve_picket_fight`, `strike_at_port` and `encounter_at` are deleted; the
+   port and the held world are where Doctrine sends armed hulls, not where the
+   engine looks for fire.
+6. ~~**Discharge events**~~ — **done**: `combat::resolve_pass` is deleted; each
+   shooter discharges on the main loop at its Design's period (R-WAR29), and
    each discharge that lands is checked against the target's wreck point.
-7. **Course adjustment events**, on flight from a moving start, raised per
-   fleet by belief events (A) an enemy moving to intercept and (B) fire on the
-   fleet; a colony ship that believes it would be wrecked before founding
-   retargets (R-WAR30, R-WAR32).
-8. **Pitched battles through the same events**, with R-WAR26's three endings,
-   retiring `resolve_beam_engagement` from the simulation (the Technology
-   beds may keep it).
-9. **Re-measure** the Warfare card (R-WAR20, R-WAR21) and the throughput and test
-   budgets.
+7. ~~**Course adjustment events**~~ — **done**: flight from a moving start
+   (`Motion::brake`), belief events A and B, one decision per fleet per shooter
+   (`FleetKey`, R-WAR32's interim), colonists that retarget (R-WAR30).
+8. ~~**Pitched battles through the same events**~~ — **done**: R-WAR26's three
+   endings, each on the event that raises it; `resolve_beam_engagement` is
+   deleted, and a Technology bed must place fleets through the engine (R-WAR36).
+9. ~~**Re-measure**~~ — **done** (appendix §D.16): *(pending: measured later in this landing, and recorded here when it is.)*
 
 ### T-132. The damage model — beam power over time, structure on hull volume
 

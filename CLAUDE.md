@@ -1484,7 +1484,8 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/belief.rs` | **believed kinematics** (R-O41) — one-sided `a_max` estimate from light-lagged observations, and the accept/decline predicate that runs on it |
 | `src/cards.rs` | the **card layer** — 18 tier-0 placeholders (3 slants × 6 trees), `Order`, and the coerce-never-reject rule |
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
-| `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement`, and the tuned station-keeping spread — **two callers since T-111**, the arena and `sim::sys_engagement` |
+| `src/sim/fire.rs` | **fire on the main loop** (T-133): encounter detection on every trajectory change, discharge events, the wreck point, belief events A and B, per-fleet decisions and course changes from a moving start |
+| `src/combat.rs` | **engine-native combat**: kinematics, weapons, loadouts, structure and the wreck point, fire control, `resolve_engagement`, and the tuned station-keeping spread — **two consumers**, the arena (`resolve_engagement`) and `sim::fire` (the rest) |
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |
 | `src/matching.rs` | the Exchange (order-book matching) — wired in at T-01; **it was never in the module list, so it did not compile as part of the crate and its tests never ran in CI** |
 | `src/log.rs` | optional diagnostic event log (the interrogation seam) |
@@ -1499,10 +1500,12 @@ place them, and call `combat::resolve_engagement`. **The arena resolves no damag
 Dependency direction is `arena → combat`, never the reverse. Do not reintroduce
 combat logic into the arena or into an example.
 
-**Since T-111 the simulation is the second caller, and the rule extends rather
-than bends: `sim → combat`, never `sim → arena`.** `sys_engagement` builds its
-own `Combatant`s from hulls that were paid for; the arena's whole purpose is
-spawning ones that were not. Tuned constants live on the `combat` side of that
+**Since T-111 the simulation is the second consumer, and the rule extends rather
+than bends: `sim → combat`, never `sim → arena`.** Since T-133 the simulation
+does not call `resolve_engagement` at all — `sim::fire` fires discharge events
+between hulls that were paid for, reading the arena's fire-control rule and
+station-keeping spread from `combat`; the arena's whole purpose is spawning
+hulls that were not. Tuned constants live on the `combat` side of that
 line — the station-keeping spread moved there from `arena` when the sim needed
 it, with `arena::ROU_STATION_*` kept as re-exports, because **a Monte-Carlo-tuned
 number with two definitions is an edit waiting to go wrong.**
@@ -1584,10 +1587,11 @@ cheap audit of the first**, and neither defect was findable by reading.
   all time is the in-sim event clock in years. Iterate collections in deterministic
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`
   guards this — never weaken it to make a feature fit. **Until T-133 no test in
-  it fired a shot** — `engagements_enabled` defaults off and none played a card
-  — so combat sat outside the gate; `combat_runs_are_bit_identical` plays the
-  card bed on a small galaxy and floors the fight count. A new mechanism behind
-  a default-off switch needs its own arm here.
+  it fired a shot** — no card-free Design is armed and none played a card — so
+  combat sat outside the gate; `combat_runs_are_bit_identical` plays the card
+  bed on a small galaxy at the shipped barrier and floors the encounter, wreck
+  and course-change counts. A new mechanism no card-free run reaches needs its
+  own arm here.
 
   **The "and wasm32" half was false until T-127, and nothing here could have
   said so.** The determinism suite runs one target, and at its horizons a
@@ -2138,6 +2142,19 @@ one, stop and flag it.
   write at a time is not one. A second property is worth asserting beside it:
   the resolver must be **total**, because a hull with no mission is a hull the
   yard was already charged for.
+- **A harness or test bed carries no special sim code; the only thing a bed
+  varies is the galaxy** (T-133, the author's ruling). No `SimConfig` switch,
+  ablation or oracle exists for a measurement, and a bed plays cards through
+  `apply_orders` at the protocol's own barrier. Three kinds of thing this
+  retired, so they are not rebuilt: a master switch for a mechanic
+  (`engagements_enabled`), an oracle that hands a decision ground truth
+  (`ablate_oracle_intercept`, `ablate_strike_fraction`), and an engine variant
+  compiled in for one arm (`ablate_color_conjunction`,
+  `ablate_picket_founding_cost`). An ablation now lives in a scratch build of
+  the engine, measured against the shipped binary, and never lands. A unit test
+  may still *place* state — a hull parked through `Simulation::park`, a Doctrine
+  field set — because that is the state a card writes, reached through the
+  engine's own entry points; it may not add a code path the game does not run.
 - **Flavor text is the author's own.** Never silently overwrite it.
 - Direct, technical register. Concrete decisions over hedging.
 - **Never force-push a designated feature branch — not even `--force-with-lease`
@@ -2759,9 +2776,18 @@ changes how you *work*, not what is left to do:
   outcome independent of how the damage was divided. A colony ship that survives
   fire at its destination leaves. Engagement range is derived from the
   Design's fire-control accuracy (`combat::engagement_range_ly`). `σ` is per Design
-  class, and every Design the engine builds has a class name. Interim: the
-  engine still looks for fire only at a blockaded port and a picketed world
-  (stage 4, detection along every trajectory, is not built).
+  class, and every Design the engine builds has a class name. Fire is found by
+  detection on every trajectory change and resolved by discharge events on the
+  main loop (`src/sim/fire.rs`); nothing is worked out ahead of time.
+- **A detection band and a drop band must differ** (T-133). Detection admitted
+  a hull at exactly its reach and the discharge dropped it `1e-12` beyond it, so
+  one hull on the boundary was found and dropped at one instant forever and the
+  run stalled at a fixed clock. Drop only a further margin out (hysteresis).
+- **Two readers of one trajectory must be one function.** `Simulation::position_at`
+  kept its own copy of the flight arithmetic and ignored the braking prefix
+  `Motion::position_at` had gained, and detection and fire disagreed about where
+  a braking hull was — the second event storm of the same landing. Read a
+  motion through `Motion`, never beside it.
 - Combat runs just-in-time for 60 fps with a **< 2 ms per-tick budget**; presentation
   time is decoupled from simulation tick duration.
 - The **Lanchester aggregate model** is reserved for imperial-scale resolution; the

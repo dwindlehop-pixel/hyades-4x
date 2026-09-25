@@ -38,7 +38,6 @@ fn run(seed: u64, share: f64) -> Vec<f64> {
         .collect();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = HORIZON;
-    cfg.engagements_enabled = true;
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
     sim.set_log_filter(LogFilter::none().with(LogCategory::Vehicles));
     sim.run();

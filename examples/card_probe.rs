@@ -11,9 +11,13 @@
 //!   each seed yields one **paired** difference and the seeds are independent
 //!   replicates. On the twelve-seat table six seats shared one galaxy and the
 //!   standard error counted them as six.
-//! - **Arms are ablations.** Each arm is the card plus a change to the engine
-//!   or the Doctrine; an arm that moves the metric names a constraint, and one
-//!   that does not refutes it.
+//! - **Arms are Doctrine writes.** Each arm is the card plus Doctrine seeded on
+//!   seat 0; an arm that moves the metric names a constraint, and one that does
+//!   not refutes it. **The engine never differs between arms** (T-133, the
+//!   author's ruling that a bed varies only the galaxy): an arm that needed a
+//!   harness-only switch in the simulation measured a game nobody plays, and
+//!   those arms — the coverage and destination oracles, the color-conjunction
+//!   ablation — are retired with their switches.
 //! - **It prints the mechanism beside the metric.** Population, infrastructure,
 //!   colony count and combat are read on every arm, so a flat objective can be
 //!   read as "the lever moved and nothing downstream listened" or "the lever
@@ -56,23 +60,18 @@ const SAMPLE_YEARS: f64 = 10.0;
 const GROWTH_CARD: u16 = 3;
 const WARFARE_CARD: u16 = 15;
 
-/// What an arm changes, applied to both halves of the pair except `card_only`,
-/// which lands on the card half alone.
+/// What an arm changes: `card_only` lands on the card half alone.
 #[derive(Clone, Copy)]
 struct Arm {
     label: &'static str,
     /// The card seat 0 plays on the card half, or `None` for an arm that is
     /// only a Doctrine write — how one write of a bundle is ablated alone.
     card: Option<u16>,
-    /// Engine change applied to *both* halves — a different engine, same card
-    /// question. This is how a constraint in the engine is removed.
-    engine: fn(&mut SimConfig),
     /// Extra Doctrine applied to seat 0 on the *card* half only — how a card
     /// is widened to test whether a missing write is what binds.
     card_only: fn(&mut Doctrine),
 }
 
-fn no_engine(_: &mut SimConfig) {}
 fn no_doctrine(_: &mut Doctrine) {}
 
 struct Sample {
@@ -113,8 +112,6 @@ fn run(seed: u64, arm: &Arm, play: bool) -> Sample {
         .collect();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = HORIZON;
-    cfg.engagements_enabled = true;
-    (arm.engine)(&mut cfg);
     let play_at = cfg.years_to_first_round;
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
     sim.set_log_filter(LogFilter::none().with(LogCategory::Combat).with(LogCategory::Vehicles));
@@ -181,21 +178,22 @@ fn run(seed: u64, arm: &Arm, play: bool) -> Sample {
     for r in sim.log().iter() {
         match r.event {
             LogEvent::VehicleParked { player: 0, role: Role::Picket, .. } => s.pickets_0 += 1,
-            LogEvent::ColonyDiverted { holder: 0, .. } => s.diverted_by_0 += 1,
+            // Only seat 0 is armed on this bed, so a rival colony ship that
+            // changed course did so on seat 0's fire or its news (T-133).
+            LogEvent::CourseChanged { player, role: Role::Colonizer, .. } if player != 0 => s.diverted_by_0 += 1,
             LogEvent::PicketIntercept { player: 0, .. } => s.intercepts_0 += 1,
+            LogEvent::EncounterBegan { shooter_seat, target_seat, .. } if shooter_seat == 0 || target_seat == 0 => {
+                s.engagements_0 += 1
+            }
+            LogEvent::HullWrecked { player, by, .. } => {
+                if by == 0 && player != 0 {
+                    s.kills_by_0 += 1;
+                }
+                if player == 0 {
+                    s.losses_of_0 += 1;
+                }
+            }
             _ => {}
-        }
-        if let LogEvent::EngagementResolved { attacker, defender, losses_attacker, losses_defender, .. } = r.event {
-            if attacker == 0 || defender == 0 {
-                s.engagements_0 += 1;
-            }
-            if attacker == 0 {
-                s.kills_by_0 += losses_defender as u64;
-                s.losses_of_0 += losses_attacker as u64;
-            } else if defender == 0 {
-                s.kills_by_0 += losses_attacker as u64;
-                s.losses_of_0 += losses_defender as u64;
-            }
         }
     }
     s
@@ -269,9 +267,6 @@ fn hostility(d: &mut Doctrine) {
     d.engage_neutrals = true;
 }
 
-fn staffed(c: &mut SimConfig) {
-    c.population_staffs_industry = true;
-}
 fn denial(d: &mut Doctrine) {
     d.engage_neutrals = true;
     d.picket_reserve = 8;
@@ -281,13 +276,6 @@ fn denial(d: &mut Doctrine) {
 /// price exactly, and inert while `enforce_roster` is off. A pure-price control.
 const PRICE_ONLY_CARD: u16 = 12;
 
-fn no_conjunction(c: &mut SimConfig) {
-    c.ablate_color_conjunction = true;
-}
-fn staffed_no_conjunction(c: &mut SimConfig) {
-    c.population_staffs_industry = true;
-    c.ablate_color_conjunction = true;
-}
 /// `TIER0[3]`'s write with no card played — the lever without its price.
 fn growth_write(d: &mut Doctrine) {
     d.growth_rate *= 1.15;
@@ -333,95 +321,26 @@ fn blockade_wide(d: &mut Doctrine) {
     d.picket_reserve = 32;
 }
 
-/// The coverage oracle (T-125): strike this fraction of rival launches outright.
-fn strike_quarter(c: &mut SimConfig) {
-    c.ablate_strike_fraction = 0.25;
-}
-fn strike_half(c: &mut SimConfig) {
-    c.ablate_strike_fraction = 0.5;
-}
-fn strike_all(c: &mut SimConfig) {
-    c.ablate_strike_fraction = 1.0;
-}
-
-fn oracle(c: &mut SimConfig) {
-    c.ablate_oracle_intercept = true;
-}
-
 fn arms() -> Vec<Arm> {
     vec![
-        Arm {
-            label: "warfare / coverage 0.25",
-            card: Some(WARFARE_CARD),
-            engine: strike_quarter,
-            card_only: no_doctrine,
-        },
-        Arm { label: "warfare / coverage 0.50", card: Some(WARFARE_CARD), engine: strike_half, card_only: no_doctrine },
-        Arm { label: "warfare / coverage 1.00", card: Some(WARFARE_CARD), engine: strike_all, card_only: no_doctrine },
-        Arm { label: "warfare / blockade", card: Some(WARFARE_CARD), engine: no_engine, card_only: blockade },
-        Arm {
-            label: "warfare / blockade, fallback supply",
-            card: Some(WARFARE_CARD),
-            engine: no_engine,
-            card_only: blockade_fallback,
-        },
-        Arm {
-            label: "warfare / blockade, wide",
-            card: Some(WARFARE_CARD),
-            engine: no_engine,
-            card_only: blockade_wide,
-        },
-        Arm {
-            label: "warfare / hold ground, oracle",
-            card: Some(WARFARE_CARD),
-            engine: oracle,
-            card_only: hold_ground,
-        },
-        Arm { label: "warfare / hold ground", card: Some(WARFARE_CARD), engine: no_engine, card_only: hold_ground },
-        Arm {
-            label: "warfare / hold ground, wide",
-            card: Some(WARFARE_CARD),
-            engine: no_engine,
-            card_only: hold_ground_wide,
-        },
-        Arm {
-            label: "warfare / pickets, no hostility",
-            card: Some(WARFARE_CARD),
-            engine: no_engine,
-            card_only: pickets_only,
-        },
-        Arm { label: "growth / write alone, staffed", card: None, engine: staffed, card_only: growth_write },
-        Arm {
-            label: "growth / staffed, no conjunction",
-            card: Some(GROWTH_CARD),
-            engine: staffed_no_conjunction,
-            card_only: no_doctrine,
-        },
-        Arm {
-            label: "growth / write alone, staffed, no conjunction",
-            card: None,
-            engine: staffed_no_conjunction,
-            card_only: growth_write,
-        },
-        Arm {
-            label: "growth / no conjunction",
-            card: Some(GROWTH_CARD),
-            engine: no_conjunction,
-            card_only: no_doctrine,
-        },
-        // T-107: the engine changes on both halves, the card question does not.
-        Arm { label: "growth / staffed", card: Some(GROWTH_CARD), engine: staffed, card_only: no_doctrine },
-        Arm { label: "warfare / price alone", card: Some(PRICE_ONLY_CARD), engine: no_engine, card_only: no_doctrine },
-        Arm { label: "warfare / + denial", card: Some(WARFARE_CARD), engine: no_engine, card_only: denial },
-        Arm { label: "growth / as shipped", card: Some(GROWTH_CARD), engine: no_engine, card_only: no_doctrine },
-        Arm { label: "warfare / as shipped", card: Some(WARFARE_CARD), engine: no_engine, card_only: no_doctrine },
+        Arm { label: "warfare / blockade", card: Some(WARFARE_CARD), card_only: blockade },
+        Arm { label: "warfare / blockade, fallback supply", card: Some(WARFARE_CARD), card_only: blockade_fallback },
+        Arm { label: "warfare / blockade, wide", card: Some(WARFARE_CARD), card_only: blockade_wide },
+        Arm { label: "warfare / hold ground", card: Some(WARFARE_CARD), card_only: hold_ground },
+        Arm { label: "warfare / hold ground, wide", card: Some(WARFARE_CARD), card_only: hold_ground_wide },
+        Arm { label: "warfare / pickets, no hostility", card: Some(WARFARE_CARD), card_only: pickets_only },
+        Arm { label: "growth / write alone", card: None, card_only: growth_write },
+        Arm { label: "warfare / price alone", card: Some(PRICE_ONLY_CARD), card_only: no_doctrine },
+        Arm { label: "warfare / + denial", card: Some(WARFARE_CARD), card_only: denial },
+        Arm { label: "growth / as shipped", card: Some(GROWTH_CARD), card_only: no_doctrine },
+        Arm { label: "warfare / as shipped", card: Some(WARFARE_CARD), card_only: no_doctrine },
         // The card's Doctrine write has two halves; each alone, with no card
         // played and so no price paid and no Design unlocked.
-        Arm { label: "warfare / scout write alone", card: None, engine: no_engine, card_only: scout_write },
-        Arm { label: "warfare / colonizer write alone", card: None, engine: no_engine, card_only: colonizer_write },
+        Arm { label: "warfare / scout write alone", card: None, card_only: scout_write },
+        Arm { label: "warfare / colonizer write alone", card: None, card_only: colonizer_write },
         // §8.2's "a Neutral empire is an Enemy empire" — specified, and not in
         // the shipped card.
-        Arm { label: "warfare / + hostility", card: Some(WARFARE_CARD), engine: no_engine, card_only: hostility },
+        Arm { label: "warfare / + hostility", card: Some(WARFARE_CARD), card_only: hostility },
     ]
 }
 

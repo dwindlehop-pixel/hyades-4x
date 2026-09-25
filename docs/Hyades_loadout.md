@@ -206,6 +206,10 @@ rewrites components on an arrival event.
 
 **Combat (new — the big addition):**
 
+- *Superseded at T-133 (`Hyades_warfare_tree.md` §8.19): there is no
+  engagement system; fire is detection on every trajectory change and discharge
+  events on the main loop, and the wreck roll is a wreck point per hull. The
+  design below is kept as what the warfare spec replaced.*
 - A new **System**, `sys_engagement`, triggered when two mutually-hostile
   ships (or fleets — `Hyades_vehicle_roles.md` §5, same-role + co-located)
   come within detection/weapon range — a condition the continuous-position

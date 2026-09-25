@@ -2016,6 +2016,86 @@ target; native against wasm32 is still the one-off check of §D.6.
 
 ---
 
+## D.16 T-133, sixth landing — fire on the main loop, and no harness code in the engine
+
+*Supports `Hyades_warfare_tree.md` §8.19.3, §8.19.6 and §8.19.7 (R-WAR25,
+R-WAR26, R-WAR29, R-WAR30 and R-L2 resolved; R-WAR34–R-WAR36 opened) and
+`CLAUDE.md` §6's harness rule. Author's ruling for this landing: "Harnesses and
+test beds cannot have special sim code. The only thing that can vary is the
+galaxy generation."*
+
+**Superseded: the recommended encounter** (§8.19.3 before this landing): one
+wreck roll when an encounter ended, `resolve_beam_engagement` kept for a pitched
+battle, detection scheduling whole encounter windows. What it was wrong about:
+the author ruled that the roll repeats on every hit (the wreck point, §D.14) and
+that fights run as events concurrently with everything else (§8.19.7), so no
+window is resolved ahead of time and no resolver survives in the simulation.
+
+**Retired with the ruling, and what each had measured** (the records stand in
+their own sections):
+
+| removed | kind | its measurement |
+|---|---|---|
+| `SimConfig::engagements_enabled` | master switch | none — it kept the card-free corpus valid, which the unarmed default now does by construction |
+| `ablate_oracle_intercept` | oracle | §D.1 (T-122: information was never the constraint) |
+| `ablate_strike_fraction` | oracle | §D.4 (T-125: the card needs ~30–45% coverage) |
+| `ablate_color_conjunction` | engine variant | §D.1 |
+| `ablate_picket_founding_cost` | engine variant | warfare §8.10 (T-116) |
+| `examples/engagement_census` | harness | warfare §7.3; its war arm armed nobody, so under discharge events it fires no shot |
+| `examples/capability_probe` | harness | §D.9, §D.10, §D.12; it called the deleted resolvers directly |
+
+**The card-free run is bit-identical to the engine before this landing.**
+`build_digest 400 1,7,42` against the build of d99a790: 42,418 / 63,568 /
+61,828 events, 428 / 928 / 842 colonies and population bits `40f4d4aae5b1d064`
+/ `40f26050ce22e49a` / `40f2017db8cca76e`, identical on all three seeds. No
+card-free Design is armed, so the fire path is not entered.
+
+**Two event storms during the build, both found by the run stalling at a fixed
+clock:** detection admitted a hull at exactly its reach and the discharge
+dropped it `1e-12` beyond, so one boundary hull was found and dropped at one
+instant forever (fixed by dropping only a further margin out); and
+`Simulation::position_at` kept its own flight arithmetic, ignoring the braking
+prefix, so detection and fire disagreed about a braking hull's position.
+
+**What fire costs, with detection on every trajectory** (callgrind,
+`combat_bench`, twelve seats, both cards at the 200-yr barrier, seed 1, release
+with symbols; instruction counts):
+
+| horizon | program total | fire code, exclusive (a lower bound) | detection (`track_changed`), inclusive | discharge `fix` | aim sort |
+|---|---|---|---|---|---|
+| 250 yr | 56.6 G | 4.4% | 2.5% | — | — |
+| 400 yr | 266.4 G | **30.1%** | **26.1%** (121 M pair searches) | 11.4% (73 M calls) | 8.4% (3.5 M sorts) |
+
+*Inference:* the budget (fire control at most 25% of run time) was met while
+the armed fleets were small and was broken by 400 yr, and the largest share was
+the pairwise detection search, not the discharges. Three changes that leave
+every result identical — a bounding-box reject before the search, skipping the
+position fix for a target whose reference distance already exceeds the reach
+plus both station-keeping radii, and an unstable sort on unique keys — were
+checked against the binary before them: *(pending: measured later in this landing, and recorded here when it is.)*
+
+**After those changes:** *(pending: measured later in this landing, and recorded here when it is.)*
+
+**Throughput on the combat bed** (`combat_bench 400`, one run per seed per
+binary, interleaved; the d99a790 binary runs the retired site model, so this
+compares two different mechanics on one protocol):
+
+*(pending: measured later in this landing, and recorded here when it is.)*
+
+**The determinism gate plays the shipped protocol.** `combat_runs_are_bit_identical`
+no longer pulls the first barrier to 60 yr. At the shipped 200 yr, six seats,
+600 planets, probed in debug: 250 yr gives seed 1 one encounter and fails the
+floor; 275 yr gives 380 and 326 encounters (5.7 s for both seeds twice); 300 yr
+gives 745 encounters, 47 wrecks and 466 course changes (seed 1) and 493, 53 and
+82 (seed 7), 12.7 s, and ships.
+
+**Test targets** (debug, `cargo test`, idle machine, the build of d99a790
+against this one): *(pending: measured later in this landing, and recorded here when it is.)*
+
+**The Warfare card** (`card_table`, 11 galaxies, 800 yr): *(pending: measured later in this landing, and recorded here when it is.)*
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the

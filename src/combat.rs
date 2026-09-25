@@ -1,9 +1,11 @@
 //! Combat — the engine's real-space fighting model (`Hyades_simulation_model.md`
-//! §4-5, `Hyades_loadout.md` §5). This is **engine-native**: the same code the
-//! production game and the Monte-Carlo balancer both resolve fights with. The
-//! Ship Testing Arena (`arena.rs`) is only a *scenario seeder* on top of this —
-//! it fabricates combatants outside the production/economy constraints and
-//! calls [`resolve_engagement`]; it owns no combat logic itself.
+//! §4-5, `Hyades_loadout.md` §5). This is **engine-native**: the damage model,
+//! structure, the wreck point, fire-control accuracy and engagement range here
+//! are what the simulation's discharge events read (`sim/fire.rs`, T-133). The
+//! Ship Testing Arena (`arena.rs`) is a *scenario seeder* on top of this — it
+//! fabricates combatants outside the production/economy constraints and calls
+//! [`resolve_engagement`], the laser-vs-missile resolver the simulation does not
+//! call.
 //!
 //! Contents: the kinematic primitives (fleet trajectories, station-keeping,
 //! Isaacs intercept, lasers with light-lag aim + point-defense, dodging
@@ -733,6 +735,15 @@ pub struct CombatConfig {
     /// ([`engagement_range_ly`]). **Placeholders**, all `1.0` — every beam
     /// Design fires with the arena's accuracy (R-WAR27).
     pub fire_control_by_class: ByClass,
+    /// **How often a Design's beams discharge, days, per Design class**
+    /// (T-133, R-WAR29). A discharge is one event on the main loop and
+    /// delivers the energy of one period, so the period sets how often fire is
+    /// checked, not how much damage a second of beam time does, and the wreck
+    /// point makes the outcome independent of it (§8.19.5). The author's
+    /// budget is that fire control take at most a quarter of run time.
+    /// **Placeholders**, all `0.25` days — inside the recommended 0.3-day bound
+    /// for resolving a mid-voyage pass (appendix §D.15).
+    pub discharge_days_by_class: ByClass,
     /// **Where wreck points sit past the structure**, in structures (T-133,
     /// `Hyades_warfare_tree.md` §8.19.5). The scale `x₀` of the Weibull
     /// distribution a hull's wreck point is drawn from ([`wreck_point_kj`]):
@@ -804,6 +815,9 @@ impl ByFamily {
 /// engine's clock in years.
 pub const SECONDS_PER_YEAR: f64 = 31_557_600.0;
 
+/// Days in a Julian year — the same year as [`SECONDS_PER_YEAR`].
+pub const DAYS_PER_YEAR: f64 = 365.25;
+
 impl CombatConfig {
     /// A beam mount's power in the engine's units, kJ per year.
     pub fn beam_power_kj_per_year(&self) -> f64 {
@@ -855,6 +869,16 @@ impl Default for CombatConfig {
                 scarp: 1.0,
                 ford: 1.0,
                 unnamed: ByFamily { systems: 1.0, contact: 1.0, offensive: 1.0 },
+            },
+            discharge_days_by_class: ByClass {
+                meadow: 0.25,
+                tor: 0.25,
+                cairn: 0.25,
+                delta: 0.25,
+                range: 0.25,
+                scarp: 0.25,
+                ford: 0.25,
+                unnamed: ByFamily { systems: 0.25, contact: 0.25, offensive: 0.25 },
             },
             wreck_scale: 1.0,
             wreck_spread: 0.5,
@@ -909,6 +933,9 @@ pub struct Loadout {
     pub fire_enemy_ly: f64,
     /// **Max distance to fire upon a neutral**, ly. As above.
     pub fire_neutral_ly: f64,
+    /// **Years between discharges** (T-133, R-WAR29): one discharge delivers
+    /// `beam_power_kj_per_year × discharge_years` per mount on target.
+    pub discharge_years: f64,
 }
 
 impl Loadout {
@@ -919,6 +946,7 @@ impl Loadout {
         fire_control_ly: 0.0,
         fire_enemy_ly: 0.0,
         fire_neutral_ly: 0.0,
+        discharge_years: 0.0,
     };
 
     /// Whether this Design can damage anything.
@@ -1017,268 +1045,6 @@ pub fn wreck_point_kj(structure_kj: f64, u: f64, cfg: &CombatConfig) -> f64 {
     structure_kj * (1.0 + cfg.wreck_scale * crate::transcendental::pow_fast(e, cfg.wreck_spread))
 }
 
-/// One ship in a simulation fight: where it is, what it mounts, and how much
-/// it can take.
-#[derive(Clone, Copy, Debug)]
-pub struct Armed {
-    pub ship: Combatant,
-    pub loadout: Loadout,
-    pub structure_kj: f64,
-    /// Energy this hull absorbed before this fight and survived, kJ (T-133).
-    /// Damage is carried from one encounter to the next.
-    pub damage_kj: f64,
-    /// The damage at which this hull is wrecked, kJ ([`wreck_point_kj`]).
-    /// `f64::INFINITY` for a hull that cannot be wrecked by the roll — the
-    /// pitched battle, which still ends at the structure, does not read it.
-    pub wreck_at_kj: f64,
-}
-
-impl Armed {
-    /// Whether absorbing `took` more kJ puts this hull at its wreck point.
-    pub fn wrecked_by(&self, took: f64) -> bool {
-        self.damage_kj + took >= self.wreck_at_kj
-    }
-}
-
-/// What a beam engagement left standing, and when it stopped.
-#[derive(Clone, Debug)]
-pub struct BeamOutcome {
-    /// Per side, which ships survived.
-    pub alive: [Vec<bool>; 2],
-    /// Time from the first tick to the end of the fight, years — the horizon
-    /// if neither side was finished.
-    pub duration_years: f64,
-}
-
-/// **Resolve a fight in which each ship fires what its Design mounts** (T-125).
-///
-/// Returns which ships are still standing and how long the fight ran. Four
-/// properties are the design and are tested:
-///
-/// - **An unarmed ship deals no damage**, so a fight between two unarmed sides
-///   ends before it starts, with no losses.
-/// - **Fire is simultaneous within a tick.** Every shooter aims at the ships
-///   standing at the start of the tick and damage lands at its end, so neither
-///   side shoots first by index order — §2.3's "no tick-based initiative".
-/// - **Damage accumulates in kJ against structure.** A hull dies when the energy
-///   it has absorbed, counting what it carried in, reaches its structure. That
-///   is a hard limit where the encounter's wreck roll treats the structure as
-///   a soft one; the pitched battle moves onto the roll at T-133 stage 8.
-/// - **Damage is a power, not a per-tick quantum** (T-132). A mount on target
-///   delivers `power × dt` in a tick, so halving `dt` doubles the ticks and
-///   halves each one's damage, and a fight lasts the same time.
-///
-/// Every mount aims at the nearest enemy not already doomed by damage landing
-/// this tick. A beam points one way, so a mount engages one target per tick; the
-/// fire-control test is a property of the shooter, the target and the time, so
-/// it is taken once per target and holds for every mount aimed there. A miss on
-/// the nearest undoomed target wastes the rest of the shooter's mounts that
-/// tick, as it did when each shot was tested on its own.
-pub fn resolve_beam_engagement(
-    fleets: &[FleetTrajectory; 2],
-    sides: [&[Armed]; 2],
-    horizon: f64,
-    dt: f64,
-) -> BeamOutcome {
-    let mut alive: [Vec<bool>; 2] = [vec![true; sides[0].len()], vec![true; sides[1].len()]];
-    // A hull enters carrying what it survived before (T-133).
-    let carried = |s: usize| sides[s].iter().map(|a| a.damage_kj).collect::<Vec<f64>>();
-    let mut damage: [Vec<f64>; 2] = [carried(0), carried(1)];
-    let armed_alive =
-        |alive: &[Vec<bool>; 2], s: usize| sides[s].iter().zip(&alive[s]).any(|(a, &l)| l && a.loadout.is_armed());
-    let mut t = 0.0;
-    while t < horizon {
-        if !alive[0].iter().any(|&a| a) || !alive[1].iter().any(|&a| a) {
-            break;
-        }
-        if !armed_alive(&alive, 0) && !armed_alive(&alive, 1) {
-            break;
-        }
-        let mut pending: [Vec<f64>; 2] = [vec![0.0; sides[0].len()], vec![0.0; sides[1].len()]];
-        for s in 0..2 {
-            let e = 1 - s;
-            for (i, shooter) in sides[s].iter().enumerate() {
-                if !alive[s][i] || !shooter.loadout.is_armed() {
-                    continue;
-                }
-                let at = shooter.ship.position_at(fleets, t);
-                // Enemies standing at the start of the tick, nearest first;
-                // ties by index, so the order is total.
-                let mut targets: Vec<(f64, usize)> = (0..sides[e].len())
-                    .filter(|&j| alive[e][j])
-                    .map(|j| (sides[e][j].ship.position_at(fleets, t).distance(at), j))
-                    .collect();
-                targets.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-                let per_mount = shooter.loadout.beam_power_kj_per_year * dt;
-                let mut mounts = shooter.loadout.beams;
-                for &(_, j) in &targets {
-                    if mounts == 0 {
-                        break;
-                    }
-                    let remaining = sides[e][j].structure_kj - damage[e][j] - pending[e][j];
-                    if remaining <= 0.0 {
-                        continue;
-                    }
-                    if !laser_hit_check(at, &sides[e][j].ship, fleets, t, shooter.loadout.fire_control_ly) {
-                        break;
-                    }
-                    // As many mounts as it takes to doom this target, and no more;
-                    // the second line covers a quotient that rounded down by an ulp.
-                    let mut needed = (remaining / per_mount).ceil();
-                    if needed * per_mount < remaining {
-                        needed += 1.0;
-                    }
-                    let used = (mounts as f64).min(needed) as u32;
-                    pending[e][j] += used as f64 * per_mount;
-                    mounts -= used;
-                }
-            }
-        }
-        for s in 0..2 {
-            for j in 0..sides[s].len() {
-                damage[s][j] += pending[s][j];
-                if damage[s][j] >= sides[s][j].structure_kj {
-                    alive[s][j] = false;
-                }
-            }
-        }
-        t += dt;
-    }
-    BeamOutcome { alive, duration_years: t }
-}
-
-/// One side of a **pass** (T-133): hulls following a shared reference path,
-/// each with its own station-keeping offset, and how far each fires on the
-/// other side.
-pub struct PassSide<'a> {
-    pub ships: &'a [Armed],
-    /// The side's reference position at absolute time `t`, years.
-    pub path: &'a dyn Fn(f64) -> Vec3,
-    /// Per ship, the farthest it fires on the other side, ly; `None` holds
-    /// fire (Doctrine ignored both fire distances, or the hull is unarmed).
-    pub fire_ly: &'a [Option<f64>],
-}
-
-impl PassSide<'_> {
-    fn position(&self, i: usize, t: f64) -> Vec3 {
-        (self.path)(t).add(self.ships[i].ship.station.offset_at(t))
-    }
-
-    /// Velocity by a centered difference of the path, plus the station's own.
-    fn velocity(&self, i: usize, t: f64, h: f64) -> Vec3 {
-        let path = (self.path)(t + h).sub((self.path)(t - h)).scale(0.5 / h);
-        path.add(self.ships[i].ship.station.offset_velocity_at(t))
-    }
-}
-
-/// **Fire between two sides that keep moving** (T-133,
-/// `Hyades_warfare_tree.md` §8.19): the resolver for an encounter, where
-/// nobody stops to fight.
-///
-/// Walks `[t0, t1)` in steps of `dt` and returns, per side, the energy each
-/// hull absorbed in it. **Nobody stops**: a hull flies its path whatever it
-/// absorbs, and the wreck roll decides the outcome — the author's ruling that
-/// the roll resolves combat and transport together. The roll is taken on
-/// every hit, as a comparison against the hull's [`Armed::wreck_at_kj`]
-/// (drawn once, [`wreck_point_kj`]): a hull that reaches its wreck point at
-/// the end of a tick is wrecked from then on, fires no more and is no longer
-/// a target. The caller reads the same comparison off the returned energy
-/// ([`Armed::wrecked_by`]).
-///
-/// Per tick, as [`resolve_beam_engagement`]: every mount of a hull that fires
-/// aims at the nearest enemy within its fire distance that has not yet
-/// absorbed its structure (counting what it carried in), delivers `power × dt`
-/// if fire control holds, and all damage lands at the end of the tick. Mounts
-/// left over once every target in reach is past its structure fire on the
-/// nearest, because past the structure more energy still moves it toward its
-/// wreck point, which the shooter cannot see. Fire control is tested against
-/// the target's actual path: its position one light-crossing later against
-/// the straight-line prediction from its velocity now.
-///
-/// **It stops early once no outcome can change**: when, for each side, the
-/// other side has no hull left that fires, or every hull on it is wrecked.
-pub fn resolve_pass(sides: [PassSide; 2], t0: f64, t1: f64, dt: f64) -> [Vec<f64>; 2] {
-    let mut absorbed: [Vec<f64>; 2] = [vec![0.0; sides[0].ships.len()], vec![0.0; sides[1].ships.len()]];
-    let wrecked = |absorbed: &[Vec<f64>; 2], s: usize, j: usize| sides[s].ships[j].wrecked_by(absorbed[s][j]);
-    let firing = |absorbed: &[Vec<f64>; 2], s: usize| {
-        (0..sides[s].ships.len())
-            .any(|i| sides[s].fire_ly[i].is_some() && sides[s].ships[i].loadout.is_armed() && !wrecked(absorbed, s, i))
-    };
-    let settled = |absorbed: &[Vec<f64>; 2]| {
-        (0..2).all(|s| !firing(absorbed, 1 - s) || (0..sides[s].ships.len()).all(|j| wrecked(absorbed, s, j)))
-    };
-    let mut t = t0;
-    while t < t1 {
-        if settled(&absorbed) {
-            break;
-        }
-        let mut pending: [Vec<f64>; 2] = [vec![0.0; sides[0].ships.len()], vec![0.0; sides[1].ships.len()]];
-        for s in 0..2 {
-            let (own, other) = (&sides[s], &sides[1 - s]);
-            for (i, shooter) in own.ships.iter().enumerate() {
-                let Some(reach) = own.fire_ly[i] else { continue };
-                if !shooter.loadout.is_armed() || wrecked(&absorbed, s, i) {
-                    continue;
-                }
-                let at = own.position(i, t);
-                let mut targets: Vec<(f64, usize)> = (0..other.ships.len())
-                    .filter(|&j| !wrecked(&absorbed, 1 - s, j))
-                    .map(|j| (other.position(j, t).distance(at), j))
-                    .filter(|&(d, _)| d <= reach)
-                    .collect();
-                targets.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-                let per_mount = shooter.loadout.beam_power_kj_per_year * dt;
-                let mut mounts = shooter.loadout.beams;
-                let hits = |j: usize, d: f64| {
-                    let predicted = other.position(j, t).add(other.velocity(j, t, dt).scale(d));
-                    predicted.distance(other.position(j, t + d)) <= shooter.loadout.fire_control_ly
-                };
-                let mut missed = false;
-                for &(d, j) in &targets {
-                    if mounts == 0 {
-                        break;
-                    }
-                    let target = &other.ships[j];
-                    let remaining = target.structure_kj - target.damage_kj - absorbed[1 - s][j] - pending[1 - s][j];
-                    if remaining <= 0.0 {
-                        continue;
-                    }
-                    if !hits(j, d) {
-                        missed = true;
-                        break;
-                    }
-                    let mut needed = (remaining / per_mount).ceil();
-                    if needed * per_mount < remaining {
-                        needed += 1.0;
-                    }
-                    let used = (mounts as f64).min(needed) as u32;
-                    pending[1 - s][j] += used as f64 * per_mount;
-                    mounts -= used;
-                }
-                // **Past everyone's structure, keep firing on the nearest.**
-                // Spreading fire is for when there is somewhere to spread it;
-                // with every target in reach already past its structure, more
-                // energy still raises the wreck odds, and §2.2 wants there
-                // always to be a reason to pile on force.
-                if mounts > 0 && !missed {
-                    if let Some(&(d, j)) = targets.first() {
-                        if hits(j, d) {
-                            pending[1 - s][j] += mounts as f64 * per_mount;
-                        }
-                    }
-                }
-            }
-        }
-        for s in 0..2 {
-            for j in 0..absorbed[s].len() {
-                absorbed[s][j] += pending[s][j];
-            }
-        }
-        t += dt;
-    }
-    absorbed
-}
-
 /// Who a laser targets this shot — a ship, or an in-flight missile
 /// (point-defense, indexed by `(shooter, local index)`).
 enum LaserTarget {
@@ -1287,10 +1053,11 @@ enum LaserTarget {
 }
 
 /// Resolve one laser-side-vs-missile-side engagement between two already-placed
-/// fleets of [`Combatant`]s. **This is the engine combat entry point** the arena
-/// scenarios and (eventually) the production game's `sys_engagement` both call.
-/// Spawning is the caller's job (the arena spawns outside production); this only
-/// fights. Deterministic given `rng`; iterates in index order.
+/// fleets of [`Combatant`]s — the Ship Testing Arena's resolver (design law #4),
+/// on which the tuned laser-vs-missile balance and `tests/balance.rs` rest.
+/// **The simulation does not call it**: since T-133 a fight in the simulation is
+/// discharge events on the main loop (`sim/fire.rs`). Spawning is the caller's
+/// job; this only fights. Deterministic given `rng`; iterates in index order.
 #[allow(clippy::too_many_arguments)]
 pub fn resolve_engagement(
     sim_cfg: &SimConfig,

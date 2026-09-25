@@ -35,7 +35,6 @@ fn main() {
             (0..SEATS).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = HORIZON;
-        cfg.engagements_enabled = true;
         let play_at = cfg.years_to_first_round;
         let mut sim = Simulation::new(galaxy, cfg, aps);
         sim.set_log_filter(LogFilter::none().with(LogCategory::Vehicles).with(LogCategory::Combat));
@@ -63,9 +62,7 @@ fn main() {
                     launches[b] += 1;
                     *per_port[b].entry((player as u64, from.x.to_bits(), from.y.to_bits())).or_insert(0) += 1;
                 }
-                LogEvent::EngagementResolved { defender: 0, losses_attacker, .. } => {
-                    struck[b] += losses_attacker as u64
-                }
+                LogEvent::HullWrecked { by: 0, role: Role::Colonizer, .. } => struck[b] += 1,
                 _ => {}
             }
         }
