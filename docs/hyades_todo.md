@@ -185,6 +185,12 @@ recorded (R-WAR24's threshold rule, R-WAR26's three endings, R-WAR27's hold
 fire, `σ` per Design class) and every Design the engine builds is named
 (R-O42b). Measurements in appendix §D.12.
 
+**Amended by the author (third landing): fights run on the main event loop,
+concurrently with production and travel, and the loop processes weapons
+discharge and course adjustment** (warfare §8.19.7). That retires the pass
+resolver built in stage 2 as an off-clock integration. The stages below are
+re-cut accordingly; stages 1 and 3 stand.
+
 **Stages, in order, each measured before the next:**
 
 1. ~~**The wreck roll**~~ — **done**: no roll below the threshold, the
@@ -204,7 +210,14 @@ fire, `σ` per Design class) and every Design the engine builds is named
    now a pitched battle only when both crews are hostile. What remains is
    removing the sites as places to look, which is stage 4, and R-WAR26's three
    endings in `resolve_beam_engagement`.
-6. **Re-measure** the Warfare card (R-WAR20, R-WAR21) and the throughput and test
+6. **Discharge events** replace `resolve_pass`: an encounter schedules each
+   shooter's discharges on the main loop (R-WAR29), and the wreck roll lands
+   when R-WAR28 says.
+7. **Course adjustment events**, on flight from a moving start (R-WAR30).
+8. **Pitched battles through the same events**, with R-WAR26's three endings,
+   retiring `resolve_beam_engagement` from the simulation (the Technology
+   beds may keep it).
+9. **Re-measure** the Warfare card (R-WAR20, R-WAR21) and the throughput and test
    budgets.
 
 ### T-132. The damage model — beam power over time, structure on hull volume

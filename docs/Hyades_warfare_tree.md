@@ -2434,6 +2434,58 @@ pitched battle, at a shared rock, still runs `resolve_beam_engagement` to one
 side's end or the horizon; its crews are unarmed Systems hulls today, so it
 destroys nothing.
 
+#### 8.19.7 Fights run on the event loop, concurrently with everything else
+
+*Author's specification: "All fights galaxy wide have to proceed concurrently
+with production and travel. The main event loop needs to process weapons
+discharge and course adjustment."*
+
+**`RATIFIED`:**
+- **A fight is a sequence of events on the main loop**, interleaved in time
+  with every production decision, mining tick and arrival in the galaxy. No
+  fight is worked out ahead of time and no fight is resolved in one call.
+- **Weapons discharge is an event.** So is **course adjustment**.
+
+**This retires the interim pass resolver** (`combat::resolve_pass`, called by
+`Simulation::encounter_at`): it integrates a whole encounter at the moment a
+ship departs, including time that has not happened yet — the opposite of
+concurrent. It stays only until discharge events replace it.
+
+**`OPEN` — R-WAR25, revised: the event design, as recommended.**
+
+| event | when | what it does |
+|---|---|---|
+| encounter begins | a hull comes within the farthest applicable fire distance of a hull that fires on it — found when either starts a trajectory or takes station (stage 4) | schedules the first discharge of every hull that fires |
+| **discharge** | every discharge period while the shooter is alive and a target is within its fire distance | fire control against the target's position *now*; `P ×` period of energy if it holds; then the next discharge |
+| **course adjustment** | when a hull's Doctrine responds to fire, or a defeated hull gets away (§2.1) | replaces the hull's trajectory from where it is and how it is moving; every encounter the old trajectory implied is re-derived |
+| wreck roll | R-WAR28 | wrecked, or gets away |
+
+A discharge reads positions at its own time, so a target that has already
+arrived, founded, turned back or been wrecked is simply not there; nothing is
+cancelled. Simultaneous events are ordered by the queue's existing `(time,
+sequence)` rule, so determinism is untouched.
+
+**`OPEN` — R-WAR28: when the wreck roll is taken, and what a survivor does.**
+The threshold rule says no roll below `θ`. If the roll is taken the moment
+damage crosses `θ`, the odds are exactly `p₀` (2% at the placeholder) every
+time, whatever the weapon — a hull is always rolled at the threshold, never
+after. Candidates: roll when the encounter ends (the damage then is all the
+damage); roll at each further multiple of `θ` with rising odds; roll at the
+crossing with odds from the damage rate. And §2.1 says a defeated ship that gets
+away *leaves*: does a colony ship that survives keep trying to found, or flee?
+
+**`OPEN` — R-WAR29: the discharge period.** A beam's output is continuous, so
+the period is a sampling rate as well as a rate of fire; one per day adds
+~54–94% to the twelve-seat card bed's event count, one per combat tick (0.18
+days) about five and a half times that (appendix §D.13). *Recommend* a Design
+field, so a Technology write can raise a rate of fire.
+
+**`OPEN` — R-WAR30: course adjustment needs flight from a moving start.** The
+engine's only leg is rest to rest, and the one course change it makes today (a
+picket re-aiming, T-120) starts the new leg *from rest* at the current position —
+velocity dropped for free. A course adjustment that is not a free stop needs a
+trajectory from a nonzero velocity, which `math.rs` does not have.
+
 ---
 
 ## 9. Register
@@ -2504,6 +2556,9 @@ destroys nothing.
 | **R-WAR24** | **the wreck curve's magnitudes** — the threshold rule is ruled (no roll below `θ`); `θ = 0.25`, `p₀ = 0.02`, `x½ = 1` are placeholders. At them a lone Cairn picket wrecks a Delta colony ship 0.999–1.000 of the time (§8.19.5) | the author: how lethal a lone picket should be, set through `σ_Delta`, the fire distance and these |
 | **R-WAR25** | **the encounter** — fire along both trajectories, one wreck roll per damaged hull when it ends, arrival-driven detection, `Standing::fires_on` (§8.19.3) | ratify, then T-133 |
 | **R-WAR27** | **the fire distances' values** — "ignored by Doctrine" is ruled to mean **hold fire at any range**; every beam Design carries `0.01` ly for both, a placeholder | a value per Design |
+| **R-WAR28** | **when the wreck roll is taken, and what a survivor does** — at the threshold crossing the odds are exactly `p₀` every time (§8.19.7) | the author |
+| **R-WAR29** | **the discharge period** — rate of fire, sampling rate and event cost at once; *recommend* a Design field (§8.19.7) | the author, then a placeholder |
+| **R-WAR30** | **flight from a moving start** — course adjustment without a free stop needs new kinematics in `math.rs` (§8.19.7) | engine work |
 | **R-WAR26** | **what ends a pitched battle** — all three candidates, ruled; how they compose and R-L2 are open, and none is built (§8.19.6) | engine work, then a pitched-battle bed |
 | **R-WAR22** | **damage does not persist past an engagement** — a hull no single fight can finish is never finished (§8.18.7) | the author: persistent damage (and repair) is new per-hull state |
 | **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |

@@ -1868,6 +1868,26 @@ threshold is unchanged; the guard's wall-clock samples are what flaked.
 
 ---
 
+## D.13 T-133, third landing — pricing fire as events on the main loop
+
+*Supports `Hyades_warfare_tree.md` §8.19.7. Arithmetic from §D.12's twelve-seat
+card bed (`combat_bench 450 1,7,42`): 1,580 / 2,030 / 2,798 encounters per run
+against 305,643 / 334,189 / 311,366 events, each encounter a laden Delta colony
+ship 105.3 days within 0.01 ly of one shooter. An upper bound: an encounter that
+ends early in a wreck schedules fewer discharges.*
+
+| discharge period | discharges per encounter | added events (seeds 1 / 7 / 42) | added share |
+|---|---|---|---|
+| 1 day | 105 | 166k / 213k / 294k | +54% / +64% / +94% |
+| 0.18 days (the combat tick) | 576 | 910k / 1.17M / 1.61M | +298% / +350% / +518% |
+
+**Roll at the threshold crossing, priced:** with discharges small against
+structure, damage crosses `θ` by a fraction of one discharge, so the roll's odds
+at that moment are `p₀` to within that fraction — 0.020 at the placeholders,
+for every weapon and every hull.
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the
