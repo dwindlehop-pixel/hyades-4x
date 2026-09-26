@@ -15,7 +15,7 @@
 //! | `B` | each fleet's spend: ten General Systems hulls' price (R-TECH11) | kt |
 //! | `x_A` | side A's task score, per bed below | per bed |
 //! | `s_AB` | A's share, `x_A / (x_A + x_B)`, ½ when both are zero (§4.6) | [0, 1] |
-//! | `R` | Bradley–Terry maximum likelihood on the Elo scale, one virtual draw per pair (R-TECH5/6), the role's default Design at 0 (R-TECH8) | Elo points |
+//! | `γ` | Bradley–Terry maximum likelihood strength, one virtual draw per pair (R-TECH5/6), on the ratio scale with the role's default Design at 1 (R-TECH8): A takes `γ_A / (γ_A + γ_B)` of a match against B, and a rating is always positive | ratio |
 //!
 //! | bed | fleets | start | Doctrine | judged by `x` | horizon |
 //! |---|---|---|---|---|---|
@@ -272,7 +272,7 @@ fn judge(bed: Bed, sim: &Simulation, cfg: &SimConfig, spend: f64, design: [usize
 }
 
 /// Bradley–Terry by minorization–maximization (Hunter 2004) on fractional wins,
-/// one virtual draw per pair (R-TECH6). Elo points, `anchor` at 0.
+/// one virtual draw per pair (R-TECH6). Ratio scale, `anchor` at 1.
 fn fit(wins: &Table, games: &Table, anchor: usize) -> [f64; N] {
     let (mut w, mut n) = (*wins, *games);
     for i in 0..N {
@@ -297,7 +297,41 @@ fn fit(wins: &Table, games: &Table, anchor: usize) -> [f64; N] {
         }
         gamma = next;
     }
-    gamma.map(|g| 400.0 * g.log10())
+    gamma
+}
+
+/// **The re-evaluation the author requires at every regeneration** (R-TECH7):
+/// how far the one-number rating misses the matches, and where. A cyclic triad
+/// is three Designs each beating the next on mean share — rock, paper,
+/// scissors — which no rating can express; the residual is the largest gap
+/// between an observed mean share and the share the ratings predict,
+/// `γ_i / (γ_i + γ_j)`. Both come from the counter-graph, and both are
+/// acceptable (the author's ruling) as long as they are read each time.
+fn intransitivity(w: &Table, n: &Table, gamma: &[f64; N]) -> (Vec<[usize; 3]>, f64, (usize, usize)) {
+    let share = |i: usize, j: usize| w[i][j] / n[i][j];
+    let beats = |i: usize, j: usize| share(i, j) > 0.5;
+    let mut cycles = Vec::new();
+    for i in 0..N {
+        for j in i + 1..N {
+            for k in i + 1..N {
+                if k != j && beats(i, j) && beats(j, k) && beats(k, i) {
+                    cycles.push([i, j, k]);
+                }
+            }
+        }
+    }
+    let (mut worst, mut at) = (0.0, (0, 0));
+    for i in 0..N {
+        for j in 0..N {
+            if i != j {
+                let r = (share(i, j) - gamma[i] / (gamma[i] + gamma[j])).abs();
+                if r > worst {
+                    (worst, at) = (r, (i, j));
+                }
+            }
+        }
+    }
+    (cycles, worst, at)
 }
 
 fn rate(bed: Bed, seeds: &[u64]) {
@@ -373,7 +407,7 @@ fn rate(bed: Bed, seeds: &[u64]) {
         println!("  {:>13} {}", POOL[i].2, row.join(" "));
     }
     println!(
-        "decided outright: {decided} of {matches} matches; {:.1} s. Rating, {} = 0, 90% over seeds:",
+        "decided outright: {decided} of {matches} matches; {:.1} s. Rating on the ratio scale, {} = 1, 90% over seeds:",
         t0.elapsed().as_secs_f64(),
         POOL[bed.anchor()].2
     );
@@ -381,8 +415,22 @@ fn rate(bed: Bed, seeds: &[u64]) {
         let mut v: Vec<f64> = boots.iter().map(|b| b[i]).collect();
         v.sort_by(f64::total_cmp);
         let q = |p: f64| v[((v.len() - 1) as f64 * p).round() as usize];
-        println!("RATING\t{}\t{}\t{:.1}\t{:.1}\t{:.1}", bed.name(), POOL[i].2, r[i], q(0.05), q(0.95));
+        println!("RATING\t{}\t{}\t{:.4}\t{:.4}\t{:.4}", bed.name(), POOL[i].2, r[i], q(0.05), q(0.95));
     }
+    let (cycles, worst, (i, j)) = intransitivity(&w, &n, &r);
+    let names: Vec<String> =
+        cycles.iter().map(|c| format!("{} > {} > {} > {}", POOL[c[0]].2, POOL[c[1]].2, POOL[c[2]].2, POOL[c[0]].2)).collect();
+    println!(
+        "INTRANSITIVITY\t{}\tcyclic triads {}{}\tlargest residual {:.3} ({} v {}: observed {:.3}, rated {:.3})",
+        bed.name(),
+        cycles.len(),
+        if names.is_empty() { String::new() } else { format!(" [{}]", names.join("; ")) },
+        worst,
+        POOL[i].2,
+        POOL[j].2,
+        w[i][j] / n[i][j],
+        r[i] / (r[i] + r[j])
+    );
     let _ = std::io::stdout().flush();
 }
 

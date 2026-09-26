@@ -84,14 +84,14 @@ freighter ride on MSV, which the starting roster excludes, so enforcement forbid
 every expansion build permanently — measured, **3 colonies and 18 vehicles against
 1,183 and 4,778** over 4,000 yr. **Blocked on cards, not on engine work (T-25).**
 
-**1.6 `OPEN` — R-O42b: the class flavor names.** The author directed naming
-every Design the engine builds (T-133). Proposed, on R-O42b's landform
-convention (small landforms for Limited hulls, larger for larger): **Meadow**
-(miner, LSV), **Tor** (survey, LSV or LCV), **Cairn** (picket, LCV), **Delta**
-(Medium colonizer), **Range** (General colonizer; after the Banks GSV class),
-**Scarp** (armed General colonizer, GCV), **Ford** (freighter, any Systems
-size). Offensive hulls stay unnamed: nothing builds them. Flavor text is the
-author's own; renaming is one line per name.
+**1.6 `RATIFIED` — R-O42b: the class flavor names** (approved by the author
+after the Tor/Ford split, T-133). On the landform convention (small landforms
+for Limited hulls, larger for larger), one class per hull: **Spur** (survey,
+LSV), **Tor** (armed survey, LCV), **Cairn** (picket, LCV), **Meadow** (miner,
+LSV), **Delta** (colonizer, MSV), **Ford** (freighter, MSV), **Range**
+(colonizer, GSV; after the Banks GSV class), **Strait** (freighter, GSV),
+**Scarp** (armed colonizer, GCV). Offensive hulls stay unnamed: nothing builds
+them. Flavor text is the author's own; renaming is one line per name.
 
 **1.7 `OPEN` — R-O47b / T-08: `on_refit` is specified and unbuilt.** Nothing in
 the engine stages a design change across transit today, so 1.4 is a law with no
@@ -261,9 +261,12 @@ the reason this is a measurement rather than a target:
 - **It costs nothing at run time.** `Q_i` is one multiply-add per owned hull per
   sample.
 
-**4.3.1 `OPEN` — R-TECH17: the pool is deduplicated by what the engine reads, not
-by name.** *Recommend:* two Designs whose every field the beds read is equal are
-one candidate. Under a Bradley–Terry rating (§4.6) a duplicate is not neutral: it
+**4.3.1 `RATIFIED` — R-TECH17: the pool is deduplicated by what the engine reads, not
+by name.** Two Designs whose every field the beds read is equal are one
+candidate. **The long-term goal is that no two named Designs share a loadout**
+(the author's note on the approval), so every duplicate this rule merges is a
+Design still waiting to be differentiated, and the dedup is expected to merge
+nothing once that is done. Under a Bradley–Terry rating (§4.6) a duplicate is not neutral: it
 adds a second copy of the same wins and losses, which moves the ratings of every
 Design it plays (Balduzzi et al. 2018, §3). **Measured, the current pool has
 duplicates:** `LimitedContactVehicle`, `LimitedContactUnit` and
@@ -317,11 +320,12 @@ a draw for every beam Design. `D_long` should sit beyond that measured beam
 reach; it is a placeholder until a ranged family exists. Ties to **R-L2**
 (single pass or repeated passes).
 
-**4.4.3 `OPEN` — R-TECH13: the Scout and Freighter beds.** Not named by the
-author. *Recommend:* Scout — a survey race on a shared unscanned field, judged by
-worlds scanned first. Freighter — a haul race between shared outpost piles and
-each side's own bank, judged by kilotons delivered. **Both are built as
-recommended** (§4.4.8), pending the author's ratification.
+**4.4.3 `RATIFIED` — R-TECH13: every role has a bed** (the author: *"Every
+role needs a test bed"*). Scout — a survey race on a shared unscanned field,
+judged by worlds reached first. Freighter — a haul race between outpost piles and
+each side's own bank, judged by kilotons delivered. With the five above that is
+one bed for every role a hull can be tasked with except `Reserve`, which is the
+end of a mission rather than one (§4.7.3). Built (§4.4.8).
 
 **4.4.8 `OPEN` — the non-combat beds as built.** Every bed is a two-seat
 standard field (`GalaxyConfig::new(2, seed)`), each seat's fleet generated at
@@ -368,8 +372,11 @@ survives almost whole. *Recommend* `x_A` = the dry mass of A's hulls neither
 wrecked nor withdrawn at the horizon. **Horizon:** 1 year, a placeholder; every
 measured match was decided long before it.
 
-**4.4.4 `OPEN` — R-TECH16: what is held fixed in a bed.** *Recommend:* Doctrine
-at the default for every candidate, so the bed rates **Design only** — the write
+**4.4.4 `RATIFIED` — R-TECH16: a bed forces the role.** The author: *"need to
+force role to test each role."* The bed generates each fleet **in the bed's
+role** (galaxy §3.1), whatever the standing layer would task that Design as, so
+every Design is tested in every role; Doctrine is otherwise the default, and
+hostile on the offensive beds (§4.4.6). The bed rates **Design** — the write
 surface this tree owns (§5). The beds run the engine's own role systems, seeded
 the way the arena seeds combat: **a bed is a scenario seeder that owns no role
 logic**, and the dependency runs `bed → sim`, as `arena → combat` does (§3 of
@@ -403,27 +410,35 @@ The outcome of a match is the score share `s_AB`. Elo already accepts fractional
 scores (a draw is ½), and the share keeps the margin a bare win would throw
 away.
 
-**4.6.2 `OPEN` — R-TECH6: complete separation.** A Design whose share is 1
+**4.6.2 `RATIFIED` — R-TECH6: complete separation** (the author: *"Virtual
+draw to start is fine"*). A Design whose share is 1
 against every opponent has **no finite maximum-likelihood rating** — the
 likelihood keeps rising as its rating grows (Hunter 2004 states the condition).
 That is not an edge case here: design law #2 *wants* a General Offensive fleet
 to beat an equal-spend Rapid one decisively. *Recommend:* a prior of one
 virtual draw between every pair, the device Coulom's Whole-History Rating uses
 (Coulom 2008) — it keeps every rating finite and moves a well-measured one by
-little.
+little. **Ratified as the starting prior**: one virtual draw per pair.
 
-**4.6.3 `OPEN` — R-TECH7: intransitivity.** Bradley–Terry places every Design on
-one line; a counter-graph with cycles (R-CG*, §3.6) cannot be put on one line
-without error. *Recommend:* report, per role, the count of cyclic triads
-(Kendall & Babington Smith 1940) and the share of variance in the pairwise
-logit-shares that the fitted rating differences explain. If that share is low,
-replace the scalar rating with a multidimensional one or with Nash averaging,
-which is also invariant to duplicated candidates (Balduzzi et al. 2018).
+**4.6.3 `RATIFIED` — R-TECH7: intransitivity is accepted, and re-evaluated at
+every regeneration.** Bradley–Terry places every Design on one line; a
+counter-graph with cycles (R-CG*, §3.6) cannot be put on one line without error.
+The author's ruling: *"variance in ELO due to counter-graph is ok; every time we
+regenerate the static ratings, we must reevaluate this rolling and determine it
+still makes sense given the current counter graph."* So every regeneration
+reports, per role, the cyclic triads (Kendall & Babington Smith 1940) and the
+largest gap between an observed mean share and the share the ratings predict
+(`examples/design_rating`'s `INTRANSITIVITY` line), and the regeneration is not
+done until someone has read that report against the counter-graph then in force.
+If it stops making sense, the replacement on the table is a multidimensional
+rating or Nash averaging, which is also invariant to duplicated candidates
+(Balduzzi et al. 2018).
 
 ### 4.7 `RATIFIED` — capability integrated over the whole fleet; normalization across roles is the author's option
 
-**4.7.1 `OPEN` — R-TECH8: Elo points must become strengths before they are
-summed.** Elo points are an **interval** scale: only differences carry meaning,
+**4.7.1 `RATIFIED` — R-TECH8: the rating is positive, on the ratio scale** (the
+author: *"rating must be positive. Convert to ratio scale"*). The harness
+reports the Bradley–Terry strength `γ` directly, the role's anchor at 1. Elo points are an **interval** scale: only differences carry meaning,
 the zero is arbitrary, and a rating can be negative. A sum of ratings over a
 fleet changes when the zero moves, so it measures nothing. *Recommend:* convert
 to the Bradley–Terry strength `10^(R/400)` — a **ratio** scale, positive, with
@@ -440,7 +455,9 @@ its strength is zero and cannot be the unit. For the offensive and picket roles
 the anchor must be an armed Design — the Warfare card's Limited Contact Design is
 the candidate.
 
-**4.7.2 `OPEN` — R-TECH9: weight each hull by its dry mass.** *Recommend*
+**4.7.2 `OPEN` — R-TECH9: weight each hull by its dry mass.** The author will
+decide on seeing the ratio-scale table (§4.9.1), noting that the ratio scale may
+already carry mass or volume. *Recommend*
 `Q_i = Σ_h m_h · c(d_h)`, in kilotons of anchor-equivalent capability. The
 rating was earned at equal **spend**, so it is a per-kiloton quantity, and the
 weight that makes it a fleet total is spend — which since R-O57 is dry mass. Two
@@ -459,14 +476,19 @@ Production's axis appearing in Technology's stock. It does not mis-cost a card �
 a card is valued on its own tree's stock (trees §2.4) — but mass enters the
 composite geomean twice (R-TREE9).
 
-**4.7.3 `OPEN` — R-TECH10: which role's strength a hull carries.** A hull's role
-changes during a game; its Design does not. If a hull carried its **current**
-role's strength, a Doctrine write that retasked hulls toward whichever role
-rates them highest would raise `Q_i` without building anything — the
-invariance rule's failure case (trees §2.5). *Recommend:*
-`c(d) = max_r γ(d, r)`, the best role the Design can fill. `Q_i` then depends
-only on which Designs an empire has built, which is what Technology writes.
-Idle hulls in `Reserve` count; scrapped hulls are not owned and do not.
+**4.7.3 `RATIFIED` — R-TECH10: a hull carries its active role's strength.**
+The author's ruling, against the recommendation: *"Evaluate the tree metric on
+each ship's active role. If you have a fleet of long range apex destroyers
+working a miner role, you didn't have much capability that year."* So
+`c_h = γ(d_h, role_h(t))`, read each year from the role the hull is tasked with
+at that time. Consequence, stated so it is not mistaken for a defect: a
+Doctrine write that retasks hulls toward the roles their Designs rate highest
+raises `Q_i` without building anything. Under this ruling that is capability —
+a fleet used for what it is good at — and not a metric farm. **Open inside it:**
+the strength of `Reserve` (a standing mission that ended; no bed rates it) —
+*recommend* zero, since an idle hull does no role's work. Scrapped hulls are not
+owned and do not count. *(Superseded recommendation `c(d) = max_r γ(d, r)`:
+appendix §D.18.)*
 
 ### 4.8 The invariance audit for this objective
 
@@ -607,6 +629,14 @@ the measurement into the target (§4.10).
 | R-O42 | seats are seeded LSV(Meadow) + LCV(Tor) |
 | R-O47b | no retroactive refits; realization is `on_refit` (law #12) |
 | R-MC16 | thrust is drawn from mounted drive |
+| R-O42b | Banks-convention Design names, one class per hull (Spur, Tor, Cairn, Meadow, Delta, Ford, Range, Strait, Scarp) |
+| R-TECH6 | one virtual draw per pair, to start (§4.6.2) |
+| R-TECH7 | counter-graph intransitivity is accepted; every regeneration reports cyclic triads and the largest residual, and is re-evaluated against the counter-graph then in force (§4.6.3) |
+| R-TECH8 | the rating is positive, on the ratio scale, anchor at 1 (§4.7.1) |
+| R-TECH10 | a hull carries its **active** role's strength each year (§4.7.3) |
+| R-TECH13 | every role has a bed (§4.4.3) |
+| R-TECH16 | a bed forces the role (§4.4.4) |
+| R-TECH17 | the pool is deduplicated by what the beds read; the goal is that no two named Designs share a loadout (§4.3.1) |
 | — | supers are synthesized at pop-Band IV by fixed two-basic recipes |
 | — | Red is the general key; Blue and Green are traversal keys (law #1) |
 | — | aggregates are queries, not stored fields |
@@ -619,25 +649,17 @@ the measurement into the target (§4.10).
 | R-L1 | shield regeneration across what | a decision, with warfare §2 |
 | R-O60 / T-04 | magazine mass on ordnance families | engine work |
 | R-O65 | flatten `hull_thrust_to_mass`? | explicit ratification — MC-tuned surface |
-| R-O42b | class flavor names | the author |
 | R-O47b / T-08 | `on_refit` is unbuilt | engine work |
 | R-CG* | is the counter-graph acyclic? | a design decision |
 | R-XM* | apex, and what it is for | a design pass |
 | R-TECH1 | **the objective is specified (§4) and not built** — no bed, no table | T-131 |
 | R-TECH2 | does capability saturate on the bed? | blocked on R-TECH1 |
 | R-TECH5 | fit Bradley–Terry by maximum likelihood on the Elo scale, not sequential updates — *recommended* | author |
-| R-TECH6 | complete separation: a prior of one virtual draw per pair — *recommended* | author |
-| R-TECH7 | intransitivity: cyclic-triad count and explained variance per role; Nash averaging if low | the first real table |
-| R-TECH8 | Elo points → strength `10^(R/400)`; per-role anchor at `γ = 1`; which anchor for combat roles | author |
-| R-TECH9 | weight hulls by dry mass, not count or volume — *recommended* | author |
-| R-TECH10 | a hull carries its Design's best-role strength, not its current role's — *recommended* | author |
+| R-TECH9 | weight hulls by dry mass, not count or volume — *recommended*; the author decides on the ratio-scale table, which may already carry mass or volume | author |
 | R-TECH11 | equal-spend budget `B` = ten General hulls — *recommended* | author |
 | R-TECH12 | `D_long`, and a closing long-range bed | a ranged family or beam falloff, then a sweep |
-| R-TECH13 | Scout and Freighter beds — *recommended*, **built as recommended** (§4.4.8) | author |
 | ~~R-TECH14~~ | ~~combat beds tie every armed Design~~ — **resolved by T-132**, warfare §8.18 | — |
 | R-TECH15 | the table's storage and staleness stamp — `data/design_ratings.tsv`, stamped with the engine commit; no harness reads it back yet | a reader that refuses a stale stamp |
-| R-TECH16 | beds hold Doctrine at the default and rate Design only — *recommended* | author |
-| R-TECH17 | the pool deduplicated by what the beds read — *recommended* | author |
 | R-TECH18 | **an unlock reaches no build** — no Design resolver reads the roster | a resolver; T-25 |
 | R-TECH19 | the offensive beds' judge read as dry mass **holding the field** (neither wrecked nor withdrawn), horizon 1 yr — *recommended* | author |
 | R-TECH3 | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |

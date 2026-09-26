@@ -1210,7 +1210,7 @@ than a power spike.
 | R-O27 | `Doctrine` has no diplomatic fields |
 | R-O28 | Design has no engine component; blocks σ_vector measurement |
 | R-O34 | ratify L1 as a stated law |
-| R-O42b | confirm class names (Meadow / Spur / Tor / Cairn / Delta / Ford / Range / Strait / Scarp, or your alternatives) — ruled that a class names one hull (T-133) |
+| ~~R-O42b~~ | ~~confirm class names~~ — **ratified** as Meadow / Spur / Tor / Cairn / Delta / Ford / Range / Strait / Scarp, one class per hull (Technology §1.6) |
 | R-O47b | does a retrofit apply retroactively, or `on_new_production` only? |
 | R-O49b | set `k` per ladder rung and `m` per Design card, arena-measured |
 | **R-O51** | ratify the three-way σ decomposition — σ_commit / σ_kinetic / σ_vector — with σ_kinetic derived from the acceleration signature, not mass or hull count |

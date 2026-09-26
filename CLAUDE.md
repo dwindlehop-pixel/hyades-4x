@@ -119,7 +119,15 @@ The MC sweeps are slow in debug; always use `--release` for them.
 ### The 60-second rule for tests and CI
 
 **Every test target and every CI step must finish in ≤60 s.** Searches are the
-only exception and they are offline, never in CI. Current costs:
+only exception and they are offline, never in CI.
+
+**The tolerance band (the author's ruling):** a target that grows past 60 s may
+run up to **72 s** before it must be fixed, and the fix brings it to **≤54 s** —
+not back to 59. The band exists so one landing that nudges a target over the
+line is not a fire drill; the 54 s floor exists so the next landing does not
+start at the edge. Measure unloaded, and time the old binary beside the new one
+(a reading taken while another run shares the cores is not a property of the
+change). Current costs:
 
 | step | cost |
 |---|---|
@@ -2249,7 +2257,7 @@ T-codes, and item 10 is blocked rather than open:
 | 5 | Colony cargo mass ≡ mineral cargo mass | R-O32 | **done** — `laden_accel` now masses `pop_cargo`; it was massless, so a laden colony ship flew like an empty hull and the burn read out cargo *type*, the one thing §6.2 exists to hide. **Completed at R-WAR9 (T-115):** this row was true of `laden_accel` and not of the dispatcher that flies colony ships — `spawn_courier` read `civilian_accel_g · G` *before* loading the hold and never re-read it, so the colonization leg was still an empty hull's. A laden Medium colonizer makes **0.241 ly/yr² against 2.446 empty**, and fixing it moved every transit-dependent magnitude in the corpus. **A row marked done is a claim about a code path, and this one named the wrong one for several landings.** |
 | 12 | Re-base hull mass on surface area (shell), contents on volume | R-O58/R-O58b | **done** — landed with 11; see below |
 | 1 | `BuildOrder::Hull { hull_type, class }` + role assigned after production | R-O29 | **done** — the three mission-named variants are gone; `Autopilot::assign_role` returns a `Tasking { role, target }` for the finished hull, and the old `MiningPair`'s freighter is now a consequence of assigning `Role::Miner`. **Behavior-neutral**, verified by stashing the diff: seed 1 / 3 seats / 4 kyr gives 1,183 colonies, 1,594 miner taskings, 5,845 scanned, 240 scouts both with and without |
-| 2 | Design/roster component | **R-O28** | **done** — `Roster` (a sorted, idempotent set of `(HullType, Class)`) is a per-player component written only by tree cards. Unblocks σ_vector for Design: the distance between pre- and post-card rosters is now computable. `Class` also introduces the Banks-convention design names (R-O42b: Meadow/Tor proposed, flavour subject to authorship) |
+| 2 | Design/roster component | **R-O28** | **done** — `Roster` (a sorted, idempotent set of `(HullType, Class)`) is a per-player component written only by tree cards. Unblocks σ_vector for Design: the distance between pre- and post-card rosters is now computable. `Class` also introduces the Banks-convention design names (R-O42b, ratified: one class per hull, Spur/Tor/Cairn/Meadow/Delta/Ford/Range/Strait/Scarp) |
 | 3 | Diplomatic fields on `Doctrine` | R-O27/R-A3 | open — no field list specified yet (**T-11**) |
 | 4 | Throttle fraction; observe `a` from trajectory not the stat block | R-O40 | open (**T-09**) |
 | 6 | `min_time_search` as a reachability-cone query | R-O31 | open — same function, reverse direction (**T-05**) |

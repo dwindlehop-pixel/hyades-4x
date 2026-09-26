@@ -2328,6 +2328,16 @@ What each column reads, from the share matrices:
   `doctrine.survey_accel_g`, a flat constant (the defect recorded in warfare §8.9.7),
   so no hull property but its price reaches the bed.
 
+**Superseded: R-TECH10's recommendation (Technology §4.7.3).** It read: *"A
+hull's role changes during a game; its Design does not. If a hull carried its
+current role's strength, a Doctrine write that retasked hulls toward whichever
+role rates them highest would raise `Q_i` without building anything — the
+invariance rule's failure case. Recommend `c(d) = max_r γ(d, r)`, the best role
+the Design can fill."* What it was wrong about, per the author's ruling: a hull
+working a role it is poor at is not delivering capability that year, so a
+Design's best-role strength overstates what the fleet did. Retasking toward
+strength is capability used, not a metric farm.
+
 ---
 
 ## D.19 Every leg flies its Design's drive — `survey_accel_g` and `civilian_accel_g` removed

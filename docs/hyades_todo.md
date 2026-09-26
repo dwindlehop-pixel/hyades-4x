@@ -299,11 +299,18 @@ generated with the galaxy and go to work through the engine's own launchers
 (galaxy §3.1). Building the beds found two faults: an outpost yields once per
 50 yr, so a 40-yr miner bed scored no generated crew; and a hauler whose rock
 its own empire settled looped at zero time (fixed — it stands down).
-**Still open:** the author's ratification of the beds (R-TECH13, R-TECH16,
-R-TECH19), the long-range geometry (R-TECH12 — 47 of 240 matches decided), a
-reader for the stamped table (R-TECH15), and two things no bed can see yet —
-the three Limited Designs are one object off the combat beds (R-O64/R-L0), and
-the survey leg flies a flat acceleration (warfare §8.9.7).
+**Ratified by the author since:** every role has a bed (R-TECH13), a bed
+forces the role (R-TECH16), the pool dedup with the goal that no two named
+Designs share a loadout (R-TECH17), one virtual draw to start (R-TECH6),
+counter-graph intransitivity accepted and re-evaluated at every regeneration
+(R-TECH7 — the harness prints an `INTRANSITIVITY` line per bed), the rating on
+the positive ratio scale (R-TECH8), and a hull carrying its **active** role's
+strength (R-TECH10, against the recommendation). The survey leg now reads the
+hull's drive (appendix §D.19). **Still open:** the offensive beds' judge
+(R-TECH19), the long-range geometry (R-TECH12 — 47 of 240 matches decided), a
+reader for the stamped table (R-TECH15), the mass weight (R-TECH9, the author
+decides on the ratio-scale table), and the three Limited Designs being one
+object off the combat beds (R-O64/R-L0).
 
 *Specified as:* Author's specification, quoted in full
 in `Hyades_technology_tree.md` §4: rate every possible Design by Elo from
@@ -349,7 +356,8 @@ is worth exactly zero on this objective whatever the table says (R-TECH18).
    Bradley–Terry fit (`examples/design_rating`), with the table in `data/`
    stamped by engine commit. **Still to do:** the intransitivity report
    (R-TECH7) and a reader that refuses a stale stamp (R-TECH15).
-6. `Q_i` in `examples/tree_gradient`, then its saturation (R-TECH2, T-78).
+6. `Q_i` in `examples/tree_gradient` — each hull's strength in the role it is
+   tasked with that year (R-TECH10) — then its saturation (R-TECH2, T-78).
 7. A Design resolver that reads the roster (R-TECH18) — the step that lets a
    Technology card move its own metric.
 
