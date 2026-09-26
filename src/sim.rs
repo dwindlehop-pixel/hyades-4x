@@ -7994,22 +7994,19 @@ impl Simulation {
             self.credit(pe, -escrow);
 
             // **The freight leg.** The obligation was instant; the ore is not.
-            // Transit is the seller's center to its own drop, flown by one hull
-            // of the seller's standing Freighter Design: a lot larger than its
-            // hold goes in `n` full loads, so it lands after `n − 1` laden-out,
-            // empty-back round trips and one last laden leg. The same
-            // `ship_travel_years` every other voyage in the engine uses, so a
-            // trade is priced in the same geometry as a colonization or a haul
-            // (§8.1: a trade is a voyage).
+            // Transit is the seller's center to its own drop — one laden leg of
+            // the seller's standing Freighter Design, at its own drive with the
+            // lot aboard up to its hold (no flat rate stands in for the
+            // Design). The same `ship_travel_years` every other voyage in the
+            // engine uses, so a trade is priced in the same geometry as a
+            // colonization or a haul (§8.1: a trade is a voyage). How many hulls
+            // carry a lot larger than one hold is not modeled: no hull is
+            // spawned for the leg at all (appendix §D.19 measured timing a lot
+            // as one hull's sequential loads, which cost −18% work-years).
             let drop_at = *self.world.position.get(seller_drop).unwrap();
             let (hull, _) = Standing::of(&self.doctrine_of(f.seller.0 as usize)).design_for(Role::Freighter);
-            let hold = hull.cargo_capacity(&self.config).max(Kilotons::new(1e-9));
-            let lot = Price::new(qty).on_scale::<units::Mass>();
-            let loads = (lot.kilotons() / hold.kilotons()).ceil().max(1.0);
-            let d = s_at.distance(drop_at);
-            let out = math::ship_travel_years(d, G * self.thrust_to_mass(hull, lot.min(hold)));
-            let back = math::ship_travel_years(d, G * self.thrust_to_mass(hull, Kilotons::ZERO));
-            let t = out + (loads - 1.0) * (out + back);
+            let lot = Price::new(qty).on_scale::<units::Mass>().min(hull.cargo_capacity(&self.config));
+            let t = math::ship_travel_years(s_at.distance(drop_at), G * self.thrust_to_mass(hull, lot));
             let id = self.exchange.next_id;
             self.exchange.next_id += 1;
             self.exchange.contracts.insert(
