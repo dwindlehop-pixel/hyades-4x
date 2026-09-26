@@ -418,8 +418,10 @@ fn rate(bed: Bed, seeds: &[u64]) {
         println!("RATING\t{}\t{}\t{:.4}\t{:.4}\t{:.4}", bed.name(), POOL[i].2, r[i], q(0.05), q(0.95));
     }
     let (cycles, worst, (i, j)) = intransitivity(&w, &n, &r);
-    let names: Vec<String> =
-        cycles.iter().map(|c| format!("{} > {} > {} > {}", POOL[c[0]].2, POOL[c[1]].2, POOL[c[2]].2, POOL[c[0]].2)).collect();
+    let names: Vec<String> = cycles
+        .iter()
+        .map(|c| format!("{} > {} > {} > {}", POOL[c[0]].2, POOL[c[1]].2, POOL[c[2]].2, POOL[c[0]].2))
+        .collect();
     println!(
         "INTRANSITIVITY\t{}\tcyclic triads {}{}\tlargest residual {:.3} ({} v {}: observed {:.3}, rated {:.3})",
         bed.name(),
