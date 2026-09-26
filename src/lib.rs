@@ -73,7 +73,7 @@ pub mod prelude {
     pub use crate::cards::{Card, CardEffect, CardId, Order, Slant, Target, Tree};
     pub use crate::combat::{CombatConfig, Combatant, EngagementOutcome, FleetTrajectory, Winner};
     pub use crate::galaxy::{Galaxy, GalaxyConfig, Planet, PlanetClass, PlanetId, PlayerId};
-    pub use crate::log::{LogCategory, LogEvent, LogFilter, LogRecord, SimLog};
+    pub use crate::log::{CourseReason, LogCategory, LogEvent, LogFilter, LogRecord, SimLog};
     pub use crate::math::Vec3;
     pub use crate::resources::{Archetype, Basic, MineralField, Minerals, Super};
     pub use crate::rng::Rng;

@@ -136,10 +136,26 @@ pub fn ship_travel_years(distance_ly: f64, accel: f64) -> f64 {
 /// Distance covered from rest under constant proper acceleration `accel` after
 /// `tau` years: `x(τ) = (c²/a)(√(1 + (aτ/c)²) − 1)`.
 #[inline]
-fn accel_leg_distance(accel: f64, tau: f64) -> f64 {
+pub fn accel_leg_distance(accel: f64, tau: f64) -> f64 {
     let t = tau.max(0.0);
     let q = accel * t / C;
     (C * C / accel) * ((1.0 + q * q).sqrt() - 1.0)
+}
+
+/// **The inverse of [`accel_leg_distance`]**: the years from rest to cover `x`
+/// ly under proper acceleration `accel`, `τ(x) = (c/a)·√((1 + a x / c²)² − 1)`.
+/// Closed form and `sqrt` only, so it is exact to IEEE 754 on every target.
+#[inline]
+pub fn accel_leg_time(accel: f64, x: f64) -> f64 {
+    let q = 1.0 + accel * x.max(0.0) / (C * C);
+    (C / accel) * (q * q - 1.0).max(0.0).sqrt()
+}
+
+/// **Coordinate speed from proper velocity** `u = γ v` (ly/yr): `v = u / √(1 + u²)`
+/// with `c = 1`. Under constant proper acceleration from rest, `u = a τ`.
+#[inline]
+pub fn speed_from_proper(u: f64) -> f64 {
+    u / (1.0 + u * u).sqrt()
 }
 
 /// Exact along-track distance covered at elapsed time `tau` into a symmetric
@@ -196,6 +212,17 @@ mod tests {
     fn one_ly_takes_about_two_years_at_1g() {
         let t = ship_travel_years(1.0, G);
         assert!((t - 2.0).abs() < 0.25, "1 ly at 1g was {t} yr");
+    }
+
+    #[test]
+    fn the_leg_time_inverts_the_leg_distance() {
+        for &a in &[0.05, 0.241, 1.0, G, 5.0] {
+            for &tau in &[0.0, 1e-4, 0.01, 0.5, 3.0, 40.0] {
+                let x = accel_leg_distance(a, tau);
+                let back = accel_leg_time(a, x);
+                assert!((back - tau).abs() <= 1e-9 * (1.0 + tau), "a {a} tau {tau}: {back}");
+            }
+        }
     }
 
     #[test]

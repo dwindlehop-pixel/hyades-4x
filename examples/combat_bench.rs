@@ -15,8 +15,8 @@
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
 use hyades_engine::cards::{CardId, Order, Target};
 use hyades_engine::galaxy::{Galaxy, GalaxyConfig, PlayerId};
-use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
-use hyades_engine::sim::{SimConfig, Simulation};
+use hyades_engine::log::{CourseReason, LogCategory, LogEvent, LogFilter};
+use hyades_engine::sim::{Role, SimConfig, Simulation};
 use std::io::Write;
 
 const SEATS: usize = 12;
@@ -33,7 +33,6 @@ fn main() {
             (0..SEATS).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = h;
-        cfg.engagements_enabled = true;
         let play_at = cfg.years_to_first_round;
         let mut sim = Simulation::new(galaxy, cfg, aps);
         // Combat only: the count is the check that shots were fired, and one
@@ -56,13 +55,36 @@ fn main() {
         }
         let s = t0.elapsed().as_secs_f64();
         let events = sim.report().events_processed;
-        let fights = sim.log().iter().filter(|r| matches!(r.event, LogEvent::EngagementResolved { .. })).count();
+        // Encounters begun, hulls wrecked by role, and course changes by
+        // reason (T-133): what the event-loop fight model did.
+        let (mut encounters, mut wrecked, mut colony_wrecks, mut retargets, mut withdrawals) =
+            (0usize, 0usize, 0usize, 0usize, 0usize);
+        let mut by_role: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        for r in sim.log().iter() {
+            match r.event {
+                LogEvent::EncounterBegan { .. } => encounters += 1,
+                LogEvent::HullWrecked { role, .. } => {
+                    wrecked += 1;
+                    *by_role.entry(format!("{role:?}")).or_insert(0usize) += 1;
+                    if role == Role::Colonizer {
+                        colony_wrecks += 1;
+                    }
+                }
+                LogEvent::CourseChanged { reason: CourseReason::Retarget, .. } => retargets += 1,
+                LogEvent::CourseChanged { reason: CourseReason::Withdraw, .. } => withdrawals += 1,
+                _ => {}
+            }
+        }
+        let colonies: usize = sim.report().players.iter().map(|p| p.colonies).sum();
         println!(
-            "seed {seed}: {:>7.2} yr/s  {:>9} events  {:>7.0} ns/event  {fights} fights",
+            "seed {seed}: {:>7.2} yr/s  {:>9} events  {:>7.0} ns/event  {encounters} encounters  \
+             {wrecked} wrecked ({colony_wrecks} colony ships)  {retargets} retargets  {withdrawals} withdrawals  \
+             {colonies} colonies",
             h / s,
             events,
             s * 1e9 / events as f64
         );
+        println!("  wrecked by role: {by_role:?}");
         let _ = std::io::stdout().flush();
     }
 }

@@ -194,8 +194,9 @@ rewrites components on an arrival event.
 
 **Movement (exists today, needs generalizing):**
 
-- `Motion.accel` is currently set from a flat `civilian_accel_g * G` or the
-  `laden_accel` derate. Under loadout, the per-leg accel becomes a **query**:
+- `Motion.accel` is `laden_accel`: the hull's drive thrust over its dry mass
+  plus cargo, on every leg — no flat rate remains (appendix §D.19). Under
+  loadout, the per-leg accel becomes a **query**:
   `total_thrust(loadout) / (dry_mass(hull, loadout) + cargo_mass(cargo))`.
   Same call site (`set_leg`), richer inputs. Nothing about the relativistic
   flip-and-burn math (`math::position_along`) changes — it already takes
@@ -206,6 +207,10 @@ rewrites components on an arrival event.
 
 **Combat (new — the big addition):**
 
+- *Superseded at T-133 (`Hyades_warfare_tree.md` §8.19): there is no
+  engagement system; fire is detection on every trajectory change and discharge
+  events on the main loop, and the wreck roll is a wreck point per hull. The
+  design below is kept as what the warfare spec replaced.*
 - A new **System**, `sys_engagement`, triggered when two mutually-hostile
   ships (or fleets — `Hyades_vehicle_roles.md` §5, same-role + co-located)
   come within detection/weapon range — a condition the continuous-position

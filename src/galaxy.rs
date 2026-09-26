@@ -509,6 +509,9 @@ impl GalaxyConfig {
 pub enum GenError {
     /// `players` is not a vertex-transitive (fair) count.
     UnfairPlayerCount(usize),
+    /// A seeded fleet names a seat the galaxy does not have, moves at or past
+    /// `c`, or is given no spend to build it with.
+    BadFleet(usize),
 }
 
 impl core::fmt::Display for GenError {
@@ -516,6 +519,9 @@ impl core::fmt::Display for GenError {
         match self {
             GenError::UnfairPlayerCount(n) => {
                 write!(f, "player count {n} has no vertex-transitive arrangement; fair counts are 2, 3, 6, 12")
+            }
+            GenError::BadFleet(i) => {
+                write!(f, "seeded fleet {i} names no seat, moves at or past c, or has no spend")
             }
         }
     }
@@ -531,6 +537,44 @@ pub struct Galaxy {
     pub hotspots: Hotspots,
     pub bands: PopBands,
     pub config: GalaxyConfig,
+    /// Fleets generated with the galaxy — none unless a bed asks for them.
+    pub fleets: FleetSeeding,
+}
+
+/// **A fleet generated with the galaxy** (the author's ruling, T-133 follow-up:
+/// "fleets can be optionally generated at Galaxy generation, with a position
+/// and velocity"). How a test bed puts two fleets face to face without any
+/// code the game does not run: the only thing a bed varies is the galaxy.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SeedFleet {
+    /// The seat that owns it.
+    pub seat: usize,
+    /// Its Design: every hull of the fleet is one `(hull, class)`.
+    pub hull: crate::sim::HullType,
+    pub class: crate::sim::Class,
+    /// The role its hulls are tasked with.
+    pub role: crate::sim::Role,
+    /// Where every hull of it starts, ly — its station-keeping spreads them.
+    pub position: Vec3,
+    /// Its coordinate velocity at the start, ly/yr (`c = 1`). A fleet under way
+    /// sheds it at its own acceleration, the way any course change from a
+    /// moving start does.
+    pub velocity: Vec3,
+}
+
+/// **The fleets a galaxy is generated with, and what each may spend.** One
+/// spend for every fleet (the author's ruling: equal mineral spend per
+/// fleet), so a fleet's hull count is `round(spend_kt / dry mass)` — derived
+/// by the engine, which is what knows a hull's mass.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FleetSeeding {
+    /// Minerals each fleet is built from, kt.
+    pub spend_kt: f64,
+    /// **A surveyed start**: each seat begins having scanned every world within
+    /// this distance of its homeworld, ly. `0` — the default — is an ordinary
+    /// start, where only the homeworld is known.
+    pub known_radius_ly: f64,
+    pub fleets: Vec<SeedFleet>,
 }
 
 impl Galaxy {
@@ -572,6 +616,28 @@ impl Galaxy {
 
     /// Generate a galaxy from a configuration.
     pub fn generate(config: GalaxyConfig) -> Result<Galaxy, GenError> {
+        Self::generate_with(config, FleetSeeding::default())
+    }
+
+    /// [`Self::generate`], with fleets placed in the generated galaxy.
+    pub fn generate_with(config: GalaxyConfig, fleets: FleetSeeding) -> Result<Galaxy, GenError> {
+        for (i, f) in fleets.fleets.iter().enumerate() {
+            // Written as the acceptable set so that a NaN anywhere is refused.
+            let good = f.seat < config.players
+                && f.velocity.norm() < 1.0
+                && fleets.spend_kt > 0.0
+                && f.position.norm().is_finite();
+            let bad = !good;
+            if bad {
+                return Err(GenError::BadFleet(i));
+            }
+        }
+        let mut galaxy = Self::generate_field(config)?;
+        galaxy.fleets = fleets;
+        Ok(galaxy)
+    }
+
+    fn generate_field(config: GalaxyConfig) -> Result<Galaxy, GenError> {
         if !Galaxy::FAIR_COUNTS.contains(&config.players) {
             return Err(GenError::UnfairPlayerCount(config.players));
         }
@@ -706,7 +772,7 @@ impl Galaxy {
             homeworlds.push(id);
         }
 
-        Ok(Galaxy { planets, homeworlds, hotspots, bands: config.pop_bands(), config })
+        Ok(Galaxy { planets, homeworlds, hotspots, bands: config.pop_bands(), config, fleets: FleetSeeding::default() })
     }
 }
 

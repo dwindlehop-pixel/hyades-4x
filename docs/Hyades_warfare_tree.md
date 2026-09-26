@@ -64,9 +64,12 @@ Dependency direction is `arena → combat`, never the reverse.
 an example once (`laser_vs_missile`), which meant the balancer and the game could
 diverge silently.
 
-**Since T-111 there are two callers and the direction is unchanged.**
-`sim::Simulation::sys_engagement` resolves through the same function the arena
-does, so the production game and the balancer still fight with one model. The
+**Since T-111 the simulation is a second consumer and the direction is
+unchanged.** ~~`sim::Simulation::sys_engagement` resolves through the same
+function the arena does~~ — *amended at T-133:* the simulation fires through its
+own discharge events (§8.19.3), reading the arena's fire-control rule and tuned
+station-keeping spread from `combat.rs`, so the two still share one model of a
+shot. The
 dependency is `sim → combat`, **never `sim → arena`**: the arena's whole job is
 spawning outside production, and these ships were paid for. The station-keeping
 constants the sweep was tuned at moved from `arena` to `combat` for the same
@@ -93,12 +96,19 @@ is **wrecked** or **gets away** is a single weighted coin-flip. Retreat
 *direction* is not random — it follows the board, toward open or friendly space.
 **The randomness is only whether the ship survives to use it.**
 
-**2.2 `RATIFIED` — `P(wreck)` is bounded in the open interval (0, 1)** and rises
-with incoming damage on a saturating curve. **Never 0%, never 100%.** A
-barely-scratched ship can still be lost; an overwhelmed one can still slip away.
-So there is always a reason to pile on force and always a live hope for the
-cornered fleet. Same logistic form as population growth, which keeps the game's
-curved quantities mathematically consistent.
+*Amended by §8.19.5 (T-133):* the coin is not flipped once. Every hull has one
+**wreck point**, drawn once, and is checked against it with every hit it takes
+past its structure — which has exactly the odds of flipping a coin on every hit
+with the odds of that hit's damage.
+
+**2.2 `RATIFIED` — `P(wreck)` rises with incoming damage on a saturating curve,
+and never reaches 100%** at any finite damage: an overwhelmed ship can still slip
+away, so there is always a reason to pile on force and always a live hope for the
+cornered fleet. *Amended by §8.19.5 (T-133, the author's ruling):* **it is 0%
+until a hull has absorbed its structure**, which is a soft maximum of hit points,
+and the curve is a Weibull distribution over damage above the structure rather
+than a logistic. "Never 0%" and "a barely-scratched ship can still be lost" are
+superseded (appendix §D.14).
 
 **2.3 `RATIFIED` — there is no tick-based initiative.** No per-round turn order,
 no INIT stat deciding who fires first. Each weapon's reach and closing behavior
@@ -202,7 +212,7 @@ have since stopped being true, and for different reasons:
   three seats on one rock. The engine has been producing thousands of contacts a
   run since outposts existed, with everyone politely ignoring each other.
 
-**So what was missing was the call, not the occasion.** `sys_engagement` — the
+**So what was missing was the call, not the occasion.** (Superseded at T-133: `sys_engagement` and its fight sites are retired, §8.19.) `sys_engagement` — the
 name `combat.rs`'s own doc comment has used since the combat refactor — now
 exists: a miner parking at a rock another empire is working raises
 `EventKind::Engagement`, and that resolves through the same
@@ -377,6 +387,10 @@ a colonizer re-routing away from a detected threat. Blocked with T-30.
 
 ## 7. The engagement site — combat in the simulation loop (T-111)
 
+> **Superseded in direction by §8.19 (author's ruling, T-133): there are no
+> engagements and no fight sites.** This section describes what the engine
+> still does until T-133 lands, and stays as that record.
+
 **`RATIFIED` as a seam; every magnitude in it is a placeholder.** What is settled
 is that the simulation resolves fights through `combat::resolve_engagement` and
 that a destroyed hull's mass is conserved. What is not settled is any number.
@@ -407,14 +421,14 @@ empire"*, which means nothing unless neutrality is where everyone starts.
 the other is in a fight whether or not it wanted one. What it can do is outrun
 them, which is §5's kinematic criterion and not consent.
 
-A second gate, `SimConfig::engagements_enabled`, also defaults off. It is not a
-design statement — it is what keeps every coverage, colony-year and work-year
-figure this project has measured valid, since all of them were taken on a galaxy
-where nothing fought. `combat_off_is_bit_identical` pins it.
+~~A second gate, `SimConfig::engagements_enabled`, also defaults off.~~ **Retired
+at T-133** with every harness-only switch (the author's ruling). What keeps the
+card-free corpus valid is that no card-free Design is armed, so a card-free run
+never enters the fire path; `a_galaxy_nobody_armed_fires_no_shot` pins it.
 
 ### 7.3 What it costs the economy — measured, and it is almost nothing
 
-Eight seeds, 3 seats, 800 yr (`examples/engagement_census`), war against peace:
+Eight seeds, 3 seats, 800 yr (`examples/engagement_census`, deleted at T-133: its war arm armed nobody, so under discharge events it fires no shot), war against peace:
 
 | | mean | seeds positive |
 |---|---|---|
@@ -1091,8 +1105,8 @@ where it could be building an armed one.
 The survey *cadence* is untouched; only the hull it names changes.
 
 **The price was expected to be paid at the yard, and it is not** — an LOU and an
-LCV cost the same 0.020 kt, so the write is bit-identically inert. §8.9.7 has
-the two reasons and what would make either bite.
+LCV cost the same 0.020 kt. The write moves a run through speed alone: the
+survey leg flies the hull's own drive (§8.9.7).
 
 **A scout built this way carries `Class::Tor`.** The class is the design
 (R-O28/R-O42b), so a Tor on an offensive shell is a survey design mounted on a
@@ -1215,7 +1229,7 @@ below. **A probe inherits every assumption of the code it measures**; when one o
 those assumptions has just been found wrong, the probe is part of what has to be
 re-derived.
 
-#### 8.9.7 The armed scout is bit-identically inert, and the reason is the cost ladder
+#### 8.9.7 The armed scout is inert in price, because of the cost ladder, and live in speed
 
 `Doctrine::scout_hull_offensive` reproduces the arm without it **to every
 printed digit** — 188 pickets, −2.87% own, +1.06% neighbors, `W_0` −29, on all
@@ -1229,20 +1243,15 @@ and its cause is one line:
 same object economically — same price, same mass, same shell — and swapping one
 for the other changes nothing the simulation reads.
 
-The two hulls *do* differ in `shell_thickness` and `drive_mass` — and
-**neither reaches a scout.** `launch_survey` flies its leg at
-`doctrine.survey_accel_g · G`, a flat constant, where the colonization and
-picket legs now read `laden_accel` and therefore read the hull's own drive
-(§8.9.6). So the survey leg has exactly the defect R-WAR9 just closed for the
-other two, and closing it there as well is what would make the drive half of
-this write bite.
+The two hulls *do* differ in `shell_thickness` and `drive_mass`. **The drive
+now reaches a scout:** the survey leg reads `laden_accel` like every other leg,
+since the author's ruling that the sim does not overwrite a ship's Design
+removed the flat `survey_accel_g` (appendix §D.19). An empty LCV flies at
+0.911 g against an LSV's 1.00.
 
-So the write is inert for two independent reasons and is kept for both: it
-becomes live in **price** when hull types carry differentiated cost (**R-O64**,
-roles §6's 0/1/2 was a unit count and not a mass ladder; **R-L0**, per-hull slot
-tables), and live in **speed** when the survey leg reads the hull it is flying.
-Until then *"the LOU takes the survey slot"* is a Design statement with no
-mechanical content.
+So the write is live in **speed** and still inert in **price**, which it becomes
+when hull types carry differentiated cost (**R-O64**, roles §6's 0/1/2 was a
+unit count and not a mass ladder; **R-L0**, per-hull slot tables).
 
 It also weakens §8.6's framing. *"A picket must cost less than a colony"* is
 satisfied — 0.020 kt against a Medium colonizer's 0.109 — but the cheap armed
@@ -1322,7 +1331,7 @@ card *is* its Doctrine half.
 #### The cause, by ablation
 
 **Restoring the founding rung takes the Doctrine write from −287.8 to −2.0.**
-That is `SimConfig::ablate_picket_founding_cost`, which violates conservation and
+That is `SimConfig::ablate_picket_founding_cost` (deleted at T-133 with every harness-only switch), which violates conservation and
 must never ship — its only job is to remove the suspected cause and watch the
 effect go, which is the one method that can refute (`CLAUDE.md` §2).
 
@@ -1725,7 +1734,7 @@ specification, and it resolves **R-WAR13**.*
 
 | role | before | after | why |
 |---|---|---|---|
-| Scout | `LimitedContactVehicle` / `Tor` | **`LimitedSystems` / `Tor`** | a Contact hull is armed; the default is not |
+| Scout | `LimitedContactVehicle` / `Tor` | **`LimitedSystems` / `Tor`** (renamed `Spur` at T-133: a class names one hull) | a Contact hull is armed; the default is not |
 | Colonizer | `MediumSystems` / `Unnamed` | unchanged | already unarmed |
 | Colonizer, upper rung | `GeneralSystems` | unchanged | ditto |
 | Miner | `LimitedSystems` / `Meadow` | unchanged | — |
@@ -1874,7 +1883,7 @@ and the suite was green across the change.
 
 Before, the class separated a scouting hull from a picketing one **only** when
 the armed write was on. Now it works unarmed as well: a scouting LSV is `Tor`
-and a mining LSV is `Meadow`. That makes `ASSIGNABLE`'s **order** load-bearing —
+(`Spur` since T-133) and a mining LSV is `Meadow`. That makes `ASSIGNABLE`'s **order** load-bearing —
 `role_of`'s second pass takes the first role that *mounts* the hull, and two
 roles now mount `LimitedSystems`. Miner precedes Scout, matching
 `competent_role`, so the two resolutions cannot disagree. Nothing
@@ -1929,11 +1938,11 @@ gate it removes, and they are different games:
 asymmetric bed (appendix §D.1) with the card carrying it. **Settled at T-123:
 armed hulls strike colony ships, at the port (§8.16).**
 
-**Decided — two ablation knobs, never design options.**
-`SimConfig::ablate_oracle_intercept` hands a picket the true destination (a
-design-law-#15 violation on purpose); `SimConfig::ablate_color_conjunction`
-bills a rung in the paying bank's own mix. Each is pinned by a test asserting
-it changes exactly the one thing it names.
+~~**Decided — two ablation knobs, never design options.**~~ **Retired at
+T-133** (the author's ruling that a test bed varies nothing but the galaxy):
+`ablate_oracle_intercept` and `ablate_color_conjunction` are deleted with their
+tests and harness arms. The measurements they produced stand in appendix §D.1
+as records of the engine that ran them.
 
 ### 8.16 The port strike — armed hulls meet colony ships where they launch (T-123, R-WAR16 resolved)
 
@@ -2009,29 +2018,28 @@ stamped on the hull (`World::loadout`); nothing re-reads it afterward (design
 law #12, no retroactive refits). Which side arrived first, which side is on
 station, and which side started the fight decide **nothing** about what either
 ship can shoot. **This retires R-WAR5's convention for every fight the
-simulation resolves** — the rock fight, the picket's defense and the port
-strike all call `combat::resolve_beam_engagement`, in which each ship fires what
-it mounts. The arena keeps its laser-side-vs-missile-side resolver, because that
+simulation resolves** — each ship fires what it mounts (since T-133, through
+discharge events, §8.19.3; `combat::resolve_beam_engagement` is deleted). The arena keeps its laser-side-vs-missile-side resolver, because that
 is the sweep `CombatConfig`'s tuned constants were calibrated on and
 `tests/balance.rs` pins it bit-for-bit.
 
-**Decided — structure is mass, and damage accumulates.** A hull's structure is
-its dry mass times `CombatConfig::hull_hp_kj_per_kt`, in kJ: the shell *is* the
-mass (R-O57, §2.3's `τ`), so a thicker-skinned hull is harder to kill with no
-second armor constant. A shot delivers its energy; a hull dies when the energy
-it has absorbed reaches its structure. Fire within a tick is **simultaneous** —
-every shooter aims at the ships standing at the start of the tick — so neither
-side shoots first by index (§2.3, no initiative).
+**Decided — damage accumulates against structure, and fire is simultaneous.**
+A hull dies when the energy it has absorbed reaches its structure. Every shooter
+aims at the ships standing at the start of the tick, so neither side shoots
+first by index (§2.3, no initiative). **How structure and damage are sized is
+§8.18 (T-132)**, which replaced "structure is dry mass" and a per-tick shot
+energy; the replaced model is appendix §D.10.
 
 #### 8.17.1 The Design space — what a weapons Design specifies
 
 | family | field | unit | what it sets | engine |
 |---|---|---|---|---|
-| all | **structure** | kJ | dry mass × `hull_hp_kj_per_kt` | **built** — placeholder `1,000 kJ/kt` (R-WAR19) |
+| all | **structure** | kJ | hull volume `r³` × the Design class's `σ` (§8.18, T-133) | **built** — placeholders `10¹¹` (Systems Designs: Meadow, Tor, Delta, Range, Ford) and `10¹²` kJ per hull unit³ (Cairn, Scarp, unnamed armed hulls) (R-WAR19) |
+| all | **fire distances** | ly | max distance to fire upon an enemy and upon a neutral; Doctrine may hold fire on either (§8.19) | **built** — both are the Design's engagement range, derived from its fire-control accuracy (`combat::engagement_range_ly`, §8.19.1): 7.90e-3 ly at the arena's accuracy |
 | **beam** | **mounts** | count | `b_role · V` over one Limited Contact hull's, floored, at least one — design law #2's slot-organic count | **built** — LCV 1 |
-| beam | **shot energy** | kJ | damage per hit | **built** — placeholder `50 kJ` (R-WAR19) |
-| beam | **fire-control error** | ly | the tolerance `laser_hit_check` compares predicted against actual target position; smaller is more accurate | **built** — reads `CombatConfig::laser_hit_tolerance` (tuned), not a second copy |
-| beam | **fire rate** | shots per mount per tick | how many shots a mount takes each `dt` | **built** — reads `laser_shots_per_tick` (tuned) |
+| beam | **power** | MW | energy per unit of time on target; a tick delivers `P · dt` (§8.18) | **built** — placeholder `50 MW` (R-WAR19) |
+| beam | **fire-control error** (accuracy) | ly | the tolerance `laser_hit_check` compares predicted against actual target position; smaller is more accurate, and it sets the engagement range | **built** — per Design class, `CombatConfig::laser_hit_tolerance` (tuned) times `fire_control_by_class`, placeholders `1.0` (R-WAR27) |
+| beam | targets per tick | count | one per mount — a beam points one way (§8.18.3) | **built**; the arena's `laser_shots_per_tick` is no longer read by the simulation |
 | beam | range falloff | kJ per ly | §2.4's "weak at long range" | `OPEN` — every simulation fight today is at range zero |
 | beam | point defense | — | whether a beam may target an in-flight missile | arena only; `OPEN` for the simulation |
 | **missile** | tubes | count | slot-organic, as beams | `OPEN` |
@@ -2069,8 +2077,8 @@ it mounts.
 | `picket_after_founding` | an **armed** colonizer keeps its hull after founding and goes to the frontier as a picket; an unarmed one still becomes its colony's stock | built (§8.17.3) |
 | `picket_intercepts` | race a seen launch to the guessed destination | built (§8.12) |
 | `picket_claims_target`, `picket_reserve` | supply — how many armed hulls to keep on station | built; reserve a placeholder |
-| target priority | which enemy a shooter takes first | built as *nearest not already doomed*; alternatives `OPEN` |
-| disengage | break off on believed kinematics (R-O41) | computed and logged, not acted on (T-10) |
+| target priority | which enemy a shooter takes first | built as *nearest hull in reach that has not absorbed its structure* (§8.19.3); alternatives `OPEN` (R-WAR37) |
+| disengage | break off on believed kinematics (R-O41) | built as a pitched battle's third ending (§8.19.6) |
 
 #### 8.17.3 Armed colonizers hold the frontier after founding
 
@@ -2107,7 +2115,9 @@ not sites (`pickets_stack_on_held_ground_like_a_crew`).
 
 **Decided — cover every seen port before stacking.** One armed hull destroys any
 unarmed colony ship, so a second at the same port adds nothing against what most
-ports launch. A new blockader therefore goes to an **uncovered** port this seat
+ports launch. **That premise is false since T-132** for Medium and General
+colony ships, which a lone Limited picket cannot finish in one engagement; the
+rule stands until R-WAR21 decides what replaces it (§8.18.6). A new blockader therefore goes to an **uncovered** port this seat
 has seen launch, ranked by launches seen in the last `intercept_reassess_years`
 and then by all launches; only when every seen port is covered does it stack, on
 the port with the most recent launches per committed hull. And the blockade-first
@@ -2139,10 +2149,14 @@ twelve-seat bed. For Warfare the metric is the integral of the seat's colonies
 over the rival mean, `S_i = ∫ C_i / mean_{j≠i} C_j dt`, card against pass.*
 
 **Measured: the card does not reach it**, and the reason is measured rather than
-guessed. Twelve-seat result in appendix §D.4.
+guessed. Twelve-seat result in appendix §D.4; **re-measured with fire on the
+event loop and simultaneous (T-133, appendix §D.17): P92 1.309 [1.267, 1.370]**
+(1.334 [1.261, 1.410] before fire was made simultaneous, §D.16), still below the
+band, and reached without wrecking colony ships at all (R-WAR37). The analysis
+below was made under the retired site model.
 
 - **The mechanic can reach it at sufficient coverage.** A coverage oracle
-  (`SimConfig::ablate_strike_fraction`, ablation only) that destroys a fixed
+  (`SimConfig::ablate_strike_fraction`, ablation only, deleted at T-133) that destroys a fixed
   fraction of rival launches from the barrier on gives `ln S` **+0.265 at 25%,
   +0.567 at 50%, +2.61 at 100%** on the asymmetric bed — so roughly **30–45% of
   rival launches struck** is the band the target asks for.
@@ -2163,6 +2177,442 @@ strike that reaches a colony ship somewhere other than its port or its
 destination; a Warfare metric or target that accounts for a card whose effect
 cannot begin until a light-crossing after it is played; or accepting this card
 below the band.
+
+### 8.18 The damage model — power over time, structure on volume (T-132)
+
+*Author's specification: "The damage model is broken and must be fixed. I think
+kilojoules is a reasonable unit. I think damage per tick is not reasonable…
+The duration needs to be scaled to allow for Design improvements and hull
+distinctions. Additionally, I don't understand the math behind the structure kJ
+rating. That is suspect. Realism is nice, and helps players develop intuition
+about the game, but it must yield to the requirements of fun. We have to change
+the damage model."* Asked what structure should scale with, the author chose
+**hull volume**.
+
+This replaces §8.17's "structure is mass" and the per-shot energy and fire rate
+in §8.17.1. What the old model was and what it got wrong is appendix §D.10.
+
+#### 8.18.1 Terms
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `P` | a beam mount's **power** while it is on target | MW; kJ/yr in the engine | `CombatConfig::beam_power_mw`, placeholder |
+| `σ` | **structure per unit of hull volume** | kJ per hull unit³ | `CombatConfig::structure_kj_per_hull_unit3`, placeholder |
+| `r³` | a hull's enclosed volume | hull unit³ | `HullType::hull_volume` (R-PROD5's quantity) |
+| `S` | a hull's **structure**, `σ · r³` — the energy that wrecks it | kJ | `combat::hull_structure_kj` |
+| `dt` | the engagement's integration step | yr | `engagement_dt_years`, 0.0005 — a numerical requirement (§2.6) |
+| `H` | the engagement horizon | yr | `engagement_horizon_years`, 0.5 — placeholder (R-WAR5) |
+| `τ_L` | time for one mount on target to wreck a Limited Contact hull, `σ · r³_LCV / P` | days | derived |
+
+#### 8.18.2 `RATIFIED` — the author's rulings
+
+- **Energy is in kilojoules.**
+- **Damage is not denominated per tick.** A mount's output is a power, and a tick
+  on target delivers `P · dt`. Halving `dt` halves each tick's damage and
+  doubles the ticks, so a fight lasts the same time
+  (`damage_is_a_power_and_the_kill_time_does_not_depend_on_the_step`). Under the
+  replaced model damage was per tick, so the fight's length in years was set by
+  the integration step.
+- **A fight's duration is scaled so Design improvements and hull distinctions
+  can act.** A fight decided in one tick cannot tell two Designs apart.
+- **Realism yields to fun.** The magnitudes are chosen for how a fight plays,
+  and are stated in physical units so players can build intuition from them.
+- **Structure scales with hull volume**, `S = σ · r³`. Durability is a value,
+  and design law #3 makes volume the value basis — as it already is for beam
+  mounts (payload volume) and for the hold.
+- **`σ` is per Design class** (T-133, the author's ruling), so structure is a
+  property of the Design and a card can write it. A hull with no named Design
+  takes its hull class's default.
+
+#### 8.18.3 Decided — how a tick resolves
+
+Every mount aims at the nearest enemy not already doomed by damage landing this
+tick, and engages one target per tick: a beam points one way. The fire-control
+test (`laser_hit_check`) depends on the shooter, the target and the time, so it
+is taken once per target per tick and holds for every mount aimed there; a miss
+on the nearest undoomed target wastes the shooter's remaining mounts that tick.
+Fire stays simultaneous (§2.3). The resolver reports how long the fight ran.
+**The arena's `laser_shots_per_tick` is no longer read by the simulation's
+resolver** — a per-tick rate is exactly the denomination this section removes —
+and the arena, which still reads it, is unchanged (`tests/balance.rs` passes).
+
+#### 8.18.4 `OPEN` — R-WAR19: the magnitudes
+
+**Placeholders:** `P = 50 MW`, `σ = 10¹² kJ per hull unit³`. A Limited Contact
+hull's structure is then 41 TJ and `τ_L` is **9.5 days**. Only `P / σ` reaches an
+outcome; `σ` is set so structures read in terajoules and the beam in megawatts.
+
+**The criterion they were chosen against, which is the part to ratify:** in the
+equal-spend, point-blank round robin (Technology §4), mirror fights last **28 to
+82 ticks** — room for a small Design difference to act — and the slowest fight
+between the smallest hulls ends well inside `H` (1,000 ticks). Measured in
+appendix §D.10.
+
+#### 8.18.5 What it does, measured (appendix §D.10)
+
+- **The short-range round robin discriminates**: most pairings are decided one
+  way, where every one used to destroy both fleets (Technology R-TECH14,
+  resolved).
+- **Design law #2 in the engine:** one GOU beats 40 ROUs and loses to 50 on all
+  three seeds; one ROU beats 10 LOUs and loses to 14. The law's target is 6–45
+  ROUs per GOU, so the crossover sits at or slightly past its upper end.
+- **Mirror matches are decisive, not draws.** Identical fleets end with one side
+  holding up to 164 of 500 hulls, decided by which fleet's station-keeping
+  geometry is easier to hit. A rating needs many seeds with sides swapped.
+- **A lone Limited picket cannot finish a Medium colony ship**: one mount needs
+  254 days against a 183-day engagement (R-WAR21). On the twelve-seat card bed
+  at 450 yr, hulls destroyed fell from **1,580 / 2,030 / 2,798 to 356 / 127 /
+  369** (seeds 1 / 7 / 42) and total colonies rose by **182 / 250 / 220**. The
+  first Warfare card's measured effect (§8.17.6) is from the replaced model and
+  has to be re-measured (R-WAR20).
+
+#### 8.18.6 `OPEN` — R-WAR21: the blockade against a Medium colony ship
+
+> **Reframed by §8.19 (T-133).** The 183-day engagement this item measures
+> against is to be deleted; under an encounter the exposure is kinematic, and a
+> lone Limited mount wrecks an arriving Medium colony ship with 0.047–0.093
+> (§8.19.5, appendix §D.11). The question — how a blockade kills one — stands.
+
+A Medium Systems hull encloses 26.8 times a Limited Contact hull's volume, so
+structure on volume makes it 26.8 times as hard to wreck while it costs 5.5
+times as much. The consequence is the blockade: **§8.17.4's rule "cover every
+seen port before stacking" rests on "one armed hull destroys any unarmed colony
+ship", and that is now false for every Medium and General colony ship.**
+Candidates, none chosen:
+
+- **Accept it.** A blockade must stack three Limited pickets to kill a Medium
+  colony ship in one engagement, and the covering rule is rewritten to stack to
+  a lethal count before covering the next port.
+- **A longer engagement.** At `H = 1 yr` one mount finishes a Medium colony ship
+  in 0.70 yr. `H` is also a cost: a fight nobody can finish runs to it.
+- **A stronger beam.** At `P ≳ 70 MW` one mount finishes it inside 0.5 yr with
+  every tick a hit — and every equal-spend fight shortens by the same factor,
+  which is the resolution §8.18.4 was chosen to buy.
+- **Structure on the hull less its hold.** Keeps armed hulls as they are and
+  makes cargo space not armor, which departs from "hull volume" as ruled.
+
+#### 8.18.7 `OPEN` — R-WAR22: damage does not persist past an engagement
+
+> **Reframed by §8.19 (T-133):** an encounter ends in a wreck roll, so the
+> question becomes whether a hull that survives the roll carries its damage into
+> the next encounter.
+
+A hull that survives a fight leaves it undamaged: the resolver's damage is local
+to one call. Under the replaced model nearly every fight ended in its first tick,
+so this never showed; now a fight that runs out `H` discards partial damage, and
+a picket that cannot finish a hull in one engagement can never finish it. *A
+decision for the author:* persistent damage (and then repair) is new state on
+every hull.
+
+### 8.19 Fights happen where trajectories meet, and Doctrine decides them (T-133)
+
+*Author's specification: "Engagements are not part of the design, but rather
+cruft to be eliminated. Unless both sides have a Doctrine to kill the enemy
+fleet, pitched battles such as the engagement described are not the common
+outcome. An unarmed ship should be trying to run away or to complete its
+mission, not locked into an engagement for half a year. Just because a ship is
+fired upon doesn't mean it submitted to an engagement. The whole point of the
+wreck roll is to have combat and transport be resolved together. In the case of
+picket vs colony ship, they should be approaching the site at speed and the
+colony ship should try to colonize before destruction."* And: *"The point is
+fights can happen anywhere, depending on Doctrine. The sim cannot hardwire fight
+sites."* And: *"Each Design/hull/class/role should have a 'Max distance to fire
+upon an enemy' and a 'Max distance to fire upon a neutral'. Either or both may be
+ignored by Doctrine."*
+
+**Built (T-133, closed).** Every stage is on the main event loop
+(`src/sim/fire.rs`): detection along every trajectory, discharges, the wreck
+point, belief events A and B, per-fleet decisions, course changes from a moving
+start, and colonists that retarget. There are no fight sites left in the
+engine — a blockaded port and a picketed world are places Doctrine *sends*
+armed hulls, and fire happens wherever a trajectory passes within a hull's fire
+distance of one that fires on it. **A test bed varies nothing but the galaxy**
+(the author's ruling): the engine carries no switch, ablation or oracle that
+exists only for a harness, and every bed plays cards through `apply_orders` at
+the protocol's barrier. Measurements in appendix §D.16.
+
+#### 8.19.1 Terms
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| — | **encounter** | — | an interval during which a hull whose Doctrine fires on an enemy hull is within beam reach of it, each on its own trajectory |
+| `ε` | **accuracy** — a Design's fire-control tolerance | ly | the arena's tuned `laser_hit_tolerance` (6e-5) times the Design class's `fire_control_by_class`, placeholders `1.0` (R-WAR27) |
+| `R` | **engagement range** — the separation at which fire control stops holding against the reference target (station-keeping at the midpoints of its spread, radius 1.25e-4 ly, period 0.05 yr): the `d` solving `ρ · g(ω d) = ε`, `g(θ) = √((1 − cos θ)² + (θ − sin θ)²)` | ly | `combat::engagement_range_ly`; 7.90e-3 at `ε = 6e-5`, growing as about `ε^0.5` (R-WAR23, resolved; appendix §D.15) |
+| `d_enemy` | **max distance to fire upon an enemy** | ly | the Design's `R`; Doctrine may ignore it, and a role may narrow it (R-WAR33) |
+| `d_neutral` | **max distance to fire upon a neutral** | ly | as `d_enemy` |
+| `E` | **exposure** — the time an encounter lasts | yr | kinematics: both trajectories, and the smaller of `R` and the applicable fire distance |
+| `D` | energy a hull has absorbed and survived, carried across encounters | kJ | `P · τ` per mount per discharge on target (§8.18); `Simulation`'s `hull_damage` |
+| `τ` | **discharge period** — the time between one Design's discharges | yr | `CombatConfig::discharge_days_by_class`, placeholders 0.25 days (R-WAR29) |
+| — | **fleet** — the unit a belief event raises one decision for: a mining crew at one rock, a picket stack at one world or port, or a single hull | — | `FleetKey`, the interim R-WAR32 |
+| — | **stop point** — where a hull comes to rest if it sheds its velocity now, at its own acceleration | ly | `Motion::come_to_rest`; past turnover it is the hull's destination |
+| `S` | the hull's structure, `σ · r³` — a soft maximum of hit points | kJ | §8.18 |
+| `x` | **overdamage** — damage above the structure, in structures: `(D − S) / S` | ratio | — |
+| `x₀` | **wreck scale** — the overdamage by which 63.2% (`1 − 1/e`) of hulls are wrecked | ratio | `CombatConfig::wreck_scale`, placeholder `1.0` (R-WAR24) |
+| `γ` | **wreck spread** — the reciprocal of the Weibull shape | ratio | `CombatConfig::wreck_spread`, placeholder `½` (R-WAR24) |
+| `u` | the hull's draw, uniform on `[0, 1)`, fixed for its life | — | a fork of the root generator on the hull's entity |
+| `W` | **wreck point** — the damage at which the hull is wrecked: `S · (1 + x₀ · (−ln(1 − u))^γ)` | kJ | `combat::wreck_point_kj` |
+| `P(wreck)` | `0` for `x ≤ 0`, else `1 − e^(−(x / x₀)^(1/γ))` | probability | the distribution `W` is drawn from |
+
+#### 8.19.2 `RATIFIED` — the author's rulings
+
+- **There are no engagements.** A fight is not a place two fleets stop at and
+  not a span of time either side commits to.
+- **There are no fight sites.** Any hull can be fired upon anywhere its
+  trajectory takes it within reach of a hull whose Doctrine fires on it. The
+  engine may not decide *where* fights happen; Doctrine decides *whether*, and
+  trajectories decide *where and for how long*.
+- **Being fired upon is not consent.** A hull under fire keeps doing what its
+  mission says: flying its voyage, arriving, founding. An unarmed hull runs or
+  completes its mission; it is never held in place by a fight.
+- **A pitched battle needs both sides.** Two fleets stand and fight only when
+  both sides' Doctrine is to kill the other's fleet.
+- **The wreck roll resolves combat and transport together.** It is the outcome
+  of an encounter: the hull either continues its trajectory and mission, or is
+  wrecked where it is.
+- **Picket against colony ship:** both approach at speed; the colony ship tries
+  to found its colony before it is destroyed.
+- **Every Design/hull/class/role carries two fire distances**: a maximum
+  distance to fire upon an enemy (`d_enemy`) and a maximum distance to fire upon
+  a neutral (`d_neutral`). **Doctrine may ignore either or both, and ignoring
+  one means holding fire on that kind of target at any range** (R-WAR27,
+  resolved).
+- **Engagement range depends on weapon accuracy, and is a function of
+  Design/hull/class and sometimes role** (R-WAR23, resolved). Built: accuracy
+  is per Design class, the range is derived from it (§8.19.1), and both fire
+  distances are that range. Which roles narrow it is `OPEN` (R-WAR33).
+- **No wreck roll until a hull has sustained a threshold of damage**
+  (R-WAR24, resolved in form). Below it the hull is not defeated and flies on.
+  **The threshold is the structure, a soft maximum of hit points.**
+- **The roll repeats with further damage, and its odds scale with damage above
+  the threshold** — not with multiples of it. More damage, higher odds; the
+  author's reference is the Super Smash Bros. series (§8.19.5).
+- **A colony ship that survives fire at its destination leaves** (R-WAR28,
+  resolved). Colonists are not suicidal: if they believe an enemy will kill
+  them before they can found, they seek a new destination (§8.19.7).
+- **Wrecked hulls continue on their course at the moment of destruction**
+  (R-WAR34, resolved). The drive is dead, so a wreck keeps the velocity it had
+  and coasts in a straight line — a hull wrecked at rest stays where it was —
+  carrying its hull, its cargo and the people aboard as slag (law #11).
+- **A pitched battle ends by any of three rules** (R-WAR26, resolved in form):
+  one side has no hull left; a hull past the threshold rolls, and survivors
+  withdraw; a side's Doctrine breaks off on believed kinematics (§5).
+
+#### 8.19.3 `RATIFIED`, built — R-WAR25: the encounter
+
+*Built at the author's direction to finish T-133.* The superseded
+recommendation (one roll when an encounter ended, `resolve_beam_engagement` for
+a pitched battle) is in appendix §D.16.
+
+- **Detection runs when a trajectory changes** (`CLAUDE.md` §4): a departure, a
+  hull taking station, a course change. For the hull that changed, the engine
+  finds the first time it comes within fire distance of every rival hull that
+  fires on it, and — if it is armed — of every rival hull it fires on, and
+  schedules an encounter-begin event for each. An unarmed hull checks the armed
+  hulls only, so its cost is `O(armed hulls)`; an armed hull checks every rival
+  hull.
+- **The entry time is exact where it can be.** One hull at rest against one on
+  a straight stretch is closed form: the stretch's intersection with the sphere
+  of the fire distance, then the inverse of the flight distance for the time.
+  Two moving hulls use conservative advancement — a step of `(gap − reach) /
+  (sum of top speeds)` cannot pass the meeting — with a segment-distance
+  lower bound that skips pairs that never come close, at most 96 steps per event
+  and resumed on a later event.
+- **Detection admits a hull at the fire distance plus two station-keeping
+  radii**, because it runs on reference trajectories and a shot is fired from
+  and at actual positions; a target is dropped only a further margin out, so a
+  hull on the boundary is not found and dropped at one instant forever.
+- **Who fires on whom, and from how far, is one standing-layer question**
+  (`CLAUDE.md` §6): `Standing::fire_distance(role, loadout, regard)`, nothing
+  where Doctrine ignores the distance.
+- **A discharge is an event** every period `τ` while anything the shooter fires
+  on is in reach. Its mounts aim at the nearest hull in reach that has not
+  absorbed its structure, as many mounts as that hull's remaining structure
+  takes; mounts left over fire on the nearest, because past the structure more
+  energy still moves a hull toward its wreck point, which the shooter cannot
+  see. Fire control is the arena's test (`combat::laser_hit_check`'s rule) on
+  the two hulls' actual positions and velocities; a miss wastes the rest of that
+  discharge. **A discharge commits its shots and they land on a `Hits` event at
+  the same instant**, after every discharge due then has fired: two fleets that
+  open fire together discharge at identical times forever, and landing each
+  volley at once let queue order — seat order — decide who fired first (T-125's
+  rule that fire is simultaneous, restored; appendix §D.17).
+- **A wreck happens where the hull is**, on the hit that reaches its wreck point
+  (§8.19.5): off every post it held, and **on its course** (§8.19.2) — a
+  `Wreck` with the position and coordinate velocity of its reference trajectory
+  at that instant and everything it carried as mass. It raises no events; its
+  position at any time is `from + velocity · (t − since)`, and the mass ledger
+  carries wrecks as their own store beside per-planet slag.
+- **A pitched battle** is two hulls that each return fire on a hull they regard
+  as an enemy: both stand (§8.19.6), and the same discharges resolve it.
+
+#### 8.19.4 What the kinematics already say, before any of it is built
+
+At the engagement range the arena's accuracy supports (7.90e-3 ly, §8.19.1), a
+laden Medium colony ship stays within `R` for **93.6 days** leaving a port or
+arriving at a world, and for **6.0–7.1 days** passing at 0.82–0.97 c mid-voyage
+(appendix §D.11 at 3e-3 and 1e-2 ly, §D.15 at the derived range; analytic).
+Exposure grows as `√R` leaving or arriving and as `R` passing, so a more accurate
+Design is exposed to fire for longer.
+*Inference:* a slow hull is exposed 20–40 times longer than a fast one, so with
+no site hardwired, fights still concentrate where hulls are slow — at departures
+and arrivals. That is kinematics choosing the place, which is what the ruling
+asks for, and the same result T-115 found for interception.
+
+#### 8.19.5 The wreck roll: a wreck point per hull (R-WAR24 form ratified, magnitudes `OPEN`)
+
+*Author's specification: "The wreck roll odds should roll again with further
+damage suffered, should scale based on the damage suffered above the threshold,
+not multiple of the threshold. Below the threshold, 0% odds. Above the
+threshold, the more damage suffered, the higher the chance. The game series
+Super Smash Bros. has the right kind of feel to it for wreck rolls. The
+threshold is a soft HP maximum."* And: the hazard curve uses the run path's
+polynomial arithmetic — no division, a small number of multiplies.
+
+**`RATIFIED`, and built:**
+- **The threshold is the structure `S`.** A hull that has absorbed less is not
+  checked at all.
+- **Every hull has a wreck point `W ≥ S`**, drawn once from its own `u` (§8.19.1)
+  and never redrawn. A hull is wrecked the moment the damage it carries reaches
+  `W`. Damage persists across encounters; nothing repairs it yet (R-WAR31).
+- **That is the repeated roll, exactly.** Checking one fixed point against every
+  hit has the same odds as rolling on every hit with the odds of that hit's
+  damage — the inverse-transform method (drawing one uniform number and mapping
+  it through the inverse of the odds curve reproduces that curve exactly). The
+  hazard (the per-unit-damage wreck rate given survival so far) is
+  `(1/γ)·x^(1/γ − 1)/x₀^(1/γ)`, which **rises with overdamage whenever `γ < 1`**:
+  a hull just past its structure usually survives the next hit, one far past it
+  usually does not.
+- **The outcome does not depend on how damage is divided into hits**, so a
+  Design's rate of fire changes how often a hull is checked and never whether it
+  is wrecked by a given energy — the property R-WAR29's discharge period relies
+  on.
+- **Run-path arithmetic** (`src/transcendental.rs`, T-130): `−ln(1 − u)` by
+  `log2_fast` and one multiply, `(·)^γ` by `pow_fast` — an exact square root at
+  `γ = ½` — and two more multiplies. No division. Computed on each hit that
+  lands, from the hull's fixed draw.
+
+**`OPEN` — the magnitudes.** `x₀ = 1`, `γ = ½` (Weibull shape 2) are
+placeholders. At them the odds of a wreck are 22.1% at half a structure past `S`,
+63.2% at one, 98.2% at two.
+
+**Measured at these placeholders** (appendix §D.14): on the twelve-seat card bed
+at 400 yr, **97.4–98.5% of colony ships fired on are wrecked** (3 seeds), against
+100% under the logistic. The picket and blockade deliver 2.45–4.05 structures
+over an exposure (appendix §D.12), which is already past the curve's steep part.
+*Inference:* the curve's shape is not what sets lethality on this bed; the
+energy delivered is, and its levers are `σ` per Design class, beam power and
+the fire distance (R-WAR24, R-WAR27).
+
+#### 8.19.6 R-WAR26: what ends a pitched battle — all three, built
+
+**Decided (the author's ruling): all three candidates end a pitched battle**, and
+the engine now reaches each through the same events as every other fight:
+
+1. **One side has no hull left** in reach — wrecked or gone. The survivor's
+   discharges find nothing and stop.
+2. **A hull past its structure withdraws** (§2.1): the hit that carries it past
+   `S` without reaching its wreck point sends it home, whatever its fleet
+   decides. Per hull.
+3. **A side breaks off on believed kinematics** (R-O41, §5): a hull that returns
+   fire on a hull it does not regard as an enemy withdraws when its own `a_max`
+   exceeds the shooter's (`belief::can_disengage`). At fire distance — a few
+   light-days — the observation is current, so belief equals truth.
+
+**How they compose:** each is evaluated on the event that raises it, so nothing
+has to be ordered within a tick. A hit checks the wreck point first, then
+ending 2, then raises the fleet's decision once per shooter. **R-L2 (single pass
+or repeated passes): repeated** — a hull that leaves reach and comes back on its
+trajectory is found again by the discharge that drops it. A shared rock is not a
+pitched battle unless both crews are armed; today's crews are unarmed Systems
+hulls, so it is nothing.
+
+#### 8.19.7 Fights run on the event loop, concurrently with everything else
+
+*Author's specification: "All fights galaxy wide have to proceed concurrently
+with production and travel. The main event loop needs to process weapons
+discharge and course adjustment."*
+
+**`RATIFIED`:**
+- **A fight is a sequence of events on the main loop**, interleaved in time
+  with every production decision, mining tick and arrival in the galaxy. No
+  fight is worked out ahead of time and no fight is resolved in one call.
+- **Weapons discharge is an event.** So is **course adjustment**.
+
+**Built.** The interim pass resolver (`combat::resolve_pass`), the stationary
+resolver (`combat::resolve_beam_engagement`) and the three sites that called
+them are deleted.
+
+| event | when | what it does |
+|---|---|---|
+| `EncounterBegin` | a hull comes within the fire distance of a hull that fires on it — found by detection when either changes trajectory (§8.19.3) | adds it to the shooter's reach, and starts the shooter's discharges |
+| `EncounterSeek` | a moving-against-moving search ran out of steps | resumes the search |
+| `Discharge` | every `τ` while the shooter has anything in reach | fire control; commits one period's energy per mount on target |
+| `Hits` | at the discharge's instant, after every discharge due then | the energy lands: the wreck check, the fleet's decision on a hit (belief event B) |
+| `ThreatSeen` | the light of the start of a shooter's current trajectory reaches a hull it will fire on, before the encounter would begin (belief event A) | the fleet's decision |
+
+An event predicted from a trajectory carries both hulls' trajectory
+generations and is dropped if either has changed, and an arrival is dropped if
+its leg has been replaced. Simultaneous events are ordered by the queue's
+existing `(time, sequence)` rule.
+
+**R-WAR28 — resolved (the author's ruling), built:** the roll is taken on every
+hit past the structure (§8.19.5), and a colony ship that survives fire at its
+destination leaves rather than founds. **Decided with it:** fire counts
+against the destination only when the shooter's fire distance covers the
+destination — a ship hit leaving a defended world, or braking out of a course
+change, was not fired on at the world it now heads for. On arrival such a ship
+seeks a new destination (R-WAR30).
+
+**R-WAR29 — the discharge period: the budget is ruled, the values are `OPEN`.**
+*Author's specification: "Realism has to give way before the exigencies of game
+design. Combat is happening concurrently across the galaxy at potentially
+hundreds of sites. We need a firing rate range (because it should vary by
+Design) that keeps the sim overhead small enough that yr/s spends at most 25% of
+its time in fire control. Thrust, heading, role selection, bids, decision making
+should be the vast majority of the yr/s budget."*
+
+- **`RATIFIED`: the discharge period is a Design property**
+  (`CombatConfig::discharge_days_by_class`, every class 0.25 days, placeholders),
+  and fire control may take at most 25% of run time.
+- **Measured with detection on every trajectory** (appendix §D.16): fire code is 16.5% of instructions exclusive (a lower bound) and about 24.5% inclusive (an upper estimate) on the twelve-seat card bed at 400 yr, after detection pruning and cheaper discharges took it from at least 30.1% — inside the 25% budget on one seed and one horizon, with less margin than the estimate's spread. *Inference:* the cost scales with the number of hulls in reach of each shooter (the per-target position fix and ordering were the largest discharge costs, ~23 targets per discharge), more than with the period.
+- **`OPEN`, recommended: a period no longer than 5% of the shortest exposure
+  the Design must resolve** — 0.3 days for a Design meant to hit hulls passing
+  mid-voyage, 4.7 days for one that fires at departures and arrivals, at the
+  arena's accuracy. **What would settle it:** the author's period per Design;
+  the budget does not choose among these.
+
+**R-WAR30 — course adjustment: ruled and built.**
+*Author's specification: "trajectory from a moving ship and events based on
+belief: A, an enemy is moving to intercept, and B, an enemy has fired upon this
+ship's fleet. The fleet abstraction is going to be key for reducing the
+decisions per year. Colonists are not suicidal; if they believe an enemy will
+kill them before they can found a colony, they will seek a new destination."*
+
+- **A course change is a new trajectory from where the hull is and how it is
+  moving**: it sheds its velocity along its heading at its own proper
+  acceleration, then flies an ordinary leg from its stop point (`Motion::brake`,
+  `math::accel_leg_time`). A hull past turnover stops at the very place it was
+  going, so turning back after turnover saves nothing.
+- **Belief event A** fires when the light of the start of a hostile hull's
+  current trajectory reaches the fleet, if the two current trajectories bring
+  the hulls within fire distance and the light arrives first. A colony ship acts on
+  it only if the fire would come before it arrives. **Belief event B** is a hit.
+- **One decision per fleet per shooter** (`FleetKey`), through the standing
+  layer's resolver `Standing::under_fire(role, returns_fire, regards_enemy,
+  under_way, may_disengage)`: a colony ship retargets; a hull that returns fire
+  stands against an enemy and withdraws from a neutral it can outrun; a hull at
+  rest that cannot return fire withdraws; a hull under way that cannot flies on.
+  Every member of the fleet acts on the decision.
+- **A colony ship retargets** to the nearest world its empire has scanned, does
+  not own, has not already sent a ship to and does not believe an enemy holds,
+  that its hold can found, measured from its stop point; with none, it goes
+  home. A world is believed held where a threat was seen or a shot came from.
+- **`OPEN` (R-WAR35): belief event A discards a sighting when the shooter has
+  changed course since**, which the shooter's observers cannot know until the
+  new course's light arrives — a zero-lag read of the kind design law #15 rules
+  out. The lagged alternative is to keep the old sighting and let its encounter
+  fail to begin. **What would settle it:** a measurement of how often a
+  retarget is decided on a sighting the lag would have kept.
 
 ---
 
@@ -2189,7 +2639,7 @@ below the band.
 | **R-IND22** | **the founding center pays the floor-rung top-up**, so the absorbing-zero guard (§8.7) is a *transfer* rather than mass appearing from nowhere. A parent too poor to pay leaves its child at whatever it could afford — the guard degrades rather than conjuring. **Design law #11 now holds with no exceptions**, card played or not |
 | **R-WAR13** | **resolved (T-121)** — `DoctrineWrite::ArmedFrontier` is the Warfare write, and `TIER0[15]` carries it alongside the two Design unlocks. §8.2's *third* write, `picket_after_founding`, stays out: §8.10 measured it at −287.8 `W_0`, so it is R-WAR6's question (§8.14) |
 | **T-123** | **a blockader strikes the colony ships its rival launches from a port it stands at**, at range zero, as the defender (R-WAR5). Placement reads only launches whose light has reached the seat's capital. `DoctrineWrite::ArmedFrontier` writes it, with the claim-target supply and a reserve floor of `ARMED_FRONTIER_BLOCKADERS = 8` (placeholder) (§8.16) |
-| **T-123** | **`fight_at` is the one fight between hulls standing at a site** — a picket's defense and a port strike both call it, and it is bit-identical to the picket fight it was extracted from (the as-shipped arm reproduces T-122 per seed) |
+| ~~**T-123**~~ | ~~**`fight_at` is the one fight between hulls standing at a site**~~ — **superseded (T-133):** there are no fight sites; every fight is discharges on the event loop (§8.19.3) |
 | **T-121** | **the default standing layer is unarmed at every role, and `TIER0[15]` is the only key to the Contact family.** Scout rides `LimitedSystems`, colonization `MediumSystems`/`GeneralSystems`, and the seeded roster carries one design. The card unlocks LCV(Tor) and GCV(Unnamed) and writes `DoctrineWrite::ArmedFrontier`, which moves survey and the colonizer ladder onto them together (§8.14) |
 | **T-121** | **the picket rides `LimitedContactVehicle`**, not `LimitedOffensive`. The Limited tier shares one `cost_fraction`, so §8.6's denial arithmetic runs on an unchanged price; what moves is a nonzero hold and `hull_thrust_to_mass` 2.0 → 1.4. No role mounts an Offensive hull (§8.14) |
 | **T-121** | **a card is a bundle of writes** — `Card::effects: &'static [CardEffect]`, applied in slice order — which is what §8.2's *"one Design write, three Doctrine writes"* describes. Seventeen cards carry a one-element bundle (§8.14) |
@@ -2204,15 +2654,17 @@ below the band.
 | **T-115** | **a picket whose world is colonized returns to the frontier**, off station and off the books in one function — which is the situation T-113's held-ground preference creates (§8.9.3) |
 | **T-113** | the per-class candidate reduction (R-O70) is exact only for a consumer reading the argmax of a **class**; a consumer reading the argmax of a *subset* needs its own slot, and got one (§8.8) |
 | **T-112** | a colony founded at infrastructure **zero** is an absorbing state, not a price — `employment_rate` returns exactly `0.0` there, so it can never mine or build. A departing picket leaves the ladder's floor rung instead (§8.7) |
-| **T-111** | `combat::resolve_engagement` is called from `sim.rs`; the simulation and the arena fight with one model, and the arena still seeds no production |
-| law #11 | a destroyed hull's mass becomes **slag at the site** — inert (R-O59), conserved, and never a salvage yield |
-| — | no tick-based initiative; `dt = 0.0005 yr`; < 2 ms per tick |
+| **T-111** | ~~`combat::resolve_engagement` is called from `sim.rs`~~ — **amended (T-133):** the simulation fights through its own discharge events (`src/sim/fire.rs`) with the arena's fire-control rule and tuned station-keeping spread from `combat.rs`; the arena keeps `resolve_engagement` for its own sweeps and seeds no production |
+| law #11 | a destroyed hull's mass becomes **slag** — inert (R-O59), conserved, and never a salvage yield; a wrecked hull keeps its course (R-WAR34) |
+| **T-133** | **no engagements, no fight sites, and fire on the main loop** — detection on every trajectory change, discharges every `τ`, a wreck point per hull, belief events A and B, one decision per fleet per shooter, course changes from a moving start, colonists that retarget (§8.19) |
+| **T-133** | **a test bed varies nothing but the galaxy** (the author's ruling): no switch, ablation or oracle in the engine exists for a harness, and beds play cards through `apply_orders` at the protocol's barrier |
+| — | no tick-based initiative; `dt = 0.0005 yr` and < 2 ms per tick in the arena; the simulation fires on discharge events (§8.19.7) |
 
 ### Open
 
 | Code | Question | What would settle it |
 |---|---|---|
-| ~~**T-30**~~ | ~~no accept/decline site exists~~ — **closed as stated (T-111).** The round layer had already landed and the engine was producing ~4,200 co-locations per run unremarked; `sys_engagement` now resolves them. R-AC13 and posture cards are **not** unblocked: both need a decision at *range* | done; see §3.4 and §7 |
+| ~~**T-30**~~ | ~~no accept/decline site exists~~ — **closed as stated (T-111).** The round layer had already landed and the engine was producing ~4,200 co-locations per run unremarked. Since T-133 the decision is a fleet's response to belief events A and B, at range (§8.19.7) | done |
 | **R-IND20** | **whether founding should erect from the hold at all** is a magnitude (`founding_infra_share`, default 0.0, measured flat at §8.8 because a colony ship's hold is nearly all settlers — R-WAR7). The *rule*, that whatever it erects respects the works mix, is ratified at T-117 | a `settler_target` that reserves mineral volume (R-WAR7), then the same census |
 
 | **R-WAR11** | **may a Doctrine write impose a cost that scales with its holder's own activity?** A card has two costs: `Card::cost`, a bounded one-off the engine already charges, and the mechanic's own — here, every colony founded afterwards starting 5.5x thinner, forever. The second cannot be priced, because its size depends on how much the player goes on to expand, and a difference objective charges it twice (§8.10). **Not Warfare-specific**, so it belongs in the card contract | a decision on whether a card's total cost must be bounded at play time |
@@ -2222,17 +2674,35 @@ below the band.
 | ~~**R-WAR15**~~ | ~~by what path does the armed card reach the simulation?~~ **Resolved (T-122): at legal play it does not.** The effect §8.14 measured was the 0.5 kt price, paid inside the card-free opening; a pure-price control reproduces it and vanishes at the round-0 barrier. The per-write ablation it asked for was run: the colonizer write is bit-identical on 8/8 seeds, the scout write is noise (appendix §D.1). Superseded by R-WAR16 | — |
 | **R-WAR14** | **`Sim::inert_card_plays` counts `NotYetImplemented` only**, so a card writing real state into a component with no live consumer reads as working. It measures which match arm ran, not whether the write reached a decision (§8.13) | a definition of "reached a decision" that a counter can test — the candidate is whether the written component is read on a live path |
 | **R-WAR12** | **the two guess magnitudes** — `intercept_cone_radians` (0.15 rad) and `intercept_reassess_years` (25 yr). Neither is physical: the cone sets how wide a guess may be and therefore what a feint is worth, and the cadence sets how long one stays bought. They are the first magnitudes in this tree whose job is to price a **bluff** rather than a kinetic outcome | a bed on which the yomi channel is readable — not `W_0`, which a bluff does not move directly |
-| **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is **bit-identically inert** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |
+| **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is inert in **price** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0), and live in speed since the survey leg reads the hull's drive (appendix §D.19) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |
 | **R-WAR7** | **a colonizer's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
 | **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole colonizer loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
-| ~~**R-WAR5**~~ | ~~which side carries which weapon~~ **Resolved for the simulation (T-125): a ship carries what its Design mounts** (§8.17). Every simulation fight uses `resolve_beam_engagement`. The convention survives only in the arena's laser-side-vs-missile-side sweep, where `carrier_accel` still reads the laser side's first hull — kept because it is what `tests/balance.rs`'s goldens were tuned on | — |
-| **R-WAR20** | **the first Warfare card is below the author's 1.5–2.0x P92 target**, bound by transit latency: coverage of rival launches must reach ~30–45% and the port strike reaches ~10% in the expansion peak (§8.17.6) | the author's choice among an earlier first barrier, a different meeting site, a latency-aware Warfare target, or accepting the card below the band |
+| ~~**R-WAR5**~~ | ~~which side carries which weapon~~ **Resolved for the simulation (T-125): a ship carries what its Design mounts** (§8.17). Every simulation fight is discharges on the event loop (§8.19.3). The convention survives only in the arena's laser-side-vs-missile-side sweep, where `carrier_accel` still reads the laser side's first hull — kept because it is what `tests/balance.rs`'s goldens were tuned on | — |
+| **R-WAR20** | **the first Warfare card is below the author's 1.5–2.0x P92 target** — P92 1.309 [1.267, 1.370] with simultaneous fire on the event loop (T-133, appendix §D.17), 1.204 before; bound by transit latency: coverage of rival launches must reach ~30–45% and the port strike reaches ~10% in the expansion peak (§8.17.6) | the author's choice among an earlier first barrier, a different meeting site, a latency-aware Warfare target, or accepting the card below the band |
 | ~~**R-WAR18**~~ | ~~blockade placement has no recency~~ **Implemented (T-125), measured null**: ranking by launches seen in the last `intercept_reassess_years` and moving a blockader off a port that went quiet changed `ln S` by less than its standard error, because latency, not placement, binds (§8.17.5) | — |
-| **R-WAR19** | **the beam and structure magnitudes** — `beam_shot_energy_kj = 50`, `hull_hp_kj_per_kt = 1,000`. Neither is physical, and together they set how many hits each hull takes (a Medium colonizer three, a General Contact colonizer twenty-two) | the arena, once it can seed a beam-versus-beam fight between loadouts rather than sides |
-| **T-111** | **the engagement magnitudes** — `engagement_horizon_years`, `engagement_volley_period_years`, and whether a shared rock is the right occasion for a fight at all | a bed on which Warfare's objective is readable (R-TREE8) |
+| **R-WAR19** | **the beam and structure magnitudes** — `beam_power_mw = 50`, and `σ` per Design class since T-133: `10¹¹` for Systems Designs, `10¹²` for armed ones (T-132; the per-tick `50 kJ` shot and `1,000 kJ/kt` structure they replace are appendix §D.10). Only `P / σ` reaches an outcome; one mount wrecks a Limited Contact hull in 9.5 days | ratify the duration criterion in §8.18.4 (mirror fights 28–82 ticks, every fight inside `H`), then the arena once it can seed beam-versus-beam fights between loadouts |
+| **R-WAR21** | **a lone Limited picket cannot finish a Medium colony ship** (254 days against a 183-day engagement), so §8.17.4's covering rule has lost its premise and the twelve-seat bed's kills fell 77–94% (§8.18.6) | the author's choice: accept and stack, a longer engagement, a stronger beam, or structure less the hold |
+| ~~**R-WAR23**~~ | **resolved** (the author's ruling): engagement range depends on weapon accuracy and is a function of Design/hull/class and sometimes role. Derived from the Design's fire-control tolerance against the reference target (§8.19.1): 7.90e-3 ly at the arena's accuracy, against §D.10's measured reach (reliable to 3e-3, thinning by 1e-2) | — |
+| **R-WAR24** | **the wreck curve's magnitudes** — the form is ruled and built (§8.19.5): threshold at the structure, a Weibull wreck point per hull, checked on every hit. `x₀ = 1`, `γ = ½` are placeholders; at them 97.4–98.5% of colony ships fired on are wrecked on the card bed | the author: how lethal a lone picket should be, set through `σ` per class, beam power, the fire distance and these |
+| ~~**R-WAR25**~~ | **resolved and built (T-133)**: detection on every trajectory change, discharges on the event loop, a wreck point checked on every hit (§8.19.3) | — |
+| **R-WAR27** | **accuracy per Design** — "ignored by Doctrine" is ruled to mean **hold fire at any range**; both fire distances are the Design's engagement range, derived from its accuracy. Accuracy is per Design class as a multiple of the arena's tolerance, every class `1.0`, a placeholder | an accuracy per Design class |
+| ~~**R-WAR28**~~ | **resolved** (the author's ruling), **built**: the roll is taken on every hit past the structure, with odds from the damage above it; a colony ship that survives fire at its destination leaves, and fire counts against the destination only from a gun that covers it (§8.19.7) | — |
+| **R-WAR29** | **the discharge period** — ruled a Design property under a budget: fire control at most 25% of run time. Measured with detection on every trajectory: fire code is 16.5% of instructions exclusive (a lower bound) and about 24.5% inclusive (an upper estimate) on the twelve-seat card bed at 400 yr, after detection pruning and cheaper discharges took it from at least 30.1% — inside the 25% budget on one seed and one horizon, with less margin than the estimate's spread. *Recommend* a period of at most 5% of the shortest exposure the Design must resolve — 0.3 days mid-voyage, 4.7 days at departures and arrivals, at the arena's accuracy (§8.19.7, appendix §D.14–§D.16) | the author: a period per Design |
+| ~~**R-WAR30**~~ | **course adjustment — ruled and built (T-133)**: a trajectory from a moving start, triggered by belief events (A) and (B), decided once per fleet per shooter; colonists retarget to the nearest known world they can found and do not believe held (§8.19.7) | — |
+| **R-WAR31** | **repair** — a hull carries the damage it survived for the rest of its life (§8.19.5); nothing repairs it | the author: whether damage heals, where, and at what cost |
+| **R-WAR32** | **the stored fleet** — the fleet decides course adjustments (§8.19.7), which amends roles §5's "a query, not a stored thing". **Interim, built:** a mining crew at one rock, a picket stack at one world or port, or a single hull (`FleetKey`); hulls in flight are each their own fleet | the author: who joins and leaves a fleet, and when |
+| ~~**R-WAR34**~~ | **resolved (the author's ruling): wrecked hulls continue on their course at the moment of destruction** — a coasting `Wreck` carrying the hull's whole mass, not slag booked at a planet (§8.19.2, §8.19.3) | — |
+| **R-WAR35** | **belief event A reads a course change before its light arrives** — a sighting is discarded when the shooter has changed course since, which its observers cannot yet know (design law #15) (§8.19.7) | a count of retargets decided on a sighting the lag would have kept |
+| **R-WAR37** | **target priority under fire anywhere** — nearest-first was harmless while fights happened only at sites; with fire wherever hulls are in reach, a blockader's shots go to what stands nearest it, and on the twelve-seat card bed **no colony ship was wrecked** on three seeds against 10,903–12,845 other hulls (appendix §D.16). The port strike's purpose (§8.16) is the colony ship | the author: a Doctrine priority by role (colony ships first for a blockader is the recommendation), then the card bed re-measured |
+| **R-WAR38** | **the armed survey Design's structure** — `Tor` keeps `σ = 10¹¹`, the value it carried when one class named the survey Design on both shells; §8.18's rule puts armed Designs at `10¹²` | the author: `σ` for `Tor` |
+| ~~**R-WAR36**~~ | **resolved (the author's ruling): fleets are generated with the galaxy**, with a position, a velocity and an equal mineral spend (Technology §4.4.5) — a bed places fleets without any code the game does not run. The question below is kept as it was asked: **the arena against the harness ruling** — design law #4 makes the Ship Testing Arena the required harness for per-class `r_eq`, and it spawns and fights hulls outside the simulation; the author's T-133 ruling is that a harness carries no special sim code. `arena.rs` is a scenario seeder that calls `combat::resolve_engagement`, not the simulation's fire path, so the two are not yet in conflict — but a pitched-battle bed for the Technology rating (`Hyades_technology_tree.md` §4) cannot use it and stay within the ruling | the author: whether the arena keeps its own resolver, or seeds scenarios into the simulation and steps its event loop |
+| **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
+| ~~**R-WAR26**~~ | **what ends a pitched battle — ruled and built (T-133)**: all three, each on the event that raises it; R-L2 is answered as repeated passes (§8.19.6) | — |
+| ~~**R-WAR22**~~ | ~~damage does not persist past an engagement~~ — **resolved (T-133):** damage persists for the hull's life (§8.19.5); repair is R-WAR31 | — |
+| ~~**T-111**~~ | ~~the engagement magnitudes~~ — **retired (T-133):** there are no engagements; the magnitudes are the discharge period (R-WAR29) and the fire distances | — |
 | R-MC9c / T-12 | HP pools, weapon count, missile AoE, magazines | engine work, then the arena |
 | R-L0 | per-hull slot tables | the arena |
-| R-L2 | single closing pass or repeated passes? | pin with the wreck roll |
+| ~~R-L2~~ | ~~single closing pass or repeated passes?~~ **Repeated (T-133)**: a hull that leaves reach is found again on its trajectory | — |
 | R-O40 / T-09 | throttle fraction; observe `a` from the trajectory | engine work |
 | R-O31 / T-05 | `min_time_search` as a reachability cone | engine work |
 | R-O65 | flatten `hull_thrust_to_mass`? | explicit ratification |

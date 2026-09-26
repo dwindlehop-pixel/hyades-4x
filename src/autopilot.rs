@@ -19,6 +19,7 @@
 //! view structs rather than its internals.
 
 use crate::cards::Order;
+use crate::combat::Loadout;
 use crate::galaxy::{PlanetClass, PlanetId, PlayerId};
 use crate::math::Vec3;
 use crate::sim::{Class, HullType, Role};
@@ -219,8 +220,6 @@ pub struct Doctrine {
     // --- Explore / Survey (autopilot-doc §2) ---
     /// Number of survey vehicles in the opening fan-out. Base `6` (cube faces).
     pub survey_vehicles: usize,
-    /// Survey acceleration in g (base `1.0`).
-    pub survey_accel_g: f64,
     /// How many known, unclaimed candidate worlds the empire wants on hand.
     /// When [`ProductionContext::candidate_count`] falls below this, a center
     /// at the limited tier builds a Scout instead of idling — this is what
@@ -260,9 +259,6 @@ pub struct Doctrine {
     /// not theirs to do. What they *can* do is outrun you, which is
     /// [`crate::belief::can_disengage`] and is decided on kinematics rather than
     /// on consent.
-    ///
-    /// Gated additionally by [`crate::sim::SimConfig::engagements_enabled`],
-    /// which is the master switch that keeps the measurement corpus valid.
     pub engage_neutrals: bool,
     /// **Do colonizers hold the ground they did not take?** (T-112.)
     ///
@@ -351,18 +347,18 @@ pub struct Doctrine {
     /// **The price was expected to be paid at the yard, and there is none**:
     /// under R-O57 cost *is* dry mass and `hull_dry_mass` reads the cost
     /// *tier*, which groups every Limited hull — so an LOU and an LCV are the
-    /// same 0.020 kt object and this write is **bit-identically inert**. It is
-    /// kept because it goes live on two independent axes that are already
-    /// open: price, when hull types carry differentiated cost (R-O64, R-L0);
-    /// and speed, when `launch_survey` reads the hull it is flying instead of
-    /// a flat `survey_accel_g · G`, which is the same defect R-WAR9 closed for
-    /// the colonization and picket legs. `Hyades_warfare_tree.md` §8.9.7.
+    /// same 0.020 kt object, and the write is inert in **price** until hull
+    /// types carry differentiated cost (R-O64, R-L0). It is live in **speed**:
+    /// the survey leg flies the hull's own drive (a flat `survey_accel_g` was
+    /// removed on the author's ruling that the sim does not overwrite a
+    /// Design), and an LCV's empty drive is 0.911 g against an LSV's 1.00.
+    /// `Hyades_warfare_tree.md` §8.9.7.
     ///
     /// **A scout built this way carries `Class::Tor`**, which is how
     /// `assign_role` tells it from a picket built on the same hull. The class
-    /// *is* the design (R-O28/R-O42b), so a Tor on an offensive hull is a
-    /// survey design mounted on a fighting shell — exactly what a Design write
-    /// does — and it needs no second piece of state to disambiguate.
+    /// *is* the design (R-O28/R-O42b), and a class names one hull, so the
+    /// armed survey Design (Tor, on the Contact hull) and the unarmed one
+    /// (Spur, on the Systems hull) are two Designs.
     ///
     /// **Placeholder, default false** (R-WAR8) — the card sets it.
     pub scout_hull_offensive: bool,
@@ -610,7 +606,6 @@ impl Default for Doctrine {
             growth_rate: 0.873,
             biosphere_regen_bonus: 1.0,
             survey_vehicles: 6,
-            survey_accel_g: 1.0,
             // 1024 — ratified with k_high above; survey must scale with the
             // empire or expansion outruns its own map. Monotone by construction
             // (survey is a fallback, never a pre-emption), so raising it is safe.
@@ -1654,22 +1649,26 @@ impl<'a> Standing<'a> {
     /// **The design this layer lays down for `role`** — the hull *and* the
     /// class, because the class is what distinguishes two roles sharing a hull.
     /// Two pairs share one today: a scouting Limited Contact Vehicle (`Tor`)
-    /// against a picketing one (`Unnamed`) once the Warfare card is played, and
-    /// a scouting Limited Systems hull (`Tor`) against a mining one (`Meadow`)
+    /// against a picketing one (`Cairn`) once the Warfare card is played, and
+    /// a scouting Limited Systems hull (`Spur`) against a mining one (`Meadow`)
     /// before it (T-115, T-121).
     pub fn design_for(&self, role: Role) -> (HullType, Class) {
         match role {
-            Role::Scout => (scout_hull(self.doctrine), Class::Tor),
-            Role::Colonizer => (HullType::MediumSystems, Class::Unnamed),
+            Role::Scout => match scout_hull(self.doctrine) {
+                HullType::LimitedSystems => (HullType::LimitedSystems, Class::Spur),
+                hull => (hull, Class::Tor),
+            },
+            Role::Colonizer => (HullType::MediumSystems, Class::Delta),
             Role::Miner => (HullType::LimitedSystems, Class::Meadow),
-            Role::Picket => (HullType::LimitedContactVehicle, Class::Unnamed),
-            // **Not assignable, and the design collides with the colonizer's
-            // on purpose** — a freighter rides the same Medium Systems hull
-            // (roles §4.4). It is safe only because `ASSIGNABLE` excludes it,
-            // so `role_of` can never return it; adding it there would make
-            // `(MediumSystems, Unnamed)` ambiguous and silently task colony
-            // ships as freight. The same holds for the two terminal states.
-            Role::Freighter | Role::Reserve | Role::Scrapped => (HullType::MediumSystems, Class::Unnamed),
+            Role::Picket => (HullType::LimitedContactVehicle, Class::Cairn),
+            // **Not assignable** — a freighter is produced beside a miner, not
+            // tasked (roles §5), so `ASSIGNABLE` excludes it. It shares the
+            // Medium Systems *hull* with the colonizer and not the Design:
+            // since T-133 the two classes differ (Ford, Delta), so a freighter
+            // can no longer read back as a colony ship. The two terminal
+            // states answer with the freighter's Design because they must
+            // answer something; nothing builds to them.
+            Role::Freighter | Role::Reserve | Role::Scrapped => (HullType::MediumSystems, Class::Ford),
         }
     }
 
@@ -1755,6 +1754,98 @@ impl<'a> Standing<'a> {
     pub fn recycles_on_founding(&self) -> bool {
         !self.doctrine.picket_after_founding
     }
+
+    /// **How this layer regards another empire** (T-133). There is no
+    /// diplomacy yet (T-11), so every other empire is neutral unless the
+    /// hostility write makes neutrals enemies — §8.2's *"a Neutral empire is an
+    /// Enemy empire"*.
+    pub fn regard(&self) -> Relation {
+        if self.doctrine.engage_neutrals {
+            Relation::Enemy
+        } else {
+            Relation::Neutral
+        }
+    }
+
+    /// **How far a hull in `role` carrying `loadout` fires on a hull it
+    /// regards as `toward`**, or `None` where it holds fire
+    /// (`Hyades_warfare_tree.md` §8.19, T-133).
+    ///
+    /// The distances are the Design's (`Loadout::fire_enemy_ly`,
+    /// `fire_neutral_ly`), both the engagement range its fire control supports
+    /// (`combat::engagement_range_ly`); Doctrine decides which it ignores, and
+    /// ignoring one holds fire at any range (the author's ruling). The author
+    /// also ruled that engagement range *sometimes* depends on role; this is
+    /// where a role would narrow it, and no role does yet (R-WAR33). The default layer fires
+    /// on enemies and holds fire on neutrals — **except in the picket role**,
+    /// whose whole mission is denying a neutral's colony ships, which is what
+    /// the Warfare card's writes put hulls in that role to do.
+    /// **What a fleet does when an enemy threatens or fires on it** (T-133,
+    /// warfare §8.19.2 and §8.19.7, the author's rulings).
+    ///
+    /// - A **colony ship** seeks a new destination: colonists who believe an
+    ///   enemy will kill them before they can found are not suicidal.
+    /// - A hull that **returns fire on an enemy** stands: that is a pitched
+    ///   battle, which needs both sides' Doctrine to kill. One that returns
+    ///   fire but regards the shooter only as a neutral breaks off when it
+    ///   believes it can outrun it (R-WAR26's third ending); otherwise it is
+    ///   committed and stands.
+    /// - A hull **holding a post** it cannot defend — a mining crew, a
+    ///   reserve — leaves: an unarmed ship runs or completes its mission, and
+    ///   its mission here is over while it is under fire.
+    /// - A hull **under way** completes its mission.
+    ///
+    /// A hull past its structure withdraws whatever this says (§2.1, R-WAR26's
+    /// second ending); that is decided per hull, not per fleet.
+    pub fn under_fire(
+        &self,
+        role: Role,
+        returns_fire: bool,
+        regards_enemy: bool,
+        under_way: bool,
+        may_disengage: bool,
+    ) -> UnderFire {
+        if role == Role::Colonizer {
+            return UnderFire::Retarget;
+        }
+        if returns_fire {
+            return if !regards_enemy && may_disengage { UnderFire::Withdraw } else { UnderFire::Continue };
+        }
+        if !under_way {
+            return UnderFire::Withdraw;
+        }
+        UnderFire::Continue
+    }
+
+    pub fn fire_distance(&self, role: Role, loadout: &Loadout, toward: Relation) -> Option<f64> {
+        if !loadout.is_armed() {
+            return None;
+        }
+        match toward {
+            Relation::Enemy => Some(loadout.fire_enemy_ly),
+            Relation::Neutral if role == Role::Picket => Some(loadout.fire_neutral_ly),
+            Relation::Neutral => None,
+        }
+    }
+}
+
+/// **What a fleet does about a threat or a hit** (T-133, warfare §8.19.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnderFire {
+    /// Keep flying the mission — or stand and fight.
+    Continue,
+    /// A colony ship seeks a new destination.
+    Retarget,
+    /// Head home.
+    Withdraw,
+}
+
+/// How one empire regards another (T-133). Only the two the fire distances
+/// distinguish; the rest of the diplomatic list is T-11.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Relation {
+    Enemy,
+    Neutral,
 }
 
 /// **What a hull is good for when the standing layer mounts nothing on it.**
@@ -1838,6 +1929,9 @@ fn hull_order(hull: HullType) -> BuildOrder {
     let class = match hull {
         HullType::LimitedSystems => Class::Meadow,
         HullType::LimitedContactVehicle => Class::Tor,
+        HullType::MediumSystems => Class::Delta,
+        HullType::GeneralSystems => Class::Range,
+        HullType::GeneralContactVehicle => Class::Scarp,
         _ => Class::Unnamed,
     };
     BuildOrder::Hull { hull_type: hull, class }
@@ -2157,6 +2251,29 @@ mod tests {
         );
     }
 
+    /// **Fire distances, and Doctrine holding fire** (T-133, warfare §8.19):
+    /// an unarmed hull never fires; by default a picket fires on neutrals and
+    /// every other role holds fire on them; everyone fires on an enemy, and
+    /// the hostility write is what makes a neutral one.
+    #[test]
+    fn doctrine_holds_fire_on_neutrals_except_in_the_picket_role() {
+        let cfg = crate::sim::SimConfig::new(1);
+        let combat = crate::combat::CombatConfig::default();
+        let gun = crate::sim::design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &cfg, &combat);
+        let none = crate::combat::Loadout::UNARMED;
+        let peace = Doctrine::default();
+        let st = Standing::of(&peace);
+        assert_eq!(st.regard(), Relation::Neutral, "every other empire is neutral by default");
+        assert_eq!(st.fire_distance(Role::Picket, &none, Relation::Enemy), None, "unarmed never fires");
+        assert_eq!(st.fire_distance(Role::Picket, &gun, Relation::Neutral), Some(gun.fire_neutral_ly));
+        for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Freighter, Role::Reserve] {
+            assert_eq!(st.fire_distance(role, &gun, Relation::Neutral), None, "{role:?} holds fire on a neutral");
+            assert_eq!(st.fire_distance(role, &gun, Relation::Enemy), Some(gun.fire_enemy_ly));
+        }
+        let war = Doctrine { engage_neutrals: true, ..Doctrine::default() };
+        assert_eq!(Standing::of(&war).regard(), Relation::Enemy, "the hostility write makes a neutral an enemy");
+    }
+
     #[test]
     fn a_contact_hull_scouts_as_a_tor_and_pickets_otherwise() {
         let ap = BaselineAutopilot::default();
@@ -2171,8 +2288,8 @@ mod tests {
         );
         assert_eq!(
             Standing::of(&plain).scout_order(),
-            BuildOrder::Hull { hull_type: HullType::LimitedSystems, class: Class::Tor },
-            "and so does the unarmed one, so the class means the same thing either way"
+            BuildOrder::Hull { hull_type: HullType::LimitedSystems, class: Class::Spur },
+            "the unarmed one carries its own Design: a class names one hull"
         );
 
         let cands = one_colony_candidate(&ap, &armed);
@@ -2181,7 +2298,7 @@ mod tests {
         assert_eq!(as_scout.role, Role::Scout);
         assert_eq!(as_scout.target, None, "a scout picks its own world from the frontier");
 
-        let as_picket = ap.assign_role(&armed, hull, Class::Unnamed, &cands).unwrap();
+        let as_picket = ap.assign_role(&armed, hull, Class::Cairn, &cands).unwrap();
         assert_eq!(as_picket.role, Role::Picket, "the same hull without the survey design still holds ground");
 
         // And the same disambiguation holds on the unarmed side, where the
@@ -2191,7 +2308,7 @@ mod tests {
         // there would say nothing about which role the design resolves to.
         let st = Standing::of(&plain);
         let lsv = HullType::LimitedSystems;
-        assert_eq!(st.role_of(lsv, Class::Tor), Some(Role::Scout));
+        assert_eq!(st.role_of(lsv, Class::Spur), Some(Role::Scout));
         assert_eq!(st.role_of(lsv, Class::Meadow), Some(Role::Miner));
     }
 
@@ -2352,12 +2469,57 @@ mod tests {
                 };
                 let st = Standing::of(&d);
                 for hull in all {
-                    for class in [Class::Unnamed, Class::Tor, Class::Meadow] {
+                    for class in [Class::Unnamed, Class::Spur, Class::Tor, Class::Meadow] {
                         assert!(st.role_of(hull, class).is_some(), "{hull:?}/{class:?} has no mission");
                     }
                 }
             }
         }
+    }
+
+    /// **A class names one hull** (the author's ruling). Every Design the
+    /// standing layer lays down, under every combination of the writes, every
+    /// Design a card unlocks, and every class `hull_order` stamps sits on the
+    /// hull its class names — and the armed survey Design is armed.
+    #[test]
+    fn a_named_class_is_on_one_hull() {
+        let on_its_hull = |hull: HullType, class: Class, site: &str| {
+            if let Some(h) = class.hull() {
+                assert_eq!(hull, h, "{site}: {class:?} on {hull:?}, but it names {h:?}");
+            }
+        };
+        for scout_armed in [false, true] {
+            for colonizer_contact in [false, true] {
+                let d = Doctrine {
+                    scout_hull_offensive: scout_armed,
+                    colonizer_general_contact: colonizer_contact,
+                    ..Doctrine::default()
+                };
+                let st = Standing::of(&d);
+                for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
+                    let (hull, class) = st.design_for(role);
+                    on_its_hull(hull, class, "design_for");
+                }
+            }
+        }
+        for hull in HullType::ALL {
+            if let BuildOrder::Hull { hull_type, class } = hull_order(hull) {
+                on_its_hull(hull_type, class, "hull_order");
+            }
+        }
+        for hull in [HullType::MediumSystems, HullType::GeneralSystems] {
+            on_its_hull(hull, Class::freighter_for(hull), "a freighter");
+        }
+        for card in crate::cards::TIER0.iter() {
+            for effect in card.effects {
+                if let crate::cards::CardEffect::UnlockDesign(hull, class) = *effect {
+                    on_its_hull(hull, class, "a card's unlock");
+                }
+            }
+        }
+        let cfg = crate::sim::SimConfig::new(1);
+        let tor = crate::sim::design_loadout(HullType::LimitedContactVehicle, Class::Tor, &cfg, &Default::default());
+        assert!(tor.is_armed(), "a Tor is on a Contact hull, so it is armed");
     }
 
     /// One `Candidate` a mature center would happily colonize.

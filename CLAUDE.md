@@ -61,10 +61,10 @@ why Politics cards are **not opt-in**.
 decisions.** `Hyades_autopilot_colonization_growth.md` (Expansion + Growth,
 Rev 4), `Hyades_production_tree.md`, `Hyades_technology_tree.md`,
 `Hyades_warfare_tree.md` and the politics spec above. The three new ones are
-Rev 1 and are mostly `OPEN` **on purpose** — Technology has no objective at all
-until `Q_i` is instrumented, and Warfare is blocked on T-30's missing
-accept/decline site — so read their registers before assuming a question is
-unasked.
+mostly `OPEN` **on purpose** — Technology (Rev 2) has an objective the author
+specified at T-131, a static per-role Elo rating of every Design, with a first
+table in `data/design_ratings.tsv` that nothing reads yet; Warfare is blocked on T-30's missing accept/decline site — so read their
+registers before assuming a question is unasked.
 
 **`docs/Hyades_experiments_appendix.md` is where the measurement record lives.**
 Nothing in it is normative. It holds the runs, the refuted hypotheses and the
@@ -119,7 +119,15 @@ The MC sweeps are slow in debug; always use `--release` for them.
 ### The 60-second rule for tests and CI
 
 **Every test target and every CI step must finish in ≤60 s.** Searches are the
-only exception and they are offline, never in CI. Current costs:
+only exception and they are offline, never in CI.
+
+**The tolerance band (the author's ruling):** a target that grows past 60 s may
+run up to **72 s** before it must be fixed, and the fix brings it to **≤54 s** —
+not back to 59. The band exists so one landing that nudges a target over the
+line is not a fire drill; the 54 s floor exists so the next landing does not
+start at the edge. Measure unloaded, and time the old binary beside the new one
+(a reading taken while another run shares the cores is not a property of the
+change). Current costs:
 
 | step | cost |
 |---|---|
@@ -699,7 +707,9 @@ Three properties, and the second is why it is worth the trouble:
 
 Three of the six trees are measurable (Expansion, Growth, Production); Warfare is
 an algebraic zero on the 3-seat bed, Politics is Expansion exactly, Technology is
-undefined — reasons in the harness docs and in trees §2.3. **Say which you left
+rated per Design (`data/design_ratings.tsv`) but no harness turns the table
+into a stock yet (T-131) — reasons in the harness docs and
+in trees §2.3. **Say which you left
 out and why**; a composite over an unstated subset is worse than a single metric.
 
 **First run, 32 knobs, 4 CRN seeds, 1,500 yr** — full raw per-seed dataset in
@@ -1483,7 +1493,8 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/belief.rs` | **believed kinematics** (R-O41) — one-sided `a_max` estimate from light-lagged observations, and the accept/decline predicate that runs on it |
 | `src/cards.rs` | the **card layer** — 18 tier-0 placeholders (3 slants × 6 trees), `Order`, and the coerce-never-reject rule |
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
-| `src/combat.rs` | **engine-native combat**: kinematics, weapons, `resolve_engagement`, and the tuned station-keeping spread — **two callers since T-111**, the arena and `sim::sys_engagement` |
+| `src/sim/fire.rs` | **fire on the main loop** (T-133): encounter detection on every trajectory change, discharge events, the wreck point, belief events A and B, per-fleet decisions and course changes from a moving start |
+| `src/combat.rs` | **engine-native combat**: kinematics, weapons, loadouts, structure and the wreck point, fire control, `resolve_engagement`, and the tuned station-keeping spread — **two consumers**, the arena (`resolve_engagement`) and `sim::fire` (the rest) |
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |
 | `src/matching.rs` | the Exchange (order-book matching) — wired in at T-01; **it was never in the module list, so it did not compile as part of the crate and its tests never ran in CI** |
 | `src/log.rs` | optional diagnostic event log (the interrogation seam) |
@@ -1498,10 +1509,12 @@ place them, and call `combat::resolve_engagement`. **The arena resolves no damag
 Dependency direction is `arena → combat`, never the reverse. Do not reintroduce
 combat logic into the arena or into an example.
 
-**Since T-111 the simulation is the second caller, and the rule extends rather
-than bends: `sim → combat`, never `sim → arena`.** `sys_engagement` builds its
-own `Combatant`s from hulls that were paid for; the arena's whole purpose is
-spawning ones that were not. Tuned constants live on the `combat` side of that
+**Since T-111 the simulation is the second consumer, and the rule extends rather
+than bends: `sim → combat`, never `sim → arena`.** Since T-133 the simulation
+does not call `resolve_engagement` at all — `sim::fire` fires discharge events
+between hulls that were paid for, reading the arena's fire-control rule and
+station-keeping spread from `combat`; the arena's whole purpose is spawning
+hulls that were not. Tuned constants live on the `combat` side of that
 line — the station-keeping spread moved there from `arena` when the sim needed
 it, with `arena::ROU_STATION_*` kept as re-exports, because **a Monte-Carlo-tuned
 number with two definitions is an edit waiting to go wrong.**
@@ -1582,7 +1595,12 @@ cheap audit of the first**, and neither defect was findable by reading.
 - **Determinism is a hard requirement.** All randomness flows from a seeded `Rng`;
   all time is the in-sim event clock in years. Iterate collections in deterministic
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`
-  guards this — never weaken it to make a feature fit.
+  guards this — never weaken it to make a feature fit. **Until T-133 no test in
+  it fired a shot** — no card-free Design is armed and none played a card — so
+  combat sat outside the gate; `combat_runs_are_bit_identical` plays the card
+  bed on a small galaxy at the shipped barrier and floors the encounter, wreck
+  and course-change counts. A new mechanism no card-free run reaches needs its
+  own arm here.
 
   **The "and wasm32" half was false until T-127, and nothing here could have
   said so.** The determinism suite runs one target, and at its horizons a
@@ -2133,6 +2151,22 @@ one, stop and flag it.
   write at a time is not one. A second property is worth asserting beside it:
   the resolver must be **total**, because a hull with no mission is a hull the
   yard was already charged for.
+- **A harness or test bed carries no special sim code; the only thing a bed
+  varies is the galaxy** (T-133, the author's ruling). No `SimConfig` switch,
+  ablation or oracle exists for a measurement, and a bed plays cards through
+  `apply_orders` at the protocol's own barrier. Three kinds of thing this
+  retired, so they are not rebuilt: a master switch for a mechanic
+  (`engagements_enabled`), an oracle that hands a decision ground truth
+  (`ablate_oracle_intercept`, `ablate_strike_fraction`), and an engine variant
+  compiled in for one arm (`ablate_color_conjunction`,
+  `ablate_picket_founding_cost`). An ablation now lives in a scratch build of
+  the engine, measured against the shipped binary, and never lands. A unit test
+  may still *place* state — a hull parked through `Simulation::park`, a Doctrine
+  field set — because that is the state a card writes, reached through the
+  engine's own entry points; it may not add a code path the game does not run.
+  **A bed that needs fleets generates them with the galaxy**
+  (`Galaxy::generate_with`, equal mineral spend per fleet) — the author's
+  answer to how a rating bed puts two fleets face to face.
 - **Flavor text is the author's own.** Never silently overwrite it.
 - Direct, technical register. Concrete decisions over hedging.
 - **Never force-push a designated feature branch — not even `--force-with-lease`
@@ -2223,7 +2257,7 @@ T-codes, and item 10 is blocked rather than open:
 | 5 | Colony cargo mass ≡ mineral cargo mass | R-O32 | **done** — `laden_accel` now masses `pop_cargo`; it was massless, so a laden colony ship flew like an empty hull and the burn read out cargo *type*, the one thing §6.2 exists to hide. **Completed at R-WAR9 (T-115):** this row was true of `laden_accel` and not of the dispatcher that flies colony ships — `spawn_courier` read `civilian_accel_g · G` *before* loading the hold and never re-read it, so the colonization leg was still an empty hull's. A laden Medium colonizer makes **0.241 ly/yr² against 2.446 empty**, and fixing it moved every transit-dependent magnitude in the corpus. **A row marked done is a claim about a code path, and this one named the wrong one for several landings.** |
 | 12 | Re-base hull mass on surface area (shell), contents on volume | R-O58/R-O58b | **done** — landed with 11; see below |
 | 1 | `BuildOrder::Hull { hull_type, class }` + role assigned after production | R-O29 | **done** — the three mission-named variants are gone; `Autopilot::assign_role` returns a `Tasking { role, target }` for the finished hull, and the old `MiningPair`'s freighter is now a consequence of assigning `Role::Miner`. **Behavior-neutral**, verified by stashing the diff: seed 1 / 3 seats / 4 kyr gives 1,183 colonies, 1,594 miner taskings, 5,845 scanned, 240 scouts both with and without |
-| 2 | Design/roster component | **R-O28** | **done** — `Roster` (a sorted, idempotent set of `(HullType, Class)`) is a per-player component written only by tree cards. Unblocks σ_vector for Design: the distance between pre- and post-card rosters is now computable. `Class` also introduces the Banks-convention design names (R-O42b: Meadow/Tor proposed, flavour subject to authorship) |
+| 2 | Design/roster component | **R-O28** | **done** — `Roster` (a sorted, idempotent set of `(HullType, Class)`) is a per-player component written only by tree cards. Unblocks σ_vector for Design: the distance between pre- and post-card rosters is now computable. `Class` also introduces the Banks-convention design names (R-O42b, ratified: one class per hull, Spur/Tor/Cairn/Meadow/Delta/Ford/Range/Strait/Scarp) |
 | 3 | Diplomatic fields on `Doctrine` | R-O27/R-A3 | open — no field list specified yet (**T-11**) |
 | 4 | Throttle fraction; observe `a` from trajectory not the stat block | R-O40 | open (**T-09**) |
 | 6 | `min_time_search` as a reachability-cone query | R-O31 | open — same function, reverse direction (**T-05**) |
@@ -2742,6 +2776,40 @@ changes how you *work*, not what is left to do:
 - **`LASER_HIT_TOLERANCE` changes require dimensional analysis** against actual hull
   dimensions before acceptance. It is an abstracted fire-control stat, *not* literal
   hull cross-section.
+- **Damage is a power, never a per-tick quantum** (T-132, warfare §8.18). A beam
+  mount on target delivers `P · dt`, and a hull's structure is `σ · r³`. A new
+  weapon family states its damage as a rate over time: `dt` is fixed by missile
+  guidance, and a per-tick quantity lets it set how fast hulls die — which is
+  how every armed fight came to end in its first tick.
+- **There are no engagements and no fight sites** (T-133, warfare §8.19, the
+  author's ruling). A hull under fire keeps flying its mission, and is wrecked
+  when its carried damage reaches a **wreck point drawn once per hull** past its
+  structure (§8.19.5) — which is the roll repeated on every hit, and makes an
+  outcome independent of how the damage was divided. **A wrecked hull continues
+  on its course** — it coasts at the velocity it had, carrying its whole mass,
+  and the ledger counts it as a wreck, not as slag at a planet. A colony ship that survives
+  fire at its destination leaves. Engagement range is derived from the
+  Design's fire-control accuracy (`combat::engagement_range_ly`). `σ` is per Design
+  class, and every Design the engine builds has a class name. Fire is found by
+  detection on every trajectory change and resolved by discharge events on the
+  main loop (`src/sim/fire.rs`); nothing is worked out ahead of time.
+- **Events at one instant are a sequence, so a simultaneous rule needs two
+  phases.** Two fleets that open fire together discharge at identical times
+  forever, and a discharge that applied its damage at once let the queue's
+  sequence number — seat order — decide every exchange: Scarp against Tor
+  flipped outright with the seating. A discharge now commits its shots and a
+  `Hits` event at the same instant lands them after every discharge due then.
+  **Swap the seats in any head-to-head measurement**; it is the check that
+  found this.
+- **A detection band and a drop band must differ** (T-133). Detection admitted
+  a hull at exactly its reach and the discharge dropped it `1e-12` beyond it, so
+  one hull on the boundary was found and dropped at one instant forever and the
+  run stalled at a fixed clock. Drop only a further margin out (hysteresis).
+- **Two readers of one trajectory must be one function.** `Simulation::position_at`
+  kept its own copy of the flight arithmetic and ignored the braking prefix
+  `Motion::position_at` had gained, and detection and fire disagreed about where
+  a braking hull was — the second event storm of the same landing. Read a
+  motion through `Motion`, never beside it.
 - Combat runs just-in-time for 60 fps with a **< 2 ms per-tick budget**; presentation
   time is decoupled from simulation tick duration.
 - The **Lanchester aggregate model** is reserved for imperial-scale resolution; the

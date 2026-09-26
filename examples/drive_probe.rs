@@ -2,11 +2,12 @@
 //!
 //! The question this answers, asked directly: *can a laden GSV be made
 //! competitive with an equal-cost fleet of MSVs in both throughput and
-//! turnaround?* Today it is not — it wins on throughput and loses on
-//! turnaround, because civilian motion prices thrust as `civilian_accel_g ×
-//! dry_mass` and dry mass is the **shell** (`r²`), while the load it has to
-//! push is the **hold** (`r³`). So laden acceleration falls as `1/r` by
-//! construction and the biggest hull is the most sluggish one.
+//! turnaround?* Before T-96 it was not — it won on throughput and lost on
+//! turnaround, because civilian motion priced thrust as 1 g × dry mass and
+//! dry mass is the **shell** (`r²`), while the load it has to push is the
+//! **hold** (`r³`). So laden acceleration fell as `1/r` by construction and
+//! the biggest hull was the most sluggish one. (The engine has since adopted
+//! the drive law this harness prices; its baseline row is the retired law.)
 //!
 //! R-MC16 already ratified the fix and named it a *capacity*: thrust scales
 //! with volume because ENG slots do, and realized thrust is a **Design**
@@ -85,12 +86,12 @@ fn design(h: HullType, cfg: &SimConfig, k: f64, phi: f64) -> Ship {
     }
 }
 
-/// Today's law, for the baseline row: thrust is `civilian_accel_g × dry_mass`,
-/// so acceleration is `dry / (dry + cargo)` and the drive is free and massless.
+/// The pre-T-96 law, for the baseline row: thrust was 1 g × dry mass, so
+/// acceleration was `dry / (dry + cargo)` and the drive was free and massless.
 fn today(h: HullType, cfg: &SimConfig) -> Ship {
     let dry = hyades_engine::sim::hull_dry_mass(h, cfg).kilotons();
     let cargo = h.cargo_capacity(cfg).kilotons() * FILL;
-    let (a_laden, a_empty) = (cfg.civilian_accel_g * dry / (dry + cargo), cfg.civilian_accel_g);
+    let (a_laden, a_empty) = (dry / (dry + cargo), 1.0);
     let g = math::G;
     Ship {
         cost: dry,
@@ -130,7 +131,7 @@ fn main() {
     let hulls =
         [("LSV", HullType::LimitedSystems), ("MSV", HullType::MediumSystems), ("GSV", HullType::GeneralSystems)];
 
-    head("today — thrust = civilian_accel_g x dry_mass (shell, r^2); the drive is free and massless");
+    head("pre-T-96 — thrust = 1 g x dry_mass (shell, r^2); the drive is free and massless");
     for (n, h) in hulls {
         row(n, &today(h, &cfg));
     }

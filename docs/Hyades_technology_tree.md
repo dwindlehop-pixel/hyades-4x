@@ -8,11 +8,17 @@ standing-layer state, and the asymmetric leak), `Hyades_warfare_tree.md` (what
 capability is spent on) and `Exotic_matter_technology_inspiration.md`. New calls
 continue the **R-TECH n** series.*
 
-**Rev 1, new.** Carries **ratified decisions and open decisions only**
+**Rev 2 (T-131).** Carries **ratified decisions and open decisions only**
 (`CLAUDE.md` §6). This is the **least-built** of the six trees: the standing-layer
 half is ratified and shipped (`Roster`, `Class`, `UnlockDesign`), the loadout
-model is specified and unbuilt, and the objective is a proposal with a knob in it.
-Most of this file is `OPEN`, and it says so per item rather than in the prose.
+model is specified and unbuilt, and **the objective is now specified by the
+author** (§4) — a static rating of every Design, earned head-to-head in one test
+bed per role — with every bed built and a first table measured (§4.9.1). Most of this file is `OPEN`, and it says so per item
+rather than in the prose.
+
+**Rev 2 changes:** §4 rewritten to the author's specification, replacing the
+power-mean proposal (R-TREE4, never ratified; appendix §D.9). §5.6 added — a
+Technology write reaches no build today. R-TECH5 through R-TECH18 opened. **T-132** resolved R-TECH14 (the damage model).
 
 ---
 
@@ -78,9 +84,14 @@ freighter ride on MSV, which the starting roster excludes, so enforcement forbid
 every expansion build permanently — measured, **3 colonies and 18 vehicles against
 1,183 and 4,778** over 4,000 yr. **Blocked on cards, not on engine work (T-25).**
 
-**1.6 `OPEN` — R-O42b: the class flavour names.** Meadow for the LSV and Tor for
-the LCV are proposed, scaling the Banks convention down to Limited sizes. Flavour
-text is the author's own; renaming is a one-line change.
+**1.6 `RATIFIED` — R-O42b: the class flavor names** (approved by the author
+after the Tor/Ford split, T-133). On the landform convention (small landforms
+for Limited hulls, larger for larger), one class per hull: **Spur** (survey,
+LSV), **Tor** (armed survey, LCV), **Cairn** (picket, LCV), **Meadow** (miner,
+LSV), **Delta** (colonizer, MSV), **Ford** (freighter, MSV), **Range**
+(colonizer, GSV; after the Banks GSV class), **Strait** (freighter, GSV),
+**Scarp** (armed colonizer, GCV). Offensive hulls stay unnamed: nothing builds
+them. Flavor text is the author's own; renaming is one line per name.
 
 **1.7 `OPEN` — R-O47b / T-08: `on_refit` is specified and unbuilt.** Nothing in
 the engine stages a design change across transit today, so 1.4 is a law with no
@@ -159,10 +170,10 @@ its magazines accelerates differently.
 mineral ladder.** Design law #1. **Red is the general key** (broad class access);
 **Blue and Green are traversal keys** (specific edges only).
 
-**3.2 `RATIFIED` — supers are synthesised, never mined, and only at pop-Band IV.**
+**3.2 `RATIFIED` — supers are synthesized, never mined, and only at pop-Band IV.**
 Fixed two-basic recipes: `Blue ← C+M`, `Red ← M+Y`, `Green ← Y+C`. Each archetype
 is rich in two basics and poor in the third — **the two precursors of its single
-native super** — so every empire self-synthesises exactly one and must acquire the
+native super** — so every empire self-synthesizes exactly one and must acquire the
 other two. **That is the structural reason the Exchange exists.**
 
 **3.3 `RATIFIED` — no categorical strategic classification may be co-extensive
@@ -182,72 +193,390 @@ why they must be made in pairs.
 ("nontransitive") balance is explicitly on the table. This is a design decision
 with large consequences for card authoring and it has not been made.
 
-**3.7 `OPEN` — R-XM*: apex, and what it is for.** Synthesised from supers. Present
+**3.7 `OPEN` — R-XM*: apex, and what it is for.** Synthesized from supers. Present
 in `resources.rs` and in nothing else.
 
 ---
 
-## 4. The objective — capability-years
+## 4. The objective — capability-years, rated statically per role
 
-**4.1 `RATIFIED in form, OPEN in content` — the objective is an integral of a
-capability stock.**
+*Author's specification (T-131): "Evaluate fleet capability integrated over time
+statically, assigning an ELO score to each possible Design/hull/class/role. For
+each candidate, pit a fleet [10–1000], depending upon size, against all other
+candidates in a test bed per role. So a colony ship would need to colonize
+planets, a picket would need to intercept less heavily armed targets, a
+battleship would need to engage in a pitched battle, and a miner would need to
+fly to a mining outpost and refine ore. Each test bed is competitive, with two
+players in a head-to-head competition. Competitions are judged according to
+task. ELO is calculated (possibly with normalization across roles) the usual
+way, and then the tree metric is ELO-as-capability integrated over the whole
+fleet, for every year."* And: *"Long range offensive roles should start at a
+distance. Short range offensive roles should start at point blank range."*
+
+This replaces the power-mean proposal (R-TREE4), which was never ratified; what
+it was and why it is replaced is in appendix §D.9.
+
+### 4.1 Terms
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `d` | a **Design**: a `(HullType, Class)` and the loadout `design_loadout` stamps on it at construction | — | §1.1, warfare §8.17 |
+| `r` | a **role** that has a test bed | — | §4.4 |
+| `𝒟` | the **candidate pool**: every distinct Design the engine and the card table can produce | set | §4.3 |
+| `m_d` | dry mass of one hull of `d`, which is its mineral cost (R-O57) | kt | `hull_dry_mass` |
+| `B` | the **equal-spend budget** each side of a match receives | kt | §4.5, placeholder |
+| `N_d` | hulls of `d` a side fields: `round(B / m_d)` | count | §4.5 |
+| `x_A` | side A's **task score** in one match | per role, §4.4 | the bed |
+| `s_AB` | A's **score share**, `x_A / (x_A + x_B)`, or `½` when both are zero | in `[0, 1]` | §4.6 |
+| `R(d, r)` | `d`'s **rating** in role `r` | Elo points | §4.6 |
+| `γ(d, r)` | `d`'s **strength** in role `r`, `10^(R/400)` scaled so the role's anchor reads 1 | ratio | §4.7 |
+| `d₀(r)` | the **anchor** Design of role `r` | — | §4.7 |
+| `c(d)` | a hull's **capability**: the strength its Design carries into the stock | ratio | §4.7 |
+| `Q_i(t)` | player `i`'s **capability stock**: `Σ_{h ∈ i} m_h · c(d_h)` | kt of anchor-equivalent | §4.7 |
+| `T_i` | **capability-years**: `∫₀^T Q_i(t) dt`, sampled yearly | kt·yr | §4.2 |
+| `D_long` | starting separation of the long-range offensive bed | ly | §4.4, placeholder |
+
+### 4.2 `RATIFIED` — capability-years, sampled every year
 
 ```text
-T_i = ∫₀^T Q_i(t) dt
+T_i = ∫₀^T Q_i(t) dt        Q_i(t) = Σ_{h owned by i at t}  m_h · c(d_h)
 ```
 
-Every tree's objective is an `X`-years, which is the form colony-years already has
-and the reason it is the guard the project trusts: **count at a horizon is a weak
-invariant; the integral falls the moment anything slows down.**
+The form every tree's objective takes (trees §2.2): an integral of a stock, so
+it falls the moment anything slows down. Sampled on a fixed yearly grid (trees
+§3.3), never on events.
 
-**4.2 `OPEN` — R-TREE4: `Q_i`'s axes, weights, references and aggregator.**
-The proposal, and the reasoning matters more than the constants: capability is a
-per-mass effectiveness times the mass, naturally a **vector**:
+### 4.3 `RATIFIED` — the rating is static, and the pool is every possible Design
 
-| axis | meaning | measurable as |
+**Static** means the rating table is computed offline, once per engine revision,
+and `Q_i` is a lookup during a run. Three properties follow, and the first is
+the reason this is a measurement rather than a target:
+
+- **An opponent cannot move it.** A hull's capability does not depend on what the
+  rival is flying this game, so a Technology card is not scored by the luck of
+  the matchup.
+- **Unlocking a Design moves no rating.** The pool is every *possible* Design,
+  not the ones anyone has unlocked, so a roster write changes `Q_i` only when
+  hulls of the new Design are built (§4.8).
+- **It costs nothing at run time.** `Q_i` is one multiply-add per owned hull per
+  sample.
+
+**4.3.1 `RATIFIED` — R-TECH17: the pool is deduplicated by what the engine reads, not
+by name.** Two Designs whose every field the beds read is equal are one
+candidate. **The long-term goal is that no two named Designs share a loadout**
+(the author's note on the approval), so every duplicate this rule merges is a
+Design still waiting to be differentiated, and the dedup is expected to merge
+nothing once that is done. Under a Bradley–Terry rating (§4.6) a duplicate is not neutral: it
+adds a second copy of the same wins and losses, which moves the ratings of every
+Design it plays (Balduzzi et al. 2018, §3). **Measured, the current pool has
+duplicates:** `LimitedContactVehicle`, `LimitedContactUnit` and
+`LimitedOffensive` are identical in dry mass (0.0200 kt), mounts (1 beam) and
+structure (20 kJ), and so are the two General Contact hulls (1.0995 kt, 317
+beams). Ten hull types are **seven** distinct Designs today — three unarmed
+Systems hulls and four armed ones (appendix §D.9). `design_loadout` ignores the
+class, **but structure does not since T-133** (`σ` is per Design class), so
+two classes on one hull are now two candidates wherever their `σ` differs — the
+survey Design (Tor) and the picket Design (Cairn) on the Limited Contact hull
+are the first such pair.
+
+### 4.4 `RATIFIED` — one competitive test bed per role, two players, judged by task
+
+Each bed is a **head-to-head**: two players, each fielding an equal-spend fleet
+of one candidate Design, in a symmetric scenario where they compete for the same
+thing. Every candidate plays every other candidate in the role's pool.
+
+| role | what each side does | judged by (`x`) | start | engine today |
+|---|---|---|---|---|
+| **Colonizer** | found colonies on a shared field of worlds; a world founded first is gone for the other side | colonies founded in the bed's horizon | symmetric home ports | **built** (§4.4.8) |
+| **Miner** | fly to outposts on a shared field of rocks, extract, and deliver ore to be refined into the bank; rocks deplete for both | ore banked — **as built, ore extracted at the fleet's rocks** (§4.4.8) | symmetric home ports | **built** |
+| **Picket** | each side has a port launching a fixed schedule of **reference** colony ships, less heavily armed than any picket; pickets strike the rival's launches and defend their own | rival launches destroyed — **as built, rival colony ships wrecked or turned away** (§4.4.8) | blockade stations at the rival port (warfare §8.16) | **built** |
+| **Short-range offensive** | a pitched battle | dry mass holding the field (R-TECH19) | **point blank** — both fleets on one reference point | **built**: `examples/design_rating`, fleets generated with the galaxy (§4.4.5), the simulation's own event loop (warfare §8.19.3) |
+| **Long-range offensive** | a pitched battle | surviving dry mass | **at a distance**, `D_long` apart | **built**, closing (§4.4.2); beams alone do not reach a standing fleet |
+
+**4.4.1 `RATIFIED` — the starting geometry belongs to the role, never to the
+Design.** A short-range Design entered in the long-range bed starts at a
+distance and is judged there. This is warfare §8.17's rule — *a loadout is a
+property of the Design, never of the fight* — applied to where the fight starts:
+the bed sets the geometry per role, and every candidate in that role meets the
+same geometry.
+
+*Inference, stated separately:* splitting pitched battle by range moves warfare
+§2.4's largest counter-graph cycle — long-range families beat close families at
+range and lose to them close — **between** pools rather than inside one, which is
+the case a single-axis rating handles worst (§4.6.3). Confidence is moderate; a
+measured cyclic-triad count inside each offensive pool (R-TECH7) would confirm or
+refute it once a second weapon family exists.
+
+**4.4.2 `OPEN` — R-TECH12: `D_long`, and whether the fleets close.**
+*Recommend:* the long-range bed starts the fleets `D_long` apart **closing at a
+fixed relative velocity**, so a match passes through every range from `D_long`
+to zero — the torpedo's advantage in warfare §2.3 is damage delivered *before*
+the brawler reaches beam range, which needs the brawler to be approaching.
+**Measured on stationary fleets, beams stop reaching:** ten LCVs a side fight to
+a decision out to 3e-3 ly, and at 1e-2 ly and beyond the fight runs the whole
+engagement with almost nothing destroyed (appendix §D.10; §D.9 is the same sweep
+under the replaced damage model). So a long-range bed whose fleets do not close is
+a draw for every beam Design. `D_long` should sit beyond that measured beam
+reach; it is a placeholder until a ranged family exists. Ties to **R-L2**
+(single pass or repeated passes).
+
+**4.4.3 `RATIFIED` — R-TECH13: every role has a bed** (the author: *"Every
+role needs a test bed"*). Scout — a survey race on a shared unscanned field,
+judged by worlds reached first. Freighter — a haul race between outpost piles and
+each side's own bank, judged by kilotons delivered. With the five above that is
+one bed for every role a hull can be tasked with except `Reserve`, which is the
+end of a mission rather than one (§4.7.3). Built (§4.4.8).
+
+**4.4.8 `OPEN` — the non-combat beds as built.** Every bed is a two-seat
+standard field (`GalaxyConfig::new(2, seed)`), each seat's fleet generated at
+its home port at spend `B`, default Doctrine, and a surveyed start of 20 ly
+(galaxy §3.1) where the role needs known worlds at `t = 0`. *Recommend* these
+judges and horizons (placeholders):
+
+| bed | fleets | judged by `x` | horizon |
+|---|---|---|---|
+| picket | one per seat, Picket, stationed on the rival's home port | rival colony ships wrecked or turned away | 150 yr |
+| colonizer | one per seat, Colonizer | colonies the fleet founds | 80 yr |
+| miner | one per seat, Miner, one hull to a rock the seat ranks an outpost | ore extracted at the fleet's rocks, by that seat | 160 yr — three outpost yields at `mining_tick_years` = 50 |
+| freighter | a reference Meadow miner fleet and the candidate as Freighter, per seat | kilotons the fleet's freighters deposit | 160 yr |
+| scout | one per seat, Scout | worlds the fleet reaches first | 40 yr |
+
+The miner judge counts every crew of that seat at the fleet's rocks, the
+autopilot's own included; both seats carry that term, so it is a shared
+baseline rather than a bias, and it dilutes the share. The scout bed reads a
+hull's price (how many hulls the spend buys) and its drive (the survey leg flies
+`laden_accel`, appendix §D.19).
+
+**4.4.5 `RATIFIED` — a bed's fleets are generated with the galaxy** (the
+author's ruling, resolving R-WAR36): *"fleets can be optionally generated at
+Galaxy generation, with a position and velocity. Equal cost mineral spend per
+fleet makes sense."* `Galaxy::generate_with` takes a `FleetSeeding` — one spend
+`B` for every fleet, and per fleet a seat, a Design, a role, a position and a
+velocity — and the engine builds `round(B / m_d)` hulls of each, parked at rest
+or shedding their velocity from the given state. The galaxy is still the only
+thing a bed varies; the fight runs on the simulation's own events.
+
+**4.4.6 `RATIFIED` — a pitched battle seats two hostile Doctrines.** Warfare
+§8.19.2's ruling: two fleets stand and fight only when both sides' Doctrine is
+to kill the other's fleet. Under the default Doctrine a hull that can outrun a
+neutral attacker withdraws on the first hit (§8.19.6's third ending), and the
+bed measured exactly that: every Scarp left the field under a scratch
+(appendix §D.17). So the offensive beds seat both sides with `engage_neutrals`;
+R-TECH16's default Doctrine stands for every other role.
+
+**4.4.7 `OPEN` — R-TECH19: "surviving dry mass" is read as dry mass holding the
+field.** A pitched battle ends in withdrawals far more than in wrecks (§8.19.6's
+second ending sends a hull past its structure home), so a defeated fleet
+survives almost whole. *Recommend* `x_A` = the dry mass of A's hulls neither
+wrecked nor withdrawn at the horizon. **Horizon:** 1 year, a placeholder; every
+measured match was decided long before it.
+
+**4.4.4 `RATIFIED` — R-TECH16: a bed forces the role.** The author: *"need to
+force role to test each role."* The bed generates each fleet **in the bed's
+role** (galaxy §3.1), whatever the standing layer would task that Design as, so
+every Design is tested in every role; Doctrine is otherwise the default, and
+hostile on the offensive beds (§4.4.6). The bed rates **Design** — the write
+surface this tree owns (§5). The beds run the engine's own role systems, seeded
+the way the arena seeds combat: **a bed is a scenario seeder that owns no role
+logic**, and the dependency runs `bed → sim`, as `arena → combat` does (§3 of
+`CLAUDE.md`). Each pair is played on the same seeds (common random numbers) with
+the two sides' positions mirrored, so a side has no geometric advantage. Seeds
+per pair and each non-combat bed's horizon are placeholders.
+
+### 4.5 `RATIFIED` — fleet size follows hull size, 10 to 1,000 a side
+
+**4.5.1 `OPEN` — R-TECH11: sizes set by equal mineral spend.** *Recommend:*
+`N_d = round(B / m_d)` with `B` = ten General hulls' price. On the shipped ladder
+(1 : 1/10 : 1/50) that fields **10 General Systems, 12 General Contact, 13
+General Offensive, 120–132 Medium/Rapid and 654–658 Limited** hulls — inside the
+author's range. Equal spend, not equal count, because a rating earned at equal
+count would score a design for being cheap: design law #3 is a claim about equal
+spend, and so is law #2's target (1 GOU against 6–45 ROUs).
+
+### 4.6 `RATIFIED` — the rating is Elo
+
+**4.6.1 `OPEN` — R-TECH5: fit, do not update.** *Recommend:* fit the
+**Bradley–Terry model** by maximum likelihood over the whole round robin, on the
+Elo scale. Elo's expected score, `1 / (1 + 10^(−ΔR/400))`, *is* the
+Bradley–Terry win probability with strengths `10^(R/400)` (Bradley & Terry 1952;
+Elo 1978), so the scale and meaning are Elo's. What changes is the estimator:
+the sequential update the chess federations use depends on the order the games
+are played in and on a step size `K`, and a static round robin has no order.
+The maximum-likelihood fit is unique when it exists (Zermelo 1929), converges by
+the minorization–maximization iteration (Hunter 2004), and is deterministic.
+
+The outcome of a match is the score share `s_AB`. Elo already accepts fractional
+scores (a draw is ½), and the share keeps the margin a bare win would throw
+away.
+
+**4.6.2 `RATIFIED` — R-TECH6: complete separation** (the author: *"Virtual
+draw to start is fine"*). A Design whose share is 1
+against every opponent has **no finite maximum-likelihood rating** — the
+likelihood keeps rising as its rating grows (Hunter 2004 states the condition).
+That is not an edge case here: design law #2 *wants* a General Offensive fleet
+to beat an equal-spend Rapid one decisively. *Recommend:* a prior of one
+virtual draw between every pair, the device Coulom's Whole-History Rating uses
+(Coulom 2008) — it keeps every rating finite and moves a well-measured one by
+little. **Ratified as the starting prior**: one virtual draw per pair.
+
+**4.6.3 `RATIFIED` — R-TECH7: intransitivity is accepted, and re-evaluated at
+every regeneration.** Bradley–Terry places every Design on one line; a
+counter-graph with cycles (R-CG*, §3.6) cannot be put on one line without error.
+The author's ruling: *"variance in ELO due to counter-graph is ok; every time we
+regenerate the static ratings, we must reevaluate this rolling and determine it
+still makes sense given the current counter graph."* So every regeneration
+reports, per role, the cyclic triads (Kendall & Babington Smith 1940) and the
+largest gap between an observed mean share and the share the ratings predict
+(`examples/design_rating`'s `INTRANSITIVITY` line), and the regeneration is not
+done until someone has read that report against the counter-graph then in force.
+If it stops making sense, the replacement on the table is a multidimensional
+rating or Nash averaging, which is also invariant to duplicated candidates
+(Balduzzi et al. 2018).
+
+### 4.7 `RATIFIED` — capability integrated over the whole fleet; normalization across roles is the author's option
+
+**4.7.1 `RATIFIED` — R-TECH8: the rating is positive, on the ratio scale** (the
+author: *"rating must be positive. Convert to ratio scale"*). The harness
+reports the Bradley–Terry strength `γ` directly, the role's anchor at 1. Elo points are an **interval** scale: only differences carry meaning,
+the zero is arbitrary, and a rating can be negative. A sum of ratings over a
+fleet changes when the zero moves, so it measures nothing. *Recommend:* convert
+to the Bradley–Terry strength `10^(R/400)` — a **ratio** scale, positive, with
+`P(A beats B) = γ_A / (γ_A + γ_B)` — before summing. The stock is then positive,
+which is also what the composite's geometric mean needs (trees §2.4, R-TREE9).
+
+**Normalization across roles**, the author's option: a rating is comparable only
+inside its own role's pool. *Recommend:* scale each role so its anchor Design
+`d₀(r)` has `γ = 1`, which makes every strength read "multiples of the anchor in
+this role". *Recommend* the anchor be the Design the default standing layer
+assigns to that role (T-121), fixed at game start. **Open inside it:** the
+default layer is unarmed, and an unarmed Design scores zero in a combat bed, so
+its strength is zero and cannot be the unit. For the offensive and picket roles
+the anchor must be an armed Design — the Warfare card's Limited Contact Design is
+the candidate.
+
+**4.7.2 `OPEN` — R-TECH9: weight each hull by its dry mass.** The author will
+decide on seeing the ratio-scale table (§4.9.1), noting that the ratio scale may
+already carry mass or volume. *Recommend*
+`Q_i = Σ_h m_h · c(d_h)`, in kilotons of anchor-equivalent capability. The
+rating was earned at equal **spend**, so it is a per-kiloton quantity, and the
+weight that makes it a fleet total is spend — which since R-O57 is dry mass. Two
+alternatives, and why not:
+
+- **By count** scores a Limited hull equal to a General one of the same
+  strength — the fragmentation reward design law #3 forbids.
+- **By volume** counts consolidation **twice**: the equal-spend bed already
+  measured how much better a large hull does per kiloton, and that is inside
+  `γ`. Volume is Production's stock (trees §2.3.4) for exactly the reason it is
+  wrong here.
+
+Consequence, stated so it is not mistaken for a defect: `Q_i` is fleet mass times
+a mass-weighted mean strength, so building more hulls raises it. That is
+Production's axis appearing in Technology's stock. It does not mis-cost a card —
+a card is valued on its own tree's stock (trees §2.4) — but mass enters the
+composite geomean twice (R-TREE9).
+
+**4.7.3 `RATIFIED` — R-TECH10: a hull carries its active role's strength.**
+The author's ruling, against the recommendation: *"Evaluate the tree metric on
+each ship's active role. If you have a fleet of long range apex destroyers
+working a miner role, you didn't have much capability that year."* So
+`c_h = γ(d_h, role_h(t))`, read each year from the role the hull is tasked with
+at that time. Consequence, stated so it is not mistaken for a defect: a
+Doctrine write that retasks hulls toward the roles their Designs rate highest
+raises `Q_i` without building anything. Under this ruling that is capability —
+a fleet used for what it is good at — and not a metric farm. **Open inside it:**
+the strength of `Reserve` (a standing mission that ended; no bed rates it) —
+*recommend* zero, since an idle hull does no role's work. Scrapped hulls are not
+owned and do not count. *(Superseded recommendation `c(d) = max_r γ(d, r)`:
+appendix §D.18.)*
+
+### 4.8 The invariance audit for this objective
+
+| a card could… | move `Q_i` without moving the world? | answer |
 |---|---|---|
-| projection | deliverable combat mass at range | combat mass × reach under `a_max` within a response window |
-| defense | combat mass within response time of owned colonies | the same, evaluated against own holdings |
-| acquisition | ore delivered per year | freighter deliveries — **already logged** |
+| unlock a Design | no | the pool is every possible Design; only built hulls count (§4.3) |
+| retask hulls (Doctrine) | **yes, if a hull carries its current role's strength** | carry the best role's (§4.7.3) |
+| change what a rival flies | no | the rating is static (§4.3) |
+| build more hulls | yes, and the world moved | Production's axis inside the stock (§4.7.2) |
+| add a Design to the game (authoring, not play) | changes every rating | the table is per engine revision; dedup (§4.3.1, R-TECH17); Nash averaging if cyclic (§4.6.3) |
 
-Aggregate with a **power mean**, not a sum and not a hard minimum:
+### 4.9 R-TECH14 — resolved (T-132): the combat beds tied every armed Design, and now discriminate
 
-```text
-Q = ( Σ_a  s_a · (q_a / q_ref,a)^ρ ) ^ (1/ρ)
-```
+Under the damage model T-132 replaced, an equal-spend, point-blank round robin
+over the armed Designs destroyed both fleets in every one of its 49 matches
+(appendix §D.9): one mount delivered a hundred Limited hulls' structure per
+tick. **Resolved by the author's damage model** (warfare §8.18): beam power over
+time, structure on hull volume. The same round robin now decides most pairings
+one way, with mirror fights lasting 28–82 ticks; one GOU beats 40 ROUs and loses
+to 50 (appendix §D.10).
 
-- A **sum** (`ρ = 1`) lets Technology farm whichever axis is cheapest.
-- A **hard Liebig minimum** (`ρ → −∞`) matches the economic thesis — the best war
-  machine needs all three basics and all three supers, which *is* a minimum — and
-  forces the cross-tree engagement design law #7 requires.
-- But a hard minimum makes a card's value depend entirely on whether it happens
-  to raise the **currently weakest** axis, which is enormous variance, and
-  `Hyades_trees_and_card_value.md` §4.3 requires tier-1 cards to have the
-  *lowest* dispersion of any tier.
+**What remains for the beds, and is not this item:** mirror matches are decided
+by station-keeping geometry rather than drawn, so a rating needs many seeds with
+sides swapped (R-TECH16); and the long-range bed still needs fleets that close
+(R-TECH12).
 
-So **`ρ` is a measured knob**, and "how Liebig is capability" becomes one number
-to ratify rather than a binary to argue about. *Recommend* starting near
-`ρ = −1` (harmonic mean: strongly penalises a weak axis without zeroing the card
-that missed it). `s_a`, `q_ref,a` and `ρ` are all placeholders.
+### 4.9.1 The table — every role, the named Designs, ratio scale (appendix §D.19)
 
-**4.3 `OPEN` — R-TECH1: capability is undefined today and the tree therefore has
-no objective at all.** `examples/tree_gradient` **excludes** Technology from its
-composite for this reason, and says so — a composite over an unstated subset is
-worse than a single metric. Instrumenting `Q_i` is the prerequisite for measuring
-a single Technology card.
+`examples/design_rating all`, equal spend `B` = ten General Systems hulls
+(13.15 kt), eight seeds, both seatings, 240 matches a role, every leg at its
+Design's own drive. The table is `data/design_ratings.tsv`, stamped with the
+engine commit (R-TECH15); the raw matches are `data/design_rating_matches.tsv`.
+**Measured**, `γ` with the role's anchor at 1 (R-TECH8):
 
-**4.4 `OPEN` — R-TECH2: does capability saturate on the measurement bed?**
-`Hyades_trees_and_card_value.md` §3.2 requires this as the *first* measurement.
-Unknown, because 4.3.
+| role (anchor) | order, `γ` |
+|---|---|
+| short-range (Cairn) | Scarp 7.58 > Cairn 1 > Tor 0.192 > the unarmed three, 0.015 |
+| long-range (Cairn) | Scarp 5.49 > Cairn 1 > Tor 0.754 > Delta 0.665 ≈ Meadow 0.660 > Range 0.609 |
+| picket (Cairn) | Scarp 2.03 > Cairn = Tor 1 > the unarmed three, 0.037 |
+| colonizer (Delta) | Delta 1 > Scarp 0.221 > Range 0.193 > the Limited three, 0.009 (they found nothing) |
+| miner (Meadow) | Meadow 1 ≈ Tor = Cairn 1.000 > Delta 0.633 > Scarp 0.206 ≈ Range 0.200 |
+| freighter (Delta) | Range 1.81 > Scarp 1.12 > Delta 1 > Meadow 0.181 > Tor = Cairn 0.016 (they carry nothing) |
+| scout (Meadow) | Meadow 1 > Tor = Cairn 0.989 > Delta 0.582 > Scarp 0.127 > Range 0.120 |
+
+**Ratios are measured only where pairs are not separated completely.** Every
+short-range ratio, and the unarmed-against-armed ratios of the picket and
+colonizer beds, are R-TECH6's prior. The rest are bootstrapped; the miner's
+General-hull intervals are the widest (0.11–0.35).
+
+**R-TECH7's re-evaluation for this table:** no bed has a cyclic triad. The
+largest gap between an observed mean share and the rated one is 0.20 (long-range,
+Cairn against Scarp: 0.356 observed, 0.154 rated) and 0.16 (short-range, Tor
+against Cairn, where both are the prior's); every other bed is within 0.08.
+*Inference:* with one weapon family there is no counter to produce a cycle, so
+the scalar rating holds for now; a second family is the observation that would
+change this.
+
+**One thing a Design does not reach yet, so the table reads it as a tie:** the
+three Limited Designs are one object to the miner bed and near one to the
+scout bed (one cost tier, one mass — warfare §8.9.7; they differ only in drive,
+0.911 g against 1.00). That is R-O64/R-L0, and the author's long-term goal that
+no two named Designs share a loadout (§4.3.1).
+
+### 4.10 `OPEN` — R-TECH15: where the table lives and how it goes stale
+
+*Recommend:* an offline harness writes the table to `data/`, stamped with the
+digest of every configuration value the beds read; the harnesses that compute
+`T_i` read it and refuse a table whose stamp does not match the running
+configuration. The engine does not read it: capability is a measurement, and no
+autopilot decision may consult it.
+
+**Cost:** the six-Design pool over all seven beds, both seatings, is 1,680
+matches for eight seeds and **7.5 min** on one core (appendix §D.18); the
+long-range bed is 42% of it. The round robin is `n(n − 1)` seated matches per
+role per seed — 30 for six Designs.
+
+### 4.11 `OPEN` — R-TECH2: does capability saturate on the measurement bed?
+
+Trees §3.2 requires per-stock saturation as the first measurement. Unknown until
+the table exists.
 
 ---
 
 ## 5. What a Technology card writes
 
 **5.1 `RATIFIED` — the write surface that exists.** `CardEffect::UnlockDesign(
-HullType, Class)` adds a roster entry. That is the whole of it today, and it is
-real: the engine stores it, `enforce_roster` reads it, and a disclosure publishes
-it.
+HullType, Class)` adds a roster entry. That is the whole of it today: the engine
+stores it, `enforce_roster` reads it when enforcement is on, and a disclosure
+publishes it. §5.6 says what it does not reach.
 
 **5.2 `RATIFIED` — legibility is σ read from the other side.** Design law #9. A
 card's slant *is* how much it would only be worth playing if you meant it, so the
@@ -275,6 +604,26 @@ second multiplicative axis on the same bill and risks making the two trees
 substitutes rather than complements. *Recommend* no — and record the reasoning,
 because it is the obvious thing to add later.
 
+**5.6 `OPEN` — R-TECH18: an unlock reaches no build, so every Technology card is
+worth zero on §4's metric by construction.** Two readers are missing, and either
+one alone is enough:
+
+- `roster_permits` returns `true` before it reads the roster whenever
+  `enforce_roster` is off, which is the shipped default (T-25, §1.5).
+- `Standing::design_for` — the only function that chooses which Design a role is
+  built on — reads **Doctrine only**. Nothing that decides a build reads the
+  roster, so unlocking the General Contact Design (card 14) never causes one to
+  be built, and `Q_i` counts only built hulls (§4.3).
+
+So `T_i` for a Technology card is the pass arm's `T_i` exactly, whatever the
+table says. That is `CLAUDE.md`'s *count the consumers of a write* in its plain
+form, and it is found by reading, not by a bed.
+
+**What would settle it:** a Design resolver that picks, per role, among the
+Designs the roster holds. Which one it picks is a policy question, and **it must
+not read the capability table** — a policy that maximizes the metric would turn
+the measurement into the target (§4.10).
+
 ---
 
 ## 6. Register
@@ -289,7 +638,15 @@ because it is the obvious thing to add later.
 | R-O42 | seats are seeded LSV(Meadow) + LCV(Tor) |
 | R-O47b | no retroactive refits; realization is `on_refit` (law #12) |
 | R-MC16 | thrust is drawn from mounted drive |
-| — | supers are synthesised at pop-Band IV by fixed two-basic recipes |
+| R-O42b | Banks-convention Design names, one class per hull (Spur, Tor, Cairn, Meadow, Delta, Ford, Range, Strait, Scarp) |
+| R-TECH6 | one virtual draw per pair, to start (§4.6.2) |
+| R-TECH7 | counter-graph intransitivity is accepted; every regeneration reports cyclic triads and the largest residual, and is re-evaluated against the counter-graph then in force (§4.6.3) |
+| R-TECH8 | the rating is positive, on the ratio scale, anchor at 1 (§4.7.1) |
+| R-TECH10 | a hull carries its **active** role's strength each year (§4.7.3) |
+| R-TECH13 | every role has a bed (§4.4.3) |
+| R-TECH16 | a bed forces the role (§4.4.4) |
+| R-TECH17 | the pool is deduplicated by what the beds read; the goal is that no two named Designs share a loadout (§4.3.1) |
+| — | supers are synthesized at pop-Band IV by fixed two-basic recipes |
 | — | Red is the general key; Blue and Green are traversal keys (law #1) |
 | — | aggregates are queries, not stored fields |
 
@@ -301,13 +658,19 @@ because it is the obvious thing to add later.
 | R-L1 | shield regeneration across what | a decision, with warfare §2 |
 | R-O60 / T-04 | magazine mass on ordnance families | engine work |
 | R-O65 | flatten `hull_thrust_to_mass`? | explicit ratification — MC-tuned surface |
-| R-O42b | class flavour names | the author |
 | R-O47b / T-08 | `on_refit` is unbuilt | engine work |
 | R-CG* | is the counter-graph acyclic? | a design decision |
 | R-XM* | apex, and what it is for | a design pass |
-| R-TREE4 | `Q_i`'s axes, weights and `ρ` | instrument, then MC |
-| R-TECH1 | **the tree has no objective until `Q_i` exists** | R-TREE4 |
+| R-TECH1 | **the objective is specified (§4) and not built** — no bed, no table | T-131 |
 | R-TECH2 | does capability saturate on the bed? | blocked on R-TECH1 |
+| R-TECH5 | fit Bradley–Terry by maximum likelihood on the Elo scale, not sequential updates — *recommended* | author |
+| R-TECH9 | weight hulls by dry mass, not count or volume — *recommended*; the author decides on the ratio-scale table, which may already carry mass or volume | author |
+| R-TECH11 | equal-spend budget `B` = ten General hulls — *recommended* | author |
+| R-TECH12 | `D_long`, and a closing long-range bed | a ranged family or beam falloff, then a sweep |
+| ~~R-TECH14~~ | ~~combat beds tie every armed Design~~ — **resolved by T-132**, warfare §8.18 | — |
+| R-TECH15 | the table's storage and staleness stamp — `data/design_ratings.tsv`, stamped with the engine commit; no harness reads it back yet | a reader that refuses a stale stamp |
+| R-TECH18 | **an unlock reaches no build** — no Design resolver reads the roster | a resolver; T-25 |
+| R-TECH19 | the offensive beds' judge read as dry mass **holding the field** (neither wrecked nor withdrawn), horizon 1 yr — *recommended* | author |
 | R-TECH3 | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |
 | R-TECH4 | a miniaturization analogue inside this tree? | a decision — *recommend no* |
 | T-25 | `enforce_roster` defaults off because there is no unlock path | the card system |
@@ -319,7 +682,26 @@ because it is the obvious thing to add later.
 - `Hyades_loadout.md` — the slot model, item families, and the integration plan
 - `Hyades_standing_layer_and_observation.md` §2 (concealment by vector), §5 (the
   asymmetric leak), §6.2 (acceleration as the observable), §7 (hull/class/role)
-- `Hyades_trees_and_card_value.md` §2.3.5 (capability-years), §3.2, §4.3
+- `Hyades_trees_and_card_value.md` §2.3.5 (capability-years), §2.5, §3.2, §4.3
+- `examples/capability_probe` (deleted at T-133: it called the retired resolvers
+  directly) — the pool, the per-match cost, beam reach, and the short-range round
+  robin (appendix §D.9)
+- Balduzzi, D., Tuyls, K., Pérolat, J. & Graepel, T. (2018). Re-evaluating
+  evaluation. *Advances in Neural Information Processing Systems 31.* —
+  intransitivity, redundant candidates, Nash averaging
+- Bradley, R. A. & Terry, M. E. (1952). Rank analysis of incomplete block
+  designs: I. The method of paired comparisons. *Biometrika* 39(3/4), 324–345
+- Coulom, R. (2008). Whole-History Rating: a Bayesian rating system for players
+  of time-varying strength. *Computers and Games*, LNCS 5131, 113–124 — the
+  virtual-draw prior
+- Elo, A. E. (1978). *The Rating of Chessplayers, Past and Present.* Arco
+- Hunter, D. R. (2004). MM algorithms for generalized Bradley–Terry models.
+  *Annals of Statistics* 32(1), 384–406 — existence condition and iteration
+- Kendall, M. G. & Babington Smith, B. (1940). On the method of paired
+  comparisons. *Biometrika* 31(3/4), 324–345 — cyclic triads
+- Zermelo, E. (1929). Die Berechnung der Turnier-Ergebnisse als ein
+  Maximumproblem der Wahrscheinlichkeitsrechnung. *Mathematische Zeitschrift* 29,
+  436–460 — uniqueness of the fit
 - `Hyades_warfare_tree.md` — what capability is spent on, and the arena that sets it
 - `Hyades_production_tree.md` §5 (the hull ladder this fits onto)
 - `Exotic_matter_technology_inspiration.md` ·

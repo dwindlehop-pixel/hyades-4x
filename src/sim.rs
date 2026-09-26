@@ -59,7 +59,7 @@ use crate::autopilot::{
     Standing, SurveyStrategy, SurveyView, Tasking,
 };
 use crate::cards::{self, CardEffect, Order, Target};
-use crate::combat::{CombatConfig, Combatant, FleetTrajectory, StationKeeping};
+use crate::combat::CombatConfig;
 use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
 use crate::matching;
@@ -110,6 +110,10 @@ impl<T> ComponentStore<T> {
     }
     fn contains(&self, e: Entity) -> bool {
         self.get(e).is_some()
+    }
+    /// One past the highest entity index ever stored.
+    fn capacity(&self) -> usize {
+        self.items.len()
     }
     /// Clear the component, returning what was there. Vacating a slot is not
     /// the same as never having filled one — the shipyard-occupancy store
@@ -327,6 +331,14 @@ impl Factors {
 /// A vehicle's flight geometry — everything [`math::position_along`] needs to
 /// place it at any instant. A parked vehicle has `origin == dest`, `depart ==
 /// arrive`, so it reports a fixed point.
+///
+/// **A course change starts from a moving hull** (T-133, warfare §8.19.7,
+/// R-WAR30). A hull that changes course mid-leg first sheds the velocity it
+/// has, along the direction it is moving, at the same proper acceleration —
+/// the [`Brake`] — and then flies an ordinary rest-to-rest leg from where it
+/// stopped. Nothing is dropped for free: stopping costs the time and distance
+/// its speed implies, and a hull past its turnover point stops at the very
+/// place it was going, which is why turning back after turnover saves nothing.
 #[derive(Clone, Copy, Debug)]
 struct Motion {
     origin: Vec3,
@@ -334,6 +346,142 @@ struct Motion {
     depart: f64,
     arrive: f64,
     accel: f64,
+    /// The braking segment flown before `depart`, when this motion began as a
+    /// course change on the move. `None` for a leg that starts at rest.
+    brake: Option<Brake>,
+}
+
+/// **Shedding a velocity** (T-133): from `from` at `start`, moving along `dir`,
+/// decelerating at the motion's proper acceleration to rest `length` ly on, at
+/// `end`. The time reverse of accelerating from rest, so its arithmetic is
+/// [`math::accel_leg_distance`] read backwards.
+#[derive(Clone, Copy, Debug)]
+struct Brake {
+    from: Vec3,
+    dir: Vec3,
+    start: f64,
+    end: f64,
+    length: f64,
+    /// The proper acceleration it brakes at — the leg's it interrupted.
+    accel: f64,
+}
+
+/// **A wrecked hull** (T-133): its drive is dead, so it keeps the velocity it
+/// had when it was wrecked and coasts in a straight line. It carries its hull,
+/// its cargo and the people aboard as slag (design law #11), and raises no
+/// events — where it is at any time is closed form.
+#[derive(Clone, Copy, Debug)]
+struct Wreck {
+    /// Where and when it was wrecked, on its reference trajectory.
+    from: Vec3,
+    since: f64,
+    /// Its coordinate velocity then, ly/yr.
+    velocity: Vec3,
+    /// Everything it carried: dry mass, cargo and settlers.
+    mass: Kilotons,
+}
+
+impl Wreck {
+    fn position_at(&self, t: f64) -> Vec3 {
+        self.from.add(self.velocity.scale((t - self.since).max(0.0)))
+    }
+}
+
+impl Brake {
+    /// Where the hull comes to rest.
+    fn stop(&self) -> Vec3 {
+        self.from.add(self.dir.scale(self.length))
+    }
+}
+
+impl Motion {
+    /// A leg from rest at `origin`, leaving at `depart`.
+    fn leg(origin: Vec3, dest: Vec3, depart: f64, accel: f64) -> Motion {
+        let dist = origin.distance(dest);
+        let travel = if dist > 0.0 { math::ship_travel_years(dist, accel) } else { 0.0 };
+        Motion { origin, dest, depart, arrive: depart + travel, accel, brake: None }
+    }
+
+    /// **A hull at `at` moving at `velocity`, shedding it from `t`** at proper
+    /// acceleration `accel` and then at rest where it stops — the braking
+    /// prefix [`Self::come_to_rest`] builds, from a given state.
+    fn from_moving(at: Vec3, velocity: Vec3, t: f64, accel: f64) -> Motion {
+        let v = velocity.norm();
+        let u = v / (1.0 - v * v).sqrt();
+        let length = ((1.0 + u * u).sqrt() - 1.0) / accel;
+        let brake = Brake { from: at, dir: velocity.normalized(), start: t, end: t + u / accel, length, accel };
+        let stop = brake.stop();
+        Motion { origin: stop, dest: stop, depart: brake.end, arrive: brake.end, accel, brake: Some(brake) }
+    }
+
+    /// Where the hull is at absolute time `t`.
+    fn position_at(&self, t: f64) -> Vec3 {
+        if let Some(b) = self.brake {
+            if t < b.end {
+                let covered = (b.length - math::accel_leg_distance(b.accel, b.end - t)).clamp(0.0, b.length);
+                return b.from.add(b.dir.scale(covered));
+            }
+        }
+        math::position_along(self.origin, self.dest, self.depart, self.arrive, self.accel, t)
+    }
+
+    /// The hull's coordinate velocity at `t`, ly/yr. Proper velocity is
+    /// `a · τ` from rest, so the speed is exact at every instant.
+    fn velocity_at(&self, t: f64) -> Vec3 {
+        if let Some(b) = self.brake {
+            if t < b.end {
+                let u = b.accel * (b.end - t.max(b.start));
+                return b.dir.scale(math::speed_from_proper(u));
+            }
+        }
+        let span = self.arrive - self.depart;
+        if t <= self.depart || t >= self.arrive || span <= 0.0 {
+            return Vec3::ZERO;
+        }
+        let tau = t - self.depart;
+        let u = self.accel * tau.min(span - tau);
+        self.dest.sub(self.origin).normalized().scale(math::speed_from_proper(u))
+    }
+
+    /// The fastest the hull moves from `t` to the end of this motion — the
+    /// bound encounter detection advances by.
+    fn top_speed_from(&self, t: f64) -> f64 {
+        let braking = self
+            .brake
+            .filter(|b| t < b.end)
+            .map_or(0.0, |b| math::speed_from_proper(b.accel * (b.end - t.max(b.start))));
+        let span = self.arrive - self.depart;
+        let peak = if span > 0.0 && t < self.arrive { math::speed_from_proper(self.accel * 0.5 * span) } else { 0.0 };
+        braking.max(peak)
+    }
+
+    /// Whether the hull is under way at `t` — braking, flying, or waiting out a
+    /// departure delay before a leg it has been given.
+    fn under_way(&self, t: f64) -> bool {
+        t < self.arrive || self.brake.is_some_and(|b| t < b.end)
+    }
+
+    /// **Where and when the hull can be at rest, starting now** (T-133): the
+    /// stop point, the time it gets there, and the braking segment that takes
+    /// it there — `None` when it is already at rest.
+    fn come_to_rest(&self, t: f64) -> (Vec3, f64, Option<Brake>) {
+        if let Some(b) = self.brake {
+            if t < b.end {
+                return (b.stop(), b.end, Some(b));
+            }
+        }
+        let span = self.arrive - self.depart;
+        if t <= self.depart || t >= self.arrive || span <= 0.0 {
+            return (self.position_at(t), t, None);
+        }
+        let tau = t - self.depart;
+        let u = self.accel * tau.min(span - tau);
+        let length = ((1.0 + u * u).sqrt() - 1.0) / self.accel;
+        let here = self.position_at(t);
+        let dir = self.dest.sub(self.origin).normalized();
+        let brake = Brake { from: here, dir, start: t, end: t + u / self.accel, length, accel: self.accel };
+        (brake.stop(), brake.end, Some(brake))
+    }
 }
 
 /// A vehicle's semantic destination & survey state.
@@ -605,6 +753,36 @@ pub enum HullType {
     GeneralOffensive,
 }
 
+/// **The hull taxonomy's class** (`Hyades_vehicle_roles.md` §3): what a hull
+/// is built for. Not [`Class`], which names a Design within a hull type — the
+/// word "class" means this in the taxonomy and that in the roster.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HullFamily {
+    /// Civilian hulls whose volume is mostly hold (LSV, MSV, GSV).
+    Systems,
+    /// Scouting and picketing hulls (LCV, LCU, GCV, GCU).
+    Contact,
+    /// Warships (LOU, ROU, GOU).
+    Offensive,
+}
+
+impl HullType {
+    /// Which taxonomy class this hull belongs to.
+    pub const fn family(self) -> HullFamily {
+        use HullType::*;
+        match self {
+            LimitedSystems | MediumSystems | GeneralSystems => HullFamily::Systems,
+            LimitedContactVehicle | LimitedContactUnit | GeneralContactVehicle | GeneralContactUnit => {
+                HullFamily::Contact
+            }
+            LimitedOffensive | RapidOffensive | GeneralOffensive => HullFamily::Offensive,
+        }
+    }
+}
+
+mod fire;
+use fire::{FleetKey, Track};
+
 /// A named **design** within a hull type — the Banks-convention class name.
 ///
 /// Hull, class and role are three separate things (R-O29,
@@ -621,15 +799,67 @@ pub enum HullType {
 /// a one-line change and the author's call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Class {
-    /// LSV — proposed *Meadow*-class (alts: Fen, Holm, Croft, Hollow).
+    /// The mining Design, on the Limited Systems hull — proposed *Meadow*-class
+    /// (alts: Fen, Holm, Croft, Hollow).
     Meadow,
-    /// LCV — proposed *Tor*-class (alts: Spur, Cairn, Shoal, Gully).
+    /// The unarmed survey Design, on the Limited Systems hull — proposed
+    /// *Spur*-class, from §7.1's alternates. The default scout.
+    Spur,
+    /// The armed survey Design, on the Limited Contact hull — proposed
+    /// *Tor*-class, §7.1's name for the LCV. The scout once the Warfare card
+    /// moves survey onto the Contact family. **A class names one hull** (the
+    /// author's ruling): Tor was the survey Design on both shells until it
+    /// was split, and a Tor is always armed because every Contact hull is.
     Tor,
-    /// A hull type whose classes are not yet authored. Everything the engine
-    /// builds beyond the two seeded designs uses this until Design cards give
-    /// it a name — it keeps the roster total rather than pretending the rest of
-    /// the taxonomy already exists.
+    /// The picket Design, on the Limited Contact hull — proposed *Cairn*-class,
+    /// a marker on held ground (T-133).
+    Cairn,
+    /// The Medium colonizer Design, on the Medium Systems hull — proposed
+    /// *Delta*-class (T-133).
+    Delta,
+    /// The General colonizer Design, on the General Systems hull — proposed
+    /// *Range*-class, after the Banks GSV class (T-133).
+    Range,
+    /// The armed General colonizer Design, on the General Contact hull —
+    /// proposed *Scarp*-class (T-133).
+    Scarp,
+    /// The Medium freighter Design, on the Medium Systems hull — proposed
+    /// *Ford*-class (T-133).
+    Ford,
+    /// The General freighter Design, on the General Systems hull — proposed
+    /// *Strait*-class, the large crossing to Ford's small one. A freighter is
+    /// sized to its rock (T-98), and a class names one hull (the author's
+    /// ruling), so the two sizes are two Designs.
+    Strait,
+    /// A hull with no authored Design: the Offensive hulls nothing builds, the
+    /// arena's spawns, and the seed hulls the galaxy is generated with. It
+    /// takes its hull class's default structure (`combat::ByClass`).
     Unnamed,
+}
+
+impl Class {
+    /// **The freighter Design for a hull** its rock called for (T-98): Ford on
+    /// the Medium hull, Strait on the General one.
+    pub fn freighter_for(hull: HullType) -> Class {
+        if hull == HullType::GeneralSystems {
+            Class::Strait
+        } else {
+            Class::Ford
+        }
+    }
+
+    /// **The one hull a named Design is on** (the author's ruling: a class
+    /// names one hull). `None` only for [`Class::Unnamed`], which is not a name.
+    pub fn hull(self) -> Option<HullType> {
+        match self {
+            Class::Meadow | Class::Spur => Some(HullType::LimitedSystems),
+            Class::Tor | Class::Cairn => Some(HullType::LimitedContactVehicle),
+            Class::Delta | Class::Ford => Some(HullType::MediumSystems),
+            Class::Range | Class::Strait => Some(HullType::GeneralSystems),
+            Class::Scarp => Some(HullType::GeneralContactVehicle),
+            Class::Unnamed => None,
+        }
+    }
 }
 
 /// The **roster**: which `(hull, class)` designs a player can build at all
@@ -1457,25 +1687,36 @@ pub fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
 /// Offensive hulls mount **beams**, as many as their payload volume holds:
 /// `b_role · V` (§2.3) divided by one Limited Contact hull's, floored, at least
 /// one. That is design law #2's slot-organic count; nothing here is a combat
-/// constant tuned per hull. The class does not yet change the loadout — every
-/// armed Design the engine builds is the Warfare card's — and it is in the
-/// signature because the Design is `(hull, class)`.
+/// constant tuned per hull.
 ///
-/// Energy per shot and hull structure are **placeholders** (R-WAR19); fire
-/// control and fire rate read the arena's tuned values rather than defining
-/// second copies of them.
-pub fn design_loadout(hull: HullType, _class: Class, cfg: &SimConfig, combat: &CombatConfig) -> crate::combat::Loadout {
+/// **Accuracy and engagement range are the Design's** (T-133, the author's
+/// ruling): fire control is the class's tolerance
+/// ([`crate::combat::beam_accuracy_ly`]), and both fire distances are the range
+/// that tolerance supports ([`crate::combat::engagement_range_ly`]). Doctrine
+/// may ignore either distance, and a role may narrow it through
+/// `Standing::fire_distance` (R-WAR33).
+///
+/// Beam power is a **placeholder** (R-WAR19, T-132), set for how long a fight
+/// lasts rather than for realism; fire control reads the arena's tuned value
+/// rather than defining a second copy of it. The arena's shots-per-tick is
+/// **not** read: damage is a power delivered over time (warfare §8.18), so a
+/// per-tick rate would tie a fight's outcome to the integration step.
+pub fn design_loadout(hull: HullType, class: Class, cfg: &SimConfig, combat: &CombatConfig) -> crate::combat::Loadout {
     let payload = |h: HullType| h.hull_radius(cfg).cubed() * h.geometry().reserved_payload_fraction;
     let own = payload(hull);
     if own <= Volume::ZERO {
         return crate::combat::Loadout::UNARMED;
     }
     let mounts = (own / payload(HullType::LimitedContactVehicle) + 1e-9).floor().max(1.0) as u32;
+    let accuracy = crate::combat::beam_accuracy_ly(class, hull.family(), combat);
+    let range = crate::combat::engagement_range_ly(accuracy);
     crate::combat::Loadout {
         beams: mounts,
-        shot_energy_kj: combat.beam_shot_energy_kj,
-        fire_control_ly: combat.laser_hit_tolerance,
-        shots_per_tick: combat.laser_shots_per_tick as u32,
+        beam_power_kj_per_year: combat.beam_power_kj_per_year(),
+        fire_control_ly: accuracy,
+        fire_enemy_ly: range,
+        fire_neutral_ly: range,
+        discharge_years: combat.discharge_days_by_class.of(class, hull.family()) / crate::combat::DAYS_PER_YEAR,
     }
 }
 
@@ -1543,7 +1784,7 @@ fn hull_shell_mass(hull: HullType, cfg: &SimConfig) -> Kilotons {
     Kilotons::new(hull.cost_fraction(cfg) * cfg.general_vehicle_cost)
 }
 
-/// Empty-hull thrust-to-mass, in units of `civilian_accel_g` — Offensive hulls
+/// Empty-hull thrust-to-mass, in g — Offensive hulls
 /// out-accelerate haulers, and the Rapid Offensive Unit is the fastest thing in
 /// the game (`Hulls_classes_the_qualitative_counter-graph.md`: "the Culture's
 /// fastest ships"). Placeholder magnitudes, monotone by intent (R-ARENA3).
@@ -1557,8 +1798,8 @@ fn hull_shell_mass(hull: HullType, cfg: &SimConfig) -> Kilotons {
 /// opposite. It is deliberately **not** flattened in this change: it is an
 /// MC-tuned combat surface, and CLAUDE.md §6 requires explicit ratification
 /// before those move. Flattening it is a one-line change once ratified, and it
-/// touches nothing in `sim` — civilian motion runs on `civilian_accel_g`, so
-/// only `arena`/`combat` read this.
+/// touches nothing in `sim` — the sim flies every hull on its own drive
+/// (`Simulation::laden_accel`), so only `arena`/`combat` read this.
 fn hull_thrust_to_mass(hull: HullType) -> f64 {
     use HullType::*;
     match hull {
@@ -1579,7 +1820,7 @@ fn hull_thrust_to_mass(hull: HullType) -> f64 {
 /// empty-hull accel — so cargo mass (added in the denominator elsewhere) is the
 /// only thing that derates it, matching the loadout acceleration query.
 pub fn hull_base_thrust(hull: HullType, cfg: &SimConfig) -> f64 {
-    hull_thrust_to_mass(hull) * cfg.civilian_accel_g * hull_dry_mass(hull, cfg).kilotons()
+    hull_thrust_to_mass(hull) * hull_dry_mass(hull, cfg).kilotons()
 }
 
 /// Per-hull thrust-factor spread (unit-mean-ish jitter a spawner draws within).
@@ -1698,6 +1939,24 @@ struct World {
     /// never changed after (design law #12: no retroactive refits). Absent is
     /// unarmed, which is every hull the Warfare card has not unlocked.
     loadout: ComponentStore<crate::combat::Loadout>,
+    /// **The Design class a hull was built to** (T-133), stamped once at
+    /// construction like its loadout. Absent reads as [`Class::Unnamed`].
+    design_class: ComponentStore<Class>,
+    /// **Energy a hull has absorbed and survived, kJ** (T-133, warfare
+    /// §8.19.5). Carried from one encounter to the next, so the wreck roll
+    /// repeats with further damage rather than starting over. Absent is
+    /// undamaged. Nothing repairs it yet (R-WAR31).
+    hull_damage: ComponentStore<f64>,
+    /// **Which trajectory a hull is on** (T-133): a generation that changes on
+    /// every course, and where and when the current one began.
+    track: ComponentStore<Track>,
+    /// **A hull's station-keeping**, drawn once from its own fork when it is
+    /// first fired on or fires (T-133) — a pure function of the seed and the
+    /// entity, cached because every discharge reads it.
+    station: ComponentStore<crate::combat::StationKeeping>,
+    /// **A wrecked hull, still on its course** (T-133, the author's ruling:
+    /// "Wrecked hulls continue on their course at the moment of destruction").
+    wreck: ComponentStore<Wreck>,
     motion: ComponentStore<Motion>,
     voyage: ComponentStore<Voyage>,
     cargo: ComponentStore<Minerals>,
@@ -1888,6 +2147,11 @@ impl World {
             hull_type: ComponentStore::new(),
             hull_minerals: ComponentStore::new(),
             loadout: ComponentStore::new(),
+            design_class: ComponentStore::new(),
+            hull_damage: ComponentStore::new(),
+            track: ComponentStore::new(),
+            station: ComponentStore::new(),
+            wreck: ComponentStore::new(),
             motion: ComponentStore::new(),
             voyage: ComponentStore::new(),
             cargo: ComponentStore::new(),
@@ -1971,26 +2235,29 @@ enum EventKind {
     /// An exhausted Scout reaches a friendly colony and scraps
     /// (`Hyades_vehicle_roles.md` §4.1/§4.6 — confirmed, LCV only).
     ScrapArrive { vehicle: Entity },
-    /// **Two empires' hulls are standing on the same rock** (T-111).
-    ///
-    /// Raised by [`Simulation::sys_mining_arrive`] when a miner parks at an
-    /// outpost another empire is already working — the arrival *is* the moment
-    /// the situation changed, which is §4's rule, and mining is non-exclusive by
-    /// default (roles §4.3) so this is a legal board state and not an error.
-    ///
-    /// It carries the site and nothing else: who is present is read from
-    /// `mine_crew` at resolution time, because a hull can leave between the
-    /// arrival and the shot and an event that cached the crew would fight with
-    /// ships that are no longer there.
-    Engagement { site: Entity },
-    /// **A picket's light has reached an inbound colonizer's empire** (T-112).
-    ///
-    /// Scheduled at `established_at + distance(world, the colonizer's home
-    /// center)`, which is the earliest instant the order to turn back could
-    /// physically have been given. If that lands after the colonizer's own
-    /// arrival the news is simply too late and this never fires — which is the
-    /// light-lag counterplay window doing its job rather than a special case.
-    ColonyDivert { vehicle: Entity },
+    /// **A hull comes within a shooter's fire distance** (T-133, warfare
+    /// §8.19.7). Found by encounter detection when either hull starts a
+    /// trajectory or takes station, and scheduled for the instant it happens.
+    /// `gs` and `gt` are the two hulls' track generations when it was found:
+    /// if either has changed course since, the prediction is stale and the
+    /// event is dropped — the new trajectory ran its own detection.
+    EncounterBegin { shooter: Entity, target: Entity, gs: u32, gt: u32 },
+    /// **A search for the moment two moving hulls meet, continued** (T-133).
+    /// Detection between two hulls that are both under way advances in bounded
+    /// steps and resumes here rather than running unbounded on one event.
+    EncounterSeek { shooter: Entity, target: Entity, gs: u32, gt: u32 },
+    /// **One weapons discharge** (T-133, §8.19.7): a shooter fires on the
+    /// hulls in its reach and schedules its next discharge one Design period
+    /// later, for as long as anything it fires on is in reach.
+    Discharge { shooter: Entity },
+    /// **The energy of a discharge lands** (T-133): at the discharge's own
+    /// instant, after every discharge due at that instant has fired, so fire is
+    /// simultaneous and no side shoots first by index (T-125).
+    Hits { shooter: Entity },
+    /// **Light carrying an armed hull's approach reaches a hull it will fire
+    /// on** (T-133, belief event A, R-WAR30): the target's fleet can decide
+    /// before the first shot. Stale when either hull has changed course.
+    ThreatSeen { target: Entity, shooter: Entity, gs: u32, gt: u32 },
     /// A picket reaches the world it is to hold and takes station (T-112).
     PicketArrive { vehicle: Entity },
     /// **The light of a colony-ship launch reaches a watching capital**
@@ -2021,6 +2288,22 @@ enum EventKind {
     /// (net §1.1 forbids the latter outright — a state transition that depends
     /// on a local clock is the classic lockstep desync).
     RoundBoundary { round: u32 },
+}
+
+impl EventKind {
+    /// The hull this event is the arrival of, for the events that end a leg.
+    fn arrival_of(&self) -> Option<Entity> {
+        match *self {
+            EventKind::ContactArrive { vehicle }
+            | EventKind::ColonyArrive { vehicle }
+            | EventKind::MiningArrive { vehicle }
+            | EventKind::FreighterArrive { vehicle }
+            | EventKind::ReturnArrive { vehicle }
+            | EventKind::ScrapArrive { vehicle }
+            | EventKind::PicketArrive { vehicle } => Some(vehicle),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -2246,7 +2529,6 @@ pub struct SimConfig {
     ///
     /// **Placeholder magnitude** (R-IND3), like every coefficient in §5.
     pub fab_cap: f64,
-    pub civilian_accel_g: f64,
     pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
 
@@ -2344,21 +2626,6 @@ pub struct SimConfig {
     /// is measurable) but not yet binding. Flip this on with the card layer, or
     /// with a doctrine that can unlock designs.
     pub enforce_roster: bool,
-    /// **Does the simulation resolve engagements at all?** (T-111.)
-    ///
-    /// The master gate on `sys_engagement`, and it **defaults off** for the same
-    /// reason [`Self::enforce_roster`] does: the mechanic is real and none of its
-    /// magnitudes are ratified. Every coverage, colony-year and work-year figure
-    /// this project has measured was taken on a galaxy where nothing fights, so
-    /// turning combat on by default would consume the entire measurement corpus
-    /// in one landing (`CLAUDE.md` §6). Off, the run is **bit-identical** —
-    /// `combat_off_is_bit_identical` pins it.
-    ///
-    /// It is a *master* switch, not the design's own answer to "who fights".
-    /// That is [`crate::autopilot::Doctrine::engage_neutrals`], which is
-    /// per-player and is what a Warfare card writes
-    /// (`Hyades_warfare_tree.md` §7.2). Both must be on for a shot to be fired.
-    pub engagements_enabled: bool,
     /// **Population staffs industry** (T-107, `Hyades_industry.md` §1.8).
     ///
     /// When on, every output path reads the *worked* stock rather than the
@@ -2391,45 +2658,6 @@ pub struct SimConfig {
     /// card moves population and nothing else: measured at T-124, the first
     /// Growth card raised population +0.745 in log and work-years −0.014.
     pub population_staffs_industry: bool,
-    /// **Ablation only — never a design option** (T-122). When on, a rung is
-    /// billed in proportion to the paying bank's *own* color mix, so any bank
-    /// holding the total can pay it: the per-color conjunction T-73 ratified is
-    /// removed. It exists to answer one question — is the color conjunction
-    /// what stands between more output and more infrastructure? — and the
-    /// answer is read from whether a card's effect on work-years appears with
-    /// it on. Design law #11 still holds: the bank pays the full total.
-    pub ablate_color_conjunction: bool,
-    /// **Ablation only — a design-law-#15 violation on purpose** (T-122). When
-    /// on, an intercepting picket is handed the colony ship's true destination
-    /// instead of guessing it from the bearing (T-120). It answers one
-    /// question: is the guess what stands between pickets on station and
-    /// pickets meeting colony ships? Never a design option — a picket that
-    /// knows the answer cannot be deceived (`CLAUDE.md`, "an inference is a
-    /// mechanic").
-    pub ablate_oracle_intercept: bool,
-    /// **Ablation only — a coverage oracle** (T-125). When positive, a colony
-    /// ship launched by a seat that does not blockade is destroyed at its port
-    /// with this probability whenever any seat does blockade, whether or not a
-    /// blockader is standing there. It answers one question: **what fraction of
-    /// rival launches must the port strike reach** for the Warfare card to move
-    /// its metric by the author's target? Never a design option — it strikes
-    /// without a hull, a meeting or light-lag. Default `0.0`, inert.
-    pub ablate_strike_fraction: f64,
-    /// **An ablation, and it is wrong on purpose** (T-116).
-    ///
-    /// Under `Doctrine::picket_after_founding` a colonizer keeps its hull, so
-    /// the colony it founds gets no recycled stock and starts at the ladder's
-    /// floor instead of `founding_infra(hull)` — a factor of about **5.5** on
-    /// a Medium hull (0.020 kt against 0.109). That is conservation being
-    /// correct (R-O57, design law #11): the minerals flew away.
-    ///
-    /// Setting this restores the rung anyway, which **violates conservation**
-    /// and must never ship. It exists so the card's measured `W_0` can be
-    /// attributed: `examples/warfare_why` runs the card with and without it,
-    /// and if the loss goes, the founding rung is the cause. `CLAUDE.md` §2 —
-    /// ablation is the only method that can refute, and a mechanism nobody
-    /// removed is a story rather than a cause.
-    pub ablate_picket_founding_cost: bool,
     /// **How wide a cone a picket will guess into** (R-WAR10, T-120), in
     /// radians of half-angle off the observed bearing.
     ///
@@ -2454,19 +2682,6 @@ pub struct SimConfig {
     /// **Placeholder, 25 yr** (R-WAR12) — roughly a third of a colony ship's
     /// 25-ly crossing, so a chase gets two or three looks.
     pub intercept_reassess_years: f64,
-    /// How long a resolved engagement is simulated for, in years.
-    ///
-    /// **Placeholder magnitude (R-WAR5).** `resolve_engagement` walks `dt`-sized
-    /// steps to this horizon, so it is the per-engagement cost knob as well as a
-    /// balance one; 0.5 yr is what `examples/laser_vs_missile` sweeps at.
-    pub engagement_horizon_years: f64,
-    /// Integration step inside an engagement, in years.
-    ///
-    /// **Not a tuning knob: `dt = 0.0005` (~0.18 days) is a numerical
-    /// requirement.** At the old `dt = 0.006` missiles scored *zero* hits
-    /// against a dodging target (§8, warfare §2.6). Raising it does not make
-    /// combat cheaper, it makes it wrong.
-    pub engagement_dt_years: f64,
     /// Fraction of a center's local density mined into its stockpile per cycle.
     pub center_mining_fraction: f64,
     /// Logistic regrowth rate of planetary **biosphere mass** per production
@@ -2741,7 +2956,6 @@ impl SimConfig {
             max_pickup_stops: 2,
             build_lead_years: 2.0,
             fab_cap: 0.1,
-            civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
             colony_seed_pop: BandTier::I,
@@ -2757,19 +2971,12 @@ impl SimConfig {
             enforce_roster: false,
             // Off: the mechanic is unratified and every measured number in the
             // tree was taken without it. See the field doc.
-            engagements_enabled: false,
             // **On by default since T-125 — the author's decision** (R-IND23):
             // without it population is not a factor of production and no
             // Growth card can reach its own tree's stock.
             population_staffs_industry: true,
-            ablate_color_conjunction: false,
-            ablate_oracle_intercept: false,
-            ablate_strike_fraction: 0.0,
-            ablate_picket_founding_cost: false,
             intercept_cone_radians: 0.15,
             intercept_reassess_years: 25.0,
-            engagement_horizon_years: 0.5,
-            engagement_dt_years: 0.0005,
             recycle_mining_pairs: RECYCLE_MINING_PAIRS_DEFAULT,
             center_mining_fraction: 0.15,
             biosphere_regen_rate: 0.127,
@@ -2963,13 +3170,28 @@ pub struct Simulation {
     /// blockading mid-game recalls — only the launches whose light has already
     /// arrived (`recall_seen_launches`).
     launch_history: Vec<(f64, u64, u32)>,
-    /// **Colonizers currently flying at each world**, target planet id → hulls.
-    ///
-    /// Maintained at launch and cleared on arrival or diversion. It exists so a
-    /// newly established picket can notify exactly the ships it threatens in
-    /// `O(inbound)` instead of scanning the fleet — §4's locality rule, on a
-    /// path that fires once per founding.
-    inbound_colonizers: BTreeMap<u64, Vec<Entity>>,
+    /// **Armed hulls in play** (T-133): the shooters encounter detection
+    /// checks every new trajectory against. Empty in a game nobody played the
+    /// Warfare card in, which makes detection one `is_empty()` per trajectory.
+    armed: BTreeSet<Entity>,
+    /// **Per shooter, the hulls it has in reach and fires on** (T-133).
+    in_reach: BTreeMap<Entity, BTreeSet<Entity>>,
+    /// Shooters with a discharge scheduled — one loop per shooter.
+    firing: BTreeSet<Entity>,
+    /// Shots a discharge has committed and not yet landed, per shooter.
+    pending_hits: BTreeMap<Entity, Vec<(Entity, f64)>>,
+    /// **Hulls fired on at their destination** since their current trajectory
+    /// began — hit by a shooter whose fire distance covers the world they are
+    /// flying to. A colony ship among them does not found (T-133, the
+    /// author's ruling).
+    fired_on_at_destination: BTreeSet<Entity>,
+    /// **One decision per fleet per shooter** (T-133, R-WAR30): the fleet is
+    /// the unit that decides, so a second hit from the same shooter on the
+    /// same fleet raises nothing.
+    responded: BTreeSet<(FleetKey, Entity)>,
+    /// Per seat, worlds it believes an enemy holds — where a threat was seen
+    /// or a shot came from. A retargeting colony ship avoids them.
+    threatened: Vec<BTreeSet<u64>>,
     /// Ore an outpost has extracted **for one player**, awaiting a freighter.
     ///
     /// Keyed by `(player, outpost)`, and that is the correction: the rock's
@@ -3018,16 +3240,14 @@ pub struct Simulation {
 }
 
 /// **What a picket saw of a colony ship** — the one observation its guess is
-/// made from (R-WAR10, T-120). Bundled because the guess reads all four and
-/// nothing else: where the ship left from, which way it is moving, when that
-/// light reached the picket, and the ship itself — the last read *only* by the
-/// oracle ablation (`SimConfig::ablate_oracle_intercept`), never by the guess.
+/// made from (R-WAR10, T-120). Bundled because the guess reads all three and
+/// nothing else: where the ship left from, which way it is moving, and when
+/// that light reached the picket.
 #[derive(Clone, Copy, Debug)]
 struct Sighting {
     origin: Vec3,
     bearing: Vec3,
     t_see: f64,
-    quarry: Entity,
 }
 
 /// **A hull as it leaves the yard** — the type, and the minerals that bought it
@@ -3059,6 +3279,19 @@ impl BuiltHull {
 impl Simulation {
     /// Build a simulation, ingesting a generated [`Galaxy`] into the ECS world.
     pub fn new(galaxy: Galaxy, config: SimConfig, autopilots: Vec<Box<dyn Autopilot>>) -> Self {
+        Self::new_logged(galaxy, config, autopilots, LogFilter::none())
+    }
+
+    /// [`Self::new`] with the log filter set **before** the galaxy is
+    /// bootstrapped, so what happens at `t = 0` — the opening survey launches,
+    /// the fleets the galaxy was generated with — is recorded. `set_log_filter`
+    /// after construction has already missed it.
+    pub fn new_logged(
+        galaxy: Galaxy,
+        config: SimConfig,
+        autopilots: Vec<Box<dyn Autopilot>>,
+        filter: LogFilter,
+    ) -> Self {
         // Refuse a degenerate hull ladder rather than simulating one. A config
         // where nothing can carry cargo still *runs* — it produces numbers, and
         // they look like an economy's — which is exactly why this must be loud.
@@ -3069,6 +3302,7 @@ impl Simulation {
         }
         let n = galaxy.homeworlds.len();
         assert_eq!(autopilots.len(), n, "need one autopilot per seat");
+        let seeding = galaxy.fleets.clone();
 
         let mut world = World::new();
 
@@ -3153,7 +3387,13 @@ impl Simulation {
             launches_seen: vec![BTreeMap::new(); n],
             launches_recent: vec![VecDeque::new(); n],
             launch_history: Vec::new(),
-            inbound_colonizers: BTreeMap::new(),
+            armed: BTreeSet::new(),
+            in_reach: BTreeMap::new(),
+            firing: BTreeSet::new(),
+            pending_hits: BTreeMap::new(),
+            fired_on_at_destination: BTreeSet::new(),
+            responded: BTreeSet::new(),
+            threatened: vec![BTreeSet::new(); n],
             outpost_stock: BTreeMap::new(),
             exchange: Exchange::default(),
             exchange_posting: true,
@@ -3162,10 +3402,180 @@ impl Simulation {
             reserve_freighters: vec![Vec::new(); n],
             current_round: 0,
             inert_card_plays: 0,
-            log: SimLog::new(),
+            log: SimLog::with_filter(filter),
         };
         sim.bootstrap();
+        sim.seed_fleets(&seeding);
         sim
+    }
+
+    /// **Build the fleets the galaxy was generated with** (T-133 follow-up,
+    /// T-131's beds). Every fleet gets the same spend and its hull count from
+    /// its Design's dry mass (R-O57), so the count is the engine's and not the
+    /// bed's. The hulls are unpaid, like the opening survey craft: generated,
+    /// not built.
+    ///
+    /// **A hull's role decides how it starts.** A mission role leaves its
+    /// seat's home port through the engine's own launcher for that role, aimed
+    /// by the engine's own rule — a scout at the survey frontier, a colony ship
+    /// at the nearest known world it can found (the rule a retargeting colonist
+    /// uses), a miner at the known rocks nearest first and round again, a
+    /// freighter at its seat's generated mining sites in turn. A
+    /// station role — picket, reserve — takes the fleet's position and
+    /// velocity: parked at rest, or shedding the velocity from there. A
+    /// mission hull with nowhere to go stands in Reserve at its home port.
+    fn seed_fleets(&mut self, seeding: &crate::galaxy::FleetSeeding) {
+        // **A surveyed start**: each seat has scanned every world within the
+        // known radius of its homeworld, so a colonizer or miner fleet has
+        // somewhere to go at `t = 0`.
+        if seeding.known_radius_ly > 0.0 {
+            for p in 0..self.player_entity.len() {
+                let home = self.world.player_info.get(self.player_entity[p]).unwrap().home;
+                let at = *self.world.position.get(home).unwrap();
+                let known: Vec<PlanetId> = self
+                    .planet_entity
+                    .iter()
+                    .filter(|&&e| self.world.position.get(e).is_some_and(|q| q.distance(at) <= seeding.known_radius_ly))
+                    .map(|&e| *self.world.planet_id.get(e).unwrap())
+                    .collect();
+                let k = self.world.knowledge.get_mut(self.player_entity[p]).unwrap();
+                for pid in known {
+                    k.scanned.insert(pid);
+                }
+            }
+        }
+        let mut sites: Vec<Vec<Entity>> = vec![Vec::new(); self.player_entity.len()];
+        let mut next_site = vec![0usize; self.player_entity.len()];
+        for f in &seeding.fleets {
+            let mass = hull_dry_mass(f.hull, &self.config).kilotons();
+            let count = (seeding.spend_kt / mass).round() as usize;
+            assert!(count > 0, "a fleet spend of {} kt buys no {:?} ({mass} kt)", seeding.spend_kt, f.hull);
+            let seat = f.seat;
+            let home = self.world.player_info.get(self.player_entity[seat]).unwrap().home;
+            let home_pos = *self.world.position.get(home).unwrap();
+            let rocks = if f.role == Role::Miner { self.known_rocks(seat, home) } else { Vec::new() };
+            for k in 0..count {
+                let built = BuiltHull { hull: f.hull, class: f.class, mix: Minerals::default() };
+                let e = Entity(self.world.next);
+                let launched = match f.role {
+                    Role::Scout => self.launch_survey(seat, home_pos, Vec3::ZERO, 0, 0.0, built),
+                    Role::Colonizer => match self.nearest_colony_site(seat, f.hull, home, home_pos) {
+                        Some((w, pid)) => {
+                            self.mark_targeted(seat, pid);
+                            self.spawn_courier(seat, Role::Colonizer, built, home, w, 0.0);
+                            true
+                        }
+                        None => false,
+                    },
+                    Role::Miner if !rocks.is_empty() => {
+                        let w = rocks[k % rocks.len()];
+                        if k < rocks.len() {
+                            sites[seat].push(w);
+                        }
+                        self.spawn_courier(seat, Role::Miner, built, home, w, 0.0);
+                        true
+                    }
+                    Role::Freighter if !sites[seat].is_empty() => {
+                        let outpost = sites[seat][next_site[seat] % sites[seat].len()];
+                        next_site[seat] += 1;
+                        self.spawn_freighter(seat, home, home_pos, outpost, f.hull, 0.0);
+                        self.world.design_class.insert(e, f.class);
+                        true
+                    }
+                    _ => false,
+                };
+                if !launched {
+                    self.world.spawn();
+                    let station = matches!(f.role, Role::Picket | Role::Reserve);
+                    let role = if station { f.role } else { Role::Reserve };
+                    self.world.owner.insert(e, PlayerId(seat as u32));
+                    self.world.role.insert(e, role);
+                    self.world.hull_type.insert(e, f.hull);
+                    self.stamp_loadout(e, built);
+                    self.world.home_center.insert(e, home);
+                    let (at, velocity) = if station { (f.position, f.velocity) } else { (home_pos, Vec3::ZERO) };
+                    if velocity.norm() == 0.0 {
+                        self.park(e, at);
+                    } else {
+                        let accel = self.laden_accel(e);
+                        self.world.motion.insert(e, Motion::from_moving(at, velocity, self.clock, accel));
+                        self.track_changed(e);
+                    }
+                }
+                self.log.push(
+                    self.clock,
+                    LogEvent::FleetGenerated {
+                        player: seat as u32,
+                        vehicle: e,
+                        hull: f.hull,
+                        class: f.class,
+                        role: f.role,
+                    },
+                );
+            }
+        }
+    }
+
+    /// **The nearest known world a colony ship of `hull` from `home` can found,
+    /// measured from `from`** — scanned, unowned, not already targeted by this
+    /// empire, not believed held by an enemy (T-133). The colonist's rule: a
+    /// retargeting colony ship and a generated one choose the same way.
+    fn nearest_colony_site(&self, p: usize, hull: HullType, home: Entity, from: Vec3) -> Option<(Entity, PlanetId)> {
+        let knowledge = self.world.knowledge.get(self.player_entity[p])?;
+        let mut candidates: Vec<(f64, Entity, PlanetId)> = knowledge
+            .scanned
+            .iter()
+            .filter(|pid| !knowledge.targeted.contains(**pid))
+            .filter_map(|&pid| {
+                let w = *self.planet_entity.get(pid.0 as usize)?;
+                if self.world.owner.contains(w) || self.threatened[p].contains(&w.0) {
+                    return None;
+                }
+                Some((self.world.position.get(w)?.distance(from), w, pid))
+            })
+            .collect();
+        candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        candidates
+            .into_iter()
+            .find(|&(_, w, _)| self.colony_seed_for(hull, home, w).is_some_and(|k| k > Kilotons::ZERO))
+            .map(|(_, w, pid)| (w, pid))
+    }
+
+    /// **The known rocks, nearest first** — where a generated miner fleet
+    /// goes, one hull per rock and then round again, so crews stack by the
+    /// engine's crowding law (T-71). A rock is what the seat's own autopilot
+    /// classifies as a mining outpost from its home port — the rule its built
+    /// miners are tasked by — so a generated miner never stands on a world the
+    /// same seat would settle (a colony mines itself, `sys_production_tick`).
+    fn known_rocks(&mut self, p: usize, home: Entity) -> Vec<Entity> {
+        let pe = self.player_entity[p];
+        let holdings_centroid = self.holdings_centroid(p);
+        let (Some(knowledge), Some(doctrine), Some(info)) =
+            (self.world.knowledge.get(pe), self.world.doctrine.get(pe), self.world.player_info.get(pe))
+        else {
+            return Vec::new();
+        };
+        let from = *self.world.position.get(home).unwrap();
+        let ctx = RankContext {
+            scarcity: info.scarcity,
+            holdings_centroid,
+            mineral_pressure: self.mineral_pressure_of(home),
+        };
+        let mut rocks: Vec<(f64, Entity)> = knowledge
+            .scanned
+            .iter()
+            .filter_map(|&pid| {
+                let w = *self.planet_entity.get(pid.0 as usize)?;
+                if self.world.owner.contains(w)
+                    || self.autopilots[p].rank(doctrine, &self.view_of(w), &ctx).class != PlanetClass::MiningOutpost
+                {
+                    return None;
+                }
+                Some((self.world.position.get(w)?.distance(from), w))
+            })
+            .collect();
+        rocks.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        rocks.into_iter().map(|(_, w)| w).collect()
     }
 
     /// Convenience: every seat runs the baseline colonization/growth policy.
@@ -3196,14 +3606,6 @@ impl Simulation {
     /// on `Production` only for the window you're interrogating, then turn it
     /// back off. Does not affect simulation outcomes (see
     /// `tests::logging_does_not_affect_outcomes`).
-    /// Replace the tuned combat surface used by [`Self::sys_engagement`].
-    ///
-    /// For the arena and for sweeps. **Changing any of it is a ratification**
-    /// (the working agreement), not a tuning convenience.
-    pub fn set_combat_config(&mut self, cfg: CombatConfig) {
-        self.combat = cfg;
-    }
-
     /// Wreckage standing at a planet, in kilotons — inert (R-O59, T-03).
     pub fn slag_at(&self, planet: PlanetId) -> Kilotons {
         self.planet_entity
@@ -3230,19 +3632,12 @@ impl Simulation {
 
     // --- doctrine (a per-player Component; `Hyades_vehicle_roles.md` §9) ---
 
-    /// Player `p`'s live, tunable doctrine. Authoritative from bootstrap
-    /// onward — mutating this (via [`Self::set_doctrine`]) is how MC sweeps,
-    /// and eventually cards, actually change behavior; the `Autopilot`
-    /// object passed to [`Simulation::new`] is never consulted again after
-    /// its `default_doctrine()` seeds this at construction.
+    /// Player `p`'s live doctrine. Authoritative from bootstrap onward and
+    /// written only by cards (`apply_orders`); the `Autopilot` object passed to
+    /// [`Simulation::new`] is never consulted again after its
+    /// `default_doctrine()` seeds this at construction.
     pub fn doctrine(&self, p: usize) -> &Doctrine {
         self.world.doctrine.get(self.player_entity[p]).expect("every player has a doctrine")
-    }
-
-    /// Replace player `p`'s doctrine outright (e.g. an MC sweep varying
-    /// `reinvest_bias`, or — later — a card that changes doctrine mid-game).
-    pub fn set_doctrine(&mut self, p: usize, doctrine: Doctrine) {
-        self.world.doctrine.insert(self.player_entity[p], doctrine);
     }
 
     // --- setup -------------------------------------------------------------
@@ -3541,7 +3936,10 @@ impl Simulation {
     /// non-spatial entities (players).
     pub fn position_at(&self, e: Entity, t: f64) -> Option<Vec3> {
         if let Some(m) = self.world.motion.get(e) {
-            Some(math::position_along(m.origin, m.dest, m.depart, m.arrive, m.accel, t))
+            // Through the motion, so a braking segment is read (T-133).
+            Some(m.position_at(t))
+        } else if let Some(w) = self.world.wreck.get(e) {
+            Some(w.position_at(t))
         } else {
             self.world.position.get(e).copied()
         }
@@ -3570,6 +3968,15 @@ impl Simulation {
         let Reverse(ev) = self.queue.pop().unwrap();
         self.clock = ev.time;
         self.events_processed += 1;
+        // **An arrival belongs to the leg that scheduled it** (T-133). A hull
+        // that changed course or was wrecked since has a different leg, or
+        // none, and its old arrival is dropped here rather than in every
+        // handler.
+        if let Some(vehicle) = ev.kind.arrival_of() {
+            if !self.arrival_is_current(vehicle, ev.time) {
+                return true;
+            }
+        }
         match ev.kind {
             EventKind::ContactArrive { vehicle } => self.sys_contact_arrive(vehicle),
             EventKind::ScanReport { player, planet } => self.sys_scan_report(player, planet),
@@ -3582,9 +3989,12 @@ impl Simulation {
             EventKind::BuildDecision { center } => self.sys_build_decision(center),
             EventKind::ContractDue { id } => self.sys_contract_due(id),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
-            EventKind::Engagement { site } => self.sys_engagement(site),
-            EventKind::ColonyDivert { vehicle } => self.sys_colony_divert(vehicle),
             EventKind::PicketArrive { vehicle } => self.sys_picket_arrive(vehicle),
+            EventKind::EncounterBegin { shooter, target, gs, gt } => self.sys_encounter_begin(shooter, target, gs, gt),
+            EventKind::EncounterSeek { shooter, target, gs, gt } => self.sys_encounter_seek(shooter, target, gs, gt),
+            EventKind::Discharge { shooter } => self.sys_discharge(shooter),
+            EventKind::Hits { shooter } => self.sys_hits(shooter),
+            EventKind::ThreatSeen { target, shooter, gs, gt } => self.sys_threat_seen(target, shooter, gs, gt),
             EventKind::LaunchSeen { observer, center } => {
                 *self.launches_seen[observer as usize].entry(center.0).or_insert(0) += 1;
                 self.launches_recent[observer as usize].push_back((self.clock, center.0));
@@ -3628,7 +4038,7 @@ impl Simulation {
             if let Some(next_pid) = next {
                 self.world.knowledge.get_mut(pe).unwrap().visited.insert(next_pid);
                 let next = self.planet_entity[next_pid.0 as usize];
-                let accel = doctrine.survey_accel_g * G;
+                let accel = self.laden_accel(vehicle);
                 let dest = *self.world.position.get(next).unwrap();
                 let arrive = self.set_leg(vehicle, here, dest, accel, 0.0);
                 let v = self.world.voyage.get_mut(vehicle).unwrap();
@@ -3651,7 +4061,7 @@ impl Simulation {
         // and LCV is the only hull type this role currently builds.
         if let Some(dest_e) = self.nearest_owned_planet(p, here) {
             let dest_pos = *self.world.position.get(dest_e).unwrap();
-            let accel = self.config.civilian_accel_g * G;
+            let accel = self.laden_accel(vehicle);
             let arrive = self.set_leg(vehicle, here, dest_pos, accel, 0.0);
             self.schedule_at(arrive, EventKind::ScrapArrive { vehicle });
         } else {
@@ -3675,30 +4085,16 @@ impl Simulation {
         let target = voyage.target;
         let here = self.position_at(target, self.clock).unwrap();
         let target_pid = *self.world.planet_id.get(target).unwrap();
-        self.clear_inbound(target, vehicle);
 
-        // **A hostile picket is standing here** (T-112). The news did not reach
-        // this empire in time — light-lag — so the ship arrived anyway and is
-        // now in a fight it did not choose.
-        //
-        // **Resolved inline rather than scheduled.** Scheduling an engagement
-        // and re-queuing this arrival would loop forever whenever both sides
-        // survive; the outcome is needed *here*, to decide between founding and
-        // turning back. Three outcomes, and the middle one is why a picket is
-        // not an absolute veto:
-        //
-        // - the colonizer dies → nothing founds, and nothing returns;
-        // - the picket dies → the ground is clear and it founds normally;
-        // - both live → it turns back with its people, as if contested (R-AC8).
-        if self.picket_blocks(target, owner.0) {
-            self.resolve_picket_fight(target, p);
-            if self.world.role.get(vehicle).copied() == Some(Role::Scrapped) {
-                return; // destroyed on arrival
-            }
-            if self.picket_blocks(target, owner.0) {
-                self.bounce_colonizer(vehicle, target, here, p, target_pid);
-                return;
-            }
+        // **Fired on at its world and survived, it leaves** (T-133, warfare
+        // §8.19.2, the author's ruling). The colonists are not suicidal: a ship
+        // hit by a gun that covers this world believes the next shot kills it
+        // before the colony stands, so it seeks another world rather than
+        // founding here. A ship nobody fired on here founds, whoever is
+        // standing here.
+        if self.fired_on_at_destination.contains(&vehicle) {
+            self.retarget_colonizer(vehicle);
+            return;
         }
 
         if !self.world.owner.contains(target) {
@@ -3715,15 +4111,7 @@ impl Simulation {
                 // its minerals in the hull, so it has none to leave here — and
                 // what it leaves instead is whatever the hold was loaded with,
                 // credited just below.
-                // **Ablation knob, not a design option** (T-116,
-                // `SimConfig::ablate_picket_founding_cost`). Conservation says
-                // a hull that flies on leaves nothing (R-O57, design law #11),
-                // so charging the rung is the *correct* model and this switch
-                // is wrong on purpose. It exists because the card's measured
-                // `W_0` has to be attributed to something, and the only way to
-                // show the founding rung is the cause is to remove it and watch
-                // the effect go (`CLAUDE.md` §2: ablation refutes).
-                let recycles = !self.stays_armed_after_founding(p, vehicle) || self.config.ablate_picket_founding_cost;
+                let recycles = !self.stays_armed_after_founding(p, vehicle);
                 // **What the ceiling turns away is banked, not burned**
                 // (T-118, design law #11). `founding_infra` clamps the recycled
                 // hull to the top playable rung's price, and the clamped-off
@@ -3950,7 +4338,7 @@ impl Simulation {
     fn bounce_colonizer(&mut self, vehicle: Entity, target: Entity, here: Vec3, p: usize, target_pid: PlanetId) {
         let home = *self.world.home_center.get(vehicle).unwrap_or(&target);
         let home_pos = *self.world.position.get(home).unwrap();
-        let accel = self.config.civilian_accel_g * G;
+        let accel = self.laden_accel(vehicle);
         let arrive = self.set_leg(vehicle, here, home_pos, accel, 0.0);
         self.schedule_at(arrive, EventKind::ReturnArrive { vehicle });
         self.log.push(self.clock, LogEvent::ColonyContested { player: p as u32, vehicle, planet: target_pid });
@@ -3972,51 +4360,6 @@ impl Simulation {
         if self.active_mines.insert(outpost.0) {
             self.schedule(self.config.mining_tick_years, EventKind::MiningTick { outpost });
         }
-        // **Contact.** Mining is non-exclusive (roles §4.3), so this arrival may
-        // have just put two empires' hulls on the same rock — the one place in
-        // the shipped engine where that legally happens, and it happens a lot:
-        // 68-75% of occupied sites end up shared and a 1,500-year run produces
-        // ~4,200 contacts (`examples/contact_census`). The arrival *is* the
-        // moment the situation changed (§4), so the check belongs here and
-        // nowhere else.
-        if self.hostile_contact_at(outpost).is_some() {
-            self.schedule(0.0, EventKind::Engagement { site: outpost });
-        }
-    }
-
-    /// **Is there a fight at this outpost, and who starts it?**
-    ///
-    /// Returns `(attacker_seat, defender_seat)` for the first hostile pairing in
-    /// seat order, or `None`. The attacker is the empire whose Doctrine says a
-    /// neutral is an enemy; the defender is the lowest-numbered seat it is
-    /// standing next to. Deliberately **not symmetric**: hostility is a property
-    /// of one side's doctrine, and being shot at is not a choice
-    /// (`Doctrine::engage_neutrals`).
-    ///
-    /// `O(seats²)` at worst, with seats ≤ 18 and no allocation — the locality
-    /// rule §4 requires of anything on an arrival path. `mine_crew` is already
-    /// keyed `(seat, outpost)`, so this reads the index rather than scanning.
-    fn hostile_contact_at(&self, outpost: Entity) -> Option<(usize, usize)> {
-        if !self.config.engagements_enabled {
-            return None;
-        }
-        let mut present: Vec<usize> = Vec::new();
-        for (&(seat, site), crew) in self.mine_crew.range((0u32, outpost.0)..=(u32::MAX, outpost.0)) {
-            if site == outpost.0 && !crew.is_empty() {
-                present.push(seat as usize);
-            }
-        }
-        if present.len() < 2 {
-            return None;
-        }
-        for &a in &present {
-            if self.doctrine_of(a).engage_neutrals {
-                if let Some(&d) = present.iter().find(|&&d| d != a) {
-                    return Some((a, d));
-                }
-            }
-        }
-        None
     }
 
     // --- Denial: pickets, light-lagged warning, and diversion (T-112) --------
@@ -4028,29 +4371,16 @@ impl Simulation {
     /// come to disagree (`CLAUDE.md` §6's standing-layer rule).
     ///
     /// Yes only when the hull is **armed** — a picket that cannot shoot denies
-    /// nothing — and Doctrine says hold ground, under the engagement master
-    /// switch. An unarmed colonizer always becomes its colony's stock.
+    /// nothing — and Doctrine says hold ground. An unarmed colonizer always
+    /// becomes its colony's stock.
     fn stays_armed_after_founding(&self, seat: usize, vehicle: Entity) -> bool {
-        self.config.engagements_enabled
-            && self.world.loadout.get(vehicle).is_some_and(|l| l.is_armed())
+        self.world.loadout.get(vehicle).is_some_and(|l| l.is_armed())
             && !Standing::of(&self.doctrine_of(seat)).recycles_on_founding()
     }
 
-    /// Does this seat blockade rival ports (T-123)? Gated by the same master
-    /// switch as every other Warfare posture.
+    /// Does this seat blockade rival ports (T-123)?
     fn blockade_doctrine(&self, seat: usize) -> bool {
-        self.config.engagements_enabled && self.doctrine_of(seat).picket_blockades
-    }
-
-    /// Is an unclaimed world held against `seat` right now?
-    ///
-    /// Ground truth, and it is read **only** at the moment of arrival — where
-    /// the range is zero and there is nothing left to be lagged about. The
-    /// *decision* to turn back is taken on light-lagged news
-    /// ([`Self::notify_inbound`]); this is the ship discovering what is
-    /// actually there by flying into it.
-    fn picket_blocks(&self, world: Entity, seat: u32) -> bool {
-        self.picket.get(&world.0).is_some_and(|&(holder, _, _)| holder != seat)
+        self.doctrine_of(seat).picket_blockades
     }
 
     /// **What a hull is made of, and what it gives back** (R-IND21, T-119).
@@ -4093,8 +4423,12 @@ impl Simulation {
     /// One build can lay down several hulls out of one withdrawal (a mining
     /// crew and its freighter), so the *mix* is what is shared and each hull
     /// takes its own mass in that mix.
-    /// **Mount the Design's weapons** (T-125). Once, at construction.
+    /// **Mount the Design's weapons and record its class** (T-125, T-133).
+    /// Once, at construction.
     fn stamp_loadout(&mut self, vehicle: Entity, built: BuiltHull) {
+        if built.class != Class::Unnamed {
+            self.world.design_class.insert(vehicle, built.class);
+        }
         let l = design_loadout(built.hull, built.class, &self.config, &self.combat);
         if l.is_armed() {
             self.world.loadout.insert(vehicle, l);
@@ -4229,8 +4563,16 @@ impl Simulation {
         // Medium hull makes 2.45 — which is what decides whether it wins the
         // race in `offer_interception`, so the flat figure was answering that
         // question with a number belonging to no hull in particular.
-        let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
-        let arrive = self.set_leg(vehicle, origin, dest, accel, delay);
+        let accel = self.laden_accel(vehicle);
+        // **A picket re-aimed in flight sheds its velocity first** (T-133,
+        // R-WAR30): it used to start the new leg from rest where it stood — a
+        // free stop.
+        let under_way = self.world.motion.get(vehicle).is_some_and(|m| m.under_way(self.clock));
+        let arrive = if under_way {
+            self.course_change(vehicle, dest)
+        } else {
+            self.set_leg(vehicle, origin, dest, accel, delay)
+        };
         *self.picket_inbound.entry(world.0).or_default() += 1;
         self.schedule_at(arrive, EventKind::PicketArrive { vehicle });
         arrive
@@ -4291,7 +4633,7 @@ impl Simulation {
     /// guess at, which keeps the inference inside what this player knows
     /// (design law #15).
     fn offer_interception(&mut self, launcher: usize, from_center: Entity, ship: Entity, depart: f64) {
-        if self.picket.is_empty() || !self.config.engagements_enabled {
+        if self.picket.is_empty() {
             return;
         }
         let Some(&origin_pos) = self.world.position.get(from_center) else { return };
@@ -4315,8 +4657,8 @@ impl Simulation {
             let from = Entity(w);
             let Some(&station) = self.world.position.get(from) else { continue };
             let t_see = depart + origin_pos.distance(station);
-            let accel = self.laden_accel(hull, self.config.civilian_accel_g);
-            let seen = Sighting { origin: origin_pos, bearing, t_see, quarry: ship };
+            let accel = self.laden_accel(hull);
+            let seen = Sighting { origin: origin_pos, bearing, t_see };
             let Some((guess, t_reach)) = self.guess_destination(seat, seen, station, accel) else {
                 continue;
             };
@@ -4361,15 +4703,7 @@ impl Simulation {
     /// is the cheaper errand, so it is the better prior. It is a prior, not
     /// knowledge, which is the whole point.
     fn guess_destination(&self, seat: usize, seen: Sighting, station: Vec3, accel: f64) -> Option<(Entity, f64)> {
-        let Sighting { origin, bearing, t_see, quarry } = seen;
-        if self.config.ablate_oracle_intercept {
-            let target = self.world.voyage.get(quarry)?.target;
-            if self.world.owner.contains(target) || self.picket.contains_key(&target.0) {
-                return None;
-            }
-            let pos = *self.world.position.get(target)?;
-            return Some((target, t_see + math::ship_travel_years(station.distance(pos), accel)));
-        }
+        let Sighting { origin, bearing, t_see } = seen;
         let cos_cone = transcendental::cos(self.config.intercept_cone_radians.clamp(0.0, core::f64::consts::PI));
         let scanned: Vec<PlanetId> =
             self.world.knowledge.get(self.player_entity[seat])?.scanned.iter().copied().collect();
@@ -4434,8 +4768,8 @@ impl Simulation {
         if bearing.norm() <= 0.0 {
             return;
         }
-        let accel = self.laden_accel(picket, self.config.civilian_accel_g);
-        let sighting = Sighting { origin: seen, bearing, t_see: self.clock, quarry };
+        let accel = self.laden_accel(picket);
+        let sighting = Sighting { origin: seen, bearing, t_see: self.clock };
         if let Some((guess, t_reach)) = self.guess_destination(seat, sighting, here, accel) {
             if guess != voyage.target && t_reach < qm.arrive {
                 // **Re-aim.** The leg is replaced from where the picket is now,
@@ -4513,154 +4847,6 @@ impl Simulation {
         self.picket.insert(world.0, (owner.0, vec![vehicle], self.clock));
         self.picket_count[owner.0 as usize] += 1;
         self.log.push(self.clock, LogEvent::VehicleParked { player: owner.0, vehicle, role: Role::Picket, at: pid });
-        self.notify_inbound(world);
-    }
-
-    /// **Tell every threatened colony ship, at the speed of light — twice.**
-    ///
-    /// There are two responders and they are not the same responder, which is
-    /// the correction T-115 makes to T-112.
-    ///
-    /// **The home center**, at `now + distance(world, home center)`. That is
-    /// card contract §2's rule verbatim — *a reaction to a detected fleet is
-    /// scheduled by the distance to the responder* — and it is the channel that
-    /// carries an *order*.
-    ///
-    /// **The ship itself**, at the instant the light actually overtakes it.
-    /// A hull flying toward the world is closing on the source, so the news
-    /// reaches it sooner than it reaches anything behind it, and it does not
-    /// need anyone's permission to notice a picket. Leaving this channel out
-    /// made every diversion a round trip through an empire's capital, which is
-    /// not what the observation model says and not what a crew would do.
-    ///
-    /// Both are scheduled; [`Self::sys_colony_divert`] is idempotent and guards
-    /// against a stale wake, so whichever lands first is the one that decides.
-    fn notify_inbound(&mut self, world: Entity) {
-        let Some(inbound) = self.inbound_colonizers.get(&world.0).cloned() else { return };
-        let Some(&(holder, _, _)) = self.picket.get(&world.0) else { return };
-        let world_pos = *self.world.position.get(world).unwrap();
-        for v in inbound {
-            if self.world.owner.get(v).copied().map(|o| o.0) == Some(holder) {
-                continue;
-            }
-            if let Some(&home) = self.world.home_center.get(v) {
-                if let Some(&home_pos) = self.world.position.get(home) {
-                    // c = 1, distance in light-years, time in years (`math`).
-                    self.schedule(world_pos.distance(home_pos), EventKind::ColonyDivert { vehicle: v });
-                }
-            }
-            if let Some(lag) = self.light_overtakes(v, world_pos) {
-                self.schedule(lag, EventKind::ColonyDivert { vehicle: v });
-            }
-        }
-    }
-
-    /// **When does light leaving `source` now catch up with a moving hull?**
-    ///
-    /// Returns the delay in years, or `None` if the hull has no position.
-    ///
-    /// A stationary observer at distance `d` is reached at `d`. A hull *closing*
-    /// on the source is reached sooner, and by how much depends on the whole
-    /// trajectory, so the answer is the root of
-    ///
-    /// ```text
-    /// f(t) = (t − now) − |p(t) − source|
-    /// ```
-    ///
-    /// which is where the light's travelled distance equals the hull's current
-    /// range. `f(now) = −d₀ ≤ 0`, and at `now + d₀` the hull is no farther than
-    /// it was (it is closing, and past arrival `position_at` pins it at the
-    /// destination), so `f ≥ 0` there and a root is bracketed. Bisection, 48
-    /// halvings, which is exact to the last bits of a double over any bracket
-    /// this engine produces.
-    ///
-    /// **Bisection rather than a closed form on purpose.** The trajectory is a
-    /// relativistic 1 g brachistochrone with a departure delay
-    /// (`math::position_along`), so `|p(t) − source|` has no elementary
-    /// inverse — and a root found by halving uses only comparison, addition and
-    /// `sqrt`, all exactly specified by IEEE 754, where a fitted approximation
-    /// would be a per-platform divergence in replicated state (design law #16,
-    /// and the reason `transcendental` forbids `mul_add`).
-    fn light_overtakes(&self, vehicle: Entity, source: Vec3) -> Option<f64> {
-        let now = self.clock;
-        let d0 = self.position_at(vehicle, now)?.distance(source);
-        if d0 <= 0.0 {
-            return Some(0.0);
-        }
-        let range_at = |t: f64| self.position_at(vehicle, t).map(|p| p.distance(source)).unwrap_or(0.0);
-        let (mut lo, mut hi) = (0.0f64, d0);
-        for _ in 0..48 {
-            let mid = 0.5 * (lo + hi);
-            if mid - range_at(now + mid) < 0.0 {
-                lo = mid;
-            } else {
-                hi = mid;
-            }
-        }
-        Some(hi)
-    }
-
-    /// **The warning arrived in time: turn back.**
-    ///
-    /// Guarded three ways, because the event was scheduled against a world state
-    /// that may have moved on: the ship may have already landed, the picket may
-    /// be gone, and the ship may no longer be a colonizer. A stale wake is the
-    /// normal case, not an error.
-    fn sys_colony_divert(&mut self, vehicle: Entity) {
-        if self.world.role.get(vehicle).copied() != Some(Role::Colonizer) {
-            return;
-        }
-        let Some(&voyage) = self.world.voyage.get(vehicle) else { return };
-        let target = voyage.target;
-        let Some(&owner) = self.world.owner.get(vehicle) else { return };
-        if !self.picket_blocks(target, owner.0) {
-            return;
-        }
-        // Still inbound? If the arrival already fired it is off the index.
-        let still_flying = self.inbound_colonizers.get(&target.0).is_some_and(|v| v.contains(&vehicle));
-        if !still_flying {
-            return;
-        }
-        // **Past turnover the ship is committed, and that is kinematics rather
-        // than a rule** (T-115).
-        //
-        // Now that the hull hears the news itself and not only through its
-        // capital, the warning *always* beats it there: light leaves the world
-        // the picket took, and the hull is closing on that world below `c`. So
-        // "did the warning arrive in time" stopped discriminating, and without
-        // a second question every picket would turn every ship back and the
-        // arrival fight would never happen again.
-        //
-        // The question that replaces it costs no constant. A leg is a
-        // relativistic 1 g brachistochrone (`math`), so the hull accelerates to
-        // the midpoint and decelerates from it; **before turnover its velocity
-        // still points somewhere it can choose, after turnover it is shedding
-        // the velocity it already spent and arrives whatever it decides.** The
-        // midpoint in time is `(depart + arrive) / 2`.
-        //
-        // So the counterplay window is a *margin* rather than a race, and both
-        // channels still matter: the ship's own sighting is early and the
-        // order from home may or may not land before the hull is past turning.
-        let Some(&motion) = self.world.motion.get(vehicle) else { return };
-        if self.clock >= 0.5 * (motion.depart + motion.arrive) {
-            return;
-        }
-        let Some(here) = self.position_at(vehicle, self.clock) else { return };
-        let pid = *self.world.planet_id.get(target).unwrap();
-        let holder = self.picket.get(&target.0).map(|&(h, _, _)| h).unwrap_or(owner.0);
-        self.clear_inbound(target, vehicle);
-        self.log.push(self.clock, LogEvent::ColonyDiverted { player: owner.0, vehicle, planet: pid, holder });
-        self.bounce_colonizer(vehicle, target, here, owner.0 as usize, pid);
-    }
-
-    /// Drop a colonizer from the inbound index.
-    fn clear_inbound(&mut self, target: Entity, vehicle: Entity) {
-        if let Some(v) = self.inbound_colonizers.get_mut(&target.0) {
-            v.retain(|&e| e != vehicle);
-            if v.is_empty() {
-                self.inbound_colonizers.remove(&target.0);
-            }
-        }
     }
 
     // --- The port strike (T-123, R-WAR16) ------------------------------------
@@ -4860,173 +5046,6 @@ impl Simulation {
         }
     }
 
-    /// **The hostile stack standing at `center`**, as `(seat, hulls)` — the
-    /// lowest hostile seat first, for determinism.
-    fn hostile_blockade(&self, center: Entity, launcher: u32) -> Option<(u32, Vec<Entity>)> {
-        if self.blockade.is_empty() {
-            return None;
-        }
-        self.blockade
-            .range((center.0, 0)..=(center.0, u32::MAX))
-            .find(|(&(_, s), stack)| s != launcher && !stack.is_empty())
-            .map(|(&(_, s), stack)| (s, stack.clone()))
-    }
-
-    /// **The coverage oracle** ([`SimConfig::ablate_strike_fraction`]): destroy
-    /// this launch with the configured probability if any other seat
-    /// blockades. Deterministic in the ship's entity id.
-    fn oracle_strike(&mut self, launcher: usize, center: Entity, ship: Entity) -> bool {
-        let f = self.config.ablate_strike_fraction;
-        if f <= 0.0 || self.blockade_doctrine(launcher) {
-            return false;
-        }
-        let Some(striker) = (0..self.player_entity.len()).find(|&q| q != launcher && self.blockade_doctrine(q)) else {
-            return false;
-        };
-        if Rng::new(self.config.seed ^ ship.0.wrapping_mul(0x9E37_79B9_7F4A_7C15)).unit() >= f {
-            return false;
-        }
-        let slag = self.destroy_free_hulls(&[ship]);
-        let total = *self.world.slag.get(center).unwrap_or(&Kilotons::ZERO) + slag;
-        self.world.slag.insert(center, total);
-        let pid = *self.world.planet_id.get(center).unwrap();
-        self.log.push(
-            self.clock,
-            LogEvent::EngagementResolved {
-                site: pid,
-                attacker: launcher as u32,
-                defender: striker as u32,
-                attacker_ships: 1,
-                defender_ships: 0,
-                losses_attacker: 1,
-                losses_defender: 0,
-                committed: true,
-                slag: slag.kilotons(),
-            },
-        );
-        true
-    }
-
-    /// **Strike a colony ship at the port it is leaving.** Returns whether it
-    /// was destroyed.
-    ///
-    /// Range zero, so there is nothing lagged to decide on: the blockader is
-    /// standing where the hull is. It takes the defender's side because it is
-    /// the one on station — the same convention as a picket's defense (R-WAR5),
-    /// and the one that decides the outcome.
-    ///
-    /// **The destroyed ship's destination stays marked** in its owner's
-    /// `targeted` set, because that set is monotone by construction (T-101's
-    /// prune depends on it) — so a strike also withdraws one world from the
-    /// launcher's candidate list. A colonizer that dies at a picket already
-    /// did the same.
-    fn strike_at_port(&mut self, launcher: usize, center: Entity, ship: Entity) -> bool {
-        let Some((seat, stack)) = self.hostile_blockade(center, launcher as u32) else { return false };
-        let Some((def_dead, att_dead)) = self.fight_at(center, seat, &stack, launcher, &[ship]) else {
-            return false;
-        };
-        for dead in def_dead {
-            self.leave_blockade(center.0, seat, dead);
-        }
-        !att_dead.is_empty()
-    }
-
-    /// **A colonizer that flew in anyway fights the picket holding the world.**
-    ///
-    /// Same resolver as everything else (T-111). The picket takes the laser side
-    /// — it is the one on station — and the arriving colonizer the missile side,
-    /// which is R-WAR5's placeholder convention and decides outcomes.
-    fn resolve_picket_fight(&mut self, world: Entity, arriving_seat: usize) {
-        let Some((holder, stack, _)) = self.picket.get(&world.0) else { return };
-        let (holder, defenders) = (*holder, stack.clone());
-        let attackers: Vec<Entity> = self
-            .inbound_colonizers
-            .get(&world.0)
-            .map(|v| {
-                v.iter()
-                    .copied()
-                    .filter(|&e| self.world.owner.get(e).copied().map(|o| o.0 as usize) == Some(arriving_seat))
-                    .collect()
-            })
-            .unwrap_or_default();
-        if attackers.is_empty() {
-            return;
-        }
-        let Some((def_dead, att_dead)) = self.fight_at(world, holder, &defenders, arriving_seat, &attackers) else {
-            return;
-        };
-        for dead in def_dead {
-            self.detach_picket(world, dead);
-        }
-        for dead in att_dead {
-            self.clear_inbound(world, dead);
-        }
-    }
-
-    /// **One fight between hulls standing at `site`**, resolved, wrecked and
-    /// logged — the part a picket's defense and a port strike share (T-123).
-    ///
-    /// The defenders take the laser side and the attackers the missile side,
-    /// which is R-WAR5's placeholder convention and decides outcomes. The
-    /// destroyed hulls, their crews and their cargo become slag at the site
-    /// (design law #11). Returns `(defenders lost, attackers lost)`; the caller
-    /// owns whatever index the dead were standing in.
-    fn fight_at(
-        &mut self,
-        site: Entity,
-        defender_seat: u32,
-        defenders: &[Entity],
-        attacker_seat: usize,
-        attackers: &[Entity],
-    ) -> Option<(Vec<Entity>, Vec<Entity>)> {
-        let pos = self.position_at(site, self.clock)?;
-        let pid = *self.world.planet_id.get(site).unwrap();
-        let fleets = [FleetTrajectory { origin: pos, velocity: Vec3::ZERO }; 2];
-        let mut rng = self.rng.fork(self.seq ^ site.0.wrapping_mul(0x9E37_79B9));
-        let def_ships = self.armed(defenders, 0, &mut rng);
-        let att_ships = self.armed(attackers, 1, &mut rng);
-        let committed = crate::belief::resolve_engagement_choice(
-            att_ships[0].ship.max_accel(&self.config),
-            def_ships[0].ship.max_accel(&self.config),
-        ) == crate::belief::Engagement::Committed;
-
-        // **Each side fires what its Design mounts** (T-125). Which side is on
-        // station no longer decides who is armed.
-        let [def_alive, att_alive] = crate::combat::resolve_beam_engagement(
-            &fleets,
-            [&def_ships, &att_ships],
-            self.config.engagement_horizon_years,
-            self.config.engagement_dt_years,
-        );
-        let dead = |hulls: &[Entity], alive: &[bool]| -> Vec<Entity> {
-            hulls.iter().zip(alive).filter(|&(_, &a)| !a).map(|(&e, _)| e).collect()
-        };
-        let def_dead = dead(defenders, &def_alive);
-        let att_dead = dead(attackers, &att_alive);
-
-        let mut slag = Kilotons::ZERO;
-        slag += self.destroy_free_hulls(&def_dead);
-        slag += self.destroy_free_hulls(&att_dead);
-        let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + slag;
-        self.world.slag.insert(site, total);
-
-        self.log.push(
-            self.clock,
-            LogEvent::EngagementResolved {
-                site: pid,
-                attacker: attacker_seat as u32,
-                defender: defender_seat,
-                attacker_ships: attackers.len() as u32,
-                defender_ships: defenders.len() as u32,
-                losses_attacker: att_dead.len() as u32,
-                losses_defender: def_dead.len() as u32,
-                committed,
-                slag: slag.kilotons(),
-            },
-        );
-        Some((def_dead, att_dead))
-    }
-
     /// Destroy hulls that are not in a crew index (pickets and colonizers).
     fn destroy_free_hulls(&mut self, dead: &[Entity]) -> Kilotons {
         let mut mass = Kilotons::ZERO;
@@ -5045,6 +5064,7 @@ impl Simulation {
             self.world.cargo.insert(e, Minerals::default());
             self.world.role.insert(e, Role::Scrapped);
             self.world.motion.remove(e);
+            self.world.hull_damage.remove(e);
         }
         mass
     }
@@ -5052,180 +5072,6 @@ impl Simulation {
     /// This seat's standing Doctrine.
     fn doctrine_of(&self, seat: usize) -> Doctrine {
         *self.world.doctrine.get(self.player_entity[seat]).unwrap()
-    }
-
-    /// **Resolve one engagement at a shared site** (T-111) — the call
-    /// `combat.rs`'s own doc comment has named `sys_engagement` since the combat
-    /// refactor, and the thing whose absence blocks R-AC13, the belief wiring
-    /// and every posture card (`Hyades_warfare_tree.md` §3.4).
-    ///
-    /// Four steps, and the middle two are the design rather than the plumbing:
-    ///
-    /// 1. **Re-read who is present.** The event carries the site only — a hull
-    ///    can leave between the arrival that raised it and this call.
-    /// 2. **Accept/decline on believed kinematics** (R-O41, warfare §5.5). At a
-    ///    shared rock the two fleets are *co-located*, so the range is zero and
-    ///    so is the light-lag: the observation available now is current, and
-    ///    belief equals truth. That is not a hole in design law #15, it is the
-    ///    degenerate case of it — §5.4 already exempts close range for exactly
-    ///    this reason. **The interesting half of `belief.rs` is still unwired**:
-    ///    a surprise attack needs an engagement decided *at range* against a
-    ///    stale observation, which needs T-33's observation store.
-    /// 3. **Fight** through `combat::resolve_engagement` — the same function the
-    ///    arena calls, which is the whole point of the combat/arena split.
-    /// 4. **Conserve the wreckage.** Destroyed hulls become slag at the site.
-    ///
-    /// **Which side carries which weapon is a placeholder (R-WAR5).**
-    /// `resolve_engagement` is laser-side-vs-missile-side because that is the
-    /// sweep it was tuned on, and per-hull slot tables do not exist (R-L0).
-    /// The defender holds station and takes the laser side; the arriving
-    /// attacker takes the missile side. That is a *convention*, it decides the
-    /// outcome, and it is not ratified.
-    fn sys_engagement(&mut self, site: Entity) {
-        let Some((attacker, defender)) = self.hostile_contact_at(site) else { return };
-        let Some(pid) = self.world.planet_id.get(site).copied() else { return };
-        let Some(pos) = self.position_at(site, self.clock) else { return };
-
-        let att_hulls = self.crew_hulls(attacker, site);
-        let def_hulls = self.crew_hulls(defender, site);
-        if att_hulls.is_empty() || def_hulls.is_empty() {
-            return;
-        }
-
-        // Both fleets sit on the rock, so both trajectories are the site's own
-        // and the separation is the station-keeping spread alone.
-        let fleets = [FleetTrajectory { origin: pos, velocity: Vec3::ZERO }; 2];
-        let mut rng = self.rng.fork(self.seq ^ site.0.wrapping_mul(0x9E37_79B9));
-        let def_ships = self.armed(&def_hulls, 0, &mut rng);
-        let att_ships = self.armed(&att_hulls, 1, &mut rng);
-
-        // Step 2: can the attacker break off if this goes badly? Zero range, so
-        // the belief is a fresh observation and cannot be stale.
-        let own = att_ships[0].ship.max_accel(&self.config);
-        let theirs = def_ships[0].ship.max_accel(&self.config);
-        let choice = crate::belief::resolve_engagement_choice(own, theirs);
-        let committed = choice == crate::belief::Engagement::Committed;
-
-        // Step 3: each side fires what its Design mounts (T-125). Two unarmed
-        // crews — every miner is a Systems hull — cannot hurt each other.
-        let [def_alive, att_alive] = crate::combat::resolve_beam_engagement(
-            &fleets,
-            [&def_ships, &att_ships],
-            self.config.engagement_horizon_years,
-            self.config.engagement_dt_years,
-        );
-
-        // Step 4: the dead are exactly the hulls whose structure ran out.
-        let dead = |hulls: &[Entity], alive: &[bool]| -> Vec<Entity> {
-            hulls.iter().zip(alive).filter(|&(_, &a)| !a).map(|(&e, _)| e).collect()
-        };
-        let def_dead = dead(&def_hulls, &def_alive);
-        let att_dead = dead(&att_hulls, &att_alive);
-        let (def_lost, att_lost) = (def_dead.len(), att_dead.len());
-        let mut slag = Kilotons::ZERO;
-        slag += self.destroy_hulls(defender, site, &def_dead);
-        slag += self.destroy_hulls(attacker, site, &att_dead);
-        let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + slag;
-        self.world.slag.insert(site, total);
-
-        self.log.push(
-            self.clock,
-            LogEvent::EngagementResolved {
-                site: pid,
-                attacker: attacker as u32,
-                defender: defender as u32,
-                attacker_ships: att_hulls.len() as u32,
-                defender_ships: def_hulls.len() as u32,
-                losses_attacker: att_lost as u32,
-                losses_defender: def_lost as u32,
-                committed,
-                slag: slag.kilotons(),
-            },
-        );
-    }
-
-    /// One seat's hulls standing at `site`, in arrival order.
-    fn crew_hulls(&self, seat: usize, site: Entity) -> Vec<Entity> {
-        self.mine_crew.get(&(seat as u32, site.0)).cloned().unwrap_or_default()
-    }
-
-    /// Turn stationed hulls into [`Combatant`]s — the sim's own spawn path.
-    ///
-    /// Deliberately **not** `arena::spawn_fleet`: the arena exists to spawn
-    /// outside production and the dependency runs `arena → combat`, never
-    /// `sim → arena`. These ships are the opposite — they were paid for, they
-    /// have a real hull, and their acceleration is whatever that hull gives.
-    /// Each hull as it will fight: the Design's loadout and its structure.
-    fn armed(&self, hulls: &[Entity], fleet: usize, rng: &mut Rng) -> Vec<crate::combat::Armed> {
-        self.combatants(hulls, fleet, rng)
-            .into_iter()
-            .zip(hulls)
-            .map(|(ship, e)| crate::combat::Armed {
-                ship,
-                loadout: self.world.loadout.get(*e).copied().unwrap_or(crate::combat::Loadout::UNARMED),
-                hp_kj: crate::combat::hull_hp_kj(ship.hull, &self.config, &self.combat),
-            })
-            .collect()
-    }
-
-    fn combatants(&self, hulls: &[Entity], fleet: usize, rng: &mut Rng) -> Vec<Combatant> {
-        hulls
-            .iter()
-            .enumerate()
-            .map(|(i, &e)| {
-                let hull = *self.world.hull_type.get(e).unwrap_or(&HullType::LimitedSystems);
-                let role = *self.world.role.get(e).unwrap_or(&Role::Reserve);
-                // **The fleet index has to be in the label.** `Rng::fork` takes
-                // `&self` and does not advance, so forking on `i` alone hands
-                // the two fleets bit-identical draws ship-for-ship: attacker 0
-                // and defender 0 get the same `thrust_factor`, `own == theirs`,
-                // and `can_disengage` — a strict `>` — is false forever. The
-                // census read **100% committed across 8,127 engagements**,
-                // which is what a degenerate draw looks like from the outside.
-                let mut ship_rng = rng.fork(((fleet as u64) << 32) | i as u64);
-                let (lo, hi) = hull_thrust_multiplier_range(hull);
-                Combatant {
-                    role,
-                    hull,
-                    thrust_factor: ship_rng.range(lo, hi),
-                    fleet,
-                    station: StationKeeping::draw(
-                        &mut ship_rng,
-                        crate::arena::ROU_STATION_RADIUS,
-                        crate::arena::ROU_STATION_PERIOD,
-                    ),
-                    maneuver_velocity: Vec3::ZERO,
-                    maneuver_start: 0.0,
-                    maneuver_origin_offset: Vec3::ZERO,
-                }
-            })
-            .collect()
-    }
-
-    /// Remove destroyed hulls from the crew index and return the mass they were.
-    ///
-    /// A hull's dry mass **is** its mineral cost (R-O57), so this is the exact
-    /// quantity that has to reappear as slag for design law #11 to hold.
-    fn destroy_hulls(&mut self, seat: usize, site: Entity, dead: &[Entity]) -> Kilotons {
-        if dead.is_empty() {
-            return Kilotons::ZERO;
-        }
-        let mut mass = Kilotons::ZERO;
-        for &e in dead {
-            let hull = *self.world.hull_type.get(e).unwrap_or(&HullType::LimitedSystems);
-            mass += hull_dry_mass(hull, &self.config);
-            // Terminal: the hull is gone. `Role::Scrapped` is the engine's
-            // existing "this entity is finished" marker and nothing re-tasks it.
-            self.world.role.insert(e, Role::Scrapped);
-            self.world.motion.remove(e);
-        }
-        if let Some(crew) = self.mine_crew.get_mut(&(seat as u32, site.0)) {
-            crew.retain(|e| !dead.contains(e));
-            if crew.is_empty() {
-                self.mine_crew.remove(&(seat as u32, site.0));
-            }
-        }
-        mass
     }
 
     fn sys_freighter_arrive(&mut self, vehicle: Entity) {
@@ -5314,7 +5160,15 @@ impl Simulation {
             // Equivalent at `max_pickup_stops = 1`, where every stop is `base`.
             if sh.outpost == sh.base {
                 let dens = self.world.density.get(sh.base).unwrap().total_mass().kilotons();
-                if load <= Price::new(1e-9) && dens * self.config.outpost_mining_fraction <= self.config.density_floor {
+                let exhausted = dens * self.config.outpost_mining_fraction <= self.config.density_floor;
+                // **A rock this empire has settled is a colony, and a colony
+                // mines itself** (`sys_production_tick`). Its hauler would be
+                // routed to the center it is standing on — a leg of zero length
+                // arriving at the instant it leaves — and shuttle there forever
+                // without the clock moving. The pair's mission is over the same
+                // way an exhausted rock's is.
+                let settled = self.world.owner.get(sh.base).is_some_and(|o| o.0 == p);
+                if load <= Price::new(1e-9) && (exhausted || settled) {
                     let here = self.position_at(sh.base, self.clock).unwrap();
                     let outpost_pid = *self.world.planet_id.get(sh.base).unwrap();
                     self.park(vehicle, here);
@@ -5339,9 +5193,9 @@ impl Simulation {
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
                 if room > Price::new(1e-9) && want.iter().fold(Price::ZERO, |a, &b| a + b) > Price::ZERO {
                     let here = self.position_at(sh.outpost, self.clock).unwrap();
-                    if let Some(next) = self.next_pickup(PlayerId(p), here, sh.outpost, &want, room) {
+                    let accel = self.laden_accel(vehicle);
+                    if let Some(next) = self.next_pickup(PlayerId(p), here, sh.outpost, &want, room, accel) {
                         let to = *self.world.position.get(next).unwrap();
-                        let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
                         let arrive = self.set_leg(vehicle, here, to, accel, 0.0);
                         {
                             let s = self.world.shuttle.get_mut(vehicle).unwrap();
@@ -5367,13 +5221,13 @@ impl Simulation {
             let home = *self.world.home_center.get(vehicle).unwrap_or(&sh.outpost);
             let here = self.position_at(sh.outpost, self.clock).unwrap();
             let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-            let dest = self.best_delivery_center(PlayerId(p), here, &cargo).unwrap_or(home);
+            let dest = self.best_delivery_center(PlayerId(p), here, &cargo, self.laden_accel(vehicle)).unwrap_or(home);
             self.world.shuttle.get_mut(vehicle).unwrap().destination = dest;
 
             let from = self.position_at(sh.outpost, self.clock).unwrap();
             let to = *self.world.position.get(dest).unwrap();
             // Laden run: acceleration derated by the ore just loaded.
-            let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
+            let accel = self.laden_accel(vehicle);
             let arrive = self.set_leg(vehicle, from, to, accel, 0.0);
             self.world.shuttle.get_mut(vehicle).unwrap().outbound = false;
             self.schedule_at(arrive, EventKind::FreighterArrive { vehicle });
@@ -5430,7 +5284,7 @@ impl Simulation {
             // `outpost` never leaves `base`.
             let from = self.position_at(sh.destination, self.clock).unwrap();
             let to = *self.world.position.get(sh.base).unwrap();
-            let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
+            let accel = self.laden_accel(vehicle);
             let arrive = self.set_leg(vehicle, from, to, accel, 0.0);
             {
                 let s = self.world.shuttle.get_mut(vehicle).unwrap();
@@ -5599,7 +5453,12 @@ impl Simulation {
             let density_after = self.world.density.get(outpost).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
-                LogEvent::MineralsExtracted { planet: pid, amount: extracted.basic_total().kilotons(), density_after },
+                LogEvent::MineralsExtracted {
+                    player,
+                    planet: pid,
+                    amount: extracted.basic_total().kilotons(),
+                    density_after,
+                },
             );
         }
         if any {
@@ -5672,6 +5531,7 @@ impl Simulation {
             self.log.push(
                 self.clock,
                 LogEvent::MineralsExtracted {
+                    player: self.world.owner.get(center).map_or(0, |o| o.0),
                     planet: center_pid,
                     amount: extracted.basic_total().kilotons(),
                     density_after,
@@ -5918,7 +5778,7 @@ impl Simulation {
         let target_level = infra_step_price(infra, &self.config);
         let works = self.world.works.get(pe).copied().unwrap_or_default();
         let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
-        let infra_bill = self.rung_bill(target_level, &works, &bank);
+        let infra_bill = works_bill(target_level, &works);
         let stockpile_by_color = [
             Price::new(bank.get_basic(Basic::Cyan)),
             Price::new(bank.get_basic(Basic::Magenta)),
@@ -6005,6 +5865,10 @@ impl Simulation {
         // carries, and the founding rung — and `general_colonizer_hull` is the
         // same function `production_choice` names the hull with.
         let general_hull = crate::autopilot::general_colonizer_hull(&doctrine);
+        // Per hull, not per candidate: a colony ship's hold and its laden
+        // drive depend on the Design alone.
+        let colony_hulls = [HullType::MediumSystems, general_hull]
+            .map(|h| (h.colony_seed_capacity(&self.config), self.colony_ship_accel(h)));
         let mut count = 0usize;
         // **Six slots, not three: the per-class winner and the per-class winner
         // among held ground** (T-113).
@@ -6085,10 +5949,8 @@ impl Simulation {
                     // The per-hull settler figure is computed for the reduced
                     // winners only, not for every scanned world — the reduction
                     // is exactly what makes that affordable (R-O70).
-                    let settlers_by_hull = [
-                        self.settler_target(center, e, HullType::MediumSystems.colony_seed_capacity(&self.config)),
-                        self.settler_target(center, e, general_hull.colony_seed_capacity(&self.config)),
-                    ];
+                    let settlers_by_hull =
+                        colony_hulls.map(|(hold, accel)| self.settler_target(center, e, hold, accel));
                     let mining_crew = self.mining_crew_for(center, e);
                     let cand = Candidate { view, ranked, settlers_by_hull, mining_crew, held_by_me, claim_inbound };
                     if wins_class {
@@ -6249,27 +6111,6 @@ impl Simulation {
             return f.infra;
         }
         f.infra * self.staffing(center)
-    }
-
-    /// **The color-split bill for a rung, as this engine bills it.** T-73's
-    /// `works_bill` unless the conjunction is ablated, in which case the total
-    /// is split by the paying bank's own mix (see
-    /// [`SimConfig::ablate_color_conjunction`]).
-    fn rung_bill(&self, step: Price, works: &cards::Works, bank: &Minerals) -> [Price; 3] {
-        let bill = works_bill(step, works);
-        if !self.config.ablate_color_conjunction {
-            return bill;
-        }
-        let total: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
-        let held = bank.basic_total();
-        if held <= Price::ZERO {
-            return bill;
-        }
-        let mut out = [Price::ZERO; 3];
-        for (i, &c) in Basic::ALL.iter().enumerate() {
-            out[i] = total * (bank.get_basic(c) / held.kilotons());
-        }
-        out
     }
 
     /// **`u = min(1, P / P_req(I))`** — the fraction of a center's standing
@@ -6452,7 +6293,7 @@ impl Simulation {
                 // `works_bill` the decision was made against.
                 let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
                 let bank_now = self.world.stockpile.get(center).copied().unwrap_or_default();
-                let bill = self.rung_bill(target, &works, &bank_now);
+                let bill = works_bill(target, &works);
                 let payable = can_pay_bill(&bank_now, &bill);
                 // What was actually committed is the bill, not the ladder step:
                 // `eta_works` divides the total, so an efficiency card makes the
@@ -6874,7 +6715,6 @@ impl Simulation {
             return HullType::MediumSystems;
         };
         let d = a.distance(b);
-        let g = self.config.civilian_accel_g * G;
 
         // **Liquidity, which is design law #3's own counterweight** —
         // *indivisibility as a liability*, and the half a steady-state
@@ -6917,14 +6757,14 @@ impl Simulation {
             if best.is_some() && hull_cost(hull, &self.config) > budget {
                 continue;
             }
-            let empty = math::ship_travel_years(d, g * self.thrust_to_mass(hull, Kilotons::ZERO));
+            let empty = math::ship_travel_years(d, G * self.thrust_to_mass(hull, Kilotons::ZERO));
             // Seed with a full hold, then re-solve once against the load that
             // implies. The laden leg is monotone in the load, so one pass is
             // enough to land inside a percent of the fixed point.
             let mut load = cap;
             let mut round = f64::INFINITY;
             for _ in 0..2 {
-                let laden = math::ship_travel_years(d, g * self.thrust_to_mass(hull, Kilotons::new(load)));
+                let laden = math::ship_travel_years(d, G * self.thrust_to_mass(hull, Kilotons::new(load)));
                 round = laden + empty;
                 load = cap.min(flow * round);
             }
@@ -7014,7 +6854,7 @@ impl Simulation {
         self.world.role.insert(e, Role::Miner);
         self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
         self.world.home_center.insert(e, center);
-        let accel = self.config.civilian_accel_g * G;
+        let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, from, dest, accel, 0.0);
         self.schedule_at(arrive, EventKind::MiningArrive { vehicle: e });
         let target_pid = *self.world.planet_id.get(target).unwrap();
@@ -7042,7 +6882,7 @@ impl Simulation {
         self.world.role.insert(e, Role::Freighter);
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { base: outpost, outpost, destination: center, outbound: true, stops: 0 });
-        let accel = self.config.civilian_accel_g * G;
+        let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, from, dest, accel, 0.0);
         self.schedule_at(arrive, EventKind::FreighterArrive { vehicle: e });
         let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
@@ -7210,7 +7050,12 @@ impl Simulation {
         // has, but as the split that maximizes the growth of the combined
         // origin-plus-colony system under a travel discount (R-IND12; see
         // `settler_target`, which also defines every symbol it uses).
-        Some(hold.min(self.founding_capacity(target)).min(self.settler_target(origin, target, hold)))
+        Some(hold.min(self.founding_capacity(target)).min(self.settler_target(
+            origin,
+            target,
+            hold,
+            self.colony_ship_accel(hull),
+        )))
     }
 
     /// **How many settlers a center sends, and where the number comes from
@@ -7225,7 +7070,7 @@ impl Simulation {
     /// | `K_c` | the target's carrying capacity, same function | kt |
     /// | `x_0` | the floor a colony would otherwise start from, [`units::POPULATION_SEED_FLOOR`] | kt |
     /// | `r` | logistic growth rate per cycle, `Doctrine::growth_rate` | 1/cycle |
-    /// | `tau` | one-way transit, origin → target, at civilian accel | yr |
+    /// | `tau` | one-way transit, origin → target, at the colony ship's laden drive ([`Self::colony_ship_accel`]) | yr |
     /// | `delta` | discount on a gain that arrives `tau` late | — |
     /// | `S` | settlers put aboard | kt |
     /// | `g(x, K)` | the logistic rate `r·x·(1 − x/K)` — the engine's own step | kt/cycle |
@@ -7281,7 +7126,7 @@ impl Simulation {
     /// constant**: `cycle_years` already exists and is the natural clock for a
     /// quantity denominated per cycle. Whether the form should be exponential is
     /// **R-IND14**, open.
-    fn settler_target(&self, center: Entity, target: Entity, hold: Kilotons) -> Kilotons {
+    fn settler_target(&self, center: Entity, target: Entity, hold: Kilotons, accel: f64) -> Kilotons {
         let x_p = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
         let k_p = self.capacity_of(center);
         let k_c = self.capacity_of(target);
@@ -7300,7 +7145,7 @@ impl Simulation {
         if hi >= k_c * (1.0 - 1e-12) {
             return hi.min(k_c);
         }
-        let delta = self.travel_discount(center, target);
+        let delta = self.travel_discount(center, target, accel);
         Kilotons::new(best_endowment(
             hi.kilotons(),
             x_p.kilotons(),
@@ -7327,13 +7172,17 @@ impl Simulation {
 
     /// `delta = 1 / (1 + tau / cycle_years)` — see [`Self::settler_target`] for
     /// what the symbols are and why the form is hyperbolic.
-    fn travel_discount(&self, center: Entity, target: Entity) -> f64 {
+    ///
+    /// `tau` is the colony ship's own flight time at `accel`, which callers take
+    /// from [`Self::colony_ship_accel`] — never a flat rate standing in for the
+    /// Design.
+    fn travel_discount(&self, center: Entity, target: Entity, accel: f64) -> f64 {
         let (a, b) = (self.world.position.get(center), self.world.position.get(target));
         let tau = match (a, b) {
             (Some(&from), Some(&to)) => {
                 let d = from.distance(to);
                 if d > 0.0 {
-                    math::ship_travel_years(d, self.config.civilian_accel_g * G)
+                    math::ship_travel_years(d, accel)
                 } else {
                     0.0
                 }
@@ -7489,7 +7338,7 @@ impl Simulation {
         //
         // `laden_accel` reads the hull's own drive as well as its load (T-96),
         // so this also stops the leg pretending every hull has the same thrust.
-        let accel = self.laden_accel(e, self.config.civilian_accel_g);
+        let accel = self.laden_accel(e);
         self.world.home_center.insert(e, center);
         let target_pid = *self.world.planet_id.get(target).unwrap();
         let spawned = LogEvent::VehicleSpawned {
@@ -7502,15 +7351,11 @@ impl Simulation {
             settlers: settlers.kilotons(),
             endowment: endowment.basic_total().kilotons(),
         };
-        // **A blockader at the port meets it here** (T-123) — before the leg
-        // is scheduled, so a ship that dies at the yard has no arrival left
-        // to fire. Its launch is still seen: the light left before the fight.
+        // Its launch is seen (T-123): the light leaves when the drive lights.
+        // A blockader at the port meets it as it leaves — found by encounter
+        // detection when its leg starts, like any other hull's (T-133).
         if role == Role::Colonizer {
             self.report_launch(p, center, launch_delay);
-            if self.strike_at_port(p, center, e) || self.oracle_strike(p, center, e) {
-                self.log.push(self.clock, spawned);
-                return;
-            }
         }
         let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         let ev = match role {
@@ -7518,11 +7363,6 @@ impl Simulation {
             Role::Picket => EventKind::PicketArrive { vehicle: e },
             _ => EventKind::MiningArrive { vehicle: e },
         };
-        if role == Role::Colonizer {
-            // Index it so a picket established while it is in flight can find
-            // it without scanning the fleet (T-112).
-            self.inbound_colonizers.entry(target.0).or_default().push(e);
-        }
         if role == Role::Picket {
             *self.picket_inbound.entry(target.0).or_default() += 1;
         }
@@ -7550,14 +7390,15 @@ impl Simulation {
         launch_delay: f64,
     ) {
         let dest = *self.world.position.get(outpost).unwrap();
-        let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, Role::Freighter);
         self.world.hull_type.insert(e, hull);
+        self.world.design_class.insert(e, Class::freighter_for(hull));
         self.world.cargo.insert(e, Minerals::default());
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { base: outpost, outpost, destination: center, outbound: true, stops: 0 });
+        let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         self.schedule_at(arrive, EventKind::FreighterArrive { vehicle: e });
         let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
@@ -7599,7 +7440,6 @@ impl Simulation {
         self.fill_survey_candidates(p, &mut cands);
         let bias = if heading == Vec3::ZERO { None } else { Some(heading) };
         let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
-        let accel = doctrine.survey_accel_g * G;
         let picked = self.autopilots[p].choose_survey_target(&doctrine, from, bias, &cands);
         self.survey_scratch = cands;
         if let Some(target_pid) = picked {
@@ -7614,6 +7454,7 @@ impl Simulation {
             self.stamp_loadout(e, built);
             self.world.voyage.insert(e, Voyage { target, heading_bias: bias, hops });
             self.world.cargo.insert(e, Minerals::default());
+            let accel = self.laden_accel(e);
             let arrive = self.set_leg(e, from, dest, accel, launch_delay);
             self.schedule_at(arrive, EventKind::ContactArrive { vehicle: e });
             self.log.push(
@@ -7637,19 +7478,26 @@ impl Simulation {
 
     /// Set a vehicle's flight leg and return its arrival time.
     fn set_leg(&mut self, e: Entity, origin: Vec3, dest: Vec3, accel: f64, build_delay: f64) -> f64 {
-        let dist = origin.distance(dest);
-        let travel = if dist > 0.0 { math::ship_travel_years(dist, accel) } else { 0.0 };
-        let depart = self.clock + build_delay;
-        let arrive = depart + travel;
-        self.world.motion.insert(e, Motion { origin, dest, depart, arrive, accel });
-        arrive
+        let leg = self.plan_leg(origin, dest, accel, build_delay);
+        self.world.motion.insert(e, leg);
+        self.track_changed(e);
+        leg.arrive
     }
 
-    /// Acceleration (ly/yr²) for a vehicle setting out *now*, derated for the
-    /// mass it is currently carrying: `a = base_g·G · dry / (dry + cargo)`.
-    /// This is the `a = thrust / mass` relation with thrust ∝ `base_g` and mass
-    /// = dry + laden cargo, so a fully-loaded freighter leaves its outpost
-    /// slower than it returns empty.
+    /// The leg [`Self::set_leg`] would fly, without flying it — so a ship's
+    /// departure can be fired upon before its arrival is scheduled (T-133).
+    fn plan_leg(&self, origin: Vec3, dest: Vec3, accel: f64, build_delay: f64) -> Motion {
+        Motion::leg(origin, dest, self.clock + build_delay, accel)
+    }
+
+    /// Acceleration (ly/yr²) for a vehicle setting out *now*: its Design's
+    /// drive thrust over its dry mass plus what it is carrying, so a
+    /// fully-loaded freighter leaves its outpost slower than it returns empty.
+    ///
+    /// **This is the only acceleration a hull flies at** (the author's ruling:
+    /// the sim does not overwrite a ship's Design). There is no flat civilian
+    /// or survey rate any more; every leg, and every forecast of a leg, reads
+    /// the hull's own drive and load.
     ///
     /// **Every mass here is in one unit, kilotons (R-O57/L6).** There is no
     /// cargo-mass coefficient any more: a mineral in the hold masses exactly
@@ -7660,11 +7508,12 @@ impl Simulation {
     /// as hard as a General one.
     ///
     /// The consequence is that laden spreads get much wider, which is R-O58's
-    /// point rather than a side effect: a Medium freighter under a full hold
-    /// carries 15× its own dry mass and accelerates at 1/16 g, while an empty
-    /// hull of any size does 1 g. Large hulls broadcast their load state; small
-    /// ones do not (§9.2's non-combat source of small-fleet value).
-    fn laden_accel(&self, e: Entity, base_g: f64) -> f64 {
+    /// point rather than a side effect. Empty, the Systems hulls fly at 1.00 /
+    /// 2.37 / 5.06 g (Limited / Medium / General, T-96's drive ladder); with a
+    /// full hold a Limited hull keeps 0.70 g and a General one drops to 0.23 g.
+    /// Large hulls broadcast their load state; small ones do not (§9.2's
+    /// non-combat source of small-fleet value).
+    fn laden_accel(&self, e: Entity) -> f64 {
         // **Colony cargo mass ≡ mineral cargo mass** (R-O32,
         // `Hyades_standing_layer_and_observation.md` §6.2). A hold full of
         // settlers weighs what a hold full of ore weighs, so the burn cannot be
@@ -7700,11 +7549,7 @@ impl Simulation {
         // drive and cargo both scale `r³`, the shell term shrinks away, and
         // laden acceleration becomes **size-independent** — measured at 1.01x
         // across the Medium-to-General step, with nothing tuned to produce it.
-        //
-        // `base_g` is retained as the caller's throttle (design law #10: a ship
-        // may fly below peak and never above it), so a civilian leg still asks
-        // for `civilian_accel_g` and gets what the drive can actually deliver.
-        base_g * G * self.thrust_to_mass(hull, laden - dry)
+        G * self.thrust_to_mass(hull, laden - dry)
     }
 
     /// **Acceleration in `g`, for a hull carrying a stated load** (T-96, T-98).
@@ -7720,10 +7565,22 @@ impl Simulation {
         thrust / (dry + load.max(Kilotons::ZERO)).kilotons()
     }
 
+    /// **A colony ship's acceleration, laden as it launches** — ly/yr². The hold
+    /// leaves full: settlers, and minerals in whatever volume they do not take
+    /// (`endowment_minerals`, R-O74), so the load is `colony_seed_capacity`.
+    /// The forecast `settler_target` discounts with, and the flight
+    /// `spawn_courier` flies, are then the same number.
+    fn colony_ship_accel(&self, hull: HullType) -> f64 {
+        G * self.thrust_to_mass(hull, hull.colony_seed_capacity(&self.config))
+    }
+
     /// Park a vehicle at `pos` (degenerate motion ⇒ fixed position, not in flight).
     fn park(&mut self, e: Entity, pos: Vec3) {
-        let accel = self.config.civilian_accel_g * G;
-        self.world.motion.insert(e, Motion { origin: pos, dest: pos, depart: self.clock, arrive: self.clock, accel });
+        let accel = self.laden_accel(e);
+        self.world
+            .motion
+            .insert(e, Motion { origin: pos, dest: pos, depart: self.clock, arrive: self.clock, accel, brake: None });
+        self.track_changed(e);
     }
 
     /// Fill `out` with this player's unowned, unvisited worlds. Takes a caller-
@@ -8137,12 +7994,19 @@ impl Simulation {
             self.credit(pe, -escrow);
 
             // **The freight leg.** The obligation was instant; the ore is not.
-            // Transit is the seller's center to its own drop, at civilian
-            // acceleration — the same `ship_travel_years` every other voyage in
-            // the engine uses, so a trade is priced in the same geometry as a
-            // colonization or a haul (§8.1: a trade is a voyage).
+            // Transit is the seller's center to its own drop — one laden leg of
+            // the seller's standing Freighter Design, at its own drive with the
+            // lot aboard up to its hold (no flat rate stands in for the
+            // Design). The same `ship_travel_years` every other voyage in the
+            // engine uses, so a trade is priced in the same geometry as a
+            // colonization or a haul (§8.1: a trade is a voyage). How many hulls
+            // carry a lot larger than one hold is not modeled: no hull is
+            // spawned for the leg at all (appendix §D.19 measured timing a lot
+            // as one hull's sequential loads, which cost −18% work-years).
             let drop_at = *self.world.position.get(seller_drop).unwrap();
-            let t = math::ship_travel_years(s_at.distance(drop_at), self.config.civilian_accel_g * G);
+            let (hull, _) = Standing::of(&self.doctrine_of(f.seller.0 as usize)).design_for(Role::Freighter);
+            let lot = Price::new(qty).on_scale::<units::Mass>().min(hull.cargo_capacity(&self.config));
+            let t = math::ship_travel_years(s_at.distance(drop_at), G * self.thrust_to_mass(hull, lot));
             let id = self.exchange.next_id;
             self.exchange.next_id += 1;
             self.exchange.contracts.insert(
@@ -8431,12 +8295,14 @@ impl Simulation {
     /// permanently: it was already the oracle for single-supply matching, and
     /// it is now the oracle for zero-discount routing too — the same function
     /// checking two different generalisations.
-    fn best_delivery_center(&self, owner: PlayerId, from: Vec3, cargo: &Minerals) -> Option<Entity> {
+    ///
+    /// `accel` is the hauler's own, laden with `cargo` ([`Self::laden_accel`]),
+    /// so the voyage is priced at the rate it will be flown.
+    fn best_delivery_center(&self, owner: PlayerId, from: Vec3, cargo: &Minerals, accel: f64) -> Option<Entity> {
         let lambda = self.config.trade_decay_lambda;
         if lambda <= 0.0 {
             return self.most_needed_center(owner);
         }
-        let accel = self.config.civilian_accel_g * G;
         let mut best: Option<(Entity, f64)> = None;
         for e in self.planet_entity.iter().copied() {
             if self.world.owner.get(e).copied() != Some(owner) {
@@ -8521,7 +8387,7 @@ impl Simulation {
         let step = infra_step_price(f.infra, &self.config);
         let works = self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default();
         let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
-        let bill = self.rung_bill(step, &works, &bank);
+        let bill = works_bill(step, &works);
         let mut out = [Price::ZERO; 3];
         for (i, &c) in Basic::ALL.iter().enumerate() {
             out[i] = (bill[i] - Price::new(bank.get_basic(c))).max(Price::ZERO);
@@ -8580,9 +8446,9 @@ impl Simulation {
         current: Entity,
         want: &[Price; 3],
         room: Price,
+        accel: f64,
     ) -> Option<Entity> {
         let lambda = self.config.trade_decay_lambda;
-        let accel = self.config.civilian_accel_g * G;
         let mut best: Option<(Entity, f64)> = None;
         for (&(pl, rock), pile) in self.outpost_stock.iter() {
             if pl != owner.0 {
@@ -8768,6 +8634,9 @@ impl Simulation {
         // double it.
         for i in 0..self.world.next {
             let e = Entity(i);
+            if let Some(w) = self.world.wreck.get(e) {
+                m.wrecks += w.mass.kilotons();
+            }
             if self.world.role.get(e).copied() == Some(Role::Scrapped) {
                 continue;
             }
@@ -9199,8 +9068,11 @@ pub struct MassLedger {
     pub settlers: f64,
     /// Standing biomass that is not people.
     pub biomass: f64,
-    /// Wreckage, inert and at the site that made it (R-O59).
+    /// Slag standing at a planet, inert (R-O59) — the unrecovered half of a
+    /// scrapped hull.
     pub slag: f64,
+    /// Wrecked hulls still on their course, with everything aboard (T-133).
+    pub wrecks: f64,
 }
 
 impl MassLedger {
@@ -9217,6 +9089,7 @@ impl MassLedger {
             + self.settlers
             + self.biomass
             + self.slag
+            + self.wrecks
     }
 
     /// Per-store differences, for saying *where* a leak is rather than that
@@ -9233,6 +9106,7 @@ impl MassLedger {
             settlers: other.settlers - self.settlers,
             biomass: other.biomass - self.biomass,
             slag: other.slag - self.slag,
+            wrecks: other.wrecks - self.wrecks,
         }
     }
 }
@@ -10344,52 +10218,45 @@ mod tests {
 
     /// **Combat off reproduces the galaxy bit-for-bit** (T-111).
     ///
-    /// The property the whole gate exists for. Every coverage, colony-year and
-    /// work-year figure this project has measured was taken before anything
-    /// fought, and the offline search rests on them; a mechanic that perturbed
-    /// the default run would consume that corpus on the day it landed. So the
-    /// engagement path must be *unreachable* rather than merely quiet, and this
-    /// asserts it against a run built before the code existed.
+    /// **A galaxy nobody armed fires no shot** (T-111, T-133). There is no
+    /// master switch: fire needs a Design that mounts weapons, and only the
+    /// Warfare card's hulls do, so a card-free run never enters the fire path.
+    /// Every coverage, colony-year and work-year figure this project measured
+    /// before anything fought rests on that, so it is asserted here rather
+    /// than assumed: no armed hull, no encounter, and two runs agree.
     #[test]
-    fn combat_off_is_bit_identical() {
+    fn a_galaxy_nobody_armed_fires_no_shot() {
         let mk = || Simulation::with_baseline(test_galaxy(3, 2024), paired_cfg(2024));
         let mut a = mk();
         let mut b = mk();
+        a.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
         let ra = a.run();
         let rb = b.run();
         paired_mechanism_fired(&ra);
-        assert!(!a.config.engagements_enabled, "the gate must ship closed");
+        assert!(a.armed.is_empty(), "no Design the card-free standing layer builds is armed");
         assert_eq!(ra.events_processed, rb.events_processed);
         for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
             assert_eq!(pa.colonies, pb.colonies);
             assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
         }
-        // **Nothing was destroyed *by combat*, which is no longer the same
-        // claim as "no slag"** (T-118). Slag is what mass degrades into rather
-        // than vanishing (design law #11), and scrapping a hull now leaves the
-        // unrecovered half there — so a peaceful galaxy accumulates slag from
-        // ordinary retirement. The assertion that still means something is that
-        // **no engagement resolved**, which is what the gate is for.
-        assert!(
-            !a.log().iter().any(|r| matches!(r.event, crate::log::LogEvent::EngagementResolved { .. })),
-            "combat is off and an engagement resolved anyway"
-        );
+        // **Nothing was destroyed *by fire*, which is not the same claim as
+        // "no slag"** (T-118): scrapping a hull leaves its unrecovered half as
+        // slag, so a peaceful galaxy accumulates it from ordinary retirement.
+        assert_eq!(a.log().iter().count(), 0, "an unarmed galaxy logged a combat event");
     }
 
     /// A bed where two empires have actually grown into each other.
     ///
     /// **The horizon is the whole content of this helper.** `paired_cfg`'s
     /// 120 yr produces 12 occupied sites and **zero** shared ones — the seats
-    /// are still expanding into empty space and have not met. Measured on this
-    /// galaxy: 120 yr gives 0 shared sites and 0 fights, 400 yr gives 76 and
-    /// 141. So a combat test at 120 yr passes or fails on whether anyone has
-    /// *met*, which is not what it is asking. `CLAUDE.md` §2's rule about
-    /// horizons cut past the point a mechanism fires, arrived at from the other
-    /// side: this one had to go **up**.
+    /// are still expanding into empty space and have not met. So a combat test
+    /// at 120 yr passes or fails on whether anyone has *met*, which is not what
+    /// it is asking. `CLAUDE.md` §2's rule about horizons cut past the point a
+    /// mechanism fires, arrived at from the other side: this one had to go
+    /// **up**.
     fn contact_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = 400.0;
-        cfg.engagements_enabled = true;
         cfg
     }
 
@@ -10410,161 +10277,41 @@ mod tests {
         Simulation::new(galaxy, cfg, autopilots)
     }
 
-    /// **The gate is what closes it, not the absence of contact** (T-111).
-    ///
-    /// Two runs that differ only in `engagements_enabled` + `engage_neutrals`
-    /// must differ, or the mechanic is inert and the test above proves nothing.
-    /// `examples/contact_census` measured the upstream side — 68-75% of occupied
-    /// sites end up shared — and this is the same claim from inside the engine.
+    /// **Armed hulls that meet fire, and what they wreck is slag** (T-111,
+    /// T-133, design law #11). The counterpart of the test above: with the
+    /// Warfare card's writes on one seat, encounters begin, hulls are wrecked,
+    /// and every kilotonne a wreck logged is still in the galaxy — a wreck
+    /// keeps its course (the author's ruling), so it is counted where it is,
+    /// not at a planet. `mass_is_conserved_through_the_blockade` weighs the
+    /// whole board.
     #[test]
-    fn combat_on_actually_fights() {
+    fn armed_hulls_that_meet_fire_and_their_wrecks_are_slag() {
         let mut sim = belligerents(test_galaxy(3, 2024), contact_cfg(2024));
         sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
         sim.run();
-
-        let fights =
-            sim.log().iter().filter(|r| matches!(r.event, crate::log::LogEvent::EngagementResolved { .. })).count();
-        assert!(fights > 0, "combat is on and nothing fought — the trigger never fired");
-    }
-
-    /// **Slag conserves the mass of what it destroyed** (design law #11, R-O59).
-    ///
-    /// Mass has no exclusions, and "the loser's ships vanish" would be a leak on
-    /// the one path Warfare runs on. A hull's dry mass *is* its mineral cost
-    /// (R-O57), so the wreckage standing at a site must equal the summed cost of
-    /// the hulls that died there — reconciled from the log, which records both
-    /// counts and mass independently.
-    #[test]
-    fn slag_conserves_the_mass_of_what_it_destroyed() {
-        let mut sim = belligerents(test_galaxy(3, 2024), contact_cfg(2024));
-        sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
-        sim.run();
-
-        let mut logged_slag = 0.0;
-        let mut kills = 0u32;
+        let (mut encounters, mut wrecks, mut logged_slag) = (0usize, 0usize, 0.0);
         for r in sim.log().iter() {
-            if let crate::log::LogEvent::EngagementResolved { slag, losses_attacker, losses_defender, .. } = r.event {
-                logged_slag += slag;
-                kills += losses_attacker + losses_defender;
+            match r.event {
+                LogEvent::EncounterBegan { .. } => encounters += 1,
+                LogEvent::HullWrecked { slag, .. } => {
+                    wrecks += 1;
+                    logged_slag += slag;
+                }
+                _ => {}
             }
         }
-        assert!(kills > 0, "nothing died, so this asserts nothing");
-        // **Combat is no longer the only thing that makes slag** (T-118), so
-        // this is an inequality now: design law #11 says wastage *degrades*
-        // rather than vanishing, and the unrecovered half of every scrapped
-        // hull lands here too. What still has to hold exactly is that every
-        // kilotonne combat destroyed is standing somewhere — nothing combat
-        // wrecked may go missing.
-        let standing: f64 = (0..sim.planet_entity.len()).map(|i| sim.slag_at(PlanetId(i as u32)).kilotons()).sum();
+        assert!(encounters > 0, "armed hulls met nobody — detection never fired");
+        assert!(wrecks > 0, "nothing was wrecked, so the slag half asserts nothing");
+        let (count, standing) = (0..sim.world.next)
+            .filter_map(|i| sim.world.wreck.get(Entity(i)))
+            .fold((0usize, 0.0), |(n, m), w| (n + 1, m + w.mass.kilotons()));
+        assert_eq!(count, wrecks, "every wreck logged is a wreck in the galaxy");
         assert!(
-            standing >= logged_slag - 1e-9,
-            "combat destroyed {logged_slag} kt but only {standing} kt is standing on the board"
+            (standing - logged_slag).abs() <= 1e-12 * logged_slag.max(1.0),
+            "{logged_slag} kt logged, {standing} kt in wrecks"
         );
-        // **Since T-125 the dead are colony ships, not miners**: unarmed miners
-        // cannot hurt each other, and what dies is what an armed Design meets —
-        // hulls carrying settlers and cargo, all of which become slag. So the
-        // count bounds the mass from below rather than fixing it; the exact
-        // per-kill accounting is `mass_is_conserved_through_the_blockade`'s,
-        // which weighs the whole board.
         let lightest = HullType::ALL.iter().map(|&h| hull_dry_mass(h, &sim.config).kilotons()).fold(f64::MAX, f64::min);
-        assert!(
-            logged_slag >= kills as f64 * lightest - 1e-9,
-            "{kills} hulls died but only {logged_slag} kt was logged, below {lightest} kt apiece"
-        );
-    }
-
-    /// Two ships a hair apart, for the beam resolver's tests.
-    fn beam_duel(a: crate::combat::Loadout, b: crate::combat::Loadout, hull: HullType) -> [Vec<bool>; 2] {
-        let cfg = test_cfg(1);
-        let combat = CombatConfig::default();
-        let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }; 2];
-        let mut rng = Rng::new(7);
-        let ship = |fleet: usize, rng: &mut Rng| Combatant {
-            role: Role::Picket,
-            hull,
-            thrust_factor: 1.0,
-            fleet,
-            station: StationKeeping::draw(rng, crate::arena::ROU_STATION_RADIUS, crate::arena::ROU_STATION_PERIOD),
-            maneuver_velocity: Vec3::ZERO,
-            maneuver_start: 0.0,
-            maneuver_origin_offset: Vec3::ZERO,
-        };
-        let hp = crate::combat::hull_hp_kj(hull, &cfg, &combat);
-        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: a, hp_kj: hp }];
-        let s1 = [crate::combat::Armed { ship: ship(1, &mut rng), loadout: b, hp_kj: hp }];
-        crate::combat::resolve_beam_engagement(
-            &fleets,
-            [&s0, &s1],
-            cfg.engagement_horizon_years,
-            cfg.engagement_dt_years,
-        )
-    }
-
-    /// **Each side fires what its Design mounts** (T-125). Three properties,
-    /// each the claim the resolver's doc comment makes:
-    ///
-    /// - two unarmed ships cannot hurt each other;
-    /// - an armed ship kills an unarmed one whichever side it is on — who is on
-    ///   station no longer decides who carries weapons (R-WAR5 retired);
-    /// - two identical armed ships trade simultaneously — neither side shoots
-    ///   first by index, so both die.
-    #[test]
-    fn a_ship_fires_what_its_design_mounts_and_nothing_else() {
-        let cfg = test_cfg(1);
-        let beams = design_loadout(HullType::LimitedContactVehicle, Class::Unnamed, &cfg, &CombatConfig::default());
-        let none = crate::combat::Loadout::UNARMED;
-        let hull = HullType::LimitedContactVehicle;
-        assert_eq!(beam_duel(none, none, hull), [vec![true], vec![true]], "unarmed against unarmed");
-        assert_eq!(beam_duel(beams, none, hull), [vec![true], vec![false]], "armed on side 0 wins");
-        assert_eq!(beam_duel(none, beams, hull), [vec![false], vec![true]], "armed on side 1 wins too");
-        assert_eq!(beam_duel(beams, beams, hull), [vec![false], vec![false]], "fire is simultaneous");
-    }
-
-    /// **Damage is energy against structure, not one shot one kill** (T-125).
-    /// A single shot too weak to finish the hull leaves it standing.
-    #[test]
-    fn a_shot_weaker_than_the_hull_does_not_kill_it() {
-        let cfg = test_cfg(1);
-        let combat = CombatConfig::default();
-        let hull = HullType::GeneralContactVehicle;
-        let hp = crate::combat::hull_hp_kj(hull, &cfg, &combat);
-        let one_shot = crate::combat::Loadout {
-            beams: 1,
-            shot_energy_kj: hp / 3.0,
-            fire_control_ly: combat.laser_hit_tolerance,
-            shots_per_tick: 1,
-        };
-        // One shot per tick: the first leaves it standing, the third kills it.
-        let cfg1 = SimConfig { engagement_horizon_years: 1.5 * cfg.engagement_dt_years, ..cfg };
-        let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }; 2];
-        let mut rng = Rng::new(3);
-        let ship = |fleet: usize, rng: &mut Rng| Combatant {
-            role: Role::Picket,
-            hull,
-            thrust_factor: 1.0,
-            fleet,
-            station: StationKeeping::draw(rng, crate::arena::ROU_STATION_RADIUS, crate::arena::ROU_STATION_PERIOD),
-            maneuver_velocity: Vec3::ZERO,
-            maneuver_start: 0.0,
-            maneuver_origin_offset: Vec3::ZERO,
-        };
-        let s0 = [crate::combat::Armed { ship: ship(0, &mut rng), loadout: one_shot, hp_kj: hp }];
-        let s1 =
-            [crate::combat::Armed { ship: ship(1, &mut rng), loadout: crate::combat::Loadout::UNARMED, hp_kj: hp }];
-        let short = crate::combat::resolve_beam_engagement(
-            &fleets,
-            [&s0, &s1],
-            cfg1.engagement_horizon_years,
-            cfg1.engagement_dt_years,
-        );
-        assert_eq!(short[1], vec![true], "at most two shots cannot finish a hull that takes three");
-        let long = crate::combat::resolve_beam_engagement(
-            &fleets,
-            [&s0, &s1],
-            cfg.engagement_horizon_years,
-            cfg.engagement_dt_years,
-        );
-        assert_eq!(long[1], vec![false], "given time, the damage adds up");
+        assert!(logged_slag >= wrecks as f64 * lightest - 1e-9, "{wrecks} wrecks logged only {logged_slag} kt");
     }
 
     /// **Only the Warfare card arms a hull** (T-125). Every Design the default
@@ -10605,6 +10352,7 @@ mod tests {
     /// a legal board state is a crash, not a rule.
     #[test]
     fn an_engagement_with_one_empty_side_is_a_walkover() {
+        use crate::combat::{Combatant, FleetTrajectory};
         let cfg = SimConfig::new(1);
         let combat = CombatConfig::default();
         let mut rng = Rng::new(1);
@@ -10626,6 +10374,95 @@ mod tests {
         let b = crate::combat::resolve_engagement(&cfg, &combat, &mut rng, &fleets, &none, &one, 0.1, 0.0005, 0.05);
         assert_eq!(b.laser_survivors, 0);
         assert_eq!(b.missile_survivors, 3);
+    }
+
+    /// **A Design's engagement range is where its fire control stops holding**
+    /// (T-133, the author's ruling that engagement range depends on weapon
+    /// accuracy). Against the reference target — station-keeping at the
+    /// midpoints of the spread — `laser_hit_check` hits at 99% of the range and
+    /// misses at 101% of it, in every orbital plane and phase. A more accurate
+    /// Design reaches farther, and the range reaches the Design through its
+    /// loadout.
+    #[test]
+    fn engagement_range_is_where_fire_control_stops_holding() {
+        use crate::combat::{
+            engagement_range_ly, laser_hit_check, Combatant, FleetTrajectory, StationKeeping, STATION_PERIOD,
+            STATION_RADIUS,
+        };
+        let combat = CombatConfig::default();
+        let accuracy = combat.laser_hit_tolerance;
+        let range = engagement_range_ly(accuracy);
+        assert!((7.8e-3..8.0e-3).contains(&range), "the arena's accuracy reaches {range} ly");
+        let radius = 0.5 * (STATION_RADIUS.0 + STATION_RADIUS.1);
+        let period = 0.5 * (STATION_PERIOD.0 + STATION_PERIOD.1);
+        let fleets = [FleetTrajectory { origin: Vec3::ZERO, velocity: Vec3::ZERO }];
+        for seed in 1..=20u64 {
+            let mut rng = Rng::new(seed);
+            let target = Combatant {
+                role: Role::Colonizer,
+                hull: HullType::MediumSystems,
+                thrust_factor: 1.0,
+                fleet: 0,
+                station: StationKeeping::draw(&mut rng, (radius, radius), (period, period)),
+                maneuver_velocity: Vec3::ZERO,
+                maneuver_start: 0.0,
+                maneuver_origin_offset: Vec3::ZERO,
+            };
+            // The light-crossing is measured to the target's position, so place
+            // the shooter at the wanted distance from it, not from the fleet.
+            let at = |d: f64| target.position_at(&fleets, 0.0).add(Vec3::new(d, 0.0, 0.0));
+            assert!(laser_hit_check(at(0.99 * range), &target, &fleets, 0.0, accuracy), "seed {seed}: hit inside");
+            assert!(!laser_hit_check(at(1.01 * range), &target, &fleets, 0.0, accuracy), "seed {seed}: miss outside");
+        }
+        let mut last = 0.0;
+        for k in [0.25, 0.5, 1.0, 2.0, 4.0] {
+            let r = engagement_range_ly(k * accuracy);
+            assert!(r > last, "a more tolerant fire control reaches farther: {k} gives {r}");
+            last = r;
+        }
+        let cfg = test_cfg(1);
+        let cairn = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &cfg, &combat);
+        assert_eq!(cairn.fire_control_ly, accuracy, "the Cairn fires with its class's accuracy");
+        assert_eq!(cairn.fire_enemy_ly, range, "and its fire distances are that accuracy's range");
+        assert_eq!(cairn.fire_neutral_ly, range);
+        let sharp = CombatConfig {
+            fire_control_by_class: crate::combat::ByClass { cairn: 0.25, ..combat.fire_control_by_class },
+            ..combat
+        };
+        let sharp_cairn = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &cfg, &sharp);
+        assert!(sharp_cairn.fire_enemy_ly < range, "a class write moves its range, and only its own");
+        let scarp = design_loadout(HullType::GeneralContactVehicle, Class::Scarp, &cfg, &sharp);
+        assert_eq!(scarp.fire_enemy_ly, range);
+    }
+
+    /// **A wreck point is past the structure and follows its curve** (T-133,
+    /// warfare §8.19.5). No hull is wrecked within its structure, the point
+    /// rises with the hull's draw, and the draw maps onto the Weibull odds
+    /// `1 − e^(−(x / x₀)^(1/γ))` within the run-path arithmetic's error — at
+    /// the shipped spread, which takes the exact square root, and at one that
+    /// takes the general power.
+    #[test]
+    fn a_wreck_point_is_past_the_structure_and_follows_its_curve() {
+        let s = 1.0e9;
+        for spread in [0.5, 1.0 / 3.0] {
+            let c = CombatConfig { wreck_spread: spread, ..CombatConfig::default() };
+            assert_eq!(crate::combat::wreck_point_kj(s, 0.0, &c), s, "the lowest draw is wrecked at its structure");
+            for u in [1e-9, 1e-6, 3e-5] {
+                let at = crate::combat::wreck_point_kj(s, u, &c);
+                assert!(at.is_finite() && at >= s, "spread {spread}: a low draw at u = {u} is a wreck point, {at}");
+            }
+            let mut last = s;
+            for i in 1..1000 {
+                let u = i as f64 / 1000.0;
+                let at = crate::combat::wreck_point_kj(s, u, &c);
+                assert!(at > last, "spread {spread}: the wreck point rises with the draw, at u = {u}");
+                last = at;
+                // The odds of a wreck point at or below `at` are `u` itself.
+                let over = (at - s) / s / c.wreck_scale;
+                let odds = 1.0 - crate::transcendental::exp(-crate::transcendental::pow(over, 1.0 / spread));
+                assert!((odds - u).abs() < 2e-4, "spread {spread}: u = {u} maps to odds {odds}");
+            }
+        }
     }
 
     /// **Denial off reproduces the galaxy bit-for-bit** (T-112).
@@ -10725,47 +10562,6 @@ mod tests {
         assert_eq!(dead, 0.0, "zero must still be the absorbing state this floor exists to avoid");
     }
 
-    /// **The hull hears the picket before its capital does** (T-115).
-    ///
-    /// The correction T-115 makes to T-112 is that there are two responders,
-    /// and this pins the one that was missing: a ship closing on the world the
-    /// picket took is reached by that light *sooner* than a stationary
-    /// observer at its launch range, because it is flying into the wavefront.
-    ///
-    /// Asserted as an inequality against the two bounds that bracket it rather
-    /// than against a golden number, so it stays true under any change to the
-    /// flight model.
-    #[test]
-    fn the_light_overtakes_a_closing_hull_sooner_than_a_standing_one() {
-        let mut cfg = test_cfg(4242);
-        cfg.horizon_years = 200.0;
-        let mut sim = Simulation::with_baseline(test_galaxy(2, 4242), cfg);
-        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
-        let target = *sim
-            .planet_entity
-            .iter()
-            .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
-            .max_by(|&&a, &&b| {
-                let p = |e| sim.world.position.get(e).unwrap().distance(*sim.world.position.get(home).unwrap());
-                p(a).partial_cmp(&p(b)).unwrap().then(a.0.cmp(&b.0))
-            })
-            .expect("a distant unclaimed world");
-        sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home, target, 0.0);
-        let ship = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
-
-        let world_pos = *sim.world.position.get(target).unwrap();
-        let d0 = sim.position_at(ship, sim.clock).unwrap().distance(world_pos);
-        assert!(d0 > 0.0, "the ship has to be somewhere else for this to say anything");
-
-        let lag = sim.light_overtakes(ship, world_pos).expect("the ship has a position");
-        assert!(lag > 0.0, "light does not arrive instantly, got {lag}");
-        assert!(lag < d0, "a closing hull is reached sooner than a standing one: {lag} vs {d0}");
-
-        // And the root is a root: the light has travelled exactly the hull's range.
-        let range = sim.position_at(ship, sim.clock + lag).unwrap().distance(world_pos);
-        assert!((lag - range).abs() < 1e-9, "light travelled {lag}, hull range {range}");
-    }
-
     /// **Mass is conserved** (design law #11, T-118).
     ///
     /// The engine's most load-bearing invariant, asserted in prose until now.
@@ -10807,24 +10603,19 @@ mod tests {
         }
     }
 
-    /// **Mass is conserved when the card is played too** (T-118).
+    /// **Mass is conserved when a colonizer keeps its hull** (T-118, T-119).
     ///
     /// The paths the default galaxy never walks are the ones that move mass
-    /// most violently: hulls destroyed in an engagement, a colonizer that keeps
-    /// its hull, settlers dying with the ship that carried them. All three are
-    /// the Warfare card's, and all three are `engagements_enabled`.
-    ///
-    /// **The floor rung is the one accounted exception and it is asserted, not
-    /// waived.** A colony founded below `Band Empty` is raised to it, because
-    /// zero infrastructure is an absorbing state rather than a small number
-    /// (§8.7) — so this bed may *gain* mass, never lose it, and never more than
-    /// one floor rung per colony founded.
+    /// most violently. This one is the colonizer that flies on to picket
+    /// rather than becoming the colony's stock, with the floor-rung top-up
+    /// billed to the founding center (R-IND22), so nothing is exempt. Hulls
+    /// wrecked by fire, with the settlers aboard, are
+    /// `mass_is_conserved_through_the_blockade`'s.
     #[test]
     fn mass_is_conserved_under_the_warfare_card() {
         let mut cfg = test_cfg(5);
         cfg.horizon_years = 200.0;
         cfg.biosphere_regen_rate = 0.0;
-        cfg.engagements_enabled = true;
         let galaxy = test_galaxy(3, 5);
         let autopilots: Vec<Box<dyn Autopilot>> = (0..3)
             .map(|i| {
@@ -10886,16 +10677,15 @@ mod tests {
         }
     }
 
-    /// **Mass is conserved through the port strike, over a whole run**
-    /// (T-123). The constructed test above pins one strike; this one lets the
-    /// blockade find its own ports and asserts it struck something, so the
+    /// **Mass is conserved through the card's fire, over a whole run** (T-123,
+    /// T-133). The constructed tests pin one wreck each; this one lets the
+    /// armed seat find its own fights and asserts it wrecked something, so the
     /// ledger is checked on the path the card actually walks.
     #[test]
     fn mass_is_conserved_through_the_blockade() {
         let mut cfg = test_cfg(5);
         cfg.horizon_years = 300.0;
         cfg.biosphere_regen_rate = 0.0;
-        cfg.engagements_enabled = true;
         let autopilots: Vec<Box<dyn Autopilot>> = (0..3)
             .map(|i| {
                 let mut d = Doctrine::default();
@@ -10910,14 +10700,10 @@ mod tests {
         let before = sim.mass_ledger();
         sim.run();
         let after = sim.mass_ledger();
-        let strikes = sim
-            .log()
-            .iter()
-            .filter(|r| matches!(r.event, LogEvent::EngagementResolved { defender: 0, losses_attacker: 1.., .. }))
-            .count();
-        // Non-vacuity (`CLAUDE.md` §2's trim guard): a blockade that never
-        // struck leaves this passing on a run that proved nothing.
-        assert!(strikes > 0, "no blockader ever struck a colony ship");
+        let strikes = sim.log().iter().filter(|r| matches!(r.event, LogEvent::HullWrecked { by: 0, .. })).count();
+        // Non-vacuity (`CLAUDE.md` §2's trim guard): a card that never wrecked
+        // anything leaves this passing on a run that proved nothing.
+        assert!(strikes > 0, "the armed seat never wrecked a hull");
         let drift = (after.total() - before.total()).abs() / before.total();
         assert!(drift < 1e-9, "mass is not conserved through {strikes} strikes: {:#?}", before.delta(&after));
     }
@@ -10988,7 +10774,7 @@ mod tests {
     /// not be feinted, whatever else it modeled.
     #[test]
     fn a_picket_backs_the_near_world_on_a_bearing_and_can_be_feinted() {
-        let (sim, picket, decoy, _) = feint_fixture(false);
+        let (sim, picket, decoy, _) = feint_fixture();
         assert_eq!(
             sim.world.voyage.get(picket).map(|v| v.target),
             Some(decoy),
@@ -10996,28 +10782,13 @@ mod tests {
         );
     }
 
-    /// **The oracle ablation means exactly "told the answer"** (T-122).
-    ///
-    /// The same scene as the feint, with `ablate_oracle_intercept` on: the
-    /// picket backs the world the ship is actually going to. Pinned because an
-    /// ablation is only worth its measurement if it changes the one thing it
-    /// names — T-122 read "the guess is not what binds" off this switch, and
-    /// that reading is void if the switch did something else.
-    #[test]
-    fn the_oracle_ablation_backs_the_true_destination() {
-        let (sim, picket, _, prize) = feint_fixture(true);
-        assert_eq!(sim.world.voyage.get(picket).map(|v| v.target), Some(prize));
-    }
-
     /// Two unclaimed worlds on one bearing out of seat 1's home — a decoy near,
     /// the prize far — a seat-0 picket standing beside the decoy, and seat 1's
     /// colonizer launched at the prize. Returns `(sim, picket, decoy, prize)`
     /// after the launch, so the picket has already chosen.
-    fn feint_fixture(oracle: bool) -> (Simulation, Entity, Entity, Entity) {
+    fn feint_fixture() -> (Simulation, Entity, Entity, Entity) {
         let mut cfg = test_cfg(606);
         cfg.horizon_years = 5.0;
-        cfg.engagements_enabled = true;
-        cfg.ablate_oracle_intercept = oracle;
         let mut sim = Simulation::with_baseline(test_galaxy(2, 606), cfg);
         {
             let d = sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap();
@@ -11063,32 +10834,6 @@ mod tests {
         (sim, picket, decoy, prize)
     }
 
-    #[test]
-    fn the_color_conjunction_ablation_bills_the_same_total_in_the_banks_mix() {
-        // **T-122.** The ablation removes *which colors* a rung needs and
-        // nothing else: the total billed is unchanged (so design law #11 holds
-        // and `eta_works` still means what it did), and the split follows the
-        // paying bank, so any bank holding the total can pay. A lopsided bank
-        // that fails the ratified per-color test must pass the ablated one.
-        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), test_cfg(3));
-        let works = cards::Works::default();
-        let step = Price::new(0.9);
-        let mut bank = Minerals::default();
-        bank.add_basic(Basic::Cyan, 2.0);
-        bank.add_basic(Basic::Magenta, 0.05);
-
-        let ratified = sim.rung_bill(step, &works, &bank);
-        assert_eq!(ratified, works_bill(step, &works), "off, the bill is T-73's");
-        assert!(!can_pay_bill(&bank, &ratified), "a one-color bank cannot pay a three-color rung");
-
-        sim.config.ablate_color_conjunction = true;
-        let ablated = sim.rung_bill(step, &works, &bank);
-        let total = |b: &[Price; 3]| b.iter().fold(Price::ZERO, |a, &x| a + x).kilotons();
-        assert!((total(&ablated) - total(&ratified)).abs() < 1e-12, "the total is the same bill");
-        assert_eq!(ablated[2], Price::ZERO, "no Yellow is asked of a bank that holds none");
-        assert!(can_pay_bill(&bank, &ablated), "and the bank that holds the total now pays it");
-    }
-
     /// **A picket whose world gets colonized goes back to the frontier**
     /// (T-115). Its product is a colony somebody does not found, and this world
     /// now has one — so a hull left parked there is a hull doing nothing, and
@@ -11098,7 +10843,6 @@ mod tests {
     fn a_picket_leaves_a_world_that_has_been_colonized() {
         let mut cfg = test_cfg(77);
         cfg.horizon_years = 50.0;
-        cfg.engagements_enabled = true;
         let mut sim = Simulation::with_baseline(test_galaxy(2, 77), cfg);
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let home_pos = *sim.world.position.get(home).unwrap();
@@ -11172,7 +10916,7 @@ mod tests {
     /// that fires on half of it.
     ///
     /// Asserted as the identity rather than against a golden acceleration, so
-    /// it survives any retune of `civilian_accel_g` or the drive ladder.
+    /// it survives any retune of the drive ladder.
     #[test]
     fn the_colonization_leg_is_flown_at_the_rate_its_own_load_implies() {
         let mut cfg = test_cfg(31);
@@ -11189,16 +10933,16 @@ mod tests {
                 d(a).partial_cmp(&d(b)).unwrap().then(a.0.cmp(&b.0))
             })
             .expect("an unclaimed world");
+        let ship = Entity(sim.world.next);
         sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home, target, 0.0);
-        let ship = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
 
         // It is carrying something — otherwise this test says nothing.
         let pop = sim.world.pop_cargo.get(ship).copied().unwrap_or(Kilotons::ZERO);
         assert!(pop > Kilotons::ZERO, "the hull must actually be laden for the comparison to bite");
 
         let flown = sim.world.motion.get(ship).expect("under way").accel;
-        let empty = sim.config.civilian_accel_g * G;
-        let laden = sim.laden_accel(ship, sim.config.civilian_accel_g);
+        let empty = G * sim.thrust_to_mass(HullType::MediumSystems, Kilotons::ZERO);
+        let laden = sim.laden_accel(ship);
         assert!(laden < empty, "a laden hull is the slower one, or there is nothing to check");
         assert_eq!(flown, laden, "R-O32: the leg flies at the rate its own load implies");
         assert_ne!(flown, empty, "R-WAR9: and not at the empty-hull rate it used to");
@@ -11217,7 +10961,6 @@ mod tests {
     fn a_picket_intercepts_a_colony_ship_it_can_beat_there() {
         let mut cfg = test_cfg(909);
         cfg.horizon_years = 10.0;
-        cfg.engagements_enabled = true;
         let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
         {
             let d = sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap();
@@ -11237,7 +10980,10 @@ mod tests {
         // spacing is correspondingly wider, so placing the station keeps this
         // test about the criterion, the departure delay and the argmin, and
         // leaves how often the real field offers such a pair to the census.
-        let accel = sim.config.civilian_accel_g * G;
+        // Each party at its own Design's rate: an empty Limited Offensive picket
+        // and a laden Medium colony ship.
+        let picket_accel = G * sim.thrust_to_mass(HullType::LimitedOffensive, Kilotons::ZERO);
+        let colony_accel = sim.colony_ship_accel(HullType::MediumSystems);
         let free: Vec<Entity> = sim
             .planet_entity
             .iter()
@@ -11272,8 +11018,8 @@ mod tests {
         // Diagnostic in the message, so a failure says which term missed.
         let sp = *sim.world.position.get(station).unwrap();
         let t_see = home1_pos.distance(sp);
-        let t_reach = t_see + math::ship_travel_years(sp.distance(contested_pos), accel);
-        let colony_reach = math::ship_travel_years(home1_pos.distance(contested_pos), accel);
+        let t_reach = t_see + math::ship_travel_years(sp.distance(contested_pos), picket_accel);
+        let colony_reach = math::ship_travel_years(home1_pos.distance(contested_pos), colony_accel);
         assert!(t_reach < colony_reach, "constructed race must be winnable: {t_reach:.3} vs {colony_reach:.3}");
 
         // **The picket can only guess at worlds it has surveyed** (R-WAR10).
@@ -11286,6 +11032,7 @@ mod tests {
             sim.world.knowledge.get_mut(sim.player_entity[0]).unwrap().scanned.insert(pid);
         }
 
+        let ship = Entity(sim.world.next);
         sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, contested, 0.0);
 
         assert!(
@@ -11300,7 +11047,7 @@ mod tests {
         );
         let m = sim.world.motion.get(picket).expect("it is under way");
         assert!(m.depart > sim.clock, "it cannot leave before the light gets there: {} vs {}", m.depart, sim.clock);
-        let colony_arrival = sim.world.motion.get(sim.inbound_colonizers[&contested.0][0]).unwrap().arrive;
+        let colony_arrival = sim.world.motion.get(ship).unwrap().arrive;
         assert!(m.arrive < colony_arrival, "and it only goes if it wins: {} vs {colony_arrival}", m.arrive);
     }
 
@@ -11310,9 +11057,7 @@ mod tests {
     /// is scheduled to arrive when it would.
     #[test]
     fn a_new_blockader_recalls_only_launches_whose_light_has_arrived() {
-        let mut cfg = test_cfg(909);
-        cfg.engagements_enabled = true;
-        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), test_cfg(909));
         let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
         let lag = sim.world.position.get(home1).unwrap().distance(*sim.world.position.get(home0).unwrap());
@@ -11342,9 +11087,7 @@ mod tests {
     /// seat holds; and taking one hull off leaves the world held.
     #[test]
     fn pickets_stack_on_held_ground_like_a_crew() {
-        let mut cfg = test_cfg(909);
-        cfg.engagements_enabled = true;
-        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 909), test_cfg(909));
         let world = *sim
             .planet_entity
             .iter()
@@ -11372,35 +11115,44 @@ mod tests {
         assert_eq!(sim.picket_count[0], 1);
     }
 
-    /// **A blockader at a rival's port destroys the colony ship leaving it,
-    /// and the people and cargo aboard become slag** (T-123, R-WAR16).
+    /// **A blockade at a rival's port wrecks the colony ship leaving it, and
+    /// the people and cargo aboard become slag** (T-123, R-WAR16, T-133).
     ///
     /// Constructed rather than waited for, like the picket tests beside it: the
-    /// assertion is about the strike and the ledger, and how often the real
-    /// field offers a blockade is `examples/card_probe`'s question.
+    /// assertion is about the wreck and the ledger, and how often the real
+    /// field offers a blockade is `examples/card_probe`'s question. The
+    /// blockader is a General Contact (Scarp) hull, whose 317 mounts deliver
+    /// many structures per discharge, so the wreck check's odds round to one
+    /// and the ledger half of this test does not rest on a draw.
     #[test]
-    fn a_blockader_strikes_the_colony_ship_leaving_its_port() {
+    fn a_blockader_wrecks_the_colony_ship_leaving_its_port() {
         let mut cfg = test_cfg(909);
         cfg.horizon_years = 10.0;
-        cfg.engagements_enabled = true;
         cfg.biosphere_regen_rate = 0.0;
         let mut sim = Simulation::with_baseline(test_galaxy(2, 909), cfg);
+        sim.set_log_filter(LogFilter::none().with(crate::log::LogCategory::Combat));
         sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap().picket_blockades = true;
         assert!(!Doctrine::default().picket_blockades, "the write must ship unplayed");
 
+        let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+        let port = *sim.world.position.get(home1).unwrap();
         let target = *sim
             .planet_entity
             .iter()
             .find(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
             .expect("the bed needs an unclaimed world");
+        let beams = design_loadout(HullType::GeneralContactVehicle, Class::Scarp, &sim.config, &sim.combat);
+        assert!(beams.is_armed(), "the Warfare card's General Contact Design mounts beams");
         let blockader = sim.world.spawn();
         sim.world.owner.insert(blockader, PlayerId(0));
         sim.world.role.insert(blockader, Role::Picket);
-        sim.world.hull_type.insert(blockader, HullType::LimitedContactVehicle);
-        let beams = design_loadout(HullType::LimitedContactVehicle, Class::Unnamed, &sim.config, &sim.combat);
-        assert!(beams.is_armed(), "the Warfare card's picket Design mounts beams");
+        sim.world.hull_type.insert(blockader, HullType::GeneralContactVehicle);
+        sim.world.design_class.insert(blockader, Class::Scarp);
         sim.world.loadout.insert(blockader, beams);
+        sim.world.home_center.insert(blockader, home0);
+        sim.world.voyage.insert(blockader, Voyage { target: home1, heading_bias: None, hops: 0 });
+        sim.park(blockader, port);
         sim.blockade.insert((home1.0, 0), vec![blockader]);
         sim.picket_count[0] += 1;
 
@@ -11408,29 +11160,39 @@ mod tests {
         let before = sim.mass_ledger();
         let ship = Entity(sim.world.next);
         sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, target, 0.0);
+        assert!(*sim.world.population.get(home1).unwrap() < pop_before, "settlers must have boarded");
+        while sim.world.role.get(ship).copied() != Some(Role::Scrapped) && sim.clock < 1.0 && sim.step() {}
         let after = sim.mass_ledger();
 
-        assert!(*sim.world.population.get(home1).unwrap() < pop_before, "settlers must have boarded");
-        assert_eq!(sim.world.role.get(ship).copied(), Some(Role::Scrapped), "the colony ship dies at the yard");
-        assert!(!sim.inbound_colonizers.contains_key(&target.0), "and never flies");
-        assert_eq!(
-            sim.blockade.get(&(home1.0, 0)),
-            Some(&vec![blockader]),
-            "the armed blockader holds against an unarmed ship"
-        );
-        assert!(sim.world.slag.get(home1).is_some_and(|s| s.kilotons() > 0.0), "the wreck is at the port");
+        assert_eq!(sim.world.role.get(ship).copied(), Some(Role::Scrapped), "the colony ship is wrecked leaving");
+        let wreck = sim.log().iter().find_map(|r| match r.event {
+            LogEvent::HullWrecked { vehicle, by, .. } if vehicle == ship => Some((r.time, by)),
+            _ => None,
+        });
+        let (when, by) = wreck.expect("and the wreck is logged");
+        assert_eq!(by, 0, "by the blockading seat");
+        let arrive = sim.world.motion.get(ship).map_or(f64::INFINITY, |m| m.arrive);
+        assert!(when < arrive, "before it could found");
+        assert_eq!(sim.world.owner.get(target), None, "and nobody founds its world");
+        assert_eq!(sim.blockade.get(&(home1.0, 0)), Some(&vec![blockader]), "the armed blockade holds");
+        // **The wreck keeps its course** (the author's ruling): it was wrecked
+        // leaving, within fire distance of the port, and coasts on at the
+        // velocity it had.
+        let w = *sim.world.wreck.get(ship).expect("the wreck is in the galaxy");
+        assert!(w.mass.kilotons() > 0.0);
+        assert!(w.from.distance(port) <= beams.fire_neutral_ly * 2.0, "wrecked leaving the port: {:?}", w.from);
+        let later = w.since + 1.0;
+        let drift = sim.position_at(ship, later).unwrap().distance(w.from.add(w.velocity.scale(1.0)));
+        assert!(drift < 1e-12, "and it coasts in a straight line");
         // An unpaid hull is the one thing created here; everything it carried
         // was debited from the port and has to reappear as slag.
         let hull = hull_dry_mass(HullType::MediumSystems, &sim.config).kilotons();
         let drift = after.total() - before.total() - hull;
-        assert!(drift.abs() < 1e-9 * before.total(), "mass must be conserved through the strike: {drift:+e}");
+        assert!(drift.abs() < 1e-9 * before.total(), "mass must be conserved through the wreck: {drift:+e}");
 
-        // **Nothing is scheduled to arrive**: the run carries on with no
-        // `ColonyArrive` for a scrapped hull. And the strike's launch was
-        // still *seen* — by seat 0 only, and not before the light could reach
-        // its capital.
-        let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
-        let lag = sim.world.position.get(home1).unwrap().distance(*sim.world.position.get(home0).unwrap());
+        // The launch was still *seen* — by seat 0 only, and not before the
+        // light could reach its capital.
+        let lag = port.distance(*sim.world.position.get(home0).unwrap());
         sim.config.horizon_years = lag + 1.0;
         while sim.step() {
             if sim.launches_seen[0].contains_key(&home1.0) {
@@ -11449,57 +11211,131 @@ mod tests {
         assert_eq!(sim.blockade_target(0), Some(home1), "hulls stack at a port like a mining crew (T-125)");
     }
 
-    /// **A picket holds ground and a rival colonizer turns back from it**
-    /// (T-112) — the mechanism check, built rather than waited for.
-    ///
-    /// **It has to be constructed, and that is itself the finding.** On the
-    /// standard bed the whole card produces **3–12 diversions per 800-year
-    /// run** against 493–793 pickets, so an emergent test would be asserting
-    /// on a one-in-a-hundred event and would sit at zero on a small galaxy.
-    /// This places the picket and the rival colonizer directly, so the path is
-    /// pinned even though the card almost never walks it in play.
-    #[test]
-    fn a_picket_turns_a_rival_colonizer_back() {
-        let mut cfg = test_cfg(2024);
+    /// Seat 1 launches a colony ship at the unclaimed world nearest its home;
+    /// returns `(sim, ship, world)` with the ship under way.
+    fn colony_ship_under_way(seed: u64) -> (Simulation, Entity, Entity) {
+        let mut cfg = test_cfg(seed);
         cfg.horizon_years = 400.0;
-        cfg.engagements_enabled = true;
-        let mut sim = Simulation::with_baseline(test_galaxy(2, 2024), cfg);
-
-        // Seat 1 sends a colonizer at the nearest unclaimed world to its own
-        // homeworld: the warning travels the same distance the ship does, and
-        // the ship is slower than light, so the margin is real but small.
+        let mut sim = Simulation::with_baseline(test_galaxy(2, seed), cfg);
+        sim.set_log_filter(
+            LogFilter::none().with(crate::log::LogCategory::Combat).with(crate::log::LogCategory::Vehicles),
+        );
         let home1 = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
         let home1_pos = *sim.world.position.get(home1).unwrap();
-        let target = *sim
+        let world = *sim
             .planet_entity
             .iter()
             .filter(|&&e| !sim.world.owner.contains(e) && sim.world.factors.contains(e))
             .min_by(|&&a, &&b| {
-                let da = sim.world.position.get(a).unwrap().distance(home1_pos);
-                let db = sim.world.position.get(b).unwrap().distance(home1_pos);
-                da.partial_cmp(&db).unwrap().then(a.0.cmp(&b.0))
+                let d = |e| sim.world.position.get(e).unwrap().distance(home1_pos);
+                d(a).total_cmp(&d(b)).then(a.0.cmp(&b.0))
             })
             .expect("an unclaimed world");
-        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, target, 0.0);
-        let colonizer = *sim.inbound_colonizers.get(&target.0).unwrap().first().unwrap();
+        // Seat 1 knows the field, so a ship that turns away has somewhere to go.
+        let known: Vec<PlanetId> = sim.planet_entity.iter().map(|&e| *sim.world.planet_id.get(e).unwrap()).collect();
+        let k = sim.world.knowledge.get_mut(sim.player_entity[1]).unwrap();
+        for pid in known {
+            k.scanned.insert(pid);
+        }
+        let ship = Entity(sim.world.next);
+        sim.spawn_courier(1, Role::Colonizer, BuiltHull::unpaid(HullType::MediumSystems), home1, world, 0.0);
+        (sim, ship, world)
+    }
 
-        // Seat 0 is already holding it, as of now.
-        let picket_hull = sim.world.spawn();
-        sim.world.owner.insert(picket_hull, PlayerId(0));
-        sim.world.role.insert(picket_hull, Role::Picket);
-        sim.world.hull_type.insert(picket_hull, HullType::GeneralContactVehicle);
-        sim.picket.insert(target.0, (0, vec![picket_hull], sim.clock));
-        sim.notify_inbound(target);
+    /// A seat-0 picket takes station on `world` now, carrying `loadout`.
+    fn picket_on(sim: &mut Simulation, world: Entity, loadout: crate::combat::Loadout) -> Entity {
+        let picket = sim.world.spawn();
+        sim.world.owner.insert(picket, PlayerId(0));
+        sim.world.role.insert(picket, Role::Picket);
+        sim.world.hull_type.insert(picket, HullType::LimitedContactVehicle);
+        sim.world.design_class.insert(picket, Class::Cairn);
+        sim.world.loadout.insert(picket, loadout);
+        let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        sim.world.home_center.insert(picket, home0);
+        sim.world.voyage.insert(picket, Voyage { target: world, heading_bias: None, hops: 0 });
+        let at = *sim.world.position.get(world).unwrap();
+        sim.park(picket, at);
+        sim.picket.insert(world.0, (0, vec![picket], sim.clock));
+        sim.picket_count[0] += 1;
+        picket
+    }
 
-        sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Combat));
-        sim.run();
+    fn course_changes(sim: &Simulation, ship: Entity) -> Vec<crate::log::CourseReason> {
+        sim.log()
+            .iter()
+            .filter_map(|r| match r.event {
+                LogEvent::CourseChanged { vehicle, reason, .. } if vehicle == ship => Some(reason),
+                _ => None,
+            })
+            .collect()
+    }
 
-        let diverted =
-            sim.log().iter().filter(|r| matches!(r.event, crate::log::LogEvent::ColonyDiverted { .. })).count();
-        assert_eq!(diverted, 1, "the colonizer should have turned back exactly once");
-        // And it did not found: the world is still unowned.
-        assert!(!sim.world.owner.contains(target), "a diverted colonizer must not have founded");
-        assert_ne!(sim.world.role.get(colonizer).copied(), Some(Role::Colonizer), "it should be re-tasked");
+    /// **The news of an armed picket turns a colony ship away before a shot;
+    /// an unarmed picket is not a veto** (T-112, T-115, T-133, belief event A).
+    ///
+    /// The picket takes station as the ship leaves, so the light of it reaches
+    /// the ship long before the ship reaches its fire distance: the ship seeks
+    /// another world and is never fired on. With nothing mounted the picket is
+    /// no threat, nothing reaches the ship, and it founds under the picket.
+    #[test]
+    fn an_armed_picket_turns_a_colony_ship_away_and_an_unarmed_one_does_not() {
+        let (mut sim, ship, world) = colony_ship_under_way(2024);
+        let arrive = sim.world.motion.get(ship).unwrap().arrive;
+        let gun = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &sim.config, &sim.combat);
+        picket_on(&mut sim, world, gun);
+        while sim.clock < arrive + 1.0 && sim.step() {}
+        let changes = course_changes(&sim, ship);
+        assert_eq!(changes.first(), Some(&crate::log::CourseReason::Retarget), "it turned away: {changes:?}");
+        assert_eq!(sim.world.hull_damage.get(ship), None, "on the news, before a shot");
+        assert_ne!(sim.world.owner.get(world).copied(), Some(PlayerId(1)), "and did not found under the gun");
+
+        let (mut sim, ship, world) = colony_ship_under_way(2024);
+        let arrive = sim.world.motion.get(ship).unwrap().arrive;
+        picket_on(&mut sim, world, crate::combat::Loadout::UNARMED);
+        while sim.clock < arrive + 1.0 && sim.step() {}
+        assert!(course_changes(&sim, ship).is_empty(), "an unarmed picket threatens nobody");
+        assert_eq!(sim.world.owner.get(world).copied(), Some(PlayerId(1)), "the ship founds under it");
+    }
+
+    /// **A colony ship fired on is wrecked or leaves; it never founds**
+    /// (T-133, warfare §8.19.5, the author's ruling). An armed picket takes the
+    /// world once the ship is past turnover: the ship still hears of it and
+    /// seeks another world, but past turnover it stops where it was going, so
+    /// it brakes into the picket's fire. With the Cairn's gun it is wrecked;
+    /// with a thousandth of its power it is hit, survives within its
+    /// structure, and flies on to its new world carrying the damage.
+    #[test]
+    fn a_colony_ship_fired_on_at_its_world_is_wrecked_or_leaves() {
+        let arrive_under = |power_fraction: f64| {
+            let (mut sim, ship, world) = colony_ship_under_way(2024);
+            let leg = *sim.world.motion.get(ship).unwrap();
+            let mut gun = design_loadout(HullType::LimitedContactVehicle, Class::Cairn, &sim.config, &sim.combat);
+            gun.beam_power_kj_per_year *= power_fraction;
+            while sim.clock < leg.depart + 0.75 * (leg.arrive - leg.depart) && sim.step() {}
+            picket_on(&mut sim, world, gun);
+            while sim.clock < leg.arrive + 1.0 && sim.step() {}
+            let hit = sim.world.hull_damage.get(ship).is_some() || sim.world.role.get(ship) == Some(&Role::Scrapped);
+            assert!(hit, "power {power_fraction}: the picket must have fired on the approach");
+            assert_ne!(sim.world.owner.get(world).copied(), Some(PlayerId(1)), "a ship fired on never founds");
+            (sim, ship)
+        };
+
+        let (sim, ship) = arrive_under(1.0);
+        assert_eq!(sim.world.role.get(ship).copied(), Some(Role::Scrapped), "the Cairn's gun wrecks it");
+        let wrecked =
+            sim.log().iter().any(|r| matches!(r.event, LogEvent::HullWrecked { vehicle, .. } if vehicle == ship));
+        assert!(wrecked, "and the wreck is logged");
+
+        let (sim, ship) = arrive_under(1e-3);
+        assert_eq!(sim.world.role.get(ship).copied(), Some(Role::Colonizer), "a thousandth of it does not wreck it");
+        let carried = sim.world.hull_damage.get(ship).copied().unwrap_or(0.0);
+        let structure =
+            crate::combat::hull_structure_kj(HullType::MediumSystems, Class::Unnamed, &sim.config, &sim.combat);
+        assert!(carried > 0.0 && carried < structure, "it carries damage within its structure: {carried}");
+        assert!(
+            course_changes(&sim, ship).contains(&crate::log::CourseReason::Retarget),
+            "and has sought another world"
+        );
     }
 
     #[test]
@@ -11538,17 +11374,16 @@ mod tests {
         // design law #3 its cost advantage, now reaching acceleration.
         let galaxy = test_galaxy(2, 1);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(1));
-        let base = sim.config.civilian_accel_g;
 
         // fabricate a throwaway entity id with no cargo component → empty
         let empty = Entity(u64::MAX); // no cargo store entry ⇒ 0 cargo
-        assert!(sim.laden_accel(empty, base) > 0.0, "an entity with no hull still flies on the default hull");
+        assert!(sim.laden_accel(empty) > 0.0, "an entity with no hull still flies on the default hull");
 
         let mut last = 0.0;
         for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
             let e = sim.world.spawn();
             sim.world.hull_type.insert(e, hull);
-            let a = sim.laden_accel(e, base);
+            let a = sim.laden_accel(e);
             assert!(a > last, "{hull:?} empty should out-accelerate the size below it: {a} vs {last}");
             last = a;
         }
@@ -11559,7 +11394,7 @@ mod tests {
         for (hull, want) in [(HullType::LimitedSystems, 1.0), (HullType::LimitedContactVehicle, 0.911)] {
             let e = sim.world.spawn();
             sim.world.hull_type.insert(e, hull);
-            let a = sim.laden_accel(e, base) / G;
+            let a = sim.laden_accel(e) / G;
             assert!((a - want).abs() < 0.01, "{hull:?} empty flies at {a} g, anchor says {want}");
         }
 
@@ -11567,12 +11402,12 @@ mod tests {
         let mut sim2 = Simulation::with_baseline(test_galaxy(2, 1), SimConfig::new(1));
         let bare = sim2.world.spawn();
         sim2.world.hull_type.insert(bare, HullType::MediumSystems);
-        let a_empty = sim2.laden_accel(bare, base);
+        let a_empty = sim2.laden_accel(bare);
         let laden = sim2.world.spawn();
         let m = Minerals { cyan: 5.0, ..Minerals::default() };
         sim2.world.cargo.insert(laden, m);
         sim2.world.hull_type.insert(laden, HullType::MediumSystems);
-        let a_laden = sim2.laden_accel(laden, base);
+        let a_laden = sim2.laden_accel(laden);
         assert!(a_laden < a_empty, "laden accel {a_laden} should be < empty {a_empty}");
 
         // R-O57: one mass unit, so the derate is exactly thrust/(dry+cargo) with
@@ -11580,14 +11415,14 @@ mod tests {
         // mounts (T-96) and the denominator is everything it has to push.
         let dry = hull_dry_mass(HullType::MediumSystems, &sim2.config).kilotons();
         let thrust = sim2.config.drive_specific_thrust * HullType::MediumSystems.drive_mass(&sim2.config).kilotons();
-        assert!((a_laden - base * G * thrust / (dry + 5.0)).abs() < 1e-12);
+        assert!((a_laden - G * thrust / (dry + 5.0)).abs() < 1e-12);
 
         // The same load on a bigger hull derates *less* — dry mass is in the
         // denominator, so the spread is a statement about how full the hold is.
         let big = sim2.world.spawn();
         sim2.world.cargo.insert(big, m);
         sim2.world.hull_type.insert(big, HullType::GeneralSystems);
-        assert!(sim2.laden_accel(big, base) > a_laden);
+        assert!(sim2.laden_accel(big) > a_laden);
     }
 
     /// **Production's objective must be able to express design law #3, and in
@@ -12796,7 +12631,8 @@ mod tests {
         assert!(st.colonizer_ladder().contains(&HullType::GeneralContactVehicle));
         let r = sim.world.roster.get(sim.player_entity[0]).unwrap();
         assert!(r.has(HullType::LimitedContactVehicle, Class::Tor));
-        assert!(r.has(HullType::GeneralContactVehicle, Class::Unnamed));
+        assert!(r.has(HullType::GeneralContactVehicle, Class::Scarp));
+        assert!(r.has(HullType::LimitedContactVehicle, Class::Cairn));
 
         // Every hull the armed layer now mounts must be one the card unlocked,
         // or the Design half does not cover the Doctrine half — which is the
@@ -12804,7 +12640,7 @@ mod tests {
         for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
             let (hull, class) = st.design_for(role);
             if is_contact_hull(hull) {
-                assert!(r.has_hull(hull), "{role:?} rides {hull:?}/{class:?}, which the card did not unlock");
+                assert!(r.has(hull, class), "{role:?} rides {hull:?}/{class:?}, which the card did not unlock");
             }
         }
     }
@@ -14254,13 +14090,14 @@ mod tests {
 
         let yellow = Minerals { yellow: 10.0, ..Default::default() };
         let magenta = Minerals { magenta: 10.0, ..Default::default() };
+        let accel = G * sim.thrust_to_mass(HullType::MediumSystems, Kilotons::new(10.0));
         assert_eq!(
-            sim.best_delivery_center(PlayerId(0), here, &yellow),
+            sim.best_delivery_center(PlayerId(0), here, &yellow, accel),
             Some(a),
             "a Yellow-laden hauler must go to the Yellow-short center"
         );
         assert_eq!(
-            sim.best_delivery_center(PlayerId(0), here, &magenta),
+            sim.best_delivery_center(PlayerId(0), here, &magenta, accel),
             Some(b),
             "and the same route with Magenta aboard must go the other way"
         );
@@ -14290,7 +14127,7 @@ mod tests {
         assert!(far > 0.0 && far < near, "and one missing everything scores strictly less: {far} vs {near}");
         assert_eq!(sim.bill_completion(a, PlayerId(0), &magenta), 0.0, "the wrong color completes nothing");
         assert_eq!(
-            sim.best_delivery_center(PlayerId(0), here, &yellow),
+            sim.best_delivery_center(PlayerId(0), here, &yellow, accel),
             Some(a),
             "so the hauler goes to the center it can finish, not the emptiest"
         );
@@ -14460,31 +14297,32 @@ mod tests {
         let here = *sim.world.position.get(home).unwrap();
         sim.world.position.insert(target, here);
         let k = units::population_mass(cap);
-        let hold = Kilotons::new(f64::MAX / 4.0); // ask the policy, not the hull
+        let hold = Kilotons::new(f64::MAX / 4.0); // ask the policy, not the hull's hold
+        let accel = sim.colony_ship_accel(HullType::MediumSystems); // whose drive prices the voyage
 
         // **Something always ships**, at every fill level — including the one
         // that broke the marginal-rate formulation, an origin well below its own
         // growth peak.
         for fill in [0.05, 0.2, 0.5, 0.9, 1.0] {
             sim.world.population.insert(home, k * fill);
-            let got = sim.settler_target(home, target, hold);
+            let got = sim.settler_target(home, target, hold, accel);
             assert!(got > Kilotons::ZERO, "an origin at {fill} of its ceiling must still colonize, got {got}");
             assert!(got <= k * fill * 0.5 + Kilotons::new(1e-9), "and must not be stripped: {got} of {}", k * fill);
         }
 
         // **Distance reduces it.** Same origin, same destination, further away.
         sim.world.population.insert(home, k);
-        let near = sim.settler_target(home, target, hold);
+        let near = sim.settler_target(home, target, hold, accel);
         sim.world.position.insert(target, Vec3::new(here.x + 3000.0, here.y, here.z));
-        let far = sim.settler_target(home, target, hold);
-        assert!(sim.travel_discount(home, target) < 0.05, "3,000 ly should be heavily discounted");
+        let far = sim.settler_target(home, target, hold, accel);
+        assert!(sim.travel_discount(home, target, accel) < 0.05, "3,000 ly should be heavily discounted");
         assert!(far < near, "a distant world is worth less to seed: {far} vs {near}");
 
         // **A poorer destination takes less**, because the seed cannot exceed
         // what that world can hold.
         sim.world.position.insert(target, here);
         sim.world.factors.insert(target, factors(Band::new(1.0)));
-        let poor = sim.settler_target(home, target, hold);
+        let poor = sim.settler_target(home, target, hold, accel);
         assert!(poor <= units::population_mass(Band::new(1.0)), "capped by the destination: {poor}");
         assert!(poor < near, "and it is less than a rich destination takes: {poor} vs {near}");
     }
@@ -14519,7 +14357,7 @@ mod tests {
                         sim.world.population.insert(home, units::population_mass(Band::new(kp)) * fill);
                         for (i, hull) in hulls.iter().enumerate() {
                             let hold = hull.colony_seed_capacity(&sim.config);
-                            let advertised = sim.settler_target(home, target, hold);
+                            let advertised = sim.settler_target(home, target, hold, sim.colony_ship_accel(*hull));
                             let loaded = sim.colony_seed_for(*hull, home, target).unwrap_or(Kilotons::ZERO);
                             assert!(
                                 (advertised - loaded).kilotons().abs() < 1e-12,
@@ -14701,5 +14539,150 @@ mod tests {
                 assert!(seen.insert(ship), "ship {ship:?} appeared in more than one fleet");
             }
         }
+    }
+
+    /// A two-seat field with fleets generated at each seat's home port, the
+    /// baseline on both seats, and the vehicle log on.
+    fn fleet_bed(seed: u64, radius: f64, spend: f64, fleets: &[(usize, HullType, Class, Role)]) -> Simulation {
+        use crate::galaxy::{FleetSeeding, SeedFleet};
+        let mut g = GalaxyConfig::new(2, seed);
+        g.planet_count = 400;
+        let probe = Galaxy::generate(g).unwrap();
+        let fleets = fleets
+            .iter()
+            .map(|&(seat, hull, class, role)| SeedFleet {
+                seat,
+                hull,
+                class,
+                role,
+                position: probe.planets[probe.homeworlds[seat].0 as usize].position,
+                velocity: Vec3::ZERO,
+            })
+            .collect();
+        let galaxy =
+            Galaxy::generate_with(g, FleetSeeding { spend_kt: spend, known_radius_ly: radius, fleets }).unwrap();
+        let aps: Vec<Box<dyn Autopilot>> =
+            (0..2).map(|_| Box::new(BaselineAutopilot::default()) as Box<dyn Autopilot>).collect();
+        Simulation::new_logged(galaxy, test_cfg(seed), aps, LogFilter::none().with(crate::log::LogCategory::Vehicles))
+    }
+
+    /// Where each generated hull of `role` was first sent, by seat.
+    fn generated_targets(sim: &Simulation, role: Role) -> [Vec<u32>; 2] {
+        let ours: BTreeSet<Entity> = sim
+            .log()
+            .iter()
+            .filter_map(|r| match r.event {
+                LogEvent::FleetGenerated { vehicle, role: r, .. } if r == role => Some(vehicle),
+                _ => None,
+            })
+            .collect();
+        let mut to = [Vec::new(), Vec::new()];
+        for r in sim.log().iter() {
+            if let LogEvent::VehicleSpawned { player, vehicle, role: r, to: at, .. } = r.event {
+                if r == role && ours.contains(&vehicle) {
+                    to[player as usize].push(at.0);
+                }
+            }
+        }
+        to
+    }
+
+    /// **Generated mission fleets are tasked by the engine's own launchers**
+    /// (Technology §4.4's role beds). A seat starts with every world inside the
+    /// known radius scanned; each fleet is its spend's worth of hulls; miners
+    /// go one to a rock, nearest first, and only to worlds the seat's own
+    /// autopilot ranks as mining outposts; freighters go to those rocks;
+    /// colony ships go to distinct worlds; and survey craft launch.
+    #[test]
+    fn generated_mission_fleets_are_tasked_like_built_hulls() {
+        let radius = 25.0;
+        let spend = 0.5;
+        let mut sim = fleet_bed(
+            5,
+            radius,
+            spend,
+            &[
+                (0, HullType::LimitedSystems, Class::Meadow, Role::Miner),
+                (0, HullType::MediumSystems, Class::Delta, Role::Freighter),
+                (1, HullType::MediumSystems, Class::Delta, Role::Colonizer),
+                (1, HullType::LimitedSystems, Class::Spur, Role::Scout),
+            ],
+        );
+        let cfg = sim.config;
+        let count = |hull| (spend / hull_dry_mass(hull, &cfg).kilotons()).round() as usize;
+        for p in 0..2 {
+            let home = sim.world.player_info.get(sim.player_entity[p]).unwrap().home;
+            let at = *sim.world.position.get(home).unwrap();
+            let k = sim.world.knowledge.get(sim.player_entity[p]).unwrap();
+            let scanned: BTreeSet<PlanetId> = k.scanned.iter().copied().collect();
+            let unscanned = sim
+                .planet_entity
+                .iter()
+                .filter(|&&w| sim.world.position.get(w).unwrap().distance(at) <= radius)
+                .filter(|&&w| !scanned.contains(sim.world.planet_id.get(w).unwrap()))
+                .count();
+            assert_eq!(unscanned, 0, "seat {p} starts surveyed to {radius} ly");
+        }
+        let miners = generated_targets(&sim, Role::Miner);
+        let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let rocks: Vec<u32> =
+            sim.known_rocks(0, home0).iter().map(|&w| sim.world.planet_id.get(w).unwrap().0).collect();
+        assert!(!rocks.is_empty(), "the bed has rocks to mine");
+        assert_eq!(miners[0].len(), count(HullType::LimitedSystems), "every generated miner launches");
+        let sites: BTreeSet<u32> = miners[0].iter().copied().collect();
+        assert_eq!(sites.len(), rocks.len().min(miners[0].len()), "one to a rock before any rock takes two");
+        assert!(sites.iter().all(|w| rocks.contains(w)), "only to worlds the seat ranks as outposts");
+        let freighters = generated_targets(&sim, Role::Freighter);
+        assert_eq!(freighters[0].len(), count(HullType::MediumSystems));
+        assert!(freighters[0].iter().all(|w| sites.contains(w)), "freight serves the generated rocks");
+        let colonists = generated_targets(&sim, Role::Colonizer);
+        let distinct: BTreeSet<u32> = colonists[1].iter().copied().collect();
+        assert!(!colonists[1].is_empty(), "colony ships launch");
+        assert_eq!(distinct.len(), colonists[1].len(), "each colony ship to its own world");
+        assert_eq!(generated_targets(&sim, Role::Scout)[1].len(), count(HullType::LimitedSystems));
+    }
+
+    /// **A hauler whose rock its own empire settles stands down.** Before the
+    /// guard it kept shuttling, and whenever the delivery router picked the
+    /// center it was standing on, the leg had zero length and rescheduled at
+    /// one clock reading forever (the freighter bed, seed 1, at 40.2 yr). This
+    /// fixture's router picks another center, so the ablated engine fails the
+    /// Reserve assertion rather than the step budget. A seat's miners and its
+    /// colony ships share any world that is settleable and ranked an outpost,
+    /// which is how the state is reached here.
+    #[test]
+    fn a_hauler_whose_rock_is_settled_stands_down() {
+        let mut sim = fleet_bed(
+            1,
+            20.0,
+            2.0,
+            &[
+                (0, HullType::LimitedSystems, Class::Meadow, Role::Miner),
+                (0, HullType::MediumSystems, Class::Delta, Role::Freighter),
+                (0, HullType::MediumSystems, Class::Delta, Role::Colonizer),
+            ],
+        );
+        let sites: BTreeSet<u32> = generated_targets(&sim, Role::Miner)[0].iter().copied().collect();
+        let shared: BTreeSet<u32> =
+            generated_targets(&sim, Role::Colonizer)[0].iter().copied().filter(|w| sites.contains(w)).collect();
+        assert!(!shared.is_empty(), "the bed must settle a mined rock, or it tests nothing");
+        let mut steps = 0u64;
+        while sim.step() {
+            steps += 1;
+            assert!(steps < 5_000_000, "stalled at {} yr", sim.clock());
+        }
+        let settled: BTreeSet<u32> = sim
+            .log()
+            .iter()
+            .filter_map(|r| match r.event {
+                LogEvent::ColonyFounded { player: 0, planet, .. } if shared.contains(&planet.0) => Some(planet.0),
+                _ => None,
+            })
+            .collect();
+        assert!(!settled.is_empty(), "a mined rock is settled inside the horizon");
+        let stood_down = sim.log().iter().any(|r| {
+            matches!(r.event, LogEvent::VehicleParked { player: 0, role: Role::Reserve, at, .. } if settled.contains(&at.0))
+        });
+        assert!(stood_down, "its hauler goes to Reserve there");
     }
 }

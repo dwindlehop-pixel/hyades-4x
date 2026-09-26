@@ -47,6 +47,33 @@ Same **2-rich-1-poor shape** rotated → **equal total wealth, color-shifted**. 
 
 ---
 
+### 3.1 Fleets generated with the galaxy (T-133 follow-up) — `RATIFIED`
+
+*Author's ruling:* "fleets can be optionally generated at Galaxy generation,
+with a position and velocity. Equal cost mineral spend per fleet makes sense."
+`Galaxy::generate_with(config, FleetSeeding)`: one spend for every fleet, and per
+fleet a seat, a Design `(hull, class)`, a role, a position and a velocity (`< c`).
+The engine builds `round(spend / dry mass)` unpaid hulls of each at bootstrap.
+None by default, so an ordinary game is unchanged; this is how a test bed puts
+fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
+
+**A generated hull goes to work through the engine's own launchers** —
+`RATIFIED` as mechanism, magnitudes placeholders:
+
+- `known_radius_ly` (ly; 0 by default) — a **surveyed start**: each seat has
+  scanned every world within that radius of its homeworld at `t = 0`, so a
+  colonizer or miner fleet has somewhere to go.
+- A **Scout** hull launches a survey from its home port; a **Colonizer** hull
+  flies to the nearest scanned world it can seed, one hull to a world; a
+  **Miner** hull flies to a scanned world its seat's own autopilot ranks a
+  mining outpost, nearest first, one to a rock before any rock takes two; a
+  **Freighter** hull serves the seat's generated mining sites in turn.
+- A **Picket** or **Reserve** hull stands at the fleet's position with its
+  velocity; a mission hull with nowhere to go stands in Reserve at its home
+  port.
+- Every generated hull is logged once, `FleetGenerated`, with its seat, Design
+  and role, which is how a bed tells its fleet from what the autopilot builds.
+
 ## 4. Materials — the ladder, the color algebra, and synthesis
 
 ### 4.1 Three tiers

@@ -1352,7 +1352,8 @@ initiative (simultaneous resolution by geometry, not turn order), damage by
 stat/position/formation, and the per-ship wreck roll as the sole stochastic
 element. `Hyades_loadout.md` §6 specifies *how* it schedules:
 `sys_engagement` fires on spatial-proximity events on the existing
-discrete-event queue, not a combat-round clock. None of this is undesigned
+discrete-event queue, not a combat-round clock (*superseded at T-133 by
+detection and discharge events, `Hyades_warfare_tree.md` §8.19*). None of this is undesigned
 — it's designed and unimplemented, which is a smaller gap than starting
 from nothing, but still a real one. Concretely, the arena is blocked on:
 

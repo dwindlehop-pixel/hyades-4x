@@ -1,9 +1,11 @@
 //! Combat — the engine's real-space fighting model (`Hyades_simulation_model.md`
-//! §4-5, `Hyades_loadout.md` §5). This is **engine-native**: the same code the
-//! production game and the Monte-Carlo balancer both resolve fights with. The
-//! Ship Testing Arena (`arena.rs`) is only a *scenario seeder* on top of this —
-//! it fabricates combatants outside the production/economy constraints and
-//! calls [`resolve_engagement`]; it owns no combat logic itself.
+//! §4-5, `Hyades_loadout.md` §5). This is **engine-native**: the damage model,
+//! structure, the wreck point, fire-control accuracy and engagement range here
+//! are what the simulation's discharge events read (`sim/fire.rs`, T-133). The
+//! Ship Testing Arena (`arena.rs`) is a *scenario seeder* on top of this — it
+//! fabricates combatants outside the production/economy constraints and calls
+//! [`resolve_engagement`], the laser-vs-missile resolver the simulation does not
+//! call.
 //!
 //! Contents: the kinematic primitives (fleet trajectories, station-keeping,
 //! Isaacs intercept, lasers with light-lag aim + point-defense, dodging
@@ -13,7 +15,7 @@
 //! the engine, not in a harness.
 use crate::math::Vec3;
 use crate::rng::Rng;
-use crate::sim::{hull_base_thrust, hull_dry_mass, HullType, Role, SimConfig};
+use crate::sim::{hull_base_thrust, hull_dry_mass, Class, HullFamily, HullType, Role, SimConfig};
 use crate::transcendental;
 use std::f64::consts::{PI, TAU};
 
@@ -709,15 +711,122 @@ pub struct CombatConfig {
     pub laser_shots_per_tick: usize,
     /// Missiles per burst; bursts are desynchronized and released one per tick.
     pub burst_count: usize,
-    /// **Energy one beam shot delivers, kJ** (T-125). A Design quantity in the
-    /// weapons space (`Hyades_warfare_tree.md` §8.17); the one beam Design the
-    /// engine builds reads it from here. **Placeholder** (R-WAR19) — the arena
-    /// does not read it, so the tuned laser-vs-missile balance is untouched.
-    pub beam_shot_energy_kj: f64,
-    /// **Structure per kilotonne of dry mass, kJ/kt** (T-125) — a hull's hit
-    /// points are its dry mass times this. Mass is the armor statement because
-    /// the shell *is* the mass (R-O57, §2.3's `τ`). **Placeholder** (R-WAR19).
-    pub hull_hp_kj_per_kt: f64,
+    /// **A beam mount's power, MW** (T-132) — the rate at which one mount on
+    /// target delivers energy, whatever the integration step. A Design quantity
+    /// in the weapons space (`Hyades_warfare_tree.md` §8.17); the one beam
+    /// Design the engine builds reads it from here. **Placeholder** (R-WAR19),
+    /// chosen for fight duration, not for realism (§8.18). The arena does not
+    /// read it, so the tuned laser-vs-missile balance is untouched.
+    pub beam_power_mw: f64,
+    /// **Structure per unit of hull volume, kJ per hull unit³, per Design
+    /// class** (T-132, T-133) — a hull's structure is this times its enclosed
+    /// volume `r³`. Volume, not mass, because durability is a *value* and
+    /// design law #3 makes volume the value basis. Per Design class (the
+    /// author's ruling) so that structure is a Design property a card can
+    /// write. **Placeholders** (R-WAR19); only their ratios to
+    /// [`Self::beam_power_mw`] reach an outcome.
+    pub structure_kj_per_hull_unit3: ByClass,
+    /// **Fire-control accuracy per Design class, as a multiple of
+    /// [`Self::laser_hit_tolerance`]** (T-133, the author's ruling that
+    /// engagement range depends on weapon accuracy and is a function of the
+    /// Design). A Design's fire-control tolerance is this times the arena's
+    /// tuned tolerance, so that tuned number keeps one definition; smaller is
+    /// more accurate. A Design's engagement range is derived from it
+    /// ([`engagement_range_ly`]). **Placeholders**, all `1.0` — every beam
+    /// Design fires with the arena's accuracy (R-WAR27).
+    pub fire_control_by_class: ByClass,
+    /// **How often a Design's beams discharge, days, per Design class**
+    /// (T-133, R-WAR29). A discharge is one event on the main loop and
+    /// delivers the energy of one period, so the period sets how often fire is
+    /// checked, not how much damage a second of beam time does, and the wreck
+    /// point makes the outcome independent of it (§8.19.5). The author's
+    /// budget is that fire control take at most a quarter of run time.
+    /// **Placeholders**, all `0.25` days — inside the recommended 0.3-day bound
+    /// for resolving a mid-voyage pass (appendix §D.15).
+    pub discharge_days_by_class: ByClass,
+    /// **Where wreck points sit past the structure**, in structures (T-133,
+    /// `Hyades_warfare_tree.md` §8.19.5). The scale `x₀` of the Weibull
+    /// distribution a hull's wreck point is drawn from ([`wreck_point_kj`]):
+    /// 63.2% of hulls (`1 − 1/e`) are wrecked by the time they have absorbed
+    /// `1 + x₀` structures. **Placeholder** (R-WAR24).
+    pub wreck_scale: f64,
+    /// **How widely wreck points spread**, `γ`, the reciprocal of the Weibull
+    /// shape. Below 1 the odds of the next hit wrecking a hull rise with the
+    /// damage it already carries, which is the Super Smash Bros. behavior the
+    /// author asked for: a hull just past its structure usually survives a
+    /// hit, one far past it usually does not. `½` is shape 2, and is the value
+    /// [`crate::transcendental::pow_fast`] takes exactly, as a square root.
+    /// **Placeholder** (R-WAR24).
+    pub wreck_spread: f64,
+}
+
+/// **A quantity per named Design class**, and a default by hull class for a
+/// hull with no named Design — structure per unit of hull volume, fire-control
+/// accuracy.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ByClass {
+    pub meadow: f64,
+    pub spur: f64,
+    pub tor: f64,
+    pub cairn: f64,
+    pub delta: f64,
+    pub range: f64,
+    pub scarp: f64,
+    pub ford: f64,
+    pub strait: f64,
+    /// For [`Class::Unnamed`]: by the hull's taxonomy class.
+    pub unnamed: ByFamily,
+}
+
+impl ByClass {
+    /// The value for a Design: its class's, or its hull class's default.
+    pub fn of(&self, class: Class, family: HullFamily) -> f64 {
+        match class {
+            Class::Meadow => self.meadow,
+            Class::Spur => self.spur,
+            Class::Tor => self.tor,
+            Class::Cairn => self.cairn,
+            Class::Delta => self.delta,
+            Class::Range => self.range,
+            Class::Scarp => self.scarp,
+            Class::Ford => self.ford,
+            Class::Strait => self.strait,
+            Class::Unnamed => self.unnamed.of(family),
+        }
+    }
+}
+
+/// A quantity that differs by hull class (`HullFamily`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ByFamily {
+    pub systems: f64,
+    pub contact: f64,
+    pub offensive: f64,
+}
+
+impl ByFamily {
+    /// The value for one hull class.
+    pub fn of(&self, family: HullFamily) -> f64 {
+        match family {
+            HullFamily::Systems => self.systems,
+            HullFamily::Contact => self.contact,
+            HullFamily::Offensive => self.offensive,
+        }
+    }
+}
+
+/// Seconds in a Julian year — the one conversion between a power in MW and the
+/// engine's clock in years.
+pub const SECONDS_PER_YEAR: f64 = 31_557_600.0;
+
+/// Days in a Julian year — the same year as [`SECONDS_PER_YEAR`].
+pub const DAYS_PER_YEAR: f64 = 365.25;
+
+impl CombatConfig {
+    /// A beam mount's power in the engine's units, kJ per year.
+    pub fn beam_power_kj_per_year(&self) -> f64 {
+        self.beam_power_mw * 1_000.0 * SECONDS_PER_YEAR
+    }
 }
 
 impl Default for CombatConfig {
@@ -736,10 +845,55 @@ impl Default for CombatConfig {
             max_missiles_per_shooter: 30,
             laser_shots_per_tick: 40,
             burst_count: 4,
-            // Placeholders (R-WAR19): a Medium colonizer (0.109 kt) takes three
-            // shots, a General Contact colonizer (1.10 kt) twenty-two.
-            beam_shot_energy_kj: 50.0,
-            hull_hp_kj_per_kt: 1_000.0,
+            // Placeholders (R-WAR19, T-132), chosen together for how long a
+            // fight lasts (warfare §8.18): one 50 MW mount wrecks a Limited
+            // Contact hull (r³ = 0.041, 41 TJ) in about nine and a half days.
+            beam_power_mw: 50.0,
+            // Designs on Systems hulls at a tenth of the armed ones (T-133): a
+            // Delta colony ship then carries 2.7 times a Cairn picket's
+            // structure for 5.5 times its price, where on whole volume at one
+            // value it carried 26.8 times. The unarmed survey Design (Spur) is a
+            // Systems Design. The armed one (Tor) keeps the value it carried
+            // when one class named the survey Design on both shells; the
+            // rule above would put an armed Design at 10¹² (R-WAR38, open).
+            structure_kj_per_hull_unit3: ByClass {
+                meadow: 1.0e11,
+                spur: 1.0e11,
+                tor: 1.0e11,
+                cairn: 1.0e12,
+                delta: 1.0e11,
+                range: 1.0e11,
+                scarp: 1.0e12,
+                ford: 1.0e11,
+                strait: 1.0e11,
+                unnamed: ByFamily { systems: 1.0e11, contact: 1.0e12, offensive: 1.0e12 },
+            },
+            fire_control_by_class: ByClass {
+                meadow: 1.0,
+                spur: 1.0,
+                tor: 1.0,
+                cairn: 1.0,
+                delta: 1.0,
+                range: 1.0,
+                scarp: 1.0,
+                ford: 1.0,
+                strait: 1.0,
+                unnamed: ByFamily { systems: 1.0, contact: 1.0, offensive: 1.0 },
+            },
+            discharge_days_by_class: ByClass {
+                meadow: 0.25,
+                spur: 0.25,
+                tor: 0.25,
+                cairn: 0.25,
+                delta: 0.25,
+                range: 0.25,
+                scarp: 0.25,
+                ford: 0.25,
+                strait: 0.25,
+                unnamed: ByFamily { systems: 0.25, contact: 0.25, offensive: 0.25 },
+            },
+            wreck_scale: 1.0,
+            wreck_spread: 0.5,
         }
     }
 }
@@ -780,111 +934,127 @@ pub struct Loadout {
     /// Beam mounts. **Zero is unarmed**, and unarmed is the default for every
     /// hull the Warfare card has not unlocked.
     pub beams: u32,
-    /// Energy one shot delivers, kJ.
-    pub shot_energy_kj: f64,
+    /// Power one mount delivers while it is on target, kJ per year (T-132).
+    /// A rate, so a fight's outcome does not depend on the integration step.
+    pub beam_power_kj_per_year: f64,
     /// Fire-control error bound, ly — the tolerance [`laser_hit_check`]
     /// compares predicted against actual target position.
     pub fire_control_ly: f64,
-    /// Shots per mount per tick (fire rate).
-    pub shots_per_tick: u32,
+    /// **Max distance to fire upon an enemy**, ly (T-133, the author's ruling).
+    /// Doctrine may ignore it, and ignoring it holds fire at any range.
+    pub fire_enemy_ly: f64,
+    /// **Max distance to fire upon a neutral**, ly. As above.
+    pub fire_neutral_ly: f64,
+    /// **Years between discharges** (T-133, R-WAR29): one discharge delivers
+    /// `beam_power_kj_per_year × discharge_years` per mount on target.
+    pub discharge_years: f64,
 }
 
 impl Loadout {
     /// No weapons at all.
-    pub const UNARMED: Loadout = Loadout { beams: 0, shot_energy_kj: 0.0, fire_control_ly: 0.0, shots_per_tick: 0 };
+    pub const UNARMED: Loadout = Loadout {
+        beams: 0,
+        beam_power_kj_per_year: 0.0,
+        fire_control_ly: 0.0,
+        fire_enemy_ly: 0.0,
+        fire_neutral_ly: 0.0,
+        discharge_years: 0.0,
+    };
 
     /// Whether this Design can damage anything.
     pub fn is_armed(&self) -> bool {
-        self.beams > 0 && self.shots_per_tick > 0 && self.shot_energy_kj > 0.0
+        self.beams > 0 && self.beam_power_kj_per_year > 0.0
     }
 }
 
-/// **A hull's structure, kJ** — dry mass times [`CombatConfig::hull_hp_kj_per_kt`].
-pub fn hull_hp_kj(hull: HullType, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f64 {
-    hull_dry_mass(hull, sim_cfg).kilotons() * cfg.hull_hp_kj_per_kt
+/// **A hull's structure, kJ** — its enclosed volume `r³` times its Design
+/// class's [`CombatConfig::structure_kj_per_hull_unit3`] (T-132, T-133).
+pub fn hull_structure_kj(hull: HullType, class: Class, sim_cfg: &SimConfig, cfg: &CombatConfig) -> f64 {
+    hull.hull_volume(sim_cfg).hull_units_cubed() * cfg.structure_kj_per_hull_unit3.of(class, hull.family())
 }
 
-/// One ship in a simulation fight: where it is, what it mounts, and how much
-/// it can take.
-#[derive(Clone, Copy, Debug)]
-pub struct Armed {
-    pub ship: Combatant,
-    pub loadout: Loadout,
-    pub hp_kj: f64,
+/// **A Design's fire-control tolerance, ly** — the arena's tuned
+/// [`CombatConfig::laser_hit_tolerance`] times the Design class's
+/// [`CombatConfig::fire_control_by_class`] (T-133). Smaller is more accurate.
+pub fn beam_accuracy_ly(class: Class, family: HullFamily, cfg: &CombatConfig) -> f64 {
+    cfg.laser_hit_tolerance * cfg.fire_control_by_class.of(class, family)
 }
 
-/// **Resolve a fight in which each ship fires what its Design mounts** (T-125).
+/// **The engagement range a fire-control tolerance supports, ly** (T-133,
+/// `Hyades_warfare_tree.md` §8.19.1; the author's ruling that engagement range
+/// depends on weapon accuracy).
 ///
-/// Returns, per side, which ships are still standing. Three properties are the
-/// design and are tested:
+/// Fire control predicts a target along its velocity for one light-crossing
+/// `d` and hits if the target's actual position is within `accuracy_ly` of the
+/// prediction ([`laser_hit_check`]). A hull holding station on a circle of
+/// radius `ρ` at angular rate `ω` drifts off its tangent by `ρ · g(ω d)` in
+/// that time, with `g(θ) = √((1 − cos θ)² + (θ − sin θ)²)` — independent of
+/// phase and plane, and increasing in `θ`. The range is the `d` at which that
+/// drift equals the tolerance, against the **reference target**: the midpoints
+/// of [`STATION_RADIUS`] and [`STATION_PERIOD`], the spread every hull the
+/// simulation places draws from. At the arena's tolerance that is 7.90e-3 ly;
+/// the median over the whole spread is 8.04e-3 (appendix §D.15).
 ///
-/// - **An unarmed ship deals no damage**, so a fight between two unarmed sides
-///   ends before it starts, with no losses.
-/// - **Fire is simultaneous within a tick.** Every shooter aims at the ships
-///   standing at the start of the tick and damage lands at its end, so neither
-///   side shoots first by index order — §2.3's "no tick-based initiative".
-/// - **Damage accumulates in kJ against structure.** A hull dies when the energy
-///   it has absorbed reaches its structure; a shot is not a kill.
-///
-/// Each shot goes to the nearest enemy not already doomed by damage landing this
-/// tick, so a battery does not spend a tick killing one ship forty times.
-pub fn resolve_beam_engagement(
-    fleets: &[FleetTrajectory; 2],
-    sides: [&[Armed]; 2],
-    horizon: f64,
-    dt: f64,
-) -> [Vec<bool>; 2] {
-    let mut alive: [Vec<bool>; 2] = [vec![true; sides[0].len()], vec![true; sides[1].len()]];
-    let mut damage: [Vec<f64>; 2] = [vec![0.0; sides[0].len()], vec![0.0; sides[1].len()]];
-    let armed_alive =
-        |alive: &[Vec<bool>; 2], s: usize| sides[s].iter().zip(&alive[s]).any(|(a, &l)| l && a.loadout.is_armed());
-    let mut t = 0.0;
-    while t < horizon {
-        if !alive[0].iter().any(|&a| a) || !alive[1].iter().any(|&a| a) {
-            break;
-        }
-        if !armed_alive(&alive, 0) && !armed_alive(&alive, 1) {
-            break;
-        }
-        let mut pending: [Vec<f64>; 2] = [vec![0.0; sides[0].len()], vec![0.0; sides[1].len()]];
-        for s in 0..2 {
-            let e = 1 - s;
-            for (i, shooter) in sides[s].iter().enumerate() {
-                if !alive[s][i] || !shooter.loadout.is_armed() {
-                    continue;
-                }
-                let at = shooter.ship.position_at(fleets, t);
-                // Enemies standing at the start of the tick, nearest first;
-                // ties by index, so the order is total.
-                let mut targets: Vec<(f64, usize)> = (0..sides[e].len())
-                    .filter(|&j| alive[e][j])
-                    .map(|j| (sides[e][j].ship.position_at(fleets, t).distance(at), j))
-                    .collect();
-                targets.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-                let shots = shooter.loadout.beams * shooter.loadout.shots_per_tick;
-                for _ in 0..shots {
-                    let Some(&(_, j)) =
-                        targets.iter().find(|&&(_, j)| damage[e][j] + pending[e][j] < sides[e][j].hp_kj)
-                    else {
-                        break;
-                    };
-                    if laser_hit_check(at, &sides[e][j].ship, fleets, t, shooter.loadout.fire_control_ly) {
-                        pending[e][j] += shooter.loadout.shot_energy_kj;
-                    }
-                }
-            }
-        }
-        for s in 0..2 {
-            for j in 0..sides[s].len() {
-                damage[s][j] += pending[s][j];
-                if damage[s][j] >= sides[s][j].hp_kj {
-                    alive[s][j] = false;
-                }
-            }
-        }
-        t += dt;
+/// Nearer targets are hit whatever their station-keeping; past the range, fire
+/// control holds only against the calmer part of the spread. Solved by
+/// bisection on `θ`, 64 halvings, with the engine's own `sin_cos` — once per
+/// Design built, not per shot.
+pub fn engagement_range_ly(accuracy_ly: f64) -> f64 {
+    let radius = 0.5 * (STATION_RADIUS.0 + STATION_RADIUS.1);
+    let omega = TAU / (0.5 * (STATION_PERIOD.0 + STATION_PERIOD.1));
+    let allowed = accuracy_ly / radius;
+    if allowed.is_nan() || allowed <= 0.0 {
+        return 0.0;
     }
-    alive
+    let drift_sq = |theta: f64| {
+        let (sin, cos) = transcendental::sin_cos(theta);
+        (1.0 - cos) * (1.0 - cos) + (theta - sin) * (theta - sin)
+    };
+    // g(θ) ≥ θ − sin θ ≥ θ − 1, so the drift has passed `allowed` by θ = allowed + 2.
+    let (mut lo, mut hi) = (0.0, allowed + 2.0);
+    for _ in 0..64 {
+        let mid = 0.5 * (lo + hi);
+        if drift_sq(mid) <= allowed * allowed {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    lo / omega
+}
+
+/// **A hull's wreck point, kJ**: the damage at which it is wrecked
+/// (`Hyades_warfare_tree.md` §8.19.5; T-133). `u` is a uniform draw in
+/// `[0, 1)` that belongs to the hull and never changes.
+///
+/// **Zero odds up to the structure**, which is a soft maximum of hit points
+/// (the author's ruling). Past it the wreck point sits `x₀ · E^γ` structures
+/// further on, with `E = −ln(1 − u)` an exponential draw — so the overdamage
+/// at which a hull is wrecked follows a Weibull distribution with scale
+/// [`CombatConfig::wreck_scale`] and shape `1 / γ`
+/// ([`CombatConfig::wreck_spread`]), and the odds of being wrecked by
+/// overdamage `x` (damage *above* the structure, in structures) are
+/// `1 − e^(−(x / x₀)^(1/γ))`.
+///
+/// **This is the wreck roll, repeated with every further damage.** Drawing
+/// the point once and comparing each hit's damage against it gives exactly
+/// the odds of rolling on every hit with the odds of the damage between that
+/// roll and the last — the inverse-transform method — and it makes the
+/// outcome independent of how the damage was divided into hits. A Design's
+/// firing rate changes how often a hull is checked, not whether it is
+/// wrecked, which is what lets fire control be coarse for performance
+/// (R-WAR29) without moving any outcome.
+///
+/// **Run-path arithmetic** (`src/transcendental.rs`, T-130): no division,
+/// [`crate::transcendental::log2_fast`] for the logarithm, and at the shipped
+/// `γ = ½` an exact square root. Computed once per hull per encounter; the
+/// per-hit test is a comparison.
+pub fn wreck_point_kj(structure_kj: f64, u: f64, cfg: &CombatConfig) -> f64 {
+    // `log2_fast(1.0)` is +4.8e-5, not zero (its error is absolute), so the
+    // lowest draws would give a negative `E` and a NaN root — a hull that no
+    // damage could wreck. They are the draws whose true `E` is below 3.3e-5.
+    let e = (-core::f64::consts::LN_2 * crate::transcendental::log2_fast(1.0 - u)).max(0.0);
+    structure_kj * (1.0 + cfg.wreck_scale * crate::transcendental::pow_fast(e, cfg.wreck_spread))
 }
 
 /// Who a laser targets this shot — a ship, or an in-flight missile
@@ -895,10 +1065,11 @@ enum LaserTarget {
 }
 
 /// Resolve one laser-side-vs-missile-side engagement between two already-placed
-/// fleets of [`Combatant`]s. **This is the engine combat entry point** the arena
-/// scenarios and (eventually) the production game's `sys_engagement` both call.
-/// Spawning is the caller's job (the arena spawns outside production); this only
-/// fights. Deterministic given `rng`; iterates in index order.
+/// fleets of [`Combatant`]s — the Ship Testing Arena's resolver (design law #4),
+/// on which the tuned laser-vs-missile balance and `tests/balance.rs` rest.
+/// **The simulation does not call it**: since T-133 a fight in the simulation is
+/// discharge events on the main loop (`sim/fire.rs`). Spawning is the caller's
+/// job; this only fights. Deterministic given `rng`; iterates in index order.
 #[allow(clippy::too_many_arguments)]
 pub fn resolve_engagement(
     sim_cfg: &SimConfig,

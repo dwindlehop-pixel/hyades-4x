@@ -71,9 +71,11 @@ graded by repeat sightings. No formulation.
 ## 2. Survey
 
 **2.1 `RATIFIED` — the opening is six Light Vehicles on the six cube-face
-headings** (±X/±Y/±Z), free starting units, 1 g constant proper acceleration.
-`Doctrine::survey_vehicles = 6`, `survey_accel_g = 1.0`. **Placeholder
-magnitudes.**
+headings** (±X/±Y/±Z), free starting units. `Doctrine::survey_vehicles = 6`.
+**Placeholder magnitude.** A survey craft flies at its own Design's drive, like
+every hull (§8.4): an empty LSV at 1.00 g, an empty LCV at 0.911 g. There is no
+survey rate in Doctrine — the author's ruling that the sim does not overwrite a
+ship's Design removed `survey_accel_g` (appendix §D.19).
 
 **2.2 `RATIFIED` — every later survey craft is a paid build** from a production
 center, charged to that center's stockpile. Each chain ends after
@@ -474,7 +476,10 @@ The substance belongs to `Hyades_warfare_tree.md`.
 **8.1 `RATIFIED` — the four civilian roles.** Scout (survey), Colonizer (founds),
 Miner (extracts), Freighter (hauls), plus **Reserve** (a standing mission that
 ended) and **Scrapped** (a *completable* mission that ended — only an exhausted
-Scout, at `scrap_recovery_fraction = 0.5`).
+Scout, at `scrap_recovery_fraction = 0.5`). A miner/hauler pair's mission ends
+when its rock is exhausted **or when its own empire settles the rock** — a colony
+mines itself — and the hauler goes to Reserve (appendix §D.18; before this a
+hauler routed to the center it stood on flew legs of zero length forever).
 
 **8.2 `RATIFIED` — role eligibility is permissive; competence varies.**
 `assign_role` declines on no viable target, never on hull type. Competence is a

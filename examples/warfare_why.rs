@@ -61,11 +61,6 @@ enum Arm {
     /// Doctrine + Design + the policy that makes the Design half reachable.
     /// This is the card as it would have to ship to mean anything.
     WholeCardLive,
-    /// **The ablation.** `DoctrineOnly` with the founding rung restored — which
-    /// violates conservation and must never ship. If the card's whole loss goes
-    /// here, the founding rung is the cause and the card's price is simply in
-    /// the wrong place.
-    DoctrineNoFoundingCost,
 }
 
 struct Row {
@@ -80,8 +75,7 @@ struct Row {
 
 fn run(seed: u64, arm: Arm) -> Row {
     let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
-    let doctrine_on =
-        matches!(arm, Arm::DoctrineOnly | Arm::WholeCard | Arm::WholeCardLive | Arm::DoctrineNoFoundingCost);
+    let doctrine_on = matches!(arm, Arm::DoctrineOnly | Arm::WholeCard | Arm::WholeCardLive);
     let design_on = matches!(arm, Arm::GcvOnly | Arm::PerMineralGcv | Arm::WholeCard | Arm::WholeCardLive);
     let per_mineral = matches!(arm, Arm::PerMineral | Arm::PerMineralGcv | Arm::WholeCardLive);
     let autopilots: Vec<Box<dyn Autopilot>> = (0..PLAYERS)
@@ -103,8 +97,6 @@ fn run(seed: u64, arm: Arm) -> Row {
         .collect();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = HORIZON;
-    cfg.engagements_enabled = doctrine_on;
-    cfg.ablate_picket_founding_cost = arm == Arm::DoctrineNoFoundingCost;
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
     sim.set_log_filter(
         LogFilter::none().with(LogCategory::Production).with(LogCategory::Vehicles).with(LogCategory::Combat),
@@ -120,7 +112,7 @@ fn run(seed: u64, arm: Arm) -> Row {
                 _ => {}
             },
             LogEvent::ColonyFounded { player: 0, .. } => founded += 1,
-            LogEvent::ColonyDiverted { player: 0, .. } => diverted += 1,
+            LogEvent::CourseChanged { player: 0, role: Role::Colonizer, .. } => diverted += 1,
             LogEvent::ColonyContested { player: 0, .. } => contested += 1,
             _ => {}
         }
@@ -164,15 +156,9 @@ fn main() {
     );
     let _ = std::io::stdout().flush();
 
-    for arm in [
-        Arm::GcvOnly,
-        Arm::PerMineral,
-        Arm::PerMineralGcv,
-        Arm::DoctrineOnly,
-        Arm::DoctrineNoFoundingCost,
-        Arm::WholeCard,
-        Arm::WholeCardLive,
-    ] {
+    for arm in
+        [Arm::GcvOnly, Arm::PerMineral, Arm::PerMineralGcv, Arm::DoctrineOnly, Arm::WholeCard, Arm::WholeCardLive]
+    {
         let (mut own, mut nbr, mut w) = (0.0, 0.0, 0.0);
         let (mut bm, mut bg, mut fo, mut lost) = (0u64, 0u64, 0u64, 0u64);
         for (i, &seed) in SEEDS.iter().enumerate() {

@@ -148,7 +148,7 @@ invisible at range and has paid twice for it.
 
 **σ_vector is measurable in the engine.** `Doctrine` is a real numeric vector
 in `autopilot.rs` (`productivity_step`, `growth_rate`, `survey_vehicles`,
-`survey_accel_g`, `expand_bias`, `reinvest_bias`, and the ranking weights
+`expand_bias`, `reinvest_bias`, and the ranking weights
 `w_k` / `w_mineral` / `w_hub` / `centrality_scale` / `mineral_pressure_gain`),
 so a card's σ_vector is a computable distance between pre- and post-card
 doctrine states. **Design has no engine component at all** — this half is
@@ -485,7 +485,7 @@ scouts badly — slow, no dedicated sensor fit — but legally.
 > said *"100% LSV in the Scout role"* since R-O42; the engine surveyed with an
 > LCV until T-121, so the ratified default and the shipped default disagreed for
 > the whole intervening period. `Standing::design_for(Role::Scout)` returns
-> `(LimitedSystems, Tor)` under the default doctrine, and the Contact hull it
+> `(LimitedSystems, Spur)` under the default doctrine, and the Contact hull it
 > used to return is now locked behind the first Warfare card
 > (`Hyades_warfare_tree.md` §8.14).
 >
@@ -496,6 +496,13 @@ scouts badly — slow, no dedicated sensor fit — but legally.
 > every empire's opening fleet identical more completely than two do. What is
 > lost is `Tor` as a *seeded* class name; it is authored by the card that
 > unlocks the hull carrying it.
+>
+> **A class names one hull** (the author's ruling, T-133). `Tor` is the armed
+> survey Design on the LCV, and so always armed; the unarmed survey Design on
+> the LSV is **`Spur`** (proposed, from the alternates below). The freighter
+> likewise: **`Ford`** on the MSV, **`Strait`** on the GSV (proposed).
+> `Class::hull` states the one hull of every named class, and
+> `a_named_class_is_on_one_hull` checks every site that chooses a Design.
 >
 > **Enforcement is still off by default**, because the colonizer and freighter
 > ride on the Medium hull, which the starting roster excludes, so enforcing it
@@ -1171,8 +1178,9 @@ calls 0/1/2 *confirmed* and this reinterprets what it confirmed.
 **R-O65** — `hull_thrust_to_mass` still carries a 1.2 / 1.1 / 1.0 ladder across
 Systems sizes, which the shell model says should be flat (thrust and dry mass
 both scale with area). Not flattened here: it is an MC-tuned combat surface and
-needs ratification. It reaches only `arena`/`combat` — civilian motion runs on
-`civilian_accel_g` — so flattening it is a one-line change once ratified.
+needs ratification. It reaches only `arena`/`combat` — the sim flies every hull
+on its own drive (`laden_accel`) — so flattening it is a one-line change once
+ratified.
 
 **Retrofit, ratified separately:** no deep-space retrofit by default; refit at a
 friendly port only; a card enables field refit for minerals. This answers
@@ -1202,7 +1210,7 @@ than a power spike.
 | R-O27 | `Doctrine` has no diplomatic fields |
 | R-O28 | Design has no engine component; blocks σ_vector measurement |
 | R-O34 | ratify L1 as a stated law |
-| R-O42b | confirm class names (Meadow / Tor, or your alternatives) |
+| ~~R-O42b~~ | ~~confirm class names~~ — **ratified** as Meadow / Spur / Tor / Cairn / Delta / Ford / Range / Strait / Scarp, one class per hull (Technology §1.6) |
 | R-O47b | does a retrofit apply retroactively, or `on_new_production` only? |
 | R-O49b | set `k` per ladder rung and `m` per Design card, arena-measured |
 | **R-O51** | ratify the three-way σ decomposition — σ_commit / σ_kinetic / σ_vector — with σ_kinetic derived from the acceleration signature, not mass or hull count |

@@ -53,8 +53,9 @@ pub enum LogCategory {
     Scanning,
     /// Round barriers and the cards played at them (the protocol clock).
     Cards,
-    /// Engagements resolved in the simulation loop and the hulls they destroyed
-    /// (`Hyades_warfare_tree.md` §7, T-111) — `EngagementResolved`.
+    /// Fire on the main loop (`Hyades_warfare_tree.md` §8.19, T-133): an
+    /// encounter beginning, a hull wrecked, a course changed under fire or its
+    /// news — `EncounterBegan`, `HullWrecked`, `CourseChanged`.
     Combat,
 }
 
@@ -191,7 +192,7 @@ pub enum LogEvent {
 
     /// In-ground density was mined into a stockpile (a center's local take, or
     /// an outpost's periodic [`crate::sim`] mining tick).
-    MineralsExtracted { planet: PlanetId, amount: f64, density_after: f64 },
+    MineralsExtracted { player: u32, planet: PlanetId, amount: f64, density_after: f64 },
     /// A body's density crossed the floor; mining there has stopped for good.
     MiningExhausted { planet: PlanetId },
     /// A freighter loaded at an outpost or deposited at a center.
@@ -206,6 +207,10 @@ pub enum LogEvent {
     /// derivable from the hull — and that split is the only way to tell which of
     /// the three caps was binding (hull, destination, or origin) without
     /// reaching into engine internals. `examples/endowment` reads it.
+    /// **A hull generated with the galaxy** (T-131 beds): which seat, which
+    /// Design and which role, so a bed can tell its fleet from what the seat's
+    /// economy builds.
+    FleetGenerated { player: u32, vehicle: Entity, hull: HullType, class: crate::sim::Class, role: Role },
     VehicleSpawned {
         player: u32,
         vehicle: Entity,
@@ -274,34 +279,30 @@ pub enum LogEvent {
     /// index; `round` is the protocol clock, not the sim clock.
     CardPlayed { player: u32, card: u16, round: u32 },
 
-    /// **A colonizer turned back because a rival is holding its target**
-    /// (T-112) — distinct from [`Self::ColonyContested`], which is losing a
-    /// *race*, and the distinction is load-bearing: the two were counted
-    /// together once and the combined figure read as ~33% of diverts being the
-    /// picketing seat's own, which is simply its share of the table and says
-    /// nothing about denial at all.
-    ColonyDiverted { player: u32, vehicle: Entity, planet: PlanetId, holder: u32 },
+    /// **A hull came within a shooter's fire distance** (T-133, warfare
+    /// §8.19.7): the shooter's discharges begin. Logged once per pair entering
+    /// reach, so its count is the number of encounters — nothing is held in
+    /// place by it, and it says nothing yet about damage.
+    EncounterBegan { shooter_seat: u32, target_seat: u32, shooter: Entity, target: Entity },
+    /// **A hull reached its wreck point** (T-133, §8.19.5) and is slag.
+    /// `player` owns the wreck, `by` is the seat that fired the last discharge,
+    /// `damage` the energy it had absorbed in kJ and `slag` the mass it became
+    /// in kt — hull, cargo and anyone aboard (design law #11).
+    HullWrecked { player: u32, vehicle: Entity, role: Role, by: u32, damage: f64, slag: f64 },
+    /// **A hull changed course under a threat or under fire** (T-133, §8.19.7):
+    /// the fleet decision a belief event raised. `to` is the new destination.
+    CourseChanged { player: u32, vehicle: Entity, role: Role, reason: CourseReason, to: PlanetId },
+}
 
-    /// **An engagement was resolved in the simulation loop** (T-111) — the first
-    /// `LogEvent` that records something being destroyed.
-    ///
-    /// `attacker`/`defender` are seats; `attacker` is the empire whose Doctrine
-    /// started it. `committed` is the attacker's accept/decline
-    /// ([`crate::belief::Engagement`]) read as a bool: `true` when it could not
-    /// have broken off. `losses_*` are hull counts and `slag` is the mass they
-    /// became, so a census can reconcile the two against the cost ladder rather
-    /// than trusting either alone.
-    EngagementResolved {
-        site: PlanetId,
-        attacker: u32,
-        defender: u32,
-        attacker_ships: u32,
-        defender_ships: u32,
-        losses_attacker: u32,
-        losses_defender: u32,
-        committed: bool,
-        slag: f64,
-    },
+/// **Why a hull changed course** (T-133).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CourseReason {
+    /// A colony ship that believes it would be wrecked before founding seeks a
+    /// new destination.
+    Retarget,
+    /// Past its structure, off a post it cannot hold under fire, or breaking
+    /// off on believed kinematics — it heads home.
+    Withdraw,
 }
 
 impl LogEvent {
@@ -312,7 +313,8 @@ impl LogEvent {
             ProductionDecision { .. } | BuildApplied { .. } => LogCategory::Production,
             PicketIntercept { .. } => LogCategory::Combat,
             MineralsExtracted { .. } | MiningExhausted { .. } | FreighterTransfer { .. } => LogCategory::Mining,
-            VehicleSpawned { .. }
+            FleetGenerated { .. }
+            | VehicleSpawned { .. }
             | VehicleParked { .. }
             | ContactArrived { .. }
             | ColonyFounded { .. }
@@ -321,7 +323,7 @@ impl LogEvent {
             PopulationStep { .. } => LogCategory::Population,
             ScanReceived { .. } => LogCategory::Scanning,
             CardPlayed { .. } => LogCategory::Cards,
-            EngagementResolved { .. } | ColonyDiverted { .. } => LogCategory::Combat,
+            EncounterBegan { .. } | HullWrecked { .. } | CourseChanged { .. } => LogCategory::Combat,
         }
     }
 
@@ -333,6 +335,7 @@ impl LogEvent {
             | PicketIntercept { player, .. }
             | BuildApplied { player, .. }
             | FreighterTransfer { player, .. }
+            | FleetGenerated { player, .. }
             | VehicleSpawned { player, .. }
             | VehicleParked { player, .. }
             | ContactArrived { player, .. }
@@ -340,12 +343,12 @@ impl LogEvent {
             | ColonyContested { player, .. }
             | VehicleScrapped { player, .. }
             | ScanReceived { player, .. }
-            | ColonyDiverted { player, .. }
+            | HullWrecked { player, .. }
+            | CourseChanged { player, .. }
             | CardPlayed { player, .. } => Some(player),
-            // An engagement is about two seats, so it belongs to neither.
-            MineralsExtracted { .. } | MiningExhausted { .. } | PopulationStep { .. } | EngagementResolved { .. } => {
-                None
-            }
+            // An encounter is about two seats, so it belongs to neither.
+            MineralsExtracted { player, .. } => Some(player),
+            MiningExhausted { .. } | PopulationStep { .. } | EncounterBegan { .. } => None,
         }
     }
 
@@ -359,10 +362,11 @@ impl LogEvent {
             | PopulationStep { planet, .. }
             | ScanReceived { planet, .. } => Some(planet),
             FreighterTransfer { at, .. } | VehicleParked { at, .. } | VehicleScrapped { at, .. } => Some(at),
-            EngagementResolved { site, .. } => Some(site),
-            ColonyDiverted { planet, .. } => Some(planet),
+            CourseChanged { to, .. } => Some(to),
+            EncounterBegan { .. } | HullWrecked { .. } => None,
             PicketIntercept { target, .. } => Some(target),
             VehicleSpawned { to, .. } => Some(to),
+            FleetGenerated { .. } => None,
             ContactArrived { planet, .. } => Some(planet),
             ColonyFounded { planet, .. } | ColonyContested { planet, .. } => Some(planet),
             CardPlayed { .. } => None,
@@ -376,11 +380,15 @@ impl LogEvent {
         match *self {
             FreighterTransfer { vehicle, .. }
             | PicketIntercept { vehicle, .. }
+            | FleetGenerated { vehicle, .. }
             | VehicleSpawned { vehicle, .. }
             | VehicleParked { vehicle, .. }
             | ContactArrived { vehicle, .. }
             | ColonyFounded { vehicle, .. }
             | ColonyContested { vehicle, .. }
+            | HullWrecked { vehicle, .. }
+            | CourseChanged { vehicle, .. }
+            | EncounterBegan { target: vehicle, .. }
             | VehicleScrapped { vehicle, .. } => Some(vehicle),
             _ => None,
         }
@@ -418,8 +426,8 @@ impl fmt::Display for LogEvent {
                 "P{player} planet#{} built {order:?} (cost={cost:.2}, stockpile now {stockpile_after:.2})",
                 center.0
             ),
-            MineralsExtracted { planet, amount, density_after } => {
-                write!(f, "planet#{} mined {amount:.3} (density now {density_after:.3})", planet.0)
+            MineralsExtracted { player, planet, amount, density_after } => {
+                write!(f, "P{player} planet#{} mined {amount:.3} (density now {density_after:.3})", planet.0)
             }
             MiningExhausted { planet } => write!(f, "planet#{} mined out", planet.0),
             FreighterTransfer { player, leg, amount, at, .. } => {
@@ -428,6 +436,9 @@ impl fmt::Display for LogEvent {
                     FreighterLeg::Deposited => "deposited",
                 };
                 write!(f, "P{player} freighter {verb} {amount:.2} at planet#{}", at.0)
+            }
+            FleetGenerated { player, hull, class, role, .. } => {
+                write!(f, "P{player} generated {role:?} {class:?} on {hull:?}")
             }
             VehicleSpawned { player, role, to, .. } => {
                 write!(f, "P{player} launched {role:?} -> planet#{}", to.0)
@@ -456,25 +467,15 @@ impl fmt::Display for LogEvent {
             }
             ScanReceived { player, planet } => write!(f, "P{player} scan of planet#{} received", planet.0),
             CardPlayed { player, card, round } => write!(f, "P{player} played card#{card} at round {round}"),
-            ColonyDiverted { player, planet, holder, .. } => {
-                write!(f, "P{player} turned back from {planet:?}: P{holder} is holding it")
+            EncounterBegan { shooter_seat, target_seat, .. } => {
+                write!(f, "P{shooter_seat} opens fire on a P{target_seat} hull")
             }
-            EngagementResolved {
-                site,
-                attacker,
-                defender,
-                attacker_ships,
-                defender_ships,
-                losses_attacker,
-                losses_defender,
-                committed,
-                slag,
-            } => write!(
-                f,
-                "engagement at {site:?}: P{attacker} ({attacker_ships}) vs P{defender} ({defender_ships}) \
-                 -> -{losses_attacker}/-{losses_defender}, {}, {slag:.4} kt slag",
-                if *committed { "committed" } else { "could disengage" }
-            ),
+            HullWrecked { player, role, by, damage, slag, .. } => {
+                write!(f, "P{player} {role:?} wrecked by P{by} ({damage:.3e} kJ absorbed, {slag:.4} kt slag)")
+            }
+            CourseChanged { player, role, reason, to, .. } => {
+                write!(f, "P{player} {role:?} changes course ({reason:?}) for planet#{}", to.0)
+            }
         }
     }
 }
@@ -596,7 +597,7 @@ mod tests {
         let mut log = SimLog::with_filter(LogFilter::all());
         log.push(1.0, sample(0));
         log.push(2.0, sample(1));
-        log.push(3.0, LogEvent::MineralsExtracted { planet: PlanetId(5), amount: 1.0, density_after: 0.5 });
+        log.push(3.0, LogEvent::MineralsExtracted { player: 2, planet: PlanetId(5), amount: 1.0, density_after: 0.5 });
 
         assert_eq!(log.by_player(0).count(), 1);
         assert_eq!(log.by_player(1).count(), 1);

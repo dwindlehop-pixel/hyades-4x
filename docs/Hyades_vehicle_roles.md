@@ -168,11 +168,10 @@ carries no such information itself.
   a survey test that is almost always true, so the survey branch is where the
   hulls actually are (`Hyades_warfare_tree.md` §8.9.4).
 
-  **The class is what says which errand it was built for.** A scout carries
-  `Class::Tor` whatever shell it is mounted on, so a Tor on an offensive hull is
-  a survey design on a fighting shell — which is what a Design write does
-  (R-O28/R-O42b) — and `assign_role` reads it back without a second piece of
-  state.
+  **The class is what says which errand it was built for**, and **a class
+  names one hull** (the author's ruling, T-133): a scout on the Limited Systems
+  hull is a `Spur`, one on the Limited Contact hull a `Tor` — two Designs — and
+  `assign_role` reads either back without a second piece of state.
 
 ### 4.2 Colonizer — Systems
 
@@ -393,6 +392,15 @@ spatially-local groupings, not an empire-wide bucket. An empire-wide
 same-role count (e.g. whatever `Levée en Masse` scales off,
 `command_cards.md` §8) is a separate, still-useful number computed the same
 way minus the location filter — not itself "the fleet."
+
+> **Amended by `Hyades_warfare_tree.md` §8.19.7 (T-133, R-WAR30).** The author
+> ruled that the fleet is the unit that *decides* a course adjustment — one
+> belief event, one decision for the fleet rather than one per hull — because
+> that is what bounds decisions per year as hull counts grow. A decision unit
+> has to persist between the event that raises a decision and the trajectory
+> it produces, so "a query, not a stored thing" does not survive the ruling in
+> that use. **`OPEN` (R-WAR32):** what a stored fleet is — whether same-role
+> and co-located still defines membership, and when a hull joins or leaves.
 
 ---
 

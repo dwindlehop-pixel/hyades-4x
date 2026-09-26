@@ -163,6 +163,204 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-133. No engagements and no fight sites — encounters along trajectories, decided by Doctrine
+
+**Closed (sixth landing).** Every stage below is built and the harness-only
+sim code is gone (the author's ruling: *"Harnesses and test beds cannot have
+special sim code. The only thing that can vary is the galaxy generation."*).
+Opened and resolved R-WAR34 (the author's ruling: a wrecked hull continues on
+its course), opened R-WAR35 (belief
+event A reads a course change before its light arrives) and R-WAR36 (the arena
+against the harness ruling); resolved R-WAR22, R-WAR25, R-WAR26, R-WAR30 and
+R-L2; R-WAR29's budget is measured with detection on every trajectory
+(appendix §D.16).
+
+*History, kept as the record of how it got here:* `Hyades_warfare_tree.md` §8.19
+carries the rulings (no engagements; no hardwired fight sites; being fired upon
+is not consent; a pitched battle needs both sides' Doctrine; the wreck roll
+resolves combat and transport together; the colony ship tries to found before it
+is destroyed) and the recommended mechanism (R-WAR25). Priced in appendix §D.11.
+
+**What the engine does today, and has to stop doing:** it fights at three
+hardwired sites — a shared rock (`sys_engagement`), a held world
+(`resolve_picket_fight`) and a blockaded port (`strike_at_port`) — through a
+stationary resolver that holds both sides in place up to
+`engagement_horizon_years`, and a colony ship that survives turns back.
+
+**Where it stands (second landing):** stages 1–3 are built, and stage 5 in an
+interim form — the port and the held world still decide *where* the engine looks
+for fire, but nobody is held there any longer: a colony ship flies through the
+fire, takes a wreck roll, and flies on or founds. The author's answers are
+recorded (R-WAR24's threshold rule, R-WAR26's three endings, R-WAR27's hold
+fire, `σ` per Design class) and every Design the engine builds is named
+(R-O42b). Measurements in appendix §D.12.
+
+**Amended by the author (third landing): fights run on the main event loop,
+concurrently with production and travel, and the loop processes weapons
+discharge and course adjustment** (warfare §8.19.7). That retires the pass
+resolver built in stage 2 as an off-clock integration. The stages below are
+re-cut accordingly; stages 1 and 3 stand.
+
+**Fourth landing: the author ruled the wreck roll, the survivor and the course
+adjustment** (warfare §8.19.2, §8.19.5, §8.19.7). The threshold is the structure,
+a soft maximum of hit points; the roll repeats with further damage, with odds
+from damage above it; a colony ship that survives fire leaves; course adjustment
+is flight from a moving start on belief events, decided per fleet; fire control
+may take at most 25% of run time (R-WAR29). Stage 1 is rebuilt to the ruling,
+the arriving survivor leaves, and the fire-control share is measured: **0.77% of
+instructions** on the twelve-seat card bed, so at today's encounter count the
+budget admits any discharge period above 0.011 days; a period of at most 5%
+of the shortest exposure the Design must resolve is recommended (0.3–4.7 days
+at the arena's accuracy), and the budget has to be re-measured once stage 4 sets
+the encounter count (R-WAR29, appendix §D.14).
+
+**Fifth landing: engagement range depends on weapon accuracy** (the author's
+ruling, R-WAR23 resolved). Accuracy is per Design class, the range is derived
+from it against the reference target (7.90e-3 ly at the arena's accuracy), and
+the 0.01 ly placeholder is gone. Which roles narrow the range is R-WAR33
+(appendix §D.15).
+
+**Stages, in order, each measured before the next:**
+
+1. ~~**The wreck roll**~~ — **done, rebuilt at the fourth landing**: a Weibull
+   wreck point per hull past its structure (`combat::wreck_point_kj`), checked on
+   every hit, damage carried across encounters (`hull_damage`); run-path
+   arithmetic, no division. Placeholders `x₀ = 1`, `γ = ½` (R-WAR24).
+2. ~~**The pass resolver**~~ — **done**: `combat::resolve_pass`, fire between
+   hulls on arbitrary paths; a hull at its wreck point stops firing and is no
+   longer a target, and the pass stops once no outcome can change.
+3. ~~**Fire distances**~~ — **done**: on every Design's loadout, both the
+   engagement range derived from the Design's accuracy (7.90e-3 ly at the
+   arena's; R-WAR23 resolved, appendix §D.15); `Standing::fire_distance` holds
+   fire where Doctrine ignores one, and is where a role would narrow the range
+   (R-WAR33); default holds fire on neutrals except in the picket role.
+4. ~~**Encounter detection**~~ — **done**: on every trajectory change, the first
+   entry into fire distance against every rival that fires or is fired on —
+   closed form against a hull at rest, conservative advancement between two
+   moving hulls — scheduled as events (warfare §8.19.3).
+5. ~~**Retire the three sites**~~ — **done**: `sys_engagement`,
+   `resolve_picket_fight`, `strike_at_port` and `encounter_at` are deleted; the
+   port and the held world are where Doctrine sends armed hulls, not where the
+   engine looks for fire.
+6. ~~**Discharge events**~~ — **done**: `combat::resolve_pass` is deleted; each
+   shooter discharges on the main loop at its Design's period (R-WAR29), and
+   each discharge that lands is checked against the target's wreck point.
+7. ~~**Course adjustment events**~~ — **done**: flight from a moving start
+   (`Motion::brake`), belief events A and B, one decision per fleet per shooter
+   (`FleetKey`, R-WAR32's interim), colonists that retarget (R-WAR30).
+8. ~~**Pitched battles through the same events**~~ — **done**: R-WAR26's three
+   endings, each on the event that raises it; `resolve_beam_engagement` is
+   deleted, and a Technology bed must place fleets through the engine (R-WAR36).
+9. ~~**Re-measure**~~ — **done** (appendix §D.16): on the twelve-seat table, 11 galaxies, the
+   Warfare card's P92 is **1.309 [1.267, 1.370]** with fire simultaneous
+   (§D.17; 1.334 [1.261, 1.410] before it, 1.204 [1.164, 1.226] at T-125), still below the 1.5–2.0x target (R-WAR20), and Growth's is 1.889
+   [1.742, 2.669]; fire control is ~16.5–24.5% of instructions on the card bed,
+   inside the 25% budget (R-WAR29); test targets all under 60 s; card-free runs
+   bit-identical to the engine before. The port strike wrecks no colony ship
+   under nearest-first targeting (R-WAR37).
+
+### T-132. The damage model — beam power over time, structure on hull volume
+
+**Closed (engine); opened R-WAR21 and R-WAR22.** Author's specification, quoted
+in `Hyades_warfare_tree.md` §8.18: kilojoules; damage not per tick; a fight's
+duration scaled so Design improvements and hull distinctions can act; realism
+yields to fun; structure on **hull volume** (the author's choice between volume
+and dry mass). Appendix §D.10.
+
+- **The model:** a beam mount delivers power `P` while on target, `P · dt` per
+  tick, so a fight's length does not depend on the step (tested). Structure is
+  `σ · r³`. One target per mount per tick. The simulation's resolver no longer
+  reads the arena's `laser_shots_per_tick`; the arena is unchanged
+  (`tests/balance.rs` passes).
+- **Placeholders (R-WAR19):** `P = 50 MW`, `σ = 10¹² kJ per hull unit³` — one
+  mount wrecks a Limited Contact hull in 9.5 days. Chosen so equal-spend mirror
+  fights last 28–82 ticks and every fight between the smallest hulls ends inside
+  the 1,000-tick engagement.
+- **Measured:** the short-range round robin decides every pairing on seed 1
+  (it destroyed both fleets in all 49 before), resolving Technology R-TECH14;
+  one GOU beats 40 ROUs and loses to 50; one ROU beats 10 LOUs and loses to 14.
+- **What it cost the Warfare card:** a lone Limited picket cannot finish a
+  Medium colony ship in one engagement (254 days against 183), so on the
+  twelve-seat card bed hulls destroyed fell 77–94% and colonies rose 8–11%
+  (seeds 1, 7, 42). §8.17.4's covering rule lost its premise. **R-WAR21** is
+  the author's choice of remedy; **R-WAR20** needs re-measuring after it.
+- **Opened R-WAR22:** damage does not persist past an engagement, which was
+  invisible while every fight ended in one tick.
+- **Test budget:** determinism 47.1 s old against 46.9 s new, one uncontended
+  pair on this container (a second pair read 46.7 against 51.9 with the new run
+  overlapping other builds); smoke 33.3 s, telemetry 23.0 s, balance 50.6 s.
+
+### T-131. The Technology objective — a static rating of every Design, earned head-to-head per role
+
+**Advanced: all seven beds are built and the first table is measured**
+(Technology §4.4.8 and §4.9.1, appendix §D.18; `data/design_ratings.tsv`).
+Six Designs, eight seeds, both seatings, 1,680 matches in 7.5 min. Fleets are
+generated with the galaxy and go to work through the engine's own launchers
+(galaxy §3.1). Building the beds found two faults: an outpost yields once per
+50 yr, so a 40-yr miner bed scored no generated crew; and a hauler whose rock
+its own empire settled looped at zero time (fixed — it stands down).
+**Ratified by the author since:** every role has a bed (R-TECH13), a bed
+forces the role (R-TECH16), the pool dedup with the goal that no two named
+Designs share a loadout (R-TECH17), one virtual draw to start (R-TECH6),
+counter-graph intransitivity accepted and re-evaluated at every regeneration
+(R-TECH7 — the harness prints an `INTRANSITIVITY` line per bed), the rating on
+the positive ratio scale (R-TECH8), and a hull carrying its **active** role's
+strength (R-TECH10, against the recommendation). The survey leg now reads the
+hull's drive (appendix §D.19). **Still open:** the offensive beds' judge
+(R-TECH19), the long-range geometry (R-TECH12 — 47 of 240 matches decided), a
+reader for the stamped table (R-TECH15), the mass weight (R-TECH9, the author
+decides on the ratio-scale table), and the three Limited Designs being one
+object off the combat beds (R-O64/R-L0).
+
+*Specified as:* Author's specification, quoted in full
+in `Hyades_technology_tree.md` §4: rate every possible Design by Elo from
+head-to-head matches at a fleet size set by hull size (10–1,000), one
+competitive test bed per role judged by its task; long-range offensive roles
+start at a distance and short-range ones at point blank; the tree's stock is
+that rating as capability, integrated over the whole fleet, every year.
+Supersedes R-TREE4. Measurements in appendix §D.9.
+
+**Landed in this entry (spec and probe, no engine change):** Technology §4
+rewritten, trees §2.3.5 and §2.5 amended, `examples/capability_probe` added.
+
+**Measured before building anything** (`examples/capability_probe`):
+
+- **The pool is seven Designs**, not ten: LCV, LCU and LOU are identical in
+  every field a bed reads, and so are GCV and GCU (R-TECH17).
+- **Equal spend at ten General hulls fields 10–658 hulls a side**, inside the
+  author's range (R-TECH11).
+- **A 500-a-side combat match costs 0.032–0.049 s over three runs** — a lower bound, because
+  every measured fight ended immediately.
+- **The short-range bed tied every armed Design**: 49 of 49 matches
+  destroyed both fleets (R-TECH14 — resolved by T-132's damage model).
+- **Beams stop reaching between 1e-3 and 1e-1 ly** on stationary fleets, so a
+  long-range bed whose fleets do not close is a draw for every beam Design
+  (R-TECH12).
+
+**Found by reading:** no build decision reads the roster —
+`Standing::design_for` reads Doctrine only, and `roster_permits` returns `true`
+while `enforce_roster` is off — so every Technology card builds nothing new and
+is worth exactly zero on this objective whatever the table says (R-TECH18).
+
+**Stages, in order:**
+
+1. The author ratifies or overrides the recommendations (R-TECH5–R-TECH11,
+   R-TECH13, R-TECH16, R-TECH17).
+2. ~~R-WAR19's lethality set so an equal-spend fight lasts many ticks
+   (R-TECH14)~~ — **done at T-132**; a closing long-range bed (R-TECH12) remains.
+3. `VehicleSnapshot` carries the hull type and class, so `Q_i` is computable
+   from a run.
+4. ~~A bed seeder~~ — **done**: fleets generated with the galaxy
+   (`Galaxy::generate_with`, galaxy §3.1).
+5. ~~The beds and the rating harness~~ — **done** for all seven beds and the
+   Bradley–Terry fit (`examples/design_rating`), with the table in `data/`
+   stamped by engine commit. **Still to do:** the intransitivity report
+   (R-TECH7) and a reader that refuses a stale stamp (R-TECH15).
+6. `Q_i` in `examples/tree_gradient` — each hull's strength in the role it is
+   tasked with that year (R-TECH10) — then its saturation (R-TECH2, T-78).
+7. A Design resolver that reads the roster (R-TECH18) — the step that lets a
+   Technology card move its own metric.
+
 ### T-130. `exp` and `ln` on the run path: four-multiply minimax polynomials
 
 **Closed.** Author's direction: *"Replace exp and ln with the best polynomial
@@ -1469,10 +1667,13 @@ than leaving it inside three separate documents.
 - **Production is measurable today.** Fleet-years in mass, and
   `VehicleSnapshot::dry_mass` exists. What it lacks is a saturation measurement
   (**R-PROD3**) and any card that writes `Works` (**R-PROD1**).
-- **Technology has no objective at all.** `Q_i` is a proposal with three
-  candidate axes and an unratified aggregator exponent `ρ` (**R-TREE4**), so
-  `examples/tree_gradient` **excludes** Technology from its composite and says
-  so. **R-TECH1** is the prerequisite for measuring a single Technology card.
+- **Technology's objective has a first table and no consumer (T-131).** The
+  author replaced R-TREE4's power mean with a static per-role Elo rating of
+  every Design; the table exists (`data/design_ratings.tsv`) and
+  `examples/tree_gradient` still **excludes** Technology, because nothing reads
+  the table into `Q_i` yet (stage 6). **R-TECH1** is the prerequisite for measuring a
+  single Technology card, and **R-TECH18** (no build reads the roster) is the
+  prerequisite for one to score anything.
 - **Warfare is an algebraic zero on the 3-seat bed** — and **the reason given
   here was wrong (T-111).** This said *"because nothing fights, and it cannot
   fight until T-30 gives the engine an accept/decline site."* The round layer had
@@ -4880,7 +5081,7 @@ Design law #3 holds throughout — at `F = 100`, cost per kt hauled is 4.00
 | **Cost (`F_cost`)** | `general_vehicle_cost` (its Band I anchor), `medium_fleet_size`, `limited_fleet_size`, `hull_dry_mass`, `homeworld_start_minerals`, **the infra upgrade price**, `scrap_recovery_fraction`'s base |
 | **Cargo (`F_cargo`)** | `cargo_unit_size` (its Band I anchor = the Medium hold), `HullType::cargo_capacity` |
 | **Mineral density** | `mineral_peak`, `density_floor`, `rank.mineral_high` — in-ground density, arguably the cost family's Band I before extraction; **unclassified, needs a call** |
-| **On no ladder** (rates, times, fractions, weights, counts) | `horizon_years`, `cycle_years`, `build_years`, `growth_rate`, `biosphere_regen_rate`, `biosphere_regen_bonus`, `trade_decay_lambda`, `productivity_step`, `reinvest_bias`, `w_k`/`w_mineral`/`w_hub`, `centrality_scale`, `mineral_pressure_gain`, `civilian_accel_g`, `survey_accel_g`, `center_mining_fraction`, `outpost_mining_fraction`, `mining_tick_years`, `survey_reserve`, `survey_vehicles`, `max_survey_hops` |
+| **On no ladder** (rates, times, fractions, weights, counts) | `horizon_years`, `cycle_years`, `build_years`, `growth_rate`, `biosphere_regen_rate`, `biosphere_regen_bonus`, `trade_decay_lambda`, `productivity_step`, `reinvest_bias`, `w_k`/`w_mineral`/`w_hub`, `centrality_scale`, `mineral_pressure_gain`, `center_mining_fraction`, `outpost_mining_fraction`, `mining_tick_years`, `survey_reserve`, `survey_vehicles`, `max_survey_hops` |
 
 #### What the survey turned up
 
@@ -5792,7 +5993,7 @@ The shell model says empty-hull acceleration is size-independent (thrust and dry
 mass both scale with area), but the code still carries a 1.2 / 1.1 / 1.0 ladder
 across Systems sizes. Not flattened when R-O58 landed, because it is an MC-tuned
 combat surface and CLAUDE.md §6 requires ratification before those move. It
-reaches only `arena`/`combat` — civilian motion runs on `civilian_accel_g` — so
+reaches only `arena`/`combat` — the sim flies every hull on its own drive — so
 this is a one-line change plus a balance re-run.
 
 ### T-18. R-O64 — confirm the reinterpretation of roles §6's cargo ladder

@@ -318,3 +318,87 @@ fn no_nan_or_infinity_reaches_replicated_state() {
         }
     }
 }
+
+/// **Bit-identity with shots fired** (T-133). The rest of this file plays no
+/// card, so no Design is armed and no fire code runs: detection, discharges,
+/// the wreck check, the belief events and the course changes they make were
+/// all outside the gate.
+///
+/// The bed is the card bed's protocol on a small galaxy — six seats, 600
+/// planets, the Warfare card on even seats and the Growth card on odd ones at
+/// the first round barrier. **Only the galaxy differs from a played game**
+/// (the author's ruling): the barrier is the shipped one, so the horizon runs
+/// past it far enough to reach the fights. Two runs must agree on every
+/// combat record, to the last bit of its time and its slag, and on the report.
+///
+/// The floors say the mechanism fired: encounters began, hulls were wrecked,
+/// and fleets changed course, so the belief path ran as well as the wreck's.
+fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 3]) {
+    const SEATS: usize = 6;
+    let mut gcfg = GalaxyConfig::new(SEATS, seed);
+    gcfg.planet_count = 600;
+    let galaxy = Galaxy::generate(gcfg).unwrap();
+    let aps: Vec<Box<dyn Autopilot>> =
+        (0..SEATS).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
+    let mut cfg = SimConfig::new(seed);
+    cfg.horizon_years = COMBAT_HORIZON;
+    let play_at = cfg.years_to_first_round;
+    let mut sim = Simulation::new(galaxy, cfg, aps);
+    sim.set_log_filter(LogFilter::none().with(LogCategory::Combat));
+    let mut played = false;
+    while sim.step() {
+        if !played && sim.clock() >= play_at {
+            let orders: Vec<Order> = (0..SEATS)
+                .map(|i| Order {
+                    seat: PlayerId(i as u32),
+                    card: Some(CardId(if i % 2 == 0 { 15 } else { 3 })),
+                    target: Target::None,
+                })
+                .collect();
+            sim.apply_orders(sim.current_round(), &orders);
+            played = true;
+        }
+    }
+    // `{:?}` on an `f64` prints its shortest round-trip form, so equal strings
+    // are equal bits.
+    let log = sim.log().iter().map(|r| format!("{:?} {:?}", r.time.to_bits(), r.event)).collect();
+    let mut counts = [0usize; 3];
+    for r in sim.log().iter() {
+        match r.event {
+            LogEvent::EncounterBegan { .. } => counts[0] += 1,
+            LogEvent::HullWrecked { .. } => counts[1] += 1,
+            LogEvent::CourseChanged { .. } => counts[2] += 1,
+            _ => {}
+        }
+    }
+    (sim.report(), log, counts)
+}
+
+/// The combat bed's horizon: past the shipped first round barrier (200 yr)
+/// by as much as the fights need to reach the floors below. Probed in debug:
+/// 250 yr gives seed 1 **one** encounter and fails the floor; 275 yr gives
+/// 380 and 326 encounters (5.7 s); 300 yr gives 745 and 493 (12.7 s) and
+/// ships, for the margin.
+const COMBAT_HORIZON: f64 = 300.0;
+
+#[test]
+fn combat_runs_are_bit_identical() {
+    for seed in [1u64, 7] {
+        let (ra, la, [encounters, wrecks, turns]) = combat_run(seed);
+        let (rb, lb, _) = combat_run(seed);
+        eprintln!("seed {seed}: {encounters} encounters, {wrecks} wrecks, {turns} course changes");
+        assert!(encounters >= 50, "seed {seed}: only {encounters} encounters — the bed no longer reaches combat");
+        assert!(wrecks > 0, "seed {seed}: nothing was wrecked, so the wreck path never ran");
+        assert!(turns > 0, "seed {seed}: no fleet changed course, so the belief path never ran");
+        assert_eq!(la.len(), lb.len(), "seed {seed}: combat record count");
+        for (i, (a, b)) in la.iter().zip(&lb).enumerate() {
+            assert_eq!(a, b, "seed {seed}: combat record {i}");
+        }
+        assert_eq!(ra.events_processed, rb.events_processed, "seed {seed}: events");
+        for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
+            assert_eq!(pa.colonies, pb.colonies);
+            assert_eq!(pa.mining_outposts, pb.mining_outposts);
+            assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
+        }
+    }
+}

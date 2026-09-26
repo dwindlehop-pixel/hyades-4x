@@ -30,20 +30,20 @@ fn main() {
     let autopilots: Vec<Box<dyn Autopilot>> =
         (0..seats).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
     let cfg = SimConfig::new(1);
-    let accel = cfg.civilian_accel_g * G;
     let pts: Vec<_> = galaxy.planets.iter().map(|p| p.position).collect();
     let _sim = Simulation::new(galaxy, cfg, autopilots);
-    println!("civilian accel = {accel:.4} ly/yr^2");
 
     // The acceleration a colony ship actually flies at, and the one a picket
     // does. Both read off the hull rather than off a flat constant (R-WAR9).
     let dry = hull_dry_mass(HullType::MediumSystems, &cfg).kilotons();
     let drive = HullType::MediumSystems.drive_mass(&cfg).kilotons();
     let hold = HullType::MediumSystems.colony_seed_capacity(&cfg).kilotons();
-    let a_laden = cfg.civilian_accel_g * G * (cfg.drive_specific_thrust * drive) / (dry + hold);
+    let a_laden = G * (cfg.drive_specific_thrust * drive) / (dry + hold);
     let p_dry = hull_dry_mass(HullType::LimitedOffensive, &cfg).kilotons();
     let p_drive = HullType::LimitedOffensive.drive_mass(&cfg).kilotons();
-    let a_picket = cfg.civilian_accel_g * G * (cfg.drive_specific_thrust * p_drive) / p_dry;
+    let a_picket = G * (cfg.drive_specific_thrust * p_drive) / p_dry;
+    let a_empty = G * (cfg.drive_specific_thrust * drive) / dry;
+    println!("empty Medium colonizer = {a_empty:.4} ly/yr^2");
     println!("laden Medium colonizer = {a_laden:.4} ly/yr^2");
     println!("empty LOU picket       = {a_picket:.4} ly/yr^2");
 
@@ -51,7 +51,7 @@ fn main() {
     // range? That overhead *is* the interceptor's window.
     println!("\n{:>8}  {:>10}  {:>10}  {:>10}  {:>12}", "range ly", "light yr", "empty yr", "laden yr", "window yr");
     for d in [1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 200.0] {
-        let e = math::ship_travel_years(d, accel);
+        let e = math::ship_travel_years(d, a_empty);
         let l = math::ship_travel_years(d, a_laden);
         println!("{d:>8.1}  {d:>10.3}  {e:>10.3}  {l:>10.3}  {:>12.3}", l - d);
     }

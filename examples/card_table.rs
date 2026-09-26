@@ -120,9 +120,8 @@ fn run(seed: u64, arm: Arm) -> Trace {
         (0..SEATS).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = window_end();
-    // The same bed in every arm. Gating the engagement layer on the arm would
-    // put its own effect inside the Warfare card's measured value.
-    cfg.engagements_enabled = true;
+    // The same engine in every arm; only the cards differ (T-133: a bed
+    // varies nothing but the galaxy and the protocol's own orders).
     let play_at = cfg.years_to_first_round;
     let mut sim = Simulation::new(galaxy, cfg, autopilots);
 
