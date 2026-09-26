@@ -292,7 +292,16 @@ and dry mass). Appendix §D.10.
 
 ### T-131. The Technology objective — a static rating of every Design, earned head-to-head per role
 
-**Open, Band B: specified, not built.** Author's specification, quoted in full
+**Advanced (T-133 follow-up): the short-range offensive bed is built and has
+rated the named armed Designs** — Scarp > Cairn > Tor, every pair decided
+outright, so the order is measured and the gaps are R-TECH6's prior
+(Technology §4.9.1, appendix §D.17). Fleets are generated with the galaxy
+(§4.4.5); the pitched-battle bed seats two hostile Doctrines (§4.4.6); the
+judge is dry mass holding the field (R-TECH19, recommended). **Still to build:**
+the colonizer, miner, picket, scout and freighter beds, and the long-range one
+(R-TECH12).
+
+*Specified as:* Author's specification, quoted in full
 in `Hyades_technology_tree.md` §4: rate every possible Design by Elo from
 head-to-head matches at a fleet size set by hull size (10–1,000), one
 competitive test bed per role judged by its task; long-range offensive roles

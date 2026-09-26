@@ -641,10 +641,24 @@ impl Simulation {
                 }
             }
         }
-        for (t, energy) in deliveries {
-            self.deliver(shooter, t, energy);
+        // **Committed now, landed after everyone due now has fired** (T-125:
+        // fire is simultaneous). Two fleets that open fire together discharge
+        // at the same instants forever, and landing each volley at once let
+        // the side whose event came first in the queue — seat order — wreck or
+        // turn the other before it fired.
+        if !deliveries.is_empty() {
+            self.pending_hits.entry(shooter).or_default().extend(deliveries);
+            self.schedule(0.0, EventKind::Hits { shooter });
         }
         self.schedule(loadout.discharge_years, EventKind::Discharge { shooter });
+    }
+
+    /// **A discharge's energy lands** — every shot it committed, whatever has
+    /// happened to the shooter since, because the shots had already left.
+    pub(super) fn sys_hits(&mut self, shooter: Entity) {
+        for (target, energy) in self.pending_hits.remove(&shooter).unwrap_or_default() {
+            self.deliver(shooter, target, energy);
+        }
     }
 
     fn stop_firing(&mut self, shooter: Entity) {
@@ -1175,6 +1189,75 @@ mod tests {
             assert!(d >= at && d < at + one * (1.0 + 1e-9), "halved {halve} worn {worn}: wrecked at {d}, point {at}");
             assert_eq!(sim.world.role.get(e1).copied(), Some(Role::Scrapped));
         }
+    }
+
+    /// **Fleets generated with the galaxy** (the author's ruling): each gets
+    /// the same mineral spend and its hull count from its Design's dry mass; a
+    /// fleet at rest stands where it was placed, one under way starts at its
+    /// position with its velocity; a fleet naming no seat, or moving at `c`, is
+    /// refused at generation; and two fleets placed face to face fight.
+    #[test]
+    fn fleets_generated_with_the_galaxy_are_equal_spend_and_fight() {
+        use crate::galaxy::{FleetSeeding, GenError, SeedFleet};
+        let mut g = GalaxyConfig::new(2, 31);
+        g.planet_count = 200;
+        let at = Vec3::new(0.0, 0.0, 60.0);
+        let fleet =
+            |seat, hull, class, velocity| SeedFleet { seat, hull, class, role: Role::Picket, position: at, velocity };
+        let cairn = fleet(0, HullType::LimitedContactVehicle, Class::Cairn, Vec3::ZERO);
+        let scarp = fleet(1, HullType::GeneralContactVehicle, Class::Scarp, Vec3::ZERO);
+        let drift = Vec3::new(0.3, 0.0, 0.0);
+        let under_way = fleet(1, HullType::LimitedContactVehicle, Class::Tor, drift);
+        let spend = 2.2;
+        let seeding = FleetSeeding { spend_kt: spend, fleets: vec![cairn, scarp, under_way] };
+        let galaxy = Galaxy::generate_with(g, seeding.clone()).unwrap();
+        let mut cfg = SimConfig::new(31);
+        cfg.horizon_years = 60.0;
+        let mut sim = Simulation::with_baseline(galaxy, cfg);
+        sim.set_log_filter(LogFilter::none().with(LogCategory::Combat));
+        for f in &seeding.fleets {
+            let hulls: Vec<Entity> = (0..sim.world.next)
+                .map(Entity)
+                .filter(|&e| {
+                    sim.world.owner.get(e) == Some(&PlayerId(f.seat as u32))
+                        && sim.world.hull_type.get(e) == Some(&f.hull)
+                        && sim.world.design_class.get(e) == Some(&f.class)
+                })
+                .collect();
+            let m = hull_dry_mass(f.hull, &sim.config).kilotons();
+            assert_eq!(hulls.len(), (spend / m).round() as usize, "{:?}: the count is the spend's", f.class);
+            assert!((hulls.len() as f64 * m - spend).abs() <= 0.5 * m, "{:?}: equal spend to half a hull", f.class);
+            for &e in &hulls {
+                let mo = sim.world.motion.get(e).unwrap();
+                assert!(mo.position_at(0.0).distance(at) < 1e-12, "placed where the galaxy says");
+                assert!(mo.velocity_at(0.0).distance(f.velocity) < 1e-9, "at the velocity it says");
+            }
+        }
+        let bad = FleetSeeding { spend_kt: spend, fleets: vec![SeedFleet { seat: 2, ..cairn }] };
+        assert!(matches!(Galaxy::generate_with(g, bad), Err(GenError::BadFleet(0))));
+        let fast =
+            FleetSeeding { spend_kt: spend, fleets: vec![SeedFleet { velocity: Vec3::new(1.0, 0.0, 0.0), ..cairn }] };
+        assert!(matches!(Galaxy::generate_with(g, fast), Err(GenError::BadFleet(0))));
+
+        run_to(&mut sim, 0.5);
+        let shot = |seat: u32| {
+            sim.log()
+                .iter()
+                .any(|r| matches!(r.event, LogEvent::EncounterBegan { shooter_seat, .. } if shooter_seat == seat))
+        };
+        assert!(shot(0) && shot(1), "both sides fire");
+        let (mut withdrew, mut wrecked) = ([0usize; 2], [0usize; 2]);
+        for r in sim.log().iter() {
+            match r.event {
+                LogEvent::CourseChanged { player, reason: CourseReason::Withdraw, .. } => {
+                    withdrew[player as usize] += 1
+                }
+                LogEvent::HullWrecked { player, .. } => wrecked[player as usize] += 1,
+                _ => {}
+            }
+        }
+        eprintln!("withdrew {withdrew:?} wrecked {wrecked:?}");
+        assert!(withdrew[0] + wrecked[0] > 0, "the fight defeats hulls: withdrew {withdrew:?}, wrecked {wrecked:?}");
     }
 
     /// **A wrecked hull continues on its course** (T-133, the author's ruling).

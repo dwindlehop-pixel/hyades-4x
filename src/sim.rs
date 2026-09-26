@@ -402,6 +402,18 @@ impl Motion {
         Motion { origin, dest, depart, arrive: depart + travel, accel, brake: None }
     }
 
+    /// **A hull at `at` moving at `velocity`, shedding it from `t`** at proper
+    /// acceleration `accel` and then at rest where it stops — the braking
+    /// prefix [`Self::come_to_rest`] builds, from a given state.
+    fn from_moving(at: Vec3, velocity: Vec3, t: f64, accel: f64) -> Motion {
+        let v = velocity.norm();
+        let u = v / (1.0 - v * v).sqrt();
+        let length = ((1.0 + u * u).sqrt() - 1.0) / accel;
+        let brake = Brake { from: at, dir: velocity.normalized(), start: t, end: t + u / accel, length, accel };
+        let stop = brake.stop();
+        Motion { origin: stop, dest: stop, depart: brake.end, arrive: brake.end, accel, brake: Some(brake) }
+    }
+
     /// Where the hull is at absolute time `t`.
     fn position_at(&self, t: f64) -> Vec3 {
         if let Some(b) = self.brake {
@@ -2238,6 +2250,10 @@ enum EventKind {
     /// hulls in its reach and schedules its next discharge one Design period
     /// later, for as long as anything it fires on is in reach.
     Discharge { shooter: Entity },
+    /// **The energy of a discharge lands** (T-133): at the discharge's own
+    /// instant, after every discharge due at that instant has fired, so fire is
+    /// simultaneous and no side shoots first by index (T-125).
+    Hits { shooter: Entity },
     /// **Light carrying an armed hull's approach reaches a hull it will fire
     /// on** (T-133, belief event A, R-WAR30): the target's fleet can decide
     /// before the first shot. Stale when either hull has changed course.
@@ -3164,6 +3180,8 @@ pub struct Simulation {
     in_reach: BTreeMap<Entity, BTreeSet<Entity>>,
     /// Shooters with a discharge scheduled — one loop per shooter.
     firing: BTreeSet<Entity>,
+    /// Shots a discharge has committed and not yet landed, per shooter.
+    pending_hits: BTreeMap<Entity, Vec<(Entity, f64)>>,
     /// **Hulls fired on at their destination** since their current trajectory
     /// began — hit by a shooter whose fire distance covers the world they are
     /// flying to. A colony ship among them does not found (T-133, the
@@ -3273,6 +3291,7 @@ impl Simulation {
         }
         let n = galaxy.homeworlds.len();
         assert_eq!(autopilots.len(), n, "need one autopilot per seat");
+        let seeding = galaxy.fleets.clone();
 
         let mut world = World::new();
 
@@ -3360,6 +3379,7 @@ impl Simulation {
             armed: BTreeSet::new(),
             in_reach: BTreeMap::new(),
             firing: BTreeSet::new(),
+            pending_hits: BTreeMap::new(),
             fired_on_at_destination: BTreeSet::new(),
             responded: BTreeSet::new(),
             threatened: vec![BTreeSet::new(); n],
@@ -3374,7 +3394,40 @@ impl Simulation {
             log: SimLog::new(),
         };
         sim.bootstrap();
+        sim.seed_fleets(&seeding);
         sim
+    }
+
+    /// **Build the fleets the galaxy was generated with** (T-133 follow-up).
+    /// Every fleet gets the same spend and its hull count from its Design's
+    /// dry mass (R-O57), so the count is the engine's and not the bed's. The
+    /// hulls are unpaid, like the opening survey craft: generated, not built.
+    /// A fleet at rest is parked; one under way sheds its velocity from its
+    /// starting point, as any course change from a moving start does.
+    fn seed_fleets(&mut self, seeding: &crate::galaxy::FleetSeeding) {
+        for f in &seeding.fleets {
+            let mass = hull_dry_mass(f.hull, &self.config).kilotons();
+            let count = (seeding.spend_kt / mass).round() as usize;
+            assert!(count > 0, "a fleet spend of {} kt buys no {:?} ({mass} kt)", seeding.spend_kt, f.hull);
+            let home = self.world.player_info.get(self.player_entity[f.seat]).unwrap().home;
+            let loadout = design_loadout(f.hull, f.class, &self.config, &self.combat);
+            for _ in 0..count {
+                let e = self.world.spawn();
+                self.world.owner.insert(e, PlayerId(f.seat as u32));
+                self.world.role.insert(e, f.role);
+                self.world.hull_type.insert(e, f.hull);
+                self.world.design_class.insert(e, f.class);
+                self.world.loadout.insert(e, loadout);
+                self.world.home_center.insert(e, home);
+                if f.velocity.norm() == 0.0 {
+                    self.park(e, f.position);
+                } else {
+                    let accel = self.laden_accel(e, self.config.civilian_accel_g);
+                    self.world.motion.insert(e, Motion::from_moving(f.position, f.velocity, self.clock, accel));
+                    self.track_changed(e);
+                }
+            }
+        }
     }
 
     /// Convenience: every seat runs the baseline colonization/growth policy.
@@ -3792,6 +3845,7 @@ impl Simulation {
             EventKind::EncounterBegin { shooter, target, gs, gt } => self.sys_encounter_begin(shooter, target, gs, gt),
             EventKind::EncounterSeek { shooter, target, gs, gt } => self.sys_encounter_seek(shooter, target, gs, gt),
             EventKind::Discharge { shooter } => self.sys_discharge(shooter),
+            EventKind::Hits { shooter } => self.sys_hits(shooter),
             EventKind::ThreatSeen { target, shooter, gs, gt } => self.sys_threat_seen(target, shooter, gs, gt),
             EventKind::LaunchSeen { observer, center } => {
                 *self.launches_seen[observer as usize].entry(center.0).or_insert(0) += 1;

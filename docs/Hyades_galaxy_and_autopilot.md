@@ -47,6 +47,16 @@ Same **2-rich-1-poor shape** rotated → **equal total wealth, color-shifted**. 
 
 ---
 
+### 3.1 Fleets generated with the galaxy (T-133 follow-up) — `RATIFIED`
+
+*Author's ruling:* "fleets can be optionally generated at Galaxy generation,
+with a position and velocity. Equal cost mineral spend per fleet makes sense."
+`Galaxy::generate_with(config, FleetSeeding)`: one spend for every fleet, and per
+fleet a seat, a Design `(hull, class)`, a role, a position and a velocity (`< c`).
+The engine builds `round(spend / dry mass)` unpaid hulls of each at bootstrap.
+None by default, so an ordinary game is unchanged; this is how a test bed puts
+fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
+
 ## 4. Materials — the ladder, the color algebra, and synthesis
 
 ### 4.1 Three tiers

@@ -2155,6 +2155,9 @@ one, stop and flag it.
   may still *place* state — a hull parked through `Simulation::park`, a Doctrine
   field set — because that is the state a card writes, reached through the
   engine's own entry points; it may not add a code path the game does not run.
+  **A bed that needs fleets generates them with the galaxy**
+  (`Galaxy::generate_with`, equal mineral spend per fleet) — the author's
+  answer to how a rating bed puts two fleets face to face.
 - **Flavor text is the author's own.** Never silently overwrite it.
 - Direct, technical register. Concrete decisions over hedging.
 - **Never force-push a designated feature branch — not even `--force-with-lease`
@@ -2781,6 +2784,14 @@ changes how you *work*, not what is left to do:
   class, and every Design the engine builds has a class name. Fire is found by
   detection on every trajectory change and resolved by discharge events on the
   main loop (`src/sim/fire.rs`); nothing is worked out ahead of time.
+- **Events at one instant are a sequence, so a simultaneous rule needs two
+  phases.** Two fleets that open fire together discharge at identical times
+  forever, and a discharge that applied its damage at once let the queue's
+  sequence number — seat order — decide every exchange: Scarp against Tor
+  flipped outright with the seating. A discharge now commits its shots and a
+  `Hits` event at the same instant lands them after every discharge due then.
+  **Swap the seats in any head-to-head measurement**; it is the check that
+  found this.
 - **A detection band and a drop band must differ** (T-133). Detection admitted
   a hull at exactly its reach and the discharge dropped it `1e-12` beyond it, so
   one hull on the boundary was found and dropped at one instant forever and the

@@ -2155,7 +2155,8 @@ over the rival mean, `S_i = ∫ C_i / mean_{j≠i} C_j dt`, card against pass.*
 
 **Measured: the card does not reach it**, and the reason is measured rather than
 guessed. Twelve-seat result in appendix §D.4; **re-measured with fire on the
-event loop (T-133, appendix §D.16): P92 1.334 [1.261, 1.410]**, still below the
+event loop (T-133, appendix §D.16): P92 1.334 [1.261, 1.410]**, measured before
+fire was made simultaneous (§D.17, re-measure running), still below the
 band, and reached without wrecking colony ships at all (R-WAR37). The analysis
 below was made under the retired site model.
 
@@ -2435,7 +2436,11 @@ a pitched battle) is in appendix §D.16.
   energy still moves a hull toward its wreck point, which the shooter cannot
   see. Fire control is the arena's test (`combat::laser_hit_check`'s rule) on
   the two hulls' actual positions and velocities; a miss wastes the rest of that
-  discharge.
+  discharge. **A discharge commits its shots and they land on a `Hits` event at
+  the same instant**, after every discharge due then has fired: two fleets that
+  open fire together discharge at identical times forever, and landing each
+  volley at once let queue order — seat order — decide who fired first (T-125's
+  rule that fire is simultaneous, restored; appendix §D.17).
 - **A wreck happens where the hull is**, on the hit that reaches its wreck point
   (§8.19.5): off every post it held, and **on its course** (§8.19.2) — a
   `Wreck` with the position and coordinate velocity of its reference trajectory
@@ -2546,7 +2551,8 @@ them are deleted.
 |---|---|---|
 | `EncounterBegin` | a hull comes within the fire distance of a hull that fires on it — found by detection when either changes trajectory (§8.19.3) | adds it to the shooter's reach, and starts the shooter's discharges |
 | `EncounterSeek` | a moving-against-moving search ran out of steps | resumes the search |
-| `Discharge` | every `τ` while the shooter has anything in reach | fire control and energy, the wreck check, the fleet's decision on a hit (belief event B) |
+| `Discharge` | every `τ` while the shooter has anything in reach | fire control; commits one period's energy per mount on target |
+| `Hits` | at the discharge's instant, after every discharge due then | the energy lands: the wreck check, the fleet's decision on a hit (belief event B) |
 | `ThreatSeen` | the light of the start of a shooter's current trajectory reaches a hull it will fire on, before the encounter would begin (belief event A) | the fleet's decision |
 
 An event predicted from a trajectory carries both hulls' trajectory
@@ -2694,7 +2700,7 @@ kill them before they can found a colony, they will seek a new destination."*
 | **R-WAR35** | **belief event A reads a course change before its light arrives** — a sighting is discarded when the shooter has changed course since, which its observers cannot yet know (design law #15) (§8.19.7) | a count of retargets decided on a sighting the lag would have kept |
 | **R-WAR37** | **target priority under fire anywhere** — nearest-first was harmless while fights happened only at sites; with fire wherever hulls are in reach, a blockader's shots go to what stands nearest it, and on the twelve-seat card bed **no colony ship was wrecked** on three seeds against 10,903–12,845 other hulls (appendix §D.16). The port strike's purpose (§8.16) is the colony ship | the author: a Doctrine priority by role (colony ships first for a blockader is the recommendation), then the card bed re-measured |
 | **R-WAR38** | **the armed survey Design's structure** — `Tor` keeps `σ = 10¹¹`, the value it carried when one class named the survey Design on both shells; §8.18's rule puts armed Designs at `10¹²` | the author: `σ` for `Tor` |
-| **R-WAR36** | **the arena against the harness ruling** — design law #4 makes the Ship Testing Arena the required harness for per-class `r_eq`, and it spawns and fights hulls outside the simulation; the author's T-133 ruling is that a harness carries no special sim code. `arena.rs` is a scenario seeder that calls `combat::resolve_engagement`, not the simulation's fire path, so the two are not yet in conflict — but a pitched-battle bed for the Technology rating (`Hyades_technology_tree.md` §4) cannot use it and stay within the ruling | the author: whether the arena keeps its own resolver, or seeds scenarios into the simulation and steps its event loop |
+| ~~**R-WAR36**~~ | **resolved (the author's ruling): fleets are generated with the galaxy**, with a position, a velocity and an equal mineral spend (Technology §4.4.5) — a bed places fleets without any code the game does not run. The question below is kept as it was asked: **the arena against the harness ruling** — design law #4 makes the Ship Testing Arena the required harness for per-class `r_eq`, and it spawns and fights hulls outside the simulation; the author's T-133 ruling is that a harness carries no special sim code. `arena.rs` is a scenario seeder that calls `combat::resolve_engagement`, not the simulation's fire path, so the two are not yet in conflict — but a pitched-battle bed for the Technology rating (`Hyades_technology_tree.md` §4) cannot use it and stay within the ruling | the author: whether the arena keeps its own resolver, or seeds scenarios into the simulation and steps its event loop |
 | **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
 | ~~**R-WAR26**~~ | **what ends a pitched battle — ruled and built (T-133)**: all three, each on the event that raises it; R-L2 is answered as repeated passes (§8.19.6) | — |
 | ~~**R-WAR22**~~ | ~~damage does not persist past an engagement~~ — **resolved (T-133):** damage persists for the hull's life (§8.19.5); repair is R-WAR31 | — |

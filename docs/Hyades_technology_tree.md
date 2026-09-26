@@ -287,7 +287,7 @@ thing. Every candidate plays every other candidate in the role's pool.
 | **Colonizer** | found colonies on a shared field of worlds; a world founded first is gone for the other side | colonies founded in the bed's horizon | symmetric home ports | the role system exists; the bed does not |
 | **Miner** | fly to outposts on a shared field of rocks, extract, and deliver ore to be refined into the bank; rocks deplete for both | ore banked | symmetric home ports | the role system exists; the bed does not |
 | **Picket** | each side has a port launching a fixed schedule of **reference** colony ships, less heavily armed than any picket; pickets strike the rival's launches and defend their own | rival launches destroyed | blockade stations at the rival port (warfare §8.16) | the strike exists; the bed does not |
-| **Short-range offensive** | a pitched battle | surviving dry mass | **point blank** — both fleets on one reference point | the simulation's discharge events (warfare §8.19.3); the bed does not exist, and under the T-133 harness ruling it must place both fleets through the engine and step its event loop rather than call a resolver (R-WAR36) |
+| **Short-range offensive** | a pitched battle | dry mass holding the field (R-TECH19) | **point blank** — both fleets on one reference point | **built**: `examples/design_rating`, fleets generated with the galaxy (§4.4.5), the simulation's own event loop (warfare §8.19.3) |
 | **Long-range offensive** | a pitched battle | surviving dry mass | **at a distance**, `D_long` apart | as above; beams alone do not reach (§4.4.2) |
 
 **4.4.1 `RATIFIED` — the starting geometry belongs to the role, never to the
@@ -321,6 +321,30 @@ reach; it is a placeholder until a ranged family exists. Ties to **R-L2**
 author. *Recommend:* Scout — a survey race on a shared unscanned field, judged by
 worlds scanned first. Freighter — a haul race between shared outpost piles and
 each side's own bank, judged by kilotons delivered.
+
+**4.4.5 `RATIFIED` — a bed's fleets are generated with the galaxy** (the
+author's ruling, resolving R-WAR36): *"fleets can be optionally generated at
+Galaxy generation, with a position and velocity. Equal cost mineral spend per
+fleet makes sense."* `Galaxy::generate_with` takes a `FleetSeeding` — one spend
+`B` for every fleet, and per fleet a seat, a Design, a role, a position and a
+velocity — and the engine builds `round(B / m_d)` hulls of each, parked at rest
+or shedding their velocity from the given state. The galaxy is still the only
+thing a bed varies; the fight runs on the simulation's own events.
+
+**4.4.6 `RATIFIED` — a pitched battle seats two hostile Doctrines.** Warfare
+§8.19.2's ruling: two fleets stand and fight only when both sides' Doctrine is
+to kill the other's fleet. Under the default Doctrine a hull that can outrun a
+neutral attacker withdraws on the first hit (§8.19.6's third ending), and the
+bed measured exactly that: every Scarp left the field under a scratch
+(appendix §D.17). So the offensive beds seat both sides with `engage_neutrals`;
+R-TECH16's default Doctrine stands for every other role.
+
+**4.4.7 `OPEN` — R-TECH19: "surviving dry mass" is read as dry mass holding the
+field.** A pitched battle ends in withdrawals far more than in wrecks (§8.19.6's
+second ending sends a hull past its structure home), so a defeated fleet
+survives almost whole. *Recommend* `x_A` = the dry mass of A's hulls neither
+wrecked nor withdrawn at the horizon. **Horizon:** 1 year, a placeholder; every
+measured match was decided long before it.
 
 **4.4.4 `OPEN` — R-TECH16: what is held fixed in a bed.** *Recommend:* Doctrine
 at the default for every candidate, so the bed rates **Design only** — the write
@@ -447,6 +471,26 @@ by station-keeping geometry rather than drawn, so a rating needs many seeds with
 sides swapped (R-TECH16); and the long-range bed still needs fleets that close
 (R-TECH12).
 
+### 4.9.1 The first short-range table — the named armed Designs (appendix §D.17)
+
+`examples/design_rating`, equal spend `B` = ten General Systems hulls (13.15 kt:
+12 Scarps against 658 Limited hulls), point blank, both seats hostile, four seeds,
+both seatings. **Every one of the 24 matches is decided outright**:
+
+| Design | hull | rating, Elo points (Cairn = 0) |
+|---|---|---|
+| Scarp | General Contact | **+383.4** |
+| Cairn | Limited Contact | **0** |
+| Tor | Limited Contact | **−383.4** |
+
+The **order** is measured. The **gaps are not**: with every pair completely
+separated, ±383.4 is R-TECH6's one-virtual-draw prior (8.5 wins to 0.5 per pair)
+and nothing else, and the bootstrap interval is a point. What would give the
+table magnitudes is a pair that is not decided outright — Designs closer in
+per-kiloton firepower and structure than a 5.8× (Scarp over Cairn) or 10×
+(Cairn over Tor, `σ` alone) difference, which is R-WAR19's and R-WAR38's
+placeholders, not a property of the bed.
+
 ### 4.10 `OPEN` — R-TECH15: where the table lives and how it goes stale
 
 *Recommend:* an offline harness writes the table to `data/`, stamped with the
@@ -567,6 +611,7 @@ the measurement into the target (§4.10).
 | R-TECH16 | beds hold Doctrine at the default and rate Design only — *recommended* | author |
 | R-TECH17 | the pool deduplicated by what the beds read — *recommended* | author |
 | R-TECH18 | **an unlock reaches no build** — no Design resolver reads the roster | a resolver; T-25 |
+| R-TECH19 | the offensive beds' judge read as dry mass **holding the field** (neither wrecked nor withdrawn), horizon 1 yr — *recommended* | author |
 | R-TECH3 | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |
 | R-TECH4 | a miniaturization analogue inside this tree? | a decision — *recommend no* |
 | T-25 | `enforce_roster` defaults off because there is no unlock path | the card system |

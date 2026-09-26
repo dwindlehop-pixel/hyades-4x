@@ -2171,6 +2171,63 @@ difference is not attributable to this landing alone.
 
 ---
 
+## D.17 The first Design rating — fleets generated with the galaxy, and simultaneous fire
+
+*Supports `Hyades_technology_tree.md` §4.4.5–§4.4.7 and §4.9.1 (R-TECH19 opened,
+R-WAR36 resolved) and `Hyades_warfare_tree.md` §8.19.3 (the `Hits` event).
+`examples/design_rating`: two seats, 200 planets, the two fleets generated at one
+point 60 ly off the disk, equal spend `B` = 13.15 kt (ten General Systems hulls),
+horizon 1 yr, every pair on every seed with the seats swapped.*
+
+**Seat order decided the fight before the fix** (seed 1, default Doctrine, the
+share is seat 0's dry mass holding the field):
+
+| seat 0 v seat 1 | share, discharges landing at once | share, `Hits` after every discharge due |
+|---|---|---|
+| Tor v Scarp | 1.000 (Scarps all withdrew) | 1.000 (2.88 kt held) |
+| Scarp v Tor | **1.000** (Tors all withdrew) | **0.000** (3.28 kt of Tors held) |
+| Cairn v Scarp | 1.000 | 1.000 (11.30 kt held) |
+| Scarp v Cairn | **0.000** (Cairns 11.24 kt held) | 0.000 (11.36 kt held) |
+
+Both fleets open fire at one instant and share the 0.25-day period, so every
+volley is a tie in time; applying each as it fired let seat 0's land first. With
+the fix the seatings agree to within 0.40 kt. *Inference:* every simultaneous
+exchange in the engine was being ordered by entity sequence until this landing.
+
+**Under the default Doctrine the faster fleet leaves.** In the right-hand column
+every Scarp withdrew in every match — a Scarp that can outrun its neutral
+attacker breaks off on the first hit (warfare §8.19.6's third ending) — so the
+bed measured Doctrine, not Design. Seated hostile on both sides (Technology
+§4.4.6), four seeds (1, 7, 42, 31337), 24 matches:
+
+| row v column, mean share | Tor | Cairn | Scarp |
+|---|---|---|---|
+| Tor | — | 0.000 | 0.000 |
+| Cairn | 1.000 | — | 0.000 |
+| Scarp | 1.000 | 1.000 | — |
+
+Bradley–Terry with one virtual draw per pair, Cairn anchored: **Tor −383.4,
+Cairn 0, Scarp +383.4 Elo**, bootstrap interval a point. Every pair is completely
+separated, so the gaps are the prior's (8.5 to 0.5 per pair). The losing fleet
+is removed whole — e.g. Scarp v Cairn: 658 Cairns wrecked or withdrawn, the 12
+Scarps untouched in mass. 12.2 s for the whole round robin.
+
+**Defeat is withdrawal more than wreck.** The generated-fleet unit test (110
+Cairns against 2 Scarps and 110 moving Tors, default Doctrine, half a year) ends
+with 65 and 25 hulls withdrawn and **none wrecked**: mounts are allocated to
+cover a target's remaining structure, so a hull is pushed past its structure and
+leaves (§8.19.6's second ending) before leftover mounts reach its wreck point.
+That is why the judge is read as holding the field (R-TECH19).
+
+**What the `Hits` event did to the combat bed** (`combat_bench 400`, seed 1):
+events 4,904,545 → 8,571,068 (one `Hits` per landing discharge), encounters
+26,752 → 26,652, wrecks 12,845 → 12,639, colonies 2,018 → 2,025, 14.11 →
+13.84 yr/s. The card-free digest is unchanged (no card, no fire).
+
+**The Warfare card re-measured after the fix:** *(pending: `card_table`, 11 galaxies, running; §D.16's 1.334 predates the fix.)*
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the
