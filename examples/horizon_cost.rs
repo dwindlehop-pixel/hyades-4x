@@ -1,6 +1,6 @@
 //! **What a horizon costs, and what it buys — re-measured after T-68.**
 //!
-//! `CLAUDE.md` §2 carries a horizon/cost table that the screen-vs-objective
+//! `AGENTS.md` §2 carries a horizon/cost table that the screen-vs-objective
 //! rule leans on. It was measured at an operating point three landings ago and
 //! is now wrong by two orders of magnitude, which is exactly the failure mode
 //! that file warns about in its own §7 ("the 456 yr/s row is stale in a way

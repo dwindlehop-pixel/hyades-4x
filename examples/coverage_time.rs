@@ -62,7 +62,7 @@ fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
 
 /// **The horizon this driver runs at, and why it is not the objective's.**
 ///
-/// 2,000 yr — `CLAUDE.md` §2's calibrated screen (rank agreement ρ = 0.923 with
+/// 2,000 yr — `AGENTS.md` §2's calibrated screen (rank agreement ρ = 0.923 with
 /// the 4,000-year objective, ~31x cheaper). This harness exists for the
 /// **doctrine comparison** between the two beds in `main`, and those two differ
 /// by roughly a factor of two in coverage; a screen that ranks working
@@ -70,7 +70,7 @@ fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
 ///
 /// **What the trim costs**, stated rather than left to look free: the absolute
 /// coverage figures printed here are no longer comparable to the 4,000-year
-/// numbers quoted in `CLAUDE.md` §7, and a *narrow* doctrine difference could
+/// numbers quoted in `AGENTS.md` §7, and a *narrow* doctrine difference could
 /// hide inside the screen's disagreement with the objective. Anything that
 /// close belongs in the offline search, which is not time-boxed.
 ///

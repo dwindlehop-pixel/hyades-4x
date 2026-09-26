@@ -255,7 +255,7 @@ impl Card {
 ///
 /// **Scaffolding, not a proposal.** The count and the tree/slant grid are
 /// ratified; the flavour names, the costs, and which effect sits in which slot
-/// are placeholders. Flavour text is the author's own (CLAUDE.md §6) and none
+/// are placeholders. Flavour text is the author's own (AGENTS.md §6) and none
 /// has been written — these carry no names at all rather than inventing them.
 pub const TIER0: [Card; 18] = {
     const fn c(
@@ -521,7 +521,7 @@ impl Works {
     /// accumulate at play time.
     ///
     /// This is the one trap `Hyades_industry.md` §6.7 singles out, and the repo
-    /// has already paid for it once: `holdings_centroid` (`CLAUDE.md` §4) walked
+    /// has already paid for it once: `holdings_centroid` (`AGENTS.md` §4) walked
     /// planets in id order while a running total would have accumulated in claim
     /// order, and **float addition is not associative**, so the two answers
     /// differ in their last bits. Multiplication is no better. A running product

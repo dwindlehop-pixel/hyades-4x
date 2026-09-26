@@ -61,7 +61,7 @@ pub struct PlanetSnapshot {
     ///
     /// Carried alongside the Band for the same reason `biomass` is carried
     /// alongside `biosphere`: a Band is a *reading* and the stock is the thing
-    /// (`CLAUDE.md` §4). It is a `Price` because the infrastructure ladder is
+    /// (`AGENTS.md` §4). It is a `Price` because the infrastructure ladder is
     /// the mineral ladder (R-O80), so this is kilotons on the Cost scale — the
     /// two ladders are `^1.5` apart and reading it on the wrong one would move
     /// every threshold at once.

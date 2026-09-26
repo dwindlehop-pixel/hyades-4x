@@ -5,7 +5,7 @@
 //! colony's stock instead of banking it, and measured against the objective it
 //! is flat (`examples/denial_census`: −8.33% against −8.30% own colonies, −119
 //! against −120 on `W_0`). Flat against an objective is not a mechanism, and
-//! `CLAUDE.md` §2's rule for it is to **measure how much of the time the
+//! `AGENTS.md` §2's rule for it is to **measure how much of the time the
 //! resource the knob buys is even binding** — here, how often the erected share
 //! is larger than the floor rung it has to beat to matter at all.
 //!

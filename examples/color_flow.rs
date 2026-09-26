@@ -36,7 +36,7 @@ const SEEDS: [u64; 2] = [1, 7];
 const PLAYERS: usize = 3;
 /// Overridable from argv (`color_flow <planets> <horizon>`) so the *diagnosis*
 /// can run on a small galaxy and only the verdict pays for the full bed —
-/// `CLAUDE.md` §2's "reduce the galaxy before the horizon".
+/// `AGENTS.md` §2's "reduce the galaxy before the horizon".
 const HORIZON: f64 = 4000.0;
 const SAMPLE_YEARS: f64 = 200.0;
 

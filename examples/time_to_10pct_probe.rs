@@ -12,7 +12,7 @@
 //!
 //! This is the same gradient methodology as `examples/gradient_probe.rs`
 //! (common random numbers, paired central differences, elasticity + standard
-//! error — see CLAUDE.md §2 "How to search"), retargeted at **years to 10%
+//! error — see AGENTS.md §2 "How to search"), retargeted at **years to 10%
 //! colonized** instead of coverage-at-horizon. Lower is better here, the
 //! opposite sign convention from the coverage objective, so elasticity signs
 //! read as "raise the knob, get there this many years sooner/later per ln."
@@ -36,7 +36,7 @@
 //! 3.0`, before the ratification moved the shipped value to 4.45, and at 4.45
 //! coverage turns out to be an interior optimum, so both metrics actually
 //! agree. **Never compare two gradients taken at different operating points.**
-//! Use `colonies@2000` for screening instead (CLAUDE.md §2).
+//! Use `colonies@2000` for screening instead (AGENTS.md §2).
 //!
 //! Run: `cargo run --release --example time_to_10pct_probe`
 

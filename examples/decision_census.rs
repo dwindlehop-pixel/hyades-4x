@@ -2,7 +2,7 @@
 //! change can be attributed to *which* work got more expensive rather than to
 //! the aggregate.
 //!
-//! `CLAUDE.md` §2 says to read `yr/s` and `ns/event` together, and the row that
+//! `AGENTS.md` §2 says to read `yr/s` and `ns/event` together, and the row that
 //! matters here is "`yr/s` down, `ns/event` up": events got dearer. But that
 //! diagnosis stops one step short of actionable — it does not say *which*
 //! events. T-88 moved a saving center's build decision off the economy tick and

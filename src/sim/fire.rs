@@ -995,7 +995,7 @@ mod tests {
     use crate::galaxy::GalaxyConfig;
     use crate::log::{LogCategory, LogFilter};
 
-    /// The unit bed: two seats on a 200-planet field (`CLAUDE.md` §2's
+    /// The unit bed: two seats on a 200-planet field (`AGENTS.md` §2's
     /// "reduce the galaxy before the horizon").
     fn bed(seed: u64) -> Simulation {
         let mut g = GalaxyConfig::new(2, seed);

@@ -22,7 +22,7 @@
 //!   1.0 some of the loss is worlds nobody takes (real denial, or real waste),
 //!   above 1.0 the card is actively feeding the table.
 //!
-//! The last one is the number this harness exists for. `CLAUDE.md` §2: an
+//! The last one is the number this harness exists for. `AGENTS.md` §2: an
 //! aggregate over a set the treatment re-selects has to report its mix, and
 //! `W_0` is a difference of two such aggregates.
 

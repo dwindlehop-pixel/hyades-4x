@@ -34,7 +34,7 @@
 //!   that built it, so sector discipline doesn't evaporate the moment the
 //!   empire starts building replacement scouts.
 //!
-//! All three run on the *same* seeds (common random numbers, CLAUDE.md §2)
+//! All three run on the *same* seeds (common random numbers, AGENTS.md §2)
 //! so the comparison is paired, not a comparison of noisy means.
 //!
 //! Run: `cargo run --release --example survey_strategy_search`
@@ -160,7 +160,7 @@ fn main() {
     println!(
         "\nReading: negative Δ means faster (better). ~noise means the difference is inside\n\
          2 standard errors of zero on this 4-seed bed and should not be trusted without a\n\
-         wider bed (CLAUDE.md §2). This objective (years to {:.0}% colonized) is deliberately\n\
+         wider bed (AGENTS.md §2). This objective (years to {:.0}% colonized) is deliberately\n\
          different from the rest of the tree's 4,000-year coverage objective — it isolates\n\
          the opening decades, which is the only window a survey-targeting knob can reach.",
         TARGET_FRACTION * 100.0

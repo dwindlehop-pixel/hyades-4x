@@ -35,7 +35,7 @@ some queue; **change nothing if the existing approach is best.**
   few dozen colonies — the expansion fixes take a 3-seat game to thousands
   of vehicles, and the scans multiply per agent exactly as "Speed tomorrow"
   below predicts. Treat that paragraph as the live one and re-measure before
-  concluding the scans are cheap. See CLAUDE.md §7 for the throughput watch.
+  concluding the scans are cheap. See AGENTS.md §7 for the throughput watch.
 - **Speed tomorrow:** the costs are *multiplicative* where it hurts — the
   Monte-Carlo balancer runs thousands of sims × parameter sweeps, and the
   scans multiply per-agent (F freighters × P planets per hauling wave,

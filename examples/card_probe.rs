@@ -51,7 +51,7 @@ use std::io::Write;
 
 const SEATS: usize = 3;
 /// Eight independent replicates — the standard four and the replication four
-/// (`CLAUDE.md` §2: a set the candidate was not chosen against).
+/// (`AGENTS.md` §2: a set the candidate was not chosen against).
 const SEEDS: [u64; 8] = [1, 7, 42, 31337, 2, 3, 5, 11];
 /// 600 years of play after the round-0 barrier at 200 yr.
 const HORIZON: f64 = 800.0;

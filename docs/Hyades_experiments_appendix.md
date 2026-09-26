@@ -9,7 +9,7 @@ retracted.*
 
 ## 0. Why this file exists, and how to use it
 
-`CLAUDE.md` §6 splits a spec into **decisions the engine must honor** and
+`AGENTS.md` §6 splits a spec into **decisions the engine must honor** and
 **decisions still open**, and sends everything else here. The reason is that the
 two kinds of statement decay differently:
 
@@ -119,7 +119,7 @@ and whose maximum over the entire run is 164**. So the predicate
 `candidate_count < survey_reserve` is a constant `true`, and **every value above
 ~200 is bit-identical.**
 
-That is the plateau `CLAUDE.md` §2 records as a measurement artifact: 2048 reads
+That is the plateau `AGENTS.md` §2 records as a measurement artifact: 2048 reads
 as noise (+3.5 ± 2.6), while 512 → −21.8, 256 → −96.8, 64 → −840 fall off a
 cliff. The ratification was not wrong about the *direction*; the magnitude
 simply never reached the simulation.
@@ -506,7 +506,7 @@ effect and the simulated elasticity shows 0.1–0.6.
 statement of its value is: the metric can now *express* design law #3. A metric
 that is silent on a law will stay silent right up until a card makes the law
 matter, and card design is the thing it would mislead — which is the same
-argument `CLAUDE.md` §2 makes about a denominator the game can play.
+argument `AGENTS.md` §2 makes about a denominator the game can play.
 
 **`data/tree_gradient.tsv` (T-50) is stale** in its Production column and its
 composite geomean. Not re-denominated, because that would keep the numbers'
@@ -726,7 +726,7 @@ was never in danger; the representation was.
 
 # §C. Cross-cutting — measurement artifacts, collected
 
-*Seven shapes, all of them live in this project at some point. `CLAUDE.md` §2
+*Seven shapes, all of them live in this project at some point. `AGENTS.md` §2
 carries the working rules; this is the case list.*
 
 | # | What was measured | What it actually was | Entry |
@@ -869,7 +869,7 @@ standard error below is optimistic by an unmeasured factor:
 The Growth point estimate is larger than the asymmetric bed's (+0.199 against
 +0.133) and **three galaxies cannot resolve it**: t 1.6 on an optimistic SE.
 Treating seat-seeds as independent, 3 SE at this mean needs ~64 seat-seeds, or
-~11 galaxies at ~5 min each — over the ~10-minute ceiling `CLAUDE.md` §2 sets
+~11 galaxies at ~5 min each — over the ~10-minute ceiling `AGENTS.md` §2 sets
 for an ephemeral container, so it is a by-hand run. The asymmetric bed is the
 one that answers the per-card question; this one answers how the cards read
 beside each other. *(Run at T-123 over 11 galaxies, with the standard error
@@ -1139,7 +1139,7 @@ against an expansion clock that starts 100 years after the card is legal.
 
 ## D.5 T-126 — release-binary throughput on the combat bed: compiler knobs, then the profile
 
-**Supports:** the T-126 entry in `hyades_todo.md` and `CLAUDE.md` §7's
+**Supports:** the T-126 entry in `hyades_todo.md` and `AGENTS.md` §7's
 throughput table. `examples/combat_bench`: the twelve-seat card bed with both
 cards played at the barrier and engagements on, run to 400 yr (200 years past
 the barrier; 1,038 and 1,357 fights on seeds 1 and 7), not to completion. Every
@@ -1179,7 +1179,7 @@ same value, cached and kept in step by `set_bio_max`. Reading the cache:
 | base | 14.67, 14.93 | 14.76, 14.63 | 118,286–127,283 |
 | **cached Band** | **30.87, 31.21** | **29.82, 30.10** | **58,013–60,481** |
 
-**2.07x, bit-identical.** `CLAUDE.md` §4 already names this pattern ("convert at
+**2.07x, bit-identical.** `AGENTS.md` §4 already names this pattern ("convert at
 the edges — never inside a loop over entities"), and `bio_max_band` was written
 for exactly this reason (R-O70) — at a different call site.
 
@@ -1195,7 +1195,7 @@ call — T-101's compaction, bit-identical for the same reason:
 
 **Cumulative: 14.61 → 36.40 yr/s (2.49x) on the combat bed**, same events and
 fights on both seeds. What is left in the scan is materializing a `SurveyView`
-per unvisited world for a policy that keeps one of them (`CLAUDE.md` §4, "do not
+per unvisited world for a policy that keeps one of them (`AGENTS.md` §4, "do not
 materialize a collection you only `min_by` over"); removing it changes the
 `Autopilot::choose_survey_target` interface and is not done here.
 
@@ -1674,7 +1674,7 @@ per mount per tick.
 
 - **The rate was denominated in the integration step.** Damage per tick means
   damage per year scales with `1/dt`, so a numerical requirement set how fast
-  hulls died. `CLAUDE.md`'s "a rate is per *something*" in a new place.
+  hulls died. `AGENTS.md`'s "a rate is per *something*" in a new place.
 - **Every armed fight ended in its first tick.** 49 of 49 equal-spend
   point-blank matches destroyed both fleets (§D.9), so no Design difference and
   no hull difference could act.
@@ -1769,7 +1769,7 @@ on the direction, since `a_lone_limited_picket_cannot_finish_a_medium_colony_shi
 pins the arithmetic; a per-fight tally by hull type would confirm the share.
 
 `ns/event` rose 6–13%: the workload changed (fights now run many ticks), so by
-`CLAUDE.md` §2's reading table this is more work per event, not a regression to
+`AGENTS.md` §2's reading table this is more work per event, not a regression to
 profile — and the run carries 8–11% more colonies.
 
 ---
@@ -1850,7 +1850,7 @@ one-tick fight did. *Inference:* the wreck odds round to one in every strike at
 these placeholders, so the outcome counts cannot tell the two models apart; the
 difference is that a survivor is now possible and the time on target is
 kinematic. The workload is the same and `ns/event` is 12–15% higher than
-pre-T-132 — `CLAUDE.md` §2's second row, a per-unit cost: each pass integrates
+pre-T-132 — `AGENTS.md` §2's second row, a per-unit cost: each pass integrates
 ~580 ticks where the old fight ended in one. One run per seed. The pass stops
 once every reachable roll is exactly certain in `f64`, which needs about eight
 structures absorbed and so rarely fires here (seed 1: 54,510 → 52,635, one run
@@ -2020,7 +2020,7 @@ target; native against wasm32 is still the one-off check of §D.6.
 
 *Supports `Hyades_warfare_tree.md` §8.19.3, §8.19.6 and §8.19.7 (R-WAR25,
 R-WAR26, R-WAR29, R-WAR30 and R-L2 resolved; R-WAR34–R-WAR36 opened) and
-`CLAUDE.md` §6's harness rule. Author's ruling for this landing: "Harnesses and
+`AGENTS.md` §6's harness rule. Author's ruling for this landing: "Harnesses and
 test beds cannot have special sim code. The only thing that can vary is the
 galaxy generation."*
 
@@ -2103,7 +2103,7 @@ compares two different mechanics on one protocol):
 | 7 | 32.96, 228,354, 53,151 | 8.58, 7,005,020, 6,654 |
 | 42 | 33.99, 216,317, 54,396 | 8.87, 5,204,808, 8,660 |
 
-This is the first row of `CLAUDE.md` §2's reading table taken to an extreme:
+This is the first row of `AGENTS.md` §2's reading table taken to an extreme:
 events rose 22.8–30.7× and the cost per event fell 6.3–8.1×, so the
 simulation is doing more work, each unit cheaper. Throughput stays 3.4–4.9×
 above T-24's floor of 2.5 yr/s on this bed.
@@ -2427,7 +2427,7 @@ residual 0.20 (long-range, Cairn against Scarp).
 
 ## References
 
-- `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the
+- `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
   rule that sends entries here
 - `docs/Hyades_autopilot_colonization_growth.md` — the Expansion/Growth spec §A
   supports

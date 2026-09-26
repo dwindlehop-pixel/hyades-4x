@@ -281,7 +281,7 @@ pub struct Doctrine {
     /// the denial rather than a side effect.
     ///
     /// Separate from [`Self::engage_neutrals`] on purpose, so the two arms can
-    /// be ablated apart (`CLAUDE.md` §2's 2×2 rule). Denial and shooting are
+    /// be ablated apart (`AGENTS.md` §2's 2×2 rule). Denial and shooting are
     /// different mechanisms and the card carries both.
     pub picket_after_founding: bool,
     /// **How many worlds this empire tries to keep held** (T-113).
@@ -331,7 +331,7 @@ pub struct Doctrine {
     /// **Placeholder, default false** (R-WAR6) — measured as its own ablation
     /// arm in `examples/denial_census`, because it and [`Self::picket_reserve`]
     /// address one diagnosis and landing them together would make either
-    /// unattributable (`CLAUDE.md` §2's 2×2 rule).
+    /// unattributable (`AGENTS.md` §2's 2×2 rule).
     pub picket_claims_target: bool,
     /// **The Limited Offensive hull scouts, in place of the Limited Contact
     /// Vehicle** (T-115).
@@ -653,7 +653,7 @@ pub struct PlanetView {
     /// colony fills toward it, and is not remotely legible anyway.
     pub biosphere: Band,
     /// **The three per-color Band readings, precomputed** (T-100). `rank`
-    /// wants the *readings*, not the masses — `CLAUDE.md` §4's "hand a decision
+    /// wants the *readings*, not the masses — `AGENTS.md` §4's "hand a decision
     /// only the fields it reads" — and computing them here lets the engine
     /// memoize a conversion that was 136 M logarithms per run.
     ///
@@ -926,7 +926,7 @@ pub struct ProductionContext {
     /// nothing to pick and the hull flies nowhere.
     ///
     /// Counted off a running total rather than a walk, because a production
-    /// decision reads it (`CLAUDE.md` §4: per-decision work must be `O(what the
+    /// decision reads it (`AGENTS.md` §4: per-decision work must be `O(what the
     /// decision reads)`).
     pub survey_frontier: usize,
 }
@@ -1242,7 +1242,7 @@ impl Autopilot for BaselineAutopilot {
         // and its maximum over the whole run is **164**, against a ratified
         // `survey_reserve` of **1024**. So the comparison is a constant `true`
         // and every value above ~200 is bit-identical. That also explains the
-        // plateau `CLAUDE.md` §2 records as a measurement artifact — 2048 reads
+        // plateau `AGENTS.md` §2 records as a measurement artifact — 2048 reads
         // as noise, 512 / 256 / 64 fall off a cliff — as a threshold sitting
         // above the whole range of the thing it thresholds.
         let wants_survey = ctx.survey_frontier > 0 && ctx.candidate_count < doctrine.survey_reserve;

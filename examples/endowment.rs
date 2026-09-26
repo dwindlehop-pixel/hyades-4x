@@ -53,7 +53,7 @@ fn run(seed: u64) -> (usize, f64, f64) {
 /// model this replaced is a *symptom*; the mechanism is which cap was binding,
 /// and if it is the hold on essentially every launch then "fill the hold" is the
 /// answer both models give and the identity is arithmetic rather than luck
-/// (`CLAUDE.md` §2 — never leave a symptom without a proven mechanism).
+/// (`AGENTS.md` §2 — never leave a symptom without a proven mechanism).
 ///
 /// Run on a truncated horizon on purpose: this is a question about the *shape*
 /// of launches, not about the objective, and the shape is established long
@@ -110,7 +110,7 @@ fn main() {
     println!("objective = colony COUNT; colony-years is the guard");
     // **No baseline is hardcoded here on purpose.** A constant copied into a
     // harness is a number that rots silently the next time anything upstream
-    // lands — `CLAUDE.md` §7 keeps a stale 456 yr/s row precisely as the
+    // lands — `AGENTS.md` §7 keeps a stale 456 yr/s row precisely as the
     // reminder. Absolutes go here; the comparison lives in the doc, next to the
     // landing it belongs to.
     println!("absolute figures — compare against the run recorded in Hyades_industry.md §1.7\n");

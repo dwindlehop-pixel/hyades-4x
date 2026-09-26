@@ -9,7 +9,7 @@ capability is spent on) and `Exotic_matter_technology_inspiration.md`. New calls
 continue the **R-TECH n** series.*
 
 **Rev 2 (T-131).** Carries **ratified decisions and open decisions only**
-(`CLAUDE.md` §6). This is the **least-built** of the six trees: the standing-layer
+(`AGENTS.md` §6). This is the **least-built** of the six trees: the standing-layer
 half is ratified and shipped (`Roster`, `Class`, `UnlockDesign`), the loadout
 model is specified and unbuilt, and **the objective is now specified by the
 author** (§4) — a static rating of every Design, earned head-to-head in one test
@@ -379,7 +379,7 @@ hostile on the offensive beds (§4.4.6). The bed rates **Design** — the write
 surface this tree owns (§5). The beds run the engine's own role systems, seeded
 the way the arena seeds combat: **a bed is a scenario seeder that owns no role
 logic**, and the dependency runs `bed → sim`, as `arena → combat` does (§3 of
-`CLAUDE.md`). Each pair is played on the same seeds (common random numbers) with
+`AGENTS.md`). Each pair is played on the same seeds (common random numbers) with
 the two sides' positions mirrored, so a side has no geometric advantage. Seeds
 per pair and each non-combat bed's horizon are placeholders.
 
@@ -616,7 +616,7 @@ one alone is enough:
   be built, and `Q_i` counts only built hulls (§4.3).
 
 So `T_i` for a Technology card is the pass arm's `T_i` exactly, whatever the
-table says. That is `CLAUDE.md`'s *count the consumers of a write* in its plain
+table says. That is `AGENTS.md`'s *count the consumers of a write* in its plain
 form, and it is found by reading, not by a bed.
 
 **What would settle it:** a Design resolver that picks, per role, among the
@@ -707,4 +707,4 @@ the measurement into the target (§4.10).
 - `Exotic_matter_technology_inspiration.md` ·
   `Hulls_classes_the_qualitative_counter-graph.md` (the Banks-convention source)
 - `src/sim.rs` — `Roster`, `Class`, `HullType`; `src/cards.rs` — `UnlockDesign`
-- CLAUDE.md design laws #1, #2, #9, #10, #12, #13
+- AGENTS.md design laws #1, #2, #9, #10, #12, #13

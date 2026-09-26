@@ -9,7 +9,7 @@ outposts, freight, and the production decision. Companion to
 flagged **R-ACn**.*
 
 **Rev 4.** Rewritten to carry **ratified decisions and open decisions only**
-(`CLAUDE.md` §6). The measurement record that used to be inlined here — R-AC3's
+(`AGENTS.md` §6). The measurement record that used to be inlined here — R-AC3's
 survey sweep, R-AC19's recycling passes, R-O66's ablations, R-O68's dead branch,
 R-O86's 99% waste, the `survey_reserve` plateau, and the withdrawn R-AC20 sign
 conflict — is in **`Hyades_experiments_appendix.md` §A**, linked per decision.
@@ -606,4 +606,4 @@ count, not a fraction — and the guard is kept rather than deleted.
 - `Hyades_vehicle_roles.md` §4 — role definitions and the standing/completable
   distinction
 - `Hyades_card_contract.md` §6 — deterministic argmax targeting
-- `CLAUDE.md` design laws #3, #11, #14, #15
+- `AGENTS.md` design laws #3, #11, #14, #15

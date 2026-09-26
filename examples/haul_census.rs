@@ -4,7 +4,7 @@
 //! kilotons. Colony-years barely moved (−0.9%) but wall time **doubled**, and
 //! the obvious story — "there are more vehicles now" — is wrong by a factor of
 //! five. This counts the engine's events by kind so the cost is attributed
-//! rather than guessed at, which is `CLAUDE.md` §2's rule about mechanisms
+//! rather than guessed at, which is `AGENTS.md` §2's rule about mechanisms
 //! applied to performance.
 //!
 //! Seed 1, 3 seats, shipped defaults, measured across the T-62 landing:

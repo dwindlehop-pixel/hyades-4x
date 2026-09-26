@@ -10,7 +10,7 @@ table. Its objective is **colony-years relative to the table, neighbor-weighted*
 the **R-WAR n** series.*
 
 **Rev 1, new.** Carries **ratified decisions and open decisions only**
-(`CLAUDE.md` §6). The tactical resolver ships and is engine-native; the belief
+(`AGENTS.md` §6). The tactical resolver ships and is engine-native; the belief
 layer ships and is unwired; the **strategic** half — who fights whom, when, and
 what it costs the loser — does not exist. The register reflects that.
 
@@ -261,7 +261,7 @@ infrastructure (design law #11).
 > untouchable — and `biosphere_regen_rate` is bit-identically inert for the same
 > reason. **A Warfare card that lowers a world's pristine ceiling is the first
 > thing that makes either real**, and it also makes the coverage denominator
-> playable again, which is the failure mode `CLAUDE.md`'s metric-invariance rule
+> playable again, which is the failure mode `AGENTS.md`'s metric-invariance rule
 > exists to catch.
 
 **4.3 `RATIFIED` — population collapse is design content; the undershoot was
@@ -436,7 +436,7 @@ Eight seeds, 3 seats, 800 yr (`examples/engagement_census`, deleted at T-133: it
 | colony-years | **−0.74% ± 0.26** | 3/8 |
 
 Per run: **3,701–4,131 engagements** and **5,488–12,819 hulls destroyed**, for
-110–258 kt of slag. Neither aggregate is a finding — `CLAUDE.md` §2 puts the
+110–258 kt of slag. Neither aggregate is a finding — `AGENTS.md` §2 puts the
 2-SE bar as a floor for *considering* a number, and a 5/8 or 3/8 sign test is
 noise — but the **magnitude** is the point, and it is a corroboration rather than
 a surprise:
@@ -448,7 +448,7 @@ a surprise:
 > hulls instead of by counting them.
 
 **Throughput rose on all eight seeds** (109→126 … 124→137 yr/s) with `ns/event`
-*falling* (20,556→18,060). `CLAUDE.md` §2's table reads that pair as "a real
+*falling* (20,556→18,060). `AGENTS.md` §2's table reads that pair as "a real
 optimization", and it is not one: nothing got faster per unit of work, there is
 simply less work because 11,345 hulls stopped existing. That table assumes a
 fixed workload, and this is the row it does not cover.
@@ -477,7 +477,7 @@ fixed workload, and this is the row it does not cover.
 ### 7.5 Two arena assumptions the wiring exposed
 
 Worth recording because both were invisible while `resolve_engagement` had one
-caller, and both are the shape `CLAUDE.md` §2 warns about — a constant whose
+caller, and both are the shape `AGENTS.md` §2 warns about — a constant whose
 stated reason stopped holding when something else changed.
 
 - **An empty side panicked.** `laser_ships[0]` is safe in a scenario that always
@@ -662,7 +662,7 @@ requirement — it is the only bed on which either card's value is defined.
 
 **3. The Growth card's own ratified numbers do not transfer.** `growth_rate` was
 measured on **colony count** — Expansion's objective, not Growth's — and
-`CLAUDE.md` §2 records that the 2,000-year screen overstated it by ~3.7× against
+`AGENTS.md` §2 records that the 2,000-year screen overstated it by ~3.7× against
 the 4,000-year objective while preserving the ranking. Worse, T-94/T-95 consumed
 the surface outright: the closed-form logistic made the answer independent of the
 tick, and R-O84's plateau map was built by counting 50-year cycles to a Band
@@ -1199,7 +1199,7 @@ on an arm that is still supply-starved at 24 pickets a run.
 **Resolved.** `Simulation::spawn_courier` computed the leg's acceleration as
 `civilian_accel_g · G` **before** the hold was loaded and never re-read it, so a
 colony ship flew at the empty-hull rate while every `laden_accel` call site in
-the engine was freight. `CLAUDE.md` §7 records standing-layer item 5 (R-O32) as
+the engine was freight. `AGENTS.md` §7 records standing-layer item 5 (R-O32) as
 closing exactly that — *"it was massless, so a laden colony ship flew like an
 empty hull"* — and it had closed it for the arena and not for this dispatcher.
 
@@ -1218,7 +1218,7 @@ comparison between them is between two different engines.
 **How it was found is the reusable part.** Nothing was looking for it. The
 interception mechanic needed a number — how long a colony ship takes compared to
 light — and the number turned out to be a property of a defect rather than of
-the design. `CLAUDE.md` §3's *"a second caller is a cheap audit of the first"*
+the design. `AGENTS.md` §3's *"a second caller is a cheap audit of the first"*
 holds for physics as well as for panics.
 
 **And the first answer this document gave was wrong because of it.** §8.9.5
@@ -1234,7 +1234,7 @@ re-derived.
 `Doctrine::scout_hull_offensive` reproduces the arm without it **to every
 printed digit** — 188 pickets, −2.87% own, +1.06% neighbors, `W_0` −29, on all
 eight seeds, and it did so before the R-WAR9 fix as well as after it. That is
-the *exactly zero* verdict rather than the *inside noise* one (`CLAUDE.md` §2),
+the *exactly zero* verdict rather than the *inside noise* one (`AGENTS.md` §2),
 and its cause is one line:
 
 **`hull_dry_mass(LimitedContactVehicle) == hull_dry_mass(LimitedOffensive) ==
@@ -1333,7 +1333,7 @@ card *is* its Doctrine half.
 **Restoring the founding rung takes the Doctrine write from −287.8 to −2.0.**
 That is `SimConfig::ablate_picket_founding_cost` (deleted at T-133 with every harness-only switch), which violates conservation and
 must never ship — its only job is to remove the suspected cause and watch the
-effect go, which is the one method that can refute (`CLAUDE.md` §2).
+effect go, which is the one method that can refute (`AGENTS.md` §2).
 
 So the chain is:
 
@@ -2403,7 +2403,7 @@ the protocol's barrier. Measurements in appendix §D.16.
 recommendation (one roll when an encounter ended, `resolve_beam_engagement` for
 a pitched battle) is in appendix §D.16.
 
-- **Detection runs when a trajectory changes** (`CLAUDE.md` §4): a departure, a
+- **Detection runs when a trajectory changes** (`AGENTS.md` §4): a departure, a
   hull taking station, a course change. For the hull that changed, the engine
   finds the first time it comes within fire distance of every rival hull that
   fires on it, and — if it is armed — of every rival hull it fires on, and
@@ -2422,7 +2422,7 @@ a pitched battle) is in appendix §D.16.
   and at actual positions; a target is dropped only a further margin out, so a
   hull on the boundary is not found and dropped at one instant forever.
 - **Who fires on whom, and from how far, is one standing-layer question**
-  (`CLAUDE.md` §6): `Standing::fire_distance(role, loadout, regard)`, nothing
+  (`AGENTS.md` §6): `Standing::fire_distance(role, loadout, regard)`, nothing
   where Doctrine ignores the distance.
 - **A discharge is an event** every period `τ` while anything the shooter fires
   on is in reach. Its mounts aim at the nearest hull in reach that has not
@@ -2735,4 +2735,4 @@ kill them before they can found a colony, they will seek a new destination."*
 - `Hyades_vehicle_roles.md` §4.2 — the Colonizer role and the arrival behavior
   §8.2 changes
 - `src/combat.rs`, `src/arena.rs`, `src/belief.rs`
-- CLAUDE.md design laws #2, #3, #4, #7, #8, #10, #11
+- AGENTS.md design laws #2, #3, #4, #7, #8, #10, #11

@@ -318,7 +318,7 @@ pub struct GalaxyConfig {
     /// hauling is the engine's largest single cost (`examples/haul_census`:
     /// freighter transfers ×6.81 where vehicles rose ×1.20), and it is what puts
     /// the 12-seat × 8-kyr corner under T-24's throughput floor. **That is now an
-    /// optimization problem, not a tuning one** (T-66) — `CLAUDE.md` §7 is
+    /// optimization problem, not a tuning one** (T-66) — `AGENTS.md` §7 is
     /// explicit that approaching the floor is the trigger to optimize rather
     /// than to shrink the scenario, and the scale is no longer available to
     /// shrink.

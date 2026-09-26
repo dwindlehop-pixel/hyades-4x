@@ -3,7 +3,7 @@
 //! Removing the subsidy (T-60) cost half the bed: 1,813 colonies against 3,481.
 //! The intended response is freight — minerals to low-infrastructure colonies,
 //! then population to colonies with headroom. Before building either, this asks
-//! the question `CLAUDE.md` §2 insists on: **is the thing being optimized what
+//! the question `AGENTS.md` §2 insists on: **is the thing being optimized what
 //! is actually scarce?**
 //!
 //! `mineral_pressure_of` is `1 − stock/next_rung_price`, and a freighter picks

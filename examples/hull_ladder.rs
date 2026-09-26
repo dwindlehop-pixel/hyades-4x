@@ -12,7 +12,7 @@
 //! Run: `cargo run --release --example hull_ladder` for every leg, or
 //! `... -- <substring>` to run only the legs whose name matches. The baseline
 //! leg always runs, because every delta is against it on the same seeds (common
-//! random numbers, `CLAUDE.md` §"How to search").
+//! random numbers, `AGENTS.md` §"How to search").
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::prelude::*;
 use std::io::Write;

@@ -186,7 +186,7 @@ struct Factors {
     /// (`Hyades_industry.md` §1.3, T-70).
     ///
     /// It is a `Price` rather than a `Band` because a **Band is a reading, not a
-    /// second thing to store** (`CLAUDE.md` §4) — and because the infrastructure
+    /// second thing to store** (`AGENTS.md` §4) — and because the infrastructure
     /// ladder *is* the mineral ladder (R-O80), so the reading has to be taken on
     /// the **Cost** scale. `Price` is kilotons carrying that scale marker, which
     /// is what satisfies §1.3's "stored as a mass in kilotons" without silently
@@ -1026,7 +1026,7 @@ impl HullType {
     /// `cargo_capacity`, which made "a Limited hull is all shell" a
     /// *definition* and left `medium_fleet_size` doing two jobs: since
     /// `r = sqrt(cost ratio)`, the price knob was also the hold knob, and
-    /// `CLAUDE.md` §2 lists the measurement artifacts that came of it. With a
+    /// `AGENTS.md` §2 lists the measurement artifacts that came of it. With a
     /// real `τ` the two are independent functions of one body — cost is the
     /// shell, capacity is the hold.
     pub const fn shell_thickness(self) -> Length {
@@ -1201,7 +1201,7 @@ impl HullType {
     /// a fixed reference radius `√3`, which made `cargo_unit_size` the hold of a
     /// hull no ladder actually produced and put a derived quantity in a
     /// denominator — the shape of four of the measurement artifacts in
-    /// `CLAUDE.md` §2. A hold is now a volume and a density converts it.
+    /// `AGENTS.md` §2. A hold is now a volume and a density converts it.
     ///
     /// **This supersedes the abstract 0 / 1 / 2 unit count** of
     /// `Hyades_vehicle_roles.md` §6. That ladder was confirmed, but as a *unit
@@ -1294,7 +1294,7 @@ pub fn role_hull_type(role: Role) -> HullType {
 // ladder actually produced. Thickness is now a ratified per-hull quantity
 // (`HullType::geometry`) and capacity is a volume times a density, so there is
 // no normalizer left to put a derived quantity in a denominator — which is
-// what four of the measurement artifacts in `CLAUDE.md` §2 had in common.
+// what four of the measurement artifacts in `AGENTS.md` §2 had in common.
 
 // `FOUNDING_INFRA_AT_MEDIUM` is **deleted (R-O77 closed)**. It was the anchor a
 // subsidised founding rate scaled from: a Medium hull cost 0.1 minerals and
@@ -1751,7 +1751,7 @@ fn infra_rung_of(stock: Price, cfg: &SimConfig) -> usize {
 ///
 /// This resolves the flagged placeholder rather than reconciling it. The former
 /// `hull_dry_mass` was a *reconstruction* — a `SimConfig::dry_mass` constant
-/// times a size tier of 1 / 2 / 3, a volume-like proxy — and CLAUDE.md §7 asked
+/// times a size tier of 1 / 2 / 3, a volume-like proxy — and AGENTS.md §7 asked
 /// for it to be checked against git history before anything was built on top.
 /// Conservation makes the check moot: no independent value can be correct,
 /// because any value other than the cost is mass appearing from or vanishing
@@ -1796,7 +1796,7 @@ fn hull_shell_mass(hull: HullType, cfg: &SimConfig) -> Kilotons {
 /// the whole per-class spread living in what they can carry. The residual
 /// 1.2 / 1.1 / 1.0 Systems ladder here predates the shell model and says the
 /// opposite. It is deliberately **not** flattened in this change: it is an
-/// MC-tuned combat surface, and CLAUDE.md §6 requires explicit ratification
+/// MC-tuned combat surface, and AGENTS.md §6 requires explicit ratification
 /// before those move. Flattening it is a one-line change once ratified, and it
 /// touches nothing in `sim` — the sim flies every hull on its own drive
 /// (`Simulation::laden_accel`), so only `arena`/`combat` read this.
@@ -2051,7 +2051,7 @@ struct Exchange {
     /// §10.8's census, at the one place a market can silently do nothing. A
     /// book with deep two-sided depth and zero contracts is indistinguishable
     /// from a book nobody posted to unless the *rejections* are counted — which
-    /// is `CLAUDE.md` §2's "instrument the decision", and it is how the first
+    /// is `AGENTS.md` §2's "instrument the decision", and it is how the first
     /// run of this stage was diagnosed instead of guessed at.
     rejected: [u64; 4],
     /// Fills the matcher produced, before any filter.
@@ -2365,7 +2365,7 @@ pub struct SimConfig {
     ///
     /// **Every gradient measured before this lands is consumed**: the operating
     /// point moved and moved a long way (colony-years +19.9%). Re-measure rather
-    /// than stepping along an old direction — `CLAUDE.md` §2 has recorded this
+    /// than stepping along an old direction — `AGENTS.md` §2 has recorded this
     /// trap twice already.
     pub cycle_years: f64,
     /// **How long a saving center waits before asking again** (T-88) — the
@@ -2772,7 +2772,7 @@ pub struct SimConfig {
     /// silently rescales what every row means. The table was taken at
     /// `medium_fleet_size = 4.45`, where "past roughly 1–5" meant *past roughly
     /// 0.19–0.96 kt of real Medium hold*. At the ratified ladder this field's
-    /// 1.0 is a 4.81 kt hold, already clear of it. CLAUDE.md §2: a parameter
+    /// 1.0 is a 4.81 kt hold, already clear of it. AGENTS.md §2: a parameter
     /// that reaches the objective through a derived quantity cannot be swept
     /// alone.
     ///
@@ -3212,7 +3212,7 @@ pub struct Simulation {
     exchange: Exchange,
     /// Whether the round barrier posts to the Exchange at all (T-84).
     ///
-    /// Exists for the inertness ablation and nothing else: `CLAUDE.md` §2 puts
+    /// Exists for the inertness ablation and nothing else: `AGENTS.md` §2 puts
     /// ablation first among the three kinds of proof, and "posting changes
     /// nothing" is only checkable against a run that did not post.
     exchange_posting: bool,
@@ -4368,7 +4368,7 @@ impl Simulation {
     /// founding?** (T-112, T-125.) One predicate for both halves of the
     /// decision — whether the hull is credited as the colony's stock and
     /// whether it is dispatched — because two readings of one write is how they
-    /// come to disagree (`CLAUDE.md` §6's standing-layer rule).
+    /// come to disagree (`AGENTS.md` §6's standing-layer rule).
     ///
     /// Yes only when the hull is **armed** — a picket that cannot shoot denies
     /// nothing — and Doctrine says hold ground. An unarmed colonizer always
@@ -5267,7 +5267,7 @@ impl Simulation {
             // the standard bed there are ~26,800 deposits against ~99,000
             // production ticks over 1,500 yr, so moving the retry onto the
             // arrival lowers the decision count while raising its
-            // responsiveness. `CLAUDE.md` §4's rule exactly — entities evaluate
+            // responsiveness. `AGENTS.md` §4's rule exactly — entities evaluate
             // on their own arrival events, and the evaluation is `O(1)` to
             // reach.
             if cargo.basic_total() > Price::ZERO {
@@ -5766,7 +5766,7 @@ impl Simulation {
         let (infra, infra_band, k_potential) = {
             let f = self.world.factors.get(center).unwrap();
             // One reading, taken at the edge — the decision and the log line
-            // both want the rung, and `band_from` is a conversion (`CLAUDE.md` §4).
+            // both want the rung, and `band_from` is a conversion (`AGENTS.md` §4).
             (f.infra, f.infra_band(&self.config), f.k_potential())
         };
         let level = self.bands.level(*self.world.population.get(center).unwrap());
@@ -6622,7 +6622,7 @@ impl Simulation {
     /// **R-IND20: demand is read at the founding center, not empire-wide.** An
     /// outpost feeds the whole empire through freight, so the correct demand is
     /// the empire's unmet total; that is an `O(planets)` scan on a decision path
-    /// (`CLAUDE.md` §4) and would need the `holdings_centroid` memo treatment.
+    /// (`AGENTS.md` §4) and would need the `holdings_centroid` memo treatment.
     /// The center that pays for the pair is the defensible local proxy, and the
     /// difference is what R-IND20 is for.
     fn mining_crew_for(&self, center: Entity, planet: Entity) -> usize {
@@ -6694,7 +6694,7 @@ impl Simulation {
     /// size — it reads one deposit, one center and one distance — but it is three
     /// hulls × two passes × two travel solves, so ~12 square roots per mining-pair
     /// build. Builds are orders of magnitude rarer than arrivals, which is the
-    /// budget `CLAUDE.md` §4 actually sets.
+    /// budget `AGENTS.md` §4 actually sets.
     ///
     /// **What the demand term is not.** It is a *ceiling*, not this hauler's
     /// share: a center served by ten pairs can absorb its fabrication rate once,
@@ -7556,7 +7556,7 @@ impl Simulation {
     ///
     /// Factored out of [`Self::laden_accel`] so the *forecast* a build decision
     /// runs on and the *flight* it produces are one expression. They were about
-    /// to be two, and `CLAUDE.md` §2 has the standing case for why that goes
+    /// to be two, and `AGENTS.md` §2 has the standing case for why that goes
     /// wrong silently: a policy that prices a voyage differently from the engine
     /// that flies it is choosing against a world it does not live in.
     fn thrust_to_mass(&self, hull: HullType, load: Kilotons) -> f64 {
@@ -8116,7 +8116,7 @@ impl Simulation {
 
     /// Turn the whole Exchange off — posting, clearing and settlement (T-77).
     ///
-    /// The ablation `CLAUDE.md` §2 puts first among the three kinds of proof:
+    /// The ablation `AGENTS.md` §2 puts first among the three kinds of proof:
     /// "trade narrowed color dispersion" is only a claim if there is a run
     /// without trade to compare against.
     pub fn set_exchange_enabled(&mut self, on: bool) {
@@ -8159,7 +8159,7 @@ impl Simulation {
     ///
     /// Delivered ore lands here, not in a bank (§10.6) — so a census that reads
     /// only planet stockpiles **cannot see what the Exchange moved**. That is
-    /// the metric-blindness `CLAUDE.md` §2 keeps warning about, and it made the
+    /// the metric-blindness `AGENTS.md` §2 keeps warning about, and it made the
     /// first color-flow reading look like trade changed nothing.
     pub fn outpost_holdings(&self, p: PlayerId) -> Minerals {
         let mut out = Minerals::default();
@@ -8861,7 +8861,7 @@ fn best_endowment(hi: f64, xp: f64, kp: f64, kc: f64, x0: f64, delta: f64, grid:
 ///   (T-64 derived it from the conjugacy to the logistic map with `μ = 1 + r`).
 ///   There is no period-doubling in a closed form.
 /// - **The clamp is provably inert.** The old `.clamp(0.0, c)` was
-///   load-bearing, and dangerously so: `CLAUDE.md` §2 records that it hid a
+///   load-bearing, and dangerously so: `AGENTS.md` §2 records that it hid a
 ///   too-large `r` by collapsing the logistic into a step function that filled a
 ///   world in one cycle *and scored well doing it*. The clamp below can only
 ///   fire on a last-bit rounding, and it is written as the interval the
@@ -9627,7 +9627,7 @@ mod tests {
         }
     }
 
-    /// **The unit tests' galaxy: small, and that is the point** (`CLAUDE.md` §2,
+    /// **The unit tests' galaxy: small, and that is the point** (`AGENTS.md` §2,
     /// "reduce the galaxy before the horizon").
     ///
     /// Measured in debug, which is how tests run: a 2-seat 60-year run costs
@@ -9659,7 +9659,7 @@ mod tests {
     /// For tests that run the sim **twice and compare the two bit-for-bit**.
     ///
     /// Those assert an *arithmetic identity* — logging is a side channel, the
-    /// round layer is inert while everyone passes — and `CLAUDE.md` §2 already
+    /// round layer is inert while everyone passes — and `AGENTS.md` §2 already
     /// settled what that costs: "determinism is a property of the arithmetic,
     /// not of how long you accumulate it." Two runs is two horizons, so these
     /// pay double for a horizon that buys them nothing.
@@ -9671,7 +9671,7 @@ mod tests {
     /// 120: the two paired tests were **35.5 s and 25.4 s of a 54 s target**
     /// between them. The identity is unchanged both times; only the bill was.
     ///
-    /// **Probed past the value shipped, per `CLAUDE.md` §2.** At 60 yr both
+    /// **Probed past the value shipped, per `AGENTS.md` §2.** At 60 yr both
     /// still pass and the target is faster again, so 120 is roughly double the
     /// point where anything binds. What keeps that honest is
     /// [`paired_mechanism_fired`], which every caller asserts: a horizon cut
@@ -9902,7 +9902,7 @@ mod tests {
 
         // And it chains rather than firing once, and stops at the horizon rather
         // than running away. **Shortened the cadence, not the horizon**
-        // (`CLAUDE.md` §2 — cut samples, not the question): this used to buy its
+        // (`AGENTS.md` §2 — cut samples, not the question): this used to buy its
         // extra barriers with a 1,400 yr run, which cost **437 s of a 507 s unit
         // target** once T-68 made hulls 3-4x quicker to build and the entity
         // count followed. A 25 yr cadence at 250 yr exercises **ten** barriers
@@ -10079,7 +10079,7 @@ mod tests {
         // **The third paired-run test, and the most expensive of them** — six
         // seats, run twice. `paired_cfg` for the same reason as the other two:
         // determinism is a property of the arithmetic, not of how long you
-        // accumulate it (`CLAUDE.md` §2), and after T-68 this one run was 65 s
+        // accumulate it (`AGENTS.md` §2), and after T-68 this one run was 65 s
         // of a 68 s unit target on its own. `tests/determinism.rs` is the
         // full-scale guard; this is the in-module smoke version of it.
         let mk = |seed: u64| {
@@ -10251,7 +10251,7 @@ mod tests {
     /// 120 yr produces 12 occupied sites and **zero** shared ones — the seats
     /// are still expanding into empty space and have not met. So a combat test
     /// at 120 yr passes or fails on whether anyone has *met*, which is not what
-    /// it is asking. `CLAUDE.md` §2's rule about horizons cut past the point a
+    /// it is asking. `AGENTS.md` §2's rule about horizons cut past the point a
     /// mechanism fires, arrived at from the other side: this one had to go
     /// **up**.
     fn contact_cfg(seed: u64) -> SimConfig {
@@ -10590,7 +10590,7 @@ mod tests {
             let after = sim.mass_ledger();
             let d = before.delta(&after);
             // The mechanism has to have fired, or this passes vacuously on a
-            // simulation that did nothing (`CLAUDE.md` §2's trim guard).
+            // simulation that did nothing (`AGENTS.md` §2's trim guard).
             assert!(d.hulls.abs() > 0.0, "{seats} seats / seed {seed}: no hull was ever built or retired");
             let drift = (after.total() - before.total()).abs() / before.total();
             assert!(
@@ -10701,7 +10701,7 @@ mod tests {
         sim.run();
         let after = sim.mass_ledger();
         let strikes = sim.log().iter().filter(|r| matches!(r.event, LogEvent::HullWrecked { by: 0, .. })).count();
-        // Non-vacuity (`CLAUDE.md` §2's trim guard): a card that never wrecked
+        // Non-vacuity (`AGENTS.md` §2's trim guard): a card that never wrecked
         // anything leaves this passing on a run that proved nothing.
         assert!(strikes > 0, "the armed seat never wrecked a hull");
         let drift = (after.total() - before.total()).abs() / before.total();
@@ -10905,7 +10905,7 @@ mod tests {
     /// `spawn_courier` used to read `civilian_accel_g · G` **before** the hold
     /// was loaded and never re-read it, so the leg flew at the empty-hull rate
     /// while every `laden_accel` call site in the engine was freight — even
-    /// though `CLAUDE.md` §7 records R-O32 as having closed exactly that
+    /// though `AGENTS.md` §7 records R-O32 as having closed exactly that
     /// (*"it was massless, so a laden colony ship flew like an empty hull"*).
     ///
     /// It was found by needing the number for something else: an interceptor's
@@ -12744,7 +12744,7 @@ mod tests {
     /// **T-70: infrastructure is a stock of minerals; the rung is a reading.**
     ///
     /// It was a `Band` — a position on a ladder, stored — which is the thing
-    /// `CLAUDE.md` §4 says never to do: *a Band is a reading, not a second thing
+    /// `AGENTS.md` §4 says never to do: *a Band is a reading, not a second thing
     /// to store*. `Hyades_industry.md` §1.3 states the same rule for this
     /// quantity specifically, because infrastructure is **built out of
     /// minerals** and minerals are masses (L6/R-O57).
@@ -13536,7 +13536,7 @@ mod tests {
     /// `μ = 1 + r`, which period-doubles at `r = 2` — true of `x + r·x·(1 −
     /// x/K)` and of nothing else. The closed form has `e^(−rΔ) ∈ (0, 1)` for
     /// every positive `r`, so it is monotone at any rate, and the `clamp` that
-    /// `CLAUDE.md` §2 records as *hiding* a too-large `r` can no longer be doing
+    /// `AGENTS.md` §2 records as *hiding* a too-large `r` can no longer be doing
     /// any work.
     ///
     /// Asserted well past the retired bound, from both directions, because the

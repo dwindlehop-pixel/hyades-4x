@@ -8,7 +8,7 @@ matching engine this builds on), `Hyades_standing_layer_and_observation.md`
 `Hyades_netcode.md` (net §). Calls flagged **R-Pn**.*
 
 **Rev 2.** Rewritten to carry **ratified decisions and open decisions only**
-(`CLAUDE.md` §6). The implementation history that used to be inlined — the λ
+(`AGENTS.md` §6). The implementation history that used to be inlined — the λ
 routing sweep, the four faucet/sink models, T-77's settlement census, the
 400-planet screen that was wrong twice, the stage plan that predicted the wrong
 risky stage, and the guard that turned out inverted — is in
@@ -734,7 +734,7 @@ bed before anything switches on.**
 - `Hyades_trees_and_card_value.md` §2.3.6 — the Politics objective, and why it is
   Expansion exactly until `φ_ij` is instrumented
 - `Hyades_card_contract.md` §1, §6 · `Hyades_netcode.md` §1.1, §2d, §8.1
-- CLAUDE.md design laws #1, #7, #11, #13, #15, #16
+- AGENTS.md design laws #1, #7, #11, #13, #15, #16
 
 **External**
 - Double coincidence of wants: https://en.wikipedia.org/wiki/Coincidence_of_wants

@@ -14,14 +14,14 @@
 //!   the world can absorb the load it lands three times the people per mineral.
 //!
 //! The objective is **absolute colony count** (T-20); colony-years is the guard
-//! (`CLAUDE.md` §7). Common random numbers throughout — every policy is
+//! (`AGENTS.md` §7). Common random numbers throughout — every policy is
 //! evaluated on the same four seeds and compared seed by seed, because seed
 //! noise here dwarfs the effect.
 //!
 //! ## The two rival mechanisms, and how this tells them apart
 //!
 //! A colony-years gain with a large negative shift in mean founding time has
-//! two stories, and `CLAUDE.md` §2 forbids shipping the plausible one:
+//! two stories, and `AGENTS.md` §2 forbids shipping the plausible one:
 //!
 //! - **Transit** — a deep seed becomes a *forward base* sooner, so later
 //!   colonizers launch from closer to the frontier. Signature: `mean_flight`

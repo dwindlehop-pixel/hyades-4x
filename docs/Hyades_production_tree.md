@@ -8,7 +8,7 @@ algebra), `Hyades_mineral_cost_curve.md` (the two ladders),
 is fitted with). New calls continue the **R-PROD n** series.*
 
 **Rev 1, new.** Carries **ratified decisions and open decisions only**
-(`CLAUDE.md` §6). More of this tree is built than any other unlanded tree —
+(`AGENTS.md` §6). More of this tree is built than any other unlanded tree —
 `Works`, the employment split, the fold, the color-denominated bill, the berth
 model and the cost ladder all ship — so the ratified half is substantial and the
 open half is mostly *cards*: nothing writes `Works` yet except a test.
@@ -302,7 +302,7 @@ The first term is the ladder price times a shape efficiency — the old objectiv
 basis — and the second is the part that grows as `cost^(3/2)`. **Volume-years is
 mass-years plus the interior.**
 
-> **What this knowingly invalidates**, per `CLAUDE.md` §6. R-O88's ratified
+> **What this knowingly invalidates**, per `AGENTS.md` §6. R-O88's ratified
 > "+26–34% fleet-years" was taken on the **count**, and `data/tree_gradient.tsv`'s
 > Production column and composite geomean (T-50) were taken on the **mass**.
 > Neither is re-denominated here — that would keep the number's authority while
@@ -399,4 +399,4 @@ world. **R-IND8 — open**, and it is the join with Warfare.
   §4.3 (the dispersion constraint)
 - `Hyades_vehicle_roles.md` §6 · `Hyades_loadout.md` §3.5 (MECH tooling)
 - `src/cards.rs` — `Works`, `Employment`, `WorksWrite`, `Works::fold`
-- CLAUDE.md design laws #3, #6, #11
+- AGENTS.md design laws #3, #6, #11

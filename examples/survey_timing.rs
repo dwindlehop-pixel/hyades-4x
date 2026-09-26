@@ -16,7 +16,7 @@
 //!   downstream or merely happens.
 //!
 //! `Doctrine::survey_reserve` is the knob: the frontier size a center keeps
-//! stocked, so it sets how many scouts exist. `CLAUDE.md` §2 records it as a
+//! stocked, so it sets how many scouts exist. `AGENTS.md` §2 records it as a
 //! *false positive* in the gradient probe — a plateau at 1,024 with a cliff
 //! below — but that was measured against **coverage**, which saturates. Against
 //! *timing* it may not be flat at all, and that is the question.

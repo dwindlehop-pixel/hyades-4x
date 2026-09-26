@@ -712,7 +712,7 @@ reconstruction or reconciliation against the sweep-tuned propulsion values — i
 > the first because no independent value can be correct, the second because
 > under conservation it is identically 1. Cargo mass in `laden_accel` is now the
 > mineral load plus the pop load, added straight to the hull's own mass with no
-> coefficient between them. CLAUDE.md §7's flagged reconstruction is closed:
+> coefficient between them. AGENTS.md §7's flagged reconstruction is closed:
 > resolved by deletion, as this section predicted, not by reconciliation against
 > git history.
 
@@ -1017,7 +1017,7 @@ to soften the units. The operating point has moved either way, so the gradients
 measured before this landing are consumed; `growth_rate` and
 `biosphere_regen_rate` keep their ratified values until re-measured *here*.
 
-**This is the artifact pattern from `CLAUDE.md` §2, caught by ablation.** The
+**This is the artifact pattern from `AGENTS.md` §2, caught by ablation.** The
 first explanation written down was plausible, mechanistic, and consistent with
 the sign — and two one-line ablations refuted it. A real number with a
 confident story attached is exactly the shape all six of this project's prior

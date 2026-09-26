@@ -6,7 +6,7 @@
 //! simulation, ~25–30 s at the shipped snowball defaults, so a 9-knob
 //! gradient probe costs 72 of them and an offline search costs hundreds.
 //! Throughput here is not a comfort, it is balance coverage not bought
-//! (CLAUDE.md §7).
+//! (AGENTS.md §7).
 //!
 //! This file asks: **is there a metric that is quick to measure and ranks
 //! configurations the same way coverage does?** If so, searches can run
@@ -385,7 +385,7 @@ fn correlation_phase() {
 ///
 /// `horizon_years` is purely a stopping condition, so this is the real price
 /// of every `colonies@T` proxy. Cost is superlinear in duration
-/// (CLAUDE.md §7) because entity count compounds, so the saving is much
+/// (AGENTS.md §7) because entity count compounds, so the saving is much
 /// larger than the ratio of horizons.
 fn cost_phase() {
     println!("\n=== Cost of a truncated run (default config, mean over seeds) ===");

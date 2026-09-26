@@ -7,7 +7,7 @@
 //! not simulated to completion: the default horizon, 450 yr, is 250 years past
 //! the barrier, which covers the first strikes and the rivals' expansion peak.
 //!
-//! Prints `yr/s` and `ns/event` side by side (`CLAUDE.md` §2: a rate over a
+//! Prints `yr/s` and `ns/event` side by side (`AGENTS.md` §2: a rate over a
 //! population the change re-selects cannot tell "more work" from "dearer work"),
 //! and the fight count, so a knob that changed the simulation rather than its
 //! speed shows up as a different count rather than as a speedup.

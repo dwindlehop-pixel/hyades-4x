@@ -41,7 +41,7 @@
 //! knob it swept in isolation is now covered better, and *checkably*, by
 //! `examples/gradient_probe.rs` (elasticity + standard error) and
 //! `examples/gradient_step.rs` (a verified line search along the measured
-//! gradient) — see CLAUDE.md §2 "How to search" and `hyades_todo.md` T-45.
+//! gradient) — see AGENTS.md §2 "How to search" and `hyades_todo.md` T-45.
 //! Prefer those for any future doctrine work; this file stays for the
 //! diagnosis narrative above, which is still the right account of the
 //! freighter-routing fix.
@@ -56,12 +56,12 @@ use hyades_engine::prelude::*;
 use hyades_engine::units::Band;
 
 /// **Four seeds, cut from ten — and this is a real reduction in what the search
-/// proves, so it is recorded rather than hidden** (CLAUDE.md §2: cut samples,
+/// proves, so it is recorded rather than hidden** (AGENTS.md §2: cut samples,
 /// not the question; say what the trim cost).
 ///
 /// The trim is not about the 60-second rule — this job is offline and untimed.
 /// It is about *finishing at all*. Ratifying `trade_decay_lambda` tripled
-/// coverage and therefore entity count, which took the search from CLAUDE.md's
+/// coverage and therefore entity count, which took the search from AGENTS.md's
 /// recorded ~40 minutes to ~110, and two consecutive runs were killed by
 /// container restarts before they got past round two. A search that never
 /// completes proves nothing; four seeds runs in ~45 minutes and, because

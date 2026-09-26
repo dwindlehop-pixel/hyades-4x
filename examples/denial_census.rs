@@ -1,7 +1,7 @@
 //! **T-112: does holding ground actually curb a neighbor's expansion?**
 //!
 //! The author's stated expectation, written down before the measurement so it
-//! can refuse the change (`CLAUDE.md` §2): *"I expect to greatly decrease the
+//! can refuse the change (`AGENTS.md` §2): *"I expect to greatly decrease the
 //! expansion of the Warfare player's neighbors. Some blood shed is expected,
 //! but the goal is curbing the neighbor's growth."*
 //!
@@ -41,7 +41,7 @@ struct Arm {
     pickets: u64,
 }
 
-/// Which half of the card is switched on — `CLAUDE.md` §2's 2x2 rule, because
+/// Which half of the card is switched on — `AGENTS.md` §2's 2x2 rule, because
 /// T-112 and T-113 address the same diagnosis and landing them together would
 /// make either one unattributable.
 #[derive(Clone, Copy, PartialEq)]
@@ -166,7 +166,7 @@ fn main() {
         all.iter().filter(|(l, _)| only.iter().any(|o| l.trim().contains(o.as_str()))).copied().collect()
     };
     assert!(!arms.is_empty(), "no arm matched {only:?}");
-    // **Print before the work, not after it.** `CLAUDE.md` §2: a harness that
+    // **Print before the work, not after it.** `AGENTS.md` §2: a harness that
     // says nothing until its first expensive stage finishes is indistinguishable
     // from a hung one, and this one sat silent for four minutes.
     println!("peace baseline: {} seeds, {PLAYERS} seats, {HORIZON} yr…", SEEDS.len());

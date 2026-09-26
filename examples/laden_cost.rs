@@ -2,7 +2,7 @@
 //!
 //! The fix is a correctness fix — R-O32 says a laden colony ship is slower and
 //! the dispatcher was reading the empty rate — but it moves every colonization
-//! transit, so the magnitude is the thing the next reader needs and `CLAUDE.md`
+//! transit, so the magnitude is the thing the next reader needs and `AGENTS.md`
 //! §2 wants `ns/event` beside `yr/s` for it.
 
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};

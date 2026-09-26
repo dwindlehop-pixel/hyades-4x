@@ -8,7 +8,7 @@
 //! The question it exists to answer: does changing `-C target-cpu` change the
 //! simulation? Rust sets `fp-contract=off` and does not reassociate float
 //! reductions without fast-math, so the answer *should* be no even with `+fma`
-//! and AVX-512 available — but `CLAUDE.md` §4 makes bit-identity a hard
+//! and AVX-512 available — but `AGENTS.md` §4 makes bit-identity a hard
 //! requirement and §2 says to measure rather than to reason about it.
 use hyades_engine::prelude::*;
 

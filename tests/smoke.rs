@@ -9,7 +9,7 @@ use hyades_engine::prelude::*;
 /// clears the confirmed 2.5-simulated-years/real-second target, but these
 /// tests don't need the full default horizon to prove what they're checking.
 ///
-/// **500 → 300 yr at T-68**, for the reason `CLAUDE.md` §2 gives for watching
+/// **500 → 300 yr at T-68**, for the reason `AGENTS.md` §2 gives for watching
 /// test *targets* rather than test *asks*: `t_build` now tracks hull mass, so a
 /// Medium hull takes 3.0 yr instead of 10, centers decide three times as often,
 /// and the entity count follows. Nothing here asks a long-run question — every
@@ -41,7 +41,7 @@ fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimR
 }
 
 /// **The horizon is `SMOKE_HORIZON`, and every assertion here is an invariant** — the
-/// seat count comes back, scanning happened, expansion happened. `CLAUDE.md`
+/// seat count comes back, scanning happened, expansion happened. `AGENTS.md`
 /// §2: an invariant needs the mechanism to have fired *once*, not a long run to
 /// accumulate in. 300 yr was inherited from when a simulated year was cheap;
 /// T-69 and T-71/T-72 have each roughly doubled entity count since, and this

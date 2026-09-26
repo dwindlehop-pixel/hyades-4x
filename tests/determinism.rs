@@ -11,7 +11,7 @@ use hyades_engine::prelude::*;
 /// Build a run with an explicit, short horizon — determinism holds at any
 /// point in the run, so proving it does not need the full default horizon.
 /// Every test here pins one explicitly: the shipped defaults snowball to
-/// thousands of vehicles across 4,000 years (CLAUDE.md design law #9), and a
+/// thousands of vehicles across 4,000 years (AGENTS.md design law #9), and a
 /// full-length debug run costs a minute-plus each. Bit-identity is a property
 /// of the arithmetic, not of how long you let it accumulate.
 fn fresh_short(players: usize, seed: u64, horizon_years: f64) -> Simulation {
@@ -56,7 +56,7 @@ fn tiny_galaxy(players: usize, seed: u64, planets: usize, horizon_years: f64) ->
 /// specified for.
 ///
 /// **Full-size galaxies, and the horizon is now per seat count.** This is the
-/// one test `CLAUDE.md` §2 says must *keep* the scenery: an ordering fault in
+/// one test `AGENTS.md` §2 says must *keep* the scenery: an ordering fault in
 /// a large collection only shows at scale. So the lever is duration — and
 /// bit-identity is an arithmetic identity, which needs no horizon at all
 /// beyond enough of one that the mechanism has fired.
@@ -80,7 +80,7 @@ fn tiny_galaxy(players: usize, seed: u64, planets: usize, horizon_years: f64) ->
 /// roughly a third of its events at a fixed horizon and three of the five
 /// dropped under the floor. Re-measured: 2,381 / 1,853 / 1,775 / 1,930 /
 /// 2,152 events at the horizons below. That is the `yr/s`-versus-`ns/event`
-/// distinction (`CLAUDE.md` §2) showing up in a test budget — the work per
+/// distinction (`AGENTS.md` §2) showing up in a test budget — the work per
 /// event rose, the event count fell, and only one of those is visible here.
 ///
 /// **Re-scaled at T-88**, and the first attempt overshot — which is the
@@ -91,7 +91,7 @@ fn tiny_galaxy(players: usize, seed: u64, planets: usize, horizon_years: f64) ->
 /// almost nothing to multiply. Measured instead, these horizons buy each arm
 /// ~1,500 events — against the 1,800–3,000 the old ones
 /// bought — and take the target from 267 s back under budget.
-/// The rule `CLAUDE.md` §2 states is the one being followed — when a change
+/// The rule `AGENTS.md` §2 states is the one being followed — when a change
 /// raises event count, check the test horizons *in the same commit* — and
 /// the floor below is what says the trim did not go too far.
 ///

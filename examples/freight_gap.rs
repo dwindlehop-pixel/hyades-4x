@@ -131,7 +131,7 @@ fn main() {
     // records in time order and difference them: `Loaded → Deposited` is the
     // laden delivery leg, `Deposited → Loaded` the empty pickup leg. Reading a
     // *mean round trip* alone would hide which one moved — the mix rule from
-    // `CLAUDE.md` §2, applied to a duration.
+    // `AGENTS.md` §2, applied to a duration.
     let mut legs: BTreeMap<Entity, (f64, FreighterLeg)> = BTreeMap::new();
     let (mut out_n, mut out_t, mut in_n, mut in_t) = (0u64, 0.0f64, 0u64, 0.0f64);
     for rec in sim.log().by_category(LogCategory::Mining) {
