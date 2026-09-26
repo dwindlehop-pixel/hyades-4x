@@ -162,6 +162,16 @@ impl Book {
         self.asks.iter().find(|x| x.entity == e)
     }
 
+    /// The standing bids, in posting order.
+    pub fn bids(&self) -> &[Offer] {
+        &self.bids
+    }
+
+    /// The standing asks, in posting order.
+    pub fn asks(&self) -> &[Offer] {
+        &self.asks
+    }
+
     pub fn len(&self) -> (usize, usize) {
         (self.bids.len(), self.asks.len())
     }
@@ -181,31 +191,6 @@ impl Book {
     /// Determinism: total order on every comparison; no float NaN can
     /// enter (debug-asserted on post); identical books ⇒ identical fills.
     pub fn match_wave(&mut self) -> Vec<Fill> {
-        self.match_wave_with(false)
-    }
-
-    /// **A wave that refuses to pair an empire with itself** (T-77).
-    ///
-    /// The Exchange's books are **cross-empire by construction** (§3.1): every
-    /// empire posts both sides of every color, because a center is short one
-    /// color and long another at the same time (T-73 measured 1,494 of 1,515
-    /// banks single-colored). An owner-blind matcher on such a book spends most
-    /// of its capacity pairing an empire with itself.
-    ///
-    /// **Measured before this existed: 608 of 942 fills were self-trades** —
-    /// 65% — and they are worse than merely useless, because a matched quantity
-    /// is *reserved*. Every self-trade consumed depth that a real counterparty
-    /// could have taken, so the anti-herding fix that makes the matcher good was
-    /// working against it here.
-    ///
-    /// The intra-empire haulage books (`Commodity::Minerals`, `BuildTarget`)
-    /// are per-owner and *want* same-owner pairings, which is why this is a
-    /// parameter and not a change to the matcher's one behavior.
-    pub fn match_wave_cross_empire(&mut self) -> Vec<Fill> {
-        self.match_wave_with(true)
-    }
-
-    fn match_wave_with(&mut self, cross_empire: bool) -> Vec<Fill> {
         // Deterministic bid order: price desc, entity asc.
         let mut bid_idx: Vec<usize> = (0..self.bids.len()).collect();
         bid_idx.sort_by(|&i, &j| {
@@ -221,7 +206,7 @@ impl Book {
                     .asks
                     .iter()
                     .enumerate()
-                    .filter(|(_, a)| a.qty > 0.0 && !(cross_empire && a.owner == self.bids[bi].owner))
+                    .filter(|(_, a)| a.qty > 0.0)
                     .min_by(|(_, a), (_, b)| {
                         let (da, db) = (dist2(a.pos, self.bids[bi].pos), dist2(b.pos, self.bids[bi].pos));
                         da.partial_cmp(&db).unwrap_or(core::cmp::Ordering::Equal).then(a.entity.cmp(&b.entity))
@@ -246,6 +231,325 @@ impl Book {
         self.asks.retain(|x| x.qty > 0.0);
         fills
     }
+}
+
+// ------------------------------------------------------------------------
+// The Exchange's clearing: a spatial price equilibrium (R-MX7, T-134).
+
+/// **One way an ask can reach one buyer empire** (R-MX7).
+///
+/// `decay` is `λ·t`: the settlement burn's exponent for this leg, so the seller
+/// keeps `exp(−decay)` of what the buyer escrows (politics §3.3). The caller
+/// prices `t` off the seller's standing Freighter Design flying to the venue
+/// both empires share; the matcher never sees geometry.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Route {
+    pub buyer: PlayerId,
+    pub decay: f64,
+}
+
+/// **Kilotonnes of one ask sold to one buyer empire, at that empire's price.**
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Flow {
+    /// Index into the `asks` slice the clearing was given.
+    pub ask: usize,
+    /// Index into that ask's route list — the leg the caller already priced.
+    pub route: usize,
+    pub seller: PlayerId,
+    pub buyer: PlayerId,
+    pub qty: f64,
+    /// What the buyer escrows per kilotonne: its empire's uniform price.
+    pub price: f64,
+}
+
+/// **The quoted price never goes below this fraction of the book's top offer.**
+///
+/// A numerical device, not a tunable: the clearing runs on log prices, a
+/// reservation of zero has no logarithm, and 74% of posted asks carry one (a
+/// center with no bill to pay values its spare ore at nothing). Any floor far
+/// below every positive price gives the same allocation; this one only decides
+/// how close to zero an uncontested price is quoted.
+pub const PRICE_FLOOR_FRACTION: f64 = 1e-9;
+
+/// A total order on `f64` keys for the heaps below (no NaN reaches here: every
+/// key is a sum of finite logs and finite decays).
+#[derive(Clone, Copy, PartialEq)]
+struct Key(f64);
+
+impl Eq for Key {}
+
+impl PartialOrd for Key {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Key {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
+
+/// **Clear one color's cross-empire book at spatial-equilibrium prices**
+/// (R-MX7, T-134).
+///
+/// Every buyer empire pays one price per kilotonne; a seller ships to the
+/// buyer whose price, net of the settlement burn on the leg, pays it most;
+/// a bid buys only if its value is at least its empire's price; an ask sells
+/// only if what it keeps is at least its reservation. That is Samuelson's
+/// (1952) spatial price equilibrium, as Takayama and Judge (1971) set it out
+/// as a programming problem, with the burn `exp(−λt)` as the transport term.
+///
+/// **Taking logs makes it a transportation problem.** The seller keeps
+/// `P_B·exp(−λt)`, so in `ln P` the burn is an additive cost `λt` and every
+/// equilibrium condition is a comparison of sums. The allocation that meets
+/// them all maximizes
+///
+/// ```text
+/// Σ_bids ln(b)·x  −  Σ_(ask, buyer) (ln(a) + λt)·y      subject to
+/// Σ_(bids of B) x = Σ_asks y_(ask, B)   (mass is conserved on every leg)
+/// ```
+///
+/// and the empire prices are the constraints' duals. It is solved exactly by
+/// successive shortest paths (Ahuja, Magnanti and Orlin 1993, §9.7) on a graph
+/// whose only interior nodes are the buyer empires — an ask is an arc from the
+/// source into an empire, and rerouting an ask already flowing to one empire
+/// is an arc between two — so each augmentation is a Bellman–Ford over at most
+/// one node per seat.
+///
+/// **The prices are the least equilibrium prices** — each empire pays what its
+/// strongest excluded competitor would have paid, and no more (the ascending
+/// auction's outcome; Demange, Gale and Sotomayor 1986). A buyer with no
+/// competitor and ample supply pays the sellers' reservation, which is zero for
+/// a center with nothing to build: then the price is the floor above.
+///
+/// Deterministic: offers are read in slice order, every tie breaks on an
+/// index, and no hash map is used.
+pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> Vec<Flow> {
+    use crate::transcendental::{exp, ln};
+    use core::cmp::Reverse;
+    type Heap<T> = std::collections::BinaryHeap<Reverse<T>>;
+    debug_assert_eq!(asks.len(), routes.len());
+    let top = bids.iter().chain(asks.iter()).fold(0.0f64, |m, o| m.max(o.price));
+    if top <= 0.0 {
+        return Vec::new();
+    }
+    let floor = top * PRICE_FLOOR_FRACTION;
+    let ln_floor = ln(floor);
+
+    // Buyer empires, in id order; a bid below the floor can never trade.
+    let mut buyers: Vec<PlayerId> = bids.iter().filter(|b| b.price > floor).map(|b| b.owner).collect();
+    buyers.sort();
+    buyers.dedup();
+    let nb = buyers.len();
+    if nb == 0 {
+        return Vec::new();
+    }
+    let node = |p: PlayerId| buyers.binary_search(&p).ok();
+
+    // Each empire's demand curve: (ln b, remaining qty), highest first.
+    let mut demand: Vec<Vec<(f64, f64)>> = vec![Vec::new(); nb];
+    let mut order: Vec<usize> = (0..bids.len()).filter(|&i| bids[i].price > floor && bids[i].qty > 0.0).collect();
+    order.sort_by(|&i, &j| bids[j].price.total_cmp(&bids[i].price).then(bids[i].entity.cmp(&bids[j].entity)));
+    for i in order {
+        let b = node(bids[i].owner).unwrap();
+        demand[b].push((ln(bids[i].price), bids[i].qty));
+    }
+    let mut next = vec![0usize; nb];
+
+    let ln_ask: Vec<f64> = asks.iter().map(|a| if a.price > floor { ln(a.price) } else { ln_floor }).collect();
+    // Route arcs resolved to nodes; a route to an empire with no bid is dropped.
+    let arcs: Vec<Vec<(usize, f64)>> = routes
+        .iter()
+        .enumerate()
+        .map(|(j, rs)| {
+            rs.iter()
+                .map(|r| match node(r.buyer) {
+                    Some(b) if r.buyer != asks[j].owner => (b, r.decay),
+                    _ => (usize::MAX, 0.0),
+                })
+                .collect()
+        })
+        .collect();
+    let mut free: Vec<f64> = asks.iter().map(|a| a.qty.max(0.0)).collect();
+    let mut flow: Vec<Vec<f64>> = routes.iter().map(|rs| vec![0.0; rs.len()]).collect();
+
+    // Source arcs: per empire, the cheapest ask with supply left.
+    let mut source: Vec<Heap<(Key, usize, usize)>> = (0..nb).map(|_| Heap::new()).collect();
+    for (j, rs) in arcs.iter().enumerate() {
+        for (r, &(b, decay)) in rs.iter().enumerate() {
+            if b != usize::MAX && free[j] > 0.0 {
+                source[b].push(Reverse((Key(ln_ask[j] + decay), j, r)));
+            }
+        }
+    }
+    // Reroute arcs: per ordered pair (from, to), the cheapest ask flowing at
+    // `from` that could go to `to` instead. Pushed when a flow opens.
+    let mut reroute: Vec<Heap<(Key, usize, usize, usize)>> = (0..nb * nb).map(|_| Heap::new()).collect();
+    let open = |reroute: &mut Vec<Heap<(Key, usize, usize, usize)>>, j: usize, r: usize| {
+        let (from, c) = arcs[j][r];
+        for (r2, &(to, c2)) in arcs[j].iter().enumerate() {
+            if r2 != r && to != usize::MAX {
+                reroute[from * nb + to].push(Reverse((Key(c2 - c), j, r, r2)));
+            }
+        }
+    };
+
+    const TOL: f64 = 1e-12;
+    let cap = 4 * (bids.len() + asks.len() + arcs.iter().map(Vec::len).sum::<usize>()) + 16;
+    let mut dist = vec![0.0f64; nb];
+    let mut pred: Vec<Option<(usize, usize, usize, usize)>> = vec![None; nb];
+    let mut via: Vec<Option<(usize, usize)>> = vec![None; nb];
+    let mut edge: Vec<Option<(f64, usize, usize, usize)>> = vec![None; nb * nb];
+    for _ in 0..cap {
+        // Arc weights, dropping exhausted heap tops.
+        for b in 0..nb {
+            let h = &mut source[b];
+            while h.peek().is_some_and(|Reverse((_, j, _))| free[*j] <= 0.0) {
+                h.pop();
+            }
+            match h.peek() {
+                Some(Reverse((Key(w), j, r))) => {
+                    dist[b] = *w;
+                    via[b] = Some((*j, *r));
+                }
+                None => {
+                    dist[b] = f64::INFINITY;
+                    via[b] = None;
+                }
+            }
+            pred[b] = None;
+            while next[b] < demand[b].len() && demand[b][next[b]].1 <= 0.0 {
+                next[b] += 1;
+            }
+        }
+        for (k, h) in reroute.iter_mut().enumerate() {
+            while h.peek().is_some_and(|Reverse((_, j, r, _))| flow[*j][*r] <= 0.0) {
+                h.pop();
+            }
+            edge[k] = h.peek().map(|Reverse((Key(w), j, r, r2))| (*w, *j, *r, *r2));
+        }
+        // Shortest paths from the source over the empire nodes.
+        for _ in 0..nb {
+            let mut changed = false;
+            for from in 0..nb {
+                if !dist[from].is_finite() {
+                    continue;
+                }
+                for to in 0..nb {
+                    if let Some((w, j, r, r2)) = edge[from * nb + to] {
+                        if dist[from] + w < dist[to] - TOL {
+                            dist[to] = dist[from] + w;
+                            pred[to] = Some((from, j, r, r2));
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        // The cheapest path into a bid; stop when no path gains anything.
+        let mut best: Option<(f64, usize)> = None;
+        for b in 0..nb {
+            if next[b] < demand[b].len() && dist[b].is_finite() {
+                let cost = dist[b] - demand[b][next[b]].0;
+                if best.is_none_or(|(c, _)| cost < c) {
+                    best = Some((cost, b));
+                }
+            }
+        }
+        let Some((cost, sink)) = best else { break };
+        if cost >= -TOL {
+            break;
+        }
+        // Walk the path back to its source arc, taking the bottleneck.
+        let mut path: Vec<(usize, usize, usize)> = Vec::new(); // (ask, from-route, to-route)
+        let mut b = sink;
+        let mut amount = demand[sink][next[sink]].1;
+        while let Some((from, j, r, r2)) = pred[b] {
+            amount = amount.min(flow[j][r]);
+            path.push((j, r, r2));
+            b = from;
+            if path.len() > nb {
+                debug_assert!(false, "a negative cycle cannot arise on a shortest-path augmentation");
+                return Vec::new();
+            }
+        }
+        let (j0, r0) = via[b].expect("a finite distance has a source arc");
+        amount = amount.min(free[j0]);
+        free[j0] -= amount;
+        if flow[j0][r0] <= 0.0 {
+            flow[j0][r0] += amount;
+            open(&mut reroute, j0, r0);
+        } else {
+            flow[j0][r0] += amount;
+        }
+        for &(j, r, r2) in &path {
+            flow[j][r] -= amount;
+            let opened = flow[j][r2] <= 0.0;
+            flow[j][r2] += amount;
+            if opened {
+                open(&mut reroute, j, r2);
+            }
+        }
+        demand[sink][next[sink]].1 -= amount;
+    }
+
+    // Least equilibrium log-prices: each empire's price is at least its best
+    // unfilled bid and at least what each of its sellers is paid elsewhere, and
+    // the least vector meeting those is found by relaxation.
+    let mut pi = vec![f64::NEG_INFINITY; nb];
+    for b in 0..nb {
+        if let Some(&(lb, _)) = demand[b][next[b].min(demand[b].len())..].iter().find(|(_, q)| *q > 0.0) {
+            pi[b] = lb;
+        }
+    }
+    for (j, rs) in arcs.iter().enumerate() {
+        for (r, &(b, c)) in rs.iter().enumerate() {
+            if flow[j][r] > 0.0 {
+                pi[b] = pi[b].max(ln_ask[j] + c);
+            }
+        }
+    }
+    for _ in 0..=nb {
+        let mut changed = false;
+        for (j, rs) in arcs.iter().enumerate() {
+            for (r, &(b, c)) in rs.iter().enumerate() {
+                if flow[j][r] <= 0.0 {
+                    continue;
+                }
+                for (r2, &(b2, c2)) in rs.iter().enumerate() {
+                    if r2 != r && b2 != usize::MAX && pi[b2] - c2 + c > pi[b] + TOL {
+                        pi[b] = pi[b2] - c2 + c;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let price: Vec<f64> = pi.iter().map(|&p| if p.is_finite() { exp(p) } else { 0.0 }).collect();
+
+    let mut out = Vec::new();
+    for (j, rs) in arcs.iter().enumerate() {
+        for (r, &(b, _)) in rs.iter().enumerate() {
+            if flow[j][r] > TOL * asks[j].qty.max(1.0) {
+                out.push(Flow {
+                    ask: j,
+                    route: r,
+                    seller: asks[j].owner,
+                    buyer: buyers[b],
+                    qty: flow[j][r],
+                    price: price[b],
+                });
+            }
+        }
+    }
+    out
 }
 
 // ------------------------------------------------------------------------
@@ -404,29 +708,165 @@ mod tests {
             }
         }
     }
-    /// **A cross-empire wave never pairs an empire with itself** (T-77).
-    ///
-    /// Measured before this existed: **608 of 942 fills were self-trades**, and
-    /// they are worse than useless because a matched quantity is *reserved* —
-    /// every one consumed depth a real counterparty could have taken. The
-    /// anti-herding fix that makes this matcher good was working against it on
-    /// a book where everyone posts both sides.
+    fn route(buyer: u32, decay: f64) -> Route {
+        Route { buyer: PlayerId(buyer), decay }
+    }
+
+    /// **The winner pays its strongest excluded rival's value, not its own**
+    /// (R-MX7). Two empires want one kilotonne from a third; the higher bid
+    /// takes it at the lower bid's price — the ascending auction's outcome.
     #[test]
-    fn a_cross_empire_wave_skips_an_empires_own_asks() {
-        let mut b = Book::new();
-        b.post_bid(owned(1, 0.9, 1.0, 0.0, 3));
-        b.post_ask(owned(100, 0.0, 1.0, 0.0, 3)); // same empire, and nearest
-        b.post_ask(owned(101, 0.0, 1.0, 50.0, 7)); // a real counterparty, far away
+    fn a_contested_ask_goes_to_the_higher_bid_at_the_rivals_price() {
+        let bids = [owned(1, 10.0, 1.0, 0.0, 1), owned(2, 8.0, 1.0, 0.0, 2)];
+        let asks = [owned(100, 0.0, 1.0, 0.0, 0)];
+        let flows = clear_spatial(&bids, &asks, &[vec![route(1, 0.0), route(2, 0.0)]]);
+        assert_eq!(flows.len(), 1);
+        assert_eq!(flows[0].buyer, PlayerId(1));
+        assert!((flows[0].qty - 1.0).abs() < 1e-12);
+        assert!((flows[0].price - 8.0).abs() < 1e-9, "price {}", flows[0].price);
+    }
 
-        let plain = b.clone().match_wave();
-        assert_eq!(plain[0].seller, PlayerId(3), "the owner-blind wave takes the near self-ask");
+    /// **The burn on the leg is the transport cost.** One buyer, two sellers
+    /// with free ore, one leg costing more burn: the cheaper leg ships.
+    #[test]
+    fn supply_ships_on_the_leg_that_burns_least() {
+        let bids = [owned(1, 3.0, 1.0, 0.0, 1)];
+        let asks = [owned(100, 0.0, 1.0, 0.0, 0), owned(101, 0.0, 1.0, 0.0, 2)];
+        let flows = clear_spatial(&bids, &asks, &[vec![route(1, 0.5)], vec![route(1, 0.1)]]);
+        assert_eq!(flows.len(), 1);
+        assert_eq!(flows[0].ask, 1);
+    }
 
-        let cross = b.match_wave_cross_empire();
-        assert_eq!(cross.len(), 1);
-        assert_eq!(cross[0].seller, PlayerId(7), "a cross-empire wave must reach past its own ask");
-        assert_ne!(cross[0].buyer, cross[0].seller);
-        // The intra-empire books still want same-owner pairing, which is why
-        // this is a second method and not a change to the one behavior.
-        assert_eq!(plain.len(), 1);
+    /// **A seller never sells below what the ore is worth to it**, and the
+    /// price it is paid covers the burn: `P·exp(−λt) ≥ a`.
+    #[test]
+    fn a_reservation_and_the_burn_set_the_floor_of_the_price() {
+        let asks = [owned(100, 5.0, 1.0, 0.0, 0)];
+        let low = clear_spatial(&[owned(1, 4.0, 1.0, 0.0, 1)], &asks, &[vec![route(1, 0.0)]]);
+        assert!(low.is_empty(), "a bid below the reservation must not trade");
+        let d = 0.2;
+        let high = clear_spatial(&[owned(1, 9.0, 1.0, 0.0, 1)], &asks, &[vec![route(1, d)]]);
+        assert_eq!(high.len(), 1);
+        let keep = crate::transcendental::exp(-d);
+        assert!((high[0].price * keep - 5.0).abs() < 1e-9, "seller keeps {}", high[0].price * keep);
+    }
+
+    /// **An empire never buys its own ask** — a route to the ask's owner is
+    /// dropped even if a caller supplies one.
+    #[test]
+    fn an_empire_never_clears_against_itself() {
+        let bids = [owned(1, 9.0, 1.0, 0.0, 3)];
+        let asks = [owned(100, 0.0, 1.0, 0.0, 3)];
+        assert!(clear_spatial(&bids, &asks, &[vec![route(3, 0.0)]]).is_empty());
+    }
+
+    /// A deterministic pseudo-random book: `sellers` asks and `bids` bids over
+    /// `seats` empires, a fraction of asks at zero reservation as on the bed.
+    fn random_book(seed: u64, seats: u32, n_asks: usize, n_bids: usize) -> (Vec<Offer>, Vec<Offer>, Vec<Vec<Route>>) {
+        let mut rng = crate::rng::Rng::new(seed);
+        let mut asks = Vec::new();
+        let mut routes = Vec::new();
+        for j in 0..n_asks {
+            let owner = rng.below(seats as usize) as u32;
+            let price = if rng.unit() < 0.7 { 0.0 } else { rng.unit() * 2.0 };
+            asks.push(owned(1000 + j as u64, price, 0.1 + rng.unit() * 5.0, 0.0, owner));
+            let mut rs = Vec::new();
+            for b in 0..seats {
+                if b != owner && rng.unit() < 0.7 {
+                    rs.push(route(b, rng.unit() * 0.6));
+                }
+            }
+            routes.push(rs);
+        }
+        let bids = (0..n_bids)
+            .map(|i| {
+                owned(i as u64, 0.05 + rng.unit() * 3.0, 0.1 + rng.unit() * 3.0, 0.0, rng.below(seats as usize) as u32)
+            })
+            .collect();
+        (bids, asks, routes)
+    }
+
+    /// **Every competitive-equilibrium condition holds on random books** —
+    /// which, by LP duality, is what makes the allocation the optimum of the
+    /// log-price transportation problem `clear_spatial` documents. Checked:
+    /// no ask oversold; each empire buys at least every bid above its price
+    /// and at most every bid at or above it; every flow is the seller's best
+    /// net price and at least its reservation; no unsold ore would sell.
+    #[test]
+    fn random_books_clear_at_a_competitive_equilibrium() {
+        use crate::transcendental::exp;
+        for seed in 0..40u64 {
+            let seats = 2 + (seed % 5) as u32;
+            let (bids, asks, routes) = random_book(seed, seats, 30, 60);
+            let flows = clear_spatial(&bids, &asks, &routes);
+            let top = bids.iter().chain(asks.iter()).fold(0.0f64, |m, o| m.max(o.price));
+            let floor = top * PRICE_FLOOR_FRACTION;
+            let tol = 1e-7;
+            let mut price = vec![None::<f64>; seats as usize];
+            let mut sold = vec![0.0; asks.len()];
+            let mut bought = vec![0.0; seats as usize];
+            for f in &flows {
+                let p = price[f.buyer.0 as usize].get_or_insert(f.price);
+                assert_eq!(*p, f.price, "one price per empire");
+                sold[f.ask] += f.qty;
+                bought[f.buyer.0 as usize] += f.qty;
+                assert_ne!(f.buyer, f.seller);
+            }
+            for (j, a) in asks.iter().enumerate() {
+                assert!(sold[j] <= a.qty * (1.0 + 1e-12), "seed {seed}: ask {j} oversold");
+            }
+            for b in 0..seats as usize {
+                let Some(p) = price[b] else { continue };
+                let above: f64 =
+                    bids.iter().filter(|x| x.owner.0 as usize == b && x.price > p * (1.0 + tol)).map(|x| x.qty).sum();
+                let at: f64 =
+                    bids.iter().filter(|x| x.owner.0 as usize == b && x.price >= p * (1.0 - tol)).map(|x| x.qty).sum();
+                assert!(
+                    bought[b] >= above * (1.0 - 1e-9) && bought[b] <= at * (1.0 + 1e-9),
+                    "seed {seed}: empire {b} demand"
+                );
+            }
+            // An empire that bought nothing has no quoted price; its bids are
+            // what a seller could have had from it.
+            let offer = |b: usize| -> f64 {
+                price[b].unwrap_or_else(|| {
+                    bids.iter().filter(|x| x.owner.0 as usize == b).fold(0.0f64, |m, x| m.max(x.price))
+                })
+            };
+            for f in &flows {
+                let net = f.price * exp(-routes[f.ask][f.route].decay);
+                assert!(net >= asks[f.ask].price.max(floor) * (1.0 - tol), "seed {seed}: sold below reservation");
+                for r in &routes[f.ask] {
+                    if r.buyer != asks[f.ask].owner {
+                        let rival = offer(r.buyer.0 as usize) * exp(-r.decay);
+                        assert!(net >= rival * (1.0 - tol), "seed {seed}: a seller had a better buyer");
+                    }
+                }
+            }
+            for (j, a) in asks.iter().enumerate() {
+                if a.qty - sold[j] <= 1e-9 * a.qty.max(1.0) {
+                    continue;
+                }
+                for r in &routes[j] {
+                    let b = r.buyer.0 as usize;
+                    if r.buyer == a.owner {
+                        continue;
+                    }
+                    if let Some(p) = price[b] {
+                        assert!(
+                            p * exp(-r.decay) <= a.price.max(floor) * (1.0 + tol),
+                            "seed {seed}: unsold ore {j} would sell to {b}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Identical books clear identically — the determinism contract.
+    #[test]
+    fn spatial_clearing_is_deterministic() {
+        let (bids, asks, routes) = random_book(7, 5, 40, 80);
+        assert_eq!(clear_spatial(&bids, &asks, &routes), clear_spatial(&bids, &asks, &routes));
     }
 }

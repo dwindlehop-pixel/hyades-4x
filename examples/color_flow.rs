@@ -128,11 +128,8 @@ fn main() {
             "  contracts: {settled} settled, {} defaulted, {in_flight} in flight, ${burned:.1} burned",
             sim.exchange_defaults()
         );
-        let (fills, rej) = sim.exchange_rejections();
-        println!(
-            "  fills {fills} -> rejected: self {} / no-venue {} / no-price {} / no-purse {}",
-            rej[0], rej[1], rej[2], rej[3]
-        );
+        let (fills, unfunded) = sim.exchange_unfunded();
+        println!("  flows {fills} -> {unfunded} scaled down by the buyer's purse");
         println!(
             "  offers posted (bids/asks): C {}/{}  M {}/{}  Y {}/{}",
             posted[0].0, posted[0].1, posted[1].0, posted[1].1, posted[2].0, posted[2].1

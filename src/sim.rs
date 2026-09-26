@@ -2045,16 +2045,15 @@ struct Exchange {
     /// drains it. Live depth after a wave is the unmatched remainder, which
     /// answers a different question.
     posted: [(u64, u64); 3],
-    /// **Why a fill did not become a contract**, cumulative: `(self-trade, no
-    /// shared venue, no price, no purse)`.
+    /// **Flows the purse could not fully fund**, cumulative (§10.8's census).
     ///
-    /// §10.8's census, at the one place a market can silently do nothing. A
-    /// book with deep two-sided depth and zero contracts is indistinguishable
-    /// from a book nobody posted to unless the *rejections* are counted — which
-    /// is `AGENTS.md` §2's "instrument the decision", and it is how the first
-    /// run of this stage was diagnosed instead of guessed at.
-    rejected: [u64; 4],
-    /// Fills the matcher produced, before any filter.
+    /// Since R-MX7 the clearing only produces flows between empires that share
+    /// a venue and never pairs an empire with itself, so the three rejections
+    /// this used to count (self-trade, no venue, no price) cannot occur. What
+    /// remains is the purse: an empire whose bill at its cleared price exceeds
+    /// its ledger has every flow scaled down by the same factor.
+    unfunded: u64,
+    /// Flows the clearing produced, before the purse.
     fills: u64,
     /// Kilotons actually delivered, per color — the volume the market moved.
     /// Without it a census can only say trade *happened*, not whether it
@@ -7894,8 +7893,10 @@ impl Simulation {
     /// the mechanic rather than a failure: **geography is the trade
     /// constraint.** An empire with no rock in common with anyone is landlocked,
     /// and reaching one is a reason to go somewhere.
-    fn shared_venue(&self, a: PlayerId, b: PlayerId, ship_from: Vec3) -> Option<Entity> {
-        let (mine, theirs) = (self.worked_outposts(a), self.worked_outposts(b));
+    ///
+    /// `mine` and `theirs` are the two empires' [`Self::worked_outposts`],
+    /// read once per barrier by the caller.
+    fn nearest_shared(&self, mine: &[u64], theirs: &[u64], ship_from: Vec3) -> Option<Entity> {
         let mut best: Option<(f64, u64)> = None;
         // Both lists are id-sorted, so this is a linear merge rather than a
         // nested scan — a center can work thousands of rocks (§4.5).
@@ -7943,70 +7944,89 @@ impl Simulation {
     ///   creating a debt nobody agreed to.
     fn clear_exchange(&mut self) {
         let now = self.clock;
-        let mut fills: Vec<(usize, matching::Fill)> = Vec::new();
-        for (i, book) in self.exchange.books.iter_mut().enumerate() {
-            for f in book.match_wave_cross_empire() {
-                fills.push((i, f));
+        let lambda = self.config.trade_decay_lambda;
+        let players = self.player_entity.len();
+        // The venue a seller's center ships to for one buyer does not depend on
+        // the color, so it is found once per (center, buyer) this barrier.
+        let worked: Vec<Vec<u64>> = (0..players).map(|p| self.worked_outposts(PlayerId(p as u32))).collect();
+        let mut venues: BTreeMap<(u64, u32), Option<Entity>> = BTreeMap::new();
+        // (color, flow, venue, leg years), in color then flow order.
+        let mut cleared: Vec<(usize, matching::Flow, Entity, f64)> = Vec::new();
+        for (i, book) in self.exchange.books.iter().enumerate() {
+            let (bids, asks) = (book.bids(), book.asks());
+            let mut buyers: Vec<PlayerId> = bids.iter().map(|b| b.owner).collect();
+            buyers.sort();
+            buyers.dedup();
+            let mut routes: Vec<Vec<matching::Route>> = Vec::with_capacity(asks.len());
+            let mut legs: Vec<Vec<(Entity, f64)>> = Vec::with_capacity(asks.len());
+            for a in asks {
+                let (mut rs, mut ls) = (Vec::new(), Vec::new());
+                let s_at = *self.world.position.get(Entity(a.entity)).unwrap();
+                // One laden leg of the seller's standing Freighter Design, the
+                // lot aboard up to its hold — the same leg the contract flies,
+                // so the price the clearing charged for transit is the burn the
+                // settlement takes.
+                let (hull, _) = Standing::of(&self.doctrine_of(a.owner.0 as usize)).design_for(Role::Freighter);
+                let lot = Price::new(a.qty).on_scale::<units::Mass>().min(hull.cargo_capacity(&self.config));
+                let accel = G * self.thrust_to_mass(hull, lot);
+                for &b in buyers.iter().filter(|&&b| b != a.owner) {
+                    let venue = *venues.entry((a.entity, b.0)).or_insert_with(|| {
+                        self.nearest_shared(&worked[a.owner.0 as usize], &worked[b.0 as usize], s_at)
+                    });
+                    if let Some(v) = venue {
+                        let t = math::ship_travel_years(s_at.distance(*self.world.position.get(v).unwrap()), accel);
+                        rs.push(matching::Route { buyer: b, decay: lambda * t });
+                        ls.push((v, t));
+                    }
+                }
+                routes.push(rs);
+                legs.push(ls);
+            }
+            for f in matching::clear_spatial(bids, asks, &routes) {
+                let (v, t) = legs[f.ask][f.route];
+                cleared.push((i, f, v, t));
             }
         }
-        for (i, f) in fills {
+
+        // **What the purse can actually pay.** Escrow is locked at clearing, so
+        // an empire whose bill at its cleared prices exceeds its ledger has all
+        // of its flows scaled by one factor — no flow is favored by the order
+        // it was listed in.
+        let mut bill = vec![0.0f64; players];
+        for (_, f, _, _) in &cleared {
+            bill[f.buyer.0 as usize] += f.qty * f.price;
+        }
+        let scale: Vec<f64> = (0..players)
+            .map(|p| {
+                let purse = self.purse_of(PlayerId(p as u32));
+                if bill[p] <= purse {
+                    1.0
+                } else if purse > 0.0 {
+                    purse / bill[p]
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+
+        for (i, f, seller_drop, t) in cleared {
             self.exchange.fills += 1;
-            if f.buyer == f.seller {
-                self.exchange.rejected[0] += 1;
+            let s = scale[f.buyer.0 as usize];
+            if s < 1.0 {
+                self.exchange.unfunded += 1;
+            }
+            let qty = f.qty * s;
+            let escrow = qty * f.price;
+            if qty <= 1e-9 || !escrow.is_finite() {
                 continue;
             }
-            let (bid_e, ask_e) = (Entity(f.bid), Entity(f.ask));
-            let (Some(&b_at), Some(&s_at)) = (self.world.position.get(bid_e), self.world.position.get(ask_e)) else {
-                continue;
-            };
-            // The seller ships, so the seller picks its own drop.
-            let Some(seller_drop) = self.shared_venue(f.buyer, f.seller, s_at) else {
-                self.exchange.rejected[1] += 1;
-                continue; // landlocked with respect to each other this round
-            };
+            let pe = self.player_entity[f.buyer.0 as usize];
+            self.credit(pe, -escrow);
             // The buyer's side is `$` in the default transaction, and `$` has no
             // location. A goods counter-leg is the buyer's own contract on
             // another color's book, with its own drop — which is how "leave
             // Yellow at X in exchange for Magenta at Y" is expressed.
             let buyer_drop = None;
-            let _ = b_at;
-
-            // **The price the fill cleared at**, carried on the fill rather
-            // than looked up — a wave drops exhausted offers, so a bid that
-            // matched in full is already gone from the book.
-            let price = f.price;
-            let purse = self.purse_of(f.buyer);
-            if price <= 0.0 {
-                self.exchange.rejected[2] += 1;
-                continue;
-            }
-            if purse <= 0.0 {
-                self.exchange.rejected[3] += 1;
-                continue;
-            }
-            let qty = f.qty.min(purse / price);
-            let escrow = qty * price;
-            if qty <= 1e-9 || !escrow.is_finite() {
-                continue;
-            }
-
-            let pe = self.player_entity[f.buyer.0 as usize];
-            self.credit(pe, -escrow);
-
-            // **The freight leg.** The obligation was instant; the ore is not.
-            // Transit is the seller's center to its own drop — one laden leg of
-            // the seller's standing Freighter Design, at its own drive with the
-            // lot aboard up to its hold (no flat rate stands in for the
-            // Design). The same `ship_travel_years` every other voyage in the
-            // engine uses, so a trade is priced in the same geometry as a
-            // colonization or a haul (§8.1: a trade is a voyage). How many hulls
-            // carry a lot larger than one hold is not modeled: no hull is
-            // spawned for the leg at all (appendix §D.19 measured timing a lot
-            // as one hull's sequential loads, which cost −18% work-years).
-            let drop_at = *self.world.position.get(seller_drop).unwrap();
-            let (hull, _) = Standing::of(&self.doctrine_of(f.seller.0 as usize)).design_for(Role::Freighter);
-            let lot = Price::new(qty).on_scale::<units::Mass>().min(hull.cargo_capacity(&self.config));
-            let t = math::ship_travel_years(s_at.distance(drop_at), G * self.thrust_to_mass(hull, lot));
             let id = self.exchange.next_id;
             self.exchange.next_id += 1;
             self.exchange.contracts.insert(
@@ -8014,7 +8034,7 @@ impl Simulation {
                 Contract {
                     buyer: f.buyer,
                     seller: f.seller,
-                    seller_center: ask_e,
+                    seller_center: Entity(self.exchange.books[i].asks()[f.ask].entity),
                     color: Basic::ALL[i],
                     qty,
                     escrow,
@@ -8171,10 +8191,10 @@ impl Simulation {
         out
     }
 
-    /// Fills produced, and why each rejected one was: `(self-trade, no venue,
-    /// no price, no purse)`.
-    pub fn exchange_rejections(&self) -> (u64, [u64; 4]) {
-        (self.exchange.fills, self.exchange.rejected)
+    /// Flows the clearing produced, and how many of them the buyer's purse
+    /// could not fully fund.
+    pub fn exchange_unfunded(&self) -> (u64, u64) {
+        (self.exchange.fills, self.exchange.unfunded)
     }
 
     /// Cumulative `(bids, asks)` posted per color, in `Basic::ALL` order.
@@ -12156,14 +12176,17 @@ mod tests {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 61), test_cfg(61));
         let (a, b) = (PlayerId(0), PlayerId(1));
         let origin = Vec3::ZERO;
+        let venue = |sim: &Simulation, a: PlayerId, b: PlayerId, at: Vec3| {
+            sim.nearest_shared(&sim.worked_outposts(a), &sim.worked_outposts(b), at)
+        };
 
-        assert_eq!(sim.shared_venue(a, b, origin), None, "no crews anywhere, no venue");
+        assert_eq!(venue(&sim, a, b, origin), None, "no crews anywhere, no venue");
 
         // One rock each, different rocks: still nothing in common.
         let (r1, r2) = (sim.planet_entity[20], sim.planet_entity[21]);
         sim.mine_crew.insert((0, r1.0), vec![sim.world.spawn()]);
         sim.mine_crew.insert((1, r2.0), vec![sim.world.spawn()]);
-        assert_eq!(sim.shared_venue(a, b, origin), None, "different rocks are not a venue");
+        assert_eq!(venue(&sim, a, b, origin), None, "different rocks are not a venue");
 
         // Now share two, and each shipper gets the one nearest *itself*.
         let (r3, r4) = (sim.planet_entity[22], sim.planet_entity[23]);
@@ -12172,16 +12195,16 @@ mod tests {
             sim.mine_crew.insert((1, r.0), vec![sim.world.spawn()]);
         }
         let (p3, p4) = (*sim.world.position.get(r3).unwrap(), *sim.world.position.get(r4).unwrap());
-        assert_eq!(sim.shared_venue(a, b, p3), Some(r3), "a shipper standing on a shared rock drops there");
-        assert_eq!(sim.shared_venue(a, b, p4), Some(r4));
+        assert_eq!(venue(&sim, a, b, p3), Some(r3), "a shipper standing on a shared rock drops there");
+        assert_eq!(venue(&sim, a, b, p4), Some(r4));
 
         // **The venue set is symmetric even though the choice is not.** Which
         // rocks are *available* cannot depend on which party is named first;
         // which one is *picked* depends only on where the shipper is.
-        assert_eq!(sim.shared_venue(a, b, p3), sim.shared_venue(b, a, p3));
+        assert_eq!(venue(&sim, a, b, p3), venue(&sim, b, a, p3));
         assert_ne!(
-            sim.shared_venue(a, b, p3),
-            sim.shared_venue(a, b, p4),
+            venue(&sim, a, b, p3),
+            venue(&sim, a, b, p4),
             "two shippers in different places must not be forced to one compromise rock"
         );
     }
