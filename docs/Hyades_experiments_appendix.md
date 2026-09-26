@@ -2224,7 +2224,59 @@ events 4,904,545 → 8,571,068 (one `Hits` per landing discharge), encounters
 26,752 → 26,652, wrecks 12,845 → 12,639, colonies 2,018 → 2,025, 14.11 →
 13.84 yr/s. The card-free digest is unchanged (no card, no fire).
 
-**The Warfare card re-measured after the fix:** *(pending: `card_table`, 11 galaxies, running; §D.16's 1.334 predates the fix.)*
+**The Warfare card re-measured after the fix** (`card_table`, 11 galaxies,
+800 yr, three shards pooled; the 90% interval is a bootstrap over galaxies in
+the harness's seed order):
+
+| card | median | **P92 [90%]** | P98 | mean `ln` ratio per galaxy | galaxies above 1 |
+|---|---|---|---|---|---|
+| Growth | 1.172 | **1.889 [1.742, 2.110]** | 3.749 | +0.150 ± 0.059 (t 2.54) | 10/11 |
+| Warfare | 1.098 | **1.309 [1.267, 1.370]** | 1.541 | +0.091 ± 0.020 (t 4.63) | 11/11 |
+
+Growth's 66 seat ratios reproduce §D.16's to the printed digit (no Growth seat
+fires a shot); its interval's upper end differs from §D.16's 2.669 through the
+bootstrap replicates, not the data. Warfare's P92 moved 1.334 → 1.309, inside
+both intervals, so making fire simultaneous is not resolved as a change to the
+card at 11 galaxies. Every card landed on time on every seat.
+
+---
+
+## D.18 The role beds — generated mission fleets, and two faults they exposed
+
+*Supports `Hyades_galaxy_and_autopilot.md` §3.1 (mission dispatch),
+`Hyades_autopilot_colonization_growth.md` §8.1 (a hauler stands down when its
+rock is settled) and `Hyades_technology_tree.md` §4.4 (the role beds).
+`examples/design_rating`, two seats, the standard field (6,723 planets on seed
+1), spend `B` = 13.15 kt, a surveyed start of 20 ly for the picket, colonizer,
+miner and freighter beds.*
+
+**The first miner bed scored ore no generated miner dug.** At a 40-yr horizon
+four different hulls scored identically on each seat (seat 0 44.42 kt, seat 1
+809.67 kt, seed 1). An outpost yields once per `mining_tick_years` = 50 yr after
+its crew lands, so no generated crew had yielded yet; the score was colony
+centers mining rocks the autopilot had since settled, a quantity no hull choice
+reaches. Two changes: the bed runs 160 yr (three ticks), and a generated miner
+goes only to a world its seat's autopilot ranks a mining outpost, which the
+baseline never settles. After both, seed 1, seat 0 at 160 yr: Meadow 103,439 kt,
+Delta 44,103 kt, Range 362 kt.
+
+**The first freighter bed never finished a match.** Traced by stepping the
+event loop: from 40.218 yr on seed 1, two freighters' `FreighterArrive` events
+fired at that one clock reading, alternating, for as long as the run was left
+going. Each hauler's rock (planet 886) had been settled by its own seat, so the
+delivery router picked the center the hauler stood on, the leg had zero length,
+and the return leg to the same rock did too. Nothing ended the pair, because
+only an exhausted rock did. A baseline game does not reach the state because
+the baseline mines only worlds below its colonization bar; a generated miner
+fleet sent to every scanned rock did. The engine now stands a hauler down when
+its own empire has settled its rock (`a_hauler_whose_rock_is_settled_stands_down`;
+with the guard removed that test fails). Card-free runs are bit-identical across
+the guard (`build_digest 400 1,7,42`: popbits 40f4d4aae5b1d064,
+40f26050ce22e49a, 40f2017db8cca76e, as before).
+
+**Cost after both fixes, seed 1, one core:** short-range 11.7 s, long-range
+24.6 s, picket 11.4 s, colonizer 1.8 s, miner 3.8 s, freighter 4.5 s, scout
+3.9 s for each bed's 30 matches.
 
 ---
 

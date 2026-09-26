@@ -252,8 +252,8 @@ the 0.01 ly placeholder is gone. Which roles narrow the range is R-WAR33
    endings, each on the event that raises it; `resolve_beam_engagement` is
    deleted, and a Technology bed must place fleets through the engine (R-WAR36).
 9. ~~**Re-measure**~~ — **done** (appendix §D.16): on the twelve-seat table, 11 galaxies, the
-   Warfare card's P92 is **1.334 [1.261, 1.410]** (was 1.204 [1.164, 1.226] at
-   T-125), still below the 1.5–2.0x target (R-WAR20), and Growth's is 1.889
+   Warfare card's P92 is **1.309 [1.267, 1.370]** with fire simultaneous
+   (§D.17; 1.334 [1.261, 1.410] before it, 1.204 [1.164, 1.226] at T-125), still below the 1.5–2.0x target (R-WAR20), and Growth's is 1.889
    [1.742, 2.669]; fire control is ~16.5–24.5% of instructions on the card bed,
    inside the 25% budget (R-WAR29); test targets all under 60 s; card-free runs
    bit-identical to the engine before. The port strike wrecks no colony ship

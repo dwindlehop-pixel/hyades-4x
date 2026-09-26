@@ -570,6 +570,10 @@ pub struct SeedFleet {
 pub struct FleetSeeding {
     /// Minerals each fleet is built from, kt.
     pub spend_kt: f64,
+    /// **A surveyed start**: each seat begins having scanned every world within
+    /// this distance of its homeworld, ly. `0` — the default — is an ordinary
+    /// start, where only the homeworld is known.
+    pub known_radius_ly: f64,
     pub fleets: Vec<SeedFleet>,
 }
 

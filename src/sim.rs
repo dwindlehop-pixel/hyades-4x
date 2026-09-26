@@ -3281,6 +3281,19 @@ impl BuiltHull {
 impl Simulation {
     /// Build a simulation, ingesting a generated [`Galaxy`] into the ECS world.
     pub fn new(galaxy: Galaxy, config: SimConfig, autopilots: Vec<Box<dyn Autopilot>>) -> Self {
+        Self::new_logged(galaxy, config, autopilots, LogFilter::none())
+    }
+
+    /// [`Self::new`] with the log filter set **before** the galaxy is
+    /// bootstrapped, so what happens at `t = 0` — the opening survey launches,
+    /// the fleets the galaxy was generated with — is recorded. `set_log_filter`
+    /// after construction has already missed it.
+    pub fn new_logged(
+        galaxy: Galaxy,
+        config: SimConfig,
+        autopilots: Vec<Box<dyn Autopilot>>,
+        filter: LogFilter,
+    ) -> Self {
         // Refuse a degenerate hull ladder rather than simulating one. A config
         // where nothing can carry cargo still *runs* — it produces numbers, and
         // they look like an economy's — which is exactly why this must be loud.
@@ -3391,43 +3404,180 @@ impl Simulation {
             reserve_freighters: vec![Vec::new(); n],
             current_round: 0,
             inert_card_plays: 0,
-            log: SimLog::new(),
+            log: SimLog::with_filter(filter),
         };
         sim.bootstrap();
         sim.seed_fleets(&seeding);
         sim
     }
 
-    /// **Build the fleets the galaxy was generated with** (T-133 follow-up).
-    /// Every fleet gets the same spend and its hull count from its Design's
-    /// dry mass (R-O57), so the count is the engine's and not the bed's. The
-    /// hulls are unpaid, like the opening survey craft: generated, not built.
-    /// A fleet at rest is parked; one under way sheds its velocity from its
-    /// starting point, as any course change from a moving start does.
+    /// **Build the fleets the galaxy was generated with** (T-133 follow-up,
+    /// T-131's beds). Every fleet gets the same spend and its hull count from
+    /// its Design's dry mass (R-O57), so the count is the engine's and not the
+    /// bed's. The hulls are unpaid, like the opening survey craft: generated,
+    /// not built.
+    ///
+    /// **A hull's role decides how it starts.** A mission role leaves its
+    /// seat's home port through the engine's own launcher for that role, aimed
+    /// by the engine's own rule — a scout at the survey frontier, a colony ship
+    /// at the nearest known world it can found (the rule a retargeting colonist
+    /// uses), a miner at the known rocks nearest first and round again, a
+    /// freighter at its seat's generated mining sites in turn. A
+    /// station role — picket, reserve — takes the fleet's position and
+    /// velocity: parked at rest, or shedding the velocity from there. A
+    /// mission hull with nowhere to go stands in Reserve at its home port.
     fn seed_fleets(&mut self, seeding: &crate::galaxy::FleetSeeding) {
+        // **A surveyed start**: each seat has scanned every world within the
+        // known radius of its homeworld, so a colonizer or miner fleet has
+        // somewhere to go at `t = 0`.
+        if seeding.known_radius_ly > 0.0 {
+            for p in 0..self.player_entity.len() {
+                let home = self.world.player_info.get(self.player_entity[p]).unwrap().home;
+                let at = *self.world.position.get(home).unwrap();
+                let known: Vec<PlanetId> = self
+                    .planet_entity
+                    .iter()
+                    .filter(|&&e| self.world.position.get(e).is_some_and(|q| q.distance(at) <= seeding.known_radius_ly))
+                    .map(|&e| *self.world.planet_id.get(e).unwrap())
+                    .collect();
+                let k = self.world.knowledge.get_mut(self.player_entity[p]).unwrap();
+                for pid in known {
+                    k.scanned.insert(pid);
+                }
+            }
+        }
+        let mut sites: Vec<Vec<Entity>> = vec![Vec::new(); self.player_entity.len()];
+        let mut next_site = vec![0usize; self.player_entity.len()];
         for f in &seeding.fleets {
             let mass = hull_dry_mass(f.hull, &self.config).kilotons();
             let count = (seeding.spend_kt / mass).round() as usize;
             assert!(count > 0, "a fleet spend of {} kt buys no {:?} ({mass} kt)", seeding.spend_kt, f.hull);
-            let home = self.world.player_info.get(self.player_entity[f.seat]).unwrap().home;
-            let loadout = design_loadout(f.hull, f.class, &self.config, &self.combat);
-            for _ in 0..count {
-                let e = self.world.spawn();
-                self.world.owner.insert(e, PlayerId(f.seat as u32));
-                self.world.role.insert(e, f.role);
-                self.world.hull_type.insert(e, f.hull);
-                self.world.design_class.insert(e, f.class);
-                self.world.loadout.insert(e, loadout);
-                self.world.home_center.insert(e, home);
-                if f.velocity.norm() == 0.0 {
-                    self.park(e, f.position);
-                } else {
-                    let accel = self.laden_accel(e, self.config.civilian_accel_g);
-                    self.world.motion.insert(e, Motion::from_moving(f.position, f.velocity, self.clock, accel));
-                    self.track_changed(e);
+            let seat = f.seat;
+            let home = self.world.player_info.get(self.player_entity[seat]).unwrap().home;
+            let home_pos = *self.world.position.get(home).unwrap();
+            let rocks = if f.role == Role::Miner { self.known_rocks(seat, home) } else { Vec::new() };
+            for k in 0..count {
+                let built = BuiltHull { hull: f.hull, class: f.class, mix: Minerals::default() };
+                let e = Entity(self.world.next);
+                let launched = match f.role {
+                    Role::Scout => self.launch_survey(seat, home_pos, Vec3::ZERO, 0, 0.0, built),
+                    Role::Colonizer => match self.nearest_colony_site(seat, f.hull, home, home_pos) {
+                        Some((w, pid)) => {
+                            self.mark_targeted(seat, pid);
+                            self.spawn_courier(seat, Role::Colonizer, built, home, w, 0.0);
+                            true
+                        }
+                        None => false,
+                    },
+                    Role::Miner if !rocks.is_empty() => {
+                        let w = rocks[k % rocks.len()];
+                        if k < rocks.len() {
+                            sites[seat].push(w);
+                        }
+                        self.spawn_courier(seat, Role::Miner, built, home, w, 0.0);
+                        true
+                    }
+                    Role::Freighter if !sites[seat].is_empty() => {
+                        let outpost = sites[seat][next_site[seat] % sites[seat].len()];
+                        next_site[seat] += 1;
+                        self.spawn_freighter(seat, home, home_pos, outpost, f.hull, 0.0);
+                        self.world.design_class.insert(e, f.class);
+                        true
+                    }
+                    _ => false,
+                };
+                if !launched {
+                    self.world.spawn();
+                    let station = matches!(f.role, Role::Picket | Role::Reserve);
+                    let role = if station { f.role } else { Role::Reserve };
+                    self.world.owner.insert(e, PlayerId(seat as u32));
+                    self.world.role.insert(e, role);
+                    self.world.hull_type.insert(e, f.hull);
+                    self.stamp_loadout(e, built);
+                    self.world.home_center.insert(e, home);
+                    let (at, velocity) = if station { (f.position, f.velocity) } else { (home_pos, Vec3::ZERO) };
+                    if velocity.norm() == 0.0 {
+                        self.park(e, at);
+                    } else {
+                        let accel = self.laden_accel(e, self.config.civilian_accel_g);
+                        self.world.motion.insert(e, Motion::from_moving(at, velocity, self.clock, accel));
+                        self.track_changed(e);
+                    }
                 }
+                self.log.push(
+                    self.clock,
+                    LogEvent::FleetGenerated {
+                        player: seat as u32,
+                        vehicle: e,
+                        hull: f.hull,
+                        class: f.class,
+                        role: f.role,
+                    },
+                );
             }
         }
+    }
+
+    /// **The nearest known world a colony ship of `hull` from `home` can found,
+    /// measured from `from`** — scanned, unowned, not already targeted by this
+    /// empire, not believed held by an enemy (T-133). The colonist's rule: a
+    /// retargeting colony ship and a generated one choose the same way.
+    fn nearest_colony_site(&self, p: usize, hull: HullType, home: Entity, from: Vec3) -> Option<(Entity, PlanetId)> {
+        let knowledge = self.world.knowledge.get(self.player_entity[p])?;
+        let mut candidates: Vec<(f64, Entity, PlanetId)> = knowledge
+            .scanned
+            .iter()
+            .filter(|pid| !knowledge.targeted.contains(**pid))
+            .filter_map(|&pid| {
+                let w = *self.planet_entity.get(pid.0 as usize)?;
+                if self.world.owner.contains(w) || self.threatened[p].contains(&w.0) {
+                    return None;
+                }
+                Some((self.world.position.get(w)?.distance(from), w, pid))
+            })
+            .collect();
+        candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        candidates
+            .into_iter()
+            .find(|&(_, w, _)| self.colony_seed_for(hull, home, w).is_some_and(|k| k > Kilotons::ZERO))
+            .map(|(_, w, pid)| (w, pid))
+    }
+
+    /// **The known rocks, nearest first** — where a generated miner fleet
+    /// goes, one hull per rock and then round again, so crews stack by the
+    /// engine's crowding law (T-71). A rock is what the seat's own autopilot
+    /// classifies as a mining outpost from its home port — the rule its built
+    /// miners are tasked by — so a generated miner never stands on a world the
+    /// same seat would settle (a colony mines itself, `sys_production_tick`).
+    fn known_rocks(&mut self, p: usize, home: Entity) -> Vec<Entity> {
+        let pe = self.player_entity[p];
+        let holdings_centroid = self.holdings_centroid(p);
+        let (Some(knowledge), Some(doctrine), Some(info)) =
+            (self.world.knowledge.get(pe), self.world.doctrine.get(pe), self.world.player_info.get(pe))
+        else {
+            return Vec::new();
+        };
+        let from = *self.world.position.get(home).unwrap();
+        let ctx = RankContext {
+            scarcity: info.scarcity,
+            holdings_centroid,
+            mineral_pressure: self.mineral_pressure_of(home),
+        };
+        let mut rocks: Vec<(f64, Entity)> = knowledge
+            .scanned
+            .iter()
+            .filter_map(|&pid| {
+                let w = *self.planet_entity.get(pid.0 as usize)?;
+                if self.world.owner.contains(w)
+                    || self.autopilots[p].rank(doctrine, &self.view_of(w), &ctx).class != PlanetClass::MiningOutpost
+                {
+                    return None;
+                }
+                Some((self.world.position.get(w)?.distance(from), w))
+            })
+            .collect();
+        rocks.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        rocks.into_iter().map(|(_, w)| w).collect()
     }
 
     /// Convenience: every seat runs the baseline colonization/growth policy.
@@ -5012,7 +5162,15 @@ impl Simulation {
             // Equivalent at `max_pickup_stops = 1`, where every stop is `base`.
             if sh.outpost == sh.base {
                 let dens = self.world.density.get(sh.base).unwrap().total_mass().kilotons();
-                if load <= Price::new(1e-9) && dens * self.config.outpost_mining_fraction <= self.config.density_floor {
+                let exhausted = dens * self.config.outpost_mining_fraction <= self.config.density_floor;
+                // **A rock this empire has settled is a colony, and a colony
+                // mines itself** (`sys_production_tick`). Its hauler would be
+                // routed to the center it is standing on — a leg of zero length
+                // arriving at the instant it leaves — and shuttle there forever
+                // without the clock moving. The pair's mission is over the same
+                // way an exhausted rock's is.
+                let settled = self.world.owner.get(sh.base).is_some_and(|o| o.0 == p);
+                if load <= Price::new(1e-9) && (exhausted || settled) {
                     let here = self.position_at(sh.base, self.clock).unwrap();
                     let outpost_pid = *self.world.planet_id.get(sh.base).unwrap();
                     self.park(vehicle, here);
@@ -5297,7 +5455,12 @@ impl Simulation {
             let density_after = self.world.density.get(outpost).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
-                LogEvent::MineralsExtracted { planet: pid, amount: extracted.basic_total().kilotons(), density_after },
+                LogEvent::MineralsExtracted {
+                    player,
+                    planet: pid,
+                    amount: extracted.basic_total().kilotons(),
+                    density_after,
+                },
             );
         }
         if any {
@@ -5370,6 +5533,7 @@ impl Simulation {
             self.log.push(
                 self.clock,
                 LogEvent::MineralsExtracted {
+                    player: self.world.owner.get(center).map_or(0, |o| o.0),
                     planet: center_pid,
                     amount: extracted.basic_total().kilotons(),
                     density_after,
@@ -14345,5 +14509,150 @@ mod tests {
                 assert!(seen.insert(ship), "ship {ship:?} appeared in more than one fleet");
             }
         }
+    }
+
+    /// A two-seat field with fleets generated at each seat's home port, the
+    /// baseline on both seats, and the vehicle log on.
+    fn fleet_bed(seed: u64, radius: f64, spend: f64, fleets: &[(usize, HullType, Class, Role)]) -> Simulation {
+        use crate::galaxy::{FleetSeeding, SeedFleet};
+        let mut g = GalaxyConfig::new(2, seed);
+        g.planet_count = 400;
+        let probe = Galaxy::generate(g).unwrap();
+        let fleets = fleets
+            .iter()
+            .map(|&(seat, hull, class, role)| SeedFleet {
+                seat,
+                hull,
+                class,
+                role,
+                position: probe.planets[probe.homeworlds[seat].0 as usize].position,
+                velocity: Vec3::ZERO,
+            })
+            .collect();
+        let galaxy =
+            Galaxy::generate_with(g, FleetSeeding { spend_kt: spend, known_radius_ly: radius, fleets }).unwrap();
+        let aps: Vec<Box<dyn Autopilot>> =
+            (0..2).map(|_| Box::new(BaselineAutopilot::default()) as Box<dyn Autopilot>).collect();
+        Simulation::new_logged(galaxy, test_cfg(seed), aps, LogFilter::none().with(crate::log::LogCategory::Vehicles))
+    }
+
+    /// Where each generated hull of `role` was first sent, by seat.
+    fn generated_targets(sim: &Simulation, role: Role) -> [Vec<u32>; 2] {
+        let ours: BTreeSet<Entity> = sim
+            .log()
+            .iter()
+            .filter_map(|r| match r.event {
+                LogEvent::FleetGenerated { vehicle, role: r, .. } if r == role => Some(vehicle),
+                _ => None,
+            })
+            .collect();
+        let mut to = [Vec::new(), Vec::new()];
+        for r in sim.log().iter() {
+            if let LogEvent::VehicleSpawned { player, vehicle, role: r, to: at, .. } = r.event {
+                if r == role && ours.contains(&vehicle) {
+                    to[player as usize].push(at.0);
+                }
+            }
+        }
+        to
+    }
+
+    /// **Generated mission fleets are tasked by the engine's own launchers**
+    /// (Technology §4.4's role beds). A seat starts with every world inside the
+    /// known radius scanned; each fleet is its spend's worth of hulls; miners
+    /// go one to a rock, nearest first, and only to worlds the seat's own
+    /// autopilot ranks as mining outposts; freighters go to those rocks;
+    /// colony ships go to distinct worlds; and survey craft launch.
+    #[test]
+    fn generated_mission_fleets_are_tasked_like_built_hulls() {
+        let radius = 25.0;
+        let spend = 0.5;
+        let mut sim = fleet_bed(
+            5,
+            radius,
+            spend,
+            &[
+                (0, HullType::LimitedSystems, Class::Meadow, Role::Miner),
+                (0, HullType::MediumSystems, Class::Delta, Role::Freighter),
+                (1, HullType::MediumSystems, Class::Delta, Role::Colonizer),
+                (1, HullType::LimitedSystems, Class::Spur, Role::Scout),
+            ],
+        );
+        let cfg = sim.config;
+        let count = |hull| (spend / hull_dry_mass(hull, &cfg).kilotons()).round() as usize;
+        for p in 0..2 {
+            let home = sim.world.player_info.get(sim.player_entity[p]).unwrap().home;
+            let at = *sim.world.position.get(home).unwrap();
+            let k = sim.world.knowledge.get(sim.player_entity[p]).unwrap();
+            let scanned: BTreeSet<PlanetId> = k.scanned.iter().copied().collect();
+            let unscanned = sim
+                .planet_entity
+                .iter()
+                .filter(|&&w| sim.world.position.get(w).unwrap().distance(at) <= radius)
+                .filter(|&&w| !scanned.contains(sim.world.planet_id.get(w).unwrap()))
+                .count();
+            assert_eq!(unscanned, 0, "seat {p} starts surveyed to {radius} ly");
+        }
+        let miners = generated_targets(&sim, Role::Miner);
+        let home0 = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let rocks: Vec<u32> =
+            sim.known_rocks(0, home0).iter().map(|&w| sim.world.planet_id.get(w).unwrap().0).collect();
+        assert!(!rocks.is_empty(), "the bed has rocks to mine");
+        assert_eq!(miners[0].len(), count(HullType::LimitedSystems), "every generated miner launches");
+        let sites: BTreeSet<u32> = miners[0].iter().copied().collect();
+        assert_eq!(sites.len(), rocks.len().min(miners[0].len()), "one to a rock before any rock takes two");
+        assert!(sites.iter().all(|w| rocks.contains(w)), "only to worlds the seat ranks as outposts");
+        let freighters = generated_targets(&sim, Role::Freighter);
+        assert_eq!(freighters[0].len(), count(HullType::MediumSystems));
+        assert!(freighters[0].iter().all(|w| sites.contains(w)), "freight serves the generated rocks");
+        let colonists = generated_targets(&sim, Role::Colonizer);
+        let distinct: BTreeSet<u32> = colonists[1].iter().copied().collect();
+        assert!(!colonists[1].is_empty(), "colony ships launch");
+        assert_eq!(distinct.len(), colonists[1].len(), "each colony ship to its own world");
+        assert_eq!(generated_targets(&sim, Role::Scout)[1].len(), count(HullType::LimitedSystems));
+    }
+
+    /// **A hauler whose rock its own empire settles stands down.** Before the
+    /// guard it kept shuttling, and whenever the delivery router picked the
+    /// center it was standing on, the leg had zero length and rescheduled at
+    /// one clock reading forever (the freighter bed, seed 1, at 40.2 yr). This
+    /// fixture's router picks another center, so the ablated engine fails the
+    /// Reserve assertion rather than the step budget. A seat's miners and its
+    /// colony ships share any world that is settleable and ranked an outpost,
+    /// which is how the state is reached here.
+    #[test]
+    fn a_hauler_whose_rock_is_settled_stands_down() {
+        let mut sim = fleet_bed(
+            1,
+            20.0,
+            2.0,
+            &[
+                (0, HullType::LimitedSystems, Class::Meadow, Role::Miner),
+                (0, HullType::MediumSystems, Class::Delta, Role::Freighter),
+                (0, HullType::MediumSystems, Class::Delta, Role::Colonizer),
+            ],
+        );
+        let sites: BTreeSet<u32> = generated_targets(&sim, Role::Miner)[0].iter().copied().collect();
+        let shared: BTreeSet<u32> =
+            generated_targets(&sim, Role::Colonizer)[0].iter().copied().filter(|w| sites.contains(w)).collect();
+        assert!(!shared.is_empty(), "the bed must settle a mined rock, or it tests nothing");
+        let mut steps = 0u64;
+        while sim.step() {
+            steps += 1;
+            assert!(steps < 5_000_000, "stalled at {} yr", sim.clock());
+        }
+        let settled: BTreeSet<u32> = sim
+            .log()
+            .iter()
+            .filter_map(|r| match r.event {
+                LogEvent::ColonyFounded { player: 0, planet, .. } if shared.contains(&planet.0) => Some(planet.0),
+                _ => None,
+            })
+            .collect();
+        assert!(!settled.is_empty(), "a mined rock is settled inside the horizon");
+        let stood_down = sim.log().iter().any(|r| {
+            matches!(r.event, LogEvent::VehicleParked { player: 0, role: Role::Reserve, at, .. } if settled.contains(&at.0))
+        });
+        assert!(stood_down, "its hauler goes to Reserve there");
     }
 }

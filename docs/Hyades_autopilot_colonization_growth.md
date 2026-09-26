@@ -474,7 +474,10 @@ The substance belongs to `Hyades_warfare_tree.md`.
 **8.1 `RATIFIED` — the four civilian roles.** Scout (survey), Colonizer (founds),
 Miner (extracts), Freighter (hauls), plus **Reserve** (a standing mission that
 ended) and **Scrapped** (a *completable* mission that ended — only an exhausted
-Scout, at `scrap_recovery_fraction = 0.5`).
+Scout, at `scrap_recovery_fraction = 0.5`). A miner/hauler pair's mission ends
+when its rock is exhausted **or when its own empire settles the rock** — a colony
+mines itself — and the hauler goes to Reserve (appendix §D.18; before this a
+hauler routed to the center it stood on flew legs of zero length forever).
 
 **8.2 `RATIFIED` — role eligibility is permissive; competence varies.**
 `assign_role` declines on no viable target, never on hull type. Competence is a

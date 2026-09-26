@@ -192,7 +192,7 @@ pub enum LogEvent {
 
     /// In-ground density was mined into a stockpile (a center's local take, or
     /// an outpost's periodic [`crate::sim`] mining tick).
-    MineralsExtracted { planet: PlanetId, amount: f64, density_after: f64 },
+    MineralsExtracted { player: u32, planet: PlanetId, amount: f64, density_after: f64 },
     /// A body's density crossed the floor; mining there has stopped for good.
     MiningExhausted { planet: PlanetId },
     /// A freighter loaded at an outpost or deposited at a center.
@@ -207,6 +207,10 @@ pub enum LogEvent {
     /// derivable from the hull — and that split is the only way to tell which of
     /// the three caps was binding (hull, destination, or origin) without
     /// reaching into engine internals. `examples/endowment` reads it.
+    /// **A hull generated with the galaxy** (T-131 beds): which seat, which
+    /// Design and which role, so a bed can tell its fleet from what the seat's
+    /// economy builds.
+    FleetGenerated { player: u32, vehicle: Entity, hull: HullType, class: crate::sim::Class, role: Role },
     VehicleSpawned {
         player: u32,
         vehicle: Entity,
@@ -309,7 +313,8 @@ impl LogEvent {
             ProductionDecision { .. } | BuildApplied { .. } => LogCategory::Production,
             PicketIntercept { .. } => LogCategory::Combat,
             MineralsExtracted { .. } | MiningExhausted { .. } | FreighterTransfer { .. } => LogCategory::Mining,
-            VehicleSpawned { .. }
+            FleetGenerated { .. }
+            | VehicleSpawned { .. }
             | VehicleParked { .. }
             | ContactArrived { .. }
             | ColonyFounded { .. }
@@ -330,6 +335,7 @@ impl LogEvent {
             | PicketIntercept { player, .. }
             | BuildApplied { player, .. }
             | FreighterTransfer { player, .. }
+            | FleetGenerated { player, .. }
             | VehicleSpawned { player, .. }
             | VehicleParked { player, .. }
             | ContactArrived { player, .. }
@@ -341,7 +347,8 @@ impl LogEvent {
             | CourseChanged { player, .. }
             | CardPlayed { player, .. } => Some(player),
             // An encounter is about two seats, so it belongs to neither.
-            MineralsExtracted { .. } | MiningExhausted { .. } | PopulationStep { .. } | EncounterBegan { .. } => None,
+            MineralsExtracted { player, .. } => Some(player),
+            MiningExhausted { .. } | PopulationStep { .. } | EncounterBegan { .. } => None,
         }
     }
 
@@ -359,6 +366,7 @@ impl LogEvent {
             EncounterBegan { .. } | HullWrecked { .. } => None,
             PicketIntercept { target, .. } => Some(target),
             VehicleSpawned { to, .. } => Some(to),
+            FleetGenerated { .. } => None,
             ContactArrived { planet, .. } => Some(planet),
             ColonyFounded { planet, .. } | ColonyContested { planet, .. } => Some(planet),
             CardPlayed { .. } => None,
@@ -372,6 +380,7 @@ impl LogEvent {
         match *self {
             FreighterTransfer { vehicle, .. }
             | PicketIntercept { vehicle, .. }
+            | FleetGenerated { vehicle, .. }
             | VehicleSpawned { vehicle, .. }
             | VehicleParked { vehicle, .. }
             | ContactArrived { vehicle, .. }
@@ -417,8 +426,8 @@ impl fmt::Display for LogEvent {
                 "P{player} planet#{} built {order:?} (cost={cost:.2}, stockpile now {stockpile_after:.2})",
                 center.0
             ),
-            MineralsExtracted { planet, amount, density_after } => {
-                write!(f, "planet#{} mined {amount:.3} (density now {density_after:.3})", planet.0)
+            MineralsExtracted { player, planet, amount, density_after } => {
+                write!(f, "P{player} planet#{} mined {amount:.3} (density now {density_after:.3})", planet.0)
             }
             MiningExhausted { planet } => write!(f, "planet#{} mined out", planet.0),
             FreighterTransfer { player, leg, amount, at, .. } => {
@@ -427,6 +436,9 @@ impl fmt::Display for LogEvent {
                     FreighterLeg::Deposited => "deposited",
                 };
                 write!(f, "P{player} freighter {verb} {amount:.2} at planet#{}", at.0)
+            }
+            FleetGenerated { player, hull, class, role, .. } => {
+                write!(f, "P{player} generated {role:?} {class:?} on {hull:?}")
             }
             VehicleSpawned { player, role, to, .. } => {
                 write!(f, "P{player} launched {role:?} -> planet#{}", to.0)
@@ -585,7 +597,7 @@ mod tests {
         let mut log = SimLog::with_filter(LogFilter::all());
         log.push(1.0, sample(0));
         log.push(2.0, sample(1));
-        log.push(3.0, LogEvent::MineralsExtracted { planet: PlanetId(5), amount: 1.0, density_after: 0.5 });
+        log.push(3.0, LogEvent::MineralsExtracted { player: 2, planet: PlanetId(5), amount: 1.0, density_after: 0.5 });
 
         assert_eq!(log.by_player(0).count(), 1);
         assert_eq!(log.by_player(1).count(), 1);

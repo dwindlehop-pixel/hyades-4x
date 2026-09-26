@@ -1,129 +1,297 @@
-//! **The short-range offensive rating of every named armed Design**
-//! (`Hyades_technology_tree.md` §4, T-131; beds under the T-133 harness
-//! ruling). `design_rating [seeds] [horizon_years]`.
+//! **The static rating of every named Design, per role** (`Hyades_technology_tree.md`
+//! §4, T-131). `design_rating [role|all] [seeds]`.
 //!
-//! Each match is a galaxy generated with two fleets and nothing else changed
-//! (the author's ruling: a bed varies only the galaxy, and fleets are generated
-//! with it, at equal mineral spend). The two fleets are placed on one point far
-//! off the disk — **point blank**, §4.4's start for the short-range role — and
-//! the simulation runs its own event loop: detection, discharges, wreck points,
-//! the fleets' decisions under the default Doctrine.
+//! Every match is a galaxy generated with fleets and nothing else changed (the
+//! author's rulings: a bed varies only the galaxy; fleets are generated with it
+//! at equal mineral spend, with a position and a velocity). The simulation runs
+//! its own event loop and its own role systems; the harness reads the log.
+//!
+//! **The pool** is the named Designs, deduplicated by every field the beds read
+//! (R-TECH17): Meadow and Spur, Delta and Ford, Range and Strait are the same
+//! object to the engine, so each pair is one candidate.
 //!
 //! | quantity | meaning | unit |
 //! |---|---|---|
-//! | `B` | each fleet's spend: ten General Systems hulls' price (R-TECH11's recommendation) | kt |
-//! | `x_A` | side A's dry mass **still holding the field** at the horizon — neither wrecked nor withdrawn (R-TECH18, recommended reading of §4.4's "surviving dry mass") | kt |
-//! | `s_AB` | A's score share, `x_A / (x_A + x_B)`, or ½ when both are zero (§4.6) | in [0, 1] |
-//! | `R` | the Bradley–Terry maximum-likelihood rating on the Elo scale, one virtual draw per pair (R-TECH5, R-TECH6), Cairn anchored at 0 (R-TECH8) | Elo points |
+//! | `B` | each fleet's spend: ten General Systems hulls' price (R-TECH11) | kt |
+//! | `x_A` | side A's task score, per bed below | per bed |
+//! | `s_AB` | A's share, `x_A / (x_A + x_B)`, ½ when both are zero (§4.6) | [0, 1] |
+//! | `R` | Bradley–Terry maximum likelihood on the Elo scale, one virtual draw per pair (R-TECH5/6), the role's default Design at 0 (R-TECH8) | Elo points |
 //!
-//! Every pair is played on every seed with the seats swapped (R-TECH16), and
-//! the 90% interval on each rating is bootstrapped over seeds.
+//! | bed | fleets | start | Doctrine | judged by `x` | horizon |
+//! |---|---|---|---|---|---|
+//! | short-range offensive | one per seat, Picket | point blank, off the disk | hostile (§4.4.6) | dry mass holding the field (R-TECH19) | 1 yr |
+//! | long-range offensive | one per seat, Picket | `D_long` apart, closing | hostile | dry mass holding the field | 1 yr |
+//! | picket | one per seat, Picket | on the rival's home port | default | rival colony ships wrecked or turned away | 150 yr |
+//! | colonizer | one per seat, Colonizer | home port, surveyed start | default | colonies the fleet founds | 80 yr |
+//! | miner | one per seat, Miner | home port, surveyed start | default | ore extracted at the fleet's rocks | 160 yr |
+//! | freighter | reference Meadow miners + the candidate as Freighter | home port, surveyed start | default | kilotons the fleet delivers to its bank | 160 yr |
+//! | scout | one per seat, Scout | home port | default | worlds it reaches first | 40 yr |
+//!
+//! Every pair is played on every seed with the seats swapped (R-TECH16); the
+//! 90% interval on each rating is bootstrapped over seeds.
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
 use hyades_engine::galaxy::{FleetSeeding, Galaxy, GalaxyConfig, SeedFleet};
-use hyades_engine::log::{CourseReason, LogCategory, LogEvent, LogFilter};
+use hyades_engine::log::{CourseReason, FreighterLeg, LogCategory, LogEvent, LogFilter};
 use hyades_engine::math::Vec3;
-use hyades_engine::sim::{hull_dry_mass, Class, HullType, Role, SimConfig, Simulation};
+use hyades_engine::sim::{hull_dry_mass, Class, Entity, HullType, Role, SimConfig, Simulation};
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
-/// The named armed Designs — every class on a Contact hull.
-const POOL: [(HullType, Class); 3] = [
-    (HullType::LimitedContactVehicle, Class::Tor),
-    (HullType::LimitedContactVehicle, Class::Cairn),
-    (HullType::GeneralContactVehicle, Class::Scarp),
+/// The distinct named Designs, with the names each stands for.
+const POOL: [(HullType, Class, &str); 6] = [
+    (HullType::LimitedSystems, Class::Meadow, "Meadow=Spur"),
+    (HullType::LimitedContactVehicle, Class::Tor, "Tor"),
+    (HullType::LimitedContactVehicle, Class::Cairn, "Cairn"),
+    (HullType::MediumSystems, Class::Delta, "Delta=Ford"),
+    (HullType::GeneralSystems, Class::Range, "Range=Strait"),
+    (HullType::GeneralContactVehicle, Class::Scarp, "Scarp"),
 ];
-const ANCHOR: usize = 1;
+const N: usize = POOL.len();
+/// A per-pair quantity over the pool.
+type Table = [[f64; N]; N];
 
-/// A per-pair quantity over the pool: score summed, or games played.
-type Table = [[f64; 3]; 3];
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Bed {
+    ShortRange,
+    LongRange,
+    Picket,
+    Colonizer,
+    Miner,
+    Freighter,
+    Scout,
+}
 
-/// One match: `a` on seat 0 against `b` on seat 1. Returns each side's dry mass
-/// holding the field, and what the fight did.
-fn play(seed: u64, a: usize, b: usize, horizon: f64) -> ([f64; 2], [usize; 2], [usize; 2], f64) {
-    let mut g = GalaxyConfig::new(2, seed);
-    g.planet_count = 200;
+impl Bed {
+    const ALL: [Bed; 7] =
+        [Bed::ShortRange, Bed::LongRange, Bed::Picket, Bed::Colonizer, Bed::Miner, Bed::Freighter, Bed::Scout];
+    fn name(self) -> &'static str {
+        match self {
+            Bed::ShortRange => "short-range",
+            Bed::LongRange => "long-range",
+            Bed::Picket => "picket",
+            Bed::Colonizer => "colonizer",
+            Bed::Miner => "miner",
+            Bed::Freighter => "freighter",
+            Bed::Scout => "scout",
+        }
+    }
+    /// Placeholders, each long enough that the bed's task has run its course.
+    /// An outpost yields once per `mining_tick_years` (50) after its crew
+    /// lands, so the two mining beds run for three ticks.
+    fn horizon(self) -> f64 {
+        match self {
+            Bed::ShortRange | Bed::LongRange => 1.0,
+            Bed::Picket => 150.0,
+            Bed::Colonizer => 80.0,
+            Bed::Miner | Bed::Freighter => 160.0,
+            Bed::Scout => 40.0,
+        }
+    }
+    /// The role's anchor: the Design the default standing layer assigns it, or
+    /// the Warfare card's picket where the default is unarmed (R-TECH8).
+    fn anchor(self) -> usize {
+        match self {
+            Bed::ShortRange | Bed::LongRange | Bed::Picket => 2,
+            Bed::Colonizer | Bed::Freighter => 3,
+            Bed::Miner | Bed::Scout => 0,
+        }
+    }
+    fn hostile(self) -> bool {
+        matches!(self, Bed::ShortRange | Bed::LongRange)
+    }
+    /// A surveyed start, ly, where the role needs known worlds at `t = 0`.
+    fn known_radius(self) -> f64 {
+        match self {
+            Bed::Picket | Bed::Colonizer | Bed::Miner | Bed::Freighter => 20.0,
+            _ => 0.0,
+        }
+    }
+}
+
+/// `D_long`, the long-range bed's starting separation, ly — beyond every beam
+/// Design's reach (7.9e-3 ly). Placeholder (R-TECH12).
+const D_LONG: f64 = 0.03;
+/// Each long-range fleet's closing speed, `c` — enough that every hull passes
+/// the midpoint before it can stop. Placeholder (R-TECH12).
+const CLOSING: f64 = 0.45;
+
+/// The standard two-seat field: role beds need worlds at the density a game has.
+fn galaxy_config(seed: u64) -> GalaxyConfig {
+    GalaxyConfig::new(2, seed)
+}
+
+/// One match: Design `a` on seat 0 against `b` on seat 1. Returns each side's
+/// task score.
+fn play(bed: Bed, seed: u64, a: usize, b: usize) -> [f64; 2] {
+    let g = galaxy_config(seed);
     let cfg = SimConfig::new(seed);
-    let mass_cfg = cfg;
     let spend = 10.0 * hull_dry_mass(HullType::GeneralSystems, &cfg).kilotons();
-    let at = Vec3::new(0.0, 0.0, 60.0);
-    let fleet = |seat: usize, d: usize| SeedFleet {
+    let homes: Vec<Vec3> = {
+        let probe = Galaxy::generate(g).unwrap();
+        probe.homeworlds.iter().map(|&h| probe.planets[h.0 as usize].position).collect()
+    };
+    let design = [a, b];
+    let fleet = |seat: usize, d: usize, role: Role, position: Vec3, velocity: Vec3| SeedFleet {
         seat,
         hull: POOL[d].0,
         class: POOL[d].1,
-        role: Role::Picket,
-        position: at,
-        velocity: Vec3::ZERO,
+        role,
+        position,
+        velocity,
     };
-    let seeding = FleetSeeding { spend_kt: spend, fleets: vec![fleet(0, a), fleet(1, b)] };
-    let galaxy = Galaxy::generate_with(g, seeding).unwrap();
-    let mut cfg = cfg;
-    cfg.horizon_years = horizon;
-    // **Both seats hostile.** The author's ruling (warfare §8.19.2): two fleets
-    // stand and fight only when both sides' Doctrine is to kill the other's
-    // fleet, so a pitched-battle bed seats two such Doctrines. Under the
-    // default a neutral that can outrun its attacker leaves on the first hit.
-    let hostile = Doctrine { engage_neutrals: true, ..Doctrine::default() };
-    let aps: Vec<Box<dyn Autopilot>> =
-        (0..2).map(|_| Box::new(BaselineAutopilot::new(hostile)) as Box<dyn Autopilot>).collect();
-    let mut sim = Simulation::new(galaxy, cfg, aps);
-    sim.set_log_filter(LogFilter::none().with(LogCategory::Combat));
-    let t0 = std::time::Instant::now();
-    sim.run();
-    let secs = t0.elapsed().as_secs_f64();
-    let (mut wrecked, mut withdrew) = ([0usize; 2], [0usize; 2]);
-    // **Held, read off the log.** Each fleet is `round(B / m)` hulls, and the
-    // seeded fleets are the only Pickets on this bed (the default Doctrine
-    // fields none), so a fleet has lost exactly the Picket hulls of its seat
-    // that were wrecked or withdrew — each counted once.
-    let mut gone = [std::collections::BTreeSet::new(), std::collections::BTreeSet::new()];
-    for r in sim.log().iter() {
-        match r.event {
-            LogEvent::HullWrecked { player, vehicle, role: Role::Picket, .. } => {
-                wrecked[player as usize] += 1;
-                gone[player as usize].insert(vehicle);
+    let off_disk = Vec3::new(0.0, 0.0, 60.0);
+    let mut fleets = Vec::new();
+    for (seat, &d) in design.iter().enumerate() {
+        match bed {
+            Bed::ShortRange => fleets.push(fleet(seat, d, Role::Picket, off_disk, Vec3::ZERO)),
+            Bed::LongRange => {
+                let side = if seat == 0 { -1.0 } else { 1.0 };
+                let at = off_disk.add(Vec3::new(side * 0.5 * D_LONG, 0.0, 0.0));
+                fleets.push(fleet(seat, d, Role::Picket, at, Vec3::new(-side * CLOSING, 0.0, 0.0)));
             }
-            LogEvent::HullWrecked { player, vehicle, role: Role::Reserve, .. } => {
-                // A hull that had already withdrawn, wrecked on its way out.
-                wrecked[player as usize] += 1;
-                gone[player as usize].insert(vehicle);
+            Bed::Picket => fleets.push(fleet(seat, d, Role::Picket, homes[1 - seat], Vec3::ZERO)),
+            Bed::Colonizer => fleets.push(fleet(seat, d, Role::Colonizer, homes[seat], Vec3::ZERO)),
+            Bed::Miner => fleets.push(fleet(seat, d, Role::Miner, homes[seat], Vec3::ZERO)),
+            Bed::Freighter => {
+                fleets.push(fleet(seat, 0, Role::Miner, homes[seat], Vec3::ZERO));
+                fleets.push(fleet(seat, d, Role::Freighter, homes[seat], Vec3::ZERO));
             }
-            LogEvent::CourseChanged { player, vehicle, role: Role::Picket, reason: CourseReason::Withdraw, .. } => {
-                withdrew[player as usize] += 1;
-                gone[player as usize].insert(vehicle);
-            }
-            _ => {}
+            Bed::Scout => fleets.push(fleet(seat, d, Role::Scout, homes[seat], Vec3::ZERO)),
         }
     }
-    let mut held = [0.0; 2];
-    for (seat, d) in [(0, a), (1, b)] {
-        let m = hull_dry_mass(POOL[d].0, &mass_cfg).kilotons();
-        let count = (spend / m).round() as usize;
-        held[seat] = (count - gone[seat].len()) as f64 * m;
-    }
-    (held, wrecked, withdrew, secs)
+    let seeding = FleetSeeding { spend_kt: spend, known_radius_ly: bed.known_radius(), fleets };
+    let galaxy = Galaxy::generate_with(g, seeding).unwrap();
+    let mut run_cfg = cfg;
+    run_cfg.horizon_years = bed.horizon();
+    let doctrine = Doctrine { engage_neutrals: bed.hostile(), ..Doctrine::default() };
+    let aps: Vec<Box<dyn Autopilot>> =
+        (0..2).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<dyn Autopilot>).collect();
+    let filter = LogFilter::none().with(LogCategory::Vehicles).with(LogCategory::Mining).with(LogCategory::Combat);
+    let mut sim = Simulation::new_logged(galaxy, run_cfg, aps, filter);
+    sim.run();
+    judge(bed, &sim, &cfg, spend, design)
 }
 
-/// Bradley–Terry by minorization–maximization (Hunter 2004) on fractional
-/// wins, with one virtual draw per pair. Returns Elo points, anchor at 0.
-fn fit(wins: &Table, games: &Table) -> [f64; 3] {
-    let mut w = *wins;
-    let mut n = *games;
-    for i in 0..3 {
-        for j in 0..3 {
+/// The bed's task score for each seat, read off the log.
+fn judge(bed: Bed, sim: &Simulation, cfg: &SimConfig, spend: f64, design: [usize; 2]) -> [f64; 2] {
+    // The generated fleet of each seat, by the role it was generated for.
+    let mut fleet: BTreeMap<Entity, (usize, Role)> = BTreeMap::new();
+    for r in sim.log().iter() {
+        if let LogEvent::FleetGenerated { player, vehicle, role, .. } = r.event {
+            fleet.insert(vehicle, (player as usize, role));
+        }
+    }
+    let ours = |v: Entity, seat: usize, role: Role| fleet.get(&v).is_some_and(|&(s, r)| s == seat && r == role);
+    // The rocks each seat's generated miners were sent to.
+    let mut sites: [BTreeSet<u32>; 2] = [BTreeSet::new(), BTreeSet::new()];
+    for r in sim.log().iter() {
+        if let LogEvent::VehicleSpawned { player, vehicle, role: Role::Miner, to, .. } = r.event {
+            if ours(vehicle, player as usize, Role::Miner) {
+                sites[player as usize].insert(to.0);
+            }
+        }
+    }
+    let mut x = [0.0; 2];
+    match bed {
+        Bed::ShortRange | Bed::LongRange => {
+            let mut gone = [BTreeSet::new(), BTreeSet::new()];
+            for r in sim.log().iter() {
+                match r.event {
+                    LogEvent::HullWrecked { player, vehicle, .. } => {
+                        gone[player as usize].insert(vehicle);
+                    }
+                    LogEvent::CourseChanged { player, vehicle, reason: CourseReason::Withdraw, .. } => {
+                        gone[player as usize].insert(vehicle);
+                    }
+                    _ => {}
+                }
+            }
+            for seat in 0..2 {
+                let m = hull_dry_mass(POOL[design[seat]].0, cfg).kilotons();
+                let count = (spend / m).round() as usize;
+                let lost = gone[seat].iter().filter(|&&v| ours(v, seat, Role::Picket)).count();
+                x[seat] = (count - lost) as f64 * m;
+            }
+        }
+        Bed::Picket => {
+            // A rival colony ship denied: wrecked, or turned away under fire or
+            // its news. Only the fleets are armed, so every denial is theirs.
+            let mut denied = [BTreeSet::new(), BTreeSet::new()];
+            for r in sim.log().iter() {
+                match r.event {
+                    LogEvent::HullWrecked { player, vehicle, role: Role::Colonizer, .. }
+                    | LogEvent::CourseChanged { player, vehicle, role: Role::Colonizer, .. } => {
+                        denied[1 - player as usize].insert(vehicle);
+                    }
+                    _ => {}
+                }
+            }
+            x = [denied[0].len() as f64, denied[1].len() as f64];
+        }
+        Bed::Colonizer => {
+            for r in sim.log().iter() {
+                if let LogEvent::ColonyFounded { player, vehicle, .. } = r.event {
+                    if ours(vehicle, player as usize, Role::Colonizer) {
+                        x[player as usize] += 1.0;
+                    }
+                }
+            }
+        }
+        Bed::Miner => {
+            for r in sim.log().iter() {
+                if let LogEvent::MineralsExtracted { player, planet, amount, .. } = r.event {
+                    if sites[player as usize].contains(&planet.0) {
+                        x[player as usize] += amount;
+                    }
+                }
+            }
+        }
+        Bed::Freighter => {
+            for r in sim.log().iter() {
+                if let LogEvent::FreighterTransfer { player, vehicle, leg: FreighterLeg::Deposited, amount, .. } =
+                    r.event
+                {
+                    if ours(vehicle, player as usize, Role::Freighter) {
+                        x[player as usize] += amount;
+                    }
+                }
+            }
+        }
+        Bed::Scout => {
+            let mut first: BTreeSet<u32> = BTreeSet::new();
+            for r in sim.log().iter() {
+                if let LogEvent::ContactArrived { player, vehicle, planet, .. } = r.event {
+                    if first.insert(planet.0) && ours(vehicle, player as usize, Role::Scout) {
+                        x[player as usize] += 1.0;
+                    }
+                }
+            }
+        }
+    }
+    x
+}
+
+/// Bradley–Terry by minorization–maximization (Hunter 2004) on fractional wins,
+/// one virtual draw per pair (R-TECH6). Elo points, `anchor` at 0.
+fn fit(wins: &Table, games: &Table, anchor: usize) -> [f64; N] {
+    let (mut w, mut n) = (*wins, *games);
+    for i in 0..N {
+        for j in 0..N {
             if i != j {
                 w[i][j] += 0.5;
                 n[i][j] += 1.0;
             }
         }
     }
-    let mut gamma = [1.0; 3];
-    for _ in 0..10_000 {
+    let mut gamma = [1.0; N];
+    for _ in 0..20_000 {
         let mut next = gamma;
-        for i in 0..3 {
-            let won: f64 = (0..3).filter(|&j| j != i).map(|j| w[i][j]).sum();
-            let den: f64 = (0..3).filter(|&j| j != i).map(|j| n[i][j] / (gamma[i] + gamma[j])).sum();
+        for i in 0..N {
+            let won: f64 = (0..N).filter(|&j| j != i).map(|j| w[i][j]).sum();
+            let den: f64 = (0..N).filter(|&j| j != i).map(|j| n[i][j] / (gamma[i] + gamma[j])).sum();
             next[i] = won / den;
         }
-        let a = next[ANCHOR];
+        let a = next[anchor];
         for g in next.iter_mut() {
             *g /= a;
         }
@@ -132,33 +300,37 @@ fn fit(wins: &Table, games: &Table) -> [f64; 3] {
     gamma.map(|g| 400.0 * g.log10())
 }
 
-fn main() {
-    let seeds: Vec<u64> = std::env::args()
-        .nth(1)
-        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
-        .unwrap_or_else(|| vec![1, 7, 42, 31337]);
-    let horizon: f64 = std::env::args().nth(2).and_then(|s| s.parse().ok()).unwrap_or(1.0);
-    println!("short-range bed: {} seeds, horizon {horizon} yr, pool {:?}", seeds.len(), POOL.map(|p| p.1));
+fn rate(bed: Bed, seeds: &[u64]) {
+    println!("\n== {} bed: {} seeds, horizon {} yr", bed.name(), seeds.len(), bed.horizon());
     let _ = std::io::stdout().flush();
-    // per seed: shares[seed][i][j] summed over the two seatings, and games
+    let t0 = std::time::Instant::now();
     let mut per_seed: Vec<(Table, Table)> = Vec::new();
-    for &seed in &seeds {
-        let (mut wins, mut games) = ([[0.0; 3]; 3], [[0.0; 3]; 3]);
-        for a in 0..3 {
-            for b in 0..3 {
+    let (mut decided, mut matches) = (0usize, 0usize);
+    for &seed in seeds {
+        let (mut wins, mut games) = ([[0.0; N]; N], [[0.0; N]; N]);
+        for a in 0..N {
+            for b in 0..N {
                 if a == b {
                     continue;
                 }
-                let (held, wrecked, withdrew, secs) = play(seed, a, b, horizon);
-                let tot = held[0] + held[1];
-                let s = if tot > 0.0 { held[0] / tot } else { 0.5 };
+                let x = play(bed, seed, a, b);
+                let tot = x[0] + x[1];
+                let s = if tot > 0.0 { x[0] / tot } else { 0.5 };
                 wins[a][b] += s;
                 wins[b][a] += 1.0 - s;
                 games[a][b] += 1.0;
                 games[b][a] += 1.0;
+                matches += 1;
+                if tot > 0.0 && (s == 0.0 || s == 1.0) {
+                    decided += 1;
+                }
                 println!(
-                    "MATCH seed {seed} {:?} v {:?}: held {:.3} / {:.3} kt  share {s:.3}  wrecked {wrecked:?}  withdrew {withdrew:?}  {secs:.1} s",
-                    POOL[a].1, POOL[b].1, held[0], held[1]
+                    "MATCH\t{}\t{seed}\t{}\t{}\t{:.4}\t{:.4}\t{s:.3}",
+                    bed.name(),
+                    POOL[a].2,
+                    POOL[b].2,
+                    x[0],
+                    x[1]
                 );
                 let _ = std::io::stdout().flush();
             }
@@ -166,10 +338,10 @@ fn main() {
         per_seed.push((wins, games));
     }
     let sum = |set: &[usize]| {
-        let (mut w, mut n) = ([[0.0; 3]; 3], [[0.0; 3]; 3]);
+        let (mut w, mut n) = ([[0.0; N]; N], [[0.0; N]; N]);
         for &k in set {
-            for i in 0..3 {
-                for j in 0..3 {
+            for i in 0..N {
+                for j in 0..N {
                     w[i][j] += per_seed[k].0[i][j];
                     n[i][j] += per_seed[k].1[i][j];
                 }
@@ -179,8 +351,7 @@ fn main() {
     };
     let all: Vec<usize> = (0..seeds.len()).collect();
     let (w, n) = sum(&all);
-    let r = fit(&w, &n);
-    // Bootstrap over seeds, a fixed splitmix stream so a rerun prints the same.
+    let r = fit(&w, &n, bed.anchor());
     let mut state: u64 = 0x05EE_DE10;
     let mut next = || {
         state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -189,23 +360,41 @@ fn main() {
         z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
         z ^ (z >> 31)
     };
-    let mut boots: Vec<[f64; 3]> = Vec::new();
-    for _ in 0..2000 {
+    let mut boots: Vec<[f64; N]> = Vec::new();
+    for _ in 0..1000 {
         let pick: Vec<usize> = (0..seeds.len()).map(|_| (next() % seeds.len() as u64) as usize).collect();
         let (bw, bn) = sum(&pick);
-        boots.push(fit(&bw, &bn));
+        boots.push(fit(&bw, &bn, bed.anchor()));
     }
-    println!("\nmean share, row against column (both seatings, all seeds):");
-    for i in 0..3 {
+    println!("mean share, row against column:");
+    for i in 0..N {
         let row: Vec<String> =
-            (0..3).map(|j| if i == j { "   -  ".into() } else { format!("{:6.3}", w[i][j] / n[i][j]) }).collect();
-        println!("  {:>6?} {}", POOL[i].1, row.join(" "));
+            (0..N).map(|j| if i == j { "   -  ".into() } else { format!("{:6.3}", w[i][j] / n[i][j]) }).collect();
+        println!("  {:>13} {}", POOL[i].2, row.join(" "));
     }
-    println!("\nrating (Elo points, {:?} = 0), 90% interval bootstrapped over seeds:", POOL[ANCHOR].1);
-    for i in 0..3 {
+    println!(
+        "decided outright: {decided} of {matches} matches; {:.1} s. Rating, {} = 0, 90% over seeds:",
+        t0.elapsed().as_secs_f64(),
+        POOL[bed.anchor()].2
+    );
+    for i in 0..N {
         let mut v: Vec<f64> = boots.iter().map(|b| b[i]).collect();
         v.sort_by(f64::total_cmp);
         let q = |p: f64| v[((v.len() - 1) as f64 * p).round() as usize];
-        println!("  {:>6?}: {:+8.1}  [{:+8.1}, {:+8.1}]", POOL[i].1, r[i], q(0.05), q(0.95));
+        println!("RATING\t{}\t{}\t{:.1}\t{:.1}\t{:.1}", bed.name(), POOL[i].2, r[i], q(0.05), q(0.95));
+    }
+    let _ = std::io::stdout().flush();
+}
+
+fn main() {
+    let which = std::env::args().nth(1).unwrap_or_else(|| "all".into());
+    let seeds: Vec<u64> = std::env::args()
+        .nth(2)
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![1, 7, 42, 31337]);
+    for bed in Bed::ALL {
+        if which == "all" || which == bed.name() {
+            rate(bed, &seeds);
+        }
     }
 }

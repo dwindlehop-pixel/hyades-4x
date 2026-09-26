@@ -937,24 +937,7 @@ impl Simulation {
             return;
         };
         let (stop, _, _) = m.come_to_rest(self.clock);
-        let knowledge = self.world.knowledge.get(self.player_entity[p]).unwrap();
-        let mut candidates: Vec<(f64, Entity, PlanetId)> = knowledge
-            .scanned
-            .iter()
-            .filter(|pid| !knowledge.targeted.contains(**pid))
-            .filter_map(|&pid| {
-                let w = *self.planet_entity.get(pid.0 as usize)?;
-                if self.world.owner.contains(w) || self.threatened[p].contains(&w.0) {
-                    return None;
-                }
-                Some((self.world.position.get(w)?.distance(stop), w, pid))
-            })
-            .collect();
-        candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        let choice = candidates
-            .into_iter()
-            .find(|&(_, w, _)| self.colony_seed_for(hull, home, w).is_some_and(|k| k > Kilotons::ZERO));
-        let Some((_, w, pid)) = choice else {
+        let Some((w, pid)) = self.nearest_colony_site(p, hull, home, stop) else {
             self.withdraw(e);
             return;
         };
@@ -1209,7 +1192,7 @@ mod tests {
         let drift = Vec3::new(0.3, 0.0, 0.0);
         let under_way = fleet(1, HullType::LimitedContactVehicle, Class::Tor, drift);
         let spend = 2.2;
-        let seeding = FleetSeeding { spend_kt: spend, fleets: vec![cairn, scarp, under_way] };
+        let seeding = FleetSeeding { spend_kt: spend, known_radius_ly: 0.0, fleets: vec![cairn, scarp, under_way] };
         let galaxy = Galaxy::generate_with(g, seeding.clone()).unwrap();
         let mut cfg = SimConfig::new(31);
         cfg.horizon_years = 60.0;
@@ -1233,10 +1216,13 @@ mod tests {
                 assert!(mo.velocity_at(0.0).distance(f.velocity) < 1e-9, "at the velocity it says");
             }
         }
-        let bad = FleetSeeding { spend_kt: spend, fleets: vec![SeedFleet { seat: 2, ..cairn }] };
+        let bad = FleetSeeding { spend_kt: spend, known_radius_ly: 0.0, fleets: vec![SeedFleet { seat: 2, ..cairn }] };
         assert!(matches!(Galaxy::generate_with(g, bad), Err(GenError::BadFleet(0))));
-        let fast =
-            FleetSeeding { spend_kt: spend, fleets: vec![SeedFleet { velocity: Vec3::new(1.0, 0.0, 0.0), ..cairn }] };
+        let fast = FleetSeeding {
+            spend_kt: spend,
+            known_radius_ly: 0.0,
+            fleets: vec![SeedFleet { velocity: Vec3::new(1.0, 0.0, 0.0), ..cairn }],
+        };
         assert!(matches!(Galaxy::generate_with(g, fast), Err(GenError::BadFleet(0))));
 
         run_to(&mut sim, 0.5);
