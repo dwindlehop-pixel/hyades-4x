@@ -292,14 +292,18 @@ and dry mass). Appendix §D.10.
 
 ### T-131. The Technology objective — a static rating of every Design, earned head-to-head per role
 
-**Advanced (T-133 follow-up): the short-range offensive bed is built and has
-rated the named armed Designs** — Scarp > Cairn > Tor, every pair decided
-outright, so the order is measured and the gaps are R-TECH6's prior
-(Technology §4.9.1, appendix §D.17). Fleets are generated with the galaxy
-(§4.4.5); the pitched-battle bed seats two hostile Doctrines (§4.4.6); the
-judge is dry mass holding the field (R-TECH19, recommended). **Still to build:**
-the colonizer, miner, picket, scout and freighter beds, and the long-range one
-(R-TECH12).
+**Advanced: all seven beds are built and the first table is measured**
+(Technology §4.4.8 and §4.9.1, appendix §D.18; `data/design_ratings.tsv`).
+Six Designs, eight seeds, both seatings, 1,680 matches in 7.5 min. Fleets are
+generated with the galaxy and go to work through the engine's own launchers
+(galaxy §3.1). Building the beds found two faults: an outpost yields once per
+50 yr, so a 40-yr miner bed scored no generated crew; and a hauler whose rock
+its own empire settled looped at zero time (fixed — it stands down).
+**Still open:** the author's ratification of the beds (R-TECH13, R-TECH16,
+R-TECH19), the long-range geometry (R-TECH12 — 47 of 240 matches decided), a
+reader for the stamped table (R-TECH15), and two things no bed can see yet —
+the three Limited Designs are one object off the combat beds (R-O64/R-L0), and
+the survey leg flies a flat acceleration (warfare §8.9.7).
 
 *Specified as:* Author's specification, quoted in full
 in `Hyades_technology_tree.md` §4: rate every possible Design by Elo from
@@ -339,13 +343,12 @@ is worth exactly zero on this objective whatever the table says (R-TECH18).
    (R-TECH14)~~ — **done at T-132**; a closing long-range bed (R-TECH12) remains.
 3. `VehicleSnapshot` carries the hull type and class, so `Q_i` is computable
    from a run.
-4. A bed seeder: equal-spend fleets spawned into a `Simulation` with no
-   production, running the engine's own role systems (`bed → sim`, as
-   `arena → combat`).
-5. The five beds (colonizer, miner, picket, short-range, long-range), then the
-   rating harness: Bradley–Terry maximum likelihood with a virtual-draw prior,
-   the intransitivity report (R-TECH7), and the table in `data/` with its
-   configuration stamp (R-TECH15).
+4. ~~A bed seeder~~ — **done**: fleets generated with the galaxy
+   (`Galaxy::generate_with`, galaxy §3.1).
+5. ~~The beds and the rating harness~~ — **done** for all seven beds and the
+   Bradley–Terry fit (`examples/design_rating`), with the table in `data/`
+   stamped by engine commit. **Still to do:** the intransitivity report
+   (R-TECH7) and a reader that refuses a stale stamp (R-TECH15).
 6. `Q_i` in `examples/tree_gradient`, then its saturation (R-TECH2, T-78).
 7. A Design resolver that reads the roster (R-TECH18) — the step that lets a
    Technology card move its own metric.
@@ -1656,10 +1659,11 @@ than leaving it inside three separate documents.
 - **Production is measurable today.** Fleet-years in mass, and
   `VehicleSnapshot::dry_mass` exists. What it lacks is a saturation measurement
   (**R-PROD3**) and any card that writes `Works` (**R-PROD1**).
-- **Technology's objective is specified and not built (T-131).** The author
-  replaced R-TREE4's power mean with a static per-role Elo rating of every
-  Design; `examples/tree_gradient` still **excludes** Technology, because the
-  table does not exist yet. **R-TECH1** is the prerequisite for measuring a
+- **Technology's objective has a first table and no consumer (T-131).** The
+  author replaced R-TREE4's power mean with a static per-role Elo rating of
+  every Design; the table exists (`data/design_ratings.tsv`) and
+  `examples/tree_gradient` still **excludes** Technology, because nothing reads
+  the table into `Q_i` yet (stage 6). **R-TECH1** is the prerequisite for measuring a
   single Technology card, and **R-TECH18** (no build reads the roster) is the
   prerequisite for one to score anything.
 - **Warfare is an algebraic zero on the 3-seat bed** — and **the reason given

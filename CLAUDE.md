@@ -62,8 +62,8 @@ decisions.** `Hyades_autopilot_colonization_growth.md` (Expansion + Growth,
 Rev 4), `Hyades_production_tree.md`, `Hyades_technology_tree.md`,
 `Hyades_warfare_tree.md` and the politics spec above. The three new ones are
 mostly `OPEN` **on purpose** — Technology (Rev 2) has an objective the author
-specified at T-131, a static per-role Elo rating of every Design, and no table
-yet; Warfare is blocked on T-30's missing accept/decline site — so read their
+specified at T-131, a static per-role Elo rating of every Design, with a first
+table in `data/design_ratings.tsv` that nothing reads yet; Warfare is blocked on T-30's missing accept/decline site — so read their
 registers before assuming a question is unasked.
 
 **`docs/Hyades_experiments_appendix.md` is where the measurement record lives.**
@@ -699,7 +699,8 @@ Three properties, and the second is why it is worth the trouble:
 
 Three of the six trees are measurable (Expansion, Growth, Production); Warfare is
 an algebraic zero on the 3-seat bed, Politics is Expansion exactly, Technology is
-specified and has no rating table yet (T-131) — reasons in the harness docs and
+rated per Design (`data/design_ratings.tsv`) but no harness turns the table
+into a stock yet (T-131) — reasons in the harness docs and
 in trees §2.3. **Say which you left
 out and why**; a composite over an unstated subset is worse than a single metric.
 

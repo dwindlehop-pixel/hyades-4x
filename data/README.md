@@ -57,3 +57,29 @@ in one estimate defeats the point of having them — a candidate's error bar on 
 bed it was selected on is not evidence about the candidate.
 
 Definitions: `Hyades_trees_and_card_value.md` §2.3.
+
+## `design_ratings.tsv` and `design_rating_matches.tsv`
+
+The Technology tree's static Design rating (`Hyades_technology_tree.md` §4,
+T-131), written from `examples/design_rating all <seeds>`. The first line of
+`design_ratings.tsv` stamps the engine commit and the bed; **a rating is a
+measurement of that engine and no other** (R-TECH15), so read the stamp before
+the numbers.
+
+`design_rating_matches.tsv` is the raw record — **one row per match**, every
+pair on every seed with the seats swapped — from which every rating and interval
+is recoverable:
+
+| column | meaning |
+|---|---|
+| `bed` | the role bed (§4.4) |
+| `seed` | galaxy and sim seed |
+| `seat0`, `seat1` | the Design on each seat, named as the pool deduplicates it (R-TECH17) |
+| `x0`, `x1` | each side's task score, in the bed's own unit (appendix §D.18) |
+| `share0` | `x0 / (x0 + x1)`, ½ when both are zero |
+
+`design_ratings.tsv`: `elo` is the Bradley–Terry maximum-likelihood rating with
+one virtual draw per pair, on the Elo scale, the bed's anchor Design at 0;
+`p05`/`p95` are the 5th and 95th percentiles over 1,000 bootstrap resamples of
+the seeds. An interval that is a point means every pair was separated
+completely, and the gap is the virtual draw's.

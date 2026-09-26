@@ -2278,6 +2278,56 @@ the guard (`build_digest 400 1,7,42`: popbits 40f4d4aae5b1d064,
 24.6 s, picket 11.4 s, colonizer 1.8 s, miner 3.8 s, freighter 4.5 s, scout
 3.9 s for each bed's 30 matches.
 
+**The first table over every role** (`design_rating all`, seeds 1, 7, 42,
+31337, 2, 3, 5, 11, both seatings: 240 matches a bed, 1,680 in all, 7.5 min on
+one core). Raw record: `data/design_rating_matches.tsv`; ratings:
+`data/design_ratings.tsv`. Elo points, the anchor at 0, 90% interval from 1,000
+bootstrap resamples of the seeds; *prior* marks a rating whose pairs are all
+separated completely, so its gap is the virtual draw's (8.5 to 0.5 per pair):
+
+| Design | short-range | long-range | picket | colonizer | miner | freighter | scout |
+|---|---|---|---|---|---|---|---|
+| Meadow=Spur (LSV) | −731.6 *prior* | −72.1 [−73.1, −71.2] | −574.9 [−580.3, −570.0] | −820.1 [−821.5, −818.6] | **0** | −302.5 [−307.6, −297.3] | **0** |
+| Tor (LCV) | −286.8 *prior* | −49.0 [−49.6, −48.6] | 0.0 | −820.1 | −0.1 [−0.4, 0.2] | −726.4 [−732.0, −720.8] | 0.0 |
+| Cairn (LCV) | **0** | **0** | **0** | −820.1 | −0.1 [−0.4, 0.2] | −726.4 | 0.0 |
+| Delta=Ford (MSV) | −732.1 *prior* | −70.9 [−74.3, −67.1] | −574.9 | **0** | −79.5 [−100.4, −54.6] | **0** | −111.3 [−113.5, −109.1] |
+| Range=Strait (GSV) | −731.5 *prior* | −86.1 [−88.4, −83.9] | −574.9 | −278.2 [−279.8, −276.6] | −280.0 [−386.2, −187.4] | +101.6 [+95.0, +109.3] | −407.9 [−412.5, −404.0] |
+| Scarp (GCV) | +351.9 *prior* | +295.9 [+292.0, +299.9] | +122.6 [+97.3, +148.1] | −254.4 [−256.0, −252.7] | −273.9 [−377.3, −183.3] | +12.9 [−4.8, +29.0] | −383.3 [−388.2, −379.0] |
+
+Matches decided outright (one side scoring zero): short-range 192, long-range
+47, picket 144, colonizer 144, miner 0, freighter 128, scout 0, of 240 each.
+
+What each column reads, from the share matrices:
+
+- **Short-range.** Every armed pair is decided the same way on every seed:
+  Scarp over Cairn over Tor. The three unarmed Designs draw one another (both
+  sides hold the field) and lose every match to an armed one. Every gap is the
+  prior's.
+- **Long-range** (`D_long` = 0.03 ly, closing at 0.45 c). 47 of 240 decided.
+  Scarp takes 0.644 of the field against Cairn and 0.886 against Delta; every
+  Limited armed Design takes 0.52–0.58 against an unarmed one. At a relative
+  0.9 c the fleets cross the widest beam reach (7.9e-3 ly each way) in 6.4 days
+  (an upper bound on time in range if neither has braked). *Inference:* this bed
+  mostly measures what one pass delivers (R-TECH12, R-L2). Confidence moderate;
+  a sweep of the closing speed, or a count of discharges per match, would settle
+  it.
+- **Picket.** Tor and Cairn draw each other exactly; Scarp takes 0.699 of the
+  denials against either. Unarmed Designs deny nothing.
+- **Colonizer.** Limited hulls found nothing (a Limited hold carries no founding
+  seed — capability, not competence). Delta takes 0.885 of the colonies against
+  Range and 0.865 against Scarp.
+- **Miner.** Crews count hulls, one Limited hull one unit (T-71), so equal spend
+  favors the cheapest hull: Limited over Medium (0.629) over General (0.849).
+  The three Limited Designs are one object to the miner (same tier, same mass;
+  mining reads no weapon).
+- **Freighter** (Meadow miners on both seats). Range delivers 0.665 of Delta's
+  share, Scarp ties Delta (0.522); a Limited Systems hull delivers 0.08 of a
+  Medium's, and a Limited Contact hull delivers nothing (its volume is weapons
+  and drive).
+- **Scout.** The ranking is hull count. `launch_survey` flies every hull at
+  `doctrine.survey_accel_g`, a flat constant (the defect recorded in warfare §8.9.7),
+  so no hull property but its price reaches the bed.
+
 ---
 
 ## References

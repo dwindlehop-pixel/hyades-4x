@@ -13,7 +13,7 @@ continue the **R-TECH n** series.*
 half is ratified and shipped (`Roster`, `Class`, `UnlockDesign`), the loadout
 model is specified and unbuilt, and **the objective is now specified by the
 author** (§4) — a static rating of every Design, earned head-to-head in one test
-bed per role — and unbuilt. Most of this file is `OPEN`, and it says so per item
+bed per role — with every bed built and a first table measured (§4.9.1). Most of this file is `OPEN`, and it says so per item
 rather than in the prose.
 
 **Rev 2 changes:** §4 rewritten to the author's specification, replacing the
@@ -284,11 +284,11 @@ thing. Every candidate plays every other candidate in the role's pool.
 
 | role | what each side does | judged by (`x`) | start | engine today |
 |---|---|---|---|---|
-| **Colonizer** | found colonies on a shared field of worlds; a world founded first is gone for the other side | colonies founded in the bed's horizon | symmetric home ports | the role system exists; the bed does not |
-| **Miner** | fly to outposts on a shared field of rocks, extract, and deliver ore to be refined into the bank; rocks deplete for both | ore banked | symmetric home ports | the role system exists; the bed does not |
-| **Picket** | each side has a port launching a fixed schedule of **reference** colony ships, less heavily armed than any picket; pickets strike the rival's launches and defend their own | rival launches destroyed | blockade stations at the rival port (warfare §8.16) | the strike exists; the bed does not |
+| **Colonizer** | found colonies on a shared field of worlds; a world founded first is gone for the other side | colonies founded in the bed's horizon | symmetric home ports | **built** (§4.4.8) |
+| **Miner** | fly to outposts on a shared field of rocks, extract, and deliver ore to be refined into the bank; rocks deplete for both | ore banked — **as built, ore extracted at the fleet's rocks** (§4.4.8) | symmetric home ports | **built** |
+| **Picket** | each side has a port launching a fixed schedule of **reference** colony ships, less heavily armed than any picket; pickets strike the rival's launches and defend their own | rival launches destroyed — **as built, rival colony ships wrecked or turned away** (§4.4.8) | blockade stations at the rival port (warfare §8.16) | **built** |
 | **Short-range offensive** | a pitched battle | dry mass holding the field (R-TECH19) | **point blank** — both fleets on one reference point | **built**: `examples/design_rating`, fleets generated with the galaxy (§4.4.5), the simulation's own event loop (warfare §8.19.3) |
-| **Long-range offensive** | a pitched battle | surviving dry mass | **at a distance**, `D_long` apart | as above; beams alone do not reach (§4.4.2) |
+| **Long-range offensive** | a pitched battle | surviving dry mass | **at a distance**, `D_long` apart | **built**, closing (§4.4.2); beams alone do not reach a standing fleet |
 
 **4.4.1 `RATIFIED` — the starting geometry belongs to the role, never to the
 Design.** A short-range Design entered in the long-range bed starts at a
@@ -320,7 +320,29 @@ reach; it is a placeholder until a ranged family exists. Ties to **R-L2**
 **4.4.3 `OPEN` — R-TECH13: the Scout and Freighter beds.** Not named by the
 author. *Recommend:* Scout — a survey race on a shared unscanned field, judged by
 worlds scanned first. Freighter — a haul race between shared outpost piles and
-each side's own bank, judged by kilotons delivered.
+each side's own bank, judged by kilotons delivered. **Both are built as
+recommended** (§4.4.8), pending the author's ratification.
+
+**4.4.8 `OPEN` — the non-combat beds as built.** Every bed is a two-seat
+standard field (`GalaxyConfig::new(2, seed)`), each seat's fleet generated at
+its home port at spend `B`, default Doctrine, and a surveyed start of 20 ly
+(galaxy §3.1) where the role needs known worlds at `t = 0`. *Recommend* these
+judges and horizons (placeholders):
+
+| bed | fleets | judged by `x` | horizon |
+|---|---|---|---|
+| picket | one per seat, Picket, stationed on the rival's home port | rival colony ships wrecked or turned away | 150 yr |
+| colonizer | one per seat, Colonizer | colonies the fleet founds | 80 yr |
+| miner | one per seat, Miner, one hull to a rock the seat ranks an outpost | ore extracted at the fleet's rocks, by that seat | 160 yr — three outpost yields at `mining_tick_years` = 50 |
+| freighter | a reference Meadow miner fleet and the candidate as Freighter, per seat | kilotons the fleet's freighters deposit | 160 yr |
+| scout | one per seat, Scout | worlds the fleet reaches first | 40 yr |
+
+The miner judge counts every crew of that seat at the fleet's rocks, the
+autopilot's own included; both seats carry that term, so it is a shared
+baseline rather than a bias, and it dilutes the share. The scout bed reads
+nothing of a hull but its price while `launch_survey` flies a flat
+`survey_accel_g` (warfare §8.9.7) — so it rates hull count until the survey leg
+reads the hull's drive.
 
 **4.4.5 `RATIFIED` — a bed's fleets are generated with the galaxy** (the
 author's ruling, resolving R-WAR36): *"fleets can be optionally generated at
@@ -471,25 +493,32 @@ by station-keeping geometry rather than drawn, so a rating needs many seeds with
 sides swapped (R-TECH16); and the long-range bed still needs fleets that close
 (R-TECH12).
 
-### 4.9.1 The first short-range table — the named armed Designs (appendix §D.17)
+### 4.9.1 The first table — every role, the named Designs (appendix §D.18)
 
-`examples/design_rating`, equal spend `B` = ten General Systems hulls (13.15 kt:
-12 Scarps against 658 Limited hulls), point blank, both seats hostile, four seeds,
-both seatings. **Every one of the 24 matches is decided outright**:
+`examples/design_rating all`, equal spend `B` = ten General Systems hulls
+(13.15 kt), eight seeds, both seatings, 240 matches a role. The table is
+`data/design_ratings.tsv`, stamped with the engine commit (R-TECH15); the raw
+matches are `data/design_rating_matches.tsv`. **Measured, per role, the order:**
 
-| Design | hull | rating, Elo points (Cairn = 0) |
-|---|---|---|
-| Scarp | General Contact | **+383.4** |
-| Cairn | Limited Contact | **0** |
-| Tor | Limited Contact | **−383.4** |
+| role (anchor) | order |
+|---|---|
+| short-range (Cairn) | Scarp > Cairn > Tor > the unarmed three, all tied |
+| long-range (Cairn) | Scarp ≫ Cairn > Tor > the unarmed three |
+| picket (Cairn) | Scarp > Cairn = Tor > the unarmed three, all tied |
+| colonizer (Delta) | Delta > Scarp ≈ Range > the Limited three, which found nothing |
+| miner (Meadow) | the Limited three, tied > Delta > Range ≈ Scarp |
+| freighter (Delta) | Range > Scarp ≈ Delta > Meadow > Tor = Cairn, which carry nothing |
+| scout (Meadow) | the Limited three, tied > Delta > Scarp ≈ Range |
 
-The **order** is measured. The **gaps are not**: with every pair completely
-separated, ±383.4 is R-TECH6's one-virtual-draw prior (8.5 wins to 0.5 per pair)
-and nothing else, and the bootstrap interval is a point. What would give the
-table magnitudes is a pair that is not decided outright — Designs closer in
-per-kiloton firepower and structure than a 5.8× (Scarp over Cairn) or 10×
-(Cairn over Tor, `σ` alone) difference, which is R-WAR19's and R-WAR38's
-placeholders, not a property of the bed.
+**Gaps are measured only where pairs are not separated completely.** Every
+short-range gap, and the unarmed-against-armed gaps of the picket bed, are
+R-TECH6's prior. The miner, freighter, colonizer and scout gaps are
+bootstrapped; the miner's General-hull intervals span ±100 Elo.
+
+**Two things a Design does not reach yet, so the table reads them as ties:**
+the three Limited Designs are one object to every non-combat bed (one cost
+tier, one mass — warfare §8.9.7), and the scout bed reads only price. The first
+is R-O64/R-L0; the second is the survey leg's flat acceleration.
 
 ### 4.10 `OPEN` — R-TECH15: where the table lives and how it goes stale
 
@@ -499,11 +528,10 @@ digest of every configuration value the beds read; the harnesses that compute
 configuration. The engine does not read it: capability is a measurement, and no
 autopilot decision may consult it.
 
-**Cost:** a point-blank combat match at 500 Limited hulls a side costs **1.46 s**
-(68 ticks, one run) on the current resolver, and the seven-Design short-range
-round robin **17.1 s** per seed (appendix §D.10). The round robin is
-`n(n − 1)/2` pairs per role times seeds — 21 pairs for seven Designs. The colonizer, miner and picket beds are short simulation
-runs and are not yet priced.
+**Cost:** the six-Design pool over all seven beds, both seatings, is 1,680
+matches for eight seeds and **7.5 min** on one core (appendix §D.18); the
+long-range bed is 42% of it. The round robin is `n(n − 1)` seated matches per
+role per seed — 30 for six Designs.
 
 ### 4.11 `OPEN` — R-TECH2: does capability saturate on the measurement bed?
 
@@ -605,9 +633,9 @@ the measurement into the target (§4.10).
 | R-TECH10 | a hull carries its Design's best-role strength, not its current role's — *recommended* | author |
 | R-TECH11 | equal-spend budget `B` = ten General hulls — *recommended* | author |
 | R-TECH12 | `D_long`, and a closing long-range bed | a ranged family or beam falloff, then a sweep |
-| R-TECH13 | Scout and Freighter beds | author |
+| R-TECH13 | Scout and Freighter beds — *recommended*, **built as recommended** (§4.4.8) | author |
 | ~~R-TECH14~~ | ~~combat beds tie every armed Design~~ — **resolved by T-132**, warfare §8.18 | — |
-| R-TECH15 | the table's storage and staleness stamp | engine work |
+| R-TECH15 | the table's storage and staleness stamp — `data/design_ratings.tsv`, stamped with the engine commit; no harness reads it back yet | a reader that refuses a stale stamp |
 | R-TECH16 | beds hold Doctrine at the default and rate Design only — *recommended* | author |
 | R-TECH17 | the pool deduplicated by what the beds read — *recommended* | author |
 | R-TECH18 | **an unlock reaches no build** — no Design resolver reads the roster | a resolver; T-25 |
