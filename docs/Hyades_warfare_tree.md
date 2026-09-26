@@ -1105,8 +1105,8 @@ where it could be building an armed one.
 The survey *cadence* is untouched; only the hull it names changes.
 
 **The price was expected to be paid at the yard, and it is not** — an LOU and an
-LCV cost the same 0.020 kt, so the write is bit-identically inert. §8.9.7 has
-the two reasons and what would make either bite.
+LCV cost the same 0.020 kt. The write moves a run through speed alone: the
+survey leg flies the hull's own drive (§8.9.7).
 
 **A scout built this way carries `Class::Tor`.** The class is the design
 (R-O28/R-O42b), so a Tor on an offensive shell is a survey design mounted on a
@@ -1229,7 +1229,7 @@ below. **A probe inherits every assumption of the code it measures**; when one o
 those assumptions has just been found wrong, the probe is part of what has to be
 re-derived.
 
-#### 8.9.7 The armed scout is bit-identically inert, and the reason is the cost ladder
+#### 8.9.7 The armed scout is inert in price, because of the cost ladder, and live in speed
 
 `Doctrine::scout_hull_offensive` reproduces the arm without it **to every
 printed digit** — 188 pickets, −2.87% own, +1.06% neighbors, `W_0` −29, on all
@@ -1243,20 +1243,15 @@ and its cause is one line:
 same object economically — same price, same mass, same shell — and swapping one
 for the other changes nothing the simulation reads.
 
-The two hulls *do* differ in `shell_thickness` and `drive_mass` — and
-**neither reaches a scout.** `launch_survey` flies its leg at
-`doctrine.survey_accel_g · G`, a flat constant, where the colonization and
-picket legs now read `laden_accel` and therefore read the hull's own drive
-(§8.9.6). So the survey leg has exactly the defect R-WAR9 just closed for the
-other two, and closing it there as well is what would make the drive half of
-this write bite.
+The two hulls *do* differ in `shell_thickness` and `drive_mass`. **The drive
+now reaches a scout:** the survey leg reads `laden_accel` like every other leg,
+since the author's ruling that the sim does not overwrite a ship's Design
+removed the flat `survey_accel_g` (appendix §D.19). An empty LCV flies at
+0.911 g against an LSV's 1.00.
 
-So the write is inert for two independent reasons and is kept for both: it
-becomes live in **price** when hull types carry differentiated cost (**R-O64**,
-roles §6's 0/1/2 was a unit count and not a mass ladder; **R-L0**, per-hull slot
-tables), and live in **speed** when the survey leg reads the hull it is flying.
-Until then *"the LOU takes the survey slot"* is a Design statement with no
-mechanical content.
+So the write is live in **speed** and still inert in **price**, which it becomes
+when hull types carry differentiated cost (**R-O64**, roles §6's 0/1/2 was a
+unit count and not a mass ladder; **R-L0**, per-hull slot tables).
 
 It also weakens §8.6's framing. *"A picket must cost less than a colony"* is
 satisfied — 0.020 kt against a Medium colonizer's 0.109 — but the cheap armed
@@ -2679,7 +2674,7 @@ kill them before they can found a colony, they will seek a new destination."*
 | ~~**R-WAR15**~~ | ~~by what path does the armed card reach the simulation?~~ **Resolved (T-122): at legal play it does not.** The effect §8.14 measured was the 0.5 kt price, paid inside the card-free opening; a pure-price control reproduces it and vanishes at the round-0 barrier. The per-write ablation it asked for was run: the colonizer write is bit-identical on 8/8 seeds, the scout write is noise (appendix §D.1). Superseded by R-WAR16 | — |
 | **R-WAR14** | **`Sim::inert_card_plays` counts `NotYetImplemented` only**, so a card writing real state into a component with no live consumer reads as working. It measures which match arm ran, not whether the write reached a decision (§8.13) | a definition of "reached a decision" that a counter can test — the candidate is whether the written component is read on a live path |
 | **R-WAR12** | **the two guess magnitudes** — `intercept_cone_radians` (0.15 rad) and `intercept_reassess_years` (25 yr). Neither is physical: the cone sets how wide a guess may be and therefore what a feint is worth, and the cadence sets how long one stays bought. They are the first magnitudes in this tree whose job is to price a **bluff** rather than a kinetic outcome | a bed on which the yomi channel is readable — not `W_0`, which a bluff does not move directly |
-| **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is **bit-identically inert** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |
+| **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is inert in **price** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0), and live in speed since the survey leg reads the hull's drive (appendix §D.19) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |
 | **R-WAR7** | **a colonizer's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
 | **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole colonizer loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
 | ~~**R-WAR5**~~ | ~~which side carries which weapon~~ **Resolved for the simulation (T-125): a ship carries what its Design mounts** (§8.17). Every simulation fight is discharges on the event loop (§8.19.3). The convention survives only in the arena's laser-side-vs-missile-side sweep, where `carrier_accel` still reads the laser side's first hull — kept because it is what `tests/balance.rs`'s goldens were tuned on | — |

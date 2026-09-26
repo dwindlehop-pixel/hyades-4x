@@ -384,7 +384,6 @@ fn knobs(c: &SimConfig, d: &Doctrine) -> Vec<Knob> {
         Knob { name: "medium_fleet_size", value: c.medium_fleet_size, set: |c, _, v| c.medium_fleet_size = v },
         Knob { name: "limited_fleet_size", value: c.limited_fleet_size, set: |c, _, v| c.limited_fleet_size = v },
         Knob { name: "general_vehicle_cost", value: c.general_vehicle_cost, set: |c, _, v| c.general_vehicle_cost = v },
-        Knob { name: "civilian_accel_g", value: c.civilian_accel_g, set: |c, _, v| c.civilian_accel_g = v },
         Knob { name: "trade_decay_lambda", value: c.trade_decay_lambda, set: |c, _, v| c.trade_decay_lambda = v },
         Knob {
             name: "scrap_recovery_fraction",
@@ -414,7 +413,6 @@ fn knobs(c: &SimConfig, d: &Doctrine) -> Vec<Knob> {
             set: |_, d, v| d.rank.mineral_pressure_gain = v,
         },
         // --- survey ------------------------------------------------------------
-        Knob { name: "survey_accel_g", value: d.survey_accel_g, set: |_, d, v| d.survey_accel_g = v },
         Knob {
             name: "survey_vehicles",
             value: d.survey_vehicles as f64,

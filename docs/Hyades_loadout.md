@@ -194,8 +194,9 @@ rewrites components on an arrival event.
 
 **Movement (exists today, needs generalizing):**
 
-- `Motion.accel` is currently set from a flat `civilian_accel_g * G` or the
-  `laden_accel` derate. Under loadout, the per-leg accel becomes a **query**:
+- `Motion.accel` is `laden_accel`: the hull's drive thrust over its dry mass
+  plus cargo, on every leg — no flat rate remains (appendix §D.19). Under
+  loadout, the per-leg accel becomes a **query**:
   `total_thrust(loadout) / (dry_mass(hull, loadout) + cargo_mass(cargo))`.
   Same call site (`set_leg`), richer inputs. Nothing about the relativistic
   flip-and-burn math (`math::position_along`) changes — it already takes

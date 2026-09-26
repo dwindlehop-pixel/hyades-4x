@@ -5073,7 +5073,7 @@ Design law #3 holds throughout — at `F = 100`, cost per kt hauled is 4.00
 | **Cost (`F_cost`)** | `general_vehicle_cost` (its Band I anchor), `medium_fleet_size`, `limited_fleet_size`, `hull_dry_mass`, `homeworld_start_minerals`, **the infra upgrade price**, `scrap_recovery_fraction`'s base |
 | **Cargo (`F_cargo`)** | `cargo_unit_size` (its Band I anchor = the Medium hold), `HullType::cargo_capacity` |
 | **Mineral density** | `mineral_peak`, `density_floor`, `rank.mineral_high` — in-ground density, arguably the cost family's Band I before extraction; **unclassified, needs a call** |
-| **On no ladder** (rates, times, fractions, weights, counts) | `horizon_years`, `cycle_years`, `build_years`, `growth_rate`, `biosphere_regen_rate`, `biosphere_regen_bonus`, `trade_decay_lambda`, `productivity_step`, `reinvest_bias`, `w_k`/`w_mineral`/`w_hub`, `centrality_scale`, `mineral_pressure_gain`, `civilian_accel_g`, `survey_accel_g`, `center_mining_fraction`, `outpost_mining_fraction`, `mining_tick_years`, `survey_reserve`, `survey_vehicles`, `max_survey_hops` |
+| **On no ladder** (rates, times, fractions, weights, counts) | `horizon_years`, `cycle_years`, `build_years`, `growth_rate`, `biosphere_regen_rate`, `biosphere_regen_bonus`, `trade_decay_lambda`, `productivity_step`, `reinvest_bias`, `w_k`/`w_mineral`/`w_hub`, `centrality_scale`, `mineral_pressure_gain`, `center_mining_fraction`, `outpost_mining_fraction`, `mining_tick_years`, `survey_reserve`, `survey_vehicles`, `max_survey_hops` |
 
 #### What the survey turned up
 
@@ -5985,7 +5985,7 @@ The shell model says empty-hull acceleration is size-independent (thrust and dry
 mass both scale with area), but the code still carries a 1.2 / 1.1 / 1.0 ladder
 across Systems sizes. Not flattened when R-O58 landed, because it is an MC-tuned
 combat surface and CLAUDE.md §6 requires ratification before those move. It
-reaches only `arena`/`combat` — civilian motion runs on `civilian_accel_g` — so
+reaches only `arena`/`combat` — the sim flies every hull on its own drive — so
 this is a one-line change plus a balance re-run.
 
 ### T-18. R-O64 — confirm the reinterpretation of roles §6's cargo ladder

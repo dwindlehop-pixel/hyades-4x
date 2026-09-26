@@ -148,7 +148,7 @@ invisible at range and has paid twice for it.
 
 **σ_vector is measurable in the engine.** `Doctrine` is a real numeric vector
 in `autopilot.rs` (`productivity_step`, `growth_rate`, `survey_vehicles`,
-`survey_accel_g`, `expand_bias`, `reinvest_bias`, and the ranking weights
+`expand_bias`, `reinvest_bias`, and the ranking weights
 `w_k` / `w_mineral` / `w_hub` / `centrality_scale` / `mineral_pressure_gain`),
 so a card's σ_vector is a computable distance between pre- and post-card
 doctrine states. **Design has no engine component at all** — this half is
@@ -1178,8 +1178,9 @@ calls 0/1/2 *confirmed* and this reinterprets what it confirmed.
 **R-O65** — `hull_thrust_to_mass` still carries a 1.2 / 1.1 / 1.0 ladder across
 Systems sizes, which the shell model says should be flat (thrust and dry mass
 both scale with area). Not flattened here: it is an MC-tuned combat surface and
-needs ratification. It reaches only `arena`/`combat` — civilian motion runs on
-`civilian_accel_g` — so flattening it is a one-line change once ratified.
+needs ratification. It reaches only `arena`/`combat` — the sim flies every hull
+on its own drive (`laden_accel`) — so flattening it is a one-line change once
+ratified.
 
 **Retrofit, ratified separately:** no deep-space retrofit by default; refit at a
 friendly port only; a card enables field refit for minerals. This answers

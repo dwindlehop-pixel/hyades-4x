@@ -17,8 +17,8 @@ fn main() {
         let drive = h.drive_mass(&cfg).kilotons();
         let hold = h.cargo_capacity(&cfg).kilotons();
         let seed = h.colony_seed_capacity(&cfg).kilotons();
-        let ae = cfg.civilian_accel_g * G * (dsp * drive) / dry;
-        let al = cfg.civilian_accel_g * G * (dsp * drive) / (dry + seed);
+        let ae = G * (dsp * drive) / dry;
+        let al = G * (dsp * drive) / (dry + seed);
         println!("{h:>24?}  {dry:>9.4}  {hold:>9.4}  {seed:>9.4}  {ae:>9.4}  {al:>9.5}  {:>8.3}", seed / dry);
     }
 }

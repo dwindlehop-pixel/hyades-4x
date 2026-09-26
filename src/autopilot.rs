@@ -220,8 +220,6 @@ pub struct Doctrine {
     // --- Explore / Survey (autopilot-doc §2) ---
     /// Number of survey vehicles in the opening fan-out. Base `6` (cube faces).
     pub survey_vehicles: usize,
-    /// Survey acceleration in g (base `1.0`).
-    pub survey_accel_g: f64,
     /// How many known, unclaimed candidate worlds the empire wants on hand.
     /// When [`ProductionContext::candidate_count`] falls below this, a center
     /// at the limited tier builds a Scout instead of idling — this is what
@@ -349,12 +347,12 @@ pub struct Doctrine {
     /// **The price was expected to be paid at the yard, and there is none**:
     /// under R-O57 cost *is* dry mass and `hull_dry_mass` reads the cost
     /// *tier*, which groups every Limited hull — so an LOU and an LCV are the
-    /// same 0.020 kt object and this write is **bit-identically inert**. It is
-    /// kept because it goes live on two independent axes that are already
-    /// open: price, when hull types carry differentiated cost (R-O64, R-L0);
-    /// and speed, when `launch_survey` reads the hull it is flying instead of
-    /// a flat `survey_accel_g · G`, which is the same defect R-WAR9 closed for
-    /// the colonization and picket legs. `Hyades_warfare_tree.md` §8.9.7.
+    /// same 0.020 kt object, and the write is inert in **price** until hull
+    /// types carry differentiated cost (R-O64, R-L0). It is live in **speed**:
+    /// the survey leg flies the hull's own drive (a flat `survey_accel_g` was
+    /// removed on the author's ruling that the sim does not overwrite a
+    /// Design), and an LCV's empty drive is 0.911 g against an LSV's 1.00.
+    /// `Hyades_warfare_tree.md` §8.9.7.
     ///
     /// **A scout built this way carries `Class::Tor`**, which is how
     /// `assign_role` tells it from a picket built on the same hull. The class
@@ -608,7 +606,6 @@ impl Default for Doctrine {
             growth_rate: 0.873,
             biosphere_regen_bonus: 1.0,
             survey_vehicles: 6,
-            survey_accel_g: 1.0,
             // 1024 — ratified with k_high above; survey must scale with the
             // empire or expansion outruns its own map. Monotone by construction
             // (survey is a fallback, never a pre-emption), so raising it is safe.

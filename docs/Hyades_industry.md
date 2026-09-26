@@ -344,7 +344,7 @@ one of its two load-bearing lines was unreadable as a result (`CLAUDE.md` §6):
 | `H` | the hull's hold | kt | geometry, `HullType::colony_seed_capacity` |
 | `S` | settlers put aboard | kt | derived below |
 | `E` | mineral endowment put aboard | kt (as `Price`) | derived below |
-| `tau` | one-way transit, origin → destination | yr | `math::ship_travel_years` at civilian accel |
+| `tau` | one-way transit, origin → destination | yr | `math::ship_travel_years` at the colony ship's own laden drive (`colony_ship_accel`: its Design's thrust over dry mass plus a full hold) |
 | `delta` | discount on a gain arriving `tau` late | — | `1 / (1 + tau / cycle_years)` |
 | `r` | logistic growth rate per cycle | 1/cycle | `Doctrine::growth_rate` |
 | `g(x, K)` | logistic rate, `r·x·(1 − x/K)` | kt/cycle | the engine's own growth step |

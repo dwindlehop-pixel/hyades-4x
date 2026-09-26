@@ -857,8 +857,8 @@ impl Simulation {
         // **Believed kinematics at short range** (R-O41, warfare §5.4): the
         // shooter is within fire distance, a few light-days, so the
         // observation is current and belief equals truth.
-        let own = self.laden_accel(target, self.config.civilian_accel_g);
-        let theirs = self.laden_accel(shooter, self.config.civilian_accel_g);
+        let own = self.laden_accel(target);
+        let theirs = self.laden_accel(shooter);
         let may_disengage = crate::belief::can_disengage(own, theirs);
         // What the hull knows of the shooter's post is where it saw it standing
         // or heading, and a colony ship's own destination under fire.
@@ -915,7 +915,7 @@ impl Simulation {
         let now = self.clock;
         let current = self.world.motion.get(e).copied();
         let (stop, stop_at, brake) = current.map_or((dest, now, None), |m| m.come_to_rest(now));
-        let accel = self.laden_accel(e, self.config.civilian_accel_g);
+        let accel = self.laden_accel(e);
         let mut leg = Motion::leg(stop, dest, stop_at.max(now), accel);
         leg.brake = brake;
         self.world.motion.insert(e, leg);

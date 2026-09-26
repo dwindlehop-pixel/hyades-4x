@@ -71,9 +71,11 @@ graded by repeat sightings. No formulation.
 ## 2. Survey
 
 **2.1 `RATIFIED` — the opening is six Light Vehicles on the six cube-face
-headings** (±X/±Y/±Z), free starting units, 1 g constant proper acceleration.
-`Doctrine::survey_vehicles = 6`, `survey_accel_g = 1.0`. **Placeholder
-magnitudes.**
+headings** (±X/±Y/±Z), free starting units. `Doctrine::survey_vehicles = 6`.
+**Placeholder magnitude.** A survey craft flies at its own Design's drive, like
+every hull (§8.4): an empty LSV at 1.00 g, an empty LCV at 0.911 g. There is no
+survey rate in Doctrine — the author's ruling that the sim does not overwrite a
+ship's Design removed `survey_accel_g` (appendix §D.19).
 
 **2.2 `RATIFIED` — every later survey craft is a paid build** from a production
 center, charged to that center's stockpile. Each chain ends after

@@ -1784,7 +1784,7 @@ fn hull_shell_mass(hull: HullType, cfg: &SimConfig) -> Kilotons {
     Kilotons::new(hull.cost_fraction(cfg) * cfg.general_vehicle_cost)
 }
 
-/// Empty-hull thrust-to-mass, in units of `civilian_accel_g` — Offensive hulls
+/// Empty-hull thrust-to-mass, in g — Offensive hulls
 /// out-accelerate haulers, and the Rapid Offensive Unit is the fastest thing in
 /// the game (`Hulls_classes_the_qualitative_counter-graph.md`: "the Culture's
 /// fastest ships"). Placeholder magnitudes, monotone by intent (R-ARENA3).
@@ -1798,8 +1798,8 @@ fn hull_shell_mass(hull: HullType, cfg: &SimConfig) -> Kilotons {
 /// opposite. It is deliberately **not** flattened in this change: it is an
 /// MC-tuned combat surface, and CLAUDE.md §6 requires explicit ratification
 /// before those move. Flattening it is a one-line change once ratified, and it
-/// touches nothing in `sim` — civilian motion runs on `civilian_accel_g`, so
-/// only `arena`/`combat` read this.
+/// touches nothing in `sim` — the sim flies every hull on its own drive
+/// (`Simulation::laden_accel`), so only `arena`/`combat` read this.
 fn hull_thrust_to_mass(hull: HullType) -> f64 {
     use HullType::*;
     match hull {
@@ -1820,7 +1820,7 @@ fn hull_thrust_to_mass(hull: HullType) -> f64 {
 /// empty-hull accel — so cargo mass (added in the denominator elsewhere) is the
 /// only thing that derates it, matching the loadout acceleration query.
 pub fn hull_base_thrust(hull: HullType, cfg: &SimConfig) -> f64 {
-    hull_thrust_to_mass(hull) * cfg.civilian_accel_g * hull_dry_mass(hull, cfg).kilotons()
+    hull_thrust_to_mass(hull) * hull_dry_mass(hull, cfg).kilotons()
 }
 
 /// Per-hull thrust-factor spread (unit-mean-ish jitter a spawner draws within).
@@ -2529,7 +2529,6 @@ pub struct SimConfig {
     ///
     /// **Placeholder magnitude** (R-IND3), like every coefficient in §5.
     pub fab_cap: f64,
-    pub civilian_accel_g: f64,
     pub colony_seed_pop: BandTier,
     pub max_survey_hops: usize,
 
@@ -2957,7 +2956,6 @@ impl SimConfig {
             max_pickup_stops: 2,
             build_lead_years: 2.0,
             fab_cap: 0.1,
-            civilian_accel_g: 1.0,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
             // not a placeholder (`Hyades_vehicle_roles.md` §4.2/R-V9).
             colony_seed_pop: BandTier::I,
@@ -3499,7 +3497,7 @@ impl Simulation {
                     if velocity.norm() == 0.0 {
                         self.park(e, at);
                     } else {
-                        let accel = self.laden_accel(e, self.config.civilian_accel_g);
+                        let accel = self.laden_accel(e);
                         self.world.motion.insert(e, Motion::from_moving(at, velocity, self.clock, accel));
                         self.track_changed(e);
                     }
@@ -4040,7 +4038,7 @@ impl Simulation {
             if let Some(next_pid) = next {
                 self.world.knowledge.get_mut(pe).unwrap().visited.insert(next_pid);
                 let next = self.planet_entity[next_pid.0 as usize];
-                let accel = doctrine.survey_accel_g * G;
+                let accel = self.laden_accel(vehicle);
                 let dest = *self.world.position.get(next).unwrap();
                 let arrive = self.set_leg(vehicle, here, dest, accel, 0.0);
                 let v = self.world.voyage.get_mut(vehicle).unwrap();
@@ -4063,7 +4061,7 @@ impl Simulation {
         // and LCV is the only hull type this role currently builds.
         if let Some(dest_e) = self.nearest_owned_planet(p, here) {
             let dest_pos = *self.world.position.get(dest_e).unwrap();
-            let accel = self.config.civilian_accel_g * G;
+            let accel = self.laden_accel(vehicle);
             let arrive = self.set_leg(vehicle, here, dest_pos, accel, 0.0);
             self.schedule_at(arrive, EventKind::ScrapArrive { vehicle });
         } else {
@@ -4340,7 +4338,7 @@ impl Simulation {
     fn bounce_colonizer(&mut self, vehicle: Entity, target: Entity, here: Vec3, p: usize, target_pid: PlanetId) {
         let home = *self.world.home_center.get(vehicle).unwrap_or(&target);
         let home_pos = *self.world.position.get(home).unwrap();
-        let accel = self.config.civilian_accel_g * G;
+        let accel = self.laden_accel(vehicle);
         let arrive = self.set_leg(vehicle, here, home_pos, accel, 0.0);
         self.schedule_at(arrive, EventKind::ReturnArrive { vehicle });
         self.log.push(self.clock, LogEvent::ColonyContested { player: p as u32, vehicle, planet: target_pid });
@@ -4565,7 +4563,7 @@ impl Simulation {
         // Medium hull makes 2.45 — which is what decides whether it wins the
         // race in `offer_interception`, so the flat figure was answering that
         // question with a number belonging to no hull in particular.
-        let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
+        let accel = self.laden_accel(vehicle);
         // **A picket re-aimed in flight sheds its velocity first** (T-133,
         // R-WAR30): it used to start the new leg from rest where it stood — a
         // free stop.
@@ -4659,7 +4657,7 @@ impl Simulation {
             let from = Entity(w);
             let Some(&station) = self.world.position.get(from) else { continue };
             let t_see = depart + origin_pos.distance(station);
-            let accel = self.laden_accel(hull, self.config.civilian_accel_g);
+            let accel = self.laden_accel(hull);
             let seen = Sighting { origin: origin_pos, bearing, t_see };
             let Some((guess, t_reach)) = self.guess_destination(seat, seen, station, accel) else {
                 continue;
@@ -4770,7 +4768,7 @@ impl Simulation {
         if bearing.norm() <= 0.0 {
             return;
         }
-        let accel = self.laden_accel(picket, self.config.civilian_accel_g);
+        let accel = self.laden_accel(picket);
         let sighting = Sighting { origin: seen, bearing, t_see: self.clock };
         if let Some((guess, t_reach)) = self.guess_destination(seat, sighting, here, accel) {
             if guess != voyage.target && t_reach < qm.arrive {
@@ -5195,9 +5193,9 @@ impl Simulation {
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
                 if room > Price::new(1e-9) && want.iter().fold(Price::ZERO, |a, &b| a + b) > Price::ZERO {
                     let here = self.position_at(sh.outpost, self.clock).unwrap();
-                    if let Some(next) = self.next_pickup(PlayerId(p), here, sh.outpost, &want, room) {
+                    let accel = self.laden_accel(vehicle);
+                    if let Some(next) = self.next_pickup(PlayerId(p), here, sh.outpost, &want, room, accel) {
                         let to = *self.world.position.get(next).unwrap();
-                        let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
                         let arrive = self.set_leg(vehicle, here, to, accel, 0.0);
                         {
                             let s = self.world.shuttle.get_mut(vehicle).unwrap();
@@ -5223,13 +5221,13 @@ impl Simulation {
             let home = *self.world.home_center.get(vehicle).unwrap_or(&sh.outpost);
             let here = self.position_at(sh.outpost, self.clock).unwrap();
             let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-            let dest = self.best_delivery_center(PlayerId(p), here, &cargo).unwrap_or(home);
+            let dest = self.best_delivery_center(PlayerId(p), here, &cargo, self.laden_accel(vehicle)).unwrap_or(home);
             self.world.shuttle.get_mut(vehicle).unwrap().destination = dest;
 
             let from = self.position_at(sh.outpost, self.clock).unwrap();
             let to = *self.world.position.get(dest).unwrap();
             // Laden run: acceleration derated by the ore just loaded.
-            let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
+            let accel = self.laden_accel(vehicle);
             let arrive = self.set_leg(vehicle, from, to, accel, 0.0);
             self.world.shuttle.get_mut(vehicle).unwrap().outbound = false;
             self.schedule_at(arrive, EventKind::FreighterArrive { vehicle });
@@ -5286,7 +5284,7 @@ impl Simulation {
             // `outpost` never leaves `base`.
             let from = self.position_at(sh.destination, self.clock).unwrap();
             let to = *self.world.position.get(sh.base).unwrap();
-            let accel = self.laden_accel(vehicle, self.config.civilian_accel_g);
+            let accel = self.laden_accel(vehicle);
             let arrive = self.set_leg(vehicle, from, to, accel, 0.0);
             {
                 let s = self.world.shuttle.get_mut(vehicle).unwrap();
@@ -5867,6 +5865,10 @@ impl Simulation {
         // carries, and the founding rung — and `general_colonizer_hull` is the
         // same function `production_choice` names the hull with.
         let general_hull = crate::autopilot::general_colonizer_hull(&doctrine);
+        // Per hull, not per candidate: a colony ship's hold and its laden
+        // drive depend on the Design alone.
+        let colony_hulls = [HullType::MediumSystems, general_hull]
+            .map(|h| (h.colony_seed_capacity(&self.config), self.colony_ship_accel(h)));
         let mut count = 0usize;
         // **Six slots, not three: the per-class winner and the per-class winner
         // among held ground** (T-113).
@@ -5947,10 +5949,8 @@ impl Simulation {
                     // The per-hull settler figure is computed for the reduced
                     // winners only, not for every scanned world — the reduction
                     // is exactly what makes that affordable (R-O70).
-                    let settlers_by_hull = [
-                        self.settler_target(center, e, HullType::MediumSystems.colony_seed_capacity(&self.config)),
-                        self.settler_target(center, e, general_hull.colony_seed_capacity(&self.config)),
-                    ];
+                    let settlers_by_hull =
+                        colony_hulls.map(|(hold, accel)| self.settler_target(center, e, hold, accel));
                     let mining_crew = self.mining_crew_for(center, e);
                     let cand = Candidate { view, ranked, settlers_by_hull, mining_crew, held_by_me, claim_inbound };
                     if wins_class {
@@ -6715,7 +6715,6 @@ impl Simulation {
             return HullType::MediumSystems;
         };
         let d = a.distance(b);
-        let g = self.config.civilian_accel_g * G;
 
         // **Liquidity, which is design law #3's own counterweight** —
         // *indivisibility as a liability*, and the half a steady-state
@@ -6758,14 +6757,14 @@ impl Simulation {
             if best.is_some() && hull_cost(hull, &self.config) > budget {
                 continue;
             }
-            let empty = math::ship_travel_years(d, g * self.thrust_to_mass(hull, Kilotons::ZERO));
+            let empty = math::ship_travel_years(d, G * self.thrust_to_mass(hull, Kilotons::ZERO));
             // Seed with a full hold, then re-solve once against the load that
             // implies. The laden leg is monotone in the load, so one pass is
             // enough to land inside a percent of the fixed point.
             let mut load = cap;
             let mut round = f64::INFINITY;
             for _ in 0..2 {
-                let laden = math::ship_travel_years(d, g * self.thrust_to_mass(hull, Kilotons::new(load)));
+                let laden = math::ship_travel_years(d, G * self.thrust_to_mass(hull, Kilotons::new(load)));
                 round = laden + empty;
                 load = cap.min(flow * round);
             }
@@ -6855,7 +6854,7 @@ impl Simulation {
         self.world.role.insert(e, Role::Miner);
         self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
         self.world.home_center.insert(e, center);
-        let accel = self.config.civilian_accel_g * G;
+        let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, from, dest, accel, 0.0);
         self.schedule_at(arrive, EventKind::MiningArrive { vehicle: e });
         let target_pid = *self.world.planet_id.get(target).unwrap();
@@ -6883,7 +6882,7 @@ impl Simulation {
         self.world.role.insert(e, Role::Freighter);
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { base: outpost, outpost, destination: center, outbound: true, stops: 0 });
-        let accel = self.config.civilian_accel_g * G;
+        let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, from, dest, accel, 0.0);
         self.schedule_at(arrive, EventKind::FreighterArrive { vehicle: e });
         let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
@@ -7051,7 +7050,12 @@ impl Simulation {
         // has, but as the split that maximizes the growth of the combined
         // origin-plus-colony system under a travel discount (R-IND12; see
         // `settler_target`, which also defines every symbol it uses).
-        Some(hold.min(self.founding_capacity(target)).min(self.settler_target(origin, target, hold)))
+        Some(hold.min(self.founding_capacity(target)).min(self.settler_target(
+            origin,
+            target,
+            hold,
+            self.colony_ship_accel(hull),
+        )))
     }
 
     /// **How many settlers a center sends, and where the number comes from
@@ -7066,7 +7070,7 @@ impl Simulation {
     /// | `K_c` | the target's carrying capacity, same function | kt |
     /// | `x_0` | the floor a colony would otherwise start from, [`units::POPULATION_SEED_FLOOR`] | kt |
     /// | `r` | logistic growth rate per cycle, `Doctrine::growth_rate` | 1/cycle |
-    /// | `tau` | one-way transit, origin → target, at civilian accel | yr |
+    /// | `tau` | one-way transit, origin → target, at the colony ship's laden drive ([`Self::colony_ship_accel`]) | yr |
     /// | `delta` | discount on a gain that arrives `tau` late | — |
     /// | `S` | settlers put aboard | kt |
     /// | `g(x, K)` | the logistic rate `r·x·(1 − x/K)` — the engine's own step | kt/cycle |
@@ -7122,7 +7126,7 @@ impl Simulation {
     /// constant**: `cycle_years` already exists and is the natural clock for a
     /// quantity denominated per cycle. Whether the form should be exponential is
     /// **R-IND14**, open.
-    fn settler_target(&self, center: Entity, target: Entity, hold: Kilotons) -> Kilotons {
+    fn settler_target(&self, center: Entity, target: Entity, hold: Kilotons, accel: f64) -> Kilotons {
         let x_p = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
         let k_p = self.capacity_of(center);
         let k_c = self.capacity_of(target);
@@ -7141,7 +7145,7 @@ impl Simulation {
         if hi >= k_c * (1.0 - 1e-12) {
             return hi.min(k_c);
         }
-        let delta = self.travel_discount(center, target);
+        let delta = self.travel_discount(center, target, accel);
         Kilotons::new(best_endowment(
             hi.kilotons(),
             x_p.kilotons(),
@@ -7168,13 +7172,17 @@ impl Simulation {
 
     /// `delta = 1 / (1 + tau / cycle_years)` — see [`Self::settler_target`] for
     /// what the symbols are and why the form is hyperbolic.
-    fn travel_discount(&self, center: Entity, target: Entity) -> f64 {
+    ///
+    /// `tau` is the colony ship's own flight time at `accel`, which callers take
+    /// from [`Self::colony_ship_accel`] — never a flat rate standing in for the
+    /// Design.
+    fn travel_discount(&self, center: Entity, target: Entity, accel: f64) -> f64 {
         let (a, b) = (self.world.position.get(center), self.world.position.get(target));
         let tau = match (a, b) {
             (Some(&from), Some(&to)) => {
                 let d = from.distance(to);
                 if d > 0.0 {
-                    math::ship_travel_years(d, self.config.civilian_accel_g * G)
+                    math::ship_travel_years(d, accel)
                 } else {
                     0.0
                 }
@@ -7330,7 +7338,7 @@ impl Simulation {
         //
         // `laden_accel` reads the hull's own drive as well as its load (T-96),
         // so this also stops the leg pretending every hull has the same thrust.
-        let accel = self.laden_accel(e, self.config.civilian_accel_g);
+        let accel = self.laden_accel(e);
         self.world.home_center.insert(e, center);
         let target_pid = *self.world.planet_id.get(target).unwrap();
         let spawned = LogEvent::VehicleSpawned {
@@ -7382,7 +7390,6 @@ impl Simulation {
         launch_delay: f64,
     ) {
         let dest = *self.world.position.get(outpost).unwrap();
-        let accel = self.config.civilian_accel_g * G;
         let e = self.world.spawn();
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, Role::Freighter);
@@ -7391,6 +7398,7 @@ impl Simulation {
         self.world.cargo.insert(e, Minerals::default());
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { base: outpost, outpost, destination: center, outbound: true, stops: 0 });
+        let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         self.schedule_at(arrive, EventKind::FreighterArrive { vehicle: e });
         let outpost_pid = *self.world.planet_id.get(outpost).unwrap();
@@ -7432,7 +7440,6 @@ impl Simulation {
         self.fill_survey_candidates(p, &mut cands);
         let bias = if heading == Vec3::ZERO { None } else { Some(heading) };
         let doctrine = *self.world.doctrine.get(self.player_entity[p]).unwrap();
-        let accel = doctrine.survey_accel_g * G;
         let picked = self.autopilots[p].choose_survey_target(&doctrine, from, bias, &cands);
         self.survey_scratch = cands;
         if let Some(target_pid) = picked {
@@ -7447,6 +7454,7 @@ impl Simulation {
             self.stamp_loadout(e, built);
             self.world.voyage.insert(e, Voyage { target, heading_bias: bias, hops });
             self.world.cargo.insert(e, Minerals::default());
+            let accel = self.laden_accel(e);
             let arrive = self.set_leg(e, from, dest, accel, launch_delay);
             self.schedule_at(arrive, EventKind::ContactArrive { vehicle: e });
             self.log.push(
@@ -7482,11 +7490,14 @@ impl Simulation {
         Motion::leg(origin, dest, self.clock + build_delay, accel)
     }
 
-    /// Acceleration (ly/yr²) for a vehicle setting out *now*, derated for the
-    /// mass it is currently carrying: `a = base_g·G · dry / (dry + cargo)`.
-    /// This is the `a = thrust / mass` relation with thrust ∝ `base_g` and mass
-    /// = dry + laden cargo, so a fully-loaded freighter leaves its outpost
-    /// slower than it returns empty.
+    /// Acceleration (ly/yr²) for a vehicle setting out *now*: its Design's
+    /// drive thrust over its dry mass plus what it is carrying, so a
+    /// fully-loaded freighter leaves its outpost slower than it returns empty.
+    ///
+    /// **This is the only acceleration a hull flies at** (the author's ruling:
+    /// the sim does not overwrite a ship's Design). There is no flat civilian
+    /// or survey rate any more; every leg, and every forecast of a leg, reads
+    /// the hull's own drive and load.
     ///
     /// **Every mass here is in one unit, kilotons (R-O57/L6).** There is no
     /// cargo-mass coefficient any more: a mineral in the hold masses exactly
@@ -7497,11 +7508,12 @@ impl Simulation {
     /// as hard as a General one.
     ///
     /// The consequence is that laden spreads get much wider, which is R-O58's
-    /// point rather than a side effect: a Medium freighter under a full hold
-    /// carries 15× its own dry mass and accelerates at 1/16 g, while an empty
-    /// hull of any size does 1 g. Large hulls broadcast their load state; small
-    /// ones do not (§9.2's non-combat source of small-fleet value).
-    fn laden_accel(&self, e: Entity, base_g: f64) -> f64 {
+    /// point rather than a side effect. Empty, the Systems hulls fly at 1.00 /
+    /// 2.37 / 5.06 g (Limited / Medium / General, T-96's drive ladder); with a
+    /// full hold a Limited hull keeps 0.70 g and a General one drops to 0.23 g.
+    /// Large hulls broadcast their load state; small ones do not (§9.2's
+    /// non-combat source of small-fleet value).
+    fn laden_accel(&self, e: Entity) -> f64 {
         // **Colony cargo mass ≡ mineral cargo mass** (R-O32,
         // `Hyades_standing_layer_and_observation.md` §6.2). A hold full of
         // settlers weighs what a hold full of ore weighs, so the burn cannot be
@@ -7537,11 +7549,7 @@ impl Simulation {
         // drive and cargo both scale `r³`, the shell term shrinks away, and
         // laden acceleration becomes **size-independent** — measured at 1.01x
         // across the Medium-to-General step, with nothing tuned to produce it.
-        //
-        // `base_g` is retained as the caller's throttle (design law #10: a ship
-        // may fly below peak and never above it), so a civilian leg still asks
-        // for `civilian_accel_g` and gets what the drive can actually deliver.
-        base_g * G * self.thrust_to_mass(hull, laden - dry)
+        G * self.thrust_to_mass(hull, laden - dry)
     }
 
     /// **Acceleration in `g`, for a hull carrying a stated load** (T-96, T-98).
@@ -7557,9 +7565,18 @@ impl Simulation {
         thrust / (dry + load.max(Kilotons::ZERO)).kilotons()
     }
 
+    /// **A colony ship's acceleration, laden as it launches** — ly/yr². The hold
+    /// leaves full: settlers, and minerals in whatever volume they do not take
+    /// (`endowment_minerals`, R-O74), so the load is `colony_seed_capacity`.
+    /// The forecast `settler_target` discounts with, and the flight
+    /// `spawn_courier` flies, are then the same number.
+    fn colony_ship_accel(&self, hull: HullType) -> f64 {
+        G * self.thrust_to_mass(hull, hull.colony_seed_capacity(&self.config))
+    }
+
     /// Park a vehicle at `pos` (degenerate motion ⇒ fixed position, not in flight).
     fn park(&mut self, e: Entity, pos: Vec3) {
-        let accel = self.config.civilian_accel_g * G;
+        let accel = self.laden_accel(e);
         self.world
             .motion
             .insert(e, Motion { origin: pos, dest: pos, depart: self.clock, arrive: self.clock, accel, brake: None });
@@ -7977,12 +7994,22 @@ impl Simulation {
             self.credit(pe, -escrow);
 
             // **The freight leg.** The obligation was instant; the ore is not.
-            // Transit is the seller's center to its own drop, at civilian
-            // acceleration — the same `ship_travel_years` every other voyage in
-            // the engine uses, so a trade is priced in the same geometry as a
-            // colonization or a haul (§8.1: a trade is a voyage).
+            // Transit is the seller's center to its own drop, flown by one hull
+            // of the seller's standing Freighter Design: a lot larger than its
+            // hold goes in `n` full loads, so it lands after `n − 1` laden-out,
+            // empty-back round trips and one last laden leg. The same
+            // `ship_travel_years` every other voyage in the engine uses, so a
+            // trade is priced in the same geometry as a colonization or a haul
+            // (§8.1: a trade is a voyage).
             let drop_at = *self.world.position.get(seller_drop).unwrap();
-            let t = math::ship_travel_years(s_at.distance(drop_at), self.config.civilian_accel_g * G);
+            let (hull, _) = Standing::of(&self.doctrine_of(f.seller.0 as usize)).design_for(Role::Freighter);
+            let hold = hull.cargo_capacity(&self.config).max(Kilotons::new(1e-9));
+            let lot = Price::new(qty).on_scale::<units::Mass>();
+            let loads = (lot.kilotons() / hold.kilotons()).ceil().max(1.0);
+            let d = s_at.distance(drop_at);
+            let out = math::ship_travel_years(d, G * self.thrust_to_mass(hull, lot.min(hold)));
+            let back = math::ship_travel_years(d, G * self.thrust_to_mass(hull, Kilotons::ZERO));
+            let t = out + (loads - 1.0) * (out + back);
             let id = self.exchange.next_id;
             self.exchange.next_id += 1;
             self.exchange.contracts.insert(
@@ -8271,12 +8298,14 @@ impl Simulation {
     /// permanently: it was already the oracle for single-supply matching, and
     /// it is now the oracle for zero-discount routing too — the same function
     /// checking two different generalisations.
-    fn best_delivery_center(&self, owner: PlayerId, from: Vec3, cargo: &Minerals) -> Option<Entity> {
+    ///
+    /// `accel` is the hauler's own, laden with `cargo` ([`Self::laden_accel`]),
+    /// so the voyage is priced at the rate it will be flown.
+    fn best_delivery_center(&self, owner: PlayerId, from: Vec3, cargo: &Minerals, accel: f64) -> Option<Entity> {
         let lambda = self.config.trade_decay_lambda;
         if lambda <= 0.0 {
             return self.most_needed_center(owner);
         }
-        let accel = self.config.civilian_accel_g * G;
         let mut best: Option<(Entity, f64)> = None;
         for e in self.planet_entity.iter().copied() {
             if self.world.owner.get(e).copied() != Some(owner) {
@@ -8420,9 +8449,9 @@ impl Simulation {
         current: Entity,
         want: &[Price; 3],
         room: Price,
+        accel: f64,
     ) -> Option<Entity> {
         let lambda = self.config.trade_decay_lambda;
-        let accel = self.config.civilian_accel_g * G;
         let mut best: Option<(Entity, f64)> = None;
         for (&(pl, rock), pile) in self.outpost_stock.iter() {
             if pl != owner.0 {
@@ -10890,7 +10919,7 @@ mod tests {
     /// that fires on half of it.
     ///
     /// Asserted as the identity rather than against a golden acceleration, so
-    /// it survives any retune of `civilian_accel_g` or the drive ladder.
+    /// it survives any retune of the drive ladder.
     #[test]
     fn the_colonization_leg_is_flown_at_the_rate_its_own_load_implies() {
         let mut cfg = test_cfg(31);
@@ -10915,8 +10944,8 @@ mod tests {
         assert!(pop > Kilotons::ZERO, "the hull must actually be laden for the comparison to bite");
 
         let flown = sim.world.motion.get(ship).expect("under way").accel;
-        let empty = sim.config.civilian_accel_g * G;
-        let laden = sim.laden_accel(ship, sim.config.civilian_accel_g);
+        let empty = G * sim.thrust_to_mass(HullType::MediumSystems, Kilotons::ZERO);
+        let laden = sim.laden_accel(ship);
         assert!(laden < empty, "a laden hull is the slower one, or there is nothing to check");
         assert_eq!(flown, laden, "R-O32: the leg flies at the rate its own load implies");
         assert_ne!(flown, empty, "R-WAR9: and not at the empty-hull rate it used to");
@@ -10954,7 +10983,10 @@ mod tests {
         // spacing is correspondingly wider, so placing the station keeps this
         // test about the criterion, the departure delay and the argmin, and
         // leaves how often the real field offers such a pair to the census.
-        let accel = sim.config.civilian_accel_g * G;
+        // Each party at its own Design's rate: an empty Limited Offensive picket
+        // and a laden Medium colony ship.
+        let picket_accel = G * sim.thrust_to_mass(HullType::LimitedOffensive, Kilotons::ZERO);
+        let colony_accel = sim.colony_ship_accel(HullType::MediumSystems);
         let free: Vec<Entity> = sim
             .planet_entity
             .iter()
@@ -10989,8 +11021,8 @@ mod tests {
         // Diagnostic in the message, so a failure says which term missed.
         let sp = *sim.world.position.get(station).unwrap();
         let t_see = home1_pos.distance(sp);
-        let t_reach = t_see + math::ship_travel_years(sp.distance(contested_pos), accel);
-        let colony_reach = math::ship_travel_years(home1_pos.distance(contested_pos), accel);
+        let t_reach = t_see + math::ship_travel_years(sp.distance(contested_pos), picket_accel);
+        let colony_reach = math::ship_travel_years(home1_pos.distance(contested_pos), colony_accel);
         assert!(t_reach < colony_reach, "constructed race must be winnable: {t_reach:.3} vs {colony_reach:.3}");
 
         // **The picket can only guess at worlds it has surveyed** (R-WAR10).
@@ -11345,17 +11377,16 @@ mod tests {
         // design law #3 its cost advantage, now reaching acceleration.
         let galaxy = test_galaxy(2, 1);
         let mut sim = Simulation::with_baseline(galaxy, SimConfig::new(1));
-        let base = sim.config.civilian_accel_g;
 
         // fabricate a throwaway entity id with no cargo component → empty
         let empty = Entity(u64::MAX); // no cargo store entry ⇒ 0 cargo
-        assert!(sim.laden_accel(empty, base) > 0.0, "an entity with no hull still flies on the default hull");
+        assert!(sim.laden_accel(empty) > 0.0, "an entity with no hull still flies on the default hull");
 
         let mut last = 0.0;
         for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
             let e = sim.world.spawn();
             sim.world.hull_type.insert(e, hull);
-            let a = sim.laden_accel(e, base);
+            let a = sim.laden_accel(e);
             assert!(a > last, "{hull:?} empty should out-accelerate the size below it: {a} vs {last}");
             last = a;
         }
@@ -11366,7 +11397,7 @@ mod tests {
         for (hull, want) in [(HullType::LimitedSystems, 1.0), (HullType::LimitedContactVehicle, 0.911)] {
             let e = sim.world.spawn();
             sim.world.hull_type.insert(e, hull);
-            let a = sim.laden_accel(e, base) / G;
+            let a = sim.laden_accel(e) / G;
             assert!((a - want).abs() < 0.01, "{hull:?} empty flies at {a} g, anchor says {want}");
         }
 
@@ -11374,12 +11405,12 @@ mod tests {
         let mut sim2 = Simulation::with_baseline(test_galaxy(2, 1), SimConfig::new(1));
         let bare = sim2.world.spawn();
         sim2.world.hull_type.insert(bare, HullType::MediumSystems);
-        let a_empty = sim2.laden_accel(bare, base);
+        let a_empty = sim2.laden_accel(bare);
         let laden = sim2.world.spawn();
         let m = Minerals { cyan: 5.0, ..Minerals::default() };
         sim2.world.cargo.insert(laden, m);
         sim2.world.hull_type.insert(laden, HullType::MediumSystems);
-        let a_laden = sim2.laden_accel(laden, base);
+        let a_laden = sim2.laden_accel(laden);
         assert!(a_laden < a_empty, "laden accel {a_laden} should be < empty {a_empty}");
 
         // R-O57: one mass unit, so the derate is exactly thrust/(dry+cargo) with
@@ -11387,14 +11418,14 @@ mod tests {
         // mounts (T-96) and the denominator is everything it has to push.
         let dry = hull_dry_mass(HullType::MediumSystems, &sim2.config).kilotons();
         let thrust = sim2.config.drive_specific_thrust * HullType::MediumSystems.drive_mass(&sim2.config).kilotons();
-        assert!((a_laden - base * G * thrust / (dry + 5.0)).abs() < 1e-12);
+        assert!((a_laden - G * thrust / (dry + 5.0)).abs() < 1e-12);
 
         // The same load on a bigger hull derates *less* — dry mass is in the
         // denominator, so the spread is a statement about how full the hold is.
         let big = sim2.world.spawn();
         sim2.world.cargo.insert(big, m);
         sim2.world.hull_type.insert(big, HullType::GeneralSystems);
-        assert!(sim2.laden_accel(big, base) > a_laden);
+        assert!(sim2.laden_accel(big) > a_laden);
     }
 
     /// **Production's objective must be able to express design law #3, and in
@@ -14062,13 +14093,14 @@ mod tests {
 
         let yellow = Minerals { yellow: 10.0, ..Default::default() };
         let magenta = Minerals { magenta: 10.0, ..Default::default() };
+        let accel = G * sim.thrust_to_mass(HullType::MediumSystems, Kilotons::new(10.0));
         assert_eq!(
-            sim.best_delivery_center(PlayerId(0), here, &yellow),
+            sim.best_delivery_center(PlayerId(0), here, &yellow, accel),
             Some(a),
             "a Yellow-laden hauler must go to the Yellow-short center"
         );
         assert_eq!(
-            sim.best_delivery_center(PlayerId(0), here, &magenta),
+            sim.best_delivery_center(PlayerId(0), here, &magenta, accel),
             Some(b),
             "and the same route with Magenta aboard must go the other way"
         );
@@ -14098,7 +14130,7 @@ mod tests {
         assert!(far > 0.0 && far < near, "and one missing everything scores strictly less: {far} vs {near}");
         assert_eq!(sim.bill_completion(a, PlayerId(0), &magenta), 0.0, "the wrong color completes nothing");
         assert_eq!(
-            sim.best_delivery_center(PlayerId(0), here, &yellow),
+            sim.best_delivery_center(PlayerId(0), here, &yellow, accel),
             Some(a),
             "so the hauler goes to the center it can finish, not the emptiest"
         );
@@ -14268,31 +14300,32 @@ mod tests {
         let here = *sim.world.position.get(home).unwrap();
         sim.world.position.insert(target, here);
         let k = units::population_mass(cap);
-        let hold = Kilotons::new(f64::MAX / 4.0); // ask the policy, not the hull
+        let hold = Kilotons::new(f64::MAX / 4.0); // ask the policy, not the hull's hold
+        let accel = sim.colony_ship_accel(HullType::MediumSystems); // whose drive prices the voyage
 
         // **Something always ships**, at every fill level — including the one
         // that broke the marginal-rate formulation, an origin well below its own
         // growth peak.
         for fill in [0.05, 0.2, 0.5, 0.9, 1.0] {
             sim.world.population.insert(home, k * fill);
-            let got = sim.settler_target(home, target, hold);
+            let got = sim.settler_target(home, target, hold, accel);
             assert!(got > Kilotons::ZERO, "an origin at {fill} of its ceiling must still colonize, got {got}");
             assert!(got <= k * fill * 0.5 + Kilotons::new(1e-9), "and must not be stripped: {got} of {}", k * fill);
         }
 
         // **Distance reduces it.** Same origin, same destination, further away.
         sim.world.population.insert(home, k);
-        let near = sim.settler_target(home, target, hold);
+        let near = sim.settler_target(home, target, hold, accel);
         sim.world.position.insert(target, Vec3::new(here.x + 3000.0, here.y, here.z));
-        let far = sim.settler_target(home, target, hold);
-        assert!(sim.travel_discount(home, target) < 0.05, "3,000 ly should be heavily discounted");
+        let far = sim.settler_target(home, target, hold, accel);
+        assert!(sim.travel_discount(home, target, accel) < 0.05, "3,000 ly should be heavily discounted");
         assert!(far < near, "a distant world is worth less to seed: {far} vs {near}");
 
         // **A poorer destination takes less**, because the seed cannot exceed
         // what that world can hold.
         sim.world.position.insert(target, here);
         sim.world.factors.insert(target, factors(Band::new(1.0)));
-        let poor = sim.settler_target(home, target, hold);
+        let poor = sim.settler_target(home, target, hold, accel);
         assert!(poor <= units::population_mass(Band::new(1.0)), "capped by the destination: {poor}");
         assert!(poor < near, "and it is less than a rich destination takes: {poor} vs {near}");
     }
@@ -14327,7 +14360,7 @@ mod tests {
                         sim.world.population.insert(home, units::population_mass(Band::new(kp)) * fill);
                         for (i, hull) in hulls.iter().enumerate() {
                             let hold = hull.colony_seed_capacity(&sim.config);
-                            let advertised = sim.settler_target(home, target, hold);
+                            let advertised = sim.settler_target(home, target, hold, sim.colony_ship_accel(*hull));
                             let loaded = sim.colony_seed_for(*hull, home, target).unwrap_or(Kilotons::ZERO);
                             assert!(
                                 (advertised - loaded).kilotons().abs() < 1e-12,

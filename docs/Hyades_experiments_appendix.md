@@ -2330,6 +2330,46 @@ What each column reads, from the share matrices:
 
 ---
 
+## D.19 Every leg flies its Design's drive — `survey_accel_g` and `civilian_accel_g` removed
+
+*Supports the author's ruling — "survey_accel_g must be removed. No overwriting
+the Design of a ship by the sim" — as recorded in
+`Hyades_autopilot_colonization_growth.md` §2.1, `Hyades_loadout.md` §5 and
+`Hyades_warfare_tree.md` §8.9.7.*
+
+**What was overwritten.** Thirteen sites flew or priced a hull at a flat
+rate in place of its Design's drive: the two survey legs at
+`Doctrine::survey_accel_g · G`, and the scrap leg, a colony ship's bounce home,
+both Reserve re-taskings, a new freighter's first leg, a parked hull's motion,
+the settler travel discount, the delivery and pickup routers and the Exchange's
+freight leg at `SimConfig::civilian_accel_g · G` (1 g). The laden legs already
+read the hull (`laden_accel`, with `civilian_accel_g` as a 1.0 throttle). Every
+site now reads `laden_accel` or, for a forecast, the same `thrust_to_mass` of
+the hull that will fly: the settler discount prices a colony ship laden to its
+seed capacity (`colony_ship_accel`), the routers price the hauler's own laden
+rate, and the Exchange leg is flown by the seller's standing Freighter Design
+in as many full loads as the lot needs. Both constants are deleted.
+
+The drive ladder the sites now read (T-96): empty, 1.00 / 2.37 / 5.06 g for
+Limited / Medium / General Systems hulls, 0.911 g for a Limited Contact hull;
+a laden Medium colony ship 0.234 g. So a Limited scout flies where it did, and
+a Medium hull on an empty leg flies 2.37 times as fast as before.
+
+**The armed-scout write is no longer inert.** `scout_hull_offensive` reproduced
+its baseline bit-identically while the survey leg ignored the hull
+(§8.9.7). At 400 yr, 3 seats, the write now moves the run: 43,773 → 41,860
+events on seed 1 and 61,545 → 62,491 on seed 7.
+
+**Runs move** (`build_digest 400`, 3 seats): colonies at 400 yr
+428 → 452, 928 → 891 and 842 → 726 on seeds 1, 7 and 42.
+
+**Test targets, unloaded, two interleaved runs each:** `tests/determinism.rs`
+44.1 / 44.3 s before, 42.0 / 42.1 s after. Readings of 59.3 and 60.4 s were
+taken while other runs shared the four cores and are not a property of the
+change.
+
+---
+
 ## References
 
 - `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the
