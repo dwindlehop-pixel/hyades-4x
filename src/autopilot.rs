@@ -358,9 +358,9 @@ pub struct Doctrine {
     ///
     /// **A scout built this way carries `Class::Tor`**, which is how
     /// `assign_role` tells it from a picket built on the same hull. The class
-    /// *is* the design (R-O28/R-O42b), so a Tor on an offensive hull is a
-    /// survey design mounted on a fighting shell — exactly what a Design write
-    /// does — and it needs no second piece of state to disambiguate.
+    /// *is* the design (R-O28/R-O42b), and a class names one hull, so the
+    /// armed survey Design (Tor, on the Contact hull) and the unarmed one
+    /// (Spur, on the Systems hull) are two Designs.
     ///
     /// **Placeholder, default false** (R-WAR8) — the card sets it.
     pub scout_hull_offensive: bool,
@@ -1652,12 +1652,15 @@ impl<'a> Standing<'a> {
     /// **The design this layer lays down for `role`** — the hull *and* the
     /// class, because the class is what distinguishes two roles sharing a hull.
     /// Two pairs share one today: a scouting Limited Contact Vehicle (`Tor`)
-    /// against a picketing one (`Unnamed`) once the Warfare card is played, and
-    /// a scouting Limited Systems hull (`Tor`) against a mining one (`Meadow`)
+    /// against a picketing one (`Cairn`) once the Warfare card is played, and
+    /// a scouting Limited Systems hull (`Spur`) against a mining one (`Meadow`)
     /// before it (T-115, T-121).
     pub fn design_for(&self, role: Role) -> (HullType, Class) {
         match role {
-            Role::Scout => (scout_hull(self.doctrine), Class::Tor),
+            Role::Scout => match scout_hull(self.doctrine) {
+                HullType::LimitedSystems => (HullType::LimitedSystems, Class::Spur),
+                hull => (hull, Class::Tor),
+            },
             Role::Colonizer => (HullType::MediumSystems, Class::Delta),
             Role::Miner => (HullType::LimitedSystems, Class::Meadow),
             Role::Picket => (HullType::LimitedContactVehicle, Class::Cairn),
@@ -2288,8 +2291,8 @@ mod tests {
         );
         assert_eq!(
             Standing::of(&plain).scout_order(),
-            BuildOrder::Hull { hull_type: HullType::LimitedSystems, class: Class::Tor },
-            "and so does the unarmed one, so the class means the same thing either way"
+            BuildOrder::Hull { hull_type: HullType::LimitedSystems, class: Class::Spur },
+            "the unarmed one carries its own Design: a class names one hull"
         );
 
         let cands = one_colony_candidate(&ap, &armed);
@@ -2308,7 +2311,7 @@ mod tests {
         // there would say nothing about which role the design resolves to.
         let st = Standing::of(&plain);
         let lsv = HullType::LimitedSystems;
-        assert_eq!(st.role_of(lsv, Class::Tor), Some(Role::Scout));
+        assert_eq!(st.role_of(lsv, Class::Spur), Some(Role::Scout));
         assert_eq!(st.role_of(lsv, Class::Meadow), Some(Role::Miner));
     }
 
@@ -2469,12 +2472,57 @@ mod tests {
                 };
                 let st = Standing::of(&d);
                 for hull in all {
-                    for class in [Class::Unnamed, Class::Tor, Class::Meadow] {
+                    for class in [Class::Unnamed, Class::Spur, Class::Tor, Class::Meadow] {
                         assert!(st.role_of(hull, class).is_some(), "{hull:?}/{class:?} has no mission");
                     }
                 }
             }
         }
+    }
+
+    /// **A class names one hull** (the author's ruling). Every Design the
+    /// standing layer lays down, under every combination of the writes, every
+    /// Design a card unlocks, and every class `hull_order` stamps sits on the
+    /// hull its class names — and the armed survey Design is armed.
+    #[test]
+    fn a_named_class_is_on_one_hull() {
+        let on_its_hull = |hull: HullType, class: Class, site: &str| {
+            if let Some(h) = class.hull() {
+                assert_eq!(hull, h, "{site}: {class:?} on {hull:?}, but it names {h:?}");
+            }
+        };
+        for scout_armed in [false, true] {
+            for colonizer_contact in [false, true] {
+                let d = Doctrine {
+                    scout_hull_offensive: scout_armed,
+                    colonizer_general_contact: colonizer_contact,
+                    ..Doctrine::default()
+                };
+                let st = Standing::of(&d);
+                for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
+                    let (hull, class) = st.design_for(role);
+                    on_its_hull(hull, class, "design_for");
+                }
+            }
+        }
+        for hull in HullType::ALL {
+            if let BuildOrder::Hull { hull_type, class } = hull_order(hull) {
+                on_its_hull(hull_type, class, "hull_order");
+            }
+        }
+        for hull in [HullType::MediumSystems, HullType::GeneralSystems] {
+            on_its_hull(hull, Class::freighter_for(hull), "a freighter");
+        }
+        for card in crate::cards::TIER0.iter() {
+            for effect in card.effects {
+                if let crate::cards::CardEffect::UnlockDesign(hull, class) = *effect {
+                    on_its_hull(hull, class, "a card's unlock");
+                }
+            }
+        }
+        let cfg = crate::sim::SimConfig::new(1);
+        let tor = crate::sim::design_loadout(HullType::LimitedContactVehicle, Class::Tor, &cfg, &Default::default());
+        assert!(tor.is_armed(), "a Tor is on a Contact hull, so it is armed");
     }
 
     /// One `Candidate` a mature center would happily colonize.

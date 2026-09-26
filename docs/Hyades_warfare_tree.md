@@ -1739,7 +1739,7 @@ specification, and it resolves **R-WAR13**.*
 
 | role | before | after | why |
 |---|---|---|---|
-| Scout | `LimitedContactVehicle` / `Tor` | **`LimitedSystems` / `Tor`** | a Contact hull is armed; the default is not |
+| Scout | `LimitedContactVehicle` / `Tor` | **`LimitedSystems` / `Tor`** (renamed `Spur` at T-133: a class names one hull) | a Contact hull is armed; the default is not |
 | Colonizer | `MediumSystems` / `Unnamed` | unchanged | already unarmed |
 | Colonizer, upper rung | `GeneralSystems` | unchanged | ditto |
 | Miner | `LimitedSystems` / `Meadow` | unchanged | — |
@@ -1888,7 +1888,7 @@ and the suite was green across the change.
 
 Before, the class separated a scouting hull from a picketing one **only** when
 the armed write was on. Now it works unarmed as well: a scouting LSV is `Tor`
-and a mining LSV is `Meadow`. That makes `ASSIGNABLE`'s **order** load-bearing —
+(`Spur` since T-133) and a mining LSV is `Meadow`. That makes `ASSIGNABLE`'s **order** load-bearing —
 `role_of`'s second pass takes the first role that *mounts* the hull, and two
 roles now mount `LimitedSystems`. Miner precedes Scout, matching
 `competent_role`, so the two resolutions cannot disagree. Nothing
@@ -2693,6 +2693,7 @@ kill them before they can found a colony, they will seek a new destination."*
 | ~~**R-WAR34**~~ | **resolved (the author's ruling): wrecked hulls continue on their course at the moment of destruction** — a coasting `Wreck` carrying the hull's whole mass, not slag booked at a planet (§8.19.2, §8.19.3) | — |
 | **R-WAR35** | **belief event A reads a course change before its light arrives** — a sighting is discarded when the shooter has changed course since, which its observers cannot yet know (design law #15) (§8.19.7) | a count of retargets decided on a sighting the lag would have kept |
 | **R-WAR37** | **target priority under fire anywhere** — nearest-first was harmless while fights happened only at sites; with fire wherever hulls are in reach, a blockader's shots go to what stands nearest it, and on the twelve-seat card bed **no colony ship was wrecked** on three seeds against 10,903–12,845 other hulls (appendix §D.16). The port strike's purpose (§8.16) is the colony ship | the author: a Doctrine priority by role (colony ships first for a blockader is the recommendation), then the card bed re-measured |
+| **R-WAR38** | **the armed survey Design's structure** — `Tor` keeps `σ = 10¹¹`, the value it carried when one class named the survey Design on both shells; §8.18's rule puts armed Designs at `10¹²` | the author: `σ` for `Tor` |
 | **R-WAR36** | **the arena against the harness ruling** — design law #4 makes the Ship Testing Arena the required harness for per-class `r_eq`, and it spawns and fights hulls outside the simulation; the author's T-133 ruling is that a harness carries no special sim code. `arena.rs` is a scenario seeder that calls `combat::resolve_engagement`, not the simulation's fire path, so the two are not yet in conflict — but a pitched-battle bed for the Technology rating (`Hyades_technology_tree.md` §4) cannot use it and stay within the ruling | the author: whether the arena keeps its own resolver, or seeds scenarios into the simulation and steps its event loop |
 | **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
 | ~~**R-WAR26**~~ | **what ends a pitched battle — ruled and built (T-133)**: all three, each on the event that raises it; R-L2 is answered as repeated passes (§8.19.6) | — |

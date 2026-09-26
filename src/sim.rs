@@ -790,9 +790,14 @@ pub enum Class {
     /// The mining Design, on the Limited Systems hull — proposed *Meadow*-class
     /// (alts: Fen, Holm, Croft, Hollow).
     Meadow,
-    /// The survey Design — proposed *Tor*-class (alts: Spur, Shoal, Gully).
-    /// Mounted on the Limited Systems hull by default and on the Limited
-    /// Contact hull once the Warfare card arms it.
+    /// The unarmed survey Design, on the Limited Systems hull — proposed
+    /// *Spur*-class, from §7.1's alternates. The default scout.
+    Spur,
+    /// The armed survey Design, on the Limited Contact hull — proposed
+    /// *Tor*-class, §7.1's name for the LCV. The scout once the Warfare card
+    /// moves survey onto the Contact family. **A class names one hull** (the
+    /// author's ruling): Tor was the survey Design on both shells until it
+    /// was split, and a Tor is always armed because every Contact hull is.
     Tor,
     /// The picket Design, on the Limited Contact hull — proposed *Cairn*-class,
     /// a marker on held ground (T-133).
@@ -806,13 +811,43 @@ pub enum Class {
     /// The armed General colonizer Design, on the General Contact hull —
     /// proposed *Scarp*-class (T-133).
     Scarp,
-    /// The freighter Design, on whichever Systems hull the rock calls for
-    /// (T-98) — proposed *Ford*-class (T-133).
+    /// The Medium freighter Design, on the Medium Systems hull — proposed
+    /// *Ford*-class (T-133).
     Ford,
+    /// The General freighter Design, on the General Systems hull — proposed
+    /// *Strait*-class, the large crossing to Ford's small one. A freighter is
+    /// sized to its rock (T-98), and a class names one hull (the author's
+    /// ruling), so the two sizes are two Designs.
+    Strait,
     /// A hull with no authored Design: the Offensive hulls nothing builds, the
     /// arena's spawns, and the seed hulls the galaxy is generated with. It
     /// takes its hull class's default structure (`combat::ByClass`).
     Unnamed,
+}
+
+impl Class {
+    /// **The freighter Design for a hull** its rock called for (T-98): Ford on
+    /// the Medium hull, Strait on the General one.
+    pub fn freighter_for(hull: HullType) -> Class {
+        if hull == HullType::GeneralSystems {
+            Class::Strait
+        } else {
+            Class::Ford
+        }
+    }
+
+    /// **The one hull a named Design is on** (the author's ruling: a class
+    /// names one hull). `None` only for [`Class::Unnamed`], which is not a name.
+    pub fn hull(self) -> Option<HullType> {
+        match self {
+            Class::Meadow | Class::Spur => Some(HullType::LimitedSystems),
+            Class::Tor | Class::Cairn => Some(HullType::LimitedContactVehicle),
+            Class::Delta | Class::Ford => Some(HullType::MediumSystems),
+            Class::Range | Class::Strait => Some(HullType::GeneralSystems),
+            Class::Scarp => Some(HullType::GeneralContactVehicle),
+            Class::Unnamed => None,
+        }
+    }
 }
 
 /// The **roster**: which `(hull, class)` designs a player can build at all
@@ -7134,7 +7169,7 @@ impl Simulation {
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, Role::Freighter);
         self.world.hull_type.insert(e, hull);
-        self.world.design_class.insert(e, Class::Ford);
+        self.world.design_class.insert(e, Class::freighter_for(hull));
         self.world.cargo.insert(e, Minerals::default());
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { base: outpost, outpost, destination: center, outbound: true, stops: 0 });

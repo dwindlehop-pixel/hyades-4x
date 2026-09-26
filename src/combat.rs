@@ -766,12 +766,14 @@ pub struct CombatConfig {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ByClass {
     pub meadow: f64,
+    pub spur: f64,
     pub tor: f64,
     pub cairn: f64,
     pub delta: f64,
     pub range: f64,
     pub scarp: f64,
     pub ford: f64,
+    pub strait: f64,
     /// For [`Class::Unnamed`]: by the hull's taxonomy class.
     pub unnamed: ByFamily,
 }
@@ -781,12 +783,14 @@ impl ByClass {
     pub fn of(&self, class: Class, family: HullFamily) -> f64 {
         match class {
             Class::Meadow => self.meadow,
+            Class::Spur => self.spur,
             Class::Tor => self.tor,
             Class::Cairn => self.cairn,
             Class::Delta => self.delta,
             Class::Range => self.range,
             Class::Scarp => self.scarp,
             Class::Ford => self.ford,
+            Class::Strait => self.strait,
             Class::Unnamed => self.unnamed.of(family),
         }
     }
@@ -848,36 +852,44 @@ impl Default for CombatConfig {
             // Designs on Systems hulls at a tenth of the armed ones (T-133): a
             // Delta colony ship then carries 2.7 times a Cairn picket's
             // structure for 5.5 times its price, where on whole volume at one
-            // value it carried 26.8 times. The survey Design (Tor) is a
-            // civilian Design on either shell.
+            // value it carried 26.8 times. The unarmed survey Design (Spur) is a
+            // Systems Design. The armed one (Tor) keeps the value it carried
+            // when one class named the survey Design on both shells; the
+            // rule above would put an armed Design at 10¹² (R-WAR38, open).
             structure_kj_per_hull_unit3: ByClass {
                 meadow: 1.0e11,
+                spur: 1.0e11,
                 tor: 1.0e11,
                 cairn: 1.0e12,
                 delta: 1.0e11,
                 range: 1.0e11,
                 scarp: 1.0e12,
                 ford: 1.0e11,
+                strait: 1.0e11,
                 unnamed: ByFamily { systems: 1.0e11, contact: 1.0e12, offensive: 1.0e12 },
             },
             fire_control_by_class: ByClass {
                 meadow: 1.0,
+                spur: 1.0,
                 tor: 1.0,
                 cairn: 1.0,
                 delta: 1.0,
                 range: 1.0,
                 scarp: 1.0,
                 ford: 1.0,
+                strait: 1.0,
                 unnamed: ByFamily { systems: 1.0, contact: 1.0, offensive: 1.0 },
             },
             discharge_days_by_class: ByClass {
                 meadow: 0.25,
+                spur: 0.25,
                 tor: 0.25,
                 cairn: 0.25,
                 delta: 0.25,
                 range: 0.25,
                 scarp: 0.25,
                 ford: 0.25,
+                strait: 0.25,
                 unnamed: ByFamily { systems: 0.25, contact: 0.25, offensive: 0.25 },
             },
             wreck_scale: 1.0,
