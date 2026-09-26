@@ -168,7 +168,8 @@ description of the change.
 **Closed (sixth landing).** Every stage below is built and the harness-only
 sim code is gone (the author's ruling: *"Harnesses and test beds cannot have
 special sim code. The only thing that can vary is the galaxy generation."*).
-Opened R-WAR34 (the slag site of a wreck in open space), R-WAR35 (belief
+Opened and resolved R-WAR34 (the author's ruling: a wrecked hull continues on
+its course), opened R-WAR35 (belief
 event A reads a course change before its light arrives) and R-WAR36 (the arena
 against the harness ruling); resolved R-WAR22, R-WAR25, R-WAR26, R-WAR30 and
 R-L2; R-WAR29's budget is measured with detection on every trajectory

@@ -366,6 +366,27 @@ struct Brake {
     accel: f64,
 }
 
+/// **A wrecked hull** (T-133): its drive is dead, so it keeps the velocity it
+/// had when it was wrecked and coasts in a straight line. It carries its hull,
+/// its cargo and the people aboard as slag (design law #11), and raises no
+/// events — where it is at any time is closed form.
+#[derive(Clone, Copy, Debug)]
+struct Wreck {
+    /// Where and when it was wrecked, on its reference trajectory.
+    from: Vec3,
+    since: f64,
+    /// Its coordinate velocity then, ly/yr.
+    velocity: Vec3,
+    /// Everything it carried: dry mass, cargo and settlers.
+    mass: Kilotons,
+}
+
+impl Wreck {
+    fn position_at(&self, t: f64) -> Vec3 {
+        self.from.add(self.velocity.scale((t - self.since).max(0.0)))
+    }
+}
+
 impl Brake {
     /// Where the hull comes to rest.
     fn stop(&self) -> Vec3 {
@@ -1886,6 +1907,9 @@ struct World {
     /// first fired on or fires (T-133) — a pure function of the seed and the
     /// entity, cached because every discharge reads it.
     station: ComponentStore<crate::combat::StationKeeping>,
+    /// **A wrecked hull, still on its course** (T-133, the author's ruling:
+    /// "Wrecked hulls continue on their course at the moment of destruction").
+    wreck: ComponentStore<Wreck>,
     motion: ComponentStore<Motion>,
     voyage: ComponentStore<Voyage>,
     cargo: ComponentStore<Minerals>,
@@ -2080,6 +2104,7 @@ impl World {
             hull_damage: ComponentStore::new(),
             track: ComponentStore::new(),
             station: ComponentStore::new(),
+            wreck: ComponentStore::new(),
             motion: ComponentStore::new(),
             voyage: ComponentStore::new(),
             cargo: ComponentStore::new(),
@@ -3677,6 +3702,8 @@ impl Simulation {
         if let Some(m) = self.world.motion.get(e) {
             // Through the motion, so a braking segment is read (T-133).
             Some(m.position_at(t))
+        } else if let Some(w) = self.world.wreck.get(e) {
+            Some(w.position_at(t))
         } else {
             self.world.position.get(e).copied()
         }
@@ -8328,6 +8355,9 @@ impl Simulation {
         // double it.
         for i in 0..self.world.next {
             let e = Entity(i);
+            if let Some(w) = self.world.wreck.get(e) {
+                m.wrecks += w.mass.kilotons();
+            }
             if self.world.role.get(e).copied() == Some(Role::Scrapped) {
                 continue;
             }
@@ -8759,8 +8789,11 @@ pub struct MassLedger {
     pub settlers: f64,
     /// Standing biomass that is not people.
     pub biomass: f64,
-    /// Wreckage, inert and at the site that made it (R-O59).
+    /// Slag standing at a planet, inert (R-O59) — the unrecovered half of a
+    /// scrapped hull.
     pub slag: f64,
+    /// Wrecked hulls still on their course, with everything aboard (T-133).
+    pub wrecks: f64,
 }
 
 impl MassLedger {
@@ -8777,6 +8810,7 @@ impl MassLedger {
             + self.settlers
             + self.biomass
             + self.slag
+            + self.wrecks
     }
 
     /// Per-store differences, for saying *where* a leak is rather than that
@@ -8793,6 +8827,7 @@ impl MassLedger {
             settlers: other.settlers - self.settlers,
             biomass: other.biomass - self.biomass,
             slag: other.slag - self.slag,
+            wrecks: other.wrecks - self.wrecks,
         }
     }
 }
@@ -9966,9 +10001,10 @@ mod tests {
     /// **Armed hulls that meet fire, and what they wreck is slag** (T-111,
     /// T-133, design law #11). The counterpart of the test above: with the
     /// Warfare card's writes on one seat, encounters begin, hulls are wrecked,
-    /// and every kilotonne a wreck logged is standing on the board. Scrapping
-    /// makes slag too (T-118), so the board total bounds the logged total from
-    /// above; `mass_is_conserved_through_the_blockade` weighs the whole board.
+    /// and every kilotonne a wreck logged is still in the galaxy — a wreck
+    /// keeps its course (the author's ruling), so it is counted where it is,
+    /// not at a planet. `mass_is_conserved_through_the_blockade` weighs the
+    /// whole board.
     #[test]
     fn armed_hulls_that_meet_fire_and_their_wrecks_are_slag() {
         let mut sim = belligerents(test_galaxy(3, 2024), contact_cfg(2024));
@@ -9987,8 +10023,14 @@ mod tests {
         }
         assert!(encounters > 0, "armed hulls met nobody — detection never fired");
         assert!(wrecks > 0, "nothing was wrecked, so the slag half asserts nothing");
-        let standing: f64 = (0..sim.planet_entity.len()).map(|i| sim.slag_at(PlanetId(i as u32)).kilotons()).sum();
-        assert!(standing >= logged_slag - 1e-9, "wrecks logged {logged_slag} kt and {standing} kt is standing");
+        let (count, standing) = (0..sim.world.next)
+            .filter_map(|i| sim.world.wreck.get(Entity(i)))
+            .fold((0usize, 0.0), |(n, m), w| (n + 1, m + w.mass.kilotons()));
+        assert_eq!(count, wrecks, "every wreck logged is a wreck in the galaxy");
+        assert!(
+            (standing - logged_slag).abs() <= 1e-12 * logged_slag.max(1.0),
+            "{logged_slag} kt logged, {standing} kt in wrecks"
+        );
         let lightest = HullType::ALL.iter().map(|&h| hull_dry_mass(h, &sim.config).kilotons()).fold(f64::MAX, f64::min);
         assert!(logged_slag >= wrecks as f64 * lightest - 1e-9, "{wrecks} wrecks logged only {logged_slag} kt");
     }
@@ -10851,7 +10893,15 @@ mod tests {
         assert!(when < arrive, "before it could found");
         assert_eq!(sim.world.owner.get(target), None, "and nobody founds its world");
         assert_eq!(sim.blockade.get(&(home1.0, 0)), Some(&vec![blockader]), "the armed blockade holds");
-        assert!(sim.world.slag.get(home1).is_some_and(|s| s.kilotons() > 0.0), "the wreck is at the port");
+        // **The wreck keeps its course** (the author's ruling): it was wrecked
+        // leaving, within fire distance of the port, and coasts on at the
+        // velocity it had.
+        let w = *sim.world.wreck.get(ship).expect("the wreck is in the galaxy");
+        assert!(w.mass.kilotons() > 0.0);
+        assert!(w.from.distance(port) <= beams.fire_neutral_ly * 2.0, "wrecked leaving the port: {:?}", w.from);
+        let later = w.since + 1.0;
+        let drift = sim.position_at(ship, later).unwrap().distance(w.from.add(w.velocity.scale(1.0)));
+        assert!(drift < 1e-12, "and it coasts in a straight line");
         // An unpaid hull is the one thing created here; everything it carried
         // was debited from the port and has to reappear as slag.
         let hull = hull_dry_mass(HullType::MediumSystems, &sim.config).kilotons();

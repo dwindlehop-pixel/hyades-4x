@@ -716,19 +716,22 @@ impl Simulation {
     }
 
     /// **A hull reaches its wreck point** (T-133, §8.19.5), wherever it is:
-    /// off every post, its mass slag (design law #11).
+    /// off every post, and **still on its course** (the author's ruling:
+    /// "Wrecked hulls continue on their course at the moment of destruction").
+    /// Its drive is dead, so it keeps the velocity it had and coasts, carrying
+    /// its hull, its cargo and the people aboard as slag (design law #11).
     fn wreck_hull(&mut self, e: Entity, by: Entity, damage: f64) {
-        let here = self.position_at(e, self.clock).unwrap_or(Vec3::ZERO);
+        let now = self.clock;
+        let (from, velocity) =
+            self.world.motion.get(e).map_or((self.position_at(e, now).unwrap_or(Vec3::ZERO), Vec3::ZERO), |m| {
+                (m.position_at(now), m.velocity_at(now))
+            });
         let owner = self.world.owner.get(e).map_or(0, |o| o.0);
         let role = self.world.role.get(e).copied().unwrap_or(Role::Reserve);
         let by_seat = self.world.owner.get(by).map_or(0, |o| o.0);
-        let site = self.slag_site(e, here);
         self.leave_post(e);
-        let slag = self.destroy_free_hulls(&[e]);
-        if let Some(site) = site {
-            let total = *self.world.slag.get(site).unwrap_or(&Kilotons::ZERO) + slag;
-            self.world.slag.insert(site, total);
-        }
+        let mass = self.destroy_free_hulls(&[e]);
+        self.world.wreck.insert(e, Wreck { from, since: now, velocity, mass });
         self.armed.remove(&e);
         self.stop_firing(e);
         self.fired_on_at_destination.remove(&e);
@@ -736,25 +739,9 @@ impl Simulation {
             track.gen = track.gen.wrapping_add(1);
         }
         self.log.push(
-            self.clock,
-            LogEvent::HullWrecked { player: owner, vehicle: e, role, by: by_seat, damage, slag: slag.kilotons() },
+            now,
+            LogEvent::HullWrecked { player: owner, vehicle: e, role, by: by_seat, damage, slag: mass.kilotons() },
         );
-    }
-
-    /// **Where a wreck's slag is booked**: slag is a per-planet store (R-O59,
-    /// T-03), so a hull wrecked in open space is booked at whichever of its
-    /// destination and its home is nearer to it.
-    fn slag_site(&self, e: Entity, here: Vec3) -> Option<Entity> {
-        let a = self.world.voyage.get(e).map(|v| v.target);
-        let b = self.world.home_center.get(e).copied();
-        let dist = |p: Entity| self.world.position.get(p).map_or(f64::INFINITY, |q| q.distance(here));
-        match (a, b) {
-            (Some(a), Some(b)) => Some(if dist(b) < dist(a) { b } else { a }),
-            (a, b) => a.or(b).or_else(|| {
-                let seat = self.world.owner.get(e).map_or(0, |o| o.0 as usize);
-                self.nearest_owned_planet(seat, here)
-            }),
-        }
     }
 
     /// **Take a hull off whatever post it holds** — a mining crew, a picket
@@ -1188,6 +1175,43 @@ mod tests {
             assert!(d >= at && d < at + one * (1.0 + 1e-9), "halved {halve} worn {worn}: wrecked at {d}, point {at}");
             assert_eq!(sim.world.role.get(e1).copied(), Some(Role::Scrapped));
         }
+    }
+
+    /// **A wrecked hull continues on its course** (T-133, the author's ruling).
+    /// A hull flying past a Scarp's guns is wrecked in flight; the wreck starts
+    /// where the hull was and keeps the velocity it had, coasting in a straight
+    /// line with its drive dead, and carries its whole mass.
+    #[test]
+    fn a_wrecked_hull_continues_on_its_course() {
+        let mut sim = bed(21);
+        enemies(&mut sim);
+        let at = open_space(&sim);
+        let gun = design_loadout(HullType::GeneralContactVehicle, Class::Scarp, &sim.config, &sim.combat);
+        stand(&mut sim, 0, HullType::GeneralContactVehicle, Class::Scarp, gun, at);
+        // A seat-1 hull crossing the gun's reach at speed, off to one side.
+        let prey = stand(&mut sim, 1, HullType::MediumSystems, Class::Delta, Loadout::UNARMED, at);
+        let side = Vec3::new(0.0, 0.3 * gun.fire_enemy_ly, 0.0);
+        let leg = Motion::leg(
+            at.add(side).add(Vec3::new(-1.0, 0.0, 0.0)),
+            at.add(side).add(Vec3::new(1.0, 0.0, 0.0)),
+            0.0,
+            2.0,
+        );
+        sim.world.motion.insert(prey, leg);
+        sim.track_changed(prey);
+        let before = sim.mass_ledger();
+        run_to(&mut sim, leg.arrive);
+        let w = *sim.world.wreck.get(prey).expect("the Scarp wrecks it in passing");
+        assert!(w.since > leg.depart && w.since < leg.arrive, "wrecked in flight at {}", w.since);
+        assert!(w.from.distance(leg.position_at(w.since)) < 1e-12, "where it was");
+        assert!(w.velocity.distance(leg.velocity_at(w.since)) < 1e-12, "at the velocity it had");
+        assert!(w.velocity.norm() > 0.0);
+        let t = w.since + 3.0;
+        assert!(sim.position_at(prey, t).unwrap().distance(w.from.add(w.velocity.scale(3.0))) < 1e-12);
+        assert!(sim.position_at(prey, t).unwrap().distance(leg.dest) > 0.0, "and does not stop where it was going");
+        assert!((w.mass - hull_dry_mass(HullType::MediumSystems, &sim.config)).kilotons().abs() < 1e-12);
+        let after = sim.mass_ledger();
+        assert!((after.wrecks - before.wrecks - w.mass.kilotons()).abs() < 1e-12, "the ledger carries the wreck");
     }
 
     /// **The entry into reach is exact on both stretches of a course

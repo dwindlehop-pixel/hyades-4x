@@ -2773,7 +2773,9 @@ changes how you *work*, not what is left to do:
   author's ruling). A hull under fire keeps flying its mission, and is wrecked
   when its carried damage reaches a **wreck point drawn once per hull** past its
   structure (§8.19.5) — which is the roll repeated on every hit, and makes an
-  outcome independent of how the damage was divided. A colony ship that survives
+  outcome independent of how the damage was divided. **A wrecked hull continues
+  on its course** — it coasts at the velocity it had, carrying its whole mass,
+  and the ledger counts it as a wreck, not as slag at a planet. A colony ship that survives
   fire at its destination leaves. Engagement range is derived from the
   Design's fire-control accuracy (`combat::engagement_range_ly`). `σ` is per Design
   class, and every Design the engine builds has a class name. Fire is found by

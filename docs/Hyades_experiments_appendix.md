@@ -2043,6 +2043,7 @@ their own sections):
 | `ablate_picket_founding_cost` | engine variant | warfare §8.10 (T-116) |
 | `examples/engagement_census` | harness | warfare §7.3; its war arm armed nobody, so under discharge events it fires no shot |
 | `examples/capability_probe` | harness | §D.9, §D.10, §D.12; it called the deleted resolvers directly |
+| slag booked at the nearer of a wreck's destination and home | interim rule | none; superseded by the author's ruling that a wreck keeps its course |
 
 **The card-free run is bit-identical to the engine before this landing.**
 `build_digest 400 1,7,42` against the build of d99a790: 42,418 / 63,568 /
@@ -2132,6 +2133,13 @@ no longer pulls the first barrier to 60 yr. At the shipped 200 yr, six seats,
 floor; 275 yr gives 380 and 326 encounters (5.7 s for both seeds twice); 300 yr
 gives 745 encounters, 47 wrecks and 466 course changes (seed 1) and 493, 53 and
 82 (seed 7), 12.7 s, and ships.
+
+**Wrecks keep their course** (the author's ruling, R-WAR34): a wreck is no
+longer booked as slag at the nearer of its destination and its home, but coasts
+at the velocity it had, with the ledger carrying wrecks as their own store.
+Slag is inert, so nothing else moved: `combat_bench 400` reproduces every
+printed count on seeds 1 and 7 against the build before it, and on the unit
+bed the wrecks' summed mass equals the logged total exactly.
 
 **Test targets** (debug, `cargo test`, idle machine, one run each, the build of
 d99a790 against this one): unit 3.24 → 4.53 s, determinism 48.69 → 50.83 s,

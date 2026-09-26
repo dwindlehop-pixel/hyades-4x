@@ -2393,6 +2393,10 @@ the protocol's barrier. Measurements in appendix §D.16.
 - **A colony ship that survives fire at its destination leaves** (R-WAR28,
   resolved). Colonists are not suicidal: if they believe an enemy will kill
   them before they can found, they seek a new destination (§8.19.7).
+- **Wrecked hulls continue on their course at the moment of destruction**
+  (R-WAR34, resolved). The drive is dead, so a wreck keeps the velocity it had
+  and coasts in a straight line — a hull wrecked at rest stays where it was —
+  carrying its hull, its cargo and the people aboard as slag (law #11).
 - **A pitched battle ends by any of three rules** (R-WAR26, resolved in form):
   one side has no hull left; a hull past the threshold rolls, and survivors
   withdraw; a side's Doctrine breaks off on believed kinematics (§5).
@@ -2433,9 +2437,11 @@ a pitched battle) is in appendix §D.16.
   the two hulls' actual positions and velocities; a miss wastes the rest of that
   discharge.
 - **A wreck happens where the hull is**, on the hit that reaches its wreck point
-  (§8.19.5): off every post it held, its mass slag. **`OPEN` (R-WAR34):** slag
-  is a per-planet store (R-O59), so a wreck in open space is booked at whichever
-  of the hull's destination and its home is nearer.
+  (§8.19.5): off every post it held, and **on its course** (§8.19.2) — a
+  `Wreck` with the position and coordinate velocity of its reference trajectory
+  at that instant and everything it carried as mass. It raises no events; its
+  position at any time is `from + velocity · (t − since)`, and the mass ledger
+  carries wrecks as their own store beside per-planet slag.
 - **A pitched battle** is two hulls that each return fire on a hull they regard
   as an enemy: both stand (§8.19.6), and the same discharges resolve it.
 
@@ -2648,7 +2654,7 @@ kill them before they can found a colony, they will seek a new destination."*
 | **T-113** | the per-class candidate reduction (R-O70) is exact only for a consumer reading the argmax of a **class**; a consumer reading the argmax of a *subset* needs its own slot, and got one (§8.8) |
 | **T-112** | a colony founded at infrastructure **zero** is an absorbing state, not a price — `employment_rate` returns exactly `0.0` there, so it can never mine or build. A departing picket leaves the ladder's floor rung instead (§8.7) |
 | **T-111** | ~~`combat::resolve_engagement` is called from `sim.rs`~~ — **amended (T-133):** the simulation fights through its own discharge events (`src/sim/fire.rs`) with the arena's fire-control rule and tuned station-keeping spread from `combat.rs`; the arena keeps `resolve_engagement` for its own sweeps and seeds no production |
-| law #11 | a destroyed hull's mass becomes **slag** — inert (R-O59), conserved, and never a salvage yield; where a wreck in open space is booked is R-WAR34 |
+| law #11 | a destroyed hull's mass becomes **slag** — inert (R-O59), conserved, and never a salvage yield; a wrecked hull keeps its course (R-WAR34) |
 | **T-133** | **no engagements, no fight sites, and fire on the main loop** — detection on every trajectory change, discharges every `τ`, a wreck point per hull, belief events A and B, one decision per fleet per shooter, course changes from a moving start, colonists that retarget (§8.19) |
 | **T-133** | **a test bed varies nothing but the galaxy** (the author's ruling): no switch, ablation or oracle in the engine exists for a harness, and beds play cards through `apply_orders` at the protocol's barrier |
 | — | no tick-based initiative; `dt = 0.0005 yr` and < 2 ms per tick in the arena; the simulation fires on discharge events (§8.19.7) |
@@ -2684,7 +2690,7 @@ kill them before they can found a colony, they will seek a new destination."*
 | ~~**R-WAR30**~~ | **course adjustment — ruled and built (T-133)**: a trajectory from a moving start, triggered by belief events (A) and (B), decided once per fleet per shooter; colonists retarget to the nearest known world they can found and do not believe held (§8.19.7) | — |
 | **R-WAR31** | **repair** — a hull carries the damage it survived for the rest of its life (§8.19.5); nothing repairs it | the author: whether damage heals, where, and at what cost |
 | **R-WAR32** | **the stored fleet** — the fleet decides course adjustments (§8.19.7), which amends roles §5's "a query, not a stored thing". **Interim, built:** a mining crew at one rock, a picket stack at one world or port, or a single hull (`FleetKey`); hulls in flight are each their own fleet | the author: who joins and leaves a fleet, and when |
-| **R-WAR34** | **where a wreck in open space leaves its slag** — slag is a per-planet store (R-O59); interim, the nearer of the hull's destination and its home (§8.19.3) | a slag store off the planets, or the author's choice of site |
+| ~~**R-WAR34**~~ | **resolved (the author's ruling): wrecked hulls continue on their course at the moment of destruction** — a coasting `Wreck` carrying the hull's whole mass, not slag booked at a planet (§8.19.2, §8.19.3) | — |
 | **R-WAR35** | **belief event A reads a course change before its light arrives** — a sighting is discarded when the shooter has changed course since, which its observers cannot yet know (design law #15) (§8.19.7) | a count of retargets decided on a sighting the lag would have kept |
 | **R-WAR37** | **target priority under fire anywhere** — nearest-first was harmless while fights happened only at sites; with fire wherever hulls are in reach, a blockader's shots go to what stands nearest it, and on the twelve-seat card bed **no colony ship was wrecked** on three seeds against 10,903–12,845 other hulls (appendix §D.16). The port strike's purpose (§8.16) is the colony ship | the author: a Doctrine priority by role (colony ships first for a blockader is the recommendation), then the card bed re-measured |
 | **R-WAR36** | **the arena against the harness ruling** — design law #4 makes the Ship Testing Arena the required harness for per-class `r_eq`, and it spawns and fights hulls outside the simulation; the author's T-133 ruling is that a harness carries no special sim code. `arena.rs` is a scenario seeder that calls `combat::resolve_engagement`, not the simulation's fire path, so the two are not yet in conflict — but a pitched-battle bed for the Technology rating (`Hyades_technology_tree.md` §4) cannot use it and stay within the ruling | the author: whether the arena keeps its own resolver, or seeds scenarios into the simulation and steps its event loop |
