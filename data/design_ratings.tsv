@@ -1,45 +1,53 @@
-# design_rating, engine 86a6454, seeds 1,7,42,31337,2,3,5,11, both seatings, spend 10 General Systems hulls (13.15 kt)
-# columns: bed, design, Elo (anchor 0), 5th and 95th percentile over 1000 seed bootstraps
-bed	design	elo	p05	p95
-short-range	Meadow=Spur	-731.6	-731.6	-731.6
-short-range	Tor	-286.8	-286.8	-286.8
-short-range	Cairn	0.0	0.0	0.0
-short-range	Delta=Ford	-732.1	-732.1	-732.1
-short-range	Range=Strait	-731.5	-731.5	-731.5
-short-range	Scarp	351.9	351.9	351.9
-long-range	Meadow=Spur	-72.1	-73.1	-71.2
-long-range	Tor	-49.0	-49.6	-48.6
-long-range	Cairn	0.0	0.0	0.0
-long-range	Delta=Ford	-70.9	-74.3	-67.1
-long-range	Range=Strait	-86.1	-88.4	-83.9
-long-range	Scarp	295.9	292.0	299.9
-picket	Meadow=Spur	-574.9	-580.3	-570.0
-picket	Tor	0.0	0.0	0.0
-picket	Cairn	0.0	0.0	0.0
-picket	Delta=Ford	-574.9	-580.3	-570.0
-picket	Range=Strait	-574.9	-580.3	-570.0
-picket	Scarp	122.6	97.3	148.1
-colonizer	Meadow=Spur	-820.1	-821.5	-818.6
-colonizer	Tor	-820.1	-821.5	-818.6
-colonizer	Cairn	-820.1	-821.5	-818.6
-colonizer	Delta=Ford	0.0	0.0	0.0
-colonizer	Range=Strait	-278.2	-279.8	-276.6
-colonizer	Scarp	-254.4	-256.0	-252.7
-miner	Meadow=Spur	0.0	0.0	0.0
-miner	Tor	-0.1	-0.4	0.2
-miner	Cairn	-0.1	-0.4	0.2
-miner	Delta=Ford	-79.5	-100.4	-54.6
-miner	Range=Strait	-280.0	-386.2	-187.4
-miner	Scarp	-273.9	-377.3	-183.3
-freighter	Meadow=Spur	-302.5	-307.6	-297.3
-freighter	Tor	-726.4	-732.0	-720.8
-freighter	Cairn	-726.4	-732.0	-720.8
-freighter	Delta=Ford	0.0	0.0	0.0
-freighter	Range=Strait	101.6	95.0	109.3
-freighter	Scarp	12.9	-4.8	29.0
-scout	Meadow=Spur	0.0	0.0	0.0
-scout	Tor	0.0	0.0	0.0
-scout	Cairn	0.0	0.0	0.0
-scout	Delta=Ford	-111.3	-113.5	-109.1
-scout	Range=Strait	-407.9	-412.5	-404.0
-scout	Scarp	-383.3	-388.2	-379.0
+# design_rating, engine 52fc4f2, seeds 1,7,42,31337,2,3,5,11, both seatings, spend 10 General Systems hulls (13.15 kt)
+# columns: bed, design, gamma on the ratio scale (anchor 1; R-TECH8), 5th and 95th percentile over 1000 seed bootstraps
+bed	design	gamma	p05	p95
+short-range	Meadow=Spur	0.0148	0.0148	0.0148
+short-range	Tor	0.1918	0.1918	0.1918
+short-range	Cairn	1.0000	1.0000	1.0000
+short-range	Delta=Ford	0.0148	0.0148	0.0148
+short-range	Range=Strait	0.0148	0.0148	0.0148
+short-range	Scarp	7.5816	7.5816	7.5816
+long-range	Meadow=Spur	0.6601	0.6564	0.6638
+long-range	Tor	0.7540	0.7517	0.7561
+long-range	Cairn	1.0000	1.0000	1.0000
+long-range	Delta=Ford	0.6648	0.6519	0.6794
+long-range	Range=Strait	0.6092	0.6013	0.6169
+long-range	Scarp	5.4927	5.3704	5.6203
+picket	Meadow=Spur	0.0365	0.0354	0.0376
+picket	Tor	1.0000	1.0000	1.0000
+picket	Cairn	1.0000	1.0000	1.0000
+picket	Delta=Ford	0.0365	0.0354	0.0376
+picket	Range=Strait	0.0365	0.0354	0.0376
+picket	Scarp	2.0257	1.7505	2.3457
+colonizer	Meadow=Spur	0.0086	0.0084	0.0087
+colonizer	Tor	0.0086	0.0084	0.0087
+colonizer	Cairn	0.0086	0.0084	0.0087
+colonizer	Delta=Ford	1.0000	1.0000	1.0000
+colonizer	Range=Strait	0.1928	0.1890	0.1967
+colonizer	Scarp	0.2210	0.2167	0.2256
+miner	Meadow=Spur	1.0000	1.0000	1.0000
+miner	Tor	0.9995	0.9980	1.0009
+miner	Cairn	0.9995	0.9980	1.0009
+miner	Delta=Ford	0.6325	0.5613	0.7298
+miner	Range=Strait	0.1996	0.1085	0.3400
+miner	Scarp	0.2063	0.1141	0.3472
+freighter	Meadow=Spur	0.1810	0.1750	0.1879
+freighter	Tor	0.0157	0.0151	0.0163
+freighter	Cairn	0.0157	0.0151	0.0163
+freighter	Delta=Ford	1.0000	1.0000	1.0000
+freighter	Range=Strait	1.8116	1.6451	1.9821
+freighter	Scarp	1.1212	1.0189	1.2251
+scout	Meadow=Spur	1.0000	1.0000	1.0000
+scout	Tor	0.9887	0.9860	0.9913
+scout	Cairn	0.9887	0.9860	0.9913
+scout	Delta=Ford	0.5821	0.5740	0.5898
+scout	Range=Strait	0.1195	0.1165	0.1223
+scout	Scarp	0.1270	0.1238	0.1300
+# intransitivity (R-TECH7), per bed:
+# INTRANSITIVITY	short-range	cyclic triads 0	largest residual 0.161 (Tor v Cairn: observed 0.000, rated 0.161)
+# INTRANSITIVITY	long-range	cyclic triads 0	largest residual 0.202 (Cairn v Scarp: observed 0.356, rated 0.154)
+# INTRANSITIVITY	picket	cyclic triads 0	largest residual 0.035 (Tor v Meadow=Spur: observed 1.000, rated 0.965)
+# INTRANSITIVITY	colonizer	cyclic triads 0	largest residual 0.054 (Scarp v Delta=Ford: observed 0.127, rated 0.181)
+# INTRANSITIVITY	miner	cyclic triads 0	largest residual 0.031 (Scarp v Delta=Ford: observed 0.215, rated 0.246)
+# INTRANSITIVITY	freighter	cyclic triads 0	largest residual 0.080 (Meadow=Spur v Tor: observed 1.000, rated 0.920)
+# INTRANSITIVITY	scout	cyclic triads 0	largest residual 0.027 (Delta=Ford v Range=Strait: observed 0.856, rated 0.830)

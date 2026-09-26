@@ -2324,9 +2324,9 @@ What each column reads, from the share matrices:
   share, Scarp ties Delta (0.522); a Limited Systems hull delivers 0.08 of a
   Medium's, and a Limited Contact hull delivers nothing (its volume is weapons
   and drive).
-- **Scout.** The ranking is hull count. `launch_survey` flies every hull at
+- **Scout.** The ranking is hull count. `launch_survey` flew every hull at
   `doctrine.survey_accel_g`, a flat constant (the defect recorded in warfare §8.9.7),
-  so no hull property but its price reaches the bed.
+  so no hull property but its price reached the bed. *(Removed since: §D.19.)*
 
 **Superseded: R-TECH10's recommendation (Technology §4.7.3).** It read: *"A
 hull's role changes during a game; its Design does not. If a hull carried its
@@ -2377,6 +2377,51 @@ events on seed 1 and 61,545 → 62,491 on seed 7.
 44.1 / 44.3 s before, 42.0 / 42.1 s after. Readings of 59.3 and 60.4 s were
 taken while other runs shared the four cores and are not a property of the
 change.
+
+**The objectives** (`work_years`, 3 seats, 4,000 yr, seeds 1, 7, 42, 31337, 2,
+3, 5, 11, paired against the pre-change binary):
+
+| arm | work-years | colony-years |
+|---|---|---|
+| first landing (Exchange leg as one hull's sequential full loads) | **−18.26% ± 4.71**, 1/8 positive | +0.03% ± 0.09 |
+| shipped (Exchange leg as one laden voyage) | **+2.26% ± 4.69**, 5/8 positive | +0.03% ± 0.09 |
+
+Throughput on the shipped arm +1.50% ± 1.25 yr/s, `ns/event` −1.40% ± 1.18.
+
+**How the −18% was found, because no single intuitive site carried it.**
+Ablations in scratch builds, each restoring one group of sites to the old flat
+1 g, measured against the first landing: the routers' forecasts +3.55% ± 3.52,
+the settler discount +6.37% ± 2.41, the flight legs +5.80% ± 3.82 — each
+leaving −13 to −16% against the old binary. A census of mineral flows at
+1,500 yr (four seeds) named the channel: freight deposited fell 18–28% and
+infrastructure builds 8–14% on every seed, and none of the three ablations
+restored either. The Exchange leg was the remaining changed site, and it had
+been rewritten twice — to the seller's Freighter drive, and to `n` sequential
+full loads of one hull. Restoring it either to the flat 1 g or to a single
+laden voyage at the Design's drive returned freight and builds to the old level
+(seed 7: 279,886 kt old, 277,663 and 280,825 kt in the two arms). So the
+sequential loads were the cause, not the drive; the engine ships the single
+voyage. *Inference:* a trade that settles over many hull-trips arrives too late
+to fund the next rung, and the bank that waits is the one deepening; confidence
+moderate, and a per-contract settlement-delay histogram would test it.
+
+**The ratio-scale table** (`design_rating all`, the same eight seeds, both
+seatings; R-TECH8's ratio scale, anchor 1; `data/design_ratings.tsv`):
+
+| Design | short-range | long-range | picket | colonizer | miner | freighter | scout |
+|---|---|---|---|---|---|---|---|
+| Meadow=Spur (LSV) | 0.0148 *prior* | 0.660 [0.656, 0.664] | 0.0365 [0.0354, 0.0376] | 0.0086 | **1** | 0.181 [0.175, 0.188] | **1** |
+| Tor (LCV) | 0.192 *prior* | 0.754 [0.752, 0.756] | 1.000 | 0.0086 | 0.9995 [0.998, 1.001] | 0.0157 | 0.989 [0.986, 0.991] |
+| Cairn (LCV) | **1** | **1** | **1** | 0.0086 | 0.9995 | 0.0157 | 0.989 |
+| Delta=Ford (MSV) | 0.0148 *prior* | 0.665 [0.652, 0.679] | 0.0365 | **1** | 0.633 [0.561, 0.730] | **1** | 0.582 [0.574, 0.590] |
+| Range=Strait (GSV) | 0.0148 *prior* | 0.609 [0.601, 0.617] | 0.0365 | 0.193 [0.189, 0.197] | 0.200 [0.109, 0.340] | 1.81 [1.65, 1.98] | 0.120 [0.117, 0.122] |
+| Scarp (GCV) | 7.58 *prior* | 5.49 [5.37, 5.62] | 2.03 [1.75, 2.35] | 0.221 [0.217, 0.226] | 0.206 [0.114, 0.347] | 1.12 [1.02, 1.23] | 0.127 [0.124, 0.130] |
+
+Against §D.18's table (the same seeds, before this change), the combat and
+colonizer orders are unchanged; the scout bed now separates the LCV Designs
+from the LSV (0.989, their drive 0.911 g against 1.00), which a flat survey rate
+could not. Intransitivity (R-TECH7): no cyclic triad in any bed; largest
+residual 0.20 (long-range, Cairn against Scarp).
 
 ---
 

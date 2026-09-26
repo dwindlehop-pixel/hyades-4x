@@ -78,8 +78,11 @@ is recoverable:
 | `x0`, `x1` | each side's task score, in the bed's own unit (appendix §D.18) |
 | `share0` | `x0 / (x0 + x1)`, ½ when both are zero |
 
-`design_ratings.tsv`: `elo` is the Bradley–Terry maximum-likelihood rating with
-one virtual draw per pair, on the Elo scale, the bed's anchor Design at 0;
-`p05`/`p95` are the 5th and 95th percentiles over 1,000 bootstrap resamples of
-the seeds. An interval that is a point means every pair was separated
-completely, and the gap is the virtual draw's.
+`design_ratings.tsv`: `gamma` is the Bradley–Terry maximum-likelihood strength
+with one virtual draw per pair, on the **ratio scale** with the bed's anchor
+Design at 1 (R-TECH8): A takes `γ_A / (γ_A + γ_B)` of a match against B, and
+every rating is positive. `p05`/`p95` are the 5th and 95th percentiles over
+1,000 bootstrap resamples of the seeds. An interval that is a point means every
+pair was separated completely, and the ratio is the virtual draw's. The comment
+lines at the end carry each bed's intransitivity report (R-TECH7), which a
+regeneration is not complete without reading.

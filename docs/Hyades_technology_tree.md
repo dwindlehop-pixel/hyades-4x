@@ -343,10 +343,9 @@ judges and horizons (placeholders):
 
 The miner judge counts every crew of that seat at the fleet's rocks, the
 autopilot's own included; both seats carry that term, so it is a shared
-baseline rather than a bias, and it dilutes the share. The scout bed reads
-nothing of a hull but its price while `launch_survey` flies a flat
-`survey_accel_g` (warfare §8.9.7) — so it rates hull count until the survey leg
-reads the hull's drive.
+baseline rather than a bias, and it dilutes the share. The scout bed reads a
+hull's price (how many hulls the spend buys) and its drive (the survey leg flies
+`laden_accel`, appendix §D.19).
 
 **4.4.5 `RATIFIED` — a bed's fleets are generated with the galaxy** (the
 author's ruling, resolving R-WAR36): *"fleets can be optionally generated at
@@ -515,32 +514,42 @@ by station-keeping geometry rather than drawn, so a rating needs many seeds with
 sides swapped (R-TECH16); and the long-range bed still needs fleets that close
 (R-TECH12).
 
-### 4.9.1 The first table — every role, the named Designs (appendix §D.18)
+### 4.9.1 The table — every role, the named Designs, ratio scale (appendix §D.19)
 
 `examples/design_rating all`, equal spend `B` = ten General Systems hulls
-(13.15 kt), eight seeds, both seatings, 240 matches a role. The table is
-`data/design_ratings.tsv`, stamped with the engine commit (R-TECH15); the raw
-matches are `data/design_rating_matches.tsv`. **Measured, per role, the order:**
+(13.15 kt), eight seeds, both seatings, 240 matches a role, every leg at its
+Design's own drive. The table is `data/design_ratings.tsv`, stamped with the
+engine commit (R-TECH15); the raw matches are `data/design_rating_matches.tsv`.
+**Measured**, `γ` with the role's anchor at 1 (R-TECH8):
 
-| role (anchor) | order |
+| role (anchor) | order, `γ` |
 |---|---|
-| short-range (Cairn) | Scarp > Cairn > Tor > the unarmed three, all tied |
-| long-range (Cairn) | Scarp ≫ Cairn > Tor > the unarmed three |
-| picket (Cairn) | Scarp > Cairn = Tor > the unarmed three, all tied |
-| colonizer (Delta) | Delta > Scarp ≈ Range > the Limited three, which found nothing |
-| miner (Meadow) | the Limited three, tied > Delta > Range ≈ Scarp |
-| freighter (Delta) | Range > Scarp ≈ Delta > Meadow > Tor = Cairn, which carry nothing |
-| scout (Meadow) | the Limited three, tied > Delta > Scarp ≈ Range |
+| short-range (Cairn) | Scarp 7.58 > Cairn 1 > Tor 0.192 > the unarmed three, 0.015 |
+| long-range (Cairn) | Scarp 5.49 > Cairn 1 > Tor 0.754 > Delta 0.665 ≈ Meadow 0.660 > Range 0.609 |
+| picket (Cairn) | Scarp 2.03 > Cairn = Tor 1 > the unarmed three, 0.037 |
+| colonizer (Delta) | Delta 1 > Scarp 0.221 > Range 0.193 > the Limited three, 0.009 (they found nothing) |
+| miner (Meadow) | Meadow 1 ≈ Tor = Cairn 1.000 > Delta 0.633 > Scarp 0.206 ≈ Range 0.200 |
+| freighter (Delta) | Range 1.81 > Scarp 1.12 > Delta 1 > Meadow 0.181 > Tor = Cairn 0.016 (they carry nothing) |
+| scout (Meadow) | Meadow 1 > Tor = Cairn 0.989 > Delta 0.582 > Scarp 0.127 > Range 0.120 |
 
-**Gaps are measured only where pairs are not separated completely.** Every
-short-range gap, and the unarmed-against-armed gaps of the picket bed, are
-R-TECH6's prior. The miner, freighter, colonizer and scout gaps are
-bootstrapped; the miner's General-hull intervals span ±100 Elo.
+**Ratios are measured only where pairs are not separated completely.** Every
+short-range ratio, and the unarmed-against-armed ratios of the picket and
+colonizer beds, are R-TECH6's prior. The rest are bootstrapped; the miner's
+General-hull intervals are the widest (0.11–0.35).
 
-**Two things a Design does not reach yet, so the table reads them as ties:**
-the three Limited Designs are one object to every non-combat bed (one cost
-tier, one mass — warfare §8.9.7), and the scout bed reads only price. The first
-is R-O64/R-L0; the second is the survey leg's flat acceleration.
+**R-TECH7's re-evaluation for this table:** no bed has a cyclic triad. The
+largest gap between an observed mean share and the rated one is 0.20 (long-range,
+Cairn against Scarp: 0.356 observed, 0.154 rated) and 0.16 (short-range, Tor
+against Cairn, where both are the prior's); every other bed is within 0.08.
+*Inference:* with one weapon family there is no counter to produce a cycle, so
+the scalar rating holds for now; a second family is the observation that would
+change this.
+
+**One thing a Design does not reach yet, so the table reads it as a tie:** the
+three Limited Designs are one object to the miner bed and near one to the
+scout bed (one cost tier, one mass — warfare §8.9.7; they differ only in drive,
+0.911 g against 1.00). That is R-O64/R-L0, and the author's long-term goal that
+no two named Designs share a loadout (§4.3.1).
 
 ### 4.10 `OPEN` — R-TECH15: where the table lives and how it goes stale
 
