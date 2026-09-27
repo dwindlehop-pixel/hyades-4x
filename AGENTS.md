@@ -897,7 +897,7 @@ was reverted. Three habits, and the last one is the general shape:
   the cost of re-checking one was a single run.
 
 **And the reason no routing fix reaches it is structural, not statistical.** A
-hold is filled from `outpost_stock[(player, rock)]` — one map entry — and a rock
+hold is filled from the empire's holding at one rock — one map entry — and a rock
 is one color (0.789). So **every delivery is mono-colored by construction**, and
 a bank is a sum of mono-colored lumps. Which rock, and which center the lump
 goes to, are both choices *over indivisible single-source loads*:
@@ -966,6 +966,26 @@ Three things from it that generalise past freight:
   because a **conjunction** makes the *minority* component the whole constraint:
   1.7% of the mass carried 100% of the scarcity. An aggregate that is slack can
   contain a component that is not, and a conjunction is the tell.
+
+### An optimal allocation is optimal for the model it was given (T-134)
+
+**The Exchange's first optimal clearing was exact — it matched scipy's LP to
+every printed digit — and cost −18.9% work-years**, moving the same tonnage as
+the greedy wave it replaced. Five plausible mechanisms were refuted by ablation
+before a per-lot census named the real one: the LP treated ore dropped at a rock
+as delivered, and the engine only moves it at the rate of the one hauler based
+there. The greedy wave had been near that rate **by accident** — a fill was one
+bid, bounded by one center's shortfall — and the optimum sent a buyer's whole
+demand through its cheapest legs in lots of 1,000–28,000 kt that sat.
+
+- **Census the quantity the objective integrates, per unit of the decision.**
+  Aggregates said "same tonnage"; loaded fraction *by lot size* said everything,
+  and at equal lot size the optimum was as good or better.
+- **Put the missing constraint in, and ablate it against the rule.** The 2×2
+  showed the capacity carried the whole effect (+45%) and the clearing rule
+  none once it was present — neither the regression nor the cure was the rule.
+- **A constraint an accident used to enforce has to be written down** before a
+  better algorithm removes the accident.
 
 ### A signal that outruns what it warns about is not a race
 
@@ -2368,6 +2388,7 @@ changes how you *work*, not what is left to do:
   | T-127, standard bed, 3 seats, **400 yr** (where old and new are nearly one run), min of 7: **30,197 → 30,642** and **25,443 → 26,177 `ns/event`** — fewer instructions (−0.56%), more time: a latency cost | — | **+1.5% / +2.9% per event** | — |
   | **T-129 (no Band reading on the run path)**, same bed, min of 7, interleaved against T-127: **30,523 → 29,087** and **26,270 → 24,011 `ns/event`**, instructions per event −2.4% — faster than before T-127 on both seeds | — | **−4.7% / −8.6% per event** | — |
   | T-130 (`exp`/`ln` as four-multiply polynomials), seed 7, 400 yr: instructions per event **−0.84%**; 15 paired rounds **0.986 ± 0.013** — not resolved; combat bed not resolved | — | — | — |
+  | **T-134 (Exchange at a spatial equilibrium, delivery room, one holding per (empire, planet))**, 3 seats, 1,500 yr, 3 interleaved rounds against the shipped binary: **128.4–135.7 → 145.1–156.8 yr/s**, `ns/event` 12,645–13,116 → 10,874–11,993 | — | **+11% to +17%** | — |
 
   **R-WAR9's row is a case where the workload changed and the columns must be
   read that way** (§2's T-111 caveat). Flying colony ships at the rate their

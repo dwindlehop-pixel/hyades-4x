@@ -2425,6 +2425,88 @@ residual 0.20 (long-range, Cairn against Scarp).
 
 ---
 
+## D.20 T-134 — the Exchange at a spatial equilibrium, the collection capacity it was missing, and one holding per (empire, planet)
+
+*Supports `Hyades_matching.md` §8 and politics §2.14/§2.16. Bed: `examples/work_years`, 3 seats, 4,000 yr, seeds 1, 7, 42, 31337 and the replication set 2, 3, 5, 11; paired log-ratios with standard errors across the 8 seeds unless stated. Every ablation below was a scratch build, measured against the shipped binary, and none landed (`AGENTS.md` §6).*
+
+**The optimal clearing, alone, regressed.** `clear_spatial` reproduced scipy's
+LP optimum on 9 seed-1 books to every printed digit and passed every equilibrium
+condition on 40 random books, and it cost **−18.89% ± 4.28% work-years, 0/8
+seeds up** (89.75M → 74.55M). The Exchange switched off scored 71.30M, so the
+shipped greedy wave was worth +25.9% and the optimal clearing kept +4.6% of it,
+**while moving the same tonnage** (seed 1 at 1,500 yr: 146,792 → 147,804 kt).
+
+**Five mechanisms refuted by ablation before the cause was found:**
+
+| hypothesis | ablation | result |
+|---|---|---|
+| sellers now keep their reservation | reservations zeroed | seed 2, 1,500 yr: 5.43M → 5.92M (shipped 7.25M) |
+| asks post the bill's share of a bank | asks post only the spare | 72.95M (8 seeds) |
+| the buyer's collection leg is unpriced | leg cost + collection leg | 75.71M |
+| settlement timed on the whole ask | timed on the sold lot | 76.26M |
+| trade itself is harmful | Exchange off | 71.30M — worse |
+| deliveries concentrated on few venues | each lot split over 4 venues | loaded 5.5% / 11.1% — unchanged |
+
+**The census that found it** (per-lot tracking of Exchange ore through the
+buyer's holding at the venue, proportional attribution on each load, seeds 2
+and 7 at 1,500 yr). Every venue is served by one buyer hauler (p10–p90 = 1) with
+a laden round trip of ~100–200 yr. Loaded fraction, lots delivered before 1,100 yr:
+
+| lot size | shipped greedy (s2 / s7) | optimal clearing (s2 / s7) |
+|---|---|---|
+| 10–100 kt | 54.3% / 70.1% | 68.1% / 74.2% |
+| 100–1,000 kt | 31.9% / 47.8% | 33.7% / 62.9% |
+| ≥ 1,000 kt | none | **1.0% / 4.2%** (117k / 105k kt) |
+
+At equal lot size the optimal clearing's lots are collected as fast or faster;
+the whole deficit sits in lots of ≥ 1,000 kt, which the greedy wave never made
+because a fill was one bid (≤ ~380 kt). The optimal clearing sends a buyer's
+whole demand for a color through a few cheapest legs, mostly to rocks already
+rich in that color (91% of kt on seed 2). Refuted along the way by the same
+census: the delivered color being unwanted by the venue hauler's destination
+(similar shares, similar rates) and longer round trips (medians 142 vs 157 yr).
+
+**The 2×2 that proved it** — capacity = what the buyer's based haulers move in a
+400-yr round less what already waits, per color, spilling to the next shared rock:
+
+| | no cap | cap |
+|---|---|---|
+| greedy wave | 89.75M | 140.87M, **+45.35% ± 3.14%**, 8/8 |
+| optimal clearing | 74.55M, −18.89% ± 4.28%, 0/8 | 139.33M, **−1.27% ± 2.84%** against greedy+cap, 4/8 |
+
+The cap carries the whole effect; once it is present the clearing rule does not
+move work-years. Loaded fraction under the cap: 36.9% / 37.3% (seeds 2 / 7),
+against 18.0% / 24.8% for the shipped wave.
+
+**The landed stages** (engine code, not scratch):
+
+| stage | what | result |
+|---|---|---|
+| A | one holding per (empire, planet) | **bit-identical** to stage 1 on seeds 1, 2, 7 at 1,500 yr (work-years, colony-years, works, colonies, vehicles, events) |
+| B | capacity as route capacities in the LP, then placement | **+47.29% ± 3.04%**, 8/8 against the shipped wave |
+| B+C | plus asks from every holding away from a yard | **+51.27% ± 1.71%**, 8/8; against B **+3.98% ± 2.09%, 6/8 — not resolved** |
+
+Colony-years moved by −0.00% under B+C.
+
+**Throughput.** Stage A's first version kept every holding in one ordered map
+and was bit-identical at **+19% to +27% per event**; indexing a holding at an
+owned planet by the planet removed it (stage A per event 10,353–11,776 ns
+against stage 1's 12,175–13,734, 6/6 pairs). Stage B+C's first version summed
+each route's room over a sorted venue list per ask — 3.46 s of a 12.8 s run
+spent building routes, against 0.010 s solving and 0.013 s placing — and cost
+−17% yr/s; computing the shared-rock set and its room once per (seller, buyer,
+color) is bit-identical and runs **145.1–156.8 yr/s against the shipped
+binary's 128.4–135.7** (3 seats, 1,500 yr, seeds 1 and 7, 3 interleaved rounds;
+10,874–11,993 against 12,645–13,116 ns/event). 12-seat combat bench:
+11.51–11.59 against 11.67–11.97 yr/s with 9% more events at lower ns/event.
+
+**Two habits from it.** *A proven-optimal allocation is optimal for the model it
+was given* — the LP treated ore dropped at a rock as delivered, and the engine
+only moves it at one hauler's rate; the census, not the objective, named the
+missing term. And *ablate the pieces of a 2×2 apart before crediting either*:
+the clearing rule looked like the cause of a −19% and the cure of a +44%, and it
+was neither.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

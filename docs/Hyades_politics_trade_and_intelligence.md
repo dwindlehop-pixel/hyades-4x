@@ -178,8 +178,9 @@ world.** Caravan trade: goods change hands at a waypoint. *An outsider's freight
 near your colony is a step left to cards.*
 
 **The engine already has the venue.** An outpost is unowned — no `owner` component
-is ever set on a worked rock — while `outpost_stock` is keyed `(player, rock)`, so
-each empire holds its own pile at the same body. **2,226 of 2,494 worked sites are
+is ever set on a worked rock — while an empire's minerals are held per
+`(empire, planet)` (`Holdings`, T-134), so each empire holds its own ore at the
+same body. **2,226 of 2,494 worked sites are
 cross-player** on the standard bed.
 
 Four consequences:
@@ -319,17 +320,30 @@ window is a **round-layer** object, not a wall-clock one (net §1.1 forbids host
 clocks, and a bid window driven by a local timer is a desync). *Recommend* the
 window be a fraction of `years_per_round` so it composes with the round layer.
 
-**2.14 `OPEN` — R-P18: why trade costs ~4.4% of work-years on both seeds.**
-Settlement works and moves the right color in the right direction, and the empire
-is measurably poorer for it. **Leading hypothesis, recorded as unproven:** the two
-legs are asymmetric — the seller's ore leaves a spendable bank at settlement while
-the buyer's lands in an outpost pile until its own freighter calls. Checkable by
-comparing banked against piled holdings over time and measuring settlement-to-bank
-dwell. **Ablate before tuning anything.** Appendix §B.3.
+**2.14 ~~`OPEN` — R-P18: why trade costs ~4.4% of work-years on both seeds.~~
+`RESOLVED` by T-134.** The dwell the hypothesis named was real and the asymmetry
+was not the cause: **ore delivered to a buyer beyond what its own haulers based at
+the venue can carry away before the next barrier stays there**, and the seller's
+ore it came out of was spendable. The clearing now delivers no more than that
+(§2.16). Measured by a per-lot census and a 2×2 of clearing rule × capacity —
+appendix §D.20.
 
 Carries two structural limiters on volume too: **ten clearings per game**
 (`years_per_round = 400`, set by the card layer rather than the market) and a bid
 sized to one infrastructure rung rather than to consumption.
+
+**2.16 `RATIFIED` — the book clears at a spatial price equilibrium, no deeper than
+the buyer can move on, and every holding can sell (R-MX7, T-134).**
+`Hyades_matching.md` §8 carries the decisions; in one line each:
+
+- One price per buyer empire; a seller ships to the buyer whose price, net of
+  §1.3's burn on the leg, pays it most; least equilibrium prices (R-MX7).
+- A leg carries at most the buyer's **delivery room** at the rocks it shares
+  with the seller: what the buyer's haulers based there move in one round, less
+  what already waits, unlimited at a planet the buyer owns.
+- A bank, the ore on a rock and a hauler's arrived cargo are **one quantity**
+  (the author's ruling), so ore an empire holds where it has no yard asks, at no
+  reservation, for the part its own haulers cannot move this round.
 
 **2.15 `OPEN` — the guard for Exchange work is the build-mix census, not
 colony-years.** Colony-years is **monotone inverse** for anything that changes how
@@ -634,7 +648,9 @@ unplayable.** MC.
 Highest price first, nearest within price, partial fills, matched quantity
 *reserved* (the anti-herding fix), unmatched remainder queued, ties by entity id,
 **no `HashMap` anywhere** — already network-safe under net §6. What changes is
-what it is a book *of*.
+what it is a book *of*. **Since T-134 the cross-empire Exchange does not use that
+greedy wave:** it clears with `matching::clear_spatial` (§2.16); the wave stays
+as the intra-empire matcher and `most_needed_center`'s oracle (design law #5).
 
 > It was never in the module list, so it did not compile as part of the crate and
 > its tests never ran in CI. **"Built and audited" and "compiled" are different
@@ -656,7 +672,9 @@ what it is a book *of*.
 **9.3 `RATIFIED` — state, and where it lives.** Per player, alongside `Doctrine`,
 `Roster` and `Works`: `purse: $` (**replicated state**, so it is in the digest and
 design law #16 applies — no NaN, no infinity) and `reputation`. Global, one per
-commodity: the cross-empire `Book`. Per contract in flight: buyer, seller, color,
+commodity: the round's cross-empire offers, a plain list rebuilt at each barrier
+(two empires can hold ore on one rock, so an offer is not identified by its
+planet alone). Per contract in flight: buyer, seller, color,
 quantity, escrow `E`, and the two drops. **That last is the first thing in the
 engine that is *owed* rather than owned.**
 
@@ -669,6 +687,7 @@ engine that is *owed* rather than owned.**
 | 3 | Cross-empire book; centers post `wtp` bids | **done**, bit-identical | ~~T-84~~ |
 | 4 | Clearing at the round barrier → contracts + escrow | **done**, bit-identical | ~~T-85~~ |
 | 5 | The freight leg; escrow settles on arrival | **done; costs ~4.4% work-years** (§2.14) | ~~T-77~~ |
+| 5b | Spatial-equilibrium clearing, delivery room, every holding sells | **done; +51.27% ± 1.71% work-years against stage 5** (§2.16) | ~~T-134~~ |
 | 6 | Default, interdiction, reputation | **open** | **T-86** |
 
 Stages 1–4 were deliberately inert, for the reason `Hyades_industry.md` §6.7's
@@ -698,6 +717,8 @@ bed before anything switches on.**
 | R-P10 | clearing is per round, at the barrier |
 | R-P16 | the faucet ships against infrastructure stock **as an explicit placeholder** |
 | R-P17 | a contract has **two** drops, one per shipper |
+| R-P18 | **resolved (T-134)** — trade's cost was delivery beyond the buyer's haul capacity (§2.14) |
+| R-MX7 | the book clears at a spatial price equilibrium, capped by delivery room; every holding can sell (§2.16) |
 | R-IND5 | the market is free; everything that bends it is a card |
 | R-IND10 | non-delivery returns escrow minus the burn; the loss is shared |
 | — | settlement is at a shared outpost (§2.3); the obligation is instant, the goods are not (§2.5) |
@@ -713,7 +734,6 @@ bed before anything switches on.**
 | R-P13 | which stances may be written, by which tier, on which index | a design pass |
 | R-P14 | does an imposed stance decay? | MC |
 | R-P15 | does a two-referent `Target` widen `target_ref` past R-NET4? | R-NET4, R-C1 |
-| R-P18 | **why trade costs ~4.4% of work-years on both seeds** — ablate before tuning | §2.14 |
 | — | reputation decay rate on both models | MC |
 | — | λ is +0.002 on Expansion and −0.348 on Growth | the composite objective |
 | T-86 | default, interdiction, reputation (stage 6) | — |

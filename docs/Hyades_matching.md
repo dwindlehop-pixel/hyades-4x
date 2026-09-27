@@ -1,4 +1,12 @@
-# Hyades — The Exchange: producer↔consumer matching (draft Rev 1)
+# Hyades — The Exchange: producer↔consumer matching (Rev 2)
+
+**Rev 2 (T-134).** §8 added: the **cross-empire** Exchange clears at a spatial
+price equilibrium, no deeper than the buyer can move on, and every holding can
+sell. Those items are `RATIFIED` (R-MX7, the author's approval of the proposal
+and of the census-derived capacity; the one-quantity ruling on holdings). §0–§7
+below are the Rev 1 draft of the **intra-empire** matcher and keep their status;
+where they say optimality is not a goal, that is about the intra-empire wave and
+not about §8.
 
 **Status:** draft, proposed by Claude for Jonathan's ratification, with a
 **tested reference implementation** (`matching.rs`, 6/6 unit tests passing,
@@ -237,6 +245,69 @@ uploaded.
 
 ---
 
+---
+
+## 8. The cross-empire clearing (T-134)
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `B` | a buyer empire | — | — |
+| `j` | an ask: one empire's offer of one color from one planet | — | `post_exchange_offers` |
+| `P_B` | buyer `B`'s price for the color this round | `$`/kt | the clearing's dual |
+| `a_j` | ask `j`'s reservation | `$`/kt | `willingness_to_pay` at a yard; `0` away from one |
+| `b_i` | bid `i`'s value | `$`/kt | `willingness_to_pay`, politics §2.11 |
+| `λ` | transit burn rate | 1/yr | `trade_decay_lambda = 0.01` (R-P2) |
+| `t_jB` | the seller's laden leg to the shared rock nearest it | yr | `ship_travel_years` on the seller's Freighter Design |
+| `H_(B,v)` | what `B`'s haulers based at rock `v` carry away in one round | kt | `haul_per_round`: hold × `years_per_round` / laden round trip |
+| `R_(B,v,c)` | `B`'s delivery room at `v` for color `c` | kt | `H_(B,v)` − what `B` already holds there in `c`, floored at 0; unlimited where `B` owns `v` |
+
+**8.1 `RATIFIED` — R-MX7: the book clears at a spatial price equilibrium.** One
+price `P_B` per buyer empire; ask `j` ships to the buyer maximizing
+`P_B · exp(−λ t_jB)` and only if that is at least `a_j`; a bid buys only if
+`b_i ≥ P_B`. Samuelson (1952), Takayama & Judge (1971). In `ln P` the burn is an
+additive cost, so the allocation is the optimum of a transportation LP and the
+prices are its duals; `matching::clear_spatial` solves it exactly by successive
+shortest paths over a graph whose interior nodes are the buyer empires, and
+quotes the **least** equilibrium prices (Demange, Gale & Sotomayor 1986). A
+reservation of zero is floored at `1e-9` of the book's top offer — a numerical
+device for the logarithm, not a tunable. Verified against scipy's LP on 9 books
+and by every equilibrium condition on 40 random books — appendix §D.20.
+
+**8.2 `RATIFIED` — a leg carries no more than the buyer can move on.** Each
+route's capacity is `Σ_v R_(B,v,c)` over the rocks the seller and buyer both
+work; the solver honors arc capacities exactly, and the flows are placed at those
+rocks nearest the seller first, each taking at most its remaining room. What
+finds no room is not sold. **Why:** ore delivered beyond `H` stays at the rock —
+the clearing without this term moved the same tonnage as the greedy wave and lost
+18.9% of work-years, and adding it is worth +47.3% ± 3.0% on 8/8 seeds. Appendix
+§D.20. No new constant: the hold, the trip and the round interval are the
+engine's.
+
+**8.3 `RATIFIED` — a bank, the ore on a rock and a hauler's arrived cargo are one
+quantity** (the author's ruling). The engine holds an empire's minerals per
+`(empire, planet)` (`Holdings`); a center's "bank" is only the holding at a planet
+the empire owns. Two indexes sit behind the one interface for speed, and claiming
+a planet moves the claimant's holding there from one to the other.
+
+**8.4 `RATIFIED` — every holding can sell.** A holding where its owner has no
+yard asks, at `a_j = 0`, for the part its owner's haulers cannot move this round —
+`max(0, held − H_(owner, v))`, split across colors in proportion to what it holds.
+A holding at a rock the buyer also works hands over with a zero-length leg.
+Worth +3.98% ± 2.09% over §8.2 alone (6/8 seeds) — **not resolved at two standard
+errors**; ratified as the ruling's consequence, not on that number.
+
+**8.5 `OPEN` — R-MX8: may a hauler draw on a center's holding?** Held off for
+now, so that §8.3 changed nothing else: a hauler loads only where its empire has
+no yard, and a milk run picks up only there. Under §8.3 a colony's holding is
+the same ore as a pile, so carrying it to a needier center is a coherent policy.
+**What would settle it:** the author's call, then an arm on the 8-seed bed.
+
+**8.6 Throughput.** §8 costs nothing measurable on the 3-seat bed — per-event
+cost fell against the pre-T-134 engine in 6/6 interleaved pairs — and the
+12-seat combat bench does 9% more events at lower per-event cost. Appendix §D.20.
+
+---
+
 ## References
 
 - Cities: Skylines `TransferManager` internals (offers, priority blocks,
@@ -251,6 +322,14 @@ uploaded.
 - Willmott, A., "Inside GlassBox," GDC 2012 (resources/units/maps/agents;
   10,000+ dumb agents): https://www.andrewwillmott.com/talks/inside-glassbox
   — coverage: https://www.gamedeveloper.com/design/gdc-2012-breaking-down-em-simcity-em-s-glassbox-engine
+- Samuelson, P.A., "Spatial Price Equilibrium and Linear Programming,"
+  *American Economic Review* 42(3) (1952) 283–303
+- Takayama, T. & Judge, G.G., *Spatial and Temporal Price and Allocation
+  Models*, North-Holland (1971)
+- Ahuja, R.K., Magnanti, T.L. & Orlin, J.B., *Network Flows*, Prentice Hall
+  (1993), §9.7 — successive shortest paths
+- Demange, G., Gale, D. & Sotomayor, M., "Multi-Item Auctions," *Journal of
+  Political Economy* 94(4) (1986) 863–872 — least equilibrium prices
 - Bertsekas, D.P., "The Auction Algorithm: A Distributed Relaxation Method
   for the Assignment Problem," *Annals of Operations Research* 14 (1988)
   105–123; survey: https://www.mit.edu/~dimitrib/Auction_Encycl.pdf

@@ -247,8 +247,9 @@ colonization currently filters on instantaneous global ownership.
 ## 5. Mining outposts and freight
 
 **5.1 `RATIFIED` — an outpost is worked, not colonized, and it is unowned.** No
-`owner` component is ever set on a worked rock. `outpost_stock` is keyed
-`(player, rock)`, so **each empire holds its own pile at the same body** and each
+`owner` component is ever set on a worked rock. An empire's minerals are held
+per `(empire, planet)` (`Holdings`, T-134 — a bank, a pile and arrived cargo are
+one quantity), so **each empire holds its own pile at the same body** and each
 player's crew works the shared rock into that player's own pile. Measured on the
 standard bed, **2,226 of 2,494 worked sites are cross-player.**
 

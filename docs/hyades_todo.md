@@ -163,6 +163,25 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-134. The Exchange at a spatial equilibrium; one holding per (empire, planet)
+
+**Advanced — stages 1, A, B and C landed; stage 2 open.** The author approved
+clearing the cross-empire book at a spatial price equilibrium (R-MX7) and ruled
+that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
+
+- **Stage 1** — `matching::clear_spatial`, exact and LP-verified. Alone it cost
+  −18.9% work-years; the census found why (deliveries beyond what the buyer's
+  haulers can move on stay at the rock), appendix §D.20.
+- **Stage A** — `Holdings`, one quantity keyed `(empire, planet)`; bit-identical.
+- **Stage B** — each leg capped at the buyer's delivery room; +47.29% ± 3.04%.
+- **Stage C** — every holding away from a yard sells what its owner cannot
+  move; +51.27% ± 1.71% in total, C's own share not resolved at 2 SE.
+- **Resolved:** R-P18 (politics §2.14). **Ratified:** R-MX7 and matching §8.
+- **Opened:** R-MX8 — may a hauler draw on a center's holding (matching §8.5).
+- **Open, stage 2:** within an empire, one idle pool and role prices, so idle
+  hulls bid across roles (a Delta mines in a pinch when the miner price covers
+  its lower productivity). Not started.
+
 ### T-133. No engagements and no fight sites — encounters along trajectories, decided by Doctrine
 
 **Closed (sixth landing).** Every stage below is built and the harness-only
@@ -3920,7 +3939,8 @@ with a large measurement attached; the shipped ladder stands until it is made.
 ### T-59. Mining crews and outpost ore are per player
 
 **Directed this conversation.** `mine_crew` is keyed `(player, outpost)` and ore
-lives in `outpost_stock: BTreeMap<(u32, u64), Minerals>`.
+lives in `outpost_stock: BTreeMap<(u32, u64), Minerals>` — since T-134 in
+`Holdings`, one quantity per `(empire, planet)` that includes the banks.
 
 The rock's `stockpile` component was one pile per *planet*, and outposts are
 never claimed — `claim_planet` is for colonies — so two empires working the same
