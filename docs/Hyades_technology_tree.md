@@ -18,7 +18,7 @@ rather than in the prose.
 
 **Rev 2 changes:** §4 rewritten to the author's specification, replacing the
 power-mean proposal (R-TREE4, never ratified; appendix §D.9). §5.6 added — a
-Technology write reaches no build today. R-TECH5 through R-TECH18 opened. **T-132** resolved R-TECH14 (the damage model).
+Technology write reaches no build today. R-TECH5 through R-TECH18 opened. §7 added — technology options and inspirations (R-TECH20, R-TECH21). **T-132** resolved R-TECH14 (the damage model).
 
 ---
 
@@ -674,6 +674,65 @@ the measurement into the target (§4.10).
 | R-TECH3 | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |
 | R-TECH4 | a miniaturization analogue inside this tree? | a decision — *recommend no* |
 | T-25 | `enforce_roster` defaults off because there is no unlock path | the card system |
+| R-TECH20 | magnetar matter as a Technology option (§7.1.2) | a design pass naming the write and its mass cost |
+| R-TECH21 | Barrow's inward scale as this tree's tier axis, Kardashev as Production's (§7.2) — *recommended* | author |
+
+---
+
+## 7. Technology options and inspirations
+
+*Every item here is `OPEN`: a candidate for what a Technology write could one day
+unlock, or a source the tree's design may draw on. None is authorable until the
+thing it writes exists (§5.4), and none is a ratified mechanic.*
+
+### 7.1 `OPEN` — options
+
+**7.1.1 Exotic matter** — the families in `Exotic_matter_technology_inspiration.md`
+(negative and imaginary mass, degenerate matter, materials at high pressure, the
+uncommon condensed states). Bound by §3.5: exotic synthesis is pair production.
+
+**7.1.2 `OPEN` — R-TECH20: magnetar matter — how it differs from regular matter.**
+A magnetar's surface field is `~10^10–10^11 T` (Duncan & Thompson 1992; Kouveliotou
+et al. 1998). Two thresholds set where matter stops behaving like regular matter,
+and both are physics, not placeholders:
+
+| symbol | name | value | what changes above it |
+|---|---|---|---|
+| `B_0` | atomic field unit | `2.35 × 10^5 T` | the magnetic energy of an electron exceeds its Coulomb binding: atoms are compressed across the field into cylinders along it, bind more tightly, and join into linear molecular chains that condense into a solid of chains (Lai 2001, §§2–4) |
+| `B_Q` | quantum-electrodynamic critical field | `4.41 × 10^9 T` | the vacuum itself is birefringent and a photon can split in two (Harding & Lai 2006, §5) |
+
+So the difference from regular matter is **structural and directional**: bonding,
+cohesion and the response to light are set by the field's strength and direction
+rather than by chemistry alone. **What would settle R-TECH20:** a design pass
+saying which Technology write — a component stat, a hull material, a sensor
+signature — this becomes, and what it costs under design law #11.
+
+### 7.2 `OPEN` — inspirations
+
+- **Iain M. Banks, the Culture novels** — the hull taxonomy and Design names
+  (R-O42b; `Hulls_classes_the_qualitative_counter-graph.md`).
+- **Exotic matter** — `Exotic_matter_technology_inspiration.md` (§7.1.1).
+- **Barrow's inward civilization scale** (Barrow 1998). Where Kardashev ranks a
+  civilization by the energy it commands at ever larger scales, Barrow ranks it by
+  the **smallest scale it can manipulate**:
+
+  | type | what it manipulates |
+  |---|---|
+  | I-minus | objects of its own scale — building, mining, joining and breaking solids |
+  | II-minus | genes — altering how living things develop |
+  | III-minus | molecules and molecular bonds — new materials |
+  | IV-minus | individual atoms — nanotechnology |
+  | V-minus | atomic nuclei |
+  | VI-minus | elementary particles |
+  | Omega-minus | the structure of space and time |
+
+  **`OPEN` — R-TECH21, recommendation attached: read Barrow as this tree's axis
+  and Kardashev as Production's.** §0's split — Technology raises per-mass
+  effectiveness, Production raises mass — is the same split as inward precision
+  against outward scale. *Recommended* as the ordering of Technology's tiers;
+  nobody has ratified it. **What would settle it:** the author's call, and a tier
+  list that places each §7.1 option on the scale (magnetar matter sits at IV-minus
+  to V-minus: it is an atomic-scale change of structure).
 
 ---
 
@@ -704,6 +763,21 @@ the measurement into the target (§4.10).
   436–460 — uniqueness of the fit
 - `Hyades_warfare_tree.md` — what capability is spent on, and the arena that sets it
 - `Hyades_production_tree.md` §5 (the hull ladder this fits onto)
+- Barrow, J. D. (1998). *Impossibility: The Limits of Science and the Science of
+  Limits.* Oxford University Press — the inward civilization scale (§7.2)
+- Duncan, R. C. & Thompson, C. (1992). Formation of very strongly magnetized
+  neutron stars: implications for gamma-ray bursts. *Astrophysical Journal* 392,
+  L9–L13 — magnetars
+- Harding, A. K. & Lai, D. (2006). Physics of strongly magnetized neutron stars.
+  *Reports on Progress in Physics* 69, 2631–2708 — vacuum birefringence, photon
+  splitting
+- Kardashev, N. S. (1964). Transmission of information by extraterrestrial
+  civilizations. *Soviet Astronomy* 8, 217–221 — the outward scale Barrow inverts
+- Kouveliotou, C. et al. (1998). An X-ray pulsar with a superstrong magnetic field
+  in the soft γ-ray repeater SGR 1806−20. *Nature* 393, 235–237 — a measured
+  magnetar field
+- Lai, D. (2001). Matter in strong magnetic fields. *Reviews of Modern Physics*
+  73, 629–662 — atoms, chains and condensed matter above `B_0`
 - `Exotic_matter_technology_inspiration.md` ·
   `Hulls_classes_the_qualitative_counter-graph.md` (the Banks-convention source)
 - `src/sim.rs` — `Roster`, `Class`, `HullType`; `src/cards.rs` — `UnlockDesign`
