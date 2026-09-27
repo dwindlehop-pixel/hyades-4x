@@ -113,6 +113,32 @@ Concrete, so this is checkable rather than a vibe:
 5. **Flavour text is the author's own** (`AGENTS.md` §6). This section constrains
    register; it does not license anyone to rewrite the author's lines.
 
+### 1.4b A card's name and flavor read the game it is played in
+
+**`RATIFIED` (the author's direction):** a card's flavor text, and potentially
+its name, change with what this empire and the card's target have played.
+Privateers against a peaceful empire read differently from Privateers against
+an empire that has already declared you an enemy; a Growth card is biological
+by default and reads differently if Production reached an android workforce
+first. So each card carries a **voice table** — a default reading and one row
+per context that changes it — authored in its tree spec
+(`.claude/skills/card-workflow`, Stage 9).
+
+- A context is a condition over state the command layer shows every player:
+  cards played by this empire and by the target, the relation between them,
+  which tree reached a milestone first.
+- A context changes the name, the flavor, or both. **It never changes the
+  `role` subtitle or the rules** (§1.4 rule 4).
+- The choice is made in presentation from `Snapshot` and nothing flows back
+  (design law #15).
+- Every row is the author's to approve (§1.4 rule 5); drafts are labeled.
+
+**`OPEN` — R-TREE13: `Snapshot` does not carry which cards each seat has
+played, or the relation between seats**, so no voice table can be resolved
+yet. **What would settle it:** a `PlayerSnapshot` field listing played cards by
+round (the `CardPlayed` log already records them), and the relation once
+diplomacy exists (T-11).
+
 ### 1.5 What this amends
 
 `Hyades_galaxy_and_autopilot.md` §7 says the game "carries hope (a young people
@@ -663,6 +689,7 @@ Stated so it is not discovered as a surprise:
 | **R-TREE10** | **Re-measure the composite on volume.** `data/tree_gradient.tsv` (T-50, 32 knobs, 4 seeds) was taken with Production in **mass**; §2.3.4 now reads volume. Spot-checked on the three hull-ladder knobs at seed 1 / 600 yr, the Production elasticity moves by 0.1–0.6 and no sign changes (appendix §A.14), but one seed with no error bar is a sanity check and not a result. The full bed wants re-running before anything cites that column again. | §2.3.4 |
 | **R-TREE9** | **The composite objective.** `examples/tree_gradient` scores the geomean of the ratio-to-default of the measurable trees, which makes `∂ln S/∂ln x` the plain mean of the per-tree elasticities and everything dimensionless. Two things are unratified: the equal weighting across trees, and whether a geomean is the right aggregator once Warfare and Technology join (a tree that can go negative has no log). | §2.4 |
 | **R-TREE11** | **The write-capability partition** (card contract §10). Whether "population-lethal" is a *sign* test on the write's argument or a declared per-card flag, and whether the partition is exclusive (only Warfare) or a floor (Warfare must carry some, others may not). | card contract §10.4 |
+| **R-TREE13** | **The voice table needs state `Snapshot` does not carry** — each seat's played cards and the relation between seats (§1.4b). | §1.4b |
 | **R-TREE12** | **Warfare card value has no doubling time of its own.** Decided here: cost a Warfare card as the fractional *increase* it causes in the **target's** doubling time, on the target's own tree stock, against a CRN counterfactual. Open: whether the target is the single highest-`w_ij` neighbor or the `w`-weighted mean over all of them, and how that composes with §4.2's P92 when the target set is itself a random variable. | §5.4 |
 
 ---

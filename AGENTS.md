@@ -2078,6 +2078,11 @@ one, stop and flag it.
   It also catches bookkeeping faults cheaply: T-83 was used for two different
   things in one session because no landing had been asked to enumerate its
   codes, and the collision surfaced only when the second one was read back.
+- **A card goes through `.claude/skills/card-workflow`** — design, reach audit,
+  implementation, tests, measurement, within-tree balance, name and voice, in
+  that order, each stage with a gate. Cross-tree balance and counter-graph
+  design are a separate workflow; this one hands off to it rather than
+  inventing an edge or borrowing another tree's metric.
 - **Make concrete decisions; flag open questions as R-codes.** A decision plus a
   flagged R-code beats an open-ended clarifying question. Existing families:
   `R-MC*` (mineral cost / combat), `R-L*` (loadout), `R-ARENA*`, `R-MX*` (matching),

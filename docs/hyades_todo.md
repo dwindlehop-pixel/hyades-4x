@@ -163,6 +163,32 @@ description of the change.
 
 ## Band A — ready to build
 
+### T-137. Voice tables need played cards and relations in `Snapshot`
+
+**Open (R-TREE13).** A card's name and flavor change with what this empire and
+its target have played (trees §1.4b, the author's direction), selected in
+presentation from `Snapshot`. `PlayerSnapshot` carries neither the cards each
+seat has played nor the relation between seats. The `CardPlayed` log has the
+first; the second waits on diplomacy (T-11).
+
+### T-136. The first Technology card — the drive
+
+**Opened, design only** (`Hyades_technology_tree.md` §8). A per-empire drive
+factor `f`, folded in `CardId` order and stamped on each hull at construction
+(design law #12). Stages: the fold and stamp, bit-identical at `f = 1`; the
+card in `TIER0[12]` (R-TECH22); ratings for the upgraded Designs; the
+capability-years reader T-131 lacks, then the card's value. Leg time has
+elasticity at most −½ in `f`, so the gain is on laden hulls over short legs.
+
+### T-135. The second Warfare card — Privateers
+
+**Opened, design only** (`Hyades_warfare_tree.md` §8.21). A GCU Design and a
+Privateer role that raid rival Holdings and freighters; a raid is an Exchange
+at a price coerced down by the victim's believed risk of being wrecked; freighter
+evasion and capitulation; an offload side run that returns a full privateer to
+raiding and reopens self-trade (matching §8.4b); targeting by belief about
+rival production. Seven stages, the reach audit first. Opens R-WAR40–R-WAR43.
+
 ### T-134. The Exchange at a spatial equilibrium; one holding per (empire, planet)
 
 **Advanced — stages 1, A, B, C and 2 landed; R-MX8, R-MX9, R-MX10 and R-WAR39
@@ -188,7 +214,9 @@ that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
   0.02, colonies identical — not resolved, appendix §D.21.
 - **Opened by stage 2:** R-MX9 (a Mahan main fleet's quick intercept — no
   main-fleet role or belief about battle outcomes exists), R-MX10 (the card
-  interfaces this leaves), R-WAR39 (the battle reach).
+  interfaces this leaves), R-WAR39 (what a picket may believe about a battle
+  it did not fight in; the fixed reach is retired by the author's ruling that
+  "nearby" is belief about arriving in time).
 - **Still open from the first plan:** one idle pool across roles, so idle hulls
   bid for any duty (a Delta mines in a pinch when the miner price covers its
   lower productivity). Stage 2 built the price and the side-run interface it

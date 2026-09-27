@@ -83,6 +83,29 @@ use crate::units::{self, Band, BandTier, Kilotons, Length, Measure, Price, Volum
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Entity(pub u64);
 
+/// **The Exchange book in kilotonnes** — [`Simulation::book_census`]. Every
+/// field is indexed `[empire][color]`, colors in [`Basic::ALL`] order.
+#[derive(Clone, Debug)]
+pub struct BookCensus {
+    /// Center shortfalls posted as bids.
+    pub bid: Vec<[f64; 3]>,
+    /// Asks from centers' own banks (a color the center is not short of).
+    pub ask_yard: Vec<[f64; 3]>,
+    /// Asks from holdings away from a yard: what the owner's haulers cannot move.
+    pub ask_away: Vec<[f64; 3]>,
+    /// Everything held away from a yard.
+    pub held_away: Vec<[f64; 3]>,
+    /// Room the empire's own haulers have left this round at the rocks it works.
+    pub haul_room: Vec<[f64; 3]>,
+    /// Everything banked at the empire's own planets.
+    pub banked: Vec<[f64; 3]>,
+    /// What this empire bought at the last barrier, after the purse scale.
+    pub filled: Vec<[f64; 3]>,
+    /// The part of [`Self::filled`] it bought from itself (zero while
+    /// self-routes are dropped).
+    pub filled_self: Vec<[f64; 3]>,
+}
+
 /// **A hull away from its standing duty for one freight run** (T-134 stage 2),
 /// and the leg it is on. Its role reads `Freighter` for the run; the duty it
 /// returns to is its voyage target, which the run does not touch.
@@ -2096,6 +2119,10 @@ struct Exchange {
     /// drains it. Live depth after a wave is the unmatched remainder, which
     /// answers a different question.
     posted: [(u64, u64); 3],
+    /// Kilotonnes struck at the last barrier, by buyer and color, and the part
+    /// the buyer bought from itself — a census ([`Simulation::book_census`]).
+    last_fill: Vec<[f64; 3]>,
+    last_fill_self: Vec<[f64; 3]>,
     /// **Flows the purse could not fully fund**, cumulative (§10.8's census).
     ///
     /// Since R-MX7 the clearing only produces flows between empires that share
@@ -3281,9 +3308,10 @@ pub struct Simulation {
     /// from the moment they leave, so the return is an ordinary
     /// `PicketArrive`.
     sorties: BTreeMap<u64, fire::Sortie>,
-    /// Posted pickets a battle's light is on its way to, and the battle — the
-    /// first one seen; the rest arrive while it is already answering.
-    battle_called: BTreeMap<u64, (Vec3, Entity)>,
+    /// Posted pickets a battle's light is on its way to, and the battle — its
+    /// site, its world and when it is believed decided. The first one seen;
+    /// the rest arrive while the picket is already answering.
+    battle_called: BTreeMap<u64, (Vec3, Entity, f64)>,
     /// Sorties pickets have flown, for the census.
     sortie_count: u64,
     /// **The cross-empire Exchange** (T-84). Rebuilt and cleared at the round
@@ -8530,6 +8558,8 @@ impl Simulation {
         // an empire whose bill at its cleared prices exceeds its ledger has all
         // of its flows scaled by one factor — no flow is favored by the order
         // it was listed in.
+        self.exchange.last_fill = vec![[0.0; 3]; players];
+        self.exchange.last_fill_self = vec![[0.0; 3]; players];
         let mut bill = vec![0.0f64; players];
         for (_, f, _, _, _) in &cleared {
             bill[f.buyer.0 as usize] += f.qty * f.price;
@@ -8557,6 +8587,10 @@ impl Simulation {
             let escrow = qty * f.price;
             if qty <= 1e-9 || !escrow.is_finite() {
                 continue;
+            }
+            self.exchange.last_fill[f.buyer.0 as usize][i] += qty;
+            if f.seller == f.buyer {
+                self.exchange.last_fill_self[f.buyer.0 as usize][i] += qty;
             }
             let pe = self.player_entity[f.buyer.0 as usize];
             self.credit(pe, -escrow);
@@ -8752,6 +8786,59 @@ impl Simulation {
     }
 
     /// Cumulative `(bids, asks)` posted per color, in `Basic::ALL` order.
+    /// **The book as posted at the last barrier, in kilotonnes, per empire and
+    /// color** — a read-only census (T-134): what centers bid for, what yards
+    /// and away holdings ask, what is held away from a yard, the room the
+    /// empire's own haulers have left this round, and what its centers bank.
+    pub fn book_census(&self) -> BookCensus {
+        let n = self.player_entity.len();
+        let mut c = BookCensus {
+            bid: vec![[0.0; 3]; n],
+            ask_yard: vec![[0.0; 3]; n],
+            ask_away: vec![[0.0; 3]; n],
+            held_away: vec![[0.0; 3]; n],
+            haul_room: vec![[0.0; 3]; n],
+            banked: vec![[0.0; 3]; n],
+            filled: self.exchange.last_fill.clone(),
+            filled_self: self.exchange.last_fill_self.clone(),
+        };
+        c.filled.resize(n, [0.0; 3]);
+        c.filled_self.resize(n, [0.0; 3]);
+        for (i, m) in self.exchange.markets.iter().enumerate() {
+            for b in &m.bids {
+                c.bid[b.owner.0 as usize][i] += b.qty;
+            }
+            for a in &m.asks {
+                let yard = self.world.owner.get(Entity(a.entity)).is_some_and(|o| *o == a.owner);
+                let side = if yard { &mut c.ask_yard } else { &mut c.ask_away };
+                side[a.owner.0 as usize][i] += a.qty;
+            }
+        }
+        for (&(p, _), m) in &self.holdings.elsewhere {
+            for (i, &col) in Basic::ALL.iter().enumerate() {
+                c.held_away[p as usize][i] += m.get_basic(col);
+            }
+        }
+        for p in 0..n {
+            for o in self.worked_outposts(PlayerId(p as u32)) {
+                for (i, &col) in Basic::ALL.iter().enumerate() {
+                    let r = self.delivery_room(p as u32, Entity(o), col);
+                    if r.is_finite() {
+                        c.haul_room[p][i] += r;
+                    }
+                }
+            }
+        }
+        for &e in &self.planet_entity {
+            if let (Some(o), Some(m)) = (self.world.owner.get(e), self.held_at(e)) {
+                for (i, &col) in Basic::ALL.iter().enumerate() {
+                    c.banked[o.0 as usize][i] += m.get_basic(col);
+                }
+            }
+        }
+        c
+    }
+
     pub fn exchange_posted(&self) -> [(u64, u64); 3] {
         self.exchange.posted
     }

@@ -602,28 +602,20 @@ pub struct Doctrine {
 }
 
 /// **The price of each duty in an empire's internal exchange of hull time**
-/// (T-134 stage 2), and how far a picket answers a battle. The prices are
-/// dimensionless weights on rates in kilotonnes per year; every default is a
-/// placeholder for a card to write (`Hyades_matching.md` §9).
+/// (T-134 stage 2). Dimensionless weights on rates in kilotonnes per year;
+/// every default is `1.0`, a placeholder for a card to write
+/// (`Hyades_matching.md` §9).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DutyPrices {
     /// Ore a miner lifts onto a pile that its empire can still move.
     pub mine: f64,
     /// Ore a hull delivers to a center that is short of it.
     pub freight: f64,
-    /// **How far a posted picket goes to a pitched battle**, in light-years
-    /// from its post — "nearby" (T-134 stage 2). A battle is pitched when both
-    /// hulls in the encounter are armed and one of them is standing at a post
-    /// (`Hyades_warfare_tree.md` §8.20). The picket leaves when the battle's light reaches it, so the reach is also
-    /// the most years of news it acts on. `0` keeps every picket on its post.
-    /// **Placeholder, 2.0 ly** — about a third of the median spacing between
-    /// neighboring worlds (6.16 ly, `examples/intercept_probe`).
-    pub battle_reach_ly: f64,
 }
 
 impl Default for DutyPrices {
     fn default() -> Self {
-        DutyPrices { mine: 1.0, freight: 1.0, battle_reach_ly: 2.0 }
+        DutyPrices { mine: 1.0, freight: 1.0 }
     }
 }
 
@@ -1803,11 +1795,14 @@ impl<'a> Standing<'a> {
         freight_rate * p.freight > mining_rate * p.mine
     }
 
-    /// **Does a posted picket go to a pitched battle `distance_ly` away?**
-    /// (T-134 stage 2.) Yes within [`DutyPrices::battle_reach_ly`], for a
-    /// battle one of its own empire's hulls is fighting.
-    pub fn joins_battle(&self, distance_ly: f64) -> bool {
-        distance_ly > 0.0 && distance_ly <= self.doctrine.duty_price.battle_reach_ly
+    /// **Does a posted picket go to a pitched battle?** (T-134 stage 2; the
+    /// author's ruling.) "Nearby" is belief about arriving in time to affect
+    /// the outcome: yes when the picket would arrive — the battle's light plus
+    /// its own flight — before the battle is believed decided. Both are years
+    /// from the same moment. A card that changes how a picket judges the
+    /// fight writes here.
+    pub fn joins_battle(&self, arrive_in: f64, decided_in: f64) -> bool {
+        arrive_in < decided_in
     }
 
     /// **Does a colony ship fly one freight run before it embarks?** (T-134

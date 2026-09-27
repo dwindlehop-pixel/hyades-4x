@@ -2524,6 +2524,36 @@ empire could spend at a center out to its own pile at a shared rock, where it
 waits for a hauler. A per-lot census of self-filled lots by where they were
 spent would change that. The shipped clearing drops self-routes.
 
+**Why self-trade moves nothing — a census of the book** (`examples/holding_demand`,
+3 seats, seeds 1 and 7, every barrier to 2,000 yr; `Simulation::book_census`
+reads the book as posted and the fills as struck). There is demand for what the
+Holdings hold, and it is small against them: from year 600 on, bids are 1–19%
+of what is held away from yards (seed 1, 1,000 yr, Cyan: 42,627 kt bid against
+1,806,461 kt held away; seed 1, 1,800 yr, Yellow: 348,940 against 1,869,490).
+Centers also bank more in colors they are not short of than all the bids
+combined in most rows. Bids are small because a center bids only its shortfall
+against its next rung (the same caveat `unmet_color_demand` carries, §6.20).
+
+Fills against bids, shipped (no self-routes) and a scratch build that allows them:
+
+| seed, year, color | bid (kt) | filled, shipped | filled, self allowed | of which self | own haulers' spare room |
+|---|---|---|---|---|---|
+| 1, 600, C | 11,252 / 13,628 | 11,252 | 13,628 | 1,035 | 13,628 |
+| 1, 1,000, C | 42,627 / 43,528 | 42,627 | 43,528 | 4,192 | 43,528 |
+| 1, 1,800, C | 226,513 / 216,004 | 22,699 | 20,323 | 8,736 | 20,346 |
+| 7, 1,000, Y | 62,025 / 57,538 | 62,025 | 57,538 | 21,388 | 57,538 |
+| 7, 1,800, Y | 223,234 / 211,417 | 35,069 | 35,315 | 11,456 | 35,338 |
+
+Two regimes, and self-trade adds nothing in either. **Early**, every bid fills
+from rival sellers, and self-fills (7–40% of the volume) displace rivals. **Late**,
+fills stop short of bids at the buyer's own haulers' spare room at the rocks it
+shares with the seller — with self-trade allowed, fill equals that room to
+within 0.4% in every row where it falls short of the bid — and a self-route consumes the same room. Across
+rows the fill total moves −11% to +13% between the builds (one run per seed).
+An inference: self-trade reassigns fills and burns `exp(−λt)` of what it moves,
+which is where the −2.51% ± 1.59% work-years above would come from; a
+per-lot account of burned mass would test it.
+
 **The miner freight run alone** (matching §9.1): work-years **+0.63% ± 3.32%,
 3/8 up**; colony-years −0.01% ± 0.02%; colonies identical on all 8 seeds. The
 run fires: 2,998 and 1,817 runs on seeds 1 and 7 over 1,500 yr, most of them
@@ -2547,6 +2577,26 @@ starts, the shooter's side had another post within 1 ly in 1,228 and the
 target's side within 2 ly in 11. With the shipped predicate (both armed, one
 standing) and the 2 ly placeholder reach: **3 sorties on seed 1, 0 on seed 7**;
 a scratch build at 8 ly flew 105 on seed 1.
+
+**Superseded by the author's ruling on "nearby"** (warfare §8.20): the reach is
+now belief about arriving before the battle is decided, with no distance
+constant. The 2 ly and 8 ly counts above are a record of the retired rule.
+`a_picket_joins_a_battle_it_can_reach_in_time_and_returns_to_its_post` sets
+the fight's believed length to twice and half the picket's light-plus-flight
+time and asserts one sortie and none. Its first run failed on a real defect —
+the arrival check read `world.position`, which a parked hull does not carry, so
+every flight time was infinite; it now reads the hull's position through its
+motion.
+
+**The belief rule on the card bed.** Two interleaved rounds against the fixed
+reach, seeds 1 and 7, 450 yr: **0 sorties on both seeds** (3 and 0 before), and
+`ns/event` 3,522–3,568 against 3,461–3,553 on seed 1 and 4,561–4,655 against
+4,706–4,777 on seed 7 — within the run-to-run spread. A scratch census of every
+pitched encounter on seed 1 (3,366; 3,165 Cairn against Cairn, 201 Cairn against
+Tor): believed fight length p50 0.019 yr, maximum 0.026 yr; distance from the
+battle to the nearest post of either side p05 5.94 ly, p50 14.06 ly, p95 49.7 ly;
+encounters with any post nearer than the fight's length, in light-years: 0.
+So the predicate cannot be true at current beam and structure magnitudes.
 
 **Throughput.**
 

@@ -591,7 +591,8 @@ latents, so the inverse problem is under-determined at range — but **arming a
 fleet is loud unless you also buy thrust.** A Technology card that adds weapons
 without a propulsion partner announces itself.
 
-**5.4 `OPEN` — R-TECH3: the card surface beyond `UnlockDesign`.** Candidates, in
+**5.4 `OPEN` — R-TECH3: the card surface beyond `UnlockDesign`.** *Advanced:*
+the drive factor (§8) is the first write designed past it. Candidates, in
 rough order of how well the engine could support them today: component stat
 tables (needs §2.5), `hull_thrust_to_mass` (needs R-O65 ratified), sensor and
 stealth ranges (needs the detection query), the counter-graph edges themselves
@@ -676,6 +677,106 @@ the measurement into the target (§4.10).
 | R-TECH4 | a miniaturization analogue inside this tree? | a decision — *recommend no* |
 | T-25 | `enforce_roster` defaults off because there is no unlock path | the card system |
 | R-TECH20 | magnetar matter as a Technology option (§7.1.2) | a design pass naming the write and its mass cost |
+| R-TECH22 | the drive card's slot, slant and factor `f` — `TIER0[12]` recommended, replacing an unlock that reaches no build (§8.1) | the author; `f` after stage 4 of T-136 |
+| R-TECH23 | where the drive state lives — a `DesignWrite` fold in `CardId` order beside `Works` (recommended) or a `WorksWrite` variant (§8.4) | the author |
+
+---
+
+## 8. The first Technology card — the drive (T-136, design; nothing built)
+
+Taken through `.claude/skills/card-workflow` Stages 0–3. **Every magnitude is a
+placeholder and every decision not marked `RATIFIED` is open.**
+
+**8.1 Brief (Stage 0).** The author: *"Obvious first Technology card is one that
+improves engines for better acceleration."* *Recommended* slot `TIER0[12]`
+(Inscrutable), replacing `UnlockDesign(MediumSystems, Delta)`, which reaches no
+build (R-TECH18). Counter-graph edges: not given; the card is the propulsion
+half §5.3 says concealment needs, which the cross-tree workflow places.
+
+**8.2 Story and objective (Stage 1).** The Long Dawn's mouth, **First Light**.
+The metric is capability-years `T_i` (§4.2). Unlike an unlock, a drive write
+reaches every hull built after the play, so it has a path to `Q_i` without the
+Design resolver R-TECH18 is waiting on — provided the rating table carries the
+upgraded Designs, which it does not yet (8.5, stage 3).
+
+**8.3 Intent as algebra (Stage 2).**
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `k` | specific thrust | kt·g per kt of drive | `SimConfig::drive_specific_thrust = 18.21` (R-MC16 anchor) |
+| `f` | this empire's drive factor | — | the card; `1.0` before it |
+| `m_drv` | a hull's drive mass | kt | `HullType::drive_mass` |
+| `M` | dry mass plus load | kt | `thrust_to_mass` |
+| `a` | proper acceleration, `G · k · f · m_drv / M` | ly/yr² | `laden_accel` |
+| `d` | leg length | ly | — |
+| `t` | leg time, `√(d² + 4d/a)` (c = 1) | yr | `math::ship_travel_years` |
+
+- **Every hull of the empire accelerates `f` times harder, empty or laden.** So
+  `a_empty / a_laden = 1 + C / M_dry` is untouched (R-O95): the card does not
+  change cargo efficiency or the load broadcast (design law #10), only the level.
+- **Leg time falls with elasticity `−(2d/a) / (d² + 4d/a)`**, bounded by `−½`
+  because the light term `d` does not move. Arithmetic on the formula above,
+  not a measurement:
+
+  | hull, leg | `t` at `f = 1` | `f = 1.5` | `f = 2` | elasticity |
+  |---|---|---|---|---|
+  | laden Medium colonizer, 1 ly | 4.19 yr | 3.47 | 3.05 | −0.47 |
+  | laden Medium colonizer, 6.16 ly | 11.84 | 10.30 | 9.44 | −0.37 |
+  | laden Medium colonizer, 25 ly | 32.25 | 30.03 | 28.85 | −0.20 |
+  | empty Medium, 6.16 ly | 6.93 | 6.68 | 6.56 | −0.11 |
+  | empty LCV, 6.16 ly | 8.01 | 7.44 | 7.14 | −0.20 |
+
+  So the gain is concentrated on laden hulls over short legs — freight and
+  colonization — and a 1.5x drive cuts any leg by at most 18%.
+- **What rivals see:** this empire's acceleration rises by `f` on new hulls, and
+  a rival's belief (R-O41, the maximum ever observed) rises when its light
+  arrives. Masking stays spend-once.
+- **No mass cost** (design law #11 is not touched): `k` is per-mass
+  effectiveness, which is what §0 says this tree raises. The price is the
+  card's cost.
+
+**8.4 Writes (Stage 3).**
+
+- **A Design write, folded in `CardId` order** like `Works` (float products are
+  order-dependent): one per-empire factor `f`.
+- **Design law #12 — hulls in the field keep the drive they were built with.**
+  `f` is stamped on each hull at construction; `laden_accel` reads the hull's
+  stamp, and every forecast of a hull the empire *would* build (a leg priced for
+  a build decision, `settler_target`'s discount, the freight score) reads the
+  empire's current `f`. One function carries both readings, because a policy
+  that prices a leg differently from the engine that flies it chooses against a
+  world it does not live in (`thrust_to_mass`'s own comment).
+- **Consumers to audit (Stage 4.1):** 13 `thrust_to_mass` call sites and 34
+  `laden_accel` call sites, all of which read the drive; the rating beds, which
+  must fly the upgraded Design at its own drive.
+
+**8.5 Staged plan (T-136).**
+
+1. **The fold and the per-hull stamp**, bit-identical at `f = 1` on the
+   standard bed (a test pins it), and a test that a hull built before the play
+   keeps its drive.
+2. **The card in its slot**, played at the barrier, with the two-direction
+   tests (workflow Stage 6).
+3. **Rate the upgraded Designs** in every role bed (`examples/design_rating`) so
+   `c(d)` exists for a Design with `f ≠ 1`.
+4. **The capability-years harness** that turns the table into `T_i` (T-131's
+   missing reader), then the card's value at P92 and its within-tree balance
+   against the unlock cards.
+
+**8.6 Voice (Stage 9) — every line a DRAFT for the author.** Role subtitle,
+fixed: *Every hull built from now on accelerates harder.*
+
+| context | name (DRAFT) | flavor (DRAFT) |
+|---|---|---|
+| default | *First Light* | "Every year a ship spends between stars is a year its people are not yet home. We have given some of those years back." — Directorate of Transit Efficiency |
+| this empire has played the first Warfare card | *Closing Speed* | "Help that arrives sooner is more help." — Office of Rapid Response |
+| this empire has played an Expansion survey card | *The Long Voyage, Shortened* | "The shore has not moved. We have." |
+
+The context rows need R-TREE13 (played cards in `Snapshot`).
+
+**8.7 Open.** R-TECH22 (slot, slant and the magnitude of `f`), R-TECH23 (where
+the drive state lives — a `DesignWrite` fold beside `Works`, recommended, or a
+`WorksWrite` variant).
 
 ---
 
