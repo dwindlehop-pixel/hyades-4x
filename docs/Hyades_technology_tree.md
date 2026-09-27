@@ -645,6 +645,7 @@ the measurement into the target (§4.10).
 | R-TECH10 | a hull carries its **active** role's strength each year (§4.7.3) |
 | R-TECH13 | every role has a bed (§4.4.3) |
 | R-TECH16 | a bed forces the role (§4.4.4) |
+| R-TECH21 | Barrow's scale is loose guidance for this tree and Kardashev's for Production; **card tiers are an instrument of the counter-graph, not of a civilization scale** (§7.2) |
 | R-TECH17 | the pool is deduplicated by what the beds read; the goal is that no two named Designs share a loadout (§4.3.1) |
 | — | supers are synthesized at pop-Band IV by fixed two-basic recipes |
 | — | Red is the general key; Blue and Green are traversal keys (law #1) |
@@ -675,7 +676,6 @@ the measurement into the target (§4.10).
 | R-TECH4 | a miniaturization analogue inside this tree? | a decision — *recommend no* |
 | T-25 | `enforce_roster` defaults off because there is no unlock path | the card system |
 | R-TECH20 | magnetar matter as a Technology option (§7.1.2) | a design pass naming the write and its mass cost |
-| R-TECH21 | Barrow's inward scale as this tree's tier axis, Kardashev as Production's (§7.2) — *recommended* | author |
 
 ---
 
@@ -726,13 +726,15 @@ signature — this becomes, and what it costs under design law #11.
   | VI-minus | elementary particles |
   | Omega-minus | the structure of space and time |
 
-  **`OPEN` — R-TECH21, recommendation attached: read Barrow as this tree's axis
-  and Kardashev as Production's.** §0's split — Technology raises per-mass
-  effectiveness, Production raises mass — is the same split as inward precision
-  against outward scale. *Recommended* as the ordering of Technology's tiers;
-  nobody has ratified it. **What would settle it:** the author's call, and a tier
-  list that places each §7.1 option on the scale (magnetar matter sits at IV-minus
-  to V-minus: it is an atomic-scale change of structure).
+  **`RATIFIED` — R-TECH21 (the author's ruling): Barrow's scale is loose
+  guidance for this tree, and Kardashev's for Production — nothing more.** §0's
+  split (Technology raises per-mass effectiveness, Production raises mass) reads
+  as inward precision against outward scale, and that is as far as the analogy
+  goes. **Card tiers are an instrument of the counter-graph (§3), not of a
+  civilization scale**: a tier is ordered by what it counters and what counters
+  it, and a Barrow type never decides where a card sits. The author notes there
+  is room in the design space for this and for more cards besides; §7.1's
+  options are placed by their counter-graph edges when they are designed.
 
 ---
 
