@@ -2039,9 +2039,24 @@ struct World {
 /// events (§10.0). Indexed in `Basic::ALL` order so the set has a canonical
 /// order — which §10.5 needs, because per-round clearing over a *set* is what
 /// keeps price from being a function of event ordering.
+/// One color's bids and asks for a round.
+#[derive(Default, Clone)]
+struct Market {
+    bids: Vec<matching::Offer>,
+    asks: Vec<matching::Offer>,
+}
+
 #[derive(Default)]
 struct Exchange {
-    books: [matching::Book; 3],
+    /// One color's offers for the round, rebuilt at every barrier. Plain lists
+    /// rather than [`matching::Book`]: two empires can hold ore on the same
+    /// rock, so an offer is not identified by its planet alone (T-134).
+    markets: [Market; 3],
+    /// **How much each empire's haulers move away from a planet per round**,
+    /// kilotonnes, keyed `(empire, planet)` — measured at the barrier from the
+    /// haulers based there (T-134). What an empire can take delivery of at a
+    /// rock, and what it cannot move from one, are both read off it.
+    haul: BTreeMap<(u32, u64), f64>,
     /// **Contracts in flight** — matched, escrowed, not yet settled (T-85).
     ///
     /// §10.2: *"this is the state §3.3 needs and the engine has no analogue
@@ -7886,9 +7901,10 @@ impl Simulation {
     /// **Nothing clears yet.** This stage is inert by construction (§10.7
     /// stages 1–3) and the guard is a bit-identical bed.
     fn post_exchange_offers(&mut self) {
-        for b in self.exchange.books.iter_mut() {
-            *b = matching::Book::new();
+        for m in self.exchange.markets.iter_mut() {
+            *m = Market::default();
         }
+        self.exchange.haul = self.haul_per_round();
         let players = self.player_entity.len();
         for p in 0..players {
             let pe = self.player_entity[p];
@@ -7910,7 +7926,7 @@ impl Simulation {
                         let price = self.willingness_to_pay(e, c, &doctrine);
                         if price > 0.0 {
                             self.exchange.posted[i].0 += 1;
-                            self.exchange.books[i].post_bid(matching::Offer {
+                            self.exchange.markets[i].bids.push(matching::Offer {
                                 entity: e.0,
                                 price,
                                 qty: short,
@@ -7926,7 +7942,7 @@ impl Simulation {
                         let spare = bank.get_basic(c);
                         if spare > 1e-9 {
                             self.exchange.posted[i].1 += 1;
-                            self.exchange.books[i].post_ask(matching::Offer {
+                            self.exchange.markets[i].asks.push(matching::Offer {
                                 entity: e.0,
                                 price: self.willingness_to_pay(e, c, &doctrine),
                                 qty: spare,
@@ -7938,6 +7954,83 @@ impl Simulation {
                 }
             }
         }
+
+        // **Every holding is the same quantity, so every holding can sell**
+        // (T-134). Ore an empire holds where it has no yard is sellable for the
+        // part its own haulers cannot move this round — the same measure that
+        // limits what a buyer can take delivery of — and it asks nothing for
+        // it: ore that will not move before the next barrier is worth nothing
+        // to its owner within the round. Offered in each color in proportion
+        // to what the holding contains.
+        let away: Vec<((u32, u64), Minerals)> = self.holdings.elsewhere.iter().map(|(k, m)| (*k, *m)).collect();
+        for ((p, at), m) in away {
+            let total = m.basic_total().kilotons();
+            let moved = self.exchange.haul.get(&(p, at)).copied().unwrap_or(0.0);
+            let spare = total - moved;
+            if spare <= 1e-9 || total <= 0.0 {
+                continue;
+            }
+            let Some(pos) = self.world.position.get(Entity(at)).copied() else {
+                continue;
+            };
+            for (i, &c) in Basic::ALL.iter().enumerate() {
+                let qty = spare * m.get_basic(c) / total;
+                if qty > 1e-9 {
+                    self.exchange.posted[i].1 += 1;
+                    self.exchange.markets[i].asks.push(matching::Offer {
+                        entity: at,
+                        price: 0.0,
+                        qty,
+                        pos: [pos.x, pos.y, pos.z],
+                        owner: PlayerId(p),
+                    });
+                }
+            }
+        }
+    }
+
+    /// **What each empire's haulers carry away from a planet in one round**
+    /// (T-134), kilotonnes, keyed `(empire, planet)`.
+    ///
+    /// Each hauler based at a rock carries one full hold per laden round trip
+    /// to the center it serves, so over `years_per_round` it moves
+    /// `hold · years_per_round / round_trip`. Nothing here is a new constant:
+    /// the hold is the hull's, the trip is its own drive over the distance, and
+    /// the interval is the round's.
+    fn haul_per_round(&self) -> BTreeMap<(u32, u64), f64> {
+        let mut out: BTreeMap<(u32, u64), f64> = BTreeMap::new();
+        for (k, sh) in self.world.shuttle.items.iter().enumerate() {
+            let Some(sh) = sh else { continue };
+            let e = Entity(k as u64);
+            if self.world.role.get(e).copied() != Some(Role::Freighter) {
+                continue;
+            }
+            let (Some(o), Some(&hull)) = (self.world.owner.get(e), self.world.hull_type.get(e)) else {
+                continue;
+            };
+            let (Some(from), Some(to)) = (self.world.position.get(sh.base), self.world.position.get(sh.destination))
+            else {
+                continue;
+            };
+            let hold = hull.cargo_capacity(&self.config);
+            let trip = 2.0 * math::ship_travel_years(from.distance(*to), G * self.thrust_to_mass(hull, hold));
+            if trip > 0.0 {
+                *out.entry((o.0, sh.base.0)).or_default() += hold.kilotons() * self.config.years_per_round / trip;
+            }
+        }
+        out
+    }
+
+    /// **How much more of color `c` empire `p` can take delivery of at planet
+    /// `at` this round** (T-134): unlimited where it has a yard, otherwise what
+    /// its haulers carry away in a round less what already waits there.
+    fn delivery_room(&self, p: u32, at: Entity, c: Basic) -> f64 {
+        if self.world.owner.get(at).is_some_and(|o| o.0 == p) {
+            return f64::INFINITY;
+        }
+        let moved = self.exchange.haul.get(&(p, at.0)).copied().unwrap_or(0.0);
+        let waiting = self.holding(p, at).map_or(0.0, |m| m.get_basic(c));
+        (moved - waiting).max(0.0)
     }
 
     /// **The outposts an empire has crew standing on**, in outpost-id order
@@ -7966,32 +8059,38 @@ impl Simulation {
     /// and reaching one is a reason to go somewhere.
     ///
     /// `mine` and `theirs` are the two empires' [`Self::worked_outposts`],
-    /// read once per barrier by the caller.
-    fn nearest_shared(&self, mine: &[u64], theirs: &[u64], ship_from: Vec3) -> Option<Entity> {
-        let mut best: Option<(f64, u64)> = None;
+    /// read once per barrier by the caller. [`Self::nearest_first`] orders the
+    /// result from a shipper: the nearest is where a leg is priced, and the
+    /// rest are where it spills when the buyer has no more room there.
+    fn common_rocks(mine: &[u64], theirs: &[u64]) -> Vec<u64> {
         // Both lists are id-sorted, so this is a linear merge rather than a
         // nested scan — a center can work thousands of rocks (§4.5).
+        let mut out = Vec::new();
         let (mut i, mut j) = (0usize, 0usize);
         while i < mine.len() && j < theirs.len() {
             match mine[i].cmp(&theirs[j]) {
                 Ordering::Less => i += 1,
                 Ordering::Greater => j += 1,
                 Ordering::Equal => {
-                    let e = Entity(mine[i]);
-                    if let Some(&at) = self.world.position.get(e) {
-                        let cost = ship_from.distance(at);
-                        // Id breaks ties, so the choice is total and does not
-                        // depend on which party is named first.
-                        if best.is_none_or(|(c, o)| cost < c || (cost == c && mine[i] < o)) {
-                            best = Some((cost, mine[i]));
-                        }
-                    }
+                    out.push(mine[i]);
                     i += 1;
                     j += 1;
                 }
             }
         }
-        best.map(|(_, o)| Entity(o))
+        out
+    }
+
+    /// `rocks` ordered nearest `ship_from` first, with their distances; id
+    /// breaks ties, so the order is total and does not depend on which party
+    /// is named first.
+    fn nearest_first(&self, rocks: &[u64], ship_from: Vec3) -> Vec<(f64, u64)> {
+        let mut out: Vec<(f64, u64)> = rocks
+            .iter()
+            .filter_map(|&o| self.world.position.get(Entity(o)).map(|at| (ship_from.distance(*at), o)))
+            .collect();
+        out.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+        out
     }
 
     /// **Clear every color book into escrowed contracts** (§10.5, T-85).
@@ -8017,21 +8116,30 @@ impl Simulation {
         let now = self.clock;
         let lambda = self.config.trade_decay_lambda;
         let players = self.player_entity.len();
-        // The venue a seller's center ships to for one buyer does not depend on
-        // the color, so it is found once per (center, buyer) this barrier.
+        // The rocks a seller and a buyer both work do not depend on where the
+        // seller ships from or on the color, so the set is found once per
+        // (seller, buyer) this barrier; the buyer's total room over it once per
+        // color. A route needs only the nearest of them, and the full
+        // nearest-first order is built only where a flow has to be placed.
         let worked: Vec<Vec<u64>> = (0..players).map(|p| self.worked_outposts(PlayerId(p as u32))).collect();
-        let mut venues: BTreeMap<(u64, u32), Option<Entity>> = BTreeMap::new();
-        // (color, flow, venue, leg years), in color then flow order.
-        let mut cleared: Vec<(usize, matching::Flow, Entity, f64)> = Vec::new();
-        for (i, book) in self.exchange.books.iter().enumerate() {
-            let (bids, asks) = (book.bids(), book.asks());
+        let mut shared: BTreeMap<(u32, u32), Vec<u64>> = BTreeMap::new();
+        let mut nearest: BTreeMap<(u32, u64, u32), Option<(f64, u64)>> = BTreeMap::new();
+        // Room left at each (buyer, venue, color), drawn down as flows are placed.
+        let mut room: BTreeMap<(u32, u64, usize), f64> = BTreeMap::new();
+        // (color, flow, place sold from, venue, leg years), in color then flow order.
+        let mut cleared: Vec<(usize, matching::Flow, Entity, Entity, f64)> = Vec::new();
+        for i in 0..3 {
+            let market = std::mem::take(&mut self.exchange.markets[i]);
+            let (bids, asks) = (&market.bids, &market.asks);
             let mut buyers: Vec<PlayerId> = bids.iter().map(|b| b.owner).collect();
             buyers.sort();
             buyers.dedup();
+            let color = Basic::ALL[i];
+            let mut total_room: BTreeMap<(u32, u32), f64> = BTreeMap::new();
             let mut routes: Vec<Vec<matching::Route>> = Vec::with_capacity(asks.len());
-            let mut legs: Vec<Vec<(Entity, f64)>> = Vec::with_capacity(asks.len());
+            let mut accel: Vec<f64> = Vec::with_capacity(asks.len());
             for a in asks {
-                let (mut rs, mut ls) = (Vec::new(), Vec::new());
+                let mut rs = Vec::new();
                 let s_at = *self.world.position.get(Entity(a.entity)).unwrap();
                 // One laden leg of the seller's standing Freighter Design, the
                 // lot aboard up to its hold — the same leg the contract flies,
@@ -8039,24 +8147,61 @@ impl Simulation {
                 // settlement takes.
                 let (hull, _) = Standing::of(&self.doctrine_of(a.owner.0 as usize)).design_for(Role::Freighter);
                 let lot = Price::new(a.qty).on_scale::<units::Mass>().min(hull.cargo_capacity(&self.config));
-                let accel = G * self.thrust_to_mass(hull, lot);
+                let g = G * self.thrust_to_mass(hull, lot);
+                accel.push(g);
                 for &b in buyers.iter().filter(|&&b| b != a.owner) {
-                    let venue = *venues.entry((a.entity, b.0)).or_insert_with(|| {
-                        self.nearest_shared(&worked[a.owner.0 as usize], &worked[b.0 as usize], s_at)
+                    let set = shared
+                        .entry((a.owner.0, b.0))
+                        .or_insert_with(|| Self::common_rocks(&worked[a.owner.0 as usize], &worked[b.0 as usize]));
+                    let near = *nearest.entry((a.owner.0, a.entity, b.0)).or_insert_with(|| {
+                        set.iter()
+                            .filter_map(|&o| self.world.position.get(Entity(o)).map(|at| (s_at.distance(*at), o)))
+                            .min_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)))
                     });
-                    if let Some(v) = venue {
-                        let t = math::ship_travel_years(s_at.distance(*self.world.position.get(v).unwrap()), accel);
-                        rs.push(matching::Route { buyer: b, decay: lambda * t });
-                        ls.push((v, t));
-                    }
+                    let Some((d, _)) = near else { continue };
+                    // **The leg carries no more than the buyer can move on**:
+                    // the buyer's room, this round, over every rock it shares
+                    // with the seller.
+                    let cap = *total_room.entry((a.owner.0, b.0)).or_insert_with(|| {
+                        set.iter()
+                            .map(|&o| {
+                                *room.entry((b.0, o, i)).or_insert_with(|| self.delivery_room(b.0, Entity(o), color))
+                            })
+                            .sum()
+                    });
+                    let t = math::ship_travel_years(d, g);
+                    rs.push(matching::Route { buyer: b, decay: lambda * t, cap });
                 }
                 routes.push(rs);
-                legs.push(ls);
             }
+            // Place each flow at the buyer's venues nearest the seller, as far
+            // as each has room: two asks can reach one venue, and the room at a
+            // venue is shared between them. What finds no room is not sold.
             for f in matching::clear_spatial(bids, asks, &routes) {
-                let (v, t) = legs[f.ask][f.route];
-                cleared.push((i, f, v, t));
+                let a = asks[f.ask];
+                let place = Entity(a.entity);
+                let s_at = *self.world.position.get(place).unwrap();
+                let list = self.nearest_first(&shared[&(a.owner.0, f.buyer.0)], s_at);
+                let mut left = f.qty;
+                for (d, o) in list {
+                    if left <= 1e-9 {
+                        break;
+                    }
+                    let r = room
+                        .entry((f.buyer.0, o, i))
+                        .or_insert_with(|| self.delivery_room(f.buyer.0, Entity(o), color));
+                    let take = left.min(*r);
+                    if take <= 1e-9 {
+                        continue;
+                    }
+                    *r -= take;
+                    left -= take;
+                    let mut g = f;
+                    g.qty = take;
+                    cleared.push((i, g, place, Entity(o), math::ship_travel_years(d, accel[f.ask])));
+                }
             }
+            self.exchange.markets[i] = market;
         }
 
         // **What the purse can actually pay.** Escrow is locked at clearing, so
@@ -8064,7 +8209,7 @@ impl Simulation {
         // of its flows scaled by one factor — no flow is favored by the order
         // it was listed in.
         let mut bill = vec![0.0f64; players];
-        for (_, f, _, _) in &cleared {
+        for (_, f, _, _, _) in &cleared {
             bill[f.buyer.0 as usize] += f.qty * f.price;
         }
         let scale: Vec<f64> = (0..players)
@@ -8080,7 +8225,7 @@ impl Simulation {
             })
             .collect();
 
-        for (i, f, seller_drop, t) in cleared {
+        for (i, f, place, seller_drop, t) in cleared {
             self.exchange.fills += 1;
             let s = scale[f.buyer.0 as usize];
             if s < 1.0 {
@@ -8105,7 +8250,7 @@ impl Simulation {
                 Contract {
                     buyer: f.buyer,
                     seller: f.seller,
-                    seller_center: Entity(self.exchange.books[i].asks()[f.ask].entity),
+                    seller_center: place,
                     color: Basic::ALL[i],
                     qty,
                     escrow,
@@ -8317,7 +8462,8 @@ impl Simulation {
     /// How many offers stand on each color's book. Diagnostic — the interim
     /// guard for Exchange work is a census, not colony-years (§10.8).
     pub fn exchange_depth(&self) -> [(usize, usize); 3] {
-        [self.exchange.books[0].len(), self.exchange.books[1].len(), self.exchange.books[2].len()]
+        let m = &self.exchange.markets;
+        [(m[0].bids.len(), m[0].asks.len()), (m[1].bids.len(), m[1].asks.len()), (m[2].bids.len(), m[2].asks.len())]
     }
 
     /// **Add to an empire's `$` ledger** — the only writer (T-82).
@@ -12248,13 +12394,71 @@ mod tests {
     /// cannot settle, and **each drop is chosen by the party shipping to it**
     /// (R-P17, as revised — a contract has two locations, and a shipper pays for
     /// its own leg).
+    /// **An empire can take delivery of what its haulers can move on** (T-134).
+    ///
+    /// The census that found this: ore delivered to a buyer beyond what its
+    /// haulers based at the venue can carry away before the next barrier sits
+    /// there, and the Exchange that ignored it lost 19% of work-years while
+    /// moving the same tonnage (appendix §D.20). Pinned three ways: a rock with
+    /// no hauler of the buyer's has no room; a rock with one has its round's
+    /// carrying less what already waits; a planet the buyer owns has no limit.
+    #[test]
+    fn delivery_room_is_what_the_buyers_haulers_move_less_what_waits() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 72), test_cfg(72));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let rock = sim.planet_entity[30];
+        sim.exchange.haul = sim.haul_per_round();
+        assert_eq!(sim.delivery_room(0, rock, Basic::Cyan), 0.0, "no hauler based there, no room");
+        assert!(sim.delivery_room(0, home, Basic::Cyan).is_infinite(), "a yard takes any delivery");
+
+        let from = *sim.world.position.get(home).unwrap();
+        sim.spawn_freighter(0, home, from, rock, HullType::MediumSystems, 0.0);
+        sim.exchange.haul = sim.haul_per_round();
+        let per_round = sim.exchange.haul[&(0, rock.0)];
+        assert!(per_round > 0.0);
+        assert!((sim.delivery_room(0, rock, Basic::Cyan) - per_round).abs() < 1e-9);
+        assert_eq!(sim.delivery_room(1, rock, Basic::Cyan), 0.0, "the room is the buyer's own haulers'");
+
+        sim.holding_mut(0, rock).cyan = per_round * 0.25;
+        assert!((sim.delivery_room(0, rock, Basic::Cyan) - per_round * 0.75).abs() < 1e-9, "what waits uses room");
+        sim.holding_mut(0, rock).cyan = per_round * 2.0;
+        assert_eq!(sim.delivery_room(0, rock, Basic::Cyan), 0.0);
+        assert!((sim.delivery_room(0, rock, Basic::Yellow) - per_round).abs() < 1e-9, "per color");
+    }
+
+    /// **A holding where its owner has no yard is on the market** (T-134, the
+    /// author's ruling that a bank, a pile and arrived cargo are one quantity).
+    /// It offers what its owner's haulers cannot move this round, in its own
+    /// color mix, and asks nothing for it.
+    #[test]
+    fn a_holding_away_from_a_yard_asks_for_what_its_owner_cannot_move() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 73), test_cfg(73));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let rock = sim.planet_entity[30];
+        sim.holdings.elsewhere.insert((0, rock.0), Minerals { cyan: 90.0, yellow: 30.0, ..Default::default() });
+        sim.post_exchange_offers();
+        let asked = |sim: &Simulation, i: usize| -> f64 {
+            sim.exchange.markets[i].asks.iter().filter(|a| a.entity == rock.0).map(|a| a.qty).sum()
+        };
+        assert!((asked(&sim, 0) - 90.0).abs() < 1e-9 && (asked(&sim, 2) - 30.0).abs() < 1e-9);
+        assert!(sim.exchange.markets[0].asks.iter().filter(|a| a.entity == rock.0).all(|a| a.price == 0.0));
+
+        let from = *sim.world.position.get(home).unwrap();
+        sim.spawn_freighter(0, home, from, rock, HullType::MediumSystems, 0.0);
+        sim.post_exchange_offers();
+        let moved = sim.exchange.haul[&(0, rock.0)];
+        let spare = (120.0 - moved).max(0.0);
+        assert!((asked(&sim, 0) - spare * 0.75).abs() < 1e-9, "what its haulers move is not for sale");
+    }
+
     #[test]
     fn two_empires_can_only_trade_where_they_both_have_crew() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 61), test_cfg(61));
         let (a, b) = (PlayerId(0), PlayerId(1));
         let origin = Vec3::ZERO;
         let venue = |sim: &Simulation, a: PlayerId, b: PlayerId, at: Vec3| {
-            sim.nearest_shared(&sim.worked_outposts(a), &sim.worked_outposts(b), at)
+            let common = Simulation::common_rocks(&sim.worked_outposts(a), &sim.worked_outposts(b));
+            sim.nearest_first(&common, at).first().map(|&(_, o)| Entity(o))
         };
 
         assert_eq!(venue(&sim, a, b, origin), None, "no crews anywhere, no venue");

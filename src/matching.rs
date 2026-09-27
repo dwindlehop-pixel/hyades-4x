@@ -242,10 +242,15 @@ impl Book {
 /// keeps `exp(−decay)` of what the buyer escrows (politics §3.3). The caller
 /// prices `t` off the seller's standing Freighter Design flying to the venue
 /// both empires share; the matcher never sees geometry.
+///
+/// `cap` is the most this leg can carry this round, in kilotonnes — what the
+/// buyer can move on from where the leg ends (T-134). `f64::INFINITY` when
+/// nothing limits it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Route {
     pub buyer: PlayerId,
     pub decay: f64,
+    pub cap: f64,
 }
 
 /// **Kilotonnes of one ask sold to one buyer empire, at that empire's price.**
@@ -323,6 +328,11 @@ impl Ord for Key {
 /// competitor and ample supply pays the sellers' reservation, which is zero for
 /// a center with nothing to build: then the price is the floor above.
 ///
+/// **Each leg carries at most its route's `cap`** (T-134), which makes it a
+/// capacitated transportation problem; successive shortest paths handles arc
+/// capacities without change to the method, and a full leg drops out of the
+/// price relaxation because it cannot take more at any price.
+///
 /// Deterministic: offers are read in slice order, every tie breaks on an
 /// index, and no hash map is used.
 pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> Vec<Flow> {
@@ -365,12 +375,13 @@ pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> V
         .map(|(j, rs)| {
             rs.iter()
                 .map(|r| match node(r.buyer) {
-                    Some(b) if r.buyer != asks[j].owner => (b, r.decay),
+                    Some(b) if r.buyer != asks[j].owner && r.cap > 0.0 => (b, r.decay),
                     _ => (usize::MAX, 0.0),
                 })
                 .collect()
         })
         .collect();
+    let room = |flow: &Vec<Vec<f64>>, j: usize, r: usize| routes[j][r].cap - flow[j][r];
     let mut free: Vec<f64> = asks.iter().map(|a| a.qty.max(0.0)).collect();
     let mut flow: Vec<Vec<f64>> = routes.iter().map(|rs| vec![0.0; rs.len()]).collect();
 
@@ -389,7 +400,29 @@ pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> V
     let open = |reroute: &mut Vec<Heap<(Key, usize, usize, usize)>>, j: usize, r: usize| {
         let (from, c) = arcs[j][r];
         for (r2, &(to, c2)) in arcs[j].iter().enumerate() {
-            if r2 != r && to != usize::MAX {
+            if r2 != r && to != usize::MAX && to != from {
+                reroute[from * nb + to].push(Reverse((Key(c2 - c), j, r, r2)));
+            }
+        }
+    };
+    // A leg that was full and now has room again is usable again: as a source
+    // arc, and as the target of a reroute from every leg of the same ask that
+    // carries flow. Heaps drop stale entries lazily, so re-pushing is safe.
+    let reopen = |source: &mut Vec<Heap<(Key, usize, usize)>>,
+                  reroute: &mut Vec<Heap<(Key, usize, usize, usize)>>,
+                  flow: &Vec<Vec<f64>>,
+                  free: &[f64],
+                  j: usize,
+                  r2: usize| {
+        let (to, c2) = arcs[j][r2];
+        if to == usize::MAX {
+            return;
+        }
+        if free[j] > 0.0 {
+            source[to].push(Reverse((Key(ln_ask[j] + c2), j, r2)));
+        }
+        for (r, &(from, c)) in arcs[j].iter().enumerate() {
+            if r != r2 && from != usize::MAX && from != to && flow[j][r] > 0.0 {
                 reroute[from * nb + to].push(Reverse((Key(c2 - c), j, r, r2)));
             }
         }
@@ -405,7 +438,7 @@ pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> V
         // Arc weights, dropping exhausted heap tops.
         for b in 0..nb {
             let h = &mut source[b];
-            while h.peek().is_some_and(|Reverse((_, j, _))| free[*j] <= 0.0) {
+            while h.peek().is_some_and(|Reverse((_, j, r))| free[*j] <= 0.0 || room(&flow, *j, *r) <= 0.0) {
                 h.pop();
             }
             match h.peek() {
@@ -424,7 +457,7 @@ pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> V
             }
         }
         for (k, h) in reroute.iter_mut().enumerate() {
-            while h.peek().is_some_and(|Reverse((_, j, r, _))| flow[*j][*r] <= 0.0) {
+            while h.peek().is_some_and(|Reverse((_, j, r, r2))| flow[*j][*r] <= 0.0 || room(&flow, *j, *r2) <= 0.0) {
                 h.pop();
             }
             edge[k] = h.peek().map(|Reverse((Key(w), j, r, r2))| (*w, *j, *r, *r2));
@@ -469,7 +502,7 @@ pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> V
         let mut b = sink;
         let mut amount = demand[sink][next[sink]].1;
         while let Some((from, j, r, r2)) = pred[b] {
-            amount = amount.min(flow[j][r]);
+            amount = amount.min(flow[j][r]).min(room(&flow, j, r2));
             path.push((j, r, r2));
             b = from;
             if path.len() > nb {
@@ -478,7 +511,7 @@ pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> V
             }
         }
         let (j0, r0) = via[b].expect("a finite distance has a source arc");
-        amount = amount.min(free[j0]);
+        amount = amount.min(free[j0]).min(room(&flow, j0, r0));
         free[j0] -= amount;
         if flow[j0][r0] <= 0.0 {
             flow[j0][r0] += amount;
@@ -487,11 +520,15 @@ pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> V
             flow[j0][r0] += amount;
         }
         for &(j, r, r2) in &path {
+            let was_full = room(&flow, j, r) <= 0.0;
             flow[j][r] -= amount;
             let opened = flow[j][r2] <= 0.0;
             flow[j][r2] += amount;
             if opened {
                 open(&mut reroute, j, r2);
+            }
+            if was_full {
+                reopen(&mut source, &mut reroute, &flow, &free, j, r);
             }
         }
         demand[sink][next[sink]].1 -= amount;
@@ -521,7 +558,7 @@ pub fn clear_spatial(bids: &[Offer], asks: &[Offer], routes: &[Vec<Route>]) -> V
                     continue;
                 }
                 for (r2, &(b2, c2)) in rs.iter().enumerate() {
-                    if r2 != r && b2 != usize::MAX && pi[b2] - c2 + c > pi[b] + TOL {
+                    if r2 != r && b2 != usize::MAX && room(&flow, j, r2) > 0.0 && pi[b2] - c2 + c > pi[b] + TOL {
                         pi[b] = pi[b2] - c2 + c;
                         changed = true;
                     }
@@ -709,7 +746,7 @@ mod tests {
         }
     }
     fn route(buyer: u32, decay: f64) -> Route {
-        Route { buyer: PlayerId(buyer), decay }
+        Route { buyer: PlayerId(buyer), decay, cap: f64::INFINITY }
     }
 
     /// **The winner pays its strongest excluded rival's value, not its own**
@@ -773,7 +810,8 @@ mod tests {
             let mut rs = Vec::new();
             for b in 0..seats {
                 if b != owner && rng.unit() < 0.7 {
-                    rs.push(route(b, rng.unit() * 0.6));
+                    let cap = if rng.unit() < 0.5 { f64::INFINITY } else { rng.unit() * 3.0 };
+                    rs.push(Route { buyer: PlayerId(b), decay: rng.unit() * 0.6, cap });
                 }
             }
             routes.push(rs);
@@ -789,9 +827,10 @@ mod tests {
     /// **Every competitive-equilibrium condition holds on random books** —
     /// which, by LP duality, is what makes the allocation the optimum of the
     /// log-price transportation problem `clear_spatial` documents. Checked:
-    /// no ask oversold; each empire buys at least every bid above its price
-    /// and at most every bid at or above it; every flow is the seller's best
-    /// net price and at least its reservation; no unsold ore would sell.
+    /// no ask oversold and no leg over its capacity; each empire buys at least
+    /// every bid above its price and at most every bid at or above it; every
+    /// flow is at least its reservation and beats every leg of the same ask
+    /// that still has room; no unsold ore would sell on a leg with room.
     #[test]
     fn random_books_clear_at_a_competitive_equilibrium() {
         use crate::transcendental::exp;
@@ -805,6 +844,16 @@ mod tests {
             let mut price = vec![None::<f64>; seats as usize];
             let mut sold = vec![0.0; asks.len()];
             let mut bought = vec![0.0; seats as usize];
+            let mut on_leg: Vec<Vec<f64>> = routes.iter().map(|rs| vec![0.0; rs.len()]).collect();
+            for f in &flows {
+                on_leg[f.ask][f.route] += f.qty;
+            }
+            let full = |j: usize, r: usize| on_leg[j][r] >= routes[j][r].cap * (1.0 - 1e-9);
+            for (j, rs) in routes.iter().enumerate() {
+                for (r, rt) in rs.iter().enumerate() {
+                    assert!(on_leg[j][r] <= rt.cap * (1.0 + 1e-12), "seed {seed}: leg over capacity");
+                }
+            }
             for f in &flows {
                 let p = price[f.buyer.0 as usize].get_or_insert(f.price);
                 assert_eq!(*p, f.price, "one price per empire");
@@ -836,8 +885,8 @@ mod tests {
             for f in &flows {
                 let net = f.price * exp(-routes[f.ask][f.route].decay);
                 assert!(net >= asks[f.ask].price.max(floor) * (1.0 - tol), "seed {seed}: sold below reservation");
-                for r in &routes[f.ask] {
-                    if r.buyer != asks[f.ask].owner {
+                for (ri, r) in routes[f.ask].iter().enumerate() {
+                    if r.buyer != asks[f.ask].owner && !full(f.ask, ri) {
                         let rival = offer(r.buyer.0 as usize) * exp(-r.decay);
                         assert!(net >= rival * (1.0 - tol), "seed {seed}: a seller had a better buyer");
                     }
@@ -847,9 +896,9 @@ mod tests {
                 if a.qty - sold[j] <= 1e-9 * a.qty.max(1.0) {
                     continue;
                 }
-                for r in &routes[j] {
+                for (ri, r) in routes[j].iter().enumerate() {
                     let b = r.buyer.0 as usize;
-                    if r.buyer == a.owner {
+                    if r.buyer == a.owner || full(j, ri) {
                         continue;
                     }
                     if let Some(p) = price[b] {
@@ -861,6 +910,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// **A leg carries no more than the buyer can move on** (T-134). Ten
+    /// kilotonnes on offer, a leg to the high bidder that can take three: the
+    /// rest goes to the other buyer rather than over the cap.
+    #[test]
+    fn a_full_leg_sends_the_rest_elsewhere() {
+        let bids = [owned(1, 10.0, 10.0, 0.0, 1), owned(2, 8.0, 10.0, 0.0, 2)];
+        let asks = [owned(100, 0.0, 10.0, 0.0, 0)];
+        let routes = [vec![
+            Route { buyer: PlayerId(1), decay: 0.0, cap: 3.0 },
+            Route { buyer: PlayerId(2), decay: 0.0, cap: f64::INFINITY },
+        ]];
+        let flows = clear_spatial(&bids, &asks, &routes);
+        let to = |b: u32| flows.iter().filter(|f| f.buyer == PlayerId(b)).map(|f| f.qty).sum::<f64>();
+        assert!((to(1) - 3.0).abs() < 1e-9, "the capped leg carries its cap: {}", to(1));
+        assert!((to(2) - 7.0).abs() < 1e-9, "the rest goes to the other buyer: {}", to(2));
     }
 
     /// Identical books clear identically — the determinism contract.
