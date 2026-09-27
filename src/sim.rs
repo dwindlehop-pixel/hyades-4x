@@ -83,6 +83,20 @@ use crate::units::{self, Band, BandTier, Kilotons, Length, Measure, Price, Volum
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Entity(pub u64);
 
+/// **A hull away from its standing duty for one freight run** (T-134 stage 2),
+/// and the leg it is on. Its role reads `Freighter` for the run; the duty it
+/// returns to is its voyage target, which the run does not touch.
+#[derive(Clone, Copy, Debug)]
+enum SideRun {
+    /// A miner carrying its rock's ore to `dest`, then back to the rock.
+    Delivery { dest: Entity },
+    /// A colony ship flying empty to its empire's pile at `pile`, to load what
+    /// `center` is short of.
+    Pickup { pile: Entity, center: Entity },
+    /// A colony ship carrying that load home to `center`, where it embarks.
+    Homeward { center: Entity },
+}
+
 /// **What every empire holds, and where** (T-134, the author's ruling).
 ///
 /// One quantity: what a center's yard spends, what waits on a rock for a
@@ -2057,6 +2071,10 @@ struct Exchange {
     /// haulers based there (T-134). What an empire can take delivery of at a
     /// rock, and what it cannot move from one, are both read off it.
     haul: BTreeMap<(u32, u64), f64>,
+    /// Whether [`Self::haul`] has been measured yet — it is first measured at
+    /// the first round barrier, and an empty map before then means "not yet
+    /// measured", not "no haulers".
+    haul_measured: bool,
     /// **Contracts in flight** — matched, escrowed, not yet settled (T-85).
     ///
     /// §10.2: *"this is the state §3.3 needs and the engine has no analogue
@@ -2234,6 +2252,10 @@ enum EventKind {
     FreighterArrive { vehicle: Entity },
     /// A returning vehicle reaches home and parks (e.g. a jilted colony ship).
     ReturnArrive { vehicle: Entity },
+    /// **A hull on a side duty delivers** (T-134 stage 2): a miner that left
+    /// its rock for one freight run reaches the center it is carrying to,
+    /// unloads, and heads back to its crew.
+    DutyArrive { vehicle: Entity },
     /// A manned outpost extracts ore from its dwindling density.
     MiningTick { outpost: Entity },
     /// A production center's **economy** step: mine + grow. Cadence-driven, one
@@ -2291,6 +2313,13 @@ enum EventKind {
     ThreatSeen { target: Entity, shooter: Entity, gs: u32, gt: u32 },
     /// A picket reaches the world it is to hold and takes station (T-112).
     PicketArrive { vehicle: Entity },
+    /// A pitched battle's light reaches a posted picket (T-134 stage 2).
+    BattleSeen { picket: Entity },
+    /// A picket on a sortie reaches the battle.
+    SortieArrive { vehicle: Entity },
+    /// A picket at a battle checks, one firing period after arriving, whether
+    /// it found anything in reach.
+    SortieHold { vehicle: Entity },
     /// **The light of a colony-ship launch reaches a watching capital**
     /// (T-123). Scheduled at `depart + distance(port, capital)` and only for a
     /// seat whose Doctrine blockades, so a run nobody plays the card in
@@ -2330,8 +2359,10 @@ impl EventKind {
             | EventKind::MiningArrive { vehicle }
             | EventKind::FreighterArrive { vehicle }
             | EventKind::ReturnArrive { vehicle }
+            | EventKind::DutyArrive { vehicle }
             | EventKind::ScrapArrive { vehicle }
-            | EventKind::PicketArrive { vehicle } => Some(vehicle),
+            | EventKind::PicketArrive { vehicle }
+            | EventKind::SortieArrive { vehicle } => Some(vehicle),
             _ => None,
         }
     }
@@ -3237,6 +3268,24 @@ pub struct Simulation {
     /// an empire draw from a rival's pile is a *card*, not the default.
     /// Every empire's minerals, by planet — see [`Holdings`] (T-134).
     holdings: Holdings,
+    /// **Hulls away on a side duty, and the leg each is on** (T-134 stage 2),
+    /// keyed by entity id.
+    side_runs: BTreeMap<u64, SideRun>,
+    /// Freight runs miners have made, for the census.
+    side_run_count: u64,
+    /// Freight runs colony ships have made before embarking, for the census.
+    embark_run_count: u64,
+    /// **Pickets away from their posts at a pitched battle** (T-134 stage 2),
+    /// keyed by entity id. Counted in flight to their post on
+    /// [`Self::picket_inbound`] (and [`Self::blockade_bound`] for a port)
+    /// from the moment they leave, so the return is an ordinary
+    /// `PicketArrive`.
+    sorties: BTreeMap<u64, fire::Sortie>,
+    /// Posted pickets a battle's light is on its way to, and the battle — the
+    /// first one seen; the rest arrive while it is already answering.
+    battle_called: BTreeMap<u64, (Vec3, Entity)>,
+    /// Sorties pickets have flown, for the census.
+    sortie_count: u64,
     /// **The cross-empire Exchange** (T-84). Rebuilt and cleared at the round
     /// barrier (§10.5), never continuously — a continuous book makes price a
     /// function of event ordering, and two clients that tie-break a match
@@ -3426,6 +3475,12 @@ impl Simulation {
             responded: BTreeSet::new(),
             threatened: vec![BTreeSet::new(); n],
             holdings: Holdings { owned: ComponentStore::new(), elsewhere: BTreeMap::new() },
+            side_runs: BTreeMap::new(),
+            side_run_count: 0,
+            embark_run_count: 0,
+            sorties: BTreeMap::new(),
+            battle_called: BTreeMap::new(),
+            sortie_count: 0,
             exchange: Exchange::default(),
             exchange_posting: true,
             exchange_settlement: true,
@@ -3782,6 +3837,12 @@ impl Simulation {
         // this is the moment the standing layer is coherent — and a round is a
         // *set*, which is what gives the book a canonical order. Posting is
         // inert until T-85 wires clearing.
+        //
+        // What each empire's haulers move in a round is measured here whether
+        // or not the book posts: the Exchange's delivery room and the side
+        // duties both read it (T-134).
+        self.exchange.haul = self.haul_per_round();
+        self.exchange.haul_measured = true;
         if self.exchange_posting {
             self.post_exchange_offers();
             self.clear_exchange();
@@ -4019,6 +4080,7 @@ impl Simulation {
             EventKind::ScanReport { player, planet } => self.sys_scan_report(player, planet),
             EventKind::ColonyArrive { vehicle } => self.sys_colony_arrive(vehicle),
             EventKind::MiningArrive { vehicle } => self.sys_mining_arrive(vehicle),
+            EventKind::DutyArrive { vehicle } => self.sys_duty_arrive(vehicle),
             EventKind::FreighterArrive { vehicle } => self.sys_freighter_arrive(vehicle),
             EventKind::ReturnArrive { vehicle } => self.sys_return_arrive(vehicle),
             EventKind::MiningTick { outpost } => self.sys_mining_tick(outpost),
@@ -4027,6 +4089,9 @@ impl Simulation {
             EventKind::ContractDue { id } => self.sys_contract_due(id),
             EventKind::ScrapArrive { vehicle } => self.sys_scrap_arrive(vehicle),
             EventKind::PicketArrive { vehicle } => self.sys_picket_arrive(vehicle),
+            EventKind::BattleSeen { picket } => self.sys_battle_seen(picket),
+            EventKind::SortieArrive { vehicle } => self.sys_sortie_arrive(vehicle),
+            EventKind::SortieHold { vehicle } => self.sys_sortie_hold(vehicle),
             EventKind::EncounterBegin { shooter, target, gs, gt } => self.sys_encounter_begin(shooter, target, gs, gt),
             EventKind::EncounterSeek { shooter, target, gs, gt } => self.sys_encounter_seek(shooter, target, gs, gt),
             EventKind::Discharge { shooter } => self.sys_discharge(shooter),
@@ -5468,6 +5533,7 @@ impl Simulation {
             .map(|((pl, _), c)| (*pl, c.len()))
             .collect();
         let mut any = false;
+        let mut lifted: Vec<(u32, usize, f64)> = Vec::new();
         for (player, crew) in crews {
             let amt = {
                 let d = self.world.density.get(outpost).unwrap();
@@ -5491,6 +5557,7 @@ impl Simulation {
             any = true;
             let extracted = self.world.density.get_mut(outpost).unwrap().extract(Kilotons::new(amt));
             self.holding_mut(player, outpost).add_basics(&extracted);
+            lifted.push((player, crew, extracted.basic_total().kilotons()));
             let density_after = self.world.density.get(outpost).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
@@ -5504,6 +5571,9 @@ impl Simulation {
         }
         if any {
             self.schedule(self.config.mining_tick_years, EventKind::MiningTick { outpost });
+            for (player, crew, amount) in lifted {
+                self.consider_freight_run(player, outpost, crew, amount);
+            }
         } else {
             self.active_mines.remove(&outpost.0); // mined out
             self.log.push(self.clock, LogEvent::MiningExhausted { planet: pid });
@@ -5527,6 +5597,178 @@ impl Simulation {
                 }
             }
         }
+    }
+
+    /// **A miner weighs one freight run against staying on its rock** (T-134
+    /// stage 2) — the first duty of an empire's internal exchange of hull time.
+    ///
+    /// Two rates in kilotonnes per year, weighed by [`Standing::takes_freight_run`]:
+    /// what one miner of this crew adds to the empire's pile here, **zero when
+    /// that pile already exceeds what its haulers move in a round** (the ore
+    /// would go nowhere), and what one run delivers — the part of this pile the
+    /// best center wants, up to the miner's hold, over the laden round trip.
+    /// One miner leaves per tick and the last never does, so the rock keeps a
+    /// crew and its ticks. Nothing before the first barrier, when the haulers'
+    /// rate has not been measured yet.
+    fn consider_freight_run(&mut self, player: u32, rock: Entity, crew: usize, lifted: f64) {
+        if crew < 2 || !self.exchange.haul_measured {
+            return;
+        }
+        let Some(&miner) = self.mine_crew.get(&(player, rock.0)).and_then(|c| c.last()) else { return };
+        let Some(&hull) = self.world.hull_type.get(miner) else { return };
+        let hold = hull.cargo_capacity(&self.config).on_scale::<units::Cost>();
+        let pile = self.holding(player, rock).copied().unwrap_or_default();
+        if hold <= Price::ZERO || pile.basic_total() <= Price::ZERO {
+            return;
+        }
+        let here = *self.world.position.get(rock).unwrap();
+        let owner = PlayerId(player);
+        // A probe of what a full hold from this pile would carry, to choose the
+        // center by the same need-and-distance score every hauler uses.
+        let probe = {
+            let f = (hold / pile.basic_total()).min(1.0);
+            Minerals { cyan: pile.cyan * f, magenta: pile.magenta * f, yellow: pile.yellow * f, ..Default::default() }
+        };
+        let probe_accel = G * self.thrust_to_mass(hull, probe.basic_total().on_scale::<units::Mass>());
+        let Some(dest) = self.best_delivery_center(owner, here, &probe, probe_accel) else { return };
+        let want = self.wanted_here(dest, owner, &Minerals::default());
+        let mut load = pile;
+        let moved = take_for_deficit(&mut load, &want, hold.min(pile.basic_total()), Fill::Shortfall);
+        if moved.basic_total() <= Price::ZERO {
+            return;
+        }
+        let dest_at = *self.world.position.get(dest).unwrap();
+        let accel = G * self.thrust_to_mass(hull, moved.basic_total().on_scale::<units::Mass>());
+        let trip = math::ship_travel_years(here.distance(dest_at), accel)
+            + math::ship_travel_years(here.distance(dest_at), G * self.thrust_to_mass(hull, Kilotons::ZERO));
+        let movable = self.exchange.haul.get(&(player, rock.0)).copied().unwrap_or(0.0);
+        let mining_rate = if pile.basic_total().kilotons() > movable {
+            0.0
+        } else {
+            lifted / crew as f64 / self.config.mining_tick_years
+        };
+        let freight_rate = moved.basic_total().kilotons() / trip.max(1e-9);
+        let doctrine = self.doctrine_of(player as usize);
+        if !Standing::of(&doctrine).takes_freight_run(mining_rate, freight_rate) {
+            return;
+        }
+        // Leave: out of the crew, the load out of the pile and into the hold.
+        if let Some(c) = self.mine_crew.get_mut(&(player, rock.0)) {
+            c.pop();
+        }
+        self.load_side_cargo(miner, owner, rock, load, moved);
+        self.world.role.insert(miner, Role::Freighter);
+        self.side_runs.insert(miner.0, SideRun::Delivery { dest });
+        self.side_run_count += 1;
+        let arrive = self.set_leg(miner, here, dest_at, accel, 0.0);
+        self.schedule_at(arrive, EventKind::DutyArrive { vehicle: miner });
+    }
+
+    /// **A hull on a side run reaches the end of a leg** (T-134 stage 2).
+    fn sys_duty_arrive(&mut self, vehicle: Entity) {
+        let Some(run) = self.side_runs.remove(&vehicle.0) else { return };
+        let Some(owner) = self.world.owner.get(vehicle).copied() else { return };
+        match run {
+            SideRun::Delivery { dest } => {
+                self.deliver_side_cargo(vehicle, owner, dest);
+                // Back to the rock, which rejoins the crew on arrival.
+                let Some(rock) = self.world.voyage.get(vehicle).map(|v| v.target) else { return };
+                self.world.role.insert(vehicle, Role::Miner);
+                let from = *self.world.position.get(dest).unwrap();
+                let to = *self.world.position.get(rock).unwrap();
+                let accel = self.laden_accel(vehicle);
+                let arrive = self.set_leg(vehicle, from, to, accel, 0.0);
+                self.schedule_at(arrive, EventKind::MiningArrive { vehicle });
+            }
+            SideRun::Pickup { pile, center } => {
+                let hull = self.world.hull_type.get(vehicle).copied().unwrap_or(HullType::MediumSystems);
+                let hold = hull.cargo_capacity(&self.config).on_scale::<units::Cost>();
+                let want = self.wanted_here(center, owner, &Minerals::default());
+                let mut left = self.holding(owner.0, pile).copied().unwrap_or_default();
+                let room = hold.min(left.basic_total());
+                let moved = take_for_deficit(&mut left, &want, room, Fill::Shortfall);
+                if moved.basic_total() > Price::ZERO {
+                    self.load_side_cargo(vehicle, owner, pile, left, moved);
+                }
+                self.side_runs.insert(vehicle.0, SideRun::Homeward { center });
+                let from = *self.world.position.get(pile).unwrap();
+                let to = *self.world.position.get(center).unwrap();
+                let accel = self.laden_accel(vehicle);
+                let arrive = self.set_leg(vehicle, from, to, accel, 0.0);
+                self.schedule_at(arrive, EventKind::DutyArrive { vehicle });
+            }
+            SideRun::Homeward { center } => {
+                self.deliver_side_cargo(vehicle, owner, center);
+                if self.world.owner.get(center) == Some(&owner) {
+                    self.world.role.insert(vehicle, Role::Colonizer);
+                    self.embark(vehicle, center, 0.0);
+                } else {
+                    // Home was lost while the ship was away: nobody there to
+                    // send, so the hull stands down where it is.
+                    let pid = *self.world.planet_id.get(center).unwrap();
+                    let at = *self.world.position.get(center).unwrap();
+                    self.park(vehicle, at);
+                    self.release_to_reserve(vehicle, Role::Freighter, pid);
+                }
+            }
+        }
+    }
+
+    /// Load a side run's hold at `at`: the holding keeps `left`, the hull
+    /// carries `moved`.
+    fn load_side_cargo(&mut self, vehicle: Entity, owner: PlayerId, at: Entity, left: Minerals, moved: Minerals) {
+        *self.holding_mut(owner.0, at) = left;
+        self.world.cargo.insert(vehicle, moved);
+        let pid = *self.world.planet_id.get(at).unwrap();
+        self.log.push(
+            self.clock,
+            LogEvent::FreighterTransfer {
+                player: owner.0,
+                vehicle,
+                leg: FreighterLeg::Loaded,
+                amount: moved.basic_total().kilotons(),
+                at: pid,
+            },
+        );
+    }
+
+    /// Unload a side run's hold into its empire's holding at `at` — at a world
+    /// the empire has since lost, it lands there all the same, as the empire's
+    /// holding at a planet it does not own.
+    fn deliver_side_cargo(&mut self, vehicle: Entity, owner: PlayerId, at: Entity) {
+        let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
+        if cargo.basic_total() <= Price::ZERO {
+            return;
+        }
+        self.holding_mut(owner.0, at).add_basics(&cargo);
+        self.world.cargo.insert(vehicle, Minerals::default());
+        let pid = *self.world.planet_id.get(at).unwrap();
+        self.log.push(
+            self.clock,
+            LogEvent::FreighterTransfer {
+                player: owner.0,
+                vehicle,
+                leg: FreighterLeg::Deposited,
+                amount: cargo.basic_total().kilotons(),
+                at: pid,
+            },
+        );
+        self.wake_on_minerals(at);
+    }
+
+    /// Freight runs miners have made since the run began (T-134 stage 2).
+    pub fn side_runs_made(&self) -> u64 {
+        self.side_run_count
+    }
+
+    /// Freight runs colony ships have made before embarking (T-134 stage 2).
+    pub fn embark_runs_made(&self) -> u64 {
+        self.embark_run_count
+    }
+
+    /// Sorties pickets have flown to pitched battles (T-134 stage 2).
+    pub fn sorties_flown(&self) -> u64 {
+        self.sortie_count
     }
 
     fn sys_production_tick(&mut self, center: Entity) {
@@ -7323,10 +7565,6 @@ impl Simulation {
         launch_delay: f64,
     ) {
         let hull = built.hull;
-        // The launch point *is* the center — it was passed in alongside it until
-        // T-68 needed a seventh argument, and the two were always the same read.
-        let from = *self.world.position.get(center).unwrap();
-        let dest = *self.world.position.get(target).unwrap();
         let e = self.world.spawn();
         self.world.owner.insert(e, PlayerId(p as u32));
         self.world.role.insert(e, role);
@@ -7334,6 +7572,54 @@ impl Simulation {
         self.stamp_composition(e, hull, &built.mix);
         self.stamp_loadout(e, built);
         self.world.voyage.insert(e, Voyage { target, heading_bias: None, hops: 0 });
+        if role == Role::Colonizer {
+            if !self.start_embark_run(p, e, center, launch_delay) {
+                self.embark(e, center, launch_delay);
+            }
+            return;
+        }
+        // The launch point *is* the center — it was passed in alongside it until
+        // T-68 needed a seventh argument, and the two were always the same read.
+        let from = *self.world.position.get(center).unwrap();
+        let dest = *self.world.position.get(target).unwrap();
+        self.world.cargo.insert(e, Minerals::default());
+        self.world.pop_cargo.insert(e, Kilotons::ZERO);
+        let accel = self.laden_accel(e);
+        self.world.home_center.insert(e, center);
+        let target_pid = *self.world.planet_id.get(target).unwrap();
+        let spawned = LogEvent::VehicleSpawned {
+            player: p as u32,
+            vehicle: e,
+            role,
+            hull,
+            from,
+            to: target_pid,
+            settlers: 0.0,
+            endowment: 0.0,
+        };
+        let arrive = self.set_leg(e, from, dest, accel, launch_delay);
+        let ev = match role {
+            Role::Picket => EventKind::PicketArrive { vehicle: e },
+            _ => EventKind::MiningArrive { vehicle: e },
+        };
+        if role == Role::Picket {
+            *self.picket_inbound.entry(target.0).or_default() += 1;
+        }
+        self.schedule_at(arrive, ev);
+        self.log.push(self.clock, spawned);
+    }
+
+    /// **A colony ship loads at `center` and flies for its voyage target.**
+    ///
+    /// Its launch is logged here (`VehicleSpawned`), with the settlers and
+    /// endowment aboard — for a ship that ran freight first (T-134 stage 2),
+    /// after that run, since this is when it leaves for the colony.
+    fn embark(&mut self, e: Entity, center: Entity, launch_delay: f64) {
+        let p = self.world.owner.get(e).unwrap().0 as usize;
+        let hull = *self.world.hull_type.get(e).unwrap();
+        let target = self.world.voyage.get(e).unwrap().target;
+        let from = *self.world.position.get(center).unwrap();
+        let dest = *self.world.position.get(target).unwrap();
         // A Colonizer carries its founding population as cargo, consumed on
         // arrival (`Hyades_vehicle_roles.md` §4.2), and **how much is what the
         // hull's hold masses** (T-56 stage 4b) rather than a flat constant.
@@ -7343,18 +7629,13 @@ impl Simulation {
         // minerals from its stockpile, so a launch moves mass rather than
         // creating it. Load before the ship exists as far as the books are
         // concerned — the debit and the credit are the same statement.
-        let (settlers, endowment) = if role == Role::Colonizer {
-            let settlers = self.colony_seed_for(hull, center, target).unwrap_or(Kilotons::ZERO);
-            let minerals = self.endowment_minerals(center, hull, settlers);
-            if settlers > Kilotons::ZERO {
-                let pop = self.world.population.get_mut(center).unwrap();
-                *pop = (*pop - settlers).max(Kilotons::ZERO);
-            }
-            let loaded = self.held_at_mut(center).map(|bank| take_basics(bank, minerals)).unwrap_or_default();
-            (settlers, loaded)
-        } else {
-            (Kilotons::ZERO, Minerals::default())
-        };
+        let settlers = self.colony_seed_for(hull, center, target).unwrap_or(Kilotons::ZERO);
+        let minerals = self.endowment_minerals(center, hull, settlers);
+        if settlers > Kilotons::ZERO {
+            let pop = self.world.population.get_mut(center).unwrap();
+            *pop = (*pop - settlers).max(Kilotons::ZERO);
+        }
+        let endowment = self.held_at_mut(center).map(|bank| take_basics(bank, minerals)).unwrap_or_default();
         self.world.cargo.insert(e, endowment);
         self.world.pop_cargo.insert(e, settlers);
         // **Read the acceleration *after* the hold is loaded** (R-WAR9,
@@ -7384,7 +7665,7 @@ impl Simulation {
         let spawned = LogEvent::VehicleSpawned {
             player: p as u32,
             vehicle: e,
-            role,
+            role: Role::Colonizer,
             hull,
             from,
             to: target_pid,
@@ -7394,30 +7675,72 @@ impl Simulation {
         // Its launch is seen (T-123): the light leaves when the drive lights.
         // A blockader at the port meets it as it leaves — found by encounter
         // detection when its leg starts, like any other hull's (T-133).
-        if role == Role::Colonizer {
-            self.report_launch(p, center, launch_delay);
-        }
+        self.report_launch(p, center, launch_delay);
         let arrive = self.set_leg(e, from, dest, accel, launch_delay);
-        let ev = match role {
-            Role::Colonizer => EventKind::ColonyArrive { vehicle: e },
-            Role::Picket => EventKind::PicketArrive { vehicle: e },
-            _ => EventKind::MiningArrive { vehicle: e },
-        };
-        if role == Role::Picket {
-            *self.picket_inbound.entry(target.0).or_default() += 1;
-        }
-        if role == Role::Colonizer {
-            // The light leaves when the drive lights, not when the yard
-            // finishes the paperwork: `launch_delay` is part of `depart`
-            // (`set_leg`), and a picket that read `now` would be reacting to a
-            // hull that has not moved yet.
-            // **The ship, not its destination** (R-WAR10). A picket is handed
-            // the hull it can see and infers the rest; passing `target` here
-            // was the engine telling it where the ship was going.
-            self.offer_interception(p, center, e, self.clock + launch_delay);
-        }
-        self.schedule_at(arrive, ev);
+        // The light leaves when the drive lights, not when the yard
+        // finishes the paperwork: `launch_delay` is part of `depart`
+        // (`set_leg`), and a picket that read `now` would be reacting to a
+        // hull that has not moved yet.
+        // **The ship, not its destination** (R-WAR10). A picket is handed
+        // the hull it can see and infers the rest; passing `target` here
+        // was the engine telling it where the ship was going.
+        self.offer_interception(p, center, e, self.clock + launch_delay);
+        self.schedule_at(arrive, EventKind::ColonyArrive { vehicle: e });
         self.log.push(self.clock, spawned);
+    }
+
+    /// **A colony ship whose origin is still growing runs freight first**
+    /// (T-134 stage 2, the author's direction). When the origin — not the
+    /// hold, not the world — is what limits the settlers it would carry now
+    /// ([`Standing::runs_freight_before_embarking`]), the hull flies empty to
+    /// the nearest pile its empire holds of anything `center` is short of,
+    /// brings a load home, and embarks on arrival with what the origin sends
+    /// then. Nothing before the first barrier, and nothing when no pile holds
+    /// what the center wants. Returns whether the run started.
+    fn start_embark_run(&mut self, p: usize, e: Entity, center: Entity, launch_delay: f64) -> bool {
+        if !self.exchange.haul_measured {
+            return false;
+        }
+        let hull = *self.world.hull_type.get(e).unwrap();
+        let target = self.world.voyage.get(e).unwrap().target;
+        let Some(seed) = self.colony_seed_for(hull, center, target) else { return false };
+        let room = hull.colony_seed_capacity(&self.config).min(self.founding_capacity(target));
+        let origin_limits = seed < room * (1.0 - 1e-9);
+        if !Standing::of(&self.doctrine_of(p)).runs_freight_before_embarking(origin_limits) {
+            return false;
+        }
+        if hull.cargo_capacity(&self.config) <= Kilotons::ZERO {
+            return false;
+        }
+        let owner = PlayerId(p as u32);
+        let want = self.wanted_here(center, owner, &Minerals::default());
+        let home = *self.world.position.get(center).unwrap();
+        let wanted = |m: &Minerals| {
+            (m.cyan > 0.0 && want[0] > Price::ZERO)
+                || (m.magenta > 0.0 && want[1] > Price::ZERO)
+                || (m.yellow > 0.0 && want[2] > Price::ZERO)
+        };
+        let seat = p as u32;
+        let pile = self
+            .holdings
+            .elsewhere
+            .range((seat, 0)..=(seat, u64::MAX))
+            .filter(|(_, m)| wanted(m))
+            .filter_map(|(&(_, at), _)| self.world.position.get(Entity(at)).map(|x| (home.distance(*x), at)))
+            .min_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+        let Some((_, at)) = pile else { return false };
+        let pile = Entity(at);
+        self.world.role.insert(e, Role::Freighter);
+        self.world.cargo.insert(e, Minerals::default());
+        self.world.pop_cargo.insert(e, Kilotons::ZERO);
+        self.world.home_center.insert(e, center);
+        self.side_runs.insert(e.0, SideRun::Pickup { pile, center });
+        self.embark_run_count += 1;
+        let dest = *self.world.position.get(pile).unwrap();
+        let accel = self.laden_accel(e);
+        let arrive = self.set_leg(e, home, dest, accel, launch_delay);
+        self.schedule_at(arrive, EventKind::DutyArrive { vehicle: e });
+        true
     }
 
     fn spawn_freighter(
@@ -7904,7 +8227,6 @@ impl Simulation {
         for m in self.exchange.markets.iter_mut() {
             *m = Market::default();
         }
-        self.exchange.haul = self.haul_per_round();
         let players = self.player_entity.len();
         for p in 0..players {
             let pe = self.player_entity[p];
@@ -9897,6 +10219,11 @@ mod tests {
         Galaxy::generate(g).unwrap()
     }
 
+    /// Past the first barrier by enough for both side runs to fire on the
+    /// `test_galaxy(3, 11)` bed (T-134 stage 2). Probed: 250 passes, 220 has no
+    /// colony-ship run, so 400 leaves 150 years of room for 0.08 s.
+    const SIDE_RUN_HORIZON: f64 = 400.0;
+
     fn test_cfg(seed: u64) -> SimConfig {
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = 60.0;
@@ -10848,6 +11175,42 @@ mod tests {
                 after.total() - before.total()
             );
         }
+    }
+
+    /// **Mass is conserved through both side runs** (T-134 stage 2): a miner's
+    /// delivery and return, and a colony ship's pickup, delivery home and
+    /// embarkation. Neither runs before the first barrier, so this bed runs
+    /// past it, and it fails if either never fired.
+    #[test]
+    fn mass_is_conserved_through_side_runs() {
+        let mut cfg = test_cfg(11);
+        cfg.horizon_years = SIDE_RUN_HORIZON;
+        cfg.biosphere_regen_rate = 0.0;
+        let mut sim = Simulation::with_baseline(test_galaxy(3, 11), cfg);
+        let before = sim.mass_ledger();
+        sim.run();
+        assert!(sim.side_runs_made() > 0, "no miner ran freight");
+        assert!(sim.embark_runs_made() > 0, "no colony ship ran freight before embarking");
+        let after = sim.mass_ledger();
+        let drift = (after.total() - before.total()).abs() / before.total();
+        assert!(drift < 1e-9, "mass is not conserved: {:#?}", before.delta(&after));
+    }
+
+    /// **Pricing freight at zero turns both side runs off** (T-134 stage 2) —
+    /// the Doctrine write a card makes, read through the one resolver.
+    #[test]
+    fn a_zero_freight_price_turns_every_side_run_off() {
+        let mut cfg = test_cfg(11);
+        cfg.horizon_years = SIDE_RUN_HORIZON;
+        let d = Doctrine {
+            duty_price: crate::autopilot::DutyPrices { freight: 0.0, ..Default::default() },
+            ..Doctrine::default()
+        };
+        let autopilots: Vec<Box<dyn Autopilot>> =
+            (0..3).map(|_| Box::new(BaselineAutopilot::new(d)) as Box<dyn Autopilot>).collect();
+        let mut sim = Simulation::new(test_galaxy(3, 11), cfg, autopilots);
+        sim.run();
+        assert_eq!((sim.side_runs_made(), sim.embark_runs_made()), (0, 0));
     }
 
     /// **Mass is conserved when a colonizer keeps its hull** (T-118, T-119).
@@ -12445,6 +12808,7 @@ mod tests {
 
         let from = *sim.world.position.get(home).unwrap();
         sim.spawn_freighter(0, home, from, rock, HullType::MediumSystems, 0.0);
+        sim.exchange.haul = sim.haul_per_round(); // what the barrier measures before posting
         sim.post_exchange_offers();
         let moved = sim.exchange.haul[&(0, rock.0)];
         let spare = (120.0 - moved).max(0.0);

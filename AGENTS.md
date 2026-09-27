@@ -1126,6 +1126,24 @@ relation between `Card::cost` and a homeworld's seeded bank — two magnitudes
 nobody reconciled. **Record when a card actually landed, and assert the
 precondition in both directions**, rather than assuming the play took.
 
+### Census a trigger's predicate before building on it (T-134 stage 2)
+
+**The first rule for a picket joining a pitched battle fired zero times on the
+combat bed, and the reason was the predicate, not the reach.** "Pitched" was
+written as *both hulls standing when the encounter begins* — and an encounter
+begins when the arriving hull enters reach, still under way. A scratch print of
+the standing state at every encounter start read **0 of 41,770** with both
+standing. The rule compiled, its unit test could have been written to pass, and
+it could not fire on any bed.
+
+- **Before tuning the magnitude of a triggered rule, count how often its
+  predicate is true on the bed.** One scratch print per trigger site, kept out of
+  the landing. Here it separated "the reach is too short" from "the condition
+  is never met", which want different fixes.
+- **A state read at an event's start is the state at the moment the event is
+  raised**, and the engine raises most events on a transition. A predicate that
+  requires the transition to have finished is false by construction there.
+
 ### A default that is not the ratified default is a contradiction nobody filed
 
 **T-121 is the worked example, and the spec had been right the whole time.**
@@ -2389,6 +2407,7 @@ changes how you *work*, not what is left to do:
   | **T-129 (no Band reading on the run path)**, same bed, min of 7, interleaved against T-127: **30,523 → 29,087** and **26,270 → 24,011 `ns/event`**, instructions per event −2.4% — faster than before T-127 on both seeds | — | **−4.7% / −8.6% per event** | — |
   | T-130 (`exp`/`ln` as four-multiply polynomials), seed 7, 400 yr: instructions per event **−0.84%**; 15 paired rounds **0.986 ± 0.013** — not resolved; combat bed not resolved | — | — | — |
   | **T-134 (Exchange at a spatial equilibrium, delivery room, one holding per (empire, planet))**, 3 seats, 1,500 yr, 3 interleaved rounds against the shipped binary: **128.4–135.7 → 145.1–156.8 yr/s**, `ns/event` 12,645–13,116 → 10,874–11,993 | — | **+11% to +17%** | — |
+  | T-134 stage 2 (side duties: miner and colony-ship freight runs, picket sorties), 3 seats, 1,500 yr, 3 interleaved rounds: `ns/event` min-of-3 **+2.5% / −2.6%** on seeds 1 / 7, events +0.9% / +1.1%; combat bench seed 1, 2 rounds: **11.17–11.34 → 10.87–10.92 yr/s**, fewer events at higher `ns/event`, the new code ≤0.4% of instructions | — | not resolved / **about −3%** | — |
 
   **R-WAR9's row is a case where the workload changed and the columns must be
   read that way** (§2's T-111 caveat). Flying colony ships at the rate their

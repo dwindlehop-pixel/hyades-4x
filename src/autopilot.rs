@@ -161,6 +161,15 @@ pub enum ColonizerPolicy {
 /// (six-vehicle survey, 1 g, +20% productivity step).
 #[derive(Clone, Copy, Debug)]
 pub struct Doctrine {
+    /// **What an empire pays for each duty a hull can do** (T-134 stage 2) —
+    /// the prices of the empire's own internal exchange of hull time.
+    ///
+    /// A hull weighs the duty it is on against a side duty it can do at the
+    /// same moment, each as a rate in kilotonnes per year times its price, and
+    /// takes the side duty when that is worth more. All prices are `1.0` by
+    /// default, so the comparison is between rates: **placeholders, unmeasured**,
+    /// and the surface a card, a Design or a Doctrine write moves.
+    pub duty_price: DutyPrices,
     /// Which hull a center lays down for a colonizer (R-IND11, open).
     pub colonizer_policy: ColonizerPolicy,
 
@@ -592,9 +601,36 @@ pub struct Doctrine {
     pub rank: RankWeights,
 }
 
+/// **The price of each duty in an empire's internal exchange of hull time**
+/// (T-134 stage 2), and how far a picket answers a battle. The prices are
+/// dimensionless weights on rates in kilotonnes per year; every default is a
+/// placeholder for a card to write (`Hyades_matching.md` §9).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DutyPrices {
+    /// Ore a miner lifts onto a pile that its empire can still move.
+    pub mine: f64,
+    /// Ore a hull delivers to a center that is short of it.
+    pub freight: f64,
+    /// **How far a posted picket goes to a pitched battle**, in light-years
+    /// from its post — "nearby" (T-134 stage 2). A battle is pitched when both
+    /// hulls in the encounter are armed and one of them is standing at a post
+    /// (`Hyades_warfare_tree.md` §8.20). The picket leaves when the battle's light reaches it, so the reach is also
+    /// the most years of news it acts on. `0` keeps every picket on its post.
+    /// **Placeholder, 2.0 ly** — about a third of the median spacing between
+    /// neighboring worlds (6.16 ly, `examples/intercept_probe`).
+    pub battle_reach_ly: f64,
+}
+
+impl Default for DutyPrices {
+    fn default() -> Self {
+        DutyPrices { mine: 1.0, freight: 1.0, battle_reach_ly: 2.0 }
+    }
+}
+
 impl Default for Doctrine {
     fn default() -> Self {
         Doctrine {
+            duty_price: DutyPrices::default(),
             // Unmeasured as of T-67; `CheapestViable` is the *incumbent*
             // behavior, not a ratified answer. R-IND11 is the open question and
             // `examples/colonizer_policy` is the harness.
@@ -1753,6 +1789,35 @@ impl<'a> Standing<'a> {
     /// (`Hyades_warfare_tree.md` §8.10).
     pub fn recycles_on_founding(&self) -> bool {
         !self.doctrine.picket_after_founding
+    }
+
+    /// **Does a miner leave its rock for one freight run?** (T-134 stage 2.)
+    ///
+    /// Both sides are rates in kilotonnes per year — what the miner adds to a
+    /// pile its empire can move, and what one delivery run brings to a center
+    /// short of it — each weighed by [`Doctrine::duty_price`]. Mining at a rock
+    /// whose pile already exceeds what the empire's haulers move in a round
+    /// adds nothing, so its rate is zero there and any wanted delivery wins.
+    pub fn takes_freight_run(&self, mining_rate: f64, freight_rate: f64) -> bool {
+        let p = &self.doctrine.duty_price;
+        freight_rate * p.freight > mining_rate * p.mine
+    }
+
+    /// **Does a posted picket go to a pitched battle `distance_ly` away?**
+    /// (T-134 stage 2.) Yes within [`DutyPrices::battle_reach_ly`], for a
+    /// battle one of its own empire's hulls is fighting.
+    pub fn joins_battle(&self, distance_ly: f64) -> bool {
+        distance_ly > 0.0 && distance_ly <= self.doctrine.duty_price.battle_reach_ly
+    }
+
+    /// **Does a colony ship fly one freight run before it embarks?** (T-134
+    /// stage 2.) Yes when its origin, not its hold or its world, is what
+    /// limits the settlers it would carry now — the origin is still growing,
+    /// and the hull's time is worth a delivery while it grows — and freight
+    /// carries a positive price. The run is one pickup and one delivery home;
+    /// the ship then loads the settlers the grown origin sends.
+    pub fn runs_freight_before_embarking(&self, origin_limits_seed: bool) -> bool {
+        origin_limits_seed && self.doctrine.duty_price.freight > 0.0
     }
 
     /// **How this layer regards another empire** (T-133). There is no

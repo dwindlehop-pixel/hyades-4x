@@ -2614,6 +2614,35 @@ kill them before they can found a colony, they will seek a new destination."*
   fail to begin. **What would settle it:** a measurement of how often a
   retarget is decided on a sighting the lag would have kept.
 
+### 8.20 A posted picket goes to a pitched battle nearby (T-134 stage 2)
+
+**`RATIFIED` (the author's direction): pickets contribute to a pitched battle
+nearby.** Built as follows; the magnitude is open (R-WAR39).
+
+- **Pitched** means both hulls in an encounter are armed and one of them is
+  standing — the battle is at a place, and it is a fight rather than a strike
+  on a hull that cannot answer. "Both standing" is not the test: an encounter
+  begins when the arriving hull enters reach, still under way, and **0 of
+  41,770** encounters on the twelve-seat card bed began with both hulls standing
+  (seed 1, 450 yr).
+- **Who is called:** each side's posted pickets — picket stacks and blockade
+  stacks — within `DutyPrices::battle_reach_ly` of the standing hull
+  (`Standing::joins_battle`). A picket already fighting is not called.
+- **When:** the battle's light reaches the picket's post `distance` years after
+  the encounter begins (c = 1). On that event the picket leaves if it is still
+  standing on its post and not fighting.
+- **Books:** from the moment it leaves it is counted in flight to its post
+  (`picket_inbound`, and `blockade_bound` for a port), so the return is an
+  ordinary `PicketArrive` and a hull wrecked or withdrawn on the way comes off
+  the books through `leave_post`.
+- **Return:** at the battle it stands, and goes back to its post when nothing
+  is left in its reach — when its target set empties, or one discharge period
+  after arrival if nothing came into reach. No new constant.
+
+Measured on the twelve-seat card bed at 450 yr: **3 sorties on seed 1 and 0 on
+seed 7** at the 2 ly placeholder; at 8 ly (a scratch build), 105 on seed 1. The
+count rests on the reach. Appendix §D.21.
+
 ---
 
 ## 9. Register
@@ -2696,6 +2725,8 @@ kill them before they can found a colony, they will seek a new destination."*
 | **R-WAR37** | **target priority under fire anywhere** — nearest-first was harmless while fights happened only at sites; with fire wherever hulls are in reach, a blockader's shots go to what stands nearest it, and on the twelve-seat card bed **no colony ship was wrecked** on three seeds against 10,903–12,845 other hulls (appendix §D.16). The port strike's purpose (§8.16) is the colony ship | the author: a Doctrine priority by role (colony ships first for a blockader is the recommendation), then the card bed re-measured |
 | **R-WAR38** | **the armed survey Design's structure** — `Tor` keeps `σ = 10¹¹`, the value it carried when one class named the survey Design on both shells; §8.18's rule puts armed Designs at `10¹²` | the author: `σ` for `Tor` |
 | ~~**R-WAR36**~~ | **resolved (the author's ruling): fleets are generated with the galaxy**, with a position, a velocity and an equal mineral spend (Technology §4.4.5) — a bed places fleets without any code the game does not run. The question below is kept as it was asked: **the arena against the harness ruling** — design law #4 makes the Ship Testing Arena the required harness for per-class `r_eq`, and it spawns and fights hulls outside the simulation; the author's T-133 ruling is that a harness carries no special sim code. `arena.rs` is a scenario seeder that calls `combat::resolve_engagement`, not the simulation's fire path, so the two are not yet in conflict — but a pitched-battle bed for the Technology rating (`Hyades_technology_tree.md` §4) cannot use it and stay within the ruling | the author: whether the arena keeps its own resolver, or seeds scenarios into the simulation and steps its event loop |
+| **R-WAR39** | **how far "nearby" is for a pitched battle** — `DutyPrices::battle_reach_ly = 2.0` ly, a placeholder a third of the median spacing between neighboring worlds; it gives 3 and 0 sorties on two seeds of the card bed, and 8 ly gives 105 (§8.20) | the author: a reach, or a rule that prices the post left open against the battle joined |
+| **R-MX9** | **a Mahan main fleet's quick intercept** — only when it does not change belief about pitched-battle success or current Doctrine outcomes. No main-fleet role and no such belief exist yet (`Hyades_matching.md` §9.5) | a main-fleet role (R-WAR32), a per-empire estimate of pitched-battle success, then the rule as a `Standing` question |
 | **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
 | ~~**R-WAR26**~~ | **what ends a pitched battle — ruled and built (T-133)**: all three, each on the event that raises it; R-L2 is answered as repeated passes (§8.19.6) | — |
 | ~~**R-WAR22**~~ | ~~damage does not persist past an engagement~~ — **resolved (T-133):** damage persists for the hull's life (§8.19.5); repair is R-WAR31 | — |

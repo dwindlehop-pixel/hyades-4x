@@ -165,7 +165,8 @@ description of the change.
 
 ### T-134. The Exchange at a spatial equilibrium; one holding per (empire, planet)
 
-**Advanced — stages 1, A, B and C landed; stage 2 open.** The author approved
+**Advanced — stages 1, A, B, C and 2 landed; R-MX8, R-MX9, R-MX10 and R-WAR39
+open.** The author approved
 clearing the cross-empire book at a spatial price equilibrium (R-MX7) and ruled
 that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
 
@@ -178,9 +179,20 @@ that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
   move; +51.27% ± 1.71% in total, C's own share not resolved at 2 SE.
 - **Resolved:** R-P18 (politics §2.14). **Ratified:** R-MX7 and matching §8.
 - **Opened:** R-MX8 — may a hauler draw on a center's holding (matching §8.5).
-- **Open, stage 2:** within an empire, one idle pool and role prices, so idle
-  hulls bid across roles (a Delta mines in a pinch when the miner price covers
-  its lower productivity). Not started.
+- **Stage 2** — the internal duty exchange (matching §9), on the author's
+  direction: a miner on a large holding runs freight when a center wants it
+  (§9.1); a colony ship whose origin is still growing runs one load home before
+  it embarks (§9.2); a posted picket goes to a pitched battle nearby and returns
+  (warfare §8.20). `Doctrine::duty_price` carries the prices and the reach, all
+  placeholders. Card-free: work-years +0.80% ± 1.89, colony-years +0.03% ±
+  0.02, colonies identical — not resolved, appendix §D.21.
+- **Opened by stage 2:** R-MX9 (a Mahan main fleet's quick intercept — no
+  main-fleet role or belief about battle outcomes exists), R-MX10 (the card
+  interfaces this leaves), R-WAR39 (the battle reach).
+- **Still open from the first plan:** one idle pool across roles, so idle hulls
+  bid for any duty (a Delta mines in a pinch when the miner price covers its
+  lower productivity). Stage 2 built the price and the side-run interface it
+  would use; the pool is not started.
 
 ### T-133. No engagements and no fight sites — encounters along trajectories, decided by Doctrine
 

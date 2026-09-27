@@ -79,10 +79,11 @@ fn main() {
         println!(
             "seed {seed}: {:>7.2} yr/s  {:>9} events  {:>7.0} ns/event  {encounters} encounters  \
              {wrecked} wrecked ({colony_wrecks} colony ships)  {retargets} retargets  {withdrawals} withdrawals  \
-             {colonies} colonies",
+             {colonies} colonies  {} sorties",
             h / s,
             events,
-            s * 1e9 / events as f64
+            s * 1e9 / events as f64,
+            sim.sorties_flown()
         );
         println!("  wrecked by role: {by_role:?}");
         let _ = std::io::stdout().flush();

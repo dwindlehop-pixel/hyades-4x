@@ -308,6 +308,84 @@ cost fell against the pre-T-134 engine in 6/6 interleaved pairs — and the
 
 ---
 
+## 9. The internal duty exchange (T-134 stage 2)
+
+§8 prices ore between empires. This section prices **hull time inside one
+empire**: a hull standing on one duty weighs a side duty against it, in the same
+units, with Doctrine setting the exchange rate. The engine carries the first
+three side duties the author specified; the rest of the author's list is open
+below, and every magnitude here is a placeholder.
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `m` | a miner's mining rate: its crew's lift this tick over crew size and `mining_tick_years` | kt/yr | `sys_mining_tick` |
+| `f` | a run's freight rate: what the best center wants of the pile, up to the hold, over the laden-plus-empty round trip | kt/yr | `consider_freight_run` |
+| `p_mine`, `p_freight` | the prices of the two duties | — | `Doctrine::duty_price` (`DutyPrices`), both `1.0`, placeholders |
+| `r_battle` | how far a posted picket goes to a pitched battle | ly | `DutyPrices::battle_reach_ly = 2.0`, placeholder |
+
+**9.1 `RATIFIED` (the author's direction) — a miner on a large holding runs
+freight when there is demand.** After each mining tick, the last miner of a crew
+of two or more leaves for one run when `f · p_freight > m · p_mine`
+(`Standing::takes_freight_run`). `m` is **zero** when its empire's pile at the
+rock already exceeds `H` (§8's per-round haul), because ore lifted there goes
+nowhere this round. The run carries what the best center (the score every hauler
+uses) is short of, delivers it into that center's holding, and flies back to the
+rock, where the miner rejoins its crew. Nothing runs before the first barrier,
+when `H` is first measured; `H` is measured at every barrier whether or not the
+book posts.
+
+**9.2 `RATIFIED` (the author's direction) — a colony ship whose origin is still
+growing runs freight before it embarks.** When the origin's settler split
+(`settler_target`, R-IND12), not the hold or the world, limits the settlers a
+colony ship would carry now, the hull flies empty to the nearest pile its empire
+holds of anything its origin is short of, brings one load home, and then embarks
+with what the grown origin sends (`Standing::runs_freight_before_embarking`,
+off when `p_freight = 0`). Its launch — the `VehicleSpawned` record, the light a
+blockader sees, the offer to rival pickets — is the embarkation, not the build.
+About 22% of colony ships launch with fewer settlers than their hold carries
+(seeds 1 and 7, 1,000 yr).
+
+**9.3 `RATIFIED` (the author's direction) — a posted picket goes to a pitched
+battle nearby.** Specified in `Hyades_warfare_tree.md` §8.20: both hulls armed
+and one standing, the light of the battle reaching the picket's post within
+`r_battle`, a return to the post when nothing is left in its reach.
+
+**9.4 What the three duties measured.** Card-free, 8 seeds, 4,000 yr:
+work-years **+0.80% ± 1.89** (3/8 seeds up), colony-years **+0.03% ± 0.02**,
+colonies identical on every seed — not resolved at two standard errors, and
+ratified on the author's direction, not on the number. Over 1,000 yr on seeds
+1 and 7, miners make 2,723 and 1,460 runs and colony ships 1,511 and 1,341.
+Appendix §D.21.
+
+**9.5 `OPEN` — R-MX9: a Mahan main fleet's quick intercept.** The author's
+rule: a main fleet runs a quick intercept **only if** doing so does not change
+its empire's belief about how pitched battles go or what the current Doctrine
+achieves. The engine has no main-fleet role, no stored belief about battle
+outcomes and no record of Doctrine outcomes, so none of the three terms of the
+rule can be evaluated yet. **What would settle it:** a main-fleet role (roles §5's
+stored fleet, `Hyades_warfare_tree.md` R-WAR32), a per-empire estimate of
+pitched-battle success that a detachment would move, then the rule as a
+`Standing` question beside `joins_battle`.
+
+**9.6 `OPEN` — R-MX10: the room this leaves for cards.** The author: most of
+this Exchange cannot be implemented yet, and the design should leave room for
+new cards, Designs and Doctrine to widen what it means. The places a card can
+write today, each read through one `Standing` question:
+
+- **Duty prices** (`DutyPrices`) — a card that values freight over mining, or
+  sets `p_freight = 0` to keep every hull on its standing duty.
+- **The battle reach** — how far "nearby" is for this empire's pickets.
+- **A Design's hold** — every side run carries `cargo_capacity`, so a Design
+  write that enlarges a hold enlarges every side run it makes.
+- **A new duty** — a `SideRun` variant and a `Standing` question are the whole
+  interface; the event loop, the conservation ledger and the stand-down on
+  withdrawal already cover it.
+
+**What would settle it:** the cards themselves; until then these are the
+interfaces, not the designs.
+
+---
+
 ## References
 
 - Cities: Skylines `TransferManager` internals (offers, priority blocks,

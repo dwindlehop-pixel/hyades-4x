@@ -2507,6 +2507,62 @@ missing term. And *ablate the pieces of a 2×2 apart before crediting either*:
 the clearing rule looked like the cause of a −19% and the cure of a +44%, and it
 was neither.
 
+## D.21 T-134 stage 2 — the internal duty exchange, and self-trade
+
+*Supports `Hyades_matching.md` §9, `Hyades_warfare_tree.md` §8.20 and roles
+§4.5b. Card-free bed: `examples/work_years`, 3 seats, 4,000 yr, the 8 seeds of
+§D.20, paired log-ratios against the branch binary before stage 2 (`c5df349`),
+standard errors across seeds. Combat bed: `examples/combat_bench`, 12 seats,
+both cards at the barrier, 450 yr. Every scratch arm below was measured against
+the shipped binary and did not land.*
+
+**Self-trade — the question asked of stage 1's clearing.** An arm that let an
+empire's asks fill its own bids scored **−2.51% ± 1.59% work-years, 2/8 seeds
+up**, and colony-years **+0.00% ± 0.01%**. Not resolved at 2 SE; the sign leans
+harmful. An inference, held at about 60% confidence: a self-trade moves ore an
+empire could spend at a center out to its own pile at a shared rock, where it
+waits for a hauler. A per-lot census of self-filled lots by where they were
+spent would change that. The shipped clearing drops self-routes.
+
+**The miner freight run alone** (matching §9.1): work-years **+0.63% ± 3.32%,
+3/8 up**; colony-years −0.01% ± 0.02%; colonies identical on all 8 seeds. The
+run fires: 2,998 and 1,817 runs on seeds 1 and 7 over 1,500 yr, most of them
+after year 500.
+
+**With the colony ship's run before embarking** (§9.2): work-years **+0.80% ±
+1.89%, 3/8 up**; colony-years **+0.03% ± 0.02%, 7/8 up**; colonies identical on
+all 8 seeds. Over 1,000 yr on seeds 1 and 7, miners make 2,723 and 1,460 runs and
+colony ships 1,511 and 1,341. What triggers the colony run was measured before
+it was built: 22.2% and 22.8% of colony ships launch with fewer settlers than the
+hold carries (6,201 and 5,776 launches, seeds 1 and 7, 1,000 yr). Per-seed
+work-years swing from −3.8% to +11.5%, which reads as a reordering of a
+compounding run rather than a gradient; no default moved on this number.
+
+**The picket sortie** (warfare §8.20). The first predicate — both hulls
+standing when the encounter begins — was censused with a scratch print on the
+combat bed, seed 1: **0 of 41,770** encounter starts had both standing. By role
+pair, 3,240 were picket against picket, the rest a picket against a scout,
+miner, freighter, colony ship or withdrawing hull. For picket-against-picket
+starts, the shooter's side had another post within 1 ly in 1,228 and the
+target's side within 2 ly in 11. With the shipped predicate (both armed, one
+standing) and the 2 ly placeholder reach: **3 sorties on seed 1, 0 on seed 7**;
+a scratch build at 8 ly flew 105 on seed 1.
+
+**Throughput.**
+
+| bed | before stage 2 | stage 2 | reading |
+|---|---|---|---|
+| 3 seats, 1,500 yr, seeds 1 and 7, 3 interleaved rounds, ns/event | 11,815–12,124 and 11,881–12,170 | 12,116–13,857 and 11,575–12,403 | min-of-3 +2.5% and −2.6%: not resolved; events +0.9% and +1.1% |
+| combat bench, seed 1, 2 interleaved rounds | 11.17 / 11.34 yr/s, 3,205 / 3,157 ns/event, 12,574,563 events | 10.87 / 10.92 yr/s, 3,408 / 3,393 ns/event, 12,144,877 events | about −3% yr/s: fewer events, each dearer |
+
+Callgrind on the combat bed (seed 1, 300 yr) puts the new code's own
+instructions at `best_delivery_center` 0.30% (regular haulers included),
+`embark` 0.06% and `call_to_battle` 0.002%, against `fill_survey_candidates` at
+45.5%. An inference: the combat bed's per-event rise is the changed run — which
+hulls fly where, and so which survey scans run — and not the cost of the side
+duties. A per-function comparison against the old binary's profile would test
+it.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
