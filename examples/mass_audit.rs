@@ -13,10 +13,7 @@ use std::io::Write;
 fn main() {
     let seats = 3;
     let seed = 11;
-    println!(
-        "{:>8}  {:>14}  {:>10}  {:>10}  {:>10}  {:>10}",
-        "horizon", "drift kt", "hulls", "infra", "slag", "banked"
-    );
+    println!("{:>8}  {:>14}  {:>10}  {:>10}  {:>10}  {:>10}", "horizon", "drift kt", "hulls", "infra", "slag", "held");
     let _ = std::io::stdout().flush();
     for h in [20.0f64, 24.0, 26.0, 28.0, 30.0, 32.0, 34.0, 36.0, 38.0, 40.0] {
         let galaxy = Galaxy::generate({
@@ -41,7 +38,7 @@ fn main() {
             d.hulls,
             d.infrastructure,
             d.slag,
-            d.banked
+            d.held
         );
         let _ = std::io::stdout().flush();
     }

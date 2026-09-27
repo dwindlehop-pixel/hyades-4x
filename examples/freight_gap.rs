@@ -10,7 +10,7 @@
 //! So this puts the empire's color deficit beside its own supply, per color:
 //!
 //! - **deficit** — `Σ over owned centers` of the shortfall against the next rung.
-//! - **at outposts** — mined, sitting in `outpost_stock`, waiting on a hull.
+//! - **at outposts** — mined, sitting in the empire's holdings at the rock, waiting on a hull.
 //! - **in banks** — already delivered to some center, just not the one short of it.
 //!
 //! If supply covers deficit many times over, the ore exists and freight is the

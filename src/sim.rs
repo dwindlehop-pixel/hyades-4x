@@ -83,6 +83,25 @@ use crate::units::{self, Band, BandTier, Kilotons, Length, Measure, Price, Volum
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Entity(pub u64);
 
+/// **What every empire holds, and where** (T-134, the author's ruling).
+///
+/// One quantity: what a center's yard spends, what waits on a rock for a
+/// hauler, and what a hauler unloads on arrival are all an empire's minerals at
+/// a planet. There is one way to reach it — [`Simulation::holding`] and
+/// [`Simulation::holding_mut`], by `(empire, planet)` — and two indexes behind
+/// it, because the two cases are read at very different rates: an empire's
+/// holding at a planet it **owns** is read on every economy tick and build
+/// decision, so it is indexed by the planet; everywhere else is keyed
+/// `(empire, planet)`. Claiming a planet moves the claimant's holding there from
+/// the second index to the first ([`Simulation::claim_planet`]). The split is an
+/// index, not a distinction the simulation draws.
+struct Holdings {
+    /// At a planet the empire owns, indexed by the planet.
+    owned: ComponentStore<Minerals>,
+    /// At a planet the empire does not own, keyed `(empire, planet)`.
+    elsewhere: BTreeMap<(u32, u64), Minerals>,
+}
+
 /// Dense component storage keyed by entity index; iteration is index-ordered for
 /// determinism. `None` ⇒ the entity lacks this component.
 struct ComponentStore<T> {
@@ -1863,7 +1882,6 @@ struct World {
     position: ComponentStore<Vec3>,
     factors: ComponentStore<Factors>,
     density: ComponentStore<MineralField>,
-    stockpile: ComponentStore<Minerals>,
     population: ComponentStore<Kilotons>,
     /// **Wreckage standing at a site, in kilotons** (R-O59, T-03).
     ///
@@ -2133,7 +2151,6 @@ impl World {
             position: ComponentStore::new(),
             factors: ComponentStore::new(),
             density: ComponentStore::new(),
-            stockpile: ComponentStore::new(),
             population: ComponentStore::new(),
             slag: ComponentStore::new(),
             planet_id: ComponentStore::new(),
@@ -2464,7 +2481,7 @@ pub struct SimConfig {
     pub drive_volume_fraction: f64,
     /// **How many piles one outbound leg may draw from** (T-91).
     ///
-    /// A hold is filled from `outpost_stock[(player, rock)]` — one map entry —
+    /// A hold is filled from `stock[(player, rock)]` — one map entry —
     /// and a rock is one color (mean dominant share **0.789** over 6,725
     /// sources). So at `1` every delivery in the engine is mono-colored *by
     /// construction*, a bank is a sum of mono-colored lumps, and **99.7% of
@@ -3203,7 +3220,8 @@ pub struct Simulation {
     /// because a rock is one physical object and every crew on it depletes the
     /// same ore — contesting a field is a real mechanic, and a card that lets
     /// an empire draw from a rival's pile is a *card*, not the default.
-    outpost_stock: BTreeMap<(u32, u64), Minerals>,
+    /// Every empire's minerals, by planet — see [`Holdings`] (T-134).
+    holdings: Holdings,
     /// **The cross-empire Exchange** (T-84). Rebuilt and cleared at the round
     /// barrier (§10.5), never continuously — a continuous book makes price a
     /// function of event ordering, and two clients that tie-break a match
@@ -3327,7 +3345,6 @@ impl Simulation {
                 ),
             );
             world.density.insert(e, pl.minerals);
-            world.stockpile.insert(e, Minerals::default());
             world.population.insert(e, pl.population);
             world.planet_id.insert(e, pl.id);
             if pl.is_homeworld {
@@ -3393,7 +3410,7 @@ impl Simulation {
             fired_on_at_destination: BTreeSet::new(),
             responded: BTreeSet::new(),
             threatened: vec![BTreeSet::new(); n],
-            outpost_stock: BTreeMap::new(),
+            holdings: Holdings { owned: ComponentStore::new(), elsewhere: BTreeMap::new() },
             exchange: Exchange::default(),
             exchange_posting: true,
             exchange_settlement: true,
@@ -3403,6 +3420,12 @@ impl Simulation {
             inert_card_plays: 0,
             log: SimLog::with_filter(filter),
         };
+        for &e in &sim.planet_entity {
+            if let Some(o) = sim.world.owner.get(e) {
+                let _ = o;
+                sim.holdings.owned.insert(e, Minerals::default());
+            }
+        }
         sim.bootstrap();
         sim.seed_fleets(&seeding);
         sim
@@ -3678,7 +3701,7 @@ impl Simulation {
 
             // Seed the homeworld's stockpile so it can begin deepening infra.
             let seed = self.config.homeworld_start_minerals / 3.0;
-            let s = self.world.stockpile.get_mut(home).unwrap();
+            let s = self.held_at_mut(home).unwrap();
             s.cyan += seed;
             s.magenta += seed;
             s.yellow += seed;
@@ -3804,7 +3827,7 @@ impl Simulation {
         let mut total = Price::ZERO;
         for &e in &self.planet_entity {
             if self.world.owner.get(e).copied() == Some(me) {
-                if let Some(s) = self.world.stockpile.get(e) {
+                if let Some(s) = self.held_at(e) {
                     total += s.basic_total();
                     if total >= cost {
                         return true;
@@ -3823,7 +3846,7 @@ impl Simulation {
             .planet_entity
             .iter()
             .filter(|&&e| self.world.owner.get(e).copied() == Some(me))
-            .filter_map(|&e| self.world.stockpile.get(e).map(|s| (e, s.basic_total())))
+            .filter_map(|&e| self.held_at(e).map(|s| (e, s.basic_total())))
             .filter(|&(_, t)| t > Price::ZERO)
             .collect();
         // Richest first; entity id breaks ties so the order is total.
@@ -3834,7 +3857,7 @@ impl Simulation {
                 break;
             }
             let take = remaining.min(avail);
-            take_basics(self.world.stockpile.get_mut(e).unwrap(), take);
+            take_basics(self.held_at_mut(e).unwrap(), take);
             remaining -= take;
         }
     }
@@ -4133,7 +4156,7 @@ impl Simulation {
                     // away is a fact about what the hull was built from rather
                     // than an even split nobody chose.
                     let spill = self.composition_of(vehicle, overflow);
-                    if let Some(bank) = self.world.stockpile.get_mut(target) {
+                    if let Some(bank) = self.held_at_mut(target) {
                         bank.add_basics(&spill);
                         bank.red += spill.red;
                         bank.green += spill.green;
@@ -4212,7 +4235,7 @@ impl Simulation {
                 for &c in Basic::ALL.iter() {
                     to_bank.add_basic(c, (offered.get_basic(c) - consumed.get_basic(c)).max(0.0));
                 }
-                if let Some(bank) = self.world.stockpile.get_mut(target) {
+                if let Some(bank) = self.held_at_mut(target) {
                     bank.add_basics(&to_bank);
                 }
                 let f = self.world.factors.get_mut(target).unwrap();
@@ -4249,7 +4272,7 @@ impl Simulation {
                 let shortfall = (floor - standing).max(Price::ZERO);
                 let paid = if shortfall > Price::ZERO {
                     let home = self.world.home_center.get(vehicle).copied();
-                    match home.and_then(|h| self.world.stockpile.get_mut(h)) {
+                    match home.and_then(|h| self.held_at_mut(h)) {
                         Some(bank) => {
                             let take = shortfall.kilotons().min(bank.basic_total().kilotons());
                             let p = Price::new(take);
@@ -5088,10 +5111,15 @@ impl Simulation {
             // **Its owner's pile, not the rock's.** Outposts are never claimed,
             // so a per-planet heap let either empire haul away what the other's
             // miners dug.
-            let stock = self.outpost_stock.entry((p, sh.outpost.0)).or_default();
+            // **Where there is no yard** (T-134): once this empire owns the
+            // rock, what stands there is that colony's holdings, which its own
+            // yard spends — whether a hauler may carry a center's holdings
+            // elsewhere is R-MX8, and until it is decided it may not.
+            let yard_here = self.world.owner.get(sh.outpost).is_some_and(|o| o.0 == p);
+            let stock = self.holding_mut(p, sh.outpost);
             // A hold is a mass and a stockpile is a price; the same kilotons,
             // two ladders (R-O57). `on_scale` is the crossing, said out loud.
-            let avail = stock.basic_total();
+            let avail = if yard_here { Price::ZERO } else { stock.basic_total() };
             // **Room, not capacity** (T-91). On a milk run the hold already
             // carries what the earlier stops on this leg put in it, so the
             // budget for this pile is what is left. At `max_pickup_stops = 1`
@@ -5123,8 +5151,7 @@ impl Simulation {
                 // twice and still land short in the third.
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
                 let fill = if last_stop { Fill::Hold } else { Fill::Shortfall };
-                let moved =
-                    take_for_deficit(self.outpost_stock.get_mut(&(p, sh.outpost.0)).unwrap(), &want, load, fill);
+                let moved = take_for_deficit(self.holding_mut(p, sh.outpost), &want, load, fill);
                 self.world.cargo.get_mut(vehicle).unwrap().add_basics(&moved);
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
                 self.log.push(
@@ -5233,7 +5260,7 @@ impl Simulation {
         } else {
             // At the destination: deposit cargo into its stockpile.
             let cargo = *self.world.cargo.get(vehicle).unwrap();
-            self.world.stockpile.get_mut(sh.destination).unwrap().add_basics(&cargo);
+            self.held_at_mut(sh.destination).unwrap().add_basics(&cargo);
             {
                 let c = self.world.cargo.get_mut(vehicle).unwrap();
                 c.cyan = 0.0;
@@ -5316,8 +5343,8 @@ impl Simulation {
                 self.world.pop_cargo.insert(vehicle, Kilotons::ZERO);
             }
             let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-            if cargo.basic_total() > Price::ZERO && self.world.stockpile.contains(home) {
-                self.world.stockpile.get_mut(home).unwrap().add_basics(&cargo);
+            if cargo.basic_total() > Price::ZERO && self.owns_planet(home) {
+                self.held_at_mut(home).unwrap().add_basics(&cargo);
                 self.world.cargo.insert(vehicle, Minerals::default());
             }
         }
@@ -5373,7 +5400,7 @@ impl Simulation {
             // A hull built from supers returns supers; the even split it used
             // to credit was a guess in the one dimension that binds (§6.19c).
             let salvage = self.composition_of(vehicle, recovered.on_scale::<units::Cost>());
-            let stock = self.world.stockpile.get_mut(dest_e).unwrap();
+            let stock = self.held_at_mut(dest_e).unwrap();
             stock.add_basics(&salvage);
             stock.red += salvage.red;
             stock.green += salvage.green;
@@ -5448,7 +5475,7 @@ impl Simulation {
             }
             any = true;
             let extracted = self.world.density.get_mut(outpost).unwrap().extract(Kilotons::new(amt));
-            self.outpost_stock.entry((player, outpost.0)).or_default().add_basics(&extracted);
+            self.holding_mut(player, outpost).add_basics(&extracted);
             let density_after = self.world.density.get(outpost).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
@@ -5525,7 +5552,7 @@ impl Simulation {
         };
         if amt > 0.0 {
             let extracted = self.world.density.get_mut(center).unwrap().extract(Kilotons::new(amt));
-            self.world.stockpile.get_mut(center).unwrap().add_basics(&extracted);
+            self.held_at_mut(center).unwrap().add_basics(&extracted);
             let density_after = self.world.density.get(center).unwrap().total_mass().kilotons();
             self.log.push(
                 self.clock,
@@ -5770,13 +5797,13 @@ impl Simulation {
         };
         let level = self.bands.level(*self.world.population.get(center).unwrap());
         let center_pos = *self.world.position.get(center).unwrap();
-        let stock_total = self.world.stockpile.get(center).unwrap().basic_total();
+        let stock_total = self.held_at(center).unwrap().basic_total();
         // Minerals to buy the next whole level, from the stock standing there —
         // and since T-73 the bill is payable *in colors*, so the split and the
         // bank both go into the context.
         let target_level = infra_step_price(infra, &self.config);
         let works = self.world.works.get(pe).copied().unwrap_or_default();
-        let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
+        let bank = self.held_at(center).copied().unwrap_or_default();
         let infra_bill = works_bill(target_level, &works);
         let stockpile_by_color = [
             Price::new(bank.get_basic(Basic::Cyan)),
@@ -6291,7 +6318,7 @@ impl Simulation {
                 // **Pay the color bill, not the total** (T-73). Same
                 // `works_bill` the decision was made against.
                 let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
-                let bank_now = self.world.stockpile.get(center).copied().unwrap_or_default();
+                let bank_now = self.held_at(center).copied().unwrap_or_default();
                 let bill = works_bill(target, &works);
                 let payable = can_pay_bill(&bank_now, &bill);
                 // What was actually committed is the bill, not the ladder step:
@@ -6300,14 +6327,14 @@ impl Simulation {
                 // built (T-68), which has to be the same number.
                 let billed: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
                 if payable {
-                    pay_bill(self.world.stockpile.get_mut(center).unwrap(), &bill);
+                    pay_bill(self.held_at_mut(center).unwrap(), &bill);
                     let f = self.world.factors.get_mut(center).unwrap();
                     // **A rung is bought, not incremented.** The stock moves to
                     // exactly what standing at the next rung costs, so the
                     // ladder stays the single source of the number (T-70).
                     let next = infra_rung_of(f.infra, &self.config) + 1;
                     f.infra = infra_rung_price(next, &self.config);
-                    let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
+                    let stockpile_after = self.held_at(center).unwrap().basic_total();
                     self.log.push(
                         self.clock,
                         LogEvent::BuildApplied {
@@ -6467,8 +6494,8 @@ impl Simulation {
                 // colors, so a flat refund would change the mix — and the mix
                 // is the mineral economy's binding constraint (§6.19c).
                 // Nothing else touches this bank between here and the dispatch.
-                let bank_before = *self.world.stockpile.get(center).unwrap();
-                let Some(build_mix) = self.world.stockpile.get_mut(center).unwrap().try_take_total(cost) else {
+                let bank_before = *self.held_at(center).unwrap();
+                let Some(build_mix) = self.held_at_mut(center).unwrap().try_take_total(cost) else {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
                     for e in reused_miners {
@@ -6513,7 +6540,7 @@ impl Simulation {
                             launch_delay,
                             BuiltHull { hull: hull_type, class, mix: build_mix },
                         ) {
-                            *self.world.stockpile.get_mut(center).unwrap() = bank_before;
+                            *self.held_at_mut(center).unwrap() = bank_before;
                         }
                     }
                     (r, Some(t)) => {
@@ -6546,7 +6573,7 @@ impl Simulation {
                     }
                     (_, None) => {}
                 }
-                let stockpile_after = self.world.stockpile.get(center).unwrap().basic_total();
+                let stockpile_after = self.held_at(center).unwrap().basic_total();
                 self.log.push(
                     self.clock,
                     LogEvent::BuildApplied {
@@ -6734,7 +6761,7 @@ impl Simulation {
         // banks are thin and the cheap hull wins because it is the only one
         // there; late, the forecast decides on merit. The cheapest hull is never
         // filtered out, so the choice is total.
-        let bank = self.world.stockpile.get(center).map(|b| b.basic_total()).unwrap_or(Price::ZERO);
+        let bank = self.held_at(center).map(|b| b.basic_total()).unwrap_or(Price::ZERO);
         let budget = (bank - role_cost(Role::Miner, &self.config) * crew as f64).max(Price::ZERO);
 
         let mut best: Option<(HullType, f64, f64)> = None;
@@ -7233,7 +7260,7 @@ impl Simulation {
         if spare <= Kilotons::ZERO {
             return Price::ZERO;
         }
-        let bank = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
+        let bank = self.held_at(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
         let demand = self.build_out_price(center, hull);
         // A hold is a mass and a bank is a price; the same kilotons read on two
         // ladders (`units::Qty::on_scale`), crossed explicitly rather than by
@@ -7308,8 +7335,7 @@ impl Simulation {
                 let pop = self.world.population.get_mut(center).unwrap();
                 *pop = (*pop - settlers).max(Kilotons::ZERO);
             }
-            let loaded =
-                self.world.stockpile.get_mut(center).map(|bank| take_basics(bank, minerals)).unwrap_or_default();
+            let loaded = self.held_at_mut(center).map(|bank| take_basics(bank, minerals)).unwrap_or_default();
             (settlers, loaded)
         } else {
             (Kilotons::ZERO, Minerals::default())
@@ -7765,6 +7791,43 @@ impl Simulation {
         }
     }
 
+    /// Whether `e` is a planet some empire owns — a place with a yard.
+    fn owns_planet(&self, e: Entity) -> bool {
+        self.world.planet_id.contains(e) && self.world.owner.contains(e)
+    }
+
+    /// **What the owner of planet `e` holds there** (T-134) — the minerals its
+    /// yard spends. The same quantity as ore waiting on a rock or unloaded from
+    /// a hold: one entry in [`Self::stock`], read at a planet the empire owns.
+    /// `None` for a planet nobody owns.
+    fn held_at(&self, e: Entity) -> Option<&Minerals> {
+        self.holdings.owned.get(e)
+    }
+
+    /// Mutable [`Self::held_at`].
+    fn held_at_mut(&mut self, e: Entity) -> Option<&mut Minerals> {
+        self.holdings.owned.get_mut(e)
+    }
+
+    /// **Empire `p`'s minerals at planet `at`** (T-134), `None` if it holds
+    /// nothing there — the one read of [`Holdings`].
+    fn holding(&self, p: u32, at: Entity) -> Option<&Minerals> {
+        if self.world.owner.get(at).is_some_and(|o| o.0 == p) {
+            self.holdings.owned.get(at)
+        } else {
+            self.holdings.elsewhere.get(&(p, at.0))
+        }
+    }
+
+    /// Mutable [`Self::holding`], creating an empty holding if there was none.
+    fn holding_mut(&mut self, p: u32, at: Entity) -> &mut Minerals {
+        if self.world.owner.get(at).is_some_and(|o| o.0 == p) && self.world.planet_id.contains(at) {
+            self.holdings.owned.entry_or_insert_with(at, Minerals::default)
+        } else {
+            self.holdings.elsewhere.entry((p, at.0)).or_default()
+        }
+    }
+
     /// **The only sanctioned way to give a planet an owner.**
     ///
     /// Ownership is what moves [`Self::holdings_centroid`], so the cache is
@@ -7774,6 +7837,14 @@ impl Simulation {
     /// `holdings_centroid`'s caller-facing test build catches exactly that.
     fn claim_planet(&mut self, planet: Entity, owner: PlayerId) {
         self.world.owner.insert(planet, owner);
+        // What the claimant already held here is now its holding at a planet it
+        // owns: the same minerals, moved to the owned index (see `Holdings`).
+        let there = self.holdings.elsewhere.remove(&(owner.0, planet.0)).unwrap_or_default();
+        let h = self.holdings.owned.entry_or_insert_with(planet, Minerals::default);
+        h.add_basics(&there);
+        h.red += there.red;
+        h.green += there.green;
+        h.blue += there.blue;
         self.centroid_cache[owner.0 as usize] = None;
     }
 
@@ -7830,7 +7901,7 @@ impl Simulation {
                     continue;
                 }
                 let deficit = self.color_deficit(e, owner);
-                let bank = self.world.stockpile.get(e).copied().unwrap_or_default();
+                let bank = self.held_at(e).copied().unwrap_or_default();
                 let pos = *self.world.position.get(e).unwrap();
                 let at = [pos.x, pos.y, pos.z];
                 for (i, &c) in Basic::ALL.iter().enumerate() {
@@ -8088,23 +8159,24 @@ impl Simulation {
         // Does the seller still have it? `get_basic` is the color the contract
         // names, not the bank total — a center rich in Cyan cannot settle a
         // Yellow contract, which is the whole point of the color axis.
-        let held = self.world.stockpile.get(c.seller_center).map_or(0.0, |b| b.get_basic(c.color));
-        let delivered = held + 1e-9 >= c.qty && self.world.owner.get(c.seller_center).copied() == Some(c.seller);
+        // The seller's holding at the place it sells from (T-134): a world it
+        // has since lost is no longer its holding, so that defaults too.
+        let held = self.holding(c.seller.0, c.seller_center).map_or(0.0, |b| b.get_basic(c.color));
+        let delivered = held + 1e-9 >= c.qty;
 
         if delivered {
-            if let Some(bank) = self.world.stockpile.get_mut(c.seller_center) {
-                match c.color {
-                    Basic::Cyan => bank.cyan -= c.qty,
-                    Basic::Magenta => bank.magenta -= c.qty,
-                    Basic::Yellow => bank.yellow -= c.qty,
-                }
+            let bank = self.holding_mut(c.seller.0, c.seller_center);
+            match c.color {
+                Basic::Cyan => bank.cyan -= c.qty,
+                Basic::Magenta => bank.magenta -= c.qty,
+                Basic::Yellow => bank.yellow -= c.qty,
             }
-            // **Into the buyer's own pile at that rock** — `outpost_stock` is
-            // already keyed `(player, outpost)` and is already what a laden
+            // **Into the buyer's own holding at that rock** — which is already
+            // keyed `(player, planet)` and is already what a laden
             // freighter loads from, so the collection leg needs no new code at
             // all. The buyer's hauler picks the ore up on the route it was
             // flying anyway, which is the amendment's whole claim made literal.
-            let pile = self.outpost_stock.entry((c.buyer.0, c.seller_drop.0)).or_default();
+            let pile = self.holding_mut(c.buyer.0, c.seller_drop);
             match c.color {
                 Basic::Cyan => pile.cyan += c.qty,
                 Basic::Magenta => pile.magenta += c.qty,
@@ -8183,9 +8255,24 @@ impl Simulation {
     /// first color-flow reading look like trade changed nothing.
     pub fn outpost_holdings(&self, p: PlayerId) -> Minerals {
         let mut out = Minerals::default();
-        for ((owner, _), m) in self.outpost_stock.iter() {
-            if *owner == p.0 {
-                out.add_basics(m);
+        for (_, m) in self.holdings.elsewhere.range((p.0, 0)..=(p.0, u64::MAX)) {
+            out.add_basics(m);
+        }
+        out
+    }
+
+    /// **Everything an empire holds, wherever it is** (T-134): its yards'
+    /// holdings and the ore waiting on rocks, one quantity.
+    pub fn holdings(&self, p: PlayerId) -> Minerals {
+        let mut out = Minerals::default();
+        for (_, m) in self.holdings.elsewhere.range((p.0, 0)..=(p.0, u64::MAX)) {
+            out.add_basics(m);
+        }
+        for &e in &self.planet_entity {
+            if self.world.owner.get(e).copied() == Some(p) {
+                if let Some(m) = self.holdings.owned.get(e) {
+                    out.add_basics(m);
+                }
             }
         }
         out
@@ -8271,7 +8358,7 @@ impl Simulation {
     /// compare need across the whole empire.
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
         let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
-        let stock = self.world.stockpile.get(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
+        let stock = self.held_at(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
         // The price of this center's *next* rung — the same function the build
         // path charges, rather than a second copy of `round(infra) + 1`.
         let target_level = infra_step_price(infra, &self.config);
@@ -8406,7 +8493,7 @@ impl Simulation {
         };
         let step = infra_step_price(f.infra, &self.config);
         let works = self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default();
-        let bank = self.world.stockpile.get(center).copied().unwrap_or_default();
+        let bank = self.held_at(center).copied().unwrap_or_default();
         let bill = works_bill(step, &works);
         let mut out = [Price::ZERO; 3];
         for (i, &c) in Basic::ALL.iter().enumerate() {
@@ -8457,7 +8544,7 @@ impl Simulation {
     /// **Cost.** `O(piles this player works)`, which §4 would otherwise forbid
     /// on a path this hot. It is gated behind `max_pickup_stops > 1` and so is
     /// not reached at the shipped default at all; that is a knob to measure
-    /// with, not yet a knob that is on. Deterministic: `outpost_stock` is a
+    /// with, not yet a knob that is on. Deterministic: `stock` is a
     /// `BTreeMap` and entity id breaks ties.
     fn next_pickup(
         &self,
@@ -8470,12 +8557,12 @@ impl Simulation {
     ) -> Option<Entity> {
         let lambda = self.config.trade_decay_lambda;
         let mut best: Option<(Entity, f64)> = None;
-        for (&(pl, rock), pile) in self.outpost_stock.iter() {
-            if pl != owner.0 {
-                continue;
-            }
+        for (&(pl, rock), pile) in self.holdings.elsewhere.range((owner.0, 0)..=(owner.0, u64::MAX)) {
+            let _ = pl;
             let e = Entity(rock);
-            if e == current {
+            // A milk run picks up where there is no yard: whether a hauler may
+            // draw on another center's holdings is a policy question (R-MX8).
+            if e == current || self.world.owner.get(e).copied() == Some(owner) {
                 continue;
             }
             let mut useful = Price::ZERO;
@@ -8631,9 +8718,6 @@ impl Simulation {
             if let Some(d) = self.world.density.get(e) {
                 m.in_ground += d.total_mass().kilotons();
             }
-            if let Some(s) = self.world.stockpile.get(e) {
-                m.banked += s.basic_total().on_scale::<units::Mass>().kilotons();
-            }
             if let Some(f) = self.world.factors.get(e) {
                 m.infrastructure += f.infra.on_scale::<units::Mass>().kilotons();
                 m.biomass += f.biomass.kilotons();
@@ -8645,8 +8729,8 @@ impl Simulation {
                 m.slag += s.kilotons();
             }
         }
-        for stock in self.outpost_stock.values() {
-            m.at_outposts += stock.basic_total().on_scale::<units::Mass>().kilotons();
+        for stock in self.holdings.owned.items.iter().flatten().chain(self.holdings.elsewhere.values()) {
+            m.held += stock.basic_total().on_scale::<units::Mass>().kilotons();
         }
         // Vehicles. `role` is the liveness test: `Role::Scrapped` is how the
         // engine retires a hull, and a scrapped hull's mass has already gone
@@ -8694,7 +8778,7 @@ impl Simulation {
                     population: pop,
                     pop_level: self.bands.level(pop),
                     density: *self.world.density.get(e).unwrap(),
-                    stockpile: *self.world.stockpile.get(e).unwrap(),
+                    stockpile: self.held_at(e).copied().unwrap_or_default(),
                     owner: self.world.owner.get(e).map(|o| o.0),
                     is_homeworld: self.world.homeworld.contains(e),
                 }
@@ -8729,7 +8813,7 @@ impl Simulation {
                     if self.world.owner.get(e).copied() == Some(me) {
                         snap.planets_owned += 1;
                         snap.total_population += *self.world.population.get(e).unwrap();
-                        snap.stockpiled_total += self.world.stockpile.get(e).unwrap().basic_total().kilotons();
+                        snap.stockpiled_total += self.held_at(e).unwrap().basic_total().kilotons();
                     }
                 }
                 snap.ships = vehicles.iter().filter(|v| v.owner == p as u32).count() as u32;
@@ -9070,10 +9154,9 @@ fn flatten_candidate_slots(best: &[Option<Candidate>; 6]) -> Vec<Candidate> {
 pub struct MassLedger {
     /// Undug minerals, still in the ground.
     pub in_ground: f64,
-    /// Minerals banked at a center.
-    pub banked: f64,
-    /// Minerals mined and standing at an outpost, not yet hauled.
-    pub at_outposts: f64,
+    /// Minerals an empire holds at a planet — at a yard or waiting on a rock,
+    /// one quantity (T-134).
+    pub held: f64,
     /// Minerals in a hold, in flight or parked.
     pub in_cargo: f64,
     /// Minerals standing as infrastructure — infrastructure **is** the minerals
@@ -9100,8 +9183,7 @@ impl MassLedger {
     /// except through a channel that accounts for it.
     pub fn total(&self) -> f64 {
         self.in_ground
-            + self.banked
-            + self.at_outposts
+            + self.held
             + self.in_cargo
             + self.infrastructure
             + self.hulls
@@ -9117,8 +9199,7 @@ impl MassLedger {
     pub fn delta(&self, other: &MassLedger) -> MassLedger {
         MassLedger {
             in_ground: other.in_ground - self.in_ground,
-            banked: other.banked - self.banked,
-            at_outposts: other.at_outposts - self.at_outposts,
+            held: other.held - self.held,
             in_cargo: other.in_cargo - self.in_cargo,
             infrastructure: other.infrastructure - self.infrastructure,
             hulls: other.hulls - self.hulls,
@@ -9164,14 +9245,14 @@ mod tests {
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let home_pos = *sim.world.position.get(home).unwrap();
         // Fund it well past a scout's price so the decline cannot be poverty.
-        sim.world.stockpile.get_mut(home).unwrap().add_basic(Basic::Cyan, 1_000.0);
+        sim.held_at_mut(home).unwrap().add_basic(Basic::Cyan, 1_000.0);
 
         // The hull the *default* standing layer surveys with, read rather than
         // named: naming one would make this test fail whenever a Doctrine write
         // moves the role, which is a different fact than the one it asserts.
         let doctrine = *sim.world.doctrine.get(sim.player_entity[0]).unwrap();
         let order = Standing::of(&doctrine).scout_order();
-        let bank = |sim: &Simulation| sim.world.stockpile.get(home).unwrap().basic_total();
+        let bank = |sim: &Simulation| sim.held_at(home).unwrap().basic_total();
         let vehicles = |sim: &Simulation| sim.world.role.items.iter().filter(|r| **r == Some(Role::Scout)).count();
 
         // With frontier left it builds and the mass becomes a hull.
@@ -10054,9 +10135,9 @@ mod tests {
             .planet_entity
             .iter()
             .copied()
-            .find(|&e| sim.world.owner.get(e).copied() == Some(PlayerId(0)) && sim.world.stockpile.contains(e));
+            .find(|&e| sim.world.owner.get(e).copied() == Some(PlayerId(0)) && sim.owns_planet(e));
         if let Some(h) = attacker_home {
-            let s = sim.world.stockpile.get_mut(h).unwrap();
+            let s = sim.held_at_mut(h).unwrap();
             s.cyan += 100.0;
         }
         sim.apply_orders(1, &[Order { seat: PlayerId(0), card: Some(CardId(2)), target: Target::Player(PlayerId(1)) }]);
@@ -10684,7 +10765,7 @@ mod tests {
             let rung = Band::new(1.0 + offset);
             let stock = Price::at_band_from(rung, cost_anchor(&sim.config));
             sim.world.factors.get_mut(home).unwrap().infra = stock;
-            let bank = sim.world.stockpile.get_mut(home).unwrap();
+            let bank = sim.held_at_mut(home).unwrap();
             bank.cyan += 50.0;
             bank.magenta += 50.0;
             bank.yellow += 50.0;
@@ -12060,8 +12141,8 @@ mod tests {
     ///
     /// Also pins the destination, because it is the amendment's whole claim:
     /// the ore lands in the **buyer's pile at the shared rock**, not at the
-    /// buyer's world. `outpost_stock` is already what a laden freighter loads
-    /// from, so the collection leg needed no new code.
+    /// buyer's world. The buyer's holdings at that rock are already what a
+    /// laden freighter loads from, so the collection leg needed no new code.
     #[test]
     fn settlement_moves_ore_to_the_buyers_pile_and_conserves_mass() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 71), test_cfg(71));
@@ -12070,13 +12151,12 @@ mod tests {
         for p in 0..2u32 {
             sim.mine_crew.insert((p, rock.0), vec![sim.world.spawn()]);
         }
-        sim.world.stockpile.get_mut(seller_center).unwrap().yellow = 100.0;
+        sim.held_at_mut(seller_center).unwrap().yellow = 100.0;
         sim.credit(sim.player_entity[0], 500.0);
 
+        // Holdings at a yard and on a rock are one map (T-134), so one sum.
         let total_yellow = |s: &Simulation| -> f64 {
-            let banked: f64 = s.planet_entity.iter().filter_map(|&e| s.world.stockpile.get(e)).map(|b| b.yellow).sum();
-            let piled: f64 = s.outpost_stock.values().map(|m| m.yellow).sum();
-            banked + piled
+            s.holdings.owned.items.iter().flatten().chain(s.holdings.elsewhere.values()).map(|m| m.yellow).sum()
         };
         let before = total_yellow(&sim);
 
@@ -12103,12 +12183,9 @@ mod tests {
 
         assert_eq!(sim.exchange_state().1, 1, "the contract must have settled");
         assert_eq!(sim.exchange_defaults(), 0);
+        assert!((sim.held_at(seller_center).unwrap().yellow - 60.0).abs() < 1e-9, "the seller's bank must be debited");
         assert!(
-            (sim.world.stockpile.get(seller_center).unwrap().yellow - 60.0).abs() < 1e-9,
-            "the seller's bank must be debited"
-        );
-        assert!(
-            (sim.outpost_stock.get(&(0, rock.0)).map_or(0.0, |m| m.yellow) - 40.0).abs() < 1e-9,
+            (sim.holding(0, rock).map_or(0.0, |m| m.yellow) - 40.0).abs() < 1e-9,
             "the ore must land in the *buyer's* pile at the shared rock"
         );
         assert!((total_yellow(&sim) - before).abs() < 1e-9, "mass was not conserved across the trade");
@@ -12129,7 +12206,7 @@ mod tests {
         let rock = sim.planet_entity[30];
         // The bank is short the color it owes — rich in Cyan, owing Yellow.
         {
-            let b = sim.world.stockpile.get_mut(seller_center).unwrap();
+            let b = sim.held_at_mut(seller_center).unwrap();
             b.yellow = 1.0;
             b.cyan = 9_999.0;
         }
@@ -12161,7 +12238,7 @@ mod tests {
         assert!(sim.exchange_state().2 > 0.0, "the burn is the sink (§2.3)");
         // **A rich bank in the wrong color does not help**, which is what the
         // color axis is for.
-        assert!(sim.world.stockpile.get(seller_center).unwrap().cyan > 9_000.0, "the wrong color was never touched");
+        assert!(sim.held_at(seller_center).unwrap().cyan > 9_000.0, "the wrong color was never touched");
     }
 
     /// **A trade needs a rock both parties work** (§10.6, T-85).
@@ -12335,7 +12412,7 @@ mod tests {
         // zero while the bank covers the next rung, so `D = 0` whatever the
         // yard could fabricate.
         {
-            let bank = sim.world.stockpile.get_mut(center).unwrap();
+            let bank = sim.held_at_mut(center).unwrap();
             bank.cyan = 10_000.0;
             bank.magenta = 10_000.0;
             bank.yellow = 10_000.0;
@@ -12346,7 +12423,7 @@ mod tests {
         // Starve it: pressure goes to 1 and the crew is whatever meets the
         // yard's throughput.
         {
-            let bank = sim.world.stockpile.get_mut(center).unwrap();
+            let bank = sim.held_at_mut(center).unwrap();
             bank.cyan = 0.0;
             bank.magenta = 0.0;
             bank.yellow = 0.0;
@@ -13208,7 +13285,7 @@ mod tests {
 
         // Enough minerals that affordability cannot be what stops it.
         {
-            let bank = sim.world.stockpile.get_mut(home).unwrap();
+            let bank = sim.held_at_mut(home).unwrap();
             bank.cyan = 5_000.0;
             bank.magenta = 5_000.0;
             bank.yellow = 5_000.0;
@@ -13250,7 +13327,7 @@ mod tests {
         // on so the assertion can read *what it spent* rather than assume which
         // order a rich homeworld picks (`logging_does_not_affect_outcomes`).
         sim.set_log_filter(LogFilter::none().with(crate::log::LogCategory::Production));
-        sim.world.stockpile.get_mut(home).unwrap().cyan = 500.0;
+        sim.held_at_mut(home).unwrap().cyan = 500.0;
         assert_eq!(sim.world.berths.get(home).map(|b| b.len()).unwrap_or(0), 0, "yard starts free");
 
         sim.sys_build_decision(home);
@@ -13278,9 +13355,9 @@ mod tests {
 
         // The economy tick must not decide over a busy yard — that would be the
         // cadence sneaking back in through the other door.
-        let before = sim.world.stockpile.get(home).unwrap().basic_total();
+        let before = sim.held_at(home).unwrap().basic_total();
         sim.sys_production_tick(home);
-        let after = sim.world.stockpile.get(home).unwrap().basic_total();
+        let after = sim.held_at(home).unwrap().basic_total();
         assert!(after >= before, "an occupied yard must not have spent again: {before} -> {after}");
         assert!(
             sim.world.berths.get(home).map(|b| !b.is_empty()).unwrap_or(false),
@@ -13741,7 +13818,7 @@ mod tests {
         // no mineral cost; only the un-recycled half is paid for.
         let stock_before = Price::new(1000.0);
         {
-            let st = sim.world.stockpile.get_mut(center).unwrap();
+            let st = sim.held_at_mut(center).unwrap();
             let each = stock_before.kilotons() / 3.0;
             st.cyan = each;
             st.magenta = each;
@@ -13773,7 +13850,7 @@ mod tests {
             Some(next_rock),
             "re-tasked to the new rock, flying from where the old one left it"
         );
-        let spent = stock_before - sim.world.stockpile.get(center).unwrap().basic_total();
+        let spent = stock_before - sim.held_at(center).unwrap().basic_total();
         // **The hauler's hull is derived from the pair now** (T-98), so this
         // reads the decision rather than the role — and on this rock it comes
         // out a Limited hull, which is the crossover doing its job: a thin
@@ -13872,7 +13949,7 @@ mod tests {
                 d.set(b, each);
             }
         }
-        *sim.world.stockpile.get_mut(outpost).unwrap() = Minerals::default();
+        sim.holdings.elsewhere.remove(&(0, outpost.0));
 
         let freighter = sim.world.spawn();
         sim.world.owner.insert(freighter, PlayerId(0));
@@ -13899,7 +13976,7 @@ mod tests {
     /// **A hold that no single rock could have filled** (T-91).
     ///
     /// This is the atomicity, removed and then asserted. A hold is filled from
-    /// `outpost_stock[(player, rock)]` — one map entry — and a rock is one
+    /// `stock[(player, rock)]` — one map entry — and a rock is one
     /// color (mean dominant share 0.789 over 6,725 sources), so before this
     /// every delivery in the engine was mono-colored *by construction* and a
     /// works bill is a conjunction over three colors (T-73). Two piles, two
@@ -13923,9 +14000,9 @@ mod tests {
             // An empty bank makes the center short of the whole rung, which is
             // what `color_deficit` reads. The piles are each one color, which
             // is the galaxy's own condition made exact.
-            *sim.world.stockpile.get_mut(center).unwrap() = Minerals::default();
-            sim.outpost_stock.insert((0, a.0), Minerals { cyan: 50.0, ..Default::default() });
-            sim.outpost_stock.insert((0, b.0), Minerals { magenta: 50.0, ..Default::default() });
+            *sim.held_at_mut(center).unwrap() = Minerals::default();
+            sim.holdings.elsewhere.insert((0, a.0), Minerals { cyan: 50.0, ..Default::default() });
+            sim.holdings.elsewhere.insert((0, b.0), Minerals { magenta: 50.0, ..Default::default() });
 
             let f = sim.world.spawn();
             sim.world.owner.insert(f, PlayerId(0));
@@ -14038,15 +14115,15 @@ mod tests {
         // infra 1) vs. the homeworld, which we give a full stockpile so its
         // pressure reads ~0.
         let colony = sim.planet_entity[15];
-        sim.world.owner.insert(colony, PlayerId(0));
+        sim.claim_planet(colony, PlayerId(0));
         sim.world.factors.insert(
             colony,
             Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Price::new(1.0)),
         );
-        sim.world.stockpile.insert(colony, Minerals::default());
+        *sim.held_at_mut(colony).unwrap() = Minerals::default();
 
         {
-            let s = sim.world.stockpile.get_mut(home).unwrap();
+            let s = sim.held_at_mut(home).unwrap();
             s.cyan = 10.0;
             s.magenta = 10.0;
             s.yellow = 10.0;
@@ -14084,7 +14161,7 @@ mod tests {
         // this — the color term has to.
         let (a, b) = (sim.planet_entity[15], sim.planet_entity[16]);
         for &e in &[a, b] {
-            sim.world.owner.insert(e, PlayerId(0));
+            sim.claim_planet(e, PlayerId(0));
             sim.world.factors.insert(
                 e,
                 Factors::new(
@@ -14097,19 +14174,15 @@ mod tests {
             sim.world.position.insert(e, here);
         }
         // Home can pay for everything, so it is never the needy one.
-        sim.world.stockpile.insert(home, Minerals { cyan: 1e6, magenta: 1e6, yellow: 1e6, ..Default::default() });
+        *sim.held_at_mut(home).unwrap() = Minerals { cyan: 1e6, magenta: 1e6, yellow: 1e6, ..Default::default() };
 
         let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
         let bill = works_bill(step, &cards::Works::default());
         // `a` has everything except Yellow; `b` has everything except Magenta.
-        sim.world.stockpile.insert(
-            a,
-            Minerals { cyan: bill[0].kilotons(), magenta: bill[1].kilotons(), yellow: 0.0, ..Default::default() },
-        );
-        sim.world.stockpile.insert(
-            b,
-            Minerals { cyan: bill[0].kilotons(), magenta: 0.0, yellow: bill[2].kilotons(), ..Default::default() },
-        );
+        *sim.held_at_mut(a).unwrap() =
+            Minerals { cyan: bill[0].kilotons(), magenta: bill[1].kilotons(), yellow: 0.0, ..Default::default() };
+        *sim.held_at_mut(b).unwrap() =
+            Minerals { cyan: bill[0].kilotons(), magenta: 0.0, yellow: bill[2].kilotons(), ..Default::default() };
 
         let yellow = Minerals { yellow: 10.0, ..Default::default() };
         let magenta = Minerals { magenta: 10.0, ..Default::default() };
@@ -14131,7 +14204,7 @@ mod tests {
         // or ore scatters by color and a three-color bill is never assembled
         // anywhere.
         let empty = sim.planet_entity[17];
-        sim.world.owner.insert(empty, PlayerId(0));
+        sim.claim_planet(empty, PlayerId(0));
         sim.world.factors.insert(
             empty,
             Factors::new(
@@ -14142,7 +14215,7 @@ mod tests {
             ),
         );
         sim.world.position.insert(empty, here);
-        sim.world.stockpile.insert(empty, Minerals::default());
+        *sim.held_at_mut(empty).unwrap() = Minerals::default();
 
         let near = sim.bill_completion(a, PlayerId(0), &yellow);
         let far = sim.bill_completion(empty, PlayerId(0), &yellow);
@@ -14165,14 +14238,14 @@ mod tests {
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
         let colony = sim.planet_entity[15];
-        sim.world.owner.insert(colony, PlayerId(0));
+        sim.claim_planet(colony, PlayerId(0));
         sim.world.factors.insert(
             colony,
             Factors::new(Band::new(3.0), Band::new(3.0).in_kilotons(), Band::new(3.0).in_kilotons(), Price::new(1.0)),
         );
-        sim.world.stockpile.insert(colony, Minerals::default());
+        *sim.held_at_mut(colony).unwrap() = Minerals::default();
         {
-            let s = sim.world.stockpile.get_mut(home).unwrap();
+            let s = sim.held_at_mut(home).unwrap();
             s.cyan = 10.0;
             s.magenta = 10.0;
             s.yellow = 10.0;
@@ -14186,7 +14259,6 @@ mod tests {
             }
             sim.world.density.insert(outpost, field);
         }
-        sim.world.stockpile.insert(outpost, Minerals::default());
 
         // Build a freighter "paired" with the homeworld (its home_center),
         // as apply_build would, but the homeworld is the *less* needy side.
@@ -14194,13 +14266,11 @@ mod tests {
         sim.spawn_freighter(0, home, from, outpost, HullType::MediumSystems, 0.0);
         let freighter = Entity(sim.world.entity_count() as u64 - 1);
 
-        // Give the outpost stockpile something to load, then run the load leg.
-        {
-            let s = sim.world.stockpile.get_mut(outpost).unwrap();
-            s.cyan = 5.0;
-            s.magenta = 5.0;
-            s.yellow = 5.0;
-        }
+        // Give the empire's pile at the outpost something to load, then run
+        // the load leg.
+        sim.holdings
+            .elsewhere
+            .insert((0, outpost.0), Minerals { cyan: 5.0, magenta: 5.0, yellow: 5.0, ..Default::default() });
         sim.sys_freighter_arrive(freighter); // loads, routes to most-needed
 
         let sh = *sim.world.shuttle.get(freighter).unwrap();
@@ -14238,14 +14308,14 @@ mod tests {
         );
         sim.world.population.insert(home, Kilotons::at_tier(BandTier::III));
         {
-            let s = sim.world.stockpile.get_mut(home).unwrap();
+            let s = sim.held_at_mut(home).unwrap();
             s.cyan = 30.0;
             s.magenta = 30.0;
             s.yellow = 30.0;
         }
 
         let pop_before = *sim.world.population.get(home).unwrap();
-        let bank_before = sim.world.stockpile.get(home).unwrap().basic_total();
+        let bank_before = sim.held_at(home).unwrap().basic_total();
         let there_before = *sim.world.population.get(target).unwrap();
 
         sim.spawn_courier(0, Role::Colonizer, BuiltHull::unpaid(HullType::GeneralSystems), home, target, 0.0);
@@ -14265,7 +14335,7 @@ mod tests {
 
         // The debit, both halves.
         let pop_after = *sim.world.population.get(home).unwrap();
-        let bank_after = sim.world.stockpile.get(home).unwrap().basic_total();
+        let bank_after = sim.held_at(home).unwrap().basic_total();
         assert!(
             ((pop_before - pop_after) - settlers).kilotons().abs() < 1e-9,
             "the center lost {} people for a seed of {settlers}",
@@ -14286,7 +14356,7 @@ mod tests {
             there_after - there_before
         );
         assert!(
-            (sim.world.stockpile.get(target).unwrap().basic_total() - endowment).kilotons().abs() < 1e-9,
+            (sim.held_at(target).unwrap().basic_total() - endowment).kilotons().abs() < 1e-9,
             "the new colony should start on the endowment it was sent with"
         );
         assert_eq!(*sim.world.pop_cargo.get(ship).unwrap(), Kilotons::ZERO);
@@ -14510,7 +14580,7 @@ mod tests {
         sim.world.home_center.insert(v, home0);
 
         sim.sys_colony_arrive(v);
-        let stock = sim.world.stockpile.get(target).unwrap().basic_total();
+        let stock = sim.held_at(target).unwrap().basic_total();
         assert!(stock.abs() < Price::new(1e-9), "colony should start with zero minerals, got {stock}");
     }
 
