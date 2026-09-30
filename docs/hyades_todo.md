@@ -129,8 +129,8 @@ rival production. Seven stages, the reach audit first. Opens R-WAR40–R-WAR43.
 
 ### T-134. The Exchange at a spatial equilibrium; one holding per (empire, planet)
 
-**Advanced — stages 1, A, B, C and 2 landed; R-MX8, R-MX9, R-MX10 and R-WAR39
-open.** The author approved
+**Advanced — stages 1, A, B, C and 2 landed, and R-MX8 is resolved; R-MX9,
+R-MX10 and R-WAR39 open, and the idle pool is not started.** The author approved
 clearing the cross-empire book at a spatial price equilibrium (R-MX7) and ruled
 that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
 
@@ -143,6 +143,12 @@ that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
   move; +51.27% ± 1.71% in total, C's own share not resolved at 2 SE.
 - **Resolved:** R-P18 (politics §2.14). **Ratified:** R-MX7 and matching §8.
 - **Opened:** R-MX8 — may a hauler draw on a center's holding (matching §8.5).
+- **Resolved: R-MX8** (the author's ruling, matching §8.5). A hauler carries a
+  center's abundance — its holding above its own next works bill — to the center
+  it serves, where that center's price discounted over the leg beats the
+  origin's. Colony-years +1.29% ± 0.22 (8/8 seeds), work-years +6.22% ± 3.62
+  (not resolved at 2 SE), colonies identical; loads at owned centers are 7–8% of
+  loaded tonnage. Appendix §D.22.
 - **Stage 2** — the internal duty exchange (matching §9), on the author's
   direction: a miner on a large holding runs freight when a center wants it
   (§9.1); a colony ship whose origin is still growing runs one load home before
@@ -503,7 +509,9 @@ the payable fraction moving only 0.043 → 0.052 is that ceiling showing.
 
 - **Inter-center transfer** (T-76's other half, development freight). A center
   holding 275 kt of Magenta against 0.59 kt of Cyan ships Magenta to a center
-  that needs it. Leaves the voyage structure alone, redistributes after the fact,
+  that needs it. **Landed for abundance at R-MX8** (matching §8.5): a center
+  ships what its own next bill does not claim, under the Exchange's discount;
+  `develop_bias` (shipping what a center *could* spend at home) is not built. Leaves the voyage structure alone, redistributes after the fact,
   and is the one that is already specified (§7.3).
 - **Let local mining feed the outpost pile rather than the bank**, so everything
   a center banks has passed through a routing decision. The most direct removal
@@ -834,7 +842,7 @@ a population, because those are genuinely a world's capacity to hold people.
 | 8 | Extraction and fabrication rates from Infra × allocation | T-70 | ~~**T-74**~~ — **LANDED** |
 | 9a | `Works` struct + CardId-ordered fold + commutativity property test | T-74 | ~~**T-75a**~~ — **LANDED** |
 | 9b | `Doctrine` allocation vector wired to the fold | T-75a | ~~**T-75b**~~ — **LANDED** |
-| 10 | Development freight and the balanced-exchange default | T-73 | **T-76** — *load leg landed (R-O89); routing and development freight open* |
+| 10 | Development freight and the balanced-exchange default | T-73 | **T-76** — *load leg landed (R-O89), abundance transfer between centers landed (R-MX8); routing and `develop_bias` open* |
 | 11 | Exchange settles into a **freight leg**, not a transfer (refined mass traverses real space) | T-01 | **T-77** |
 
 **T-76 is part-landed (R-O89, `Hyades_industry.md` §6.20).** R-O85 promoted it to

@@ -305,11 +305,33 @@ and not how much was filled. Appendix §D.21. Privateering (`Hyades_warfare_tree
 §8.21) is the first mechanic that creates self-trade demand the book cannot
 already meet, and would reopen this.
 
-**8.5 `OPEN` — R-MX8: may a hauler draw on a center's holding?** Held off for
-now, so that §8.3 changed nothing else: a hauler loads only where its empire has
-no yard, and a milk run picks up only there. Under §8.3 a colony's holding is
-the same ore as a pile, so carrying it to a needier center is a coherent policy.
-**What would settle it:** the author's call, then an arm on the 8-seed bed.
+**8.5 `RATIFIED` — R-MX8: a hauler carries a center's abundance to a center
+with demand, under the Exchange's journey discount** (the author's ruling). At a
+planet its empire owns, a hauler serving center `D` takes, per color `c`,
+
+```text
+offer_c = min(abundance_c, want_c)   if  wtp(D, c) · exp(−λ t) > wtp(O, c),  else 0
+abundance_c = max(0, held_c(O) − bill_c(O))
+```
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `O` | the center the hauler stands on | — | — |
+| `D` | the center the hauler serves | — | the shuttle's destination |
+| `held_c(O)` | `O`'s holding in color `c` | kt | `Holdings` (§8.3) |
+| `bill_c(O)` | `O`'s next works bill in color `c` | kt | `works_bill(infra_step_price)` |
+| `want_c` | `D`'s shortfall against its next bill, net of the hold | kt | `wanted_here` (T-91) |
+| `wtp(X, c)` | `X`'s willingness to pay for `c` | `$`/kt | `willingness_to_pay` |
+| `t` | the laden leg `O → D` at a full hold | yr | `ship_travel_years` on the hauler's Design |
+
+So a center keeps what its own next rung needs, and ships only where the Exchange
+would ship an ask (§8.1's rule with `a_j = wtp(O, c)`). What loads at a center
+goes to `D`, the buyer it was priced against, and is never re-routed. A milk run
+(T-91) may stop at such a center too, scored the same way as any other pile. A
+hauler whose own rock is settled keeps working while `O` offers something, and
+stands down as before once it offers nothing. No new constant. Measured on the
+8-seed bed: colony-years **+1.29% ± 0.22, 8/8 seeds**; work-years +6.22% ±
+3.62, not resolved at 2 SE; appendix §D.22.
 
 **8.6 Throughput.** §8 costs nothing measurable on the 3-seat bed — per-event
 cost fell against the pre-T-134 engine in 6/6 interleaved pairs — and the

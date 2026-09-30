@@ -3322,6 +3322,11 @@ mechanism as §7.1**, so `sim §2a`'s existing claim that "commerce can raise a
 partner's infrastructure… and embargo a way to let it decay" is implemented
 rather than merely asserted.
 
+**Status.** The route and its discount landed at R-MX8 (`Hyades_matching.md`
+§8.5, `RATIFIED`) for a center's **abundance**, meaning its holding above its own
+next works bill. `develop_bias`, which ships part of what a center could spend
+at home, is `OPEN` and not built (T-76).
+
 ---
 
 

@@ -5219,15 +5219,14 @@ impl Simulation {
             // **Its owner's pile, not the rock's.** Outposts are never claimed,
             // so a per-planet heap let either empire haul away what the other's
             // miners dug.
-            // **Where there is no yard** (T-134): once this empire owns the
-            // rock, what stands there is that colony's holdings, which its own
-            // yard spends — whether a hauler may carry a center's holdings
-            // elsewhere is R-MX8, and until it is decided it may not.
+            // **At a center, only its abundance, and only what the Exchange
+            // would ship** (R-MX8, the author's ruling). Once this empire owns
+            // the rock, what stands there is that colony's holding, which its
+            // own yard spends first; a hauler takes the part above the
+            // colony's next works bill that the center it serves still wants,
+            // where that center's discounted price beats this one's
+            // ([`Self::center_offer`]).
             let yard_here = self.world.owner.get(sh.outpost).is_some_and(|o| o.0 == p);
-            let stock = self.holding_mut(p, sh.outpost);
-            // A hold is a mass and a stockpile is a price; the same kilotons,
-            // two ladders (R-O57). `on_scale` is the crossing, said out loud.
-            let avail = if yard_here { Price::ZERO } else { stock.basic_total() };
             // **Room, not capacity** (T-91). On a milk run the hold already
             // carries what the earlier stops on this leg put in it, so the
             // budget for this pile is what is left. At `max_pickup_stops = 1`
@@ -5235,6 +5234,20 @@ impl Simulation {
             // this is `cap` and the arithmetic below is the pre-T-91 one.
             let aboard = self.world.cargo.get(vehicle).copied().unwrap_or_default();
             let room = (cap.on_scale::<units::Cost>() - aboard.basic_total()).max(Price::ZERO);
+            let offer = if yard_here {
+                let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
+                // Priced at a full hold: the slowest the leg can be.
+                let accel = G * self.thrust_to_mass(hull, cap);
+                Some(self.center_offer(PlayerId(p), sh.outpost, sh.destination, &want, accel))
+            } else {
+                None
+            };
+            // A hold is a mass and a stockpile is a price; the same kilotons,
+            // two ladders (R-O57). `on_scale` is the crossing, said out loud.
+            let avail = match offer {
+                Some(o) => o.iter().fold(Price::ZERO, |a, &b| a + b),
+                None => self.holding_mut(p, sh.outpost).basic_total(),
+            };
             let load = room.min(avail);
             // Is this the last pile this leg will see? The final stop fills the
             // hold; every earlier one takes only what is wanted and leaves the
@@ -5257,8 +5270,16 @@ impl Simulation {
                 // this leg may already have covered a color, and a want that
                 // does not subtract it makes the run fetch the same color
                 // twice and still land short in the third.
-                let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
-                let fill = if last_stop { Fill::Hold } else { Fill::Shortfall };
+                //
+                // At a center the offer is the want, and a hold is never topped
+                // up past it: what the center keeps is its own to spend.
+                let (want, fill) = match offer {
+                    Some(o) => (o, Fill::Shortfall),
+                    None => (
+                        self.wanted_here(sh.destination, PlayerId(p), &aboard),
+                        if last_stop { Fill::Hold } else { Fill::Shortfall },
+                    ),
+                };
                 let moved = take_for_deficit(self.holding_mut(p, sh.outpost), &want, load, fill);
                 self.world.cargo.get_mut(vehicle).unwrap().add_basics(&moved);
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
@@ -5328,7 +5349,9 @@ impl Simulation {
                 if room > Price::new(1e-9) && want.iter().fold(Price::ZERO, |a, &b| a + b) > Price::ZERO {
                     let here = self.position_at(sh.outpost, self.clock).unwrap();
                     let accel = self.laden_accel(vehicle);
-                    if let Some(next) = self.next_pickup(PlayerId(p), here, sh.outpost, &want, room, accel) {
+                    if let Some(next) =
+                        self.next_pickup(PlayerId(p), here, sh.outpost, sh.destination, &want, room, accel)
+                    {
                         let to = *self.world.position.get(next).unwrap();
                         let arrive = self.set_leg(vehicle, here, to, accel, 0.0);
                         {
@@ -5355,7 +5378,15 @@ impl Simulation {
             let home = *self.world.home_center.get(vehicle).unwrap_or(&sh.outpost);
             let here = self.position_at(sh.outpost, self.clock).unwrap();
             let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-            let dest = self.best_delivery_center(PlayerId(p), here, &cargo, self.laden_accel(vehicle)).unwrap_or(home);
+            // **A load a center let go of goes to the center it was priced
+            // against** (R-MX8): the offer passed the Exchange's gate for
+            // `sh.destination` and for no other buyer, and re-routing could
+            // send it back to the center it came from.
+            let dest = if offer.is_some() && load > Price::new(1e-9) {
+                sh.destination
+            } else {
+                self.best_delivery_center(PlayerId(p), here, &cargo, self.laden_accel(vehicle)).unwrap_or(home)
+            };
             self.world.shuttle.get_mut(vehicle).unwrap().destination = dest;
 
             let from = self.position_at(sh.outpost, self.clock).unwrap();
@@ -9043,16 +9074,58 @@ impl Simulation {
     /// A center's per-color shortfall against its **next works bill** — the
     /// quantity T-73 made meaningful and nothing was measuring.
     fn color_deficit(&self, center: Entity, owner: PlayerId) -> [Price; 3] {
-        let Some(f) = self.world.factors.get(center) else {
+        let Some(bill) = self.next_bill(center, owner) else {
             return [Price::ZERO; 3];
         };
-        let step = infra_step_price(f.infra, &self.config);
-        let works = self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default();
         let bank = self.held_at(center).copied().unwrap_or_default();
-        let bill = works_bill(step, &works);
         let mut out = [Price::ZERO; 3];
         for (i, &c) in Basic::ALL.iter().enumerate() {
             out[i] = (bill[i] - Price::new(bank.get_basic(c))).max(Price::ZERO);
+        }
+        out
+    }
+
+    /// A center's next works bill, per color — what its next rung costs. `None`
+    /// for a planet with no economy.
+    fn next_bill(&self, center: Entity, owner: PlayerId) -> Option<[Price; 3]> {
+        let f = self.world.factors.get(center)?;
+        let step = infra_step_price(f.infra, &self.config);
+        let works = self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default();
+        Some(works_bill(step, &works))
+    }
+
+    /// **What center `origin` lets a hauler carry to center `dest`** (R-MX8,
+    /// the author's ruling: a hauler may haul from a center with an abundance
+    /// to a center with demand, under the Exchange's journey discount).
+    ///
+    /// Per color: the origin's **abundance** — its holding above its own next
+    /// works bill — capped at what `dest` still `want`s, and only where the
+    /// Exchange would ship it: `dest`'s price discounted over the leg,
+    /// `wtp(dest)·exp(−λ·t)`, beats `origin`'s own `wtp(origin)` (matching
+    /// §8.1's rule for an ask). `t` is the leg `origin → dest` at `accel`.
+    /// Nothing moves from a center to itself.
+    fn center_offer(&self, owner: PlayerId, origin: Entity, dest: Entity, want: &[Price; 3], accel: f64) -> [Price; 3] {
+        let mut out = [Price::ZERO; 3];
+        if origin == dest || want.iter().all(|w| *w <= Price::ZERO) {
+            return out;
+        }
+        let Some(bill) = self.next_bill(origin, owner) else { return out };
+        let bank = self.held_at(origin).copied().unwrap_or_default();
+        let (Some(from), Some(to)) = (self.world.position.get(origin), self.world.position.get(dest)) else {
+            return out;
+        };
+        let t = math::ship_travel_years(from.distance(*to), accel);
+        let discount = transcendental::exp_fast(-self.config.trade_decay_lambda * t);
+        let doctrine = self.doctrine_of(owner.0 as usize);
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            let abundance = (Price::new(bank.get_basic(c)) - bill[i]).max(Price::ZERO);
+            if abundance <= Price::ZERO || want[i] <= Price::ZERO {
+                continue;
+            }
+            let bid = self.willingness_to_pay(dest, c, &doctrine) * discount;
+            if bid > self.willingness_to_pay(origin, c, &doctrine) {
+                out[i] = abundance.min(want[i]);
+            }
         }
         out
     }
@@ -9101,22 +9174,39 @@ impl Simulation {
     /// not reached at the shipped default at all; that is a knob to measure
     /// with, not yet a knob that is on. Deterministic: `stock` is a
     /// `BTreeMap` and entity id breaks ties.
+    #[allow(clippy::too_many_arguments)]
     fn next_pickup(
         &self,
         owner: PlayerId,
         from: Vec3,
         current: Entity,
+        dest: Entity,
         want: &[Price; 3],
         room: Price,
         accel: f64,
     ) -> Option<Entity> {
         let lambda = self.config.trade_decay_lambda;
         let mut best: Option<(Entity, f64)> = None;
-        for (&(pl, rock), pile) in self.holdings.elsewhere.range((owner.0, 0)..=(owner.0, u64::MAX)) {
-            let _ = pl;
+        let consider = |e: Entity, useful: Price, best: &mut Option<(Entity, f64)>| {
+            let useful = useful.min(room);
+            if useful <= Price::ZERO {
+                return;
+            }
+            let Some(&pos) = self.world.position.get(e) else {
+                return;
+            };
+            let t = math::ship_travel_years(from.distance(pos), accel);
+            let score = useful.kilotons() * transcendental::exp_fast(-lambda * t);
+            let better = match *best {
+                None => true,
+                Some((be, bs)) => score > bs || (score == bs && e.0 < be.0),
+            };
+            if better {
+                *best = Some((e, score));
+            }
+        };
+        for (&(_, rock), pile) in self.holdings.elsewhere.range((owner.0, 0)..=(owner.0, u64::MAX)) {
             let e = Entity(rock);
-            // A milk run picks up where there is no yard: whether a hauler may
-            // draw on another center's holdings is a policy question (R-MX8).
             if e == current || self.world.owner.get(e).copied() == Some(owner) {
                 continue;
             }
@@ -9124,22 +9214,16 @@ impl Simulation {
             for (i, &c) in Basic::ALL.iter().enumerate() {
                 useful += want[i].min(Price::new(pile.get_basic(c)));
             }
-            let useful = useful.min(room);
-            if useful <= Price::ZERO {
+            consider(e, useful, &mut best);
+        }
+        // **And a center with an abundance** (R-MX8): what it would let this
+        // hauler carry to the center it serves ([`Self::center_offer`]).
+        for &e in &self.planet_entity {
+            if e == current || e == dest || self.world.owner.get(e).copied() != Some(owner) {
                 continue;
             }
-            let Some(&pos) = self.world.position.get(e) else {
-                continue;
-            };
-            let t = math::ship_travel_years(from.distance(pos), accel);
-            let score = useful.kilotons() * transcendental::exp_fast(-lambda * t);
-            let better = match best {
-                None => true,
-                Some((be, bs)) => score > bs || (score == bs && e.0 < be.0),
-            };
-            if better {
-                best = Some((e, score));
-            }
+            let offer = self.center_offer(owner, e, dest, want, accel);
+            consider(e, offer.iter().fold(Price::ZERO, |a, &b| a + b), &mut best);
         }
         best.map(|(e, _)| e)
     }
@@ -15432,5 +15516,112 @@ mod tests {
             matches!(r.event, LogEvent::VehicleParked { player: 0, role: Role::Reserve, at, .. } if settled.contains(&at.0))
         });
         assert!(stood_down, "its hauler goes to Reserve there");
+    }
+
+    /// Two owned centers for the R-MX8 tests: `origin` holds Yellow above its
+    /// next bill and nothing else, so it is long Yellow and still under
+    /// pressure; `dest` holds nothing, so it wants every color at full
+    /// pressure. Both at rung I, co-located with the homeworld.
+    fn two_centers(sim: &mut Simulation, abundance: f64) -> (Entity, Entity, [Price; 3]) {
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let here = *sim.world.position.get(home).unwrap();
+        let (origin, dest) = (sim.planet_entity[15], sim.planet_entity[16]);
+        for &e in &[origin, dest] {
+            sim.claim_planet(e, PlayerId(0));
+            sim.world.factors.insert(
+                e,
+                Factors::new(
+                    Band::new(3.0),
+                    Band::new(3.0).in_kilotons(),
+                    Band::new(3.0).in_kilotons(),
+                    infra_rung_price(1, &sim.config),
+                ),
+            );
+            sim.world.position.insert(e, here);
+        }
+        let bill = sim.next_bill(origin, PlayerId(0)).unwrap();
+        *sim.held_at_mut(origin).unwrap() = Minerals { yellow: bill[2].kilotons() + abundance, ..Default::default() };
+        *sim.held_at_mut(dest).unwrap() = Minerals::default();
+        (origin, dest, bill)
+    }
+
+    /// **R-MX8, the author's ruling: a hauler may haul from a center with an
+    /// abundance to a center with demand, under the Exchange's journey
+    /// discount.** Asserted in both directions on one fixture: the offer is
+    /// the abundance in the color the buyer wants and nothing the origin's
+    /// own bill claims; and the same offer is withdrawn when the buyer is
+    /// moved far enough that its discounted price falls below the origin's.
+    #[test]
+    fn a_center_offers_its_abundance_only_where_the_discounted_price_wins() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
+        let (origin, dest, _) = two_centers(&mut sim, 0.05);
+        let want = sim.wanted_here(dest, PlayerId(0), &Minerals::default());
+        assert!(want.iter().all(|w| *w > Price::ZERO), "the empty center wants every color");
+        let p_origin = sim.mineral_pressure_of(origin);
+        assert!(p_origin > 0.0 && p_origin < 1.0, "origin is long Yellow and still under pressure: {p_origin}");
+        assert_eq!(sim.mineral_pressure_of(dest), 1.0);
+
+        let accel = G * sim.thrust_to_mass(HullType::MediumSystems, Kilotons::new(10.0));
+        let near = sim.center_offer(PlayerId(0), origin, dest, &want, accel);
+        assert_eq!(near[0], Price::ZERO, "no Cyan above the bill");
+        assert_eq!(near[1], Price::ZERO, "no Magenta above the bill");
+        let expect = Price::new(0.05).min(want[2]);
+        assert!((near[2] - expect).kilotons().abs() < 1e-12, "the Yellow abundance, capped at the want: {near:?}");
+
+        // The same buyer 200 ly away: `exp(−λt)` at λ = 0.01 is below 0.14,
+        // under the origin's own price, so the Exchange would not ship.
+        let far = sim.world.position.get(origin).unwrap().add(Vec3::new(200.0, 0.0, 0.0));
+        sim.world.position.insert(dest, far);
+        let t = math::ship_travel_years(200.0, accel);
+        assert!(transcendental::exp_fast(-sim.config.trade_decay_lambda * t) < p_origin);
+        assert_eq!(sim.center_offer(PlayerId(0), origin, dest, &want, accel), [Price::ZERO; 3]);
+
+        // Nothing moves from a center to itself, and nothing moves unwanted.
+        assert_eq!(sim.center_offer(PlayerId(0), origin, origin, &want, accel), [Price::ZERO; 3]);
+        assert_eq!(sim.center_offer(PlayerId(0), origin, dest, &[Price::ZERO; 3], accel), [Price::ZERO; 3]);
+    }
+
+    /// **The end-to-end form, with the ledger.** A hauler standing on a
+    /// settled center with an abundance loads what the offer names, from that
+    /// holding and nowhere else, and flies it to the center it was priced
+    /// against — and the same hauler at a center with nothing above its bill
+    /// stands down as before (R-MX8 leaves that guard as it was).
+    #[test]
+    fn a_hauler_carries_a_centers_abundance_to_the_center_it_was_priced_against() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let (origin, dest, _) = two_centers(&mut sim, 0.05);
+        let from = *sim.world.position.get(home).unwrap();
+        sim.spawn_freighter(0, home, from, origin, HullType::MediumSystems, 0.0);
+        let hauler = Entity(sim.world.entity_count() as u64 - 1);
+        sim.world.shuttle.get_mut(hauler).unwrap().destination = dest;
+
+        let want = sim.wanted_here(dest, PlayerId(0), &Minerals::default());
+        let accel =
+            G * sim.thrust_to_mass(HullType::MediumSystems, HullType::MediumSystems.cargo_capacity(&sim.config));
+        let offer = sim.center_offer(PlayerId(0), origin, dest, &want, accel);
+        assert!(offer[2] > Price::ZERO, "the fixture offers Yellow");
+        let before = sim.held_at(origin).unwrap().basic_total();
+
+        sim.sys_freighter_arrive(hauler);
+        let aboard = *sim.world.cargo.get(hauler).unwrap();
+        assert!((aboard.yellow - offer[2].kilotons()).abs() < 1e-12, "loads the offer: {aboard:?}");
+        assert_eq!(aboard.cyan + aboard.magenta, 0.0);
+        let after = sim.held_at(origin).unwrap().basic_total();
+        assert!(((before - after).kilotons() - aboard.yellow).abs() < 1e-12, "out of that holding, and conserved");
+        let sh = *sim.world.shuttle.get(hauler).unwrap();
+        assert_eq!(sh.destination, dest, "to the center the offer was priced against");
+        assert!(!sh.outbound);
+        assert_eq!(sim.world.role.get(hauler).copied(), Some(Role::Freighter));
+
+        // No abundance: nothing loads and the hauler stands down.
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
+        let (origin, dest, _) = two_centers(&mut sim, 0.0);
+        sim.spawn_freighter(0, home, from, origin, HullType::MediumSystems, 0.0);
+        let hauler = Entity(sim.world.entity_count() as u64 - 1);
+        sim.world.shuttle.get_mut(hauler).unwrap().destination = dest;
+        sim.sys_freighter_arrive(hauler);
+        assert_eq!(sim.world.cargo.get(hauler).unwrap().basic_total(), Price::ZERO);
+        assert_ne!(sim.world.role.get(hauler).copied(), Some(Role::Freighter), "stands down");
     }
 }
