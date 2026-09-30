@@ -2613,6 +2613,63 @@ hulls fly where, and so which survey scans run — and not the cost of the side
 duties. A per-function comparison against the old binary's profile would test
 it.
 
+## D.22 R-MX8 — a center's abundance hauled to a center with demand
+
+*Supports `Hyades_matching.md` §8.5. Card-free bed: `examples/work_years`,
+3 seats, 4,000 yr, the 8 seeds of §D.20, paired log-ratios against `main` at
+`c831aad`, standard errors across seeds. All four binaries ran at once on a
+4-core container, so the `yr/s` column compares like with like and not with
+other entries.*
+
+**The objective.** Colony-years **+1.29% ± 0.22, 8/8 seeds up** (5.9 SE).
+Work-years **+6.22% ± 3.62, 5/8 up** — 1.7 SE, not resolved; per seed −2.1% to
++28.9%, which reads as a reordering of a compounding run rather than a gradient.
+Colonies are identical on all 8 seeds, because the bed is saturated at `k_high`
+(`AGENTS.md` §7). Vehicles +10.1% ± 2.3, 7/8 up.
+
+An inference: the colony-years gain comes from ore reaching young colonies'
+first rungs sooner. Confidence about 70%. A per-colony census of the time from
+founding to first build in both arms would confirm or refute it.
+
+**Mechanism check** (a scratch counter over `FreighterTransfer` loads, keyed on
+whether the planet was owned by the loading empire at that time; 3 seats,
+1,500 yr). Loads at owned centers: **8.19% and 7.25% of loaded tonnage** on
+seeds 1 and 7 (6,050 and 5,996 loads), against **0.00%** on `main`, which is
+the control that says the counter reads what it claims to. On 6 seats, seed
+31337, the first such load is at 32.4 yr. `examples/bank_mix` (seed 1, 800 yr),
+`main` → R-MX8: freight's share of banked ore 8.88% → 9.97%, of which some is
+ore banked twice (a center-to-center load re-enters a bank); median payable
+fraction 0.054 → 0.059; infrastructure builds 523 → 650.
+
+**What it cost, and where.** The first build ran `ns/event` **+32.4% ± 2.7, 8/8
+seeds**, with events +2.6% — the "slower per unit" row of `AGENTS.md` §2's
+reading table. Callgrind (seed 1, 1,000 yr, the three freight functions kept
+out of line in a scratch build): program 43.5 G → 58.4 G instructions, of which
+`next_pickup` went 5.1 G → 17.4 G — the offer priced for every owned center on
+every milk-run stop (7.4 G) and the walk over every planet to find them
+(about 4.9 G). Two changes, each bit-identical to the first build at 1,000 yr
+on seeds 1 and 7 (events, colonies and population to the printed digit):
+
+| build, 1,000 yr, seeds 1 and 7, 2 interleaved rounds | `ns/event` | `yr/s` | events |
+|---|---|---|---|
+| `main` | 14,915–16,633 | 128.4–136.9 | 468,107 / 512,219 |
+| R-MX8, first build | 18,366–21,232 | 86.7–98.8 | 543,252 / 551,095 |
+| + the buyer's side read once, abundance tested before the leg | 18,084–19,926 | 91.6–100.3 | same |
+| + `owned_planets`, a per-seat index of owned planets | **14,276–15,080** | **122.1–127.1** | same |
+
+The index also serves `best_delivery_center`, which walked the galaxy on `main`
+too (7.8 G of `main`'s 43.5 G). With both changes the per-event cost is at or
+below `main`'s, and the remaining `yr/s` gap is the +16% and +8% more events
+the changed run does — the "doing more" row of the reading table.
+
+**Test budget.** `no_nan_or_infinity_reaches_replicated_state` went 37.4 →
+44.4 s at 200 yr and the determinism target 53.9–55.0 → 62.8–62.9 s. Trimmed to
+150 yr (probe in the test's comment), the target runs 56.1–58.4 s; at 130 yr it
+is 55.0–56.2 s, so that test no longer sets the target's time —
+`stepping_in_any_granularity_reaches_the_same_state` (35.6 s on `main`, 36.0 s
+here) and scheduling do. The target is under 60 s and above the 54 s the
+tolerance band asks a fix to reach; `main` itself runs it at 53.9–55.0 s.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

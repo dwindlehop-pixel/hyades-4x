@@ -139,6 +139,17 @@ struct Holdings {
     elsewhere: BTreeMap<(u32, u64), Minerals>,
 }
 
+/// **A center's side of an R-MX8 offer** (matching §8.5): the center a hauler
+/// serves, its price terms and what it still wants, read once per decision.
+struct CenterBid {
+    dest: Entity,
+    at: Vec3,
+    pressure: f64,
+    doctrine: Doctrine,
+    works: cards::Works,
+    want: [Price; 3],
+}
+
 /// Dense component storage keyed by entity index; iteration is index-ordered for
 /// determinism. `None` ⇒ the entity lacks this component.
 struct ComponentStore<T> {
@@ -3149,6 +3160,11 @@ pub struct Simulation {
     /// [`Simulation::holdings_centroid`] for why this is a memo and not a
     /// running sum.
     centroid_cache: Vec<Option<Vec3>>,
+    /// **The planets each seat owns, in entity order** — an index over
+    /// `world.owner`, written with it in [`Simulation::claim_planet`] and at
+    /// construction, so a freight decision walks an empire's own centers
+    /// rather than the galaxy (R-MX8 put one such walk on every milk-run stop).
+    owned_planets: Vec<Vec<Entity>>,
 
     autopilots: Vec<Box<dyn Autopilot>>,
     queue: BinaryHeap<Reverse<Event>>,
@@ -3478,6 +3494,7 @@ impl Simulation {
             planet_entity,
             player_entity,
             centroid_cache: vec![None; n],
+            owned_planets: vec![Vec::new(); n],
             autopilots,
             queue: BinaryHeap::new(),
             rng: Rng::new(config.seed),
@@ -3519,9 +3536,9 @@ impl Simulation {
             log: SimLog::with_filter(filter),
         };
         for &e in &sim.planet_entity {
-            if let Some(o) = sim.world.owner.get(e) {
-                let _ = o;
+            if let Some(o) = sim.world.owner.get(e).copied() {
                 sim.holdings.owned.insert(e, Minerals::default());
+                sim.owned_planets[o.0 as usize].push(e);
             }
         }
         sim.bootstrap();
@@ -5349,9 +5366,7 @@ impl Simulation {
                 if room > Price::new(1e-9) && want.iter().fold(Price::ZERO, |a, &b| a + b) > Price::ZERO {
                     let here = self.position_at(sh.outpost, self.clock).unwrap();
                     let accel = self.laden_accel(vehicle);
-                    if let Some(next) =
-                        self.next_pickup(PlayerId(p), here, sh.outpost, sh.destination, &want, room, accel)
-                    {
+                    if let Some(next) = self.next_pickup(PlayerId(p), sh.outpost, sh.destination, &want, room, accel) {
                         let to = *self.world.position.get(next).unwrap();
                         let arrive = self.set_leg(vehicle, here, to, accel, 0.0);
                         {
@@ -8233,7 +8248,14 @@ impl Simulation {
     /// silently, and only on some seeds. The `debug_assert` in
     /// `holdings_centroid`'s caller-facing test build catches exactly that.
     fn claim_planet(&mut self, planet: Entity, owner: PlayerId) {
+        if let Some(prev) = self.world.owner.get(planet).copied() {
+            self.owned_planets[prev.0 as usize].retain(|&e| e != planet);
+        }
         self.world.owner.insert(planet, owner);
+        let list = &mut self.owned_planets[owner.0 as usize];
+        if let Err(at) = list.binary_search(&planet) {
+            list.insert(at, planet);
+        }
         // What the claimant already held here is now its holding at a planet it
         // owns: the same minerals, moved to the owned index (see `Holdings`).
         let there = self.holdings.elsewhere.remove(&(owner.0, planet.0)).unwrap_or_default();
@@ -8997,10 +9019,7 @@ impl Simulation {
             return self.most_needed_center(owner);
         }
         let mut best: Option<(Entity, f64)> = None;
-        for e in self.planet_entity.iter().copied() {
-            if self.world.owner.get(e).copied() != Some(owner) {
-                continue;
-            }
+        for &e in &self.owned_planets[owner.0 as usize] {
             let d = from.distance(*self.world.position.get(e).unwrap());
             let t = math::ship_travel_years(d, accel);
             let score = self.bill_completion(e, owner, cargo) * transcendental::exp_fast(-lambda * t);
@@ -9105,26 +9124,61 @@ impl Simulation {
     /// §8.1's rule for an ask). `t` is the leg `origin → dest` at `accel`.
     /// Nothing moves from a center to itself.
     fn center_offer(&self, owner: PlayerId, origin: Entity, dest: Entity, want: &[Price; 3], accel: f64) -> [Price; 3] {
+        match self.center_bid(owner, dest, want) {
+            Some(bid) => self.offer_from(origin, &bid, accel),
+            None => [Price::ZERO; 3],
+        }
+    }
+
+    /// The buying side of [`Self::center_offer`], read once per decision so a
+    /// milk run weighing every center it owns does not re-read it per center.
+    /// `None` when nothing is wanted.
+    fn center_bid(&self, owner: PlayerId, dest: Entity, want: &[Price; 3]) -> Option<CenterBid> {
+        if want.iter().all(|w| *w <= Price::ZERO) {
+            return None;
+        }
+        Some(CenterBid {
+            dest,
+            at: *self.world.position.get(dest)?,
+            pressure: self.mineral_pressure_of(dest),
+            doctrine: self.doctrine_of(owner.0 as usize),
+            works: self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default(),
+            want: *want,
+        })
+    }
+
+    /// The selling side: what `origin` offers `bid`. The abundance is read
+    /// first, so a center long nothing the buyer wants costs no leg and no
+    /// discount.
+    fn offer_from(&self, origin: Entity, bid: &CenterBid, accel: f64) -> [Price; 3] {
         let mut out = [Price::ZERO; 3];
-        if origin == dest || want.iter().all(|w| *w <= Price::ZERO) {
+        if origin == bid.dest {
             return out;
         }
-        let Some(bill) = self.next_bill(origin, owner) else { return out };
+        let Some(f) = self.world.factors.get(origin) else { return out };
+        let bill = works_bill(infra_step_price(f.infra, &self.config), &bid.works);
         let bank = self.held_at(origin).copied().unwrap_or_default();
-        let (Some(from), Some(to)) = (self.world.position.get(origin), self.world.position.get(dest)) else {
-            return out;
-        };
-        let t = math::ship_travel_years(from.distance(*to), accel);
-        let discount = transcendental::exp_fast(-self.config.trade_decay_lambda * t);
-        let doctrine = self.doctrine_of(owner.0 as usize);
+        let mut abundance = [Price::ZERO; 3];
         for (i, &c) in Basic::ALL.iter().enumerate() {
-            let abundance = (Price::new(bank.get_basic(c)) - bill[i]).max(Price::ZERO);
-            if abundance <= Price::ZERO || want[i] <= Price::ZERO {
+            if bid.want[i] > Price::ZERO {
+                abundance[i] = (Price::new(bank.get_basic(c)) - bill[i]).max(Price::ZERO);
+            }
+        }
+        if abundance.iter().all(|a| *a <= Price::ZERO) {
+            return out;
+        }
+        let Some(from) = self.world.position.get(origin) else { return out };
+        let t = math::ship_travel_years(from.distance(bid.at), accel);
+        let discount = transcendental::exp_fast(-self.config.trade_decay_lambda * t);
+        let own = self.mineral_pressure_of(origin);
+        // `willingness_to_pay`, term for term, on both sides of §8.1's test.
+        for i in 0..3 {
+            if abundance[i] <= Price::ZERO {
                 continue;
             }
-            let bid = self.willingness_to_pay(dest, c, &doctrine) * discount;
-            if bid > self.willingness_to_pay(origin, c, &doctrine) {
-                out[i] = abundance.min(want[i]);
+            let k = bid.doctrine.base_value[i] * bid.doctrine.doctrine_demand[i];
+            if k * bid.pressure * discount > k * own {
+                out[i] = abundance[i].min(bid.want[i]);
             }
         }
         out
@@ -9169,16 +9223,20 @@ impl Simulation {
     /// voyage whichever leg it is on. A detour is a voyage like any other
     /// (§8.1), and it is paid for in transit the hold is not earning.
     ///
-    /// **Cost.** `O(piles this player works)`, which §4 would otherwise forbid
-    /// on a path this hot. It is gated behind `max_pickup_stops > 1` and so is
-    /// not reached at the shipped default at all; that is a knob to measure
-    /// with, not yet a knob that is on. Deterministic: `stock` is a
-    /// `BTreeMap` and entity id breaks ties.
-    #[allow(clippy::too_many_arguments)]
+    /// **Centers are stops too** (R-MX8): a center this empire owns scores
+    /// what it would let the hauler carry to `dest` ([`Self::offer_from`]).
+    ///
+    /// **Cost.** `O(piles this player works + centers it owns)` per stop, on
+    /// every leg with a stop left (`max_pickup_stops = 2` ships). The centers
+    /// come from `owned_planets` rather than a walk of the galaxy, and a
+    /// center long nothing `dest` wants exits before its leg is priced; with
+    /// both, the 1,000-yr bed's per-event cost is at or below the engine's
+    /// before R-MX8 (appendix §D.22). Deterministic: `elsewhere` is a
+    /// `BTreeMap`, `owned_planets` is in entity order, and entity id breaks
+    /// ties.
     fn next_pickup(
         &self,
         owner: PlayerId,
-        from: Vec3,
         current: Entity,
         dest: Entity,
         want: &[Price; 3],
@@ -9186,6 +9244,7 @@ impl Simulation {
         accel: f64,
     ) -> Option<Entity> {
         let lambda = self.config.trade_decay_lambda;
+        let from = self.position_at(current, self.clock)?;
         let mut best: Option<(Entity, f64)> = None;
         let consider = |e: Entity, useful: Price, best: &mut Option<(Entity, f64)>| {
             let useful = useful.min(room);
@@ -9218,12 +9277,14 @@ impl Simulation {
         }
         // **And a center with an abundance** (R-MX8): what it would let this
         // hauler carry to the center it serves ([`Self::center_offer`]).
-        for &e in &self.planet_entity {
-            if e == current || e == dest || self.world.owner.get(e).copied() != Some(owner) {
-                continue;
+        if let Some(bid) = self.center_bid(owner, dest, want) {
+            for &e in &self.owned_planets[owner.0 as usize] {
+                if e == current {
+                    continue;
+                }
+                let offer = self.offer_from(e, &bid, accel);
+                consider(e, offer.iter().fold(Price::ZERO, |a, &b| a + b), &mut best);
             }
-            let offer = self.center_offer(owner, e, dest, want, accel);
-            consider(e, offer.iter().fold(Price::ZERO, |a, &b| a + b), &mut best);
         }
         best.map(|(e, _)| e)
     }

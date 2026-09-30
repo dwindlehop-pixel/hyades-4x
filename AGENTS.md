@@ -2414,6 +2414,7 @@ changes how you *work*, not what is left to do:
   | T-130 (`exp`/`ln` as four-multiply polynomials), seed 7, 400 yr: instructions per event **−0.84%**; 15 paired rounds **0.986 ± 0.013** — not resolved; combat bed not resolved | — | — | — |
   | **T-134 (Exchange at a spatial equilibrium, delivery room, one holding per (empire, planet))**, 3 seats, 1,500 yr, 3 interleaved rounds against the shipped binary: **128.4–135.7 → 145.1–156.8 yr/s**, `ns/event` 12,645–13,116 → 10,874–11,993 | — | **+11% to +17%** | — |
   | T-134 stage 2 (side duties: miner and colony-ship freight runs, picket sorties), 3 seats, 1,500 yr, 3 interleaved rounds: `ns/event` min-of-3 **+2.5% / −2.6%** on seeds 1 / 7, events +0.9% / +1.1%; combat bench seed 1, 2 rounds: **11.17–11.34 → 10.87–10.92 yr/s**, fewer events at higher `ns/event`, the new code ≤0.4% of instructions | — | not resolved / **about −3%** | — |
+  | R-MX8 (a center's abundance hauled to a center with demand), 3 seats, 1,000 yr, 2 interleaved rounds against `main`: first build **18,366–21,232** against **14,915–16,633 `ns/event`**; with the buyer's side read once and a per-seat owned-planet index, **14,276–15,080**, bit-identical to the first build; events +16% / +8% | — | **122–127 against 128–137 yr/s** — per event at or below `main`, the run does more | — |
 
   **R-WAR9's row is a case where the workload changed and the columns must be
   read that way** (§2's T-111 caveat). Flying colony ships at the rate their

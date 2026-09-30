@@ -264,12 +264,16 @@ fn stepping_in_any_granularity_reaches_the_same_state() {
 /// infinite quantity in this model.
 #[test]
 fn no_nan_or_infinity_reaches_replicated_state() {
-    // **200 yr, trimmed at R-O88** (was 400, which cost 30 s once the berth
-    // count opened). The assertion is an invariant — no non-finite value reaches
-    // replicated state — so it needs the mechanism to have fired, not a long
-    // accumulation. The full galaxy stays: this walks every planet's snapshot
-    // fields, so breadth is what it is actually reading.
-    let mut sim = fresh_short(6, 31337, 200.0);
+    // **150 yr, trimmed at R-MX8** (200 at R-O88, 400 before). The assertion
+    // is an invariant — no non-finite value reaches replicated state — so it
+    // needs the mechanism to have fired, not a long accumulation. R-MX8 moved
+    // this bed from 37 s to 44 s at 200 yr; probed at 100 / 130 / 150 / 170 /
+    // 200 yr: 9.0k / 14.7k / 19.3k / 24.6k / 33.5k events in 17 / 24 / 30 / 35
+    // / 44 s, and the first center-to-center load on this bed is at 32.4 yr, so
+    // every one of those horizons walks the new path. The full galaxy stays:
+    // this walks every planet's snapshot fields, so breadth is what it is
+    // actually reading.
+    let mut sim = fresh_short(6, 31337, 150.0);
     let report = sim.run();
     assert!(
         report.events_processed > 1_000,
