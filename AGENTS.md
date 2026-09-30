@@ -2362,7 +2362,8 @@ shell model says should be flat; not flattened, it is MC-tuned).
 ### Also open — see `docs/hyades_todo.md`
 
 **The full register of outstanding work lives in `docs/hyades_todo.md`**, ordered
-specific → vague with permanent `T-nn` identifiers. Do not maintain a second copy
+specific → vague with permanent `T-nn` identifiers, and **what was built lives in
+`docs/hyades_done.md`** — a Band A entry moves there, unchanged, when it closes. Do not maintain a second copy
 of it here; cite the T-code. What stays in this file is only the material that
 changes how you *work*, not what is left to do:
 
