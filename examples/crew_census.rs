@@ -8,7 +8,7 @@
 //!
 //! That is the hypothesis for why `miners_per_outpost = 1` did not reproduce the
 //! bed bit-for-bit. **It is a plausible mechanism attached to a real number,
-//! which is the shape of every measurement artifact in `CLAUDE.md` §2**, so this
+//! which is the shape of every measurement artifact in `AGENTS.md` §2**, so this
 //! counts the crews instead of arguing about them. No engine change: the log
 //! already records every miner that parks and where.
 //!
@@ -16,7 +16,7 @@
 //! §4.5). The crowding law predicts **fewer, larger, closer outposts**: a rich
 //! body genuinely rewards a big crew, so the fleet concentrates rather than
 //! spreading, and freight cost scales with *sites and distance* rather than with
-//! crew. `CLAUDE.md` §2 is explicit that a claim about site count has to be read
+//! crew. `AGENTS.md` §2 is explicit that a claim about site count has to be read
 //! from a census and must not be inferred from the objective — an objective that
 //! moved the right way would be consistent with the prediction and would not be
 //! evidence for it. So all three halves of "fewer, larger, closer" are printed

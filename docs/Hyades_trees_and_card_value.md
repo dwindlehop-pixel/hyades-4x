@@ -110,8 +110,34 @@ Concrete, so this is checkable rather than a vibe:
    fiction cannot drift free of what the card does — the gap is between the
    empire's *framing* and the outcome, never between the card's text and its
    rules.
-5. **Flavour text is the author's own** (`CLAUDE.md` §6). This section constrains
+5. **Flavour text is the author's own** (`AGENTS.md` §6). This section constrains
    register; it does not license anyone to rewrite the author's lines.
+
+### 1.4b A card's name and flavor read the game it is played in
+
+**`RATIFIED` (the author's direction):** a card's flavor text, and potentially
+its name, change with what this empire and the card's target have played.
+Privateers against a peaceful empire read differently from Privateers against
+an empire that has already declared you an enemy; a Growth card is biological
+by default and reads differently if Production reached an android workforce
+first. So each card carries a **voice table** — a default reading and one row
+per context that changes it — authored in its tree spec
+(`.claude/skills/card-workflow`, Stage 9).
+
+- A context is a condition over state the command layer shows every player:
+  cards played by this empire and by the target, the relation between them,
+  which tree reached a milestone first.
+- A context changes the name, the flavor, or both. **It never changes the
+  `role` subtitle or the rules** (§1.4 rule 4).
+- The choice is made in presentation from `Snapshot` and nothing flows back
+  (design law #15).
+- Every row is the author's to approve (§1.4 rule 5); drafts are labeled.
+
+**`OPEN` — R-TREE13: `Snapshot` does not carry which cards each seat has
+played, or the relation between seats**, so no voice table can be resolved
+yet. **What would settle it:** a `PlayerSnapshot` field listing played cards by
+round (the `CardPlayed` log already records them), and the relation once
+diplomacy exists (T-11).
 
 ### 1.5 What this amends
 
@@ -160,7 +186,7 @@ So: **one objective per tree, evaluated per player.**
 
 ### 2.2 Terms
 
-Defined before use (`CLAUDE.md` §6), because §3 and §4 both index on them.
+Defined before use (`AGENTS.md` §6), because §3 and §4 both index on them.
 
 | symbol | name | unit | where it comes from |
 |---|---|---|---|
@@ -179,7 +205,7 @@ Defined before use (`CLAUDE.md` §6), because §3 and §4 both index on them.
 
 **Every objective is an integral of a stock over the horizon** — an
 "`X`-years" — which is the form colony-years already has and the reason it is
-the guard the project trusts (`CLAUDE.md` §7: count at a horizon is a weak
+the guard the project trusts (`AGENTS.md` §7: count at a horizon is a weak
 invariant; the integral falls the moment anything slows down).
 
 ### 2.3 The six
@@ -216,7 +242,7 @@ placeholder length scale (**R-TREE2**).
 **`d_ij` is measured once, at game start, from homeworld positions — and this is
 an anti-farm rule, not an optimization.** A live `d_ij` would be a term the
 Warfare player can move without fighting: expand *away* from a strong rival and
-their weight falls, scoring the same as having beaten them. `CLAUDE.md` §2's
+their weight falls, scoring the same as having beaten them. `AGENTS.md` §2's
 invariance rule in its exact form — *what could a card do to move this without
 moving the world?* Freezing `w_ij` at setup answers "nothing".
 
@@ -441,7 +467,7 @@ the signal that the window has been chosen wrong.
 
 ### 2.5 The invariance audit
 
-`CLAUDE.md`'s rule — *what could a card do to move this metric without moving the
+`AGENTS.md`'s rule — *what could a card do to move this metric without moving the
 world?* — applied to all six before any of them is used:
 
 | objective | farmable? | the answer |
@@ -468,7 +494,7 @@ colony count saturates early but the other five stocks plausibly do not, so a
 short horizon would bias every comparison toward Expansion. The reasoning stands;
 the number does not. **The author's revision: every colonizable world is taken by
 ~2,500 years, so 8 kyr buys nothing that 3 kyr does not** — and the engine's own
-measurements agree from the other side (`CLAUDE.md` §2: colony count reaches
+measurements agree from the other side (`AGENTS.md` §2: colony count reaches
 97.9% of its 4,000-year total by 1,500 yr and 99.9% by 2,000).
 
 **The bed is 3,000 years.** That is ~500 years of margin past the point
@@ -504,7 +530,7 @@ Three things soften the cost and none of them removes it:
 - **Common random numbers**, already the project's practice: the same galaxies
   for every card, compared card-by-card within seed. This is free and it is worth
   more here than anywhere else, because the quantity being estimated is a *tail*.
-- **Screen on a truncated horizon, ratify on the objective** (`CLAUDE.md` §2),
+- **Screen on a truncated horizon, ratify on the objective** (`AGENTS.md` §2),
   with the screen **re-calibrated** — the ρ figures in that file predate three
   landings and must not be assumed to carry.
 - **Measure where each stock actually saturates first** (§3.2). If fleet-years
@@ -633,7 +659,7 @@ Stated so it is not discovered as a surprise:
 
 - **A tail quantile is expensive.** P92 has far higher sampling variance than a
   mean at the same sample count. Every tier-1 equality claim needs an error bar,
-  and `CLAUDE.md` §2's rule — *anything inside 2 SE of zero is not a finding* —
+  and `AGENTS.md` §2's rule — *anything inside 2 SE of zero is not a finding* —
   applies to differences between cards exactly as it does to knobs.
 - **Counterfactual value is not additive.** Two cards each worth +5% at P92 are
   not worth +10% together; the project has already measured this once, where
@@ -663,6 +689,7 @@ Stated so it is not discovered as a surprise:
 | **R-TREE10** | **Re-measure the composite on volume.** `data/tree_gradient.tsv` (T-50, 32 knobs, 4 seeds) was taken with Production in **mass**; §2.3.4 now reads volume. Spot-checked on the three hull-ladder knobs at seed 1 / 600 yr, the Production elasticity moves by 0.1–0.6 and no sign changes (appendix §A.14), but one seed with no error bar is a sanity check and not a result. The full bed wants re-running before anything cites that column again. | §2.3.4 |
 | **R-TREE9** | **The composite objective.** `examples/tree_gradient` scores the geomean of the ratio-to-default of the measurable trees, which makes `∂ln S/∂ln x` the plain mean of the per-tree elasticities and everything dimensionless. Two things are unratified: the equal weighting across trees, and whether a geomean is the right aggregator once Warfare and Technology join (a tree that can go negative has no log). | §2.4 |
 | **R-TREE11** | **The write-capability partition** (card contract §10). Whether "population-lethal" is a *sign* test on the write's argument or a declared per-card flag, and whether the partition is exclusive (only Warfare) or a floor (Warfare must carry some, others may not). | card contract §10.4 |
+| **R-TREE13** | **The voice table needs state `Snapshot` does not carry** — each seat's played cards and the relation between seats (§1.4b). | §1.4b |
 | **R-TREE12** | **Warfare card value has no doubling time of its own.** Decided here: cost a Warfare card as the fractional *increase* it causes in the **target's** doubling time, on the target's own tree stock, against a CRN counterfactual. Open: whether the target is the single highest-`w_ij` neighbor or the `w`-weighted mean over all of them, and how that composes with §4.2's P92 when the target set is itself a random variable. | §5.4 |
 
 ---

@@ -14,7 +14,7 @@ fn main() {
         let r = sim.run();
         let s = t0.elapsed().as_secs_f64();
         let col: usize = r.players.iter().map(|p| p.colonies).sum();
-        // `ns/event` beside `yr/s`, per CLAUDE.md: a rate over a population the
+        // `ns/event` beside `yr/s`, per AGENTS.md: a rate over a population the
         // change re-selects cannot tell "more work" from "dearer work".
         println!(
             "seed {seed}: {:>6.1} yr/s  {:>8} events  {:>7.0} ns/event  {col} colonies  pop {:.6}",

@@ -111,7 +111,7 @@ population kill.
 
 **Infrastructure is stored as a mass in kilotons.** It is built out of minerals
 and minerals are masses (L6/R-O57); a Band is a *reading* of it for display and
-for thresholds, never a second thing to store (T-64, `CLAUDE.md` §4).
+for thresholds, never a second thing to store (T-64, `AGENTS.md` §4).
 
 ### 1.4 What the amendment costs, in engine terms
 
@@ -241,7 +241,7 @@ Deep-seeded colonies **skip the pre-`medium_min_level` staircase** and go
 straight for a hull they must save for. That is the pathway from seed mass to
 earlier founding, and the aggregate was hiding it.
 
-> **A new artifact shape for `CLAUDE.md` §2's table: an aggregate that moves
+> **A new artifact shape for `AGENTS.md` §2's table: an aggregate that moves
 > against every one of its parts.** Nothing was wrong with the dwell
 > measurement; it was a correct mean over a population whose composition the
 > treatment changes. Any metric averaged over a set the intervention re-selects
@@ -333,7 +333,7 @@ set how much was invented.
 #### Terms
 
 Defined before use, because the previous revision of this section did not and
-one of its two load-bearing lines was unreadable as a result (`CLAUDE.md` §6):
+one of its two load-bearing lines was unreadable as a result (`AGENTS.md` §6):
 
 | symbol | name | unit | where it comes from |
 |---|---|---|---|
@@ -593,7 +593,7 @@ rather than a refinement:
 - **The profitability test cannot be written without it.** With `Y` independent
   of `P`, the population column of the author's ruling has nothing to multiply,
   and the test collapses back to the scale-free 1.8-year payback above.
-- **It is the same question `CLAUDE.md` §2 asks of any knob** — *measure whether
+- **It is the same question `AGENTS.md` §2 asks of any knob** — *measure whether
   the resource the change buys is even binding.* A rung of infrastructure with
   nobody to work it is capacity bought and not staffed. T-88 found the same
   shape one level up: build rate governs ~19% of a center's timeline, so +29%
@@ -794,7 +794,7 @@ expansion loop whose time constant T-51/R-O68 identified as the binding limiter.
 *(T-51 closed at §6.18; the limiter's mechanism resolved to the infra price
 ladder rather than to the comparison — R-O85.)*
 Guard is `examples/colony_years`; the prediction is *up*, and if it is not, find
-the mechanism before tuning the value (`CLAUDE.md` §2).
+the mechanism before tuning the value (`AGENTS.md` §2).
 
 > **Landed (T-68, stage 2).** `SimConfig::build_years = 10.0` is gone, replaced
 > by `build_lead_years` and `slip_throughput`; `Simulation::build_time(mass)` is
@@ -834,7 +834,7 @@ the mechanism before tuning the value (`CLAUDE.md` §2).
 > reason to happen.
 >
 > **What it cost in test time, and why that is a finding rather than a chore.**
-> The unit target went **87 s → 507 s**, and `CLAUDE.md` §2's rule applied
+> The unit target went **87 s → 507 s**, and `AGENTS.md` §2's rule applied
 > exactly as written: *when a test target moves, look at what the simulation
 > started doing, not at what the tests are asking.* A Medium hull dropped from 10
 > yr to 3.0, so centers decide three times as often and the entity count follows.
@@ -1283,7 +1283,7 @@ associative, so this is a real constraint on implementation and not a formality:
 - which means the state is a **multiset of played cards folded in card order**,
   and never a running product mutated at play time.
 
-That is the same lesson as `holdings_centroid` (`CLAUDE.md` §4): a running total
+That is the same lesson as `holdings_centroid` (`AGENTS.md` §4): a running total
 accumulates in event order, a recomputed fold accumulates in a canonical order,
 and only the second is reproducible. **R-IND4** is this test; it is cheap, and it
 must exist before the second industrial card does.
@@ -1350,7 +1350,7 @@ struct Works {
 }
 ```
 
-The trap is the one `holdings_centroid` already taught (`CLAUDE.md` §4): **a
+The trap is the one `holdings_centroid` already taught (`AGENTS.md` §4): **a
 running total accumulates in event order and a recomputed fold accumulates in a
 canonical order, and only the second is reproducible.** Playing cards A then B
 must give bit-identical state to B then A, which for floats means the fold has to
@@ -1581,7 +1581,7 @@ completion   = (short_before − short_after) / short_before   · exp(−λ·t)
 
 **Divide by what is left to find, not by the bill.** The first written form of
 R-IND17 used `Σ bill` and it does not concentrate — worked on paper before
-implementing, per `CLAUDE.md`'s rule about probing a scaling relationship first:
+implementing, per `AGENTS.md`'s rule about probing a scaling relationship first:
 
 | destination, given a Yellow cargo | `÷ Σ bill` | `÷ short_before` |
 |---|---|---|
@@ -1719,7 +1719,7 @@ hard.
 
 **This is not ratified and no number here should be quoted as a result.** Two
 seeds cannot separate a −9.41% treatment effect from seed noise on a bed whose
-four-seed spread is routinely wider than that (`CLAUDE.md` §2), and the standard
+four-seed spread is routinely wider than that (`AGENTS.md` §2), and the standard
 CRN bed is four seeds for exactly this reason. What the pair does establish is
 the *sign structure*: the change is a **reallocation, not a gain** — the same
 deepen-versus-expand trade R-O66 and §6.9 both landed on, now visible as one
@@ -1774,7 +1774,7 @@ everything else in the commit in place reproduces the pre-T-69 numbers
 **bit-for-bit** — 1,385,302.5 and 1,446,100.0 work-years, 10,717,850 and
 10,688,675 colony-years — so the berth bookkeeping, the `Vec` of completion
 times and the fill loop are all inert at one berth, and the gain is not some
-other line in the change. `CLAUDE.md` §2 puts ablation first among the three
+other line in the change. `AGENTS.md` §2 puts ablation first among the three
 kinds of proof; this is the cheap version of it, and it also rules out the
 awkward possibility that a refactor moved the bed by accident.
 
@@ -1905,7 +1905,7 @@ ruled minerals out specifically. Bringing ore forward is worth something only
 where minerals are what you run out of. On a bed where they are not, the
 objective-optimal crew is **one hull everywhere**, and ratifying `f` here would
 ratify *"do not mine"* — a statement about the test bed, not about the design.
-`CLAUDE.md` §7 already says this in general form: **before tuning another
+`AGENTS.md` §7 already says this in general form: **before tuning another
 economic knob, check whether the thing being optimized is what is actually
 scarce.**
 
@@ -2023,7 +2023,7 @@ that stops being mined when demand stops.
 **R-IND20, open: demand is read at the founding center, not empire-wide.** An
 outpost feeds the whole empire through freight, so the correct demand is the
 empire's unmet total. That is an `O(planets)` scan on a decision path
-(`CLAUDE.md` §4) and would need the `holdings_centroid` memo treatment. The
+(`AGENTS.md` §4) and would need the `holdings_centroid` memo treatment. The
 center that pays for the pair is the defensible local proxy; the difference is
 what R-IND20 is for.
 
@@ -2217,7 +2217,7 @@ That is the sink's real shape: it is 756 Bands wide and priced at a ladder whose
 top half buys nothing the empire is short of. Fixing it means moving MC-tuned
 surfaces — `fab_cap` and the knee, the infra ladder's anchor, or giving
 infrastructure a consumer that does not saturate — and every one of those needs
-ratification (`CLAUDE.md` §6), so none is taken here.
+ratification (`AGENTS.md` §6), so none is taken here.
 
 ### 6.19 R-O87 — `reinvest_bias` cannot move work-years, and that is an identity
 
@@ -2256,7 +2256,7 @@ Confirmed at the objective horizon:
 | **pooled, eight seeds** | **+0.32%** | **1.42** | **0.22 SE — flat** | 5/8 |
 
 **The first row is a coin landing on its edge, and the second row is what
-proved it.** `CLAUDE.md` §2 already carried that warning from `survey_reserve`
+proved it.** `AGENTS.md` §2 already carried that warning from `survey_reserve`
 — "a 2.4-SE reading on four seeds is not a finding" — and this is the first time
 the project has *refuted* one rather than merely doubted it. The refutation cost
 four runs and is far stronger than more seeds on the same bed would have been:
@@ -2493,7 +2493,7 @@ a 50-year Euler step on a logistic — but it is no longer the dominant throttle
 and the 81%-of-timeline figure in its register entry is superseded.
 
 **Cost, and where it landed.** Not throughput, which improved; the **test
-targets**, which is where entity count always lands first (`CLAUDE.md` §2). Unit
+targets**, which is where entity count always lands first (`AGENTS.md` §2). Unit
 went 19 → 54 s and determinism 30 → 58 s, both fixed in the same commit and both
 by the lever that section prescribes — `paired_cfg` 250 → 120 yr with an
 `events_processed` floor guarding the trim, and `full_run_reports_are_bit_identical`
@@ -2634,7 +2634,7 @@ than mistuned** — after λ (freighter routing had no distance component at all
 `take_for_deficit` replaces `take_basics` on the load leg. The destination is the
 center the hauler delivered to last, so the pairing is a standing relationship
 and the deficit read is `O(1)` — reading the empire's aggregate would be
-`O(owned planets)` on one of the hottest paths in the engine (`CLAUDE.md` §4).
+`O(owned planets)` on one of the hottest paths in the engine (`AGENTS.md` §4).
 
 The split is **along the deficit vector**, not down it. A works bill is a
 *conjunction* — the rung pays only when every color clears — so what matters is
@@ -2656,7 +2656,7 @@ Two candidate changes, both plausible, run as a 2×2. Standard four-seed CRN bed
 | both | need-routed | deficit | 601,663.8 | −41.2% |
 
 **Replicated on seeds the candidate was not chosen against** — the step that
-refuted R-O87's candidate (`CLAUDE.md` §2). Seeds 2, 3, 5, 11: **+8.60% ± 2.61,
+refuted R-O87's candidate (`AGENTS.md` §2). Seeds 2, 3, 5, 11: **+8.60% ± 2.61,
 4/4 positive.** Pooled over all eight:
 
 > **+8.40% ± 1.86 work-years, 8/8 seeds positive, 4.5 SE.**
@@ -2732,7 +2732,7 @@ router to have a choice at all:
 guessed at.** The candidate cause is that a need-routed pickup breaks the 1:1
 miner↔hauler pairing, so extraction and haulage stop being matched rock by rock —
 but that is a story that fits the sign, which is the exact shape of all seven
-measurement artifacts in `CLAUDE.md` §2. Carried under **T-76**; the arm is not
+measurement artifacts in `AGENTS.md` §2. Carried under **T-76**; the arm is not
 shipped and nothing depends on it.
 
 #### What this does and does not fix
@@ -2764,7 +2764,7 @@ legs of the cost ladder and are near-perfectly antisymmetric, which is R-O58's
 
 **They share a cliff and they do not share an upside**, which is a distinction
 |elasticity| cannot make and which took re-ranking the table by *available gain*
-to see (`CLAUDE.md` §2, trap 1). Ranked by `max(S(+10%), S(−10%)) − 1`,
+to see (`AGENTS.md` §2, trap 1). Ranked by `max(S(+10%), S(−10%)) − 1`,
 `general_vehicle_cost` is **+7.79%** and `medium_fleet_size` **+7.21%** — both
 4/4 seeds, both replicated on four more (pooled **+7.80% ± 1.27** and
 **+7.88% ± 0.75**, 8/8) — while `cargo_unit_size` falls to **22nd of 32 at
@@ -2856,7 +2856,7 @@ sweep says nothing above it is worth taking.
 opposite values. The **economic integration step** — mine, grow, regrow, mint —
 is a rate over an interval and wants to be *small* for fidelity. The **retry
 cadence** for a saving center's build decision wants to be large, or better, not
-a cadence at all (`CLAUDE.md` §4: entities evaluate on their own arrival events,
+a cadence at all (`AGENTS.md` §4: entities evaluate on their own arrival events,
 never on a sweep). They were the same number because `sys_production_tick` called
 `sys_build_decision` inline, so lowering the tick multiplied the decisions with
 it — and a decision is two orders of magnitude dearer than a tick, because it
@@ -3033,7 +3033,7 @@ fetch the same color twice and land short in the third.
 
 **Cost, stated rather than discovered later.** `next_pickup` is
 `O(piles this player works)` on one of the engine's hotter paths, which
-`CLAUDE.md` §4 would otherwise forbid. It runs only when a leg has a stop left,
+`AGENTS.md` §4 would otherwise forbid. It runs only when a leg has a stop left,
 so it is one scan per outbound leg rather than per arrival, and it is measured at
 the ~5% of `ns/event` above. Carried as **T-93**.
 
@@ -3073,7 +3073,7 @@ because it never passes through a hull. Carried as **T-92**.
 and it is the transferable part.** Mass was never the binding resource: the
 empire banks 360,000 kt it cannot spend. A **conjunction** makes the *minority*
 color the whole constraint, so a channel carrying 1.7% of the mass carried 100%
-of the scarcity, and fixing its composition was worth +55%. `CLAUDE.md` §2's rule
+of the scarcity, and fixing its composition was worth +55%. `AGENTS.md` §2's rule
 is to check whether the resource a change buys is binding; T-91 says to check
 **which** resource, because an aggregate that is plainly slack can contain a
 component that is not.
@@ -3130,7 +3130,7 @@ settles the portability question — transcendentals ship inside the WASM module
   positive `r`, so the closed form is monotone at any rate.
   `the_logistic_is_monotone_at_any_growth_rate` asserts it from both directions
   out to `r = 1000`.
-- **The clamp at `K` stops being load-bearing.** `CLAUDE.md` §2 records it as
+- **The clamp at `K` stops being load-bearing.** `AGENTS.md` §2 records it as
   *hiding* a too-large `r` — collapsing the logistic into a step function that
   filled a world in one cycle and scored well doing it. It can now only fire on a
   last-bit rounding, and is written as the interval the mathematics already
@@ -3164,7 +3164,7 @@ fewer events** — a cheaper operating point that did not exist under Euler, and
 the first thing T-95 should re-examine.
 
 **What it consumes.** `growth_rate = 0.873` was ratified (R-O84) against the
-Euler trajectory, and `CLAUDE.md`'s rule applies: the operating point has moved,
+Euler trajectory, and `AGENTS.md`'s rule applies: the operating point has moved,
 so every gradient measured on it is spent. The value is **carried, not
 re-ratified** — re-measuring it is part of T-95, and the plateau map R-O84 warns
 about has to be redrawn anyway because its step structure came from counting
@@ -3355,7 +3355,7 @@ whose pairs happen to sit on Magenta rocks accumulates Magenta forever, and
 at R-O89 and costs **−52.3%**, with three explanations refuted and the cause
 still open — it breaks the 1:1 miner↔hauler pairing every trip. Outpost
 *selection* is a different intervention: it is made once, at build time, it
-leaves the pairing intact, and it is where `CLAUDE.md` §4 says a decision of this
+leaves the pairing intact, and it is where `AGENTS.md` §4 says a decision of this
 kind belongs (evaluated when a center actually orders a pair, on data it already
 reads).
 
@@ -3367,7 +3367,7 @@ static one did not:
   makes every center chase the same color at once. The empire's aggregate is
   the other extreme and is what the `freight_gap` census shows is already
   balanced (171x–2,356x supply on every color), so it would say nothing.
-- **Is it farmable?** `CLAUDE.md`'s invariance rule applies: a term that reads
+- **Is it farmable?** `AGENTS.md`'s invariance rule applies: a term that reads
   live holdings can in principle be moved by a card that changes holdings without
   changing the world. Scarcity read from *bills outstanding* rather than from ore
   on hand is the candidate that is not.

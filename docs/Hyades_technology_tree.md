@@ -9,7 +9,7 @@ capability is spent on) and `Exotic_matter_technology_inspiration.md`. New calls
 continue the **R-TECH n** series.*
 
 **Rev 2 (T-131).** Carries **ratified decisions and open decisions only**
-(`CLAUDE.md` §6). This is the **least-built** of the six trees: the standing-layer
+(`AGENTS.md` §6). This is the **least-built** of the six trees: the standing-layer
 half is ratified and shipped (`Roster`, `Class`, `UnlockDesign`), the loadout
 model is specified and unbuilt, and **the objective is now specified by the
 author** (§4) — a static rating of every Design, earned head-to-head in one test
@@ -18,7 +18,7 @@ rather than in the prose.
 
 **Rev 2 changes:** §4 rewritten to the author's specification, replacing the
 power-mean proposal (R-TREE4, never ratified; appendix §D.9). §5.6 added — a
-Technology write reaches no build today. R-TECH5 through R-TECH18 opened. **T-132** resolved R-TECH14 (the damage model).
+Technology write reaches no build today. R-TECH5 through R-TECH18 opened. §7 added — technology options and inspirations (R-TECH20, R-TECH21). **T-132** resolved R-TECH14 (the damage model).
 
 ---
 
@@ -379,7 +379,7 @@ hostile on the offensive beds (§4.4.6). The bed rates **Design** — the write
 surface this tree owns (§5). The beds run the engine's own role systems, seeded
 the way the arena seeds combat: **a bed is a scenario seeder that owns no role
 logic**, and the dependency runs `bed → sim`, as `arena → combat` does (§3 of
-`CLAUDE.md`). Each pair is played on the same seeds (common random numbers) with
+`AGENTS.md`). Each pair is played on the same seeds (common random numbers) with
 the two sides' positions mirrored, so a side has no geometric advantage. Seeds
 per pair and each non-combat bed's horizon are placeholders.
 
@@ -591,7 +591,8 @@ latents, so the inverse problem is under-determined at range — but **arming a
 fleet is loud unless you also buy thrust.** A Technology card that adds weapons
 without a propulsion partner announces itself.
 
-**5.4 `OPEN` — R-TECH3: the card surface beyond `UnlockDesign`.** Candidates, in
+**5.4 `OPEN` — R-TECH3: the card surface beyond `UnlockDesign`.** *Advanced:*
+the drive factor (§8) is the first write designed past it. Candidates, in
 rough order of how well the engine could support them today: component stat
 tables (needs §2.5), `hull_thrust_to_mass` (needs R-O65 ratified), sensor and
 stealth ranges (needs the detection query), the counter-graph edges themselves
@@ -616,7 +617,7 @@ one alone is enough:
   be built, and `Q_i` counts only built hulls (§4.3).
 
 So `T_i` for a Technology card is the pass arm's `T_i` exactly, whatever the
-table says. That is `CLAUDE.md`'s *count the consumers of a write* in its plain
+table says. That is `AGENTS.md`'s *count the consumers of a write* in its plain
 form, and it is found by reading, not by a bed.
 
 **What would settle it:** a Design resolver that picks, per role, among the
@@ -645,6 +646,7 @@ the measurement into the target (§4.10).
 | R-TECH10 | a hull carries its **active** role's strength each year (§4.7.3) |
 | R-TECH13 | every role has a bed (§4.4.3) |
 | R-TECH16 | a bed forces the role (§4.4.4) |
+| R-TECH21 | Barrow's scale is loose guidance for this tree and Kardashev's for Production; **card tiers are an instrument of the counter-graph, not of a civilization scale** (§7.2) |
 | R-TECH17 | the pool is deduplicated by what the beds read; the goal is that no two named Designs share a loadout (§4.3.1) |
 | — | supers are synthesized at pop-Band IV by fixed two-basic recipes |
 | — | Red is the general key; Blue and Green are traversal keys (law #1) |
@@ -674,6 +676,166 @@ the measurement into the target (§4.10).
 | R-TECH3 | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |
 | R-TECH4 | a miniaturization analogue inside this tree? | a decision — *recommend no* |
 | T-25 | `enforce_roster` defaults off because there is no unlock path | the card system |
+| R-TECH20 | magnetar matter as a Technology option (§7.1.2) | a design pass naming the write and its mass cost |
+| R-TECH22 | the drive card's slot, slant and factor `f` — `TIER0[12]` recommended, replacing an unlock that reaches no build (§8.1) | the author; `f` after stage 4 of T-136 |
+| R-TECH23 | where the drive state lives — a `DesignWrite` fold in `CardId` order beside `Works` (recommended) or a `WorksWrite` variant (§8.4) | the author |
+
+---
+
+## 8. The first Technology card — the drive (T-136, design; nothing built)
+
+Taken through `.claude/skills/card-workflow` Stages 0–3. **Every magnitude is a
+placeholder and every decision not marked `RATIFIED` is open.**
+
+**8.1 Brief (Stage 0).** The author: *"Obvious first Technology card is one that
+improves engines for better acceleration."* *Recommended* slot `TIER0[12]`
+(Inscrutable), replacing `UnlockDesign(MediumSystems, Delta)`, which reaches no
+build (R-TECH18). Counter-graph edges: not given; the card is the propulsion
+half §5.3 says concealment needs, which the cross-tree workflow places.
+
+**8.2 Story and objective (Stage 1).** The Long Dawn's mouth, **First Light**.
+The metric is capability-years `T_i` (§4.2). Unlike an unlock, a drive write
+reaches every hull built after the play, so it has a path to `Q_i` without the
+Design resolver R-TECH18 is waiting on — provided the rating table carries the
+upgraded Designs, which it does not yet (8.5, stage 3).
+
+**8.3 Intent as algebra (Stage 2).**
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `k` | specific thrust | kt·g per kt of drive | `SimConfig::drive_specific_thrust = 18.21` (R-MC16 anchor) |
+| `f` | this empire's drive factor | — | the card; `1.0` before it |
+| `m_drv` | a hull's drive mass | kt | `HullType::drive_mass` |
+| `M` | dry mass plus load | kt | `thrust_to_mass` |
+| `a` | proper acceleration, `G · k · f · m_drv / M` | ly/yr² | `laden_accel` |
+| `d` | leg length | ly | — |
+| `t` | leg time, `√(d² + 4d/a)` (c = 1) | yr | `math::ship_travel_years` |
+
+- **Every hull of the empire accelerates `f` times harder, empty or laden.** So
+  `a_empty / a_laden = 1 + C / M_dry` is untouched (R-O95): the card does not
+  change cargo efficiency or the load broadcast (design law #10), only the level.
+- **Leg time falls with elasticity `−(2d/a) / (d² + 4d/a)`**, bounded by `−½`
+  because the light term `d` does not move. Arithmetic on the formula above,
+  not a measurement:
+
+  | hull, leg | `t` at `f = 1` | `f = 1.5` | `f = 2` | elasticity |
+  |---|---|---|---|---|
+  | laden Medium colonizer, 1 ly | 4.19 yr | 3.47 | 3.05 | −0.47 |
+  | laden Medium colonizer, 6.16 ly | 11.84 | 10.30 | 9.44 | −0.37 |
+  | laden Medium colonizer, 25 ly | 32.25 | 30.03 | 28.85 | −0.20 |
+  | empty Medium, 6.16 ly | 6.93 | 6.68 | 6.56 | −0.11 |
+  | empty LCV, 6.16 ly | 8.01 | 7.44 | 7.14 | −0.20 |
+
+  So the gain is concentrated on laden hulls over short legs — freight and
+  colonization — and a 1.5x drive cuts any leg by at most 18%.
+- **What rivals see:** this empire's acceleration rises by `f` on new hulls, and
+  a rival's belief (R-O41, the maximum ever observed) rises when its light
+  arrives. Masking stays spend-once.
+- **No mass cost** (design law #11 is not touched): `k` is per-mass
+  effectiveness, which is what §0 says this tree raises. The price is the
+  card's cost.
+
+**8.4 Writes (Stage 3).**
+
+- **A Design write, folded in `CardId` order** like `Works` (float products are
+  order-dependent): one per-empire factor `f`.
+- **Design law #12 — hulls in the field keep the drive they were built with.**
+  `f` is stamped on each hull at construction; `laden_accel` reads the hull's
+  stamp, and every forecast of a hull the empire *would* build (a leg priced for
+  a build decision, `settler_target`'s discount, the freight score) reads the
+  empire's current `f`. One function carries both readings, because a policy
+  that prices a leg differently from the engine that flies it chooses against a
+  world it does not live in (`thrust_to_mass`'s own comment).
+- **Consumers to audit (Stage 4.1):** 13 `thrust_to_mass` call sites and 34
+  `laden_accel` call sites, all of which read the drive; the rating beds, which
+  must fly the upgraded Design at its own drive.
+
+**8.5 Staged plan (T-136).**
+
+1. **The fold and the per-hull stamp**, bit-identical at `f = 1` on the
+   standard bed (a test pins it), and a test that a hull built before the play
+   keeps its drive.
+2. **The card in its slot**, played at the barrier, with the two-direction
+   tests (workflow Stage 6).
+3. **Rate the upgraded Designs** in every role bed (`examples/design_rating`) so
+   `c(d)` exists for a Design with `f ≠ 1`.
+4. **The capability-years harness** that turns the table into `T_i` (T-131's
+   missing reader), then the card's value at P92 and its within-tree balance
+   against the unlock cards.
+
+**8.6 Voice (Stage 9) — every line a DRAFT for the author.** Role subtitle,
+fixed: *Every hull built from now on accelerates harder.*
+
+| context | name (DRAFT) | flavor (DRAFT) |
+|---|---|---|
+| default | *First Light* | "Every year a ship spends between stars is a year its people are not yet home. We have given some of those years back." — Directorate of Transit Efficiency |
+| this empire has played the first Warfare card | *Closing Speed* | "Help that arrives sooner is more help." — Office of Rapid Response |
+| this empire has played an Expansion survey card | *The Long Voyage, Shortened* | "The shore has not moved. We have." |
+
+The context rows need R-TREE13 (played cards in `Snapshot`).
+
+**8.7 Open.** R-TECH22 (slot, slant and the magnitude of `f`), R-TECH23 (where
+the drive state lives — a `DesignWrite` fold beside `Works`, recommended, or a
+`WorksWrite` variant).
+
+---
+
+## 7. Technology options and inspirations
+
+*Every item here is `OPEN`: a candidate for what a Technology write could one day
+unlock, or a source the tree's design may draw on. None is authorable until the
+thing it writes exists (§5.4), and none is a ratified mechanic.*
+
+### 7.1 `OPEN` — options
+
+**7.1.1 Exotic matter** — the families in `Exotic_matter_technology_inspiration.md`
+(negative and imaginary mass, degenerate matter, materials at high pressure, the
+uncommon condensed states). Bound by §3.5: exotic synthesis is pair production.
+
+**7.1.2 `OPEN` — R-TECH20: magnetar matter — how it differs from regular matter.**
+A magnetar's surface field is `~10^10–10^11 T` (Duncan & Thompson 1992; Kouveliotou
+et al. 1998). Two thresholds set where matter stops behaving like regular matter,
+and both are physics, not placeholders:
+
+| symbol | name | value | what changes above it |
+|---|---|---|---|
+| `B_0` | atomic field unit | `2.35 × 10^5 T` | the magnetic energy of an electron exceeds its Coulomb binding: atoms are compressed across the field into cylinders along it, bind more tightly, and join into linear molecular chains that condense into a solid of chains (Lai 2001, §§2–4) |
+| `B_Q` | quantum-electrodynamic critical field | `4.41 × 10^9 T` | the vacuum itself is birefringent and a photon can split in two (Harding & Lai 2006, §5) |
+
+So the difference from regular matter is **structural and directional**: bonding,
+cohesion and the response to light are set by the field's strength and direction
+rather than by chemistry alone. **What would settle R-TECH20:** a design pass
+saying which Technology write — a component stat, a hull material, a sensor
+signature — this becomes, and what it costs under design law #11.
+
+### 7.2 `OPEN` — inspirations
+
+- **Iain M. Banks, the Culture novels** — the hull taxonomy and Design names
+  (R-O42b; `Hulls_classes_the_qualitative_counter-graph.md`).
+- **Exotic matter** — `Exotic_matter_technology_inspiration.md` (§7.1.1).
+- **Barrow's inward civilization scale** (Barrow 1998). Where Kardashev ranks a
+  civilization by the energy it commands at ever larger scales, Barrow ranks it by
+  the **smallest scale it can manipulate**:
+
+  | type | what it manipulates |
+  |---|---|
+  | I-minus | objects of its own scale — building, mining, joining and breaking solids |
+  | II-minus | genes — altering how living things develop |
+  | III-minus | molecules and molecular bonds — new materials |
+  | IV-minus | individual atoms — nanotechnology |
+  | V-minus | atomic nuclei |
+  | VI-minus | elementary particles |
+  | Omega-minus | the structure of space and time |
+
+  **`RATIFIED` — R-TECH21 (the author's ruling): Barrow's scale is loose
+  guidance for this tree, and Kardashev's for Production — nothing more.** §0's
+  split (Technology raises per-mass effectiveness, Production raises mass) reads
+  as inward precision against outward scale, and that is as far as the analogy
+  goes. **Card tiers are an instrument of the counter-graph (§3), not of a
+  civilization scale**: a tier is ordered by what it counters and what counters
+  it, and a Barrow type never decides where a card sits. The author notes there
+  is room in the design space for this and for more cards besides; §7.1's
+  options are placed by their counter-graph edges when they are designed.
 
 ---
 
@@ -704,7 +866,22 @@ the measurement into the target (§4.10).
   436–460 — uniqueness of the fit
 - `Hyades_warfare_tree.md` — what capability is spent on, and the arena that sets it
 - `Hyades_production_tree.md` §5 (the hull ladder this fits onto)
+- Barrow, J. D. (1998). *Impossibility: The Limits of Science and the Science of
+  Limits.* Oxford University Press — the inward civilization scale (§7.2)
+- Duncan, R. C. & Thompson, C. (1992). Formation of very strongly magnetized
+  neutron stars: implications for gamma-ray bursts. *Astrophysical Journal* 392,
+  L9–L13 — magnetars
+- Harding, A. K. & Lai, D. (2006). Physics of strongly magnetized neutron stars.
+  *Reports on Progress in Physics* 69, 2631–2708 — vacuum birefringence, photon
+  splitting
+- Kardashev, N. S. (1964). Transmission of information by extraterrestrial
+  civilizations. *Soviet Astronomy* 8, 217–221 — the outward scale Barrow inverts
+- Kouveliotou, C. et al. (1998). An X-ray pulsar with a superstrong magnetic field
+  in the soft γ-ray repeater SGR 1806−20. *Nature* 393, 235–237 — a measured
+  magnetar field
+- Lai, D. (2001). Matter in strong magnetic fields. *Reviews of Modern Physics*
+  73, 629–662 — atoms, chains and condensed matter above `B_0`
 - `Exotic_matter_technology_inspiration.md` ·
   `Hulls_classes_the_qualitative_counter-graph.md` (the Banks-convention source)
 - `src/sim.rs` — `Roster`, `Class`, `HullType`; `src/cards.rs` — `UnlockDesign`
-- CLAUDE.md design laws #1, #2, #9, #10, #12, #13
+- AGENTS.md design laws #1, #2, #9, #10, #12, #13

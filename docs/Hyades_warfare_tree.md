@@ -10,7 +10,7 @@ table. Its objective is **colony-years relative to the table, neighbor-weighted*
 the **R-WAR n** series.*
 
 **Rev 1, new.** Carries **ratified decisions and open decisions only**
-(`CLAUDE.md` §6). The tactical resolver ships and is engine-native; the belief
+(`AGENTS.md` §6). The tactical resolver ships and is engine-native; the belief
 layer ships and is unwired; the **strategic** half — who fights whom, when, and
 what it costs the loser — does not exist. The register reflects that.
 
@@ -261,7 +261,7 @@ infrastructure (design law #11).
 > untouchable — and `biosphere_regen_rate` is bit-identically inert for the same
 > reason. **A Warfare card that lowers a world's pristine ceiling is the first
 > thing that makes either real**, and it also makes the coverage denominator
-> playable again, which is the failure mode `CLAUDE.md`'s metric-invariance rule
+> playable again, which is the failure mode `AGENTS.md`'s metric-invariance rule
 > exists to catch.
 
 **4.3 `RATIFIED` — population collapse is design content; the undershoot was
@@ -436,7 +436,7 @@ Eight seeds, 3 seats, 800 yr (`examples/engagement_census`, deleted at T-133: it
 | colony-years | **−0.74% ± 0.26** | 3/8 |
 
 Per run: **3,701–4,131 engagements** and **5,488–12,819 hulls destroyed**, for
-110–258 kt of slag. Neither aggregate is a finding — `CLAUDE.md` §2 puts the
+110–258 kt of slag. Neither aggregate is a finding — `AGENTS.md` §2 puts the
 2-SE bar as a floor for *considering* a number, and a 5/8 or 3/8 sign test is
 noise — but the **magnitude** is the point, and it is a corroboration rather than
 a surprise:
@@ -448,7 +448,7 @@ a surprise:
 > hulls instead of by counting them.
 
 **Throughput rose on all eight seeds** (109→126 … 124→137 yr/s) with `ns/event`
-*falling* (20,556→18,060). `CLAUDE.md` §2's table reads that pair as "a real
+*falling* (20,556→18,060). `AGENTS.md` §2's table reads that pair as "a real
 optimization", and it is not one: nothing got faster per unit of work, there is
 simply less work because 11,345 hulls stopped existing. That table assumes a
 fixed workload, and this is the row it does not cover.
@@ -477,7 +477,7 @@ fixed workload, and this is the row it does not cover.
 ### 7.5 Two arena assumptions the wiring exposed
 
 Worth recording because both were invisible while `resolve_engagement` had one
-caller, and both are the shape `CLAUDE.md` §2 warns about — a constant whose
+caller, and both are the shape `AGENTS.md` §2 warns about — a constant whose
 stated reason stopped holding when something else changed.
 
 - **An empty side panicked.** `laser_ships[0]` is safe in a scenario that always
@@ -662,7 +662,7 @@ requirement — it is the only bed on which either card's value is defined.
 
 **3. The Growth card's own ratified numbers do not transfer.** `growth_rate` was
 measured on **colony count** — Expansion's objective, not Growth's — and
-`CLAUDE.md` §2 records that the 2,000-year screen overstated it by ~3.7× against
+`AGENTS.md` §2 records that the 2,000-year screen overstated it by ~3.7× against
 the 4,000-year objective while preserving the ranking. Worse, T-94/T-95 consumed
 the surface outright: the closed-form logistic made the answer independent of the
 tick, and R-O84's plateau map was built by counting 50-year cycles to a Band
@@ -1199,7 +1199,7 @@ on an arm that is still supply-starved at 24 pickets a run.
 **Resolved.** `Simulation::spawn_courier` computed the leg's acceleration as
 `civilian_accel_g · G` **before** the hold was loaded and never re-read it, so a
 colony ship flew at the empty-hull rate while every `laden_accel` call site in
-the engine was freight. `CLAUDE.md` §7 records standing-layer item 5 (R-O32) as
+the engine was freight. `AGENTS.md` §7 records standing-layer item 5 (R-O32) as
 closing exactly that — *"it was massless, so a laden colony ship flew like an
 empty hull"* — and it had closed it for the arena and not for this dispatcher.
 
@@ -1218,7 +1218,7 @@ comparison between them is between two different engines.
 **How it was found is the reusable part.** Nothing was looking for it. The
 interception mechanic needed a number — how long a colony ship takes compared to
 light — and the number turned out to be a property of a defect rather than of
-the design. `CLAUDE.md` §3's *"a second caller is a cheap audit of the first"*
+the design. `AGENTS.md` §3's *"a second caller is a cheap audit of the first"*
 holds for physics as well as for panics.
 
 **And the first answer this document gave was wrong because of it.** §8.9.5
@@ -1234,7 +1234,7 @@ re-derived.
 `Doctrine::scout_hull_offensive` reproduces the arm without it **to every
 printed digit** — 188 pickets, −2.87% own, +1.06% neighbors, `W_0` −29, on all
 eight seeds, and it did so before the R-WAR9 fix as well as after it. That is
-the *exactly zero* verdict rather than the *inside noise* one (`CLAUDE.md` §2),
+the *exactly zero* verdict rather than the *inside noise* one (`AGENTS.md` §2),
 and its cause is one line:
 
 **`hull_dry_mass(LimitedContactVehicle) == hull_dry_mass(LimitedOffensive) ==
@@ -1333,7 +1333,7 @@ card *is* its Doctrine half.
 **Restoring the founding rung takes the Doctrine write from −287.8 to −2.0.**
 That is `SimConfig::ablate_picket_founding_cost` (deleted at T-133 with every harness-only switch), which violates conservation and
 must never ship — its only job is to remove the suspected cause and watch the
-effect go, which is the one method that can refute (`CLAUDE.md` §2).
+effect go, which is the one method that can refute (`AGENTS.md` §2).
 
 So the chain is:
 
@@ -2403,7 +2403,7 @@ the protocol's barrier. Measurements in appendix §D.16.
 recommendation (one roll when an encounter ended, `resolve_beam_engagement` for
 a pitched battle) is in appendix §D.16.
 
-- **Detection runs when a trajectory changes** (`CLAUDE.md` §4): a departure, a
+- **Detection runs when a trajectory changes** (`AGENTS.md` §4): a departure, a
   hull taking station, a course change. For the hull that changed, the engine
   finds the first time it comes within fire distance of every rival hull that
   fires on it, and — if it is armed — of every rival hull it fires on, and
@@ -2422,7 +2422,7 @@ a pitched battle) is in appendix §D.16.
   and at actual positions; a target is dropped only a further margin out, so a
   hull on the boundary is not found and dropped at one instant forever.
 - **Who fires on whom, and from how far, is one standing-layer question**
-  (`CLAUDE.md` §6): `Standing::fire_distance(role, loadout, regard)`, nothing
+  (`AGENTS.md` §6): `Standing::fire_distance(role, loadout, regard)`, nothing
   where Doctrine ignores the distance.
 - **A discharge is an event** every period `τ` while anything the shooter fires
   on is in reach. Its mounts aim at the nearest hull in reach that has not
@@ -2614,6 +2614,190 @@ kill them before they can found a colony, they will seek a new destination."*
   fail to begin. **What would settle it:** a measurement of how often a
   retarget is decided on a sighting the lag would have kept.
 
+### 8.20 A posted picket goes to a pitched battle it can reach in time (T-134 stage 2)
+
+**`RATIFIED` (the author's direction and ruling): pickets contribute to a
+pitched battle nearby, and "nearby is a function of belief about being able to
+arrive in time to affect the outcome."** No distance constant.
+
+- **Pitched** means both hulls in an encounter are armed and one of them is
+  standing — the battle is at a place, and it is a fight rather than a strike
+  on a hull that cannot answer. "Both standing" is not the test: an encounter
+  begins when the arriving hull enters reach, still under way, and **0 of
+  41,770** encounters on the twelve-seat card bed began with both hulls standing
+  (seed 1, 450 yr).
+- **When it is believed decided:** `T_d = min(S_t / P_s, S_s / P_t)`, where `S`
+  is a hull's structure less the damage it carries and `P` is the other hull's
+  beam power (mounts × kJ/yr) — the shorter of the two times to a wreck
+  (`battle_decided_in`). The wreck point lies past the structure (§8.19.5), so
+  `T_d` is a lower bound on the fight and the belief errs toward staying home.
+- **Who goes:** each side's posted pickets — picket stacks and blockade stacks —
+  for which `d + t_fly(d) < T_d`, where `d` is the distance from the post (the
+  battle's light reaches it `d` years later, c = 1) and `t_fly` is the picket's
+  own flight time on its current drive and load (`Standing::joins_battle`). A
+  picket already fighting is not called. The test is repeated when the light
+  arrives, on the drive the hull has then.
+- **Books:** from the moment it leaves it is counted in flight to its post
+  (`picket_inbound`, and `blockade_bound` for a port), so the return is an
+  ordinary `PicketArrive`, and a hull wrecked or withdrawn on the way comes off
+  the books through `leave_post`.
+- **Return:** at the battle it stands, and goes back to its post when nothing
+  is left in its reach — when its target set empties, or one discharge period
+  after arrival if nothing came into reach.
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `S_x` | hull `x`'s structure less its carried damage | kJ | `structure_of` − `hull_damage` |
+| `P_x` | hull `x`'s beam power | kJ/yr | its Design's loadout |
+| `T_d` | years from the battle's start until it is believed decided | yr | `battle_decided_in` |
+| `d` | distance from the picket's post to the battle | ly | — |
+| `t_fly` | the picket's flight time over `d` | yr | `math::ship_travel_years` on its laden acceleration |
+
+**`OPEN` — R-WAR39 (reopened as a belief question): the belief reads both
+Designs and the damage each carries at the battle's start as observed.** An
+empire at range sees acceleration, not loadout or damage (design law #10), so
+this is an interim belief. **What would settle it:** the author's call on what a
+seat may know of a battle it did not fight in — the recommendation is the
+Designs it has seen fire (belief event B's record) and no damage at all.
+
+**Measured: the rule flies no sortie on the twelve-seat card bed today**
+(seeds 1 and 7, 450 yr). Of 3,366 pitched encounters on seed 1, the believed
+fight length is at most 0.026 yr — one Cairn mount wrecks a Limited Contact hull
+in about 9.5 days (R-WAR19) — and the nearest post of either side is 5.9 ly away
+at the 5th percentile, so the light alone arrives years after the fight is
+decided. An inference: the rule is live for fights that last years, which a
+General hull's structure (the Privateer's GCU, §8.21) would make possible.
+Appendix §D.21. The earlier rule, a fixed reach of 2 ly (3 and 0 sorties; 105
+at 8 ly), is recorded there too.
+
+### 8.21 The second Warfare card — Privateers (T-135, design; nothing built)
+
+Taken through `.claude/skills/card-workflow` Stages 0–3, with Stage 4's audits
+listed as the first engine stage. **Every magnitude below is a placeholder and
+every decision not marked `RATIFIED` is open.**
+
+**8.21.1 Brief (Stage 0).** The author: *"a change in Doctrine to deploy
+Privateers who raid Holdings and enemy freighters to remove minerals. This
+requires Design changes to create a GCU. This requires a new Privateer role. It
+adds a new mission to the freighter role because taking minerals from a laden
+Privateer frees up the Privateer to acquire more minerals. It creates new
+self-trade demand. It also is the first instance of Exchange which is not
+mutually beneficial, which we need to represent in `$` as a local reduction in
+prices due to the mortal threat of being wrecked. We need freighter evasion and
+capitulation. We need belief about enemy mineral production so the most
+in-demand Holdings can be targeted. This space will be further explored with
+Politics manipulating markets to create Exchanges which reduce the targets'
+metric growth."*
+
+- **Tree, slot:** Warfare. *Recommended* `TIER0[16]` (Balanced, needs a
+  subject): a privateer names whom it preys on, and armed hulls with holds say
+  something about intent without saying all of it. `OPEN` (R-WAR40).
+- **Counter-graph edges:** not yet given; this card is designed without one, and
+  the cross-tree workflow places it.
+- **Touches:** design laws #10 (a laden privateer broadcasts its haul), #11
+  (every kiloton taken lands in a hold or a holding), #12 (the GCU Design reaches
+  new hulls only), #15 (target choice from light-lagged belief); R-O41 (believed
+  kinematics decide evasion); `Hyades_matching.md` §8.4b (self-trade, reopened by
+  §8.21.4) and §9 (the side-run interface the offload uses).
+
+**8.21.2 Story and objective (Stage 1).** The Hard Mercy's **Range Wars** beat:
+the open range fenced and cut. Metric: Warfare's `S_i`, the seat's colonies over
+the rival mean (trees §4.2), target 1.5x–2.0x at P92. The raid moves `S_i`
+through two channels that must be read apart: rivals' colonizer builds starved
+of a color, and this seat's own builds fed by it.
+
+**8.21.3 Intent as algebra (Stage 2).**
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `C_p` | a privateer's hold | kt | the GCU Design's `cargo_capacity`; the General Contact hull holds 9.85 kt |
+| `m` | a victim freighter's cargo | kt | its hold |
+| `H_v` | a rival holding at planet `v` | kt | `Holdings` |
+| `P_v` | the local Exchange price of a color at `v` | `$`/kt | §8's clearing dual |
+| `e` | the victim's believed chance of getting away | — | `belief::can_disengage` on believed `a_max` (R-O41) |
+| `w` | the victim's believed chance of being wrecked if caught and it refuses | — | the wreck curve (§8.19.5) against the privateer's believed beam power |
+| `L` | what the victim loses if wrecked | `$` | its hull's mass and its cargo, at `P_v` |
+| `π_v` | the coerced price | `$`/kt | below |
+
+- **A raid is an Exchange at a coerced price.** The victim sells at
+  `π_v = max(0, P_v − (1 − e)·w·L / m)`: the local price less the expected loss
+  per kiloton of refusing. Where the threat is certain and escape impossible,
+  `π_v = 0` and the exchange is theft; where the victim can outrun the
+  privateer, `e = 1` and `π_v = P_v`, so nothing is coerced. This is the first
+  exchange that is not mutually beneficial, and it is legible in `$` as the
+  difference `P_v − π_v`. Whether `$` changes hands at `π_v` or the difference is
+  only recorded is `OPEN` (R-WAR41).
+- **Capitulation and evasion are one decision.** A freighter that sees a
+  privateer closing flies on if `e = 1`, capitulates if
+  `(1 − e)·w·L > m·(P_v − π_v)` and otherwise runs. Running under `e < 1` is the
+  bet that the belief is wrong — which R-O41's one-sided estimator makes
+  possible, and which is where a privateer masking its acceleration gains.
+- **The haul frees the hull.** A privateer is full at `C_p`; a friendly
+  freighter that takes its cargo returns it to raiding. The offload is worth
+  `C_p / t_raid` kt/yr of raiding against the freighter's own delivery rate —
+  the duty exchange of `Hyades_matching.md` §9 with a new side run, not a new
+  mechanism.
+- **Targets by believed production.** The most in-demand holding is the one
+  with the largest believed stock times the privateer's own empire's price for
+  its colors. Belief is built from what light delivers: rival miners seen
+  working a rock, and rival freighters seen leaving it laden — design law #10
+  makes a laden General hull's load legible from its acceleration.
+
+**8.21.4 Writes (Stage 3).**
+
+| write | kind | read by (a `Standing` question) |
+|---|---|---|
+| `UnlockDesign(GeneralContactVehicle, <GCU class>)` — armed, with a hold | Design (law #12) | `design_for(Role::Privateer)` |
+| `DoctrineWrite::Privateering` — deploy privateers against the subject | Doctrine | `raids(target, believed value, believed risk)`; the build branch through `order_for(Role::Privateer)` |
+| — (default, every seat) | — | `capitulates(e, w, L, m, P_v, π_v)` — the victim's rule is not card-locked, because being robbed is not opt-in |
+| — (default, every seat) | — | `offloads(privateer rate, own delivery rate)` — a new `SideRun` variant |
+
+- **New role `Role::Privateer`**, standing duty: raid; returns to a friendly
+  center or meets a freighter when full.
+- **Self-trade reopens** (matching §8.4b): a privateer's hold is its empire's
+  ore away from any yard, and moving it home is the self-trade demand the book
+  could not previously create. The census that closed §8.4b found fills bound
+  by the buyer's own haulers' room; the offload adds hull time to that room
+  rather than competing for it.
+- **Politics** (later, not this card): manipulating the book so a target's
+  exchanges lower its own metric's growth.
+
+**8.21.5 Staged plan (T-135).** Each stage is its own landing and measurement.
+
+1. **Reach audit** (workflow Stage 4): consumers of each write; census rival
+   holdings (count, size distribution, distance from any armed hull) and laden
+   freighter traffic; the interception window of a GCU against a laden General
+   freighter (the `examples/intercept_probe` shape); an oracle in a scratch
+   build that removes a fixed share of rival holdings' ore, to find what share
+   reaches 1.5x `S_i`.
+2. **Belief about rival production** — the light-lagged estimator above, with
+   a census of its error against ground truth.
+3. **The Privateer role and GCU Design; raids on holdings** — no victim decision
+   is needed for ore on a rock with no armed rival present.
+4. **The coerced price in `$`** — `π_v` recorded on every raid.
+5. **Freighter evasion and capitulation.**
+6. **The offload side run**, and self-routes for privateer cargo.
+7. **Measure** on `examples/card_table` (Stage 7) and within Warfare against
+   `TIER0[15]` (Stage 8).
+
+**8.21.6 Voice (Stage 9) — every line a DRAFT for the author.** Role subtitle,
+fixed in every row: *Privateers raid Holdings and freighters.*
+
+| context | name (DRAFT) | flavor (DRAFT) |
+|---|---|---|
+| default — the subject has not declared this empire an enemy | *Free Range* | "Ore that sits in another's pile is ore that is not yet helping anyone. We are only moving it to where it can." — Office of Stewardship Transfers, founding memo |
+| the subject has declared this empire an enemy | *Deputy Commissions* | "They drew the fence. We ride the range they fenced." — Circular to all commissioned riders |
+| this empire has played the first Warfare card (`TIER0[15]`) | *The Long Ride* | "The frontier is held. Now it has to be fed." |
+| the subject has traded with this empire through the Exchange | *Market Correction* | "Every price is a promise. Some promises cost more to keep." — Commonwealth Desk of Fair Exchange |
+
+The last two rows need R-TREE13 (played cards in `Snapshot`) and the enemy
+row needs diplomacy (T-11).
+
+**8.21.7 Open (register).** R-WAR40 (slot and slant), R-WAR41 (whether `$`
+moves at `π_v`), R-WAR42 (the GCU class name and its hold/loadout split — one
+class per Design, a new class on the General Contact hull beside `Scarp`),
+R-WAR43 (what a seat may believe about rival production, and its lag).
+
 ---
 
 ## 9. Register
@@ -2696,6 +2880,12 @@ kill them before they can found a colony, they will seek a new destination."*
 | **R-WAR37** | **target priority under fire anywhere** — nearest-first was harmless while fights happened only at sites; with fire wherever hulls are in reach, a blockader's shots go to what stands nearest it, and on the twelve-seat card bed **no colony ship was wrecked** on three seeds against 10,903–12,845 other hulls (appendix §D.16). The port strike's purpose (§8.16) is the colony ship | the author: a Doctrine priority by role (colony ships first for a blockader is the recommendation), then the card bed re-measured |
 | **R-WAR38** | **the armed survey Design's structure** — `Tor` keeps `σ = 10¹¹`, the value it carried when one class named the survey Design on both shells; §8.18's rule puts armed Designs at `10¹²` | the author: `σ` for `Tor` |
 | ~~**R-WAR36**~~ | **resolved (the author's ruling): fleets are generated with the galaxy**, with a position, a velocity and an equal mineral spend (Technology §4.4.5) — a bed places fleets without any code the game does not run. The question below is kept as it was asked: **the arena against the harness ruling** — design law #4 makes the Ship Testing Arena the required harness for per-class `r_eq`, and it spawns and fights hulls outside the simulation; the author's T-133 ruling is that a harness carries no special sim code. `arena.rs` is a scenario seeder that calls `combat::resolve_engagement`, not the simulation's fire path, so the two are not yet in conflict — but a pitched-battle bed for the Technology rating (`Hyades_technology_tree.md` §4) cannot use it and stay within the ruling | the author: whether the arena keeps its own resolver, or seeds scenarios into the simulation and steps its event loop |
+| **R-WAR39** | **what a picket may believe about a battle it did not fight in** — `T_d` reads both Designs and their carried damage as observed; at range an empire sees acceleration, not loadout (design law #10). The fixed 2 ly reach it replaces is retired by the author's ruling (§8.20) | the author: the recommendation is the Designs it has seen fire, and no damage |
+| **R-MX9** | **a Mahan main fleet's quick intercept** — only when it does not change belief about pitched-battle success or current Doctrine outcomes. No main-fleet role and no such belief exist yet (`Hyades_matching.md` §9.5) | a main-fleet role (R-WAR32), a per-empire estimate of pitched-battle success, then the rule as a `Standing` question |
+| **R-WAR40** | **the Privateer card's slot and slant** — `TIER0[16]` (Balanced, needs a subject) recommended (§8.21.1) | the author |
+| **R-WAR41** | **does `$` change hands at the coerced price `π_v`**, or is `P_v − π_v` only recorded? (§8.21.3) | the author; then stage 4 of T-135 |
+| **R-WAR42** | **the GCU Design** — its class name and its hold/loadout/drive split on the General Contact hull (§8.21.4) | the author, then the arena's rating bed |
+| **R-WAR43** | **belief about rival mineral production** — which observations count (miners seen at a rock, laden departures) and how stale they may be (§8.21.3) | stage 2 of T-135, with a census of the estimator's error |
 | **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
 | ~~**R-WAR26**~~ | **what ends a pitched battle — ruled and built (T-133)**: all three, each on the event that raises it; R-L2 is answered as repeated passes (§8.19.6) | — |
 | ~~**R-WAR22**~~ | ~~damage does not persist past an engagement~~ — **resolved (T-133):** damage persists for the hull's life (§8.19.5); repair is R-WAR31 | — |
@@ -2735,4 +2925,4 @@ kill them before they can found a colony, they will seek a new destination."*
 - `Hyades_vehicle_roles.md` §4.2 — the Colonizer role and the arrival behavior
   §8.2 changes
 - `src/combat.rs`, `src/arena.rs`, `src/belief.rs`
-- CLAUDE.md design laws #2, #3, #4, #7, #8, #10, #11
+- AGENTS.md design laws #2, #3, #4, #7, #8, #10, #11

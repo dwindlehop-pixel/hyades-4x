@@ -161,6 +161,15 @@ pub enum ColonizerPolicy {
 /// (six-vehicle survey, 1 g, +20% productivity step).
 #[derive(Clone, Copy, Debug)]
 pub struct Doctrine {
+    /// **What an empire pays for each duty a hull can do** (T-134 stage 2) —
+    /// the prices of the empire's own internal exchange of hull time.
+    ///
+    /// A hull weighs the duty it is on against a side duty it can do at the
+    /// same moment, each as a rate in kilotonnes per year times its price, and
+    /// takes the side duty when that is worth more. All prices are `1.0` by
+    /// default, so the comparison is between rates: **placeholders, unmeasured**,
+    /// and the surface a card, a Design or a Doctrine write moves.
+    pub duty_price: DutyPrices,
     /// Which hull a center lays down for a colonizer (R-IND11, open).
     pub colonizer_policy: ColonizerPolicy,
 
@@ -281,7 +290,7 @@ pub struct Doctrine {
     /// the denial rather than a side effect.
     ///
     /// Separate from [`Self::engage_neutrals`] on purpose, so the two arms can
-    /// be ablated apart (`CLAUDE.md` §2's 2×2 rule). Denial and shooting are
+    /// be ablated apart (`AGENTS.md` §2's 2×2 rule). Denial and shooting are
     /// different mechanisms and the card carries both.
     pub picket_after_founding: bool,
     /// **How many worlds this empire tries to keep held** (T-113).
@@ -331,7 +340,7 @@ pub struct Doctrine {
     /// **Placeholder, default false** (R-WAR6) — measured as its own ablation
     /// arm in `examples/denial_census`, because it and [`Self::picket_reserve`]
     /// address one diagnosis and landing them together would make either
-    /// unattributable (`CLAUDE.md` §2's 2×2 rule).
+    /// unattributable (`AGENTS.md` §2's 2×2 rule).
     pub picket_claims_target: bool,
     /// **The Limited Offensive hull scouts, in place of the Limited Contact
     /// Vehicle** (T-115).
@@ -592,9 +601,28 @@ pub struct Doctrine {
     pub rank: RankWeights,
 }
 
+/// **The price of each duty in an empire's internal exchange of hull time**
+/// (T-134 stage 2). Dimensionless weights on rates in kilotonnes per year;
+/// every default is `1.0`, a placeholder for a card to write
+/// (`Hyades_matching.md` §9).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DutyPrices {
+    /// Ore a miner lifts onto a pile that its empire can still move.
+    pub mine: f64,
+    /// Ore a hull delivers to a center that is short of it.
+    pub freight: f64,
+}
+
+impl Default for DutyPrices {
+    fn default() -> Self {
+        DutyPrices { mine: 1.0, freight: 1.0 }
+    }
+}
+
 impl Default for Doctrine {
     fn default() -> Self {
         Doctrine {
+            duty_price: DutyPrices::default(),
             // Unmeasured as of T-67; `CheapestViable` is the *incumbent*
             // behavior, not a ratified answer. R-IND11 is the open question and
             // `examples/colonizer_policy` is the harness.
@@ -653,7 +681,7 @@ pub struct PlanetView {
     /// colony fills toward it, and is not remotely legible anyway.
     pub biosphere: Band,
     /// **The three per-color Band readings, precomputed** (T-100). `rank`
-    /// wants the *readings*, not the masses — `CLAUDE.md` §4's "hand a decision
+    /// wants the *readings*, not the masses — `AGENTS.md` §4's "hand a decision
     /// only the fields it reads" — and computing them here lets the engine
     /// memoize a conversion that was 136 M logarithms per run.
     ///
@@ -926,7 +954,7 @@ pub struct ProductionContext {
     /// nothing to pick and the hull flies nowhere.
     ///
     /// Counted off a running total rather than a walk, because a production
-    /// decision reads it (`CLAUDE.md` §4: per-decision work must be `O(what the
+    /// decision reads it (`AGENTS.md` §4: per-decision work must be `O(what the
     /// decision reads)`).
     pub survey_frontier: usize,
 }
@@ -1242,7 +1270,7 @@ impl Autopilot for BaselineAutopilot {
         // and its maximum over the whole run is **164**, against a ratified
         // `survey_reserve` of **1024**. So the comparison is a constant `true`
         // and every value above ~200 is bit-identical. That also explains the
-        // plateau `CLAUDE.md` §2 records as a measurement artifact — 2048 reads
+        // plateau `AGENTS.md` §2 records as a measurement artifact — 2048 reads
         // as noise, 512 / 256 / 64 fall off a cliff — as a threshold sitting
         // above the whole range of the thing it thresholds.
         let wants_survey = ctx.survey_frontier > 0 && ctx.candidate_count < doctrine.survey_reserve;
@@ -1753,6 +1781,38 @@ impl<'a> Standing<'a> {
     /// (`Hyades_warfare_tree.md` §8.10).
     pub fn recycles_on_founding(&self) -> bool {
         !self.doctrine.picket_after_founding
+    }
+
+    /// **Does a miner leave its rock for one freight run?** (T-134 stage 2.)
+    ///
+    /// Both sides are rates in kilotonnes per year — what the miner adds to a
+    /// pile its empire can move, and what one delivery run brings to a center
+    /// short of it — each weighed by [`Doctrine::duty_price`]. Mining at a rock
+    /// whose pile already exceeds what the empire's haulers move in a round
+    /// adds nothing, so its rate is zero there and any wanted delivery wins.
+    pub fn takes_freight_run(&self, mining_rate: f64, freight_rate: f64) -> bool {
+        let p = &self.doctrine.duty_price;
+        freight_rate * p.freight > mining_rate * p.mine
+    }
+
+    /// **Does a posted picket go to a pitched battle?** (T-134 stage 2; the
+    /// author's ruling.) "Nearby" is belief about arriving in time to affect
+    /// the outcome: yes when the picket would arrive — the battle's light plus
+    /// its own flight — before the battle is believed decided. Both are years
+    /// from the same moment. A card that changes how a picket judges the
+    /// fight writes here.
+    pub fn joins_battle(&self, arrive_in: f64, decided_in: f64) -> bool {
+        arrive_in < decided_in
+    }
+
+    /// **Does a colony ship fly one freight run before it embarks?** (T-134
+    /// stage 2.) Yes when its origin, not its hold or its world, is what
+    /// limits the settlers it would carry now — the origin is still growing,
+    /// and the hull's time is worth a delivery while it grows — and freight
+    /// carries a positive price. The run is one pickup and one delivery home;
+    /// the ship then loads the settlers the grown origin sends.
+    pub fn runs_freight_before_embarking(&self, origin_limits_seed: bool) -> bool {
+        origin_limits_seed && self.doctrine.duty_price.freight > 0.0
     }
 
     /// **How this layer regards another empire** (T-133). There is no

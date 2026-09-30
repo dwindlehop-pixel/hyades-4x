@@ -32,7 +32,7 @@
 //! - **`ln S` is the *arithmetic* mean of the per-tree log-ratios**, so the
 //!   composite elasticity `∂ln S/∂ln x` is exactly the mean of the per-tree
 //!   elasticities. The decomposition is free — this harness prints the parts
-//!   beside the whole and they reconcile by construction, which is `CLAUDE.md`
+//!   beside the whole and they reconcile by construction, which is `AGENTS.md`
 //!   §2's mix rule satisfied rather than merely obeyed.
 //! - **Everything reported is dimensionless** (% per %), so knobs are comparable
 //!   to each other *and* trees are comparable to each other. That is a second
@@ -105,7 +105,7 @@
 //! 1,500 yr while works and fleet mass are still compounding, so **Expansion is
 //! the tree most compressed by the truncation** and the composite is, if
 //! anything, biased against expansion-side knobs. Trust the ranking; ratify a
-//! magnitude on the full bed (`CLAUDE.md` §2).
+//! magnitude on the full bed (`AGENTS.md` §2).
 //!
 //! ## It records the raw evaluations, not the summary (T-50)
 //!
@@ -443,7 +443,7 @@ fn main() {
     let from = env_f64("TG_FROM", 0.0) as usize;
     let to = (env_f64("TG_TO", all.len() as f64) as usize).min(all.len());
     // **`TG_ONLY` names knobs directly**, for replicating a shortlist on seeds it
-    // was not chosen against — the step `CLAUDE.md` §2 requires before any
+    // was not chosen against — the step `AGENTS.md` §2 requires before any
     // globally tuned default moves, and the one that refuted R-O87's candidate.
     // Index slicing cannot express a shortlist, because the knobs that survive a
     // ranking are never contiguous.

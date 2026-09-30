@@ -6,7 +6,7 @@ Claude Code can build, test, and commit it directly.
 ## Layout
 
 ```
-CLAUDE.md          standing context: design laws, R-codes, guardrails
+AGENTS.md          standing context: design laws, R-codes, guardrails
 Cargo.toml
 src/               the engine (lib.rs wires the modules)
 examples/          MC sweeps + arena drivers  (cargo run --release --example NAME)
@@ -23,8 +23,8 @@ The engine files here are your files plus the combat refactor. Suggested order:
    `src/arena.rs`, `src/lib.rs`, `src/sim.rs`, `src/math.rs`,
    `examples/laser_vs_missile.rs`, `examples/combat_arena.rs` are modified.
    Review `git diff` before committing — see the "reconstructed placeholders"
-   warning in CLAUDE.md §7.
-3. Copy `CLAUDE.md` to the repo root and `docs/` alongside.
+   warning in AGENTS.md §7.
+3. Copy `AGENTS.md` to the repo root and `docs/` alongside.
 4. `cargo test` — expect 79 unit + 4 smoke + 4 determinism passing.
 5. `cargo run --release --example laser_vs_missile` — confirm the tuned balance
    (missiles favored closing at -0.002c; lasers at rest/receding; 200-v-100 lasers

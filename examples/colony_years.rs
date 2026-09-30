@@ -21,7 +21,7 @@ const PLAYERS: usize = 3;
 fn main() {
     // **A flushed line before any work, and one per pass.**
     //
-    // `CLAUDE.md` §2 says to check a long run's liveness by file mtime rather
+    // `AGENTS.md` §2 says to check a long run's liveness by file mtime rather
     // than by process name — and this harness defeated that rule by writing
     // nothing until a whole seed was done. A seed is **two** full runs (below),
     // so at post-T-68 speeds that is ~12 minutes of a zero-byte file whose mtime

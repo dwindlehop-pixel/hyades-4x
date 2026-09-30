@@ -9,7 +9,7 @@ retracted.*
 
 ## 0. Why this file exists, and how to use it
 
-`CLAUDE.md` §6 splits a spec into **decisions the engine must honor** and
+`AGENTS.md` §6 splits a spec into **decisions the engine must honor** and
 **decisions still open**, and sends everything else here. The reason is that the
 two kinds of statement decay differently:
 
@@ -119,7 +119,7 @@ and whose maximum over the entire run is 164**. So the predicate
 `candidate_count < survey_reserve` is a constant `true`, and **every value above
 ~200 is bit-identical.**
 
-That is the plateau `CLAUDE.md` §2 records as a measurement artifact: 2048 reads
+That is the plateau `AGENTS.md` §2 records as a measurement artifact: 2048 reads
 as noise (+3.5 ± 2.6), while 512 → −21.8, 256 → −96.8, 64 → −840 fall off a
 cliff. The ratification was not wrong about the *direction*; the magnitude
 simply never reached the simulation.
@@ -506,7 +506,7 @@ effect and the simulated elasticity shows 0.1–0.6.
 statement of its value is: the metric can now *express* design law #3. A metric
 that is silent on a law will stay silent right up until a card makes the law
 matter, and card design is the thing it would mislead — which is the same
-argument `CLAUDE.md` §2 makes about a denominator the game can play.
+argument `AGENTS.md` §2 makes about a denominator the game can play.
 
 **`data/tree_gradient.tsv` (T-50) is stale** in its Production column and its
 composite geomean. Not re-denominated, because that would keep the numbers'
@@ -726,7 +726,7 @@ was never in danger; the representation was.
 
 # §C. Cross-cutting — measurement artifacts, collected
 
-*Seven shapes, all of them live in this project at some point. `CLAUDE.md` §2
+*Seven shapes, all of them live in this project at some point. `AGENTS.md` §2
 carries the working rules; this is the case list.*
 
 | # | What was measured | What it actually was | Entry |
@@ -869,7 +869,7 @@ standard error below is optimistic by an unmeasured factor:
 The Growth point estimate is larger than the asymmetric bed's (+0.199 against
 +0.133) and **three galaxies cannot resolve it**: t 1.6 on an optimistic SE.
 Treating seat-seeds as independent, 3 SE at this mean needs ~64 seat-seeds, or
-~11 galaxies at ~5 min each — over the ~10-minute ceiling `CLAUDE.md` §2 sets
+~11 galaxies at ~5 min each — over the ~10-minute ceiling `AGENTS.md` §2 sets
 for an ephemeral container, so it is a by-hand run. The asymmetric bed is the
 one that answers the per-card question; this one answers how the cards read
 beside each other. *(Run at T-123 over 11 galaxies, with the standard error
@@ -1139,7 +1139,7 @@ against an expansion clock that starts 100 years after the card is legal.
 
 ## D.5 T-126 — release-binary throughput on the combat bed: compiler knobs, then the profile
 
-**Supports:** the T-126 entry in `hyades_todo.md` and `CLAUDE.md` §7's
+**Supports:** the T-126 entry in `hyades_todo.md` and `AGENTS.md` §7's
 throughput table. `examples/combat_bench`: the twelve-seat card bed with both
 cards played at the barrier and engagements on, run to 400 yr (200 years past
 the barrier; 1,038 and 1,357 fights on seeds 1 and 7), not to completion. Every
@@ -1179,7 +1179,7 @@ same value, cached and kept in step by `set_bio_max`. Reading the cache:
 | base | 14.67, 14.93 | 14.76, 14.63 | 118,286–127,283 |
 | **cached Band** | **30.87, 31.21** | **29.82, 30.10** | **58,013–60,481** |
 
-**2.07x, bit-identical.** `CLAUDE.md` §4 already names this pattern ("convert at
+**2.07x, bit-identical.** `AGENTS.md` §4 already names this pattern ("convert at
 the edges — never inside a loop over entities"), and `bio_max_band` was written
 for exactly this reason (R-O70) — at a different call site.
 
@@ -1195,7 +1195,7 @@ call — T-101's compaction, bit-identical for the same reason:
 
 **Cumulative: 14.61 → 36.40 yr/s (2.49x) on the combat bed**, same events and
 fights on both seeds. What is left in the scan is materializing a `SurveyView`
-per unvisited world for a policy that keeps one of them (`CLAUDE.md` §4, "do not
+per unvisited world for a policy that keeps one of them (`AGENTS.md` §4, "do not
 materialize a collection you only `min_by` over"); removing it changes the
 `Autopilot::choose_survey_target` interface and is not done here.
 
@@ -1674,7 +1674,7 @@ per mount per tick.
 
 - **The rate was denominated in the integration step.** Damage per tick means
   damage per year scales with `1/dt`, so a numerical requirement set how fast
-  hulls died. `CLAUDE.md`'s "a rate is per *something*" in a new place.
+  hulls died. `AGENTS.md`'s "a rate is per *something*" in a new place.
 - **Every armed fight ended in its first tick.** 49 of 49 equal-spend
   point-blank matches destroyed both fleets (§D.9), so no Design difference and
   no hull difference could act.
@@ -1769,7 +1769,7 @@ on the direction, since `a_lone_limited_picket_cannot_finish_a_medium_colony_shi
 pins the arithmetic; a per-fight tally by hull type would confirm the share.
 
 `ns/event` rose 6–13%: the workload changed (fights now run many ticks), so by
-`CLAUDE.md` §2's reading table this is more work per event, not a regression to
+`AGENTS.md` §2's reading table this is more work per event, not a regression to
 profile — and the run carries 8–11% more colonies.
 
 ---
@@ -1850,7 +1850,7 @@ one-tick fight did. *Inference:* the wreck odds round to one in every strike at
 these placeholders, so the outcome counts cannot tell the two models apart; the
 difference is that a survivor is now possible and the time on target is
 kinematic. The workload is the same and `ns/event` is 12–15% higher than
-pre-T-132 — `CLAUDE.md` §2's second row, a per-unit cost: each pass integrates
+pre-T-132 — `AGENTS.md` §2's second row, a per-unit cost: each pass integrates
 ~580 ticks where the old fight ended in one. One run per seed. The pass stops
 once every reachable roll is exactly certain in `f64`, which needs about eight
 structures absorbed and so rarely fires here (seed 1: 54,510 → 52,635, one run
@@ -2020,7 +2020,7 @@ target; native against wasm32 is still the one-off check of §D.6.
 
 *Supports `Hyades_warfare_tree.md` §8.19.3, §8.19.6 and §8.19.7 (R-WAR25,
 R-WAR26, R-WAR29, R-WAR30 and R-L2 resolved; R-WAR34–R-WAR36 opened) and
-`CLAUDE.md` §6's harness rule. Author's ruling for this landing: "Harnesses and
+`AGENTS.md` §6's harness rule. Author's ruling for this landing: "Harnesses and
 test beds cannot have special sim code. The only thing that can vary is the
 galaxy generation."*
 
@@ -2103,7 +2103,7 @@ compares two different mechanics on one protocol):
 | 7 | 32.96, 228,354, 53,151 | 8.58, 7,005,020, 6,654 |
 | 42 | 33.99, 216,317, 54,396 | 8.87, 5,204,808, 8,660 |
 
-This is the first row of `CLAUDE.md` §2's reading table taken to an extreme:
+This is the first row of `AGENTS.md` §2's reading table taken to an extreme:
 events rose 22.8–30.7× and the cost per event fell 6.3–8.1×, so the
 simulation is doing more work, each unit cheaper. Throughput stays 3.4–4.9×
 above T-24's floor of 2.5 yr/s on this bed.
@@ -2425,9 +2425,197 @@ residual 0.20 (long-range, Cairn against Scarp).
 
 ---
 
+## D.20 T-134 — the Exchange at a spatial equilibrium, the collection capacity it was missing, and one holding per (empire, planet)
+
+*Supports `Hyades_matching.md` §8 and politics §2.14/§2.16. Bed: `examples/work_years`, 3 seats, 4,000 yr, seeds 1, 7, 42, 31337 and the replication set 2, 3, 5, 11; paired log-ratios with standard errors across the 8 seeds unless stated. Every ablation below was a scratch build, measured against the shipped binary, and none landed (`AGENTS.md` §6).*
+
+**The optimal clearing, alone, regressed.** `clear_spatial` reproduced scipy's
+LP optimum on 9 seed-1 books to every printed digit and passed every equilibrium
+condition on 40 random books, and it cost **−18.89% ± 4.28% work-years, 0/8
+seeds up** (89.75M → 74.55M). The Exchange switched off scored 71.30M, so the
+shipped greedy wave was worth +25.9% and the optimal clearing kept +4.6% of it,
+**while moving the same tonnage** (seed 1 at 1,500 yr: 146,792 → 147,804 kt).
+
+**Five mechanisms refuted by ablation before the cause was found:**
+
+| hypothesis | ablation | result |
+|---|---|---|
+| sellers now keep their reservation | reservations zeroed | seed 2, 1,500 yr: 5.43M → 5.92M (shipped 7.25M) |
+| asks post the bill's share of a bank | asks post only the spare | 72.95M (8 seeds) |
+| the buyer's collection leg is unpriced | leg cost + collection leg | 75.71M |
+| settlement timed on the whole ask | timed on the sold lot | 76.26M |
+| trade itself is harmful | Exchange off | 71.30M — worse |
+| deliveries concentrated on few venues | each lot split over 4 venues | loaded 5.5% / 11.1% — unchanged |
+
+**The census that found it** (per-lot tracking of Exchange ore through the
+buyer's holding at the venue, proportional attribution on each load, seeds 2
+and 7 at 1,500 yr). Every venue is served by one buyer hauler (p10–p90 = 1) with
+a laden round trip of ~100–200 yr. Loaded fraction, lots delivered before 1,100 yr:
+
+| lot size | shipped greedy (s2 / s7) | optimal clearing (s2 / s7) |
+|---|---|---|
+| 10–100 kt | 54.3% / 70.1% | 68.1% / 74.2% |
+| 100–1,000 kt | 31.9% / 47.8% | 33.7% / 62.9% |
+| ≥ 1,000 kt | none | **1.0% / 4.2%** (117k / 105k kt) |
+
+At equal lot size the optimal clearing's lots are collected as fast or faster;
+the whole deficit sits in lots of ≥ 1,000 kt, which the greedy wave never made
+because a fill was one bid (≤ ~380 kt). The optimal clearing sends a buyer's
+whole demand for a color through a few cheapest legs, mostly to rocks already
+rich in that color (91% of kt on seed 2). Refuted along the way by the same
+census: the delivered color being unwanted by the venue hauler's destination
+(similar shares, similar rates) and longer round trips (medians 142 vs 157 yr).
+
+**The 2×2 that proved it** — capacity = what the buyer's based haulers move in a
+400-yr round less what already waits, per color, spilling to the next shared rock:
+
+| | no cap | cap |
+|---|---|---|
+| greedy wave | 89.75M | 140.87M, **+45.35% ± 3.14%**, 8/8 |
+| optimal clearing | 74.55M, −18.89% ± 4.28%, 0/8 | 139.33M, **−1.27% ± 2.84%** against greedy+cap, 4/8 |
+
+The cap carries the whole effect; once it is present the clearing rule does not
+move work-years. Loaded fraction under the cap: 36.9% / 37.3% (seeds 2 / 7),
+against 18.0% / 24.8% for the shipped wave.
+
+**The landed stages** (engine code, not scratch):
+
+| stage | what | result |
+|---|---|---|
+| A | one holding per (empire, planet) | **bit-identical** to stage 1 on seeds 1, 2, 7 at 1,500 yr (work-years, colony-years, works, colonies, vehicles, events) |
+| B | capacity as route capacities in the LP, then placement | **+47.29% ± 3.04%**, 8/8 against the shipped wave |
+| B+C | plus asks from every holding away from a yard | **+51.27% ± 1.71%**, 8/8; against B **+3.98% ± 2.09%, 6/8 — not resolved** |
+
+Colony-years moved by −0.00% under B+C.
+
+**Throughput.** Stage A's first version kept every holding in one ordered map
+and was bit-identical at **+19% to +27% per event**; indexing a holding at an
+owned planet by the planet removed it (stage A per event 10,353–11,776 ns
+against stage 1's 12,175–13,734, 6/6 pairs). Stage B+C's first version summed
+each route's room over a sorted venue list per ask — 3.46 s of a 12.8 s run
+spent building routes, against 0.010 s solving and 0.013 s placing — and cost
+−17% yr/s; computing the shared-rock set and its room once per (seller, buyer,
+color) is bit-identical and runs **145.1–156.8 yr/s against the shipped
+binary's 128.4–135.7** (3 seats, 1,500 yr, seeds 1 and 7, 3 interleaved rounds;
+10,874–11,993 against 12,645–13,116 ns/event). 12-seat combat bench:
+11.51–11.59 against 11.67–11.97 yr/s with 9% more events at lower ns/event.
+
+**Two habits from it.** *A proven-optimal allocation is optimal for the model it
+was given* — the LP treated ore dropped at a rock as delivered, and the engine
+only moves it at one hauler's rate; the census, not the objective, named the
+missing term. And *ablate the pieces of a 2×2 apart before crediting either*:
+the clearing rule looked like the cause of a −19% and the cure of a +44%, and it
+was neither.
+
+## D.21 T-134 stage 2 — the internal duty exchange, and self-trade
+
+*Supports `Hyades_matching.md` §9, `Hyades_warfare_tree.md` §8.20 and roles
+§4.5b. Card-free bed: `examples/work_years`, 3 seats, 4,000 yr, the 8 seeds of
+§D.20, paired log-ratios against the branch binary before stage 2 (`c5df349`),
+standard errors across seeds. Combat bed: `examples/combat_bench`, 12 seats,
+both cards at the barrier, 450 yr. Every scratch arm below was measured against
+the shipped binary and did not land.*
+
+**Self-trade — the question asked of stage 1's clearing.** An arm that let an
+empire's asks fill its own bids scored **−2.51% ± 1.59% work-years, 2/8 seeds
+up**, and colony-years **+0.00% ± 0.01%**. Not resolved at 2 SE; the sign leans
+harmful. An inference, held at about 60% confidence: a self-trade moves ore an
+empire could spend at a center out to its own pile at a shared rock, where it
+waits for a hauler. A per-lot census of self-filled lots by where they were
+spent would change that. The shipped clearing drops self-routes.
+
+**Why self-trade moves nothing — a census of the book** (`examples/holding_demand`,
+3 seats, seeds 1 and 7, every barrier to 2,000 yr; `Simulation::book_census`
+reads the book as posted and the fills as struck). There is demand for what the
+Holdings hold, and it is small against them: from year 600 on, bids are 1–19%
+of what is held away from yards (seed 1, 1,000 yr, Cyan: 42,627 kt bid against
+1,806,461 kt held away; seed 1, 1,800 yr, Yellow: 348,940 against 1,869,490).
+Centers also bank more in colors they are not short of than all the bids
+combined in most rows. Bids are small because a center bids only its shortfall
+against its next rung (the same caveat `unmet_color_demand` carries, §6.20).
+
+Fills against bids, shipped (no self-routes) and a scratch build that allows them:
+
+| seed, year, color | bid (kt) | filled, shipped | filled, self allowed | of which self | own haulers' spare room |
+|---|---|---|---|---|---|
+| 1, 600, C | 11,252 / 13,628 | 11,252 | 13,628 | 1,035 | 13,628 |
+| 1, 1,000, C | 42,627 / 43,528 | 42,627 | 43,528 | 4,192 | 43,528 |
+| 1, 1,800, C | 226,513 / 216,004 | 22,699 | 20,323 | 8,736 | 20,346 |
+| 7, 1,000, Y | 62,025 / 57,538 | 62,025 | 57,538 | 21,388 | 57,538 |
+| 7, 1,800, Y | 223,234 / 211,417 | 35,069 | 35,315 | 11,456 | 35,338 |
+
+Two regimes, and self-trade adds nothing in either. **Early**, every bid fills
+from rival sellers, and self-fills (7–40% of the volume) displace rivals. **Late**,
+fills stop short of bids at the buyer's own haulers' spare room at the rocks it
+shares with the seller — with self-trade allowed, fill equals that room to
+within 0.4% in every row where it falls short of the bid — and a self-route consumes the same room. Across
+rows the fill total moves −11% to +13% between the builds (one run per seed).
+An inference: self-trade reassigns fills and burns `exp(−λt)` of what it moves,
+which is where the −2.51% ± 1.59% work-years above would come from; a
+per-lot account of burned mass would test it.
+
+**The miner freight run alone** (matching §9.1): work-years **+0.63% ± 3.32%,
+3/8 up**; colony-years −0.01% ± 0.02%; colonies identical on all 8 seeds. The
+run fires: 2,998 and 1,817 runs on seeds 1 and 7 over 1,500 yr, most of them
+after year 500.
+
+**With the colony ship's run before embarking** (§9.2): work-years **+0.80% ±
+1.89%, 3/8 up**; colony-years **+0.03% ± 0.02%, 7/8 up**; colonies identical on
+all 8 seeds. Over 1,000 yr on seeds 1 and 7, miners make 2,723 and 1,460 runs and
+colony ships 1,511 and 1,341. What triggers the colony run was measured before
+it was built: 22.2% and 22.8% of colony ships launch with fewer settlers than the
+hold carries (6,201 and 5,776 launches, seeds 1 and 7, 1,000 yr). Per-seed
+work-years swing from −3.8% to +11.5%, which reads as a reordering of a
+compounding run rather than a gradient; no default moved on this number.
+
+**The picket sortie** (warfare §8.20). The first predicate — both hulls
+standing when the encounter begins — was censused with a scratch print on the
+combat bed, seed 1: **0 of 41,770** encounter starts had both standing. By role
+pair, 3,240 were picket against picket, the rest a picket against a scout,
+miner, freighter, colony ship or withdrawing hull. For picket-against-picket
+starts, the shooter's side had another post within 1 ly in 1,228 and the
+target's side within 2 ly in 11. With the shipped predicate (both armed, one
+standing) and the 2 ly placeholder reach: **3 sorties on seed 1, 0 on seed 7**;
+a scratch build at 8 ly flew 105 on seed 1.
+
+**Superseded by the author's ruling on "nearby"** (warfare §8.20): the reach is
+now belief about arriving before the battle is decided, with no distance
+constant. The 2 ly and 8 ly counts above are a record of the retired rule.
+`a_picket_joins_a_battle_it_can_reach_in_time_and_returns_to_its_post` sets
+the fight's believed length to twice and half the picket's light-plus-flight
+time and asserts one sortie and none. Its first run failed on a real defect —
+the arrival check read `world.position`, which a parked hull does not carry, so
+every flight time was infinite; it now reads the hull's position through its
+motion.
+
+**The belief rule on the card bed.** Two interleaved rounds against the fixed
+reach, seeds 1 and 7, 450 yr: **0 sorties on both seeds** (3 and 0 before), and
+`ns/event` 3,522–3,568 against 3,461–3,553 on seed 1 and 4,561–4,655 against
+4,706–4,777 on seed 7 — within the run-to-run spread. A scratch census of every
+pitched encounter on seed 1 (3,366; 3,165 Cairn against Cairn, 201 Cairn against
+Tor): believed fight length p50 0.019 yr, maximum 0.026 yr; distance from the
+battle to the nearest post of either side p05 5.94 ly, p50 14.06 ly, p95 49.7 ly;
+encounters with any post nearer than the fight's length, in light-years: 0.
+So the predicate cannot be true at current beam and structure magnitudes.
+
+**Throughput.**
+
+| bed | before stage 2 | stage 2 | reading |
+|---|---|---|---|
+| 3 seats, 1,500 yr, seeds 1 and 7, 3 interleaved rounds, ns/event | 11,815–12,124 and 11,881–12,170 | 12,116–13,857 and 11,575–12,403 | min-of-3 +2.5% and −2.6%: not resolved; events +0.9% and +1.1% |
+| combat bench, seed 1, 2 interleaved rounds | 11.17 / 11.34 yr/s, 3,205 / 3,157 ns/event, 12,574,563 events | 10.87 / 10.92 yr/s, 3,408 / 3,393 ns/event, 12,144,877 events | about −3% yr/s: fewer events, each dearer |
+
+Callgrind on the combat bed (seed 1, 300 yr) puts the new code's own
+instructions at `best_delivery_center` 0.30% (regular haulers included),
+`embark` 0.06% and `call_to_battle` 0.002%, against `fill_survey_candidates` at
+45.5%. An inference: the combat bed's per-event rise is the changed run — which
+hulls fly where, and so which survey scans run — and not the cost of the side
+duties. A per-function comparison against the old binary's profile would test
+it.
+
 ## References
 
-- `CLAUDE.md` §2 — how to search, how to read a gradient, the six traps, and the
+- `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
   rule that sends entries here
 - `docs/Hyades_autopilot_colonization_growth.md` — the Expansion/Growth spec §A
   supports

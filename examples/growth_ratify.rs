@@ -10,7 +10,7 @@
 //!
 //! Common random numbers throughout: every candidate is evaluated on the *same*
 //! four seeds and compared seed by seed, because seed noise here dwarfs the
-//! effect (CLAUDE.md §2). The objective is **colony-years**, not colony count —
+//! effect (AGENTS.md §2). The objective is **colony-years**, not colony count —
 //! the bed is saturated, so count has almost no room to move and the whole
 //! question is *when* the worlds were taken.
 //!
@@ -40,7 +40,7 @@ use std::io::Write;
 const SEEDS: [u64; 4] = [1, 7, 42, 31337];
 const PLAYERS: usize = 3;
 
-/// **Screen on a truncated horizon, confirm on the objective** (CLAUDE.md §2).
+/// **Screen on a truncated horizon, confirm on the objective** (AGENTS.md §2).
 /// `horizon_years` is purely a stopping condition, so a short run is a faithful
 /// *prefix*, and cost is violently superlinear in duration. Pass `--confirm` to
 /// re-run the shortlist on the real 4,000-year objective.
@@ -90,7 +90,7 @@ fn main() {
     // unmissable: 1.10 and 1.35 scored bit-identically, and so did 1.60 and
     // 1.90. Ratifying off a coarse grid would have picked a plateau *edge* by
     // accident, which is the same trap as `coverage_trace`'s degenerate sample
-    // points (CLAUDE.md §2). Same root cause as R-O68: the gate downstream is
+    // points (AGENTS.md §2). Same root cause as R-O68: the gate downstream is
     // discrete.
     let fine = std::env::args().any(|a| a == "--fine");
     let sweep: Vec<f64> = (0..24).map(|i| 0.80 + 0.05 * i as f64).collect();

@@ -1,7 +1,7 @@
 //! **Does the simulation ever put two empires in the same place?**
 //!
 //! The precondition for wiring `combat::resolve_engagement` into the sim
-//! (T-30/T-52, `Hyades_warfare_tree.md` §3.4). `CLAUDE.md` §2: *check whether the
+//! (T-30/T-52, `Hyades_warfare_tree.md` §3.4). `AGENTS.md` §2: *check whether the
 //! thing upstream was ever short* — an engagement trigger keyed on co-location is
 //! worth nothing if co-location never happens, and one census answers that before
 //! any code is written.

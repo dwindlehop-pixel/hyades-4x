@@ -68,7 +68,7 @@ fn main() {
         let half_life = if lambda > 0.0 { format!("{:.0} yr", 2f64.ln() / lambda) } else { "inf".into() };
         println!("{lambda:>10.3}  {:>28}  {:>9.2}%{delta}   half-life {half_life}", format!("{cov:?}"), frac * 100.0);
         // One row per expensive trial: flush so a partial run is readable
-        // (CLAUDE.md §2 — a partial result you can read beats a complete one
+        // (AGENTS.md §2 — a partial result you can read beats a complete one
         // you killed).
         std::io::stdout().flush().ok();
     }

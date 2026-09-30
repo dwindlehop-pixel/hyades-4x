@@ -124,7 +124,7 @@ Three reasons it is a contract clause rather than an authoring convention:
 - **Its absence is silent.** Nothing in `CardEffect` or `DoctrineWrite`
   distinguishes a write that raises a ceiling from one that lowers it — both are
   an `f64` — so a mis-slotted card compiles, runs, and reports a plausible
-  number. This is `CLAUDE.md` §4's *"a quantity carries its unit in the type"*
+  number. This is `AGENTS.md` §4's *"a quantity carries its unit in the type"*
   applied to a capability instead of a unit.
 - **`Hyades_standing_layer_and_observation.md` §5 already says Doctrine and
   Design are written *only* by tree cards.** This says *which* tree, which is
@@ -165,7 +165,7 @@ Two enforcement points, for two different failure modes, and both are cheap:
    card carries a lethal effect. This is a **static** property of shipped data,
    so it costs nothing at runtime and fails the build rather than a match. It is
    the same shape as the `compile_fail` doctest that stops a rung being written
-   as a bare number (`CLAUDE.md` §4).
+   as a bare number (`AGENTS.md` §4).
 2. **In `Order::coerce`** — a play of a lethal card from a non-Warfare tree
    coerces to `Order::pass`, like any other illegality. Redundant while the list
    is static, and **not** redundant once cards are data: §7's Monte-Carlo

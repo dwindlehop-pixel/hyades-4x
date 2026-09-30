@@ -306,6 +306,18 @@ sacrificed."
 - Terminal: consumed, no return branch. Damage/accuracy/counters are
   warfare-autopilot / counter-graph territory.
 
+### 4.5b Side runs — a hull leaves its standing duty and comes back (T-134 stage 2)
+
+**`RATIFIED` (the author's direction).** Three roles take one side run away
+from their standing duty and return to it; the role reads `Freighter` (or stays
+`Picket`) for the run, and the standing duty is the voyage target, which the
+run leaves alone. A miner on a large holding runs one freight load to a center
+that wants it; a colony ship whose origin is still growing runs one load home
+before it embarks; a posted picket goes to a pitched battle it believes it can reach before the
+battle is decided. The prices,
+the reach and the interface a new duty plugs into are `Hyades_matching.md` §9 and
+`Hyades_warfare_tree.md` §8.20.
+
 ### 4.6 Reserve vs. Scrap — which applies when
 
 **There is a third terminal state since T-111: destroyed.** Reserve and Scrap are

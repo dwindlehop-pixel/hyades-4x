@@ -27,7 +27,7 @@
 //!
 //! **Why this is a separate driver rather than five more rows in
 //! `gradient_probe`.** Cost. Each trial is a full 4,000-year snowball run, and
-//! the container these run in is ephemeral — CLAUDE.md §2 records three sweeps
+//! the container these run in is ephemeral — AGENTS.md §2 records three sweeps
 //! killed mid-flight. So this file takes the knobs to probe as arguments,
 //! letting the work be split into chunks that each finish well inside ten
 //! minutes, and flushes after every row so a killed run still yields the rows

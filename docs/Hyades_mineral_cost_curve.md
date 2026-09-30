@@ -492,7 +492,7 @@ the reason to adopt it:
    `Band Empty`; `a_Systems` eats 88% of it.
 2. **LCV, LOU and ROU carry exactly zero**, by `max(0, ·)` reached honestly:
    their reserved volume exceeds their hold. This is the *capability* half of
-   roles §4's permissive rule (`CLAUDE.md` §7 item 8) — a Limited hull has no
+   roles §4's permissive rule (`AGENTS.md` §7 item 8) — a Limited hull has no
    cargo hold as a fact, not as a competence penalty.
 3. **A General Offensive Unit still carries 2.19 kt** — troops, ordnance,
    prize crews — so "Offensive has little to zero cargo" is size-dependent
@@ -554,7 +554,7 @@ spends it on hold and armor. So:
   1.2 / 1.1 / 1.0 Systems ladder is a stand-in for a design decision the engine
   cannot yet express, because no Design write reaches thrust. Flatten it *when*
   that write lands (`hyades_todo.md` T-08, `on_refit`), not before — it is
-  MC-tuned combat surface (`CLAUDE.md` §6).
+  MC-tuned combat surface (`AGENTS.md` §6).
 
 #### R-MC16 — **resolved (T-96): the drive is a mass, not a stat**
 
@@ -916,9 +916,9 @@ value inside `[4, 8]` so a future edit cannot quietly leave the range.
 
 **R-MC15 (open, new):** decide `F₁`/`F₂` (in `[4, 8]`) and re-derive
 `medium_fleet_size`/`limited_fleet_size` from them via the gradient-step
-methodology (`CLAUDE.md` §"How to search"), rather than the two fields
+methodology (`AGENTS.md` §"How to search"), rather than the two fields
 being chosen independently as they are today — **`medium_fleet_size` is a
-globally MC-tuned parameter (`CLAUDE.md` §6) and is not to be changed
+globally MC-tuned parameter (`AGENTS.md` §6) and is not to be changed
 here** without that re-derivation and explicit re-ratification.
 `hyades_todo.md` T-19 is the concrete offline-search task this folds into.
 
@@ -1110,7 +1110,7 @@ and keeps the hull at its rung's price.
 Three consequences to carry into the code change rather than discover in it:
 
 - **`medium_fleet_size` and `limited_fleet_size` are globally MC-tuned**
-  (`CLAUDE.md` §6). Moving 4.45 → 10 and 9.0 → 50 must be measured on
+  (`AGENTS.md` §6). Moving 4.45 → 10 and 9.0 → 50 must be measured on
   **colony-years**, not colony count, because the acceptance test for this whole
   ladder is whether making General hulls *more expensive* still speeds
   colonization up.
@@ -1470,7 +1470,7 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
   gradient-step methodology rather than choosing the two independently —
   no cost ladder this project has shipped or proposed currently satisfies
   the constraint. `medium_fleet_size` is globally MC-tuned
-  (`CLAUDE.md` §6) and is not touched by this spec; `hyades_todo.md` T-19
+  (`AGENTS.md` §6) and is not touched by this spec; `hyades_todo.md` T-19
   is the concrete offline-search task this folds into.
   **RATIFIED (§2.6).** Two ladders, mass and mineral cost, tied by
   `F_mass = F_cost^(3/2)`. The `[4, 8]` window on the step factors is

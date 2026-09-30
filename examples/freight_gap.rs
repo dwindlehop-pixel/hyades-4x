@@ -10,7 +10,7 @@
 //! So this puts the empire's color deficit beside its own supply, per color:
 //!
 //! - **deficit** — `Σ over owned centers` of the shortfall against the next rung.
-//! - **at outposts** — mined, sitting in `outpost_stock`, waiting on a hull.
+//! - **at outposts** — mined, sitting in the empire's holdings at the rock, waiting on a hull.
 //! - **in banks** — already delivered to some center, just not the one short of it.
 //!
 //! If supply covers deficit many times over, the ore exists and freight is the
@@ -131,7 +131,7 @@ fn main() {
     // records in time order and difference them: `Loaded → Deposited` is the
     // laden delivery leg, `Deposited → Loaded` the empty pickup leg. Reading a
     // *mean round trip* alone would hide which one moved — the mix rule from
-    // `CLAUDE.md` §2, applied to a duration.
+    // `AGENTS.md` §2, applied to a duration.
     let mut legs: BTreeMap<Entity, (f64, FreighterLeg)> = BTreeMap::new();
     let (mut out_n, mut out_t, mut in_n, mut in_t) = (0u64, 0.0f64, 0u64, 0.0f64);
     for rec in sim.log().by_category(LogCategory::Mining) {

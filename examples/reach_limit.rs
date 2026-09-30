@@ -75,7 +75,7 @@ struct Reach {
     /// denominator you measured after a run was smaller than the one you
     /// measured before. Since the units were separated the gate reads
     /// `bio_max`, which nothing in the shipped engine moves — so the target set
-    /// is fixed, exactly as CLAUDE.md's rule about metric denominators
+    /// is fixed, exactly as AGENTS.md's rule about metric denominators
     /// requires.
     ///
     /// It stays as a **guard**, not as a statistic: the first card that lowers

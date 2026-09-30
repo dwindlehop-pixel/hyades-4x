@@ -7,7 +7,7 @@
 //! not simulated to completion: the default horizon, 450 yr, is 250 years past
 //! the barrier, which covers the first strikes and the rivals' expansion peak.
 //!
-//! Prints `yr/s` and `ns/event` side by side (`CLAUDE.md` §2: a rate over a
+//! Prints `yr/s` and `ns/event` side by side (`AGENTS.md` §2: a rate over a
 //! population the change re-selects cannot tell "more work" from "dearer work"),
 //! and the fight count, so a knob that changed the simulation rather than its
 //! speed shows up as a different count rather than as a speedup.
@@ -79,10 +79,11 @@ fn main() {
         println!(
             "seed {seed}: {:>7.2} yr/s  {:>9} events  {:>7.0} ns/event  {encounters} encounters  \
              {wrecked} wrecked ({colony_wrecks} colony ships)  {retargets} retargets  {withdrawals} withdrawals  \
-             {colonies} colonies",
+             {colonies} colonies  {} sorties",
             h / s,
             events,
-            s * 1e9 / events as f64
+            s * 1e9 / events as f64,
+            sim.sorties_flown()
         );
         println!("  wrecked by role: {by_role:?}");
         let _ = std::io::stdout().flush();

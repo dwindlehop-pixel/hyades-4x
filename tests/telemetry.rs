@@ -9,7 +9,7 @@
 //! - **Logging does not change the outcome.** An arithmetic identity, already
 //!   pinned by `sim::tests::logging_does_not_affect_outcomes` — the log is a
 //!   side channel, so the same seed gives the same run either way.
-//! - **Logging does not change the *cost*.** This file. `CLAUDE.md` §2 now asks
+//! - **Logging does not change the *cost*.** This file. `AGENTS.md` §2 now asks
 //!   for the per-event budget alongside `yr/s`, and a throughput number taken
 //!   from an instrumented run is only comparable to one taken from a bare run if
 //!   the instrument is cheap. Otherwise every measurement is reading a system
@@ -27,7 +27,7 @@
 //!   makes a run finish faster than its uncontended cost — so the minimum over
 //!   repeats is the cleanest estimate of true cost, and a mean is mostly a
 //!   measurement of what else was running.
-//! - **A small galaxy, not a short horizon** (`CLAUDE.md` §2). The question is
+//! - **A small galaxy, not a short horizon** (`AGENTS.md` §2). The question is
 //!   the *ratio* of two costs, which needs enough events to be stable and does
 //!   not need the standard bed. Shrinking the field keeps the mechanism and the
 //!   full horizon while making the test affordable.

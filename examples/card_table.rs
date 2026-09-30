@@ -14,7 +14,7 @@
 //! The Growth card's effect is `GrowthOnly` against `Pass` on odd seats; the
 //! Warfare card's is `Both` against `GrowthOnly` on even seats. Landing both at
 //! once and differencing against `Pass` would charge each card with the other's
-//! effect on the same galaxy (CLAUDE.md: *ablate them apart before you believe
+//! effect on the same galaxy (AGENTS.md: *ablate them apart before you believe
 //! either*).
 //!
 //! **One sample per card seat, as a ratio card / counterfactual:**

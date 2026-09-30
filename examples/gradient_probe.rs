@@ -76,7 +76,7 @@ const DELTA: f64 = 0.10;
 /// stopping condition, so the run is a faithful prefix.
 ///
 /// Calibrated at ρ = 0.923 against true coverage for **31× less cost**
-/// (`examples/proxy_metric_calibration.rs`, CLAUDE.md §2). **Ranking only:**
+/// (`examples/proxy_metric_calibration.rs`, AGENTS.md §2). **Ranking only:**
 /// the elasticities it reports are in points-of-colonized-at-2000 per ln, a
 /// different scale from the real objective's, so compare the *order* of knobs
 /// across modes, never the magnitudes. Screen here, ratify on the objective.

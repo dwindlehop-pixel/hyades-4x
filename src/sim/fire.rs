@@ -79,6 +79,16 @@ fn boxes_within(a: &Track, b: &Track, reach: f64) -> bool {
         && gap(a.lo.z, a.hi.z, b.lo.z, b.hi.z) <= reach
 }
 
+/// **A picket away from its post at a pitched battle** (T-134 stage 2).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Sortie {
+    /// The world or port it holds, and returns to.
+    post: Entity,
+    /// Whether it has reached the battle — from then on, running out of
+    /// targets sends it home.
+    at_site: bool,
+}
+
 /// **Who decides together** (T-133, R-WAR30 and R-WAR32's interim): a mining
 /// crew at one rock, a picket stack at one world or port, or a single hull.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -479,6 +489,7 @@ impl Simulation {
         let seat = |e: Entity| self.world.owner.get(e).map_or(0, |o| o.0);
         let (shooter_seat, target_seat) = (seat(shooter), seat(target));
         self.log.push(self.clock, LogEvent::EncounterBegan { shooter_seat, target_seat, shooter, target });
+        self.call_to_battle(shooter, target);
         if self.firing.insert(shooter) {
             self.schedule(0.0, EventKind::Discharge { shooter });
         }
@@ -664,6 +675,172 @@ impl Simulation {
     fn stop_firing(&mut self, shooter: Entity) {
         self.firing.remove(&shooter);
         self.in_reach.remove(&shooter);
+        // A picket at a battle with nothing left in reach goes back to its post.
+        if self.sorties.get(&shooter.0).is_some_and(|s| s.at_site) && self.live_hull(shooter) {
+            self.sortie_home(shooter);
+        }
+    }
+
+    /// **A pitched battle calls the pickets that believe they can arrive in
+    /// time to change it** (T-134 stage 2; the author's ruling: "nearby is a
+    /// function of belief about being able to arrive in time to affect the
+    /// outcome"). Pitched: both hulls armed, and one of them standing at a
+    /// post, so the battle is at a place and is a fight rather than a strike on
+    /// a hull that cannot answer. An encounter begins when the arriving hull
+    /// enters reach, still under way, so "both standing" never holds at its
+    /// start (0 of 41,770 encounters on `examples/combat_bench`, seed 1).
+    ///
+    /// The battle is believed decided at [`Self::battle_decided_in`] after it
+    /// begins. A posted picket of either side `d` light-years away sees it `d`
+    /// years later (c = 1) and needs its own flight time on top; it is called
+    /// only if the sum comes first ([`Standing::joins_battle`]). No distance
+    /// constant: the reach is the fight's own clock.
+    fn call_to_battle(&mut self, shooter: Entity, target: Entity) {
+        if !self.armed.contains(&shooter) || !self.armed.contains(&target) {
+            return;
+        }
+        let standing = |e: Entity| self.world.motion.get(e).is_some_and(|m| !m.under_way(self.clock));
+        let Some(held) = [target, shooter].into_iter().find(|&e| standing(e)) else { return };
+        let Some(site) = self.position_at(held, self.clock) else { return };
+        let Some(world) = self.world.voyage.get(held).map(|v| v.target) else { return };
+        let seat = |e: Entity| self.world.owner.get(e).map(|o| o.0);
+        let (Some(a), Some(b)) = (seat(shooter), seat(target)) else { return };
+        let decided_in = self.battle_decided_in(shooter, target);
+        let decided_at = self.clock + decided_in;
+        let mut called: Vec<(f64, Entity)> = Vec::new();
+        let sides = if a == b { vec![a] } else { vec![a, b] };
+        for side in sides {
+            let posts = self
+                .picket
+                .iter()
+                .filter(|(_, (holder, _, _))| *holder == side)
+                .map(|(&post, (_, stack, _))| (post, stack))
+                .chain(self.blockade.iter().filter(|(&(_, s), _)| s == side).map(|(&(post, _), stack)| (post, stack)));
+            for (post, stack) in posts {
+                let Some(at) = self.world.position.get(Entity(post)) else { continue };
+                let d = at.distance(site);
+                // The light alone is already too late: no hull here can help.
+                if d <= 0.0 || d >= decided_in {
+                    continue;
+                }
+                for &h in stack {
+                    let busy = self.in_reach.get(&h).is_some_and(|v| !v.is_empty());
+                    if h == shooter || h == target || busy || self.battle_called.contains_key(&h.0) {
+                        continue;
+                    }
+                    let doctrine = self.doctrine_of(side as usize);
+                    let flight = math::ship_travel_years(d, self.laden_accel(h));
+                    if Standing::of(&doctrine).joins_battle(d + flight, decided_in) {
+                        called.push((d, h));
+                    }
+                }
+            }
+        }
+        for (d, h) in called {
+            self.battle_called.insert(h.0, (site, world, decided_at));
+            self.schedule(d, EventKind::BattleSeen { picket: h });
+        }
+    }
+
+    /// **How long this pair's fight is believed to last**, from what the
+    /// light of its start shows: each hull's structure left, over the other's
+    /// beam power — the shorter of the two times to a wreck. The wreck point
+    /// lies past the structure (§8.19.5), so this is a lower bound on the
+    /// fight and the belief errs toward staying home. **Interim belief
+    /// (R-WAR39):** it reads both Designs and the damage they carry at the
+    /// start as observed.
+    fn battle_decided_in(&self, shooter: Entity, target: Entity) -> f64 {
+        let power = |e: Entity| self.world.loadout.get(e).map_or(0.0, |l| l.beams as f64 * l.beam_power_kj_per_year);
+        let left = |e: Entity| (self.structure_of(e) - self.world.hull_damage.get(e).copied().unwrap_or(0.0)).max(0.0);
+        let t = |victim: Entity, by: Entity| {
+            let p = power(by);
+            if p > 0.0 {
+                left(victim) / p
+            } else {
+                f64::INFINITY
+            }
+        };
+        t(target, shooter).min(t(shooter, target))
+    }
+
+    /// **The light of a pitched battle reaches a posted picket**, which
+    /// leaves its post for it if it is still standing there and not fighting.
+    pub(super) fn sys_battle_seen(&mut self, h: Entity) {
+        let Some((site, world, decided_at)) = self.battle_called.remove(&h.0) else { return };
+        if !self.live_hull(h) || self.world.role.get(h).copied() != Some(Role::Picket) {
+            return;
+        }
+        // Decided on the hull's own drive now, which may have changed since
+        // the battle's light left.
+        let flight = self
+            .position_at(h, self.clock)
+            .map_or(f64::INFINITY, |p| math::ship_travel_years(p.distance(site), self.laden_accel(h)));
+        let seat = self.world.owner.get(h).map_or(0, |o| o.0);
+        if !Standing::of(&self.doctrine_of(seat as usize)).joins_battle(flight, decided_at - self.clock) {
+            return;
+        }
+        if self.world.motion.get(h).is_none_or(|m| m.under_way(self.clock)) {
+            return;
+        }
+        if self.in_reach.get(&h).is_some_and(|v| !v.is_empty()) {
+            return;
+        }
+        let Some(post) = self.world.voyage.get(h).map(|v| v.target) else { return };
+        let seat = self.world.owner.get(h).map_or(0, |o| o.0);
+        // Off the stack, and on the in-flight books for its post from now:
+        // the return is an ordinary picket arrival.
+        if self.blockade.get(&(post.0, seat)).is_some_and(|st| st.contains(&h)) {
+            self.leave_blockade(post.0, seat, h);
+            self.bind(seat, post.0);
+        } else if self.detach_picket(post, h).is_none() {
+            return;
+        }
+        *self.picket_inbound.entry(post.0).or_default() += 1;
+        self.sorties.insert(h.0, Sortie { post, at_site: false });
+        self.sortie_count += 1;
+        let arrive = self.course_change(h, site);
+        self.schedule_at(arrive, EventKind::SortieArrive { vehicle: h });
+        let pid = *self.world.planet_id.get(world).unwrap();
+        self.log.push(
+            self.clock,
+            LogEvent::CourseChanged {
+                player: seat,
+                vehicle: h,
+                role: Role::Picket,
+                reason: CourseReason::Sortie,
+                to: pid,
+            },
+        );
+    }
+
+    /// **A picket reaches the battle** and stands there; encounter detection
+    /// finds whatever is in its reach. It checks one firing period later.
+    pub(super) fn sys_sortie_arrive(&mut self, h: Entity) {
+        let Some(s) = self.sorties.get_mut(&h.0) else { return };
+        s.at_site = true;
+        let Some(at) = self.world.motion.get(h).map(|m| m.dest) else { return };
+        self.park(h, at);
+        let period = self.world.loadout.get(h).map_or(0.0, |l| l.discharge_years);
+        self.schedule(period, EventKind::SortieHold { vehicle: h });
+    }
+
+    /// Nothing came into reach at the battle — it is over, or out of this
+    /// hull's reach — so the picket goes back.
+    pub(super) fn sys_sortie_hold(&mut self, h: Entity) {
+        if !self.sorties.get(&h.0).is_some_and(|s| s.at_site) || !self.live_hull(h) {
+            return;
+        }
+        if self.in_reach.get(&h).is_none_or(|v| v.is_empty()) {
+            self.sortie_home(h);
+        }
+    }
+
+    /// Fly a picket from a battle back to its post.
+    fn sortie_home(&mut self, h: Entity) {
+        let Some(s) = self.sorties.remove(&h.0) else { return };
+        let Some(&dest) = self.world.position.get(s.post) else { return };
+        let arrive = self.course_change(h, dest);
+        self.schedule_at(arrive, EventKind::PicketArrive { vehicle: h });
     }
 
     /// The arena's fire-control test ([`crate::combat::laser_hit_check`]) on
@@ -767,6 +944,9 @@ impl Simulation {
         let role = self.world.role.get(e).copied().unwrap_or(Role::Reserve);
         let target = self.world.voyage.get(e).map(|v| v.target);
         let under_way = self.world.motion.get(e).is_some_and(|m| m.under_way(self.clock));
+        // A side run or a call to battle ends here too (T-134 stage 2).
+        self.side_runs.remove(&e.0);
+        self.battle_called.remove(&e.0);
         match role {
             Role::Miner => {
                 if let Some(t) = target {
@@ -779,8 +959,11 @@ impl Simulation {
                 }
             }
             Role::Picket => {
+                // A picket on a sortie is on the in-flight books for its post
+                // whether it is flying or standing at the battle.
+                let sortie = self.sorties.remove(&e.0).is_some();
                 if let Some(t) = target {
-                    if under_way {
+                    if under_way || sortie {
                         if let Some(n) = self.picket_inbound.get_mut(&t.0) {
                             *n = n.saturating_sub(1);
                             if *n == 0 {
@@ -995,7 +1178,7 @@ mod tests {
     use crate::galaxy::GalaxyConfig;
     use crate::log::{LogCategory, LogFilter};
 
-    /// The unit bed: two seats on a 200-planet field (`CLAUDE.md` §2's
+    /// The unit bed: two seats on a 200-planet field (`AGENTS.md` §2's
     /// "reduce the galaxy before the horizon").
     fn bed(seed: u64) -> Simulation {
         let mut g = GalaxyConfig::new(2, seed);
@@ -1064,6 +1247,68 @@ mod tests {
     fn run_to(sim: &mut Simulation, t: f64) {
         sim.config.horizon_years = sim.config.horizon_years.max(t + 1.0);
         while sim.clock < t && sim.step() {}
+    }
+
+    /// Post `seat`'s picket `e` on unowned world `w`, as `sys_picket_arrive`
+    /// would.
+    fn post(sim: &mut Simulation, seat: u32, e: Entity, w: Entity) {
+        sim.world.voyage.insert(e, Voyage { target: w, heading_bias: None, hops: 0 });
+        let clock = sim.clock;
+        sim.picket.entry(w.0).or_insert((seat, Vec::new(), clock)).1.push(e);
+        sim.picket_count[seat as usize] += 1;
+    }
+
+    /// **A posted picket goes to a pitched battle it believes it can reach
+    /// before the battle is decided, and comes back** (T-134 stage 2, the
+    /// author's ruling on "nearby"). Seat 0 holds the bed's two closest free
+    /// worlds; a rival stands at one against seat 0's picket there. The fight's
+    /// length is set through the defender's beam power, to twice and to half
+    /// the other picket's light-plus-flight time: it goes in the first case
+    /// only, and once back, nothing is left on the books.
+    #[test]
+    fn a_picket_joins_a_battle_it_can_reach_in_time_and_returns_to_its_post() {
+        for (ratio, goes) in [(2.0, true), (0.5, false)] {
+            let mut sim = bed(3);
+            enemies(&mut sim);
+            let free: Vec<Entity> =
+                sim.planet_entity.iter().copied().filter(|&w| !sim.world.owner.contains(w)).collect();
+            let pos = |sim: &Simulation, w: Entity| *sim.world.position.get(w).unwrap();
+            let (w, q) = free
+                .iter()
+                .flat_map(|&a| free.iter().map(move |&b| (a, b)))
+                .filter(|&(a, b)| a != b)
+                .min_by(|x, y| {
+                    pos(&sim, x.0).distance(pos(&sim, x.1)).total_cmp(&pos(&sim, y.0).distance(pos(&sim, y.1)))
+                })
+                .unwrap();
+            let hull = HullType::LimitedContactVehicle;
+            let gun = cairn_gun(&sim);
+            let (at_w, at_q, weak) = (pos(&sim, w), pos(&sim, q), popgun(&sim));
+            let b = stand(&mut sim, 0, hull, Class::Cairn, gun, at_q);
+            post(&mut sim, 0, b, q);
+            let d = at_w.distance(at_q);
+            let reach_in = d + math::ship_travel_years(d, sim.laden_accel(b));
+            // The defender's gun, weakened so the rival lasts `ratio` times
+            // what the other picket needs to get there.
+            let near = at_w.add(Vec3::new(gun.fire_enemy_ly / 3.0, 0.0, 0.0));
+            let c = stand(&mut sim, 1, hull, Class::Cairn, weak, near);
+            sim.world.voyage.insert(c, Voyage { target: w, heading_bias: None, hops: 0 });
+            let full = gun.beams as f64 * gun.beam_power_kj_per_year;
+            let slow = Loadout {
+                beam_power_kj_per_year: gun.beam_power_kj_per_year * sim.structure_of(c) / (full * ratio * reach_in),
+                ..gun
+            };
+            let a = stand(&mut sim, 0, hull, Class::Cairn, slow, at_w);
+            post(&mut sim, 0, a, w);
+            let decided = sim.battle_decided_in(a, c);
+            assert!((decided / reach_in - ratio).abs() < 1e-6, "the bed sets the fight's believed length");
+
+            run_to(&mut sim, 5.0 + 4.0 * reach_in);
+            assert_eq!(sim.sorties_flown(), goes as u64, "ratio {ratio}");
+            assert!(sim.picket.get(&q.0).is_some_and(|(h, st, _)| *h == 0 && st.contains(&b)), "on its post");
+            assert!(!sim.picket_inbound.contains_key(&q.0), "nothing left on the in-flight book");
+            assert!(sim.sorties.is_empty() && sim.battle_called.is_empty());
+        }
     }
 
     /// Two rival pickets a third of the engagement range apart in open space.

@@ -564,7 +564,7 @@ may cross the JS boundary inbound.** `Math.*` in JS is engine-provided and not r
 be correctly rounded.
 
 **H4a `RATIFIED` · Native against wasm32 is bit-identical, because the engine
-calls no host libm (T-127).** H4 covers wasm against wasm. `CLAUDE.md` §4 asks
+calls no host libm (T-127).** H4 covers wasm against wasm. `AGENTS.md` §4 asks
 for more — *"same seed ⇒ bit-identical results, native and wasm32"* — and a
 native headless server validating a browser client's run needs exactly that.
 The platform libm and the Rust libm compiled into the module are different

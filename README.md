@@ -8,7 +8,7 @@ link against — the production game and the Monte-Carlo balancer. It is
 dependency-free, presentation-free, deterministic, and WASM-targetable.
 
 - **Design specs** live in [`docs/`](docs/) and are authoritative.
-- **[`CLAUDE.md`](CLAUDE.md)** is the standing working agreement: design laws,
+- **[`AGENTS.md`](AGENTS.md)** is the standing working agreement: design laws,
   open R-codes, and guardrails. Read it before changing engine behavior.
 - **[`MIGRATION.md`](MIGRATION.md)** records how this tree was assembled and
   which propulsion helpers are reconstructed placeholders.
@@ -37,7 +37,7 @@ cargo run --release --example trace              # single-run diagnostic log
 ## Layout
 
 ```
-CLAUDE.md    standing context: design laws, R-codes, guardrails
+AGENTS.md    standing context: design laws, R-codes, guardrails
 Cargo.toml
 rustfmt.toml
 src/         the engine (lib.rs wires the modules)

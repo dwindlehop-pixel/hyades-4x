@@ -303,6 +303,9 @@ pub enum CourseReason {
     /// Past its structure, off a post it cannot hold under fire, or breaking
     /// off on believed kinematics — it heads home.
     Withdraw,
+    /// A picket leaves its post for a pitched battle whose light has reached
+    /// it (T-134 stage 2); `to` is the battle's world.
+    Sortie,
 }
 
 impl LogEvent {

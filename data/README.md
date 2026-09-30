@@ -48,7 +48,7 @@ determinism check.
 the two arms, so a knob that is pure downside scores like one that is pure
 upside — `cargo_unit_size` is third of 32 by |elasticity| and twenty-second by
 benefit. Compute `max(S(+δ), S(−δ)) − 1` per knob and keep the other arm beside
-it; `CLAUDE.md` §2's "Six traps in reading a gradient" has the rest.
+it; `AGENTS.md` §2's "Six traps in reading a gradient" has the rest.
 
 The file carries **two seed sets**: 1 / 7 / 42 / 31337 is the standard CRN bed,
 and 2 / 3 / 5 / 11 is the independent replication set for the shortlist the first

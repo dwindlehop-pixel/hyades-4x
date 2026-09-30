@@ -2,7 +2,7 @@
 //! ~2,800 of 4,000 years (`examples/survey_strategy_search.rs` Round 1),
 //! when the same doctrine reaches ~49% by the horizon? If the ramp is that
 //! back-loaded, a survey-targeting knob may have no seed left to grow in —
-//! "diagnose first, sweep second" (CLAUDE.md §2, the `min_time_search`
+//! "diagnose first, sweep second" (AGENTS.md §2, the `min_time_search`
 //! precedent).
 //!
 //! Traces one seed's full colonization timeline (bucketed `ColonyFounded`

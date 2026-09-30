@@ -49,7 +49,7 @@ const SEEDS: [u64; 4] = [1, 7, 42, 31337];
 
 /// The bed, with an **independent replication set** available via `WY_SEEDS`.
 ///
-/// A 2-SE reading on four seeds is a coin landing on its edge (`CLAUDE.md` §2 —
+/// A 2-SE reading on four seeds is a coin landing on its edge (`AGENTS.md` §2 —
 /// `survey_reserve` cleared that bar and was a false positive), and the fix for
 /// that is more seeds rather than a softer bar. Replicating on seeds the
 /// candidate was not chosen against is the stronger version: it cannot inherit
@@ -87,7 +87,7 @@ struct Run {
     /// throughput fell 27% while vehicle count *fell*, because the cost was
     /// event count and not per-event work.
     ///
-    /// This is `CLAUDE.md` §2's seventh artifact shape (an aggregate that moves
+    /// This is `AGENTS.md` §2's seventh artifact shape (an aggregate that moves
     /// against its parts) applied to performance, and the decomposition is the
     /// same prescription: report the mix beside the mean.
     ns_per_event: f64,
@@ -117,7 +117,7 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Run {
     }
     // **Common random numbers**: the same seed drives the galaxy and the sim at
     // every bias, so the difference between two rows is the knob and not the
-    // draw (`CLAUDE.md` §2).
+    // draw (`AGENTS.md` §2).
     let doctrine = Doctrine { reinvest_bias: bias, ..Doctrine::default() };
     let autopilots: Vec<Box<dyn Autopilot>> =
         (0..PLAYERS).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<_>).collect();
@@ -199,7 +199,7 @@ fn main() {
 
     // Per-seed work-years at the first bias listed, so every later row can be
     // reported as a **paired** difference against it. Under CRN the difference
-    // has far lower variance than either level (`CLAUDE.md` §2), and the SE of
+    // has far lower variance than either level (`AGENTS.md` §2), and the SE of
     // that difference is the only thing that says whether a row is a finding.
     let mut base: Option<Vec<f64>> = None;
     for &bias in &biases {
