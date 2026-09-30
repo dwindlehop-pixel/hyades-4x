@@ -128,6 +128,15 @@ pub enum CardEffect {
     /// Design is permanent and strictly earlier-is-better, so this leaks
     /// spatially and never goes stale (std §5).
     UnlockDesign(HullType, Class),
+    /// **Say what a Design is paid in** — the share of its hull's price in
+    /// Red, Green, Blue and apex, the rest in basics (`sim::DesignBill`).
+    ///
+    /// The author's ruling: a card's cost in supers is what its Design writes
+    /// do to production orders. Tiers 1 and 2 write none of this; a tier-3
+    /// card's Designs are super-dominated; a win condition's are paid in apex.
+    /// Coerced, never rejected: negative shares floor at zero and a set summing
+    /// past one is scaled to one.
+    WriteDesignBill(HullType, Class, [f64; 4]),
     /// Write one field of the empire's **works** state — the industrial half of
     /// the standing layer (`Hyades_industry.md` §6.2, T-75b).
     ///

@@ -75,7 +75,7 @@ pub mod prelude {
     pub use crate::galaxy::{Galaxy, GalaxyConfig, Planet, PlanetClass, PlanetId, PlayerId};
     pub use crate::log::{CourseReason, LogCategory, LogEvent, LogFilter, LogRecord, SimLog};
     pub use crate::math::Vec3;
-    pub use crate::resources::{Archetype, Basic, MineralField, Minerals, Super};
+    pub use crate::resources::{Archetype, Basic, Material, MineralField, Minerals, Super};
     pub use crate::rng::Rng;
     pub use crate::sim::{Entity, FleetSummary, HullType, Role, SimConfig, SimReport, Simulation};
     pub use crate::snapshot::Snapshot;

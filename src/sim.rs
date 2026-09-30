@@ -64,7 +64,7 @@ use crate::galaxy::{Galaxy, PlanetClass, PlanetId, PlayerId, PopBands};
 use crate::log::{FreighterLeg, LogEvent, LogFilter, SimLog};
 use crate::matching;
 use crate::math::{self, Vec3, G};
-use crate::resources::{Archetype, Basic, MineralField, Minerals};
+use crate::resources::{Archetype, Basic, Material, MineralField, Minerals, Super};
 use crate::rng::Rng;
 use crate::snapshot::{PlanetSnapshot, PlayerSnapshot, Snapshot, VehicleKind, VehicleSnapshot};
 use crate::transcendental;
@@ -946,6 +946,61 @@ impl Class {
 pub struct Roster {
     /// Sorted, deduplicated — iteration order must be deterministic.
     unlocked: Vec<(HullType, Class)>,
+    /// **What each Design is paid in**, where a card has said (sorted by
+    /// Design). A Design with no entry is paid in basics alone.
+    bills: Vec<((HullType, Class), DesignBill)>,
+}
+
+/// **What a Design's hull is paid in** — the share of its price in each
+/// synthesized material, `Material::REFINED` order (Red, Green, Blue, apex);
+/// the rest of the price is basics, drawn as every build draws them.
+///
+/// The author's ruling: *tier 1 and 2 cards cost CMY minerals only; tier 3 is
+/// super-dominated; every win condition is conditioned on apex*, and a card's
+/// cost in supers **is** what its Design and Doctrine writes do to production
+/// orders — the two are interchangeable. So a tier-3 card does not debit a
+/// bank of supers when it is played; it writes a Design whose hulls are made of
+/// them, and every yard that builds one pays in them from then on.
+///
+/// The hull's mass is still its whole price (R-O57): a bill says what the
+/// kilotons are, not how many there are.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DesignBill {
+    /// Shares of the price, each in `[0, 1]`, summing to at most `1`.
+    pub refined: [f64; 4],
+}
+
+impl DesignBill {
+    /// Paid in basics alone — every Design until a card writes otherwise.
+    pub const BASICS: DesignBill = DesignBill { refined: [0.0; 4] };
+
+    /// A bill from any four shares: negatives are floored at zero and the set
+    /// is scaled down to sum to one if it sums to more. A card's write is
+    /// coerced, never rejected (`Order::coerce`).
+    pub fn coerced(refined: [f64; 4]) -> Self {
+        let mut r = refined.map(|x| if x.is_finite() { x.max(0.0) } else { 0.0 });
+        let sum: f64 = r.iter().sum();
+        if sum > 1.0 {
+            r = r.map(|x| x / sum);
+        }
+        DesignBill { refined: r }
+    }
+
+    pub fn is_basics(&self) -> bool {
+        self.refined.iter().all(|&x| x <= 0.0)
+    }
+
+    /// Split `price` into the part owed in each refined material and the part
+    /// owed in basics. A basics-only bill returns `price` itself as the basic
+    /// part, so a card-free build pays exactly what it always has.
+    pub fn split(&self, price: Price) -> ([Price; 4], Price) {
+        if self.is_basics() {
+            return ([Price::ZERO; 4], price);
+        }
+        let refined = self.refined.map(|x| price * x);
+        let owed = refined.iter().fold(Price::ZERO, |a, &b| a + b);
+        (refined, (price - owed).max(Price::ZERO))
+    }
 }
 
 impl Roster {
@@ -973,6 +1028,27 @@ impl Roster {
 
     pub fn designs(&self) -> &[(HullType, Class)] {
         &self.unlocked
+    }
+
+    /// **Set what a Design is paid in** — a Design write, permanent like every
+    /// other (Design never goes stale). Writing the basics bill removes the
+    /// entry, so a roster reads the same whichever way it got there.
+    pub fn set_bill(&mut self, hull: HullType, class: Class, bill: DesignBill) {
+        let key = (hull, class);
+        match self.bills.binary_search_by(|(k, _)| k.cmp(&key)) {
+            Ok(at) if bill.is_basics() => {
+                self.bills.remove(at);
+            }
+            Ok(at) => self.bills[at].1 = bill,
+            Err(_) if bill.is_basics() => {}
+            Err(at) => self.bills.insert(at, (key, bill)),
+        }
+    }
+
+    /// What this Design is paid in: the written bill, or basics alone.
+    pub fn bill_for(&self, hull: HullType, class: Class) -> DesignBill {
+        let key = (hull, class);
+        self.bills.binary_search_by(|(k, _)| k.cmp(&key)).map_or(DesignBill::BASICS, |at| self.bills[at].1)
     }
 
     pub fn len(&self) -> usize {
@@ -2931,6 +3007,13 @@ pub struct SimConfig {
     /// *direction and order of magnitude*, and the precise optimum wants the
     /// ten-seed bed (T-44).
     pub trade_decay_lambda: f64,
+    /// **`Y_super`** — super mass out per basic mass in (galaxy §4.2, cost curve
+    /// §5.0): `3 basics → 2 supers + 1 slag`. R-M2's value; placeholder.
+    pub super_yield: f64,
+    /// **`Y_apex`** — apex mass out per super mass in: `2 supers → 1 apex + 1
+    /// slag`, drawn from Red, Green and Blue in equal parts (the author's
+    /// ruling). R-M2's value; placeholder.
+    pub apex_yield: f64,
     /// **The `$` faucet rate** — `$` minted per kilotonne of fabrication capacity
     /// per year (`Hyades_politics_trade_and_intelligence.md` §1.5, T-82).
     ///
@@ -3087,6 +3170,8 @@ impl SimConfig {
             density_floor: 0.01,
             cargo_unit_size: 1.0,
             trade_decay_lambda: 0.01,
+            super_yield: 2.0 / 3.0,
+            apex_yield: 0.5,
             dollar_per_fabrication: 1.0,
             years_to_first_round: 200.0,
             years_per_round: 400.0,
@@ -3354,6 +3439,12 @@ pub struct Simulation {
     /// distance to the new target, not by position in the pool.
     reserve_miners: Vec<Vec<Entity>>,
     reserve_freighters: Vec<Vec<Entity>>,
+    /// **What each center's last declined order owed in refined materials**,
+    /// keyed by center, `Material::REFINED` order (kt). Written when a build is
+    /// declined for want of supers or apex and cleared when one is paid; its
+    /// shortfall against the holding is the center's refined demand, which
+    /// freight and the Exchange read.
+    refined_need: BTreeMap<u64, [Price; 4]>,
     /// Optional diagnostic event log — off (records nothing) until
     /// [`Simulation::set_log_filter`] enables a category. See [`crate::log`].
     log: SimLog,
@@ -3531,6 +3622,7 @@ impl Simulation {
             exchange_settlement: true,
             reserve_miners: vec![Vec::new(); n],
             reserve_freighters: vec![Vec::new(); n],
+            refined_need: BTreeMap::new(),
             current_round: 0,
             inert_card_plays: 0,
             log: SimLog::with_filter(filter),
@@ -4008,6 +4100,10 @@ impl Simulation {
                 let pe = self.player_entity[p];
                 self.world.roster.get_mut(pe).unwrap().unlock(hull, class);
             }
+            CardEffect::WriteDesignBill(hull, class, shares) => {
+                let pe = self.player_entity[p];
+                self.world.roster.get_mut(pe).unwrap().set_bill(hull, class, DesignBill::coerced(shares));
+            }
             CardEffect::DiscloseScans => {
                 // politics §5.2/§5.3. The *subject* is whose scan record is
                 // published — which need not be the player playing the card.
@@ -4282,11 +4378,7 @@ impl Simulation {
                     // than an even split nobody chose.
                     let spill = self.composition_of(vehicle, overflow);
                     if let Some(bank) = self.held_at_mut(target) {
-                        bank.add_basics(&spill);
-                        bank.red += spill.red;
-                        bank.green += spill.green;
-                        bank.blue += spill.blue;
-                        bank.apex += spill.apex;
+                        bank.add_all(&spill);
                     }
                 }
                 // **Added to what is already standing, not `max`'d over it**
@@ -4544,7 +4636,7 @@ impl Simulation {
             return Minerals::default();
         }
         let built = self.world.hull_minerals.get(vehicle).copied();
-        let total = built.map(|m| m.basic_total() + Price::new(m.red + m.green + m.blue + m.apex));
+        let total = built.map(|m| m.total());
         match (built, total) {
             (Some(m), Some(t)) if t > Price::new(1e-12) => {
                 let f = want.kilotons() / t.kilotons();
@@ -4583,7 +4675,7 @@ impl Simulation {
     }
 
     fn stamp_composition(&mut self, vehicle: Entity, hull: HullType, mix: &Minerals) {
-        let paid = mix.basic_total() + Price::new(mix.red + mix.green + mix.blue + mix.apex);
+        let paid = mix.total();
         if paid <= Price::new(1e-12) {
             return;
         }
@@ -5206,7 +5298,7 @@ impl Simulation {
             // population is destroyed rather than moved, and it is Warfare's.
             let pop = self.world.pop_cargo.get(e).copied().unwrap_or(Kilotons::ZERO);
             mass += pop;
-            mass += self.world.cargo.get(e).copied().unwrap_or_default().basic_total().on_scale::<units::Mass>();
+            mass += self.world.cargo.get(e).copied().unwrap_or_default().total().on_scale::<units::Mass>();
             self.world.pop_cargo.insert(e, Kilotons::ZERO);
             self.world.cargo.insert(e, Minerals::default());
             self.world.role.insert(e, Role::Scrapped);
@@ -5250,7 +5342,7 @@ impl Simulation {
             // the cargo is always empty here — it was zeroed on delivery — so
             // this is `cap` and the arithmetic below is the pre-T-91 one.
             let aboard = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-            let room = (cap.on_scale::<units::Cost>() - aboard.basic_total()).max(Price::ZERO);
+            let room = (cap.on_scale::<units::Cost>() - aboard.total()).max(Price::ZERO);
             let offer = if yard_here {
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
                 // Priced at a full hold: the slowest the leg can be.
@@ -5361,7 +5453,7 @@ impl Simulation {
             // a rung. Nothing below this point runs at `max_pickup_stops = 1`.
             if !last_stop {
                 let aboard = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-                let room = (cap.on_scale::<units::Cost>() - aboard.basic_total()).max(Price::ZERO);
+                let room = (cap.on_scale::<units::Cost>() - aboard.total()).max(Price::ZERO);
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
                 if room > Price::new(1e-9) && want.iter().fold(Price::ZERO, |a, &b| a + b) > Price::ZERO {
                     let here = self.position_at(sh.outpost, self.clock).unwrap();
@@ -5414,14 +5506,10 @@ impl Simulation {
         } else {
             // At the destination: deposit cargo into its stockpile.
             let cargo = *self.world.cargo.get(vehicle).unwrap();
-            self.held_at_mut(sh.destination).unwrap().add_basics(&cargo);
-            {
-                let c = self.world.cargo.get_mut(vehicle).unwrap();
-                c.cyan = 0.0;
-                c.magenta = 0.0;
-                c.yellow = 0.0;
-            }
-            if cargo.basic_total() > Price::ZERO {
+            // Every tier: a hold may carry supers and apex as well as ore.
+            self.held_at_mut(sh.destination).unwrap().add_all(&cargo);
+            self.world.cargo.insert(vehicle, Minerals::default());
+            if cargo.total() > Price::ZERO {
                 let dest_pid = *self.world.planet_id.get(sh.destination).unwrap();
                 self.log.push(
                     self.clock,
@@ -5429,7 +5517,7 @@ impl Simulation {
                         player: p,
                         vehicle,
                         leg: FreighterLeg::Deposited,
-                        amount: cargo.basic_total().kilotons(),
+                        amount: cargo.total().kilotons(),
                         at: dest_pid,
                     },
                 );
@@ -5450,7 +5538,7 @@ impl Simulation {
             // responsiveness. `AGENTS.md` §4's rule exactly — entities evaluate
             // on their own arrival events, and the evaluation is `O(1)` to
             // reach.
-            if cargo.basic_total() > Price::ZERO {
+            if cargo.total() > Price::ZERO {
                 self.wake_on_minerals(sh.destination);
             }
             // Return leg always goes back to the fixed mining source — only
@@ -5497,8 +5585,8 @@ impl Simulation {
                 self.world.pop_cargo.insert(vehicle, Kilotons::ZERO);
             }
             let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-            if cargo.basic_total() > Price::ZERO && self.owns_planet(home) {
-                self.held_at_mut(home).unwrap().add_basics(&cargo);
+            if cargo.total() > Price::ZERO && self.owns_planet(home) {
+                self.held_at_mut(home).unwrap().add_all(&cargo);
                 self.world.cargo.insert(vehicle, Minerals::default());
             }
         }
@@ -5555,11 +5643,7 @@ impl Simulation {
             // to credit was a guess in the one dimension that binds (§6.19c).
             let salvage = self.composition_of(vehicle, recovered.on_scale::<units::Cost>());
             let stock = self.held_at_mut(dest_e).unwrap();
-            stock.add_basics(&salvage);
-            stock.red += salvage.red;
-            stock.green += salvage.green;
-            stock.blue += salvage.blue;
-            stock.apex += salvage.apex;
+            stock.add_all(&salvage);
             if let Some(o) = owner {
                 let pid = *self.world.planet_id.get(dest_e).unwrap();
                 self.log.push(
@@ -5811,10 +5895,10 @@ impl Simulation {
     /// holding at a planet it does not own.
     fn deliver_side_cargo(&mut self, vehicle: Entity, owner: PlayerId, at: Entity) {
         let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-        if cargo.basic_total() <= Price::ZERO {
+        if cargo.total() <= Price::ZERO {
             return;
         }
-        self.holding_mut(owner.0, at).add_basics(&cargo);
+        self.holding_mut(owner.0, at).add_all(&cargo);
         self.world.cargo.insert(vehicle, Minerals::default());
         let pid = *self.world.planet_id.get(at).unwrap();
         self.log.push(
@@ -6128,7 +6212,9 @@ impl Simulation {
         };
         let level = self.bands.level(*self.world.population.get(center).unwrap());
         let center_pos = *self.world.position.get(center).unwrap();
-        let stock_total = self.held_at(center).unwrap().basic_total();
+        // Every tier: an order a Design bill makes payable in supers is payable
+        // out of them (identical to the basics total while none are held).
+        let stock_total = self.held_at(center).unwrap().total();
         // Minerals to buy the next whole level, from the stock standing there —
         // and since T-73 the bill is payable *in colors*, so the split and the
         // bank both go into the context.
@@ -6826,7 +6912,24 @@ impl Simulation {
                 // is the mineral economy's binding constraint (§6.19c).
                 // Nothing else touches this bank between here and the dispatch.
                 let bank_before = *self.held_at(center).unwrap();
-                let Some(build_mix) = self.held_at_mut(center).unwrap().try_take_total(cost) else {
+                // **What the order is paid in** — each Design's bill, for the
+                // hulls actually bought (R-TECH, the author's ruling: a card's
+                // cost in supers is what its Design writes do to production).
+                let refined = {
+                    let roster = self.world.roster.get(self.player_entity[p]);
+                    let bill_of = |h: HullType, c: Class| roster.map_or(DesignBill::BASICS, |r| r.bill_for(h, c));
+                    let bought = (crew - reused_miners.len().min(crew)) as f64;
+                    let (mut owed, _) = bill_of(hull_type, class).split(hull_cost(hull_type, &self.config) * bought);
+                    if paired_freighter && reused_freighter.is_none() {
+                        let (_, fclass) = Standing::of(&doctrine).design_for(Role::Freighter);
+                        let (more, _) = bill_of(hauler, fclass).split(hull_cost(hauler, &self.config));
+                        for i in 0..4 {
+                            owed[i] += more[i];
+                        }
+                    }
+                    owed
+                };
+                let Some(build_mix) = self.take_order(p, center, cost, &refined) else {
                     // Put anything taken from Reserve back, or the hulls vanish
                     // on a build that never happened.
                     for e in reused_miners {
@@ -6917,6 +7020,122 @@ impl Simulation {
                 );
                 Some(cost)
             }
+        }
+    }
+
+    /// **Withdraw an order's price from a center's holding** — `refined` in the
+    /// synthesized materials it names, the rest of `price` in basics — and
+    /// hand back what was taken, or `None` and take nothing.
+    ///
+    /// A center short of a refined material it owes synthesizes it first when
+    /// it can ([`Self::synthesize_for`]); what it still cannot pay is recorded
+    /// as its **refined need**, which freight and the Exchange read, and the
+    /// build is declined. An order with no refined part is exactly the
+    /// basics-only withdrawal every build has always made.
+    fn take_order(&mut self, p: usize, center: Entity, price: Price, refined: &[Price; 4]) -> Option<Minerals> {
+        let owed = refined.iter().fold(Price::ZERO, |a, &b| a + b);
+        if owed <= Price::ZERO {
+            return self.held_at_mut(center).unwrap().try_take_total(price);
+        }
+        let basic_part = (price - owed).max(Price::ZERO);
+        self.synthesize_for(p, center, refined, basic_part);
+        let bank = *self.held_at(center).unwrap();
+        let short = Material::REFINED.iter().enumerate().any(|(i, &m)| bank.get(m) + 1e-9 < refined[i].kilotons());
+        if short || bank.basic_total() + Price::new(1e-9) < basic_part {
+            self.refined_need.insert(center.0, *refined);
+            return None;
+        }
+        let stock = self.held_at_mut(center).unwrap();
+        let mut taken = stock.try_take_total(basic_part)?;
+        for (i, &m) in Material::REFINED.iter().enumerate() {
+            let q = refined[i].kilotons().min(stock.get(m));
+            stock.add(m, -q);
+            taken.add(m, q);
+        }
+        self.refined_need.remove(&center.0);
+        Some(taken)
+    }
+
+    /// **Synthesize at `center` what an order owes in refined materials and
+    /// the holding lacks** (galaxy §4.2 and §4.5, the author's ruling on apex).
+    ///
+    /// ```text
+    /// super s   ← its two recipe basics, half each:   made = Y_super · used
+    /// apex      ← Red, Green and Blue, a third each:  made = Y_apex  · used
+    /// slag      = used − made, left at the center (R-O59)
+    /// ```
+    ///
+    /// Only at a center whose population reads **Band IV** (§5.2, technology
+    /// §3.2). All or nothing: the plan runs only if every precursor is on hand
+    /// and the basics left afterwards still pay `basic_reserve`, the order's
+    /// basic part — a partial run would turn basics into slag and leave the
+    /// order unpayable. Apex draws on supers synthesized in the same plan.
+    ///
+    /// There is no supply chain here: a center synthesizes from its own
+    /// holding, so a homeworld rich in its two native precursors makes its
+    /// native super unaided, and a super whose precursors lie elsewhere needs
+    /// them hauled in first (§4.5, R-M5).
+    fn synthesize_for(&mut self, p: usize, center: Entity, owed: &[Price; 4], basic_reserve: Price) {
+        let pop = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
+        if self.bands.level(pop) < BandTier::IV {
+            return;
+        }
+        let bank = *self.held_at(center).unwrap();
+        let (ys, ya) = (self.config.super_yield, self.config.apex_yield);
+        if ys <= 0.0 || ya <= 0.0 {
+            return;
+        }
+        // Apex first: its shortfall becomes a draw on the three supers.
+        let apex_make = (owed[3].kilotons() - bank.apex).max(0.0);
+        let apex_draw = apex_make / ya / 3.0;
+        let mut super_make = [0.0f64; 3];
+        let mut basic_draw = [0.0f64; 3];
+        for (i, s) in Super::ALL.iter().enumerate() {
+            let m = Material::of_super(*s);
+            super_make[i] = (owed[i].kilotons() + apex_draw - bank.get(m)).max(0.0);
+            let (a, b) = s.recipe();
+            let half = super_make[i] / ys / 2.0;
+            basic_draw[a as usize] += half;
+            basic_draw[b as usize] += half;
+        }
+        if apex_make <= 0.0 && super_make.iter().all(|&x| x <= 0.0) {
+            return;
+        }
+        let used: f64 = basic_draw.iter().sum();
+        let feasible = Basic::ALL.iter().enumerate().all(|(i, &c)| bank.get_basic(c) + 1e-12 >= basic_draw[i])
+            && bank.basic_total() - Price::new(used) + Price::new(1e-9) >= basic_reserve;
+        if !feasible {
+            return;
+        }
+        let center_pid = *self.world.planet_id.get(center).unwrap();
+        let mut slag = 0.0;
+        let stock = self.held_at_mut(center).unwrap();
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            stock.add_basic(c, -basic_draw[i]);
+        }
+        let mut made_log = Vec::new();
+        for (i, s) in Super::ALL.iter().enumerate() {
+            if super_make[i] > 0.0 {
+                let m = Material::of_super(*s);
+                stock.add(m, super_make[i]);
+                let spent = super_make[i] / ys;
+                slag += spent - super_make[i];
+                made_log.push((m, super_make[i], spent));
+            }
+        }
+        if apex_make > 0.0 {
+            for s in Super::ALL {
+                stock.add(Material::of_super(s), -apex_draw);
+            }
+            stock.add(Material::Apex, apex_make);
+            slag += 3.0 * apex_draw - apex_make;
+            made_log.push((Material::Apex, apex_make, 3.0 * apex_draw));
+        }
+        let standing = *self.world.slag.get(center).unwrap_or(&Kilotons::ZERO);
+        self.world.slag.insert(center, standing + Kilotons::new(slag));
+        for (material, made, used) in made_log {
+            self.log
+                .push(self.clock, LogEvent::Synthesized { player: p as u32, center: center_pid, material, made, used });
         }
     }
 
@@ -7968,8 +8187,7 @@ impl Simulation {
         // That is an identity, not a coefficient, which is why there is no
         // `cargo_mass_per_unit` any more.
         // Cargo in a hold is a mass; the same minerals in a bank are a price.
-        let minerals =
-            self.world.cargo.get(e).map(|m| m.basic_total()).unwrap_or(Price::ZERO).on_scale::<units::Mass>();
+        let minerals = self.world.cargo.get(e).map(|m| m.total()).unwrap_or(Price::ZERO).on_scale::<units::Mass>();
         let pop = self.world.pop_cargo.get(e).copied().unwrap_or(Kilotons::ZERO);
         let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
         let dry = hull_dry_mass(hull, &self.config).max(Kilotons::new(1e-9));
@@ -8260,10 +8478,7 @@ impl Simulation {
         // owns: the same minerals, moved to the owned index (see `Holdings`).
         let there = self.holdings.elsewhere.remove(&(owner.0, planet.0)).unwrap_or_default();
         let h = self.holdings.owned.entry_or_insert_with(planet, Minerals::default);
-        h.add_basics(&there);
-        h.red += there.red;
-        h.green += there.green;
-        h.blue += there.blue;
+        h.add_all(&there);
         self.centroid_cache[owner.0 as usize] = None;
     }
 
@@ -9430,7 +9645,7 @@ impl Simulation {
             }
         }
         for stock in self.holdings.owned.items.iter().flatten().chain(self.holdings.elsewhere.values()) {
-            m.held += stock.basic_total().on_scale::<units::Mass>().kilotons();
+            m.held += stock.total().on_scale::<units::Mass>().kilotons();
         }
         // Vehicles. `role` is the liveness test: `Role::Scrapped` is how the
         // engine retires a hull, and a scrapped hull's mass has already gone
@@ -9448,7 +9663,7 @@ impl Simulation {
                 m.hulls += hull_dry_mass(h, &self.config).kilotons();
             }
             if let Some(c) = self.world.cargo.get(e) {
-                m.in_cargo += c.basic_total().on_scale::<units::Mass>().kilotons();
+                m.in_cargo += c.total().on_scale::<units::Mass>().kilotons();
             }
             if let Some(p) = self.world.pop_cargo.get(e) {
                 m.settlers += p.kilotons();
@@ -15684,5 +15899,90 @@ mod tests {
         sim.sys_freighter_arrive(hauler);
         assert_eq!(sim.world.cargo.get(hauler).unwrap().basic_total(), Price::ZERO);
         assert_ne!(sim.world.role.get(hauler).copied(), Some(Role::Freighter), "stands down");
+    }
+    /// A homeworld at the population Band synthesis needs, holding `bank`.
+    fn forge(pop: BandTier, bank: Minerals) -> (Simulation, Entity) {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        sim.world.population.insert(home, Kilotons::at_tier(pop));
+        *sim.held_at_mut(home).unwrap() = bank;
+        (sim, home)
+    }
+
+    /// **A super is made from its own recipe, at Band IV, and the rest is slag**
+    /// (galaxy §4.2 and §5.2). Blue is Cyan and Magenta in equal parts at
+    /// `Y_super = 2/3`, Yellow is untouched, and nothing leaves the ledger —
+    /// the slag standing at the center is exactly what the yield lost. Both
+    /// directions: the same order at Band III synthesizes nothing and records
+    /// the need instead.
+    #[test]
+    fn a_super_is_synthesized_from_its_recipe_at_band_iv_and_the_loss_is_slag() {
+        let bank = Minerals { cyan: 10.0, magenta: 10.0, yellow: 10.0, ..Default::default() };
+        let (mut sim, home) = forge(BandTier::IV, bank);
+        let before = sim.mass_ledger();
+        let owed = [Price::ZERO, Price::ZERO, Price::new(2.0), Price::ZERO]; // 2 kt of Blue
+        sim.synthesize_for(0, home, &owed, Price::new(1.0));
+        let after = *sim.held_at(home).unwrap();
+        assert!((after.blue - 2.0).abs() < 1e-12, "made what was owed: {after:?}");
+        assert!((after.cyan - 8.5).abs() < 1e-12 && (after.magenta - 8.5).abs() < 1e-12, "C+M, half each: {after:?}");
+        assert_eq!(after.yellow, 10.0, "Yellow is not in Blue's recipe");
+        assert!((sim.world.slag.get(home).unwrap().kilotons() - 1.0).abs() < 1e-12, "3 kt in, 2 out, 1 slag");
+        assert!((sim.mass_ledger().total() - before.total()).abs() < 1e-9, "synthesis conserves mass");
+
+        let (mut sim, home) = forge(BandTier::III, bank);
+        assert!(sim.take_order(0, home, Price::new(3.0), &owed).is_none(), "no forge below Band IV");
+        assert_eq!(*sim.held_at(home).unwrap(), bank, "and the holding is untouched");
+        assert_eq!(sim.refined_need.get(&home.0), Some(&owed), "the need is recorded for freight and the book");
+    }
+
+    /// **Apex is Red, Green and Blue in equal parts** (the author's ruling) at
+    /// `Y_apex = 1/2`, and a forge holding only basics makes all three supers on
+    /// the way: 1 kt of apex costs 2 kt of supers, which cost 3 kt of basics,
+    /// one kilotonne of each color.
+    #[test]
+    fn apex_is_made_from_all_three_supers_and_they_from_their_recipes() {
+        let bank = Minerals { cyan: 5.0, magenta: 5.0, yellow: 5.0, ..Default::default() };
+        let (mut sim, home) = forge(BandTier::IV, bank);
+        let before = sim.mass_ledger();
+        let owed = [Price::ZERO, Price::ZERO, Price::ZERO, Price::new(1.0)];
+        sim.synthesize_for(0, home, &owed, Price::ZERO);
+        let after = *sim.held_at(home).unwrap();
+        assert!((after.apex - 1.0).abs() < 1e-12, "{after:?}");
+        for (got, color) in [(after.cyan, "Cyan"), (after.magenta, "Magenta"), (after.yellow, "Yellow")] {
+            assert!((got - 4.0).abs() < 1e-12, "{color}: one kilotonne each went in, {after:?}");
+        }
+        assert!(after.red.abs() < 1e-12 && after.green.abs() < 1e-12 && after.blue.abs() < 1e-12, "{after:?}");
+        assert!((sim.world.slag.get(home).unwrap().kilotons() - 2.0).abs() < 1e-12, "3 kt in, 1 out");
+        assert!((sim.mass_ledger().total() - before.total()).abs() < 1e-9);
+    }
+
+    /// **A Design bill is paid in what it names** — the refined part exactly,
+    /// the rest in basics — and a basics-only Design pays exactly what it
+    /// always did. The hull carries the mix (R-IND21), so its salvage returns
+    /// the supers it was made of.
+    #[test]
+    fn a_design_bill_is_paid_in_what_it_names() {
+        let bank = Minerals { cyan: 10.0, magenta: 10.0, yellow: 10.0, red: 1.0, ..Default::default() };
+        let (mut sim, home) = forge(BandTier::I, bank);
+        let bill = DesignBill::coerced([0.8, 0.0, 0.0, 0.0]);
+        let (refined, basic) = bill.split(Price::new(1.0));
+        assert!((refined[0].kilotons() - 0.8).abs() < 1e-12 && (basic.kilotons() - 0.2).abs() < 1e-12);
+        let taken = sim.take_order(0, home, Price::new(1.0), &refined).expect("payable from the holding");
+        assert!((taken.red - 0.8).abs() < 1e-12 && (taken.basic_total().kilotons() - 0.2).abs() < 1e-12);
+        let left = *sim.held_at(home).unwrap();
+        assert!((left.red - 0.2).abs() < 1e-12 && (left.basic_total().kilotons() - 29.8).abs() < 1e-12);
+        assert!(sim.refined_need.is_empty());
+
+        assert_eq!(DesignBill::BASICS.split(Price::new(1.0)), ([Price::ZERO; 4], Price::new(1.0)));
+        assert_eq!(DesignBill::coerced([-1.0, 0.0, f64::NAN, 0.0]), DesignBill::BASICS, "coerced, not rejected");
+        let over = DesignBill::coerced([1.0, 1.0, 0.0, 0.0]);
+        assert!((over.refined[0] - 0.5).abs() < 1e-12 && (over.refined[1] - 0.5).abs() < 1e-12);
+
+        let mut roster = Roster::default();
+        roster.set_bill(HullType::LimitedContactVehicle, Class::Cairn, bill);
+        assert_eq!(roster.bill_for(HullType::LimitedContactVehicle, Class::Cairn), bill);
+        assert_eq!(roster.bill_for(HullType::LimitedSystems, Class::Meadow), DesignBill::BASICS);
+        roster.set_bill(HullType::LimitedContactVehicle, Class::Cairn, DesignBill::BASICS);
+        assert_eq!(roster.bill_for(HullType::LimitedContactVehicle, Class::Cairn), DesignBill::BASICS);
     }
 }

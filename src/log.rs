@@ -189,6 +189,10 @@ pub enum LogEvent {
     },
     /// A chosen build was funded and applied this cycle.
     BuildApplied { player: u32, center: PlanetId, order: BuildOrder, cost: f64, stockpile_after: f64 },
+    /// **A center synthesized a refined material** (galaxy §4.2): `made`
+    /// kilotonnes of `material` out of `used` kilotonnes of its precursors, the
+    /// difference left at the center as slag (R-O59).
+    Synthesized { player: u32, center: PlanetId, material: crate::resources::Material, made: f64, used: f64 },
 
     /// In-ground density was mined into a stockpile (a center's local take, or
     /// an outpost's periodic [`crate::sim`] mining tick).
@@ -313,7 +317,7 @@ impl LogEvent {
     pub fn category(&self) -> LogCategory {
         use LogEvent::*;
         match self {
-            ProductionDecision { .. } | BuildApplied { .. } => LogCategory::Production,
+            ProductionDecision { .. } | BuildApplied { .. } | Synthesized { .. } => LogCategory::Production,
             PicketIntercept { .. } => LogCategory::Combat,
             MineralsExtracted { .. } | MiningExhausted { .. } | FreighterTransfer { .. } => LogCategory::Mining,
             FleetGenerated { .. }
@@ -337,6 +341,7 @@ impl LogEvent {
             ProductionDecision { player, .. }
             | PicketIntercept { player, .. }
             | BuildApplied { player, .. }
+            | Synthesized { player, .. }
             | FreighterTransfer { player, .. }
             | FleetGenerated { player, .. }
             | VehicleSpawned { player, .. }
@@ -359,7 +364,9 @@ impl LogEvent {
     pub fn planet(&self) -> Option<PlanetId> {
         use LogEvent::*;
         match *self {
-            ProductionDecision { center, .. } | BuildApplied { center, .. } => Some(center),
+            ProductionDecision { center, .. } | BuildApplied { center, .. } | Synthesized { center, .. } => {
+                Some(center)
+            }
             MineralsExtracted { planet, .. }
             | MiningExhausted { planet, .. }
             | PopulationStep { planet, .. }
@@ -428,6 +435,12 @@ impl fmt::Display for LogEvent {
                 f,
                 "P{player} planet#{} built {order:?} (cost={cost:.2}, stockpile now {stockpile_after:.2})",
                 center.0
+            ),
+            Synthesized { player, center, material, made, used } => write!(
+                f,
+                "P{player} planet#{} synthesized {made:.3} {material:?} from {used:.3} (slag {:.3})",
+                center.0,
+                used - made
             ),
             MineralsExtracted { player, planet, amount, density_after } => {
                 write!(f, "P{player} planet#{} mined {amount:.3} (density now {density_after:.3})", planet.0)
