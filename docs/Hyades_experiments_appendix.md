@@ -2658,9 +2658,13 @@ on seeds 1 and 7 (events, colonies and population to the printed digit):
 | + `owned_planets`, a per-seat index of owned planets | **14,276–15,080** | **122.1–127.1** | same |
 
 The index also serves `best_delivery_center`, which walked the galaxy on `main`
-too (7.8 G of `main`'s 43.5 G). With both changes the per-event cost is at or
-below `main`'s, and the remaining `yr/s` gap is the +16% and +8% more events
-the changed run does — the "doing more" row of the reading table.
+too (7.8 G of `main`'s 43.5 G). At 1,000 yr the per-event cost is at or below
+`main`'s, and the remaining `yr/s` gap is the +16% and +8% more events the
+changed run does. **On the full bed** (8 seeds, 4,000 yr, the final build
+reproducing the first build's work-years, colony-years, colonies and events on
+every seed): `ns/event` **+2.18% ± 1.06, 6/8 up**; `yr/s` −4.64% ± 0.93;
+events +2.62% ± 0.22. The residual per-event cost is 2.1 SE and is not
+located; a callgrind pair at 4,000 yr would locate it.
 
 **Test budget.** `no_nan_or_infinity_reaches_replicated_state` went 37.4 →
 44.4 s at 200 yr and the determinism target 53.9–55.0 → 62.8–62.9 s. Trimmed to

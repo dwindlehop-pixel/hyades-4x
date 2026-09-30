@@ -9230,7 +9230,7 @@ impl Simulation {
     /// every leg with a stop left (`max_pickup_stops = 2` ships). The centers
     /// come from `owned_planets` rather than a walk of the galaxy, and a
     /// center long nothing `dest` wants exits before its leg is priced; with
-    /// both, the 1,000-yr bed's per-event cost is at or below the engine's
+    /// both, the bed's per-event cost is within 2.2% ± 1.1 of the engine's
     /// before R-MX8 (appendix §D.22). Deterministic: `elsewhere` is a
     /// `BTreeMap`, `owned_planets` is in entity order, and entity id breaks
     /// ties.

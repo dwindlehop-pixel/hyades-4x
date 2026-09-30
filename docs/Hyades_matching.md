@@ -338,7 +338,8 @@ cost fell against the pre-T-134 engine in 6/6 interleaved pairs — and the
 12-seat combat bench does 9% more events at lower per-event cost. Appendix §D.20. R-MX8
 (§8.5) prices an offer at every owned center on every milk-run stop; with the
 buyer's side read once and a per-seat index of owned planets, per-event cost on
-the 3-seat bed is at or below the engine's before it. Appendix §D.22.
+the 3-seat bed is +2.2% ± 1.1 at 4,000 yr (8 seeds) and at or below the engine's
+before it at 1,000 yr. Appendix §D.22.
 
 ---
 
