@@ -698,6 +698,26 @@ pub struct CombatConfig {
     pub missile_launch_delta_v: f64,
     /// ly — a missile counts as a hit within this of its target.
     pub missile_hit_radius: f64,
+    /// **What one round delivers on a hit, kJ** (T-139) — an energy landed at
+    /// an event, through the same damage and wreck path a beam's discharge
+    /// uses (§8.18–8.19). **Placeholder** (R-WAR44): about one Limited
+    /// Offensive hull's structure. A kinetic round at the closing speeds below
+    /// carries ~10⁶ times that; the structure placeholders it is read against
+    /// were chosen for fight duration, not physics (R-WAR19), so this is too.
+    pub missile_warhead_kj: f64,
+    /// **What a beam must deliver to destroy one round, kJ** (T-139) — the
+    /// round's structure under point defense. **Placeholder** (R-WAR44): four
+    /// 0.25-day discharges of one 50 MW mount, so one mount stops about three
+    /// rounds in the 2.9 days a round spends inside its point-defense range,
+    /// and a four-round burst is not stopped whole.
+    pub missile_structure_kj: f64,
+    /// **One round's mass, kt** (T-139). It leaves the launcher's hold, flies,
+    /// and ends as debris whatever it does (design law #11: expended ordnance
+    /// leaves the fleet lighter). **Placeholder** (R-WAR44): 1.25 t.
+    pub missile_round_kt: f64,
+    /// **Rounds the magazine holds per tube** (T-139). **Placeholder**
+    /// (R-WAR44): eight, so a Butte's full magazine is half its dry mass.
+    pub missile_rounds_per_tube: u32,
     /// ly — abstracted fire-control precision for a beam's predicted-vs-actual
     /// aim (see [`laser_hit_check`]).
     pub laser_hit_tolerance: f64,
@@ -774,6 +794,9 @@ pub struct ByClass {
     pub scarp: f64,
     pub ford: f64,
     pub strait: f64,
+    /// The missile Designs (T-139).
+    pub butte: f64,
+    pub mesa: f64,
     /// For [`Class::Unnamed`]: by the hull's taxonomy class.
     pub unnamed: ByFamily,
 }
@@ -791,6 +814,8 @@ impl ByClass {
             Class::Scarp => self.scarp,
             Class::Ford => self.ford,
             Class::Strait => self.strait,
+            Class::Butte => self.butte,
+            Class::Mesa => self.mesa,
             Class::Unnamed => self.unnamed.of(family),
         }
     }
@@ -836,6 +861,10 @@ impl Default for CombatConfig {
             missile_fuel_years: 0.08,
             missile_launch_delta_v: 0.02,
             missile_hit_radius: 0.00005,
+            missile_warhead_kj: 2.0e10,
+            missile_structure_kj: 4.0e9,
+            missile_round_kt: 0.00125,
+            missile_rounds_per_tube: 8,
             // modest 2x over the original 0.00003, from the dimensional-grounding
             // analysis; with `laser_shots_per_tick` gives real relative-velocity
             // dependence at 0.01 ly.
@@ -866,6 +895,9 @@ impl Default for CombatConfig {
                 scarp: 1.0e12,
                 ford: 1.0e11,
                 strait: 1.0e11,
+                // The missile Designs, armed Offensive hulls at the armed value.
+                butte: 1.0e12,
+                mesa: 1.0e12,
                 unnamed: ByFamily { systems: 1.0e11, contact: 1.0e12, offensive: 1.0e12 },
             },
             fire_control_by_class: ByClass {
@@ -878,6 +910,8 @@ impl Default for CombatConfig {
                 scarp: 1.0,
                 ford: 1.0,
                 strait: 1.0,
+                butte: 1.0,
+                mesa: 1.0,
                 unnamed: ByFamily { systems: 1.0, contact: 1.0, offensive: 1.0 },
             },
             discharge_days_by_class: ByClass {
@@ -890,6 +924,10 @@ impl Default for CombatConfig {
                 scarp: 0.25,
                 ford: 0.25,
                 strait: 0.25,
+                // A missile Design's period is its **reload** (T-139): one
+                // salvo per tube per day. Placeholder.
+                butte: 1.0,
+                mesa: 1.0,
                 unnamed: ByFamily { systems: 0.25, contact: 0.25, offensive: 0.25 },
             },
             wreck_scale: 1.0,
@@ -946,8 +984,19 @@ pub struct Loadout {
     /// **Max distance to fire upon a neutral**, ly. As above.
     pub fire_neutral_ly: f64,
     /// **Years between discharges** (T-133, R-WAR29): one discharge delivers
-    /// `beam_power_kj_per_year × discharge_years` per mount on target.
+    /// `beam_power_kj_per_year × discharge_years` per mount on target. For a
+    /// missile Design it is the **reload**: one round per tube per period.
     pub discharge_years: f64,
+    /// **Missile tubes** (T-139). Rounds launched per salvo, at most. Zero on
+    /// every beam Design.
+    pub tubes: u32,
+    /// **Rounds the magazine holds**. The rounds themselves are
+    /// [`crate::resources::Material::Ordnance`] in the hull's hold, carried
+    /// mass, so a full magazine is a slower hull.
+    pub magazine: u32,
+    /// **A round's proper acceleration**, ly/yr² — [`CombatConfig::missile_accel_multiplier`]
+    /// times the launching Design's empty-hull acceleration, fixed at build.
+    pub missile_accel: f64,
 }
 
 impl Loadout {
@@ -959,10 +1008,23 @@ impl Loadout {
         fire_enemy_ly: 0.0,
         fire_neutral_ly: 0.0,
         discharge_years: 0.0,
+        tubes: 0,
+        magazine: 0,
+        missile_accel: 0.0,
     };
 
     /// Whether this Design can damage anything.
     pub fn is_armed(&self) -> bool {
+        (self.beams > 0 && self.beam_power_kj_per_year > 0.0) || self.fires_missiles()
+    }
+
+    /// Whether this Design launches missiles (T-139).
+    pub fn fires_missiles(&self) -> bool {
+        self.tubes > 0 && self.magazine > 0 && self.missile_accel > 0.0
+    }
+
+    /// Whether this Design mounts beams, which are also its point defense.
+    pub fn has_beams(&self) -> bool {
         self.beams > 0 && self.beam_power_kj_per_year > 0.0
     }
 }
@@ -1000,8 +1062,24 @@ pub fn beam_accuracy_ly(class: Class, family: HullFamily, cfg: &CombatConfig) ->
 /// bisection on `θ`, 64 halvings, with the engine's own `sin_cos` — once per
 /// Design built, not per shot.
 pub fn engagement_range_ly(accuracy_ly: f64) -> f64 {
-    let radius = 0.5 * (STATION_RADIUS.0 + STATION_RADIUS.1);
-    let omega = TAU / (0.5 * (STATION_PERIOD.0 + STATION_PERIOD.1));
+    range_against(accuracy_ly, STATION_RADIUS, STATION_PERIOD)
+}
+
+/// **The range at which a beam's fire control holds on a jinking round**
+/// (T-139) — [`engagement_range_ly`]'s rule against the arena's missile dodge
+/// ([`CombatConfig::dodge_radius`], [`CombatConfig::dodge_period`]) rather than
+/// a hull's station-keeping. At the arena's tolerance, 4.7e-3 ly: a round
+/// circles faster and tighter than a hull, so point defense reaches about
+/// three fifths as far as a beam fires on a hull.
+pub fn point_defense_range_ly(accuracy_ly: f64, cfg: &CombatConfig) -> f64 {
+    range_against(accuracy_ly, cfg.dodge_radius, cfg.dodge_period)
+}
+
+/// Where a target circling at the midpoints of `radius` and `period` drifts
+/// off its tangent by `accuracy_ly` within one light-crossing.
+fn range_against(accuracy_ly: f64, radius: (f64, f64), period: (f64, f64)) -> f64 {
+    let radius = 0.5 * (radius.0 + radius.1);
+    let omega = TAU / (0.5 * (period.0 + period.1));
     let allowed = accuracy_ly / radius;
     if allowed.is_nan() || allowed <= 0.0 {
         return 0.0;
@@ -1021,6 +1099,49 @@ pub fn engagement_range_ly(accuracy_ly: f64) -> f64 {
         }
     }
     lo / omega
+}
+
+/// **Where a round is, `t` years after launch** (T-139): the launch's
+/// [`CombatConfig::missile_launch_delta_v`] plus a constant proper
+/// acceleration `a` from rest, `(√(1 + (a·t)²) − 1) / a` (c = 1). The arena's
+/// kinematics with the powered stretch made relativistic, so a round from a
+/// fast launcher stays below `c`.
+fn missile_distance(t: f64, accel: f64, cfg: &CombatConfig) -> f64 {
+    let at = accel * t;
+    cfg.missile_launch_delta_v * t + ((1.0 + at * at).sqrt() - 1.0) / accel
+}
+
+/// **How far a round reaches under power**, ly — its distance at
+/// [`CombatConfig::missile_fuel_years`]. Past burnout it is ballistic and
+/// cannot follow a maneuvering target, which the arena treats as the end of
+/// its useful flight; the simulation does too. 0.0237 ly from a Limited
+/// Offensive hull, three times a beam's 7.9e-3.
+pub fn missile_reach_ly(accel: f64, cfg: &CombatConfig) -> f64 {
+    if accel <= 0.0 {
+        return 0.0;
+    }
+    missile_distance(cfg.missile_fuel_years, accel, cfg)
+}
+
+/// **A round's flight to a target `d` ly away**: `(years, speed)` at
+/// arrival, or `None` past [`missile_reach_ly`]. Bisection, 64 halvings, once
+/// per launch.
+pub fn missile_flight(d: f64, accel: f64, cfg: &CombatConfig) -> Option<(f64, f64)> {
+    if accel <= 0.0 || d > missile_reach_ly(accel, cfg) {
+        return None;
+    }
+    let (mut lo, mut hi) = (0.0, cfg.missile_fuel_years);
+    for _ in 0..64 {
+        let mid = 0.5 * (lo + hi);
+        if missile_distance(mid, accel, cfg) < d {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let at = accel * hi;
+    let speed = (cfg.missile_launch_delta_v + at / (1.0 + at * at).sqrt()).min(1.0);
+    Some((hi, speed))
 }
 
 /// **A hull's wreck point, kJ**: the damage at which it is wrecked

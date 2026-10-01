@@ -65,10 +65,17 @@ pub enum Material {
     Blue,
     /// Placeholder name *Platinum* (R-M1).
     Apex,
+    /// **Missile rounds** (T-139) — fabricated from basics at an owned center,
+    /// one kilotonne of rounds from one kilotonne of basics (design law #11).
+    /// Not a mineral: no Design bill names it and no yard spends it on a hull.
+    /// It is carried in a hold and held at a planet like any other material,
+    /// so it traverses real space (`Hyades_industry.md` §8.1), and its book is
+    /// the Exchange's eighth, closed unless an empire's Doctrine opens it.
+    Ordnance,
 }
 
 impl Material {
-    pub const ALL: [Material; 7] = [
+    pub const ALL: [Material; 8] = [
         Material::Cyan,
         Material::Magenta,
         Material::Yellow,
@@ -76,6 +83,7 @@ impl Material {
         Material::Green,
         Material::Blue,
         Material::Apex,
+        Material::Ordnance,
     ];
     /// The synthesized tiers — supers and apex, in `Super::ALL` order then apex.
     pub const REFINED: [Material; 4] = [Material::Red, Material::Green, Material::Blue, Material::Apex];
@@ -247,6 +255,8 @@ pub struct Minerals {
     pub blue: f64,
     /// Apex ultra-resource (placeholder name *Platinum*), R-M1.
     pub apex: f64,
+    /// Missile rounds, kt (T-139, [`Material::Ordnance`]).
+    pub ordnance: f64,
 }
 
 impl Minerals {
@@ -301,6 +311,7 @@ impl Minerals {
             Material::Green => self.green,
             Material::Blue => self.blue,
             Material::Apex => self.apex,
+            Material::Ordnance => self.ordnance,
         }
     }
 
@@ -315,6 +326,7 @@ impl Minerals {
             Material::Green => self.green += v,
             Material::Blue => self.blue += v,
             Material::Apex => self.apex += v,
+            Material::Ordnance => self.ordnance += v,
         }
     }
 
@@ -330,16 +342,26 @@ impl Minerals {
         Price::new(self.red + self.green + self.blue + self.apex)
     }
 
-    /// **Every tier together** — what a hold carries and what the mass ledger
-    /// weighs. The basics are summed first, so a stock with no refined material
-    /// reads exactly [`Self::basic_total`].
+    /// **Every tier together, ordnance included** — what a hold carries and
+    /// what the mass ledger weighs. The basics are summed first, so a stock
+    /// with nothing else reads exactly [`Self::basic_total`].
     #[inline]
     pub fn total(&self) -> Price {
-        let refined = self.red + self.green + self.blue + self.apex;
-        if refined == 0.0 {
+        let rest = self.red + self.green + self.blue + self.apex + self.ordnance;
+        if rest == 0.0 {
             return self.basic_total();
         }
-        self.basic_total() + Price::new(refined)
+        self.basic_total() + Price::new(rest)
+    }
+
+    /// **What a yard can spend** — every mineral tier, without ordnance, which
+    /// pays for nothing. Equal to [`Self::total`] wherever no rounds are held.
+    #[inline]
+    pub fn spendable_total(&self) -> Price {
+        if self.ordnance == 0.0 {
+            return self.total();
+        }
+        self.total() - Price::new(self.ordnance)
     }
 
     /// Fold another stock into this one, every tier.
@@ -350,6 +372,7 @@ impl Minerals {
         self.green += o.green;
         self.blue += o.blue;
         self.apex += o.apex;
+        self.ordnance += o.ordnance;
     }
 
     /// Try to spend `amount` total basic minerals, drawing from each color in
@@ -386,6 +409,7 @@ impl Minerals {
         taken.green = 0.0;
         taken.blue = 0.0;
         taken.apex = 0.0;
+        taken.ordnance = 0.0;
         self.cyan -= taken.cyan;
         self.magenta -= taken.magenta;
         self.yellow -= taken.yellow;

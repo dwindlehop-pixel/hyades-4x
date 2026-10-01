@@ -194,7 +194,23 @@ pub enum DoctrineWrite {
     /// colonizer kept its hull and nothing could be struck; that measurement
     /// is superseded rather than answered (warfare §8.17).
     ArmedFrontier,
+    /// **Post missile sentries at every center** — the Technology missile
+    /// card's Doctrine half (T-139, `Hyades_technology_tree.md` §9).
+    ///
+    /// A floor of [`MISSILE_SENTRY_RATIO`] on `Doctrine::sentry_ratio` — sentry
+    /// mass per kilotonne a center holds and houses — so a later write that
+    /// asks for more is not undone. It moves no role onto the missile Design but the sentry —
+    /// the author's ruling that a missile belongs on a hull that serves near a
+    /// center, where its magazine is refilled without a supply line.
+    MissileSentries,
 }
+
+/// **Sentry mass per kilotonne defended that the missile card writes**
+/// (T-139) — **placeholder magnitude** (R-TECH24). At the shipped ladder a
+/// sentry is 0.03 kt, so a center orders one per 3,000 kt it holds and
+/// houses: about one at a homeworld at 300 yr and about 660 at 800 yr on the
+/// 3-seat bed, where the median center holds 371 kt and orders none.
+pub const MISSILE_SENTRY_RATIO: f64 = 1e-5;
 
 /// **How many hulls the armed frontier keeps on blockade** (T-123) —
 /// **placeholder magnitude** (R-WAR19). A floor on `picket_reserve`, not a
@@ -305,7 +321,18 @@ pub const TIER0: [Card; 18] = {
         // Technology — Design writes. These are the ones that unblock roster
         // enforcement (T-25): the Medium hull has no unlock path without them.
         c(12, Technology, Inscrutable, 0.5, &[UnlockDesign(HullType::MediumSystems, Class::Delta)], false),
-        c(13, Technology, Balanced, 0.8, &[UnlockDesign(HullType::GeneralSystems, Class::Range)], false),
+        // **The basic deep-space missile** (T-139, `Hyades_technology_tree.md`
+        // §9): the sentry Design and the write that posts it at every center.
+        // It replaces `UnlockDesign(GeneralSystems, Range)`, an unlock that
+        // reached no build (R-TECH18). The slot is a recommendation (R-TECH24).
+        c(
+            13,
+            Technology,
+            Balanced,
+            0.8,
+            &[UnlockDesign(HullType::LimitedOffensive, Class::Butte), WriteDoctrine(DoctrineWrite::MissileSentries)],
+            false,
+        ),
         c(14, Technology, LessGuarded, 1.2, &[UnlockDesign(HullType::GeneralContactVehicle, Class::Scarp)], false),
         // Warfare — **the Inscrutable slot is the whole of §8.2's card that is
         // buildable today**: two Design writes opening the Contact family, and
@@ -405,6 +432,9 @@ pub fn apply_doctrine_write(d: &mut Doctrine, w: DoctrineWrite) {
             d.picket_after_founding = true;
             d.picket_claims_target = true;
             d.picket_reserve = d.picket_reserve.max(ARMED_FRONTIER_BLOCKADERS);
+        }
+        DoctrineWrite::MissileSentries => {
+            d.sentry_ratio = d.sentry_ratio.max(MISSILE_SENTRY_RATIO);
         }
     }
 }

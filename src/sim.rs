@@ -109,8 +109,9 @@ pub struct BookCensus {
 }
 
 /// **How many materials the Exchange keeps a book for** — the three basics,
-/// the three supers and apex, in `Material::ALL` order.
-pub const MATERIALS: usize = 7;
+/// the three supers, apex and ordnance, in `Material::ALL` order. The ordnance
+/// book (T-139) is posted to only by an empire whose Doctrine opens it.
+pub const MATERIALS: usize = 8;
 
 /// **A hull away from its standing duty for one freight run** (T-134 stage 2),
 /// and the leg it is on. Its role reads `Freighter` for the run; the duty it
@@ -124,6 +125,13 @@ enum SideRun {
     Pickup { pile: Entity, center: Entity },
     /// A colony ship carrying that load home to `center`, where it embarks.
     Homeward { center: Entity },
+    /// **An ammo run** (T-139): a hauler flying to `source` to load rounds for
+    /// the missile hulls at `post`.
+    AmmoPickup { source: Entity, post: Entity },
+    /// The same hauler, laden, flying to `post`.
+    AmmoDeliver { source: Entity, post: Entity },
+    /// The hauler returning to `center`, where it stands down.
+    AmmoHome { center: Entity },
 }
 
 /// **What every empire holds, and where** (T-134, the author's ruling).
@@ -796,6 +804,11 @@ pub enum Role {
     /// whole output is the colony a rival did not plant. A standing mission
     /// under roles §4.6, so it never auto-scraps.
     Picket,
+    /// **Standing guard at an owned center** (T-139). A missile hull that
+    /// stays where its yard is, fires on armed hulls of other empires that
+    /// come within its missiles' reach, and rearms from the center it guards.
+    /// A standing mission under roles §4.6.
+    Sentry,
     /// Standing, re-taskable, never auto-scrapped
     /// (`Hyades_vehicle_roles.md` §4.6 — confirmed for e.g. ROU; applied here
     /// to any non-Scout entity with nothing left to do).
@@ -813,6 +826,7 @@ impl Role {
             Role::Miner => VehicleKind::Miner,
             Role::Freighter => VehicleKind::Freighter,
             Role::Picket => VehicleKind::Picket,
+            Role::Sentry => VehicleKind::Sentry,
             Role::Reserve => VehicleKind::Reserve,
             Role::Scrapped => VehicleKind::Scrapped,
         }
@@ -875,7 +889,9 @@ impl HullType {
 }
 
 mod fire;
+mod missile;
 use fire::{FleetKey, Track};
+pub use missile::MissileStats;
 
 /// A named **design** within a hull type — the Banks-convention class name.
 ///
@@ -925,6 +941,14 @@ pub enum Class {
     /// sized to its rock (T-98), and a class names one hull (the author's
     /// ruling), so the two sizes are two Designs.
     Strait,
+    /// **The missile sentry Design**, on the Limited Offensive hull — proposed
+    /// *Butte*-class (T-139, a DRAFT name for the author). Tubes and a
+    /// magazine in place of beams; its role is [`Role::Sentry`] only.
+    Butte,
+    /// **The missile picket Design**, on the Limited Offensive hull — proposed
+    /// *Mesa*-class (T-139, DRAFT). Butte's loadout under the picket role, a
+    /// second class because a class tells two roles on one hull apart (T-121).
+    Mesa,
     /// A hull with no authored Design: the Offensive hulls nothing builds, the
     /// arena's spawns, and the seed hulls the galaxy is generated with. It
     /// takes its hull class's default structure (`combat::ByClass`).
@@ -942,6 +966,20 @@ impl Class {
         }
     }
 
+    /// **Does this Design mount missiles?** (T-139.) The variation hulls:
+    /// a Limited Offensive shell whose payload is tubes and a magazine, and
+    /// whose magazine is carried mass — cargo at the expense of acceleration.
+    pub fn is_missile(self) -> bool {
+        matches!(self, Class::Butte | Class::Mesa)
+    }
+
+    /// **The roles a missile Design is open to** (T-139, the author's ruling:
+    /// "a subset of available roles"): service at a production center, and the
+    /// picket a later card may arm. Never survey, colonization or freight —
+    /// a magazine on a hull that ranges far from a center is a supply line
+    /// the empire cannot hold.
+    pub const MISSILE_ROLES: [Role; 2] = [Role::Sentry, Role::Picket];
+
     /// **The one hull a named Design is on** (the author's ruling: a class
     /// names one hull). `None` only for [`Class::Unnamed`], which is not a name.
     pub fn hull(self) -> Option<HullType> {
@@ -951,6 +989,7 @@ impl Class {
             Class::Delta | Class::Ford => Some(HullType::MediumSystems),
             Class::Range | Class::Strait => Some(HullType::GeneralSystems),
             Class::Scarp => Some(HullType::GeneralContactVehicle),
+            Class::Butte | Class::Mesa => Some(HullType::LimitedOffensive),
             Class::Unnamed => None,
         }
     }
@@ -1487,6 +1526,9 @@ pub fn role_hull_type(role: Role) -> HullType {
         // locked family with one key — the Warfare card — where an Offensive
         // hull sitting beside an unarmed default was a second, keyless door.
         Role::Picket => HullType::LimitedContactVehicle,
+        // The missile sentry (T-139): built only once the card writes
+        // `sentry_ratio`, so this is the shell a Sentry stands in.
+        Role::Sentry => HullType::LimitedOffensive,
         Role::Reserve | Role::Scrapped => HullType::LimitedSystems, // inert; value unused
     }
 }
@@ -1914,6 +1956,10 @@ pub fn design_loadout(hull: HullType, class: Class, cfg: &SimConfig, combat: &Co
     }
     let mounts = (own / payload(HullType::LimitedContactVehicle) + 1e-9).floor().max(1.0) as u32;
     let accuracy = crate::combat::beam_accuracy_ly(class, hull.family(), combat);
+    let discharge_years = combat.discharge_days_by_class.of(class, hull.family()) / crate::combat::DAYS_PER_YEAR;
+    if class.is_missile() {
+        return missile_loadout(hull, mounts, accuracy, discharge_years, cfg, combat);
+    }
     let range = crate::combat::engagement_range_ly(accuracy);
     crate::combat::Loadout {
         beams: mounts,
@@ -1921,7 +1967,40 @@ pub fn design_loadout(hull: HullType, class: Class, cfg: &SimConfig, combat: &Co
         fire_control_ly: accuracy,
         fire_enemy_ly: range,
         fire_neutral_ly: range,
-        discharge_years: combat.discharge_days_by_class.of(class, hull.family()) / crate::combat::DAYS_PER_YEAR,
+        discharge_years,
+        ..crate::combat::Loadout::UNARMED
+    }
+}
+
+/// **A missile Design's loadout** (T-139): the payload's mounts as tubes in
+/// place of beams, a magazine of [`CombatConfig::missile_rounds_per_tube`]
+/// per tube, and rounds that accelerate at
+/// [`CombatConfig::missile_accel_multiplier`] times the hull's own empty
+/// acceleration (the arena's ratio). Both fire distances are the rounds'
+/// powered reach ([`crate::combat::missile_reach_ly`]), three times a beam's
+/// from the same hull; the period is the reload.
+fn missile_loadout(
+    hull: HullType,
+    tubes: u32,
+    accuracy: f64,
+    discharge_years: f64,
+    cfg: &SimConfig,
+    combat: &CombatConfig,
+) -> crate::combat::Loadout {
+    let empty_g =
+        cfg.drive_specific_thrust * hull.drive_mass(cfg).kilotons() / hull_dry_mass(hull, cfg).kilotons().max(1e-9);
+    let missile_accel = combat.missile_accel_multiplier * G * empty_g;
+    let reach = crate::combat::missile_reach_ly(missile_accel, combat);
+    crate::combat::Loadout {
+        beams: 0,
+        beam_power_kj_per_year: 0.0,
+        fire_control_ly: accuracy,
+        fire_enemy_ly: reach,
+        fire_neutral_ly: reach,
+        discharge_years,
+        tubes,
+        magazine: tubes * combat.missile_rounds_per_tube,
+        missile_accel,
     }
 }
 
@@ -2489,6 +2568,13 @@ enum EventKind {
     ThreatSeen { target: Entity, shooter: Entity, gs: u32, gt: u32 },
     /// A picket reaches the world it is to hold and takes station (T-112).
     PicketArrive { vehicle: Entity },
+    /// **A missile round reaches its target's position** (T-139): point
+    /// defense, then the hit or the miss.
+    MissileArrive { missile: u64 },
+    /// A new sentry leaves its yard's berth and takes station at the center.
+    SentryArrive { vehicle: Entity },
+    /// A missile hull out of rounds reaches the center it flew to rearm at.
+    RearmArrive { vehicle: Entity },
     /// A pitched battle's light reaches a posted picket (T-134 stage 2).
     BattleSeen { picket: Entity },
     /// A picket on a sortie reaches the battle.
@@ -2538,6 +2624,8 @@ impl EventKind {
             | EventKind::DutyArrive { vehicle }
             | EventKind::ScrapArrive { vehicle }
             | EventKind::PicketArrive { vehicle }
+            | EventKind::SentryArrive { vehicle }
+            | EventKind::RearmArrive { vehicle }
             | EventKind::SortieArrive { vehicle } => Some(vehicle),
             _ => None,
         }
@@ -3426,12 +3514,42 @@ pub struct Simulation {
     /// checks every new trajectory against. Empty in a game nobody played the
     /// Warfare card in, which makes detection one `is_empty()` per trajectory.
     armed: BTreeSet<Entity>,
+    /// **Armed hulls that may fire on an unarmed one** — `armed` less the
+    /// sentries, which fire only on armed hulls (T-139). Detection for an
+    /// unarmed hull walks this; equal to `armed` in a game without sentries.
+    open_fire: BTreeSet<Entity>,
     /// **Per shooter, the hulls it has in reach and fires on** (T-133).
     in_reach: BTreeMap<Entity, BTreeSet<Entity>>,
     /// Shooters with a discharge scheduled — one loop per shooter.
     firing: BTreeSet<Entity>,
     /// Shots a discharge has committed and not yet landed, per shooter.
     pending_hits: BTreeMap<Entity, Vec<(Entity, f64)>>,
+    /// **Missile rounds in flight** (T-139), by launch id.
+    missiles: BTreeMap<u64, missile::Missile>,
+    /// The next round's id.
+    next_missile: u64,
+    /// **Warhead energy in flight at each target**, kJ — a launcher does not
+    /// fire rounds a target is already owed.
+    missile_inbound: BTreeMap<Entity, f64>,
+    /// **When each point-defense hull's mounts are next free** (T-139).
+    pd_busy: BTreeMap<Entity, f64>,
+    /// **Spent rounds**, kt: every round ends as debris, whatever it did.
+    ordnance_debris: f64,
+    /// **Sentries per center** (T-139): ordered, posted or standing.
+    sentries: BTreeMap<u64, Vec<Entity>>,
+    /// **Sentries each center has ever ordered** (T-139) — what the build
+    /// branch counts. A lost sentry is not replaced: a center beside a force
+    /// it cannot beat would otherwise feed it one hull at a time.
+    sentries_ordered: BTreeMap<u64, u32>,
+    /// **Ammo runs in flight**, by `(seat, post)`: the hauler flying it.
+    ammo_runs: BTreeMap<(u32, u64), Entity>,
+    /// **Missile hulls flying to a center to rearm**: `(post, center)`.
+    rearm_trips: BTreeMap<u64, (Entity, Entity)>,
+    /// **Rounds a center's hulls wait on and it cannot make**, kt — its bid
+    /// in the ordnance book (T-139).
+    ordnance_short: BTreeMap<u64, f64>,
+    /// Missile and supply counts since the run began (T-139).
+    missile_stats: MissileStats,
     /// **Hulls fired on at their destination** since their current trajectory
     /// began — hit by a shooter whose fire distance covers the world they are
     /// flying to. A colony ship among them does not found (T-133, the
@@ -3444,6 +3562,9 @@ pub struct Simulation {
     /// Per seat, worlds it believes an enemy holds — where a threat was seen
     /// or a shot came from. A retargeting colony ship avoids them.
     threatened: Vec<BTreeSet<u64>>,
+    /// **Per seat, ports it has seen missile sentries guard** (T-139): a
+    /// picket of that seat was turned away from them. It blockades none.
+    sentried: Vec<BTreeSet<u64>>,
     /// Ore an outpost has extracted **for one player**, awaiting a freighter.
     ///
     /// Keyed by `(player, outpost)`, and that is the correction: the rock's
@@ -3669,12 +3790,25 @@ impl Simulation {
             launches_recent: vec![VecDeque::new(); n],
             launch_history: Vec::new(),
             armed: BTreeSet::new(),
+            open_fire: BTreeSet::new(),
             in_reach: BTreeMap::new(),
             firing: BTreeSet::new(),
             pending_hits: BTreeMap::new(),
+            missiles: BTreeMap::new(),
+            next_missile: 0,
+            missile_inbound: BTreeMap::new(),
+            pd_busy: BTreeMap::new(),
+            ordnance_debris: 0.0,
+            sentries: BTreeMap::new(),
+            sentries_ordered: BTreeMap::new(),
+            ammo_runs: BTreeMap::new(),
+            rearm_trips: BTreeMap::new(),
+            ordnance_short: BTreeMap::new(),
+            missile_stats: MissileStats::default(),
             fired_on_at_destination: BTreeSet::new(),
             responded: BTreeSet::new(),
             threatened: vec![BTreeSet::new(); n],
+            sentried: vec![BTreeSet::new(); n],
             holdings: Holdings { owned: ComponentStore::new(), elsewhere: BTreeMap::new() },
             side_runs: BTreeMap::new(),
             side_run_count: 0,
@@ -4157,6 +4291,7 @@ impl Simulation {
                 let pe = self.player_entity[p];
                 let was = self.blockade_doctrine(p);
                 cards::apply_doctrine_write(self.world.doctrine.get_mut(pe).unwrap(), w);
+                self.classify_sentries(p);
                 if !was && self.blockade_doctrine(p) {
                     self.recall_seen_launches(p);
                 }
@@ -4302,6 +4437,9 @@ impl Simulation {
             EventKind::EncounterSeek { shooter, target, gs, gt } => self.sys_encounter_seek(shooter, target, gs, gt),
             EventKind::Discharge { shooter } => self.sys_discharge(shooter),
             EventKind::Hits { shooter } => self.sys_hits(shooter),
+            EventKind::MissileArrive { missile } => self.sys_missile_arrive(missile),
+            EventKind::SentryArrive { vehicle } => self.sys_sentry_arrive(vehicle),
+            EventKind::RearmArrive { vehicle } => self.sys_rearm_arrive(vehicle),
             EventKind::ThreatSeen { target, shooter, gs, gt } => self.sys_threat_seen(target, shooter, gs, gt),
             EventKind::LaunchSeen { observer, center } => {
                 *self.launches_seen[observer as usize].entry(center.0).or_insert(0) += 1;
@@ -4713,6 +4851,7 @@ impl Simulation {
                     green: m.green * f,
                     blue: m.blue * f,
                     apex: m.apex * f,
+                    ordnance: 0.0,
                 }
             }
             _ => {
@@ -4755,6 +4894,7 @@ impl Simulation {
                 green: mix.green * f,
                 blue: mix.blue * f,
                 apex: mix.apex * f,
+                ordnance: 0.0,
             },
         );
     }
@@ -5247,7 +5387,7 @@ impl Simulation {
         let recent = self.recent_launches(p);
         let mut best: Option<(u64, bool, u64, u64, u64)> = None; // (port, open, recent, total, hulls + 1)
         for (&c, &n) in &self.launches_seen[p] {
-            if Some(c) == exclude {
+            if Some(c) == exclude || self.sentried[p].contains(&c) {
                 continue;
             }
             let k = self.blockade.get(&(c, seat)).map_or(0, |v| v.len() as u64)
@@ -5267,6 +5407,16 @@ impl Simulation {
             }
         }
         best.map(|(c, ..)| Entity(c))
+    }
+
+    /// **Rival ports this seat has seen launch and would blockade** — every
+    /// one but those it has seen missile sentries guard (T-139). Equal to the
+    /// count of ports seen while it has seen none.
+    fn blockade_ports_seen(&self, p: usize) -> usize {
+        if self.sentried[p].is_empty() {
+            return self.launches_seen[p].len();
+        }
+        self.launches_seen[p].keys().filter(|c| !self.sentried[p].contains(c)).count()
     }
 
     fn blockade_target(&mut self, p: usize) -> Option<Entity> {
@@ -5994,6 +6144,9 @@ impl Simulation {
                     self.release_to_reserve(vehicle, Role::Freighter, pid);
                 }
             }
+            ammo @ (SideRun::AmmoPickup { .. } | SideRun::AmmoDeliver { .. } | SideRun::AmmoHome { .. }) => {
+                self.ammo_leg(vehicle, ammo)
+            }
         }
     }
 
@@ -6337,9 +6490,10 @@ impl Simulation {
         };
         let level = self.bands.level(*self.world.population.get(center).unwrap());
         let center_pos = *self.world.position.get(center).unwrap();
-        // Every tier: an order a Design bill makes payable in supers is payable
-        // out of them (identical to the basics total while none are held).
-        let stock_total = self.held_at(center).unwrap().total();
+        // Every mineral tier: an order a Design bill makes payable in supers is
+        // payable out of them (identical to the basics total while none are
+        // held). Rounds pay for nothing.
+        let stock_total = self.held_at(center).unwrap().spendable_total();
         // Minerals to buy the next whole level, from the stock standing there —
         // and since T-73 the bill is payable *in colors*, so the split and the
         // bank both go into the context.
@@ -6586,7 +6740,11 @@ impl Simulation {
             // may stack, but a stack buys nothing against an unarmed colony
             // ship; building the reserve out past coverage cost the card 42%
             // of its effect (appendix §D.4).
-            blockade_ready: self.blockade_doctrine(p) && self.launches_seen[p].len() > self.ports_covered(p),
+            blockade_ready: self.blockade_doctrine(p) && self.blockade_ports_seen(p) > self.ports_covered(p),
+            sentry_cost: self.sentry_price(),
+            sentries_here: self.sentries_ordered.get(&center.0).copied().unwrap_or(0),
+            defended: self.held_at(center).map_or(Kilotons::ZERO, |h| h.total().on_scale::<units::Mass>())
+                + self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
             survey_frontier,
@@ -6611,7 +6769,7 @@ impl Simulation {
                 self.standing.insert(center.0, StandingOrder { design: Some((hull_type, class)), refined, basic });
                 // The second choice sees only what the standing order leaves.
                 let avail = self.available_at(center);
-                ctx.stockpile_total = avail.total();
+                ctx.stockpile_total = avail.spendable_total();
                 ctx.stockpile_by_color = Basic::ALL.map(|c| Price::new(avail.get_basic(c)));
                 // The context prices per hull; the Limited Systems hull carries
                 // two Designs (the scout's Spur and the miner's Meadow), so the
@@ -6621,6 +6779,8 @@ impl Simulation {
                     ctx.light_vehicle_cost = UNPAYABLE;
                 } else if (hull_type, class) == standing.design_for(Role::Picket) {
                     ctx.picket_cost = UNPAYABLE;
+                } else if (hull_type, class) == standing.design_for(Role::Sentry) {
+                    ctx.sentry_cost = UNPAYABLE;
                 } else if class == class_ordered_for(HullType::LimitedSystems) {
                     ctx.mining_pair_cost = UNPAYABLE;
                 } else if hull_type == HullType::MediumSystems {
@@ -7141,6 +7301,14 @@ impl Simulation {
                         ) {
                             *self.held_at_mut(center).unwrap() = bank_before;
                         }
+                    }
+                    (Role::Sentry, _) => {
+                        self.spawn_sentry(
+                            p,
+                            BuiltHull { hull: hull_type, class, mix: build_mix },
+                            center,
+                            launch_delay,
+                        );
                     }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
@@ -8859,6 +9027,7 @@ impl Simulation {
                     }
                 }
                 self.post_refined_offers(e, owner, &doctrine, &deficit, &bank, &mut empire_short);
+                self.post_ordnance_offers(e, owner, &doctrine, &deficit, &bank);
             }
         }
 
@@ -8870,6 +9039,8 @@ impl Simulation {
         // to its owner within the round. Amounts in each color in proportion
         // to what the holding contains.
         let away: Vec<((u32, u64), Minerals)> = self.holdings.elsewhere.iter().map(|(k, m)| (*k, *m)).collect();
+        let trades_ordnance: Vec<bool> =
+            (0..players).map(|p| Standing::of(&self.doctrine_of(p)).trades_ordnance()).collect();
         for ((p, at), m) in away {
             // Every tier: supers and apex a contract delivered to a rock are
             // held there like ore.
@@ -8883,6 +9054,10 @@ impl Simulation {
                 continue;
             };
             for (i, &c) in Material::ALL.iter().enumerate() {
+                // The ordnance book is the Doctrine's to open (T-139).
+                if c == Material::Ordnance && !trades_ordnance[p as usize] {
+                    continue;
+                }
                 let qty = spare * m.get(c) / total;
                 if qty > 1e-9 {
                     self.exchange.posted[i].1 += 1;
@@ -9320,6 +9495,11 @@ impl Simulation {
         // **A forge can make what it sold** (galaxy §4.5): a Band IV center
         // short of a super or apex it owes synthesizes it now, keeping its own
         // next works bill in basics.
+        // **A center makes the rounds it sold** (T-139), from basics.
+        if held + 1e-9 < c.qty && c.color == Material::Ordnance && self.owns_planet(c.seller_center) {
+            self.fabricate_rounds(c.seller.0, c.seller_center, c.qty - held);
+            held = self.holding(c.seller.0, c.seller_center).map_or(0.0, |b| b.get(c.color));
+        }
         if held + 1e-9 < c.qty && c.color.basic().is_none() && self.owns_planet(c.seller_center) {
             let i = Material::REFINED.iter().position(|&m| m == c.color).unwrap();
             let mut owed = [Price::ZERO; 4];
@@ -10172,6 +10352,7 @@ impl Simulation {
                 m.settlers += p.kilotons();
             }
         }
+        m.ordnance_spent = self.ordnance_outside();
         m
     }
 
@@ -10594,6 +10775,9 @@ pub struct MassLedger {
     pub slag: f64,
     /// Wrecked hulls still on their course, with everything aboard (T-133).
     pub wrecks: f64,
+    /// Missile rounds in flight and spent rounds' debris (T-139). Rounds in a
+    /// hold or a holding are in `in_cargo` and `held`.
+    pub ordnance_spent: f64,
 }
 
 impl MassLedger {
@@ -10610,6 +10794,7 @@ impl MassLedger {
             + self.biomass
             + self.slag
             + self.wrecks
+            + self.ordnance_spent
     }
 
     /// Per-store differences, for saying *where* a leak is rather than that
@@ -10626,6 +10811,7 @@ impl MassLedger {
             biomass: other.biomass - self.biomass,
             slag: other.slag - self.slag,
             wrecks: other.wrecks - self.wrecks,
+            ordnance_spent: other.ordnance_spent - self.ordnance_spent,
         }
     }
 }

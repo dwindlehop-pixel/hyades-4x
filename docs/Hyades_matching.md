@@ -557,10 +557,39 @@ a census of builds that spent inputs a higher-ranked order needed, under tier-3
 bills — the reservation answers it for one standing order per center; if two
 compete, the general form is needed.
 
-**10.5 `OPEN` — supply lines.** The author's direction: supply lines are the
+**10.5 Supply lines (T-139).** The author's direction: supply lines are the
 last of the Exchange's parameter spaces, and their drawback is what limits
 long-range ordnance (standing layer §9.4: an ordnance fleet has a logistics
-tail). Carried with the first missile Design as todo T-139.
+tail).
+
+- **`RATIFIED`, built — ordnance is a material that traverses space.**
+  `Material::Ordnance` is fabricated at an owned center from basics, one
+  kilotonne for one in the bank's mix, held at a planet, carried in a hold and
+  spent as debris (design law #11, industry §8.1). It pays for no hull
+  (`Minerals::spendable_total`).
+- **`RATIFIED`, built — the eighth book, closed by default.** The author's
+  ruling: the key is a deep-tier Politics card. Until something writes
+  `Doctrine::ordnance_market`, no center posts to it.
+  - **Open, a center bids** for the rounds its missile hulls wait on and it
+    could not make.
+  - **It asks** for the rounds it holds plus those it could make from basics
+    above its next works bill.
+  - **Both at the mean of its three basic willingnesses to pay.**
+  - **A sold lot is fabricated when the contract comes due.**
+  - Test: `the_ordnance_book_is_closed_until_a_doctrine_opens_it`.
+- **`RATIFIED`, built — return and ammo runs.** A missile hull at a center
+  rearms there. One at a post is served by an **ammo run**: the idle hauler
+  nearest the nearest place that can fill it flies there, loads, carries the
+  rounds out and comes home. The place is a holding with the rounds (a lot the
+  Exchange delivered included) or a center with the basics. With no hauler idle,
+  the hull flies to the nearest center to rearm and back. A hauler or a hull
+  wrecked on the way is the supply line cut. Test:
+  `a_dry_missile_picket_is_resupplied_by_ammo_run_or_by_return`.
+- **`OPEN` — R-MX15: the ordnance book's key and price.** The deep-tier
+  Politics card is not built. Whether rounds should price above their basics,
+  by the urgency of the hulls waiting on them, is open. **What would settle
+  it:** the Politics card, then a census of ordnance bids against the
+  shortfalls they answer.
 
 ---
 

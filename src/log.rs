@@ -296,6 +296,21 @@ pub enum LogEvent {
     /// **A hull changed course under a threat or under fire** (T-133, §8.19.7):
     /// the fleet decision a belief event raised. `to` is the new destination.
     CourseChanged { player: u32, vehicle: Entity, role: Role, reason: CourseReason, to: PlanetId },
+    /// **A missile round reached the end of its flight** (T-139). `player`
+    /// fired it from `vehicle` at a `target_seat` hull; `outcome` says whether
+    /// it hit, was shot down by point defense, or missed.
+    MissileResolved { player: u32, vehicle: Entity, target: Entity, target_seat: u32, outcome: MissileOutcome },
+}
+
+/// **How a missile round's flight ended** (T-139).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MissileOutcome {
+    /// It delivered its warhead.
+    Hit,
+    /// A beam within point-defense range of the target destroyed it.
+    Intercepted,
+    /// The target was gone, or past the round's powered reach.
+    Missed,
 }
 
 /// **Why a hull changed course** (T-133).
@@ -330,7 +345,9 @@ impl LogEvent {
             PopulationStep { .. } => LogCategory::Population,
             ScanReceived { .. } => LogCategory::Scanning,
             CardPlayed { .. } => LogCategory::Cards,
-            EncounterBegan { .. } | HullWrecked { .. } | CourseChanged { .. } => LogCategory::Combat,
+            EncounterBegan { .. } | HullWrecked { .. } | CourseChanged { .. } | MissileResolved { .. } => {
+                LogCategory::Combat
+            }
         }
     }
 
@@ -353,6 +370,7 @@ impl LogEvent {
             | ScanReceived { player, .. }
             | HullWrecked { player, .. }
             | CourseChanged { player, .. }
+            | MissileResolved { player, .. }
             | CardPlayed { player, .. } => Some(player),
             // An encounter is about two seats, so it belongs to neither.
             MineralsExtracted { player, .. } => Some(player),
@@ -373,7 +391,7 @@ impl LogEvent {
             | ScanReceived { planet, .. } => Some(planet),
             FreighterTransfer { at, .. } | VehicleParked { at, .. } | VehicleScrapped { at, .. } => Some(at),
             CourseChanged { to, .. } => Some(to),
-            EncounterBegan { .. } | HullWrecked { .. } => None,
+            EncounterBegan { .. } | HullWrecked { .. } | MissileResolved { .. } => None,
             PicketIntercept { target, .. } => Some(target),
             VehicleSpawned { to, .. } => Some(to),
             FleetGenerated { .. } => None,
@@ -399,6 +417,7 @@ impl LogEvent {
             | HullWrecked { vehicle, .. }
             | CourseChanged { vehicle, .. }
             | EncounterBegan { target: vehicle, .. }
+            | MissileResolved { vehicle, .. }
             | VehicleScrapped { vehicle, .. } => Some(vehicle),
             _ => None,
         }
@@ -491,6 +510,9 @@ impl fmt::Display for LogEvent {
             }
             CourseChanged { player, role, reason, to, .. } => {
                 write!(f, "P{player} {role:?} changes course ({reason:?}) for planet#{}", to.0)
+            }
+            MissileResolved { player, target_seat, outcome, .. } => {
+                write!(f, "P{player} missile at a P{target_seat} hull: {outcome:?}")
             }
         }
     }

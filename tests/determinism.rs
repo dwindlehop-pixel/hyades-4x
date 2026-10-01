@@ -329,15 +329,17 @@ fn no_nan_or_infinity_reaches_replicated_state() {
 /// all outside the gate.
 ///
 /// The bed is the card bed's protocol on a small galaxy — six seats, 600
-/// planets, the Warfare card on even seats and the Growth card on odd ones at
-/// the first round barrier. **Only the galaxy differs from a played game**
+/// planets, the Warfare, Growth and missile cards in rotation by seat at the
+/// first round barrier (the missile card since T-139, so sentries, rounds,
+/// point defense and rearming run inside the gate). **Only the galaxy differs from a played game**
 /// (the author's ruling): the barrier is the shipped one, so the horizon runs
 /// past it far enough to reach the fights. Two runs must agree on every
 /// combat record, to the last bit of its time and its slag, and on the report.
 ///
 /// The floors say the mechanism fired: encounters began, hulls were wrecked,
-/// and fleets changed course, so the belief path ran as well as the wreck's.
-fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 3]) {
+/// fleets changed course, so the belief path ran as well as the wreck's, and
+/// missile rounds reached the end of their flight.
+fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 4]) {
     const SEATS: usize = 6;
     let mut gcfg = GalaxyConfig::new(SEATS, seed);
     gcfg.planet_count = 600;
@@ -355,7 +357,7 @@ fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 3]) {
             let orders: Vec<Order> = (0..SEATS)
                 .map(|i| Order {
                     seat: PlayerId(i as u32),
-                    card: Some(CardId(if i % 2 == 0 { 15 } else { 3 })),
+                    card: Some(CardId([15, 3, 13][i % 3])),
                     target: Target::None,
                 })
                 .collect();
@@ -366,12 +368,13 @@ fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 3]) {
     // `{:?}` on an `f64` prints its shortest round-trip form, so equal strings
     // are equal bits.
     let log = sim.log().iter().map(|r| format!("{:?} {:?}", r.time.to_bits(), r.event)).collect();
-    let mut counts = [0usize; 3];
+    let mut counts = [0usize; 4];
     for r in sim.log().iter() {
         match r.event {
             LogEvent::EncounterBegan { .. } => counts[0] += 1,
             LogEvent::HullWrecked { .. } => counts[1] += 1,
             LogEvent::CourseChanged { .. } => counts[2] += 1,
+            LogEvent::MissileResolved { .. } => counts[3] += 1,
             _ => {}
         }
     }
@@ -382,15 +385,21 @@ fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 3]) {
 /// by as much as the fights need to reach the floors below. Probed in debug:
 /// 250 yr gives seed 1 **one** encounter and fails the floor; 275 yr gives
 /// 380 and 326 encounters (5.7 s); 300 yr gives 745 and 493 (12.7 s) and
-/// ships, for the margin.
-const COMBAT_HORIZON: f64 = 300.0;
+/// shipped, for the margin. Those counts are with the Warfare card on three
+/// seats. **350 yr since T-139**: the missile card is on two seats in the
+/// rotation, and its sentries are ordered in proportion to what a center
+/// holds and houses, so few stand by 300 yr — seed 1 resolves **no** round
+/// there and fails the floor. 350 yr gives 7 and 90 rounds on seeds 1 and 7
+/// (14.1 s); 400 yr gives 13 and 178 (22.1 s).
+const COMBAT_HORIZON: f64 = 350.0;
 
 #[test]
 fn combat_runs_are_bit_identical() {
     for seed in [1u64, 7] {
-        let (ra, la, [encounters, wrecks, turns]) = combat_run(seed);
+        let (ra, la, [encounters, wrecks, turns, rounds]) = combat_run(seed);
         let (rb, lb, _) = combat_run(seed);
-        eprintln!("seed {seed}: {encounters} encounters, {wrecks} wrecks, {turns} course changes");
+        eprintln!("seed {seed}: {encounters} encounters, {wrecks} wrecks, {turns} course changes, {rounds} rounds");
+        assert!(rounds > 0, "seed {seed}: no missile round resolved, so the missile path never ran");
         assert!(encounters >= 50, "seed {seed}: only {encounters} encounters — the bed no longer reaches combat");
         assert!(wrecks > 0, "seed {seed}: nothing was wrecked, so the wreck path never ran");
         assert!(turns > 0, "seed {seed}: no fleet changed course, so the belief path never ran");

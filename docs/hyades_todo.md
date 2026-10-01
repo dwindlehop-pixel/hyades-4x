@@ -95,17 +95,30 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-140. Sweep the sentry ratio and its thresholds
+
+**Open — the author's direction; not in PR #12.** `Doctrine::sentry_ratio`
+(the card writes 1e-5 kt of sentry per kt defended), the point-defense
+saturation threshold (`Standing::launches_into`), and whether losses are
+replaced (R-WAR46) are placeholders (R-TECH24, R-WAR44). Sweep them on the card
+bed, with the arena's laser-vs-missile balance as the check on the missile
+magnitudes. The reach census to start from is appendix §D.24.
+
+---
+
 ### T-139. Supply lines, and the first missile Design
 
-**Open — the author's direction, in this PR with T-138.** Supply lines are the
-last of the Exchange's parameter spaces (matching §10.5), and their drawback is
-what limits long-range ordnance (standing layer §9.4: an ordnance fleet has a
-logistics tail; R-O60/T-04, magazine mass). A tier-1 Technology card: the
-arena's deep-space missile, rebuilt on the T-132 damage model. Applied
-judiciously — only to Designs for roles a main fleet serves with hardened supply
-lines, or that serve near a production center — as **variation hulls** (cargo
-at the expense of acceleration) with a subset of roles open to them; a
-long-range LOU stands sentry at production centers. Through the card workflow.
+**Built, in PR #12 with T-138.** The basic deep-space missile is
+`TIER0[13]` (Technology §9): the sentry Design `Butte` on the Limited Offensive
+hull, posted at each center in proportion to its holding and population. Rounds
+are `Material::Ordnance`, fabricated from basics and carried as mass. Point
+defense is by every allied beam hull near the target. Resupply is by return and
+by ammo run, and the ordnance book is the Exchange's eighth, closed by default
+(warfare §8.22, matching §10.5). Card-free runs reproduce the engine before it to
+the last event on 8/8 seeds. Appendix §D.24.
+**Open:** R-TECH24, R-WAR44–R-WAR46, R-MX15, T-140 (the sweep), the deep-tier
+Politics card that opens the ordnance book, and the card's value (no harness
+reads `T_i`, R-TECH1).
 
 ---
 
@@ -1055,6 +1068,8 @@ leaving the ledger. Standing-layer §9.3, roadmap item 13.
 Ordnance is mass; energy weapons are not. Expended rounds leave the fleet, so a
 fleet that has been shooting accelerates *better* — which is a live observable
 under §6.2, not just bookkeeping. Standing-layer §9.4, roadmap item 14.
+**Advanced (T-139):** missile rounds are `Material::Ordnance` in the hold and
+end as debris on the ledger; torpedoes remain.
 
 ---
 

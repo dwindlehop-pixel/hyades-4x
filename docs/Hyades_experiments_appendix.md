@@ -2744,6 +2744,108 @@ including the two archetypes whose native super is not Red, so each forge made
 its own (technology §3.2's "exactly one" is a gradient as built; R-G4). Trade is
 pinned by `a_forge_sells_the_super_it_can_make_and_makes_it_at_settlement`.
 
+## D.24 T-139 — missiles, point defense, sentries and the supply line
+
+*Supports technology §9, warfare §8.22 and matching §10.5. Bed: a scratch
+harness, never landed, 3 seats, cards at the shipped first barrier (200 yr),
+regrowth off where the mass ledger is read. All figures are single runs on one
+seed unless stated.*
+
+**The magnitudes, priced before tuning.** A Limited Offensive hull has dry mass
+0.020 kt, 0.910 g empty and structure 1.94·10¹⁰ kJ; a Cairn has 4.10·10¹⁰. One
+50 MW beam fires to 7.9e-3 ly against a station-keeping hull. A round from the
+LOU reaches 0.0238 ly at burnout under the arena's multiplier and burn time,
+three times as far.
+
+**Defect 1: rearming by the parked test.** At first a hull counted as "at a
+center" only while parked. A sentry under way during its yard delay was
+therefore sent to rearm at its own center: zero-length legs, at one instant.
+Seed 1, missile card on seats 0 and 2, Warfare card on seat 1: **1,093,717
+events by 425 yr, with 1,158 returns to rearm**, against 38,133 events at
+300 yr. Deciding "at a center" by position took the returns to 0.
+
+**Defect 2: point defense absorbed every round.** With one round per tube per
+salvo and a round's structure at one discharge (10⁹ kJ), **3 of 9,607** rounds
+hit. A round spends about 2.9 days inside a beam's point-defense range, and one
+mount stopped one round per 0.25-day discharge. Two placeholders changed: a
+salvo is the arena's burst of 4 per tube, and a round's structure is four
+discharges (4·10⁹ kJ). Then a lone beam hull stops about 3 rounds a window, and
+a stack stops many.
+
+**Loop 1: blockaders rebuilt for a port a sentry guards.** Census of the
+logged events, 340–390 yr, same seed: **5,117 pickets spawned, 5,055 changed
+course and 5,340 parked as reserve** on the Warfare seat. A blockader that sees
+a sentry it can outrun withdraws (R-WAR26's third ending). `picket_first` then
+read the port as uncovered and built another. Fix: the seat records ports where
+a sentry turned a picket away, and blockades them no more. Wall time at 800 yr
+went from more than 600 s (the run was stopped) to 154 s.
+
+**Loop 2: sentries fed to blockade stacks.** Census, 750–800 yr: **538
+sentries spawned**. Stacks standing at the port wrecked each sentry, and the
+center replaced it. 32.5 kt of rounds were fabricated against 1.25 kt fired;
+the rest went down with the sentries. Fix: a center counts the sentries it has
+ordered. Then 875,000 events and 19.2 s at 800 yr.
+
+**Detection narrowed to what a sentry fires on.** An armed hull starting a
+trajectory scanned every hull in the world, and a sentry fires only on armed
+ones. The sentry's own scan and the scans that consult sentries now walk only
+armed hulls (`open_fire`). Missile stats and colony counts were identical before
+and after; the missile-only arm went 7.7 → 7.4 s, single runs.
+
+**Proportional sentries (the author's ruling).** Holding plus population per
+center, seed 1, card-free:
+
+| at | centers | p10 | p50 | p90 | p99 | homeworlds |
+|---|---|---|---|---|---|---|
+| 300 yr | 303 | 1.8 kt | 21.1 | 240 | 6,447 | 2,547–3,904 |
+| 800 yr | 3,057 | 17.8 kt | 371 | 5,198 | 47,952 | 1.90–1.98 M |
+
+At `ρ = 1e-5` and 0.030 kt per sentry, a center orders one per 3,000 kt. That
+is about one at a homeworld at 300 yr and about 660 at 800 yr. The sweep is
+T-140.
+
+**Arms at 800 yr, seed 1, sequential runs:**
+
+| arm | wall | events | colonies (seats 0 / 1 / 2) |
+|---|---|---|---|
+| no card | 6.6 s | 384,448 | 936 / 1,018 / 1,103 |
+| missile card, seat 0 | 6.5 s | 386,441 | 935 / 1,019 / 1,103 |
+| Warfare card, seat 1 | 12.0 s | 2,740,602 | 996 / 1,127 / 1,528 |
+| missile, Warfare, missile | 19.4 s | 3,187,036 | 991 / 1,148 / 1,496 |
+
+**Reach census, 4 seeds** (1, 7, 42, 31337; 3 seats; 800 yr; the Warfare card
+on seat 1 in both arms, the missile card on seat 0 in one; runs concurrent, so
+no wall times):
+
+| seed | rounds launched | hit / stopped / missed | seat 1 hulls wrecked by seat 0 | seat 0 colonies, missile arm − Warfare-only arm |
+|---|---|---|---|---|
+| 1 | 306 | 27 / 229 / 50 | 4 | 967 − 996 = −29 |
+| 7 | 135 | 31 / 78 / 26 | 3 | 996 − 1,006 = −10 |
+| 42 | 170 | 30 / 96 / 44 | 5 | 847 − 889 = −42 |
+| 31337 | 172 | 34 / 103 / 35 | 4 | 1,414 − 1,448 = −34 |
+
+Mean difference **−28.8 ± 6.9** colonies (SE over 4 seeds), 4/4 down. Colony
+count is Expansion's metric. This is recorded as a cost the card's seat paid at
+these placeholders, not as the card's value; nothing reads Technology's own
+metric (R-TECH1).
+
+**Bit-identity, card-free.** `examples/build_digest` at 1,500 yr on seeds 1, 7,
+42, 31337, 2, 3, 5, 11, against the pushed head `1e9aec6`: event counts, colony
+counts and population bits identical on 8/8.
+
+**Mass.** With regrowth off at 800 yr the ledger moves by −1.2e-5 kt card-free.
+With cards it moves by −0.5 kt (Warfare), −0.8 kt (missile) and −2.1 kt (both,
+three plays): exactly the card prices paid, and nothing else.
+
+**The determinism arm.** `combat_runs_are_bit_identical` now rotates Warfare,
+Growth and missile cards over six seats. At 300 yr seed 1 resolves **no** round,
+because proportional sentries are few that early. Probed: 350 yr gives 7 and 90
+rounds on seeds 1 and 7 (14.1 s); 400 yr gives 13 and 178 (22.1 s); 450 yr
+gives 13 and 178 (27.2 s). 350 yr ships. The whole target is 54.2 s.
+
+**Test targets after the landing:** unit 5.9 s (295 tests), determinism
+54.2 s, smoke 35.7 s, telemetry 27.5 s.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

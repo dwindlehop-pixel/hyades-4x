@@ -160,7 +160,9 @@ combat surface** and the working agreement requires explicit ratification.
 **2.8 `OPEN` — R-O60 / T-04: magazine mass on ordnance families.** Expended
 ordnance must leave the fleet lighter (design law #11), which makes a magazine a
 mass that is spent — and therefore a *readable* one, since a fleet that has shot
-its magazines accelerates differently.
+its magazines accelerates differently. **Built for missiles (T-139, §9):** the
+rounds are `Material::Ordnance` in the hull's hold, so the burn reads the
+magazine and a fired round is debris on the ledger. Torpedoes have no family yet.
 
 ---
 
@@ -671,7 +673,7 @@ the measurement into the target (§4.10).
 |---|---|---|
 | R-L0 | per-hull slot tables | the arena (design law #4) |
 | R-L1 | shield regeneration across what | a decision, with warfare §2 |
-| R-O60 / T-04 | magazine mass on ordnance families | engine work |
+| R-O60 / T-04 | magazine mass on ordnance families — **built for missiles (T-139, §2.8)** | torpedoes, when a card builds the family |
 | R-O65 | flatten `hull_thrust_to_mass`? | explicit ratification — MC-tuned surface |
 | R-O47b / T-08 | `on_refit` is unbuilt | engine work |
 | R-CG* | is the counter-graph acyclic? | a design decision |
@@ -684,13 +686,14 @@ the measurement into the target (§4.10).
 | R-TECH12 | `D_long`, and a closing long-range bed | a ranged family or beam falloff, then a sweep |
 | ~~R-TECH14~~ | ~~combat beds tie every armed Design~~ — **resolved by T-132**, warfare §8.18 | — |
 | R-TECH15 | the table's storage and staleness stamp — `data/design_ratings.tsv`, stamped with the engine commit; no harness reads it back yet | a reader that refuses a stale stamp |
-| R-TECH18 | **an unlock reaches no build** — no Design resolver reads the roster | a resolver; T-25 |
+| R-TECH18 | **an unlock reaches no build** — no Design resolver reads the roster. **Advanced (T-139):** the missile card reaches builds through its Doctrine write, which `Standing::design_for(Sentry)` reads; an unlock alone still reaches none (§9.5) | a resolver; T-25 |
 | R-TECH19 | the offensive beds' judge read as dry mass **holding the field** (neither wrecked nor withdrawn), horizon 1 yr — *recommended* | author |
 | R-TECH3 | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |
 | R-TECH4 | a miniaturization analogue inside this tree? | a decision — *recommend no* |
 | T-25 | `enforce_roster` defaults off because there is no unlock path | the card system |
 | R-TECH20 | magnetar matter as a Technology option (§7.1.2) | a design pass naming the write and its mass cost |
 | R-TECH22 | the drive card's slot, slant and factor `f` — `TIER0[12]` recommended, replacing an unlock that reaches no build (§8.1) | the author; `f` after stage 4 of T-136 |
+| R-TECH24 | **the missile card's slot, slant and sentry ratio** — `TIER0[13]` (Balanced) and `ρ = 1e-5` recommended (§9.1, §9.3) | the author; T-140 sweeps `ρ` and its thresholds |
 | R-TECH23 | where the drive state lives — a `DesignWrite` fold in `CardId` order beside `Works` (recommended) or a `WorksWrite` variant (§8.4) | the author |
 
 ---
@@ -790,6 +793,107 @@ The context rows need R-TREE13 (played cards in `Snapshot`).
 **8.7 Open.** R-TECH22 (slot, slant and the magnitude of `f`), R-TECH23 (where
 the drive state lives — a `DesignWrite` fold beside `Works`, recommended, or a
 `WorksWrite` variant).
+
+---
+
+## 9. The second Technology card — the basic deep-space missile (T-139, built)
+
+Taken through `.claude/skills/card-workflow`. **Every magnitude is a
+placeholder.** What the card does to fights and to supply lines is
+`Hyades_warfare_tree.md` §8.22; the ordnance book is matching §10.5.
+
+**9.1 Brief (Stage 0).** The author: *"Another tier 1 Technology card should be
+basic deep space missile as explored in the arena, but updated to use the new
+damage model. … The right Design updates will only change those ships that are
+intended for roles a main battle fleet with adequate supply line hardening or to
+complete service near a production center. Feels like these should be variation
+hulls (cargo at the expense of acceleration) with a subset of available roles
+open to them. A long range LOU should stand sentry at production centers."* And:
+*"Sentry fleet strength should be built up proportionally to the Holdings and
+population increase."* Slot `TIER0[13]` (Balanced), replacing
+`UnlockDesign(GeneralSystems, Range)`, which reached no build (R-TECH18). Slot,
+slant and magnitudes are R-TECH24. Counter-graph edges: not given; the card meets
+the Warfare card's blockade, which is placed by the cross-tree workflow.
+
+**9.2 Story and objective (Stage 1).** The metric is capability-years `T_i`
+(§4.2), and no harness reads it (R-TECH1), so the card is measured for **reach**
+without a value claim (9.6).
+
+**9.3 Intent as algebra (Stage 2).**
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `a_h` | the launcher's empty-hull acceleration | ly/yr² | its drive (R-MC16): 0.94 for a Limited Offensive hull |
+| `a` | a round's proper acceleration, `8 · a_h` | ly/yr² | `CombatConfig::missile_accel_multiplier` (arena, tuned) |
+| `t_f` | burn time | yr | `missile_fuel_years` = 0.08 (arena) |
+| `x(t)` | distance flown, `Δv·t + (√(1 + (a t)²) − 1)/a` | ly | `combat::missile_flight` |
+| `R` | reach, `x(t_f)` | ly | 0.0238 from a LOU; a beam's is 7.9e-3 |
+| `m_r` | one round's mass | kt | 0.00125 (R-WAR44) |
+| `n` | rounds per magazine, 8 per tube | — | R-WAR44 |
+| `M` | the Butte's dry mass | kt | 0.020 |
+| `ρ` | sentry mass per kilotonne defended | — | `Doctrine::sentry_ratio`; the card writes 1e-5 |
+| `D` | a center's holding plus its population | kt | the center |
+| `c_s` | one sentry's price, hull plus magazine | kt | 0.030 |
+
+- **Cargo at the expense of acceleration:** a full magazine is `n·m_r = 0.010`
+  kt on a 0.020 kt hull, so a Butte flies at `2/3` of its empty acceleration
+  full and at its empty acceleration dry. That is R-O95's ratio, with the
+  magazine as the load.
+- **Three times a beam's reach from the same hull:** `R / 7.9e-3 = 3.0`.
+- **Defense in proportion:** a center orders `⌊ρ · D / c_s⌋` sentries, so one
+  per 3,000 kt at the placeholder.
+
+**9.4 Writes (Stage 3).**
+
+| write | field | `Standing` question | call sites |
+|---|---|---|---|
+| `UnlockDesign(LimitedOffensive, Butte)` | the Roster | none while `enforce_roster` is off (R-TECH18) | `roster_permits` |
+| `WriteDoctrine(MissileSentries)` | `Doctrine::sentry_ratio` (floor) | `sentries_wanted`, `design_for(Sentry)` | the production policy's fallback, the build order, `assign_role` |
+| — (no card) | `Doctrine::missile_pickets` | `design_for(Picket)` → `Mesa` | the room a later card with hardened supply lines writes |
+| — (default on) | `Doctrine::point_defense` | `point_defense(role)` | point defense at a round's arrival |
+| — (closed) | `Doctrine::ordnance_market` | `trades_ordnance` | the ordnance book (matching §10.5) |
+
+**9.5 Reach audit (Stage 4).**
+
+1. **Consumers.** The Doctrine write is read by the policy's sentry branch
+   through `sentries_wanted`, so the card reaches builds: 271 sentries ordered on
+   seat 0, seed 1, 3 seats, 800 yr. **This is the first Technology card with a
+   path to a build** (R-TECH18).
+2. **Defaults against the spec.** `the_sentry_design_is_locked_behind_the_missile_card`
+   asserts that no default role is on a missile Design and that no center orders
+   a sentry at any defended mass. It then plays the card's writes and asserts the
+   proportional count.
+3. **Price.** The scratch probe that fixed `R` and the burst also found the two
+   policy loops in warfare §8.22.3. The per-round numbers are in 9.3.
+4. **Trigger census.** Rounds launched per 800-yr run against a Warfare
+   neighbor: 135–306 over 4 seeds (appendix §D.24).
+5. **Oracle ceiling.** Not run: there is no metric to read it against (9.2).
+
+**9.6 What it does, measured — reach, not value** (appendix §D.24). 4 seeds,
+3 seats, 800 yr. The missile card is on seat 0 and the Warfare card on seat 1 in
+both arms. Results are estimates over those 4 seeds:
+
+- 135–306 rounds launched per run; 27–34 hit, 57–75% were shot down and 16–19%
+  missed.
+- 3–5 seat-1 hulls wrecked by seat 0 per run.
+- Seat 0's colonies were **−28.8 ± 6.9** (SE over 4 seeds, 4/4 down) against
+  the Warfare-only arm. Colony count is Expansion's metric, and this is recorded
+  as a cost the card's seat paid, not as the card's value.
+
+**9.7 Voice (Stage 9) — every line a DRAFT for the author.** Role subtitle,
+fixed: *Each center keeps missile sentries in proportion to what it holds.*
+
+| context | name (DRAFT) | flavor (DRAFT) |
+|---|---|---|
+| default | *Hearth Watch* | "We have built nothing that reaches past our own sky. What we love is here; so are they." — Office of Domestic Assurance |
+| a rival has played the first Warfare card | *Porch Light* | "We would never fire first. We have only made sure the first thing anyone sees is how far we can see." |
+| this empire has played the first Warfare card | *Both Hands* | "One hand open. The other, as a courtesy, also open, and pointed." |
+
+The context rows need R-TREE13 (played cards in `Snapshot`).
+
+**9.8 Open.** R-TECH24 (slot, slant and `ρ`; the sweep is T-140), R-WAR44
+(every missile magnitude), R-WAR45, R-WAR46, R-MX15 (the ordnance book's key and
+price).
 
 ---
 
