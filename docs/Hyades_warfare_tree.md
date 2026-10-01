@@ -2819,8 +2819,14 @@ a placeholder (R-WAR44).
   Design `Butte`).
 - **Sentry strength is in proportion to what there is to defend.** A center
   orders sentries until their mass reaches `Doctrine::sentry_ratio` × (its
-  holding + its population), both in kilotonnes. A lost sentry is replaced only
-  as that share grows (R-WAR46).
+  holding + its population), both in kilotonnes.
+- **Point defense comes out of the beam's ordinary firing cycle** (R-WAR45,
+  ruled). Mounts committed to a round deliver nothing at hulls, and a beam
+  stops rounds no faster than its firing rate, so volume of fire overwhelms it.
+- **Replacing losses in a war is a pricing question** (R-WAR46, ruled). A
+  center counts the sentries it has standing or ordered, so a loss leaves a
+  place, and the replacement is a build the center buys at its price like any
+  other. How a loss should enter that price is open (R-WAR47).
 - **Point defense may be mounted on ships that are not a round's target, and
   any solution allows intercept by nearby allies.** Every beam hull of the
   target's empire within point-defense range of the target engages, the target
@@ -2839,7 +2845,7 @@ a placeholder (R-WAR44).
 | hold fire | a target is fired on only if the post's ready rounds plus those flying at it exceed the point-defense capacity believed around it (`Standing::launches_into`); a hull that holds fire on everything stops firing until a hull near it moves |
 | flight | constant proper acceleration from the launch Δv, `x(t) = Δv·t + (√(1 + (a·t)²) − 1)/a`; reach is `x` at burnout |
 | arrival | a miss if the target is gone or has left the reach; else point defense, then the warhead through the beam's own damage, wreck and fleet-decision path |
-| point defense | each defender has the round inside its range for `range / speed`; killing it takes `⌈structure / (power · period)⌉` discharges shared over its mounts, one round at a time; the defender that finishes soonest takes it, if before impact |
+| point defense | decided when the round enters the widest point-defense range (`EventKind::MissileEnters`): each defender has it inside its own range for `range / speed`; killing it takes `⌈structure / (power · period)⌉` discharges shared over its mounts, one round at a time; the defender that finishes soonest commits its mounts for that interval, if it finishes before impact, and its discharges in that interval deliver nothing at hulls. The round is stopped if that defender is still there at impact |
 | mass | every round ends as debris on the ledger (`MassLedger::ordnance_spent`) |
 
 **8.22.3 Decided — what the two policy loops found, and the rules that close
@@ -2851,12 +2857,14 @@ them** (appendix §D.24).
   away blockades that port no more** (`sentried`). It is recorded only when the
   threat is a sentry, so Warfare-only runs are unchanged.
 - Blockade stacks shot the sentries standing beside them, and a center rebuilt
-  each one it lost: 538 sentries in 50 years. **A center counts the sentries it
-  has ordered, not the ones standing.**
+  each one it lost. Counting only the sentries ordered closed that loop, and
+  was **superseded by R-WAR46**: replacing losses is a pricing question. At
+  today's prices the loop returns — a sentry costs 0.03 kt against banks of
+  thousands, so the price gate never binds (appendix §D.24). R-WAR47 is the
+  price that would see the loss.
 
-**8.22.4 `OPEN`.** R-WAR44 (every missile magnitude), R-WAR45 (point defense
-does not take time from a beam's offensive discharges), R-WAR46 (sentry losses
-are replaced only as the defended share grows). The sweep of the sentry ratio
+**8.22.4 `OPEN`.** R-WAR44 (every missile magnitude), R-WAR47 (how a loss
+enters a replacement's price). The sweep of the sentry ratio
 and its thresholds is T-140. Whether the spent-round debris store should be
 cut is T-141.
 
@@ -2949,8 +2957,9 @@ cut is T-141.
 | **R-WAR42** | **the GCU Design** — its class name and its hold/loadout/drive split on the General Contact hull (§8.21.4) | the author, then the arena's rating bed |
 | **R-WAR43** | **belief about rival mineral production** — which observations count (miners seen at a rock, laden departures) and how stale they may be (§8.21.3) | stage 2 of T-135, with a census of the estimator's error |
 | **R-WAR44** | **the missile magnitudes** — warhead `2·10¹⁰` kJ, structure under point defense `4·10⁹` kJ, round 1.25 t, 8 rounds per tube, burst 4 per tube (the arena's), reload 1 day — all placeholders (§8.22) | a sweep against the arena's laser-vs-missile balance, with T-140 |
-| **R-WAR45** | **point defense and offense share mounts?** — a beam's point-defense engagements take no time from its offensive discharges (§8.22.2) | the author; a census of beam hulls doing both at one instant |
-| **R-WAR46** | **are lost sentries replaced?** — a center counts sentries ordered, so a loss is replaced only as its defended share grows; the alternative fed blockade stacks one hull at a time (§8.22.3) | the author; T-140 |
+| ~~**R-WAR45**~~ | **resolved (the author's ruling): point defense comes out of the beam's ordinary firing cycle** — mounts committed to a round deliver nothing at hulls, and a beam stops rounds no faster than its rate, so volume of fire overwhelms it (§8.22.1) | — |
+| ~~**R-WAR46**~~ | **resolved (the author's ruling): replacing losses in a war is a pricing question** — a center counts sentries standing or ordered, and a replacement is a priced build (§8.22.1) | — |
+| **R-WAR47** | **how a loss enters a replacement's price** — at today's prices a sentry is 0.03 kt against banks of thousands, the price gate never binds, and a center beside a force it cannot beat rebuilds what it loses: 3,147 sentries in 50 years on seed 1 (appendix §D.24). *Recommended:* the center's willingness to pay for a replacement falls with its recent losses there, as a Doctrine price (the shadow-price form, matching §10.4) | the author |
 | **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
 | ~~**R-WAR26**~~ | **what ends a pitched battle — ruled and built (T-133)**: all three, each on the event that raises it; R-L2 is answered as repeated passes (§8.19.6) | — |
 | ~~**R-WAR22**~~ | ~~damage does not persist past an engagement~~ — **resolved (T-133):** damage persists for the hull's life (§8.19.5); repair is R-WAR31 | — |

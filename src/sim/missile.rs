@@ -9,8 +9,9 @@
 //!
 //! | event | when | what it does |
 //! |---|---|---|
-//! | [`EventKind::Discharge`] | every reload while anything it fires on is in reach | launches up to one round per tube, nearest target first, no more than a target still needs |
-//! | [`EventKind::MissileArrive`] | the round's flight time later | point defense by every allied beam hull within range of the target, then the hit or the miss |
+//! | [`EventKind::Discharge`] | every reload while anything it fires on is in reach | launches a burst per tube, nearest target first, no more than a target still needs |
+//! | [`EventKind::MissileEnters`] | the round enters point-defense range of its target | the allied beam hull that can finish it before impact commits its mounts, which fire at nothing else meanwhile (R-WAR45) |
+//! | [`EventKind::MissileArrive`] | the round's flight time later | stopped if its defender is still there; otherwise the hit or the miss |
 //! | [`EventKind::SentryArrive`] | a sentry leaves its yard | takes station at its center and fills its magazine there |
 //! | [`EventKind::RearmArrive`] | a hull out of rounds reaches a center | rearms there and flies back to its post |
 //!
@@ -39,6 +40,11 @@ pub(super) struct Missile {
     reach: f64,
     /// Its speed at the target, c — how long point defense has to engage it.
     speed: f64,
+    /// When it reaches the target.
+    impact: f64,
+    /// The point-defense hull that committed its mounts to it, if one could
+    /// finish it before impact (decided as it enters range).
+    stopped_by: Option<Entity>,
     mass_kt: f64,
     warhead_kj: f64,
 }
@@ -190,10 +196,59 @@ impl Simulation {
         let owner = self.world.owner.get(shooter).map_or(0, |o| o.0);
         let id = self.next_missile;
         self.next_missile += 1;
-        self.missiles.insert(id, Missile { shooter, owner, target, from, reach, speed, mass_kt, warhead_kj });
+        let impact = self.clock + years;
+        let missile =
+            Missile { shooter, owner, target, from, reach, speed, impact, stopped_by: None, mass_kt, warhead_kj };
+        self.missiles.insert(id, missile);
         *self.missile_inbound.entry(target).or_default() += warhead_kj;
         self.missile_stats.launched += 1;
-        self.schedule(years, EventKind::MissileArrive { missile: id });
+        // Point defense engages from the moment the round enters the widest
+        // point-defense range any Design has.
+        let widest = crate::combat::point_defense_range_ly(
+            self.combat.laser_hit_tolerance * self.combat.fire_control_by_class.max(),
+            &self.combat,
+        );
+        let enters = (impact - widest / speed.max(1e-9)).max(self.clock);
+        self.schedule_at(enters, EventKind::MissileEnters { missile: id });
+        self.schedule_at(impact, EventKind::MissileArrive { missile: id });
+    }
+
+    /// **A round enters point-defense range** (T-139; R-WAR45, the author's
+    /// ruling: point defense comes out of a beam's ordinary firing cycle, and
+    /// its rate is what volume of fire overwhelms). Of the target's defenders
+    /// ([`Simulation::point_defenders`]), the one that can finish the round
+    /// soonest commits its mounts from when it is free, or from when the round
+    /// enters its own range, until it is done — if that is before impact. Its
+    /// discharges in that interval deliver nothing at hulls.
+    pub(super) fn sys_missile_enters(&mut self, id: u64) {
+        let Some(&m) = self.missiles.get(&id) else { return };
+        if !self.live_hull(m.target) {
+            return;
+        }
+        let Some(at) = self.position_at(m.target, self.clock) else { return };
+        let now = self.clock;
+        let mut best: Option<(f64, f64, Entity)> = None;
+        for (d, window, busy) in self.point_defenders(m.target, at, m.speed) {
+            let free = self.pd_busy.get(&d).and_then(|v| v.last()).map_or(f64::NEG_INFINITY, |&(_, end)| end);
+            let start = free.max(m.impact - window).max(now);
+            let done = start + busy;
+            if done <= m.impact && best.is_none_or(|(t, _, e)| done < t || (done == t && d < e)) {
+                best = Some((done, start, d));
+            }
+        }
+        let Some((done, start, d)) = best else { return };
+        let slots = self.pd_busy.entry(d).or_default();
+        slots.retain(|&(_, end)| end > now);
+        slots.push((start, done));
+        if let Some(mm) = self.missiles.get_mut(&id) {
+            mm.stopped_by = Some(d);
+        }
+    }
+
+    /// **Are this beam hull's mounts committed to point defense now?**
+    pub(super) fn defending_now(&self, e: Entity) -> bool {
+        let now = self.clock;
+        self.pd_busy.get(&e).is_some_and(|v| v.iter().any(|&(start, end)| start <= now && now < end))
     }
 
     /// **A round reaches its target's position** (T-139): it misses if the
@@ -214,7 +269,9 @@ impl Simulation {
         let at = self.position_at(m.target, now).filter(|_| self.live_hull(m.target));
         let outcome = match at {
             Some(p) if p.distance(m.from) <= m.reach + STATION_RADIUS.1 => {
-                if self.point_defense_stops(m.target, p, m.speed, now) {
+                // Stopped only if the defender that took it is still there to
+                // finish it.
+                if m.stopped_by.is_some_and(|d| self.live_hull(d)) {
                     MissileOutcome::Intercepted
                 } else {
                     // The beam's own damage, wreck roll and fleet decision.
@@ -278,25 +335,6 @@ impl Simulation {
         self.point_defenders(target, at, speed).iter().map(|&(_, window, busy)| (window / busy).floor() as u32).sum()
     }
 
-    /// **Does point defense shoot this round down?** The defender that would
-    /// finish it soonest takes it — engaging from when the round enters its
-    /// range, or from when it finished the round before — and it is stopped
-    /// if that is before impact. A defender engages one round at a time
-    /// ([`Simulation::pd_busy`]).
-    fn point_defense_stops(&mut self, target: Entity, at: Vec3, speed: f64, now: f64) -> bool {
-        let mut best: Option<(f64, Entity)> = None;
-        for (d, window, busy) in self.point_defenders(target, at, speed) {
-            let start = self.pd_busy.get(&d).copied().unwrap_or(f64::NEG_INFINITY).max(now - window);
-            let done = start + busy;
-            if done <= now && best.is_none_or(|(t, e)| done < t || (done == t && d < e)) {
-                best = Some((done, d));
-            }
-        }
-        let Some((done, d)) = best else { return false };
-        self.pd_busy.insert(d, done);
-        true
-    }
-
     // --- Sentries --------------------------------------------------------
 
     /// **Order a sentry for `center`** (T-139): it leaves the berth when the
@@ -314,7 +352,6 @@ impl Simulation {
         self.world.cargo.insert(e, Minerals::default());
         self.world.pop_cargo.insert(e, Kilotons::ZERO);
         self.sentries.entry(center.0).or_default().push(e);
-        *self.sentries_ordered.entry(center.0).or_default() += 1;
         let at = *self.world.position.get(center).unwrap();
         let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, at, at, accel, launch_delay);
@@ -1089,6 +1126,76 @@ mod tests {
             let drift = sim.mass_ledger().total() - before;
             assert!(drift.abs() < 1e-9 * before, "resupply conserves mass: {drift:+e}");
         }
+    }
+
+    /// **Point defense comes out of the beam's firing cycle** (R-WAR45, the
+    /// author's ruling). A seat-1 Cairn dueling a seat-0 hull is fired on by a
+    /// seat-0 sentry it cannot reach. While its mounts are committed to a
+    /// round, its discharges put nothing on the hull it is dueling; once the
+    /// commitment ends, they do again.
+    #[test]
+    fn point_defense_takes_a_beam_off_its_target_while_it_defends() {
+        let mut sim = logged(1);
+        // Seat 1 regards seat 0 as an enemy, so its picket stands under the
+        // rounds rather than breaking off (R-WAR26's third ending).
+        sim.world.doctrine.get_mut(sim.player_entity[1]).unwrap().engage_neutrals = true;
+        sentry(&mut sim, 0);
+        let h0 = home(&sim, 0);
+        let at = pos(&sim, h0);
+        let cairn = (HullType::LimitedContactVehicle, Class::Cairn);
+        let gun = hull(&mut sim, 1, Role::Picket, cairn, at.add(Vec3::new(0.015, 0.0, 0.0)), h0);
+        // A large hull, so the duel outlasts the rounds' flight, whose fire
+        // does not hurt: it stands and returns fire without deciding the duel.
+        let big = (HullType::GeneralContactVehicle, Class::Scarp);
+        let mine = hull(&mut sim, 0, Role::Picket, big, at.add(Vec3::new(0.019, 0.0, 0.0)), h0);
+        let popgun = Loadout { beam_power_kj_per_year: 1e-9, ..*sim.world.loadout.get(mine).unwrap() };
+        sim.world.loadout.insert(mine, popgun);
+        sim.track_changed(mine);
+        let damage = |sim: &Simulation| sim.world.hull_damage.get(mine).copied().unwrap_or(0.0);
+        // Until the rival Cairn commits its mounts to a round.
+        let mut slot = None;
+        while slot.is_none() && sim.clock < 0.3 {
+            assert!(sim.step());
+            slot = sim.pd_busy.get(&gun).and_then(|v| v.iter().copied().find(|&(_, end)| end > sim.clock));
+        }
+        let (start, end) = slot.expect("the rival Cairn defended against a round");
+        let wait = (start - sim.clock).max(0.0) + 1e-6;
+        run_for(&mut sim, wait);
+        let before = damage(&sim);
+        assert!(before > 0.0, "the duel was on before the round came");
+        let inside = end - sim.clock - 1e-6;
+        run_for(&mut sim, inside);
+        assert_eq!(damage(&sim), before, "no offensive output while defending");
+        // A burst chains its rounds' commitments back to back: wait out the
+        // last one, then one discharge period.
+        while sim.pd_busy.get(&gun).is_some_and(|v| v.iter().any(|&(_, end)| end > sim.clock)) && sim.clock < 0.5 {
+            assert!(sim.step());
+        }
+        run_for(&mut sim, 1.0 / crate::combat::DAYS_PER_YEAR);
+        assert!(
+            damage(&sim) > before,
+            "and the duel resumes after: t={} live={} role={:?} slots={:?} stats={:?}",
+            sim.clock,
+            sim.live_hull(gun),
+            sim.world.role.get(gun),
+            sim.pd_busy.get(&gun),
+            sim.missile_stats()
+        );
+    }
+
+    /// **A lost sentry leaves its center's count** (R-WAR46), so the center
+    /// may buy another at its price.
+    #[test]
+    fn a_wrecked_sentry_leaves_its_centers_count() {
+        let mut sim = bed(1);
+        let s = sentry(&mut sim, 0);
+        let h0 = home(&sim, 0);
+        assert_eq!(sim.sentries.get(&h0.0).map(|v| v.len()), Some(1));
+        let at = pos(&sim, h0);
+        let gun = hull(&mut sim, 1, Role::Picket, (HullType::LimitedContactVehicle, Class::Cairn), at, h0);
+        sim.deliver(gun, s, 1e15);
+        assert!(!sim.live_hull(s), "wrecked");
+        assert!(sim.sentries.get(&h0.0).is_none_or(|v| v.is_empty()), "and off its center's count");
     }
 
     /// **The ordnance book is closed until a Doctrine opens it** (T-139,

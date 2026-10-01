@@ -2846,6 +2846,38 @@ gives 13 and 178 (27.2 s). 350 yr ships. The whole target is 54.2 s.
 **Test targets after the landing:** unit 5.9 s (295 tests), determinism
 54.2 s, smoke 35.7 s, telemetry 27.5 s.
 
+**After the author's rulings on R-WAR45 and R-WAR46.** Everything above in
+this entry was measured under the earlier rules: point defense decided at
+impact, outside the beam's firing cycle, and sentries counted as ordered. Two
+changes followed the rulings.
+
+- **Point defense commits a beam's mounts** from when a round enters range
+  until it is destroyed, and the beam's discharges in that interval deliver
+  nothing at hulls. `point_defense_takes_a_beam_off_its_target_while_it_defends`
+  pins it: no damage on the dueled hull inside the interval, and damage again
+  after.
+- **Sentries are counted standing or ordered**, so a loss leaves a place that
+  a priced build fills.
+
+Same bed as the arms table (seed 1, 3 seats, 800 yr, sequential single runs):
+
+| arm | wall | events | sentries spawned, 750–800 yr | seat 0 hulls wrecked by seat 1 | colonies (seats 0 / 1 / 2) |
+|---|---|---|---|---|---|
+| missile card, seat 0 | 6.0 s | 386,222 | 261 | 0 | 930 / 1,021 / 1,103 |
+| missile, Warfare, missile | 43.7 s | 3,683,069 | 3,147 | 4,800 | 817 / 1,189 / 1,512 |
+
+Rounds in the second arm: 326 launched, 73 hit, 170 stopped, 83 missed.
+Against the ordered-count rule on the same arm, seat 0 has 174 fewer colonies
+(817 against 991) and spawns 3.8x the sentries. That is the rebuild loop of
+"Loop 2" above: the price gate does not bind, because a sentry costs 0.03 kt
+against banks of thousands. One seed, so this is a reading and not an
+estimate. It is the measurement behind R-WAR47.
+
+Card-free runs are bit-identical to `539389d` on seeds 1, 7, 42, 31337, 2, 3, 5
+and 11 at 1,200 yr. Test targets on this session's machine: unit 4.5 s (298
+tests), determinism 41.8 s, smoke 25.1 s, telemetry 21.9 s. That machine ran
+faster than the one above, so the two sets of times are not comparable.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

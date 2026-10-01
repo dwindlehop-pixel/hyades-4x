@@ -1145,8 +1145,10 @@ the other side's kills at a steady rate. Habits:
   reading any code.** The run with the loop and the run without it differ in
   one row by three orders of magnitude.
 - **A stock target that counts the hulls standing will refill what is
-  destroyed.** Count what was ordered, or remember where the loss happened, so
-  that what the stock defends is the only thing that grows it.
+  destroyed, at whatever rate the enemy destroys it.** Whether it should is a
+  pricing question (the author's ruling, R-WAR46): a price that cannot see the
+  loss does not limit it — a sentry is 0.03 kt against banks of thousands —
+  so make the price see it (R-WAR47) rather than adding a counting rule.
 - **A flag that schedules nothing must be cleared on every exit path.** A
   shooter left in `firing` with no discharge pending can never be restarted,
   because a new encounter starts discharges only for a shooter not already in

@@ -892,7 +892,8 @@ fixed: *Each center keeps missile sentries in proportion to what it holds.*
 The context rows need R-TREE13 (played cards in `Snapshot`).
 
 **9.8 Open.** R-TECH24 (slot, slant and `ρ`; the sweep is T-140), R-WAR44
-(every missile magnitude), R-WAR45, R-WAR46, R-MX15 (the ordnance book's key and
+(every missile magnitude), R-WAR47 (how a loss enters a replacement's price),
+R-MX15 (the ordnance book's key and
 price).
 
 ---

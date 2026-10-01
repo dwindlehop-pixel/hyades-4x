@@ -2571,6 +2571,9 @@ enum EventKind {
     /// **A missile round reaches its target's position** (T-139): point
     /// defense, then the hit or the miss.
     MissileArrive { missile: u64 },
+    /// **A round enters point-defense range of its target** (T-139, R-WAR45):
+    /// the defender that can finish it before impact commits its mounts now.
+    MissileEnters { missile: u64 },
     /// A new sentry leaves its yard's berth and takes station at the center.
     SentryArrive { vehicle: Entity },
     /// A missile hull out of rounds reaches the center it flew to rearm at.
@@ -3531,16 +3534,16 @@ pub struct Simulation {
     /// **Warhead energy in flight at each target**, kJ — a launcher does not
     /// fire rounds a target is already owed.
     missile_inbound: BTreeMap<Entity, f64>,
-    /// **When each point-defense hull's mounts are next free** (T-139).
-    pd_busy: BTreeMap<Entity, f64>,
+    /// **The time each beam hull's mounts are committed to point defense**
+    /// (T-139, R-WAR45 ruled): `(start, end)` intervals, in order and not
+    /// overlapping. A discharge inside one delivers nothing offensive.
+    pd_busy: BTreeMap<Entity, Vec<(f64, f64)>>,
     /// **Spent rounds**, kt: every round ends as debris, whatever it did.
     ordnance_debris: f64,
-    /// **Sentries per center** (T-139): ordered, posted or standing.
+    /// **Sentries per center** (T-139): ordered, posted or standing — what
+    /// the build branch counts, so a lost one leaves a place a priced build
+    /// may fill (R-WAR46 ruled: replacing losses is a pricing question).
     sentries: BTreeMap<u64, Vec<Entity>>,
-    /// **Sentries each center has ever ordered** (T-139) — what the build
-    /// branch counts. A lost sentry is not replaced: a center beside a force
-    /// it cannot beat would otherwise feed it one hull at a time.
-    sentries_ordered: BTreeMap<u64, u32>,
     /// **Ammo runs in flight**, by `(seat, post)`: the hauler flying it.
     ammo_runs: BTreeMap<(u32, u64), Entity>,
     /// **Missile hulls flying to a center to rearm**: `(post, center)`.
@@ -3800,7 +3803,6 @@ impl Simulation {
             pd_busy: BTreeMap::new(),
             ordnance_debris: 0.0,
             sentries: BTreeMap::new(),
-            sentries_ordered: BTreeMap::new(),
             ammo_runs: BTreeMap::new(),
             rearm_trips: BTreeMap::new(),
             ordnance_short: BTreeMap::new(),
@@ -4438,6 +4440,7 @@ impl Simulation {
             EventKind::Discharge { shooter } => self.sys_discharge(shooter),
             EventKind::Hits { shooter } => self.sys_hits(shooter),
             EventKind::MissileArrive { missile } => self.sys_missile_arrive(missile),
+            EventKind::MissileEnters { missile } => self.sys_missile_enters(missile),
             EventKind::SentryArrive { vehicle } => self.sys_sentry_arrive(vehicle),
             EventKind::RearmArrive { vehicle } => self.sys_rearm_arrive(vehicle),
             EventKind::ThreatSeen { target, shooter, gs, gt } => self.sys_threat_seen(target, shooter, gs, gt),
@@ -6742,7 +6745,7 @@ impl Simulation {
             // of its effect (appendix §D.4).
             blockade_ready: self.blockade_doctrine(p) && self.blockade_ports_seen(p) > self.ports_covered(p),
             sentry_cost: self.sentry_price(),
-            sentries_here: self.sentries_ordered.get(&center.0).copied().unwrap_or(0),
+            sentries_here: self.sentries.get(&center.0).map_or(0, |s| s.len() as u32),
             defended: self.held_at(center).map_or(Kilotons::ZERO, |h| h.total().on_scale::<units::Mass>())
                 + self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),

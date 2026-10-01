@@ -556,8 +556,9 @@ pub struct Doctrine {
     /// price — hull and magazine, which is their mass (R-O57) — reaches this
     /// times what it holds plus its population, in kilotonnes. Written by the
     /// missile card; `0.0` until then, which is what keeps the sentry Design
-    /// (`Class::Butte`) locked behind it. A lost sentry is replaced only as the
-    /// center's share grows. **Placeholder magnitude.**
+    /// (`Class::Butte`) locked behind it. A lost sentry is replaced as a
+    /// priced build (R-WAR46, the author's ruling); how a loss should enter
+    /// that price is R-WAR47. **Placeholder magnitude.**
     pub sentry_ratio: f64,
 
     /// **Pickets fly the missile Design** (`Class::Mesa`, T-139). No card
@@ -984,9 +985,10 @@ pub struct ProductionContext {
     /// **What one missile sentry costs this center** (T-139): the Butte hull
     /// and the basics its magazine is fabricated from on posting.
     pub sentry_cost: Price,
-    /// **Sentries this center has ordered**, against
-    /// [`Standing::sentries_wanted`]. Lost ones still count: the Doctrine
-    /// says how many a center builds, not how many it keeps (T-139).
+    /// **Sentries standing at or ordered for this center**, against
+    /// [`Standing::sentries_wanted`] (T-139). A lost one is a place a priced
+    /// build may fill: the author's ruling that replacing losses is a pricing
+    /// question (R-WAR46).
     pub sentries_here: u32,
     /// **What this center has to defend**, kt: everything its empire holds
     /// there, every tier, plus its population (T-139).
@@ -1380,6 +1382,15 @@ impl Autopilot for BaselineAutopilot {
         // **up on both seeds** (3,309 → 3,314 / 2,540,752.7 → 2,544,150.4;
         // 3,334 → 3,336 / 2,608,344.6 → 2,609,993.2). Strictly better, which is
         // what a wasted build should look like when it stops.
+        // **A center short of its sentries orders one, ahead of survey**
+        // (T-139) — here and in the fallback below, the two places survey is
+        // chosen. Bounded by the center's share of what it defends, and zero
+        // unless the missile card was played.
+        let wants_sentry = ctx.sentries_here < Standing::of(doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost);
+        let can_afford_sentry = ctx.stockpile_total + Price::new(1e-9) >= ctx.sentry_cost;
+        if candidates.is_empty() && wants_sentry && can_afford_sentry {
+            return Standing::of(doctrine).order_for(Role::Sentry);
+        }
         if candidates.is_empty() && can_afford_light && ctx.survey_frontier > 0 {
             return Standing::of(doctrine).scout_order();
         }
@@ -1617,12 +1628,6 @@ impl Autopilot for BaselineAutopilot {
         {
             return Standing::of(doctrine).order_for(Role::Picket);
         }
-        // **A center short of its sentries orders one, ahead of survey**
-        // (T-139). Bounded per center by the Doctrine's count, so it is a
-        // stock that converges and cannot starve survey for long; zero unless
-        // the missile card was played.
-        let wants_sentry = ctx.sentries_here < Standing::of(doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost);
-        let can_afford_sentry = ctx.stockpile_total + Price::new(1e-9) >= ctx.sentry_cost;
         let survey_fallback = if wants_sentry && can_afford_sentry {
             Standing::of(doctrine).order_for(Role::Sentry)
         } else if wants_survey && can_afford_light {
@@ -2324,6 +2329,26 @@ mod tests {
             // is the one that closes it.
             survey_frontier: 1,
         }
+    }
+
+    /// **A lost sentry is replaced by a priced build** (T-139, R-WAR46 ruled:
+    /// replacing losses is a pricing question). A center below its share
+    /// orders one when it can pay the price, and not when it cannot.
+    #[test]
+    fn a_center_short_of_its_sentries_buys_one_at_its_price() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine { sentry_ratio: crate::cards::MISSILE_SENTRY_RATIO, ..Doctrine::default() };
+        let sentry = Standing::of(&doctrine).order_for(Role::Sentry);
+        // Nothing to deepen (infra at `k_potential`), so the fallback decides.
+        let mut ctx = prod_ctx(BandTier::III, 4.0, 50.0);
+        ctx.defended = Kilotons::new(1e6);
+        ctx.sentry_cost = Price::new(0.03);
+        ctx.sentries_here = Standing::of(&doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost) - 1;
+        assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), sentry, "one short, and affordable");
+        let full = ProductionContext { sentries_here: ctx.sentries_here + 1, ..ctx };
+        assert_ne!(ap.production_choice(&doctrine, &full, &[]), sentry, "at its share");
+        let poor = ProductionContext { sentry_cost: Price::new(100.0), ..ctx };
+        assert_ne!(ap.production_choice(&doctrine, &poor, &[]), sentry, "a price it cannot pay");
     }
 
     #[test]

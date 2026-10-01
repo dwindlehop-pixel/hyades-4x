@@ -665,6 +665,12 @@ impl Simulation {
     /// mount, nearest target first.
     fn beam_volley(&mut self, shooter: Entity, loadout: Loadout, at: Vec3, mut aim: Vec<(f64, Entity)>) {
         let now = self.clock;
+        // **Mounts on point defense fire at nothing else** (R-WAR45, the
+        // author's ruling): this discharge is spent on rounds.
+        if self.defending_now(shooter) {
+            self.schedule(loadout.discharge_years, EventKind::Discharge { shooter });
+            return;
+        }
         // **Nearest first, extracted as needed.** Keys are unique (the entity
         // breaks ties), so the order is total. A discharge usually spends its
         // mounts on the first one or two, so the nearest few are selected in

@@ -802,6 +802,28 @@ pub struct ByClass {
 }
 
 impl ByClass {
+    /// The largest value any Design takes.
+    pub fn max(&self) -> f64 {
+        [
+            self.meadow,
+            self.spur,
+            self.tor,
+            self.cairn,
+            self.delta,
+            self.range,
+            self.scarp,
+            self.ford,
+            self.strait,
+            self.butte,
+            self.mesa,
+            self.unnamed.systems,
+            self.unnamed.contact,
+            self.unnamed.offensive,
+        ]
+        .into_iter()
+        .fold(f64::NEG_INFINITY, f64::max)
+    }
+
     /// The value for a Design: its class's, or its hull class's default.
     pub fn of(&self, class: Class, family: HullFamily) -> f64 {
         match class {

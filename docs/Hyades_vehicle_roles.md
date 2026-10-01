@@ -324,7 +324,8 @@ the reach and the interface a new duty plugs into are `Hyades_matching.md` §9 a
 hull stands guard at the center that built it (`Role::Sentry`, Design `Butte`).
 It fires on armed hulls of other empires within its missiles' reach and lets
 unarmed traffic pass, and it rearms from the center it guards. A center orders
-sentries in proportion to what it holds and houses (`Doctrine::sentry_ratio`).
+sentries in proportion to what it holds and houses (`Doctrine::sentry_ratio`),
+and replaces a lost one as a priced build (R-WAR46).
 A standing mission under §4.6, so it never auto-scraps. Only the missile card
 writes the ratio. The same missile Design is open to the picket role
 (`Mesa`) and to no other: never survey, colonization or freight
