@@ -2857,7 +2857,8 @@ them** (appendix §D.24).
 **8.22.4 `OPEN`.** R-WAR44 (every missile magnitude), R-WAR45 (point defense
 does not take time from a beam's offensive discharges), R-WAR46 (sentry losses
 are replaced only as the defended share grows). The sweep of the sentry ratio
-and its thresholds is T-140.
+and its thresholds is T-140. Whether the spent-round debris store should be
+cut is T-141.
 
 ---
 

@@ -95,6 +95,34 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-141. Decide whether spent-round debris should be cut
+
+**Open — the author's question; not in PR #12.** Every missile round, hit,
+intercepted or missed, ends in `Simulation::ordnance_debris`, a single
+kilotonne count with no position. It is read only by the mass ledger
+(`MassLedger::ordnance_spent`). No decision reads it and nothing in the game
+can see it.
+
+The tension is design law #11: *expended ordnance leaves the fleet lighter*,
+with no exclusions. Deleting the store outright would make a fired round
+vanish from the ledger, so cutting it needs one of three resolutions:
+
+- **Keep it** as it is: one `f64` and one ledger term. Cost: no events and no
+  decisions; `mass_is_conserved_with_regrowth_off` and the T-139 tests read it.
+- **Fold it into an existing store**, for example slag at the world nearest
+  the hit, or the target's wreck mass. Rounds stay conserved without a store of
+  their own. This gives debris a place, which is content the author may or may
+  not want.
+- **An author-ratified exemption** for spent ordnance, recorded against law #11
+  and its `mass_is_conserved` guard. Law #11's own text warns that an
+  exemption is a free resource a search will find.
+
+**What would settle it:** the author's ruling on whether spent ordnance must
+be conserved. Then delete the field and update the ledger, the tests and
+warfare §8.22.2 to match.
+
+---
+
 ### T-140. Sweep the sentry ratio and its thresholds
 
 **Open — the author's direction; not in PR #12.** `Doctrine::sentry_ratio`
