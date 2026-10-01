@@ -2674,6 +2674,76 @@ is 55.0–56.2 s, so that test no longer sets the target's time —
 here) and scheduling do. The target is under 60 s and above the 54 s the
 tolerance band asks a fix to reach; `main` itself runs it at 53.9–55.0 s.
 
+## D.23 T-138 — supers, apex, the refined Exchange, priced production, and a reachable Band IV
+
+*Supports galaxy §3.0 and §4.5, technology §3.2 and §3.7, trees §4.6, matching
+§8.7 and §10.4. Card-free bed: `examples/work_years`, 3 seats, 4,000 yr, the 8
+seeds of §D.20, against the R-MX8 build (`e7e883b`), all four binaries at once.*
+
+**Population Band IV was unreachable.** The top population edge
+(`PopBands::from_weibull(1.4, 4.0)`) is the `Band IV` mass, 715,541.75 kt, and
+so was every homeworld's `K` (habitability and pristine biosphere both `Band
+4.0`); no world had a ceiling above it (0 of the 200-planet test galaxy, 19 at
+it). The closed-form logistic approaches its ceiling without reaching it, so no
+world could hold population `Band IV` and the synthesis gate could never open;
+a homeworld stood at 61% of it at 600 yr. The same comparison feeds
+`industrial_signature`, which could never be true either.
+
+**Calibrating the ceiling to the author's schedule** (a scratch harness, never
+landed: seat 0's homeworld population against the `Band IV` edge every 10 yr;
+seeds 1, 7, 42, 31337; 1,600 yr; rounds at 200 / 600 / 1,000 / 1,400 yr):
+
+| ceiling (Band) | card-free, every seat | Growth card ×1.6 at round 1, seat 0 | Expansion card ×8 at round 1, seat 0 |
+|---|---|---|---|
+| 4.05 | 693–745 yr | 503–522 yr | identical to card-free |
+| 4.1 | 653–705 yr | 483–502 yr | identical to card-free |
+| 4.2 | 632–685 yr | 473–482 yr | identical to card-free |
+| 4.3 | 623–675 yr | 463–482 yr | identical to card-free |
+
+At 4.2 a growth-dedicated build crosses before round two's card selection and
+every card-free seat crosses between rounds two and three, as the ruling asks.
+The ceiling moves the crossing by about 70 yr over 4.05–4.3. The Expansion card
+draws no population, so no build in the engine drains a homeworld faster than
+the default and the ruling's round-four case cannot be measured yet.
+
+**Card-free, the whole layer is inert** — the 4.2 ceiling and every refined
+mechanism together: work-years, colony-years, colonies, vehicles and events
+**bit-identical on 8/8 seeds**; only the population figure moves (seed 1 at
+1,000 yr: 64,267,894 → 68,593,963 kt). An inference, at about 90% confidence:
+nothing a card-free run decides reads a homeworld's population above the
+`Band III` edge. A census of the decisions that read population would confirm it.
+
+**Throughput.** The first build ran `ns/event` +5.49% ± 1.05 (8/8) on that bed
+with identical events — the new code's own cost. With fast paths for a game
+with no standing order and for a hauler with no refined want, interleaved at
+1,000 yr (3 rounds, seeds 1 and 7, events identical): 15,017–15,287 against
+15,110–15,477 and 14,053–14,861 against 14,285–14,788 `ns/event`; min-of-3
++0.6% and +1.7%, inside the run-to-run spread — not resolved. Test targets:
+unit 5.6 s, determinism 51.2 s, smoke 35.2 s, telemetry 25.9 s (the
+determinism target was 56–58 s at §D.22).
+
+**The mechanism bed** (`a_super_billed_design_is_synthesized_traded_and_built_with_mass_conserved`,
+3 seats, 200 planets, 1,500 yr, regrowth off, every seat's colonizer and miner
+Designs billed 25% Red — the state a tier-3 Design write leaves): 3.04 kt of
+Red synthesized, 393 hulls built carrying Red, mass conserved to 1e-9. Two
+defects found on the way, both fixed before landing:
+
+- **A blocked Design stopped the yard.** A seat whose colonizer owed Red it
+  could not get chose that order at every decision, declined it, and built
+  nothing else — its banks did not move for centuries. Fixed by quoting a
+  Design the center cannot pay as unpayable and choosing again (§10.4).
+- **Quoting hid the demand.** With the Design quoted unpayable up front, the
+  center never ordered it, never declined, and recorded no need: 0.03 kt made,
+  one Red hull, nothing for freight or the Exchange to answer. Fixed by
+  choosing on plain prices first and recording the need when the choice is
+  blocked; needs are re-recorded at each decision so a center that stops
+  wanting the order stops bidding for it.
+
+No Red was traded in that bed: every homeworld held some Magenta and Yellow,
+including the two archetypes whose native super is not Red, so each forge made
+its own (technology §3.2's "exactly one" is a gradient as built; R-G4). Trade is
+pinned by `a_forge_sells_the_super_it_can_make_and_makes_it_at_settlement`.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

@@ -1233,6 +1233,11 @@ whether refining was **worth** it — that is §5.1. **R-M2
 the ratified values; this section only names them so they stop being typed
 as bare `3:2:1` wherever they're cited.**
 
+*Built* (`SimConfig::super_yield = 2/3`, `apex_yield = 1/2`, both placeholders
+under R-M2): a forge draws `made / Y` of precursors and leaves `made · (1/Y − 1)`
+as slag at the forge; `the_super_is_synthesized_from_its_recipe…` and
+`apex_is_made_from_all_three_supers…` pin both ratios and the ledger.
+
 ### 5.1 The value-equivalence heuristic — a different question, on a different axis
 
 **Stripped of the "3 fleets" clause and disentangled from the literal

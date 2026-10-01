@@ -337,8 +337,9 @@ measured against nothing.
 ## 7. What is not here
 
 **7.1 Capitals and synthesis.** A production center that reaches **pop-Band IV**
-unlocks capitals and synthesis (world model §5.2). Nothing of this exists in the
-engine and it is the natural depth-3 of this tree. **R-PROD4 — open**, and it is
+unlocks capitals and synthesis (world model §5.2). **Synthesis is built**
+(galaxy §4.5): a forge makes supers and apex for the orders and contracts that
+owe them. Capitals are not, and they are the natural depth-3 of this tree. **R-PROD4 — open**, and it is
 the join with Technology: synthesis makes *supers*, which are a Technology
 commodity.
 

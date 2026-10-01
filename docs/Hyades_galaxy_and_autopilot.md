@@ -33,7 +33,7 @@ Cliques cap at 3, rings come in 6s, 4/5/7 have no equal-adjacency arrangement. A
 
 ## 3. Homeworlds — super-aligned, identical in shape, equitable but unequal
 
-Identical in shape (fairness): **Band IV / Band IV / Band I** (hab/bio/infra) → `K = min = 1`; a **small town** that matures by building **infra Band I → Band IV** (§5; the Band ladder is defined generally in `Hyades_mineral_cost_curve.md` §2.6). **Rich in two tier-1 colors, poor in the third** — the two precursors of **one super** — so **mining income is imbalanced** and three rotationally-symmetric archetypes result (reflecting the §7 color swap):
+Identical in shape (fairness): **Band 4.2 / Band 4.2 / Band I** (hab/bio/infra; §3.0 below) → `K = min = 1`; a **small town** that matures by building **infra Band I → Band IV** (§5; the Band ladder is defined generally in `Hyades_mineral_cost_curve.md` §2.6). **Rich in two tier-1 colors, poor in the third** — the two precursors of **one super** — so **mining income is imbalanced** and three rotationally-symmetric archetypes result (reflecting the §7 color swap):
 
 | Homeworld | Rich basics | Poor | Native super @ pop Band IV | Cheap tree-pairs | Expensive pair |
 |---|---|---|---|---|---|
@@ -43,7 +43,21 @@ Identical in shape (fairness): **Band IV / Band IV / Band I** (hab/bio/infra) �
 
 Same **2-rich-1-poor shape** rotated → **equal total wealth, color-shifted**. The start is **equitable but unequal**: 4 trees cheap, 2 expensive, your native super fixed. Blue-type is the militarist-expander-technologist (weak economy/diplomacy); Red-type the tall industrial-military-political power (weak at spreading); Green-type the economic-expansionist (weak on the whole war-tech axis). **N=3:** one of each. **N=6:** B-R-G alternating. **R-G3:** placement per table.
 
-**Eventual self-synthesis.** At **pop Band IV** a homeworld self-synthesizes **exactly one** super — its archetype's — in **modest** quantity, **no supply chain**. The **corrected R-G4:** the homeworld is a **bounded** exception to the habitability↔metallicity anticorrelation (§4.4) — habitable *and* modestly mineralized in two colors, **enough for one modest super, not super-rich**. **R-G4:** modest yield; confirm "exactly one super" is hard.
+**3.0 `RATIFIED` (the author's ruling) — a homeworld's ceiling is `Band 4.2`.**
+Habitability and pristine biosphere both read `Band 4.2` (`GalaxyConfig::homeworld_ceiling`),
+a little past `Band IV`. At `4.0` the ceiling *was* the top population edge, and
+the logistic approaches its ceiling without reaching it, so no world could ever
+hold population `Band IV` and synthesis (§4.5) could never run. The target is a
+schedule: a growth-dedicated build reaches population `Band IV` before round
+two's card selection, most builds by round three, a high-tempo proactive build
+around round four. Measured on seeds 1, 7, 42, 31337: card-free homeworlds cross
+at 632–685 yr (round two is at 600 yr, round three at 1,000), and a Growth card at
+the first barrier brings its homeworld across at 473–482 yr. No build in the
+engine drains a homeworld faster than the default, so the round-four case is not
+yet measurable. Appendix §D.23. **Placeholder** magnitude; the schedule is the
+ruling.
+
+**Eventual self-synthesis.** At **pop Band IV** a homeworld self-synthesizes **exactly one** super — its archetype's — in **modest** quantity, **no supply chain**. The **corrected R-G4:** the homeworld is a **bounded** exception to the habitability↔metallicity anticorrelation (§4.4) — habitable *and* modestly mineralized in two colors, **enough for one modest super, not super-rich**. **R-G4 (`OPEN`):** modest yield; confirm "exactly one super" is hard. *Measured: it is not, in the engine as built* — every homeworld holds all three basics once freight and the Exchange run, so each can make any super at a cost set by its poorest precursor (technology §3.2, appendix §D.23). **What would settle it:** the author's call between a gradient (as built) and a hard rule (e.g. synthesis drawing only on ore mined from the forge's own ground).
 
 ---
 
@@ -80,7 +94,7 @@ fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
 **Tier 1 — basics: Cyan, Magenta, Yellow.** Mined (§4.3). · **Tier 2 — supers: Red, Green, Blue.** Synthesized, never mined (R-M1). · **Apex.** Synthesized from supers; metallic silver-white, *Platinum* a placeholder name (R-M1).
 
 ### 4.2 Color algebra + the refining ladder
-Fixed two-basic recipes: **Blue ← Cyan + Magenta · Red ← Magenta + Yellow · Green ← Yellow + Cyan.** Ladder **3 basics → 2 supers → 1 apex** with **wastage** (cards reduce it) — named as yield fractions
+Fixed two-basic recipes: **Blue ← Cyan + Magenta · Red ← Magenta + Yellow · Green ← Yellow + Cyan.** **Apex ← Red + Green + Blue in equal parts** (`RATIFIED`, the author's ruling — silver-white is additive white). Ladder **3 basics → 2 supers → 1 apex** with **wastage** (cards reduce it) — named as yield fractions
 **`Y_super` = 2/3** (mineral-mass → super-mass) and **`Y_apex` = 1/2**
 (super-mass → apex-mass) in `Hyades_mineral_cost_curve.md` §5.0, which also
 distinguishes this literal mass-conserving ratio from the separate
@@ -135,6 +149,18 @@ additive-on-Band, not the distribution.
 
 ### 4.5 Synthesis gates — pop Band IV + supply chain
 Synthesis **only at pop Band IV** (§5.2). Each super needs **two** basics from distant hotspots → synthesis **generally demands a supply chain**; a hex where two gaussians overlap richly (synthesize **with no chain**) is **exceptionally high value** — the homeworld is the modest, archetype-locked instance. **R-M5:** supply-chain model.
+
+**`RATIFIED` and built — synthesis is demand-driven, at a forge, from its own
+holding.** A center whose population reads `Band IV` is a forge. It synthesizes
+when an order it is paying owes a super or apex it does not hold, or when a
+contract it sold comes due, drawing the recipe's precursors from its own holding
+at `Y_super = 2/3` and `Y_apex = 1/2` (placeholders, R-M2), all or nothing, and
+keeping what its order or its next works bill needs in basics. The yield's loss
+is slag at the forge (R-O59). What consumes supers is the author's ruling
+(`Hyades_trees_and_card_value.md` §4.6): **only a tier-3 card's Design writes,
+and apex only win conditions** — so a card-free game synthesizes nothing.
+**R-M5 stays `OPEN`:** nothing yet hauls precursors to a forge for synthesis's
+sake; a forge makes what its own holding allows.
 
 ### 4.6 Substitution — native only within a super's own counter-graph aspects
 Each super is native across the **whole lineup — but only for the specific aspects of the counter-graph it brings.** Covering **Blue's** aspects with Red/Green/apex costs **a card each**; Blue does **not** natively cover another super's aspects. Supers are **non-interchangeable specialists**, cheap in their own region, card-expensive outside it. **R-M6:** each super's (and the apex's) aspect-set.
@@ -196,7 +222,7 @@ A card overrides exactly one default (sim §0a). The **command view is omniscien
 | **Explore** | idle **Contact** hulls path to nearest unrevealed hex | **The Long Voyage**; **The Compass** |
 | **Expand** | **Systems** hulls settle nearest *viable* world, weighing **colony-vs-mine** | **The Compass**; **The Long Voyage** |
 | **Exploit** | colonies build **infra toward K**, grow pop, **mine local incl. Z-column** | **The First Hearth**, **First Furrow**, **The Open Hand** |
-| **Synthesize** | at **pop Band IV**, convert per `Y_super`/`Y_apex` + wastage (`Hyades_mineral_cost_curve.md` §5.0); a matured homeworld self-makes its **one** native super | post-pop-Band-IV (Synthesis) |
+| **Synthesize** | at **pop Band IV**, convert per `Y_super`/`Y_apex` + wastage (`Hyades_mineral_cost_curve.md` §5.0) **when an order or a sold contract owes it** (§4.5); a matured homeworld self-makes its **one** native super | post-pop-Band-IV (Synthesis) |
 | **Exterminate / defend** | **Offensive** hulls **hold**; engage in-range, **line** formation, deterministic accept/decline | **Those Who Stand**, **The Pattern**, **Open Skies** |
 | **Build** | planetside at docks; capitals/synthesis **pop-Band-IV-gated**; mobile dock excepted | **The Compass**, **The First Hearth** |
 | **Retreat** (sim §4) | defeated ships flee toward open/friendly space **in 3D**; survival = wreck roll | deep Warfare + positioning |

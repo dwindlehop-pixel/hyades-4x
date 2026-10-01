@@ -95,6 +95,38 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-139. Supply lines, and the first missile Design
+
+**Open — the author's direction, in this PR with T-138.** Supply lines are the
+last of the Exchange's parameter spaces (matching §10.5), and their drawback is
+what limits long-range ordnance (standing layer §9.4: an ordnance fleet has a
+logistics tail; R-O60/T-04, magazine mass). A tier-1 Technology card: the
+arena's deep-space missile, rebuilt on the T-132 damage model. Applied
+judiciously — only to Designs for roles a main fleet serves with hardened supply
+lines, or that serve near a production center — as **variation hulls** (cargo
+at the expense of acceleration) with a subset of roles open to them; a
+long-range LOU stands sentry at production centers. Through the card workflow.
+
+---
+
+### T-138. Supers, apex and the refined Exchange; production priced
+
+**Advanced to built — the author's rulings, in PR #12.** Tiers 1–2 cost basics;
+a tier-3 card's cost in supers is its Design writes (`DesignBill`); every win
+condition is conditioned on apex (trees §4.6). Apex is Red + Green + Blue in
+equal parts. A homeworld's ceiling is `Band 4.2` so population `Band IV` is
+reachable (galaxy §3.0). Synthesis at a forge (galaxy §4.5), slag at the forge,
+every tier on the ledger, seven Exchange books with refined bids, asks and
+capacity asks, refined freight (matching §8.7), and production priced by a
+standing order's reservation (matching §10.4). Card-free runs reproduce the
+engine before it to the last event on 8/8 seeds. Appendix §D.23.
+**Open:** R-M5 (hauling precursors to a forge), R-G4 ("exactly one super" is a
+gradient as built), R-MX11–R-MX13 (monopoly, monopsony, cartel), urgency from
+threat belief (§10.4), the general shadow-price production form, win
+conditions themselves, refinable slag (T-03).
+
+---
+
 ### T-137. Voice tables need played cards and relations in `Snapshot`
 
 **Open (R-TREE13).** A card's name and flavor change with what this empire and

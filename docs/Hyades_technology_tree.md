@@ -176,6 +176,15 @@ is rich in two basics and poor in the third — **the two precursors of its sing
 native super** — so every empire self-synthesizes exactly one and must acquire the
 other two. **That is the structural reason the Exchange exists.**
 
+*Built* (galaxy §4.5): a forge synthesizes from its own holding when an order or
+a sold contract owes a super. **"Exactly one" is a gradient, not a wall** —
+measured: on a 3-seat bed with every seat's colonizer and miner Designs billed
+25% Red, all three homeworlds made Red from the Magenta and Yellow their banks
+held, including the two whose native super is not Red, because freight and the
+Exchange put every basic in every bank. A seat poor in a precursor pays more for
+the super it is not native to; it is not barred from it. R-G4 asks whether
+"exactly one" should be hard; this is the evidence on it. Appendix §D.23.
+
 **3.3 `RATIFIED` — no categorical strategic classification may be co-extensive
 with a color domain.** Design law #13 / **R-O34**. It would lock out exactly the
 archetype poor in that color. Continuous classifications expressed as magnitude
@@ -193,8 +202,12 @@ why they must be made in pairs.
 ("nontransitive") balance is explicitly on the table. This is a design decision
 with large consequences for card authoring and it has not been made.
 
-**3.7 `OPEN` — R-XM*: apex, and what it is for.** Synthesized from supers. Present
-in `resources.rs` and in nothing else.
+**3.7 — R-XM*: apex, and what it is for.** **`RATIFIED` (the author's rulings):**
+apex is made from Red, Green and Blue in equal parts at `Y_apex = 1/2`, and
+**every win condition is conditioned on apex** (trees §4.6). Built: a forge
+makes apex from its three supers (and the supers from basics) when an order or a
+contract owes it. **`OPEN`:** the win conditions themselves, and whether apex
+carries any combat property (R-MC7/R-MC8, the specific-strength ladder).
 
 ---
 

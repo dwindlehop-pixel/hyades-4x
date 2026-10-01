@@ -539,6 +539,17 @@ pub struct Doctrine {
     /// that must agree with nothing checking that they do.
     pub doctrine_demand: [f64; 3],
 
+    /// **How much this empire's policy wants each refined material** —
+    /// Red, Green, Blue and apex, `Material::REFINED` order. The refined
+    /// counterpart of [`Self::doctrine_demand`], weighting a center's bid for
+    /// the supers and apex its orders owe (matching §9.6: the card interface
+    /// for how urgently an empire buys them). The floor it multiplies is not a
+    /// field: a super's is the basics' mean floor over `Y_super`, apex's over
+    /// `Y_super · Y_apex` — what the precursors cost.
+    ///
+    /// **Placeholder magnitude**: `1.0` each.
+    pub refined_demand: [f64; 4],
+
     /// **Discount applied to a counterparty by reputation** (politics §3.5,
     /// §10.4). The fourth term of `wtp`. Inert until T-86 ships reputation.
     ///
@@ -658,6 +669,7 @@ impl Default for Doctrine {
             // bills are denominated in. `WORKS_MIX_DEFAULT` is in `Basic` order
             // and is `3:2:1` Yellow : Cyan : Magenta (`Hyades_industry.md` §6.10).
             doctrine_demand: crate::cards::WORKS_MIX_DEFAULT,
+            refined_demand: [1.0; 4],
             risk_aversion: 0.0,
             expand_bias: ExpandBias::ProductionCentersFirst,
             // 0.5 — **held, not defaulted** (R-O87). Work-years is flat in this
@@ -1986,15 +1998,21 @@ pub fn general_colonizer_hull(doctrine: &Doctrine) -> HullType {
 /// pair and the colonizer ladder, where the caller is choosing a hull by price
 /// and the role is not in question.
 fn hull_order(hull: HullType) -> BuildOrder {
-    let class = match hull {
+    BuildOrder::Hull { hull_type: hull, class: class_ordered_for(hull) }
+}
+
+/// **The class a policy orders when it names a hull** — the Design the
+/// production context's per-hull prices stand for, so the engine quotes the
+/// same Design the order will build.
+pub fn class_ordered_for(hull: HullType) -> Class {
+    match hull {
         HullType::LimitedSystems => Class::Meadow,
         HullType::LimitedContactVehicle => Class::Tor,
         HullType::MediumSystems => Class::Delta,
         HullType::GeneralSystems => Class::Range,
         HullType::GeneralContactVehicle => Class::Scarp,
         _ => Class::Unnamed,
-    };
-    BuildOrder::Hull { hull_type: hull, class }
+    }
 }
 
 /// Deterministic comparison for `max_by`: higher score wins, ties broken by id.
