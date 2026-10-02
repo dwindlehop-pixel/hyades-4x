@@ -126,12 +126,19 @@ warfare §8.22.2 to match.
 ### T-140. Sweep the sentry ratio and its thresholds
 
 **Open — the author's direction; not in PR #12.** `Doctrine::sentry_ratio`
-(the card writes 1e-5 kt of sentry per kt defended), the point-defense
-saturation threshold (`Standing::launches_into`), and the loss price
-`Doctrine::sentry_loss_price` (`κ = 3`, chosen by Monte Carlo at R-WAR47 for
-the ratio the card writes) are placeholders or open (R-TECH24, R-WAR44,
-R-WAR47). A ratio sweep moves the losses `κ` multiplies, so sweep the two
-jointly; `examples/sentry_price_sweep` is the bed. Sweep them on the card
+(the card writes 1e-5 kt of sentry per kt defended) and the point-defense
+saturation threshold (`Standing::launches_into`) are placeholders or open
+(R-TECH24, R-WAR44).
+
+**The loss price is ratified, not part of this sweep: `κ = 3`**
+(`Doctrine::sentry_loss_price`, R-WAR47, ratified by the author after PR #12).
+It was chosen on 8 seeds at 800 yr at the ratio the card writes (1e-5), where
+every `κ` from 1 to 1000 scored within one standard error of the others
+(appendix §D.24). A ratio sweep changes how many sentries stand and so how
+many are lost, which is what `κ` multiplies. Hold `κ` at 3 through the sweep,
+then re-run `examples/sentry_price_sweep` at the ratio the sweep chooses. If
+`κ = 3` is no longer inside the plateau there, bring the measurement to the
+author: a ratified value moves only with a new ratification. Sweep them on the card
 bed, with the arena's laser-vs-missile balance as the check on the missile
 magnitudes. The reach census to start from is appendix §D.24.
 
@@ -147,7 +154,7 @@ defense is by every allied beam hull near the target. Resupply is by return and
 by ammo run, and the ordnance book is the Exchange's eighth, closed by default
 (warfare §8.22, matching §10.5). Card-free runs reproduce the engine before it to
 the last event on 8/8 seeds. Appendix §D.24.
-**Open:** R-TECH24, R-WAR44, R-WAR47 (`κ = 3` by Monte Carlo, unratified), R-WAR48, R-MX15, T-140 (the sweep), the deep-tier
+**Open:** R-TECH24, R-WAR44, R-WAR48, R-MX15, T-140 (the sweep), the deep-tier
 Politics card that opens the ordnance book, and the card's value (no harness
 reads `T_i`, R-TECH1).
 

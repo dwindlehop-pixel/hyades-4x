@@ -569,7 +569,7 @@ pub struct Doctrine {
     /// still bills `c_s` — mass is what a hull is (R-O57) — so the factor is a
     /// shadow price: it moves the decision, not the bank. `0.0` replaces
     /// every loss; a positive `κ` stops replacing where the losses outrun
-    /// what the defended mass is worth. **Chosen by Monte Carlo, not yet
+    /// what the defended mass is worth. **Chosen by Monte Carlo and
     /// ratified** (`examples/sentry_price_sweep`, appendix §D.24).
     pub sentry_loss_price: f64,
 
@@ -1756,7 +1756,7 @@ pub struct Standing<'a> {
 /// reaches that pass — every build stamps a class — but
 /// `every_hull_has_a_role_under_every_doctrine` does.
 /// **The sentry loss price `κ`** ([`Doctrine::sentry_loss_price`], R-WAR47),
-/// **chosen by Monte Carlo and not yet ratified**
+/// **chosen by Monte Carlo and ratified by the author**
 /// (`examples/sentry_price_sweep`, appendix §D.24). Over eight seeds at
 /// 800 yr, every `κ > 0` beats `κ = 0` on the defending seat's colony-years
 /// (`κ = 3`: +4.65% ± 1.94) with work-years flat, and `κ ∈ [1, 1000]` are

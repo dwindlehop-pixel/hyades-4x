@@ -2946,7 +2946,8 @@ gain is seed 1 (+15.1% colony-years at `κ = 10`); the replication set gains
 on three or four of four seeds at every `κ ≥ 0.1`. `κ = 3` ships: it sits
 inside the plateau and short of the limit where a loss ends replacement,
 which would turn R-WAR46's pricing into a ban. It is a choice of a point in
-a plateau the sweep measured, not an optimum it found.
+a plateau the sweep measured, not an optimum it found. **The author ratified
+`κ = 3` after PR #12 merged.**
 
 Card-free runs are bit-identical to `0887203` on seeds 1, 7, 42, 31337 at
 1,000 yr (events, every seat's stocks, the mass ledger). Test targets, this
