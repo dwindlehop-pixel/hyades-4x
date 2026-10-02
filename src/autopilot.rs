@@ -539,6 +539,59 @@ pub struct Doctrine {
     /// that must agree with nothing checking that they do.
     pub doctrine_demand: [f64; 3],
 
+    /// **How much this empire's policy wants each refined material** —
+    /// Red, Green, Blue and apex, `Material::REFINED` order. The refined
+    /// counterpart of [`Self::doctrine_demand`], weighting a center's bid for
+    /// the supers and apex its orders owe (matching §9.6: the card interface
+    /// for how urgently an empire buys them). The floor it multiplies is not a
+    /// field: a super's is the basics' mean floor over `Y_super`, apex's over
+    /// `Y_super · Y_apex` — what the precursors cost.
+    ///
+    /// **Placeholder magnitude**: `1.0` each.
+    pub refined_demand: [f64; 4],
+
+    /// **Sentry mass per kilotonne defended** (T-139,
+    /// `Hyades_technology_tree.md` §9; the author's ruling: "more defense in
+    /// proportion to more to defend"). A center orders sentries until their
+    /// price — hull and magazine, which is their mass (R-O57) — reaches this
+    /// times what it holds plus its population, in kilotonnes. Written by the
+    /// missile card; `0.0` until then, which is what keeps the sentry Design
+    /// (`Class::Butte`) locked behind it. A lost sentry is replaced as a
+    /// priced build (R-WAR46, the author's ruling), at the price
+    /// [`Self::sentry_loss_price`] sets. **Placeholder magnitude.**
+    pub sentry_ratio: f64,
+
+    /// **How a lost sentry raises the price of the next one** (R-WAR47,
+    /// `Hyades_warfare_tree.md` §8.22). A center that has lost `L` sentries
+    /// prices one at `c_s · (1 + κ · L)`, with `κ` this field and `c_s` the
+    /// hull and magazine mass, and orders as many as
+    /// [`Self::sentry_ratio`] of what it defends buys at that price. The yard
+    /// still bills `c_s` — mass is what a hull is (R-O57) — so the factor is a
+    /// shadow price: it moves the decision, not the bank. `0.0` replaces
+    /// every loss; a positive `κ` stops replacing where the losses outrun
+    /// what the defended mass is worth. **Chosen by Monte Carlo, not yet
+    /// ratified** (`examples/sentry_price_sweep`, appendix §D.24).
+    pub sentry_loss_price: f64,
+
+    /// **Pickets fly the missile Design** (`Class::Mesa`, T-139). No card
+    /// writes it: it is the room a later card with supply-line hardening
+    /// writes into, and the write the author warned about — missiles on a
+    /// hull posted far from a center run dry where the empire must resupply
+    /// them by freight or by recall (`Standing::resupply`).
+    pub missile_pickets: bool,
+
+    /// **This empire's armed hulls fire on missiles aimed at it** (T-139, the
+    /// author's ruling: "the Doctrine may have point defenses mounted on ships
+    /// that are not the targets of the missiles"). A beam Design within its
+    /// point-defense range of a missile's target engages the missile, whoever
+    /// the target is. Default on: card-free runs launch no missiles.
+    pub point_defense: bool,
+
+    /// **This empire posts to the ordnance book** (T-139, the Exchange's
+    /// eighth). Closed by default; the author's ruling puts the key on a
+    /// deep-tier Politics card, which is not built (matching §10.5).
+    pub ordnance_market: bool,
+
     /// **Discount applied to a counterparty by reputation** (politics §3.5,
     /// §10.4). The fourth term of `wtp`. Inert until T-86 ships reputation.
     ///
@@ -658,6 +711,12 @@ impl Default for Doctrine {
             // bills are denominated in. `WORKS_MIX_DEFAULT` is in `Basic` order
             // and is `3:2:1` Yellow : Cyan : Magenta (`Hyades_industry.md` §6.10).
             doctrine_demand: crate::cards::WORKS_MIX_DEFAULT,
+            refined_demand: [1.0; 4],
+            sentry_ratio: 0.0,
+            sentry_loss_price: SENTRY_LOSS_PRICE,
+            missile_pickets: false,
+            point_defense: true,
+            ordnance_market: false,
             risk_aversion: 0.0,
             expand_bias: ExpandBias::ProductionCentersFirst,
             // 0.5 — **held, not defaulted** (R-O87). Work-years is flat in this
@@ -936,6 +995,20 @@ pub struct ProductionContext {
     /// Whether this empire has a seen rival port it does not yet cover — the
     /// only state in which a blockading picket has somewhere to go (T-125).
     pub blockade_ready: bool,
+    /// **What one missile sentry costs this center** (T-139): the Butte hull
+    /// and the basics its magazine is fabricated from on posting.
+    pub sentry_cost: Price,
+    /// **Sentries standing at or ordered for this center**, against
+    /// [`Standing::sentries_wanted`] (T-139). A lost one is a place a priced
+    /// build may fill: the author's ruling that replacing losses is a pricing
+    /// question (R-WAR46).
+    pub sentries_here: u32,
+    /// **What this center has to defend**, kt: everything its empire holds
+    /// there, every tier, plus its population (T-139).
+    pub defended: Kilotons,
+    /// **Sentries this center has lost** to fire (R-WAR47): what
+    /// [`Doctrine::sentry_loss_price`] multiplies.
+    pub sentries_lost: u32,
     /// Known, unclaimed, non-Barren worlds this empire could still expand to.
     /// The autopilot builds survey craft to keep this above
     /// [`Doctrine::survey_reserve`] — expansion consumes candidates, so without
@@ -1218,6 +1291,10 @@ impl Autopilot for BaselineAutopilot {
                 }
             }
 
+            // **A sentry guards the center that built it** (T-139); the engine
+            // posts it there, so it needs no target from the candidate list.
+            Role::Sentry => Some(Tasking { role: Role::Sentry, target: None }),
+
             // Nothing else is tasked from a finished hull; hold rather than
             // invent a mission.
             Role::Freighter | Role::Reserve | Role::Scrapped => None,
@@ -1321,6 +1398,16 @@ impl Autopilot for BaselineAutopilot {
         // **up on both seeds** (3,309 → 3,314 / 2,540,752.7 → 2,544,150.4;
         // 3,334 → 3,336 / 2,608,344.6 → 2,609,993.2). Strictly better, which is
         // what a wasted build should look like when it stops.
+        // **A center short of its sentries orders one, ahead of survey**
+        // (T-139) — here and in the fallback below, the two places survey is
+        // chosen. Bounded by the center's share of what it defends, and zero
+        // unless the missile card was played.
+        let wants_sentry = ctx.sentries_here
+            < Standing::of(doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost, ctx.sentries_lost);
+        let can_afford_sentry = ctx.stockpile_total + Price::new(1e-9) >= ctx.sentry_cost;
+        if candidates.is_empty() && wants_sentry && can_afford_sentry {
+            return Standing::of(doctrine).order_for(Role::Sentry);
+        }
         if candidates.is_empty() && can_afford_light && ctx.survey_frontier > 0 {
             return Standing::of(doctrine).scout_order();
         }
@@ -1558,7 +1645,9 @@ impl Autopilot for BaselineAutopilot {
         {
             return Standing::of(doctrine).order_for(Role::Picket);
         }
-        let survey_fallback = if wants_survey && can_afford_light {
+        let survey_fallback = if wants_sentry && can_afford_sentry {
+            Standing::of(doctrine).order_for(Role::Sentry)
+        } else if wants_survey && can_afford_light {
             Standing::of(doctrine).scout_order()
         } else if wants_picket && can_afford_picket {
             Standing::of(doctrine).order_for(Role::Picket)
@@ -1666,7 +1755,16 @@ pub struct Standing<'a> {
 /// is for, and the two answers should not disagree. Nothing production-built
 /// reaches that pass — every build stamps a class — but
 /// `every_hull_has_a_role_under_every_doctrine` does.
-const ASSIGNABLE: [Role; 4] = [Role::Colonizer, Role::Miner, Role::Scout, Role::Picket];
+/// **The sentry loss price `κ`** ([`Doctrine::sentry_loss_price`], R-WAR47),
+/// **chosen by Monte Carlo and not yet ratified**
+/// (`examples/sentry_price_sweep`, appendix §D.24). Over eight seeds at
+/// 800 yr, every `κ > 0` beats `κ = 0` on the defending seat's colony-years
+/// (`κ = 3`: +4.65% ± 1.94) with work-years flat, and `κ ∈ [1, 1000]` are
+/// within one standard error of each other. `3` sits inside that plateau and
+/// short of the limit where a center stops replacing after its first loss.
+pub const SENTRY_LOSS_PRICE: f64 = 3.0;
+
+const ASSIGNABLE: [Role; 5] = [Role::Colonizer, Role::Miner, Role::Scout, Role::Picket, Role::Sentry];
 
 impl<'a> Standing<'a> {
     /// Read the standing layer for one player.
@@ -1688,7 +1786,13 @@ impl<'a> Standing<'a> {
             },
             Role::Colonizer => (HullType::MediumSystems, Class::Delta),
             Role::Miner => (HullType::LimitedSystems, Class::Meadow),
+            // **A picket flies the missile Design only where a write put it
+            // there** (T-139, `Doctrine::missile_pickets`); no card does yet.
+            Role::Picket if self.doctrine.missile_pickets => (HullType::LimitedOffensive, Class::Mesa),
             Role::Picket => (HullType::LimitedContactVehicle, Class::Cairn),
+            // **The missile sentry** (T-139): the one Design a Sentry is
+            // built on. Nothing orders one until `sentry_ratio > 0`.
+            Role::Sentry => (HullType::LimitedOffensive, Class::Butte),
             // **Not assignable** — a freighter is produced beside a miner, not
             // tasked (roles §5), so `ASSIGNABLE` excludes it. It shares the
             // Medium Systems *hull* with the colonizer and not the Design:
@@ -1742,6 +1846,11 @@ impl<'a> Standing<'a> {
     pub fn mounts(&self, role: Role, hull: HullType) -> bool {
         match role {
             Role::Colonizer => self.colonizer_ladder().contains(&hull),
+            // **A sentry is ordered by name, never inferred from a shell**
+            // (T-139). The Limited Offensive hull is also the arena's and the
+            // generated fleets' unnamed warship, which competence makes a
+            // picket; only the Butte Design reads back as a sentry.
+            Role::Sentry => false,
             _ => self.design_for(role).0 == hull,
         }
     }
@@ -1877,16 +1986,86 @@ impl<'a> Standing<'a> {
         UnderFire::Continue
     }
 
-    pub fn fire_distance(&self, role: Role, loadout: &Loadout, toward: Relation) -> Option<f64> {
+    ///
+    /// **A sentry fires on any armed hull of another empire** (T-139): its
+    /// mission is keeping weapons away from the center it guards, and arming
+    /// is loud (design law #10), so whether a hull is armed is what the
+    /// sentry reads. Unarmed neutral traffic — freight, colony ships, mining
+    /// crews — passes.
+    pub fn fire_distance(&self, role: Role, loadout: &Loadout, toward: Relation, target_armed: bool) -> Option<f64> {
         if !loadout.is_armed() {
             return None;
         }
         match toward {
             Relation::Enemy => Some(loadout.fire_enemy_ly),
             Relation::Neutral if role == Role::Picket => Some(loadout.fire_neutral_ly),
+            Relation::Neutral if role == Role::Sentry && target_armed => Some(loadout.fire_neutral_ly),
             Relation::Neutral => None,
         }
     }
+
+    /// **Does a hull in `role` shoot down missiles aimed at its empire's
+    /// hulls?** (T-139, the author's ruling: point defenses may be mounted on
+    /// ships that are not the missiles' targets, and any solution must let
+    /// nearby allies intercept.) Every role, while the Doctrine says so.
+    pub fn point_defense(&self, _role: Role) -> bool {
+        self.doctrine.point_defense
+    }
+
+    /// **How a missile hull away from a center gets rounds** (T-139, the
+    /// author's choice: "return + ammo runs"). A hull standing at a center
+    /// rearms there; one at a post asks for an ammo run while the empire has
+    /// an idle hauler to fly it, and otherwise flies to a center to rearm.
+    pub fn resupply(&self, at_center: bool, hauler_free: bool) -> Resupply {
+        if at_center {
+            Resupply::AtCenter
+        } else if hauler_free {
+            Resupply::AmmoRun
+        } else {
+            Resupply::Return
+        }
+    }
+
+    /// **Does a missile post fire on a target?** (T-139.) Only when the rounds
+    /// it can put in the air, with those already flying, exceed what the
+    /// target's point defense is believed to stop — a salvo absorbed whole
+    /// spends the supply line on nothing. A card that changes how readily an
+    /// empire fires into point defense writes here.
+    pub fn launches_into(&self, capacity: u32, rounds: u32) -> bool {
+        rounds > capacity
+    }
+
+    /// **How many sentries a center with `defended` kilotonnes to defend,
+    /// having lost `lost`, orders** (T-139, the author's ruling; R-WAR47): as
+    /// many as [`Doctrine::sentry_ratio`] of that mass buys at
+    /// `sentry · (1 + κ · lost)` each, `κ` being
+    /// [`Doctrine::sentry_loss_price`] — defense in proportion to what there
+    /// is to defend, at a price that sees what defending it has cost. Zero
+    /// while the ratio is.
+    pub fn sentries_wanted(&self, defended: Kilotons, sentry: Price, lost: u32) -> u32 {
+        if self.doctrine.sentry_ratio <= 0.0 || sentry <= Price::ZERO {
+            return 0;
+        }
+        let price = sentry.kilotons() * (1.0 + self.doctrine.sentry_loss_price.max(0.0) * lost as f64);
+        (self.doctrine.sentry_ratio * defended.kilotons() / price).floor() as u32
+    }
+
+    /// **Does this empire post to the ordnance book?** (T-139, matching
+    /// §10.5.) The key is a deep-tier Politics card, not built.
+    pub fn trades_ordnance(&self) -> bool {
+        self.doctrine.ordnance_market
+    }
+}
+
+/// **How a missile hull with an empty magazine is resupplied** (T-139).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Resupply {
+    /// From the center it stands at.
+    AtCenter,
+    /// A hauler brings rounds to its post.
+    AmmoRun,
+    /// It flies to the nearest center, rearms, and flies back.
+    Return,
 }
 
 /// **What a fleet does about a threat or a hit** (T-133, warfare §8.19.7).
@@ -1986,15 +2165,21 @@ pub fn general_colonizer_hull(doctrine: &Doctrine) -> HullType {
 /// pair and the colonizer ladder, where the caller is choosing a hull by price
 /// and the role is not in question.
 fn hull_order(hull: HullType) -> BuildOrder {
-    let class = match hull {
+    BuildOrder::Hull { hull_type: hull, class: class_ordered_for(hull) }
+}
+
+/// **The class a policy orders when it names a hull** — the Design the
+/// production context's per-hull prices stand for, so the engine quotes the
+/// same Design the order will build.
+pub fn class_ordered_for(hull: HullType) -> Class {
+    match hull {
         HullType::LimitedSystems => Class::Meadow,
         HullType::LimitedContactVehicle => Class::Tor,
         HullType::MediumSystems => Class::Delta,
         HullType::GeneralSystems => Class::Range,
         HullType::GeneralContactVehicle => Class::Scarp,
         _ => Class::Unnamed,
-    };
-    BuildOrder::Hull { hull_type: hull, class }
+    }
 }
 
 /// Deterministic comparison for `max_by`: higher score wins, ties broken by id.
@@ -2150,6 +2335,10 @@ mod tests {
             picket_cost: Price::new(0.02),
             pickets_held: 0,
             blockade_ready: false,
+            sentry_cost: Price::new(0.03),
+            sentries_here: 0,
+            sentries_lost: 0,
+            defended: Kilotons::ZERO,
             infra_cost: Price::new(infra + 1.0),
             // Even thirds against a bank of even thirds: these cases are about
             // the deepen/expand branch, not about color scarcity, and
@@ -2171,6 +2360,26 @@ mod tests {
             // is the one that closes it.
             survey_frontier: 1,
         }
+    }
+
+    /// **A lost sentry is replaced by a priced build** (T-139, R-WAR46 ruled:
+    /// replacing losses is a pricing question). A center below its share
+    /// orders one when it can pay the price, and not when it cannot.
+    #[test]
+    fn a_center_short_of_its_sentries_buys_one_at_its_price() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine { sentry_ratio: crate::cards::MISSILE_SENTRY_RATIO, ..Doctrine::default() };
+        let sentry = Standing::of(&doctrine).order_for(Role::Sentry);
+        // Nothing to deepen (infra at `k_potential`), so the fallback decides.
+        let mut ctx = prod_ctx(BandTier::III, 4.0, 50.0);
+        ctx.defended = Kilotons::new(1e6);
+        ctx.sentry_cost = Price::new(0.03);
+        ctx.sentries_here = Standing::of(&doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost, 0) - 1;
+        assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), sentry, "one short, and affordable");
+        let full = ProductionContext { sentries_here: ctx.sentries_here + 1, ..ctx };
+        assert_ne!(ap.production_choice(&doctrine, &full, &[]), sentry, "at its share");
+        let poor = ProductionContext { sentry_cost: Price::new(100.0), ..ctx };
+        assert_ne!(ap.production_choice(&doctrine, &poor, &[]), sentry, "a price it cannot pay");
     }
 
     #[test]
@@ -2324,11 +2533,11 @@ mod tests {
         let peace = Doctrine::default();
         let st = Standing::of(&peace);
         assert_eq!(st.regard(), Relation::Neutral, "every other empire is neutral by default");
-        assert_eq!(st.fire_distance(Role::Picket, &none, Relation::Enemy), None, "unarmed never fires");
-        assert_eq!(st.fire_distance(Role::Picket, &gun, Relation::Neutral), Some(gun.fire_neutral_ly));
+        assert_eq!(st.fire_distance(Role::Picket, &none, Relation::Enemy, true), None, "unarmed never fires");
+        assert_eq!(st.fire_distance(Role::Picket, &gun, Relation::Neutral, false), Some(gun.fire_neutral_ly));
         for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Freighter, Role::Reserve] {
-            assert_eq!(st.fire_distance(role, &gun, Relation::Neutral), None, "{role:?} holds fire on a neutral");
-            assert_eq!(st.fire_distance(role, &gun, Relation::Enemy), Some(gun.fire_enemy_ly));
+            assert_eq!(st.fire_distance(role, &gun, Relation::Neutral, true), None, "{role:?} holds fire on a neutral");
+            assert_eq!(st.fire_distance(role, &gun, Relation::Enemy, false), Some(gun.fire_enemy_ly));
         }
         let war = Doctrine { engage_neutrals: true, ..Doctrine::default() };
         assert_eq!(Standing::of(&war).regard(), Relation::Enemy, "the hostility write makes a neutral an enemy");
@@ -2470,24 +2679,34 @@ mod tests {
     /// one write at a time is not one.
     #[test]
     fn role_of_inverts_design_for_every_role() {
-        for scout_armed in [false, true] {
-            for colonizer_contact in [false, true] {
+        for (scout_armed, colonizer_contact, missile_pickets) in (0..8).map(|i| (i & 1 != 0, i & 2 != 0, i & 4 != 0)) {
+            {
                 let d = Doctrine {
                     scout_hull_offensive: scout_armed,
                     colonizer_general_contact: colonizer_contact,
+                    missile_pickets,
+                    sentry_ratio: crate::cards::MISSILE_SENTRY_RATIO,
                     ..Doctrine::default()
                 };
                 let st = Standing::of(&d);
-                for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
+                for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket, Role::Sentry] {
                     let (hull, class) = st.design_for(role);
                     assert_eq!(
                         st.role_of(hull, class),
                         Some(role),
                         "design_for({role:?}) = ({hull:?}, {class:?}) must resolve back \
-                         (scout_armed={scout_armed}, colonizer_contact={colonizer_contact})"
+                         (scout_armed={scout_armed}, colonizer_contact={colonizer_contact}, \
+                         missile_pickets={missile_pickets})"
                     );
-                    assert!(st.mounts(role, hull), "and the layer must agree it mounts it there");
+                    // A sentry is ordered by name and never inferred from its
+                    // shell (T-139), so it alone is not "mounted" by hull.
+                    if role != Role::Sentry {
+                        assert!(st.mounts(role, hull), "and the layer must agree it mounts it there");
+                    }
                 }
+                // The shell a sentry shares with the arena's warships reads as
+                // a picket without the sentry's name.
+                assert_eq!(st.role_of(HullType::LimitedOffensive, Class::Unnamed), Some(Role::Picket));
                 // Every rung of the colonizer ladder resolves to a colonizer,
                 // not only the one `design_for` names — otherwise the General
                 // rung would be built and then tasked as something else.
@@ -2529,7 +2748,7 @@ mod tests {
                 };
                 let st = Standing::of(&d);
                 for hull in all {
-                    for class in [Class::Unnamed, Class::Spur, Class::Tor, Class::Meadow] {
+                    for class in [Class::Unnamed, Class::Spur, Class::Tor, Class::Meadow, Class::Butte, Class::Mesa] {
                         assert!(st.role_of(hull, class).is_some(), "{hull:?}/{class:?} has no mission");
                     }
                 }

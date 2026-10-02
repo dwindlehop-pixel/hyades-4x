@@ -335,6 +335,18 @@ pub struct GalaxyConfig {
     pub homeworld_rich_density: f64,
     /// Homeworld density in its one *poor* basic.
     pub homeworld_poor_density: f64,
+    /// **A homeworld's habitability and pristine biosphere, as a Band
+    /// position** — its carrying capacity `K` (industry §1.1).
+    ///
+    /// **`4.2`, the author's ruling**: a little past `Band IV`, so that true
+    /// population `Band IV` — the synthesis gate — is reachable. At `4.0` the
+    /// ceiling *was* the top population edge and the logistic approaches its
+    /// ceiling without reaching it, so no world could ever forge. The target:
+    /// a growth-dedicated build reaches `Band IV` before round two's card
+    /// selection, most builds by round three. Measured on seeds 1, 7, 42 and
+    /// 31337: card-free homeworlds cross at 632–685 yr, a Growth card at the
+    /// first barrier brings seat 0 across at 473–482 yr (appendix §D.23).
+    pub homeworld_ceiling: f64,
 
     /// Weibull shape for the pop bands (§5.1, R-P1).
     pub weibull_k: f64,
@@ -359,6 +371,7 @@ impl GalaxyConfig {
             homeworld_ring_frac: 0.5,
             homeworld_rich_density: 1.4,
             homeworld_poor_density: 0.25,
+            homeworld_ceiling: 4.2,
             weibull_k: 1.4,
             seed,
         };
@@ -760,8 +773,8 @@ impl Galaxy {
             planets.push(Planet {
                 id,
                 position,
-                habitability: Band::new(4.0), // identical 4 / 4 / 2 shape (§3, rev: infra 2)
-                biosphere: Band::new(4.0),
+                habitability: Band::new(config.homeworld_ceiling),
+                biosphere: Band::new(config.homeworld_ceiling),
                 infrastructure: Band::new(2.0), // K = min = 2: the new starting development gate
                 minerals,
                 is_homeworld: true,
@@ -840,10 +853,12 @@ mod tests {
     #[test]
     fn homeworlds_are_identical_in_shape() {
         let g = Galaxy::generate(GalaxyConfig::new(6, 123)).unwrap();
+        let ceiling = GalaxyConfig::new(6, 123).homeworld_ceiling;
+        assert!(ceiling > 4.0, "population Band IV must be reachable below the ceiling");
         for &hw in &g.homeworlds {
             let p = g.planet(hw);
-            assert_eq!(p.habitability, Band::new(4.0));
-            assert_eq!(p.biosphere, Band::new(4.0));
+            assert_eq!(p.habitability, Band::new(ceiling));
+            assert_eq!(p.biosphere, Band::new(ceiling));
             assert_eq!(p.infrastructure, Band::new(2.0));
             assert_eq!(p.k(), Band::new(2.0)); // K = min = 2
         }

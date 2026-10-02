@@ -1126,6 +1126,43 @@ relation between `Card::cost` and a homeworld's seeded bank — two magnitudes
 nobody reconciled. **Record when a card actually landed, and assert the
 precondition in both directions**, rather than assuming the play took.
 
+### A policy that replaces what an unbeatable force destroys is a farm (T-139)
+
+**Two loops in one landing, and the same census found both.** The missile
+card's first 800-yr run did not finish in 600 s. Counting the logged events by
+kind over the last 50 simulated years named each loop in one table:
+
+- **5,117 pickets spawned on one seat.** A blockader that sees a sentry it can
+  outrun withdraws, and the blockade policy then read the port as uncovered
+  and built another.
+- **538 sentries spawned.** Blockade stacks wrecked each sentry standing
+  beside them, and the center replaced it.
+
+Neither decision is wrong alone; together they convert one side's minerals into
+the other side's kills at a steady rate. Habits:
+
+- **When a run stops scaling, count events by kind over a late window before
+  reading any code.** The run with the loop and the run without it differ in
+  one row by three orders of magnitude.
+- **A stock target that counts the hulls standing will refill what is
+  destroyed, at whatever rate the enemy destroys it.** Whether it should is a
+  pricing question (the author's ruling, R-WAR46): a price that cannot see the
+  loss does not limit it — a sentry is 0.03 kt against banks of thousands —
+  so make the price see it (R-WAR47) rather than adding a counting rule.
+- **A sweep whose arms are bit-identical is measuring a knob with no input,
+  and the input is the place to look (R-WAR47).** The first `κ` sweep read
+  zero sentry losses on runs that ordered 5,589 sentries, because the loss
+  counter matched role Sentry at the wreck and a sentry under fire withdraws
+  first, standing down to Reserve. One census of the last 50 years by log
+  kind found 1,922 withdrawals. **Count a loss where the post is left, not
+  where the hull dies** — the same trap as R-O89's retirements, which a
+  filter read after the re-role.
+- **A flag that schedules nothing must be cleared on every exit path.** A
+  shooter left in `firing` with no discharge pending can never be restarted,
+  because a new encounter starts discharges only for a shooter not already in
+  `firing`. The early return that left it set was a `None` from a lookup two
+  calls down.
+
 ### Census a trigger's predicate before building on it (T-134 stage 2)
 
 **The first rule for a picket joining a pitched battle fired zero times on the
@@ -1532,6 +1569,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/cards.rs` | the **card layer** — 18 tier-0 placeholders (3 slants × 6 trees), `Order`, and the coerce-never-reject rule |
 | `src/sim.rs` | the light-lagged discrete-event ECS engine |
 | `src/sim/fire.rs` | **fire on the main loop** (T-133): encounter detection on every trajectory change, discharge events, the wreck point, belief events A and B, per-fleet decisions and course changes from a moving start |
+| `src/sim/missile.rs` | **missiles and the supply line** (T-139): salvos, round flight and arrival, point defense by allied beams, sentries in proportion to what a center holds, rearming, return trips and ammo runs, the ordnance book's offers |
 | `src/combat.rs` | **engine-native combat**: kinematics, weapons, loadouts, structure and the wreck point, fire control, `resolve_engagement`, and the tuned station-keeping spread — **two consumers**, the arena (`resolve_engagement`) and `sim::fire` (the rest) |
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |
 | `src/matching.rs` | the Exchange (order-book matching) — wired in at T-01; **it was never in the module list, so it did not compile as part of the crate and its tests never ran in CI** |
@@ -2414,6 +2452,8 @@ changes how you *work*, not what is left to do:
   | T-130 (`exp`/`ln` as four-multiply polynomials), seed 7, 400 yr: instructions per event **−0.84%**; 15 paired rounds **0.986 ± 0.013** — not resolved; combat bed not resolved | — | — | — |
   | **T-134 (Exchange at a spatial equilibrium, delivery room, one holding per (empire, planet))**, 3 seats, 1,500 yr, 3 interleaved rounds against the shipped binary: **128.4–135.7 → 145.1–156.8 yr/s**, `ns/event` 12,645–13,116 → 10,874–11,993 | — | **+11% to +17%** | — |
   | T-134 stage 2 (side duties: miner and colony-ship freight runs, picket sorties), 3 seats, 1,500 yr, 3 interleaved rounds: `ns/event` min-of-3 **+2.5% / −2.6%** on seeds 1 / 7, events +0.9% / +1.1%; combat bench seed 1, 2 rounds: **11.17–11.34 → 10.87–10.92 yr/s**, fewer events at higher `ns/event`, the new code ≤0.4% of instructions | — | not resolved / **about −3%** | — |
+  | R-MX8 (a center's abundance hauled to a center with demand), 3 seats, 1,000 yr, 2 interleaved rounds against `main`: first build **18,366–21,232** against **14,915–16,633 `ns/event`**; with the buyer's side read once and a per-seat owned-planet index, **14,276–15,080**, bit-identical to the first build; events +16% / +8% ; 8 seeds × 4,000 yr: `ns/event` **+2.18% ± 1.06**, events +2.62% | — | **122–127 against 128–137 yr/s** at 1,000 yr; **−4.64% ± 0.93** at 4,000 | — |
+  | T-139 (the missile card; sentries in proportion to holding and population), 3 seats, 800 yr, seed 1, sequential single runs: card-free **6.6 s / 384,448 events**, missile card on one seat **6.5 s / 386,441**; with the Warfare card on another seat 19.4 s / 3,187,036 against Warfare alone 12.0 s / 2,740,602 — the extra events are blockade traffic, not missiles (appendix §D.24) | — | not resolved at one run | — |
 
   **R-WAR9's row is a case where the workload changed and the columns must be
   read that way** (§2's T-111 caveat). Flying colony ships at the rate their

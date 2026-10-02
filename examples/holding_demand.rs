@@ -30,7 +30,7 @@ fn main() {
             next += every;
             let c = sim.book_census();
             for (i, name) in ["C", "M", "Y"].iter().enumerate() {
-                let sum = |v: &Vec<[f64; 3]>| v.iter().map(|r| r[i]).sum::<f64>();
+                let sum = |v: &Vec<[f64; hyades_engine::sim::MATERIALS]>| v.iter().map(|r| r[i]).sum::<f64>();
                 // Per empire: its own away asks against its own bids, and against its haulers' room.
                 let own_demand: f64 = (0..c.bid.len()).map(|p| c.ask_away[p][i].min(c.bid[p][i])).sum();
                 let own_room: f64 =

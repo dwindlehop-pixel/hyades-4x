@@ -189,6 +189,10 @@ pub enum LogEvent {
     },
     /// A chosen build was funded and applied this cycle.
     BuildApplied { player: u32, center: PlanetId, order: BuildOrder, cost: f64, stockpile_after: f64 },
+    /// **A center synthesized a refined material** (galaxy §4.2): `made`
+    /// kilotonnes of `material` out of `used` kilotonnes of its precursors, the
+    /// difference left at the center as slag (R-O59).
+    Synthesized { player: u32, center: PlanetId, material: crate::resources::Material, made: f64, used: f64 },
 
     /// In-ground density was mined into a stockpile (a center's local take, or
     /// an outpost's periodic [`crate::sim`] mining tick).
@@ -292,6 +296,21 @@ pub enum LogEvent {
     /// **A hull changed course under a threat or under fire** (T-133, §8.19.7):
     /// the fleet decision a belief event raised. `to` is the new destination.
     CourseChanged { player: u32, vehicle: Entity, role: Role, reason: CourseReason, to: PlanetId },
+    /// **A missile round reached the end of its flight** (T-139). `player`
+    /// fired it from `vehicle` at a `target_seat` hull; `outcome` says whether
+    /// it hit, was shot down by point defense, or missed.
+    MissileResolved { player: u32, vehicle: Entity, target: Entity, target_seat: u32, outcome: MissileOutcome },
+}
+
+/// **How a missile round's flight ended** (T-139).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MissileOutcome {
+    /// It delivered its warhead.
+    Hit,
+    /// A beam within point-defense range of the target destroyed it.
+    Intercepted,
+    /// The target was gone, or past the round's powered reach.
+    Missed,
 }
 
 /// **Why a hull changed course** (T-133).
@@ -313,7 +332,7 @@ impl LogEvent {
     pub fn category(&self) -> LogCategory {
         use LogEvent::*;
         match self {
-            ProductionDecision { .. } | BuildApplied { .. } => LogCategory::Production,
+            ProductionDecision { .. } | BuildApplied { .. } | Synthesized { .. } => LogCategory::Production,
             PicketIntercept { .. } => LogCategory::Combat,
             MineralsExtracted { .. } | MiningExhausted { .. } | FreighterTransfer { .. } => LogCategory::Mining,
             FleetGenerated { .. }
@@ -326,7 +345,9 @@ impl LogEvent {
             PopulationStep { .. } => LogCategory::Population,
             ScanReceived { .. } => LogCategory::Scanning,
             CardPlayed { .. } => LogCategory::Cards,
-            EncounterBegan { .. } | HullWrecked { .. } | CourseChanged { .. } => LogCategory::Combat,
+            EncounterBegan { .. } | HullWrecked { .. } | CourseChanged { .. } | MissileResolved { .. } => {
+                LogCategory::Combat
+            }
         }
     }
 
@@ -337,6 +358,7 @@ impl LogEvent {
             ProductionDecision { player, .. }
             | PicketIntercept { player, .. }
             | BuildApplied { player, .. }
+            | Synthesized { player, .. }
             | FreighterTransfer { player, .. }
             | FleetGenerated { player, .. }
             | VehicleSpawned { player, .. }
@@ -348,6 +370,7 @@ impl LogEvent {
             | ScanReceived { player, .. }
             | HullWrecked { player, .. }
             | CourseChanged { player, .. }
+            | MissileResolved { player, .. }
             | CardPlayed { player, .. } => Some(player),
             // An encounter is about two seats, so it belongs to neither.
             MineralsExtracted { player, .. } => Some(player),
@@ -359,14 +382,16 @@ impl LogEvent {
     pub fn planet(&self) -> Option<PlanetId> {
         use LogEvent::*;
         match *self {
-            ProductionDecision { center, .. } | BuildApplied { center, .. } => Some(center),
+            ProductionDecision { center, .. } | BuildApplied { center, .. } | Synthesized { center, .. } => {
+                Some(center)
+            }
             MineralsExtracted { planet, .. }
             | MiningExhausted { planet, .. }
             | PopulationStep { planet, .. }
             | ScanReceived { planet, .. } => Some(planet),
             FreighterTransfer { at, .. } | VehicleParked { at, .. } | VehicleScrapped { at, .. } => Some(at),
             CourseChanged { to, .. } => Some(to),
-            EncounterBegan { .. } | HullWrecked { .. } => None,
+            EncounterBegan { .. } | HullWrecked { .. } | MissileResolved { .. } => None,
             PicketIntercept { target, .. } => Some(target),
             VehicleSpawned { to, .. } => Some(to),
             FleetGenerated { .. } => None,
@@ -392,6 +417,7 @@ impl LogEvent {
             | HullWrecked { vehicle, .. }
             | CourseChanged { vehicle, .. }
             | EncounterBegan { target: vehicle, .. }
+            | MissileResolved { vehicle, .. }
             | VehicleScrapped { vehicle, .. } => Some(vehicle),
             _ => None,
         }
@@ -428,6 +454,12 @@ impl fmt::Display for LogEvent {
                 f,
                 "P{player} planet#{} built {order:?} (cost={cost:.2}, stockpile now {stockpile_after:.2})",
                 center.0
+            ),
+            Synthesized { player, center, material, made, used } => write!(
+                f,
+                "P{player} planet#{} synthesized {made:.3} {material:?} from {used:.3} (slag {:.3})",
+                center.0,
+                used - made
             ),
             MineralsExtracted { player, planet, amount, density_after } => {
                 write!(f, "P{player} planet#{} mined {amount:.3} (density now {density_after:.3})", planet.0)
@@ -478,6 +510,9 @@ impl fmt::Display for LogEvent {
             }
             CourseChanged { player, role, reason, to, .. } => {
                 write!(f, "P{player} {role:?} changes course ({reason:?}) for planet#{}", to.0)
+            }
+            MissileResolved { player, target_seat, outcome, .. } => {
+                write!(f, "P{player} missile at a P{target_seat} hull: {outcome:?}")
             }
         }
     }

@@ -871,6 +871,10 @@ default**, and a **tier-1 card makes it refinable**. Wastage-reduction and
 slag-refining are therefore both mass-recovery plays, and the mass sits on the
 board in the meantime rather than vanishing from the ledger.
 
+*Built:* synthesis leaves its loss as slag at the forge, in the same per-planet
+store scrapped and wrecked hulls already use, and the mass ledger counts it.
+Refinable slag (the tier-1 card) is not built (T-03).
+
 ### 9.4 Ordnance is mass; energy weapons are not (R-O60)
 
 The weapon families split on a **logistical** axis, orthogonal to the

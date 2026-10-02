@@ -275,8 +275,10 @@ a desync, and by design law #16 an unreproducible one. Per-round clearing makes
 the book's contents a **set**, and a set has a canonical order.
 
 **2.10 `RATIFIED` — books are one per commodity, spanning empires**, with the
-commodity axis being **per color**. Determinism is unaffected: the book is
-already ordered by pressure then entity id, and entity ids are globally unique.
+commodity axis being **per material** — the three basics, the three supers and
+apex (`Hyades_matching.md` §8.7; seven books). Determinism is unaffected: the
+book is already ordered by pressure then entity id, and entity ids are globally
+unique.
 
 **2.11 `RATIFIED` — a bid is derived, never chosen by a human.**
 

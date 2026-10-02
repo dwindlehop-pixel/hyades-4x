@@ -51,6 +51,70 @@ impl Super {
     }
 }
 
+/// **Every material on the ladder** — the three basics, the three supers and
+/// apex (`Hyades_galaxy_and_autopilot.md` §4.1). One index over all seven, so a
+/// book, a bill or a want can name any of them; the basics come first in
+/// `Basic::ALL` order, which every three-color array in the engine assumes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Material {
+    Cyan,
+    Magenta,
+    Yellow,
+    Red,
+    Green,
+    Blue,
+    /// Placeholder name *Platinum* (R-M1).
+    Apex,
+    /// **Missile rounds** (T-139) — fabricated from basics at an owned center,
+    /// one kilotonne of rounds from one kilotonne of basics (design law #11).
+    /// Not a mineral: no Design bill names it and no yard spends it on a hull.
+    /// It is carried in a hold and held at a planet like any other material,
+    /// so it traverses real space (`Hyades_industry.md` §8.1), and its book is
+    /// the Exchange's eighth, closed unless an empire's Doctrine opens it.
+    Ordnance,
+}
+
+impl Material {
+    pub const ALL: [Material; 8] = [
+        Material::Cyan,
+        Material::Magenta,
+        Material::Yellow,
+        Material::Red,
+        Material::Green,
+        Material::Blue,
+        Material::Apex,
+        Material::Ordnance,
+    ];
+    /// The synthesized tiers — supers and apex, in `Super::ALL` order then apex.
+    pub const REFINED: [Material; 4] = [Material::Red, Material::Green, Material::Blue, Material::Apex];
+
+    pub fn of_basic(b: Basic) -> Self {
+        match b {
+            Basic::Cyan => Material::Cyan,
+            Basic::Magenta => Material::Magenta,
+            Basic::Yellow => Material::Yellow,
+        }
+    }
+
+    pub fn of_super(s: Super) -> Self {
+        match s {
+            Super::Red => Material::Red,
+            Super::Green => Material::Green,
+            Super::Blue => Material::Blue,
+        }
+    }
+
+    /// The basic this is, if it is one.
+    pub fn basic(self) -> Option<Basic> {
+        match self {
+            Material::Cyan => Some(Basic::Cyan),
+            Material::Magenta => Some(Basic::Magenta),
+            Material::Yellow => Some(Basic::Yellow),
+            _ => None,
+        }
+    }
+}
+
 /// The three rotationally-symmetric homeworld archetypes
 /// (`Hyades_galaxy_and_autopilot.md` §3). Each is rich in two basics, poor in
 /// the third — the two precursors of its single native super.
@@ -191,6 +255,8 @@ pub struct Minerals {
     pub blue: f64,
     /// Apex ultra-resource (placeholder name *Platinum*), R-M1.
     pub apex: f64,
+    /// Missile rounds, kt (T-139, [`Material::Ordnance`]).
+    pub ordnance: f64,
 }
 
 impl Minerals {
@@ -234,6 +300,81 @@ impl Minerals {
         self.yellow += o.yellow;
     }
 
+    /// Kilotons of one material.
+    #[inline]
+    pub fn get(&self, m: Material) -> f64 {
+        match m {
+            Material::Cyan => self.cyan,
+            Material::Magenta => self.magenta,
+            Material::Yellow => self.yellow,
+            Material::Red => self.red,
+            Material::Green => self.green,
+            Material::Blue => self.blue,
+            Material::Apex => self.apex,
+            Material::Ordnance => self.ordnance,
+        }
+    }
+
+    /// Add `v` kilotons of one material (negative to remove).
+    #[inline]
+    pub fn add(&mut self, m: Material, v: f64) {
+        match m {
+            Material::Cyan => self.cyan += v,
+            Material::Magenta => self.magenta += v,
+            Material::Yellow => self.yellow += v,
+            Material::Red => self.red += v,
+            Material::Green => self.green += v,
+            Material::Blue => self.blue += v,
+            Material::Apex => self.apex += v,
+            Material::Ordnance => self.ordnance += v,
+        }
+    }
+
+    /// Supers and apex on hand, in `Material::REFINED` order.
+    #[inline]
+    pub fn refined(&self) -> [f64; 4] {
+        [self.red, self.green, self.blue, self.apex]
+    }
+
+    /// Supers and apex together.
+    #[inline]
+    pub fn refined_total(&self) -> Price {
+        Price::new(self.red + self.green + self.blue + self.apex)
+    }
+
+    /// **Every tier together, ordnance included** — what a hold carries and
+    /// what the mass ledger weighs. The basics are summed first, so a stock
+    /// with nothing else reads exactly [`Self::basic_total`].
+    #[inline]
+    pub fn total(&self) -> Price {
+        let rest = self.red + self.green + self.blue + self.apex + self.ordnance;
+        if rest == 0.0 {
+            return self.basic_total();
+        }
+        self.basic_total() + Price::new(rest)
+    }
+
+    /// **What a yard can spend** — every mineral tier, without ordnance, which
+    /// pays for nothing. Equal to [`Self::total`] wherever no rounds are held.
+    #[inline]
+    pub fn spendable_total(&self) -> Price {
+        if self.ordnance == 0.0 {
+            return self.total();
+        }
+        self.total() - Price::new(self.ordnance)
+    }
+
+    /// Fold another stock into this one, every tier.
+    #[inline]
+    pub fn add_all(&mut self, o: &Minerals) {
+        self.add_basics(o);
+        self.red += o.red;
+        self.green += o.green;
+        self.blue += o.blue;
+        self.apex += o.apex;
+        self.ordnance += o.ordnance;
+    }
+
     /// Try to spend `amount` total basic minerals, drawing from each color in
     /// proportion to how much is held. Returns `false` (and spends nothing) if
     /// the pool is short. Vehicle/infra costs flow through here.
@@ -268,6 +409,7 @@ impl Minerals {
         taken.green = 0.0;
         taken.blue = 0.0;
         taken.apex = 0.0;
+        taken.ordnance = 0.0;
         self.cyan -= taken.cyan;
         self.magenta -= taken.magenta;
         self.yellow -= taken.yellow;

@@ -95,6 +95,82 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-141. Decide whether spent-round debris should be cut
+
+**Open — the author's question; not in PR #12.** Every missile round, hit,
+intercepted or missed, ends in `Simulation::ordnance_debris`, a single
+kilotonne count with no position. It is read only by the mass ledger
+(`MassLedger::ordnance_spent`). No decision reads it and nothing in the game
+can see it.
+
+The tension is design law #11: *expended ordnance leaves the fleet lighter*,
+with no exclusions. Deleting the store outright would make a fired round
+vanish from the ledger, so cutting it needs one of three resolutions:
+
+- **Keep it** as it is: one `f64` and one ledger term. Cost: no events and no
+  decisions; `mass_is_conserved_with_regrowth_off` and the T-139 tests read it.
+- **Fold it into an existing store**, for example slag at the world nearest
+  the hit, or the target's wreck mass. Rounds stay conserved without a store of
+  their own. This gives debris a place, which is content the author may or may
+  not want.
+- **An author-ratified exemption** for spent ordnance, recorded against law #11
+  and its `mass_is_conserved` guard. Law #11's own text warns that an
+  exemption is a free resource a search will find.
+
+**What would settle it:** the author's ruling on whether spent ordnance must
+be conserved. Then delete the field and update the ledger, the tests and
+warfare §8.22.2 to match.
+
+---
+
+### T-140. Sweep the sentry ratio and its thresholds
+
+**Open — the author's direction; not in PR #12.** `Doctrine::sentry_ratio`
+(the card writes 1e-5 kt of sentry per kt defended), the point-defense
+saturation threshold (`Standing::launches_into`), and the loss price
+`Doctrine::sentry_loss_price` (`κ = 3`, chosen by Monte Carlo at R-WAR47 for
+the ratio the card writes) are placeholders or open (R-TECH24, R-WAR44,
+R-WAR47). A ratio sweep moves the losses `κ` multiplies, so sweep the two
+jointly; `examples/sentry_price_sweep` is the bed. Sweep them on the card
+bed, with the arena's laser-vs-missile balance as the check on the missile
+magnitudes. The reach census to start from is appendix §D.24.
+
+---
+
+### T-139. Supply lines, and the first missile Design
+
+**Built, in PR #12 with T-138.** The basic deep-space missile is
+`TIER0[13]` (Technology §9): the sentry Design `Butte` on the Limited Offensive
+hull, posted at each center in proportion to its holding and population. Rounds
+are `Material::Ordnance`, fabricated from basics and carried as mass. Point
+defense is by every allied beam hull near the target. Resupply is by return and
+by ammo run, and the ordnance book is the Exchange's eighth, closed by default
+(warfare §8.22, matching §10.5). Card-free runs reproduce the engine before it to
+the last event on 8/8 seeds. Appendix §D.24.
+**Open:** R-TECH24, R-WAR44, R-WAR47 (`κ = 3` by Monte Carlo, unratified), R-WAR48, R-MX15, T-140 (the sweep), the deep-tier
+Politics card that opens the ordnance book, and the card's value (no harness
+reads `T_i`, R-TECH1).
+
+---
+
+### T-138. Supers, apex and the refined Exchange; production priced
+
+**Advanced to built — the author's rulings, in PR #12.** Tiers 1–2 cost basics;
+a tier-3 card's cost in supers is its Design writes (`DesignBill`); every win
+condition is conditioned on apex (trees §4.6). Apex is Red + Green + Blue in
+equal parts. A homeworld's ceiling is `Band 4.2` so population `Band IV` is
+reachable (galaxy §3.0). Synthesis at a forge (galaxy §4.5), slag at the forge,
+every tier on the ledger, seven Exchange books with refined bids, asks and
+capacity asks, refined freight (matching §8.7), and production priced by a
+standing order's reservation (matching §10.4). Card-free runs reproduce the
+engine before it to the last event on 8/8 seeds. Appendix §D.23.
+**Open:** R-M5 (hauling precursors to a forge), R-G4 ("exactly one super" is a
+gradient as built), R-MX11–R-MX13 (monopoly, monopsony, cartel), urgency from
+threat belief (§10.4), the general shadow-price production form, win
+conditions themselves, refinable slag (T-03).
+
+---
+
 ### T-137. Voice tables need played cards and relations in `Snapshot`
 
 **Open (R-TREE13).** A card's name and flavor change with what this empire and
@@ -129,8 +205,8 @@ rival production. Seven stages, the reach audit first. Opens R-WAR40–R-WAR43.
 
 ### T-134. The Exchange at a spatial equilibrium; one holding per (empire, planet)
 
-**Advanced — stages 1, A, B, C and 2 landed; R-MX8, R-MX9, R-MX10 and R-WAR39
-open.** The author approved
+**Advanced — stages 1, A, B, C and 2 landed, and R-MX8 is resolved; R-MX9,
+R-MX10 and R-WAR39 open, and the idle pool is not started.** The author approved
 clearing the cross-empire book at a spatial price equilibrium (R-MX7) and ruled
 that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
 
@@ -143,6 +219,12 @@ that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
   move; +51.27% ± 1.71% in total, C's own share not resolved at 2 SE.
 - **Resolved:** R-P18 (politics §2.14). **Ratified:** R-MX7 and matching §8.
 - **Opened:** R-MX8 — may a hauler draw on a center's holding (matching §8.5).
+- **Resolved: R-MX8** (the author's ruling, matching §8.5). A hauler carries a
+  center's abundance — its holding above its own next works bill — to the center
+  it serves, where that center's price discounted over the leg beats the
+  origin's. Colony-years +1.29% ± 0.22 (8/8 seeds), work-years +6.22% ± 3.62
+  (not resolved at 2 SE), colonies identical; loads at owned centers are 7–8% of
+  loaded tonnage. Appendix §D.22.
 - **Stage 2** — the internal duty exchange (matching §9), on the author's
   direction: a miner on a large holding runs freight when a center wants it
   (§9.1); a colony ship whose origin is still growing runs one load home before
@@ -503,7 +585,9 @@ the payable fraction moving only 0.043 → 0.052 is that ceiling showing.
 
 - **Inter-center transfer** (T-76's other half, development freight). A center
   holding 275 kt of Magenta against 0.59 kt of Cyan ships Magenta to a center
-  that needs it. Leaves the voyage structure alone, redistributes after the fact,
+  that needs it. **Landed for abundance at R-MX8** (matching §8.5): a center
+  ships what its own next bill does not claim, under the Exchange's discount;
+  `develop_bias` (shipping what a center *could* spend at home) is not built. Leaves the voyage structure alone, redistributes after the fact,
   and is the one that is already specified (§7.3).
 - **Let local mining feed the outpost pile rather than the bank**, so everything
   a center banks has passed through a routing decision. The most direct removal
@@ -834,7 +918,7 @@ a population, because those are genuinely a world's capacity to hold people.
 | 8 | Extraction and fabrication rates from Infra × allocation | T-70 | ~~**T-74**~~ — **LANDED** |
 | 9a | `Works` struct + CardId-ordered fold + commutativity property test | T-74 | ~~**T-75a**~~ — **LANDED** |
 | 9b | `Doctrine` allocation vector wired to the fold | T-75a | ~~**T-75b**~~ — **LANDED** |
-| 10 | Development freight and the balanced-exchange default | T-73 | **T-76** — *load leg landed (R-O89); routing and development freight open* |
+| 10 | Development freight and the balanced-exchange default | T-73 | **T-76** — *load leg landed (R-O89), abundance transfer between centers landed (R-MX8); routing and `develop_bias` open* |
 | 11 | Exchange settles into a **freight leg**, not a transfer (refined mass traverses real space) | T-01 | **T-77** |
 
 **T-76 is part-landed (R-O89, `Hyades_industry.md` §6.20).** R-O85 promoted it to
@@ -1015,6 +1099,8 @@ leaving the ledger. Standing-layer §9.3, roadmap item 13.
 Ordnance is mass; energy weapons are not. Expended rounds leave the fleet, so a
 fleet that has been shooting accelerates *better* — which is a live observable
 under §6.2, not just bookkeeping. Standing-layer §9.4, roadmap item 14.
+**Advanced (T-139):** missile rounds are `Material::Ordnance` in the hold and
+end as debris on the ledger; torpedoes remain.
 
 ---
 

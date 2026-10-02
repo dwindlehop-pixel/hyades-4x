@@ -3322,6 +3322,11 @@ mechanism as §7.1**, so `sim §2a`'s existing claim that "commerce can raise a
 partner's infrastructure… and embargo a way to let it decay" is implemented
 rather than merely asserted.
 
+**Status.** The route and its discount landed at R-MX8 (`Hyades_matching.md`
+§8.5, `RATIFIED`) for a center's **abundance**, meaning its holding above its own
+next works bill. `develop_bias`, which ships part of what a center could spend
+at home, is `OPEN` and not built (T-76).
+
 ---
 
 
@@ -3516,6 +3521,14 @@ ceiling — are **R-IND6**, deliberately deferred: they should not be designed u
 the basic ramp is measured, because their whole job is to bend a curve that does
 not exist yet. §8.1 is not deferred with them; it is a property of how *all*
 refined mass moves, and it applies from the first freighter.
+
+**Since the author's ruling on tiers** (`Hyades_trees_and_card_value.md` §4.6),
+supers and apex are consumed by **tier-3 Design writes and win conditions**,
+not by works. R-IND6 stays `OPEN` and is not the path refined material takes
+into the economy; it would be a second consumer if ever designed. Refined mass
+traverses space as §8.1 requires: haulers carry supers and apex toward a
+center's refined need, and Exchange contracts deliver them to a shared rock
+(`Hyades_matching.md` §8.7).
 
 ---
 

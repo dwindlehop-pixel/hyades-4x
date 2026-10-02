@@ -30,6 +30,9 @@ pub enum VehicleKind {
     /// (`Hyades_warfare_tree.md` §8, T-112) — a standing mission, so it never
     /// auto-scraps (roles §4.6).
     Picket,
+    /// **Guarding an owned center with missiles** (T-139) — a standing
+    /// mission.
+    Sentry,
     Reserve,
     Scrapped,
 }

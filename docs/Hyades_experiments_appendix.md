@@ -2613,6 +2613,348 @@ hulls fly where, and so which survey scans run — and not the cost of the side
 duties. A per-function comparison against the old binary's profile would test
 it.
 
+## D.22 R-MX8 — a center's abundance hauled to a center with demand
+
+*Supports `Hyades_matching.md` §8.5. Card-free bed: `examples/work_years`,
+3 seats, 4,000 yr, the 8 seeds of §D.20, paired log-ratios against `main` at
+`c831aad`, standard errors across seeds. All four binaries ran at once on a
+4-core container, so the `yr/s` column compares like with like and not with
+other entries.*
+
+**The objective.** Colony-years **+1.29% ± 0.22, 8/8 seeds up** (5.9 SE).
+Work-years **+6.22% ± 3.62, 5/8 up** — 1.7 SE, not resolved; per seed −2.1% to
++28.9%, which reads as a reordering of a compounding run rather than a gradient.
+Colonies are identical on all 8 seeds, because the bed is saturated at `k_high`
+(`AGENTS.md` §7). Vehicles +10.1% ± 2.3, 7/8 up.
+
+An inference: the colony-years gain comes from ore reaching young colonies'
+first rungs sooner. Confidence about 70%. A per-colony census of the time from
+founding to first build in both arms would confirm or refute it.
+
+**Mechanism check** (a scratch counter over `FreighterTransfer` loads, keyed on
+whether the planet was owned by the loading empire at that time; 3 seats,
+1,500 yr). Loads at owned centers: **8.19% and 7.25% of loaded tonnage** on
+seeds 1 and 7 (6,050 and 5,996 loads), against **0.00%** on `main`, which is
+the control that says the counter reads what it claims to. On 6 seats, seed
+31337, the first such load is at 32.4 yr. `examples/bank_mix` (seed 1, 800 yr),
+`main` → R-MX8: freight's share of banked ore 8.88% → 9.97%, of which some is
+ore banked twice (a center-to-center load re-enters a bank); median payable
+fraction 0.054 → 0.059; infrastructure builds 523 → 650.
+
+**What it cost, and where.** The first build ran `ns/event` **+32.4% ± 2.7, 8/8
+seeds**, with events +2.6% — the "slower per unit" row of `AGENTS.md` §2's
+reading table. Callgrind (seed 1, 1,000 yr, the three freight functions kept
+out of line in a scratch build): program 43.5 G → 58.4 G instructions, of which
+`next_pickup` went 5.1 G → 17.4 G — the offer priced for every owned center on
+every milk-run stop (7.4 G) and the walk over every planet to find them
+(about 4.9 G). Two changes, each bit-identical to the first build at 1,000 yr
+on seeds 1 and 7 (events, colonies and population to the printed digit):
+
+| build, 1,000 yr, seeds 1 and 7, 2 interleaved rounds | `ns/event` | `yr/s` | events |
+|---|---|---|---|
+| `main` | 14,915–16,633 | 128.4–136.9 | 468,107 / 512,219 |
+| R-MX8, first build | 18,366–21,232 | 86.7–98.8 | 543,252 / 551,095 |
+| + the buyer's side read once, abundance tested before the leg | 18,084–19,926 | 91.6–100.3 | same |
+| + `owned_planets`, a per-seat index of owned planets | **14,276–15,080** | **122.1–127.1** | same |
+
+The index also serves `best_delivery_center`, which walked the galaxy on `main`
+too (7.8 G of `main`'s 43.5 G). At 1,000 yr the per-event cost is at or below
+`main`'s, and the remaining `yr/s` gap is the +16% and +8% more events the
+changed run does. **On the full bed** (8 seeds, 4,000 yr, the final build
+reproducing the first build's work-years, colony-years, colonies and events on
+every seed): `ns/event` **+2.18% ± 1.06, 6/8 up**; `yr/s` −4.64% ± 0.93;
+events +2.62% ± 0.22. The residual per-event cost is 2.1 SE and is not
+located; a callgrind pair at 4,000 yr would locate it.
+
+**Test budget.** `no_nan_or_infinity_reaches_replicated_state` went 37.4 →
+44.4 s at 200 yr and the determinism target 53.9–55.0 → 62.8–62.9 s. Trimmed to
+150 yr (probe in the test's comment), the target runs 56.1–58.4 s; at 130 yr it
+is 55.0–56.2 s, so that test no longer sets the target's time —
+`stepping_in_any_granularity_reaches_the_same_state` (35.6 s on `main`, 36.0 s
+here) and scheduling do. The target is under 60 s and above the 54 s the
+tolerance band asks a fix to reach; `main` itself runs it at 53.9–55.0 s.
+
+## D.23 T-138 — supers, apex, the refined Exchange, priced production, and a reachable Band IV
+
+*Supports galaxy §3.0 and §4.5, technology §3.2 and §3.7, trees §4.6, matching
+§8.7 and §10.4. Card-free bed: `examples/work_years`, 3 seats, 4,000 yr, the 8
+seeds of §D.20, against the R-MX8 build (`e7e883b`), all four binaries at once.*
+
+**Population Band IV was unreachable.** The top population edge
+(`PopBands::from_weibull(1.4, 4.0)`) is the `Band IV` mass, 715,541.75 kt, and
+so was every homeworld's `K` (habitability and pristine biosphere both `Band
+4.0`); no world had a ceiling above it (0 of the 200-planet test galaxy, 19 at
+it). The closed-form logistic approaches its ceiling without reaching it, so no
+world could hold population `Band IV` and the synthesis gate could never open;
+a homeworld stood at 61% of it at 600 yr. The same comparison feeds
+`industrial_signature`, which could never be true either.
+
+**Calibrating the ceiling to the author's schedule** (a scratch harness, never
+landed: seat 0's homeworld population against the `Band IV` edge every 10 yr;
+seeds 1, 7, 42, 31337; 1,600 yr; rounds at 200 / 600 / 1,000 / 1,400 yr):
+
+| ceiling (Band) | card-free, every seat | Growth card ×1.6 at round 1, seat 0 | Expansion card ×8 at round 1, seat 0 |
+|---|---|---|---|
+| 4.05 | 693–745 yr | 503–522 yr | identical to card-free |
+| 4.1 | 653–705 yr | 483–502 yr | identical to card-free |
+| 4.2 | 632–685 yr | 473–482 yr | identical to card-free |
+| 4.3 | 623–675 yr | 463–482 yr | identical to card-free |
+
+At 4.2 a growth-dedicated build crosses before round two's card selection and
+every card-free seat crosses between rounds two and three, as the ruling asks.
+The ceiling moves the crossing by about 70 yr over 4.05–4.3. The Expansion card
+draws no population, so no build in the engine drains a homeworld faster than
+the default and the ruling's round-four case cannot be measured yet.
+
+**Card-free, the whole layer is inert** — the 4.2 ceiling and every refined
+mechanism together: work-years, colony-years, colonies, vehicles and events
+**bit-identical on 8/8 seeds**; only the population figure moves (seed 1 at
+1,000 yr: 64,267,894 → 68,593,963 kt). An inference, at about 90% confidence:
+nothing a card-free run decides reads a homeworld's population above the
+`Band III` edge. A census of the decisions that read population would confirm it.
+
+**Throughput.** The first build ran `ns/event` +5.49% ± 1.05 (8/8) on that bed
+with identical events — the new code's own cost. With fast paths for a game
+with no standing order and for a hauler with no refined want, interleaved at
+1,000 yr (3 rounds, seeds 1 and 7, events identical): 15,017–15,287 against
+15,110–15,477 and 14,053–14,861 against 14,285–14,788 `ns/event`; min-of-3
++0.6% and +1.7%, inside the run-to-run spread — not resolved. Test targets:
+unit 5.6 s, determinism 51.2 s, smoke 35.2 s, telemetry 25.9 s (the
+determinism target was 56–58 s at §D.22).
+
+**The mechanism bed** (`a_super_billed_design_is_synthesized_traded_and_built_with_mass_conserved`,
+3 seats, 200 planets, 1,500 yr, regrowth off, every seat's colonizer and miner
+Designs billed 25% Red — the state a tier-3 Design write leaves): 3.04 kt of
+Red synthesized, 393 hulls built carrying Red, mass conserved to 1e-9. Two
+defects found on the way, both fixed before landing:
+
+- **A blocked Design stopped the yard.** A seat whose colonizer owed Red it
+  could not get chose that order at every decision, declined it, and built
+  nothing else — its banks did not move for centuries. Fixed by quoting a
+  Design the center cannot pay as unpayable and choosing again (§10.4).
+- **Quoting hid the demand.** With the Design quoted unpayable up front, the
+  center never ordered it, never declined, and recorded no need: 0.03 kt made,
+  one Red hull, nothing for freight or the Exchange to answer. Fixed by
+  choosing on plain prices first and recording the need when the choice is
+  blocked; needs are re-recorded at each decision so a center that stops
+  wanting the order stops bidding for it.
+
+No Red was traded in that bed: every homeworld held some Magenta and Yellow,
+including the two archetypes whose native super is not Red, so each forge made
+its own (technology §3.2's "exactly one" is a gradient as built; R-G4). Trade is
+pinned by `a_forge_sells_the_super_it_can_make_and_makes_it_at_settlement`.
+
+## D.24 T-139 — missiles, point defense, sentries and the supply line
+
+*Supports technology §9, warfare §8.22 and matching §10.5. Bed: a scratch
+harness, never landed, 3 seats, cards at the shipped first barrier (200 yr),
+regrowth off where the mass ledger is read. All figures are single runs on one
+seed unless stated.*
+
+**The magnitudes, priced before tuning.** A Limited Offensive hull has dry mass
+0.020 kt, 0.910 g empty and structure 1.94·10¹⁰ kJ; a Cairn has 4.10·10¹⁰. One
+50 MW beam fires to 7.9e-3 ly against a station-keeping hull. A round from the
+LOU reaches 0.0238 ly at burnout under the arena's multiplier and burn time,
+three times as far.
+
+**Defect 1: rearming by the parked test.** At first a hull counted as "at a
+center" only while parked. A sentry under way during its yard delay was
+therefore sent to rearm at its own center: zero-length legs, at one instant.
+Seed 1, missile card on seats 0 and 2, Warfare card on seat 1: **1,093,717
+events by 425 yr, with 1,158 returns to rearm**, against 38,133 events at
+300 yr. Deciding "at a center" by position took the returns to 0.
+
+**Defect 2: point defense absorbed every round.** With one round per tube per
+salvo and a round's structure at one discharge (10⁹ kJ), **3 of 9,607** rounds
+hit. A round spends about 2.9 days inside a beam's point-defense range, and one
+mount stopped one round per 0.25-day discharge. Two placeholders changed: a
+salvo is the arena's burst of 4 per tube, and a round's structure is four
+discharges (4·10⁹ kJ). Then a lone beam hull stops about 3 rounds a window, and
+a stack stops many.
+
+**Loop 1: blockaders rebuilt for a port a sentry guards.** Census of the
+logged events, 340–390 yr, same seed: **5,117 pickets spawned, 5,055 changed
+course and 5,340 parked as reserve** on the Warfare seat. A blockader that sees
+a sentry it can outrun withdraws (R-WAR26's third ending). `picket_first` then
+read the port as uncovered and built another. Fix: the seat records ports where
+a sentry turned a picket away, and blockades them no more. Wall time at 800 yr
+went from more than 600 s (the run was stopped) to 154 s.
+
+**Loop 2: sentries fed to blockade stacks.** Census, 750–800 yr: **538
+sentries spawned**. Stacks standing at the port wrecked each sentry, and the
+center replaced it. 32.5 kt of rounds were fabricated against 1.25 kt fired;
+the rest went down with the sentries. Fix: a center counts the sentries it has
+ordered. Then 875,000 events and 19.2 s at 800 yr.
+
+**Detection narrowed to what a sentry fires on.** An armed hull starting a
+trajectory scanned every hull in the world, and a sentry fires only on armed
+ones. The sentry's own scan and the scans that consult sentries now walk only
+armed hulls (`open_fire`). Missile stats and colony counts were identical before
+and after; the missile-only arm went 7.7 → 7.4 s, single runs.
+
+**Proportional sentries (the author's ruling).** Holding plus population per
+center, seed 1, card-free:
+
+| at | centers | p10 | p50 | p90 | p99 | homeworlds |
+|---|---|---|---|---|---|---|
+| 300 yr | 303 | 1.8 kt | 21.1 | 240 | 6,447 | 2,547–3,904 |
+| 800 yr | 3,057 | 17.8 kt | 371 | 5,198 | 47,952 | 1.90–1.98 M |
+
+At `ρ = 1e-5` and 0.030 kt per sentry, a center orders one per 3,000 kt. That
+is about one at a homeworld at 300 yr and about 660 at 800 yr. The sweep is
+T-140.
+
+**Arms at 800 yr, seed 1, sequential runs:**
+
+| arm | wall | events | colonies (seats 0 / 1 / 2) |
+|---|---|---|---|
+| no card | 6.6 s | 384,448 | 936 / 1,018 / 1,103 |
+| missile card, seat 0 | 6.5 s | 386,441 | 935 / 1,019 / 1,103 |
+| Warfare card, seat 1 | 12.0 s | 2,740,602 | 996 / 1,127 / 1,528 |
+| missile, Warfare, missile | 19.4 s | 3,187,036 | 991 / 1,148 / 1,496 |
+
+**Reach census, 4 seeds** (1, 7, 42, 31337; 3 seats; 800 yr; the Warfare card
+on seat 1 in both arms, the missile card on seat 0 in one; runs concurrent, so
+no wall times):
+
+| seed | rounds launched | hit / stopped / missed | seat 1 hulls wrecked by seat 0 | seat 0 colonies, missile arm − Warfare-only arm |
+|---|---|---|---|---|
+| 1 | 306 | 27 / 229 / 50 | 4 | 967 − 996 = −29 |
+| 7 | 135 | 31 / 78 / 26 | 3 | 996 − 1,006 = −10 |
+| 42 | 170 | 30 / 96 / 44 | 5 | 847 − 889 = −42 |
+| 31337 | 172 | 34 / 103 / 35 | 4 | 1,414 − 1,448 = −34 |
+
+Mean difference **−28.8 ± 6.9** colonies (SE over 4 seeds), 4/4 down. Colony
+count is Expansion's metric. This is recorded as a cost the card's seat paid at
+these placeholders, not as the card's value; nothing reads Technology's own
+metric (R-TECH1).
+
+**Bit-identity, card-free.** `examples/build_digest` at 1,500 yr on seeds 1, 7,
+42, 31337, 2, 3, 5, 11, against the pushed head `1e9aec6`: event counts, colony
+counts and population bits identical on 8/8.
+
+**Mass.** With regrowth off at 800 yr the ledger moves by −1.2e-5 kt card-free.
+With cards it moves by −0.5 kt (Warfare), −0.8 kt (missile) and −2.1 kt (both,
+three plays): exactly the card prices paid, and nothing else.
+
+**The determinism arm.** `combat_runs_are_bit_identical` now rotates Warfare,
+Growth and missile cards over six seats. At 300 yr seed 1 resolves **no** round,
+because proportional sentries are few that early. Probed: 350 yr gives 7 and 90
+rounds on seeds 1 and 7 (14.1 s); 400 yr gives 13 and 178 (22.1 s); 450 yr
+gives 13 and 178 (27.2 s). 350 yr ships. The whole target is 54.2 s.
+
+**Test targets after the landing:** unit 5.9 s (295 tests), determinism
+54.2 s, smoke 35.7 s, telemetry 27.5 s.
+
+**After the author's rulings on R-WAR45 and R-WAR46.** Everything above in
+this entry was measured under the earlier rules: point defense decided at
+impact, outside the beam's firing cycle, and sentries counted as ordered. Two
+changes followed the rulings.
+
+- **Point defense commits a beam's mounts** from when a round enters range
+  until it is destroyed, and the beam's discharges in that interval deliver
+  nothing at hulls. `point_defense_takes_a_beam_off_its_target_while_it_defends`
+  pins it: no damage on the dueled hull inside the interval, and damage again
+  after.
+- **Sentries are counted standing or ordered**, so a loss leaves a place that
+  a priced build fills.
+
+Same bed as the arms table (seed 1, 3 seats, 800 yr, sequential single runs):
+
+| arm | wall | events | sentries spawned, 750–800 yr | seat 0 hulls wrecked by seat 1 | colonies (seats 0 / 1 / 2) |
+|---|---|---|---|---|---|
+| missile card, seat 0 | 6.0 s | 386,222 | 261 | 0 | 930 / 1,021 / 1,103 |
+| missile, Warfare, missile | 43.7 s | 3,683,069 | 3,147 | 4,800 | 817 / 1,189 / 1,512 |
+
+Rounds in the second arm: 326 launched, 73 hit, 170 stopped, 83 missed.
+Against the ordered-count rule on the same arm, seat 0 has 174 fewer colonies
+(817 against 991) and spawns 3.8x the sentries. That is the rebuild loop of
+"Loop 2" above: the price gate does not bind, because a sentry costs 0.03 kt
+against banks of thousands. One seed, so this is a reading and not an
+estimate. It is the measurement behind R-WAR47.
+
+Card-free runs are bit-identical to `539389d` on seeds 1, 7, 42, 31337, 2, 3, 5
+and 11 at 1,200 yr. Test targets on this session's machine: unit 4.5 s (298
+tests), determinism 41.8 s, smoke 25.1 s, telemetry 21.9 s. That machine ran
+faster than the one above, so the two sets of times are not comparable.
+
+**R-WAR47: the loss price, set by Monte Carlo** (the author's ruling). A
+center that has lost `L` sentries orders as many as its budget buys at
+`c_s · (1 + κ · L)`; the sweep chooses `κ`
+(`Doctrine::sentry_loss_price`). Harness: `examples/sentry_price_sweep`.
+Bed: 3 seats, seat 0 plays the missile card and seat 1 the first Warfare
+card at the 200-yr barrier, seat 2 none, 800 yr. The only thing varied is
+seat 0's `κ`. Objective: seat 0's colony-years and work-years, each divided
+by the same seed's `κ = 0` arm (common random numbers), and their geometric
+mean.
+
+*The first sweep counted only sentries wrecked as sentries, and every arm
+was bit-identical.* `L` was 0 on seeds 1 and 7 with 5,589 and 2,472 sentries
+ordered. A census of the last 50 years on seed 1 found the path the count
+missed:
+
+| log row, 750–800 yr, seed 1 | count |
+|---|---|
+| sentry withdrawals (`CourseChanged`, role Sentry, reason Withdraw) | 1,922 |
+| Reserve hulls wrecked | 1,928 |
+| sentries spawned | 2,115 |
+| sentries wrecked as sentries | 0 |
+
+A sentry fired on by a neutral it can outrun withdraws (R-WAR26), stands down
+to Reserve at its own center, holds fire on neutrals and is wrecked there.
+The counter read the role after the re-role. `L` now counts a sentry leaving
+its post by either exit (`leave_missile_post`, reached only from a wreck or a
+withdrawal, both answers to fire). R-WAR48 asks whether the withdrawal
+should happen at all.
+
+*Sweep, after the fix.* Mean over seeds of the per-seed change against
+`κ = 0`, ± one standard error. Seeds 1, 7, 42, 31337 are the standard bed;
+2, 3, 5, 11 are the replication set.
+
+| `κ` | colony-years, standard 4 | work-years, standard 4 | colony-years, replication 4 | work-years, replication 4 |
+|---|---|---|---|---|
+| 0.03 | −0.06% ± 0.16 | +0.06% ± 0.41 | — | — |
+| 0.1 | +0.91% ± 1.03 | +2.56% ± 1.50 | +4.18% ± 2.25 | −1.45% ± 1.07 |
+| 0.3 | +2.29% ± 2.53 | −0.26% ± 1.67 | — | — |
+| 1 | +3.00% ± 2.55 | +2.06% ± 2.56 | +5.54% ± 2.77 | −3.11% ± 0.91 |
+| 3 | +3.84% ± 3.12 | +1.65% ± 2.55 | +5.45% ± 2.71 | −1.91% ± 1.05 |
+| 10 | +4.38% ± 3.59 | +2.50% ± 2.28 | +5.90% ± 2.94 | −2.47% ± 1.21 |
+| 30 | +4.59% ± 3.60 | +2.38% ± 2.32 | +5.87% ± 2.94 | −3.26% ± 0.80 |
+| 100 | +4.55% ± 3.61 | +2.38% ± 2.33 | +5.89% ± 2.94 | −3.26% ± 0.80 |
+| 1000 | +4.55% ± 3.61 | +2.38% ± 2.33 | +5.88% ± 2.94 | −3.26% ± 0.80 |
+
+Pooled over all eight seeds:
+
+| `κ` | colony-years | work-years | geometric mean | seeds positive | seat 1's colony-years | events |
+|---|---|---|---|---|---|---|
+| 0.1 | +2.55% ± 1.30 | +0.55% ± 1.14 | +1.51% ± 0.71 | 7/8 | −1.12% ± 0.66 | −7.2% ± 2.2 |
+| 1 | +4.27% ± 1.81 | −0.53% ± 1.59 | +1.80% ± 1.28 | 5/8 | −1.43% ± 0.65 | −9.3% ± 2.8 |
+| 3 | +4.65% ± 1.94 | −0.13% ± 1.44 | +2.19% ± 1.37 | 6/8 | −1.17% ± 0.65 | −10.0% ± 3.4 |
+| 10 | +5.14% ± 2.17 | +0.02% ± 1.52 | +2.50% ± 1.46 | 6/8 | −1.17% ± 0.66 | −10.5% ± 3.3 |
+| 30–1000 | +5.2% ± 2.2 | −0.44% ± 1.56 | +2.31% ± 1.51 | 5/8 | −1.20% ± 0.69 | −10.6% ± 3.4 |
+
+Sentries ordered per run fall from 3,782 at `κ = 0` to 548 at `κ = 3` on the
+standard four, and losses from 2,847 to 83. Wall time per run on the
+standard four, uncontended: 37.8 s at `κ = 0`, 20.0 s at `κ = 3`.
+
+*Reading.* The sweep separates `κ = 0` from `κ > 0`: colony-years rise by
+2.4 standard errors at every `κ ≥ 1`, and work-years do not move at any.
+It does not separate the values of `κ` from 1 to 1000, which differ by less
+than one standard error; above 10 the arms converge, because a center then
+replaces almost nothing after its first loss. Most of the standard bed's
+gain is seed 1 (+15.1% colony-years at `κ = 10`); the replication set gains
+on three or four of four seeds at every `κ ≥ 0.1`. `κ = 3` ships: it sits
+inside the plateau and short of the limit where a loss ends replacement,
+which would turn R-WAR46's pricing into a ban. It is a choice of a point in
+a plateau the sweep measured, not an optimum it found.
+
+Card-free runs are bit-identical to `0887203` on seeds 1, 7, 42, 31337 at
+1,000 yr (events, every seat's stocks, the mass ledger). Test targets, this
+session's machine, timed beside `0887203`'s binary: determinism 67.9 s →
+63.3 s, smoke 44.3 s → 42.6 s; unit 7.1 s (300 tests), telemetry 32.6 s.
+The determinism target is over 60 s on both binaries on this machine and
+inside the 72-s band; it was 41.8 s on the previous session's.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

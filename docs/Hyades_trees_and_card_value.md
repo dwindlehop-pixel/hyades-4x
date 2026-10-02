@@ -653,6 +653,29 @@ or wrong moment should swing hard — that is the meso layer the design is built
 on. What is being controlled is the value of the *correct* play, not the spread
 between a good play and a bad one.
 
+### 4.6 `RATIFIED` — what a card's tier is paid in (the author's ruling)
+
+> *"Tier 1 and 2 must be CMY minerals only. Tier 3 has to be super dominated,
+> if not required. Every win condition is conditioned on apex minerals."* And:
+> *"When I say 'card costs supers' I mean whatever its Design and Doctrine
+> changes should change to production orders. These are interchangeable."*
+
+- **Tiers 1 and 2 cost basics only**, and their writes leave every Design paid
+  in basics.
+- **A tier-3 card's cost in supers is its Design writes.** It writes a Design
+  bill (`CardEffect::WriteDesignBill`, `sim::DesignBill`): the share of a
+  Design's hull price paid in Red, Green, Blue and apex, the rest in basics. The
+  card is not debited a stock of supers when played; every yard that builds the
+  Design pays in them from then on (galaxy §4.5). Super-dominated means the
+  refined shares outweigh the basic one.
+- **Every win condition is conditioned on apex.** No win condition exists in
+  the engine yet; when one does, its Design or its condition is paid in apex
+  (`Material::Apex`, made from Red, Green and Blue in equal parts).
+
+Consequence for measurement: a card-free game synthesizes and trades no
+refined material, so every card-free bed is unchanged by this layer, and a
+tier-3 card's measured value includes the supply problem its bill creates.
+
 ### 4.5 What this method cannot do
 
 Stated so it is not discovered as a surprise:

@@ -305,15 +305,71 @@ and not how much was filled. Appendix §D.21. Privateering (`Hyades_warfare_tree
 §8.21) is the first mechanic that creates self-trade demand the book cannot
 already meet, and would reopen this.
 
-**8.5 `OPEN` — R-MX8: may a hauler draw on a center's holding?** Held off for
-now, so that §8.3 changed nothing else: a hauler loads only where its empire has
-no yard, and a milk run picks up only there. Under §8.3 a colony's holding is
-the same ore as a pile, so carrying it to a needier center is a coherent policy.
-**What would settle it:** the author's call, then an arm on the 8-seed bed.
+**8.5 `RATIFIED` — R-MX8: a hauler carries a center's abundance to a center
+with demand, under the Exchange's journey discount** (the author's ruling). At a
+planet its empire owns, a hauler serving center `D` takes, per color `c`,
+
+```text
+offer_c = min(abundance_c, want_c)   if  wtp(D, c) · exp(−λ t) > wtp(O, c),  else 0
+abundance_c = max(0, held_c(O) − bill_c(O))
+```
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `O` | the center the hauler stands on | — | — |
+| `D` | the center the hauler serves | — | the shuttle's destination |
+| `held_c(O)` | `O`'s holding in color `c` | kt | `Holdings` (§8.3) |
+| `bill_c(O)` | `O`'s next works bill in color `c` | kt | `works_bill(infra_step_price)` |
+| `want_c` | `D`'s shortfall against its next bill, net of the hold | kt | `wanted_here` (T-91) |
+| `wtp(X, c)` | `X`'s willingness to pay for `c` | `$`/kt | `willingness_to_pay` |
+| `t` | the laden leg `O → D` at a full hold | yr | `ship_travel_years` on the hauler's Design |
+
+So a center keeps what its own next rung needs, and ships only where the Exchange
+would ship an ask (§8.1's rule with `a_j = wtp(O, c)`). What loads at a center
+goes to `D`, the buyer it was priced against, and is never re-routed. A milk run
+(T-91) may stop at such a center too, scored the same way as any other pile. A
+hauler whose own rock is settled keeps working while `O` offers something, and
+stands down as before once it offers nothing. No new constant. Measured on the
+8-seed bed: colony-years **+1.29% ± 0.22, 8/8 seeds**; work-years +6.22% ±
+3.62, not resolved at 2 SE; appendix §D.22.
 
 **8.6 Throughput.** §8 costs nothing measurable on the 3-seat bed — per-event
 cost fell against the pre-T-134 engine in 6/6 interleaved pairs — and the
-12-seat combat bench does 9% more events at lower per-event cost. Appendix §D.20.
+12-seat combat bench does 9% more events at lower per-event cost. Appendix §D.20. R-MX8
+(§8.5) prices an offer at every owned center on every milk-run stop; with the
+buyer's side read once and a per-seat index of owned planets, per-event cost on
+the 3-seat bed is +2.2% ± 1.1 at 4,000 yr (8 seeds) and at or below the engine's
+before it at 1,000 yr. Appendix §D.22.
+
+**8.7 `RATIFIED` (built) — seven books: the basics, the three supers and apex.**
+Every rule of §8.1–§8.4 applies to each book unchanged; what is new is who
+posts in the refined ones.
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `need_m(X)` | what center `X`'s last declined order owes in refined material `m` | kt | `refined_need`, written by the yard |
+| `short_m(X)` | `max(0, need_m(X) − held_m(X))` | kt | `refined_short` |
+| `f_m` | the floor price of `m`: the basics' mean floor over `Y_super` for a super, over `Y_super · Y_apex` for apex | `$`/kt | `refined_floor` — derived, no constant |
+| `d_m` | the Doctrine's refined demand | — | `Doctrine::refined_demand`, `1.0` each, placeholders |
+
+- **Bids** — a center short of `m` for an order it declined bids `short_m` at
+  `f_m · d_m` (a declined order is fully blocked, so its pressure is `1`).
+- **Asks** — a center holding `m` above its own `need_m` asks for the excess at
+  its own price (zero: it is not short).
+- **Capacity asks** — a forge (population `Band IV`) asks for the supers it
+  could make from basics above its next works bill, `Y_super · 2 · min` over the
+  recipe's two surpluses, at a reservation equal to the precursors' price over
+  `Y_super`. It synthesizes what it sold when the contract comes due, and
+  defaults if it cannot. A forge's native super is the one whose precursors it
+  is rich in — the structural monopoly §10.1 is about.
+- **Freight** — a hauler loads the refined material the center it serves is
+  short of before ore, at a pile or as a center's offer (§8.5's rule, with the
+  order's need in place of the works bill), and routes a refined hold to the
+  center whose refined shortfall it closes most, discounted as every leg is.
+
+A card-free game posts no refined bid and clears nothing in these books.
+Tests: `a_forge_sells_the_super_it_can_make_and_makes_it_at_settlement`,
+`a_hauler_carries_the_supers_a_center_is_waiting_for`. Appendix §D.23.
 
 ---
 
@@ -392,9 +448,148 @@ write today, each read through one `Standing` question:
 - **A new duty** — a `SideRun` variant and a `Standing` question are the whole
   interface; the event loop, the conservation ledger and the stand-down on
   withdrawal already cover it.
+- **What a Design is paid in** (§8.7) — a tier-3 card writes a Design bill
+  (`CardEffect::WriteDesignBill`), which is the whole of its cost in supers
+  (trees §4.6); the yard, the need, freight and the refined books all read it.
+- **How badly an empire wants each refined material** —
+  `Doctrine::refined_demand` scales its refined bids; §10.4's urgency is a write
+  here.
 
 **What would settle it:** the cards themselves; until then these are the
 interfaces, not the designs.
+
+---
+
+## 10. Market power — the design space the Exchange leaves for cards
+
+§8 clears at a spatial equilibrium with **least prices** (Demange, Gale &
+Sotomayor 1986): every ask and bid is *derived* from state (politics §2.11), so
+no empire chooses a price, and the clearing hands surplus to buyers. That is
+the default. Each item below is a way a card could bend it, what the engine does
+today, and what would settle it. **All four are `OPEN`**, each with a
+recommendation, and the thesis that governs them is politics §0: *the
+simulation-state effects of collusion are sold to a single player acting alone.*
+
+**10.1 `OPEN` — R-MX11: monopoly.** A super's precursors are rich in one
+archetype, so at three seats each super has one native forge — a monopoly by
+geography (§8.7's capacity asks). Today a monopolist cannot use it: its
+reservation is derived (the precursors' price over the yield), so it sells at
+cost, and a rival can still make the super from bought precursors at a worse
+yield-adjusted price (technology §3.2's measured gradient). *Recommend* the
+card interface be a **markup** — a Doctrine write raising a seat's capacity-ask
+reservation per material — and a **withhold** — a write capping the share of
+capacity it offers. Both are unilateral. Their counter is already in the
+engine: the buyer's own forge at a worse yield, and Interdict on the
+monopolist's freight. **What would settle it:** a measured price gradient
+between native and non-native forges on a bed where a tier-3 bill creates
+demand, then the two writes measured against it.
+
+**10.2 `OPEN` — R-MX12: monopsony.** The single buyer is the Politics tree's
+**Corner** (politics §4.2, tier 3): bid across a whole material class rather
+than a lot. Under least-price clearing a lone buyer already pays the marginal
+seller's reservation, so what a Corner adds is **volume and exclusion** — buying
+what it does not need so a rival cannot. *Recommend* Corner be a write to
+`refined_demand` and `doctrine_demand` that also lifts the cap of a bid from
+the center's shortfall to the empire's purse, and that its purchases be
+ordinary contracts (they traverse space and can be interdicted). **What would
+settle it:** the Corner card through the card workflow.
+
+**10.3 `OPEN` — R-MX13: cartel.** A cartel is two sellers agreeing to restrict
+supply, and §0 forbids the agreement having a channel: there is no consent path
+anywhere in the card layer (politics §6.5). What a cartel *buys* — a higher
+price for one material — is available unilaterally as §10.1's withhold by a
+monopolist, or as §10.2's Corner by a buyer who then resells. *Recommend*: no
+cartel mechanism; record that the effect is bought alone, and watch for **tacit
+collusion** — every autopilot derives its asks by the same rule, so identical
+Doctrine writes by two seats would act as a cartel without agreeing. **What
+would settle it:** a census of seats posting the same markup or withhold, once
+those writes exist.
+
+**10.4 — R-MX14: outbidding your own urgent defense requirements.**
+**`RATIFIED` (the author's ruling: "production based on pricing makes sense") —
+production is priced, and what an empire's most-wanted order owes is not for
+sale, not for its own cheaper builds, and not for its haulers' other customers.**
+
+| symbol | name | unit | where it is set |
+|---|---|---|---|
+| `o*(X)` | center `X`'s **standing order**: the order the policy chose on plain prices and cannot pay, because it owes a refined material `X` neither holds nor can synthesize now | — | `standing`, written at the decision |
+| `R(X)` | the **reservation** of `o*`: the refined material it owes up to what `X` holds; at a forge, the precursors it would draw to make the rest; and its basic share from the remaining basics, in proportion | kt per material | `available_at` |
+| `A(X)` | what `X` holds less `R(X)` | kt per material | `available_at` |
+
+The prices are the Exchange's (§8.7, politics §2.11): a center short of a
+material for an order pays `f · d · pressure` for it, and a blocked order's
+pressure is `1`. In the dual reading, every kilotonne in `R(X)` is priced at
+`o*`'s value, and every order the policy ranked below `o*` is worth less per
+kilotonne — so none of them can buy it. That is implemented as a constraint
+rather than a second price vector:
+
+- **The decision** — the policy chooses on plain prices. If its choice owes a
+  refined material the center cannot pay or synthesize (`quote`), that order
+  becomes `o*`, its need is recorded, and the policy chooses again seeing only
+  `A(X)`, with `o*`'s Design quoted unpayable. `o*` stands until the next
+  decision at `X`, which re-records it only if the policy still chooses it.
+- **Every other draw on the holding reads `A(X)`** — another build, a rung of
+  works, an ask on the Exchange, an offer to a hauler (§8.5). `o*` itself pays
+  from the whole holding.
+- **An empire sells only what none of its centers waits on** — its centers'
+  refined shortfall comes off its refined asks and its forges' capacity asks
+  first, in planet order.
+- **A forge supplies its own empire** — a hauler loading at a forge for a
+  center short of a super or apex has the forge synthesize it, keeping back the
+  forge's own `o*` and its next works bill.
+- **Urgency is a Doctrine write** — `Doctrine::refined_demand` scales an
+  empire's refined bids; **`OPEN`**: raising it from belief about threat (the
+  warfare tree's belief events) is a card's write, not a default.
+
+With no Design paid in refined material there is no `o*` anywhere, `A(X)` is the
+holding, and every decision is the one it always was: card-free runs reproduce
+the engine before this landing to the last event on 8/8 seeds. Tests:
+`a_standing_order_reserves_what_it_owes_from_cheaper_orders`,
+`an_empire_does_not_sell_what_its_own_centers_wait_on`. Appendix §D.23.
+
+**`OPEN` — the general form.** A policy that scores every candidate as its
+value less the priced cost of everything it consumes, at shadow prices the
+Exchange computes (§8's duals, per material per empire, refreshed at the
+barrier), would make the constraint above one case of a rule. It reuses the
+Exchange's *prices*, never its *clearing*: clearing is per round as a set
+(politics §2.9) and production decisions are events. **What would settle it:**
+a census of builds that spent inputs a higher-ranked order needed, under tier-3
+bills — the reservation answers it for one standing order per center; if two
+compete, the general form is needed.
+
+**10.5 Supply lines (T-139).** The author's direction: supply lines are the
+last of the Exchange's parameter spaces, and their drawback is what limits
+long-range ordnance (standing layer §9.4: an ordnance fleet has a logistics
+tail).
+
+- **`RATIFIED`, built — ordnance is a material that traverses space.**
+  `Material::Ordnance` is fabricated at an owned center from basics, one
+  kilotonne for one in the bank's mix, held at a planet, carried in a hold and
+  spent as debris (design law #11, industry §8.1). It pays for no hull
+  (`Minerals::spendable_total`).
+- **`RATIFIED`, built — the eighth book, closed by default.** The author's
+  ruling: the key is a deep-tier Politics card. Until something writes
+  `Doctrine::ordnance_market`, no center posts to it.
+  - **Open, a center bids** for the rounds its missile hulls wait on and it
+    could not make.
+  - **It asks** for the rounds it holds plus those it could make from basics
+    above its next works bill.
+  - **Both at the mean of its three basic willingnesses to pay.**
+  - **A sold lot is fabricated when the contract comes due.**
+  - Test: `the_ordnance_book_is_closed_until_a_doctrine_opens_it`.
+- **`RATIFIED`, built — return and ammo runs.** A missile hull at a center
+  rearms there. One at a post is served by an **ammo run**: the idle hauler
+  nearest the nearest place that can fill it flies there, loads, carries the
+  rounds out and comes home. The place is a holding with the rounds (a lot the
+  Exchange delivered included) or a center with the basics. With no hauler idle,
+  the hull flies to the nearest center to rearm and back. A hauler or a hull
+  wrecked on the way is the supply line cut. Test:
+  `a_dry_missile_picket_is_resupplied_by_ammo_run_or_by_return`.
+- **`OPEN` — R-MX15: the ordnance book's key and price.** The deep-tier
+  Politics card is not built. Whether rounds should price above their basics,
+  by the urgency of the hulls waiting on them, is open. **What would settle
+  it:** the Politics card, then a census of ordnance bids against the
+  shortfalls they answer.
 
 ---
 

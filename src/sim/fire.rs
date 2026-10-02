@@ -18,7 +18,7 @@
 //! or off a post it cannot hold under fire heads home, and a hull that returns
 //! fire on an enemy stands.
 use super::*;
-use crate::combat::{StationKeeping, STATION_PERIOD, STATION_RADIUS};
+use crate::combat::{Loadout, StationKeeping, STATION_PERIOD, STATION_RADIUS};
 
 /// Fork label for each hull's wreck-point draw (T-133), XORed with a label from
 /// the entity so it cannot coincide with an encounter's fork.
@@ -298,6 +298,7 @@ impl Simulation {
         self.fired_on_at_destination.remove(&e);
         if self.world.loadout.get(e).is_some_and(|l| l.is_armed()) && self.live_hull(e) {
             self.armed.insert(e);
+            self.classify_fire(e);
         }
         self.detect(e);
     }
@@ -312,7 +313,33 @@ impl Simulation {
         let loadout = self.world.loadout.get(shooter)?;
         let role = self.world.role.get(shooter).copied().unwrap_or(Role::Reserve);
         let standing = Standing::of(self.world.doctrine.get(self.player_entity[os.0 as usize])?);
-        standing.fire_distance(role, loadout, standing.regard())
+        let target_armed = self.world.loadout.get(target).is_some_and(|l| l.is_armed());
+        standing.fire_distance(role, loadout, standing.regard(), target_armed)
+    }
+
+    /// **File an armed hull by whether it may fire on an unarmed one**: a
+    /// sentry that does not goes outside [`Simulation::open_fire`]. Every other
+    /// role stays in it, whatever it fires on, so a game without sentries
+    /// walks exactly the shooters it always did.
+    pub(super) fn classify_fire(&mut self, e: Entity) {
+        let selective = self.world.role.get(e).copied() == Some(Role::Sentry) && !self.fires_on_unarmed(e);
+        if selective {
+            self.open_fire.remove(&e);
+        } else {
+            self.open_fire.insert(e);
+        }
+    }
+
+    /// **Does `shooter` fire on any unarmed hull?** Its standing layer's fire
+    /// distance against an unarmed hull it regards as it regards everyone.
+    fn fires_on_unarmed(&self, shooter: Entity) -> bool {
+        let (Some(o), Some(loadout)) = (self.world.owner.get(shooter), self.world.loadout.get(shooter)) else {
+            return false;
+        };
+        let role = self.world.role.get(shooter).copied().unwrap_or(Role::Reserve);
+        let Some(d) = self.world.doctrine.get(self.player_entity[o.0 as usize]) else { return false };
+        let standing = Standing::of(d);
+        standing.fire_distance(role, loadout, standing.regard(), false).is_some()
     }
 
     /// **Encounter detection for one hull** (T-133 stage 4): against every
@@ -335,7 +362,10 @@ impl Simulation {
             sim.world.track.get(other).is_some_and(|t| boxes_within(&mine, t, reach))
         };
         let mut found: Vec<(Entity, Entity)> = Vec::new();
-        for &s in &self.armed {
+        // An unarmed hull is fired on only by shooters that fire on unarmed
+        // hulls (T-139).
+        let shooters = if self.armed.contains(&e) { &self.armed } else { &self.open_fire };
+        for &s in shooters {
             if s != e
                 && self.world.owner.get(s) != Some(&owner)
                 && near(self, s, farthest(self, s))
@@ -346,14 +376,24 @@ impl Simulation {
         }
         if self.armed.contains(&e) {
             let reach = farthest(self, e);
-            for i in 0..self.world.hull_type.capacity() {
-                let h = Entity(i as u64);
-                if h != e
-                    && self.world.owner.get(h).is_some_and(|&o| o != owner)
-                    && near(self, h, reach)
-                    && self.live_hull(h)
-                {
-                    found.push((e, h));
+            let consider = |sim: &Simulation, h: Entity| {
+                h != e && sim.world.owner.get(h).is_some_and(|&o| o != owner) && near(sim, h, reach) && sim.live_hull(h)
+            };
+            // **A shooter that fires only on armed hulls looks only at them**
+            // (T-139: a sentry). Both walks are in ascending entity order, so
+            // the pairs found come in the same order either way.
+            if self.fires_on_unarmed(e) {
+                for i in 0..self.world.hull_type.capacity() {
+                    let h = Entity(i as u64);
+                    if consider(self, h) {
+                        found.push((e, h));
+                    }
+                }
+            } else {
+                for &h in &self.armed {
+                    if consider(self, h) {
+                        found.push((e, h));
+                    }
                 }
             }
         }
@@ -552,9 +592,23 @@ impl Simulation {
             self.stop_firing(shooter);
             return;
         }
+        let Some((at, aim)) = self.targets_in_reach(shooter) else { return };
+        if loadout.fires_missiles() {
+            self.missile_salvo(shooter, loadout, at, aim);
+        } else {
+            self.beam_volley(shooter, loadout, at, aim);
+        }
+    }
+
+    /// **What a shooter can fire on now** (T-133): its position, and each hull
+    /// on its reach list within fire distance at the actual positions, with
+    /// the distance. Hulls that left reach come off the list and are sought
+    /// again; with nothing left on it the shooter stops firing and this
+    /// returns `None`.
+    fn targets_in_reach(&mut self, shooter: Entity) -> Option<(Vec3, Vec<(f64, Entity)>)> {
         let now = self.clock;
         let own_station = self.station(shooter);
-        let Some((at, _)) = self.fix(shooter, &own_station, now) else { return };
+        let (at, _) = self.fix(shooter, &own_station, now)?;
         let reference_at = self.position_at(shooter, now).unwrap_or(at);
         let listed: Vec<Entity> = self.in_reach.get(&shooter).map(|v| v.iter().copied().collect()).unwrap_or_default();
         let mut aim: Vec<(f64, Entity)> = Vec::new();
@@ -602,6 +656,19 @@ impl Simulation {
         }
         if self.in_reach.get(&shooter).is_none_or(|v| v.is_empty()) {
             self.stop_firing(shooter);
+            return None;
+        }
+        Some((at, aim))
+    }
+
+    /// **A beam Design's discharge** (T-133): energy for one period from each
+    /// mount, nearest target first.
+    fn beam_volley(&mut self, shooter: Entity, loadout: Loadout, at: Vec3, mut aim: Vec<(f64, Entity)>) {
+        let now = self.clock;
+        // **Mounts on point defense fire at nothing else** (R-WAR45, the
+        // author's ruling): this discharge is spent on rounds.
+        if self.defending_now(shooter) {
+            self.schedule(loadout.discharge_years, EventKind::Discharge { shooter });
             return;
         }
         // **Nearest first, extracted as needed.** Keys are unique (the entity
@@ -672,7 +739,7 @@ impl Simulation {
         }
     }
 
-    fn stop_firing(&mut self, shooter: Entity) {
+    pub(super) fn stop_firing(&mut self, shooter: Entity) {
         self.firing.remove(&shooter);
         self.in_reach.remove(&shooter);
         // A picket at a battle with nothing left in reach goes back to its post.
@@ -854,7 +921,7 @@ impl Simulation {
     }
 
     /// A hull's structure, kJ — its volume times its Design class's `σ`.
-    fn structure_of(&self, e: Entity) -> f64 {
+    pub(super) fn structure_of(&self, e: Entity) -> f64 {
         let hull = self.world.hull_type.get(e).copied().unwrap_or(HullType::LimitedSystems);
         let class = self.world.design_class.get(e).copied().unwrap_or(Class::Unnamed);
         crate::combat::hull_structure_kj(hull, class, &self.config, &self.combat)
@@ -871,7 +938,7 @@ impl Simulation {
 
     /// **Energy lands on a hull** (T-133): the wreck check, then the fleet's
     /// decision if it survives.
-    fn deliver(&mut self, shooter: Entity, target: Entity, energy: f64) {
+    pub(super) fn deliver(&mut self, shooter: Entity, target: Entity, energy: f64) {
         if !self.live_hull(target) {
             return;
         }
@@ -924,6 +991,7 @@ impl Simulation {
         let mass = self.destroy_free_hulls(&[e]);
         self.world.wreck.insert(e, Wreck { from, since: now, velocity, mass });
         self.armed.remove(&e);
+        self.open_fire.remove(&e);
         self.stop_firing(e);
         self.fired_on_at_destination.remove(&e);
         if let Some(track) = self.world.track.get_mut(e) {
@@ -947,6 +1015,8 @@ impl Simulation {
         // A side run or a call to battle ends here too (T-134 stage 2).
         self.side_runs.remove(&e.0);
         self.battle_called.remove(&e.0);
+        // And a sentry's post or a trip to rearm (T-139).
+        self.leave_missile_post(e);
         match role {
             Role::Miner => {
                 if let Some(t) = target {
@@ -1063,6 +1133,14 @@ impl Simulation {
                 }
             }
             UnderFire::Withdraw => {
+                // **A port missile sentries guard is not one to blockade**
+                // (T-139): a picket turned away by a sentry marks its post,
+                // and its seat sends no blockader there again.
+                if role == Role::Picket && self.world.role.get(shooter).copied() == Some(Role::Sentry) {
+                    if let Some(post) = self.world.voyage.get(target).map(|v| v.target) {
+                        self.sentried[seat].insert(post.0);
+                    }
+                }
                 for m in members {
                     self.withdraw(m);
                 }
@@ -1147,7 +1225,7 @@ impl Simulation {
     /// post it cannot hold under fire, or breaking off on believed kinematics
     /// (ending 3). It stands down to Reserve on arrival, unloading whatever it
     /// carries (`sys_return_arrive`).
-    fn withdraw(&mut self, e: Entity) {
+    pub(super) fn withdraw(&mut self, e: Entity) {
         if !self.live_hull(e) {
             return;
         }

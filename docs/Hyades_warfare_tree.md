@@ -2041,14 +2041,15 @@ energy; the replaced model is appendix §D.10.
 | beam | **fire-control error** (accuracy) | ly | the tolerance `laser_hit_check` compares predicted against actual target position; smaller is more accurate, and it sets the engagement range | **built** — per Design class, `CombatConfig::laser_hit_tolerance` (tuned) times `fire_control_by_class`, placeholders `1.0` (R-WAR27) |
 | beam | targets per tick | count | one per mount — a beam points one way (§8.18.3) | **built**; the arena's `laser_shots_per_tick` is no longer read by the simulation |
 | beam | range falloff | kJ per ly | §2.4's "weak at long range" | `OPEN` — every simulation fight today is at range zero |
-| beam | point defense | — | whether a beam may target an in-flight missile | arena only; `OPEN` for the simulation |
-| **missile** | tubes | count | slot-organic, as beams | `OPEN` |
-| missile | **acceleration** | multiple of the carrier's, or absolute ly/yr² | how fast it closes | arena only (`missile_accel_multiplier`, tuned) |
-| missile | fuel | yr | guided burn time | arena only |
-| missile | launch Δv | ly/yr | separation at release | arena only |
-| missile | warhead | kJ | damage per hit | `OPEN` — arena missiles kill on contact |
-| missile | magazine | count, and its mass | expendable rounds; expended ordnance leaves the fleet lighter (design law #11) | `OPEN` — R-O60/T-04 |
-| missile | burst, guidance cap | count | salvo shape; channel limit on missiles in flight | arena only |
+| beam | point defense | — | whether a beam may target an in-flight missile | **built (T-139, §8.22)** — any beam Design within its point-defense range of a round's target, under its Doctrine; range from the arena's dodge, 4.7e-3 ly |
+| **missile** | tubes | count | slot-organic, as beams | **built (T-139)** — the Limited Offensive payload over one Limited Contact hull's: 1 |
+| missile | **acceleration** | multiple of the carrier's, or absolute ly/yr² | how fast it closes | **built** — the arena's tuned `missile_accel_multiplier` (8) times the Design's empty-hull acceleration, fixed at build |
+| missile | fuel | yr | guided burn time | **built** — the arena's 0.08 yr; reach is the powered distance, 0.0238 ly from a Limited Offensive hull |
+| missile | launch Δv | ly/yr | separation at release | **built** — the arena's 0.02 |
+| missile | warhead | kJ | damage per hit | **built** — placeholder `2·10¹⁰` kJ, about one LOU structure (R-WAR44) |
+| missile | magazine | count, and its mass | expendable rounds; expended ordnance leaves the fleet lighter (design law #11) | **built** — 8 rounds per tube of 1.25 t each, carried as `Material::Ordnance` in the hold, so a full magazine is a slower hull (R-WAR44; R-O60/T-04 advanced) |
+| missile | burst, guidance cap | count | salvo shape; channel limit on missiles in flight | burst **built** — the arena's `burst_count` (4) per tube per salvo; guidance cap arena only |
+| missile | structure under point defense | kJ | what a beam must deliver to destroy a round | **built** — placeholder `4·10⁹` kJ, four 0.25-day discharges of one 50 MW mount (R-WAR44) |
 | **torpedo** | as missile, heavier warhead, arming distance | kJ, ly | §2.4's long-range heavy hit, weak close | `OPEN` |
 | **pulse** | burst energy, knife range | kJ, ly | §2.4's point-blank burst | `OPEN` |
 
@@ -2800,6 +2801,92 @@ R-WAR43 (what a seat may believe about rival production, and its lag).
 
 ---
 
+### 8.22 Missiles, point defense and the supply line (T-139)
+
+The basic deep-space missile is the Technology tree's card (`Hyades_technology_tree.md`
+§9). This section holds what it does to fights and to supply. Every magnitude is
+a placeholder (R-WAR44).
+
+**8.22.1 `RATIFIED` — the author's rulings.**
+
+- **Missile Designs are variation hulls with a subset of roles.** Cargo at the
+  expense of acceleration: the magazine is carried mass. A missile Design is open
+  only to roles that serve near a production center or in a fleet with hardened
+  supply lines (`Class::MISSILE_ROLES` = Sentry, Picket). Never survey,
+  colonization or freight, because a magazine on a hull that ranges far from a
+  center is a supply line the empire cannot hold.
+- **A long-range LOU stands sentry at production centers** (`Role::Sentry`,
+  Design `Butte`).
+- **Sentry strength is in proportion to what there is to defend.** A center
+  orders sentries until their mass reaches `Doctrine::sentry_ratio` × (its
+  holding + its population), both in kilotonnes.
+- **Point defense comes out of the beam's ordinary firing cycle** (R-WAR45,
+  ruled). Mounts committed to a round deliver nothing at hulls, and a beam
+  stops rounds no faster than its firing rate, so volume of fire overwhelms it.
+- **Replacing losses in a war is a pricing question** (R-WAR46, ruled). A
+  center counts the sentries it has standing or ordered, so a loss leaves a
+  place, and the replacement is a build the center buys at its price like any
+  other.
+- **A loss raises the price of the next sentry** (R-WAR47; the author's
+  ruling that the price is set by Monte Carlo). A center that has lost `L`
+  sentries orders as many as `sentry_ratio × defended` buys at
+  `c_s · (1 + κ · L)`, where `c_s` is the sentry's mass (hull and magazine,
+  0.03 kt) and `κ` is `Doctrine::sentry_loss_price`. A loss is a sentry that
+  leaves its post under fire, wrecked or withdrawn. The yard still bills
+  `c_s`: the factor is a shadow price (a valuation that moves a decision
+  without moving the bank), because a hull's cost is its mass (R-O57).
+  **`κ = 3`, chosen by Monte Carlo and awaiting ratification** (appendix
+  §D.24).
+- **Point defense may be mounted on ships that are not a round's target, and
+  any solution allows intercept by nearby allies.** Every beam hull of the
+  target's empire within point-defense range of the target engages, the target
+  included, while its Doctrine says so (`Doctrine::point_defense`, default on).
+- **Resupply is return and ammo runs.** A hull at a center rearms there. A hull
+  at a post asks for an ammo run while its empire has an idle hauler, and
+  otherwise flies to the nearest center itself (`Standing::resupply`).
+- **Ordnance is an eighth Exchange book, unlocked by a deep-tier Politics card**
+  (matching §10.5).
+
+**8.22.2 Decided — how a round resolves.**
+
+| step | rule |
+|---|---|
+| launch | at a missile Design's discharge (its period is the reload, 1 day): a burst of 4 rounds per tube, nearest target first; each round's mass leaves the hold |
+| hold fire | a target is fired on only if the post's ready rounds plus those flying at it exceed the point-defense capacity believed around it (`Standing::launches_into`); a hull that holds fire on everything stops firing until a hull near it moves |
+| flight | constant proper acceleration from the launch Δv, `x(t) = Δv·t + (√(1 + (a·t)²) − 1)/a`; reach is `x` at burnout |
+| arrival | a miss if the target is gone or has left the reach; else point defense, then the warhead through the beam's own damage, wreck and fleet-decision path |
+| point defense | decided when the round enters the widest point-defense range (`EventKind::MissileEnters`): each defender has it inside its own range for `range / speed`; killing it takes `⌈structure / (power · period)⌉` discharges shared over its mounts, one round at a time; the defender that finishes soonest commits its mounts for that interval, if it finishes before impact, and its discharges in that interval deliver nothing at hulls. The round is stopped if that defender is still there at impact |
+| mass | every round ends as debris on the ledger (`MassLedger::ordnance_spent`) |
+
+**8.22.3 Decided — what the two policy loops found, and the rules that close
+them** (appendix §D.24).
+
+- A blockade picket that sees a sentry it can outrun withdraws (R-WAR26's third
+  ending), and `picket_first` then built another for the same port: 5,117
+  pickets spawned in 50 years on one seat. **A seat whose picket a sentry turned
+  away blockades that port no more** (`sentried`). It is recorded only when the
+  threat is a sentry, so Warfare-only runs are unchanged.
+- Blockade stacks shot the sentries standing beside them, and a center rebuilt
+  each one it lost. Counting only the sentries ordered closed that loop, and
+  was **superseded by R-WAR46**: replacing losses is a pricing question. At
+  the hull's own price the loop returns, because a sentry costs 0.03 kt
+  against banks of thousands. **R-WAR47's loss price closes it**: on the card
+  bed, sentries ordered fall from 3,782 to 548 per run (mean of four seeds)
+  and the defending seat's colony-years rise (appendix §D.24).
+- **The losses are withdrawals.** A sentry fired on by a neutral it can
+  outrun withdraws (R-WAR26's third ending): it stands down to Reserve at the
+  center it guarded, holds fire on neutrals, and is then wrecked as a Reserve
+  hull. On seed 1, 1,922 sentries withdrew in the last 50 of 800 years, and
+  none was wrecked while still a sentry. Whether a sentry should withdraw from
+  its own center at all is R-WAR48.
+
+**8.22.4 `OPEN`.** R-WAR44 (every missile magnitude), R-WAR47 (ratifying
+`κ = 3`), R-WAR48 (whether a sentry withdraws from its own center). The sweep of the sentry ratio
+and its thresholds is T-140. Whether the spent-round debris store should be
+cut is T-141.
+
+---
+
 ## 9. Register
 
 ### Ratified
@@ -2886,6 +2973,11 @@ R-WAR43 (what a seat may believe about rival production, and its lag).
 | **R-WAR41** | **does `$` change hands at the coerced price `π_v`**, or is `P_v − π_v` only recorded? (§8.21.3) | the author; then stage 4 of T-135 |
 | **R-WAR42** | **the GCU Design** — its class name and its hold/loadout/drive split on the General Contact hull (§8.21.4) | the author, then the arena's rating bed |
 | **R-WAR43** | **belief about rival mineral production** — which observations count (miners seen at a rock, laden departures) and how stale they may be (§8.21.3) | stage 2 of T-135, with a census of the estimator's error |
+| **R-WAR44** | **the missile magnitudes** — warhead `2·10¹⁰` kJ, structure under point defense `4·10⁹` kJ, round 1.25 t, 8 rounds per tube, burst 4 per tube (the arena's), reload 1 day — all placeholders (§8.22) | a sweep against the arena's laser-vs-missile balance, with T-140 |
+| ~~**R-WAR45**~~ | **resolved (the author's ruling): point defense comes out of the beam's ordinary firing cycle** — mounts committed to a round deliver nothing at hulls, and a beam stops rounds no faster than its rate, so volume of fire overwhelms it (§8.22.1) | — |
+| ~~**R-WAR46**~~ | **resolved (the author's ruling): replacing losses in a war is a pricing question** — a center counts sentries standing or ordered, and a replacement is a priced build (§8.22.1) | — |
+| **R-WAR47** | **how a loss enters a replacement's price** — built as `c_s · (1 + κ · L)`, `L` the center's sentries lost under fire (wrecked or withdrawn), the factor a shadow price on the decision (§8.22.1). The author ruled the price is set by Monte Carlo: `examples/sentry_price_sweep`, eight seeds at 800 yr, separates `κ = 0` from `κ > 0` (defending seat's colony-years +4.65% ± 1.94 at `κ = 3`, work-years −0.13% ± 1.44) and does not separate `κ ∈ [1, 1000]` (appendix §D.24). **`κ = 3` ships, chosen by Monte Carlo** | ratification of `κ = 3`, or a sweep on a bed with more seats or a later horizon that separates the plateau |
+| **R-WAR48** | **whether a sentry withdraws from its own center** — under fire from a neutral it can outrun, a sentry takes R-WAR26's third ending, stands down to Reserve at the center it guarded and is wrecked there holding fire; every sentry loss on the card bed is this path (§8.22.3). *Recommended:* a sentry's post is its center, so it continues under fire as a hull with nowhere to withdraw to | the author |
 | **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
 | ~~**R-WAR26**~~ | **what ends a pitched battle — ruled and built (T-133)**: all three, each on the event that raises it; R-L2 is answered as repeated passes (§8.19.6) | — |
 | ~~**R-WAR22**~~ | ~~damage does not persist past an engagement~~ — **resolved (T-133):** damage persists for the hull's life (§8.19.5); repair is R-WAR31 | — |
