@@ -1149,6 +1149,14 @@ the other side's kills at a steady rate. Habits:
   pricing question (the author's ruling, R-WAR46): a price that cannot see the
   loss does not limit it — a sentry is 0.03 kt against banks of thousands —
   so make the price see it (R-WAR47) rather than adding a counting rule.
+- **A sweep whose arms are bit-identical is measuring a knob with no input,
+  and the input is the place to look (R-WAR47).** The first `κ` sweep read
+  zero sentry losses on runs that ordered 5,589 sentries, because the loss
+  counter matched role Sentry at the wreck and a sentry under fire withdraws
+  first, standing down to Reserve. One census of the last 50 years by log
+  kind found 1,922 withdrawals. **Count a loss where the post is left, not
+  where the hull dies** — the same trap as R-O89's retirements, which a
+  filter read after the re-role.
 - **A flag that schedules nothing must be cleared on every exit path.** A
   shooter left in `firing` with no discharge pending can never be restarted,
   because a new encounter starts discharges only for a shooter not already in

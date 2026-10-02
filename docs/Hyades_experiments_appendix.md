@@ -2878,6 +2878,83 @@ and 11 at 1,200 yr. Test targets on this session's machine: unit 4.5 s (298
 tests), determinism 41.8 s, smoke 25.1 s, telemetry 21.9 s. That machine ran
 faster than the one above, so the two sets of times are not comparable.
 
+**R-WAR47: the loss price, set by Monte Carlo** (the author's ruling). A
+center that has lost `L` sentries orders as many as its budget buys at
+`c_s · (1 + κ · L)`; the sweep chooses `κ`
+(`Doctrine::sentry_loss_price`). Harness: `examples/sentry_price_sweep`.
+Bed: 3 seats, seat 0 plays the missile card and seat 1 the first Warfare
+card at the 200-yr barrier, seat 2 none, 800 yr. The only thing varied is
+seat 0's `κ`. Objective: seat 0's colony-years and work-years, each divided
+by the same seed's `κ = 0` arm (common random numbers), and their geometric
+mean.
+
+*The first sweep counted only sentries wrecked as sentries, and every arm
+was bit-identical.* `L` was 0 on seeds 1 and 7 with 5,589 and 2,472 sentries
+ordered. A census of the last 50 years on seed 1 found the path the count
+missed:
+
+| log row, 750–800 yr, seed 1 | count |
+|---|---|
+| sentry withdrawals (`CourseChanged`, role Sentry, reason Withdraw) | 1,922 |
+| Reserve hulls wrecked | 1,928 |
+| sentries spawned | 2,115 |
+| sentries wrecked as sentries | 0 |
+
+A sentry fired on by a neutral it can outrun withdraws (R-WAR26), stands down
+to Reserve at its own center, holds fire on neutrals and is wrecked there.
+The counter read the role after the re-role. `L` now counts a sentry leaving
+its post by either exit (`leave_missile_post`, reached only from a wreck or a
+withdrawal, both answers to fire). R-WAR48 asks whether the withdrawal
+should happen at all.
+
+*Sweep, after the fix.* Mean over seeds of the per-seed change against
+`κ = 0`, ± one standard error. Seeds 1, 7, 42, 31337 are the standard bed;
+2, 3, 5, 11 are the replication set.
+
+| `κ` | colony-years, standard 4 | work-years, standard 4 | colony-years, replication 4 | work-years, replication 4 |
+|---|---|---|---|---|
+| 0.03 | −0.06% ± 0.16 | +0.06% ± 0.41 | — | — |
+| 0.1 | +0.91% ± 1.03 | +2.56% ± 1.50 | +4.18% ± 2.25 | −1.45% ± 1.07 |
+| 0.3 | +2.29% ± 2.53 | −0.26% ± 1.67 | — | — |
+| 1 | +3.00% ± 2.55 | +2.06% ± 2.56 | +5.54% ± 2.77 | −3.11% ± 0.91 |
+| 3 | +3.84% ± 3.12 | +1.65% ± 2.55 | +5.45% ± 2.71 | −1.91% ± 1.05 |
+| 10 | +4.38% ± 3.59 | +2.50% ± 2.28 | +5.90% ± 2.94 | −2.47% ± 1.21 |
+| 30 | +4.59% ± 3.60 | +2.38% ± 2.32 | +5.87% ± 2.94 | −3.26% ± 0.80 |
+| 100 | +4.55% ± 3.61 | +2.38% ± 2.33 | +5.89% ± 2.94 | −3.26% ± 0.80 |
+| 1000 | +4.55% ± 3.61 | +2.38% ± 2.33 | +5.88% ± 2.94 | −3.26% ± 0.80 |
+
+Pooled over all eight seeds:
+
+| `κ` | colony-years | work-years | geometric mean | seeds positive | seat 1's colony-years | events |
+|---|---|---|---|---|---|---|
+| 0.1 | +2.55% ± 1.30 | +0.55% ± 1.14 | +1.51% ± 0.71 | 7/8 | −1.12% ± 0.66 | −7.2% ± 2.2 |
+| 1 | +4.27% ± 1.81 | −0.53% ± 1.59 | +1.80% ± 1.28 | 5/8 | −1.43% ± 0.65 | −9.3% ± 2.8 |
+| 3 | +4.65% ± 1.94 | −0.13% ± 1.44 | +2.19% ± 1.37 | 6/8 | −1.17% ± 0.65 | −10.0% ± 3.4 |
+| 10 | +5.14% ± 2.17 | +0.02% ± 1.52 | +2.50% ± 1.46 | 6/8 | −1.17% ± 0.66 | −10.5% ± 3.3 |
+| 30–1000 | +5.2% ± 2.2 | −0.44% ± 1.56 | +2.31% ± 1.51 | 5/8 | −1.20% ± 0.69 | −10.6% ± 3.4 |
+
+Sentries ordered per run fall from 3,782 at `κ = 0` to 548 at `κ = 3` on the
+standard four, and losses from 2,847 to 83. Wall time per run on the
+standard four, uncontended: 37.8 s at `κ = 0`, 20.0 s at `κ = 3`.
+
+*Reading.* The sweep separates `κ = 0` from `κ > 0`: colony-years rise by
+2.4 standard errors at every `κ ≥ 1`, and work-years do not move at any.
+It does not separate the values of `κ` from 1 to 1000, which differ by less
+than one standard error; above 10 the arms converge, because a center then
+replaces almost nothing after its first loss. Most of the standard bed's
+gain is seed 1 (+15.1% colony-years at `κ = 10`); the replication set gains
+on three or four of four seeds at every `κ ≥ 0.1`. `κ = 3` ships: it sits
+inside the plateau and short of the limit where a loss ends replacement,
+which would turn R-WAR46's pricing into a ban. It is a choice of a point in
+a plateau the sweep measured, not an optimum it found.
+
+Card-free runs are bit-identical to `0887203` on seeds 1, 7, 42, 31337 at
+1,000 yr (events, every seat's stocks, the mass ledger). Test targets, this
+session's machine, timed beside `0887203`'s binary: determinism 67.9 s →
+63.3 s, smoke 44.3 s → 42.6 s; unit 7.1 s (300 tests), telemetry 32.6 s.
+The determinism target is over 60 s on both binaries on this machine and
+inside the 72-s band; it was 41.8 s on the previous session's.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

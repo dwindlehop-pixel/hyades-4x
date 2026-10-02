@@ -1225,7 +1225,7 @@ impl Simulation {
     /// post it cannot hold under fire, or breaking off on believed kinematics
     /// (ending 3). It stands down to Reserve on arrival, unloading whatever it
     /// carries (`sys_return_arrive`).
-    fn withdraw(&mut self, e: Entity) {
+    pub(super) fn withdraw(&mut self, e: Entity) {
         if !self.live_hull(e) {
             return;
         }

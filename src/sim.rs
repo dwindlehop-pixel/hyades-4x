@@ -3544,6 +3544,9 @@ pub struct Simulation {
     /// the build branch counts, so a lost one leaves a place a priced build
     /// may fill (R-WAR46 ruled: replacing losses is a pricing question).
     sentries: BTreeMap<u64, Vec<Entity>>,
+    /// **Sentries each center has lost to fire** (R-WAR47): what
+    /// `Doctrine::sentry_loss_price` multiplies into the next one's price.
+    sentries_lost: BTreeMap<u64, u32>,
     /// **Ammo runs in flight**, by `(seat, post)`: the hauler flying it.
     ammo_runs: BTreeMap<(u32, u64), Entity>,
     /// **Missile hulls flying to a center to rearm**: `(post, center)`.
@@ -3803,6 +3806,7 @@ impl Simulation {
             pd_busy: BTreeMap::new(),
             ordnance_debris: 0.0,
             sentries: BTreeMap::new(),
+            sentries_lost: BTreeMap::new(),
             ammo_runs: BTreeMap::new(),
             rearm_trips: BTreeMap::new(),
             ordnance_short: BTreeMap::new(),
@@ -6746,6 +6750,7 @@ impl Simulation {
             blockade_ready: self.blockade_doctrine(p) && self.blockade_ports_seen(p) > self.ports_covered(p),
             sentry_cost: self.sentry_price(),
             sentries_here: self.sentries.get(&center.0).map_or(0, |s| s.len() as u32),
+            sentries_lost: self.sentries_lost.get(&center.0).copied().unwrap_or(0),
             defended: self.held_at(center).map_or(Kilotons::ZERO, |h| h.total().on_scale::<units::Mass>())
                 + self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),

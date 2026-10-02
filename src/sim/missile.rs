@@ -66,6 +66,10 @@ pub struct MissileStats {
     pub returns: u64,
     /// Kilotonnes of rounds fabricated from basics.
     pub fabricated_kt: f64,
+    /// Sentries ordered (R-WAR47's census).
+    pub sentries_ordered: u64,
+    /// Sentries that left their post under fire — wrecked or withdrawn.
+    pub sentries_lost: u64,
 }
 
 impl Simulation {
@@ -352,6 +356,7 @@ impl Simulation {
         self.world.cargo.insert(e, Minerals::default());
         self.world.pop_cargo.insert(e, Kilotons::ZERO);
         self.sentries.entry(center.0).or_default().push(e);
+        self.missile_stats.sentries_ordered += 1;
         let at = *self.world.position.get(center).unwrap();
         let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, at, at, accel, launch_delay);
@@ -695,10 +700,20 @@ impl Simulation {
     /// **Take a hull off whatever missile books it is on** — a sentry's
     /// center, a rearm trip — when it is wrecked or leaves (called from
     /// `leave_post`).
+    ///
+    /// **A sentry that leaves is a loss to its center** (R-WAR47), whether it
+    /// is wrecked at its post or withdraws from it: both callers of
+    /// `leave_post` are answers to fire, and a withdrawn sentry stands down to
+    /// Reserve and holds fire on neutrals, so the post is gone either way.
+    /// Measured on the card bed, withdrawals were all of the losses: 1,922 in
+    /// the last 50 of 800 years on seed 1, against no sentry wrecked as a
+    /// sentry (appendix §D.24).
     pub(super) fn leave_missile_post(&mut self, e: Entity) {
         self.rearm_trips.remove(&e.0);
         if self.world.role.get(e).copied() == Some(Role::Sentry) {
             if let Some(center) = self.world.voyage.get(e).map(|v| v.target) {
+                *self.sentries_lost.entry(center.0).or_default() += 1;
+                self.missile_stats.sentries_lost += 1;
                 if let Some(s) = self.sentries.get_mut(&center.0) {
                     s.retain(|&h| h != e);
                     if s.is_empty() {
@@ -917,7 +932,7 @@ mod tests {
         let d = Doctrine::default();
         let st = Standing::of(&d);
         let rich = Kilotons::new(1e12);
-        assert_eq!(st.sentries_wanted(rich, Price::new(0.03)), 0, "no center orders a sentry by default");
+        assert_eq!(st.sentries_wanted(rich, Price::new(0.03), 0), 0, "no center orders a sentry by default");
         for role in [Role::Scout, Role::Colonizer, Role::Miner, Role::Picket] {
             assert!(!st.design_for(role).1.is_missile(), "{role:?} is not on a missile Design by default");
         }
@@ -933,9 +948,9 @@ mod tests {
         // In proportion to what there is to defend (the author's ruling).
         let one = Price::new(0.03);
         let per = one.kilotons() / crate::cards::MISSILE_SENTRY_RATIO;
-        assert_eq!(st.sentries_wanted(Kilotons::new(per * 0.99), one), 0);
-        assert_eq!(st.sentries_wanted(Kilotons::new(per * 1.01), one), 1);
-        assert_eq!(st.sentries_wanted(Kilotons::new(per * 10.01), one), 10, "ten times the value, ten sentries");
+        assert_eq!(st.sentries_wanted(Kilotons::new(per * 0.99), one, 0), 0);
+        assert_eq!(st.sentries_wanted(Kilotons::new(per * 1.01), one, 0), 1);
+        assert_eq!(st.sentries_wanted(Kilotons::new(per * 10.01), one, 0), 10, "ten times the value, ten sentries");
         assert_eq!(st.design_for(Role::Sentry), (HullType::LimitedOffensive, Class::Butte));
         assert!(!played.missile_pickets, "the card arms no picket: its supply line is not hardened");
         for role in Class::MISSILE_ROLES {
@@ -1196,6 +1211,42 @@ mod tests {
         sim.deliver(gun, s, 1e15);
         assert!(!sim.live_hull(s), "wrecked");
         assert!(sim.sentries.get(&h0.0).is_none_or(|v| v.is_empty()), "and off its center's count");
+        assert_eq!(sim.sentries_lost.get(&h0.0), Some(&1), "and on its center's losses (R-WAR47)");
+        assert_eq!(sim.missile_stats().sentries_lost, 1);
+    }
+
+    /// **A sentry that withdraws is lost to its center too** (R-WAR47): it
+    /// stands down to Reserve and leaves the count, and the loss is priced.
+    #[test]
+    fn a_withdrawn_sentry_is_a_loss_to_its_center() {
+        let mut sim = bed(1);
+        let s = sentry(&mut sim, 0);
+        let h0 = home(&sim, 0);
+        sim.withdraw(s);
+        assert_eq!(sim.world.role.get(s), Some(&Role::Reserve), "stood down");
+        assert!(sim.sentries.get(&h0.0).is_none_or(|v| v.is_empty()), "off its center's count");
+        assert_eq!(sim.sentries_lost.get(&h0.0), Some(&1), "and on its losses");
+    }
+
+    /// **A loss raises the price of the next sentry by `κ` of its own**
+    /// (R-WAR47): a center that wanted ten at `κ = 1` wants five after one
+    /// loss and two after four, and `κ = 0` replaces every loss.
+    #[test]
+    fn each_lost_sentry_adds_kappa_to_the_price_of_the_next() {
+        let one = Price::new(0.03);
+        let ten = Kilotons::new(10.01 * one.kilotons() / crate::cards::MISSILE_SENTRY_RATIO);
+        let at = |kappa: f64| Doctrine {
+            sentry_ratio: crate::cards::MISSILE_SENTRY_RATIO,
+            sentry_loss_price: kappa,
+            ..Doctrine::default()
+        };
+        let (free, priced) = (at(0.0), at(1.0));
+        for lost in [0, 1, 4, 1000] {
+            assert_eq!(Standing::of(&free).sentries_wanted(ten, one, lost), 10, "κ = 0 replaces every loss");
+        }
+        let wanted: Vec<u32> =
+            [0, 1, 4, 9].iter().map(|&l| Standing::of(&priced).sentries_wanted(ten, one, l)).collect();
+        assert_eq!(wanted, vec![10, 5, 2, 1]);
     }
 
     /// **The ordnance book is closed until a Doctrine opens it** (T-139,

@@ -557,9 +557,21 @@ pub struct Doctrine {
     /// times what it holds plus its population, in kilotonnes. Written by the
     /// missile card; `0.0` until then, which is what keeps the sentry Design
     /// (`Class::Butte`) locked behind it. A lost sentry is replaced as a
-    /// priced build (R-WAR46, the author's ruling); how a loss should enter
-    /// that price is R-WAR47. **Placeholder magnitude.**
+    /// priced build (R-WAR46, the author's ruling), at the price
+    /// [`Self::sentry_loss_price`] sets. **Placeholder magnitude.**
     pub sentry_ratio: f64,
+
+    /// **How a lost sentry raises the price of the next one** (R-WAR47,
+    /// `Hyades_warfare_tree.md` §8.22). A center that has lost `L` sentries
+    /// prices one at `c_s · (1 + κ · L)`, with `κ` this field and `c_s` the
+    /// hull and magazine mass, and orders as many as
+    /// [`Self::sentry_ratio`] of what it defends buys at that price. The yard
+    /// still bills `c_s` — mass is what a hull is (R-O57) — so the factor is a
+    /// shadow price: it moves the decision, not the bank. `0.0` replaces
+    /// every loss; a positive `κ` stops replacing where the losses outrun
+    /// what the defended mass is worth. **Chosen by Monte Carlo, not yet
+    /// ratified** (`examples/sentry_price_sweep`, appendix §D.24).
+    pub sentry_loss_price: f64,
 
     /// **Pickets fly the missile Design** (`Class::Mesa`, T-139). No card
     /// writes it: it is the room a later card with supply-line hardening
@@ -701,6 +713,7 @@ impl Default for Doctrine {
             doctrine_demand: crate::cards::WORKS_MIX_DEFAULT,
             refined_demand: [1.0; 4],
             sentry_ratio: 0.0,
+            sentry_loss_price: SENTRY_LOSS_PRICE,
             missile_pickets: false,
             point_defense: true,
             ordnance_market: false,
@@ -993,6 +1006,9 @@ pub struct ProductionContext {
     /// **What this center has to defend**, kt: everything its empire holds
     /// there, every tier, plus its population (T-139).
     pub defended: Kilotons,
+    /// **Sentries this center has lost** to fire (R-WAR47): what
+    /// [`Doctrine::sentry_loss_price`] multiplies.
+    pub sentries_lost: u32,
     /// Known, unclaimed, non-Barren worlds this empire could still expand to.
     /// The autopilot builds survey craft to keep this above
     /// [`Doctrine::survey_reserve`] — expansion consumes candidates, so without
@@ -1386,7 +1402,8 @@ impl Autopilot for BaselineAutopilot {
         // (T-139) — here and in the fallback below, the two places survey is
         // chosen. Bounded by the center's share of what it defends, and zero
         // unless the missile card was played.
-        let wants_sentry = ctx.sentries_here < Standing::of(doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost);
+        let wants_sentry = ctx.sentries_here
+            < Standing::of(doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost, ctx.sentries_lost);
         let can_afford_sentry = ctx.stockpile_total + Price::new(1e-9) >= ctx.sentry_cost;
         if candidates.is_empty() && wants_sentry && can_afford_sentry {
             return Standing::of(doctrine).order_for(Role::Sentry);
@@ -1738,6 +1755,15 @@ pub struct Standing<'a> {
 /// is for, and the two answers should not disagree. Nothing production-built
 /// reaches that pass — every build stamps a class — but
 /// `every_hull_has_a_role_under_every_doctrine` does.
+/// **The sentry loss price `κ`** ([`Doctrine::sentry_loss_price`], R-WAR47),
+/// **chosen by Monte Carlo and not yet ratified**
+/// (`examples/sentry_price_sweep`, appendix §D.24). Over eight seeds at
+/// 800 yr, every `κ > 0` beats `κ = 0` on the defending seat's colony-years
+/// (`κ = 3`: +4.65% ± 1.94) with work-years flat, and `κ ∈ [1, 1000]` are
+/// within one standard error of each other. `3` sits inside that plateau and
+/// short of the limit where a center stops replacing after its first loss.
+pub const SENTRY_LOSS_PRICE: f64 = 3.0;
+
 const ASSIGNABLE: [Role; 5] = [Role::Colonizer, Role::Miner, Role::Scout, Role::Picket, Role::Sentry];
 
 impl<'a> Standing<'a> {
@@ -2009,15 +2035,19 @@ impl<'a> Standing<'a> {
         rounds > capacity
     }
 
-    /// **How many sentries a center with `defended` kilotonnes to defend
-    /// orders** (T-139, the author's ruling): as many as
-    /// [`Doctrine::sentry_ratio`] of that mass buys at `sentry` each — defense
-    /// in proportion to what there is to defend. Zero while the ratio is.
-    pub fn sentries_wanted(&self, defended: Kilotons, sentry: Price) -> u32 {
+    /// **How many sentries a center with `defended` kilotonnes to defend,
+    /// having lost `lost`, orders** (T-139, the author's ruling; R-WAR47): as
+    /// many as [`Doctrine::sentry_ratio`] of that mass buys at
+    /// `sentry · (1 + κ · lost)` each, `κ` being
+    /// [`Doctrine::sentry_loss_price`] — defense in proportion to what there
+    /// is to defend, at a price that sees what defending it has cost. Zero
+    /// while the ratio is.
+    pub fn sentries_wanted(&self, defended: Kilotons, sentry: Price, lost: u32) -> u32 {
         if self.doctrine.sentry_ratio <= 0.0 || sentry <= Price::ZERO {
             return 0;
         }
-        (self.doctrine.sentry_ratio * defended.kilotons() / sentry.kilotons()).floor() as u32
+        let price = sentry.kilotons() * (1.0 + self.doctrine.sentry_loss_price.max(0.0) * lost as f64);
+        (self.doctrine.sentry_ratio * defended.kilotons() / price).floor() as u32
     }
 
     /// **Does this empire post to the ordnance book?** (T-139, matching
@@ -2307,6 +2337,7 @@ mod tests {
             blockade_ready: false,
             sentry_cost: Price::new(0.03),
             sentries_here: 0,
+            sentries_lost: 0,
             defended: Kilotons::ZERO,
             infra_cost: Price::new(infra + 1.0),
             // Even thirds against a bank of even thirds: these cases are about
@@ -2343,7 +2374,7 @@ mod tests {
         let mut ctx = prod_ctx(BandTier::III, 4.0, 50.0);
         ctx.defended = Kilotons::new(1e6);
         ctx.sentry_cost = Price::new(0.03);
-        ctx.sentries_here = Standing::of(&doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost) - 1;
+        ctx.sentries_here = Standing::of(&doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost, 0) - 1;
         assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), sentry, "one short, and affordable");
         let full = ProductionContext { sentries_here: ctx.sentries_here + 1, ..ctx };
         assert_ne!(ap.production_choice(&doctrine, &full, &[]), sentry, "at its share");
