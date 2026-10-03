@@ -5568,16 +5568,23 @@ impl Simulation {
             let rwant = self.refined_want(sh.destination, &aboard);
             // **A forge makes what a sister center is waiting on** (galaxy
             // §4.5): a hauler loading at a forge for a center short of a super
-            // or apex has the forge synthesize it, keeping back the forge's own
-            // standing order and its next works bill.
+            // or apex has the forge synthesize it, from what the forge's own
+            // standing order leaves, for each material the sister center pays
+            // at least the forge's reservation for (R-MX16: the works bill is
+            // priced, not held).
             if yard_here && rwant.iter().any(|w| *w > Price::ZERO) {
-                let own = self.need_of(sh.outpost);
-                let owed: [Price; 4] = core::array::from_fn(|i| own[i] + rwant[i]);
-                let keep = self
-                    .next_bill(sh.outpost, PlayerId(p))
-                    .map_or(Price::ZERO, |b| b.iter().fold(Price::ZERO, |a, &x| a + x))
-                    + self.standing.get(&sh.outpost.0).map_or(Price::ZERO, |o| o.basic);
-                self.synthesize_for(p as usize, sh.outpost, &owed, keep);
+                let doctrine = *self.world.doctrine.get(self.player_entity[p as usize]).unwrap();
+                let owed: [Price; 4] = core::array::from_fn(|i| {
+                    let pays = self.refined_wtp(sh.destination, i, &doctrine);
+                    if pays >= self.forge_reservation(sh.outpost, i, &doctrine) {
+                        rwant[i]
+                    } else {
+                        Price::ZERO
+                    }
+                });
+                if owed.iter().any(|w| *w > Price::ZERO) {
+                    self.synthesize_from_available(p as usize, sh.outpost, &owed);
+                }
             }
             let offer = if yard_here {
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
@@ -7445,7 +7452,26 @@ impl Simulation {
     /// native super unaided, and a super whose precursors lie elsewhere needs
     /// them hauled in first (§4.5, R-M5).
     fn synthesize_for(&mut self, p: usize, center: Entity, owed: &[Price; 4], basic_reserve: Price) {
-        let Some(plan) = self.synthesis_plan(center, owed, basic_reserve) else { return };
+        if let Some(plan) = self.synthesis_plan(center, owed, basic_reserve) {
+            self.run_synthesis(p, center, plan);
+        }
+    }
+
+    /// **Synthesize `owed` from what the standing order leaves** (R-MX16, the
+    /// author's ruling: price the works bill). A sale or a sister center's
+    /// order draws on [`Self::available_at`] — the forge's own most-wanted
+    /// order is the one hard hold — and not on a works bill held back: what
+    /// the works are worth to the forge is in the price it asks.
+    fn synthesize_from_available(&mut self, p: usize, center: Entity, owed: &[Price; 4]) {
+        let avail = self.available_at(center);
+        if let Some(plan) = self.synthesis_plan_on(center, &avail, owed, Price::ZERO) {
+            self.run_synthesis(p, center, plan);
+        }
+    }
+
+    /// Carry out a synthesis plan at `center`: draw the basics, make the
+    /// supers and apex, leave the yield's loss as slag, and log each material.
+    fn run_synthesis(&mut self, p: usize, center: Entity, plan: SynthesisPlan) {
         let ys = self.config.super_yield;
         let center_pid = *self.world.planet_id.get(center).unwrap();
         let mut slag = 0.0;
@@ -7483,12 +7509,24 @@ impl Simulation {
     /// a center below population Band IV, with nothing to make, or where the
     /// precursors or the basic reserve fall short.
     fn synthesis_plan(&self, center: Entity, owed: &[Price; 4], basic_reserve: Price) -> Option<SynthesisPlan> {
+        let bank = *self.held_at(center)?;
+        self.synthesis_plan_on(center, &bank, owed, basic_reserve)
+    }
+
+    /// [`Self::synthesis_plan`] against `bank` — the whole holding, or the part
+    /// of it a sale may draw on.
+    fn synthesis_plan_on(
+        &self,
+        center: Entity,
+        bank: &Minerals,
+        owed: &[Price; 4],
+        basic_reserve: Price,
+    ) -> Option<SynthesisPlan> {
         let pop = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
         if self.bands.level(pop) < BandTier::IV {
             return None;
         }
-        let bank = *self.held_at(center)?;
-        let plan = self.precursor_draw(&bank, owed)?;
+        let plan = self.precursor_draw(bank, owed)?;
         let used: f64 = plan.basic_draw.iter().sum();
         let feasible = Basic::ALL.iter().enumerate().all(|(i, &c)| bank.get_basic(c) + 1e-12 >= plan.basic_draw[i])
             && bank.basic_total() - Price::new(used) + Price::new(1e-9) >= basic_reserve;
@@ -7520,12 +7558,6 @@ impl Simulation {
             return None;
         }
         Some(SynthesisPlan { basic_draw, super_make, apex_make, apex_draw })
-    }
-
-    /// What a center's standing order owes in each refined material — zero
-    /// where it has none.
-    fn need_of(&self, center: Entity) -> [Price; 4] {
-        self.standing.get(&center.0).map_or([Price::ZERO; 4], |o| o.refined)
     }
 
     /// **The part of a center's holding that is not reserved** (priced
@@ -8257,13 +8289,17 @@ impl Simulation {
     /// **Placeholder, and flagged as one: R-IND13.** The real works-value
     /// function is §5's and needs T-73/T-74; this is the cheapest form with the
     /// right cross partial, not a claim about magnitudes.
-    fn endowment_minerals(&self, center: Entity, hull: HullType, settlers: Kilotons) -> Price {
+    ///
+    /// The build-out is the **destination's** (`target`); the bank is the
+    /// founding center's. Until the trio homeworld it was priced on the
+    /// founding center by mistake, which a homeworld's own deposit had hidden.
+    fn endowment_minerals(&self, center: Entity, target: Entity, hull: HullType, settlers: Kilotons) -> Price {
         let spare = (hull.colony_seed_capacity(&self.config) - settlers).max(Kilotons::ZERO);
         if spare <= Kilotons::ZERO {
             return Price::ZERO;
         }
         let bank = self.held_at(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
-        let demand = self.build_out_price(center, hull);
+        let demand = self.build_out_price(target, hull);
         // A hold is a mass and a bank is a price; the same kilotons read on two
         // ladders (`units::Qty::on_scale`), crossed explicitly rather than by
         // arithmetic that happens to typecheck.
@@ -8375,7 +8411,7 @@ impl Simulation {
         // creating it. Load before the ship exists as far as the books are
         // concerned — the debit and the credit are the same statement.
         let settlers = self.colony_seed_for(hull, center, target).unwrap_or(Kilotons::ZERO);
-        let minerals = self.endowment_minerals(center, hull, settlers);
+        let minerals = self.endowment_minerals(center, target, hull, settlers);
         if settlers > Kilotons::ZERO {
             let pop = self.world.population.get_mut(center).unwrap();
             *pop = (*pop - settlers).max(Kilotons::ZERO);
@@ -9034,7 +9070,7 @@ impl Simulation {
                         }
                     }
                 }
-                self.post_refined_offers(e, owner, &doctrine, &deficit, &bank, &mut empire_short);
+                self.post_refined_offers(e, owner, &doctrine, &bank, &mut empire_short);
                 self.post_ordnance_offers(e, owner, &doctrine, &deficit, &bank);
             }
         }
@@ -9098,7 +9134,6 @@ impl Simulation {
         e: Entity,
         owner: PlayerId,
         doctrine: &Doctrine,
-        deficit: &[Price; 3],
         bank: &Minerals,
         empire_short: &mut [f64; 4],
     ) {
@@ -9142,42 +9177,61 @@ impl Simulation {
         if self.bands.level(pop) < BandTier::IV {
             return;
         }
-        let Some(bill) = self.next_bill(e, owner) else { return };
         let ys = self.config.super_yield;
-        // **Offer only what settlement can make** (`synthesis_plan`, which
-        // keeps the whole works bill in basics): each precursor's surplus above
-        // its own share of the bill, the total above the whole bill, and both
-        // drawn down as each super's capacity is counted — Red and Green share
-        // Yellow, and two asks cannot both spend it.
-        let mut room: [f64; 3] = std::array::from_fn(|c| {
-            if deficit[c] > Price::ZERO {
-                0.0
-            } else {
-                (bank.get_basic(Basic::ALL[c]) - bill[c].kilotons()).max(0.0)
-            }
-        });
-        let mut total_room = (bank.basic_total() - bill.iter().fold(Price::ZERO, |a, &x| a + x)).kilotons().max(0.0);
-        for (i, s) in Super::ALL.iter().enumerate() {
+        // **Capacity is what the standing order leaves, priced** (R-MX16, the
+        // author's ruling: price the works bill). `bank` is the holding less
+        // the forge's own most-wanted order, which is all settlement may draw
+        // on (`synthesize_from_available`); what the works are worth to the
+        // forge is in its reservation, which rises with its works deficit.
+        // **Each basic is shared in thirds** among the three materials that
+        // draw it — two supers and apex — so every offer can settle together
+        // and apex is offered at all (drawn in sequence, the supers would leave
+        // at most one color for it). The thirds are a placeholder split.
+        let room: [f64; 3] = std::array::from_fn(|c| bank.get_basic(Basic::ALL[c]).max(0.0) / 3.0);
+        for (i, &m) in Material::REFINED.iter().enumerate() {
             if short[i] > Price::ZERO {
                 continue;
             }
-            let (a, b) = s.recipe();
-            let draw = (2.0 * room[a as usize].min(room[b as usize])).min(total_room);
-            room[a as usize] -= draw / 2.0;
-            room[b as usize] -= draw / 2.0;
-            total_room -= draw;
-            let mut qty = ys * draw;
+            // Kilotonnes of each basic one kilotonne of `m` draws.
+            let per: [f64; 3] = match m {
+                Material::Apex => [1.0 / (ys * self.config.apex_yield).max(1e-12) / 3.0; 3],
+                _ => {
+                    let (a, b) = Super::ALL[i].recipe();
+                    let mut v = [0.0; 3];
+                    v[a as usize] = 0.5 / ys.max(1e-12);
+                    v[b as usize] = 0.5 / ys.max(1e-12);
+                    v
+                }
+            };
+            let mut qty = (0..3).filter(|&c| per[c] > 0.0).map(|c| room[c] / per[c]).fold(f64::INFINITY, f64::min);
+            if !qty.is_finite() {
+                continue;
+            }
             let kept = qty.min(empire_short[i]);
             empire_short[i] -= kept;
             qty -= kept;
             if qty > 1e-9 {
-                let price = (self.willingness_to_pay(e, a, doctrine) + self.willingness_to_pay(e, b, doctrine))
-                    / 2.0
-                    / ys.max(1e-12);
+                let price = self.forge_reservation(e, i, doctrine);
                 let book = 3 + i;
                 self.exchange.posted[book].1 += 1;
                 self.exchange.markets[book].asks.push(matching::Offer { entity: e.0, price, qty, pos: at, owner });
             }
+        }
+    }
+
+    /// **A forge's reservation for refined material `i`**, `$`/kt: what the
+    /// basics it draws are worth to it, over the yield — the two recipe basics'
+    /// willingness to pay for a super, all three for apex. It rises with the
+    /// forge's own works deficit (`mineral_pressure_of`), which is how the
+    /// works bill is priced rather than held (R-MX16).
+    fn forge_reservation(&self, e: Entity, i: usize, doctrine: &Doctrine) -> f64 {
+        let ys = self.config.super_yield.max(1e-12);
+        if i < 3 {
+            let (a, b) = Super::ALL[i].recipe();
+            (self.willingness_to_pay(e, a, doctrine) + self.willingness_to_pay(e, b, doctrine)) / 2.0 / ys
+        } else {
+            let mean = Basic::ALL.iter().map(|&c| self.willingness_to_pay(e, c, doctrine)).sum::<f64>() / 3.0;
+            mean / (ys * self.config.apex_yield.max(1e-12))
         }
     }
 
@@ -9511,8 +9565,8 @@ impl Simulation {
         // has since lost is no longer its holding, so that defaults too.
         let mut held = self.holding(c.seller.0, c.seller_center).map_or(0.0, |b| b.get(c.color));
         // **A forge can make what it sold** (galaxy §4.5): a Band IV center
-        // short of a super or apex it owes synthesizes it now, keeping its own
-        // next works bill in basics.
+        // short of a super or apex it owes synthesizes it now, from what its
+        // own standing order leaves (R-MX16).
         // **A center makes the rounds it sold** (T-139), from basics.
         if held + 1e-9 < c.qty && c.color == Material::Ordnance && self.owns_planet(c.seller_center) {
             self.fabricate_rounds(c.seller.0, c.seller_center, c.qty - held);
@@ -9522,10 +9576,7 @@ impl Simulation {
             let i = Material::REFINED.iter().position(|&m| m == c.color).unwrap();
             let mut owed = [Price::ZERO; 4];
             owed[i] = Price::new(c.qty);
-            let reserve = self
-                .next_bill(c.seller_center, c.seller)
-                .map_or(Price::ZERO, |b| b.iter().fold(Price::ZERO, |a, &x| a + x));
-            self.synthesize_for(c.seller.0 as usize, c.seller_center, &owed, reserve);
+            self.synthesize_from_available(c.seller.0 as usize, c.seller_center, &owed);
             held = self.holding(c.seller.0, c.seller_center).map_or(0.0, |b| b.get(c.color));
         }
         let delivered = held + 1e-9 >= c.qty;
@@ -11793,7 +11844,13 @@ mod tests {
 
     #[test]
     fn empires_expand_beyond_the_homeworld() {
-        let (_sim, report) = run_default(3, 42);
+        // **Its own horizon, not `test_cfg`'s** (the trio homeworld): a
+        // homeworld mines nothing of its own, so its first colony waits on
+        // freight from its companions. Probed on seed 42: 80 yr founds none,
+        // 100 yr founds one; 120 ships.
+        let mut cfg = test_cfg(42);
+        cfg.horizon_years = 120.0;
+        let report = Simulation::with_baseline(test_galaxy(3, 42), cfg).run();
         let total_colonies: usize = report.players.iter().map(|p| p.colonies).sum();
         assert!(total_colonies > 0, "no colonies founded: {report:?}");
     }
@@ -12657,7 +12714,10 @@ mod tests {
 
         assert!(sim.world.owner.contains(target), "the colony should have been founded");
         assert!(!sim.picket.contains_key(&target.0), "nothing is left to deny on a world that is now a colony");
-        assert_eq!(sim.picket_count[0], 0, "and the empire must stop counting it as ground held");
+        // The count is the posts the seat holds now — the re-aimed picket may
+        // already stand at its new one — and the colony is not among them.
+        let held: usize = sim.picket.values().filter(|(seat, _, _)| *seat == 0).map(|(_, v, _)| v.len()).sum();
+        assert_eq!(sim.picket_count[0] as usize, held, "and the empire must stop counting it as ground held");
         // The hull is re-tasked, not parked and not destroyed.
         assert_eq!(sim.world.role.get(picket).copied(), Some(Role::Picket), "it is still a picket");
         assert_ne!(
@@ -14039,6 +14099,10 @@ mod tests {
             gcfg.planet_count = 300;
             let galaxy = Galaxy::generate(gcfg).unwrap();
             let mut cfg = test_cfg(21);
+            // The trio homeworld opens on freight, and the three seats' purses
+            // part only once their industries do: identical at 100 yr, apart at
+            // 120 (probed). 160 ships.
+            cfg.horizon_years = 160.0;
             cfg.dollar_per_fabrication = rate;
             let mut sim = Simulation::with_baseline(galaxy, cfg);
             // **Isolate the faucet.** Since T-85 the purse *is* read — clearing
@@ -16032,6 +16096,10 @@ mod tests {
             target,
             Factors::new(Band::new(1.0), Band::new(4.0).in_kilotons(), Band::new(4.0).in_kilotons(), Price::ZERO),
         );
+        // A deposit worth building out, so the destination wants minerals.
+        sim.world
+            .density
+            .insert(target, MineralField { cyan: Band::new(4.0).in_kilotons().kilotons(), ..Default::default() });
         sim.world.population.insert(home, Kilotons::at_tier(BandTier::III));
         {
             let s = sim.held_at_mut(home).unwrap();
@@ -16652,7 +16720,11 @@ mod tests {
         let (mut sim, home) = forge(BandTier::III, bank);
         assert!(sim.take_order(0, home, Price::new(3.0), &owed, None).is_none(), "no forge below Band IV");
         assert_eq!(*sim.held_at(home).unwrap(), bank, "and the holding is untouched");
-        assert_eq!(sim.need_of(home), owed, "the need is recorded for freight and the book");
+        assert_eq!(
+            sim.standing.get(&home.0).map(|o| o.refined),
+            Some(owed),
+            "the need is recorded for freight and the book"
+        );
     }
 
     /// **Apex is Red, Green and Blue in equal parts** (the author's ruling) at
@@ -16820,59 +16892,83 @@ mod tests {
         assert_eq!(sim.exchange_defaults(), 1, "a contract it cannot make defaults");
     }
 
-    /// **A forge offers only capacity settlement can make** (R-MX10's
-    /// confirmation, appendix §D.25). Settlement keeps the whole works bill in
-    /// basics, so a forge long in Red's two precursors and short in Cyan by
-    /// more than they exceed their shares offers no Red; with the Cyan bill
-    /// covered it offers exactly what the total above the bill makes, and that
-    /// offer settles. And a precursor two supers share is offered once: with
-    /// each basic `δ` above its share of the bill, the three supers together
-    /// draw no more than the `3δ` the forge has spare.
+    /// **A forge offers what its standing order leaves, every offer settles,
+    /// and apex is offered** (R-MX16, the author's ruling: price the works
+    /// bill). No works bill is held back: a forge with Cyan and no other basic
+    /// to spare offers Red from Magenta and Yellow anyway, at a reservation
+    /// that carries its works deficit. Each basic is shared in thirds among the
+    /// two supers and apex that draw it, so with `9 kt` of each the forge
+    /// offers `4 kt` of every super and `3 kt` of apex, all of which settle
+    /// together. A standing order's precursors are never offered.
     #[test]
-    fn a_forge_offers_only_capacity_it_can_settle() {
-        let setup = |bank: &dyn Fn([f64; 3]) -> Minerals| {
+    fn a_forge_offers_what_its_standing_order_leaves_at_its_price() {
+        let setup = |bank: Minerals, standing: Option<StandingOrder>| {
             let mut sim = Simulation::with_baseline(test_galaxy(2, 71), test_cfg(71));
             let forge = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
             sim.world.population.insert(forge, Kilotons::at_tier(BandTier::IV));
-            let bill = sim.next_bill(forge, PlayerId(1)).unwrap().map(|x| x.kilotons());
-            *sim.held_at_mut(forge).unwrap() = bank(bill);
+            *sim.held_at_mut(forge).unwrap() = bank;
+            if let Some(o) = standing {
+                sim.standing.insert(forge.0, o);
+            }
             sim.post_exchange_offers();
-            let asks: Vec<f64> = (3..6)
-                .map(|book| sim.exchange.markets[book].asks.iter().filter(|a| a.entity == forge.0).map(|a| a.qty).sum())
-                .collect();
-            (sim, forge, bill, asks)
+            let asks: [f64; 4] = std::array::from_fn(|i| {
+                sim.exchange.markets[3 + i].asks.iter().filter(|a| a.entity == forge.0).map(|a| a.qty).sum()
+            });
+            (sim, forge, asks)
         };
         let ys = SimConfig::new(71).super_yield;
+        let ya = SimConfig::new(71).apex_yield;
+        // Kilotonnes of each basic one kilotonne of a material draws.
+        let per = |i: usize| -> [f64; 3] {
+            if i == 3 {
+                [1.0 / (ys * ya) / 3.0; 3]
+            } else {
+                let (a, b) = Super::ALL[i].recipe();
+                let mut v = [0.0; 3];
+                v[a as usize] = 0.5 / ys;
+                v[b as usize] = 0.5 / ys;
+                v
+            }
+        };
 
-        // Cyan short by more than Magenta and Yellow are long: no Red.
-        let (_, _, bill, asks) = setup(&|b| {
-            let d = b[0] / 4.0;
-            Minerals { cyan: 0.0, magenta: b[1] + d, yellow: b[2] + d, ..Default::default() }
-        });
-        assert!(bill[0] > 0.0, "the bed needs a Cyan share in the works bill: {bill:?}");
-        assert_eq!(asks[0], 0.0, "Red is unmakeable while the works bill is kept: {asks:?}");
+        // No Cyan, Magenta and Yellow long: Red is offered, the rest are not.
+        let (sim, forge, asks) = setup(Minerals { magenta: 9.0, yellow: 9.0, ..Default::default() }, None);
+        assert!((asks[0] - 3.0 / per(0)[1]).abs() < 1e-9, "a third of each precursor as Red: {asks:?}");
+        assert_eq!((asks[1], asks[2], asks[3]), (0.0, 0.0, 0.0), "no Cyan, no Green, Blue or apex: {asks:?}");
+        let red = sim.exchange.markets[3].asks.iter().find(|a| a.entity == forge.0).unwrap();
+        let doctrine = *sim.world.doctrine.get(sim.player_entity[1]).unwrap();
+        assert_eq!(red.price, sim.forge_reservation(forge, 0, &doctrine), "at the forge's reservation");
 
-        // The Cyan share covered: Red is what the total above the bill makes, and it settles.
-        let (sim, forge, bill, asks) = setup(&|b| {
-            let d = b[0] / 4.0;
-            Minerals { cyan: b[0], magenta: b[1] + d, yellow: b[2] + d, ..Default::default() }
-        });
-        let d = bill[0] / 4.0;
-        assert!((asks[0] - ys * 2.0 * d).abs() < 1e-9, "Red {} against {}", asks[0], ys * 2.0 * d);
-        let mut owed = [Price::ZERO; 4];
-        owed[0] = Price::new(asks[0]);
-        let reserve = Price::new(bill.iter().sum());
-        assert!(sim.synthesis_plan(forge, &owed, reserve).is_some(), "the offer settles");
+        // 9 kt of each: every super and apex, and all of them settle together.
+        let bank = Minerals { cyan: 9.0, magenta: 9.0, yellow: 9.0, ..Default::default() };
+        let (mut sim, forge, asks) = setup(bank, None);
+        for (i, want) in [4.0, 4.0, 4.0, 3.0].iter().enumerate() {
+            assert!((asks[i] - want).abs() < 1e-9, "material {i}: {} against {want}", asks[i]);
+        }
+        let before = sim.mass_ledger().total();
+        for (i, &q) in asks.iter().enumerate() {
+            let mut owed = [Price::ZERO; 4];
+            owed[i] = Price::new(q);
+            let held = sim.held_at(forge).unwrap().get(Material::REFINED[i]);
+            sim.synthesize_from_available(1, forge, &owed);
+            let made = sim.held_at(forge).unwrap().get(Material::REFINED[i]) - held;
+            assert!((made - q).abs() < 1e-9, "material {i} settles: made {made} of {q}");
+        }
+        assert!((sim.mass_ledger().total() - before).abs() < 1e-9, "synthesis conserves mass");
 
-        // Every basic `δ` long: the three supers share `3δ`, not `6δ`.
-        let (_, _, bill, asks) = setup(&|b| {
-            let d = b[0] / 4.0;
-            Minerals { cyan: b[0] + d, magenta: b[1] + d, yellow: b[2] + d, ..Default::default() }
-        });
-        let d = bill[0] / 4.0;
-        let drawn: f64 = asks.iter().sum::<f64>() / ys;
-        assert!(drawn <= 3.0 * d + 1e-9, "offered {asks:?}, a draw of {drawn} against {}", 3.0 * d);
-        assert!(drawn > 0.0, "and something is offered");
+        // A standing order owing Blue: its precursors are not offered.
+        let order = StandingOrder {
+            design: Some((HullType::MediumSystems, Class::Delta)),
+            refined: [Price::ZERO, Price::ZERO, Price::new(3.0), Price::ZERO],
+            basic: Price::ZERO,
+        };
+        let (sim, forge, asks) = setup(bank, Some(order));
+        assert_eq!(asks[2], 0.0, "a center short of Blue bids for it and offers none");
+        let avail = sim.available_at(forge);
+        for (c, &b) in Basic::ALL.iter().enumerate() {
+            let drawn: f64 = (0..4).map(|i| asks[i] * per(i)[c]).sum();
+            assert!(drawn <= avail.get_basic(b) + 1e-9, "{b:?}: offers draw {drawn} of {}", avail.get_basic(b));
+        }
     }
 
     /// **A run under a super-billed Design: synthesized, traded, hauled, built,

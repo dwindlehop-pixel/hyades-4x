@@ -439,7 +439,9 @@ I* = (K_c + D) / 2          (Bands — i.e. the geometric mean of the two masses
 
 **Placeholder, flagged: R-IND13.** The real works-value function is §5's and
 needs T-73/T-74. This is the cheapest form with the right cross partial, not a
-claim about magnitudes.
+claim about magnitudes. *Built on the destination* — the engine priced `I*` on
+the founding center by mistake until the trio homeworld exposed it (its own
+deposit had kept the number positive); appendix §D.26.
 
 **The mix is not a second decision.** The settlers are capped by `K_c`, so a
 low-ceiling world takes few people and therefore leaves with a mineral-heavy

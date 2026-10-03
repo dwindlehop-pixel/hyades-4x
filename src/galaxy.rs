@@ -177,6 +177,79 @@ impl Planet {
     }
 }
 
+/// **Color sites** (§4.3; the author: a hex has a distinct slant or two). A
+/// jittered square lattice, [`GalaxyConfig::color_site_spacing_hex`] hex sides
+/// apart, covering the star field. Each site is one hue, drawn in proportion
+/// to the three hotspots' large-scale factors there, with a peak of
+/// `mineral_peak` times that hue's factor — so the galaxy keeps its hue
+/// regions and its `Band IV` seams, and a world's deposit is the Gaussian of
+/// its nearest site of each hue. Generation only; nothing is stored.
+struct ColorSites {
+    spacing: f64,
+    sigma: f64,
+    /// Cells per side is `2·half + 1`, centered on the origin.
+    half: i64,
+    /// Per cell: the site's hue, position and peak Band.
+    cells: Vec<(Basic, f64, f64, f64)>,
+}
+
+impl ColorSites {
+    fn generate(config: &GalaxyConfig, hotspots: &Hotspots, hotspot_sigma: f64, mut rng: Rng) -> ColorSites {
+        let spacing = (config.hex_side_ly * config.color_site_spacing_hex).max(1e-6);
+        // The radial profile is Gamma(2, L_xy): ten scale lengths hold all
+        // but ~5e-4 of the stars, and a world past the lattice reads trace.
+        let half = (10.0 * config.xy_scale() / spacing).ceil() as i64;
+        let side = 2 * half + 1;
+        let mut cells = Vec::with_capacity((side * side) as usize);
+        for iy in -half..=half {
+            for ix in -half..=half {
+                let x = (ix as f64 + 0.5 + 0.7 * (rng.unit() - 0.5)) * spacing;
+                let y = (iy as f64 + 0.5 + 0.7 * (rng.unit() - 0.5)) * spacing;
+                let w = Basic::ALL.map(|b| hotspots.factor(b, x, y, hotspot_sigma));
+                let total: f64 = w.iter().sum();
+                let mut pick = rng.unit() * total;
+                let mut hue = Basic::ALL[2];
+                for (k, &b) in Basic::ALL.iter().enumerate() {
+                    if pick < w[k] {
+                        hue = b;
+                        break;
+                    }
+                    pick -= w[k];
+                }
+                let floor = config.color_site_floor.clamp(0.0, 1.0);
+                cells.push((hue, x, y, config.mineral_peak * (floor + (1.0 - floor) * w[hue as usize])));
+            }
+        }
+        ColorSites { spacing, sigma: spacing * config.color_site_sigma_frac, half, cells }
+    }
+
+    /// Each hue's Band at `(x, y)` before the vertical decay and noise: its
+    /// strongest site among the 5×5 cells around the point (a site two cells
+    /// out is at least 1.3 spacings away, under 4e-4 of its peak at the
+    /// default width).
+    fn bands_at(&self, x: f64, y: f64) -> [f64; 3] {
+        let side = 2 * self.half + 1;
+        let cx = (x / self.spacing).floor() as i64;
+        let cy = (y / self.spacing).floor() as i64;
+        let mut out = [0.0f64; 3];
+        for iy in (cy - 2)..=(cy + 2) {
+            for ix in (cx - 2)..=(cx + 2) {
+                if ix < -self.half || ix > self.half || iy < -self.half || iy > self.half {
+                    continue;
+                }
+                let (hue, sx, sy, peak) = self.cells[((iy + self.half) * side + (ix + self.half)) as usize];
+                let (dx, dy) = (x - sx, y - sy);
+                let band = peak * transcendental::exp(-(dx * dx + dy * dy) / (2.0 * self.sigma * self.sigma));
+                let k = hue as usize;
+                if band > out[k] {
+                    out[k] = band;
+                }
+            }
+        }
+        out
+    }
+}
+
 /// The three hue hotspots (§4.3), placed on a ring in the reference (z=0)
 /// plane. Density of each basic peaks at its hotspot and falls off as an
 /// isotropic 3-D Gaussian — no privileged disc plane, matching the isotropic
@@ -189,6 +262,13 @@ pub struct Hotspots {
 }
 
 impl Hotspots {
+    /// Hue `b`'s large-scale Gaussian factor at `(x, y)`.
+    fn factor(&self, b: Basic, x: f64, y: f64, sigma: f64) -> f64 {
+        let h = self.get(b);
+        let (dx, dy) = (x - h.x, y - h.y);
+        transcendental::exp(-(dx * dx + dy * dy) / (2.0 * sigma * sigma))
+    }
+
     fn get(&self, b: Basic) -> Vec3 {
         match b {
             Basic::Cyan => self.cyan,
@@ -324,17 +404,45 @@ pub struct GalaxyConfig {
     /// shrink.
     pub mineral_peak: f64,
 
+    /// **Spacing of the color sites, in hex sides** (§4.3; the author: "size
+    /// the color regions so a hex has a distinct slant or two"). The three hue
+    /// hotspots set where each hue is strong across the galaxy; inside that
+    /// envelope the ore sits at color sites on a jittered lattice this far
+    /// apart, each one hue, so a world's deposit leans to the hue of its
+    /// nearest site or two. **Placeholder**: `1.0`, one site per hex side.
+    pub color_site_spacing_hex: f64,
+    /// Width of a color site's Gaussian, as a fraction of the site spacing.
+    /// At `0.5` two sites of different hue overlap little, so a world between
+    /// them carries both and a world beside one carries one. **Placeholder.**
+    pub color_site_sigma_frac: f64,
+    /// **The floor on a color site's peak**, as a fraction of `mineral_peak`.
+    /// The hotspots' envelope falls to nothing across most of the disk, and
+    /// with it every color, so a region far from the hue centers had no hue at
+    /// all; with a floor every site carries its hue, and every region leans to
+    /// one or two. A site's peak is `mineral_peak · (floor + (1 − floor) · w)`,
+    /// `w` its hue's large-scale factor. **Placeholder.**
+    pub color_site_floor: f64,
+
     /// Strength `∈ [0,1]` of the habitability↔metallicity anticorrelation
     /// (§4.4, R-M4). `0` = independent, `1` = metal-rich worlds are dead.
     pub anticorrelation: f64,
 
     /// Radius of the homeworld ring, as a fraction of the mean XY radius (§2).
     pub homeworld_ring_frac: f64,
-    /// Homeworld density in each of its two *rich* basics (modest — "enough for
-    /// one modest super, not super-rich", R-G4).
-    pub homeworld_rich_density: f64,
-    /// Homeworld density in its one *poor* basic.
-    pub homeworld_poor_density: f64,
+    /// **A homeworld is a trio** (the author's ruling): the habitable world
+    /// where the seat's population grows — and where its forge will stand —
+    /// holding only a trace of ore, and two companion worlds beside it, one
+    /// rich in each of the archetype's two rich basics. Every forge's
+    /// precursors therefore arrive by freight (§4.5). This is each companion's
+    /// Band in its one color; the other two are trace. **Placeholder.**
+    pub homeworld_companion_density: f64,
+    /// Distance from a homeworld to each companion, ly, tangential to the
+    /// homeworld ring on either side. **Placeholder.**
+    pub homeworld_companion_ly: f64,
+    /// A companion's habitability and pristine biosphere, as a Band position —
+    /// low, as the anticorrelation of §4.4 makes a mineral-rich world.
+    /// **Placeholder.**
+    pub homeworld_companion_habitability: f64,
     /// **A homeworld's habitability and pristine biosphere, as a Band
     /// position** — its carrying capacity `K` (industry §1.1).
     ///
@@ -367,10 +475,14 @@ impl GalaxyConfig {
             hotspot_ring_frac: 0.55,
             hotspot_sigma_frac: 0.42,
             mineral_peak: 4.0,
+            color_site_spacing_hex: 1.0,
+            color_site_sigma_frac: 0.5,
+            color_site_floor: 0.5,
             anticorrelation: 0.7,
             homeworld_ring_frac: 0.5,
-            homeworld_rich_density: 1.4,
-            homeworld_poor_density: 0.25,
+            homeworld_companion_density: 3.0,
+            homeworld_companion_ly: 2.0,
+            homeworld_companion_habitability: 0.5,
             homeworld_ceiling: 4.2,
             weibull_k: 1.4,
             seed,
@@ -669,8 +781,9 @@ impl Galaxy {
             Vec3::new(hotspot_ring * cos, hotspot_ring * sin, 0.0)
         };
         let hotspots = Hotspots { cyan: hotspot(0.0), magenta: hotspot(1.0), yellow: hotspot(2.0) };
+        let sites = ColorSites::generate(&config, &hotspots, hotspot_sigma, rng.fork(0xC010_5173));
 
-        let mut planets: Vec<Planet> = Vec::with_capacity(config.planet_count + config.players);
+        let mut planets: Vec<Planet> = Vec::with_capacity(config.planet_count + 3 * config.players);
 
         // --- wild field: XY radially Poisson, Z exponential (module doc) ---
         for i in 0..config.planet_count {
@@ -683,12 +796,18 @@ impl Galaxy {
             let z_decay = transcendental::exp(-(position.z.abs()) / z_scale);
             let mut minerals = MineralField::default();
             let mut band_sum = 0.0;
+            let peaks = sites.bands_at(position.x, position.y);
+            // **One noise draw per world, added to every color** (a world's
+            // richness wobbles as a whole): independent per-color noise gave
+            // ore-poor worlds three similar traces and their regions no slant.
+            // Three draws are still taken, so the stream after them is
+            // unchanged.
+            let draws = [prng.gaussian(), prng.gaussian(), prng.gaussian()];
+            let common = 0.25 * draws[0];
             for b in Basic::ALL {
-                let h = hotspots.get(b);
-                let dx = position.x - h.x;
-                let dy = position.y - h.y;
-                let r2 = dx * dx + dy * dy;
-                let g = transcendental::exp(-r2 / (2.0 * hotspot_sigma * hotspot_sigma));
+                // The hue's site field: its nearest site of that hue, whose
+                // peak the large-scale hotspots set (§4.3, hex-scale slant).
+                let g = peaks[b as usize] / config.mineral_peak.max(1e-12);
                 // **The Gaussian is over Bands (T-62).** Density is a position
                 // on the ladder, so the field is log-normal in mass: a
                 // `Band IV` seam holds ~715,000× a `Band I` one, where the old
@@ -705,8 +824,7 @@ impl Galaxy {
                 // which is the whole of T-62's residual effect on habitability
                 // (§4.4 reads the mean Band, so the representation change
                 // itself is neutral there).
-                let noise = 0.25 * prng.gaussian();
-                let band = (config.mineral_peak * g * z_decay + noise).clamp(0.0, config.mineral_peak);
+                let band = (config.mineral_peak * g * z_decay + common).clamp(0.0, config.mineral_peak);
                 band_sum += band;
                 minerals.set(b, Band::new(band).in_kilotons());
             }
@@ -760,14 +878,14 @@ impl Galaxy {
 
             // rotational archetype assignment: B-R-G cycling (§3).
             let archetype = Archetype::ALL[p % 3];
-            let (rich_a, rich_b, poor) = archetype.alignment();
+            let (rich_a, rich_b, _) = archetype.alignment();
 
-            // super-aligned, bounded exception to anticorrelation: habitable AND
-            // modestly mineralized in two colors (R-G4).
+            // The habitable world of the trio holds a trace of every color: its
+            // forge's precursors come from its companions, by freight.
             let mut minerals = MineralField::default();
-            minerals.set(rich_a, Band::new(config.homeworld_rich_density).in_kilotons());
-            minerals.set(rich_b, Band::new(config.homeworld_rich_density).in_kilotons());
-            minerals.set(poor, Band::new(config.homeworld_poor_density).in_kilotons());
+            for b in Basic::ALL {
+                minerals.set(b, Band::ZERO.in_kilotons());
+            }
 
             let id = PlanetId(planets.len() as u32);
             planets.push(Planet {
@@ -783,6 +901,34 @@ impl Galaxy {
                 population: Kilotons::at_band(Band::new(2.0)), // filled to its starting K
             });
             homeworlds.push(id);
+
+            // The two companions, one per rich basic, either side of the
+            // homeworld along the ring.
+            let tangent = Vec3::new(-sin, cos, 0.0);
+            for (side, rich) in [(1.0, rich_a), (-1.0, rich_b)] {
+                let mut minerals = MineralField::default();
+                for b in Basic::ALL {
+                    let band = if b == rich { config.homeworld_companion_density } else { 0.0 };
+                    minerals.set(b, Band::new(band).in_kilotons());
+                }
+                let at = Vec3::new(
+                    position.x + side * config.homeworld_companion_ly * tangent.x,
+                    position.y + side * config.homeworld_companion_ly * tangent.y,
+                    0.0,
+                );
+                planets.push(Planet {
+                    id: PlanetId(planets.len() as u32),
+                    position: at,
+                    habitability: Band::new(config.homeworld_companion_habitability),
+                    biosphere: Band::new(config.homeworld_companion_habitability),
+                    infrastructure: Band::ZERO,
+                    minerals,
+                    is_homeworld: false,
+                    archetype: None,
+                    owner: None,
+                    population: Kilotons::ZERO,
+                });
+            }
         }
 
         Ok(Galaxy { planets, homeworlds, hotspots, bands: config.pop_bands(), config, fleets: FleetSeeding::default() })

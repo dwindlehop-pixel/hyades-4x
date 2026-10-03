@@ -57,7 +57,9 @@ engine drains a homeworld faster than the default, so the round-four case is not
 yet measurable. Appendix §D.23. **Placeholder** magnitude; the schedule is the
 ruling.
 
-**Eventual self-synthesis.** At **pop Band IV** a homeworld self-synthesizes **exactly one** super — its archetype's — in **modest** quantity, **no supply chain**. The **corrected R-G4:** the homeworld is a **bounded** exception to the habitability↔metallicity anticorrelation (§4.4) — habitable *and* modestly mineralized in two colors, **enough for one modest super, not super-rich**. **R-G4 (`OPEN`):** modest yield; confirm "exactly one super" is hard. *Measured: it is not, in the engine as built* — every homeworld holds all three basics once freight and the Exchange run, so each can make any super at a cost set by its poorest precursor (technology §3.2, appendix §D.23). **What would settle it:** the author's call between a gradient (as built) and a hard rule (e.g. synthesis drawing only on ore mined from the forge's own ground).
+**`RATIFIED` (the author's ruling) — a homeworld is a trio.** The habitable world, where the seat's population grows and its forge will stand, holds only a trace of every basic; beside it, one companion world is rich in each of the archetype's two rich basics. **Every forge's precursors therefore arrive by freight** (§4.5). Built: companions at `Band 3.0` in their one color, trace in the others, habitability and biosphere `Band 0.5`, `2 ly` from the homeworld on either side along the ring (`GalaxyConfig::homeworld_companion_*`, all **placeholders**); they start wild, and the opening's outposts take them. Card-free, 4 seeds, 1,500 yr: colony-years and colonies unchanged within two standard errors; the first colony comes later (appendix §D.26).
+
+**Eventual self-synthesis.** At **pop Band IV** a homeworld self-synthesizes **exactly one** super — its archetype's — in **modest** quantity. **R-G4 (`OPEN`):** confirm "exactly one super" is hard. *Measured: it is not, in the engine as built* — a forge synthesizes any super whose basics its holding has, and an empire's freight brings every basic to it for its works, so each makes every super itself; with the trio, hex-scale color and a priced works bill, **0.44% of refined mass synthesized crosses between empires** (24 runs, appendix §D.26). **What would settle it:** the author's call between a gradient (as built) and a hard rule. *Recommended:* a homeworld forge synthesizes only its archetype's native super, and a colony forge none, so every non-native super is bought from the empire whose native it is.
 
 ---
 
@@ -104,7 +106,7 @@ that spec) the two used to share notation with. **No direct substitution.**
 `Hyades_mineral_cost_curve.md` §5.0 only names them.
 
 ### 4.3 Tier-1 distribution — 3D field, XY-dominant, **Gaussian over Bands** (T-62)
-**Gaussian in X & Y** (each hue's hotspot) **× exponential decay in Z from the midplane**. A turtler mines the **Z-column** for a modest baseline, but the mass sits near Z=0 and one hex captures only its XY footprint, so **the lion's share needs X-Y expansion**. **R-M3:** Z scale-height / ratio.
+**Gaussian in X & Y** (each hue's hotspot) **× exponential decay in Z from the midplane**. **`RATIFIED` (the author's direction) — color is sized to the hex: "a hex has a distinct slant or two."** The three hotspots set where each hue is strong across the galaxy; inside that envelope the ore sits at **color sites** on a jittered lattice one hex side apart, each a single hue drawn in proportion to the hotspots' weights there, with a peak of `mineral_peak · (floor + (1 − floor) · w)`. A world's deposit in a hue is its nearest site of that hue (`Band IV` seams stay at the hue centers). One noise draw per world is added to every color, so the noise does not reorder a world's colors. Spacing `1.0` hex side, width `0.5` of the spacing, floor `0.5` — **placeholders** (`GalaxyConfig::color_site_*`). Measured over 10-ly cells: 85% lean to one or two colors (a top color holding 80% of the ore, or a top two holding 90%), against 51% under the three hotspots alone (appendix §D.26). A turtler mines the **Z-column** for a modest baseline, but the mass sits near Z=0 and one hex captures only its XY footprint, so **the lion's share needs X-Y expansion**. **R-M3:** Z scale-height / ratio.
 
 **The Gaussian is over the *Band*, not over the mass.** That is the design
 statement, and it is the only reading under which the shape means anything: a
@@ -154,8 +156,10 @@ Synthesis **only at pop Band IV** (§5.2). Each super needs **two** basics from 
 holding.** A center whose population reads `Band IV` is a forge. It synthesizes
 when an order it is paying owes a super or apex it does not hold, or when a
 contract it sold comes due, drawing the recipe's precursors from its own holding
-at `Y_super = 2/3` and `Y_apex = 1/2` (placeholders, R-M2), all or nothing, and
-keeping what its order or its next works bill needs in basics. The yield's loss
+at `Y_super = 2/3` and `Y_apex = 1/2` (placeholders, R-M2), all or nothing. For
+its own order it keeps that order's basic part; for a sale or a sister center
+it draws on what its own standing order leaves, and its works bill is priced,
+not held (matching §10.6, R-MX16 — the author's ruling). The yield's loss
 is slag at the forge (R-O59). What consumes supers is the author's ruling
 (`Hyades_trees_and_card_value.md` §4.6): **only a tier-3 card's Design writes,
 and apex only win conditions** — so a card-free game synthesizes nothing.

@@ -3012,6 +3012,71 @@ rule (2.11 kt of Red offered that settlement cannot make) and passes on the
 new. Card-free runs are bit-identical to `e3e87d0` on seeds 1, 7, 42 and
 31337 at 1,000 yr: a card-free game posts no refined bid, so no ask clears.
 
+## D.26 R-MX16 priced, the trio homeworld, and hex-scale color
+
+*Supports matching §10.6, galaxy §3, §4.3 and §4.5, industry §1.7. Beds: the
+§D.25 census (3 seats, 200 planets, 1,500 yr, Designs billed 25% refined, 4
+seeds × 6 arms) for trade; `examples/work_years` (3 seats, standard galaxy, 4
+seeds, 1,500 yr) against `1e87f9d` for the card-free economy; a scratch slant
+census over 10-ly cells (never landed).*
+
+**The share of supers forged through trade** — refined kilotonnes delivered
+between empires over refined kilotonnes synthesized, pooled over 24 runs:
+
+| engine | share | runs above 0 |
+|---|---|---|
+| works bill held (§D.25) | 0.05% (0.07 of 128 kt) | 3 |
+| works bill priced | 0.71% (0.91 of 129 kt) | 12 |
+| + hotspots aligned to homeworlds (not landed) | 0.36% (0.69 of 188 kt) | 8 |
+| + homeworld poor deposit at trace (not landed) | 0.45% (0.85 of 188 kt) | 9 |
+| priced + hex-scale color + trio (landed) | **0.44%** (0.26 of 58 kt) | 2 |
+
+*Mechanism, measured.* A forge synthesizes any super whose basics its holding
+has, and an empire's freight brings every basic to its centers for its works.
+At the barriers on the aligned-hotspot galaxy a homeworld held a median 8 kt
+of its poor basic (1.7 kt with the trio) and its empire a median 1,546 kt
+(639 kt), against 0.3–3 kt of super demand per seat per run. Each forge
+supplies its own empire's shortfall before it offers, and refined trade clears
+only at a barrier — twice per run after the first forge at 605–655 yr. No
+geography that leaves every hue within an empire's reach changes this; a
+hard rule on what a forge may make would (R-G4).
+
+**Hex-scale color.** Share of 10-ly cells whose top color holds 80% of the ore
+(one color) or whose top two hold 90% (two), 4 seeds:
+
+| field | one color | two colors | neither | ore in slanted cells |
+|---|---|---|---|---|
+| three hotspots (before) | 36.0% | 14.9% | 49.0% | 99.9% |
+| color sites, no floor | 33.4% | 15.0% | 51.6% | 99.7% |
+| sites, one noise draw per world, no floor | 21.7% | 1.7% | 76.7% | 99.8% |
+| sites + floor 0.15 | 39.2% | 4.6% | 56.2% | 99.7% |
+| sites + floor 0.3 | 66.0% | 5.6% | 28.4% | 99.7% |
+| **sites + floor 0.5 (landed)** | **79.4%** | **5.3%** | **15.3%** | 99.9% |
+
+By ore mass the old field already slanted (one rich world dominates a cell);
+by cell count half the cells had no slant because the envelope leaves most of
+the disk with almost no ore in any color. The floor gives every site its hue.
+12 seats reads within a point of 3 seats in every row.
+
+**Card-free economy** (paired by seed against `1e87f9d`): work-years +16.36% ±
+11.66 (not resolved, seeds −10.6% to +43.3%), colony-years +0.19% ± 0.46,
+colonies +1.24% ± 0.54, vehicles +19.8% ± 1.9, yr/s −2.45% ± 0.68 with
+`ns/event` −0.03% ± 0.93 — the simulation does more, each event costs the
+same. The opening is later: `empires_expand_beyond_the_homeworld` founds no
+colony by 80 yr and one by 100 yr on seed 42 (it now runs 120 yr).
+
+**A defect the trio exposed.** `endowment_minerals` priced the destination's
+build-out (industry §1.7, `I* = (K_c + D)/2`) on the founding center; a
+homeworld's own deposit had kept it positive. It now prices the target. On the
+card-free bed above it is inert: the runs are identical to the last event with
+and without it.
+
+**Two allocation defects of the priced ask, found by its test.** Counting the
+supers' capacity in sequence left at most one basic for apex, so apex was never
+offered; each basic is now shared in thirds among the two supers and apex that
+draw it. `a_forge_offers_what_its_standing_order_leaves_at_its_price` pins the
+thirds, the settlement of every offer together, and the standing order's hold.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

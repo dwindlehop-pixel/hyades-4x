@@ -390,8 +390,12 @@ fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 4]) {
 /// rotation, and its sentries are ordered in proportion to what a center
 /// holds and houses, so few stand by 300 yr — seed 1 resolves **no** round
 /// there and fails the floor. 350 yr gives 7 and 90 rounds on seeds 1 and 7
-/// (14.1 s); 400 yr gives 13 and 178 (22.1 s).
-const COMBAT_HORIZON: f64 = 350.0;
+/// (14.1 s); 400 yr gives 13 and 178 (22.1 s). **500 yr since the trio
+/// homeworld**: a homeworld holds less, so fewer sentries stand early — seed 1
+/// orders 10 by 450 yr and launches no round there; at 500 yr seeds 1 and 7
+/// resolve 40 and 7 rounds, and the target runs 44 s. The margin on seed 1 is
+/// under 50 yr.
+const COMBAT_HORIZON: f64 = 500.0;
 
 #[test]
 fn combat_runs_are_bit_identical() {

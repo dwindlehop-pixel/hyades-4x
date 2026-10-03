@@ -356,16 +356,15 @@ posts in the refined ones.
   `f_m · d_m` (a declined order is fully blocked, so its pressure is `1`).
 - **Asks** — a center holding `m` above its own `need_m` asks for the excess at
   its own price (zero: it is not short).
-- **Capacity asks** — a forge (population `Band IV`) asks for the supers it
-  could make from basics above its next works bill, at a reservation equal to
-  the precursors' price over `Y_super`. The draw for a super is
-  `2 · min` over its two precursors' surpluses above their own shares of the
-  bill, capped by the total of basics above the whole bill — settlement keeps
-  the whole bill (`synthesis_plan`) — and each super's draw comes off both
-  before the next is counted, since two supers share each precursor. It
-  synthesizes what it sold when the contract comes due, and defaults if it
-  cannot. Every ask is settleable at the moment it is posted; spending between
-  the strike and the due date is the seller's risk (appendix §D.25). A forge's native super is the one whose precursors it
+- **Capacity asks** — a forge (population `Band IV`) asks for the supers and
+  apex it could make from what its own standing order leaves, at its
+  reservation (`forge_reservation`): the precursors' willingness to pay over
+  the yield, which rises with its works deficit — the works bill is priced, not
+  held (§10.6). Each basic is shared in thirds among the two supers and apex
+  that draw it (a **placeholder** split), so every offer settles together. It
+  synthesizes what it sold when the contract comes due, from what its standing
+  order leaves, and defaults if it cannot; spending between the strike and the
+  due date is the seller's risk (appendix §D.25, §D.26). A forge's native super is the one whose precursors it
   is rich in — the structural monopoly §10.1 is about.
 - **Freight** — a hauler loads the refined material the center it serves is
   short of before ore, at a pile or as a center's offer (§8.5's rule, with the
@@ -374,7 +373,7 @@ posts in the refined ones.
 
 A card-free game posts no refined bid and clears nothing in these books.
 Tests: `a_forge_sells_the_super_it_can_make_and_makes_it_at_settlement`,
-`a_forge_offers_only_capacity_it_can_settle`,
+`a_forge_offers_what_its_standing_order_leaves_at_its_price`,
 `a_hauler_carries_the_supers_a_center_is_waiting_for`. Appendix §D.23, §D.25.
 
 ---
@@ -476,9 +475,11 @@ are part of this room). What exists, and what a card can reach:
 - **Not built:** hauling precursors to a forge (galaxy §4.5, R-M5); market
   power over a forge's capacity — markup and withhold (§10.1, R-MX11) and the
   Corner (§10.2, R-MX12).
-- **Built and not operating:** cross-empire refined trade. Forges almost never
-  hold basics above their next works bill, so they almost never offer capacity,
-  and nothing offers apex (§10.6, R-MX16).
+- **Built, and almost unused:** cross-empire refined trade. With the works
+  bill priced (§10.6) forges offer capacity, apex included, but every forge
+  can make every super from basics its empire's freight brings it, so 0.44% of
+  refined mass crosses between empires (appendix §D.26). The lever left is
+  R-G4's hard rule (galaxy §3).
 
 **What would settle it:** the cards themselves; until then these are the
 interfaces, not the designs. The new-duty interface has one use beyond stage 2:
@@ -618,22 +619,22 @@ tail).
   it:** the Politics card, then a census of ordnance bids against the
   shortfalls they answer.
 
-**10.6 `OPEN` — R-MX16: refined supply is held behind the works bill.** A forge
-offers capacity only from basics above its next works bill (§8.7), and on the
-census bed every forge is short of that bill in at least one basic at every
-barrier — holdings of 0.3–100 kt against bills of 260 / 130 / 390 kt — so it
-offers nothing: 0–9 refined asks against 22–255 bids per run, and 0 kt traded
-in 21 of 24 runs. Apex has no capacity ask at all, and a forge makes only what
-it owes, so no apex is ever offered. A seat that cannot forge receives almost
-nothing (0 kt in 7 of 8 runs where one homeworld is held below `Band IV`).
-Appendix §D.25. *Recommended:* price the works bill instead of holding it,
-which is R-MX14's ruling ("production based on pricing makes sense") applied
-to the forge — a forge offers capacity at the reservation it already computes
-(the precursors' willingness to pay over the yield, which rises with its own
-works deficit), keeps only its standing order's reservation as a hard hold,
-and posts apex capacity the same way from the three supers' prices. **What
-would settle it:** the author's ruling; then the §D.25 bed, where the measure
-is refined kilotonnes delivered to a seat that cannot forge.
+**10.6 R-MX16 — a forge's works bill is priced, not held. `RATIFIED` (the
+author's ruling: "Price the works bill").** A forge offering capacity, settling
+a sale, or making a super for a sister center draws on what its own standing
+order leaves (`available_at`), and keeps nothing back for its works; what the
+works are worth to it is in its reservation (`forge_reservation`), which rises
+with its mineral pressure. Apex is offered the same way, from all three basics.
+A sister center is supplied for each material it pays at least that
+reservation for. Before, the forge held its whole next works bill, held 0.3–100
+kt against bills of 260 / 130 / 390 kt at every barrier, and offered nothing
+(appendix §D.25).
+
+Measured with the trio homeworld and hex-scale color (appendix §D.26): refined
+asks 0–17 per run against 29–204 bids, and **0.44% of refined mass synthesized
+crosses between empires** (0.26 of 58.4 kt over 24 runs), because every forge
+can make every super from basics its own freight brings. That is R-G4's
+question (galaxy §3), not this section's.
 
 ---
 
