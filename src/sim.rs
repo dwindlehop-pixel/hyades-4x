@@ -3916,6 +3916,12 @@ impl Simulation {
                         self.world.design_class.insert(e, f.class);
                         true
                     }
+                    // A sentry fleet stands at its seat's homeworld, counted
+                    // there as the center's sentries (T-139).
+                    Role::Sentry => {
+                        self.spawn_sentry(seat, built, home, 0.0);
+                        true
+                    }
                     _ => false,
                 };
                 if !launched {
@@ -3936,6 +3942,10 @@ impl Simulation {
                         self.track_changed(e);
                     }
                 }
+                // **A fleet generated with the galaxy is a whole Design**: a
+                // missile Design starts with its magazine full, its rounds
+                // generated with it as its hulls are.
+                self.fill_magazine(e);
                 self.log.push(
                     self.clock,
                     LogEvent::FleetGenerated {

@@ -3156,6 +3156,45 @@ habitable.
 **The determinism combat arm moved to seeds 5 and 9**: of seeds 1–12, only 5,
 8, 9 and 11 launch a missile round by 450 yr on this galaxy (38, 7, 105, 7).
 
+## D.29 Combat bit-identity as three tests over six sets of initial conditions
+
+*Supports `AGENTS.md` §4 (determinism) and galaxy §3.1. The author's ruling:
+make the combat determinism coverage several tests with different initial
+conditions. Replaces `combat_runs_are_bit_identical`, whose seeds had to be
+re-picked after each of §D.24, §D.27 and §D.28 because galaxy changes moved
+which seeds launched a missile round at all.*
+
+Each test runs its scenario twice and compares every combat log record (time
+bits and event), the event count, and each seat's colonies, outposts and
+population bits. Counts from one run per scenario, release build:
+
+| test | scenario | encounters | wrecks | course changes | rounds hit / stopped / missed | refilled at a center |
+|---|---|---|---|---|---|---|
+| `beam_fights_are_bit_identical` | Cairn and Tor stacks parked together, seed 31, 3 yr | 800 | 20 | 20 | — | — |
+| | Tor stack closing at 0.3 c from 0.03 ly, seed 32, 3 yr | 800 | 20 | 22 | — | — |
+| `missile_defense_is_bit_identical` | Butte sentries vs a parked Cairn stack at 0.015 ly, seed 41, 3 yr | 118 | 10 | 14 | 37 / 53 / 271 | 44 |
+| | vs a Tor stack closing at 0.2 c from 0.045 ly, seed 42, 3 yr | 100 | 10 | 10 | 10 / 46 / 254 | 36 |
+| `a_card_play_game_is_bit_identical` | 6 seats, 600 planets, cards 15/3/13, seed 1, 350 yr | 3,334 | 423 | 1,906 | 0 | 2 |
+| | same, seed 7 | 4,505 | 504 | 1,996 | 0 | 2 |
+
+Two engine additions to fleet seeding were needed (galaxy §3.1): a **Sentry**
+fleet stands at its seat's homeworld as the center's sentries, and a generated
+missile Design starts with a full magazine.
+
+**Not reached by any seeded bed:** the ammo run and the flight home. Both
+start from a post or a voyage, and a generated picket has neither. Probed
+before this was settled: Mesa pickets against an armed stack hold fire (one
+picket's burst does not exceed the stack's point defense, and a postless
+picket counts no co-located rounds); against unarmed Meadow and Delta targets
+they fire 8–16 rounds and the targets are wrecked or withdraw before any
+magazine empties (40 and 80 yr). Sentries fire only on armed hulls, so an
+unarmed target draws no fire from them. The unit test
+`a_dry_missile_picket_is_resupplied_by_ammo_run_or_by_return` covers the two
+paths outside bit-identity.
+
+**Cost:** determinism target 43.1 s debug, one run, against ~43 s before the
+change (one run each; not resolved).
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

@@ -323,41 +323,92 @@ fn no_nan_or_infinity_reaches_replicated_state() {
     }
 }
 
-/// **Bit-identity with shots fired** (T-133). The rest of this file plays no
-/// card, so no Design is armed and no fire code runs: detection, discharges,
-/// the wreck check, the belief events and the course changes they make were
-/// all outside the gate.
-///
-/// The bed is the card bed's protocol on a small galaxy — six seats, 600
-/// planets, the Warfare, Growth and missile cards in rotation by seat at the
-/// first round barrier (the missile card since T-139, so sentries, rounds,
-/// point defense and rearming run inside the gate). **Only the galaxy differs from a played game**
-/// (the author's ruling): the barrier is the shipped one, so the horizon runs
-/// past it far enough to reach the fights. Two runs must agree on every
-/// combat record, to the last bit of its time and its slag, and on the report.
-///
-/// The floors say the mechanism fired: encounters began, hulls were wrecked,
-/// fleets changed course, so the belief path ran as well as the wreck's, and
-/// missile rounds reached the end of their flight.
-fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 4]) {
-    const SEATS: usize = 6;
-    let mut gcfg = GalaxyConfig::new(SEATS, seed);
-    gcfg.planet_count = 600;
-    let galaxy = Galaxy::generate(gcfg).unwrap();
-    let aps: Vec<Box<dyn Autopilot>> =
-        (0..SEATS).map(|_| Box::new(BaselineAutopilot::new(Doctrine::default())) as Box<_>).collect();
-    let mut cfg = SimConfig::new(seed);
-    cfg.horizon_years = COMBAT_HORIZON;
+// ---------------------------------------------------------------------------
+// **Bit-identity with shots fired** (T-133). The tests above play no card, so
+// no Design is armed and no fire code runs in them. These do, each from its own
+// initial conditions, so that no one galaxy decides whether a mechanism fires
+// inside the gate: a single card-play bed once carried the whole of combat,
+// and every change to galaxy generation moved which seeds launched a missile
+// at all. Fleets are generated with the galaxy (`Galaxy::generate_with`, the
+// author's ruling: the only thing a bed varies is the galaxy) and placed where
+// the mechanism must fire. Two runs must agree on every combat record, to the
+// last bit of its time and slag, and on the report; the floors say the
+// mechanism fired.
+// ---------------------------------------------------------------------------
+
+use hyades_engine::galaxy::{FleetSeeding, SeedFleet};
+use hyades_engine::log::MissileOutcome;
+use hyades_engine::sim::Class;
+
+/// What one combat run did: encounters begun, hulls wrecked, course changes,
+/// missile rounds by outcome, and magazines refilled at a center.
+#[derive(Debug, Default, Clone, Copy)]
+struct Fired {
+    encounters: usize,
+    wrecks: usize,
+    turns: usize,
+    hits: usize,
+    intercepted: usize,
+    missed: usize,
+    /// Magazines refilled at a center.
+    rearmed: u64,
+}
+
+impl Fired {
+    fn rounds(&self) -> usize {
+        self.hits + self.intercepted + self.missed
+    }
+}
+
+/// One set of initial conditions: a galaxy, the fleets generated with it, the
+/// cards each seat plays at the first round barrier (none for a seeded fight),
+/// and a horizon.
+#[derive(Clone)]
+struct Scenario {
+    seats: usize,
+    seed: u64,
+    planets: usize,
+    spend_kt: f64,
+    /// Fleets, placed relative to a homeworld: `(seat, hull, class, role,
+    /// homeworld whose position the offset is from, offset ly, velocity ly/yr)`.
+    fleets: Vec<(usize, HullType, Class, Role, usize, Vec3, Vec3)>,
+    cards: Option<Vec<u16>>,
+    horizon: f64,
+}
+
+fn combat_run(sc: &Scenario) -> (SimReport, Vec<String>, Fired) {
+    let mut gcfg = GalaxyConfig::new(sc.seats, sc.seed);
+    gcfg.planet_count = sc.planets;
+    // Seeding moves no planet, so the bare galaxy says where the homeworlds are.
+    let bare = Galaxy::generate(gcfg).unwrap();
+    let home = |p: usize| bare.planets[bare.homeworlds[p].0 as usize].position;
+    let fleets = sc
+        .fleets
+        .iter()
+        .map(|&(seat, hull, class, role, near, offset, velocity)| SeedFleet {
+            seat,
+            hull,
+            class,
+            role,
+            position: home(near).add(offset),
+            velocity,
+        })
+        .collect();
+    let seeding = FleetSeeding { spend_kt: sc.spend_kt, known_radius_ly: 0.0, fleets };
+    let galaxy = Galaxy::generate_with(gcfg, seeding).unwrap();
+    let mut cfg = SimConfig::new(sc.seed);
+    cfg.horizon_years = sc.horizon;
     let play_at = cfg.years_to_first_round;
-    let mut sim = Simulation::new(galaxy, cfg, aps);
+    let mut sim = Simulation::with_baseline(galaxy, cfg);
     sim.set_log_filter(LogFilter::none().with(LogCategory::Combat));
-    let mut played = false;
+    let mut played = sc.cards.is_none();
     while sim.step() {
         if !played && sim.clock() >= play_at {
-            let orders: Vec<Order> = (0..SEATS)
+            let cards = sc.cards.as_ref().unwrap();
+            let orders: Vec<Order> = (0..sc.seats)
                 .map(|i| Order {
                     seat: PlayerId(i as u32),
-                    card: Some(CardId([15, 3, 13][i % 3])),
+                    card: Some(CardId(cards[i % cards.len()])),
                     target: Target::None,
                 })
                 .collect();
@@ -368,59 +419,147 @@ fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 4]) {
     // `{:?}` on an `f64` prints its shortest round-trip form, so equal strings
     // are equal bits.
     let log = sim.log().iter().map(|r| format!("{:?} {:?}", r.time.to_bits(), r.event)).collect();
-    let mut counts = [0usize; 4];
+    let mut f = Fired { rearmed: sim.missile_stats().rearmed_at_center, ..Fired::default() };
     for r in sim.log().iter() {
         match r.event {
-            LogEvent::EncounterBegan { .. } => counts[0] += 1,
-            LogEvent::HullWrecked { .. } => counts[1] += 1,
-            LogEvent::CourseChanged { .. } => counts[2] += 1,
-            LogEvent::MissileResolved { .. } => counts[3] += 1,
+            LogEvent::EncounterBegan { .. } => f.encounters += 1,
+            LogEvent::HullWrecked { .. } => f.wrecks += 1,
+            LogEvent::CourseChanged { .. } => f.turns += 1,
+            LogEvent::MissileResolved { outcome: MissileOutcome::Hit, .. } => f.hits += 1,
+            LogEvent::MissileResolved { outcome: MissileOutcome::Intercepted, .. } => f.intercepted += 1,
+            LogEvent::MissileResolved { outcome: MissileOutcome::Missed, .. } => f.missed += 1,
             _ => {}
         }
     }
-    (sim.report(), log, counts)
+    (sim.report(), log, f)
 }
 
-/// The combat bed's horizon: past the shipped first round barrier (200 yr)
-/// by as much as the fights need to reach the floors below. Probed in debug:
-/// 250 yr gives seed 1 **one** encounter and fails the floor; 275 yr gives
-/// 380 and 326 encounters (5.7 s); 300 yr gives 745 and 493 (12.7 s) and
-/// shipped, for the margin. Those counts are with the Warfare card on three
-/// seats. **350 yr since T-139**: the missile card is on two seats in the
-/// rotation, and its sentries are ordered in proportion to what a center
-/// holds and houses, so few stand by 300 yr — seed 1 resolves **no** round
-/// there and fails the floor. 350 yr gives 7 and 90 rounds on seeds 1 and 7
-/// (14.1 s); 400 yr gives 13 and 178 (22.1 s). **500 yr since the trio
-/// homeworld**: a homeworld holds less, so fewer sentries stand early — seed 1
-/// orders 10 by 450 yr and launches no round there; at 500 yr seeds 1 and 7
-/// resolve 40 and 7 rounds, and the target runs 44 s. The margin on seed 1 is
-/// under 50 yr. **Seeds 5 and 9 at 450 yr since the per-world ore cap** (a
-/// world's total ore is its richest color): of seeds 1–12 only 5, 8, 9 and 11
-/// launch a round by 450 yr, and 5 and 9 launch the most (38 and 105). A seed
-/// is chosen for the mechanism firing, which is the arm's whole question; the
-/// missile path fires on a minority of beds this early, so every change to the
-/// galaxy can move which seeds qualify.
-const COMBAT_HORIZON: f64 = 450.0;
+/// Run a scenario twice and assert the two runs are one run; return what it did.
+fn bit_identical(name: &str, sc: &Scenario) -> Fired {
+    let (ra, la, fired) = combat_run(sc);
+    let (rb, lb, _) = combat_run(sc);
+    eprintln!("{name}: {fired:?}");
+    assert_eq!(la.len(), lb.len(), "{name}: combat record count");
+    for (i, (a, b)) in la.iter().zip(&lb).enumerate() {
+        assert_eq!(a, b, "{name}: combat record {i}");
+    }
+    assert_eq!(ra.events_processed, rb.events_processed, "{name}: events");
+    for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
+        assert_eq!(pa.colonies, pb.colonies, "{name}: colonies");
+        assert_eq!(pa.mining_outposts, pb.mining_outposts, "{name}: outposts");
+        assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits(), "{name}");
+    }
+    fired
+}
 
+const STILL: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
+
+/// **Beam fleets meet** — two seats, two sets of initial conditions: a Cairn
+/// stack and a Tor stack parked face to face beside a homeworld, and a Tor
+/// stack closing at 0.3 c on a parked Cairn stack from 0.03 ly, braking into
+/// its reach. Wrecks and
+/// course changes must happen in both.
 #[test]
-fn combat_runs_are_bit_identical() {
-    for seed in [5u64, 9] {
-        let (ra, la, [encounters, wrecks, turns, rounds]) = combat_run(seed);
-        let (rb, lb, _) = combat_run(seed);
-        eprintln!("seed {seed}: {encounters} encounters, {wrecks} wrecks, {turns} course changes, {rounds} rounds");
-        assert!(rounds > 0, "seed {seed}: no missile round resolved, so the missile path never ran");
-        assert!(encounters >= 50, "seed {seed}: only {encounters} encounters — the bed no longer reaches combat");
-        assert!(wrecks > 0, "seed {seed}: nothing was wrecked, so the wreck path never ran");
-        assert!(turns > 0, "seed {seed}: no fleet changed course, so the belief path never ran");
-        assert_eq!(la.len(), lb.len(), "seed {seed}: combat record count");
-        for (i, (a, b)) in la.iter().zip(&lb).enumerate() {
-            assert_eq!(a, b, "seed {seed}: combat record {i}");
-        }
-        assert_eq!(ra.events_processed, rb.events_processed, "seed {seed}: events");
-        for (pa, pb) in ra.players.iter().zip(rb.players.iter()) {
-            assert_eq!(pa.colonies, pb.colonies);
-            assert_eq!(pa.mining_outposts, pb.mining_outposts);
-            assert_eq!(pa.total_population.kilotons().to_bits(), pb.total_population.kilotons().to_bits());
-        }
+fn beam_fights_are_bit_identical() {
+    let picket = |seat: usize, class: Class, offset: Vec3, velocity: Vec3| {
+        (seat, HullType::LimitedContactVehicle, class, Role::Picket, 0usize, offset, velocity)
+    };
+    let near = Vec3::new(0.5, 0.0, 0.0);
+    let parked = Scenario {
+        seats: 2,
+        seed: 31,
+        planets: 200,
+        spend_kt: 0.4,
+        fleets: vec![picket(0, Class::Cairn, near, STILL), picket(1, Class::Tor, near, STILL)],
+        cards: None,
+        horizon: BEAM_HORIZON,
+    };
+    let closing = Scenario {
+        seed: 32,
+        fleets: vec![
+            picket(0, Class::Cairn, near, STILL),
+            picket(1, Class::Tor, near.add(Vec3::new(0.03, 0.0, 0.0)), Vec3::new(-0.3, 0.0, 0.0)),
+        ],
+        ..parked.clone()
+    };
+    for (name, sc) in [("beam, parked", parked), ("beam, closing", closing)] {
+        let f = bit_identical(name, &sc);
+        assert!(f.encounters > 0 && f.wrecks > 0, "{name}: the beams must fight: {f:?}");
+        assert!(f.turns > 0, "{name}: a fleet must change course, so the belief path runs: {f:?}");
     }
 }
+
+/// **Sentries defend a center and rearm there** — three seats: missile
+/// sentries generated at seat 0's homeworld, and seat 1's armed beam stack
+/// inside their reach and outside a beam's, parked in one set of conditions and
+/// closing in the other. Rounds must fly, some must be stopped by the stack's
+/// point defense or hit, and an emptied sentry must refill from the center's
+/// bank. (A sentry fires only on armed hulls, so the raider is armed.)
+///
+/// The supply line's other two paths — an ammo run and a flight home — need a
+/// post or a voyage to return to, and a fleet generated with the galaxy has
+/// neither, so no seeded bed reaches them; `a_dry_missile_picket_is_resupplied_by_ammo_run_or_by_return`
+/// covers them in the unit target.
+#[test]
+fn missile_defense_is_bit_identical() {
+    let sentries = (0, HullType::LimitedOffensive, Class::Butte, Role::Sentry, 0usize, STILL, STILL);
+    let off = Vec3::new(0.015, 0.0, 0.0);
+    let parked = Scenario {
+        seats: 3,
+        seed: 41,
+        planets: 200,
+        spend_kt: 0.2,
+        fleets: vec![sentries, (1, HullType::LimitedContactVehicle, Class::Cairn, Role::Picket, 0, off, STILL)],
+        cards: None,
+        horizon: MISSILE_HORIZON,
+    };
+    let closing = Scenario {
+        seed: 42,
+        fleets: vec![
+            sentries,
+            (
+                1,
+                HullType::LimitedContactVehicle,
+                Class::Tor,
+                Role::Picket,
+                0,
+                off.scale(3.0),
+                Vec3::new(-0.2, 0.0, 0.0),
+            ),
+        ],
+        ..parked.clone()
+    };
+    for (name, sc) in [("sentries, parked raider", parked), ("sentries, closing raider", closing)] {
+        let f = bit_identical(name, &sc);
+        assert!(f.rounds() > 0, "{name}: no round resolved, so the missile path never ran: {f:?}");
+        assert!(f.hits + f.intercepted > 0, "{name}: no round hit or was stopped: {f:?}");
+        assert!(f.rearmed > 0, "{name}: no sentry refilled its magazine at the center: {f:?}");
+    }
+}
+
+/// **A played game** — the card bed's protocol on a small galaxy: six seats,
+/// 600 planets, the Warfare, Growth and missile cards in rotation at the first
+/// round barrier, as a game plays them. Whatever fights the cards produce must
+/// reproduce; the floors are on beams and the belief path, which every seed
+/// reaches, and not on missiles, which the seeded tests above carry.
+#[test]
+fn a_card_play_game_is_bit_identical() {
+    for seed in [1u64, 7] {
+        let sc = Scenario {
+            seats: 6,
+            seed,
+            planets: 600,
+            spend_kt: 0.0,
+            fleets: Vec::new(),
+            cards: Some(vec![15, 3, 13]),
+            horizon: CARD_HORIZON,
+        };
+        let f = bit_identical(&format!("cards, seed {seed}"), &sc);
+        assert!(f.encounters >= 50, "seed {seed}: only {} encounters — the bed no longer reaches combat", f.encounters);
+        assert!(f.wrecks > 0 && f.turns > 0, "seed {seed}: the wreck and belief paths must run: {f:?}");
+    }
+}
+
+const BEAM_HORIZON: f64 = 3.0;
+const MISSILE_HORIZON: f64 = 3.0;
+const CARD_HORIZON: f64 = 350.0;

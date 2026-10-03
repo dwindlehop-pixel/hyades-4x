@@ -99,6 +99,18 @@ impl Simulation {
         self.world.cargo.insert(e, c);
     }
 
+    /// **Fill a missile hull's magazine** without drawing on any bank — for
+    /// a fleet generated with the galaxy (`seed_fleets`), whose rounds come
+    /// into being with it. A hull with no tubes is left as it is.
+    pub(super) fn fill_magazine(&mut self, e: Entity) {
+        if self.world.loadout.get(e).is_some_and(|l| l.fires_missiles()) {
+            let room = self.magazine_room_kt(e);
+            if room > 0.0 {
+                self.add_rounds(e, room);
+            }
+        }
+    }
+
     /// Kilotonnes of rounds a hull's magazine lacks.
     fn magazine_room_kt(&self, e: Entity) -> f64 {
         let Some(l) = self.world.loadout.get(e) else { return 0.0 };

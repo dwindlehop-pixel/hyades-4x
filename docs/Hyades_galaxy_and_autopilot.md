@@ -85,8 +85,13 @@ fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
   mining outpost, nearest first, one to a rock before any rock takes two; a
   **Freighter** hull serves the seat's generated mining sites in turn.
 - A **Picket** or **Reserve** hull stands at the fleet's position with its
-  velocity; a mission hull with nowhere to go stands in Reserve at its home
-  port.
+  velocity; a **Sentry** hull stands at its seat's homeworld, counted there as
+  the center's sentries (T-139), whatever position the fleet names; a mission
+  hull with nowhere to go stands in Reserve at its home port.
+- **A generated missile Design starts with its magazine full** — its rounds
+  are generated with it, as its hulls are, and drawn from no bank. A generated
+  picket has no post and no voyage, so once dry it is not resupplied: the
+  ammo run and the flight home both start from one.
 - Every generated hull is logged once, `FleetGenerated`, with its seat, Design
   and role, which is how a bed tells its fleet from what the autopilot builds.
 
