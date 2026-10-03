@@ -1220,6 +1220,21 @@ search is currently optimizing the wrong parameterisation.
 
 ## Band B — decided, needs a design pass
 
+### T-142. Revise the super names once Design is specified
+
+**Blocked on Design.** The three super names in galaxy §4.1 — Countermass
+(Blue), Ambient Superconductor (Red), Metamaterial (Green) — are placeholders
+(the author's ruling). Each is meant to name a broad category of far-future
+technology built on exotic matter, and to say how it is forged (its two
+parent basics) and how it is used. The use half cannot be checked yet: which
+Design writes spend which super is unspecified (R-M6 aspect-sets, R-M7
+use-domains), and so is which super dominates which tree (R-TECH25, design
+law #1). Green's link to Growth is already a weak fit.
+
+**What would settle it:** R-M6, R-M7 and R-TECH25 resolved far enough to list,
+per super, the Design writes and trees it is the general key for. Then confirm
+or replace each name against that list and mark the §4.1 rows `RATIFIED`.
+
 ### T-08. `on_refit` retrofit realization — R-O47b / R-O55
 
 **No retroactive refits** is ratified (design law #12): a Design write never
