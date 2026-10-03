@@ -254,10 +254,11 @@ that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
   §10.6), with the author's trio homeworld and hex-scale color (galaxy §3,
   §4.3): forges offer capacity and apex, but **0.44% of refined mass crosses
   between empires** (appendix §D.26). **R-G4 resolved** (the author's ruling: supers by color
-  theory, two basics 1:1, no archetype barred); color sites now include 1:1
-  recipe pairs, and slant is measured by absolute threshold (appendix §D.27).
-  Card-free cost: colony-years −6.66% ± 1.79, work-years +22.74% ± 4.84 —
-  mechanism open.
+  theory, two basics 1:1, no archetype barred); slant is measured by absolute
+  threshold (appendix §D.27). 1:1 pair sites in generation were tried and
+  withdrawn (the author); a world's total ore is now its richest color, shared
+  in its rolled proportions (appendix §D.28: colony-years +1.68% ± 0.48 against
+  the single-hue galaxy; super trade 0.27%).
 - **Still open from the first plan:** one idle pool across roles, so idle hulls
   bid for any duty (a Delta mines in a pinch when the miner price covers its
   lower productivity). Stage 2 built the price and the side-run interface it

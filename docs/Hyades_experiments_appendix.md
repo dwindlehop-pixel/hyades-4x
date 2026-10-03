@@ -3079,6 +3079,11 @@ thirds, the settlement of every offer together, and the standing order's hold.
 
 ## D.27 Color theory: 1:1 recipe-pair sites, and slant by absolute threshold
 
+*Superseded in generation by §D.28* — the author: "1:1 is wrong for galaxy
+generation." Pair sites are removed; the forge's 1:1 recipe rule (galaxy §4.2)
+and slant by absolute threshold stand. The record below is of the pair-site
+galaxy.
+
 *Supports galaxy §3, §4.2 and §4.3, technology §3.2. The author's rulings:
 forges produce supers by color theory, two basics 1:1; slant is measured by an
 absolute threshold per mineral, traces not counting. Beds as §D.26; the slant
@@ -3117,6 +3122,39 @@ without pair sites would settle it; open.
 **The determinism combat arm moved to seeds 1 and 2 at 450 yr**: on this
 galaxy seed 7 launches no missile round at 500 yr (nor do 5 and 17 of 8 seeds
 probed), while seeds 1 and 2 launch 92 and 47 at 450 yr.
+
+## D.28 A world's total ore is its richest color
+
+*Supports galaxy §4.3. The author's ruling: limit a world's total minerals to
+the largest across its colors, shared in the rolled proportions. Beds as §D.27,
+against the single-hue galaxy of `6d751d5` and the pair-site galaxy of
+`4bdd26d`.*
+
+**Slant at `Band I` (1.0 kt)**, mineral present at ≥ the threshold, 3 seats,
+4 seeds (12 seats within a point):
+
+| galaxy | worlds: none | one | two | three | cells: none | one | two | three |
+|---|---|---|---|---|---|---|---|---|
+| single-hue sites (`6d751d5`) | 57.1% | 38.3% | 4.5% | 0.2% | 41.6% | 48.6% | 8.5% | 1.3% |
+| pair sites (`4bdd26d`) | 57.3% | 28.4% | 13.0% | 1.4% | 41.5% | 40.9% | 14.5% | 3.0% |
+| **single-hue + cap** | **58.0%** | 38.3% | 3.7% | 0.1% | 42.1% | 48.9% | 7.8% | 1.2% |
+
+At `Band II` (31.6 kt): worlds with none 90.8% (90.7% before). The cap moves
+worlds with no `Band I` mineral by +0.9 points: most worlds were already
+dominated by one color, where the cap is nearly the sum.
+
+**Card-free economy against `6d751d5`** (4 seeds, 1,500 yr, paired):
+colony-years **+1.68% ± 0.48** (4/4), colonies +1.29% ± 0.11, work-years
+−0.90% ± 4.08 (not resolved), `ns/event` −2.09% ± 0.46. Against the pair-site
+galaxy: colony-years +9.04% ± 1.73, work-years −19.17% ± 2.23. *Inference, not
+tested:* capped worlds hold less ore, so §4.4 leaves a few more of them
+habitable.
+
+**Super trade:** 0.27% of refined mass synthesized crosses between empires
+(0.20 of 74.4 kt, 24 runs; 18 runs at 0).
+
+**The determinism combat arm moved to seeds 5 and 9**: of seeds 1–12, only 5,
+8, 9 and 11 launch a missile round by 450 yr on this galaxy (38, 7, 105, 7).
 
 ## References
 
