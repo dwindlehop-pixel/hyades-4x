@@ -98,14 +98,26 @@ fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
 ## 4. Materials — the ladder, the color algebra, and synthesis
 
 ### 4.1 Three tiers
-**Tier 1 — basics: Cyan, Magenta, Yellow.** Mined (§4.3). · **Tier 2 — supers: Red, Green, Blue.** Synthesized, never mined (R-M1). · **Apex.** Synthesized from supers; metallic silver-white, *Platinum* a placeholder name (R-M1).
+**Tier 1 — basics: Cyan, Magenta, Yellow.** Mined (§4.3). · **Tier 2 — supers: Red, Green, Blue.** Synthesized, never mined. · **Apex — Strange Matter** (`RATIFIED`, the author's ruling). Synthesized from supers; metallic silver-white.
+
+**Names and fiction (R-M1).** Basics are ordinary matter changed by extreme pressure (`Exotic_matter_technology_inspiration.md`, "materials at high pressure"): stable only at depth or at an impact site, and mined from there. Supers are categories of far-future technology built on exotic matter. The color stays the mechanical name in the engine (`resources::Material`); these are the in-game names.
+
+| Tier | Color | Material (flavor) | Status |
+|---|---|---|---|
+| Basic | Cyan | **Cage Ice** — *Clathrate Hydride*: hydrogen caged in a metal lattice at core pressure; the hydrogen is propellant and the lattice is light structure | `RATIFIED` |
+| Basic | Magenta | **Rosepeter** — *Erbium Polynitride*: single-bonded nitrogen above ~110 GPa, doped with erbium; the bond energy feeds weapons and power, the erbium lases | `RATIFIED` |
+| Basic | Yellow | **Voltslate** — *Sodium Subchloride*: Na₃Cl, stable only under pressure; alternating sodium (conductor) and salt (insulator) layers are a circuit in the crystal | `RATIFIED` |
+| Super | Blue ← C+M | **Countermass** — negative mass made by pair production (§3.5 of `Hyades_technology_tree.md`); keels and drives | placeholder (T-142) |
+| Super | Red ← M+Y | **Ambient Superconductor** — an electron-pair condensate held at ordinary pressure; power, magnets, computation | placeholder (T-142) |
+| Super | Green ← Y+C | **Metamaterial** — conducting layers on a cage lattice; sensors, signature control, communications | placeholder (T-142) |
+| Apex | — | **Strange Matter** — converts ordinary matter it touches into itself; spent only on win conditions | `RATIFIED` |
 
 ### 4.2 Color algebra + the refining ladder
 Fixed two-basic recipes: **Blue ← Cyan + Magenta · Red ← Magenta + Yellow · Green ← Yellow + Cyan.** **`RATIFIED` (the author's ruling) — a forge produces supers by color theory: the two basics of a super's recipe, in a 1:1 ratio by mass,** and nothing else makes it. A forge makes whichever super its holding has both basics for; no archetype is barred from a super (R-G4, below). **Apex ← Red + Green + Blue in equal parts** (`RATIFIED`, the author's ruling — silver-white is additive white). Ladder **3 basics → 2 supers → 1 apex** with **wastage** (cards reduce it) — named as yield fractions
 **`Y_super` = 2/3** (mineral-mass → super-mass) and **`Y_apex` = 1/2**
 (super-mass → apex-mass) in `Hyades_mineral_cost_curve.md` §5.0, which also
 distinguishes this literal mass-conserving ratio from the separate
-order-of-magnitude *value* heuristic ("3 CMY = 2 RGB = 1 Platinum," §5.1 of
+order-of-magnitude *value* heuristic ("3 CMY = 2 RGB = 1 Strange Matter," §5.1 of
 that spec) the two used to share notation with. **No direct substitution.**
 **R-M2:** ratios + wastage — this section owns the ratified values;
 `Hyades_mineral_cost_curve.md` §5.0 only names them.
@@ -208,7 +220,7 @@ the forge native to it rather than make it from bought basics — matching
 §10.7, R-MX18.
 
 ### 4.6 Substitution — native only within a super's own counter-graph aspects
-Each super is native across the **whole lineup — but only for the specific aspects of the counter-graph it brings.** Covering **Blue's** aspects with Red/Green/apex costs **a card each**; Blue does **not** natively cover another super's aspects. Supers are **non-interchangeable specialists**, cheap in their own region, card-expensive outside it. **R-M6:** each super's (and the apex's) aspect-set.
+Each super is native across the **whole lineup — but only for the specific aspects of the counter-graph it brings.** Covering **Blue's** aspects with Red/Green/apex costs **a card each**; Blue does **not** natively cover another super's aspects. Supers are **non-interchangeable specialists**, cheap in their own region, card-expensive outside it. **R-M6:** each super's (and the apex's) aspect-set. Each super is also **dominant in different trees**, and is the counter-graph's general key in the trees it dominates and a traversal key elsewhere (`Hyades_technology_tree.md` §3.1, R-TECH25).
 
 ### 4.7 Use-domains — Stars! as a starting point only
 First-pass lean: **Cyan → structure/propulsion, Magenta → weapons/energy, Yellow → economy/electronics**; supers/apex add advanced bands (§4.6). **R-M7:** full mapping + apex weapons (sim §5).
@@ -317,7 +329,7 @@ Turn-1 state: co-located homeworlds at **Band IV/IV/I** (pop ~Band I, **no pop-B
 ## 9. Ratification points (consolidated)
 
 - **R-G0** sim §1/§6 absorb 3D/2D · **R-G1** hex `s`+depth · **R-G2** counts + core · **R-G3** archetype placement · ~~**R-G4**~~ self-synth yield + "exactly one" (resolved: color theory, no archetype barred, §3)
-- **R-M1** rename tier-2/apex · **R-M2** ratios+wastage · **R-M3** Z scale-height · **R-M4** anticorrelation · **R-M5** supply chain · **R-M6** super aspect-sets · **R-M7** use-domains+apex · **R-M8** Growth↔Cyan soft fit (rest intended)
+- ~~**R-M1**~~ names — **resolved**: Cage Ice, Rosepeter, Voltslate, Strange Matter (§4.1); super names are placeholders under T-142 · **R-M2** ratios+wastage · **R-M3** Z scale-height · **R-M4** anticorrelation · **R-M5** supply chain (resolved in part, §4.5) · **R-M6** super aspect-sets · **R-M7** use-domains+apex · **R-M8** Growth↔Cyan soft fit (rest intended)
 - **R-P1** Weibull `k`+bands · **R-P2** pop→design gating · **R-P3** infra rate vs. clock
 - **R-A1** expand-bias · **R-A2** formation/posture · **R-A3** trade/NAP in verb model
 - **R-N1** lock the six saga arcs as modes of love winning; Warfare voice now Hollywood-Western (Those Who Stand; saga alt 'The Gun and the Garden'); confirm the believed Beloved Republic win-state · **R-N2** tier-crossing named events carrying the elimination drumbeat

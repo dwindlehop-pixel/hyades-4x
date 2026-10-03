@@ -95,7 +95,7 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
-### T-142. Every empire forges every super — make forging a forge's purpose, then trade supers
+### T-143. Every empire forges every super — make forging a forge's purpose, then trade supers
 
 **Advanced — step 1 built (the author's ruling).** The author's direction is to
 finish addressing galaxy generation leaving every empire making supers of all
@@ -192,7 +192,7 @@ every tier on the ledger, seven Exchange books with refined bids, asks and
 capacity asks, refined freight (matching §8.7), and production priced by a
 standing order's reservation (matching §10.4). Card-free runs reproduce the
 engine before it to the last event on 8/8 seeds. Appendix §D.23.
-**Open:** R-M5's remainder (T-142), R-MX11–R-MX13 (monopoly, monopsony, cartel), urgency from
+**Open:** R-M5's remainder (T-143), R-MX11–R-MX13 (monopoly, monopsony, cartel), urgency from
 threat belief (§10.4), the general shadow-price production form, win
 conditions themselves, refinable slag (T-03).
 
@@ -1262,6 +1262,21 @@ search is currently optimizing the wrong parameterisation.
 
 
 ## Band B — decided, needs a design pass
+
+### T-142. Revise the super names once Design is specified
+
+**Blocked on Design.** The three super names in galaxy §4.1 — Countermass
+(Blue), Ambient Superconductor (Red), Metamaterial (Green) — are placeholders
+(the author's ruling). Each is meant to name a broad category of far-future
+technology built on exotic matter, and to say how it is forged (its two
+parent basics) and how it is used. The use half cannot be checked yet: which
+Design writes spend which super is unspecified (R-M6 aspect-sets, R-M7
+use-domains), and so is which super dominates which tree (R-TECH25, design
+law #1). Green's link to Growth is already a weak fit.
+
+**What would settle it:** R-M6, R-M7 and R-TECH25 resolved far enough to list,
+per super, the Design writes and trees it is the general key for. Then confirm
+or replace each name against that list and mark the §4.1 rows `RATIFIED`.
 
 ### T-08. `on_refit` retrofit realization — R-O47b / R-O55
 

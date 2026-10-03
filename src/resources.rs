@@ -4,8 +4,8 @@
 //! * **Tier 1 — basics: Cyan, Magenta, Yellow** — *mined* from the 3-D field.
 //! * **Tier 2 — supers: Red, Green, Blue** — *synthesized*, never mined, only at
 //!   pop-Band-IV, via fixed two-basic recipes (Blue←C+M, Red←M+Y, Green←Y+C).
-//! * **Apex** — synthesized from supers; metallic silver-white. *"Platinum"* is a
-//!   placeholder name (R-M1).
+//! * **Apex** — synthesized from supers; metallic silver-white. Named *Strange
+//!   Matter* (galaxy §4.1).
 //!
 //! Only **Tier-1 densities** matter for galaxy generation and the
 //! colonization/growth autopilot; supers and apex are carried here so the same
@@ -63,7 +63,7 @@ pub enum Material {
     Red,
     Green,
     Blue,
-    /// Placeholder name *Platinum* (R-M1).
+    /// *Strange Matter* (galaxy §4.1).
     Apex,
     /// **Missile rounds** (T-139) — fabricated from basics at an owned center,
     /// one kilotonne of rounds from one kilotonne of basics (design law #11).
@@ -253,7 +253,7 @@ pub struct Minerals {
     pub red: f64,
     pub green: f64,
     pub blue: f64,
-    /// Apex ultra-resource (placeholder name *Platinum*), R-M1.
+    /// Apex ultra-resource, *Strange Matter* (galaxy §4.1).
     pub apex: f64,
     /// Missile rounds, kt (T-139, [`Material::Ordnance`]).
     pub ordnance: f64,

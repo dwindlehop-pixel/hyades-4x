@@ -169,8 +169,12 @@ magazine and a fired round is debris on the ledger. Torpedoes have no family yet
 ## 3. The counter-graph
 
 **3.1 `RATIFIED` — mineral substitution lives in the counter-graph, not the
-mineral ladder.** Design law #1. **Red is the general key** (broad class access);
-**Blue and Green are traversal keys** (specific edges only).
+mineral ladder.** Design law #1. **Each super is dominant in different trees.**
+Within a tree, **the dominant super is the general key** (broad class access) and
+**the other two are traversal keys** (specific edges only). So *"Red is the
+general key; Blue and Green are traversal keys"* is the Red-dominant case and
+holds only in Red-dominant trees (the author's ruling, amending the earlier
+unqualified statement). **`OPEN` — R-TECH25:** which super dominates which tree.
 
 **3.2 `RATIFIED` — supers are synthesized, never mined, and only at pop-Band IV.**
 Fixed two-basic recipes: `Blue ← C+M`, `Red ← M+Y`, `Green ← Y+C`, **each from its
@@ -666,7 +670,7 @@ the measurement into the target (§4.10).
 | R-TECH21 | Barrow's scale is loose guidance for this tree and Kardashev's for Production; **card tiers are an instrument of the counter-graph, not of a civilization scale** (§7.2) |
 | R-TECH17 | the pool is deduplicated by what the beds read; the goal is that no two named Designs share a loadout (§4.3.1) |
 | — | supers are synthesized at pop-Band IV by fixed two-basic recipes |
-| — | Red is the general key; Blue and Green are traversal keys (law #1) |
+| — | each super is dominant in different trees; the dominant super is the general key there and the other two are traversal keys — Red-general holds in Red-dominant trees only (law #1, §3.1) |
 | — | aggregates are queries, not stored fields |
 
 ### Open
@@ -696,6 +700,7 @@ the measurement into the target (§4.10).
 | R-TECH20 | magnetar matter as a Technology option (§7.1.2) | a design pass naming the write and its mass cost |
 | R-TECH22 | the drive card's slot, slant and factor `f` — `TIER0[12]` recommended, replacing an unlock that reaches no build (§8.1) | the author; `f` after stage 4 of T-136 |
 | R-TECH24 | **the missile card's slot, slant and sentry ratio** — `TIER0[13]` (Balanced) and `ρ = 1e-5` recommended (§9.1, §9.3) | the author; T-140 sweeps `ρ` and its thresholds |
+| R-TECH25 | **which super dominates which tree** (§3.1). Structural constraint: each tree's basic feeds exactly two supers (galaxy §4.8, §3.2), so a tree's two cheap supers are fixed by the recipes; whether the dominant super must be one of those two is itself undecided | the author |
 | R-TECH23 | where the drive state lives — a `DesignWrite` fold in `CardId` order beside `Works` (recommended) or a `WorksWrite` variant (§8.4) | the author |
 
 ---

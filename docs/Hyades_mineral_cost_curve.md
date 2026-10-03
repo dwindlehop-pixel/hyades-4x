@@ -1,6 +1,6 @@
 # Hyades — Mineral Cost Curve: Permutation Ratios & Hull Scaling
 
-**Scope.** This spec turns the locked mineral/super/Platinum permutations
+**Scope.** This spec turns the locked mineral/super/Strange Matter permutations
 (A/B/C×D tree framework, color-transposition domain table) into actual
 numbers: how much of each color a card costs, and how hull class modulates
 that cost against a ship's value — including where that value math breaks
@@ -103,18 +103,18 @@ requires supers to stay "non-interchangeable specialists" even at their
 least differentiated. A super-tier card is always more domain-locked than a
 mineral-tier one at the same node depth.
 
-### 1.3 Platinum ratio
+### 1.3 Strange Matter ratio
 
-The locked Platinum mixture — `[domain mineral · 2nd-ranked mineral ·
-Platinum]` — splits **~4:2:1, held close to constant** (Platinum : primary
-mineral : secondary mineral). Platinum should dominate an apex card's cost
+The locked Strange Matter mixture — `[domain mineral · 2nd-ranked mineral ·
+Strange Matter]` — splits **~4:2:1, held close to constant** (Strange Matter : primary
+mineral : secondary mineral). Strange Matter should dominate an apex card's cost
 essentially always, not just at a design's sharpest setting — it's the
 scarcest tier by construction, so its cost-share shouldn't visibly soften
 the way mineral and super ratios are allowed to. **R-MC2 (open):** how much
 variance "close to constant" actually permits — a fixed value, or a tight
 band like 4:2:1 to 4.5:2:1.
 
-**This is a different ratio from "3 CMY = 2 RGB = 1 Platinum."** That line
+**This is a different ratio from "3 CMY = 2 RGB = 1 Strange Matter."** That line
 is a fleet-*value*-equivalence heuristic, not a card's internal cost split
 — see §5. The two happen to rhyme numerically; they aren't the same claim.
 
@@ -1195,7 +1195,7 @@ that table exists.
 
 ## 5. Mineral tier as a second, independent axis
 
-**"3 CMY = 2 RGB = 1 Platinum = 3 fleets" was one piece of notation doing
+**"3 CMY = 2 RGB = 1 Strange Matter = 3 fleets" was one piece of notation doing
 three jobs, and conflating them is exactly the bare-digit confusion §2.6
 exists to end.** Unpacked into its actual parts:
 
@@ -1210,7 +1210,7 @@ three separate times — **addition, not a Band step** (§2.6) — and is not to
 be confused with "`Band III`," a single quantity several times larger in
 one lump. Retiring this clause removes exactly the ambiguity §2.6 flags.
 
-**"3 CMY → 2 RGB → 1 Platinum" is a literal, mass-conserving refining
+**"3 CMY → 2 RGB → 1 Strange Matter" is a literal, mass-conserving refining
 ratio, and it already lives in `Hyades_galaxy_and_autopilot.md` §4.2, not
 here:** `3` units of mineral (basics) mass refine to `2` units of super
 mass plus `1` unit of slag; `2` units of super mass refine to `1` unit of
@@ -1245,11 +1245,11 @@ refining yield, what's left is an order-of-magnitude *value* heuristic, and
 it lives on a different axis than §2's hull size and §5.0's refining yield
 entirely.** Per this conversation: it never meant 3 units of base-mineral
 spend buys a fleet of equal *value* to 2 units of super spend or 1 unit of
-Platinum spend — that would just be §5.0's refining ratio read backwards,
+Strange Matter spend — that would just be §5.0's refining ratio read backwards,
 and refining yield is not the same fact as combat value. It means something
 closer to *three orders of magnitude* of base-mineral spend sitting
 alongside *two orders of magnitude* of super spend and *one order of
-magnitude* of Platinum spend — without committing to literal powers of ten
+magnitude* of Strange Matter spend — without committing to literal powers of ten
 or any single fixed progression, and without claiming those "orders of
 magnitude" line up with the Band ladder's `[4, 8]` steps (§2.6): §2.6's
 Bands quantize *size within one material*, this heuristic compares *value
@@ -1266,7 +1266,7 @@ Higher mineral tiers carry more capability per unit mass — since dry mass
 is cost and thrust scales with area, a super-built hull delivers *higher
 acceleration at equal capability* than a basics-built one, purely from
 conservation, no separate "supers are better" rule required. §9.5 calls
-this "a cleaner reading of the '3 CMY = 2 RGB = 1 Platinum' heuristic than
+this "a cleaner reading of the '3 CMY = 2 RGB = 1 Strange Matter' heuristic than
 a conversion ratio" — which is this section's point restated from the mass
 side: the payoff for refining up the tier ladder is real despite losing
 mass to slag (§5.0), because the mass that survives refining does
@@ -1274,7 +1274,7 @@ disproportionately more per kilogram.
 
 **Size (§2) and tier (this section) are orthogonal.** A hull's shape/size
 class (Limited/Medium/General) sets its `V/SA` efficiency. Its material
-tier (Base/Super/Platinum) is a *separate* question: how much combat value
+tier (Base/Super/Strange Matter) is a *separate* question: how much combat value
 a given mass of hull delivers, once built from exotic rather than ordinary
 matter. A "Super-tier Limited fleet" and a "Base-tier Medium fleet" aren't
 directly comparable through §2 alone — that comparison is the actual
@@ -1306,7 +1306,7 @@ Hitting a full order-of-magnitude mass reduction (0.1×, matching the
 negative-mass-keel example) needs an effectiveness multiplier of **100×**
 — two orders of magnitude of per-unit combat effectiveness to buy one order
 of magnitude of mass. That's a real, checkable target for whatever stat the
-negative-mass keel (or any Super/Platinum exotic component) actually grants
+negative-mass keel (or any Super/Strange Matter exotic component) actually grants
 — acceleration, evasion, alpha-strike damage, whatever the combat model
 ends up rewarding — rather than a number this spec invents unilaterally.
 
@@ -1418,7 +1418,7 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
 
 - **R-MC1:** where each card/node sits on the mineral ratio continuum
   (4:2:1 peak → 5:4:3 floor) — a per-card tuning call.
-- **R-MC2:** how much variance "platinum ratio close to 4:2:1 always"
+- **R-MC2:** how much variance "Strange Matter ratio close to 4:2:1 always"
   actually permits.
 - **R-MC3a (candidate on the table, §2.3):** pin actual per-class semi-axis
   ratios (§2.1's example values are illustrative). The `η(role, size)` table
@@ -1515,14 +1515,14 @@ velocity/N sweep ranges — informed by, but not fixed by, this spec.
 
 ## References
 
-- Card mineral/super/Platinum permutations, the A/B/C×D grid, and the
+- Card mineral/super/Strange Matter permutations, the A/B/C×D grid, and the
   native-super derivation — established earlier this conversation.
 - Combo-backbone undercosting law — `Hyades_command_cards.md` §4 (project
   file).
 - Super non-interchangeability ("native only within a super's own
   counter-graph aspects") — `Hyades_galaxy_and_autopilot.md` §4.6 (project
   file).
-- 3 CMY = 2 RGB = 1 Platinum exchange rate and the counter-graph's
+- 3 CMY = 2 RGB = 1 Strange Matter exchange rate and the counter-graph's
   equivalent-cost definition — `Hulls & classes; the qualitative
   counter-graph` (project file), including its own "GSV lacks mission
   flexibility, cannot split" observation, now formalized in §2.5.

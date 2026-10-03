@@ -914,7 +914,7 @@ acceleration at equal capability** than a basics-built one.
 
 **Technology therefore becomes legible through the kinetic channel by physics
 rather than by rule** — which is what the observation model wants, and a
-cleaner reading of the "3 CMY = 2 RGB = 1 Platinum" order-of-magnitude value
+cleaner reading of the "3 CMY = 2 RGB = 1 Strange Matter" order-of-magnitude value
 heuristic than a conversion ratio. *That heuristic is now unpacked into its
 separate literal (mass-conserving refining yield) and figurative (this
 section's value-equivalence) halves in `Hyades_mineral_cost_curve.md` §5 —
@@ -931,7 +931,7 @@ of a component's mass, not the total.
   counterweight is dead mass that must be dumped, parked, or used. Exotic
   technology arrives with an equal-and-opposite disposal problem built in.
 - **Degree, not tier.** Negative-mass components are a **factor in RGB-tier
-  designs**, not the defining element of Platinum-tier ones. Platinum is more
+  designs**, not the defining element of Strange Matter–tier ones. Strange Matter is more
   of it, not the only source of it.
 - **Surprising acceleration.** With `a = T / (m_pos + m_neg)` and `m_neg < 0`,
   effective mass falls toward zero and acceleration rises steeply — divergently

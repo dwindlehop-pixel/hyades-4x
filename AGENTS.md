@@ -1820,8 +1820,11 @@ These are settled. Do not relitigate them; if a change appears to require breaki
 one, stop and flag it.
 
 1. **Mineral substitution lives in the counter-graph, not the mineral ladder.**
-   Red = general key (broad class access); Blue/Green = traversal keys (specific
-   edges only).
+   Each super is dominant in different trees. In a tree, the dominant super is
+   the general key (broad class access) and the other two are traversal keys
+   (specific edges only) — so "Red = general key, Blue/Green = traversal keys"
+   holds in Red-dominant trees only. Which super dominates which tree is open
+   (R-TECH25).
 2. **Hull supremacy must be slot-organic, not hyperparameter-tuned.** GOU superiority
    over an equal-cost ROU fleet (and ROU over LOU) must emerge from *hull slot counts
    and volume*, never from tuning battle constants like a `LASER_KILLS_PER_TICK`-style
