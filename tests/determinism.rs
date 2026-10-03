@@ -394,12 +394,15 @@ fn combat_run(seed: u64) -> (SimReport, Vec<String>, [usize; 4]) {
 /// homeworld**: a homeworld holds less, so fewer sentries stand early — seed 1
 /// orders 10 by 450 yr and launches no round there; at 500 yr seeds 1 and 7
 /// resolve 40 and 7 rounds, and the target runs 44 s. The margin on seed 1 is
-/// under 50 yr.
-const COMBAT_HORIZON: f64 = 500.0;
+/// under 50 yr. **Seeds 1 and 2 at 450 yr since 1:1 recipe-pair color sites**:
+/// with them seed 7 launches no round even at 500 yr (nor do seeds 5 and 17),
+/// while seeds 1 and 2 launch 92 and 47 at 450 yr. A seed is chosen for the
+/// mechanism firing, which is the arm's whole question.
+const COMBAT_HORIZON: f64 = 450.0;
 
 #[test]
 fn combat_runs_are_bit_identical() {
-    for seed in [1u64, 7] {
+    for seed in [1u64, 2] {
         let (ra, la, [encounters, wrecks, turns, rounds]) = combat_run(seed);
         let (rb, lb, _) = combat_run(seed);
         eprintln!("seed {seed}: {encounters} encounters, {wrecks} wrecks, {turns} course changes, {rounds} rounds");

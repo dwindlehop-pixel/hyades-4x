@@ -477,9 +477,10 @@ are part of this room). What exists, and what a card can reach:
   Corner (§10.2, R-MX12).
 - **Built, and almost unused:** cross-empire refined trade. With the works
   bill priced (§10.6) forges offer capacity, apex included, but every forge
-  can make every super from basics its empire's freight brings it, so 0.44% of
-  refined mass crosses between empires (appendix §D.26). The lever left is
-  R-G4's hard rule (galaxy §3).
+  can make every super from basics its empire's freight brings it, so 0.25% of
+  refined mass crosses between empires (appendix §D.26, §D.27). R-G4 is
+  resolved against a hard rule (galaxy §3: supers by color theory, no
+  archetype barred), so this is the Exchange as ruled.
 
 **What would settle it:** the cards themselves; until then these are the
 interfaces, not the designs. The new-duty interface has one use beyond stage 2:
@@ -633,8 +634,8 @@ kt against bills of 260 / 130 / 390 kt at every barrier, and offered nothing
 Measured with the trio homeworld and hex-scale color (appendix §D.26): refined
 asks 0–17 per run against 29–204 bids, and **0.44% of refined mass synthesized
 crosses between empires** (0.26 of 58.4 kt over 24 runs), because every forge
-can make every super from basics its own freight brings. That is R-G4's
-question (galaxy §3), not this section's.
+can make every super from basics its own freight brings. With 1:1 recipe-pair
+color sites it is 0.25% (appendix §D.27). R-G4 is resolved (galaxy §3).
 
 ---
 

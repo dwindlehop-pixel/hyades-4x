@@ -3077,6 +3077,47 @@ offered; each basic is now shared in thirds among the two supers and apex that
 draw it. `a_forge_offers_what_its_standing_order_leaves_at_its_price` pins the
 thirds, the settlement of every offer together, and the standing order's hold.
 
+## D.27 Color theory: 1:1 recipe-pair sites, and slant by absolute threshold
+
+*Supports galaxy §3, §4.2 and §4.3, technology §3.2. The author's rulings:
+forges produce supers by color theory, two basics 1:1; slant is measured by an
+absolute threshold per mineral, traces not counting. Beds as §D.26; the slant
+census is a scratch harness over 10-ly cells and single worlds, 4 seeds,
+never landed.*
+
+**Generation.** A color site draws two hues in proportion to the hotspots'
+weights; the same hue twice is a primary site, two hues a pair site holding
+both basics of a recipe at one peak, so a world beside it holds them 1:1.
+
+**Slant by absolute threshold** (mineral present at ≥ the threshold; share of
+cells, 3 seats; 12 seats within a point):
+
+| threshold | field | none | one | two | three |
+|---|---|---|---|---|---|
+| `Band I` (1.0 kt) | single-hue sites (`6d751d5`) | 41.6% | 48.6% | 8.5% | 1.3% |
+| `Band I` | **pair sites** | 41.5% | 40.9% | **14.5%** | 3.0% |
+| `Band II` (31.6 kt) | single-hue sites | 80.3% | 17.6% | 1.9% | 0.1% |
+| `Band II` | **pair sites** | 80.9% | 13.8% | **4.6%** | 0.7% |
+
+Single worlds at `Band I`: two minerals present on 13.0% (4.5% before), three
+on 1.4% (0.2%). About 41% of cells hold no mineral at `Band I` in either field
+— their worlds carry traces only, far from a site or high above the midplane.
+
+**Super trade:** 0.25% of refined mass synthesized crosses between empires
+(0.22 of 90.5 kt, 24 runs).
+
+**Card-free economy against `6d751d5`** (4 seeds, 1,500 yr, paired by seed):
+work-years **+22.74% ± 4.84** (4/4 up), colony-years **−6.66% ± 1.79** (4/4
+down), colonies −4.97% ± 0.58, vehicles +8.4% ± 2.0, `ns/event` +7.2% ± 1.9.
+*Inference, not tested:* a pair world gives one center two colors from one
+deposit, so the three-color works bill is payable more often and deepening
+wins against founding more often. A census of payable works bills with and
+without pair sites would settle it; open.
+
+**The determinism combat arm moved to seeds 1 and 2 at 450 yr**: on this
+galaxy seed 7 launches no missile round at 500 yr (nor do 5 and 17 of 8 seeds
+probed), while seeds 1 and 2 launch 92 and 47 at 450 yr.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

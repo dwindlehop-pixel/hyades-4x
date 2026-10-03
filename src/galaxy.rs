@@ -177,20 +177,25 @@ impl Planet {
     }
 }
 
-/// **Color sites** (§4.3; the author: a hex has a distinct slant or two). A
-/// jittered square lattice, [`GalaxyConfig::color_site_spacing_hex`] hex sides
-/// apart, covering the star field. Each site is one hue, drawn in proportion
-/// to the three hotspots' large-scale factors there, with a peak of
-/// `mineral_peak` times that hue's factor — so the galaxy keeps its hue
-/// regions and its `Band IV` seams, and a world's deposit is the Gaussian of
-/// its nearest site of each hue. Generation only; nothing is stored.
+/// **Color sites** (§4.3; the author: a hex has a distinct slant or two, and
+/// supers follow color theory, two basics in a 1:1 ratio). A jittered square
+/// lattice, [`GalaxyConfig::color_site_spacing_hex`] hex sides apart, covering
+/// the star field. Each site draws two hues independently, each in proportion
+/// to the three hotspots' large-scale factors there: the same hue twice makes a
+/// **primary site** of that one basic; two different hues make a **pair site**
+/// holding both in equal mass — Magenta + Yellow (Red's recipe), Yellow + Cyan
+/// (Green's) or Cyan + Magenta (Blue's) — so pairs fall where two hue regions
+/// overlap (§4.5). A site's peak is `mineral_peak · (floor + (1 − floor) · w)`,
+/// `w` its hue's factor (the geometric mean of the two for a pair). A world's
+/// deposit in each basic is its strongest site carrying that basic.
+/// Generation only; nothing is stored.
 struct ColorSites {
     spacing: f64,
     sigma: f64,
     /// Cells per side is `2·half + 1`, centered on the origin.
     half: i64,
-    /// Per cell: the site's hue, position and peak Band.
-    cells: Vec<(Basic, f64, f64, f64)>,
+    /// Per cell: the basics the site carries, its position and its peak Band.
+    cells: Vec<([bool; 3], f64, f64, f64)>,
 }
 
 impl ColorSites {
@@ -200,6 +205,7 @@ impl ColorSites {
         // but ~5e-4 of the stars, and a world past the lattice reads trace.
         let half = (10.0 * config.xy_scale() / spacing).ceil() as i64;
         let side = 2 * half + 1;
+        let floor = config.color_site_floor.clamp(0.0, 1.0);
         let mut cells = Vec::with_capacity((side * side) as usize);
         for iy in -half..=half {
             for ix in -half..=half {
@@ -207,26 +213,31 @@ impl ColorSites {
                 let y = (iy as f64 + 0.5 + 0.7 * (rng.unit() - 0.5)) * spacing;
                 let w = Basic::ALL.map(|b| hotspots.factor(b, x, y, hotspot_sigma));
                 let total: f64 = w.iter().sum();
-                let mut pick = rng.unit() * total;
-                let mut hue = Basic::ALL[2];
-                for (k, &b) in Basic::ALL.iter().enumerate() {
-                    if pick < w[k] {
-                        hue = b;
-                        break;
+                let mut draw = || {
+                    let mut pick = rng.unit() * total;
+                    for (k, &wk) in w.iter().enumerate() {
+                        if pick < wk {
+                            return k;
+                        }
+                        pick -= wk;
                     }
-                    pick -= w[k];
-                }
-                let floor = config.color_site_floor.clamp(0.0, 1.0);
-                cells.push((hue, x, y, config.mineral_peak * (floor + (1.0 - floor) * w[hue as usize])));
+                    2
+                };
+                let (a, b) = (draw(), draw());
+                let mut carries = [false; 3];
+                carries[a] = true;
+                carries[b] = true;
+                let strength = if a == b { w[a] } else { (w[a] * w[b]).sqrt() };
+                cells.push((carries, x, y, config.mineral_peak * (floor + (1.0 - floor) * strength)));
             }
         }
         ColorSites { spacing, sigma: spacing * config.color_site_sigma_frac, half, cells }
     }
 
-    /// Each hue's Band at `(x, y)` before the vertical decay and noise: its
+    /// Each basic's Band at `(x, y)` before the vertical decay and noise: its
     /// strongest site among the 5×5 cells around the point (a site two cells
     /// out is at least 1.3 spacings away, under 4e-4 of its peak at the
-    /// default width).
+    /// default width). Beside a pair site both basics read the same Band.
     fn bands_at(&self, x: f64, y: f64) -> [f64; 3] {
         let side = 2 * self.half + 1;
         let cx = (x / self.spacing).floor() as i64;
@@ -237,12 +248,13 @@ impl ColorSites {
                 if ix < -self.half || ix > self.half || iy < -self.half || iy > self.half {
                     continue;
                 }
-                let (hue, sx, sy, peak) = self.cells[((iy + self.half) * side + (ix + self.half)) as usize];
+                let (carries, sx, sy, peak) = self.cells[((iy + self.half) * side + (ix + self.half)) as usize];
                 let (dx, dy) = (x - sx, y - sy);
                 let band = peak * transcendental::exp(-(dx * dx + dy * dy) / (2.0 * self.sigma * self.sigma));
-                let k = hue as usize;
-                if band > out[k] {
-                    out[k] = band;
+                for k in 0..3 {
+                    if carries[k] && band > out[k] {
+                        out[k] = band;
+                    }
                 }
             }
         }
