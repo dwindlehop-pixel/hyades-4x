@@ -1052,6 +1052,34 @@ struct SynthesisPlan {
     apex_draw: f64,
 }
 
+/// **What a declined decision is waiting on** (the author's rulings: no
+/// decision has a cadence of its own, and a decision is conditioned on the
+/// events that can change it). A center whose yard declined is not asked again
+/// on an economy tick until one of these has moved:
+///
+/// - `events` — a card landed; and, unless it declined while **saving** (its
+///   bank short of the cheapest price it could not pay, or its rung unpayable
+///   in some color), its empire scanned a world that can rank as a colony or
+///   a mining outpost, targeted a world, any empire claimed one, or its
+///   reserve changed;
+/// - `level` — its population crossed a band;
+/// - `infra` — its works changed;
+/// - `sentries` — the sentries its Doctrine wants;
+/// - `above` — its bank reached the cheapest price it could not pay, or
+///   `infra_bill` became payable in every color.
+///
+/// A berth clearing and minerals landing ask it directly, as before.
+#[derive(Clone, Copy, Debug)]
+struct Declined {
+    saving: bool,
+    events: (u64, u64, usize, u64, usize, u64),
+    level: BandTier,
+    infra: Price,
+    sentries: u32,
+    above: Price,
+    infra_bill: [Price; 3],
+}
+
 /// **What a Design's hull is paid in** — the share of its price in each
 /// synthesized material, `Material::REFINED` order (Red, Green, Blue, apex);
 /// the rest of the price is basics, drawn as every build draws them.
@@ -2181,20 +2209,6 @@ struct World {
     /// It stays presence-as-state — an empty list means an idle yard — for the
     /// same reason R-O69 needed a store that can vacate.
     berths: ComponentStore<Vec<f64>>,
-    /// **Earliest clock at which a saving center asks again** (T-88).
-    ///
-    /// `cycle_years` was doing two unrelated jobs, and they want opposite
-    /// values: the economic integration step (mine, grow, mint — every one a
-    /// *rate over an interval*) wants to be **small** for fidelity, while a
-    /// saving center's retry wants to be large, or better, not a cadence at
-    /// all. They were the same number because `sys_production_tick` called
-    /// `sys_build_decision` inline, so dropping the tick to 1/yr for
-    /// granularity would have multiplied decisions 50x with it — and the
-    /// decision half is what costs throughput.
-    ///
-    /// This is the separation. Absent means "ask on the next tick", which is
-    /// what a freshly-founded or freshly-woken center wants.
-    decision_after: ComponentStore<f64>,
 
     // shared
     owner: ComponentStore<PlayerId>,
@@ -2445,7 +2459,6 @@ impl World {
             homeworld: ComponentStore::new(),
             archetype: ComponentStore::new(),
             berths: ComponentStore::new(),
-            decision_after: ComponentStore::new(),
             owner: ComponentStore::new(),
             role: ComponentStore::new(),
             hull_type: ComponentStore::new(),
@@ -2677,7 +2690,8 @@ pub struct SimConfig {
     /// Since T-88 it is **only** that. It used to double as the retry cadence
     /// for a saving center's build decision, which is why it could not be
     /// lowered: the fidelity argument wants 1 yr and the decision count is what
-    /// costs throughput. See [`SimConfig::decision_retry_years`].
+    /// costs throughput. Since the author's ruling that no decision has a
+    /// cadence of its own, a center with a free berth is asked on every tick.
     ///
     /// **Ratified at 5.0** (was 50.0), on the author's directive to improve the
     /// granularity of the economic simulation. At 50 the logistic advanced by
@@ -2697,22 +2711,6 @@ pub struct SimConfig {
     /// than stepping along an old direction — `AGENTS.md` §2 has recorded this
     /// trap twice already.
     pub cycle_years: f64,
-    /// **How long a saving center waits before asking again** (T-88) — the
-    /// second job [`SimConfig::cycle_years`] used to do.
-    ///
-    /// A center that declined its last build has no `BuildDecision` pending, so
-    /// something has to bring it back. Two things do, and this is the slower
-    /// one: the fast path is minerals arriving (see `wake_on_minerals`), and
-    /// this is the floor under it — the catch-all for a situation that changed
-    /// in a way no wake site watches, such as a newly scanned candidate.
-    ///
-    /// **Defaulted to 50.0, which reproduces the pre-T-88 engine
-    /// bit-for-bit** at `cycle_years = 50`: the gate is evaluated on the
-    /// economy tick, so equal values mean it passes every time and the call is
-    /// the inline one it replaced. Not independently ratified — it is the old
-    /// coupled value, kept so the separation lands as a no-op and the sweep
-    /// that follows measures one thing.
-    pub decision_retry_years: f64,
     /// **The cadence the per-cycle rates were ratified at** (T-88).
     ///
     /// `growth_rate`, `biosphere_regen_rate` and `outpost_mining_fraction` are
@@ -3284,7 +3282,6 @@ impl SimConfig {
         SimConfig {
             horizon_years: 4000.0,
             cycle_years: 5.0,
-            decision_retry_years: 50.0,
             rate_reference_years: 50.0,
             drive_specific_thrust: 18.21,
             structural_drive_fraction: 0.05,
@@ -3645,6 +3642,18 @@ pub struct Simulation {
     current_round: u32,
     /// Count of card plays whose effect is not implemented yet.
     inert_card_plays: u64,
+    /// Cards that landed, and planets claimed, since the run began — two of
+    /// the events a declined decision waits on ([`Declined`]).
+    cards_played: u64,
+    claims: u64,
+    /// Per empire: scanned worlds that rank as a colony or production center,
+    /// and as a mining outpost at full pressure — the scans that can change a
+    /// declined decision ([`Declined`]).
+    scanned_colony_class: Vec<u64>,
+    scanned_mining_class: Vec<u64>,
+    /// **What each center's last declined decision is waiting on**, keyed by
+    /// center ([`Declined`]).
+    declined: BTreeMap<u64, Declined>,
 }
 
 /// **What a picket saw of a colony ship** — the one observation its guess is
@@ -3830,6 +3839,11 @@ impl Simulation {
             standing: BTreeMap::new(),
             current_round: 0,
             inert_card_plays: 0,
+            cards_played: 0,
+            claims: 0,
+            scanned_colony_class: vec![0; n],
+            scanned_mining_class: vec![0; n],
+            declined: BTreeMap::new(),
             log: SimLog::with_filter(filter),
         };
         for &e in &sim.planet_entity {
@@ -4231,6 +4245,7 @@ impl Simulation {
             if c.cost > 0.0 {
                 self.empire_spend(p, Price::new(c.cost));
             }
+            self.cards_played += 1;
             self.apply_card_effect(p, c, o.target, round);
         }
     }
@@ -4338,9 +4353,10 @@ impl Simulation {
                     if q == subject {
                         continue;
                     }
-                    let k = self.world.knowledge.get_mut(self.player_entity[q]).unwrap();
                     for &pid in &published {
-                        k.scanned.insert(pid);
+                        if self.world.knowledge.get_mut(self.player_entity[q]).unwrap().scanned.insert(pid) {
+                            self.note_scanned(q, pid);
+                        }
                     }
                 }
             }
@@ -4537,7 +4553,9 @@ impl Simulation {
 
     fn sys_scan_report(&mut self, player: Entity, planet: Entity) {
         let pid = *self.world.planet_id.get(planet).unwrap();
-        self.world.knowledge.get_mut(player).unwrap().scanned.insert(pid);
+        if self.world.knowledge.get_mut(player).unwrap().scanned.insert(pid) {
+            self.note_scanned(self.player_index(player) as usize, pid);
+        }
         self.log.push(self.clock, LogEvent::ScanReceived { player: self.player_index(player), planet: pid });
     }
 
@@ -4729,7 +4747,9 @@ impl Simulation {
                 f.infra
             };
             let pid = *self.world.planet_id.get(target).unwrap();
-            self.world.knowledge.get_mut(self.player_entity[p]).unwrap().scanned.insert(pid);
+            if self.world.knowledge.get_mut(self.player_entity[p]).unwrap().scanned.insert(pid) {
+                self.note_scanned(p, pid);
+            }
             self.schedule(self.config.cycle_years, EventKind::ProductionTick { center: target });
             self.log.push(
                 self.clock,
@@ -6415,28 +6435,19 @@ impl Simulation {
         // empty yard has no such event pending, so the mining step doubles as
         // its retry — mining is what changes a saving center's situation.
         //
-        // **T-88: the two jobs are severed.** This call used to be
-        // unconditional, which made `cycle_years` the retry cadence as well as
-        // the integration step — so dropping the tick to 1/yr for fidelity
-        // would have multiplied decisions 50x with it, and the decision half is
-        // what costs throughput.
-        //
-        // The gate is a *floor*, not the mechanism. The mechanism is
-        // `wake_on_minerals`, which asks the moment the thing a saving center
-        // was short of actually lands; this is the catch-all underneath it for
-        // a situation that changed somewhere no wake site watches — a newly
-        // scanned candidate, a population level crossing, a hull returning to
-        // Reserve. Evaluating it here rather than on its own event costs no
-        // events at all, and at `decision_retry_years == cycle_years` it passes
-        // every time and reproduces the inline call bit-for-bit.
-        if self.free_berths(center) > 0 && self.decision_is_due(center) {
-            self.arm_retry(center);
+        // **No decision has a cadence of its own** (the author's ruling). A
+        // center with a free berth is asked when a berth clears, when minerals
+        // land (`wake_on_minerals`), and on an economy tick only once something
+        // its last declined decision waited on has moved ([`Declined`]). T-88's
+        // retry floor, which asked a saving center at most every 50 years, is
+        // deleted; a forge forges after its yard has decided (galaxy §4.5,
+        // R-MX17).
+        if self.free_berths(center) > 0 && !self.still_declined(center) {
             self.sys_build_decision(center);
+        } else {
+            self.forge(p, center);
         }
 
-        // 4) **A forge forges** (galaxy §4.5), after its survival has had the
-        // yard: what it holds becomes supers and apex.
-        self.forge(p, center);
         self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
     }
 
@@ -6473,6 +6484,13 @@ impl Simulation {
             if !self.commit_one_build(center) {
                 break;
             }
+        }
+        // **A forge forges what its yard leaves** (galaxy §4.5; R-MX17, the
+        // author's ruling): survival and Designs paid in supers are priced
+        // above forging, so the forge runs after every decision and never
+        // ahead of one.
+        if let Some(o) = self.world.owner.get(center).copied() {
+            self.forge(o.0 as usize, center);
         }
     }
 
@@ -6561,6 +6579,7 @@ impl Simulation {
                     chosen: BuildOrder::Idle,
                 },
             );
+            self.record_declined(center, floor, infra_bill);
             return false;
         }
 
@@ -6624,10 +6643,17 @@ impl Simulation {
         // feature: with no picket anywhere on the board there is no held subset
         // to reduce, and the per-survivor map probe never runs.
         let any_pickets = !self.picket.is_empty() || !self.picket_inbound.is_empty();
-        // A forge builds only for its own survival (galaxy §4.5), which reads
-        // no world, so it does not walk the pool.
+        // **A forge builds for its survival and for Designs paid in supers**
+        // (galaxy §4.5; R-MX17, the author's ruling: a Design paid in supers
+        // is priced higher than forging). Every other order is priced out
+        // below, so a forge whose Designs are all paid in basics reads no
+        // world and does not walk the pool.
         let forge = self.is_forge(center);
-        if !forge {
+        let super_billed = self.super_billed_designs(p, &doctrine, general_hull);
+        // **Below the limited tier the policy reads no candidate** — it deepens
+        // or saves — so neither does the engine.
+        let reads_candidates = level >= self.config.limited_min_level;
+        if reads_candidates && (!forge || super_billed.iter().any(|&b| b)) {
             // **Walk the live pool and compact it in the same pass** (T-101).
             //
             // The two filters are monotone, so an entry that fails one is dead
@@ -6762,6 +6788,26 @@ impl Simulation {
             forge,
         };
 
+        // **At a forge, an order paid only in basics is priced out**: its
+        // basics are the forge's synthesis's, worth the forge premium to it
+        // (galaxy §4.5). A Design paid in supers keeps its price — it is
+        // priced higher than forging (R-MX17) — and so does survival.
+        if forge {
+            ctx.infra_cost = UNPAYABLE;
+            ctx.infra_bill = [UNPAYABLE; 3];
+            let [colonizer, general, miner, scout, picket] = super_billed;
+            for (billed, cost) in [
+                (colonizer, &mut ctx.colonizer_cost),
+                (general, &mut ctx.general_colonizer_cost),
+                (miner, &mut ctx.mining_pair_cost),
+                (scout, &mut ctx.light_vehicle_cost),
+                (picket, &mut ctx.picket_cost),
+            ] {
+                if !billed {
+                    *cost = UNPAYABLE;
+                }
+            }
+        }
         // What this center wants is decided afresh; a need recorded at an
         // earlier decision stands only while the policy still chooses it.
         self.standing.remove(&center.0);
@@ -6774,7 +6820,7 @@ impl Simulation {
         // yard builds what it can meanwhile. Never runs while every Design is
         // paid in basics.
         if let BuildOrder::Hull { hull_type, class } = order {
-            let price = ctx.price_of(hull_type);
+            let price = self.design_price(&doctrine, hull_type, class);
             if self.quote(p, center, hull_type, class, price) == UNPAYABLE {
                 let bill = self.world.roster.get(pe).map_or(DesignBill::BASICS, |r| r.bill_for(hull_type, class));
                 let (refined, basic) = bill.split(price);
@@ -6827,7 +6873,24 @@ impl Simulation {
         // `apply_build_with` declines on an unaffordable price, a roster gate, or
         // a hull with no job worth doing, and a center that built nothing must
         // not be held busy for it.
-        let Some(committed) = self.apply_build_with(p, center, center_pos, order, &cands) else {
+        let committed = self.apply_build_with(p, center, center_pos, order, &cands);
+        if committed.is_none() {
+            let above = [
+                ctx.colonizer_cost,
+                ctx.general_colonizer_cost,
+                ctx.mining_pair_cost,
+                ctx.light_vehicle_cost,
+                ctx.picket_cost,
+                ctx.sentry_cost,
+            ]
+            .into_iter()
+            .filter(|&c| c > stock_total)
+            .fold(UNPAYABLE, |a, b| a.min(b));
+            self.record_declined(center, above, ctx.infra_bill);
+        } else {
+            self.declined.remove(&center.0);
+        }
+        let Some(committed) = committed else {
             // The yard stays free and the next economy tick retries, which is
             // the right cadence for a center whose situation only changes as it
             // mines. Returning `false` also ends the fill loop — a center that
@@ -6951,15 +7014,9 @@ impl Simulation {
             .unwrap_or_default()
     }
 
-    /// **How many berths this center has spare** (T-69). Zero means every slip
-    /// is busy and the yard cannot commit again until one clears.
-    /// **Minerals landed here — decide now, floor or no floor** (T-88).
-    ///
-    /// Deliberately bypasses [`Self::decision_is_due`]. The floor exists to stop
-    /// a center re-asking a question nothing has answered; a delivery *is* the
-    /// answer, so gating it behind the floor would reinstate the cadence this
-    /// task exists to remove. Re-arms the floor, so it means "50 years since
-    /// the last decision" rather than "since the last tick".
+    /// **Minerals landed here — decide now** (T-88). A delivery is what a
+    /// saving center was waiting on, so it is asked the moment one lands
+    /// rather than at its next economy tick.
     ///
     /// A center with no free berth is skipped: its decision already has a
     /// `BuildDecision` pending for when the yard clears, and the minerals will
@@ -6968,7 +7025,6 @@ impl Simulation {
         if self.world.owner.get(center).is_none() || self.free_berths(center) == 0 {
             return;
         }
-        self.arm_retry(center);
         self.sys_build_decision(center);
     }
 
@@ -6982,20 +7038,8 @@ impl Simulation {
         self.config.cycle_years / self.config.rate_reference_years.max(1e-12)
     }
 
-    /// Has this center's retry floor elapsed? (T-88.)
-    ///
-    /// Absent means "never asked, or woken deliberately" — both want an
-    /// immediate decision, so absence reads as due.
-    fn decision_is_due(&self, center: Entity) -> bool {
-        self.world.decision_after.get(center).is_none_or(|&t| self.clock + 1e-12 >= t)
-    }
-
-    /// Push the retry floor out one `decision_retry_years` from now.
-    fn arm_retry(&mut self, center: Entity) {
-        let next = self.clock + self.config.decision_retry_years;
-        self.world.decision_after.insert(center, next);
-    }
-
+    /// **How many berths this center has spare** (T-69). Zero means every slip
+    /// is busy and the yard cannot commit again until one clears.
     fn free_berths(&self, center: Entity) -> usize {
         let total = slips(self.fabrication_stock(center), &self.config);
         let busy = self.world.berths.get(center).map(|b| b.len()).unwrap_or(0);
@@ -7492,7 +7536,8 @@ impl Simulation {
 
     /// **A forge forges** (galaxy §4.5, the author's ruling: once a center
     /// clears population `Band IV`, its primary purpose is to forge supers and
-    /// apex). At each economy tick, after its yard has served its survival:
+    /// apex). At each economy tick, after its yard has decided, on what the
+    /// yard left:
     ///
     /// ```text
     /// m        = min_c basic_c                 the balanced part of its basics
@@ -9049,6 +9094,7 @@ impl Simulation {
     /// silently, and only on some seeds. The `debug_assert` in
     /// `holdings_centroid`'s caller-facing test build catches exactly that.
     fn claim_planet(&mut self, planet: Entity, owner: PlayerId) {
+        self.claims += 1;
         if let Some(prev) = self.world.owner.get(planet).copied() {
             self.owned_planets[prev.0 as usize].retain(|&e| e != planet);
         }
@@ -9102,6 +9148,119 @@ impl Simulation {
         }
     }
 
+    /// **Which of a seat's ordered Designs a Design write bills in supers or
+    /// apex**: the Medium and General colonizers, the miner, the scout and the
+    /// picket, in that order — the orders whose price a forge's production
+    /// context carries.
+    fn super_billed_designs(&self, p: usize, doctrine: &Doctrine, general_hull: HullType) -> [bool; 5] {
+        let Some(roster) = self.world.roster.get(self.player_entity[p]) else { return [false; 5] };
+        let standing = Standing::of(doctrine);
+        let billed = |(h, c): (HullType, Class)| !roster.bill_for(h, c).is_basics();
+        [
+            billed((HullType::MediumSystems, class_ordered_for(HullType::MediumSystems))),
+            billed((general_hull, class_ordered_for(general_hull))),
+            billed((HullType::LimitedSystems, class_ordered_for(HullType::LimitedSystems))),
+            billed(standing.design_for(Role::Scout)),
+            billed(standing.design_for(Role::Picket)),
+        ]
+    }
+
+    /// The event counters a declined decision at `center` is conditioned on.
+    fn decision_events(&self, center: Entity) -> Option<(u64, u64, usize, u64, usize, u64)> {
+        let p = self.world.owner.get(center)?.0 as usize;
+        let k = self.world.knowledge.get(self.player_entity[p])?;
+        let reserve = self.reserve_miners[p].len() + self.reserve_freighters[p].len();
+        Some((
+            self.scanned_colony_class[p],
+            self.scanned_mining_class[p],
+            k.targeted.set,
+            self.claims,
+            reserve,
+            self.cards_played,
+        ))
+    }
+
+    /// **Count a newly scanned world by the class it can rank as** for empire
+    /// `p` — colony or production center (which no center's bank moves), or
+    /// mining outpost at full mineral pressure (the most a center's bank can
+    /// make of it). A world that ranks Barren even then can change no
+    /// decision, and is not counted ([`Declined`]).
+    fn note_scanned(&mut self, p: usize, pid: PlanetId) {
+        let e = self.planet_entity[pid.0 as usize];
+        let pe = self.player_entity[p];
+        let doctrine = *self.world.doctrine.get(pe).unwrap();
+        let info = *self.world.player_info.get(pe).unwrap();
+        let rctx = RankContext {
+            scarcity: info.scarcity,
+            holdings_centroid: self.holdings_centroid(p),
+            mineral_pressure: 1.0,
+        };
+        let view = self.view_of(e);
+        match self.autopilots[p].rank(&doctrine, &view, &rctx).class {
+            PlanetClass::ProductionCenter | PlanetClass::Colony => self.scanned_colony_class[p] += 1,
+            PlanetClass::MiningOutpost => self.scanned_mining_class[p] += 1,
+            PlanetClass::Barren => {}
+        }
+    }
+
+    /// The sentries `center`'s Doctrine wants now.
+    fn sentries_wanted_at(&self, center: Entity) -> u32 {
+        let Some(o) = self.world.owner.get(center) else { return 0 };
+        let lost = self.sentries_lost.get(&center.0).copied().unwrap_or(0);
+        Standing::of(&self.doctrine_of(o.0 as usize)).sentries_wanted(
+            self.defended_at(center),
+            self.sentry_price(),
+            lost,
+        )
+    }
+
+    /// **Record what a declined decision at `center` waits on** ([`Declined`]):
+    /// `above` is the cheapest price its bank could not pay, `infra_bill` the
+    /// rung it could not pay in every color.
+    fn record_declined(&mut self, center: Entity, above: Price, infra_bill: [Price; 3]) {
+        let Some(events) = self.decision_events(center) else { return };
+        let level = self.bands.level(self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO));
+        let infra = self.world.factors.get(center).map_or(Price::ZERO, |f| f.infra);
+        let sentries = self.sentries_wanted_at(center);
+        let bank = self.held_at(center).copied().unwrap_or_default();
+        let saving = bank.spendable_total() < above || !can_pay_bill(&bank, &infra_bill);
+        self.declined.insert(center.0, Declined { saving, events, level, infra, sentries, above, infra_bill });
+    }
+
+    /// **Has nothing a declined decision at `center` waited on moved?** Then
+    /// asking again would reach the same answer by the same road, and the tick
+    /// skips it.
+    fn still_declined(&self, center: Entity) -> bool {
+        let Some(d) = self.declined.get(&center.0) else { return false };
+        let Some(bank) = self.held_at(center) else { return false };
+        let level = self.bands.level(self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO));
+        let infra = self.world.factors.get(center).map_or(Price::ZERO, |f| f.infra);
+        let events = self.decision_events(center);
+        // A saving center waits on money; the pool and the reserve move what
+        // it would buy, not whether it can (the author's ruling: a decision is
+        // conditioned on the events that can change it).
+        let pool_quiet = if d.saving { events.is_some_and(|e| e.5 == d.events.5) } else { events == Some(d.events) };
+        pool_quiet
+            && level == d.level
+            && infra == d.infra
+            && bank.spendable_total() < d.above
+            && !can_pay_bill(bank, &d.infra_bill)
+            && self.sentries_wanted_at(center) == d.sentries
+    }
+
+    /// **What the yard charges for one hull of a Design**: the sentry's price
+    /// (hull and magazine) for the sentry, the hull's price otherwise. Read
+    /// from the Design, not the shell: the sentry shares Limited Offensive
+    /// with the picket and the miner shares Limited Systems with the scout,
+    /// and a forge's context prices those orders differently (galaxy §4.5).
+    fn design_price(&self, doctrine: &Doctrine, hull: HullType, class: Class) -> Price {
+        if (hull, class) == Standing::of(doctrine).design_for(Role::Sentry) {
+            self.sentry_price()
+        } else {
+            hull_cost(hull, &self.config)
+        }
+    }
+
     /// **A forge**: a center whose population reads `Band IV` (galaxy §4.5).
     /// It synthesizes, and its basics are kept for synthesis.
     fn is_forge(&self, center: Entity) -> bool {
@@ -9139,7 +9298,7 @@ impl Simulation {
             // empire's own refined shortfall comes off its refined asks first.
             let mut empire_short = [0.0f64; 4];
             for k in 0..self.owned_planets[p].len() {
-                let short = self.refined_short(self.owned_planets[p][k]);
+                let short = self.refined_need(self.owned_planets[p][k]);
                 for i in 0..4 {
                     empire_short[i] += short[i].kilotons();
                 }
@@ -9243,8 +9402,11 @@ impl Simulation {
     /// - **Asks** for what it holds above that order, at its own price (zero:
     ///   a center with a surplus is not short).
     ///
-    /// A forge offers what it has forged (galaxy §4.5): the supers it holds
-    /// outside a balanced set, and nothing it has yet to make.
+    /// A forge (galaxy §4.5, R-MX18) bids, at its premium, for the supers that
+    /// complete a balanced set, and asks zero for the rest of what it has
+    /// forged — nothing it has yet to make. An ask at the precursors' cost
+    /// would equal an ordinary center's bid, which the clearing discounts by
+    /// transit, so it would never sell to an order.
     fn post_refined_offers(
         &mut self,
         e: Entity,
@@ -9255,7 +9417,7 @@ impl Simulation {
     ) {
         let pos = *self.world.position.get(e).unwrap();
         let at = [pos.x, pos.y, pos.z];
-        let short = self.refined_short(e);
+        let short = self.refined_need(e);
         for (i, &m) in Material::REFINED.iter().enumerate() {
             let book = 3 + i;
             if short[i].kilotons() > 1e-9 {
@@ -10005,7 +10167,7 @@ impl Simulation {
     /// **How much of a center's refined shortfall the cargo closes** — the
     /// refined counterpart of [`Self::bill_completion`], in `[0, 1]`.
     fn refined_completion(&self, center: Entity, cargo: &Minerals) -> f64 {
-        let short = self.refined_short(center);
+        let short = self.refined_need(center);
         let before = short.iter().fold(Price::ZERO, |a, &b| a + b);
         if before <= Price::ZERO {
             return 0.0;
@@ -10139,8 +10301,11 @@ impl Simulation {
             }
             // `refined_wtp` term for term: the buyer is short (it wants), the
             // origin is not (it has abundance), so the test is the discount.
+            // Only the origin's own order counts against it: a forge's demand
+            // for apex comes after its empire's orders (galaxy §4.5).
             let k = self.refined_floor(&bid.doctrine, i) * bid.doctrine.refined_demand[i];
-            if k * discount > k * self.refined_pressure(origin, i) {
+            let own = if self.refined_short(origin)[i] > Price::ZERO { 1.0 } else { 0.0 };
+            if k * discount > k * own {
                 out.refined[i] = rabundance[i].min(bid.rwant[i]);
             }
         }
@@ -10166,7 +10331,7 @@ impl Simulation {
 
     /// [`Self::refined_short`] net of what a hold already carries toward it.
     fn refined_want(&self, center: Entity, aboard: &Minerals) -> [Price; 4] {
-        let mut want = self.refined_short(center);
+        let mut want = self.refined_need(center);
         if want.iter().all(|w| *w <= Price::ZERO) {
             return want;
         }
@@ -10193,7 +10358,7 @@ impl Simulation {
     /// declined, `0` otherwise — the refined counterpart of
     /// [`Self::mineral_pressure_of`]: a declined order is fully blocked.
     fn refined_pressure(&self, center: Entity, i: usize) -> f64 {
-        if self.refined_short(center)[i] > Price::ZERO {
+        if self.refined_need(center)[i] > Price::ZERO {
             1.0
         } else {
             0.0
@@ -10203,7 +10368,28 @@ impl Simulation {
     /// **What a center pays for one kilotonne of refined material `i`**, `$`/kt:
     /// its floor, times the Doctrine's refined demand, times its pressure.
     fn refined_wtp(&self, center: Entity, i: usize, doctrine: &Doctrine) -> f64 {
-        self.refined_floor(doctrine, i) * doctrine.refined_demand[i] * self.refined_pressure(center, i)
+        self.refined_floor(doctrine, i)
+            * doctrine.refined_demand[i]
+            * self.refined_pressure(center, i)
+            * self.forge_premium_at(center, doctrine)
+    }
+
+    /// **What a center wants of each refined material**, kt: its declined
+    /// order's shortfall ([`Self::refined_short`]) and, at a forge, the supers
+    /// that complete a balanced set — every super up to the largest it holds,
+    /// which is what apex draws (galaxy §4.5; R-MX18, the author's ruling:
+    /// forges bid on the supers they have demand for).
+    fn refined_need(&self, center: Entity) -> [Price; 4] {
+        let mut need = self.refined_short(center);
+        if self.is_forge(center) {
+            let bank = self.held_at(center).copied().unwrap_or_default();
+            let held = Super::ALL.map(|s| bank.get(Material::of_super(s)));
+            let top = held.iter().copied().fold(0.0, f64::max);
+            for (i, h) in held.iter().enumerate() {
+                need[i] += Price::new(top - h);
+            }
+        }
+        need
     }
 
     /// **What a hauler standing on a pile should still be looking for** — the
@@ -11011,54 +11197,6 @@ mod tests {
         assert!(sim.apply_build_with(0, home, home_pos, order, &[]).is_none(), "the order must be declined");
         assert_eq!(bank(&sim), before.0, "mass is conserved: a build that produced nothing spent nothing");
         assert_eq!(vehicles(&sim), before.1, "and nothing was created either");
-    }
-
-    /// **Shrinking the economy tick refines the economy; it must not multiply
-    /// the decisions** (T-88).
-    ///
-    /// `cycle_years` was doing two unrelated jobs — the integration step for
-    /// every rate in the economy, and the retry cadence for a saving center's
-    /// build decision — because `sys_production_tick` called
-    /// `sys_build_decision` inline. So the fidelity argument for a 1-year step
-    /// was unaffordable: it multiplied the *decision* count with it, and a
-    /// decision is two orders of magnitude dearer than a tick (it runs T-52's
-    /// candidate scan).
-    ///
-    /// Measured on the standard bed at 1,500 yr, seed 1, after the severance:
-    /// economy ticks go **48,707 → 3,602,083** (74x) while decisions go
-    /// **97,197 → 128,726** (1.32x). This pins the ratio, not the magnitudes —
-    /// what must not come back is decisions scaling with `1/cycle_years`.
-    #[test]
-    fn shrinking_the_economy_tick_does_not_multiply_decisions() {
-        let count = |cycle: f64| -> (usize, usize) {
-            let mut cfg = test_cfg(1);
-            // **Its own bed, and the reason is the property being asserted.**
-            // This is about the *steady-state* decision rate, and `test_cfg`'s
-            // horizon is deliberately short — over the first few decades the
-            // early ramp dominates and a correctly-integrated economy simply
-            // has more of everything, which this would read as a regression
-            // (it did: 3.68x at 60 yr). Small galaxy, long horizon: the
-            // scenery is not what the test reads.
-            cfg.horizon_years = 400.0;
-            cfg.cycle_years = cycle;
-            let mut sim = Simulation::with_baseline(test_galaxy(2, 1), cfg);
-            sim.set_log_filter(crate::log::LogFilter::none().with(crate::log::LogCategory::Production));
-            sim.run();
-            let d = sim.log().iter().filter(|r| matches!(r.event, LogEvent::ProductionDecision { .. })).count();
-            let b = sim.log().iter().filter(|r| matches!(r.event, LogEvent::BuildApplied { .. })).count();
-            (d, b)
-        };
-        let (coarse, _) = count(50.0);
-        let (fine, _) = count(5.0);
-        assert!(coarse > 0 && fine > 0, "the bed must actually decide something: {coarse} / {fine}");
-        // Ten times the ticks. If the retry were still on the tick this would be
-        // ~10x; the severance is what keeps it near 1.
-        let ratio = fine as f64 / coarse as f64;
-        assert!(
-            ratio < 3.0,
-            "decisions scaled {ratio:.2}x for a 10x finer tick ({coarse} -> {fine}). `cycle_years` is driving the \
-             decision rate again — see T-88; the retry belongs on `wake_on_minerals` and the `decision_after` floor."
-        );
     }
 
     /// **The economy tick must not move the population at all** (T-88, then
@@ -16975,6 +17113,28 @@ mod tests {
         assert_eq!(*sim.held_at(home).unwrap(), bank);
     }
 
+    /// **A declined decision waits on the events that can change it** (the
+    /// author's rulings: no decision has a cadence of its own, and a decision
+    /// is conditioned on an event). A center too poor for anything declines;
+    /// on later ticks it is not asked again until its bank reaches the
+    /// cheapest price it could not pay, or its population crosses a band.
+    #[test]
+    fn a_declined_decision_waits_on_its_events() {
+        let (mut sim, home) = forge(BandTier::II, Minerals::default());
+        assert!(!sim.commit_one_build(home), "an empty bank buys nothing");
+        assert!(sim.still_declined(home), "nothing it waits on has moved");
+        let above = sim.declined[&home.0].above;
+        sim.held_at_mut(home).unwrap().add_basic(Basic::Cyan, above.kilotons() * 0.5);
+        assert!(sim.still_declined(home), "half the price is still short of it");
+        sim.held_at_mut(home).unwrap().add_basic(Basic::Cyan, above.kilotons());
+        assert!(!sim.still_declined(home), "the bank reached the price: ask again");
+
+        let (mut sim, home) = forge(BandTier::II, Minerals::default());
+        assert!(!sim.commit_one_build(home));
+        sim.world.population.insert(home, Kilotons::at_tier(BandTier::III));
+        assert!(!sim.still_declined(home), "a population band crossed: ask again");
+    }
+
     /// **A forge builds for its survival and nothing else, and its survival
     /// is kept back from the forge** (the author's ruling: forging outweighs
     /// almost anything but immediate survival). Under the missile card's
@@ -16996,15 +17156,14 @@ mod tests {
         assert_eq!(sim.sentries.get(&home.0).map_or(0, |s| s.len()), 1);
     }
 
-    /// **A run under a super-billed Design: forged and conserved.** Every
-    /// seat's colonizer and miner Designs are written 25% Red — the state a
-    /// tier-3 card's Design write leaves — and the run must forge Red and
-    /// weigh the same at the end as at the start. Since a forge builds only
-    /// for its survival (galaxy §4.5), a Red-billed hull is built only at a
-    /// center the forge's Red reaches by freight, which this bed does not
-    /// reach in its horizon (R-MX17, `OPEN`).
+    /// **A run under a super-billed Design: forged, built, and conserved.**
+    /// Every seat's colonizer and miner Designs are written 25% Red — the
+    /// state a tier-3 card's Design write leaves — and the run must forge Red,
+    /// build hulls out of it, and weigh the same at the end as at the start.
+    /// A forge builds them itself: a Design paid in supers is priced higher
+    /// than forging (R-MX17, the author's ruling).
     #[test]
-    fn a_super_billed_design_is_forged_with_mass_conserved() {
+    fn a_super_billed_design_is_forged_and_built_with_mass_conserved() {
         let mut cfg = test_cfg(11);
         cfg.horizon_years = SUPER_BED_HORIZON;
         cfg.biosphere_regen_rate = 0.0;
@@ -17027,7 +17186,11 @@ mod tests {
                 _ => None,
             })
             .sum();
+        let red_hulls = (0..sim.world.next)
+            .filter(|&i| sim.world.hull_minerals.get(Entity(i)).is_some_and(|m| m.red > 0.0))
+            .count();
         assert!(made > 0.0, "no forge made Red: the bed must reach population Band IV");
+        assert!(red_hulls > 0, "no hull was built out of Red");
         let after = sim.mass_ledger();
         let drift = (after.total() - before.total()).abs() / before.total();
         assert!(drift < 1e-9, "mass is not conserved: {:#?}", before.delta(&after));

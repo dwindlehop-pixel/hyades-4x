@@ -3245,6 +3245,63 @@ conservation only.
 **Test targets after the change:** unit 5.2 s (302 tests), determinism 43.1 s,
 smoke 12.4 s, telemetry 26.5 s (debug, one run each).
 
+## D.31 Forges build super-billed Designs and bid for supers; decisions without a cadence
+
+*Supports galaxy §4.5, matching §8.7 and §10.7, autopilot §6.1a. The author's
+rulings: a Design paid in supers is priced higher than forging (R-MX17); forges
+bid on the supers they have demand for (R-MX18); no decision has a cadence of
+its own; each decision is a tree with a short circuit for the common case, and
+some are conditioned on an event. Bed: `examples/forge_census` (card-free,
+standard galaxy, 3 seats, 1,500 yr, seeds 1, 7, 42, 31337).*
+
+**R-MX17.** On §D.25's bed (Delta and Meadow billed 25% Red) the forge's first
+tick had turned its whole stock into apex (0.50 kt of each basic into 0.495 kt
+apex at 600 yr) before its yard's next decision at 605 yr, and the
+homeworld's income afterwards rounds to zero, so no Red-billed hull was built.
+Two defects stood behind it, each found by tracing the decision:
+`ProductionContext::price_of` keys on the hull, so a sentry read the picket's
+price and a Red-billed miner read the scout's, both priced out at a forge; and
+forging ran ahead of the yard. The yard's quote now reads the Design's own
+price (`design_price`) and the forge runs after the yard. The bed builds
+Red-billed hulls again (`a_super_billed_design_is_forged_and_built_with_mass_conserved`).
+
+**The retry floor.** Moving the forge behind the yard tied forging to T-88's
+`decision_retry_years = 50`, which the author ruled is not design. Deleted.
+Asking every center with a free berth on every tick doubled the cost of seed 1
+(12.3 s → 25.2 s, events +0.9%). Census of 773k decisions on seed 1: 726,129
+exited before the scan (bank below every price, or empty pool), 19,228 scanned
+and declined over 7.36 M candidates, 13,644 scanned and committed. Callgrind
+(800 yr): `commit_one_build` 63% of instructions, `view_of` + `rank` 41.5%. Of
+the scanned declines, 17,470 held the price of a colonizer and a mining pair:
+the policy preferred deepening and the rung lacked a color, so it waited on a
+color. Conditioning every decline on every scan woke 206,695 of 210,500 asks at
+800 yr (scouts add a world on almost every tick; nearly every scanned world can
+rank as a mining outpost at full pressure). Conditioning a saving decline on
+money, level, works and cards only skipped 197,772 asks and let 9,042 through.
+
+| engine, seed 1, 800 yr | time |
+|---|---|
+| 50-yr retry floor | 4.9 s |
+| every tick | 7.5 s |
+| conditioned on events | 5.0 s |
+
+Over 4 seeds at 1,500 yr, conditioned against every tick: colony-years
+−0.24% ± 0.04 (4/4 lower), work-years +6.07% ± 4.45 (not resolved). Against
+`a50ef75`: colony-years +0.12% ± 0.14, work-years +0.92% ± 4.06 (neither
+resolved).
+
+**R-MX18.** Supers delivered between empires: 271.9 / 247.1 / 228.2 / 63.4 kt
+on seeds 1 / 7 / 42 / 31337 — 810.6 of 22,040 kt forged (3.7%), against 0
+before forges bid. A seat's native super is 29.6% of what it forges, pooled
+(per seat 0.4–95.9%, median 17.3%). The recommended ask at the precursors' cost
+was not adopted: it equals an ordinary center's bid for a super and never
+clears once the bid is discounted by transit, which a unit test showed on the
+first run.
+
+**Test targets:** unit 4.0 s, determinism 35.9 s, smoke 10.6 s, telemetry
+23.2 s (debug, one run each). `shrinking_the_economy_tick_does_not_multiply_decisions`
+is retired: it pinned the retry floor.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

@@ -2866,7 +2866,9 @@ runs T-52's candidate scan.
 
 **Severed.** A saving center now decides when *minerals arrive*
 (`wake_on_minerals`, on the freight deposit), with a per-center
-`decision_retry_years` floor as the catch-all beneath it. At `cycle_years = 1`,
+`decision_retry_years` floor as the catch-all beneath it (*superseded*: the
+floor is deleted and a declined decision waits on its events,
+`Hyades_autopilot_colonization_growth.md` §6.1a). At `cycle_years = 1`,
 economy ticks go **48,707 → 3,602,083 (74x)** while decisions go **97,197 →
 128,726 (1.32x)**. The wake path is *cheaper* than the cadence it replaces —
 ~26,800 deposits against ~99,000 ticks over 1,500 yr — so responsiveness rose

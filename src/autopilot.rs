@@ -1043,8 +1043,9 @@ pub struct ProductionContext {
     /// decision reads)`).
     pub survey_frontier: usize,
     /// **The center is a forge** — its population reads `Band IV` (galaxy
-    /// §4.5). A forge's basics are its synthesis's, and it builds only for
-    /// its own survival: the sentries its Doctrine wants.
+    /// §4.5). A forge's basics are its synthesis's: it orders the sentries
+    /// its Doctrine wants first, and otherwise only what its context still
+    /// prices — Designs paid in supers (R-MX17).
     pub forge: bool,
 }
 
@@ -1318,19 +1319,16 @@ impl Autopilot for BaselineAutopilot {
     }
 
     fn production_choice(&self, doctrine: &Doctrine, ctx: &ProductionContext, candidates: &[Candidate]) -> BuildOrder {
-        // **A forge forges** (galaxy §4.5, the author's ruling: once a center
-        // clears population `Band IV` its primary purpose is to forge supers
-        // and apex, outweighing almost anything but immediate survival). Its
-        // yard builds the sentries its Doctrine wants and nothing else.
+        // **A forge's survival comes first** (galaxy §4.5, the author's
+        // ruling: forging outweighs almost anything but immediate survival).
+        // The rest of a forge's choice is priced by the engine: every order
+        // paid only in basics is quoted unpayable there, and a Design paid in
+        // supers keeps its price (R-MX17).
         let wants_sentry = ctx.sentries_here
             < Standing::of(doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost, ctx.sentries_lost);
         let can_afford_sentry = ctx.stockpile_total + Price::new(1e-9) >= ctx.sentry_cost;
-        if ctx.forge {
-            return if wants_sentry && can_afford_sentry {
-                Standing::of(doctrine).order_for(Role::Sentry)
-            } else {
-                BuildOrder::Idle
-            };
+        if ctx.forge && wants_sentry && can_afford_sentry {
+            return Standing::of(doctrine).order_for(Role::Sentry);
         }
         // Deepen while any headroom remains below the ceiling, rather than only
         // when a whole level fits under it. `K = min(hab, bio, infra)`, so infra

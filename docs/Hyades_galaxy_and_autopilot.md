@@ -59,7 +59,7 @@ ruling.
 
 **`RATIFIED` (the author's ruling) — a homeworld is a trio.** The habitable world, where the seat's population grows and its forge will stand, holds only a trace of every basic; beside it, one companion world is rich in each of the archetype's two rich basics. **Every forge's precursors therefore arrive by freight** (§4.5). Built: companions at `Band 3.0` in their one color, trace in the others, habitability and biosphere `Band 0.5`, `2 ly` from the homeworld on either side along the ring (`GalaxyConfig::homeworld_companion_*`, all **placeholders**); they start wild, and the opening's outposts take them. Card-free, 4 seeds, 1,500 yr: colony-years and colonies unchanged within two standard errors; the first colony comes later (appendix §D.26).
 
-**Eventual self-synthesis.** At **pop Band IV** a homeworld synthesizes its archetype's super from its trio's two rich basics, which are that super's recipe. **R-G4 — resolved (the author's ruling: "forges have to produce supers according to color theory").** "Exactly one super" is a gradient, not a rule: a forge makes any super whose two basics it holds 1:1 (§4.2), and an archetype is native to one super only in that its trio supplies that recipe. Measured with the trio, hex-scale color, the ore cap and a priced works bill: **0.27% of refined mass synthesized crosses between empires** (24 runs, appendix §D.28) — empires make their own supers from basics their own freight brings. With forging a forge's purpose (§4.5), card-free: every forge makes all three supers, and no super crosses (appendix §D.30).
+**Eventual self-synthesis.** At **pop Band IV** a homeworld synthesizes its archetype's super from its trio's two rich basics, which are that super's recipe. **R-G4 — resolved (the author's ruling: "forges have to produce supers according to color theory").** "Exactly one super" is a gradient, not a rule: a forge makes any super whose two basics it holds 1:1 (§4.2), and an archetype is native to one super only in that its trio supplies that recipe. Measured with the trio, hex-scale color, the ore cap and a priced works bill: **0.27% of refined mass synthesized crosses between empires** (24 runs, appendix §D.28) — empires make their own supers from basics their own freight brings. With forging a forge's purpose and forges bidding for supers (§4.5), card-free: every forge still makes all three supers, and 3.7% of supers forged cross between empires (appendix §D.31).
 
 ---
 
@@ -175,8 +175,8 @@ Synthesis **only at pop Band IV** (§5.2). Each super needs **two** basics from 
 
 **`RATIFIED` (the author's ruling) and built — forging is a forge's primary
 purpose, priced above every use but survival.** A center whose population
-reads `Band IV` is a forge. At each economy tick, after its yard has served its
-survival, it synthesizes everything it holds that synthesis can use:
+reads `Band IV` is a forge. At each economy tick, after its yard has decided,
+it synthesizes everything the yard left that synthesis can use:
 
 | step | draws | makes |
 |---|---|---|
@@ -187,10 +187,14 @@ survival, it synthesizes everything it holds that synthesis can use:
 `Y_super = 2/3`, `Y_apex = 1/2` (placeholders, R-M2); the loss is slag at the
 forge (R-O59). What is left is one basic, waiting on the colors that pair it.
 
-- **Survival first.** A forge's yard builds the sentries its Doctrine wants and
-  nothing else; their price, and the rounds its sentries' magazines lack, are
-  kept back from the forge (`survival_reserve`). Rounds are made from the
-  holding as before.
+- **Survival first.** A forge's yard builds the sentries its Doctrine wants
+  first; their price, and the rounds its sentries' magazines lack, are kept back
+  from the forge (`survival_reserve`). Rounds are made from the holding.
+- **Then Designs paid in supers — `RATIFIED` (R-MX17, the author's ruling: a
+  Design paid in supers is priced higher than forging).** A forge's yard may
+  build a Design a write bills in supers or apex; every order paid only in
+  basics is quoted unpayable at a forge. The forge runs after the yard's
+  decision, never ahead of it.
 - **Its basics are its synthesis's.** No other build, rung, Exchange ask or
   hauler draws on them (`available_at`).
 - **Priced above every other use.** A forge bids for the basics that complete
@@ -199,25 +203,31 @@ forge (R-O59). What is left is one basic, waiting on the colors that pair it.
   (`10`, **placeholder**; every other center's pressure is at most `1`), and
   its pull on its own empire's freight is scaled by the same factor.
 - **Its empire first.** Supers its empire's centers wait on, and supers it has
-  sold and not yet delivered, are kept back from apex. It offers on the
-  Exchange what it forged outside a balanced set (matching §8.7).
+  sold and not yet delivered, are kept back from apex.
+- **It bids for the supers it has demand for — `RATIFIED` (R-MX18, the author's
+  ruling).** Every super up to the largest it holds — what apex draws — is a
+  refined need, bid at `forge_premium` times the refined floor; freight routes
+  a refined hold to it by the same need. It asks zero for what it forged
+  outside a balanced set (matching §8.7).
 
 What consumes supers is the author's ruling (`Hyades_trees_and_card_value.md`
 §4.6): **only a tier-3 card's Design writes, and apex only win conditions** —
 so a card-free game forges and consumes nothing it forges. Tests:
 `a_forge_forges_pairs_into_supers_and_balanced_supers_into_apex`,
 `a_forge_builds_only_for_its_survival`,
-`a_forge_sells_what_it_has_forged_and_keeps_it_until_delivery`. Measured
-card-free (appendix §D.30): colony-years and work-years unchanged within two
-standard errors; every forge makes all three supers, its native super 4.7–93% of them per
-seat (30.9% pooled over 12 seat-runs); no super crosses between empires. *Superseded:* synthesis on demand, for
+`a_forge_sells_what_it_has_forged_and_keeps_it_until_delivery`,
+`a_super_billed_design_is_forged_and_built_with_mass_conserved`. Measured
+card-free with both rulings (appendix §D.31): colony-years and work-years
+against `a50ef75` unchanged within two standard errors; 3.7% of the supers
+forged cross between empires (810.6 of 22,040 kt over 4 seeds); a seat's native
+super is 29.6% of what it forges, pooled. *Superseded:* synthesis on demand, for
 an order or a sale only (appendix §D.30).
 
 **R-M5 — resolved in part.** Freight now loads against a forge's balanced-set
 want and a forge out-pulls every other center, so precursors are hauled to a
-forge for synthesis's sake. **`OPEN`:** whether a forge should buy a super from
-the forge native to it rather than make it from bought basics — matching
-§10.7, R-MX18.
+forge for synthesis's sake, and a forge buys the supers it lacks (R-MX18).
+**`OPEN`:** what else would make a forge buy a super from the forge native to it
+rather than make it from bought basics — T-143.
 
 ### 4.6 Substitution — native only within a super's own counter-graph aspects
 Each super is native across the **whole lineup — but only for the specific aspects of the counter-graph it brings.** Covering **Blue's** aspects with Red/Green/apex costs **a card each**; Blue does **not** natively cover another super's aspects. Supers are **non-interchangeable specialists**, cheap in their own region, card-expensive outside it. **R-M6:** each super's (and the apex's) aspect-set. Each super is also **dominant in different trees**, and is the counter-graph's general key in the trees it dominates and a traversal key elsewhere (`Hyades_technology_tree.md` §3.1, R-TECH25).

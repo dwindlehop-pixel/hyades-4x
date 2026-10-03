@@ -1711,6 +1711,16 @@ cheap audit of the first**, and neither defect was findable by reading.
   `build_years` after a build was committed. Everything is arrival- or
   completion-driven; nothing decides on a sweep.
 
+  **No decision has a cadence of its own, and each is a tree with a short
+  circuit for the common case** (the author's rulings, T-144). T-88's 50-year
+  retry floor is deleted. A declined decision records what it waits on
+  (`Declined`) — a card, a population band, its works, its bank reaching the
+  cheapest price it could not pay, and, unless it was saving, a scan, a target,
+  a claim or its reserve — and the economy tick asks it again only when one
+  has moved. Asking every tick instead doubled the standard bed's cost;
+  conditioning brought it back to the floor's (appendix §D.31). When you add a
+  decision, write its cheap exit first and name the events it waits on.
+
   The trigger is only half the rule. **Evaluation count scales with entity count, so
   per-evaluation cost must be local — O(what the decision reads), not O(galaxy).**
   The two multiply, and that product is what sets simulation speed:

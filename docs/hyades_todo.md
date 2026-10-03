@@ -95,6 +95,20 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-144. Decisions without a cadence: a short-circuit tree, conditioned on events
+
+**Advanced — built (the author's rulings).** No decision has a cadence of its
+own: T-88's retry floor is deleted. Each decision is a tree with a short
+circuit for the common case (a bank below every price; a center below the
+limited tier; a forge with nothing paid in supers), and a declined decision
+waits on the events that can change it (autopilot §6.1a). Seed 1, 800 yr:
+5.0 s against 4.9 s with the floor and 7.5 s asking every tick (appendix
+§D.31). **Open:** the other decisions in the engine that still re-ask on a
+cadence, if any, have not been audited; a census per decision site is what
+would settle it.
+
+---
+
 ### T-143. Every empire forges every super — make forging a forge's purpose, then trade supers
 
 **Advanced — step 1 built (the author's ruling).** The author's direction is to
@@ -110,9 +124,12 @@ same factor. Capacity asks, sister-supply synthesis and synthesis at
 settlement are retired, and R-MX16 is superseded. Card-free, 4 seeds: economy
 unchanged within two standard errors; forges make all three supers, native
 share 4.7–93% per seat; no super crosses between empires (appendix §D.30).
-**Open:** R-MX17 (a forge builds no super-billed Design, and on §D.25's bed its
-supers reach no builder), R-MX18 (supers between forges — the next step toward
-the direction), R-M5's remainder.
+**Step 2 built (the author's rulings):** R-MX17 — a Design paid in supers is
+priced higher than forging, so a forge's yard builds it and forges after;
+R-MX18 — forges bid on the supers they lack. 3.7% of supers forged now cross
+between empires; native share 29.6% pooled (appendix §D.31). **Open:** the
+author's direction is not yet met — every forge still makes all three supers.
+R-M5's remainder.
 
 ---
 

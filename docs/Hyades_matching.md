@@ -356,17 +356,18 @@ posts in the refined ones.
   `f_m · d_m` (a declined order is fully blocked, so its pressure is `1`).
 - **Asks** — a center holding `m` above its own `need_m` asks for the excess at
   its own price (zero: it is not short).
-- **A forge's asks** — a forge (population `Band IV`, galaxy §4.5) asks for
-  what it has forged outside a balanced set, at zero like any center with a
-  surplus, and keeps what it sold back from apex until the contract is
-  delivered. It sells nothing it has yet to make. *Superseded:* capacity asks,
+- **A forge's bids and asks** — a forge (population `Band IV`, galaxy §4.5)
+  bids for every super up to the largest it holds, at `forge_premium · f_m ·
+  d_m` (R-MX18); it asks zero, like any center with a surplus, for what it has
+  forged outside a balanced set, and keeps what it sold back from apex until
+  the contract is delivered. It sells nothing it has yet to make. *Superseded:* capacity asks,
   sold from basics and synthesized at settlement (appendix §D.30).
 - **Freight** — a hauler loads the refined material the center it serves is
   short of before ore, at a pile or as a center's offer (§8.5's rule, with the
   order's need in place of the works bill), and routes a refined hold to the
   center whose refined shortfall it closes most, discounted as every leg is.
 
-A card-free game posts no refined bid and clears nothing in these books.
+Card-free, only forges post refined bids.
 Tests: `a_forge_sells_what_it_has_forged_and_keeps_it_until_delivery`,
 `a_hauler_carries_the_supers_a_center_is_waiting_for`. Appendix §D.23, §D.25,
 §D.30.
@@ -472,12 +473,10 @@ are part of this room). What exists, and what a card can reach:
   R-M5 in part).
 - **Not built:** market power over a forge's output — markup and withhold
   (§10.1, R-MX11) and the Corner (§10.2, R-MX12).
-- **Built, and unused card-free:** cross-empire refined trade. Every forge
-  makes every super from basics it buys or hauls, and no forge bids for a
-  super, so no super crosses between empires card-free (appendix §D.30;
-  0.27% under tier-3 bills before forging was a forge's purpose, §D.28).
-  R-G4 is resolved against a hard rule (galaxy §3: supers by color theory, no
-  archetype barred); R-MX18 (§10.7) is the open question.
+- **Built:** cross-empire refined trade. Forges bid for the supers they lack
+  (R-MX18), and 3.7% of the supers forged card-free cross between empires
+  (appendix §D.31). R-G4 is resolved against a hard rule (galaxy §3: supers by
+  color theory, no archetype barred).
 
 **What would settle it:** the cards themselves; until then these are the
 interfaces, not the designs. The new-duty interface has one use beyond stage 2:
@@ -624,25 +623,18 @@ forge now keeps every basic for synthesis, builds no rung, and sells what it
 has forged rather than capacity, so there is no works bill to hold or price.
 The ruling and its measurements are in appendix §D.25, §D.26 and §D.30.
 
-**10.7 Forge output — two `OPEN` items opened by galaxy §4.5.**
+**10.7 Forge output — resolved by the author's rulings.**
 
-- **`OPEN` — R-MX17: where a super-billed Design is built.** A forge builds
-  only for its survival, so a hull a tier-3 Design write bills in supers is
-  built only at a center the forge's supers reach by freight. On §D.25's bed no
-  such center is reached in 1,500 yr and no super-billed hull is built
-  (appendix §D.30). *Recommend* the author rule whether a forge may build a
-  Design that spends what it forged — it draws on the forge's output, not its
-  inputs. **What would settle it:** the ruling, then §D.25's count of hulls
-  carrying refined material.
-- **`OPEN` — R-MX18: supers between forges.** A forge turns every balanced set
-  of supers into apex, asks zero for the rest, and bids for no super, so
-  card-free no super crosses between empires and every forge makes every
-  super, its native one 4.7–93% of them per seat (appendix §D.30). *Recommend* a forge
-  bid for the supers that complete a balanced set at `forge_premium` times the
-  refined floor, and ask for its excess at what its precursors cost it — the
-  swap that lets a native forge sell its super where a rival would make it
-  from bought basics. **What would settle it:** the native share and the
-  supers delivered between empires on §D.30's census.
+- **R-MX17 — `RATIFIED`: a Design paid in supers is priced higher than
+  forging.** A forge's yard builds such a Design (galaxy §4.5); every order
+  paid only in basics is quoted unpayable there, and the forge runs after the
+  yard. §D.25's bed builds Red-billed hulls again (appendix §D.31).
+- **R-MX18 — `RATIFIED`: forges bid on the supers they have demand for** —
+  every super up to the largest a forge holds, at `forge_premium` times the
+  refined floor (§8.7). *Not adopted:* the recommendation's second half, a
+  forge asking its precursors' cost for its excess. That ask equals an
+  ordinary center's bid for a super, which the clearing discounts by transit,
+  so it would never sell to an order; a forge asks zero like any surplus.
 
 ---
 

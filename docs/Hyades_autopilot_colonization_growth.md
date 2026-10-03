@@ -340,7 +340,21 @@ rate needs: `cycle_years = 5.0`. The **decision** is an event — `BuildDecision
 raised when the yard clears `build_years` after a build was committed — because a
 decision is not a rate. **R-O69**, +165.8 colonies (+5.0%).
 
-A declined build schedules `decision_retry_years = 50.0`.
+**6.1a `RATIFIED` (the author's rulings) — no decision has a cadence of its
+own; each is a tree with a short circuit, conditioned on the events that can
+change it.** A center's yard is asked when a berth clears, when minerals land,
+and on an economy tick only once something its last declined decision waited on
+has moved (`Declined`): a card landed; its population crossed a band; its works
+changed; the sentries its Doctrine wants changed; its bank reached the cheapest
+price it could not pay, or its rung became payable in every color; and, unless
+it declined while saving, its empire scanned a world that can rank as a colony
+or a mining outpost, targeted a world, any empire claimed one, or its reserve
+changed. The tree's short circuits, cheapest first: a bank below the cheapest
+order; a center below the limited tier, which deepens or saves without reading
+a candidate; a forge with no Design paid in supers. T-88's retry floor
+(`decision_retry_years = 50`) is deleted. Against asking on every tick, 4
+seeds: colony-years −0.24% ± 0.04, work-years +6.07% ± 4.45 (appendix §D.31).
+Test: `a_declined_decision_waits_on_its_events`.
 
 **6.2 `RATIFIED` — every rate is denominated per `rate_reference_years = 50.0`,
 not per tick.** `tick_scale` multiplies each rate by `cycle_years /
