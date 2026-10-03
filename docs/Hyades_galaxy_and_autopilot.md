@@ -91,7 +91,7 @@ fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
 ## 4. Materials — the ladder, the color algebra, and synthesis
 
 ### 4.1 Three tiers
-**Tier 1 — basics: Cyan, Magenta, Yellow.** Mined (§4.3). · **Tier 2 — supers: Red, Green, Blue.** Synthesized, never mined. · **Apex — Strange Matter** (`RATIFIED`, the author's ruling, replacing the placeholder *Platinum*). Synthesized from supers; metallic silver-white.
+**Tier 1 — basics: Cyan, Magenta, Yellow.** Mined (§4.3). · **Tier 2 — supers: Red, Green, Blue.** Synthesized, never mined. · **Apex — Strange Matter** (`RATIFIED`, the author's ruling). Synthesized from supers; metallic silver-white.
 
 **Names and fiction (R-M1).** Basics are ordinary matter changed by extreme pressure (`Exotic_matter_technology_inspiration.md`, "materials at high pressure"): stable only at depth or at an impact site, and mined from there. Supers are categories of far-future technology built on exotic matter. The color stays the mechanical name in the engine (`resources::Material`); these are the in-game names.
 
@@ -110,7 +110,7 @@ Fixed two-basic recipes: **Blue ← Cyan + Magenta · Red ← Magenta + Yellow �
 **`Y_super` = 2/3** (mineral-mass → super-mass) and **`Y_apex` = 1/2**
 (super-mass → apex-mass) in `Hyades_mineral_cost_curve.md` §5.0, which also
 distinguishes this literal mass-conserving ratio from the separate
-order-of-magnitude *value* heuristic ("3 CMY = 2 RGB = 1 Platinum," §5.1 of
+order-of-magnitude *value* heuristic ("3 CMY = 2 RGB = 1 Strange Matter," §5.1 of
 that spec) the two used to share notation with. **No direct substitution.**
 **R-M2:** ratios + wastage — this section owns the ratified values;
 `Hyades_mineral_cost_curve.md` §5.0 only names them.

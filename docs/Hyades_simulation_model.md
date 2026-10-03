@@ -44,7 +44,7 @@ There is not much to the physics, by design:
 - **Ships** carry the stats that matter *spatially*: **engine/velocity** (arrival order, pursuit, escape), **weapon profile** (range + single-target burst vs. anti-swarm splash), **armor** (hit absorption), **role/formation slot**. Classes: civilian/production, basic military, advanced, armored, experimental/flagship.
 - **Pop / colonies** grow logistically toward a per-planet carrying capacity **K**, then **lock at K** — a locked colony simply can't grow or produce further. The lock is an *economic ceiling, not a defensive state.* K is set by the three-factor planet model (§2a); making a colony hard to dislodge is something a player does with a card or structure, never a free consequence of being full.
 - **Structures** are spatial: docks (a planetside build footprint), defenses (interdiction templates / PDS), gate endpoints. Some are mobile.
-- **Minerals** — three basics (Cyan / Magenta / Yellow), three supers (Red / Green / Blue), and **Platinum**, the apex ultra-resource. The two color triads are deliberately the CMY and RGB primaries; Platinum is named and rendered as a metallic silver-white so the top tier reads instantly distinct from the six saturated hues. Minerals fund cards and builds.
+- **Minerals** — three basics (Cyan / Magenta / Yellow), three supers (Red / Green / Blue), and **Strange Matter**, the apex ultra-resource. The two color triads are deliberately the CMY and RGB primaries; Strange Matter is named and rendered as a metallic silver-white so the top tier reads instantly distinct from the six saturated hues. Minerals fund cards and builds.
 
 ## 2a. The planet model — ~~three-factor~~ **two-factor** carrying capacity, plus an industrial stock
 
@@ -266,7 +266,7 @@ The weapon / armor / engine / weapon-tech profiles form a **directed counter-gra
 | **Beam** (long-range energy) | ranged, never has to close | less effective overall; **loses to pulse** up close | range to kite the brawler |
 | **Torpedo** (alpha) | highest alpha strike; superb **capital-killer** | worst accuracy; overkill does **not** carry to nearby targets → bleeds value vs. **swarms** | — |
 | **Missile** (guided) | ranged generalist | range limited by **fuel before exhaustion**; less effective overall | tech for **longer range before fuel-out** |
-| **Exotic** (apex) | "sci-fi" dark-energy / quantum-foam / black-hole / pulsar weapons | undefined; likely Platinum/super-gated, possibly graph-breaking | where cycles and surprises are allowed to live |
+| **Exotic** (apex) | "sci-fi" dark-energy / quantum-foam / black-hole / pulsar weapons | undefined; likely Strange Matter/super-gated, possibly graph-breaking | where cycles and surprises are allowed to live |
 
 Underneath, the hull stats that differentiate everything: **acceleration, turning radius, and armor-vs-shields** (heavy armor is slow; light shields are fast), with **pulse-beats-beam** as a seed counter.
 

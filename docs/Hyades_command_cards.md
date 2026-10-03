@@ -74,7 +74,7 @@ The sim builds and deploys a **mix** of ships by board state; you shape **what**
 
 ## 3. The battle-royale backbone *(carried — condensed)*
 
-A **battle-royale auto-battler** ([Auto battler](https://en.wikipedia.org/wiki/Auto_battler)), not a Euro game. Elimination is progressive and front-loaded — first out at **~⅓ length** (10–20 min of 30–45), **dissolved / assimilated / destroyed** by manner (§9). Win by a **win-object** (skilled: Platinum, telegraphed, guarantees the win) or **last-to-lose** (casual: no win-object needed). Every tree must **survive** the drumbeat, **accelerate** it against others (the genre's "contribute to an elimination, get paid" rule — [Dota Auto Chess](https://en.wikipedia.org/wiki/Dota_Auto_Chess); cf. #36), and **reach its win-object before the drumbeat reaches it.** Snowball checked by ganging the telegraphed leader.
+A **battle-royale auto-battler** ([Auto battler](https://en.wikipedia.org/wiki/Auto_battler)), not a Euro game. Elimination is progressive and front-loaded — first out at **~⅓ length** (10–20 min of 30–45), **dissolved / assimilated / destroyed** by manner (§9). Win by a **win-object** (skilled: Strange Matter, telegraphed, guarantees the win) or **last-to-lose** (casual: no win-object needed). Every tree must **survive** the drumbeat, **accelerate** it against others (the genre's "contribute to an elimination, get paid" rule — [Dota Auto Chess](https://en.wikipedia.org/wiki/Dota_Auto_Chess); cf. #36), and **reach its win-object before the drumbeat reaches it.** Snowball checked by ganging the telegraphed leader.
 
 ---
 
@@ -138,7 +138,7 @@ so a feint costs something — stands.)* Because every reach commits, there is n
 
 ## 6. The trees — archetype blends + win-objectives *(table ratified; objects are placeholders)*
 
-**Win-objective** = the condition that wins (skilled play); the **object** in parentheses is a placeholder Platinum board-piece at the deepest leaf, telegraphing it. Objectives are ratified; objects are first-pass.
+**Win-objective** = the condition that wins (skilled play); the **object** in parentheses is a placeholder Strange Matter board-piece at the deepest leaf, telegraphing it. Objectives are ratified; objects are first-pass.
 
 | Tree (mouth) | Group · Shape → Identity | Interactivity / tempo | Win-objective *(placeholder object)* | Inflicts | Drumbeat |
 |---|---|---|---|---|---|
@@ -164,7 +164,7 @@ Warfare (**Kinetic · front-loaded shallow → Proactive deep**) inflicts **dest
 - **Mouth + shallow, front-loaded nodes (cheap to reach, proactive-flavored):** `Mobilize` *(the war-footing tip — visible the instant it resolves)* · basic **Offensive designs** *(counter-graph picks; out-design rivals, don't out-fly them)* · **Levée en Masse** *(combo card scaling with your **Systems**-hull count)*. **Reach example:** a Producer reaches Warfare's shallow node for **base + 1** to play `Levée en Masse` off its mass — a real but small commitment (the node is now unlocked), partial teeth without a deep descent.
 - **Deep, Proactive-identity nodes (soft-locked behind the descent):** **Advance** *(commit force to a hex an opponent holds)* → **Blockade** *(sever a system's supply while held)* → **Bombard** *(crater a world to lower **K**, sim §2a)*. The sim fights the engagements.
 - **Deeper still:** **Privateer** *(a cross-tree card on the Politics **and** Warfare trees — the home of piracy)*.
-- **Win-object (deepest leaf):** **War Sun** — `Platinum + supers` on a deep base; build and ignite the capital-killer (#19).
+- **Win-object (deepest leaf):** **War Sun** — `Strange Matter + supers` on a deep base; build and ignite the capital-killer (#19).
 
 Absent by design: Concentrate Fire, Encircle, Run Them Down, Picket — those are **what the sim does** once your designs and doctrine equip it.
 
@@ -178,7 +178,7 @@ Absent by design: Concentrate Fire, Encircle, Run Them Down, Picket — those ar
 
 ## 10. Arc — recapitulate, then depart from *Stars!* *(carried — condensed)*
 
-**Recapitulate** ([Stars! SG Ch.1](https://wiki.starsautohost.org/wikinew/ssg/ssg01.htm)): the strategy archetypes (expansion / production / growth / tech) and the "mature fast, then face a fleet you can't match" tension. **Depart:** Platinum **win-objects**, embraced **progressive elimination**, the front-loaded **drumbeat** — explicitly **not** a Euro game.
+**Recapitulate** ([Stars! SG Ch.1](https://wiki.starsautohost.org/wikinew/ssg/ssg01.htm)): the strategy archetypes (expansion / production / growth / tech) and the "mature fast, then face a fleet you can't match" tension. **Depart:** Strange Matter **win-objects**, embraced **progressive elimination**, the front-loaded **drumbeat** — explicitly **not** a Euro game.
 
 ---
 
