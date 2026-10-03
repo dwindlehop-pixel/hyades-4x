@@ -99,7 +99,7 @@ fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
 |---|---|---|---|
 | Basic | Cyan | **Cage Ice** — *Clathrate Hydride*: hydrogen caged in a metal lattice at core pressure; the hydrogen is propellant and the lattice is light structure | `RATIFIED` |
 | Basic | Magenta | **Rosepeter** — *Erbium Polynitride*: single-bonded nitrogen above ~110 GPa, doped with erbium; the bond energy feeds weapons and power, the erbium lases | `RATIFIED` |
-| Basic | Yellow | **Sodium Subchloride** — Na₃Cl, stable only under pressure; alternating sodium (conductor) and salt (insulator) layers are a circuit in the crystal | flavor text `RATIFIED`; in-game common name `OPEN` (R-M1) |
+| Basic | Yellow | **Voltslate** — *Sodium Subchloride*: Na₃Cl, stable only under pressure; alternating sodium (conductor) and salt (insulator) layers are a circuit in the crystal | `RATIFIED` |
 | Super | Blue ← C+M | **Countermass** — negative mass made by pair production (§3.5 of `Hyades_technology_tree.md`); keels and drives | placeholder (T-142) |
 | Super | Red ← M+Y | **Ambient Superconductor** — an electron-pair condensate held at ordinary pressure; power, magnets, computation | placeholder (T-142) |
 | Super | Green ← Y+C | **Metamaterial** — conducting layers on a cage lattice; sensors, signature control, communications | placeholder (T-142) |
@@ -284,7 +284,7 @@ Turn-1 state: co-located homeworlds at **Band IV/IV/I** (pop ~Band I, **no pop-B
 ## 9. Ratification points (consolidated)
 
 - **R-G0** sim §1/§6 absorb 3D/2D · **R-G1** hex `s`+depth · **R-G2** counts + core · **R-G3** archetype placement · **R-G4** self-synth yield + "exactly one"
-- **R-M1** in-game common name for Yellow (*Sodium Subchloride*; Cyan and Magenta ratified) (apex ratified as Strange Matter; super names are placeholders under T-142; §4.1) · **R-M2** ratios+wastage · **R-M3** Z scale-height · **R-M4** anticorrelation · **R-M5** supply chain · **R-M6** super aspect-sets · **R-M7** use-domains+apex · **R-M8** Growth↔Cyan soft fit (rest intended)
+- ~~**R-M1**~~ names — **resolved**: Cage Ice, Rosepeter, Voltslate, Strange Matter (§4.1); super names are placeholders under T-142 · **R-M2** ratios+wastage · **R-M3** Z scale-height · **R-M4** anticorrelation · **R-M5** supply chain · **R-M6** super aspect-sets · **R-M7** use-domains+apex · **R-M8** Growth↔Cyan soft fit (rest intended)
 - **R-P1** Weibull `k`+bands · **R-P2** pop→design gating · **R-P3** infra rate vs. clock
 - **R-A1** expand-bias · **R-A2** formation/posture · **R-A3** trade/NAP in verb model
 - **R-N1** lock the six saga arcs as modes of love winning; Warfare voice now Hollywood-Western (Those Who Stand; saga alt 'The Gun and the Garden'); confirm the believed Beloved Republic win-state · **R-N2** tier-crossing named events carrying the elimination drumbeat
