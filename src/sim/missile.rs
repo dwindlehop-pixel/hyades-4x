@@ -86,6 +86,23 @@ impl Simulation {
         hull_cost(hull, &self.config) + Price::new(l.magazine as f64 * self.combat.missile_round_kt)
     }
 
+    /// **What a center's survival holds back from its forge** (galaxy §4.5,
+    /// the author's ruling: forging outweighs almost anything but immediate
+    /// survival): the price of the sentries its Doctrine wants and it lacks,
+    /// and the rounds its standing sentries' magazines lack. Zero until the
+    /// missile card writes `sentry_ratio`.
+    pub(super) fn survival_reserve(&self, center: Entity) -> Price {
+        let standing = self.sentries.get(&center.0);
+        let rounds: f64 = standing.map_or(0.0, |v| v.iter().map(|&e| self.magazine_room_kt(e)).sum());
+        let Some(o) = self.world.owner.get(center) else { return Price::new(rounds) };
+        let price = self.sentry_price();
+        let lost = self.sentries_lost.get(&center.0).copied().unwrap_or(0);
+        let wanted =
+            Standing::of(&self.doctrine_of(o.0 as usize)).sentries_wanted(self.defended_at(center), price, lost);
+        let here = standing.map_or(0, |v| v.len() as u32);
+        Price::new(rounds) + price * wanted.saturating_sub(here) as f64
+    }
+
     /// Rounds in a hull's magazine.
     pub(super) fn rounds_aboard(&self, e: Entity) -> u32 {
         let held = self.world.cargo.get(e).map_or(0.0, |c| c.ordnance);
@@ -97,6 +114,18 @@ impl Simulation {
         let mut c = self.world.cargo.get(e).copied().unwrap_or_default();
         c.ordnance += kt;
         self.world.cargo.insert(e, c);
+    }
+
+    /// **Fill a missile hull's magazine** without drawing on any bank — for
+    /// a fleet generated with the galaxy (`seed_fleets`), whose rounds come
+    /// into being with it. A hull with no tubes is left as it is.
+    pub(super) fn fill_magazine(&mut self, e: Entity) {
+        if self.world.loadout.get(e).is_some_and(|l| l.fires_missiles()) {
+            let room = self.magazine_room_kt(e);
+            if room > 0.0 {
+                self.add_rounds(e, room);
+            }
+        }
     }
 
     /// Kilotonnes of rounds a hull's magazine lacks.
@@ -422,7 +451,7 @@ impl Simulation {
         if kt <= 0.0 || self.world.owner.get(center).is_none_or(|o| o.0 != seat) {
             return 0.0;
         }
-        let take = kt.min(self.available_at(center).basic_total().kilotons());
+        let take = kt.min(self.free_of_order(center).basic_total().kilotons());
         if take <= 1e-12 {
             return 0.0;
         }
@@ -553,7 +582,7 @@ impl Simulation {
         let mut consider = |sim: &Simulation, c: Entity| {
             let held = sim.holding(seat, c).map_or(0.0, |h| h.ordnance);
             let own = sim.world.owner.get(c).is_some_and(|o| o.0 == seat);
-            let makes = if own { sim.available_at(c).basic_total().kilotons() } else { 0.0 };
+            let makes = if own { sim.free_of_order(c).basic_total().kilotons() } else { 0.0 };
             if held + makes + 1e-12 < want {
                 return;
             }

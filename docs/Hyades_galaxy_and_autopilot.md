@@ -57,7 +57,9 @@ engine drains a homeworld faster than the default, so the round-four case is not
 yet measurable. Appendix §D.23. **Placeholder** magnitude; the schedule is the
 ruling.
 
-**Eventual self-synthesis.** At **pop Band IV** a homeworld self-synthesizes **exactly one** super — its archetype's — in **modest** quantity, **no supply chain**. The **corrected R-G4:** the homeworld is a **bounded** exception to the habitability↔metallicity anticorrelation (§4.4) — habitable *and* modestly mineralized in two colors, **enough for one modest super, not super-rich**. **R-G4 (`OPEN`):** modest yield; confirm "exactly one super" is hard. *Measured: it is not, in the engine as built* — every homeworld holds all three basics once freight and the Exchange run, so each can make any super at a cost set by its poorest precursor (technology §3.2, appendix §D.23). **What would settle it:** the author's call between a gradient (as built) and a hard rule (e.g. synthesis drawing only on ore mined from the forge's own ground).
+**`RATIFIED` (the author's ruling) — a homeworld is a trio.** The habitable world, where the seat's population grows and its forge will stand, holds only a trace of every basic; beside it, one companion world is rich in each of the archetype's two rich basics. **Every forge's precursors therefore arrive by freight** (§4.5). Built: companions at `Band 3.0` in their one color, trace in the others, habitability and biosphere `Band 0.5`, `2 ly` from the homeworld on either side along the ring (`GalaxyConfig::homeworld_companion_*`, all **placeholders**); they start wild, and the opening's outposts take them. Card-free, 4 seeds, 1,500 yr: colony-years and colonies unchanged within two standard errors; the first colony comes later (appendix §D.26).
+
+**Eventual self-synthesis.** At **pop Band IV** a homeworld synthesizes its archetype's super from its trio's two rich basics, which are that super's recipe. **R-G4 — resolved (the author's ruling: "forges have to produce supers according to color theory").** "Exactly one super" is a gradient, not a rule: a forge makes any super whose two basics it holds 1:1 (§4.2), and an archetype is native to one super only in that its trio supplies that recipe. Measured with the trio, hex-scale color, the ore cap and a priced works bill: **0.27% of refined mass synthesized crosses between empires** (24 runs, appendix §D.28) — empires make their own supers from basics their own freight brings. With forging a forge's purpose and forges bidding for supers (§4.5), card-free: every forge still makes all three supers, and 3.7% of supers forged cross between empires (appendix §D.31).
 
 ---
 
@@ -83,8 +85,13 @@ fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
   mining outpost, nearest first, one to a rock before any rock takes two; a
   **Freighter** hull serves the seat's generated mining sites in turn.
 - A **Picket** or **Reserve** hull stands at the fleet's position with its
-  velocity; a mission hull with nowhere to go stands in Reserve at its home
-  port.
+  velocity; a **Sentry** hull stands at its seat's homeworld, counted there as
+  the center's sentries (T-139), whatever position the fleet names; a mission
+  hull with nowhere to go stands in Reserve at its home port.
+- **A generated missile Design starts with its magazine full** — its rounds
+  are generated with it, as its hulls are, and drawn from no bank. A generated
+  picket has no post and no voyage, so once dry it is not resupplied: the
+  ammo run and the flight home both start from one.
 - Every generated hull is logged once, `FleetGenerated`, with its seat, Design
   and role, which is how a bed tells its fleet from what the autopilot builds.
 
@@ -106,7 +113,7 @@ fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
 | Apex | — | **Strange Matter** — converts ordinary matter it touches into itself; spent only on win conditions | `RATIFIED` |
 
 ### 4.2 Color algebra + the refining ladder
-Fixed two-basic recipes: **Blue ← Cyan + Magenta · Red ← Magenta + Yellow · Green ← Yellow + Cyan.** **Apex ← Red + Green + Blue in equal parts** (`RATIFIED`, the author's ruling — silver-white is additive white). Ladder **3 basics → 2 supers → 1 apex** with **wastage** (cards reduce it) — named as yield fractions
+Fixed two-basic recipes: **Blue ← Cyan + Magenta · Red ← Magenta + Yellow · Green ← Yellow + Cyan.** **`RATIFIED` (the author's ruling) — a forge produces supers by color theory: the two basics of a super's recipe, in a 1:1 ratio by mass,** and nothing else makes it. A forge makes whichever super its holding has both basics for; no archetype is barred from a super (R-G4, below). **Apex ← Red + Green + Blue in equal parts** (`RATIFIED`, the author's ruling — silver-white is additive white). Ladder **3 basics → 2 supers → 1 apex** with **wastage** (cards reduce it) — named as yield fractions
 **`Y_super` = 2/3** (mineral-mass → super-mass) and **`Y_apex` = 1/2**
 (super-mass → apex-mass) in `Hyades_mineral_cost_curve.md` §5.0, which also
 distinguishes this literal mass-conserving ratio from the separate
@@ -116,7 +123,11 @@ that spec) the two used to share notation with. **No direct substitution.**
 `Hyades_mineral_cost_curve.md` §5.0 only names them.
 
 ### 4.3 Tier-1 distribution — 3D field, XY-dominant, **Gaussian over Bands** (T-62)
-**Gaussian in X & Y** (each hue's hotspot) **× exponential decay in Z from the midplane**. A turtler mines the **Z-column** for a modest baseline, but the mass sits near Z=0 and one hex captures only its XY footprint, so **the lion's share needs X-Y expansion**. **R-M3:** Z scale-height / ratio.
+**Gaussian in X & Y** (each hue's hotspot) **× exponential decay in Z from the midplane**. **`RATIFIED` (the author's direction) — color is sized to the hex: "a hex has a distinct slant or two."** The three hotspots set where each hue is strong across the galaxy; inside that envelope the ore sits at **color sites** on a jittered lattice one hex side apart, each a single hue drawn in proportion to the hotspots' weights there, with a peak of `mineral_peak · (floor + (1 − floor) · w)`. A world's deposit in a hue is its nearest site of that hue (`Band IV` seams stay at the hue centers). One noise draw per world is added to every color, so the noise does not reorder a world's colors. Spacing `1.0` hex side, width `0.5` of the spacing, floor `0.5` — **placeholders** (`GalaxyConfig::color_site_*`). *Superseded:* sites carrying a recipe pair 1:1 — the author: 1:1 is wrong for galaxy generation (appendix §D.27).
+
+**`RATIFIED` (the author's ruling) — a world's total ore is its richest color, shared in its rolled proportions.** The three colors as the field rolls them are rescaled to sum to the largest of them, keeping their ratios: a one-color world barely changes, a balanced one keeps a third. §4.4's anticorrelation reads the capped deposit.
+
+**Slant is measured by an absolute threshold per mineral** (the author's direction: trace amounts do not count): a mineral is present in a region when it holds at least the threshold, and the region's slant is how many are present. Over 10-ly cells at `Band I` (1.0 kt): 42.1% none, 48.9% one, 7.8% two, 1.2% three; 58.0% of worlds hold no mineral at `Band I` (appendix §D.28). A turtler mines the **Z-column** for a modest baseline, but the mass sits near Z=0 and one hex captures only its XY footprint, so **the lion's share needs X-Y expansion**. **R-M3:** Z scale-height / ratio.
 
 **The Gaussian is over the *Band*, not over the mass.** That is the design
 statement, and it is the only reading under which the shape means anything: a
@@ -162,17 +173,61 @@ additive-on-Band, not the distribution.
 ### 4.5 Synthesis gates — pop Band IV + supply chain
 Synthesis **only at pop Band IV** (§5.2). Each super needs **two** basics from distant hotspots → synthesis **generally demands a supply chain**; a hex where two gaussians overlap richly (synthesize **with no chain**) is **exceptionally high value** — the homeworld is the modest, archetype-locked instance. **R-M5:** supply-chain model.
 
-**`RATIFIED` and built — synthesis is demand-driven, at a forge, from its own
-holding.** A center whose population reads `Band IV` is a forge. It synthesizes
-when an order it is paying owes a super or apex it does not hold, or when a
-contract it sold comes due, drawing the recipe's precursors from its own holding
-at `Y_super = 2/3` and `Y_apex = 1/2` (placeholders, R-M2), all or nothing, and
-keeping what its order or its next works bill needs in basics. The yield's loss
-is slag at the forge (R-O59). What consumes supers is the author's ruling
-(`Hyades_trees_and_card_value.md` §4.6): **only a tier-3 card's Design writes,
-and apex only win conditions** — so a card-free game synthesizes nothing.
-**R-M5 stays `OPEN`:** nothing yet hauls precursors to a forge for synthesis's
-sake; a forge makes what its own holding allows.
+**`RATIFIED` (the author's ruling) and built — forging is a forge's primary
+purpose, priced above every use but survival.** A center whose population
+reads `Band IV` is a forge. At each economy tick, after its yard has decided,
+it synthesizes everything the yard left that synthesis can use:
+
+| step | draws | makes |
+|---|---|---|
+| balanced basics | `m = min_c basic_c` of each basic | `Y_super · m` of every super |
+| the pair left over | `min` of the two basics still held | `Y_super · 2 · min` of their super |
+| balanced supers | `min_s super_s` of each super | `Y_apex · 3 · min` of apex |
+
+`Y_super = 2/3`, `Y_apex = 1/2` (placeholders, R-M2); the loss is slag at the
+forge (R-O59). What is left is one basic, waiting on the colors that pair it.
+
+- **Survival first.** A forge's yard builds the sentries its Doctrine wants
+  first; their price, and the rounds its sentries' magazines lack, are kept back
+  from the forge (`survival_reserve`). Rounds are made from the holding.
+- **Then Designs paid in supers — `RATIFIED` (R-MX17, the author's ruling: a
+  Design paid in supers is priced higher than forging).** A forge's yard may
+  build a Design a write bills in supers or apex; every order paid only in
+  basics is quoted unpayable at a forge. The forge runs after the yard's
+  decision, never ahead of it.
+- **Its basics are its synthesis's.** No other build, rung, Exchange ask or
+  hauler draws on them (`available_at`).
+- **Priced above every other use.** A forge bids for the basics that complete
+  a balanced set — every color up to the largest of what it holds and of its
+  next rung's colors — at `Doctrine::forge_premium` times its price
+  (`10`, **placeholder**; every other center's pressure is at most `1`), and
+  its pull on its own empire's freight is scaled by the same factor.
+- **Its empire first.** Supers its empire's centers wait on, and supers it has
+  sold and not yet delivered, are kept back from apex.
+- **It bids for the supers it has demand for — `RATIFIED` (R-MX18, the author's
+  ruling).** Every super up to the largest it holds — what apex draws — is a
+  refined need, bid at `forge_premium` times the refined floor; freight routes
+  a refined hold to it by the same need. It asks zero for what it forged
+  outside a balanced set (matching §8.7).
+
+What consumes supers is the author's ruling (`Hyades_trees_and_card_value.md`
+§4.6): **only a tier-3 card's Design writes, and apex only win conditions** —
+so a card-free game forges and consumes nothing it forges. Tests:
+`a_forge_forges_pairs_into_supers_and_balanced_supers_into_apex`,
+`a_forge_builds_only_for_its_survival`,
+`a_forge_sells_what_it_has_forged_and_keeps_it_until_delivery`,
+`a_super_billed_design_is_forged_and_built_with_mass_conserved`. Measured
+card-free with both rulings (appendix §D.31): colony-years and work-years
+against `a50ef75` unchanged within two standard errors; 3.7% of the supers
+forged cross between empires (810.6 of 22,040 kt over 4 seeds); a seat's native
+super is 29.6% of what it forges, pooled. *Superseded:* synthesis on demand, for
+an order or a sale only (appendix §D.30).
+
+**R-M5 — resolved in part.** Freight now loads against a forge's balanced-set
+want and a forge out-pulls every other center, so precursors are hauled to a
+forge for synthesis's sake, and a forge buys the supers it lacks (R-MX18).
+**`OPEN`:** what else would make a forge buy a super from the forge native to it
+rather than make it from bought basics — T-143.
 
 ### 4.6 Substitution — native only within a super's own counter-graph aspects
 Each super is native across the **whole lineup — but only for the specific aspects of the counter-graph it brings.** Covering **Blue's** aspects with Red/Green/apex costs **a card each**; Blue does **not** natively cover another super's aspects. Supers are **non-interchangeable specialists**, cheap in their own region, card-expensive outside it. **R-M6:** each super's (and the apex's) aspect-set. Each super is also **dominant in different trees**, and is the counter-graph's general key in the trees it dominates and a traversal key elsewhere (`Hyades_technology_tree.md` §3.1, R-TECH25).
@@ -283,8 +338,8 @@ Turn-1 state: co-located homeworlds at **Band IV/IV/I** (pop ~Band I, **no pop-B
 
 ## 9. Ratification points (consolidated)
 
-- **R-G0** sim §1/§6 absorb 3D/2D · **R-G1** hex `s`+depth · **R-G2** counts + core · **R-G3** archetype placement · **R-G4** self-synth yield + "exactly one"
-- ~~**R-M1**~~ names — **resolved**: Cage Ice, Rosepeter, Voltslate, Strange Matter (§4.1); super names are placeholders under T-142 · **R-M2** ratios+wastage · **R-M3** Z scale-height · **R-M4** anticorrelation · **R-M5** supply chain · **R-M6** super aspect-sets · **R-M7** use-domains+apex · **R-M8** Growth↔Cyan soft fit (rest intended)
+- **R-G0** sim §1/§6 absorb 3D/2D · **R-G1** hex `s`+depth · **R-G2** counts + core · **R-G3** archetype placement · ~~**R-G4**~~ self-synth yield + "exactly one" (resolved: color theory, no archetype barred, §3)
+- ~~**R-M1**~~ names — **resolved**: Cage Ice, Rosepeter, Voltslate, Strange Matter (§4.1); super names are placeholders under T-142 · **R-M2** ratios+wastage · **R-M3** Z scale-height · **R-M4** anticorrelation · **R-M5** supply chain (resolved in part, §4.5) · **R-M6** super aspect-sets · **R-M7** use-domains+apex · **R-M8** Growth↔Cyan soft fit (rest intended)
 - **R-P1** Weibull `k`+bands · **R-P2** pop→design gating · **R-P3** infra rate vs. clock
 - **R-A1** expand-bias · **R-A2** formation/posture · **R-A3** trade/NAP in verb model
 - **R-N1** lock the six saga arcs as modes of love winning; Warfare voice now Hollywood-Western (Those Who Stand; saga alt 'The Gun and the Garden'); confirm the believed Beloved Republic win-state · **R-N2** tier-crossing named events carrying the elimination drumbeat

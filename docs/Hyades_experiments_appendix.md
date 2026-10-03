@@ -2946,7 +2946,8 @@ gain is seed 1 (+15.1% colony-years at `κ = 10`); the replication set gains
 on three or four of four seeds at every `κ ≥ 0.1`. `κ = 3` ships: it sits
 inside the plateau and short of the limit where a loss ends replacement,
 which would turn R-WAR46's pricing into a ban. It is a choice of a point in
-a plateau the sweep measured, not an optimum it found.
+a plateau the sweep measured, not an optimum it found. **The author ratified
+`κ = 3` after PR #12 merged.**
 
 Card-free runs are bit-identical to `0887203` on seeds 1, 7, 42, 31337 at
 1,000 yr (events, every seat's stocks, the mass ledger). Test targets, this
@@ -2954,6 +2955,352 @@ session's machine, timed beside `0887203`'s binary: determinism 67.9 s →
 63.3 s, smoke 44.3 s → 42.6 s; unit 7.1 s (300 tests), telemetry 32.6 s.
 The determinism target is over 60 s on both binaries on this machine and
 inside the 72-s band; it was 41.8 s on the previous session's.
+
+## D.25 R-MX10 — synthesis and refined trade, confirmed in a run
+
+*Supports matching §8.7, §9.6 and §10.6. Bed: the §D.23 mechanism bed (3 seats,
+200 planets, 1,500 yr, regrowth off, test configuration), every seat's
+colonizer (`Delta`) and miner (`Meadow`) Designs billed 25% refined — the state
+a tier-3 Design write leaves — on seeds 11, 3, 7 and 42. A scratch census test,
+never landed, read the synthesis log, the refined books and every contract.*
+
+**Arms.** Red: 25% Red. R+G+B: 25% split equally over the three supers. Apex:
+25% apex. Non-native: each seat billed in another archetype's native super.
+Lockout: the R+G+B and apex arms on the same galaxy with seat 2's homeworld
+ceiling at `Band 3.5`, so it can never reach population `Band IV` and forge —
+a galaxy variant, which is what a bed may vary (T-133 ruling).
+
+**Synthesis and building, 24 of 24 runs.** Every seat at `Band IV` makes what
+its bills owe, and the yard builds hulls of it:
+
+| arm | refined kt made per seat (seed 11) | hulls carrying refined (4 seeds) |
+|---|---|---|
+| Red | 1.97 / 0.66 / 0.62 Red | 291–428 |
+| R+G+B | 0.28 / 0.37 / 0.24 of each | 335–464 each |
+| apex | 1.58 / 0.77 / 0.41 apex, and the supers it draws | 319–418 |
+| non-native | 0.83 / 0.64 / 0.63 of the billed super | 70–299 per super |
+| lockout, R+G+B / apex | seat 2 makes nothing | 253–406 / 272–364 |
+
+First synthesis at 605 or 655 yr on every seat that can forge. Mass drift at
+most 9.8e-16 of the total.
+
+**Trade, almost none.** Refined kilotonnes delivered between empires: 0.0050
+(seed 11, Red), 0.0369 (seed 7, R+G+B), 0.0251 (seed 7, R+G+B, lockout), and 0
+in the other 21 runs. Refined bids posted per run 22–255; asks 0–9. Seat 2 in
+the lockout arms received refined material in 1 of 8 runs.
+
+*Mechanism, instrumented at posting.* A forge offers capacity from basics
+above its next works bill. At every barrier, on every seed, each forge held
+less than that bill in at least one basic — a typical forge 0.3 / 27 / 14 kt of
+Cyan / Magenta / Yellow against a bill of 260 / 130 / 390 kt — so its capacity
+was zero. Apex is never offered: capacity asks cover the three supers only,
+and a forge synthesizes only what it owes. Every homeworld holds all three
+basics, so every forge makes every super from its own holding, and the only
+window with one forge and no other (605–655 yr on seed 11) contains no round
+barrier. Open as R-MX16.
+
+**A defect found and fixed.** A capacity ask was sized per precursor against
+that color's share of the works bill; settlement (`synthesis_plan`) keeps the
+whole bill as a total. On seed 11 at 1,000 yr seat 1's forge held 8.163 /
+7.584 / 0.028 kt against a bill of 6.333 / 3.167 / 9.500 kt and offered
+2.43 kt of Blue; its total, 15.78 kt, was below the 19.0 kt bill before any
+draw, and both Blue contracts struck from the ask defaulted at settlement. The
+ask is now capped by the total above the whole bill, and each super's draw
+comes off its precursors' room before the next super is counted (Red and Green
+share Yellow). `a_forge_offers_only_capacity_it_can_settle` fails on the old
+rule (2.11 kt of Red offered that settlement cannot make) and passes on the
+new. Card-free runs are bit-identical to `e3e87d0` on seeds 1, 7, 42 and
+31337 at 1,000 yr: a card-free game posts no refined bid, so no ask clears.
+
+## D.26 R-MX16 priced, the trio homeworld, and hex-scale color
+
+*Supports matching §10.6, galaxy §3, §4.3 and §4.5, industry §1.7. Beds: the
+§D.25 census (3 seats, 200 planets, 1,500 yr, Designs billed 25% refined, 4
+seeds × 6 arms) for trade; `examples/work_years` (3 seats, standard galaxy, 4
+seeds, 1,500 yr) against `1e87f9d` for the card-free economy; a scratch slant
+census over 10-ly cells (never landed).*
+
+**The share of supers forged through trade** — refined kilotonnes delivered
+between empires over refined kilotonnes synthesized, pooled over 24 runs:
+
+| engine | share | runs above 0 |
+|---|---|---|
+| works bill held (§D.25) | 0.05% (0.07 of 128 kt) | 3 |
+| works bill priced | 0.71% (0.91 of 129 kt) | 12 |
+| + hotspots aligned to homeworlds (not landed) | 0.36% (0.69 of 188 kt) | 8 |
+| + homeworld poor deposit at trace (not landed) | 0.45% (0.85 of 188 kt) | 9 |
+| priced + hex-scale color + trio (landed) | **0.44%** (0.26 of 58 kt) | 2 |
+
+*Mechanism, measured.* A forge synthesizes any super whose basics its holding
+has, and an empire's freight brings every basic to its centers for its works.
+At the barriers on the aligned-hotspot galaxy a homeworld held a median 8 kt
+of its poor basic (1.7 kt with the trio) and its empire a median 1,546 kt
+(639 kt), against 0.3–3 kt of super demand per seat per run. Each forge
+supplies its own empire's shortfall before it offers, and refined trade clears
+only at a barrier — twice per run after the first forge at 605–655 yr. No
+geography that leaves every hue within an empire's reach changes this; a
+hard rule on what a forge may make would (R-G4).
+
+**Hex-scale color.** Share of 10-ly cells whose top color holds 80% of the ore
+(one color) or whose top two hold 90% (two), 4 seeds:
+
+| field | one color | two colors | neither | ore in slanted cells |
+|---|---|---|---|---|
+| three hotspots (before) | 36.0% | 14.9% | 49.0% | 99.9% |
+| color sites, no floor | 33.4% | 15.0% | 51.6% | 99.7% |
+| sites, one noise draw per world, no floor | 21.7% | 1.7% | 76.7% | 99.8% |
+| sites + floor 0.15 | 39.2% | 4.6% | 56.2% | 99.7% |
+| sites + floor 0.3 | 66.0% | 5.6% | 28.4% | 99.7% |
+| **sites + floor 0.5 (landed)** | **79.4%** | **5.3%** | **15.3%** | 99.9% |
+
+By ore mass the old field already slanted (one rich world dominates a cell);
+by cell count half the cells had no slant because the envelope leaves most of
+the disk with almost no ore in any color. The floor gives every site its hue.
+12 seats reads within a point of 3 seats in every row.
+
+**Card-free economy** (paired by seed against `1e87f9d`): work-years +16.36% ±
+11.66 (not resolved, seeds −10.6% to +43.3%), colony-years +0.19% ± 0.46,
+colonies +1.24% ± 0.54, vehicles +19.8% ± 1.9, yr/s −2.45% ± 0.68 with
+`ns/event` −0.03% ± 0.93 — the simulation does more, each event costs the
+same. The opening is later: `empires_expand_beyond_the_homeworld` founds no
+colony by 80 yr and one by 100 yr on seed 42 (it now runs 120 yr).
+
+**A defect the trio exposed.** `endowment_minerals` priced the destination's
+build-out (industry §1.7, `I* = (K_c + D)/2`) on the founding center; a
+homeworld's own deposit had kept it positive. It now prices the target. On the
+card-free bed above it is inert: the runs are identical to the last event with
+and without it.
+
+**Two allocation defects of the priced ask, found by its test.** Counting the
+supers' capacity in sequence left at most one basic for apex, so apex was never
+offered; each basic is now shared in thirds among the two supers and apex that
+draw it. `a_forge_offers_what_its_standing_order_leaves_at_its_price` pins the
+thirds, the settlement of every offer together, and the standing order's hold.
+
+## D.27 Color theory: 1:1 recipe-pair sites, and slant by absolute threshold
+
+*Superseded in generation by §D.28* — the author: "1:1 is wrong for galaxy
+generation." Pair sites are removed; the forge's 1:1 recipe rule (galaxy §4.2)
+and slant by absolute threshold stand. The record below is of the pair-site
+galaxy.
+
+*Supports galaxy §3, §4.2 and §4.3, technology §3.2. The author's rulings:
+forges produce supers by color theory, two basics 1:1; slant is measured by an
+absolute threshold per mineral, traces not counting. Beds as §D.26; the slant
+census is a scratch harness over 10-ly cells and single worlds, 4 seeds,
+never landed.*
+
+**Generation.** A color site draws two hues in proportion to the hotspots'
+weights; the same hue twice is a primary site, two hues a pair site holding
+both basics of a recipe at one peak, so a world beside it holds them 1:1.
+
+**Slant by absolute threshold** (mineral present at ≥ the threshold; share of
+cells, 3 seats; 12 seats within a point):
+
+| threshold | field | none | one | two | three |
+|---|---|---|---|---|---|
+| `Band I` (1.0 kt) | single-hue sites (`6d751d5`) | 41.6% | 48.6% | 8.5% | 1.3% |
+| `Band I` | **pair sites** | 41.5% | 40.9% | **14.5%** | 3.0% |
+| `Band II` (31.6 kt) | single-hue sites | 80.3% | 17.6% | 1.9% | 0.1% |
+| `Band II` | **pair sites** | 80.9% | 13.8% | **4.6%** | 0.7% |
+
+Single worlds at `Band I`: two minerals present on 13.0% (4.5% before), three
+on 1.4% (0.2%). About 41% of cells hold no mineral at `Band I` in either field
+— their worlds carry traces only, far from a site or high above the midplane.
+
+**Super trade:** 0.25% of refined mass synthesized crosses between empires
+(0.22 of 90.5 kt, 24 runs).
+
+**Card-free economy against `6d751d5`** (4 seeds, 1,500 yr, paired by seed):
+work-years **+22.74% ± 4.84** (4/4 up), colony-years **−6.66% ± 1.79** (4/4
+down), colonies −4.97% ± 0.58, vehicles +8.4% ± 2.0, `ns/event` +7.2% ± 1.9.
+*Inference, not tested:* a pair world gives one center two colors from one
+deposit, so the three-color works bill is payable more often and deepening
+wins against founding more often. A census of payable works bills with and
+without pair sites would settle it; open.
+
+**The determinism combat arm moved to seeds 1 and 2 at 450 yr**: on this
+galaxy seed 7 launches no missile round at 500 yr (nor do 5 and 17 of 8 seeds
+probed), while seeds 1 and 2 launch 92 and 47 at 450 yr.
+
+## D.28 A world's total ore is its richest color
+
+*Supports galaxy §4.3. The author's ruling: limit a world's total minerals to
+the largest across its colors, shared in the rolled proportions. Beds as §D.27,
+against the single-hue galaxy of `6d751d5` and the pair-site galaxy of
+`4bdd26d`.*
+
+**Slant at `Band I` (1.0 kt)**, mineral present at ≥ the threshold, 3 seats,
+4 seeds (12 seats within a point):
+
+| galaxy | worlds: none | one | two | three | cells: none | one | two | three |
+|---|---|---|---|---|---|---|---|---|
+| single-hue sites (`6d751d5`) | 57.1% | 38.3% | 4.5% | 0.2% | 41.6% | 48.6% | 8.5% | 1.3% |
+| pair sites (`4bdd26d`) | 57.3% | 28.4% | 13.0% | 1.4% | 41.5% | 40.9% | 14.5% | 3.0% |
+| **single-hue + cap** | **58.0%** | 38.3% | 3.7% | 0.1% | 42.1% | 48.9% | 7.8% | 1.2% |
+
+At `Band II` (31.6 kt): worlds with none 90.8% (90.7% before). The cap moves
+worlds with no `Band I` mineral by +0.9 points: most worlds were already
+dominated by one color, where the cap is nearly the sum.
+
+**Card-free economy against `6d751d5`** (4 seeds, 1,500 yr, paired):
+colony-years **+1.68% ± 0.48** (4/4), colonies +1.29% ± 0.11, work-years
+−0.90% ± 4.08 (not resolved), `ns/event` −2.09% ± 0.46. Against the pair-site
+galaxy: colony-years +9.04% ± 1.73, work-years −19.17% ± 2.23. *Inference, not
+tested:* capped worlds hold less ore, so §4.4 leaves a few more of them
+habitable.
+
+**Super trade:** 0.27% of refined mass synthesized crosses between empires
+(0.20 of 74.4 kt, 24 runs; 18 runs at 0).
+
+**The determinism combat arm moved to seeds 5 and 9**: of seeds 1–12, only 5,
+8, 9 and 11 launch a missile round by 450 yr on this galaxy (38, 7, 105, 7).
+
+## D.29 Combat bit-identity as three tests over six sets of initial conditions
+
+*Supports `AGENTS.md` §4 (determinism) and galaxy §3.1. The author's ruling:
+make the combat determinism coverage several tests with different initial
+conditions. Replaces `combat_runs_are_bit_identical`, whose seeds had to be
+re-picked after each of §D.24, §D.27 and §D.28 because galaxy changes moved
+which seeds launched a missile round at all.*
+
+Each test runs its scenario twice and compares every combat log record (time
+bits and event), the event count, and each seat's colonies, outposts and
+population bits. Counts from one run per scenario, release build:
+
+| test | scenario | encounters | wrecks | course changes | rounds hit / stopped / missed | refilled at a center |
+|---|---|---|---|---|---|---|
+| `beam_fights_are_bit_identical` | Cairn and Tor stacks parked together, seed 31, 3 yr | 800 | 20 | 20 | — | — |
+| | Tor stack closing at 0.3 c from 0.03 ly, seed 32, 3 yr | 800 | 20 | 22 | — | — |
+| `missile_defense_is_bit_identical` | Butte sentries vs a parked Cairn stack at 0.015 ly, seed 41, 3 yr | 118 | 10 | 14 | 37 / 53 / 271 | 44 |
+| | vs a Tor stack closing at 0.2 c from 0.045 ly, seed 42, 3 yr | 100 | 10 | 10 | 10 / 46 / 254 | 36 |
+| `a_card_play_game_is_bit_identical` | 6 seats, 600 planets, cards 15/3/13, seed 1, 350 yr | 3,334 | 423 | 1,906 | 0 | 2 |
+| | same, seed 7 | 4,505 | 504 | 1,996 | 0 | 2 |
+
+Two engine additions to fleet seeding were needed (galaxy §3.1): a **Sentry**
+fleet stands at its seat's homeworld as the center's sentries, and a generated
+missile Design starts with a full magazine.
+
+**Not reached by any seeded bed:** the ammo run and the flight home. Both
+start from a post or a voyage, and a generated picket has neither. Probed
+before this was settled: Mesa pickets against an armed stack hold fire (one
+picket's burst does not exceed the stack's point defense, and a postless
+picket counts no co-located rounds); against unarmed Meadow and Delta targets
+they fire 8–16 rounds and the targets are wrecked or withdraw before any
+magazine empties (40 and 80 yr). Sentries fire only on armed hulls, so an
+unarmed target draws no fire from them. The unit test
+`a_dry_missile_picket_is_resupplied_by_ammo_run_or_by_return` covers the two
+paths outside bit-identity.
+
+**Cost:** determinism target 43.1 s debug, one run, against ~43 s before the
+change (one run each; not resolved).
+
+## D.30 Forging is a forge's purpose
+
+*Supports galaxy §4.5 and matching §8.7, §10.4, §10.6, §10.7. The author's
+ruling: forging is a high-priced activity, outweighing almost anything but
+immediate survival; once a center clears population `Band IV` its primary
+purpose is to forge supers and apex. Bed: `examples/forge_census` — card-free,
+standard galaxy, 3 seats, 1,500 yr, seeds 1, 7, 42, 31337 — run on this engine
+and on `a50ef75` (common random numbers, paired by seed and seat).*
+
+**What it replaced.** Synthesis ran on demand only: when an order a forge was
+paying owed a super it lacked, when a contract it had sold came due (capacity
+asks, sold from basics above what its standing order left and priced at the
+precursors' willingness to pay over the yield, R-MX16), or when a hauler loaded
+at a forge for a sister center. A card-free game posts no refined bid, so a
+card-free forge synthesized nothing: every seat on `a50ef75` reads 0.00 kt of
+every refined material. It was wrong about the forge's purpose, which the
+author has now ruled is to forge.
+
+**Economy, paired** (new against `a50ef75`):
+
+| quantity | empire total per seed (n = 4) | per seat (n = 12) |
+|---|---|---|
+| colony-years | +0.001% ± 0.002 | +0.000% ± 0.013, range −0.08 to +0.09 |
+| work-years | +0.66% ± 0.63 | +0.85% ± 0.84, range −2.21 to +9.43 |
+| basic kt delivered between empires | +0.45% ± 0.22 | — |
+
+None of the three is resolved at two standard errors (estimates). *Inference:*
+a homeworld that stops building at 610–845 yr costs nothing measurable because
+colonies carry the expansion loop by then; the mechanism is not instrumented.
+
+**Forge output.** First synthesis at 610–845 yr on every seat. Supers forged
+per seat 57.2–6,009.9 kt (7,495.4 kt over 12 seat-runs), apex 3,090.4 kt.
+Every forge makes all three supers. The seat's native super is 4.7–93.0% of its
+super mass (median 22.7%, pooled 30.9%): a forge makes whatever pair its
+freight and the Exchange bring, not its archetype's. **No super or apex is
+delivered between empires on any run**: a forge bids for no super, and no
+center posts a refined bid card-free (R-MX18).
+
+**Super-billed Designs.** On §D.25's bed (Delta and Meadow billed 25% Red,
+200 planets, seed 11, 1,500 yr) each seat holds 1–4 centers; the forges make
+Red and no Red-billed hull is built, because the forge no longer builds and no
+hauler carries its Red to a colony within the horizon (a scratch census, never
+landed: Red held outside the forge 0.00 kt at every century). Before, the
+forge built 291–428 such hulls itself (§D.25). Open as R-MX17;
+`a_super_billed_design_is_forged_with_mass_conserved` now pins forging and
+conservation only.
+
+**Test targets after the change:** unit 5.2 s (302 tests), determinism 43.1 s,
+smoke 12.4 s, telemetry 26.5 s (debug, one run each).
+
+## D.31 Forges build super-billed Designs and bid for supers; decisions without a cadence
+
+*Supports galaxy §4.5, matching §8.7 and §10.7, autopilot §6.1a. The author's
+rulings: a Design paid in supers is priced higher than forging (R-MX17); forges
+bid on the supers they have demand for (R-MX18); no decision has a cadence of
+its own; each decision is a tree with a short circuit for the common case, and
+some are conditioned on an event. Bed: `examples/forge_census` (card-free,
+standard galaxy, 3 seats, 1,500 yr, seeds 1, 7, 42, 31337).*
+
+**R-MX17.** On §D.25's bed (Delta and Meadow billed 25% Red) the forge's first
+tick had turned its whole stock into apex (0.50 kt of each basic into 0.495 kt
+apex at 600 yr) before its yard's next decision at 605 yr, and the
+homeworld's income afterwards rounds to zero, so no Red-billed hull was built.
+Two defects stood behind it, each found by tracing the decision:
+`ProductionContext::price_of` keys on the hull, so a sentry read the picket's
+price and a Red-billed miner read the scout's, both priced out at a forge; and
+forging ran ahead of the yard. The yard's quote now reads the Design's own
+price (`design_price`) and the forge runs after the yard. The bed builds
+Red-billed hulls again (`a_super_billed_design_is_forged_and_built_with_mass_conserved`).
+
+**The retry floor.** Moving the forge behind the yard tied forging to T-88's
+`decision_retry_years = 50`, which the author ruled is not design. Deleted.
+Asking every center with a free berth on every tick doubled the cost of seed 1
+(12.3 s → 25.2 s, events +0.9%). Census of 773k decisions on seed 1: 726,129
+exited before the scan (bank below every price, or empty pool), 19,228 scanned
+and declined over 7.36 M candidates, 13,644 scanned and committed. Callgrind
+(800 yr): `commit_one_build` 63% of instructions, `view_of` + `rank` 41.5%. Of
+the scanned declines, 17,470 held the price of a colonizer and a mining pair:
+the policy preferred deepening and the rung lacked a color, so it waited on a
+color. Conditioning every decline on every scan woke 206,695 of 210,500 asks at
+800 yr (scouts add a world on almost every tick; nearly every scanned world can
+rank as a mining outpost at full pressure). Conditioning a saving decline on
+money, level, works and cards only skipped 197,772 asks and let 9,042 through.
+
+| engine, seed 1, 800 yr | time |
+|---|---|
+| 50-yr retry floor | 4.9 s |
+| every tick | 7.5 s |
+| conditioned on events | 5.0 s |
+
+Over 4 seeds at 1,500 yr, conditioned against every tick: colony-years
+−0.24% ± 0.04 (4/4 lower), work-years +6.07% ± 4.45 (not resolved). Against
+`a50ef75`: colony-years +0.12% ± 0.14, work-years +0.92% ± 4.06 (neither
+resolved).
+
+**R-MX18.** Supers delivered between empires: 271.9 / 247.1 / 228.2 / 63.4 kt
+on seeds 1 / 7 / 42 / 31337 — 810.6 of 22,040 kt forged (3.7%), against 0
+before forges bid. A seat's native super is 29.6% of what it forges, pooled
+(per seat 0.4–95.9%, median 17.3%). The recommended ask at the precursors' cost
+was not adopted: it equals an ordinary center's bid for a super and never
+clears once the bid is discounted by transit, which a unit test showed on the
+first run.
+
+**Test targets:** unit 4.0 s, determinism 35.9 s, smoke 10.6 s, telemetry
+23.2 s (debug, one run each). `shrinking_the_economy_tick_does_not_multiply_decisions`
+is retired: it pinned the retry floor.
 
 ## References
 

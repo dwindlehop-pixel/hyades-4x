@@ -1673,10 +1673,15 @@ cheap audit of the first**, and neither defect was findable by reading.
   order. Same seed ⇒ bit-identical results, native and wasm32. `tests/determinism.rs`
   guards this — never weaken it to make a feature fit. **Until T-133 no test in
   it fired a shot** — no card-free Design is armed and none played a card — so
-  combat sat outside the gate; `combat_runs_are_bit_identical` plays the card
-  bed on a small galaxy at the shipped barrier and floors the encounter, wreck
-  and course-change counts. A new mechanism no card-free run reaches needs its
-  own arm here.
+  combat sat outside the gate. **Combat is now three tests over six sets of
+  initial conditions** — beam fleets parked and closing, missile sentries
+  against a parked and a closing raider, and a six-seat card-play game — and
+  every fight-specific one generates its fleets with the galaxy
+  (`Galaxy::generate_with`) at the place the mechanism must fire. A single
+  card-play arm once carried all of combat, and every change to galaxy
+  generation moved which seeds launched a missile at all; a seeded fleet does
+  not depend on what the autopilot builds. A new mechanism no card-free run
+  reaches needs its own seeded test here, with a floor that says it fired.
 
   **The "and wasm32" half was false until T-127, and nothing here could have
   said so.** The determinism suite runs one target, and at its horizons a
@@ -1705,6 +1710,16 @@ cheap audit of the first**, and neither defect was findable by reading.
   not, and is now an event — `BuildDecision`, raised when the yard clears
   `build_years` after a build was committed. Everything is arrival- or
   completion-driven; nothing decides on a sweep.
+
+  **No decision has a cadence of its own, and each is a tree with a short
+  circuit for the common case** (the author's rulings, T-144). T-88's 50-year
+  retry floor is deleted. A declined decision records what it waits on
+  (`Declined`) — a card, a population band, its works, its bank reaching the
+  cheapest price it could not pay, and, unless it was saving, a scan, a target,
+  a claim or its reserve — and the economy tick asks it again only when one
+  has moved. Asking every tick instead doubled the standard bed's cost;
+  conditioning brought it back to the floor's (appendix §D.31). When you add a
+  decision, write its cheap exit first and name the events it waits on.
 
   The trigger is only half the rule. **Evaluation count scales with entity count, so
   per-evaluation cost must be local — O(what the decision reads), not O(galaxy).**

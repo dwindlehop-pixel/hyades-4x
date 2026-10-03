@@ -2835,7 +2835,7 @@ a placeholder (R-WAR44).
   leaves its post under fire, wrecked or withdrawn. The yard still bills
   `c_s`: the factor is a shadow price (a valuation that moves a decision
   without moving the bank), because a hull's cost is its mass (R-O57).
-  **`κ = 3`, chosen by Monte Carlo and awaiting ratification** (appendix
+  **`κ = 3`, chosen by Monte Carlo and ratified** (appendix
   §D.24).
 - **Point defense may be mounted on ships that are not a round's target, and
   any solution allows intercept by nearby allies.** Every beam hull of the
@@ -2880,8 +2880,8 @@ them** (appendix §D.24).
   none was wrecked while still a sentry. Whether a sentry should withdraw from
   its own center at all is R-WAR48.
 
-**8.22.4 `OPEN`.** R-WAR44 (every missile magnitude), R-WAR47 (ratifying
-`κ = 3`), R-WAR48 (whether a sentry withdraws from its own center). The sweep of the sentry ratio
+**8.22.4 `OPEN`.** R-WAR44 (every missile magnitude), R-WAR48 (whether a
+sentry withdraws from its own center). The sweep of the sentry ratio
 and its thresholds is T-140. Whether the spent-round debris store should be
 cut is T-141.
 
@@ -2976,7 +2976,7 @@ cut is T-141.
 | **R-WAR44** | **the missile magnitudes** — warhead `2·10¹⁰` kJ, structure under point defense `4·10⁹` kJ, round 1.25 t, 8 rounds per tube, burst 4 per tube (the arena's), reload 1 day — all placeholders (§8.22) | a sweep against the arena's laser-vs-missile balance, with T-140 |
 | ~~**R-WAR45**~~ | **resolved (the author's ruling): point defense comes out of the beam's ordinary firing cycle** — mounts committed to a round deliver nothing at hulls, and a beam stops rounds no faster than its rate, so volume of fire overwhelms it (§8.22.1) | — |
 | ~~**R-WAR46**~~ | **resolved (the author's ruling): replacing losses in a war is a pricing question** — a center counts sentries standing or ordered, and a replacement is a priced build (§8.22.1) | — |
-| **R-WAR47** | **how a loss enters a replacement's price** — built as `c_s · (1 + κ · L)`, `L` the center's sentries lost under fire (wrecked or withdrawn), the factor a shadow price on the decision (§8.22.1). The author ruled the price is set by Monte Carlo: `examples/sentry_price_sweep`, eight seeds at 800 yr, separates `κ = 0` from `κ > 0` (defending seat's colony-years +4.65% ± 1.94 at `κ = 3`, work-years −0.13% ± 1.44) and does not separate `κ ∈ [1, 1000]` (appendix §D.24). **`κ = 3` ships, chosen by Monte Carlo** | ratification of `κ = 3`, or a sweep on a bed with more seats or a later horizon that separates the plateau |
+| ~~**R-WAR47**~~ | **resolved (the author's ratification): `κ = 3`.** How a loss enters a replacement's price — built as `c_s · (1 + κ · L)`, `L` the center's sentries lost under fire (wrecked or withdrawn), the factor a shadow price on the decision (§8.22.1). The author ruled the price is set by Monte Carlo: `examples/sentry_price_sweep`, eight seeds at 800 yr, separates `κ = 0` from `κ > 0` (defending seat's colony-years +4.65% ± 1.94 at `κ = 3`, work-years −0.13% ± 1.44) and does not separate `κ ∈ [1, 1000]` (appendix §D.24). **`κ = 3`, chosen by Monte Carlo and ratified** | — |
 | **R-WAR48** | **whether a sentry withdraws from its own center** — under fire from a neutral it can outrun, a sentry takes R-WAR26's third ending, stands down to Reserve at the center it guarded and is wrecked there holding fire; every sentry loss on the card bed is this path (§8.22.3). *Recommended:* a sentry's post is its center, so it continues under fire as a hull with nowhere to withdraw to | the author |
 | **R-WAR33** | **which roles narrow a Design's engagement range** — ruled that range *sometimes* depends on role; `Standing::fire_distance` receives the role and no role narrows it yet | the author: which roles, and by how much |
 | ~~**R-WAR26**~~ | **what ends a pitched battle — ruled and built (T-133)**: all three, each on the event that raises it; R-L2 is answered as repeated passes (§8.19.6) | — |

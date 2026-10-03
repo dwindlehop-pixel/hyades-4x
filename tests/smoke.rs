@@ -31,8 +31,22 @@ use hyades_engine::prelude::*;
 /// that put it at 150 in the first place.
 const SMOKE_HORIZON: f64 = 60.0;
 
+/// **Planets and horizon for `all_fair_counts_run_and_expand`** — the trio
+/// homeworld opens on freight from its companions, so the first colony comes
+/// later, and the full galaxy at the horizon that founds one blew the 60-second
+/// budget (54 s at 100 yr, 69 s at 120). The test asserts that expansion fires,
+/// not anything about scale, so it reduces the galaxy first (`AGENTS.md` §2).
+/// Probed at 300 planets: 80 yr founds none on 2 seats, 100 yr none on 6, 120 yr
+/// passes in 0.6 s; 150 ships.
+const EXPAND_PLANETS: usize = 300;
+const EXPAND_HORIZON: f64 = 150.0;
+
 fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimReport) {
-    let galaxy = Galaxy::generate(GalaxyConfig::new(players, seed)).unwrap();
+    run_on(GalaxyConfig::new(players, seed), seed, horizon_years)
+}
+
+fn run_on(gcfg: GalaxyConfig, seed: u64, horizon_years: f64) -> (Simulation, SimReport) {
+    let galaxy = Galaxy::generate(gcfg).unwrap();
     let mut cfg = SimConfig::new(seed);
     cfg.horizon_years = horizon_years;
     let mut sim = Simulation::with_baseline(galaxy, cfg);
@@ -62,7 +76,9 @@ fn run_short(players: usize, seed: u64, horizon_years: f64) -> (Simulation, SimR
 #[test]
 fn all_fair_counts_run_and_expand() {
     for &n in &[2usize, 3, 6, 12] {
-        let (_sim, report) = run_short(n, 100 + n as u64, SMOKE_HORIZON);
+        let mut gcfg = GalaxyConfig::new(n, 100 + n as u64);
+        gcfg.planet_count = EXPAND_PLANETS;
+        let (_sim, report) = run_on(gcfg, 100 + n as u64, EXPAND_HORIZON);
         assert_eq!(report.players.len(), n);
         assert!(report.planets_scanned_total >= n, "no scanning for {n} seats");
         let colonies: usize = report.players.iter().map(|p| p.colonies).sum();

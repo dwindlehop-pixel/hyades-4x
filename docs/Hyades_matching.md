@@ -356,20 +356,21 @@ posts in the refined ones.
   `f_m · d_m` (a declined order is fully blocked, so its pressure is `1`).
 - **Asks** — a center holding `m` above its own `need_m` asks for the excess at
   its own price (zero: it is not short).
-- **Capacity asks** — a forge (population `Band IV`) asks for the supers it
-  could make from basics above its next works bill, `Y_super · 2 · min` over the
-  recipe's two surpluses, at a reservation equal to the precursors' price over
-  `Y_super`. It synthesizes what it sold when the contract comes due, and
-  defaults if it cannot. A forge's native super is the one whose precursors it
-  is rich in — the structural monopoly §10.1 is about.
+- **A forge's bids and asks** — a forge (population `Band IV`, galaxy §4.5)
+  bids for every super up to the largest it holds, at `forge_premium · f_m ·
+  d_m` (R-MX18); it asks zero, like any center with a surplus, for what it has
+  forged outside a balanced set, and keeps what it sold back from apex until
+  the contract is delivered. It sells nothing it has yet to make. *Superseded:* capacity asks,
+  sold from basics and synthesized at settlement (appendix §D.30).
 - **Freight** — a hauler loads the refined material the center it serves is
   short of before ore, at a pile or as a center's offer (§8.5's rule, with the
   order's need in place of the works bill), and routes a refined hold to the
   center whose refined shortfall it closes most, discounted as every leg is.
 
-A card-free game posts no refined bid and clears nothing in these books.
-Tests: `a_forge_sells_the_super_it_can_make_and_makes_it_at_settlement`,
-`a_hauler_carries_the_supers_a_center_is_waiting_for`. Appendix §D.23.
+Card-free, only forges post refined bids.
+Tests: `a_forge_sells_what_it_has_forged_and_keeps_it_until_delivery`,
+`a_hauler_carries_the_supers_a_center_is_waiting_for`. Appendix §D.23, §D.25,
+§D.30.
 
 ---
 
@@ -454,9 +455,33 @@ write today, each read through one `Standing` question:
 - **How badly an empire wants each refined material** —
   `Doctrine::refined_demand` scales its refined bids; §10.4's urgency is a write
   here.
+- **The ordnance book's key** — `Doctrine::ordnance_market`, read through
+  `Standing::trades_ordnance` (§10.5, R-MX15).
+
+**Synthesis and refined trade** (the author: super and apex synthesis and trade
+are part of this room). What exists, and what a card can reach:
+
+- **Built and confirmed in a run** (appendix §D.25): a forge makes what its
+  Designs' bills owe — one super, all three, a non-native super, or apex — and
+  the yard builds hulls of it, with mass conserved, on 24 runs.
+- **Not reachable by a card:** the yields `Y_super` and `Y_apex` are
+  `SimConfig` fields, global to every empire (R-M2, placeholders), and the
+  forge gate (population `Band IV`) is fixed in code. A Technology card that
+  improves synthesis needs the yields moved to Doctrine or a Design first.
+- **Built:** hauling precursors to a forge — freight loads against a forge's
+  balanced-set want and a forge's pull carries `forge_premium` (galaxy §4.5,
+  R-M5 in part).
+- **Not built:** market power over a forge's output — markup and withhold
+  (§10.1, R-MX11) and the Corner (§10.2, R-MX12).
+- **Built:** cross-empire refined trade. Forges bid for the supers they lack
+  (R-MX18), and 3.7% of the supers forged card-free cross between empires
+  (appendix §D.31). R-G4 is resolved against a hard rule (galaxy §3: supers by
+  color theory, no archetype barred).
 
 **What would settle it:** the cards themselves; until then these are the
-interfaces, not the designs.
+interfaces, not the designs. The new-duty interface has one use beyond stage 2:
+T-139's ammo runs (`SideRun::Ammo*`, `Standing::resupply`), which needed no
+other change to the event loop or the ledger.
 
 ---
 
@@ -472,13 +497,12 @@ simulation-state effects of collusion are sold to a single player acting alone.*
 
 **10.1 `OPEN` — R-MX11: monopoly.** A super's precursors are rich in one
 archetype, so at three seats each super has one native forge — a monopoly by
-geography (§8.7's capacity asks). Today a monopolist cannot use it: its
-reservation is derived (the precursors' price over the yield), so it sells at
-cost, and a rival can still make the super from bought precursors at a worse
-yield-adjusted price (technology §3.2's measured gradient). *Recommend* the
-card interface be a **markup** — a Doctrine write raising a seat's capacity-ask
-reservation per material — and a **withhold** — a write capping the share of
-capacity it offers. Both are unilateral. Their counter is already in the
+geography. Today a monopolist cannot use it: a forge asks zero for what it
+forged outside a balanced set (§8.7), and every forge makes every super from
+basics it buys or hauls (galaxy §4.5; appendix §D.30). *Recommend* the
+card interface be a **markup** — a Doctrine write raising a seat's ask reservation
+per material — and a **withhold** — a write capping the share of
+its output it offers. Both are unilateral. Their counter is already in the
 engine: the buyer's own forge at a worse yield, and Interdict on the
 monopolist's freight. **What would settle it:** a measured price gradient
 between native and non-native forges on a bed where a tier-3 bill creates
@@ -532,11 +556,12 @@ rather than a second price vector:
   works, an ask on the Exchange, an offer to a hauler (§8.5). `o*` itself pays
   from the whole holding.
 - **An empire sells only what none of its centers waits on** — its centers'
-  refined shortfall comes off its refined asks and its forges' capacity asks
-  first, in planet order.
-- **A forge supplies its own empire** — a hauler loading at a forge for a
-  center short of a super or apex has the forge synthesize it, keeping back the
-  forge's own `o*` and its next works bill.
+  refined shortfall comes off its refined asks first, in planet order.
+- **A forge supplies its own empire** — supers its empire's centers wait on
+  are kept back from apex (galaxy §4.5), and a hauler serving such a center
+  loads them at the forge as a center's offer (§8.5).
+- **A forge's basics are not in `A(X)`** — they are its synthesis's (galaxy
+  §4.5); its survival pays from the whole holding.
 - **Urgency is a Doctrine write** — `Doctrine::refined_demand` scales an
   empire's refined bids; **`OPEN`**: raising it from belief about threat (the
   warfare tree's belief events) is a card's write, not a default.
@@ -590,6 +615,26 @@ tail).
   by the urgency of the hulls waiting on them, is open. **What would settle
   it:** the Politics card, then a census of ordnance bids against the
   shortfalls they answer.
+
+**10.6 R-MX16 — a forge's works bill is priced, not held. Superseded by galaxy
+§4.5** (the author's ruling: forging is a forge's primary purpose). R-MX16
+resolved how much of its works bill a forge offering capacity keeps back; a
+forge now keeps every basic for synthesis, builds no rung, and sells what it
+has forged rather than capacity, so there is no works bill to hold or price.
+The ruling and its measurements are in appendix §D.25, §D.26 and §D.30.
+
+**10.7 Forge output — resolved by the author's rulings.**
+
+- **R-MX17 — `RATIFIED`: a Design paid in supers is priced higher than
+  forging.** A forge's yard builds such a Design (galaxy §4.5); every order
+  paid only in basics is quoted unpayable there, and the forge runs after the
+  yard. §D.25's bed builds Red-billed hulls again (appendix §D.31).
+- **R-MX18 — `RATIFIED`: forges bid on the supers they have demand for** —
+  every super up to the largest a forge holds, at `forge_premium` times the
+  refined floor (§8.7). *Not adopted:* the recommendation's second half, a
+  forge asking its precursors' cost for its excess. That ask equals an
+  ordinary center's bid for a super, which the clearing discounts by transit,
+  so it would never sell to an order; a forge asks zero like any surplus.
 
 ---
 

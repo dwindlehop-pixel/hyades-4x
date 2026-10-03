@@ -177,7 +177,8 @@ holds only in Red-dominant trees (the author's ruling, amending the earlier
 unqualified statement). **`OPEN` — R-TECH25:** which super dominates which tree.
 
 **3.2 `RATIFIED` — supers are synthesized, never mined, and only at pop-Band IV.**
-Fixed two-basic recipes: `Blue ← C+M`, `Red ← M+Y`, `Green ← Y+C`. Each archetype
+Fixed two-basic recipes: `Blue ← C+M`, `Red ← M+Y`, `Green ← Y+C`, **each from its
+two basics in a 1:1 ratio by mass** (the author's ruling: color theory; galaxy §4.2). Each archetype
 is rich in two basics and poor in the third — **the two precursors of its single
 native super** — so every empire self-synthesizes exactly one and must acquire the
 other two. **That is the structural reason the Exchange exists.**
@@ -188,8 +189,9 @@ measured: on a 3-seat bed with every seat's colonizer and miner Designs billed
 25% Red, all three homeworlds made Red from the Magenta and Yellow their banks
 held, including the two whose native super is not Red, because freight and the
 Exchange put every basic in every bank. A seat poor in a precursor pays more for
-the super it is not native to; it is not barred from it. R-G4 asks whether
-"exactly one" should be hard; this is the evidence on it. Appendix §D.23.
+the super it is not native to; it is not barred from it. **R-G4 resolved** (the
+author's ruling): forges produce supers by color theory, and no archetype is
+barred from a super (galaxy §3). Appendix §D.23, §D.27.
 
 **3.3 `RATIFIED` — no categorical strategic classification may be co-extensive
 with a color domain.** Design law #13 / **R-O34**. It would lock out exactly the
@@ -897,7 +899,7 @@ fixed: *Each center keeps missile sentries in proportion to what it holds.*
 The context rows need R-TREE13 (played cards in `Snapshot`).
 
 **9.8 Open.** R-TECH24 (slot, slant and `ρ`; the sweep is T-140), R-WAR44
-(every missile magnitude), R-WAR47 (ratifying the loss price `κ = 3`), R-WAR48 (a sentry's withdrawal),
+(every missile magnitude), R-WAR48 (a sentry's withdrawal),
 R-MX15 (the ordnance book's key and
 price).
 

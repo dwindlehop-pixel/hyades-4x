@@ -95,6 +95,76 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-145. Raise the yomi of super and apex forging
+
+**Open — the author's direction: "we may need to increase the Yomi of super
+and apex forging."** Yomi is reading a rival's intent from what you can observe
+and acting on the read (AGENTS.md §1; standing layer §5: the tell is the fleet
+and the drawdown, lagged and scoped). Forging today carries little of it:
+
+- **No choice to read.** A forge forges every pair it holds and every balanced
+  set of supers into apex, at every tick, by rule (galaxy §4.5). No seat
+  decides what to forge, when, or whether to hold, so there is no intent behind
+  the output.
+- **What a rival can see is ungated.** A forge's refined bids sit in the
+  Exchange's books, which carry no light-lag (matching §8). Nothing about a
+  forge reaches a rival only by light, by a scan, or by inference from freight.
+- **Its output reveals nothing yet.** Supers are spent only by tier-3 Design
+  writes and apex only by win conditions (trees §4.6), so a stockpile signals
+  nothing a rival can act on until those exist.
+
+**What would settle it:** the author's direction on which half to open first.
+The options are both open, and neither is recommended over the other yet:
+
+1. A choice a card can make, for a rival to read: which super, supers against
+   apex, or hold against sell.
+2. Gating what a rival can observe through the observation model: freight
+   signatures on a forge's precursor runs, the drawdown of its holdings, a
+   scan of its stockpile.
+
+Then a census of the beliefs a rival can form about a forge on a card-free
+bed, and of what each option adds to them.
+
+---
+
+### T-144. Decisions without a cadence: a short-circuit tree, conditioned on events
+
+**Advanced — built (the author's rulings).** No decision has a cadence of its
+own: T-88's retry floor is deleted. Each decision is a tree with a short
+circuit for the common case (a bank below every price; a center below the
+limited tier; a forge with nothing paid in supers), and a declined decision
+waits on the events that can change it (autopilot §6.1a). Seed 1, 800 yr:
+5.0 s against 4.9 s with the floor and 7.5 s asking every tick (appendix
+§D.31). **Open:** the other decisions in the engine that still re-ask on a
+cadence, if any, have not been audited; a census per decision site is what
+would settle it.
+
+---
+
+### T-143. Every empire forges every super — make forging a forge's purpose, then trade supers
+
+**Advanced — step 1 built (the author's ruling).** The author's direction is to
+finish addressing galaxy generation leaving every empire making supers of all
+colors; the first step is that forging is a high-priced activity, outweighing
+almost anything but immediate survival, and a forge's primary purpose. Built
+(galaxy §4.5): a center at population `Band IV` forges every pair it holds into
+supers and every balanced set of supers into apex at each economy tick; its
+yard builds only the sentries its Doctrine wants, whose price is kept back;
+its basics are no other draw's; it bids for the basics completing a balanced
+set at `Doctrine::forge_premium` (10, placeholder) and pulls freight by the
+same factor. Capacity asks, sister-supply synthesis and synthesis at
+settlement are retired, and R-MX16 is superseded. Card-free, 4 seeds: economy
+unchanged within two standard errors; forges make all three supers, native
+share 4.7–93% per seat; no super crosses between empires (appendix §D.30).
+**Step 2 built (the author's rulings):** R-MX17 — a Design paid in supers is
+priced higher than forging, so a forge's yard builds it and forges after;
+R-MX18 — forges bid on the supers they lack. 3.7% of supers forged now cross
+between empires; native share 29.6% pooled (appendix §D.31). **Open:** the
+author's direction is not yet met — every forge still makes all three supers.
+R-M5's remainder.
+
+---
+
 ### T-141. Decide whether spent-round debris should be cut
 
 **Open — the author's question; not in PR #12.** Every missile round, hit,
@@ -126,12 +196,19 @@ warfare §8.22.2 to match.
 ### T-140. Sweep the sentry ratio and its thresholds
 
 **Open — the author's direction; not in PR #12.** `Doctrine::sentry_ratio`
-(the card writes 1e-5 kt of sentry per kt defended), the point-defense
-saturation threshold (`Standing::launches_into`), and the loss price
-`Doctrine::sentry_loss_price` (`κ = 3`, chosen by Monte Carlo at R-WAR47 for
-the ratio the card writes) are placeholders or open (R-TECH24, R-WAR44,
-R-WAR47). A ratio sweep moves the losses `κ` multiplies, so sweep the two
-jointly; `examples/sentry_price_sweep` is the bed. Sweep them on the card
+(the card writes 1e-5 kt of sentry per kt defended) and the point-defense
+saturation threshold (`Standing::launches_into`) are placeholders or open
+(R-TECH24, R-WAR44).
+
+**The loss price is ratified, not part of this sweep: `κ = 3`**
+(`Doctrine::sentry_loss_price`, R-WAR47, ratified by the author after PR #12).
+It was chosen on 8 seeds at 800 yr at the ratio the card writes (1e-5), where
+every `κ` from 1 to 1000 scored within one standard error of the others
+(appendix §D.24). A ratio sweep changes how many sentries stand and so how
+many are lost, which is what `κ` multiplies. Hold `κ` at 3 through the sweep,
+then re-run `examples/sentry_price_sweep` at the ratio the sweep chooses. If
+`κ = 3` is no longer inside the plateau there, bring the measurement to the
+author: a ratified value moves only with a new ratification. Sweep them on the card
 bed, with the arena's laser-vs-missile balance as the check on the missile
 magnitudes. The reach census to start from is appendix §D.24.
 
@@ -147,7 +224,7 @@ defense is by every allied beam hull near the target. Resupply is by return and
 by ammo run, and the ordnance book is the Exchange's eighth, closed by default
 (warfare §8.22, matching §10.5). Card-free runs reproduce the engine before it to
 the last event on 8/8 seeds. Appendix §D.24.
-**Open:** R-TECH24, R-WAR44, R-WAR47 (`κ = 3` by Monte Carlo, unratified), R-WAR48, R-MX15, T-140 (the sweep), the deep-tier
+**Open:** R-TECH24, R-WAR44, R-WAR48, R-MX15, T-140 (the sweep), the deep-tier
 Politics card that opens the ordnance book, and the card's value (no harness
 reads `T_i`, R-TECH1).
 
@@ -164,8 +241,7 @@ every tier on the ledger, seven Exchange books with refined bids, asks and
 capacity asks, refined freight (matching §8.7), and production priced by a
 standing order's reservation (matching §10.4). Card-free runs reproduce the
 engine before it to the last event on 8/8 seeds. Appendix §D.23.
-**Open:** R-M5 (hauling precursors to a forge), R-G4 ("exactly one super" is a
-gradient as built), R-MX11–R-MX13 (monopoly, monopsony, cartel), urgency from
+**Open:** R-M5's remainder (T-143), R-MX11–R-MX13 (monopoly, monopsony, cartel), urgency from
 threat belief (§10.4), the general shadow-price production form, win
 conditions themselves, refinable slag (T-03).
 
@@ -237,6 +313,22 @@ that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
   interfaces this leaves), R-WAR39 (what a picket may believe about a battle
   it did not fight in; the fixed reach is retired by the author's ruling that
   "nearby" is belief about arriving in time).
+- **R-MX10 advanced** (after PR #12): synthesis and building confirmed in a
+  run on 24 runs (4 seeds, 6 arms, appendix §D.25); matching §9.6 now lists the
+  synthesis and refined-trade interfaces and which a card can reach. A capacity
+  ask that settlement could never make is fixed
+  (`a_forge_offers_only_capacity_it_can_settle`). **Opened: R-MX16** — refined
+  supply is held behind the works bill, so cross-empire refined trade is 0 kt
+  in 21 of 24 runs and no apex is ever offered (matching §10.6).
+- **R-MX16 resolved** (the author's ruling: price the works bill, matching
+  §10.6), with the author's trio homeworld and hex-scale color (galaxy §3,
+  §4.3): forges offer capacity and apex, but **0.44% of refined mass crosses
+  between empires** (appendix §D.26). **R-G4 resolved** (the author's ruling: supers by color
+  theory, two basics 1:1, no archetype barred); slant is measured by absolute
+  threshold (appendix §D.27). 1:1 pair sites in generation were tried and
+  withdrawn (the author); a world's total ore is now its richest color, shared
+  in its rolled proportions (appendix §D.28: colony-years +1.68% ± 0.48 against
+  the single-hue galaxy; super trade 0.27%).
 - **Still open from the first plan:** one idle pool across roles, so idle hulls
   bid for any duty (a Delta mines in a pinch when the miner price covers its
   lower productivity). Stage 2 built the price and the side-run interface it

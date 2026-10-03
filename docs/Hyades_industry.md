@@ -439,7 +439,9 @@ I* = (K_c + D) / 2          (Bands — i.e. the geometric mean of the two masses
 
 **Placeholder, flagged: R-IND13.** The real works-value function is §5's and
 needs T-73/T-74. This is the cheapest form with the right cross partial, not a
-claim about magnitudes.
+claim about magnitudes. *Built on the destination* — the engine priced `I*` on
+the founding center by mistake until the trio homeworld exposed it (its own
+deposit had kept the number positive); appendix §D.26.
 
 **The mix is not a second decision.** The settlers are capped by `K_c`, so a
 low-ceiling world takes few people and therefore leaves with a mineral-heavy
@@ -2864,7 +2866,9 @@ runs T-52's candidate scan.
 
 **Severed.** A saving center now decides when *minerals arrive*
 (`wake_on_minerals`, on the freight deposit), with a per-center
-`decision_retry_years` floor as the catch-all beneath it. At `cycle_years = 1`,
+`decision_retry_years` floor as the catch-all beneath it (*superseded*: the
+floor is deleted and a declined decision waits on its events,
+`Hyades_autopilot_colonization_growth.md` §6.1a). At `cycle_years = 1`,
 economy ticks go **48,707 → 3,602,083 (74x)** while decisions go **97,197 →
 128,726 (1.32x)**. The wake path is *cheaper* than the cadence it replaces —
 ~26,800 deposits against ~99,000 ticks over 1,500 yr — so responsiveness rose
