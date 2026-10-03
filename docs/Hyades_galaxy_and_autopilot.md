@@ -163,7 +163,7 @@ and apex only win conditions** — so a card-free game synthesizes nothing.
 sake; a forge makes what its own holding allows.
 
 ### 4.6 Substitution — native only within a super's own counter-graph aspects
-Each super is native across the **whole lineup — but only for the specific aspects of the counter-graph it brings.** Covering **Blue's** aspects with Red/Green/apex costs **a card each**; Blue does **not** natively cover another super's aspects. Supers are **non-interchangeable specialists**, cheap in their own region, card-expensive outside it. **R-M6:** each super's (and the apex's) aspect-set.
+Each super is native across the **whole lineup — but only for the specific aspects of the counter-graph it brings.** Covering **Blue's** aspects with Red/Green/apex costs **a card each**; Blue does **not** natively cover another super's aspects. Supers are **non-interchangeable specialists**, cheap in their own region, card-expensive outside it. **R-M6:** each super's (and the apex's) aspect-set. Each super is also **dominant in different trees**, and is the counter-graph's general key in the trees it dominates and a traversal key elsewhere (`Hyades_technology_tree.md` §3.1, R-TECH25).
 
 ### 4.7 Use-domains — Stars! as a starting point only
 First-pass lean: **Cyan → structure/propulsion, Magenta → weapons/energy, Yellow → economy/electronics**; supers/apex add advanced bands (§4.6). **R-M7:** full mapping + apex weapons (sim §5).
