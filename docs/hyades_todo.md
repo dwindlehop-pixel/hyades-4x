@@ -95,6 +95,38 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-145. Raise the yomi of super and apex forging
+
+**Open — the author's direction: "we may need to increase the Yomi of super
+and apex forging."** Yomi is reading a rival's intent from what you can observe
+and acting on the read (AGENTS.md §1; standing layer §5: the tell is the fleet
+and the drawdown, lagged and scoped). Forging today carries little of it:
+
+- **No choice to read.** A forge forges every pair it holds and every balanced
+  set of supers into apex, at every tick, by rule (galaxy §4.5). No seat
+  decides what to forge, when, or whether to hold, so there is no intent behind
+  the output.
+- **What a rival can see is ungated.** A forge's refined bids sit in the
+  Exchange's books, which carry no light-lag (matching §8). Nothing about a
+  forge reaches a rival only by light, by a scan, or by inference from freight.
+- **Its output reveals nothing yet.** Supers are spent only by tier-3 Design
+  writes and apex only by win conditions (trees §4.6), so a stockpile signals
+  nothing a rival can act on until those exist.
+
+**What would settle it:** the author's direction on which half to open first.
+The options are both open, and neither is recommended over the other yet:
+
+1. A choice a card can make, for a rival to read: which super, supers against
+   apex, or hold against sell.
+2. Gating what a rival can observe through the observation model: freight
+   signatures on a forge's precursor runs, the drawdown of its holdings, a
+   scan of its stockpile.
+
+Then a census of the beliefs a rival can form about a forge on a card-free
+bed, and of what each option adds to them.
+
+---
+
 ### T-144. Decisions without a cadence: a short-circuit tree, conditioned on events
 
 **Advanced — built (the author's rulings).** No decision has a cadence of its
