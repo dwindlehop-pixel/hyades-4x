@@ -2956,6 +2956,62 @@ session's machine, timed beside `0887203`'s binary: determinism 67.9 s →
 The determinism target is over 60 s on both binaries on this machine and
 inside the 72-s band; it was 41.8 s on the previous session's.
 
+## D.25 R-MX10 — synthesis and refined trade, confirmed in a run
+
+*Supports matching §8.7, §9.6 and §10.6. Bed: the §D.23 mechanism bed (3 seats,
+200 planets, 1,500 yr, regrowth off, test configuration), every seat's
+colonizer (`Delta`) and miner (`Meadow`) Designs billed 25% refined — the state
+a tier-3 Design write leaves — on seeds 11, 3, 7 and 42. A scratch census test,
+never landed, read the synthesis log, the refined books and every contract.*
+
+**Arms.** Red: 25% Red. R+G+B: 25% split equally over the three supers. Apex:
+25% apex. Non-native: each seat billed in another archetype's native super.
+Lockout: the R+G+B and apex arms on the same galaxy with seat 2's homeworld
+ceiling at `Band 3.5`, so it can never reach population `Band IV` and forge —
+a galaxy variant, which is what a bed may vary (T-133 ruling).
+
+**Synthesis and building, 24 of 24 runs.** Every seat at `Band IV` makes what
+its bills owe, and the yard builds hulls of it:
+
+| arm | refined kt made per seat (seed 11) | hulls carrying refined (4 seeds) |
+|---|---|---|
+| Red | 1.97 / 0.66 / 0.62 Red | 291–428 |
+| R+G+B | 0.28 / 0.37 / 0.24 of each | 335–464 each |
+| apex | 1.58 / 0.77 / 0.41 apex, and the supers it draws | 319–418 |
+| non-native | 0.83 / 0.64 / 0.63 of the billed super | 70–299 per super |
+| lockout, R+G+B / apex | seat 2 makes nothing | 253–406 / 272–364 |
+
+First synthesis at 605 or 655 yr on every seat that can forge. Mass drift at
+most 9.8e-16 of the total.
+
+**Trade, almost none.** Refined kilotonnes delivered between empires: 0.0050
+(seed 11, Red), 0.0369 (seed 7, R+G+B), 0.0251 (seed 7, R+G+B, lockout), and 0
+in the other 21 runs. Refined bids posted per run 22–255; asks 0–9. Seat 2 in
+the lockout arms received refined material in 1 of 8 runs.
+
+*Mechanism, instrumented at posting.* A forge offers capacity from basics
+above its next works bill. At every barrier, on every seed, each forge held
+less than that bill in at least one basic — a typical forge 0.3 / 27 / 14 kt of
+Cyan / Magenta / Yellow against a bill of 260 / 130 / 390 kt — so its capacity
+was zero. Apex is never offered: capacity asks cover the three supers only,
+and a forge synthesizes only what it owes. Every homeworld holds all three
+basics, so every forge makes every super from its own holding, and the only
+window with one forge and no other (605–655 yr on seed 11) contains no round
+barrier. Open as R-MX16.
+
+**A defect found and fixed.** A capacity ask was sized per precursor against
+that color's share of the works bill; settlement (`synthesis_plan`) keeps the
+whole bill as a total. On seed 11 at 1,000 yr seat 1's forge held 8.163 /
+7.584 / 0.028 kt against a bill of 6.333 / 3.167 / 9.500 kt and offered
+2.43 kt of Blue; its total, 15.78 kt, was below the 19.0 kt bill before any
+draw, and both Blue contracts struck from the ask defaulted at settlement. The
+ask is now capped by the total above the whole bill, and each super's draw
+comes off its precursors' room before the next super is counted (Red and Green
+share Yellow). `a_forge_offers_only_capacity_it_can_settle` fails on the old
+rule (2.11 kt of Red offered that settlement cannot make) and passes on the
+new. Card-free runs are bit-identical to `e3e87d0` on seeds 1, 7, 42 and
+31337 at 1,000 yr: a card-free game posts no refined bid, so no ask clears.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

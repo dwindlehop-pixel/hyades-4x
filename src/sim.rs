@@ -9144,19 +9144,29 @@ impl Simulation {
         }
         let Some(bill) = self.next_bill(e, owner) else { return };
         let ys = self.config.super_yield;
+        // **Offer only what settlement can make** (`synthesis_plan`, which
+        // keeps the whole works bill in basics): each precursor's surplus above
+        // its own share of the bill, the total above the whole bill, and both
+        // drawn down as each super's capacity is counted — Red and Green share
+        // Yellow, and two asks cannot both spend it.
+        let mut room: [f64; 3] = std::array::from_fn(|c| {
+            if deficit[c] > Price::ZERO {
+                0.0
+            } else {
+                (bank.get_basic(Basic::ALL[c]) - bill[c].kilotons()).max(0.0)
+            }
+        });
+        let mut total_room = (bank.basic_total() - bill.iter().fold(Price::ZERO, |a, &x| a + x)).kilotons().max(0.0);
         for (i, s) in Super::ALL.iter().enumerate() {
             if short[i] > Price::ZERO {
                 continue;
             }
             let (a, b) = s.recipe();
-            let surplus = |c: Basic| {
-                if deficit[c as usize] > Price::ZERO {
-                    0.0
-                } else {
-                    (bank.get_basic(c) - bill[c as usize].kilotons()).max(0.0)
-                }
-            };
-            let mut qty = ys * 2.0 * surplus(a).min(surplus(b));
+            let draw = (2.0 * room[a as usize].min(room[b as usize])).min(total_room);
+            room[a as usize] -= draw / 2.0;
+            room[b as usize] -= draw / 2.0;
+            total_room -= draw;
+            let mut qty = ys * draw;
             let kept = qty.min(empire_short[i]);
             empire_short[i] -= kept;
             qty -= kept;
@@ -16808,6 +16818,61 @@ mod tests {
         );
         sim.sys_contract_due(id);
         assert_eq!(sim.exchange_defaults(), 1, "a contract it cannot make defaults");
+    }
+
+    /// **A forge offers only capacity settlement can make** (R-MX10's
+    /// confirmation, appendix §D.25). Settlement keeps the whole works bill in
+    /// basics, so a forge long in Red's two precursors and short in Cyan by
+    /// more than they exceed their shares offers no Red; with the Cyan bill
+    /// covered it offers exactly what the total above the bill makes, and that
+    /// offer settles. And a precursor two supers share is offered once: with
+    /// each basic `δ` above its share of the bill, the three supers together
+    /// draw no more than the `3δ` the forge has spare.
+    #[test]
+    fn a_forge_offers_only_capacity_it_can_settle() {
+        let setup = |bank: &dyn Fn([f64; 3]) -> Minerals| {
+            let mut sim = Simulation::with_baseline(test_galaxy(2, 71), test_cfg(71));
+            let forge = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
+            sim.world.population.insert(forge, Kilotons::at_tier(BandTier::IV));
+            let bill = sim.next_bill(forge, PlayerId(1)).unwrap().map(|x| x.kilotons());
+            *sim.held_at_mut(forge).unwrap() = bank(bill);
+            sim.post_exchange_offers();
+            let asks: Vec<f64> = (3..6)
+                .map(|book| sim.exchange.markets[book].asks.iter().filter(|a| a.entity == forge.0).map(|a| a.qty).sum())
+                .collect();
+            (sim, forge, bill, asks)
+        };
+        let ys = SimConfig::new(71).super_yield;
+
+        // Cyan short by more than Magenta and Yellow are long: no Red.
+        let (_, _, bill, asks) = setup(&|b| {
+            let d = b[0] / 4.0;
+            Minerals { cyan: 0.0, magenta: b[1] + d, yellow: b[2] + d, ..Default::default() }
+        });
+        assert!(bill[0] > 0.0, "the bed needs a Cyan share in the works bill: {bill:?}");
+        assert_eq!(asks[0], 0.0, "Red is unmakeable while the works bill is kept: {asks:?}");
+
+        // The Cyan share covered: Red is what the total above the bill makes, and it settles.
+        let (sim, forge, bill, asks) = setup(&|b| {
+            let d = b[0] / 4.0;
+            Minerals { cyan: b[0], magenta: b[1] + d, yellow: b[2] + d, ..Default::default() }
+        });
+        let d = bill[0] / 4.0;
+        assert!((asks[0] - ys * 2.0 * d).abs() < 1e-9, "Red {} against {}", asks[0], ys * 2.0 * d);
+        let mut owed = [Price::ZERO; 4];
+        owed[0] = Price::new(asks[0]);
+        let reserve = Price::new(bill.iter().sum());
+        assert!(sim.synthesis_plan(forge, &owed, reserve).is_some(), "the offer settles");
+
+        // Every basic `δ` long: the three supers share `3δ`, not `6δ`.
+        let (_, _, bill, asks) = setup(&|b| {
+            let d = b[0] / 4.0;
+            Minerals { cyan: b[0] + d, magenta: b[1] + d, yellow: b[2] + d, ..Default::default() }
+        });
+        let d = bill[0] / 4.0;
+        let drawn: f64 = asks.iter().sum::<f64>() / ys;
+        assert!(drawn <= 3.0 * d + 1e-9, "offered {asks:?}, a draw of {drawn} against {}", 3.0 * d);
+        assert!(drawn > 0.0, "and something is offered");
     }
 
     /// **A run under a super-billed Design: synthesized, traded, hauled, built,

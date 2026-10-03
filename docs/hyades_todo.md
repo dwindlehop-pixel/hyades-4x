@@ -213,7 +213,7 @@ rival production. Seven stages, the reach audit first. Opens R-WAR40–R-WAR43.
 ### T-134. The Exchange at a spatial equilibrium; one holding per (empire, planet)
 
 **Advanced — stages 1, A, B, C and 2 landed, and R-MX8 is resolved; R-MX9,
-R-MX10 and R-WAR39 open, and the idle pool is not started.** The author approved
+R-MX10, R-MX16 and R-WAR39 open, and the idle pool is not started.** The author approved
 clearing the cross-empire book at a spatial price equilibrium (R-MX7) and ruled
 that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
 
@@ -244,6 +244,13 @@ that a bank, the ore on a rock and a hauler's arrived cargo are one quantity.
   interfaces this leaves), R-WAR39 (what a picket may believe about a battle
   it did not fight in; the fixed reach is retired by the author's ruling that
   "nearby" is belief about arriving in time).
+- **R-MX10 advanced** (after PR #12): synthesis and building confirmed in a
+  run on 24 runs (4 seeds, 6 arms, appendix §D.25); matching §9.6 now lists the
+  synthesis and refined-trade interfaces and which a card can reach. A capacity
+  ask that settlement could never make is fixed
+  (`a_forge_offers_only_capacity_it_can_settle`). **Opened: R-MX16** — refined
+  supply is held behind the works bill, so cross-empire refined trade is 0 kt
+  in 21 of 24 runs and no apex is ever offered (matching §10.6).
 - **Still open from the first plan:** one idle pool across roles, so idle hulls
   bid for any duty (a Delta mines in a pinch when the miner price covers its
   lower productivity). Stage 2 built the price and the side-run interface it
