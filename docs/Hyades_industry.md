@@ -1644,8 +1644,8 @@ diverse. The supply constraint dominates and no routing rule can lift it.
 color-payable works bill cannot be made to work by freight alone on this
 field.** It needs the relief valves the spec already names and the engine does
 not have — the **Exchange** (§8.1, T-77) for buying colors from empires that
-have them, and design law #1's **counter-graph**, where Red is the general key,
-for substituting. Until one exists, T-73 is a constraint with no answer, and
+have them, and design law #1's **counter-graph**, where each tree's dominant super is the
+general key (Red only in Red-dominant trees; technology §3.1), for substituting. Until one exists, T-73 is a constraint with no answer, and
 §6.7's plan for stages 3–5 to land **inert** is not being met by stage 5.
 
 **Recommendation, not yet actioned:** gate the color bill behind a `SimConfig`
@@ -1656,7 +1656,7 @@ only the default changes.
 **What this does not fix, and should not be asked to.** Even perfect internal
 routing cannot give an empire a color its own ground does not hold. That is
 `§8.1`'s subject and the Exchange's job (T-77), and design law #1's counter-graph
-— Red as the general key — is the other half. **T-81's premise was that freight
+— the dominant super of each tree as its general key — is the other half. **T-81's premise was that freight
 could answer the color constraint on its own; that premise is now measured
 false.**
 
