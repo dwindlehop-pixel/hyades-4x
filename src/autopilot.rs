@@ -550,6 +550,17 @@ pub struct Doctrine {
     /// **Placeholder magnitude**: `1.0` each.
     pub refined_demand: [f64; 4],
 
+    /// **How much more a forge pays for a basic than any other use does**
+    /// (galaxy §4.5, the author's ruling: forging is a high-priced activity,
+    /// outweighing almost anything but immediate survival). A center at
+    /// population `Band IV` multiplies its willingness to pay for the basics
+    /// that complete a balanced set by this, and its pull on its empire's
+    /// freight by the same factor. Any value above `1` puts a forge's bid
+    /// ahead of every other center's, whose pressure is at most `1`.
+    ///
+    /// **Placeholder magnitude**: `10.0`.
+    pub forge_premium: f64,
+
     /// **Sentry mass per kilotonne defended** (T-139,
     /// `Hyades_technology_tree.md` §9; the author's ruling: "more defense in
     /// proportion to more to defend"). A center orders sentries until their
@@ -712,6 +723,7 @@ impl Default for Doctrine {
             // and is `3:2:1` Yellow : Cyan : Magenta (`Hyades_industry.md` §6.10).
             doctrine_demand: crate::cards::WORKS_MIX_DEFAULT,
             refined_demand: [1.0; 4],
+            forge_premium: FORGE_PREMIUM,
             sentry_ratio: 0.0,
             sentry_loss_price: SENTRY_LOSS_PRICE,
             missile_pickets: false,
@@ -1030,6 +1042,10 @@ pub struct ProductionContext {
     /// decision reads it (`AGENTS.md` §4: per-decision work must be `O(what the
     /// decision reads)`).
     pub survey_frontier: usize,
+    /// **The center is a forge** — its population reads `Band IV` (galaxy
+    /// §4.5). A forge's basics are its synthesis's, and it builds only for
+    /// its own survival: the sentries its Doctrine wants.
+    pub forge: bool,
 }
 
 impl ProductionContext {
@@ -1302,6 +1318,20 @@ impl Autopilot for BaselineAutopilot {
     }
 
     fn production_choice(&self, doctrine: &Doctrine, ctx: &ProductionContext, candidates: &[Candidate]) -> BuildOrder {
+        // **A forge forges** (galaxy §4.5, the author's ruling: once a center
+        // clears population `Band IV` its primary purpose is to forge supers
+        // and apex, outweighing almost anything but immediate survival). Its
+        // yard builds the sentries its Doctrine wants and nothing else.
+        let wants_sentry = ctx.sentries_here
+            < Standing::of(doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost, ctx.sentries_lost);
+        let can_afford_sentry = ctx.stockpile_total + Price::new(1e-9) >= ctx.sentry_cost;
+        if ctx.forge {
+            return if wants_sentry && can_afford_sentry {
+                Standing::of(doctrine).order_for(Role::Sentry)
+            } else {
+                BuildOrder::Idle
+            };
+        }
         // Deepen while any headroom remains below the ceiling, rather than only
         // when a whole level fits under it. `K = min(hab, bio, infra)`, so infra
         // overshooting `k_potential` buys nothing — but *blocking* the last
@@ -1402,9 +1432,6 @@ impl Autopilot for BaselineAutopilot {
         // (T-139) — here and in the fallback below, the two places survey is
         // chosen. Bounded by the center's share of what it defends, and zero
         // unless the missile card was played.
-        let wants_sentry = ctx.sentries_here
-            < Standing::of(doctrine).sentries_wanted(ctx.defended, ctx.sentry_cost, ctx.sentries_lost);
-        let can_afford_sentry = ctx.stockpile_total + Price::new(1e-9) >= ctx.sentry_cost;
         if candidates.is_empty() && wants_sentry && can_afford_sentry {
             return Standing::of(doctrine).order_for(Role::Sentry);
         }
@@ -1763,6 +1790,11 @@ pub struct Standing<'a> {
 /// within one standard error of each other. `3` sits inside that plateau and
 /// short of the limit where a center stops replacing after its first loss.
 pub const SENTRY_LOSS_PRICE: f64 = 3.0;
+
+/// **The forge premium** ([`Doctrine::forge_premium`]): what a forge's bid for
+/// a basic is worth against any other center's, whose pressure is at most `1`.
+/// **Placeholder magnitude.**
+pub const FORGE_PREMIUM: f64 = 10.0;
 
 const ASSIGNABLE: [Role; 5] = [Role::Colonizer, Role::Miner, Role::Scout, Role::Picket, Role::Sentry];
 
@@ -2359,6 +2391,7 @@ mod tests {
             // exercise the branch they are about. `a_fully_explored_empire_deepens_instead_of_scouting`
             // is the one that closes it.
             survey_frontier: 1,
+            forge: false,
         }
     }
 

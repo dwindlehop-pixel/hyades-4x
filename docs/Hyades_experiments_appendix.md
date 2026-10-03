@@ -3195,6 +3195,56 @@ paths outside bit-identity.
 **Cost:** determinism target 43.1 s debug, one run, against ~43 s before the
 change (one run each; not resolved).
 
+## D.30 Forging is a forge's purpose
+
+*Supports galaxy §4.5 and matching §8.7, §10.4, §10.6, §10.7. The author's
+ruling: forging is a high-priced activity, outweighing almost anything but
+immediate survival; once a center clears population `Band IV` its primary
+purpose is to forge supers and apex. Bed: `examples/forge_census` — card-free,
+standard galaxy, 3 seats, 1,500 yr, seeds 1, 7, 42, 31337 — run on this engine
+and on `a50ef75` (common random numbers, paired by seed and seat).*
+
+**What it replaced.** Synthesis ran on demand only: when an order a forge was
+paying owed a super it lacked, when a contract it had sold came due (capacity
+asks, sold from basics above what its standing order left and priced at the
+precursors' willingness to pay over the yield, R-MX16), or when a hauler loaded
+at a forge for a sister center. A card-free game posts no refined bid, so a
+card-free forge synthesized nothing: every seat on `a50ef75` reads 0.00 kt of
+every refined material. It was wrong about the forge's purpose, which the
+author has now ruled is to forge.
+
+**Economy, paired** (new against `a50ef75`):
+
+| quantity | empire total per seed (n = 4) | per seat (n = 12) |
+|---|---|---|
+| colony-years | +0.001% ± 0.002 | +0.000% ± 0.013, range −0.08 to +0.09 |
+| work-years | +0.66% ± 0.63 | +0.85% ± 0.84, range −2.21 to +9.43 |
+| basic kt delivered between empires | +0.45% ± 0.22 | — |
+
+None of the three is resolved at two standard errors (estimates). *Inference:*
+a homeworld that stops building at 610–845 yr costs nothing measurable because
+colonies carry the expansion loop by then; the mechanism is not instrumented.
+
+**Forge output.** First synthesis at 610–845 yr on every seat. Supers forged
+per seat 57.2–6,009.9 kt (7,495.4 kt over 12 seat-runs), apex 3,090.4 kt.
+Every forge makes all three supers. The seat's native super is 4.7–93.0% of its
+super mass (median 22.7%, pooled 30.9%): a forge makes whatever pair its
+freight and the Exchange bring, not its archetype's. **No super or apex is
+delivered between empires on any run**: a forge bids for no super, and no
+center posts a refined bid card-free (R-MX18).
+
+**Super-billed Designs.** On §D.25's bed (Delta and Meadow billed 25% Red,
+200 planets, seed 11, 1,500 yr) each seat holds 1–4 centers; the forges make
+Red and no Red-billed hull is built, because the forge no longer builds and no
+hauler carries its Red to a colony within the horizon (a scratch census, never
+landed: Red held outside the forge 0.00 kt at every century). Before, the
+forge built 291–428 such hulls itself (§D.25). Open as R-MX17;
+`a_super_billed_design_is_forged_with_mass_conserved` now pins forging and
+conservation only.
+
+**Test targets after the change:** unit 5.2 s (302 tests), determinism 43.1 s,
+smoke 12.4 s, telemetry 26.5 s (debug, one run each).
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

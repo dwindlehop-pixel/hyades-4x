@@ -5576,26 +5576,6 @@ impl Simulation {
             let mut aboard = self.world.cargo.get(vehicle).copied().unwrap_or_default();
             let mut room = (cap.on_scale::<units::Cost>() - aboard.total()).max(Price::ZERO);
             let rwant = self.refined_want(sh.destination, &aboard);
-            // **A forge makes what a sister center is waiting on** (galaxy
-            // §4.5): a hauler loading at a forge for a center short of a super
-            // or apex has the forge synthesize it, from what the forge's own
-            // standing order leaves, for each material the sister center pays
-            // at least the forge's reservation for (R-MX16: the works bill is
-            // priced, not held).
-            if yard_here && rwant.iter().any(|w| *w > Price::ZERO) {
-                let doctrine = *self.world.doctrine.get(self.player_entity[p as usize]).unwrap();
-                let owed: [Price; 4] = core::array::from_fn(|i| {
-                    let pays = self.refined_wtp(sh.destination, i, &doctrine);
-                    if pays >= self.forge_reservation(sh.outpost, i, &doctrine) {
-                        rwant[i]
-                    } else {
-                        Price::ZERO
-                    }
-                });
-                if owed.iter().any(|w| *w > Price::ZERO) {
-                    self.synthesize_from_available(p as usize, sh.outpost, &owed);
-                }
-            }
             let offer = if yard_here {
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
                 // Priced at a full hold: the slowest the leg can be.
@@ -6453,6 +6433,10 @@ impl Simulation {
             self.arm_retry(center);
             self.sys_build_decision(center);
         }
+
+        // 4) **A forge forges** (galaxy §4.5), after its survival has had the
+        // yard: what it holds becomes supers and apex.
+        self.forge(p, center);
         self.schedule(self.config.cycle_years, EventKind::ProductionTick { center });
     }
 
@@ -6640,7 +6624,10 @@ impl Simulation {
         // feature: with no picket anywhere on the board there is no held subset
         // to reduce, and the per-survivor map probe never runs.
         let any_pickets = !self.picket.is_empty() || !self.picket_inbound.is_empty();
-        {
+        // A forge builds only for its own survival (galaxy §4.5), which reads
+        // no world, so it does not walk the pool.
+        let forge = self.is_forge(center);
+        if !forge {
             // **Walk the live pool and compact it in the same pass** (T-101).
             //
             // The two filters are monotone, so an entry that fails one is dead
@@ -6768,11 +6755,11 @@ impl Simulation {
             sentry_cost: self.sentry_price(),
             sentries_here: self.sentries.get(&center.0).map_or(0, |s| s.len() as u32),
             sentries_lost: self.sentries_lost.get(&center.0).copied().unwrap_or(0),
-            defended: self.held_at(center).map_or(Kilotons::ZERO, |h| h.total().on_scale::<units::Mass>())
-                + self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO),
+            defended: self.defended_at(center),
             light_vehicle_cost: role_cost(Role::Scout, &self.config),
             candidate_count: count,
             survey_frontier,
+            forge,
         };
 
         // What this center wants is decided afresh; a need recorded at an
@@ -7467,18 +7454,6 @@ impl Simulation {
         }
     }
 
-    /// **Synthesize `owed` from what the standing order leaves** (R-MX16, the
-    /// author's ruling: price the works bill). A sale or a sister center's
-    /// order draws on [`Self::available_at`] — the forge's own most-wanted
-    /// order is the one hard hold — and not on a works bill held back: what
-    /// the works are worth to the forge is in the price it asks.
-    fn synthesize_from_available(&mut self, p: usize, center: Entity, owed: &[Price; 4]) {
-        let avail = self.available_at(center);
-        if let Some(plan) = self.synthesis_plan_on(center, &avail, owed, Price::ZERO) {
-            self.run_synthesis(p, center, plan);
-        }
-    }
-
     /// Carry out a synthesis plan at `center`: draw the basics, make the
     /// supers and apex, leave the yield's loss as slag, and log each material.
     fn run_synthesis(&mut self, p: usize, center: Entity, plan: SynthesisPlan) {
@@ -7515,6 +7490,103 @@ impl Simulation {
         }
     }
 
+    /// **A forge forges** (galaxy §4.5, the author's ruling: once a center
+    /// clears population `Band IV`, its primary purpose is to forge supers and
+    /// apex). At each economy tick, after its yard has served its survival:
+    ///
+    /// ```text
+    /// m        = min_c basic_c                 the balanced part of its basics
+    /// super s += Y_super · m                   each super takes m/2 of each recipe basic
+    /// super s += Y_super · 2 · min(rest_a, rest_b)   the one recipe pair left over
+    /// apex    += Y_apex · 3 · min_s super_s    from the balanced part of its supers
+    /// ```
+    ///
+    /// What is left is one basic, waiting on the colors that would pair it —
+    /// the forge's bid ([`Self::color_deficit`]). Its survival comes first:
+    /// basics for the sentries its Doctrine wants and for the rounds its
+    /// sentries lack ([`Self::survival_reserve`]) are kept back in proportion.
+    /// Supers its empire's centers wait on, and supers it has sold and not yet
+    /// delivered, are kept back from apex.
+    fn forge(&mut self, p: usize, center: Entity) {
+        if !self.is_forge(center) {
+            return;
+        }
+        if let Some(plan) = self.forge_plan(p, center) {
+            self.run_synthesis(p, center, plan);
+        }
+    }
+
+    /// What [`Self::forge`] would make, without making it. `None` when it
+    /// would make nothing.
+    fn forge_plan(&self, p: usize, center: Entity) -> Option<SynthesisPlan> {
+        let (ys, ya) = (self.config.super_yield, self.config.apex_yield);
+        if ys <= 0.0 || ya <= 0.0 {
+            return None;
+        }
+        let free = self.free_of_order(center);
+        let total = free.basic_total().kilotons();
+        let kept = if total > 0.0 { (self.survival_reserve(center).kilotons() / total).min(1.0) } else { 0.0 };
+        let mut rest: [f64; 3] = core::array::from_fn(|i| free.get_basic(Basic::ALL[i]) * (1.0 - kept));
+        let m = rest.iter().copied().fold(f64::INFINITY, f64::min).max(0.0);
+        let mut basic_draw = [m; 3];
+        let mut super_make = [ys * m; 3];
+        for r in rest.iter_mut() {
+            *r -= m;
+        }
+        for (i, s) in Super::ALL.iter().enumerate() {
+            let (a, b) = s.recipe();
+            let q = rest[a as usize].min(rest[b as usize]);
+            if q > 0.0 {
+                super_make[i] += ys * 2.0 * q;
+                basic_draw[a as usize] += q;
+                basic_draw[b as usize] += q;
+                rest[a as usize] -= q;
+                rest[b as usize] -= q;
+            }
+        }
+        let keep = self.supers_kept(p, center);
+        let apex_draw = (0..3)
+            .map(|i| free.get(Material::of_super(Super::ALL[i])) + super_make[i] - keep[i])
+            .fold(f64::INFINITY, f64::min)
+            .max(0.0);
+        let apex_make = ya * 3.0 * apex_draw;
+        if apex_make <= 0.0 && super_make.iter().all(|&x| x <= 0.0) {
+            return None;
+        }
+        Some(SynthesisPlan { basic_draw, super_make, apex_make, apex_draw })
+    }
+
+    /// **Supers a forge keeps out of apex**, kt per super: what its empire's
+    /// centers wait on (§10.4: an empire sells only what none of its centers
+    /// waits on, and a forge supplies its own empire first), and what this
+    /// forge has sold on the Exchange and not yet delivered.
+    fn supers_kept(&self, p: usize, center: Entity) -> [f64; 3] {
+        let mut keep = [0.0f64; 3];
+        if !self.standing.is_empty() {
+            for &e in &self.owned_planets[p] {
+                let short = self.refined_short(e);
+                for (i, k) in keep.iter_mut().enumerate() {
+                    *k += short[i].kilotons();
+                }
+            }
+        }
+        for c in self.exchange.contracts.values() {
+            if c.seller.0 as usize == p && c.seller_center == center {
+                if let Some(i) = Material::REFINED.iter().take(3).position(|&m| m == c.color) {
+                    keep[i] += c.qty;
+                }
+            }
+        }
+        keep
+    }
+
+    /// **What a center defends** (T-139): everything it holds, every tier on
+    /// the mass scale, and its population. Sentries are bought in proportion.
+    fn defended_at(&self, center: Entity) -> Kilotons {
+        self.held_at(center).map_or(Kilotons::ZERO, |h| h.total().on_scale::<units::Mass>())
+            + self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO)
+    }
+
     /// **What [`Self::synthesize_for`] would do**, without doing it: `None` at
     /// a center below population Band IV, with nothing to make, or where the
     /// precursors or the basic reserve fall short.
@@ -7532,8 +7604,7 @@ impl Simulation {
         owed: &[Price; 4],
         basic_reserve: Price,
     ) -> Option<SynthesisPlan> {
-        let pop = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
-        if self.bands.level(pop) < BandTier::IV {
+        if !self.is_forge(center) {
             return None;
         }
         let plan = self.precursor_draw(bank, owed)?;
@@ -7583,6 +7654,22 @@ impl Simulation {
     /// ask on the Exchange, an offer to a hauler — draws on this. With no
     /// standing order it is the holding itself, exactly.
     fn available_at(&self, center: Entity) -> Minerals {
+        let mut avail = self.free_of_order(center);
+        // **A forge's basics are its synthesis's** (galaxy §4.5, the author's
+        // ruling): no other build, rung, ask or hauler draws on them. Its own
+        // survival does — a sentry pays from the whole holding, and rounds
+        // are made from [`Self::free_of_order`].
+        if self.is_forge(center) {
+            for c in Basic::ALL {
+                avail.add_basic(c, -avail.get_basic(c));
+            }
+        }
+        avail
+    }
+
+    /// [`Self::available_at`] before a forge keeps its basics back: the
+    /// holding less what its standing order reserves.
+    pub(super) fn free_of_order(&self, center: Entity) -> Minerals {
         let bank = self.held_at(center).copied().unwrap_or_default();
         if self.standing.is_empty() {
             return bank;
@@ -7594,9 +7681,7 @@ impl Simulation {
         for (i, &m) in Material::REFINED.iter().enumerate() {
             avail.add(m, -order.refined[i].kilotons().min(bank.get(m)).max(0.0));
         }
-        let pop = self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO);
-        let forge = self.bands.level(pop) >= BandTier::IV;
-        let pre = if forge {
+        let pre = if self.is_forge(center) {
             self.precursor_draw(&bank, &order.refined).map_or([0.0; 3], |plan| plan.basic_draw)
         } else {
             [0.0; 3]
@@ -8997,7 +9082,31 @@ impl Simulation {
     /// statement of what an empire wants.
     fn willingness_to_pay(&self, center: Entity, color: Basic, doctrine: &Doctrine) -> f64 {
         let i = color as usize;
-        doctrine.base_value[i] * doctrine.doctrine_demand[i] * self.mineral_pressure_of(center)
+        doctrine.base_value[i] * doctrine.doctrine_demand[i] * self.demand_of(center, doctrine)
+    }
+
+    /// **How hard a center pulls on basics**: its mineral pressure, times
+    /// [`Doctrine::forge_premium`] at a forge — the one factor the Exchange's
+    /// bids, a center's offer test and freight's delivery score all read, so
+    /// a forge outbids and out-pulls every other use by the same margin.
+    fn demand_of(&self, center: Entity, doctrine: &Doctrine) -> f64 {
+        self.mineral_pressure_of(center) * self.forge_premium_at(center, doctrine)
+    }
+
+    /// [`Doctrine::forge_premium`] at a forge, `1` elsewhere.
+    fn forge_premium_at(&self, center: Entity, doctrine: &Doctrine) -> f64 {
+        if self.is_forge(center) {
+            doctrine.forge_premium
+        } else {
+            1.0
+        }
+    }
+
+    /// **A forge**: a center whose population reads `Band IV` (galaxy §4.5).
+    /// It synthesizes, and its basics are kept for synthesis.
+    fn is_forge(&self, center: Entity) -> bool {
+        self.world.owner.contains(center)
+            && self.world.population.get(center).is_some_and(|&pop| self.bands.level(pop) >= BandTier::IV)
     }
 
     /// **Post every empire's bids and asks to the cross-empire books** (T-84).
@@ -9133,12 +9242,9 @@ impl Simulation {
     ///   [`Self::refined_wtp`].
     /// - **Asks** for what it holds above that order, at its own price (zero:
     ///   a center with a surplus is not short).
-    /// - **Capacity asks** at a forge (pop Band IV): the supers it could make
-    ///   from basics above its next works bill, `Y_super · 2 · min` over the
-    ///   recipe's two surpluses, at a reservation equal to what the precursors
-    ///   are worth to it over the yield. Sold capacity is synthesized when the
-    ///   contract comes due. A forge's native super is the one whose two
-    ///   precursors it is rich in — the structural monopoly of galaxy §3.
+    ///
+    /// A forge offers what it has forged (galaxy §4.5): the supers it holds
+    /// outside a balanced set, and nothing it has yet to make.
     fn post_refined_offers(
         &mut self,
         e: Entity,
@@ -9182,66 +9288,6 @@ impl Simulation {
                     owner,
                 });
             }
-        }
-        let pop = self.world.population.get(e).copied().unwrap_or(Kilotons::ZERO);
-        if self.bands.level(pop) < BandTier::IV {
-            return;
-        }
-        let ys = self.config.super_yield;
-        // **Capacity is what the standing order leaves, priced** (R-MX16, the
-        // author's ruling: price the works bill). `bank` is the holding less
-        // the forge's own most-wanted order, which is all settlement may draw
-        // on (`synthesize_from_available`); what the works are worth to the
-        // forge is in its reservation, which rises with its works deficit.
-        // **Each basic is shared in thirds** among the three materials that
-        // draw it — two supers and apex — so every offer can settle together
-        // and apex is offered at all (drawn in sequence, the supers would leave
-        // at most one color for it). The thirds are a placeholder split.
-        let room: [f64; 3] = std::array::from_fn(|c| bank.get_basic(Basic::ALL[c]).max(0.0) / 3.0);
-        for (i, &m) in Material::REFINED.iter().enumerate() {
-            if short[i] > Price::ZERO {
-                continue;
-            }
-            // Kilotonnes of each basic one kilotonne of `m` draws.
-            let per: [f64; 3] = match m {
-                Material::Apex => [1.0 / (ys * self.config.apex_yield).max(1e-12) / 3.0; 3],
-                _ => {
-                    let (a, b) = Super::ALL[i].recipe();
-                    let mut v = [0.0; 3];
-                    v[a as usize] = 0.5 / ys.max(1e-12);
-                    v[b as usize] = 0.5 / ys.max(1e-12);
-                    v
-                }
-            };
-            let mut qty = (0..3).filter(|&c| per[c] > 0.0).map(|c| room[c] / per[c]).fold(f64::INFINITY, f64::min);
-            if !qty.is_finite() {
-                continue;
-            }
-            let kept = qty.min(empire_short[i]);
-            empire_short[i] -= kept;
-            qty -= kept;
-            if qty > 1e-9 {
-                let price = self.forge_reservation(e, i, doctrine);
-                let book = 3 + i;
-                self.exchange.posted[book].1 += 1;
-                self.exchange.markets[book].asks.push(matching::Offer { entity: e.0, price, qty, pos: at, owner });
-            }
-        }
-    }
-
-    /// **A forge's reservation for refined material `i`**, `$`/kt: what the
-    /// basics it draws are worth to it, over the yield — the two recipe basics'
-    /// willingness to pay for a super, all three for apex. It rises with the
-    /// forge's own works deficit (`mineral_pressure_of`), which is how the
-    /// works bill is priced rather than held (R-MX16).
-    fn forge_reservation(&self, e: Entity, i: usize, doctrine: &Doctrine) -> f64 {
-        let ys = self.config.super_yield.max(1e-12);
-        if i < 3 {
-            let (a, b) = Super::ALL[i].recipe();
-            (self.willingness_to_pay(e, a, doctrine) + self.willingness_to_pay(e, b, doctrine)) / 2.0 / ys
-        } else {
-            let mean = Basic::ALL.iter().map(|&c| self.willingness_to_pay(e, c, doctrine)).sum::<f64>() / 3.0;
-            mean / (ys * self.config.apex_yield.max(1e-12))
         }
     }
 
@@ -9574,19 +9620,9 @@ impl Simulation {
         // The seller's holding at the place it sells from (T-134): a world it
         // has since lost is no longer its holding, so that defaults too.
         let mut held = self.holding(c.seller.0, c.seller_center).map_or(0.0, |b| b.get(c.color));
-        // **A forge can make what it sold** (galaxy §4.5): a Band IV center
-        // short of a super or apex it owes synthesizes it now, from what its
-        // own standing order leaves (R-MX16).
         // **A center makes the rounds it sold** (T-139), from basics.
         if held + 1e-9 < c.qty && c.color == Material::Ordnance && self.owns_planet(c.seller_center) {
             self.fabricate_rounds(c.seller.0, c.seller_center, c.qty - held);
-            held = self.holding(c.seller.0, c.seller_center).map_or(0.0, |b| b.get(c.color));
-        }
-        if held + 1e-9 < c.qty && c.color.basic().is_none() && self.owns_planet(c.seller_center) {
-            let i = Material::REFINED.iter().position(|&m| m == c.color).unwrap();
-            let mut owed = [Price::ZERO; 4];
-            owed[i] = Price::new(c.qty);
-            self.synthesize_from_available(c.seller.0 as usize, c.seller_center, &owed);
             held = self.holding(c.seller.0, c.seller_center).map_or(0.0, |b| b.get(c.color));
         }
         let delivered = held + 1e-9 >= c.qty;
@@ -9828,6 +9864,10 @@ impl Simulation {
     /// fresh, never stored, which is what lets [`Self::most_needed_center`]
     /// compare need across the whole empire.
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
+        // A forge wants basics without end: whatever it holds it forges.
+        if self.is_forge(center) {
+            return 1.0;
+        }
         let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
         let stock = self.held_at(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
         // The price of this center's *next* rung — the same function the build
@@ -9881,6 +9921,7 @@ impl Simulation {
         if lambda <= 0.0 {
             return self.most_needed_center(owner);
         }
+        let doctrine = self.doctrine_of(owner.0 as usize);
         let mut best: Option<(Entity, f64)> = None;
         // Supers and apex aboard go where an order is waiting for them; the
         // term is read only when the hold carries some.
@@ -9892,7 +9933,8 @@ impl Simulation {
             if refined_aboard {
                 completion += self.refined_completion(e, cargo);
             }
-            let score = completion * transcendental::exp_fast(-lambda * t);
+            // A forge's pull is priced like its bids (`demand_of`).
+            let score = completion * self.forge_premium_at(e, &doctrine) * transcendental::exp_fast(-lambda * t);
             // Entity id breaks ties so the choice is total and deterministic.
             let better = match best {
                 None => true,
@@ -9982,6 +10024,15 @@ impl Simulation {
             return [Price::ZERO; 3];
         };
         let bank = self.held_at(center).copied().unwrap_or_default();
+        // **A forge wants a balanced set** (galaxy §4.5): every color up to
+        // the largest of what it holds and of its next rung's colors. Each
+        // super draws its two basics 1:1 and apex the three supers equally, so
+        // a balanced set of basics is what synthesis turns wholly into apex.
+        if self.is_forge(center) {
+            let held = Basic::ALL.map(|c| Price::new(bank.get_basic(c)));
+            let top = held.iter().chain(bill.iter()).fold(Price::ZERO, |a, &b| a.max(b));
+            return held.map(|h| (top - h).max(Price::ZERO));
+        }
         let mut out = [Price::ZERO; 3];
         for (i, &c) in Basic::ALL.iter().enumerate() {
             out[i] = (bill[i] - Price::new(bank.get_basic(c))).max(Price::ZERO);
@@ -10025,7 +10076,7 @@ impl Simulation {
         Some(CenterBid {
             dest,
             at: *self.world.position.get(dest)?,
-            pressure: self.mineral_pressure_of(dest),
+            pressure: self.demand_of(dest, &self.doctrine_of(owner.0 as usize)),
             doctrine: self.doctrine_of(owner.0 as usize),
             works: self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default(),
             want: want.basic,
@@ -16829,15 +16880,16 @@ mod tests {
         }
     }
 
-    /// **A forge sells what it can make, and makes it when the contract comes
-    /// due.** Seat 1's homeworld is a Band IV forge long Magenta and Yellow —
-    /// Red's precursors — and seat 0 has a center waiting on Red. The book
-    /// carries seat 0's bid and seat 1's capacity ask, clears a contract for
-    /// Red, and settlement synthesizes it at the forge and leaves it in seat 0's
-    /// pile at the rock they share, conserving mass. Below Band IV the forge
-    /// offers no capacity, and a contract it could not make defaults.
+    /// **A forge sells what it has forged, and keeps it until delivery.**
+    /// Seat 1's homeworld is a Band IV forge holding Magenta and Yellow —
+    /// Red's precursors — and seat 0 has a center waiting on Red. The forge's
+    /// tick makes Red; the book carries seat 0's bid and seat 1's ask, clears a
+    /// contract, and settlement leaves the Red in seat 0's pile at the rock
+    /// they share, conserving mass. A forge tick between clearing and delivery
+    /// does not turn the sold Red into apex. Below Band IV nothing is forged
+    /// and nothing offered.
     #[test]
-    fn a_forge_sells_the_super_it_can_make_and_makes_it_at_settlement() {
+    fn a_forge_sells_what_it_has_forged_and_keeps_it_until_delivery() {
         let setup = |pop: BandTier| {
             let mut sim = Simulation::with_baseline(test_galaxy(2, 71), test_cfg(71));
             let buyer_home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
@@ -16855,139 +16907,104 @@ mod tests {
             let need = [Price::new(0.3), Price::ZERO, Price::ZERO, Price::ZERO];
             sim.standing.insert(buyer_home.0, StandingOrder::refined(need));
             sim.credit(sim.player_entity[0], 500.0);
+            sim.forge(1, forge);
             (sim, forge, rock)
         };
 
         let (mut sim, forge, rock) = setup(BandTier::IV);
+        let ys = sim.config.super_yield;
+        assert!((sim.held_at(forge).unwrap().red - ys * 100.0).abs() < 1e-9, "the pair is forged into Red");
         sim.post_exchange_offers();
         let red = 3; // Material::Red in Material::ALL
         assert!(sim.exchange.markets[red].bids.iter().any(|b| b.owner == PlayerId(0)), "the waiting center bids");
         assert!(
             sim.exchange.markets[red].asks.iter().any(|a| a.owner == PlayerId(1) && a.entity == forge.0),
-            "the forge offers what it can make"
+            "the forge offers what it forged"
         );
         sim.clear_exchange();
         let deals: Vec<_> = sim.exchange.contracts.iter().map(|(&id, c)| (id, *c)).collect();
         let (id, c) = *deals.iter().find(|(_, c)| c.color == Material::Red).expect("a contract for Red");
         assert_eq!((c.buyer, c.seller, c.seller_center), (PlayerId(0), PlayerId(1), forge));
-        assert!(sim.held_at(forge).unwrap().red < c.qty, "not yet made: it is made at settlement");
+        // Green and Blue arrive: a balanced set beside the sold Red becomes
+        // apex, and the sold Red stays.
+        let held_red = sim.held_at(forge).unwrap().red;
+        sim.held_at_mut(forge).unwrap().add(Material::Green, held_red);
+        sim.held_at_mut(forge).unwrap().add(Material::Blue, held_red);
+        sim.forge(1, forge);
+        assert!((sim.held_at(forge).unwrap().red - c.qty).abs() < 1e-9, "the sold Red is kept back from apex");
         let before = sim.mass_ledger().total();
         sim.sys_contract_due(id);
-        assert_eq!(sim.exchange_defaults(), 0, "the forge made it");
+        assert_eq!(sim.exchange_defaults(), 0, "the forge delivered");
         assert!((sim.holding(0, rock).map_or(0.0, |m| m.red) - c.qty).abs() < 1e-9, "in the buyer's pile");
-        assert!(sim.world.slag.get(forge).is_some_and(|s| s.kilotons() > 0.0), "the yield's loss is slag");
         let after = sim.mass_ledger().total();
         assert!((after - before).abs() < 1e-12 * before, "settlement conserves mass: {before} -> {after}");
 
-        let (mut sim, forge, rock) = setup(BandTier::III);
+        let (mut sim, forge, _) = setup(BandTier::III);
+        assert_eq!(sim.held_at(forge).unwrap().red, 0.0, "no forge below Band IV");
         sim.post_exchange_offers();
-        assert!(sim.exchange.markets[red].asks.is_empty(), "no forge below Band IV, so no capacity to sell");
-        let id = sim.exchange.next_id;
-        sim.exchange.next_id += 1;
-        sim.exchange.contracts.insert(
-            id,
-            Contract {
-                buyer: PlayerId(0),
-                seller: PlayerId(1),
-                seller_center: forge,
-                color: Material::Red,
-                qty: 0.3,
-                escrow: 1.0,
-                seller_drop: rock,
-                buyer_drop: None,
-                struck: sim.clock,
-            },
-        );
-        sim.sys_contract_due(id);
-        assert_eq!(sim.exchange_defaults(), 1, "a contract it cannot make defaults");
+        assert!(sim.exchange.markets[red].asks.is_empty(), "nothing forged, nothing offered");
     }
 
-    /// **A forge offers what its standing order leaves, every offer settles,
-    /// and apex is offered** (R-MX16, the author's ruling: price the works
-    /// bill). No works bill is held back: a forge with Cyan and no other basic
-    /// to spare offers Red from Magenta and Yellow anyway, at a reservation
-    /// that carries its works deficit. Each basic is shared in thirds among the
-    /// two supers and apex that draw it, so with `9 kt` of each the forge
-    /// offers `4 kt` of every super and `3 kt` of apex, all of which settle
-    /// together. A standing order's precursors are never offered.
+    /// **A forge forges** (galaxy §4.5, the author's ruling). With `9 / 9 / 3`
+    /// kt of Cyan / Magenta / Yellow, the balanced `3` of each makes `Y_super ·
+    /// 3` of every super, the Cyan and Magenta left over make Blue, and the
+    /// balanced part of the supers becomes apex — leaving Blue and no basic.
+    /// Mass is conserved, the yield's loss is slag, and none of the forge's
+    /// basics are available to any other draw.
     #[test]
-    fn a_forge_offers_what_its_standing_order_leaves_at_its_price() {
-        let setup = |bank: Minerals, standing: Option<StandingOrder>| {
-            let mut sim = Simulation::with_baseline(test_galaxy(2, 71), test_cfg(71));
-            let forge = sim.world.player_info.get(sim.player_entity[1]).unwrap().home;
-            sim.world.population.insert(forge, Kilotons::at_tier(BandTier::IV));
-            *sim.held_at_mut(forge).unwrap() = bank;
-            if let Some(o) = standing {
-                sim.standing.insert(forge.0, o);
-            }
-            sim.post_exchange_offers();
-            let asks: [f64; 4] = std::array::from_fn(|i| {
-                sim.exchange.markets[3 + i].asks.iter().filter(|a| a.entity == forge.0).map(|a| a.qty).sum()
-            });
-            (sim, forge, asks)
-        };
-        let ys = SimConfig::new(71).super_yield;
-        let ya = SimConfig::new(71).apex_yield;
-        // Kilotonnes of each basic one kilotonne of a material draws.
-        let per = |i: usize| -> [f64; 3] {
-            if i == 3 {
-                [1.0 / (ys * ya) / 3.0; 3]
-            } else {
-                let (a, b) = Super::ALL[i].recipe();
-                let mut v = [0.0; 3];
-                v[a as usize] = 0.5 / ys;
-                v[b as usize] = 0.5 / ys;
-                v
-            }
-        };
-
-        // No Cyan, Magenta and Yellow long: Red is offered, the rest are not.
-        let (sim, forge, asks) = setup(Minerals { magenta: 9.0, yellow: 9.0, ..Default::default() }, None);
-        assert!((asks[0] - 3.0 / per(0)[1]).abs() < 1e-9, "a third of each precursor as Red: {asks:?}");
-        assert_eq!((asks[1], asks[2], asks[3]), (0.0, 0.0, 0.0), "no Cyan, no Green, Blue or apex: {asks:?}");
-        let red = sim.exchange.markets[3].asks.iter().find(|a| a.entity == forge.0).unwrap();
-        let doctrine = *sim.world.doctrine.get(sim.player_entity[1]).unwrap();
-        assert_eq!(red.price, sim.forge_reservation(forge, 0, &doctrine), "at the forge's reservation");
-
-        // 9 kt of each: every super and apex, and all of them settle together.
-        let bank = Minerals { cyan: 9.0, magenta: 9.0, yellow: 9.0, ..Default::default() };
-        let (mut sim, forge, asks) = setup(bank, None);
-        for (i, want) in [4.0, 4.0, 4.0, 3.0].iter().enumerate() {
-            assert!((asks[i] - want).abs() < 1e-9, "material {i}: {} against {want}", asks[i]);
-        }
+    fn a_forge_forges_pairs_into_supers_and_balanced_supers_into_apex() {
+        let bank = Minerals { cyan: 9.0, magenta: 9.0, yellow: 3.0, ..Default::default() };
+        let (mut sim, home) = forge(BandTier::IV, bank);
+        assert_eq!(sim.available_at(home).basic_total(), Price::ZERO, "a forge's basics are its synthesis's");
+        let (ys, ya) = (sim.config.super_yield, sim.config.apex_yield);
         let before = sim.mass_ledger().total();
-        for (i, &q) in asks.iter().enumerate() {
-            let mut owed = [Price::ZERO; 4];
-            owed[i] = Price::new(q);
-            let held = sim.held_at(forge).unwrap().get(Material::REFINED[i]);
-            sim.synthesize_from_available(1, forge, &owed);
-            let made = sim.held_at(forge).unwrap().get(Material::REFINED[i]) - held;
-            assert!((made - q).abs() < 1e-9, "material {i} settles: made {made} of {q}");
-        }
-        assert!((sim.mass_ledger().total() - before).abs() < 1e-9, "synthesis conserves mass");
+        sim.forge(0, home);
+        let h = *sim.held_at(home).unwrap();
+        let each = ys * 3.0;
+        assert!(h.basic_total().kilotons() < 1e-12, "every basic is paired: {h:?}");
+        assert!(h.red.abs() < 1e-12 && h.green.abs() < 1e-12, "Red and Green went into apex: {h:?}");
+        assert!((h.blue - ys * 12.0).abs() < 1e-9, "the leftover Cyan and Magenta make Blue: {h:?}");
+        assert!((h.apex - ya * 3.0 * each).abs() < 1e-9, "the balanced supers make apex: {h:?}");
+        assert!(sim.world.slag.get(home).is_some_and(|s| s.kilotons() > 0.0), "the yield's loss is slag");
+        assert!((sim.mass_ledger().total() - before).abs() < 1e-9, "forging conserves mass");
 
-        // A standing order owing Blue: its precursors are not offered.
-        let order = StandingOrder {
-            design: Some((HullType::MediumSystems, Class::Delta)),
-            refined: [Price::ZERO, Price::ZERO, Price::new(3.0), Price::ZERO],
-            basic: Price::ZERO,
-        };
-        let (sim, forge, asks) = setup(bank, Some(order));
-        assert_eq!(asks[2], 0.0, "a center short of Blue bids for it and offers none");
-        let avail = sim.available_at(forge);
-        for (c, &b) in Basic::ALL.iter().enumerate() {
-            let drawn: f64 = (0..4).map(|i| asks[i] * per(i)[c]).sum();
-            assert!(drawn <= avail.get_basic(b) + 1e-9, "{b:?}: offers draw {drawn} of {}", avail.get_basic(b));
-        }
+        // Below Band IV a center forges nothing and its basics are its own.
+        let (mut sim, home) = forge(BandTier::III, bank);
+        assert_eq!(sim.available_at(home), bank);
+        sim.forge(0, home);
+        assert_eq!(*sim.held_at(home).unwrap(), bank);
     }
 
-    /// **A run under a super-billed Design: synthesized, traded, hauled, built,
-    /// and conserved.** Every seat's colonizer Design is written 25% Red — the
-    /// state a tier-3 card's Design write leaves — and the run must make Red
-    /// (only the Red-rich archetype holds both precursors), move it, build
-    /// colony ships out of it, and weigh the same at the end as at the start.
+    /// **A forge builds for its survival and nothing else, and its survival
+    /// is kept back from the forge** (the author's ruling: forging outweighs
+    /// almost anything but immediate survival). Under the missile card's
+    /// sentry ratio a forge orders the sentries it lacks and keeps their price
+    /// in basics; without it the yard is idle, however rich.
     #[test]
-    fn a_super_billed_design_is_synthesized_traded_and_built_with_mass_conserved() {
+    fn a_forge_builds_only_for_its_survival() {
+        let bank = Minerals { cyan: 30.0, magenta: 30.0, yellow: 30.0, ..Default::default() };
+        let (mut sim, home) = forge(BandTier::IV, bank);
+        assert!(!sim.commit_one_build(home), "no sentry is wanted, so the forge builds nothing");
+        let pe = sim.player_entity[0];
+        sim.world.doctrine.get_mut(pe).unwrap().sentry_ratio = crate::cards::MISSILE_SENTRY_RATIO;
+        let reserve = sim.survival_reserve(home);
+        assert!(reserve > Price::ZERO, "the sentries it lacks are priced");
+        sim.forge(0, home);
+        let left = sim.held_at(home).unwrap().basic_total();
+        assert!((left - reserve).kilotons().abs() < 1e-9, "the forge keeps back exactly its survival: {left:?}");
+        assert!(sim.commit_one_build(home), "the forge builds a sentry");
+        assert_eq!(sim.sentries.get(&home.0).map_or(0, |s| s.len()), 1);
+    }
+
+    /// **A run under a super-billed Design: forged and conserved.** Every
+    /// seat's colonizer and miner Designs are written 25% Red — the state a
+    /// tier-3 card's Design write leaves — and the run must forge Red and
+    /// weigh the same at the end as at the start. Since a forge builds only
+    /// for its survival (galaxy §4.5), a Red-billed hull is built only at a
+    /// center the forge's Red reaches by freight, which this bed does not
+    /// reach in its horizon (R-MX17, `OPEN`).
+    #[test]
+    fn a_super_billed_design_is_forged_with_mass_conserved() {
         let mut cfg = test_cfg(11);
         cfg.horizon_years = SUPER_BED_HORIZON;
         cfg.biosphere_regen_rate = 0.0;
@@ -17010,11 +17027,7 @@ mod tests {
                 _ => None,
             })
             .sum();
-        let red_hulls = (0..sim.world.next)
-            .filter(|&i| sim.world.hull_minerals.get(Entity(i)).is_some_and(|m| m.red > 0.0))
-            .count();
         assert!(made > 0.0, "no forge made Red: the bed must reach population Band IV");
-        assert!(red_hulls > 0, "no hull was built out of Red");
         let after = sim.mass_ledger();
         let drift = (after.total() - before.total()).abs() / before.total();
         assert!(drift < 1e-9, "mass is not conserved: {:#?}", before.delta(&after));
@@ -17048,12 +17061,13 @@ mod tests {
         let bank = Minerals { cyan: 1.0, magenta: 1.0, yellow: 1.0, ..Default::default() };
         let (mut sim, home) = forge(BandTier::IV, bank);
         sim.standing.insert(home.0, StandingOrder { design: Some(design), refined: owed, basic: Price::ZERO });
-        let avail = sim.available_at(home);
+        assert_eq!(sim.available_at(home).basic_total(), Price::ZERO, "a forge's basics are its synthesis's");
+        let avail = sim.free_of_order(home);
         assert!((avail.magenta - 0.625).abs() < 1e-12 && (avail.yellow - 0.625).abs() < 1e-12, "{avail:?}");
         assert_eq!(avail.cyan, 1.0, "Cyan is not in Red's recipe");
-        // And with no standing order the holding is all available, exactly.
+        // And with no standing order the holding is free of any order, exactly.
         sim.standing.clear();
-        assert_eq!(sim.available_at(home), bank);
+        assert_eq!(sim.free_of_order(home), bank);
     }
 
     /// **The refined book sells only what no center of yours is waiting on**

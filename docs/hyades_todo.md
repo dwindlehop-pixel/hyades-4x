@@ -95,6 +95,27 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-142. Every empire forges every super — make forging a forge's purpose, then trade supers
+
+**Advanced — step 1 built (the author's ruling).** The author's direction is to
+finish addressing galaxy generation leaving every empire making supers of all
+colors; the first step is that forging is a high-priced activity, outweighing
+almost anything but immediate survival, and a forge's primary purpose. Built
+(galaxy §4.5): a center at population `Band IV` forges every pair it holds into
+supers and every balanced set of supers into apex at each economy tick; its
+yard builds only the sentries its Doctrine wants, whose price is kept back;
+its basics are no other draw's; it bids for the basics completing a balanced
+set at `Doctrine::forge_premium` (10, placeholder) and pulls freight by the
+same factor. Capacity asks, sister-supply synthesis and synthesis at
+settlement are retired, and R-MX16 is superseded. Card-free, 4 seeds: economy
+unchanged within two standard errors; forges make all three supers, native
+share 4.7–93% per seat; no super crosses between empires (appendix §D.30).
+**Open:** R-MX17 (a forge builds no super-billed Design, and on §D.25's bed its
+supers reach no builder), R-MX18 (supers between forges — the next step toward
+the direction), R-M5's remainder.
+
+---
+
 ### T-141. Decide whether spent-round debris should be cut
 
 **Open — the author's question; not in PR #12.** Every missile round, hit,
@@ -171,7 +192,7 @@ every tier on the ledger, seven Exchange books with refined bids, asks and
 capacity asks, refined freight (matching §8.7), and production priced by a
 standing order's reservation (matching §10.4). Card-free runs reproduce the
 engine before it to the last event on 8/8 seeds. Appendix §D.23.
-**Open:** R-M5 (hauling precursors to a forge), R-MX11–R-MX13 (monopoly, monopsony, cartel), urgency from
+**Open:** R-M5's remainder (T-142), R-MX11–R-MX13 (monopoly, monopsony, cartel), urgency from
 threat belief (§10.4), the general shadow-price production form, win
 conditions themselves, refinable slag (T-03).
 
