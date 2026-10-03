@@ -3,31 +3,32 @@
 //! Per `Hyades_autopilot_colonization_growth.md` §1 the simulation has *no hexes*:
 //! each star system is one point ("a planet"). This module produces exactly that
 //! field plus the seeded homeworlds. The command-view hex tiling
-//! (`Hyades_galaxy_and_autopilot.md` §1–2) is a *presentation* concern and is
-//! deliberately **not** generated here — but its **scale** is authoritative for
-//! sizing the continuous field. `Hyades_galaxy_and_autopilot.md` §1 originally
-//! stated `s ∈ [50,250] ly` per side (R-G1 explicitly left "final `s` and
-//! depth" open); this conversation revised the *side* down to **10 ly**,
-//! measured against real simulation throughput — see
-//! [`GalaxyConfig::hex_side_ly`] — while keeping the stated prism depth
-//! (`1×–5× s`, "start `3×`") as-is. The playable galaxy still spans a
-//! **hex-grid radius** built from the fair-count starting cluster (§2's
-//! tri-hex clique / ring / radius-`r` ring — "three hexes for a minimum
-//! player count start") plus **2–4 hex-steps outward in each direction**.
-//! [`GalaxyConfig::hex_grid_radius`] turns that into one number;
+//! (`Hyades_galaxy_and_autopilot.md` §1–2) is a *presentation* concern and no
+//! hex is stored — but the **color field is laid out on it** (§4.3): each hex
+//! is one color region, so the hex's size is the scale at which ore color
+//! varies. The author's ruling is that color varies at the scale of an empire,
+//! a modest integer number of hexes per player, so a hex is
+//! [`GalaxyConfig::hex_side_ly`] = **70 ly a side, 121.2 ly across flats**
+//! (R-G1).
+//!
+//! The star field's **extent** is sized separately, by a **ring step** of
+//! [`GalaxyConfig::ring_step_ly`] = 10 ly — the hex side before the hex was
+//! resized, kept under its own name so the planet field (every position, and
+//! the count) did not move when the hex did. The playable galaxy spans a
+//! **ring radius** built from the fair-count starting cluster (§2's tri-hex
+//! clique / ring / radius-`r` ring) plus **2–4 ring steps outward in each
+//! direction**. [`GalaxyConfig::ring_radius`] turns that into one number;
 //! [`GalaxyConfig::xy_scale`]/[`GalaxyConfig::z_scale`] turn *that* into the
 //! two physical scale lengths below. Star **count** is not an independent
 //! knob — it's *derived* from those scales plus the target local spacing
-//! (kept exactly, per this conversation: *"lots of empty space between
-//! planets does not create drama and tension... keep the 7 ly mean spacing
-//! and reduce the size of a hex"* — not the earlier turn's planet-count
-//! cap, which diluted density instead and was reversed), so more hexes
-//! (more players) means more stars at the same density, not the same stars
-//! spread thinner.
+//! (kept exactly: *"lots of empty space between planets does not create drama
+//! and tension... keep the 7 ly mean spacing"*), so more ring steps (more
+//! players) means more stars at the same density, not the same stars spread
+//! thinner.
 //!
 //! What the generator encodes from the world model:
 //! * **Star positions — XY radially Poisson (exponential-disk profile), Z
-//!   exponential**, independently scaled from the hex grid (previous turns
+//!   exponential**, independently scaled from the ring radius (previous turns
 //!   tied both to one shared length; that was this module's own invention,
 //!   not what the hex spec actually says — corrected here). Not a hard-edged
 //!   uniform disc (no real galaxy has a wall) and not isotropic (an isotropic
@@ -38,7 +39,7 @@
 //!   `Σ(r) ∝ exp(−r/L_xy)` — the radial marginal of that is `Gamma(shape=2,
 //!   scale=L_xy)` (area grows as `r`, so density-times-area peaks at
 //!   `r=L_xy`, not at the center). Z is a plain two-sided exponential at its
-//!   own scale `L_z`, set from the hex-prism depth. Mean *near-typical-
+//!   own scale `L_z`, a multiple of the ring step. Mean *near-typical-
 //!   radius* nearest-neighbor spacing is targeted at
 //!   [`GalaxyConfig::star_spacing_ly`] (default 7 ly, matched to real
 //!   interstellar spacing near a Sun-like star —
@@ -47,8 +48,9 @@
 //!   — see [`GalaxyConfig::derived_planet_count`] for the derivation, an
 //!   approximation validated empirically in `tests`, not a closed form for
 //!   the true inhomogeneous process.
-//! * **§4.3 tier-1 field** — Gaussian in XY around each hue's hotspot ×
-//!   exponential decay in Z, matching the star field's own shape.
+//! * **§4.3 tier-1 field** — one color site per hex, its hue weighted by the
+//!   three hue hotspots, × exponential decay in Z, matching the star field's
+//!   own shape.
 //! * **§4.4 anticorrelation** — metal-rich planets trend low-habitability; the
 //!   colony-vs-mine tension falls out of this.
 //! * **§3 homeworlds** — identical `4/4/2` shape (`K = min = 2`), super-aligned
@@ -177,34 +179,47 @@ impl Planet {
     }
 }
 
-/// **Color sites** (§4.3; the author: a hex has a distinct slant or two). A
-/// jittered square lattice, [`GalaxyConfig::color_site_spacing_hex`] hex sides
-/// apart, covering the star field. Each site is one hue, drawn in proportion
-/// to the three hotspots' large-scale factors there, with a peak of
-/// `mineral_peak` times that hue's factor — so the galaxy keeps its hue
-/// regions and its `Band IV` seams, and a world's deposit is the Gaussian of
-/// its nearest site of each hue. Generation only; nothing is stored.
+/// `√3`, written out: `f64::sqrt` is exact, but a constant needs no call.
+const SQRT_3: f64 = 1.732_050_807_568_877_2;
+
+/// **Color sites** (§4.3; the author: color varies at the scale of an empire).
+/// One site per hex of the command-view tiling — flat-top hexes
+/// [`GalaxyConfig::hex_side_ly`] a side, one centered on the galactic
+/// center — jittered inside its hex, covering the star field. Each site is one
+/// hue, drawn in proportion to the three hotspots' large-scale factors there,
+/// with a peak of `mineral_peak · (floor + (1 − floor) · w / w_max)`: `w` the
+/// hue's factor at the site and `w_max` the largest factor among the sites of
+/// that hue. So each hue's strongest site reaches `mineral_peak` — `Band IV`
+/// (R-O82) — wherever the lattice falls relative to its hotspot, and a world's
+/// deposit is the Gaussian of its strongest site of each hue. Generation only;
+/// nothing is stored.
 struct ColorSites {
-    spacing: f64,
+    /// Hex side (the circumradius), ly.
+    side: f64,
     sigma: f64,
-    /// Cells per side is `2·half + 1`, centered on the origin.
+    /// Axial coordinates `(q, r)` run over `−half..=half` on both axes.
     half: i64,
-    /// Per cell: the site's hue, position and peak Band.
+    /// Per hex, indexed `(r + half)·(2·half + 1) + (q + half)`: the site's hue,
+    /// position and peak Band.
     cells: Vec<(Basic, f64, f64, f64)>,
 }
 
 impl ColorSites {
     fn generate(config: &GalaxyConfig, hotspots: &Hotspots, hotspot_sigma: f64, mut rng: Rng) -> ColorSites {
-        let spacing = (config.hex_side_ly * config.color_site_spacing_hex).max(1e-6);
+        let side = config.hex_side_ly.max(1e-6);
+        let across = config.hex_across_flats_ly();
         // The radial profile is Gamma(2, L_xy): ten scale lengths hold all
         // but ~5e-4 of the stars, and a world past the lattice reads trace.
-        let half = (10.0 * config.xy_scale() / spacing).ceil() as i64;
-        let side = 2 * half + 1;
-        let mut cells = Vec::with_capacity((side * side) as usize);
-        for iy in -half..=half {
-            for ix in -half..=half {
-                let x = (ix as f64 + 0.5 + 0.7 * (rng.unit() - 0.5)) * spacing;
-                let y = (iy as f64 + 0.5 + 0.7 * (rng.unit() - 0.5)) * spacing;
+        // A hex `k` steps out has its center at least `1.5·k·side` away.
+        let half = (10.0 * config.xy_scale() / (1.5 * side)).ceil() as i64;
+        let width = 2 * half + 1;
+        let floor = config.color_site_floor.clamp(0.0, 1.0);
+        let mut cells = Vec::with_capacity((width * width) as usize);
+        for r in -half..=half {
+            for q in -half..=half {
+                let (cx, cy) = Self::center(q, r, side);
+                let x = cx + 0.7 * (rng.unit() - 0.5) * across;
+                let y = cy + 0.7 * (rng.unit() - 0.5) * across;
                 let w = Basic::ALL.map(|b| hotspots.factor(b, x, y, hotspot_sigma));
                 let total: f64 = w.iter().sum();
                 let mut pick = rng.unit() * total;
@@ -216,28 +231,65 @@ impl ColorSites {
                     }
                     pick -= w[k];
                 }
-                let floor = config.color_site_floor.clamp(0.0, 1.0);
-                cells.push((hue, x, y, config.mineral_peak * (floor + (1.0 - floor) * w[hue as usize])));
+                cells.push((hue, x, y, w[hue as usize]));
             }
         }
-        ColorSites { spacing, sigma: spacing * config.color_site_sigma_frac, half, cells }
+        // Normalize each hue to its strongest site. With sites a hex apart the
+        // nearest one can sit most of a hex from its hotspot, and the peak is
+        // a Band: the one site that happened to land closest would hold most
+        // of the galaxy's ore in one hue.
+        let mut w_max = [0.0f64; 3];
+        for &(hue, _, _, w) in &cells {
+            w_max[hue as usize] = w_max[hue as usize].max(w);
+        }
+        for cell in &mut cells {
+            let top = w_max[cell.0 as usize];
+            let share = if top > 0.0 { cell.3 / top } else { 0.0 };
+            cell.3 = config.mineral_peak * (floor + (1.0 - floor) * share);
+        }
+        ColorSites { side, sigma: across * config.color_site_sigma_frac, half, cells }
+    }
+
+    /// Center of the flat-top hex at axial `(q, r)`, ly.
+    fn center(q: i64, r: i64, side: f64) -> (f64, f64) {
+        (1.5 * side * q as f64, SQRT_3 * side * (r as f64 + 0.5 * q as f64))
+    }
+
+    /// The flat-top hex holding `(x, y)`, as axial `(q, r)`: the fractional
+    /// cube coordinates rounded, the component with the largest rounding error
+    /// recomputed from the other two.
+    fn hex_at(x: f64, y: f64, side: f64) -> (i64, i64) {
+        let fq = (2.0 / 3.0) * x / side;
+        let fr = (-x / 3.0 + (SQRT_3 / 3.0) * y) / side;
+        let fs = -fq - fr;
+        let (mut q, mut r, s) = (fq.round(), fr.round(), fs.round());
+        let (dq, dr, ds) = ((q - fq).abs(), (r - fr).abs(), (s - fs).abs());
+        if dq > dr && dq > ds {
+            q = -r - s;
+        } else if dr > ds {
+            r = -q - s;
+        }
+        (q as i64, r as i64)
     }
 
     /// Each hue's Band at `(x, y)` before the vertical decay and noise: its
-    /// strongest site among the 5×5 cells around the point (a site two cells
-    /// out is at least 1.3 spacings away, under 4e-4 of its peak at the
-    /// default width).
+    /// strongest site among the hexes within three steps of the point's own.
+    /// A site four steps out is at least `6·side − side − 0.49·across` =
+    /// 2.39 hex widths away, under 2e-5 of its peak at the default width.
     fn bands_at(&self, x: f64, y: f64) -> [f64; 3] {
-        let side = 2 * self.half + 1;
-        let cx = (x / self.spacing).floor() as i64;
-        let cy = (y / self.spacing).floor() as i64;
+        let width = 2 * self.half + 1;
+        let (cq, cr) = Self::hex_at(x, y, self.side);
         let mut out = [0.0f64; 3];
-        for iy in (cy - 2)..=(cy + 2) {
-            for ix in (cx - 2)..=(cx + 2) {
-                if ix < -self.half || ix > self.half || iy < -self.half || iy > self.half {
+        for dr in -3i64..=3 {
+            for dq in -3i64..=3 {
+                if (dq + dr).abs() > 3 {
                     continue;
                 }
-                let (hue, sx, sy, peak) = self.cells[((iy + self.half) * side + (ix + self.half)) as usize];
+                let (q, r) = (cq + dq, cr + dr);
+                if q < -self.half || q > self.half || r < -self.half || r > self.half {
+                    continue;
+                }
+                let (hue, sx, sy, peak) = self.cells[((r + self.half) * width + (q + self.half)) as usize];
                 let (dx, dy) = (x - sx, y - sy);
                 let band = peak * transcendental::exp(-(dx * dx + dy * dy) / (2.0 * self.sigma * self.sigma));
                 let k = hue as usize;
@@ -334,47 +386,47 @@ pub struct GalaxyConfig {
     /// Seat count. Must be a *fair* count (2, 3, 6, 12) — vertex-transitive (§2).
     pub players: usize,
     /// Number of wild (un-seeded) planets scattered in the field. Defaulted
-    /// by [`Self::new`] via [`Self::derived_planet_count`] — the hex grid
-    /// and target spacing are what actually size the galaxy now (confirmed
-    /// this conversation), star count follows from them — but left as a
+    /// by [`Self::new`] via [`Self::derived_planet_count`] — the ring radius
+    /// and target spacing are what size the galaxy, star count follows from
+    /// them — but left as a
     /// plain mutable field, like everything else here, for direct override.
     pub planet_count: usize,
 
-    /// Hex side length (ly) — the command-view hex-prism footprint
-    /// (`Hyades_galaxy_and_autopilot.md` §1 originally stated `s ∈
-    /// [50,250] ly`; **revised down** this conversation on measured
-    /// simulation-speed grounds — R-G1 was always explicitly open on the
-    /// final value, and *"lots of empty space between planets does not
-    /// create drama and tension"* independently favors the smaller end
-    /// anyway). **10 ly**, chosen from `examples/bench_hex_size.rs`'s
-    /// measured throughput: at the 12-player worst case this clears the
-    /// confirmed 2.5-simulated-years/real-second target by an **847×**
-    /// margin (2,116 yr/s measured), leaving headroom for combat/loadout
-    /// costs that don't exist in the engine yet. The empirically-
-    /// extrapolated crossover (where throughput would actually drop to
-    /// 2.5 yr/s) is ≈47 ly, from the measured local scaling trend, not a
-    /// guess — so this isn't a photo-finish choice, it's the smaller,
-    /// higher-tension end of a wide comfortably-safe range. Hexes are
-    /// never represented in the engine itself ("no hexes in the sim" —
-    /// `Hyades_autopilot_colonization_growth.md` §1); this exists purely
-    /// to size the continuous star field to the *right scale*.
+    /// **Hex side, ly — 70, from the author's target of hexes per player**
+    /// (R-G1): color varies at the scale of an empire, so an empire spans a
+    /// modest integer number of hexes — 3–6 per player at 3 seats, 6–12 at 6
+    /// and 12, 3–6 at 18 — and the author's direction for a human-scale number:
+    /// about 70 ly a side, about 120 ly across. Across flats it is `√3 · 70` =
+    /// 121.2 ly ([`Self::hex_across_flats_ly`]). Counted as the hexes holding
+    /// 90% of the worlds an empire owns at 1,500 yr, no one width meets all
+    /// four targets (`examples/hex_census`, appendix §D.32); 6 seats read
+    /// under 6 per player at this width (R-G5, open). Flat-top hexes, one
+    /// centered on the galactic center. The engine stores no hex: this sets the
+    /// color sites (§4.3) and nothing else.
     pub hex_side_ly: f64,
-    /// Hex-prism depth as a multiple of `hex_side_ly` (§1: `1×–5×`, *"start
-    /// 3×"* — not a placeholder, the spec's own stated default).
-    pub hex_depth_multiple: f64,
-    /// How many hex-steps the playable galaxy extends beyond the starting
-    /// cluster, in each direction (confirmed this conversation: *"at least
-    /// two and maybe as many as four hexes... outward... in each
-    /// direction"* — 3 here is the middle of that stated range).
-    pub hex_rings_beyond_start: f64,
+    /// **Ring step, ly — 10.** The length that sizes the star field's extent:
+    /// [`Self::xy_scale`] is [`Self::ring_radius`] ring steps and
+    /// [`Self::z_scale`] is [`Self::depth_multiple`] of them. It was the hex
+    /// side until the hex was resized to the scale of an empire (R-G1); it
+    /// keeps the value so the planet field — every position, and the count —
+    /// is unchanged. 10 ly was chosen against measured throughput (at the time
+    /// 2,116 yr/s at 12 seats, a figure `AGENTS.md` §7 records as stale).
+    pub ring_step_ly: f64,
+    /// Vertical scale length as a multiple of [`Self::ring_step_ly`] — `3`,
+    /// carried from the prism depth `1×–5×` ("start `3×`") of the old 10-ly hex.
+    pub depth_multiple: f64,
+    /// How many ring steps the playable galaxy extends beyond the starting
+    /// cluster, in each direction (*"at least two and maybe as many as four
+    /// ... outward ... in each direction"* — 3 is the middle of that range).
+    pub rings_beyond_start: f64,
 
     /// Target **mean near-typical-radius nearest-neighbor spacing** (ly) of
     /// the star field. Default 7 ly ([real interstellar spacing runs roughly
     /// 4–7 ly by method](https://www.astronomy.com/science/how-close-can-stars-get-to-each-other-in-galaxy-cores/)).
-    /// No longer what sizes the galaxy (the hex grid does, above) — this now
-    /// sizes [`Self::derived_planet_count`] instead, given the hex-derived
-    /// scale, so more hexes at the same target spacing means more stars, not
-    /// the same stars spread thinner.
+    /// No longer what sizes the galaxy (the ring radius does, above) — this
+    /// now sizes [`Self::derived_planet_count`] instead, given the ring-derived
+    /// scale, so more ring steps at the same target spacing means more stars,
+    /// not the same stars spread thinner.
     pub star_spacing_ly: f64,
 
     /// Radius of the hue-hotspot ring, as a **fraction of the mean XY
@@ -404,16 +456,10 @@ pub struct GalaxyConfig {
     /// shrink.
     pub mineral_peak: f64,
 
-    /// **Spacing of the color sites, in hex sides** (§4.3; the author: "size
-    /// the color regions so a hex has a distinct slant or two"). The three hue
-    /// hotspots set where each hue is strong across the galaxy; inside that
-    /// envelope the ore sits at color sites on a jittered lattice this far
-    /// apart, each one hue, so a world's deposit leans to the hue of its
-    /// nearest site or two. **Placeholder**: `1.0`, one site per hex side.
-    pub color_site_spacing_hex: f64,
-    /// Width of a color site's Gaussian, as a fraction of the site spacing.
-    /// At `0.5` two sites of different hue overlap little, so a world between
-    /// them carries both and a world beside one carries one. **Placeholder.**
+    /// Width of a color site's Gaussian, as a fraction of the spacing between
+    /// sites — one hex across flats, since there is one site per hex. At `0.5`
+    /// a world midway between two sites carries 0.61 of each peak and a world
+    /// beside one carries one. **Placeholder.**
     pub color_site_sigma_frac: f64,
     /// **The floor on a color site's peak**, as a fraction of `mineral_peak`.
     /// The hotspots' envelope falls to nothing across most of the disk, and
@@ -468,14 +514,14 @@ impl GalaxyConfig {
         let mut cfg = GalaxyConfig {
             players,
             planet_count: 0, // set below, once the rest of self exists
-            hex_side_ly: 10.0,
-            hex_depth_multiple: 3.0,
-            hex_rings_beyond_start: 3.0,
+            hex_side_ly: 70.0,
+            ring_step_ly: 10.0,
+            depth_multiple: 3.0,
+            rings_beyond_start: 3.0,
             star_spacing_ly: 7.0,
             hotspot_ring_frac: 0.55,
             hotspot_sigma_frac: 0.42,
             mineral_peak: 4.0,
-            color_site_spacing_hex: 1.0,
             color_site_sigma_frac: 0.5,
             color_site_floor: 0.5,
             anticorrelation: 0.7,
@@ -495,14 +541,14 @@ impl GalaxyConfig {
         PopBands::from_weibull(self.weibull_k, 4.0)
     }
 
-    /// Hex-grid radius (in hex-steps) of the **starting cluster** for
+    /// Radius (in ring steps) of the **starting cluster** for
     /// `players` seats — a *scale* reference, not the exact vertex-
     /// transitive topology from `Hyades_galaxy_and_autopilot.md` §2 (that's
     /// a command-view rendering concern, out of scope for sizing the
     /// continuous sim). *"Three hexes for a minimum player count start"*
     /// (this conversation) sets the floor; larger fair counts (6/12/18, the
     /// ring / radius-`r` ring configurations) get proportionally more.
-    fn starting_hex_radius(players: usize) -> f64 {
+    fn starting_ring_radius(players: usize) -> f64 {
         match players {
             0..=3 => 1.5, // ~3 hexes' worth of starting radius (tri-hex clique)
             // The `6r` ring family, as one closed form instead of three magic
@@ -513,7 +559,7 @@ impl GalaxyConfig {
             n if n % 6 == 0 => (n / 6) as f64 + 1.5,
             // Unreachable for a generated galaxy: `Galaxy::generate` rejects
             // non-fair counts before this runs. It survives only for callers
-            // poking `hex_grid_radius` on an unvalidated config, and is
+            // poking `ring_radius` on an unvalidated config, and is
             // deliberately *not* the ring formula — at 18 it would say 3.95
             // against the ring's 4.5, so letting it serve the family would
             // silently mis-size the galaxy.
@@ -521,17 +567,23 @@ impl GalaxyConfig {
         }
     }
 
-    /// Total hex-grid radius: starting cluster + the outward extension.
-    /// *"A game with more players will have more hexes"* (this
-    /// conversation) — a galaxy generation parameter, not a fixed constant.
-    pub fn hex_grid_radius(&self) -> f64 {
-        Self::starting_hex_radius(self.players) + self.hex_rings_beyond_start
+    /// Total ring radius, in ring steps: starting cluster + the outward
+    /// extension. *"A game with more players will have more hexes"* — a galaxy
+    /// generation parameter, not a fixed constant.
+    pub fn ring_radius(&self) -> f64 {
+        Self::starting_ring_radius(self.players) + self.rings_beyond_start
+    }
+
+    /// Hex width across flats, ly: `√3 ·` [`Self::hex_side_ly`] — the spacing
+    /// between neighboring hex centers.
+    pub fn hex_across_flats_ly(&self) -> f64 {
+        SQRT_3 * self.hex_side_ly
     }
 
     /// XY scale length `L_xy` (ly) for the `Gamma(2, L_xy)` radial profile —
-    /// derived from the hex grid, **not** from star count (confirmed this
-    /// conversation, replacing the earlier count-derived approach): the
-    /// hex-grid radius converted straight to ly. (An earlier pass here
+    /// derived from the ring radius, **not** from star count (replacing the
+    /// earlier count-derived approach): the ring radius converted straight to
+    /// ly. (An earlier pass here
     /// divided by 2, reasoning `L_xy` as "half the mean reach" — that made
     /// `z_scale` rival or exceed this at small player counts, undermining
     /// the flattening `Hyades_vehicle_roles.md`-era "don't let empires find
@@ -539,17 +591,15 @@ impl GalaxyConfig {
     /// which keeps XY meaningfully ahead of Z at every fair player count —
     /// see `tests`.)
     pub fn xy_scale(&self) -> f64 {
-        self.hex_grid_radius() * self.hex_side_ly
+        self.ring_radius() * self.ring_step_ly
     }
 
     /// Z scale length `L_z` (ly) for the two-sided `Exponential(L_z)`
-    /// vertical profile — the hex-prism depth directly (`hex_side_ly ×
-    /// hex_depth_multiple`), independent of the XY scale (confirmed this
-    /// conversation: earlier tying both to one shared length was this
-    /// module's own invention, not the actual hex spec, which defines depth
-    /// on its own terms).
+    /// vertical profile — `ring_step_ly × depth_multiple`, independent of the
+    /// XY scale (earlier tying both to one shared length was this module's own
+    /// invention, not the hex spec, which defines depth on its own terms).
     pub fn z_scale(&self) -> f64 {
-        self.hex_side_ly * self.hex_depth_multiple
+        self.ring_step_ly * self.depth_multiple
     }
 
     /// Mean XY radius (`2·L_xy`) — the natural "typical extent" reference
@@ -559,30 +609,9 @@ impl GalaxyConfig {
     }
 
     /// Star count that gives [`Self::star_spacing_ly`] average near-typical-
-    /// radius nearest-neighbor spacing, **given** the hex-derived
+    /// radius nearest-neighbor spacing, **given** the ring-derived
     /// [`Self::xy_scale`]/[`Self::z_scale`] (an inversion of the derivation
-    /// used before the hex grid became authoritative for scale — solving for
-    /// `N` given fixed `L_xy, L_z`, instead of solving for `L` given `N`) —
-    /// an approximation, not a closed form for the true inhomogeneous
-    /// process:
-    ///
-    /// The exponential-disk areal density is `Σ(r) = N·e^{-r/L_xy} /
-    /// (2πL_xy²)`; at `r = L_xy`: `Σ(L_xy) = N·e^{-1}/(2πL_xy²)`. `Z`'s peak
-    /// (midplane) density is `1/(2L_z)`. Treating their product as the
-    /// local 3-D density near the typical star's location, `λ ≈
-    /// N·e^{-1}/(4πL_xy²L_z)`, as locally homogeneous, and reusing the
-    /// homogeneous-process nearest-neighbor mean `E[R_nn] = Γ(4/3) /
-    /// (λ·(4/3)π)^{1/3}` (Weibull(k=3) mean), solving `E[R_nn] =
-    /// star_spacing_ly` for `N` gives a first-pass closed form, corrected by
-    /// the same empirically-measured factor as before (~1.87× on `L`,
-    /// applied here as `1.87³` on `N` since `N ∝ L³` at fixed spacing — `r =
-    /// L_xy` is the radial marginal's peak, but a star actually there
-    /// doesn't also sit at the Z-peak `z=0`, so the naive product overstates
-    /// true local density) — see `tests` for the empirical check.
-    /// Star count that gives [`Self::star_spacing_ly`] average near-typical-
-    /// radius nearest-neighbor spacing, **given** the hex-derived
-    /// [`Self::xy_scale`]/[`Self::z_scale`] (an inversion of the derivation
-    /// used before the hex grid became authoritative for scale — solving for
+    /// used before the ring radius became authoritative for scale — solving for
     /// `N` given fixed `L_xy, L_z`, instead of solving for `L` given `N`) —
     /// an approximation, not a closed form for the true inhomogeneous
     /// process:
@@ -604,10 +633,8 @@ impl GalaxyConfig {
     /// **No longer capped** (confirmed this conversation, reversing the
     /// previous turn's `MAX_PLANET_COUNT`): *"lots of empty space between
     /// planets does not create drama and tension... keep the 7 ly mean
-    /// spacing and reduce the size of a hex"* instead — the right
-    /// `hex_side_ly` for a tractable, genuinely-7-ly-dense galaxy is a
-    /// question for `examples/bench_hex_size.rs`'s measured throughput, not
-    /// a cap on this method.
+    /// spacing"* instead — the extent is set by [`Self::ring_step_ly`], chosen
+    /// against measured throughput, not by a cap on this method.
     pub fn derived_planet_count(&self) -> usize {
         /// Same empirical correction as before (`Hyades_habitability.md`-style
         /// honesty: measured, not derived), cubed since this solves for `N`
@@ -806,7 +833,7 @@ impl Galaxy {
             let common = 0.25 * draws[0];
             for b in Basic::ALL {
                 // The hue's site field: its nearest site of that hue, whose
-                // peak the large-scale hotspots set (§4.3, hex-scale slant).
+                // peak the large-scale hotspots set (§4.3, one site per hex).
                 let g = peaks[b as usize] / config.mineral_peak.max(1e-12);
                 // **The Gaussian is over Bands (T-62).** Density is a position
                 // on the ladder, so the field is log-normal in mass: a
@@ -986,9 +1013,68 @@ mod tests {
             let expected = (n / 6) as f64 + 1.5;
             let cfg = GalaxyConfig { players: n, ..GalaxyConfig::new(6, 1) };
             assert!(
-                (cfg.hex_grid_radius() - (expected + cfg.hex_rings_beyond_start)).abs() < 1e-12,
+                (cfg.ring_radius() - (expected + cfg.rings_beyond_start)).abs() < 1e-12,
                 "N={n} radius drifted off the 6r closed form"
             );
+        }
+    }
+
+    #[test]
+    fn resizing_the_hex_left_the_planet_field_alone() {
+        // R-G1: the hex grew to the scale of an empire and the star field kept
+        // its extent and its count — the ring step is the old 10-ly hex side.
+        for (n, count) in [(2usize, 6723usize), (3, 6722), (6, 10041), (12, 14020), (18, 18664)] {
+            let cfg = GalaxyConfig::new(n, 1);
+            assert_eq!(cfg.planet_count, count, "{n} seats");
+            assert_eq!(cfg.z_scale(), 30.0);
+        }
+        assert_eq!(GalaxyConfig::new(3, 1).xy_scale(), 45.0);
+        assert_eq!(GalaxyConfig::new(18, 1).xy_scale(), 75.0);
+    }
+
+    #[test]
+    fn a_point_reads_the_hex_whose_center_is_nearest() {
+        let cfg = GalaxyConfig::new(3, 1);
+        let side = cfg.hex_side_ly;
+        assert_eq!(side, 70.0);
+        assert!((cfg.hex_across_flats_ly() - 121.243_556_529_821_4).abs() < 1e-9, "√3 · 70 across flats");
+        let mut rng = Rng::new(5);
+        for _ in 0..2000 {
+            let (x, y) = (rng.range(-400.0, 400.0), rng.range(-400.0, 400.0));
+            let (q, r) = ColorSites::hex_at(x, y, side);
+            let d = |q: i64, r: i64| {
+                let (cx, cy) = ColorSites::center(q, r, side);
+                (x - cx) * (x - cx) + (y - cy) * (y - cy)
+            };
+            let mine = d(q, r);
+            for (dq, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)] {
+                assert!(mine <= d(q + dq, r + dr) + 1e-9, "({x}, {y}) read ({q}, {r})");
+            }
+            assert!(mine <= side * side + 1e-9, "inside its hex's circumradius");
+        }
+        for (q, r) in [(0, 0), (3, -1), (-2, 5)] {
+            let (cx, cy) = ColorSites::center(q, r, side);
+            assert_eq!(ColorSites::hex_at(cx, cy, side), (q, r));
+        }
+    }
+
+    #[test]
+    fn every_hue_reaches_the_peak_at_its_strongest_site() {
+        // R-O82 at a hex lattice: each hue's strongest site is `mineral_peak`
+        // wherever the lattice falls relative to its hotspot.
+        for seed in [1u64, 7, 42] {
+            let g = Galaxy::generate(GalaxyConfig::new(3, seed)).unwrap();
+            let cfg = g.config;
+            let sigma = cfg.mean_xy_radius() * cfg.hotspot_sigma_frac;
+            // Any stream: the property holds for every draw of the lattice.
+            let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(seed));
+            let mut top = [0.0f64; 3];
+            for &(hue, _, _, peak) in &sites.cells {
+                top[hue as usize] = top[hue as usize].max(peak);
+            }
+            for (k, t) in top.iter().enumerate() {
+                assert!((t - cfg.mineral_peak).abs() < 1e-12, "seed {seed} hue {k} peaks at {t}");
+            }
         }
     }
 
@@ -1142,8 +1228,8 @@ mod tests {
         // The actual design intent: don't let the autopilot find room
         // "vertically" — Z spread must be meaningfully tighter than XY
         // spread. The ratio is no longer a fixed 2:1 (it grows with the
-        // hex-grid radius, hence with player count — more hexes spanning
-        // XY, Z pinned to one hex-prism's depth regardless) — just check it
+        // ring radius, hence with player count — more ring steps spanning
+        // XY, Z pinned to a multiple of the ring step regardless) — just check it
         // lands clearly on the flattened side, with margin for sampling
         // noise. Median/RMS, not max: Z's exponential tail is technically
         // unbounded, so a single rare outlier isn't a fair way to judge the
@@ -1171,9 +1257,9 @@ mod tests {
     }
 
     #[test]
-    fn hex_grid_and_scale_grow_with_player_count() {
-        // "A game with more players will have more hexes" (this
-        // conversation) — the hex grid radius, and therefore both physical
+    fn ring_radius_and_scale_grow_with_player_count() {
+        // "A game with more players will have more hexes" — the ring radius,
+        // and therefore both physical
         // scales, must grow monotonically with player count across the fair
         // counts, not stay fixed or shrink.
         let mut prev_radius = 0.0;
@@ -1181,19 +1267,19 @@ mod tests {
         let mut prev_z = 0.0;
         for &n in &Galaxy::FAIR_COUNTS {
             let cfg = GalaxyConfig::new(n, 1);
-            let radius = cfg.hex_grid_radius();
+            let radius = cfg.ring_radius();
             // 2 and 3 players share the same "minimum start" cluster size
             // (both read as "3 hexes" per this conversation), so this is
             // non-decreasing, not strictly increasing, across every step.
-            assert!(radius >= prev_radius, "hex_grid_radius should not shrink as player count grows (n={n})");
+            assert!(radius >= prev_radius, "ring_radius should not shrink as player count grows (n={n})");
             assert!(cfg.xy_scale() >= prev_xy, "xy_scale should not shrink as player count grows (n={n})");
             prev_radius = radius;
             prev_xy = cfg.xy_scale();
             prev_z = cfg.z_scale();
         }
         // and it must grow at least once across the full span of fair counts.
-        assert!(GalaxyConfig::new(18, 1).hex_grid_radius() > GalaxyConfig::new(2, 1).hex_grid_radius());
-        // z_scale is pinned to one hex-prism's depth, independent of player
+        assert!(GalaxyConfig::new(18, 1).ring_radius() > GalaxyConfig::new(2, 1).ring_radius());
+        // z_scale is pinned to a multiple of the ring step, independent of player
         // count — confirm it's the same across every fair count.
         let z0 = GalaxyConfig::new(2, 1).z_scale();
         for &n in &Galaxy::FAIR_COUNTS {
@@ -1221,9 +1307,9 @@ mod tests {
     fn derived_planet_count_grows_uncapped_with_player_count() {
         // Corrected this conversation: no more artificial cap diluting
         // density ("lots of empty space... does not create drama and
-        // tension") — hex_side_ly was shrunk instead (10 ly, measured
-        // against real throughput in examples/bench_hex_size.rs). Star
-        // count should now genuinely grow with the hex grid, uncapped.
+        // tension") — the sizing length was shrunk instead (10 ly, measured
+        // against throughput; now `ring_step_ly`). Star count should
+        // genuinely grow with the ring radius, uncapped.
         let small = GalaxyConfig::new(2, 1).derived_planet_count();
         let large = GalaxyConfig::new(18, 1).derived_planet_count();
         assert!(large > small, "should grow, not sit at a shared cap");

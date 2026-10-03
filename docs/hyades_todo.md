@@ -95,6 +95,22 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-146. Make the hex presentation-only; give color its own spacing
+
+**Open — the author's question: "Why is hex size not independent of every
+measurement? It's only intended to be a human legible interface."** As landed,
+galaxy generation lays one color site per hex (§4.3), so `hex_side_ly` is the
+color-site spacing and every run reads it: at a 70-ly side colony-years fall
+19.4% ± 1.3 against the 10-ly field (appendix §D.32). Recommended (`OPEN`):
+no engine code reads `hex_side_ly`; a separate `color_site_spacing_ly` carries
+the empire-scale color ruling. **What would settle it:** the author's choice
+of that spacing — equal to the hex width, so the map reads one color per hex,
+accepting the habitability cost; or first finding why a wider spacing raises
+the mean ore Band (0.456 at 5.8 ly, 0.651 at 70 ly) and holding the count of
+worlds `k_high` admits at today's level.
+
+---
+
 ### T-145. Raise the yomi of super and apex forging
 
 **Open — the author's direction: "we may need to increase the Yomi of super
@@ -159,9 +175,12 @@ share 4.7–93% per seat; no super crosses between empires (appendix §D.30).
 **Step 2 built (the author's rulings):** R-MX17 — a Design paid in supers is
 priced higher than forging, so a forge's yard builds it and forges after;
 R-MX18 — forges bid on the supers they lack. 3.7% of supers forged now cross
-between empires; native share 29.6% pooled (appendix §D.31). **Open:** the
-author's direction is not yet met — every forge still makes all three supers.
-R-M5's remainder.
+between empires; native share 29.6% pooled (appendix §D.31). **Step 3 built
+(the author's ruling): color varies at the scale of an empire** — one color
+site per 70-ly hex (galaxy §1, §4.3). 9 of 12 seats still make all three
+supers, native share 37.0%, 5.17% of supers cross between empires (appendix
+§D.32). **Open:** the author's direction is not yet met — most forges still
+make all three supers; T-146; R-M5's remainder.
 
 ---
 

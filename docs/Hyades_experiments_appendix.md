@@ -3302,6 +3302,87 @@ first run.
 23.2 s (debug, one run each). `shrinking_the_economy_tick_does_not_multiply_decisions`
 is retired: it pinned the retry floor.
 
+## D.32 Empire-scale color: the hex width, one color site per hex
+
+*Supports galaxy §1 and §4.3, R-G1, R-G5. The author's rulings: color varies
+at the scale of an empire; a modest integer number of hexes per player (3–6 at
+3 seats, 6–12 at 6 and 12, 3–6 at 18); planet count untouched; a human-scale
+hex, about 70 ly a side and about 120 ly across. Beds: `examples/hex_census`
+(card-free, standard galaxy, 1,500 yr, seeds 1, 7, 42, 31337), scratch
+generation-only probes (never landed), `examples/forge_census` and
+`examples/bank_mix` against `82e5579`.*
+
+**Hexes per player.** Counted two ways, with flat-top hexes centered on the
+galactic center. *Proxy* — the hexes holding 90% of the worlds nearest each
+homeworld, from generation alone: every count falls with seat count at a fixed
+width (at 100 ly across: 5.92 / 6.00 / 5.04 / 5.96 per player at 3 / 6 / 12 /
+18 seats), so no width can put 3 seats at or under 6 and 6 seats at or over 6.
+*Owned territory* — the hexes holding 90% of the worlds each empire owns at
+1,500 yr (75–97% of them nearest the empire's own homeworld), measured on the
+100-ly field:
+
+| width across flats | 3 seats | 6 seats | 12 seats | 18 seats |
+|---|---|---|---|---|
+| 100 ly | 7.58 (2/12) | 7.08 (23/24) | 7.46 (44/48) | 7.99 (14/72) |
+| 110 ly | 6.58 (5/12) | 5.96 (16/24) | 6.52 (40/48) | 7.08 (23/72) |
+| 116 ly | 5.83 (9/12) | 5.58 (13/24) | 6.00 (36/48) | 6.51 (34/72) |
+| 120 ly | 5.58 (11/12) | 5.25 (10/24) | 5.75 (33/48) | 6.26 (39/72) |
+| 130 ly | 4.83 (12/12) | 4.75 (3/24) | 5.27 (18/48) | 5.61 (57/72) |
+
+Mean per player, and seats inside the target. The proxy ranked 12 seats
+lowest; owned territory does not, because empires reach past their own cell.
+6 seats need a width of at most ~110 ly, 3 and 18 seats at least ~114 and
+~125, so no width meets all four. 116 ly minimizes the worst miss; the author
+chose a side of 70 ly (121.2 ly across). Re-measured on the 70-ly field, 3
+seats read 5.83 per player at 121.2 ly, 10/12 inside the target.
+
+**Each hue's strongest site at `Band IV`.** With one site per 100-ly hex and
+the peak `mineral_peak · (floor + (1 − floor) · w)`, the site that landed
+nearest its hotspot held most of a 3-seat galaxy's ore in one hue: 93 / 99 / 95
+/ 95% on the four seeds, by mass. Normalizing each hue to its strongest site
+gives 53 / 59 / 57 / 79%; the old 10-ly field read 39–59%.
+
+**Color per empire.** Kilotonnes generated on the worlds each empire owns at
+1,500 yr: on the old field 9 of 12 seats already held 86–99% of it in one
+color, and every empire owned at least 5 worlds holding `Band I` (1 kt) of
+every color. On the 100-ly field 4 of 12 seats owned no `Band I` world in one
+color. An empire's forge draws on outposts and freight, not only on the worlds
+it owns, which is why the old field forged every super everywhere.
+
+**The card-free economy at a 70-ly side**, paired by seed against `82e5579`,
+3 seats, 1,500 yr: colony-years **−19.39% ± 1.28** (4/4 lower), work-years
+−28.1% ± 11.2 (+4.7% to −45.3%, not resolved). Supers forged 65,284 kt against
+22,040; a seat's native super 37.0% of its forging against 29.6%; supers
+crossing between empires 5.17% against 3.68%; seats making all three supers
+(each at least 1% of the largest) 9/12 against 10/12. Basics traded between
+empires fell from 258k–338k kt per seed to 146k–254k. `bank_mix`, seed 1,
+800 yr: works purchases 977 → 574, hulls 23,583 → 24,795, payable fraction
+median 0.050 → 0.043.
+
+**Why colony-years fell — an inference, not proven.** Worlds with
+`k_potential ≥ k_high` (3.2), summed over the four 3-seat galaxies: 13,801 on
+the old field, 11,680 on the 70-ly field (−15.4%); mean ore Band per world
+0.43 → 0.62–0.69. §4.4's anticorrelation lowers habitability as ore rises, and
+the standard bed is limited by the worlds `k_high` admits. Varying only the
+site spacing on the new code:
+
+| hex side (= site spacing) | admitted | mean ore Band |
+|---|---|---|
+| 5.8 ly | 13,560 | 0.456 |
+| 11.5 ly | 13,524 | 0.460 |
+| 23.1 ly | 13,303 | 0.488 |
+| 46.2 ly | 12,478 | 0.561 |
+| 70.0 ly | 11,680 | 0.651 |
+
+Why a wider spacing raises the mean ore Band is not established. An arm with
+the anticorrelation held at the old field's ore levels would settle how much
+of the −19% it carries.
+
+**Open, the author's question:** the hex is meant as a human-legible interface
+and nothing measured should depend on it. In this landing it does — one color
+site per hex makes `hex_side_ly` the color-site spacing. The recommended next
+step separates them (T-146).
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
