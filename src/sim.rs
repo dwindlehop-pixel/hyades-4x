@@ -2497,6 +2497,10 @@ struct Exchange {
     /// Without it a census can only say trade *happened*, not whether it
     /// happened at a scale that could move anything.
     traded: [f64; MATERIALS],
+    /// The same deliveries per empire, `(bought, sold)` kilotonnes per
+    /// material, keyed by seat (T-147): what each empire took from the
+    /// market and gave to it.
+    flows: BTreeMap<u32, ([f64; MATERIALS], [f64; MATERIALS])>,
 }
 
 /// **A cleared trade, escrowed and awaiting settlement at its venue** (T-85).
@@ -9448,9 +9452,11 @@ impl Simulation {
     /// holding grows and its pull on freight falls (appendix §D.46).
     fn forge_premium_at(&self, center: Entity, doctrine: &Doctrine) -> f64 {
         if self.is_forge(center) {
-            let b = infra_price_at_band(BandTier::MAX_PLAYABLE.band().bands() as usize, &self.config).kilotons();
+            let b = doctrine.forge_holding_scale
+                * infra_price_at_band(BandTier::MAX_PLAYABLE.band().bands() as usize, &self.config).kilotons();
             let h = self.held_at(center).map_or(0.0, |m| m.total().kilotons());
-            doctrine.forge_premium * b / (b + h)
+            let floor = doctrine.forge_price_floor;
+            floor + (doctrine.forge_premium - floor) * b / (b + h)
         } else {
             1.0
         }
@@ -10119,6 +10125,8 @@ impl Simulation {
             self.credit(se, paid);
             self.exchange.settled += 1;
             self.exchange.traded[c.color as usize] += c.qty;
+            self.exchange.flows.entry(c.buyer.0).or_default().0[c.color as usize] += c.qty;
+            self.exchange.flows.entry(c.seller.0).or_default().1[c.color as usize] += c.qty;
         } else {
             let be = self.player_entity[c.buyer.0 as usize];
             self.credit(be, paid);
@@ -10152,6 +10160,13 @@ impl Simulation {
     /// Kilotons delivered per color, in `Basic::ALL` order.
     pub fn exchange_traded(&self) -> [f64; MATERIALS] {
         self.exchange.traded
+    }
+
+    /// **What empire `p` has bought and sold on the Exchange**, delivered
+    /// kilotonnes per material (`Material::ALL` order) — the per-seat split of
+    /// [`Self::exchange_traded`].
+    pub fn exchange_flows(&self, p: PlayerId) -> ([f64; MATERIALS], [f64; MATERIALS]) {
+        self.exchange.flows.get(&p.0).copied().unwrap_or(([0.0; MATERIALS], [0.0; MATERIALS]))
     }
 
     /// **What an empire's centers want and cannot afford**, per color (kt).
@@ -10300,10 +10315,10 @@ impl Simulation {
     /// one trip's worth at the empire's prices, and its cost at this center's.
     fn hauler_quote(&self, p: usize, center: Entity) -> (Option<HullType>, Price, f64, f64) {
         let s = &self.shipping[p];
-        let Some((rock, b, survives)) = s.best.map(|i| s.backlog[i]) else {
+        let Some((_, b, survives)) = s.best.map(|i| s.backlog[i]) else {
             return (None, UNPAYABLE, 0.0, 0.0);
         };
-        let hull = self.freighter_hull(p, center, Entity(rock), 1);
+        let hull = self.backlog_hull(p, center, b.iter().sum());
         // A hauler in Reserve is already paid for (`mining_pair_price`).
         let cost = if self.reserve_freighters[p].is_empty() { hull_cost(hull, &self.config) } else { Price::ZERO };
         let value = Self::trip_worth(&b, survives, &s.price, hull.cargo_capacity(&self.config).kilotons());
@@ -10319,6 +10334,41 @@ impl Simulation {
             0.0
         };
         (Some(hull), cost, value, cost.kilotons() * own)
+    }
+
+    /// **The hull a backlog hauler is built on**: of the Systems hulls this
+    /// center may build and can pay for now (T-98's liquidity rule), the one
+    /// whose trip lifts the most of `backlog` kt per kilotonne it costs;
+    /// the cheaper on a tie, and the cheapest with a hold when none is
+    /// affordable, so the decision saves toward a real hull.
+    ///
+    /// *Not* [`Self::freighter_hull`], which sizes a miner's hauler to the
+    /// rock's mining rate: a pile the Exchange delivered to a small rock got a
+    /// Limited hull, whose hold is a sliver of the pile, and seed 1 of the
+    /// twin bed built 25,301 → 648,743 freighters in the sixty years after the
+    /// 1,000-year barrier (appendix §D.48).
+    fn backlog_hull(&self, p: usize, center: Entity, backlog: f64) -> HullType {
+        let bank = self.held_at(center).map_or(Price::ZERO, |b| b.basic_total());
+        let mut best: Option<(HullType, f64, Price)> = None;
+        let mut cheapest: Option<(HullType, Price)> = None;
+        for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
+            let cap = hull.cargo_capacity(&self.config).kilotons();
+            let cost = hull_cost(hull, &self.config);
+            if !self.roster_permits(p, hull) || cap <= 0.0 || cost <= Price::ZERO {
+                continue;
+            }
+            if cheapest.is_none_or(|(_, c)| cost < c) {
+                cheapest = Some((hull, cost));
+            }
+            if bank + Price::new(1e-9) < cost {
+                continue;
+            }
+            let lift = cap.min(backlog) / cost.kilotons();
+            if best.is_none_or(|(_, l, c)| lift > l || (lift == l && cost < c)) {
+                best = Some((hull, lift, cost));
+            }
+        }
+        best.map(|(h, _, _)| h).or(cheapest.map(|(h, _)| h)).unwrap_or(HullType::MediumSystems)
     }
 
     /// A hauler sent to `rock` takes one hold off its backlog.
@@ -17441,6 +17491,22 @@ mod tests {
         assert_eq!(sim.demand_value(dest, PlayerId(0), &yellow, &doctrine, false), 0.0);
     }
 
+    /// **An empty bank pays a rounding crumb with nothing, never NaN** (T-147).
+    /// An order paid wholly in supers leaves `price − owed` as a residue near
+    /// 1e-18; a forge that has synthesized its last basic holds exactly zero,
+    /// and the tolerance admitted the crumb and divided by the empty total.
+    #[test]
+    fn an_empty_bank_pays_a_crumb_with_nothing() {
+        let mut bank = Minerals { red: 1.0, ..Default::default() };
+        let taken = bank.try_take_total(Price::new(1e-12)).unwrap();
+        for c in Basic::ALL {
+            assert_eq!(taken.get_basic(c), 0.0);
+            assert_eq!(bank.get_basic(c), 0.0);
+        }
+        assert_eq!(bank.red, 1.0, "supers are not drawn by a basic payment");
+        assert!(bank.try_take_total(Price::new(1e-6)).is_none(), "more than the tolerance is refused");
+    }
+
     /// **A forge's price falls with what it holds** (T-147, the author's
     /// ruling): the full premium on an empty bank, half of it at one Band IV
     /// works stock held, and an ordinary center's full price at
@@ -17450,8 +17516,9 @@ mod tests {
         let (mut sim, home) = forge(BandTier::IV, Minerals::default());
         assert!(sim.is_forge(home));
         let doctrine = sim.doctrine_of(0);
+        // A premium above an ordinary center's, so the crossing is reached.
+        let doctrine = Doctrine { forge_premium: 10.0, ..doctrine };
         let premium = doctrine.forge_premium;
-        assert!(premium > 1.0, "the shipped premium is above an ordinary center's");
         let b = infra_price_at_band(BandTier::MAX_PLAYABLE.band().bands() as usize, &sim.config).kilotons();
         let at = |sim: &Simulation| sim.demand_of(home, &doctrine)[0];
         assert!((at(&sim) - premium).abs() < 1e-12);
@@ -17459,6 +17526,10 @@ mod tests {
         assert!((at(&sim) - premium / 2.0).abs() < 1e-12);
         *sim.held_at_mut(home).unwrap() = Minerals { yellow: (premium - 1.0) * b, ..Default::default() };
         assert!((at(&sim) - 1.0).abs() < 1e-12);
+        // And with a floor, toward the floor rather than zero.
+        let floored = Doctrine { forge_price_floor: 1.0, ..doctrine };
+        *sim.held_at_mut(home).unwrap() = Minerals { yellow: 1e9 * b, ..Default::default() };
+        assert!((sim.demand_of(home, &floored)[0] - 1.0).abs() < 1e-6);
     }
 
     /// **A hauler is priced against the shipping backlog** (T-147, R-P19).

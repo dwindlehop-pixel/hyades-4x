@@ -538,11 +538,12 @@ fn missile_defense_is_bit_identical() {
 }
 
 /// **A played game** — the card bed's protocol on a small galaxy: six seats,
-/// 400 planets, the Warfare, Growth and missile cards in rotation at the first
+/// 120 planets, the Warfare, Growth and missile cards in rotation at the first
 /// round barrier, as a game plays them. 600 planets until T-147: haulers
 /// ordered for the shipping backlog fly among the Warfare card's pickets, and
-/// the target went 40 → 105 s. At 400 it is 27 s with 8,438–15,860 encounters
-/// per seed; the floors still hold at 120 planets (4,677). Whatever fights the cards produce must
+/// the target went 40 → 105 s; 400 planets brought it to 27 s, and the swept
+/// forge premium (0.3) to 61 s again. At 120 it is 19–21 s with 3,530–12,057
+/// encounters per seed; the floors still hold at 60 planets (5,990). Whatever fights the cards produce must
 /// reproduce; the floors are on beams and the belief path, which every seed
 /// reaches, and not on missiles, which the seeded tests above carry.
 #[test]
@@ -551,7 +552,7 @@ fn a_card_play_game_is_bit_identical() {
         let sc = Scenario {
             seats: 6,
             seed,
-            planets: 400,
+            planets: 120,
             spend_kt: 0.0,
             fleets: Vec::new(),
             cards: Some(vec![15, 3, 13]),

@@ -257,16 +257,25 @@ forge (R-O59). What is left is one basic, waiting on the colors that pair it.
   decision, never ahead of it.
 - **Its basics are its synthesis's.** No other build, whole Band, Exchange ask or
   hauler draws on them (`available_at`).
-- **Priced above every other use.** A forge bids for the basics that complete
-  a balanced set — every color up to the largest of what it holds and of its
-  next whole Band's colors — at `Doctrine::forge_premium` times its price
-  (`10`, **placeholder**; every other center's pressure is at most `1`), and
-  its pull on its own empire's freight is scaled by the same factor.
+- ~~**Priced above every other use.**~~ *Contradicted by the author's ruling
+  at T-147 (appendix §D.49): the forge's price is set to maximize the tree
+  metrics on the twin bed.* A forge bids for the basics that complete a
+  balanced set — every color up to the largest of what it holds and of its next
+  whole Band's colors — at `Doctrine::forge_premium` times its price, and its
+  pull on its own empire's freight is scaled by the same factor. **`RATIFIED`
+  default `0.3`, by Monte Carlo** (`examples/forge_sweep`; +8.73% ± 1.06 on the
+  tree composite against `10`, 8/8 seeds): below `1`, so an empty forge now
+  bids under a center at full pressure and forging takes the freight
+  development does not. Supers and apex forged fall about 94%. The forge's yard
+  still builds survival first and Designs paid in supers next; only its price
+  for freight and the Exchange moved.
 - **The premium falls with what the forge holds — `RATIFIED` as the author's
   direction (T-147: "forge price should vary with its holding").** The factor
-  is `forge_premium · B / (B + H)`, where `H` is everything the forge holds,
-  every tier, in kt, and `B` the price of a whole Band IV works stock in kt
-  (the ladder's own scale; no new constant). An empty forge bids the full
+  is `floor + (forge_premium − floor) · B / (B + H)`, where `H` is everything
+  the forge holds, every tier, in kt, `B` is `Doctrine::forge_holding_scale`
+  whole Band IV works stocks in kt, and `floor` is `Doctrine::forge_price_floor`
+  (defaults `1` and `0`; neither moved the composite beyond the noise,
+  appendix §D.49). An empty forge bids the full
   premium, one holding `B` half of it, and one holding `(forge_premium − 1)·B`
   an ordinary center's full price. Card-free nothing consumes supers or apex,
   so a forge's holding grows and its pull on freight falls (appendix §D.46).

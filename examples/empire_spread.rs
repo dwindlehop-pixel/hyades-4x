@@ -22,6 +22,11 @@
 //! `ES_TRACE=1` (each century, per seat: works in total, on its largest world,
 //! and whether that world is its homeworld; and every infrastructure purchase
 //! of whole Band IV, with the world's generated deposit and ceiling);
+//! Every seed also prints what each seat bought and sold on the Exchange,
+//! delivered kilotonnes of basics and of refined material.
+//! `ES_TWINS=1` seeds every seat with twin Designs paid a third each in Red,
+//! Green and Blue (`FleetSeeding::twin_bill`, galaxy §3.1), so supers have a
+//! final demand in hulls.
 //! `ES_WATCH=<planet id>` prints that center's production decisions and,
 //! each century, its bank by color.
 //!
@@ -31,11 +36,11 @@
 //! that state.
 //!
 //! Run: `cargo run --release --example empire_spread -- <seats> <horizon>`.
-use hyades_engine::galaxy::{Galaxy, GalaxyConfig, Ground, Homeworlds, PlayerId};
+use hyades_engine::galaxy::{FleetSeeding, Galaxy, GalaxyConfig, Ground, Homeworlds, PlayerId};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 
 use hyades_engine::resources::Material;
-use hyades_engine::sim::{SimConfig, Simulation};
+use hyades_engine::sim::{DesignBill, SimConfig, Simulation};
 use std::io::Write;
 
 /// Years between samples of the integrated stocks.
@@ -77,7 +82,12 @@ fn main() {
         let g = GalaxyConfig { ground, homeworlds, ..GalaxyConfig::new(seats, seed) };
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = horizon;
-        let galaxy = Galaxy::generate(g).unwrap();
+        let twins = std::env::var("ES_TWINS").is_ok_and(|v| v.trim() == "1");
+        let seeding = FleetSeeding {
+            twin_bill: twins.then(|| DesignBill::coerced([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0, 0.0])),
+            ..Default::default()
+        };
+        let galaxy = Galaxy::generate_with(g, seeding).unwrap();
         // Per planet: is it a homeworld, its generated ceiling `K`, its deposit.
         let galaxy_planets: Vec<(bool, f64, [f64; 3])> = galaxy
             .planets
@@ -325,6 +335,16 @@ fn main() {
         for (m, name) in METRICS.iter().enumerate() {
             println!("{seed:>5}   {name:<10} {:?}", column(m).iter().map(|v| v.round()).collect::<Vec<_>>());
         }
+        // What each seat took from and gave to the Exchange, delivered kt.
+        let flows: Vec<String> = (0..seats as u32)
+            .map(|p| {
+                let (b, s) = sim.exchange_flows(PlayerId(p));
+                let (bb, sb): (f64, f64) = (b[..3].iter().sum(), s[..3].iter().sum());
+                let (br, sr): (f64, f64) = (b[3..7].iter().sum(), s[3..7].iter().sum());
+                format!("s{p} basics {bb:.0}/{sb:.0} refined {br:.0}/{sr:.0}")
+            })
+            .collect();
+        println!("{seed:>5}   exchange bought/sold kt: {}", flows.join(" | "));
         std::io::stdout().flush().ok();
         cvs.push(row);
     }

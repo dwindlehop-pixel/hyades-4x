@@ -4157,6 +4157,13 @@ nothing whatever it holds, and states that channel.
 
 ## D.47 A hauler priced against the shipping backlog
 
+> **Superseded measurement (§D.48).** The tables below were taken on an engine
+> with two defects in this change: a backlog hauler was sized to the rock's
+> mining rate, so a pile the Exchange dropped at a small rock got Limited
+> hulls and seed 1 built hundreds of thousands of them after the 1,000-year
+> barrier; and a Limited freighter order resolved to the miner role. Read the
+> tables as a record of that engine; §D.49 measures the corrected one.
+
 *Supports T-147, R-P19 and roles §4.4. The author's direction: "price of
 building a new hauler should increase with high demand in shipping", read (the
 author's choice) as the hauler's value rising so more are built; the bill stays
@@ -4213,6 +4220,82 @@ them. Pricing all three colors from one read of the bill took instructions
 targets, unloaded, old → new before the scenery changes: unit 5.9 → 20.4 s,
 determinism 40.3 → 105.4 s, telemetry 32.8 → 68.0 s; after (card bed 600 → 400
 planets, telemetry 800 → 400): 19.4 / 33.5 / 9.3 / 29.5 s.
+
+## D.48 Three defects the forge-price sweep surfaced
+
+*Supports T-147. Found running `examples/forge_sweep` (twin bed) at low forge
+premiums; each is fixed, and each is pinned by a test.*
+
+1. **NaN from an empty bank.** `Minerals::try_take_total` admits an amount up
+   to 1e-9 against a bank of exactly zero, and divided by the zero total. An
+   order paid wholly in supers leaves its basic part as a rounding residue of
+   `price − owed` (~1e-18); a forge that had synthesized its last basic held
+   exactly zero; every color became `0 · ∞`. Seen as `supers inf apex inf` in 3
+   of 80 sweep runs, first at 1,421.88 yr on seed 42 (premium 0.8), located by
+   checking `Simulation::mass_ledger` after every event. The defect predates
+   T-147; the twin bed at a low premium is what drains a forge to zero. Fixed:
+   an empty bank pays a crumb with nothing (`an_empty_bank_pays_a_crumb_with_nothing`).
+2. **A Limited freighter order resolved to the miner role.** `role_of` read
+   the freighter Design only on the Medium and General hulls, and the T-98
+   sizing builds Limited haulers too. Fixed by reading it on every Systems
+   hull (`a_hauler_is_built_where_its_trip_is_worth_its_minerals`).
+3. **A barrier storm.** With (2) fixed, seed 1 at the shipped premium built
+   25,301 → 648,743 freighters between 1,000 and 1,060 yr, while 707 Exchange
+   contracts settled and ore held at rocks rose 222 → 274 Mt. The backlog
+   hauler was sized by `freighter_hull`, which reads the rock's mining rate, so
+   a delivered pile at a small rock got a Limited hull whose hold is a sliver
+   of the pile. Fixed: a backlog hauler takes the Systems hull, of those the
+   center can pay for now, that lifts the most of the backlog per kilotonne
+   (`Simulation::backlog_hull`). After the fix, seed 1 holds 27,000–31,700
+   freighters to 1,500 yr at premiums 10 and 0.6, 87 s a run.
+
+## D.49 The forge's price, swept on the twin bed
+
+*Supports T-147. The author's ruling: forging cannot be evaluated without
+demand from the alt Designs paid in supers, and the forge-price decisions are
+made to maximize the tree metrics on the standard bed with those Designs, then
+made default. Bed: `examples/forge_sweep` — the standard galaxy (`Random`
+ground, trio homeworlds), 3 seats, 1,500 yr, every seat seeded twin Designs
+billed a third each in Red, Green and Blue. Objective: the geometric mean over
+Expansion, Growth and Production of each tree's stock divided by its value at
+the old default (`premium 10, floor 0, scale 1`) on the same seed (`AGENTS.md`
+§2's composite). Engine: after §D.48's fixes; the first two passes ran on the
+defective engine and are discarded.*
+
+Screen, seeds 1, 7, 42, 31337 (mean ± standard error of the composite):
+
+| premium | floor | scale | composite | Growth | Production | supers | apex |
+|---|---|---|---|---|---|---|---|
+| 0.3 | 0 | 1 | +9.5% ± 1.8 | +33.8% | −1.8% | −93.3% | −93.5% |
+| 1 | 0 | 1 | +9.0% ± 2.1 | +31.5% | −1.4% | −85.9% | −92.3% |
+| 0.6 | 0 | 0.3 | +8.5% ± 2.2 | +27.2% | +0.5% | −93.0% | −94.3% |
+| 0.6 | 0.3 | 1 | +8.4% ± 2.2 | +28.8% | −0.9% | −92.4% | −93.4% |
+| 1 | 0.5 | 1 | +8.4% ± 2.4 | +28.0% | −0.4% | −80.5% | −85.1% |
+| 0.6 | 0 | 1 | +8.1% ± 2.0 | +29.0% | −1.8% | −92.0% | −93.1% |
+| 0.6 | 0 | 3 | +7.0% ± 2.1 | +25.3% | −2.1% | −91.5% | −93.3% |
+| 3 | 0 | 1 | +5.5% ± 0.9 | +19.0% | −1.1% | −61.2% | −67.8% |
+| 3 | 0.5 | 1 | +3.5% ± 1.0 | +12.2% | −1.0% | −37.0% | −37.6% |
+| 10 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+
+Expansion moves by under 0.25% in every arm. Replication on seeds 2, 3, 5, 11
+(chosen against nothing) and the pooled eight:
+
+| config | seeds 1, 7, 42, 31337 | seeds 2, 3, 5, 11 | pooled, n = 8 |
+|---|---|---|---|
+| premium 0.3 | +9.47% ± 1.82, 4/4 | +7.99% ± 1.26, 4/4 | **+8.73% ± 1.06, 8/8** |
+| premium 1 | +9.01% ± 2.12, 4/4 | +8.04% ± 0.89, 4/4 | +8.52% ± 1.08, 8/8 |
+| premium 1, floor 0.5 | +8.37% ± 2.45, 4/4 | +7.24% ± 1.52, 4/4 | +7.80% ± 1.35, 8/8 |
+
+**Shipped: premium 0.3, floor 0, scale 1** — the highest pooled composite;
+premium 1 is inside its noise. The surface is a plateau below a premium of
+about 1 and falls above it: every arm that raises supers and apex lowers
+Growth, Expansion does not move, and Production moves by under 2.1% because
+the hulls paid in supers are a small part of the fleet (183–234 kt of hull per
+seat at the old default). **Inference, stated as one:** the tree composite
+prices forging only through those hulls, so it prefers basics spent on works
+to basics spent on supers; a final demand for supers larger than the twin
+hulls' would move the optimum up. Confidence about 70%; a bed whose Designs
+bill more of their price in supers would settle it.
 
 ## References
 

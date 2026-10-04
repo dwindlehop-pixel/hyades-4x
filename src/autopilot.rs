@@ -570,8 +570,29 @@ pub struct Doctrine {
     /// freight by the same factor. Any value above `1` puts a forge's bid
     /// ahead of every other center's, whose pressure is at most `1`.
     ///
-    /// **Placeholder magnitude**: `10.0`.
+    /// **Default `0.3`, chosen by Monte Carlo** ([`FORGE_PREMIUM`]).
     pub forge_premium: f64,
+
+    /// **What a full forge's price falls to**, as a multiple of an ordinary
+    /// center's full price (T-147, the author's ruling: a forge's price varies
+    /// with its holding). A forge pays
+    /// `floor + (forge_premium − floor) · B / (B + H)`, `H` everything it
+    /// holds and `B` [`Self::forge_holding_scale`] whole Band IV works stocks:
+    /// the full premium empty, falling toward this as it fills. `0` lets a
+    /// full forge stop bidding; `1` keeps it level with a center at full
+    /// pressure.
+    ///
+    /// **Default `0.0`**: the sweep found no effect of the floor beyond the
+    /// noise (appendix §D.49).
+    pub forge_price_floor: f64,
+
+    /// **The holding at which a forge's premium is halfway to its floor**, in
+    /// whole Band IV works stocks (`B` in [`Self::forge_price_floor`]'s
+    /// formula).
+    ///
+    /// **Default `1.0`**: `0.3` and `3` are inside the noise of it (appendix
+    /// §D.49).
+    pub forge_holding_scale: f64,
 
     /// **Sentry mass per kilotonne defended** (T-139,
     /// `Hyades_technology_tree.md` §9; the author's ruling: "more defense in
@@ -748,6 +769,8 @@ impl Default for Doctrine {
             doctrine_demand: crate::cards::WORKS_MIX_DEFAULT,
             refined_demand: [1.0; 4],
             forge_premium: FORGE_PREMIUM,
+            forge_price_floor: 0.0,
+            forge_holding_scale: 1.0,
             sentry_ratio: 0.0,
             sentry_loss_price: SENTRY_LOSS_PRICE,
             missile_pickets: false,
@@ -1860,10 +1883,16 @@ pub struct Standing<'a> {
 /// short of the limit where a center stops replacing after its first loss.
 pub const SENTRY_LOSS_PRICE: f64 = 3.0;
 
-/// **The forge premium** ([`Doctrine::forge_premium`]): what a forge's bid for
-/// a basic is worth against any other center's, whose pressure is at most `1`.
-/// **Placeholder magnitude.**
-pub const FORGE_PREMIUM: f64 = 10.0;
+/// **The forge premium** ([`Doctrine::forge_premium`]): what an empty forge's
+/// bid for a basic is worth against any other center's, whose pressure is at
+/// most `1`. **Chosen by Monte Carlo (T-147, the author's ruling: the forge's
+/// price is set to maximize the tree metrics on the standard bed with the
+/// twin hulls, `examples/forge_sweep`, appendix §D.49).** Pooled over eight
+/// seeds, `0.3` scores +8.73% ± 1.06 on the tree composite against `10`, 8/8
+/// seeds positive; `1` is +8.52% ± 1.08, inside the noise of it. Below `1` an
+/// empty forge bids under a center at full pressure, so forging takes the
+/// freight development does not.
+pub const FORGE_PREMIUM: f64 = 0.3;
 
 const ASSIGNABLE: [Role; 5] = [Role::Colonizer, Role::Miner, Role::Scout, Role::Picket, Role::Sentry];
 
@@ -1983,7 +2012,7 @@ impl<'a> Standing<'a> {
             // the Systems hulls with the colonizer, and the class is what tells
             // the two roles apart (T-121).
             .or_else(|| {
-                (matches!(hull, HullType::MediumSystems | HullType::GeneralSystems)
+                (matches!(hull, HullType::LimitedSystems | HullType::MediumSystems | HullType::GeneralSystems)
                     && class == Class::freighter_for(hull))
                 .then_some(Role::Freighter)
             })
@@ -2484,7 +2513,9 @@ mod tests {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
         let st = Standing::of(&doctrine);
-        for hull in [HullType::MediumSystems, HullType::GeneralSystems] {
+        // Every Systems hull the hauler can be sized to (T-98), the Limited one
+        // included: its Ford is a hauler, not the miner the hull also carries.
+        for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
             assert_eq!(st.role_of(hull, Class::freighter_for(hull)), Some(Role::Freighter));
         }
         assert_eq!(

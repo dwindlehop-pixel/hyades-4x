@@ -150,6 +150,14 @@ color-rotated, Growth +634% to +922%, supers +53–64%, apex +68–73%; on ident
 ground apex −58% ± 14. Engine cost +78% instructions per event on the telemetry
 bed. **Open:** the price's functional form (placeholder); whether a forge's
 price recovers once a final demand for supers draws its holding down (T-146).
+**Forge price chosen by Monte Carlo on the twin bed** (the author's
+ruling, appendix §D.49): `forge_premium` 10 → **0.3**, floor 0, scale 1;
++8.73% ± 1.06 on the tree composite, 8/8 seeds; supers forged fall ~94%.
+Three defects found on the way and fixed (appendix §D.48): NaN from an empty
+bank, Limited freighter orders resolving to the miner role, and a hauler storm
+after Exchange settlement. **Why empires buy a different number of whole Band
+IV works** (the spread in Growth, r = 0.94–0.97 against Growth per seat;
+appendix §D.50) — in progress.
 **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 

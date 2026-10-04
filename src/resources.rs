@@ -402,6 +402,14 @@ impl Minerals {
         if total + Price::new(1e-9) < amount {
             return None;
         }
+        // **An empty bank pays a crumb with nothing** (T-147). The tolerance
+        // above admits an `amount` up to 1e-9 against a bank of exactly zero —
+        // what an order paid wholly in supers leaves as its basic part, a
+        // rounding residue of `price − owed` — and `amount / 0` made every
+        // color `0 · ∞`, NaN, in replicated state (design law #16).
+        if total <= Price::ZERO {
+            return Some(Minerals::default());
+        }
         let f = amount / total;
         let taken = Minerals { cyan: self.cyan * f, magenta: self.magenta * f, yellow: self.yellow * f, ..*self };
         let mut taken = taken;
