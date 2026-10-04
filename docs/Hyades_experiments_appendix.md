@@ -3780,6 +3780,60 @@ so it changes between galaxies. Confidence about 60%. A census of the
 deposit within reach of each homeworld by color, against its archetype's
 bill and against the seat's colony count, would test it.
 
+## D.39 Identical ground: what separates the seats, and pricing by an empire's color gaps
+
+*Supports galaxy §2 and T-147. The author's direction: bring `Ground::Identical`'s
+spread toward `ColorRotated`'s; the thought, an empire with mineral gaps should
+raise prices. Beds: `examples/ground_census` (deposits within 40 ly of each
+homeworld, colonies and stockpile by color per seat over time) and
+`examples/colony_spread` (card-free, 3 seats, 1,500 yr, the 12 seeds of §D.37),
+against scratch builds of `HEAD` that never land.*
+
+**Where the seats differ.** On `Identical` ground the deposit within 40 ly of
+each homeworld differs between seats only by the two companions (about 2,800 kt
+each, against 10⁵–10⁶ kt of the wedge's main color). Seats mirror exactly to
+50 yr and part between 100 and 200 yr. The archetype enters the simulation in
+two places: the companions' colors (galaxy §3) and `scarcity_for`, a fixed
+rank weight of 2 on the archetype's poor color in every mineral score.
+
+**Arms** (mean spread over 12 galaxies; colonies summed over seats move by
+at most 0.5 of 3,475 on `Identical` and 3,547 on `Random` in every arm):
+
+| arm (scratch) | `Random` | `Identical` | `ColorRotated` |
+|---|---|---|---|
+| shipped: archetype weight `[1, 1, 2]` on the poor color | 73.5 | 48.0 | 19.3 |
+| weight off: `[1, 1, 1]` | 47.8 | 32.1 | 33.6 |
+| live weight from the empire's gap to its next bills, gain 1 | — | 28.5 | — |
+| same, gain 3 | — | 31.6 | — |
+| live weight from holdings, gain 1 | 60.0 | 24.3 | 31.5 |
+| same, gain 3 | — | 35.1 | — |
+| weight off, every seat's companions Cyan + Magenta | — | 17.3 | — |
+| live weight from holdings, gain 1, same companions | — | 19.4 | — |
+
+The two live weights, each normalized so the three sum to 4 as `[1, 1, 2]`
+does: *gap to next bills*, `1 + g·Σ deficit_c / Σ bill_c` over the empire's
+centers; *holdings*, `1 + g·(1 − cover_c / max cover)` with `cover_c` the
+empire's holding of color `c` (owned worlds and outposts) over its works-mix
+weight. At the start, with the companions' colors mined and the third empty,
+the holdings weight at gain 1 is `[1, 1, 2]` on the empty color — the
+archetype weight, read from the bank.
+
+Paired by galaxy (mean ± standard error of the per-galaxy difference, an
+estimate): on `Identical`, weight off −16.1 ± 8.4 against shipped (1.9 SE);
+holdings weight −23.6 ± 9.7 (2.4 SE); holdings against weight off −7.5 ± 5.5
+(1.4 SE, not resolved). On `ColorRotated`, weight off +14.2 ± 5.2 (2.8 SE) and
+holdings weight +12.0 ± 4.7 (2.6 SE): both raise the spread there. On
+`Random`, weight off −25.8 ± 7.6 (3.4 SE, 11/12 lower).
+
+**Inference, stated as one:** the fixed weight compensates each archetype for
+the color its companions lack. It fits the ground only when the ground's colors
+turn with the archetype (`ColorRotated`); on `Identical` and `Random` ground it
+sends each seat after a different color of the same deposits. Removing both
+per-seat differences on `Identical` ground (weight and companions) reaches the
+target. Confidence about 70%: the same-companion arms rest on 12 galaxies, and
+a second set of 12 seeds the arms were not chosen against would change it if
+their spread came out above 30.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

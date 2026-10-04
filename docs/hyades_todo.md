@@ -106,8 +106,12 @@ with an even works mix as well (scratch). Identical ground still ran away once
 loop starved homeworlds; freight is now routed by demand price (the author's
 ruling). Spread at 1,500 yr on 12 galaxies, one build (`GalaxyConfig::ground`):
 random mean 73.5 (was 223), identical ground with the same colors 48.0,
-identical ground with colors stepped per seat 19.3 — the target. **What would
-settle the rest:** the author's choice of default ground, or another way to
+identical ground with colors stepped per seat 19.3 — the target. On
+identical ground the seats differ by the archetype's fixed rank weight on its
+poor color and by its companions' colors (appendix §D.39); removing both
+reaches 17.3, and a live weight priced from the empire's holdings plus equal
+companions 19.4, while the live weight alone raises `ColorRotated` to 31.5
+(scratch). **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 
 ---
