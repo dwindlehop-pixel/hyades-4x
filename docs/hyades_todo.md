@@ -157,7 +157,11 @@ Three defects found on the way and fixed (appendix §D.48): NaN from an empty
 bank, Limited freighter orders resolving to the miner role, and a hauler storm
 after Exchange settlement. **Why empires buy a different number of whole Band
 IV works** (the spread in Growth, r = 0.94–0.97 against Growth per seat;
-appendix §D.50) — in progress.
+appendix §D.50): purchases = eligible Band III centers × completion share. On
+random ground the stalled centers lack one color that their own empire holds
+at 2.7–64x the shortfall elsewhere (delivery inside the empire); on identical
+ground every seat lacks the same color and no seat has it to sell. **Open:**
+the remedy for the random-ground half (price or freight inside the empire).
 **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 

@@ -4297,6 +4297,57 @@ to basics spent on supers; a final demand for supers larger than the twin
 hulls' would move the optimum up. Confidence about 70%; a bed whose Designs
 bill more of their price in supers would settle it.
 
+## D.50 Why empires buy a different number of whole Band IV works
+
+*Supports T-147. Bed: the twin bed of §D.49 at the new default (premium 0.3),
+3 seats, 1,500 yr, card-free; scratch census builds of `examples/empire_spread`
+reading the snapshot at the horizon and the Production log. Seeds 1, 7, 42,
+31337 on `Random` and `Identical` ground.*
+
+**Growth per seat tracks the count of whole Band IV works purchases**: the
+correlation (Pearson r) between a seat's Growth stock and its count of
+purchases is 0.94–0.97 across the grounds measured. The count decomposes as
+
+> purchases = centers eligible (works at Band III, ceiling above III) × share of them that completed the purchase
+
+and each factor varies, by different causes on the two grounds.
+
+| ground | seed | eligible per seat | bought per seat | completion | unbought, holding the 780 kt total but short a color | unbought, short in total |
+|---|---|---|---|---|---|---|
+| Random | 1 | 197 / 199 / 167 | 72 / 70 / 65 | 37% / 35% / 39% | 44 / 41 / 44 | 81 / 88 / 58 |
+| Random | 7 | 214 / 218 / 211 | 125 / 104 / 70 | 58% / 48% / 33% | 28 / 40 / 62 | 61 / 74 / 79 |
+| Identical | 1 | 44 / 41 / 45 | 5 / 0 / 1 | 11% / 0% / 2% | 32 / 37 / 40 | 7 / 4 / 4 |
+| Identical | 7 | 22 / 35 / 17 | 3 / 2 / 2 | 14% / 6% / 12% | 19 / 32 / 15 | 0 / 1 / 0 |
+
+Across the four seeds per ground, eligible centers run 167–260 per seat on
+random ground and 12–45 on identical ground; completion runs 29–58% and 0–11%.
+
+**Random ground: the missing color is in the same empire.** Seed 7's three
+seats are equally eligible (214 / 218 / 211) and complete 58 / 48 / 33%. The
+unbought centers that hold the total lack one color, and the empire holds that
+color above its bills elsewhere: seed 7 seat 0 is short 15.0 Mt of Cyan at its
+stalled centers and holds 106.7 Mt of Cyan above bills; seat 1 is short
+22.2 Mt of Yellow and holds 110.2 Mt above bills; seed 42 seat 0 is short
+35.5 Mt of Yellow and holds 131.4 Mt. Every seat measured (6 of 6) holds at
+least 2.7x its shortfall in each color it is short. The limit on random ground
+is delivery inside the empire, not supply.
+
+**Identical ground: the missing color is absent from every seat.** Unbought
+centers hold 2.5–6.3 Mt, 3–8x the 780 kt bill, and every seat on a seed lacks
+the same color: seed 1 is short 8.3–12.4 Mt of Cyan per seat against 1–7 kt
+of Cyan held above bills; seed 7 is short 1.7–5.1 Mt of Magenta against
+0–1 kt. Because all seats share the gap, no seat has Cyan (seed 1) or Magenta
+(seed 7) to sell, and an Exchange trade cannot fill it.
+
+**Inference, stated as one:** on random ground the spread in Growth is a spread
+in how much of each empire's own surplus color reaches its stalled Band III
+centers, so a remedy acts on freight priority or price inside the empire; on
+identical ground the spread comes from which seat happens to complete the few
+purchases the shared supply allows, and no change to trade can raise the count
+for every seat. Confidence about 75% for the random-ground half, from 6 seats on
+two seeds; a census of freight deliveries of the short color to the stalled
+centers, per seat, would raise or refute it.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
