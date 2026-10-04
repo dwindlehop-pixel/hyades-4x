@@ -126,6 +126,21 @@ across grounds) and is bimodal — whether an empire completes the color-split
 780-kt whole-Band-IV bill before its forge draws its freight. Forge premium 1
 and a bill paid in total each cut Growth's spread by moving every level
 (+37% to +2,781%); supers forged vary 0.10–0.15, mechanism not yet traced.
+**Infrastructure in fractions of a Band** (`sim::INFRA_STEP_BANDS`, shipped
+1.0; appendix §D.44): steps of 0.5–0.0625 Band lower Growth's spread by
+0.06–0.16, none of those differences beyond 2 standard errors, and at 0.25
+Band or finer they cut Production and supers by 24–43%. The author's choice.
+**The color a saving center lacks was priced at zero** (appendix §D.45):
+prices read the bank's total against the bill's, so a center long two colors
+bid nothing for the third. **Landed: each color is priced by its own
+shortfall** (`Simulation::color_pressure_of`, R-P19): color stalls −15.2% ±
+2.2 center-years on random ground, 12/12 galaxies; supers +13–15% on random
+and color-rotated ground; apex −16% on identical; Growth's spread not
+resolved. Stalls remain on about 1,100 centers per galaxy: the shortfall is
+held above bills elsewhere in the same empire (98–100%), mostly at outposts,
+and a standing forge takes 72–96% of its seat's freight (seed 1). **Open —
+the next price:** a forge whose price falls as its holding rises, measured on
+the 12 galaxies (R-P19 rules out a cap).
 **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 

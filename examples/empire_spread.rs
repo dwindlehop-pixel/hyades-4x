@@ -22,11 +22,18 @@
 //! `ES_TRACE=1` (each century, per seat: works in total, on its largest world,
 //! and whether that world is its homeworld; and every infrastructure purchase
 //! of whole Band IV, with the world's generated deposit and ceiling);
-//! `ES_WATCH=<planet id>` prints that center's production decisions.
+//! `ES_WATCH=<planet id>` prints that center's production decisions and,
+//! each century, its bank by color.
+//!
+//! Every seed also prints its **color stalls**: per seat, the center-years
+//! spent holding at least the next whole Band's total while unable to pay it
+//! in every color, how many centers stalled, and the largest bank held in
+//! that state.
 //!
 //! Run: `cargo run --release --example empire_spread -- <seats> <horizon>`.
-use hyades_engine::galaxy::{Galaxy, GalaxyConfig, Ground, Homeworlds};
+use hyades_engine::galaxy::{Galaxy, GalaxyConfig, Ground, Homeworlds, PlayerId};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
+
 use hyades_engine::resources::Material;
 use hyades_engine::sim::{SimConfig, Simulation};
 use std::io::Write;
@@ -62,6 +69,7 @@ fn main() {
         _ => Homeworlds::Trio,
     };
     let trace = std::env::var("ES_TRACE").is_ok_and(|v| v.trim() == "1");
+    let watch: Option<usize> = std::env::var("ES_WATCH").ok().and_then(|v| v.trim().parse().ok());
     println!("empire_spread: {seats} seats, horizon {horizon} yr, {ground:?}, {homeworlds:?}, seeds {seeds:?}");
     std::io::stdout().flush().ok();
     let mut cvs: Vec<[f64; 5]> = Vec::new();
@@ -86,6 +94,9 @@ fn main() {
         let filter = LogFilter::none().with(LogCategory::Production);
         sim.set_log_filter(if trace { filter.with(LogCategory::Mining) } else { filter });
         let mut acc = vec![[0.0f64; 3]; seats];
+        // Of the shortfall at the 500-year samples, how much the same empire
+        // held above its bills in the same color.
+        let (mut covered_at, mut short_at) = (0.0f64, 0.0f64);
         let mut prev = vec![[0.0f64; 3]; seats];
         let mut prev_t = 0.0;
         let mut next = SAMPLE_YEARS;
@@ -123,6 +134,34 @@ fn main() {
                 }
                 println!("{line}");
             }
+            if let Some(w) = watch.filter(|_| (next % 100.0).abs() < 1e-9) {
+                let pl = &snap.planets[w];
+                let c = hyades_engine::resources::Basic::ALL.map(|b| pl.stockpile.get_basic(b));
+                println!("{seed:>5} watch {w}: t {next:.0} bank C/M/Y {:.1}/{:.1}/{:.1} kt", c[0], c[1], c[2]);
+            }
+            if (next % 500.0).abs() < 1e-9 {
+                // Shortfall against the centers' next bills, beside what the
+                // same empire holds above them, per color.
+                let (mut short, mut long) = ([0.0f64; 3], [0.0f64; 3]);
+                let mut away = [0.0f64; 3];
+                for p in 0..seats as u32 {
+                    let (d, l) = (sim.unmet_color_demand(PlayerId(p)), sim.color_surplus(PlayerId(p)));
+                    for c in 0..3 {
+                        short[c] += d[c].kilotons();
+                        long[c] += l[c].kilotons();
+                    }
+                    let w = sim.outpost_holdings(PlayerId(p));
+                    for (c, b) in hyades_engine::resources::Basic::ALL.iter().enumerate() {
+                        away[c] += w.get_basic(*b);
+                    }
+                    covered_at += (0..3).map(|c| d[c].kilotons().min(l[c].kilotons())).sum::<f64>();
+                    short_at += (0..3).map(|c| d[c].kilotons()).sum::<f64>();
+                }
+                println!(
+                    "{seed:>5} {next:>5.0} yr: short C/M/Y {:.0}/{:.0}/{:.0} kt, held above bills {:.0}/{:.0}/{:.0} kt, of it at outposts {:.0}/{:.0}/{:.0}",
+                    short[0], short[1], short[2], long[0], long[1], long[2], away[0], away[1], away[2]
+                );
+            }
             for p in 0..seats {
                 for m in 0..3 {
                     acc[p][m] += 0.5 * (now[p][m] + prev[p][m]) * (t - prev_t);
@@ -154,7 +193,7 @@ fn main() {
                 }
             }
         }
-        if let Some(w) = std::env::var("ES_WATCH").ok().and_then(|v| v.trim().parse::<u32>().ok()) {
+        if let Some(w) = watch.map(|w| w as u32) {
             // One center's own decisions: when it decided, what it held and
             // what it chose.
             let mut last = -100.0;
@@ -197,6 +236,15 @@ fn main() {
                     *by.entry((player, (r.time / 100.0) as u64, at.0)).or_default() += amount;
                 }
             }
+            // Worlds that stand as forges at the end of the run.
+            let forges: std::collections::BTreeSet<u32> = sim
+                .snapshot()
+                .planets
+                .iter()
+                .enumerate()
+                .filter(|(_, pl)| pl.pop_level >= hyades_engine::units::BandTier::IV)
+                .map(|(k, _)| k as u32)
+                .collect();
             for p in 0..seats as u32 {
                 for c in 1..=5u64 {
                     let mut v: Vec<(u32, f64)> = by
@@ -211,15 +259,55 @@ fn main() {
                         .take(3)
                         .map(|(w, a)| format!("{w}: {a:.0} ({:.0}%)", 100.0 * a / total.max(1e-9)))
                         .collect();
+                    let to_forges: f64 = v.iter().filter(|(w, _)| forges.contains(w)).map(|x| x.1).sum();
                     println!(
-                        "{seed:>5} freight s{p} {}00s: {total:.0} kt to {} centers; top {}",
+                        "{seed:>5} freight s{p} {}00s: {total:.0} kt to {} centers, {:.0}% to forges; top {}",
                         c,
                         v.len(),
+                        100.0 * to_forges / total.max(1e-9),
                         top.join(", ")
                     );
                 }
             }
         }
+        // **Color stalls**: a center that holds at least its next whole Band's
+        // total but cannot pay it in every color. Each interval from one of
+        // its decisions to the next counts while the earlier one stalled.
+        let mut last: std::collections::BTreeMap<u32, (f64, bool, u32)> = Default::default();
+        let mut stalled = vec![0.0f64; seats];
+        let mut stalled_bank = vec![0.0f64; seats];
+        let mut stalled_centers = vec![std::collections::BTreeSet::new(); seats];
+        let close = |at: Option<(f64, bool, u32)>, now: f64, stalled: &mut [f64]| {
+            if let Some((t, true, p)) = at {
+                stalled[p as usize] += now - t;
+            }
+        };
+        for r in sim.log().iter() {
+            if let LogEvent::ProductionDecision { player, center, stockpile, infra_cost, can_afford_infra, .. } =
+                r.event
+            {
+                let stall = stockpile >= infra_cost && !can_afford_infra && infra_cost > 0.0;
+                close(last.get(&center.0).copied(), r.time, &mut stalled);
+                if stall {
+                    stalled_centers[player as usize].insert(center.0);
+                    stalled_bank[player as usize] = stalled_bank[player as usize].max(stockpile);
+                }
+                last.insert(center.0, (r.time, stall, player));
+            }
+        }
+        for at in last.values() {
+            close(Some(*at), horizon, &mut stalled);
+        }
+        println!(
+            "{seed:>5}: color stalls per seat: center-years {:?}, centers {:?}, largest stalled bank {:?} kt",
+            stalled.iter().map(|v| v.round()).collect::<Vec<_>>(),
+            stalled_centers.iter().map(|c| c.len()).collect::<Vec<_>>(),
+            stalled_bank.iter().map(|v| v.round()).collect::<Vec<_>>()
+        );
+        println!(
+            "{seed:>5}: shortfall held above bills elsewhere in the empire {:.1}%",
+            100.0 * covered_at / short_at.max(1e-9)
+        );
         let mut forged = vec![[0.0f64; 2]; seats];
         for r in sim.log().iter() {
             if let LogEvent::Synthesized { player, material, made, .. } = r.event {

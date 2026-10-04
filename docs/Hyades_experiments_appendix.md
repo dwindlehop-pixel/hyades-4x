@@ -4016,6 +4016,110 @@ cliff the shipped economy sits against, and the spread is which empires cross
 it before forging begins. Confidence about 65%; the per-galaxy differences
 carry standard errors near half their size.
 
+## D.44 Infrastructure bought in fractions of a Band
+
+*Supports T-147. The author's direction: buy infrastructure in a unit smaller
+than a whole Band, at every stage, to smooth the variation between empires —
+try 0.5, 0.25, 0.125 and 0.0625 Band. Built as `sim::INFRA_STEP_BANDS`
+(shipped 1.0, bit-identical to the whole-Band engine); each arm a scratch
+build with the constant changed. Bed: `examples/empire_spread`, `Random`
+ground, the 12 seeds of §D.37, 3 seats, 1,500 yr. Paired over galaxies, arm
+minus shipped, mean ± standard error; levels are the mean relative change of
+the galaxy total.*
+
+| step (Band) | Expansion cv | Growth cv | Production cv | supers cv | apex cv | Growth level | Production level | supers level |
+|---|---|---|---|---|---|---|---|---|
+| 1.0 (shipped) | 0.070 | 0.423 | 0.040 | 0.125 | 0.119 | — | — | — |
+| 0.5 | +0.002 ± 0.004 | −0.059 ± 0.092 | +0.001 ± 0.010 | +0.039 ± 0.042 | +0.048 ± 0.029 | +2.4% ± 16.2 | −10.1% ± 1.1 | −7.8% ± 5.1 |
+| 0.25 | +0.020 ± 0.017 | −0.156 ± 0.088 | +0.042 ± 0.019 | +0.007 ± 0.044 | +0.019 ± 0.032 | −26.5% ± 16.7 | −24.0% ± 1.9 | −32.7% ± 5.1 |
+| 0.125 | +0.066 ± 0.033 | −0.136 ± 0.095 | +0.107 ± 0.023 | +0.083 ± 0.028 | +0.099 ± 0.037 | −51.3% ± 19.0 | −32.1% ± 2.4 | −41.9% ± 5.7 |
+| 0.0625 | −0.029 ± 0.010 | −0.162 ± 0.084 | +0.076 ± 0.027 | +0.048 ± 0.052 | +0.053 ± 0.018 | −54.3% ± 18.7 | −31.4% ± 1.7 | −42.7% ± 5.1 |
+
+Every finer step lowers Growth's spread by 0.06–0.16, and none of those
+differences reaches 2 standard errors (the largest, at 0.0625, is 1.9). At
+0.25 Band and below the spread in Production, supers and apex rises, and the
+levels of Production and supers fall by 24–43%.
+
+**One mechanism is measured, in §D.45:** at 0.0625 Band, pricing each color by
+its own shortfall raises Growth's level +86.7% ± 7.2 over the 0.0625-Band arm
+alone, 12 of 12 galaxies. A smaller step is a smaller bill, and the
+total-based pressure that priced a color reached zero once a bank passed it.
+Against the shipped engine the combined arm still moves Production −28.4% ±
+2.0, supers −39.1% ± 4.7 and apex −32.8% ± 4.0, so that mechanism is not the
+whole of the loss. **Inference, stated as one:** the remaining loss comes
+from more, smaller purchases displacing hull builds at the yard. Confidence
+about 40%; a per-decision census of what the yard builds at each step size
+would settle it.
+
+## D.45 The color a saving center lacks was priced at zero
+
+*Supports T-147 and R-P19. The author's question: "Help the saving colony
+finish its colors. Why aren't haulers being directed towards the potential
+forge?" Bed: `examples/empire_spread` (now printing color stalls, the
+shortfall census and freight to forges), 3 seats, 1,500 yr, the 12 seeds of
+§D.37.*
+
+**The case.** Seed 1, `ColorRotated`, world 2115 (`ES_WATCH=2115`): bank
+C/M/Y 145.7 / 671.2 / 854.1 kt at 400 yr against a 780-kt whole-Band-IV bill
+that asks about 260 / 130 / 390 at the works mix. It held 1,292–1,672 kt from
+370 yr to the end of the run without paying. Its ceiling is Band III .850, so
+its population can never reach Band IV and it is not a potential forge; the
+forge in each seat is the homeworld, standing from about 400 yr.
+
+**The mechanism, from the code and then by ablation.** Every price a center
+posts — its Exchange bid, freight's delivery score and the center-to-center
+offer test — was `base · demand · mineral_pressure`, and `mineral_pressure`
+was `1 − bank total / bill total`. At 1,671 kt against 780 it read 0, so Cyan
+was priced at 0: no bid, and a hold of Cyan worth nothing to the center that
+lacked it. The scratch arm priced each color by its own shortfall,
+`1 − held_c / bill_c`, and changed nothing else.
+
+**Color stalls** — a center holding at least its next bill's total and unable
+to pay it in every color — are not rare: about 1,300 centers per galaxy on
+`Random` and `ColorRotated` (1,800 on `Identical`) and about 1 million
+center-years per galaxy, about 740 years per stalled center. Paired, per-color
+arm against shipped (log-ratio mean, standard error):
+
+| ground | stalled center-years | stalled centers |
+|---|---|---|
+| `Random` | −15.2% ± 2.2, 12/12 lower | −18.0% ± 2.9, 12/12 |
+| `ColorRotated` | −12.9% ± 2.4, 11/12 | −14.4% ± 3.0, 11/12 |
+| `Identical` | −4.0% ± 1.2, 12/12 | −4.1% ± 1.0, 11/12 |
+
+**Tree metrics,** same pairing (cv difference; level relative change):
+
+| ground | Growth cv | Growth level | supers cv | supers level | apex cv | apex level |
+|---|---|---|---|---|---|---|
+| `Random` | +0.057 ± 0.088 | +1.9% ± 16.7 | +0.037 ± 0.037 | +15.2% ± 5.3 | +0.068 ± 0.029 | +5.5% ± 5.7 |
+| `ColorRotated` | −0.174 ± 0.119 | +25.8% ± 16.7 | +0.006 ± 0.044 | +13.4% ± 4.8 | +0.042 ± 0.043 | −3.7% ± 4.2 |
+| `Identical` | −0.005 ± 0.098 | +9.3% ± 14.1 | −0.019 ± 0.016 | +2.0% ± 3.5 | +0.004 ± 0.052 | −16.3% ± 6.6 |
+
+Expansion and Production move by under 0.011 in cv and under 1% in level on
+every ground. No Growth-spread difference reaches 2 standard errors. Supers
+forged rise by 2.8 and 2.9 standard errors on `Random` and `ColorRotated`;
+apex's spread on `Random` rises by 2.3 and its level on `Identical` falls by
+2.5.
+
+**What the per-color price does not fix — delivery.** Shortfall census at 500,
+1,000 and 1,500 yr, 4 seeds, `Random`: the color shortfall summed over an
+empire's centers is 1.3–7.6 Mt per color, and the same empire holds 39–634 Mt
+of that color above its centers' own bills: 98.0–100% of the shortfall is
+covered color by color, on both engines. On seed 1, 62–95% of that surplus
+is ore waiting at outposts, and center banks above their own bills hold
+7–60 Mt per color, 4.6–10.8 times the whole shortfall. Per-color pricing did not lower the summed shortfall.
+**Freight to forges**, seed 1, `ColorRotated`, both engines: a seat's forge
+takes 40–70% of its deliveries in the 400s and 72–96% in the 500s. A forge's
+price is full on every color times `forge_premium` = 10, and its want is a
+balanced set up to the most it holds of any color, so it rises as it fills.
+
+**Inference, stated as one:** the remaining stalls are set by where haulers
+go, and the forge's fixed 10× price with a want that grows as it fills is what
+outbids the stalled centers once a forge stands. Confidence about 60%, from
+one galaxy's freight trace; the forge share on all 12 galaxies, and an arm
+whose forge price falls as its holding rises, would settle it. Landed: the
+per-color price (`Simulation::color_pressure_of`), bit-identical to the
+measured arm on seeds 1 and 7.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

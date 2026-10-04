@@ -168,7 +168,8 @@ struct Holdings {
 struct CenterBid {
     dest: Entity,
     at: Vec3,
-    pressure: f64,
+    /// [`Simulation::demand_of`] per color.
+    pressure: [f64; 3],
     doctrine: Doctrine,
     works: cards::Works,
     want: [Price; 3],
@@ -9284,28 +9285,51 @@ impl Simulation {
     /// (politics §3.2, T-84).
     ///
     /// ```text
-    /// wtp = base_value[c] · doctrine_demand[c] · mineral_pressure(center)
+    /// wtp_c = base_value[c] · doctrine_demand[c] · color_pressure_c(center) · forge premium
     /// ```
     ///
     /// The fourth term §3.2 names — `risk_discount(counterparty)` — is not here
     /// because it is a property of *whom you are trading with*, not of what you
     /// want, so it belongs at match time and needs reputation (T-86).
     ///
-    /// Every term is already ratified or already exists: `mineral_pressure_of`
-    /// is the engine's, and the two Doctrine fields default to the works mix
+    /// The two Doctrine fields default to the works mix
     /// (`Hyades_industry.md` §6.10) rather than to a second independent
     /// statement of what an empire wants.
     fn willingness_to_pay(&self, center: Entity, color: Basic, doctrine: &Doctrine) -> f64 {
         let i = color as usize;
-        doctrine.base_value[i] * doctrine.doctrine_demand[i] * self.demand_of(center, doctrine)
+        doctrine.base_value[i] * doctrine.doctrine_demand[i] * self.demand_of(center, i, doctrine)
     }
 
-    /// **How hard a center pulls on basics**: its mineral pressure, times
-    /// [`Doctrine::forge_premium`] at a forge — the one factor the Exchange's
-    /// bids, a center's offer test and freight's delivery score all read, so
-    /// a forge outbids and out-pulls every other use by the same margin.
-    fn demand_of(&self, center: Entity, doctrine: &Doctrine) -> f64 {
-        self.mineral_pressure_of(center) * self.forge_premium_at(center, doctrine)
+    /// **How hard a center pulls on color `i`**: its [`Self::color_pressure_of`],
+    /// times [`Doctrine::forge_premium`] at a forge — the one factor the
+    /// Exchange's bids, a center's offer test and freight's delivery score all
+    /// read, so a forge outbids and out-pulls every other use by the same
+    /// margin.
+    fn demand_of(&self, center: Entity, i: usize, doctrine: &Doctrine) -> f64 {
+        self.color_pressure_of(center, i) * self.forge_premium_at(center, doctrine)
+    }
+
+    /// **A center's pressure on one color** (T-147, R-P19): the share of its
+    /// next works bill in that color it does not hold, `1 − held_c / bill_c`,
+    /// clamped to `[0, 1]`; `1` at a forge, which forges whatever it holds.
+    ///
+    /// *Supersedes* the total-based [`Self::mineral_pressure_of`] in every
+    /// price. That one reads the bank's total against the bill's total, so a
+    /// center holding more than its bill in all but one color read zero and
+    /// priced the color it lacked at zero: no bid on the Exchange, no hauler
+    /// routed to it, and its bank stood there for the rest of the run
+    /// (appendix §D.45).
+    fn color_pressure_of(&self, center: Entity, i: usize) -> f64 {
+        if self.is_forge(center) {
+            return 1.0;
+        }
+        let Some(o) = self.world.owner.get(center).copied() else { return 0.0 };
+        let Some(bill) = self.next_bill(center, o) else { return 0.0 };
+        if bill[i] <= Price::ZERO {
+            return 0.0;
+        }
+        let held = self.held_at(center).map_or(0.0, |m| m.get_basic(Basic::ALL[i]));
+        (1.0 - held / bill[i].kilotons().max(1e-12)).clamp(0.0, 1.0)
     }
 
     /// [`Doctrine::forge_premium`] at a forge, `1` elsewhere.
@@ -10039,6 +10063,32 @@ impl Simulation {
         out
     }
 
+    /// **What an empire holds above its centers' next bills**, per color: each
+    /// center's bank less its next works bill, where positive, summed — and
+    /// the ore waiting at outposts, which no bill claims. A forge keeps its
+    /// basics for synthesis and contributes nothing.
+    ///
+    /// Read beside [`Self::unmet_color_demand`]: a color short at some
+    /// centers while this is large for the same color is held in the wrong
+    /// place, which is a delivery problem and not a supply one.
+    pub fn color_surplus(&self, p: PlayerId) -> [Price; 3] {
+        let mut out = [Price::ZERO; 3];
+        for &e in &self.owned_planets[p.0 as usize] {
+            if self.is_forge(e) {
+                continue;
+            }
+            let (Some(bill), Some(bank)) = (self.next_bill(e, p), self.held_at(e)) else { continue };
+            for (i, &c) in Basic::ALL.iter().enumerate() {
+                out[i] += (Price::new(bank.get_basic(c)) - bill[i]).max(Price::ZERO);
+            }
+        }
+        let away = self.outpost_holdings(p);
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            out[i] += Price::new(away.get_basic(c));
+        }
+        out
+    }
+
     /// **An empire's ore waiting at outposts**, summed over every pile it holds.
     ///
     /// Delivered ore lands here, not in a bank (§10.6) — so a census that reads
@@ -10263,6 +10313,11 @@ impl Simulation {
         4.0 * (1.0 + g) / (3.0 + g)
     }
 
+    /// **A center's pressure on its whole bank**: `1 − total held / total of
+    /// the next works bill`, clamped; `1` at a forge. Read by `rank`, the
+    /// mining crew and the `λ = 0` routing oracle. Prices read the per-color
+    /// [`Self::color_pressure_of`], because a total cannot see the one color
+    /// a bill is waiting on.
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
         // A forge wants basics without end: whatever it holds it forges.
         if self.is_forge(center) {
@@ -10451,7 +10506,7 @@ impl Simulation {
         Some(CenterBid {
             dest,
             at: *self.world.position.get(dest)?,
-            pressure: self.demand_of(dest, &self.doctrine_of(owner.0 as usize)),
+            pressure: core::array::from_fn(|i| self.demand_of(dest, i, &self.doctrine_of(owner.0 as usize))),
             doctrine: self.doctrine_of(owner.0 as usize),
             works: self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default(),
             want: want.basic,
@@ -10497,14 +10552,14 @@ impl Simulation {
         let Some(from) = self.world.position.get(origin) else { return out };
         let t = math::ship_travel_years(from.distance(bid.at), accel);
         let discount = transcendental::exp_fast(-self.config.trade_decay_lambda * t);
-        let own = self.mineral_pressure_of(origin);
         // `willingness_to_pay`, term for term, on both sides of §8.1's test.
         for i in 0..3 {
             if abundance[i] <= Price::ZERO {
                 continue;
             }
             let k = bid.doctrine.base_value[i] * bid.doctrine.doctrine_demand[i];
-            if k * bid.pressure * discount > k * own {
+            let own = self.color_pressure_of(origin, i);
+            if k * bid.pressure[i] * discount > k * own {
                 out.basic[i] = abundance[i].min(bid.want[i]);
             }
         }
@@ -16437,11 +16492,13 @@ mod tests {
         );
 
         // **Priced by demand** (the author's ruling; supersedes R-IND17's
-        // completion score). A third center needing *everything* wants the same
-        // Yellow at full pressure — it holds nothing toward its bill — so it
-        // pays more for it than the center that is short only Yellow, and the
-        // hauler goes there. And a hold nobody wants is routed nowhere: the
-        // caller sends it to its own home center, not to a tie-break.
+        // completion score), **one color at a time** (T-147). A third center
+        // needing *everything* holds no Yellow toward its bill, and neither
+        // does the center short only Yellow, so each pays full pressure for
+        // Yellow and they pay the same: what a center holds of the other
+        // colors does not move the price of this one. And a hold nobody wants
+        // is routed nowhere: the caller sends it to its own home center, not
+        // to a tie-break.
         let empty = sim.planet_entity[17];
         sim.claim_planet(empty, PlayerId(0));
         sim.world.factors.insert(
@@ -16459,13 +16516,13 @@ mod tests {
         let doctrine = sim.doctrine_of(0);
         let at_a = sim.demand_value(a, PlayerId(0), &yellow, &doctrine, false);
         let at_empty = sim.demand_value(empty, PlayerId(0), &yellow, &doctrine, false);
-        assert!(at_empty > at_a, "the center holding nothing pays more for Yellow: {at_empty} vs {at_a}");
+        assert_eq!(at_empty, at_a, "both hold no Yellow toward a Yellow bill");
         assert_eq!(
             sim.demand_value(a, PlayerId(0), &magenta, &doctrine, false),
             0.0,
             "a color nobody lacks is worth nothing"
         );
-        assert_eq!(sim.best_delivery_center(PlayerId(0), here, &yellow, accel), Some(empty));
+        assert_eq!(sim.best_delivery_center(PlayerId(0), here, &yellow, accel), Some(a), "a tie, broken by entity id");
         assert_eq!(sim.best_delivery_center(PlayerId(0), here, &Minerals::default(), accel), None, "an empty hold");
     }
 
@@ -17055,19 +17112,23 @@ mod tests {
 
     /// **R-MX8, the author's ruling: a hauler may haul from a center with an
     /// abundance to a center with demand, under the Exchange's journey
-    /// discount.** Asserted in both directions on one fixture: the offer is
-    /// the abundance in the color the buyer wants and nothing the origin's
-    /// own bill claims; and the same offer is withdrawn when the buyer is
-    /// moved far enough that its discounted price falls below the origin's.
+    /// discount.** The offer is the abundance in the color the buyer wants and
+    /// nothing the origin's own bill claims. A center long a color holds it
+    /// above its bill, so its own price for that color is zero (T-147,
+    /// [`Simulation::color_pressure_of`]) and the offer stands at any distance:
+    /// the discount ranks the centers a hauler could carry to, it does not
+    /// withhold the color. The test still binds at a forge, whose price for
+    /// every color is full, so a forge keeps its basics from an ordinary
+    /// center.
     #[test]
     fn a_center_offers_its_abundance_only_where_the_discounted_price_wins() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
         let (origin, dest, _) = two_centers(&mut sim, 0.05);
         let want = sim.wanted_here(dest, PlayerId(0), &Minerals::default());
         assert!(want.iter().all(|w| *w > Price::ZERO), "the empty center wants every color");
-        let p_origin = sim.mineral_pressure_of(origin);
-        assert!(p_origin > 0.0 && p_origin < 1.0, "origin is long Yellow and still under pressure: {p_origin}");
-        assert_eq!(sim.mineral_pressure_of(dest), 1.0);
+        assert_eq!(sim.color_pressure_of(origin, 2), 0.0, "origin is long Yellow");
+        assert_eq!(sim.color_pressure_of(origin, 0), 1.0, "and holds no Cyan");
+        assert_eq!(sim.color_pressure_of(dest, 2), 1.0);
 
         let accel = G * sim.thrust_to_mass(HullType::MediumSystems, Kilotons::new(10.0));
         let none = [Price::ZERO; 4];
@@ -17077,15 +17138,21 @@ mod tests {
         let expect = Price::new(0.05).min(want[2]);
         assert!((near[2] - expect).kilotons().abs() < 1e-12, "the Yellow abundance, capped at the want: {near:?}");
 
-        // The same buyer 200 ly away: `exp(−λt)` at λ = 0.01 is below 0.14,
-        // under the origin's own price, so the Exchange would not ship.
+        // The same buyer 200 ly away is offered the same Yellow.
+        let at = *sim.world.position.get(dest).unwrap();
         let far = sim.world.position.get(origin).unwrap().add(Vec3::new(200.0, 0.0, 0.0));
         sim.world.position.insert(dest, far);
-        let t = math::ship_travel_years(200.0, accel);
-        assert!(transcendental::exp_fast(-sim.config.trade_decay_lambda * t) < p_origin);
+        let offer = sim.center_offer(PlayerId(0), origin, dest, &Amounts { basic: want, refined: none }, accel).basic;
+        assert_eq!(offer, near);
+        sim.world.position.insert(dest, at);
+
+        // A forge's price is full on every color, above any discounted bid
+        // from a center that is not one.
+        sim.world.population.insert(origin, Kilotons::at_tier(BandTier::IV));
+        assert!(sim.is_forge(origin));
         assert_eq!(
-            sim.center_offer(PlayerId(0), origin, dest, &Amounts { basic: want, refined: none }, accel),
-            Amounts::default()
+            sim.center_offer(PlayerId(0), origin, dest, &Amounts { basic: want, refined: none }, accel).basic,
+            [Price::ZERO; 3]
         );
 
         // Nothing moves from a center to itself, and nothing moves unwanted.
@@ -17094,6 +17161,28 @@ mod tests {
             Amounts::default()
         );
         assert_eq!(sim.center_offer(PlayerId(0), origin, dest, &Amounts::default(), accel), Amounts::default());
+    }
+
+    /// **A center long two colors and short the third prices the third**
+    /// (T-147). Its bank holds twice its next bill in Magenta and Yellow and
+    /// no Cyan, so its total passes the bill's and the whole-bank pressure
+    /// reads zero. Cyan is still bid for, and a hold of Cyan is worth a
+    /// voyage to it, while the colors it is long are not.
+    #[test]
+    fn a_center_short_one_color_bids_for_it_whatever_its_total() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
+        let (_, dest, _) = two_centers(&mut sim, 0.0);
+        let bill = sim.next_bill(dest, PlayerId(0)).unwrap();
+        *sim.held_at_mut(dest).unwrap() =
+            Minerals { magenta: 2.0 * bill[1].kilotons(), yellow: 2.0 * bill[2].kilotons(), ..Default::default() };
+        assert_eq!(sim.mineral_pressure_of(dest), 0.0, "the total passes the bill");
+        let doctrine = sim.doctrine_of(0);
+        assert!(sim.willingness_to_pay(dest, Basic::Cyan, &doctrine) > 0.0);
+        assert_eq!(sim.willingness_to_pay(dest, Basic::Yellow, &doctrine), 0.0);
+        let cyan = Minerals { cyan: 1.0, ..Default::default() };
+        let yellow = Minerals { yellow: 1.0, ..Default::default() };
+        assert!(sim.demand_value(dest, PlayerId(0), &cyan, &doctrine, false) > 0.0);
+        assert_eq!(sim.demand_value(dest, PlayerId(0), &yellow, &doctrine, false), 0.0);
     }
 
     /// **The end-to-end form, with the ledger.** A hauler standing on a

@@ -57,6 +57,20 @@ can be a genuine continuous double auction with escrow, risk premia and
 distance-discounted clearing, running at simulation speed, because nobody is
 clicking.
 
+**Allocation is done by price, not by caps or standing orders** (`RATIFIED`,
+R-P19, the author's ruling). When the economy sends goods to the wrong place
+or leaves a center short, the remedy is a price that moves with the
+shortfall, cleared through the Exchange and read by freight routing. The
+non-preferred remedies are a cap on what a center may take, a quota, a
+reserved order that pins stock to a buyer, and a rule that routes a hauler
+by fiat. The reason is the game, not the market's efficiency: a price is
+posted, so a rival can read it, outbid it, corner it or cut the route that
+fills it. That is yomi (reading an opponent's intent from what they show)
+and conflict. A cap or an order allocates the same goods out of sight and
+leaves nothing to contest. The standing orders (§10.4) and delivery-room
+caps (§2.16) already in the engine are kept, and each is a candidate to be
+replaced by a price when one can be found that does the same work.
+
 ---
 
 ## 1. `$` — the means of exchange
@@ -285,9 +299,20 @@ unique.
 ```text
 wtp(mineral) = base_value(mineral)
              × doctrine_demand(mineral)      // Doctrine that wants it, wants it more
-             × shortfall_pressure(center)    // Simulation::mineral_pressure_of
+             × shortfall_pressure(center, mineral)  // Simulation::color_pressure_of
+             × forge_premium(center)         // Doctrine::forge_premium at a forge, else 1
              × risk_discount(counterparty)   // §3
 ```
+
+**`shortfall_pressure` is per color** (`RATIFIED` as the author's direction
+R-P19, built at T-147): `1 − held_c / bill_c` against the center's next works
+bill, clamped to `[0, 1]`, and `1` at a forge. It replaced a pressure read off
+the bank's total against the bill's total, which priced a color at zero
+whenever the center held more than its bill in the other colors. Under that
+rule the color a center lacked drew no bid and no hauler. Measured: color
+stalls (a center holding its bill's total, unable to pay it in every color)
+fall 15.2% ± 2.2 in center-years on random ground, 12 of 12 galaxies (appendix
+§D.45).
 
 **`doctrine_demand` is where the works mix enters the market**, and it is
 measured: an empire deep in Production bids a Yellow-heavy bill, and trade flow
@@ -723,6 +748,7 @@ bed before anything switches on.**
 | R-MX7 | the book clears at a spatial price equilibrium, capped by delivery room; every holding can sell (§2.16) |
 | R-IND5 | the market is free; everything that bends it is a card |
 | R-IND10 | non-delivery returns escrow minus the burn; the loss is shared |
+| R-P19 | allocation is by dynamic price through the Exchange, not by caps or standing orders (§0) |
 | — | settlement is at a shared outpost (§2.3); the obligation is instant, the goods are not (§2.5) |
 
 ### Open

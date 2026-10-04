@@ -2268,6 +2268,17 @@ one, stop and flag it.
   write at a time is not one. A second property is worth asserting beside it:
   the resolver must be **total**, because a hull with no mission is a hull the
   yard was already charged for.
+- **Fix an allocation with a price, not a cap or an order** (the author's
+  ruling, politics §0, R-P19). When goods go to the wrong center, or a
+  center sits short of one color, the preferred remedy is a price that moves
+  with the shortfall. That price is posted to the Exchange and read by
+  freight routing. Do not add a quota, a cap on what a center may take, a
+  stock reserved for one buyer, or a rule that sends a hauler somewhere by
+  fiat. A posted price can be read, outbid, cornered and interdicted by a
+  rival, and that is where yomi and conflict come from. A cap allocates the
+  same goods with nothing for a rival to contest. Where a cap or a standing
+  order already exists, it is a candidate for replacement, not a precedent
+  to copy.
 - **A harness or test bed carries no special sim code; the only thing a bed
   varies is the galaxy** (T-133, the author's ruling). No `SimConfig` switch,
   ablation or oracle exists for a measurement, and a bed plays cards through
