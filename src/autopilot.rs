@@ -2949,8 +2949,8 @@ mod tests {
         );
 
         // 3. Above the crossover the same state flips to depth — and the two
-        //    crossovers differ, so there is a band of `b` where the cheap-whole Band
-        //    center deepens and the dear-whole Band one does not. That band is the
+        //    crossovers differ, so there is a band of `b` where the center with the cheap
+        //    next whole Band deepens and the one with the dear one does not. That band is the
         //    graded region.
         doctrine.reinvest_bias = (dear + 1.0) / 2.0;
         assert!(

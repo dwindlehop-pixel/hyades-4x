@@ -1299,8 +1299,8 @@ as the card passing with no engine change needed.
   line in one run.
 - **Ablate a two-sided error one side at a time.** The old bill both overcharged
   stocks above their whole Band and topped up stocks below it. Keeping each half alone
-  reproduced the old and new engines **bit-identically**. So below-whole Band
-  upgrades never happen in play, and the overcharge alone carried the card.
+  reproduced the old and new engines **bit-identically**. So upgrades from
+  below a whole Band never happen in play, and the overcharge alone carried the card.
 
 **And price the meeting site before building the fight (T-123).** A colony ship
 picks one of thousands of destinations, and T-122 showed a picket cannot meet it
@@ -2156,7 +2156,7 @@ one, stop and flag it.
   identifier that names a design concept uses the word the specs define for
   it, and a tunable is named in the docs by its identifier. A second word for
   one concept means a reader of the code cannot check it against the spec, nor
-  the reverse — the author could not tell what "whole Band" meant, because no spec
+  the reverse — the author could not tell what "rung" meant, because no spec
   defines it: the defined term is a **whole Band** (mineral cost curve §2.6,
   `BandTier`), and the engine now says `band` (`infra_price_at_band`,
   `Qty::whole_band`). Concretely:

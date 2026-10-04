@@ -12827,7 +12827,7 @@ mod tests {
     ///
     /// The paths the default galaxy never walks are the ones that move mass
     /// most violently. This one is the colonizer that flies on to picket
-    /// rather than becoming the colony's stock, with the floor-whole Band top-up
+    /// rather than becoming the colony's stock, with the top-up to the floor whole Band
     /// billed to the founding center (R-IND22), so nothing is exempt. Hulls
     /// wrecked by fire, with the settlers aboard, are
     /// `mass_is_conserved_through_the_blockade`'s.
