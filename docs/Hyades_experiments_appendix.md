@@ -3457,6 +3457,59 @@ arm holding the admitted count and the mean ore Band at `82e5579`'s while the
 spacing grows would separate the two; a census of refined bids and asks that
 do not clear at 140 ly would test the inference directly.
 
+## D.34 Demand for supers in the card-free bed
+
+*Supports T-146 and R-M5. The author's question: is there sufficient demand
+for supers in the test bed? Bed: `examples/super_census` (card-free, standard
+galaxy, 3 seats, 1,500 yr, seeds 1, 7, 42, 31337) on three color fields;
+every figure is summed over the four runs.*
+
+**Where super demand can come from.** A refined bid is a center's declined
+order's refined shortfall, or a forge's want for the supers that complete a
+balanced set for apex (R-MX18). An order is billed in refined material only by
+a Design write (`Roster::bill_for` returns basics otherwise), so in a
+card-free game every super bid is a forge's, and its only use is apex. Apex
+has no consumer in the engine: its book carried no bid at any barrier in any
+run.
+
+| color field (spacing / width, ly) | 10 / 5 | 70 / 38.5 | 140 / 56 |
+|---|---|---|---|
+| basics mined | 6,257,724 kt | 20,764,703 kt | 27,529,826 kt |
+| basics drawn into supers | 93,503 kt (1.49%) | 44,805 kt (0.22%) | 28,950 kt (0.11%) |
+| supers forged | 62,335 kt | 29,870 kt | 19,300 kt |
+| supers drawn into apex | 48,061 kt (77.1%) | 12,806 kt (42.9%) | 4,981 kt (25.8%) |
+| apex made, all held at the horizon | 24,031 kt | 6,403 kt | 2,491 kt |
+| supers held at the horizon | 14,267 kt | 17,033 kt | 14,297 kt |
+| supers delivered between empires | 651 kt (1.04%) | 1,527 kt (5.11%) | 178 kt (0.92%) |
+
+**The books at the two barriers that follow the first forges** (barriers at
+200, 600, 1,000 and 1,400 yr; the first forge stands at 605–765 yr), supers
+summed over the three books:
+
+| field | barrier | bid | asked | per-book min(bid, ask) | filled | bid in books with no ask | asked in books with no bid |
+|---|---|---|---|---|---|---|---|
+| 10 / 5 | 1,000 | 8,708 | 5,935 | 479 | 479 | 5,344 | 0 |
+| 10 / 5 | 1,400 | 16,260 | 9,999 | 187 | 172 | 8,018 | 8,022 |
+| 70 / 38.5 | 1,000 | 5,316 | 3,272 | 856 | 856 | 3,797 | 964 |
+| 70 / 38.5 | 1,400 | 14,026 | 9,775 | 719 | 671 | 9,696 | 5,326 |
+| 140 / 56 | 1,000 | 6,553 | 3,850 | 126 | 126 | 5,515 | 2,917 |
+| 140 / 56 | 1,400 | 16,662 | 9,807 | 66 | 52 | 15,102 | 6,571 |
+
+Kilotonnes; "per-book min" is taken per seed and book, then summed. The
+clearing fills 79–100% of what each book could match. What does not trade is
+volume posted where the other side is absent: a forge bids for the supers it
+holds least of and asks only the one it holds most of, so where a seed's
+forges hold the same super most, that book has asks and no bids and the other
+two have bids and no asks.
+
+**Answer to the question: no.** The card-free bed carries no final demand for
+supers — no order is billed in them, and the one use, apex, is bid for by no
+one — so a measurement of trade in supers on it measures forges completing
+sets for a material nothing consumes. A bed in which Designs are billed in
+supers through a Design write (as §D.25's 25%-refined bills were) is what can
+test it; the refined books also clear only twice after the first forge in a
+1,500-yr run, at the 400-yr round cadence.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

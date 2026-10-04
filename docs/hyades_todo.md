@@ -104,10 +104,13 @@ random with their own spacing and width (`GalaxyConfig::color_site_spacing_ly`,
 from 10 to 210 ly (appendix §D.33): supers crossing between empires do not
 rise with spacing — under 1% on three of four seeds at 140 and 210 ly — while
 a seat's native share rises to 59–66%; the ore quantity, and with it
-habitability and work-years, moves in every arm. **Open — what would settle
-it:** an arm holding the admitted count and the mean ore Band fixed while the
-spacing grows, then a census of refined bids and asks that do not clear; and
-the author's choice of spacing and width.
+habitability and work-years, moves in every arm. Arms at the author's 5% two-color floor
+with habitable worlds held (70 / 38.5 and 140 / 56 ly) do not resolve trade in
+supers either way. **The card-free bed has no final demand for supers**
+(appendix §D.34): no order is billed in them, apex has no bid, and every
+super bid is a forge completing a set for apex. **Open — what would settle
+it:** a bed whose Designs are billed in supers through a Design write, then
+the spacing sweep on it; and the author's choice of spacing and width.
 
 ---
 
