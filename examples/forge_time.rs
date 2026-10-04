@@ -12,7 +12,7 @@
 //! | `FT_SEEDS` | galaxy seeds | 1,7,42,31337 |
 //! | `FT_GROUND` | `random`, `identical`, `rotated` | `identical` |
 //! | `FT_HOMEWORLDS` | `trio`, `centered` | `centered` |
-//! | `FT_START` | `GalaxyConfig::homeworld_start_band` | the config's |
+//! | `FT_START` | `GalaxyConfig::homeworld_start_population`, as a Band reading (`2.785` is `Band II .785`) | the config's |
 //! | `FT_FLEETS` | `1` seeds every seat with a miner, a freighter and a colonizer fleet | off |
 //! | `FT_SPEND` | kt each seeded fleet is built from (`FleetSeeding::spend_kt`) | 0.3 |
 //! | `FT_KNOWN` | surveyed radius at the start, ly (`FleetSeeding::known_radius_ly`) | 15 with fleets, else 0 |
@@ -23,7 +23,7 @@ use hyades_engine::autopilot::class_ordered_for;
 use hyades_engine::galaxy::{FleetSeeding, Galaxy, GalaxyConfig, Ground, Homeworlds, SeedFleet};
 use hyades_engine::math::Vec3;
 use hyades_engine::sim::{role_hull_type, HullType, Role, SimConfig, Simulation};
-use hyades_engine::units::BandTier;
+use hyades_engine::units::{Band, BandTier};
 use std::io::Write;
 
 fn env<T: std::str::FromStr>(name: &str) -> Option<T> {
@@ -68,7 +68,8 @@ fn main() {
     for &seed in &seeds {
         let mut g = GalaxyConfig { ground, homeworlds, ..GalaxyConfig::new(seats, seed) };
         if let Some(b) = start {
-            g.homeworld_start_band = b;
+            let tier = BandTier::containing(Band::new(b));
+            g.homeworld_start_population = (tier, b - tier.band().bands());
         }
         let mut seeding = FleetSeeding { spend_kt: spend, known_radius_ly: known, ..FleetSeeding::default() };
         if fleets_on {

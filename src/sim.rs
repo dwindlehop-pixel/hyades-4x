@@ -12121,12 +12121,12 @@ mod tests {
     #[test]
     fn a_homeworld_starts_exactly_staffed_and_losing_people_unstaffs_it() {
         // **T-107's anchor, pinned.** `P_req` is the people mass at the stock's
-        // own Band reading, and galaxy generation writes every homeworld at
-        // population Band 2 and infrastructure Band 2 — so at `t = 0` the
-        // staffing factor is exactly 1 and switching the rule on moves nothing
-        // at the reference state. If generation or either ladder's anchor ever
-        // moves, this fails before a measurement silently starts from an
-        // understaffed homeworld.
+        // own Band reading. A homeworld starts at population `Band II .785`
+        // (T-147) over infrastructure at Band 2 — about 34 times the people
+        // its stock needs — so at `t = 0` it is fully staffed and switching
+        // the rule on moves nothing there. If generation or either ladder's
+        // anchor ever moves below that, this fails before a measurement
+        // silently starts from an understaffed homeworld.
         let mut cfg = test_cfg(1);
         cfg.population_staffs_industry = true;
         let mut sim = Simulation::with_baseline(test_galaxy(3, 1), cfg);
@@ -12134,8 +12134,13 @@ mod tests {
         let u0 = sim.staffing(home);
         assert!((u0 - 1.0).abs() < 1e-9, "a homeworld starts fully staffed, got u = {u0}");
 
-        // Half the people work half the stock — `u` is linear below 1.
-        let p = *sim.world.population.get(home).unwrap();
+        // At exactly the people the stock needs, half of them work half of it
+        // — `u` is linear below 1.
+        let f = *sim.world.factors.get(home).unwrap();
+        let p = f.infra.mass_at_same_band_from(cost_anchor(&sim.config));
+        assert!(sim.world.population.get(home).unwrap().kilotons() > 30.0 * p.kilotons());
+        sim.world.population.insert(home, p);
+        assert!((sim.staffing(home) - 1.0).abs() < 1e-9);
         sim.world.population.insert(home, p * 0.5);
         let u_half = sim.staffing(home);
         assert!((u_half - 0.5).abs() < 1e-9, "half the people should staff half the stock, got {u_half}");

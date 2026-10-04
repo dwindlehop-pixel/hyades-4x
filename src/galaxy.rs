@@ -562,11 +562,12 @@ pub struct GalaxyConfig {
     /// Under [`Homeworlds::ColorCentered`], the deposit (a Band reading) of
     /// each planted outpost in its one color. **Placeholder** (`Band I`).
     pub homeworld_outpost_band: f64,
-    /// **A homeworld's starting population**, a Band reading (`Band 2.0`,
-    /// 31.6 kt). It sets the first forge's date: a forge stands at population
-    /// `Band IV`, and growth is the logistic toward the homeworld's ceiling.
-    /// **Placeholder.**
-    pub homeworld_start_band: f64,
+    /// **A homeworld's starting population**, a whole Band and a fraction of
+    /// the way to the next: `Band II .785` (`RATIFIED`, the author's ruling,
+    /// T-147), 1,076 kt. It sets the first forge's date — a forge stands at
+    /// population `Band IV`, and growth is the logistic toward the
+    /// homeworld's ceiling — at about 400 yr (appendix §D.42).
+    pub homeworld_start_population: (BandTier, f64),
 
     pub seed: u64,
 }
@@ -601,7 +602,7 @@ impl GalaxyConfig {
             homeworld_site_band: 3.0,
             homeworld_outpost_distance_ly: 5.0,
             homeworld_outpost_band: 1.0,
-            homeworld_start_band: 2.0,
+            homeworld_start_population: (BandTier::II, 0.785),
             seed,
         };
         cfg.planet_count = cfg.derived_planet_count();
@@ -1138,7 +1139,7 @@ impl Galaxy {
                 is_homeworld: true,
                 archetype: Some(archetype),
                 owner: Some(PlayerId(p as u32)),
-                population: Kilotons::at_band(Band::new(config.homeworld_start_band)),
+                population: Kilotons::at(config.homeworld_start_population.0, config.homeworld_start_population.1),
             });
             homeworlds.push(id);
 
@@ -1442,11 +1443,15 @@ mod tests {
     }
 
     #[test]
-    fn homeworld_starts_at_pop_level_two() {
-        // K = 2, pop ~2 ⇒ the level-2 "limited vehicles" production gate (§5.1).
+    fn a_homeworld_starts_at_band_ii_785() {
+        // The ratified start (T-147): `Band II .785`, 1,076 kt, which the
+        // Weibull population bands read as level III — so a homeworld clears
+        // the level-III build gate from the start.
         let g = Galaxy::generate(GalaxyConfig::new(3, 7)).unwrap();
         for &hw in &g.homeworlds {
-            assert_eq!(g.pop_level(hw), BandTier::II, "homeworld should start at Band II");
+            assert_eq!(g.planet(hw).population, Kilotons::at(BandTier::II, 0.785));
+            assert!((g.planet(hw).population.kilotons() - 1076.373).abs() < 1e-3);
+            assert_eq!(g.pop_level(hw), BandTier::III);
         }
     }
 

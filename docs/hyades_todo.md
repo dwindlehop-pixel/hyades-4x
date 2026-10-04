@@ -117,9 +117,9 @@ Color-centered homeworlds (no trio, three planted color sites; built, off by
 default) widen it on every ground: identical 70.6 at Band 3.0 and 81.8 at
 Band 4.0 (appendix §D.41). **The first forge — the author's target, a mean of
 400 yr with a 5-yr standard deviation:** set by the homeworld's starting
-population, not by fleets; a start of `Band 2.785` (shipped `Band 2.0`) with
-planted outposts and starting fleets forges at 400.7 ± 0.5 yr on all three
-grounds, with colony spread random 131.9, identical 25.9, color-rotated 55.0
+population, not by fleets. **Ratified and shipped: a homeworld starts at
+`Band II .785`** (was `Band II`); with planted outposts and starting fleets the
+first forge stands at 400.7 ± 0.5 yr on all three grounds, with colony spread random 131.9, identical 25.9, color-rotated 55.0
 (appendix §D.42). **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 
