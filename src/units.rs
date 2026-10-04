@@ -1167,9 +1167,34 @@ arith!(Volume);
 /// one call and names the unit in its return type.
 /// Printed with its unit, for the same reason it is typed: a bare number in a
 /// log line is the thing this module exists to stop.
+///
+/// **A whole Band and a fraction of the way to the next** (the author's
+/// ruling): `Band II .785` is position 2.785, `Band III` is position 3 exactly,
+/// `Band Empty .500` is 0.5. The fraction is read to three places, and a
+/// position that rounds onto a whole Band prints as that whole Band. A position
+/// below `Band Empty` or past `Band V` has no whole Band to name and prints as
+/// the bare reading.
 impl fmt::Display for Band {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Band {:.3}", self.0)
+        let milli = (self.0 * 1000.0).round();
+        if !milli.is_finite() || !(0.0..6000.0).contains(&milli) {
+            return write!(f, "Band {:.3}", self.0);
+        }
+        let whole = (milli / 1000.0).floor();
+        let fraction = (milli - whole * 1000.0) as u32;
+        let name = match whole as u8 {
+            0 => "Band Empty",
+            1 => "Band I",
+            2 => "Band II",
+            3 => "Band III",
+            4 => "Band IV",
+            _ => "Band V",
+        };
+        if fraction == 0 {
+            f.write_str(name)
+        } else {
+            write!(f, "{name} .{fraction:03}")
+        }
     }
 }
 impl fmt::Display for Length {
@@ -1721,6 +1746,17 @@ mod tests {
     }
 
     /// A whole Band reads its own number, exactly — so no tier flips at its own edge.
+    #[test]
+    fn a_band_prints_as_a_whole_band_and_a_fraction() {
+        assert_eq!(Band::new(2.785).to_string(), "Band II .785");
+        assert_eq!(Band::new(3.0).to_string(), "Band III");
+        assert_eq!(Band::new(0.5).to_string(), "Band Empty .500");
+        assert_eq!(Band::new(4.2).to_string(), "Band IV .200");
+        assert_eq!(Band::new(1.0625).to_string(), "Band I .063");
+        assert_eq!(Band::new(2.9996).to_string(), "Band III", "rounds onto the whole Band");
+        assert_eq!(Band::new(-0.25).to_string(), "Band -0.250", "below Empty there is no whole Band to name");
+    }
+
     #[test]
     fn a_whole_band_reads_as_an_integer() {
         for n in 0..=4 {

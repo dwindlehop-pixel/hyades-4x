@@ -779,8 +779,10 @@ whole Band** is one of those named values, and a quantity's **reading** is its
 position on the ladder, which can fall between them (`Band 3.6`); the engine
 names the whole Bands `BandTier` and the reading `Band`, and an identifier
 taking a whole-Band index says `band` (`infra_price_at_band`,
-`Qty::whole_band`). Earlier text called a whole Band a "rung"; the word is
-retired. *(Not to
+`Qty::whole_band`). **A reading is written as a whole Band and a fraction of
+the way to the next** (the author's ruling): `Band II .785` is position 2.785,
+and the engine prints a `Band` that way. Earlier text called a whole Band a
+"rung"; the word is retired. *(Not to
 be confused with `hyades_todo.md`'s unrelated "Band A–E" — that is a
 design-readiness classification for todo entries, lettered rather than
 numbered precisely so it doesn't collide with this one. Same word, unrelated
