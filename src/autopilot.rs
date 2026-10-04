@@ -81,6 +81,17 @@ pub struct RankWeights {
     /// pivots toward mining when starved. The optimal value is an MC question
     /// (R-AC5); this is the tunable baseline.
     pub mineral_pressure_gain: f64,
+    /// **How much an empire's color gap raises its price for that color**
+    /// (T-147, the author's ruling: holdings-based pricing). Each color's
+    /// weight in the mineral score is `1 + g · (1 − cover_c / max cover)`,
+    /// with `cover_c` the empire's holding of color `c` over its works-mix
+    /// share, and the three weights scaled to sum to 4. At `1` an empire
+    /// holding two colors and none of the third weights that color double —
+    /// the archetype weight it replaces, read from the bank instead of fixed
+    /// at game start. `1` is the measured value (appendix §D.39: `3` raised
+    /// the spread between empires); a placeholder against any other
+    /// objective.
+    pub holdings_price_gain: f64,
 }
 
 impl Default for RankWeights {
@@ -107,6 +118,7 @@ impl Default for RankWeights {
             hub_high: Band::new(0.8),
             centrality_scale: 150.0,
             mineral_pressure_gain: 1.0,
+            holdings_price_gain: 1.0,
         }
     }
 }
@@ -1354,7 +1366,14 @@ impl Autopilot for BaselineAutopilot {
         // It then hoards minerals it can never spend. Measured on seed 1: 1050
         // of 2435 Idle decisions were centers in exactly that state, several
         // holding 3.5–4.7 minerals against a 3-mineral upgrade.
-        let deepen_possible = ctx.infra < ctx.k_potential - 1e-9;
+        //
+        // **And only while the ladder has a rung above.** The ladder ends at
+        // rung 4, where the next rung's price is the current one's, so a
+        // center standing there is billed nothing for an upgrade that buys
+        // nothing — and committing it every berth, every two years, was a
+        // decision storm (appendix §D.40).
+        let has_next_rung = ctx.infra_bill.iter().any(|b| *b > Price::ZERO);
+        let deepen_possible = ctx.infra < ctx.k_potential - 1e-9 && has_next_rung;
         // The epsilon is a price too — the whole comparison is on one ladder.
         let eps = Price::new(1e-9);
         // **Every color, not the total** (T-73). `works_bill` in `sim` produces

@@ -637,7 +637,6 @@ struct Shuttle {
 /// `player_entity`, so it is not duplicated here.)
 #[derive(Clone, Copy, Debug)]
 struct PlayerInfo {
-    scarcity: [f64; 3],
     home: Entity,
 }
 
@@ -3799,10 +3798,9 @@ impl Simulation {
         for p in 0..n {
             let hw_pid = galaxy.homeworlds[p];
             let home = planet_entity[hw_pid.0 as usize];
-            let scarcity = scarcity_for(galaxy.planet(hw_pid).archetype);
 
             let e = world.spawn();
-            world.player_info.insert(e, PlayerInfo { scarcity, home });
+            world.player_info.insert(e, PlayerInfo { home });
             let mut k = Knowledge::default();
             k.scanned.insert(hw_pid);
             k.visited.insert(hw_pid);
@@ -4055,14 +4053,12 @@ impl Simulation {
     fn known_rocks(&mut self, p: usize, home: Entity) -> Vec<Entity> {
         let pe = self.player_entity[p];
         let holdings_centroid = self.holdings_centroid(p);
-        let (Some(knowledge), Some(doctrine), Some(info)) =
-            (self.world.knowledge.get(pe), self.world.doctrine.get(pe), self.world.player_info.get(pe))
-        else {
+        let (Some(knowledge), Some(doctrine)) = (self.world.knowledge.get(pe), self.world.doctrine.get(pe)) else {
             return Vec::new();
         };
         let from = *self.world.position.get(home).unwrap();
         let ctx = RankContext {
-            scarcity: info.scarcity,
+            scarcity: self.color_prices(p, &doctrine.rank),
             holdings_centroid,
             mineral_pressure: self.mineral_pressure_of(home),
         };
@@ -6655,13 +6651,15 @@ impl Simulation {
             return false;
         }
 
-        let info = *self.world.player_info.get(pe).unwrap();
         // Live mineral pressure for this center: 1 when broke for its next infra
         // upgrade, 0 when it can comfortably afford it. Drives the ranking toward
         // mining when the empire is short.
         let mineral_pressure = self.mineral_pressure_of(center);
-        let rctx =
-            RankContext { scarcity: info.scarcity, holdings_centroid: self.holdings_centroid(p), mineral_pressure };
+        let rctx = RankContext {
+            scarcity: self.color_prices(p, &doctrine.rank),
+            holdings_centroid: self.holdings_centroid(p),
+            mineral_pressure,
+        };
         // **Reduce, do not materialize (R-O70).** Both consumers —
         // `production_choice` and `assign_role` — read exactly four things off
         // this list: the per-class argmax by `score_then_id` for
@@ -7200,7 +7198,9 @@ impl Simulation {
                 // rung genuinely cheaper — and the yard is held for what was
                 // built (T-68), which has to be the same number.
                 let billed: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
-                if payable {
+                // A rung that bills nothing buys nothing — the top of the
+                // ladder — and must not hold a berth (appendix §D.40).
+                if payable && billed > Price::ZERO {
                     pay_bill(self.held_at_mut(center).unwrap(), &bill);
                     let f = self.world.factors.get_mut(center).unwrap();
                     // **A rung is bought, not incremented.** The stock moves to
@@ -9331,9 +9331,12 @@ impl Simulation {
         let e = self.planet_entity[pid.0 as usize];
         let pe = self.player_entity[p];
         let doctrine = *self.world.doctrine.get(pe).unwrap();
-        let info = *self.world.player_info.get(pe).unwrap();
+        // The most each color's price can reach ([`Self::color_prices`]), as
+        // `mineral_pressure` is taken at its most: a world counted here is one
+        // some state of the bank can make rank, so a decision waiting on scans
+        // is never left waiting on one that could have changed it.
         let rctx = RankContext {
-            scarcity: info.scarcity,
+            scarcity: [Self::color_price_ceiling(&doctrine.rank); 3],
             holdings_centroid: self.holdings_centroid(p),
             mineral_pressure: 1.0,
         };
@@ -10179,6 +10182,55 @@ impl Simulation {
     /// production tick — a Query (`Hyades_vehicle_roles.md` §1), computed
     /// fresh, never stored, which is what lets [`Self::most_needed_center`]
     /// compare need across the whole empire.
+    /// **What empire `p` pays, relatively, for each color of ore** (T-147,
+    /// the author's ruling: holdings-based pricing) — the per-color weight
+    /// [`BaselineAutopilot::rank`] puts on a world's deposit.
+    ///
+    /// ```text
+    /// cover_c = held_c / mix_w[c]
+    /// w_c     = 1 + g · (1 − cover_c / max_c cover_c)        g = holdings_price_gain
+    /// price_c = 4 · w_c / Σ w
+    /// ```
+    ///
+    /// `held_c` is everything the empire holds of color `c`, at its own worlds
+    /// and at outposts; `mix_w` is its works mix, what its rungs bill in. The
+    /// best-covered color is priced lowest, a color it holds none of highest,
+    /// and the three sum to 4 as the archetype weight `[1, 1, 2]` did — so at
+    /// `g = 1` an empire with two colors banked and none of the third prices
+    /// exactly as the archetype poor in it used to, and an empire holding
+    /// nothing prices every color alike. Read without light-lag: these are the
+    /// empire's own books.
+    fn color_prices(&self, p: usize, rank: &crate::autopilot::RankWeights) -> [f64; 3] {
+        let mut held = [0.0f64; 3];
+        let mut add = |m: &Minerals| {
+            for (c, &b) in Basic::ALL.iter().enumerate() {
+                held[c] += m.get_basic(b);
+            }
+        };
+        for &e in &self.owned_planets[p] {
+            if let Some(m) = self.held_at(e) {
+                add(m);
+            }
+        }
+        for (_, m) in self.holdings.elsewhere.range((p as u32, 0)..=(p as u32, u64::MAX)) {
+            add(m);
+        }
+        let works = self.world.works.get(self.player_entity[p]).copied().unwrap_or_default();
+        let cover: [f64; 3] = core::array::from_fn(|c| held[c] / works.mix_w[c].max(1e-12));
+        let top = cover.iter().copied().fold(0.0, f64::max);
+        let g = rank.holdings_price_gain;
+        let w: [f64; 3] = core::array::from_fn(|c| 1.0 + g * if top > 0.0 { 1.0 - cover[c] / top } else { 0.0 });
+        let sum: f64 = w.iter().sum();
+        w.map(|x| 4.0 * x / sum)
+    }
+
+    /// The most one color's price can reach under [`Self::color_prices`]: the
+    /// whole gap on that color alone, `4 · (1 + g) / (3 + g)`.
+    fn color_price_ceiling(rank: &crate::autopilot::RankWeights) -> f64 {
+        let g = rank.holdings_price_gain;
+        4.0 * (1.0 + g) / (3.0 + g)
+    }
+
     fn mineral_pressure_of(&self, center: Entity) -> f64 {
         // A forge wants basics without end: whatever it holds it forges.
         if self.is_forge(center) {
@@ -10893,25 +10945,6 @@ impl Simulation {
             .map(|((owner, role, theater), ships)| FleetSummary { owner, role, theater: PlanetId(theater), ships })
             .collect()
     }
-}
-
-fn basic_index(b: Basic) -> usize {
-    match b {
-        Basic::Cyan => 0,
-        Basic::Magenta => 1,
-        Basic::Yellow => 2,
-    }
-}
-
-/// Scarcity weights from a homeworld archetype: the one *poor* basic is scarce
-/// (weighted up), so the autopilot values outposts that supply it.
-fn scarcity_for(archetype: Option<Archetype>) -> [f64; 3] {
-    let mut s = [1.0; 3];
-    if let Some(a) = archetype {
-        let (_, _, poor) = a.alignment();
-        s[basic_index(poor)] = 2.0;
-    }
-    s
 }
 
 /// Remove `amount` total basics from a bank, in proportion to holdings, and
