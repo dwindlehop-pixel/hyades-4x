@@ -1,7 +1,7 @@
 //! **Is the color a center needs anywhere its own empire can reach?**
 //!
 //! R-O85 closed with the constraint named but not located: 43.8–46.6% of every
-//! production decision is a center that holds the *total* of its next rung and
+//! production decision is a center that holds the *total* of its next whole Band and
 //! lacks a *color* (§6.19c). That is either a **freight** problem — the color
 //! exists and is not moving — or a **trade** problem, the empire's ground simply
 //! not holding it. Those want completely different fixes, and nothing has
@@ -9,7 +9,7 @@
 //!
 //! So this puts the empire's color deficit beside its own supply, per color:
 //!
-//! - **deficit** — `Σ over owned centers` of the shortfall against the next rung.
+//! - **deficit** — `Σ over owned centers` of the shortfall against the next whole Band.
 //! - **at outposts** — mined, sitting in the empire's holdings at the rock, waiting on a hull.
 //! - **in banks** — already delivered to some center, just not the one short of it.
 //!
@@ -19,7 +19,7 @@
 //!
 //! It also reports the freight fleet itself, because a routing fix is pointless
 //! if the fleet is simply too small to move the tonnage: hold size against the
-//! rung price is what says whether this is a *routing* or a *capacity* problem.
+//! whole Band price is what says whether this is a *routing* or a *capacity* problem.
 //!
 //! And it reports the **work the fleet actually did**, decomposed, because a
 //! freight change can move any one part independently and the total cannot tell

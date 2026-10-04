@@ -106,9 +106,10 @@ fn run(seed: u64) -> Reach {
     // stops being true.
     let k_pot: HashMap<PlanetId, Band> =
         galaxy.planets.iter().map(|p| (p.id, p.habitability.min(p.biosphere))).collect();
-    // Approximate: `mineral_value` also carries per-seat scarcity (1 or 2) and
-    // live mineral pressure, both of which only *raise* it. Unit scarcity and
-    // zero pressure therefore give a lower bound on the minable set.
+    // Approximate: `mineral_value` also carries the empire's color prices
+    // (0.8 to 2.0 each at the shipped gain, summing to 4) and live mineral
+    // pressure, so unit prices and zero pressure are an estimate of the
+    // minable set, not a bound.
     let minable: HashSet<PlanetId> =
         galaxy.planets.iter().filter(|p| mineral_reading(&p.minerals) >= w.mineral_high).map(|p| p.id).collect();
 
@@ -210,7 +211,7 @@ fn ceiling_curve(seed: u64) {
 }
 
 /// What `BaselineAutopilot::rank` compares against `mineral_high`, at unit
-/// scarcity and zero pressure: the **sum of the three colors' Band readings**,
+/// color prices and zero pressure: the **sum of the three colors' Band readings**,
 /// not the Band of their total mass. The two differ by more than a Band on a
 /// world that is rich in one color, and it is the per-color sum the doctrine
 /// threshold was tuned against.

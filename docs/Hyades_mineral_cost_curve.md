@@ -359,7 +359,7 @@ the absolute shell thickness** and the hold the concentric interior:
 
 ```
 V      = r³                       total displaced volume
-hold   = (r − τ)³                 pressurised interior — this is what sits on a Band rung
+hold   = (r − τ)³                 pressurised interior — this is what sits on a whole Band
 shell  = r³ − (r − τ)³            the material actually bought
 cost   = dry mass = shell / η     η = η(role, size), §2.2
 V_reserved(role, V) = a_role + b_role · V
@@ -374,7 +374,7 @@ earlier sections claimed:
   — and it reduces to `cost ≈ 3r²τ/η ∝ area` exactly when `τ` is held fixed.
   This is also where §2.6's ratified `F_mass = F_cost^(3/2)` comes from: at
   fixed `τ`, cost tracks `r²` and hold tracks `r³`.
-- **The Band rung is the *hold*, not the usable capacity.** The `3/2` exponent
+- **The whole Band is the *hold*, not the usable capacity.** The `3/2` exponent
   is exact on hold volume and only approximate on capacity, so the ladder is
   read on the geometric quantity and `V_reserved` is a role deduction applied
   after it. That is what lets a Limited hull sit honestly at `Band Empty` and
@@ -413,13 +413,13 @@ cost(Limited) = general_vehicle_cost / limited_fleet_size   = 0.02
 
 With the R-MC15 ladder ratified in §2.6 (`F_cost` = 5, 10, 20, 40 and
 `F_mass = F_cost^(3/2)`), both the cost and the hold of every Systems hull are
-fixed by its rung, so `τ` is not a free dial at all — it is the **output**:
+fixed by its whole Band, so `τ` is not a free dial at all — it is the **output**:
 
 ```
 r = (cost·η + hold)^(1/3)        τ = r − hold^(1/3)
 ```
 
-| hull | rung | cost | hold (kt) | **`τ`** |
+| hull | whole Band | cost | hold (kt) | **`τ`** |
 |---|---|---|---|---|
 | LSV | `Band Empty` | 0.02 | 0.0894 | **0.0270** |
 | MSV | `Band I` | 0.10 | **1.000** | **0.0317** |
@@ -436,7 +436,7 @@ magnitude wide.
 **Shell thickness comes out `Limited < Medium < General`, which is the ordering
 the design arc asks for, and it was not imposed.** The mechanism is `η`: a
 larger hull is rounder (0.86 → 0.98 → 1.000, §2.2), so it gets more interior per
-unit of skin, and that surplus is what pays for a thicker skin at the same rung
+unit of skin, and that surplus is what pays for a thicker skin at the same whole Band
 spacing.
 
 **And the mechanism runs out, which is why Supers gate the mid-game General.**
@@ -456,7 +456,7 @@ is very nearly linear in `τ`:
 **So a mid-game `Band III` General Systems Hull must be a Design that requires
 Supers, and a late-game `Band IV` one a Design that requires apex** — the
 Super/apex tier is what *resets the absolute thickness* back down the ladder.
-Without that reset the hull is buildable but costs 3–6× its rung, which is the
+Without that reset the hull is buildable but costs 3–6× its whole Band, which is the
 "cost skyrockets" outcome. This is the concrete mechanical content of "Design
 level resets thickness," and it makes the Supers gate a consequence of geometry
 rather than a balance decision.
@@ -481,7 +481,7 @@ its role's `τ` multiplier and `V_reserved`:
 > The `cargo` column above is the hold less the role's core; since T-96 it is
 > also less the **drive volume** a Design mounts, and the `cost` column is the
 > shell *plus* that drive. Neither the `hold` column nor R-MC15's
-> `F_mass = F_cost^(3/2)` tie moves — the rung is the hold, and a bigger engine
+> `F_mass = F_cost^(3/2)` tie moves — the whole Band is the hold, and a bigger engine
 > must not relabel it. See "the drive is a mass, not a stat" below.
 
 Seven things this gets right that the superseded sketch did not, and they are
@@ -666,11 +666,11 @@ hulls: the drive pays for itself in shorter voyages.
 - **`t_build` moves, correctly.** Time tracks hull mass (T-68) and a hull now
   masses its drive, so §3.3's schedule goes **2.2 / 3.0 / 12.0 → 2.201 / 3.092 /
   15.154 yr**. A bigger engine is more to fabricate.
-- **A recycled hull founds slightly above its rung.** `founding_infra` is the
+- **A recycled hull founds slightly above its whole Band.** `founding_infra` is the
   hull's minerals and those now include the engine, so the Empty / I / II
   coincidence drifts by **+0.003 / +0.038 / +0.119 Bands**. R-O80's claim is
   about the two *ladders* being one ladder and is untouched — the shell alone
-  still prices exactly at its rung — and **R-O87's works identity survives
+  still prices exactly at its whole Band — and **R-O87's works identity survives
   intact**, because deepening and founding both moved together.
 - **Combat is untouched, and by cancellation rather than by care.**
   `Combatant::max_accel` is `hull_base_thrust · factor / hull_dry_mass` and
@@ -774,13 +774,19 @@ different things again.**
 
 **Band, not level.** A **Band** — `Band Empty`, **Band I**, **Band II**, **Band
 III**, **Band IV** (Roman numerals, deliberately not the glyphs a literal
-count would use) — is a discrete, *multiplicative* magnitude tier. *(Not to
+count would use) — is a discrete, *multiplicative* magnitude tier. **A
+whole Band** is one of those named values, and a quantity's **reading** is its
+position on the ladder, which can fall between them (`Band 3.6`); the engine
+names the whole Bands `BandTier` and the reading `Band`, and an identifier
+taking a whole-Band index says `band` (`infra_price_at_band`,
+`Qty::whole_band`). Earlier text called a whole Band a "rung"; the word is
+retired. *(Not to
 be confused with `hyades_todo.md`'s unrelated "Band A–E" — that is a
 design-readiness classification for todo entries, lettered rather than
 numbered precisely so it doesn't collide with this one. Same word, unrelated
 concept, different alphabet on purpose.)* Crossing
 from one Band to the next is not "one more unit"; it is a jump of several
-times the previous Band's magnitude. `Band Empty` is the bottom rung — **a
+times the previous Band's magnitude. `Band Empty` is the bottom whole Band — **a
 positive magnitude below the first threshold, not zero** (ratified: there is
 no `Band 0`, and `Band Empty > 0`); a quantity that is genuinely absent is off
 the ladder rather than at its bottom. `Band I` is the first crossed threshold and that quantity's own reference
@@ -796,7 +802,7 @@ system was always a Band ladder; it just spelled `Band` as a bare digit.
 **The anchor.** `Band I` for mineral spend is *defined*, not measured:
 `general_vehicle_cost = 1.0` (`sim.rs`) **is** one unit of minerals, **is**
 the cost of one General-class hull, *(amended below — the R-MC15 candidate
-moves the General hull up one rung, to cost `Band II`, and puts `Band I` at
+moves the General hull up one whole Band, to cost `Band II`, and puts `Band I` at
 0.25 mineral units; the field keeps its value and its name, only its Band
 label changes)*, and **is** an abstract quantity
 standing for many kilotons of real mass — §2.1–§2.3's shell-model geometry
@@ -908,7 +914,7 @@ the two units meet — and population growth pays for itself across it, so
 `BAND_STEP` sets how much biomass a Band of people actually costs. It ships
 at **`4.0`, explicitly as a placeholder pinned to this R-code** *(R-MC15 now
 ratifies the mass ladder's `I → II` factor at 31.62, and makes the bridge
-piecewise because the factor differs per rung)*. Two things follow. Ratifying `F₁`
+piecewise because the factor differs per whole Band)*. Two things follow. Ratifying `F₁`
 settles `BAND_STEP`; and any `F₁ ≠ F₂` needs the bridge to become
 piecewise, because a single exponential cannot express two different step
 factors. A test (`a_band_step_is_multiplicative_not_additive`) pins the
@@ -931,11 +937,11 @@ withdrawn — see the amendment note at the head of this section.*
 > `f64` of kilotons with a zero-sized `Scale` marker (`Mass`, `Cost`) saying
 > which of the ladders below its Band *reading* is taken on. This is the
 > engine's expression of "the shared-ratio rule binds **within** a ladder": the
-> same amount reads a different rung on each, and the shipped defaults make that
+> same amount reads a different whole Band on each, and the shipped defaults make that
 > concrete — `general_vehicle_cost = 1.0` is kilotons under R-O57 and reads
 > `Band I` as a mass, `Band II` as a cost. Crossing is `Qty::on_scale`, a no-op
 > on the bits and explicit at the call site, because a cost *is* a mass. Pinned
-> by `units::tests::the_same_amount_reads_a_different_rung_on_each_ladder`, so
+> by `units::tests::the_same_amount_reads_a_different_whole_band_on_each_ladder`, so
 > the two cannot be collapsed back into one by anyone who has not read this
 > paragraph.
 
@@ -945,8 +951,9 @@ withdrawn — see the amendment note at the head of this section.*
 >
 > - **State is kilotons, and every Band threshold is translated into kilotons
 >   statically** — at compile time or where the world is built. `K` is stored
->   as the mass it admits; the rung an amount stands nearest is a comparison
->   against squared geometric midpoints, `x² ≥ rung_k² · F_k`; a position
+>   as the mass it admits; the whole Band an amount stands nearest is a comparison
+>   against squared geometric midpoints, `x² ≥ m_k² · F_k` (`m_k` the amount at
+>   whole Band `k`); a position
 >   carried from the cost ladder to the mass ladder is `mass_n · (x /
 >   cost_n)^(3/2)` within segment `n ≥ I` (R-MC15's `3/2` tie), with the
 >   `Empty` segment's exponent `ln 1000 / ln 5` a compile-time constant.
@@ -954,8 +961,8 @@ withdrawn — see the amendment note at the head of this section.*
 >   the views, the presentation snapshot — the reading is computed per segment
 >   from static constants and a degree-7 polynomial on the mantissa bits, with
 >   **no logarithm**. It is **within 3e-7 Band** of `band(m) = n + log(m /
->   rung_n) / log(F_n)`, which remains the reading's definition, and **exact at
->   every rung**. Confirmed, measured over eighteen decades on both ladders.
+>   m_n) / log(F_n)`, which remains the reading's definition, and **exact at
+>   every whole Band**. Confirmed, measured over eighteen decades on both ladders.
 > - **Two sites take the reading as before, on the author's instruction:**
 >   `veins` and the deepening target `i_star`.
 >
@@ -978,7 +985,7 @@ force `F_mass > 8`. The shared-ratio rule therefore binds **within** a ladder:
 
 1. **`1 < F₍ₙ₊₁₎/Fₙ < 10`, on both ladders.** Step factors are strictly
    increasing — each Band is a bigger jump than the last — and grow by less
-   than a decade per rung. The old `[4, 8]` bound on the factors themselves is
+   than a decade per whole Band. The old `[4, 8]` bound on the factors themselves is
    *superseded and removed*, along with the "`F₃` is unconstrained" release
    valve: `F₃` is now constrained exactly like its siblings.
 2. **`F_mass = F_cost^(3/2)`.** Ratified as an identity, not a coincidence. It
@@ -987,12 +994,12 @@ force `F_mass > 8`. The shared-ratio rule therefore binds **within** a ladder:
    be one geometry. Note the consequence: the mass ladder's growth constraint is
    the binding one, since `F_mass` ratios are cost ratios raised to `3/2`, so a
    cost-step ratio must stay under `10^(2/3) = 4.64`.
-3. **There is no `Band 0` on the ladder.** The bottom *rung* is
+3. **There is no `Band 0` on the ladder.** The bottom *whole Band* is
    **`Band Empty`**, and **`Band Empty > 0`** — a positive magnitude beneath
    `Band I`'s threshold, not an absence. Zero is off the ladder entirely.
    **`Band Zero` exists only as a comparison sentinel**, one past the bottom
    the way `Band V` is one past the top: nothing in a game is ever at it, and
-   its job is to give a "none of this quantity" check a rung to name instead of
+   its job is to give a "none of this quantity" check a whole Band to name instead of
    a bare `0.0`. `BandTier::Zero` sits at ladder position `−1`, outside
    `BAND_FLOOR`, so adding it moved no position above it.
 
@@ -1015,18 +1022,18 @@ on both, **across `I → II → III → IV`**.
 to 1 metric ton… I want to change the **width** of `Band Empty`, not reset the
 ladder from there."*
 
-`Band Empty` is not a rung of the ratified ladder — it is where the ladder stops
+`Band Empty` is not a whole Band of the ratified ladder — it is where the ladder stops
 naming magnitudes. Rules 1 and 2 above are statements about how the ladder
-*grows*, and they hold across the playable rungs `I → II → III → IV`; how far
+*grows*, and they hold across the playable whole Bands `I → II → III → IV`; how far
 below `Band I` the ladder keeps counting is a different question, and §2.6
 already answers it per-quantity ("every quantity anchors its own `Band I`; what
 is shared is the ratio"). So:
 
 - **The mass ladder's floor is one metric tonne** — `KT(Empty) = 0.001 kt`,
-  `F_mass(Empty→I) = 1000`. `Band I` does not move, and neither does any rung
+  `F_mass(Empty→I) = 1000`. `Band I` does not move, and neither does any whole Band
   above it.
 - **The cost ladder's floor is untouched** at `F_cost(Empty→I) = 5`. That step
-  is the Limited hull's price, a real rung on a real ladder, and the two floors
+  is the Limited hull's price, a real whole Band on a real ladder, and the two floors
   are not tied to each other.
 - Consequently `F_mass = F_cost^(3/2)` and `1 < F₍ₙ₊₁₎/Fₙ < 10` are claims about
   `I → II → III → IV`. `1000` is neither `5^1.5` nor within a decade of `31.6`,
@@ -1059,14 +1066,14 @@ or more" constraint. **This progression is a default, not a measurement**: it is
 subject to Monte-Carlo verification that it does not create a colony-years
 bottleneck (`examples/colony_years`), and that verification is Stage 3's job.
 
-**Where the rungs land.** `Band I` is **one kiloton**, and everything else is
+**Where the whole Bands land.** `Band I` is **one kiloton**, and everything else is
 read off it: a small town of ~3,333 people at ~300 kg of person, possessions and
 pressurised volume each, and a Medium hull's reference hold. The opening General
 hull is `Band II` on both ladders:
 
-| rung | mineral cost | hold (kt) | population | what sits there |
+| whole Band | mineral cost | hold (kt) | population | what sits there |
 |---|---|---|---|---|
-| `Band Empty` | 0.02 | 0.001 | 3.3 | the ladder's **floor** (T-63); a Limited hull *costs* this rung |
+| `Band Empty` | 0.02 | 0.001 | 3.3 | the ladder's **floor** (T-63); a Limited hull *costs* this whole Band |
 | `Band I` | 0.10 | **1.00** | 3,333 | one **Medium** hull |
 | `Band II` | 1.00 | 31.6 | 105,400 | one **General** hull, opening Design |
 | `Band III` | 20.0 | 2,828 | 9.43 M | General, **Supers** Design (mid-game) |
@@ -1086,17 +1093,17 @@ requirement is an order of magnitude wide.
 `Band I`**; a Limited ~~sits at `Band Empty` on both~~ **costs `Band Empty` and
 holds `Band 0.65`** — the hold leg is retracted by the T-63 amendment above,
 which widened the mass ladder's floor without moving the cost ladder's. The step factors differ
-(5/10/20/40 against 11/32/89/253) and the rungs still correspond, because each
+(5/10/20/40 against 11/32/89/253) and the whole Bands still correspond, because each
 quantity anchors its own `Band I` — which is what this section said from the
 start, now with the ratios it actually implies.
 
 **The Supers gate falls out of this, it is not bolted on.** §2.3 shows shell
 thickness coming out `Limited < Medium < General` from `η` alone, and then
 *flattening* once the GSV is a literal sphere. So a `Band III` hold at a fixed
-Design level's thickness costs ~3× its rung. **A mid-game `Band III` General
+Design level's thickness costs ~3× its whole Band. **A mid-game `Band III` General
 Systems Hull must therefore be a Design requiring Supers, and a `Band IV` one a
 Design requiring apex** — the Super/apex tier is what resets absolute thickness
-and keeps the hull at its rung's price.
+and keeps the hull at its whole Band's price.
 
 **What ratification moves in the engine:**
 
@@ -1115,7 +1122,7 @@ Three consequences to carry into the code change rather than discover in it:
   ladder is whether making General hulls *more expensive* still speeds
   colonization up.
 - **`BAND_STEP` is no longer a single exponential.** The ratified progression
-  has a different factor per rung, so the `KT(b) = KT_I · BAND_STEP^(b−1)`
+  has a different factor per whole Band, so the `KT(b) = KT_I · BAND_STEP^(b−1)`
   bridge in `src/units.rs` becomes **piecewise**, and
   `a_band_step_is_multiplicative_not_additive`'s `[4, 8]` assertion is replaced
   by the growth check `1 < F₍ₙ₊₁₎/Fₙ < 10` plus the `3/2` tie to the cost ladder.

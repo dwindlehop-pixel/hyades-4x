@@ -37,11 +37,15 @@ how to meet it. The runaway was an empty hauler's routing loop (appendix
 §D.38); with freight routed by demand price, `GalaxyConfig::ground` selects
 among three kinds of ground, all built, `Ground::Random` the default:
 
-| `Ground` | what each seat starts on | spread at 1,500 yr, 12 galaxies (appendix §D.38) |
-|---|---|---|
-| `Random` | one field over the whole disk | mean 73.5, median 74.5 |
-| `Identical` | one wedge of the disk turned to every seat, same colors | mean 48.0, median 42 |
-| `ColorRotated` | the wedge with its colors stepped once per seat, as the archetypes step | mean 19.3, median 21 — the target |
+| `Ground` | what each seat starts on | spread, archetype weight (§D.38) | spread, holdings-based pricing (§D.40) |
+|---|---|---|---|
+| `Random` | one field over the whole disk | 73.5 | 60.1 |
+| `Identical` | one wedge of the disk turned to every seat, same colors | 48.0 | 24.3 |
+| `ColorRotated` | the wedge with its colors stepped once per seat, as the archetypes step | 19.3 | 31.7 |
+
+Mean spread at 1,500 yr over 12 galaxies. Holdings-based pricing is ratified
+(autopilot spec §3.9); under it no ground meets the target with trio
+homeworlds.
 
 ---
 
@@ -219,11 +223,11 @@ forge (R-O59). What is left is one basic, waiting on the colors that pair it.
   build a Design a write bills in supers or apex; every order paid only in
   basics is quoted unpayable at a forge. The forge runs after the yard's
   decision, never ahead of it.
-- **Its basics are its synthesis's.** No other build, rung, Exchange ask or
+- **Its basics are its synthesis's.** No other build, whole Band, Exchange ask or
   hauler draws on them (`available_at`).
 - **Priced above every other use.** A forge bids for the basics that complete
   a balanced set — every color up to the largest of what it holds and of its
-  next rung's colors — at `Doctrine::forge_premium` times its price
+  next whole Band's colors — at `Doctrine::forge_premium` times its price
   (`10`, **placeholder**; every other center's pressure is at most `1`), and
   its pull on its own empire's freight is scaled by the same factor.
 - **Its empire first.** Supers its empire's centers wait on, and supers it has

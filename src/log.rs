@@ -178,7 +178,7 @@ pub enum LogEvent {
         ///
         /// A works bill is payable in *named colors*, and the galaxy's supply
         /// is single-colored (mean dominant-color share 0.789, 38% of sources
-        /// ≥95% one color), so "could this center afford the rung" and "did
+        /// ≥95% one color), so "could this center afford the whole Band" and "did
         /// this center hold enough ore" are different questions with different
         /// answers. Reconstructing the first from `stockpile` and `infra_cost`
         /// counts a color-short center as having *chosen* not to deepen, which
@@ -254,7 +254,7 @@ pub enum LogEvent {
     ///
     /// `infra` is the founding stock in kilotons, *after* every term that can
     /// set it: the recycled hull, the share of the hold erected on arrival, and
-    /// the floor rung. It is logged because zero there is an absorbing state
+    /// the floor whole Band. It is logged because zero there is an absorbing state
     /// rather than a small number (`Hyades_warfare_tree.md` §8.7), so the
     /// distribution of this one figure is what says whether a Doctrine write
     /// aimed at it is doing anything — and reconstructing it from the hull type
@@ -281,7 +281,7 @@ pub enum LogEvent {
     /// `population` is **kilotons of people** and `k` is the ceiling as a Band
     /// — the two units the pair genuinely are since T-64, rather than two
     /// readings of one ladder. The logistic runs on the mass; `k` is a
-    /// classification, and reading it as a rung is what makes it comparable to
+    /// classification, and reading it as a whole Band is what makes it comparable to
     /// habitability and infrastructure.
     PopulationStep { planet: PlanetId, population: f64, k: f64 },
 

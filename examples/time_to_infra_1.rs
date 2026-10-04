@@ -2,7 +2,7 @@
 //!
 //! Since T-60 removed the founding subsidy a colony is founded with only the
 //! mass of the hull that founded it — `Band 0.046` for a Medium hull — and must
-//! buy its first real rung out of its own ground. This measures how long that
+//! buy its first real whole Band out of its own ground. This measures how long that
 //! takes, per colony, from the log:
 //!
 //! - `ColonyFounded` gives the founding time.

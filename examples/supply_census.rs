@@ -6,7 +6,7 @@
 //! the question `AGENTS.md` §2 insists on: **is the thing being optimized what
 //! is actually scarce?**
 //!
-//! `mineral_pressure_of` is `1 − stock/next_rung_price`, and a freighter picks
+//! `mineral_pressure_of` is `1 − stock / (price of the next whole Band)`, and a freighter picks
 //! its destination by that, discounted by transit. A newly founded colony has
 //! no stock, so its pressure is already **1.0 — the maximum**. Existing routing
 //! therefore *already* prefers exactly the colonies the new freight is meant to

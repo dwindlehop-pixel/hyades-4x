@@ -988,8 +988,8 @@ stock above its rung paid for mass it never received; one below would have
 received mass it never paid for. `founding_infra` is a hull's cost, so colonies
 start between rungs routinely.
 
-**Fix:** bill `infra_rung_price(at + 1) − stock`. Identical for a stock on a
-rung. `an_off_rung_upgrade_erects_what_it_bills` asserts both directions and
+**Fix:** bill `infra_price_at_band(at + 1) − stock`. Identical for a stock on a
+rung. `an_off_band_upgrade_erects_what_it_bills` asserts both directions and
 fails on the old bill with −0.02921 kt.
 
 ### The default bed barely moves
@@ -1388,7 +1388,7 @@ A temporary `#[track_caller]` counter on every conversion, on T-127's engine
 | 322,600 | `capacity_of`: `population_mass(K)` | round trip — `K` is a minimum of two masses |
 | 235,350 | `Factors::infra_band` | reading |
 | 228,890 | `staffing`: `at_band(infra_band)` | round trip cost → mass |
-| 203,342 | `infra_rung_of`: `round(band)` | threshold |
+| 203,342 | `infra_band_of`: `round(band)` | threshold |
 | 54,443 | `veins` | reading (unchanged by instruction) |
 | 16,713 | `mineral_bands` memo misses | reading (`rank`) |
 | 12,082 | `founding_infra_band` | reading |
@@ -3833,6 +3833,41 @@ per-seat differences on `Identical` ground (weight and companions) reaches the
 target. Confidence about 70%: the same-companion arms rest on 12 galaxies, and
 a second set of 12 seeds the arms were not chosen against would change it if
 their spread came out above 30.
+
+## D.40 Holdings-based pricing, landed; the free upgrade at whole Band IV
+
+*Supports autopilot spec §3.9 (holdings-based pricing, the author's ruling),
+galaxy §2 and T-147. Beds: `examples/colony_spread` (card-free, 3 seats,
+1,500 yr, the 12 seeds of §D.37); single 800-yr runs on seeds 1 and 7 timed
+against `ac086e9`'s parent, two runs each; a scratch event census by kind and
+century (never landed).*
+
+**A decision storm, found by removing the archetype weight.** With the weight
+off, seed 7 ran 893,303 events at 26.6 µs each against the shipped engine's
+404,959 at 15.9 µs. Counted by kind and century, build decisions ran ~13,000
+per century to 500 yr, then 87,041 and 375,509, and one center — seat 0's
+homeworld — committed `UpgradeInfrastructure` 370,903 times between 600 and
+700 yr, each holding a berth for the 2-yr lead time. The center stood at
+800 kt, whole Band IV, where the ladder ends (`Qty::whole_band(n)` is the
+Band IV amount for every `n ≥ 4`), so `infra_step_price` billed zero for an
+upgrade that moved nothing; the decision's headroom test compared against the
+homeworld's `K` of Band 4.2 and kept choosing it. **Fixed at the source:** the
+decision deepens only while a whole Band above exists, and the yard declines a
+zero bill (`a_center_on_the_top_whole_band_does_not_deepen`). The shipped
+engine was exposed to it wherever a center reached whole Band IV.
+
+**Landed against the arm measured in §D.39.** Seed 1 reproduces the scratch
+holdings arm's colony counts exactly (1,050 / 1,077 / 1,049). Spread at
+1,500 yr, 12 galaxies (mean; scratch arm in brackets): `Random` 60.1 (60.0),
+`Identical` 24.3 (24.3, every galaxy equal), `ColorRotated` 31.7 (31.5; seed 7
+14 against 12, the Band IV guard).
+
+**Cost** (an estimate from two runs per seed): per event +2.0% on seed 1
+(16,446 against 16,117 ns) and +7.6% on seed 7 (≈17,100 against 15,897 ns),
+with events within 1.5% of the shipped engine. The cost is `color_prices`
+summing the empire's holdings at every production decision and outpost
+ranking — O(worlds and outposts held) per call. A running total kept at each
+of the ~90 sites that write holdings would make it O(1); not done.
 
 ## References
 

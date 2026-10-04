@@ -303,9 +303,9 @@ struct Factors {
     /// the **Cost** scale. `Price` is kilotons carrying that scale marker, which
     /// is what satisfies §1.3's "stored as a mass in kilotons" without silently
     /// moving every infrastructure threshold onto the mass ladder, where the
-    /// rungs are `^1.5` apart and every gate would mean something different.
+    /// whole Bands are `^1.5` apart and every gate would mean something different.
     ///
-    /// Read the rung with [`Factors::infra_band`]; never `in_bands()`, which
+    /// Read the whole Band with [`Factors::infra_band`]; never `in_bands()`, which
     /// would take it on the wrong ladder.
     infra: Price,
 }
@@ -416,20 +416,20 @@ impl Factors {
     /// `KT(min(hab, band(bio_max)))` is `min(KT(hab), KT(band(bio_max)))`, and
     /// `KT(band(bio_max))` is `bio_max` itself — the mass the reading was taken
     /// of. The one place the round trip was not the identity is the floor: a
-    /// pristine biosphere at or below the ladder's bottom rung reads Band zero,
+    /// pristine biosphere at or below the ladder's bottom whole Band reads Band zero,
     /// and zero people is no mass (`units::population_mass`), so it admits none.
     #[inline]
     fn k_mass(&self) -> Kilotons {
-        if self.bio_max.kilotons() <= Kilotons::rung(0) {
+        if self.bio_max.kilotons() <= Kilotons::whole_band(0) {
             return Kilotons::ZERO;
         }
         self.hab_mass.min(self.bio_max)
     }
 
-    /// **The infrastructure rung, read off the stock** — the one place the
+    /// **The infrastructure whole Band, read off the stock** — the one place the
     /// Cost-ladder reading is taken (T-70).
     ///
-    /// `infra` is stored as the minerals standing in it, so the rung is a
+    /// `infra` is stored as the minerals standing in it, so the whole Band is a
     /// reading away. That is a conversion and conversions are not free, so call
     /// it at the **edges** — a
     /// production decision, a log line, a view — and never inside a loop over
@@ -1074,7 +1074,7 @@ struct SynthesisPlan {
 /// on an economy tick until one of these has moved:
 ///
 /// - `events` — a card landed; and, unless it declined while **saving** (its
-///   bank short of the cheapest price it could not pay, or its rung unpayable
+///   bank short of the cheapest price it could not pay, or its whole Band unpayable
 ///   in some color), its empire scanned a world that can rank as a colony or
 ///   a mining outpost, targeted a world, any empire claimed one, or its
 ///   reserve changed;
@@ -1221,7 +1221,7 @@ impl Roster {
 /// sphericity table and `τ` from §2.3's thickness solve; the two
 /// `V_reserved` terms are §2.3's ratified role constants. None of them is a
 /// free parameter for a search to move — they are what the Band ladders
-/// *are*, and moving one without re-deriving the rungs breaks the tie
+/// *are*, and moving one without re-deriving the whole Bands breaks the tie
 /// `F_mass = F_cost^(3/2)` that R-MC15 ratified.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HullGeometry {
@@ -1251,14 +1251,14 @@ pub struct HullGeometry {
 // **Written to full precision, not to the spec table's four decimals.** These
 // are not free constants: §2.3 *solves* them from the ratified cost and the
 // ratified hold, `τ = (cost·η + hold)^(1/3) − hold^(1/3)`, so a rounded value
-// misses its Band rung. At four decimals the Medium hull's hold came out
+// misses its whole Band. At four decimals the Medium hull's hold came out
 // 0.9977 kt against a `Band I` of 1.000 — 0.2% low, and enough to make a
-// Colonizer unable to carry a colony seed defined at exactly that rung. The
-// rungs are what the numbers are *for*; carry them at full width.
+// Colonizer unable to carry a colony seed defined at exactly that whole Band. The
+// whole Bands are what the numbers are *for*; carry them at full width.
 //
-// They reproduce the rungs at the **ratified cost ladder** (1 : 1/10 : 1/50).
+// They reproduce the whole Bands at the **ratified cost ladder** (1 : 1/10 : 1/50).
 // A config that moves `medium_fleet_size` without moving the mass ladder has
-// broken `F_mass = F_cost^(3/2)`, and the hold drifts off its rung — which is
+// broken `F_mass = F_cost^(3/2)`, and the hold drifts off its whole Band — which is
 // the tie being visible rather than a bug.
 const TAU_LIMITED: f64 = 0.027_003_351_217_540_383;
 const TAU_MEDIUM: f64 = 0.031_654_111_594_258_35;
@@ -1372,10 +1372,10 @@ impl HullType {
     }
 
     /// The hold's **volume**, `(r − τ)³` — the geometric quantity that sits on a
-    /// Band rung (§2.3), as distinct from the cargo it can carry, which is this
+    /// whole Band (§2.3), as distinct from the cargo it can carry, which is this
     /// minus the role's `V_reserved` and is a mass.
     ///
-    /// At the ratified ladder the Systems row lands on the rungs exactly:
+    /// At the ratified ladder the Systems row lands on the whole Bands exactly:
     /// `Band Empty` 0.089, `Band I` 1.00, `Band II` 31.6.
     pub fn hold_volume(self, cfg: &SimConfig) -> Volume {
         self.hold_radius(cfg).cubed()
@@ -1439,7 +1439,7 @@ impl HullType {
     /// paid for in minerals."* This is that quantity. It comes out of the usable
     /// interior rather than out of `V` because a slot lives in the hold and not
     /// in the skin — §2.3's formula writes `b_role · V`, and the difference is
-    /// second-order at every rung but the Limited one, where `V` would put
+    /// second-order at every whole Band but the Limited one, where `V` would put
     /// engines inside the shell.
     ///
     /// **It is charged three times**, which is what makes it a trade rather
@@ -1479,7 +1479,7 @@ impl HullType {
     /// capacity = max(0, hold − V_reserved) · cargo_unit_size
     /// ```
     ///
-    /// The Band rung is the **hold**; `V_reserved` is the role deduction on top
+    /// The whole Band is the **hold**; `V_reserved` is the role deduction on top
     /// of it, and [`SimConfig::cargo_unit_size`] is the one density that turns a
     /// volume into a mass. Three consequences, all of them §2.3's and none of
     /// them special-cased here:
@@ -1509,9 +1509,9 @@ impl HullType {
     pub fn cargo_capacity(self, cfg: &SimConfig) -> Kilotons {
         // **Drive is a third reservation** (T-96), taken after the role's core
         // and before anything can be carried. Deliberately deducted here and
-        // not from [`Self::hold_volume`]: the *hold* is what sits on a Band rung
+        // not from [`Self::hold_volume`]: the *hold* is what sits on a whole Band
         // (R-MC15's `F_mass = F_cost^(3/2)` tie is a claim about it), so the
-        // rungs must not move because a Design mounted a bigger engine.
+        // whole Bands must not move because a Design mounted a bigger engine.
         let usable = self.hold_volume(cfg) - self.reserved_volume(cfg) - self.drive_volume(cfg);
         Kilotons::new(usable.max(Volume::ZERO).hull_units_cubed() * cfg.cargo_unit_size)
     }
@@ -1606,12 +1606,12 @@ pub fn role_hull_type(role: Role) -> HullType {
 /// **The infrastructure ladder — priced in minerals, on the mineral ladder
 /// (R-O80 closed).**
 ///
-/// Infrastructure is bought with minerals, so its rungs are the *cost* ladder's
-/// rungs: **`Infra I` costs `minerals I`**, rung for rung. `general_vehicle_cost`
+/// Infrastructure is bought with minerals, so its whole Bands are the *cost* ladder's
+/// whole Bands: **`Infra I` costs `minerals I`**, whole Band for whole Band. `general_vehicle_cost`
 /// is cost `Band II` (§2.6), which anchors the rest through the ratified
 /// factors `5, 10, 20, 40`:
 ///
-/// | rung | minerals to be at it | step from the rung below |
+/// | whole Band | minerals to be at it | step from the whole Band below |
 /// |---|---|---|
 /// | `Empty` | 0.02 | — |
 /// | `I` | 0.10 | 0.08 |
@@ -1625,10 +1625,10 @@ pub fn role_hull_type(role: Role) -> HullType {
 /// ("infrastructure upgrades cost minerals equal to the target level") and
 /// survived because `Band` still had an `Add`.
 ///
-/// The shape of the economy changes with it: the first two rungs get an order
+/// The shape of the economy changes with it: the first two whole Bands get an order
 /// of magnitude cheaper and `Band III` becomes a real investment rather than
 /// three minerals. That is what a multiplicative ladder means — and it is why
-/// the correspondence with hull prices is *exact*. The rungs **are** the hull
+/// the correspondence with hull prices is *exact*. The whole Bands **are** the hull
 /// costs (`Limited` 0.02, `Medium` 0.10, `General` 1.00), so a recycled hull
 /// buys precisely the infrastructure its minerals would have bought, and
 /// [`Simulation::founding_infra`] needs no separate rate.
@@ -1777,7 +1777,7 @@ fn miner_equivalent(cfg: &SimConfig) -> f64 {
 /// rate a Michaelis–Menten hyperbola bounded by `fab_cap`. So the axis was
 /// bounded by `fab_cap / slip_throughput = 2` — **closed, not short**: a yard
 /// standing on 10¹² kt of infrastructure still had two berths, and homeworlds
-/// are *generated* at rung II, already past the only step it had (R-O88).
+/// are *generated* at whole Band II, already past the only step it had (R-O88).
 ///
 /// **Quantity here, quality in [`Simulation::berth_rate`].** That split is the
 /// whole of R-O88's fix: `fab_cap` now bounds what *one berth* can do, so §6.3's
@@ -1807,19 +1807,19 @@ fn slips(fabrication_stock: f64, cfg: &SimConfig) -> usize {
 /// one.
 ///
 /// **Placeholder anchor** (R-O88): the *form* is the ratified part, the choice
-/// of the Limited hull as the unit is not. It is picked so a rung-I center keeps
+/// of the Limited hull as the unit is not. It is picked so a whole Band-I center keeps
 /// exactly the two berths it had before this landed.
 #[inline]
 fn infra_per_slip(cfg: &SimConfig) -> f64 {
     hull_cost(HullType::LimitedSystems, cfg).kilotons()
 }
 
-/// **The knee of the rate curve: one infrastructure rung's worth of works, as
+/// **The knee of the rate curve: one infrastructure whole Band's worth of works, as
 /// one employment's share of it** (T-74).
 ///
-/// `infra_rung_price(1)` is what standing at rung I costs — the same number a
+/// `infra_price_at_band(1)` is what standing at whole Band I costs — the same number a
 /// Medium hull costs (R-O80) — and a default allocation splits the stock three
-/// ways. So a rung-I center with no works cards played has `u = half` in every
+/// ways. So a whole Band-I center with no works cards played has `u = half` in every
 /// employment, sits exactly at half its ceiling, and reproduces the flat
 /// constants T-68 and the mining model shipped.
 ///
@@ -1828,7 +1828,7 @@ fn infra_per_slip(cfg: &SimConfig) -> f64 {
 /// ratified, so what T-74 changes is the *shape* around that point rather than
 /// the point itself.
 fn works_knee(cfg: &SimConfig) -> f64 {
-    infra_rung_price(1, cfg).kilotons() / 3.0
+    infra_price_at_band(1, cfg).kilotons() / 3.0
 }
 
 /// **A planet's rate for one employment, from its infrastructure** (T-74,
@@ -1874,7 +1874,7 @@ fn employment_rate(infra: Price, works: &cards::Works, e: cards::Employment, bas
     cap * u / (u + half)
 }
 
-/// **The works bill for a center's next rung, split by color** (T-73,
+/// **The works bill for a center's next whole Band, split by color** (T-73,
 /// `Hyades_industry.md` §5.1/§6.3).
 ///
 /// ```text
@@ -1926,7 +1926,7 @@ fn pay_bill(bank: &mut Minerals, bill: &[Price; 3]) {
 /// **How much infrastructure a hold of minerals can actually be erected into**
 /// (T-117) — and it is a **conjunction over the three colors**, not a total.
 ///
-/// A rung is billed by color: `works_bill` splits it by `works.mix_share(c)`
+/// A whole Band is billed by color: `works_bill` splits it by `works.mix_share(c)`
 /// and `can_pay_bill` tests every color separately. So minerals standing in a
 /// hold erect only as much as their **scarcest** color allows, in ratio:
 ///
@@ -1967,16 +1967,16 @@ fn erectable_from(aboard: &Minerals, works: &cards::Works) -> (Price, Minerals) 
     (Price::new(limit * works.eta_works.max(1e-12)), consumed)
 }
 
-/// The minerals it takes to *stand at* whole infrastructure rung `n`.
+/// The minerals it takes to *stand at* whole infrastructure whole Band `n`.
 ///
-/// Public because rung 0 is the **floor** a colony is founded at when nothing
+/// Public because whole Band 0 is the **floor** a colony is founded at when nothing
 /// else sets its stock, and zero there is an absorbing state rather than a small
 /// number (`Hyades_warfare_tree.md` §8.7) — so a harness asking whether a
 /// Doctrine write aimed at the founding stock does anything has to compare
 /// against this exact quantity rather than a reconstruction of it.
 #[inline]
-pub fn infra_rung_price(n: usize, cfg: &SimConfig) -> Price {
-    Price::new(Price::rung_from(n, cost_anchor(cfg)))
+pub fn infra_price_at_band(n: usize, cfg: &SimConfig) -> Price {
+    Price::new(Price::whole_band_from(n, cost_anchor(cfg)))
 }
 
 /// **The weapons a Design mounts** (T-125, `Hyades_warfare_tree.md` §8.17).
@@ -2057,29 +2057,29 @@ fn missile_loadout(
     }
 }
 
-/// Minerals to raise infrastructure from the stock `from` to the next whole rung.
+/// Minerals to raise infrastructure from the stock `from` to the next whole Band.
 ///
-/// Takes the **stock** rather than a Band since T-70, so the rung is derived
+/// Takes the **stock** rather than a Band since T-70, so the whole Band is derived
 /// here rather than at every call site — one reading, one place it can be taken
 /// on the wrong ladder.
 ///
-/// **The bill is what the stock is short of the next rung, not the width of
-/// the rung it rounds to** (T-124, design law #11). The purchase moves the
-/// stock to exactly `infra_rung_price(at + 1)`, so any other bill makes or
-/// destroys mass: a stock founded between rungs — `founding_infra` is a hull's
-/// cost, which lands anywhere — paid the full rung width and was then snapped
+/// **The bill is what the stock is short of the next whole Band, not the width of
+/// the whole Band it rounds to** (T-124, design law #11). The purchase moves the
+/// stock to exactly `infra_price_at_band(at + 1)`, so any other bill makes or
+/// destroys mass: a stock founded between whole Bands — `founding_infra` is a hull's
+/// cost, which lands anywhere — paid the full whole Band width and was then snapped
 /// up by less, and the difference left the ledger. Measured at 0.0292 kt per
 /// such purchase on the 3-seat unit bed, starting at 250 yr. Identical for a
-/// stock that stands on a rung, which every homeworld does.
+/// stock that stands on a whole Band, which every homeworld does.
 fn infra_step_price(from: Price, cfg: &SimConfig) -> Price {
-    let at = infra_rung_of(from, cfg);
-    infra_rung_price(at + 1, cfg) - from
+    let at = infra_band_of(from, cfg);
+    infra_price_at_band(at + 1, cfg) - from
 }
 
-/// The whole rung an infrastructure stock stands at.
+/// The whole Band an infrastructure stock stands at.
 #[inline]
-fn infra_rung_of(stock: Price, cfg: &SimConfig) -> usize {
-    stock.nearest_rung_from(cost_anchor(cfg))
+fn infra_band_of(stock: Price, cfg: &SimConfig) -> usize {
+    stock.nearest_whole_band_from(cost_anchor(cfg))
 }
 
 /// **Dry mass ≡ mineral cost (R-O57, L6).** Minerals spent become hull, so a
@@ -2821,7 +2821,7 @@ pub struct SimConfig {
     /// and a rock is one color (mean dominant share **0.789** over 6,725
     /// sources). So at `1` every delivery in the engine is mono-colored *by
     /// construction*, a bank is a sum of mono-colored lumps, and **99.7% of
-    /// banked ore cannot pay a balanced rung at any price** (`Hyades_industry.md`
+    /// banked ore cannot pay a balanced whole Band at any price** (`Hyades_industry.md`
     /// §6.23). A works bill is a conjunction over three colors (T-73), so that
     /// is the whole of the mineral economy's remaining constraint.
     ///
@@ -2872,7 +2872,7 @@ pub struct SimConfig {
     ///
     /// **0.2 → 0.1, and that is a re-denomination rather than a retune.** The
     /// old code divided a planet-wide `F` by `slips`, which was always exactly
-    /// 2 at every rung a center can occupy, so halving the ceiling reproduces
+    /// 2 at every whole Band a center can occupy, so halving the ceiling reproduces
     /// the old per-berth rate **bit-for-bit** — pinned by
     /// `turnaround_is_unchanged_and_only_the_berth_count_opened`. It also makes
     /// §3.3's approved turnaround schedule read off this constant directly:
@@ -2891,7 +2891,7 @@ pub struct SimConfig {
     /// population, so this is really a gate on *infrastructure*, and the
     /// corrected ladder charges **20 minerals cumulative to reach `Band III`
     /// against 6 under the old linear one**. An expansion gate cannot sit one
-    /// rung above a step that costs twenty times the last one: at `Band III`
+    /// whole Band above a step that costs twenty times the last one: at `Band III`
     /// the standard bed produced **zero colonies in 4,000 years** on both
     /// seeds, homeworlds stalling at `Band II` and never affording a colonizer.
     ///
@@ -2954,7 +2954,7 @@ pub struct SimConfig {
     ///
     /// **Ratified at 50** — `5 × medium_fleet_size`, the `Empty → I` step of
     /// the cost ladder (§2.6, R-MC15). Not independently tunable any more: with
-    /// `medium_fleet_size` it forms the two lowest rungs of a Band ladder, and
+    /// `medium_fleet_size` it forms the two lowest whole Bands of a Band ladder, and
     /// their ratio is what the growth rule constrains.
     pub limited_fleet_size: f64,
     /// Minerals a homeworld starts with, to seed the first infra deepening.
@@ -3774,9 +3774,9 @@ impl Simulation {
                     // construction rather than by convention.
                     pl.biosphere.in_kilotons(),
                     pl.biosphere.in_kilotons(),
-                    // Galaxy generation states the starting rung; the engine stores
-                    // the stock that rung costs (T-70).
-                    infra_rung_price(pl.infrastructure.round().bands().max(0.0) as usize, &config),
+                    // Galaxy generation states the starting whole Band; the engine stores
+                    // the stock that whole Band costs (T-70).
+                    infra_price_at_band(pl.infrastructure.round().bands().max(0.0) as usize, &config),
                 ),
             );
             world.density.insert(e, pl.minerals);
@@ -4058,7 +4058,7 @@ impl Simulation {
         };
         let from = *self.world.position.get(home).unwrap();
         let ctx = RankContext {
-            scarcity: self.color_prices(p, &doctrine.rank),
+            color_price: self.color_prices(p, &doctrine.rank),
             holdings_centroid,
             mineral_pressure: self.mineral_pressure_of(home),
         };
@@ -4638,7 +4638,7 @@ impl Simulation {
                 let recycles = !self.stays_armed_after_founding(p, vehicle);
                 // **What the ceiling turns away is banked, not burned**
                 // (T-118, design law #11). `founding_infra` clamps the recycled
-                // hull to the top playable rung's price, and the clamped-off
+                // hull to the top playable whole Band's price, and the clamped-off
                 // remainder used to vanish — the mass ledger found it as
                 // exactly one hull's worth of ore going missing at the first
                 // founding (a 0.10921 kt Medium hull crediting 0.0892 of
@@ -4715,7 +4715,7 @@ impl Simulation {
                 // bigger and the other vanished — which is not conservation,
                 // it is a comparison standing where a sum belongs.
                 //
-                // **And the hold erects in ratio, not in total.** A rung is
+                // **And the hold erects in ratio, not in total.** A whole Band is
                 // billed per color (`works_bill`), so minerals standing in a
                 // hold are worth only what their scarcest color allows:
                 // `erectable_from` is that conjunction, and it hands back what
@@ -4752,7 +4752,7 @@ impl Simulation {
             // A `max` rather than a `min`, and outside the picket branch: it
             // catches *any* route to zero — a hull that left, a hold that was
             // empty, a share of nothing — instead of the one that happened to
-            // be found first. **Placeholder rung (R-WAR6).**
+            // be found first. **Placeholder whole Band (R-WAR6).**
             // **And the founding center pays for it** (R-IND22, resolved).
             //
             // The top-up used to appear from nowhere, which was the last
@@ -4765,7 +4765,7 @@ impl Simulation {
             // conjuring, and a bankrupt empire cannot found its way to free
             // infrastructure.
             let founding_stock = {
-                let floor = infra_rung_price(0, &self.config).max(Price::new(1e-9));
+                let floor = infra_price_at_band(0, &self.config).max(Price::new(1e-9));
                 let standing = self.world.factors.get(target).map(|f| f.infra).unwrap_or(Price::ZERO);
                 let shortfall = (floor - standing).max(Price::ZERO);
                 let paid = if shortfall > Price::ZERO {
@@ -5809,7 +5809,7 @@ impl Simulation {
             // **The milk run** (T-91). If the hold still has room, the
             // destination is still short of something, and this leg has a stop
             // left, go and get it rather than delivering a hold that cannot pay
-            // a rung. Nothing below this point runs at `max_pickup_stops = 1`.
+            // a whole Band. Nothing below this point runs at `max_pickup_stops = 1`.
             if !last_stop {
                 let aboard = self.world.cargo.get(vehicle).copied().unwrap_or_default();
                 let room = (cap.on_scale::<units::Cost>() - aboard.total()).max(Price::ZERO);
@@ -6579,7 +6579,7 @@ impl Simulation {
         let (infra, infra_band, k_potential) = {
             let f = self.world.factors.get(center).unwrap();
             // One reading, taken at the edge — the decision and the log line
-            // both want the rung, and `band_from` is a conversion (`AGENTS.md` §4).
+            // both want the whole Band, and `band_from` is a conversion (`AGENTS.md` §4).
             (f.infra, f.infra_band(&self.config), f.k_potential())
         };
         let level = self.bands.level(*self.world.population.get(center).unwrap());
@@ -6656,7 +6656,7 @@ impl Simulation {
         // mining when the empire is short.
         let mineral_pressure = self.mineral_pressure_of(center);
         let rctx = RankContext {
-            scarcity: self.color_prices(p, &doctrine.rank),
+            color_price: self.color_prices(p, &doctrine.rank),
             holdings_centroid: self.holdings_centroid(p),
             mineral_pressure,
         };
@@ -6681,7 +6681,7 @@ impl Simulation {
         // **The General-tier colonizer is a doctrine read, not a constant**
         // (T-116). Bound once here because four separate places downstream have
         // to agree about it — the two settler figures, the price the context
-        // carries, and the founding rung — and `general_colonizer_hull` is the
+        // carries, and the founding whole Band — and `general_colonizer_hull` is the
         // same function `production_choice` names the hull with.
         let general_hull = crate::autopilot::general_colonizer_hull(&doctrine);
         // Per hull, not per candidate: a colony ship's hold and its laden
@@ -6987,7 +6987,7 @@ impl Simulation {
     /// F_slip` (`Hyades_industry.md` §3.2, T-68).
     ///
     /// Takes the **mass actually committed**, which is what makes one expression
-    /// cover every order the engine has: a hull, an infrastructure rung, or a
+    /// cover every order the engine has: a hull, an infrastructure whole Band, or a
     /// whole mining pair. Under R-O57 dry mass and mineral cost are the same
     /// number, so "what this build costs" and "how much stuff it is" are not two
     /// quantities — and a mining pair drawn partly from Reserve is cheaper *and*
@@ -7195,19 +7195,19 @@ impl Simulation {
                 let payable = can_pay_bill(&bank_now, &bill);
                 // What was actually committed is the bill, not the ladder step:
                 // `eta_works` divides the total, so an efficiency card makes the
-                // rung genuinely cheaper — and the yard is held for what was
+                // whole Band genuinely cheaper — and the yard is held for what was
                 // built (T-68), which has to be the same number.
                 let billed: Price = bill.iter().fold(Price::ZERO, |a, &b| a + b);
-                // A rung that bills nothing buys nothing — the top of the
+                // A whole Band that bills nothing buys nothing — the top of the
                 // ladder — and must not hold a berth (appendix §D.40).
                 if payable && billed > Price::ZERO {
                     pay_bill(self.held_at_mut(center).unwrap(), &bill);
                     let f = self.world.factors.get_mut(center).unwrap();
-                    // **A rung is bought, not incremented.** The stock moves to
-                    // exactly what standing at the next rung costs, so the
+                    // **A whole Band is bought, not incremented.** The stock moves to
+                    // exactly what standing at the next whole Band costs, so the
                     // ladder stays the single source of the number (T-70).
-                    let next = infra_rung_of(f.infra, &self.config) + 1;
-                    f.infra = infra_rung_price(next, &self.config);
+                    let next = infra_band_of(f.infra, &self.config) + 1;
+                    f.infra = infra_price_at_band(next, &self.config);
                     let stockpile_after = self.held_at(center).unwrap().basic_total();
                     self.log.push(
                         self.clock,
@@ -7791,13 +7791,13 @@ impl Simulation {
     /// proportion. Read in the dual: those kilotonnes are priced at the
     /// standing order's value, and every order the policy ranked below it is
     /// worth less per kilotonne, so none can buy them. Every use of the holding
-    /// other than paying the standing order itself — another build, a rung, an
+    /// other than paying the standing order itself — another build, a whole Band, an
     /// ask on the Exchange, an offer to a hauler — draws on this. With no
     /// standing order it is the holding itself, exactly.
     fn available_at(&self, center: Entity) -> Minerals {
         let mut avail = self.free_of_order(center);
         // **A forge's basics are its synthesis's** (galaxy §4.5, the author's
-        // ruling): no other build, rung, ask or hauler draws on them. Its own
+        // ruling): no other build, whole Band, ask or hauler draws on them. Its own
         // survival does — a sentry pays from the whole holding, and rounds
         // are made from [`Self::free_of_order`].
         if self.is_forge(center) {
@@ -7938,7 +7938,7 @@ impl Simulation {
     /// Both terms already exist and both already run on this decision path.
     /// `fabrication_rate` is the rate the yard turns minerals into mass — the
     /// only sink that consumes ore — and `mineral_pressure` is `1.0` when the
-    /// center is broke for its next rung and `0.0` when it is comfortable. A
+    /// center is broke for its next whole Band and `0.0` when it is comfortable. A
     /// center with a full bank has no unmet demand and opens a mine with one
     /// hull; a starved one crews to its throughput.
     ///
@@ -8265,7 +8265,7 @@ impl Simulation {
     /// Until now a Medium hull's 0.1 minerals became a whole Band of
     /// infrastructure that the ladder charges 1.0 for — founding conjured 10×
     /// the mass spent, in flat contradiction of design law #11. With the
-    /// conjuring gone a Medium colonizer founds at a *third* of a rung, and a
+    /// conjuring gone a Medium colonizer founds at a *third* of a whole Band, and a
     /// General hull is the only one that reaches `Band I`: the first
     /// configuration in which "a Medium hull unless a General is required"
     /// has ever had a case where a General is required.
@@ -8287,14 +8287,14 @@ impl Simulation {
     fn founding_infra(&self, hull: HullType) -> Price {
         // **The recycled hull's minerals *are* the stock** (T-70), so this is a
         // price and no longer a Band — the clamp is to what the top playable
-        // rung costs rather than to the rung's index. Same content, one ladder
+        // whole Band costs rather than to the whole Band's index. Same content, one ladder
         // reading fewer, and it lands on the ladder's own value rather than on
         // a Band that has to be converted back the moment it is spent against.
-        let ceiling = infra_rung_price(BandTier::MAX_PLAYABLE.band().bands() as usize, &self.config);
+        let ceiling = infra_price_at_band(BandTier::MAX_PLAYABLE.band().bands() as usize, &self.config);
         hull_cost(hull, &self.config).min(ceiling).max(Price::ZERO)
     }
 
-    /// [`Self::founding_infra`] as a rung, for the surfaces that want the
+    /// [`Self::founding_infra`] as a whole Band, for the surfaces that want the
     /// reading rather than the stock.
     #[inline]
     fn founding_infra_band(&self, hull: HullType) -> Band {
@@ -8540,7 +8540,7 @@ impl Simulation {
     /// | `S` | settlers already loaded | kt |
     /// | `I_0` | founding infrastructure, the recycled hull | Band |
     /// | `I_star` | the build-out the site is worth developing to | Band |
-    /// | `C(I_0 → I_star)` | cumulative rung price over that range | kt (as `Price`) |
+    /// | `C(I_0 → I_star)` | cumulative whole Band price over that range | kt (as `Price`) |
     /// | `K_c` | the target's carrying capacity | Band |
     /// | `D` | the target's mineral abundance | Band |
     ///
@@ -8584,21 +8584,21 @@ impl Simulation {
     }
 
     /// `C(I_0 → I_star)` — what the destination's intended build-out costs, as
-    /// the sum of the infrastructure rungs between the recycled hull's rung and
-    /// the works-value rung. See [`Self::endowment_minerals`] for the symbols.
+    /// the sum of the infrastructure whole Bands between the recycled hull's whole Band and
+    /// the works-value whole Band. See [`Self::endowment_minerals`] for the symbols.
     fn build_out_price(&self, target: Entity, hull: HullType) -> Price {
         let Some(f) = self.world.factors.get(target) else {
             return Price::ZERO;
         };
         let density = self.world.density.get(target).map(|d| d.abundance()).unwrap_or(Band::ZERO);
-        // The works rung: geometric mean of capacity and abundance, which on the
+        // The works whole Band: geometric mean of capacity and abundance, which on the
         // Band ladder is their midpoint (R-IND13, placeholder).
         let i_star = Band::new((f.k().bands() + density.bands()) * 0.5);
-        let from = infra_rung_of(self.founding_infra(hull), &self.config);
+        let from = infra_band_of(self.founding_infra(hull), &self.config);
         let to = i_star.round().bands().max(0.0) as usize;
         let mut total = Price::ZERO;
-        for rung in (from + 1)..=to {
-            total += infra_rung_price(rung, &self.config);
+        for whole_band in (from + 1)..=to {
+            total += infra_price_at_band(whole_band, &self.config);
         }
         total
     }
@@ -9073,7 +9073,7 @@ impl Simulation {
     /// (T-100) — the single largest cost in the engine before this landed.
     ///
     /// `BaselineAutopilot::rank` scores a world's ore as
-    /// `Σ_c scarcity_c · Band(m_c)`, and `Band(·)` was a `ln` (a polynomial
+    /// `Σ_c color_price_c · Band(m_c)`, and `Band(·)` was a `ln` (a polynomial
     /// since T-129). The production
     /// candidate scan reaches `rank` **45.4 M times** over an 800-year
     /// three-seat run (T-52), so that is ~136 M logarithms for a quantity that
@@ -9336,7 +9336,7 @@ impl Simulation {
         // some state of the bank can make rank, so a decision waiting on scans
         // is never left waiting on one that could have changed it.
         let rctx = RankContext {
-            scarcity: [Self::color_price_ceiling(&doctrine.rank); 3],
+            color_price: [Self::color_price_ceiling(&doctrine.rank); 3],
             holdings_centroid: self.holdings_centroid(p),
             mineral_pressure: 1.0,
         };
@@ -9361,7 +9361,7 @@ impl Simulation {
 
     /// **Record what a declined decision at `center` waits on** ([`Declined`]):
     /// `above` is the cheapest price its bank could not pay, `infra_bill` the
-    /// rung it could not pay in every color.
+    /// whole Band it could not pay in every color.
     fn record_declined(&mut self, center: Entity, above: Price, infra_bill: [Price; 3]) {
         let Some(events) = self.decision_events(center) else { return };
         let level = self.bands.level(self.world.population.get(center).copied().unwrap_or(Kilotons::ZERO));
@@ -9984,8 +9984,8 @@ impl Simulation {
     /// **What an empire's centers want and cannot afford**, per color (kt).
     ///
     /// The sum of `color_deficit` over every center it owns — each center's
-    /// shortfall against its **next** infrastructure rung, in the colors that
-    /// rung is billed in. This is demand in the only sense the engine has one:
+    /// shortfall against its **next** infrastructure whole Band, in the colors that
+    /// whole Band is billed in. This is demand in the only sense the engine has one:
     /// a purchase a center would make and cannot.
     ///
     /// Paired with [`Self::outpost_holdings`] it answers the question that
@@ -10193,7 +10193,7 @@ impl Simulation {
     /// ```
     ///
     /// `held_c` is everything the empire holds of color `c`, at its own worlds
-    /// and at outposts; `mix_w` is its works mix, what its rungs bill in. The
+    /// and at outposts; `mix_w` is its works mix, what its whole Bands bill in. The
     /// best-covered color is priced lowest, a color it holds none of highest,
     /// and the three sum to 4 as the archetype weight `[1, 1, 2]` did — so at
     /// `g = 1` an empire with two colors banked and none of the third prices
@@ -10238,7 +10238,7 @@ impl Simulation {
         }
         let infra = self.world.factors.get(center).map(|f| f.infra).unwrap_or(Price::ZERO);
         let stock = self.held_at(center).map(|s| s.basic_total()).unwrap_or(Price::ZERO);
-        // The price of this center's *next* rung — the same function the build
+        // The price of this center's *next* whole Band — the same function the build
         // path charges, rather than a second copy of `round(infra) + 1`.
         let target_level = infra_step_price(infra, &self.config);
         (1.0 - stock / target_level.max(Price::new(1e-9))).clamp(0.0, 1.0)
@@ -10368,7 +10368,7 @@ impl Simulation {
         };
         let bank = self.held_at(center).copied().unwrap_or_default();
         // **A forge wants a balanced set** (galaxy §4.5): every color up to
-        // the largest of what it holds and of its next rung's colors. Each
+        // the largest of what it holds and of its next whole Band's colors. Each
         // super draws its two basics 1:1 and apex the three supers equally, so
         // a balanced set of basics is what synthesis turns wholly into apex.
         if self.is_forge(center) {
@@ -10383,7 +10383,7 @@ impl Simulation {
         out
     }
 
-    /// A center's next works bill, per color — what its next rung costs. `None`
+    /// A center's next works bill, per color — what its next whole Band costs. `None`
     /// for a planet with no economy.
     fn next_bill(&self, center: Entity, owner: PlayerId) -> Option<[Price; 3]> {
         let f = self.world.factors.get(center)?;
@@ -10604,7 +10604,7 @@ impl Simulation {
     /// of, so a rock holding a mountain of the color already aboard scores
     /// zero however close it is. A works bill pays when every color clears
     /// (T-73), and the census that opened T-91 found **99.7% of banked ore
-    /// unable to pay a rung** precisely because tonnage and usefulness had come
+    /// unable to pay a whole Band** precisely because tonnage and usefulness had come
     /// apart (`Hyades_industry.md` §6.23).
     ///
     /// `λ` is `trade_decay_lambda` — the same discount [`Self::best_delivery_center`]
@@ -10909,7 +10909,7 @@ impl Simulation {
                     if self.world.owner.get(e).copied() == Some(me) {
                         snap.planets_owned += 1;
                         snap.total_population += *self.world.population.get(e).unwrap();
-                        snap.stockpiled_total += self.held_at(e).unwrap().basic_total().kilotons();
+                        snap.stockpile_total += self.held_at(e).unwrap().basic_total().kilotons();
                     }
                 }
                 snap.ships = vehicles.iter().filter(|v| v.owner == p as u32).count() as u32;
@@ -11109,7 +11109,7 @@ enum Fill {
 /// it hauled the right thing.
 ///
 /// **The split is the deficit's own ratio, not neediest-color-first.** A bill is
-/// a *conjunction* — the rung pays only when every color clears — so what
+/// a *conjunction* — the whole Band pays only when every color clears — so what
 /// matters is `min_c bank[c]/bill[c]`, not the sum of anything. Filling the
 /// neediest color first maximizes that sum and lands mono-colored loads, and
 /// `try_spend_total` drains a bank **proportionally** for every hull, so the one
@@ -11120,13 +11120,13 @@ enum Fill {
 ///
 /// The hold is filled **along** that direction, not merely up to the shortfall:
 /// a hauler that would fly home light instead overshoots in the ratio the
-/// destination wants, because the next rung is already waiting behind this one
+/// destination wants, because the next whole Band is already waiting behind this one
 /// and ore banked in the right proportion is ore the following bill can spend.
 ///
 /// **Then it tops up.** If the pile cannot supply the wanted direction — the
 /// color is simply not in this rock — the remaining room loads proportionally,
 /// because a half-empty hull has spent the same transit for less and banked ore
-/// still buys hulls even when it buys no rung. A center that is short of nothing
+/// still buys hulls even when it buys no whole Band. A center that is short of nothing
 /// skips the first pass entirely and this reduces to [`take_basics`].
 ///
 /// **Both of those are [`Fill::Hold`].** Under [`Fill::Shortfall`] neither
@@ -11149,7 +11149,7 @@ fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price, 
         // So each color is capped **twice** — at what is wanted, and at its
         // proportional share of the hold. The second cap is the one that does
         // the work, and it is not belt-and-braces: the infrastructure ladder is
-        // geometric, so a rung's bill outgrows a hold, and past that point
+        // geometric, so a whole Band's bill outgrows a hold, and past that point
         // `min(want, room)` is just `room` and the first pile takes everything.
         // That is the regime where development actually happens, and without the
         // share cap the milk run switches itself off exactly there.
@@ -11321,6 +11321,39 @@ mod tests {
     /// Asserted as conservation rather than as a decline, because the decline is
     /// the implementation and the invariant is the point: the bank does not move
     /// unless an object came out.
+    /// **Holdings-based pricing** (T-147, autopilot spec §3.9): the color an
+    /// empire holds least of, against its works mix, is priced highest; the
+    /// three prices sum to 4; ore at an outpost counts as ore at a world.
+    #[test]
+    fn an_empire_prices_highest_the_color_its_holdings_lack() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let rank = crate::autopilot::RankWeights::default();
+        let mix = sim.world.works.get(sim.player_entity[0]).copied().unwrap_or_default().mix_w;
+        for e in sim.owned_planets[0].clone() {
+            if let Some(m) = sim.held_at_mut(e) {
+                *m = Minerals::default();
+            }
+        }
+        sim.holdings.elsewhere.retain(|&(p, _), _| p != 0);
+        let close = |a: [f64; 3], b: [f64; 3]| (0..3).all(|c| (a[c] - b[c]).abs() < 1e-12);
+        assert!(close(sim.color_prices(0, &rank), [4.0 / 3.0; 3]), "holding nothing prices every color alike");
+
+        // Cyan and Yellow in their works-mix proportion, no Magenta: at the
+        // shipped gain, the archetype weight `[1, 1, 2]` on the color missing.
+        sim.held_at_mut(home).unwrap().add_basic(Basic::Cyan, 10.0 * mix[0]);
+        sim.held_at_mut(home).unwrap().add_basic(Basic::Yellow, 10.0 * mix[2]);
+        let prices = sim.color_prices(0, &rank);
+        assert!(close(prices, [1.0, 2.0, 1.0]), "{prices:?}");
+        assert_eq!(prices[1], Simulation::color_price_ceiling(&rank), "a color held at zero reaches the ceiling");
+
+        // The Magenta arrives at an outpost: the empire holds every color in
+        // proportion again.
+        let rock = sim.planet_entity.iter().copied().find(|&e| sim.world.owner.get(e).is_none()).unwrap();
+        sim.holding_mut(0, rock).add_basic(Basic::Magenta, 10.0 * mix[1]);
+        assert!(close(sim.color_prices(0, &rank), [4.0 / 3.0; 3]));
+    }
+
     #[test]
     fn a_scout_build_with_no_frontier_left_spends_nothing() {
         let mut sim = Simulation::with_baseline(Galaxy::generate(GalaxyConfig::new(2, 5)).unwrap(), test_cfg(5));
@@ -11433,22 +11466,22 @@ mod tests {
         );
     }
 
-    /// **One freighter hold buys exactly one infrastructure rung, and the
+    /// **One freighter hold buys exactly one infrastructure whole Band, and the
     /// margin is 2.3%** (R-O90).
     ///
     /// This is not a knob and nobody set it. It is a coincidence between two
     /// independently ratified ladders — the hull cost ladder sets a Medium
-    /// freighter's hold, the infrastructure cost ladder sets what a rung costs —
+    /// freighter's hold, the infrastructure cost ladder sets what a whole Band costs —
     /// and the engine's whole development rate turns on which side of it the
     /// defaults land:
     ///
     /// | | kt |
     /// |---|---|
     /// | Medium hold | **0.921** |
-    /// | rung 1 → 2, the step above founding | **0.900** |
-    /// | trips per rung | **0.977** |
+    /// | whole Band 1 → 2, the step above founding | **0.900** |
+    /// | trips per whole Band | **0.977** |
     ///
-    /// A colony is founded at rung 1 exactly (its stock *is* the recycled hull's
+    /// A colony is founded at whole Band 1 exactly (its stock *is* the recycled hull's
     /// 0.100 kt, T-70/R-O57), so the step above founding is the one every colony
     /// in the galaxy faces first, and a round trip is ~124 years
     /// (`examples/freight_gap`). One trip or two is therefore a factor of two on
@@ -11476,16 +11509,16 @@ mod tests {
     /// margin is *correct* — that is R-O90, open — only that a change which
     /// crosses it has to say so.
     #[test]
-    fn one_freighter_hold_covers_one_infrastructure_rung() {
+    fn one_freighter_hold_covers_one_infrastructure_band() {
         let cfg = SimConfig::new(1);
         let hold = HullType::MediumSystems.cargo_capacity(&cfg);
         let founding = hull_cost(HullType::MediumSystems, &cfg);
         let step = infra_step_price(founding, &cfg);
-        assert_eq!(infra_rung_of(founding, &cfg), 1, "a colony is founded standing on rung 1");
+        assert_eq!(infra_band_of(founding, &cfg), 1, "a colony is founded standing on whole Band 1");
         let trips = step.kilotons() / hold.kilotons();
         assert!(
             trips <= 1.0,
-            "a Medium hold ({:.4} kt) no longer covers the rung above founding ({:.4} kt): {trips:.4} trips. \
+            "a Medium hold ({:.4} kt) no longer covers the whole_band above founding ({:.4} kt): {trips:.4} trips. \
              This is a cliff, not a gradient — 2% the wrong side of it halves colony-years and work-years \
              (R-O90). If that is intended, move this assertion and say why.",
             hold.kilotons(),
@@ -11493,7 +11526,7 @@ mod tests {
         );
         assert!(
             trips > 0.90,
-            "the hold now overshoots the rung by more than 10% ({trips:.4} trips). Not a fault, but the \
+            "the hold now overshoots the whole_band by more than 10% ({trips:.4} trips). Not a fault, but the \
              coincidence this test pins has stopped being one and the sweep in the doc comment is stale."
         );
     }
@@ -11511,7 +11544,7 @@ mod tests {
     ///
     /// The third case is the one that keeps a hauler honest: a center short of
     /// nothing must still fill up, because banked ore buys hulls even when it
-    /// buys no rung.
+    /// buys no whole Band.
     #[test]
     fn a_hold_is_filled_along_the_deficit_and_topped_up_with_bulk() {
         let pile = || Minerals { cyan: 100.0, magenta: 100.0, yellow: 100.0, ..Default::default() };
@@ -11530,7 +11563,7 @@ mod tests {
         // Deficit smaller than the hold: the hold fills *along* the direction
         // rather than stopping at the shortfall, so 1:1:0 over a 4 kt hold is
         // 2:2:0 and not 1:1 plus two of bulk. Overshooting in the right ratio
-        // banks ore the *next* rung can spend; stopping short banks ore no rung
+        // banks ore the *next* whole Band can spend; stopping short banks ore no whole Band
         // can.
         let mut bank = pile();
         let got = take_for_deficit(&mut bank, &[kt(1.0), kt(1.0), kt(0.0)], kt(4.0), Fill::Hold);
@@ -11569,8 +11602,8 @@ mod tests {
     /// ordinary pickups.
     ///
     /// The share cap is the load-bearing half and the third case is why. A
-    /// works bill grows geometrically with the rung (`infra_step_price`), so
-    /// past the rung where a bill outgrows a hold, `min(want, room)` is just
+    /// works bill grows geometrically with the whole Band (`infra_step_price`), so
+    /// past the whole Band where a bill outgrows a hold, `min(want, room)` is just
     /// `room` — the first pile takes everything and the run is a normal pickup
     /// with extra transit. That is the regime development actually happens in.
     #[test]
@@ -11609,7 +11642,7 @@ mod tests {
     /// accident:
     ///
     /// - **Deepen.** The bill is `infra_step_price / eta_works` and the stock
-    ///   moves to exactly the next rung, so works rise by `infra_step_price`.
+    ///   moves to exactly the next whole Band, so works rise by `infra_step_price`.
     ///   Works per mineral = `eta_works`.
     /// - **Found.** The bill is the colonizer's price, and the new colony's
     ///   stock is `founding_infra = hull_cost` — the recycled hull's minerals
@@ -11623,19 +11656,19 @@ mod tests {
     /// the half about *flow* runs the other way.** A colony is founded with a
     /// recycled hull and cannot keep improving that way, so what the two routes
     /// buy *afterwards* is not symmetric: deepening raises this center's build
-    /// rate forever. Priced off the engine's own functions, rung I → II is
+    /// rate forever. Priced off the engine's own functions, whole Band I → II is
     /// **+29.0% hull/yr for 0.90 kt — nine colonizers — and pays itself back in
     /// 62 years** against a 1,500-year horizon. That should dominate, and the
     /// reason it does not is three separate facts, none of them this identity
     /// (`Hyades_industry.md` §6.19a, `examples/founding_tree`):
     ///
     /// 1. **Homeworlds are generated at `Band 2.0`** (`galaxy.rs`), which is
-    ///    exactly where fabrication saturates, so the rung worth +29% is one
-    ///    they already have. Rung II → III costs 19 kt — 190 colonizers — for
+    ///    exactly where fabrication saturates, so the whole Band worth +29% is one
+    ///    they already have. Whole Band II → III costs 19 kt — 190 colonizers — for
     ///    **+3.2%**.
     /// 2. **`slips` never grows.** `1 + ⌊F / slip_throughput⌋` with
     ///    `F < fab_cap = 0.2` and `slip_throughput = 0.1` is **2 berths at every
-    ///    rung** (R-O85).
+    ///    whole Band** (R-O85).
     /// 3. **Build rate governs a fifth of the timeline.** Measured at a
     ///    homeworld: yard utilization **18.8%**, and the gap from one decision
     ///    to the next is **1.5 yr after a committed build against 29.6 yr after
@@ -11665,23 +11698,23 @@ mod tests {
             "a recycled hull's minerals are the colony's works stock"
         );
 
-        // Deepen, at every rung a center can actually stand on: what the bill
-        // costs, against the works the rung adds.
+        // Deepen, at every whole Band a center can actually stand on: what the bill
+        // costs, against the works the whole Band adds.
         for n in 0..BandTier::MAX_PLAYABLE.band().bands() as usize {
-            let stand = infra_rung_price(n, &cfg);
+            let stand = infra_price_at_band(n, &cfg);
             let step = infra_step_price(stand, &cfg);
             let billed: Price = works_bill(step, &works).iter().fold(Price::ZERO, |a, &b| a + b);
-            let gained = infra_rung_price(n + 1, &cfg) - stand;
+            let gained = infra_price_at_band(n + 1, &cfg) - stand;
             assert!(
                 (billed - gained).kilotons().abs() < 1e-12,
-                "rung {n}: billed {billed:?} against {gained:?} of works gained"
+                "whole Band {n}: billed {billed:?} against {gained:?} of works gained"
             );
             // And therefore the same works per mineral as founding does.
             let deepen_yield = gained / billed;
             let found_yield = sim.founding_infra(HullType::MediumSystems) / hull;
             assert!(
                 (deepen_yield - found_yield).abs() < 1e-12,
-                "rung {n}: deepening yields {deepen_yield} works per mineral, founding {found_yield} — \
+                "whole_band {n}: deepening yields {deepen_yield} works per mineral, founding {found_yield} — \
                  reinvest_bias is no longer neutral for work-years and R-O87 wants re-sweeping"
             );
         }
@@ -11695,7 +11728,7 @@ mod tests {
     /// hyperbola bounded by `fab_cap`; and `slips` read that rate. So the axis
     /// was `fab_cap / slip_throughput = 2` berths — **closed, not short**: a
     /// yard on 10¹² kt of infrastructure still had two, and homeworlds are
-    /// *generated* at rung II, already past the only step it had.
+    /// *generated* at whole Band II, already past the only step it had.
     ///
     /// The fix splits `F`'s two roles. `slips` is the **quantity** axis and
     /// reads the fabrication *stock*, unbounded. `berth_rate` is the **quality**
@@ -11707,9 +11740,9 @@ mod tests {
     /// **What this test is for is the claim that the change is surgical.**
     /// `fab_cap` went 0.2 → 0.1, which is a re-denomination and not a retune:
     /// the old code divided a planet-wide rate by a `slips` that was *always
-    /// exactly 2* at every rung a center can occupy, so halving the ceiling
+    /// exactly 2* at every whole Band a center can occupy, so halving the ceiling
     /// reproduces the old per-berth rate bit-for-bit. Turnaround is therefore
-    /// **unchanged at every playable rung**, and the only thing that moved is
+    /// **unchanged at every playable whole Band**, and the only thing that moved is
     /// how many hulls a yard can have in the water at once.
     #[test]
     fn turnaround_is_unchanged_and_only_the_berth_count_opened() {
@@ -11718,7 +11751,7 @@ mod tests {
         let knee = works_knee(&cfg);
 
         for n in 1..=BandTier::MAX_PLAYABLE.band().bands() as usize {
-            let stock = infra_rung_price(n, &cfg);
+            let stock = infra_price_at_band(n, &cfg);
             let u = employment_stock(stock, &works, cards::Employment::Fabrication);
 
             // What the pre-R-O88 engine charged: a planet-wide rate at
@@ -11728,7 +11761,7 @@ mod tests {
             let new_per_berth = employment_rate(stock, &works, cards::Employment::Fabrication, cfg.fab_cap, knee);
             assert!(
                 (old_per_berth - new_per_berth).abs() < 1e-15,
-                "rung {n}: per-berth rate moved, {old_per_berth} → {new_per_berth}. \
+                "whole_band {n}: per-berth rate moved, {old_per_berth} → {new_per_berth}. \
                  R-O88 was supposed to be a re-denomination, not a retune"
             );
 
@@ -11737,11 +11770,12 @@ mod tests {
             assert_eq!(slips(u, &cfg), want);
         }
 
-        // Rung I keeps exactly the two berths it had; everything above opens.
-        let berths =
-            |n: usize| slips(employment_stock(infra_rung_price(n, &cfg), &works, cards::Employment::Fabrication), &cfg);
-        assert_eq!(berths(1), 2, "a rung-I yard is unchanged, which is what anchors the placeholder");
-        assert!(berths(2) > berths(1), "rung II must now buy berths — it bought none before");
+        // Whole Band I keeps exactly the two berths it had; everything above opens.
+        let berths = |n: usize| {
+            slips(employment_stock(infra_price_at_band(n, &cfg), &works, cards::Employment::Fabrication), &cfg)
+        };
+        assert_eq!(berths(1), 2, "a whole Band-I yard is unchanged, which is what anchors the placeholder");
+        assert!(berths(2) > berths(1), "whole Band II must now buy berths — it bought none before");
         assert!(berths(3) > berths(2));
         assert!(berths(4) > berths(3));
 
@@ -12702,12 +12736,12 @@ mod tests {
     #[test]
     fn a_picketed_founding_still_leaves_a_workable_colony() {
         let cfg = SimConfig::new(1);
-        let floor = infra_rung_price(0, &cfg);
-        assert!(floor > Price::ZERO, "the floor rung must be a real quantity, got {floor:?}");
+        let floor = infra_price_at_band(0, &cfg);
+        assert!(floor > Price::ZERO, "the floor whole Band must be a real quantity, got {floor:?}");
         // The thing that would break: an employment rate of exactly zero.
         let works = cards::Works::default();
         let rate = employment_rate(floor, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg));
-        assert!(rate > 0.0, "a colony at the floor rung must still fabricate, got {rate}");
+        assert!(rate > 0.0, "a colony at the floor whole Band must still fabricate, got {rate}");
         let dead = employment_rate(Price::ZERO, &works, cards::Employment::Fabrication, cfg.fab_cap, works_knee(&cfg));
         assert_eq!(dead, 0.0, "zero must still be the absorbing state this floor exists to avoid");
     }
@@ -12793,7 +12827,7 @@ mod tests {
     ///
     /// The paths the default galaxy never walks are the ones that move mass
     /// most violently. This one is the colonizer that flies on to picket
-    /// rather than becoming the colony's stock, with the floor-rung top-up
+    /// rather than becoming the colony's stock, with the floor-whole Band top-up
     /// billed to the founding center (R-IND22), so nothing is exempt. Hulls
     /// wrecked by fire, with the settlers aboard, are
     /// `mass_is_conserved_through_the_blockade`'s.
@@ -12831,24 +12865,24 @@ mod tests {
         );
     }
 
-    /// **A rung bought from between rungs erects exactly what it bills**
+    /// **A whole Band bought from between whole Bands erects exactly what it bills**
     /// (T-124, design law #11).
     ///
     /// `founding_infra` is a hull's cost, so a colony's stock starts wherever
-    /// that lands on the ladder. The purchase sets the stock to the next rung;
-    /// the bill used to be the width of the rung the stock *rounds* to, so a
-    /// stock above its rung lost the difference and one below it gained it.
+    /// that lands on the ladder. The purchase sets the stock to the next whole Band;
+    /// the bill used to be the width of the whole Band the stock *rounds* to, so a
+    /// stock above its whole Band lost the difference and one below it gained it.
     /// Found by the blockade's conservation test at 250 yr, on a run with no
     /// card played. Both directions are asserted.
     #[test]
-    fn an_off_rung_upgrade_erects_what_it_bills() {
+    fn an_off_band_upgrade_erects_what_it_bills() {
         let cfg = test_cfg(5);
         for offset in [0.1113, -0.3] {
             let mut sim = Simulation::with_baseline(test_galaxy(2, 5), cfg);
             let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
             let home_pos = *sim.world.position.get(home).unwrap();
-            let rung = Band::new(1.0 + offset);
-            let stock = Price::at_band_from(rung, cost_anchor(&sim.config));
+            let whole_band = Band::new(1.0 + offset);
+            let stock = Price::at_band_from(whole_band, cost_anchor(&sim.config));
             sim.world.factors.get_mut(home).unwrap().infra = stock;
             let bank = sim.held_at_mut(home).unwrap();
             bank.cyan += 50.0;
@@ -13796,7 +13830,7 @@ mod tests {
     /// two scales. The old test's failure message asked for exactly this
     /// replacement, and T-56 stage 3c is what triggered it.
     ///
-    /// The rung is the **hold**, not the usable cargo: `V_reserved` is a role
+    /// The whole Band is the **hold**, not the usable cargo: `V_reserved` is a role
     /// deduction applied after the ladder, so cargo steps a little wide of the
     /// factor (34.3 against 31.6) while the hold hits it.
     #[test]
@@ -13826,13 +13860,13 @@ mod tests {
 
         // **Medium and General holds still land on `Band I` and `Band II`.**
         // That is the part of the T-56 story the floor change does *not* touch,
-        // because both rungs are above it. What it does touch is the Limited
+        // because both whole Bands are above it. What it does touch is the Limited
         // hull, whose 0.089 kt hold used to sit exactly on `Band Empty` and now
         // reads ~`Band 0.65` — recorded here rather than asserted, because it
         // is a consequence of the floor and not a property of the geometry.
-        for (hull, rung) in [(m, 1.0), (g, 2.0)] {
+        for (hull, whole_band) in [(m, 1.0), (g, 2.0)] {
             let hold = Kilotons::new(hull.hold_volume(&cfg).hull_units_cubed() * cfg.cargo_unit_size);
-            assert!((hold.in_bands().bands() - rung).abs() < 0.05, "{hull:?} hold reads {:?}", hold.in_bands());
+            assert!((hold.in_bands().bands() - whole_band).abs() < 0.05, "{hull:?} hold reads {:?}", hold.in_bands());
         }
 
         // **R-V9 is satisfied by geometry rather than contradicted by it.** A
@@ -13840,7 +13874,7 @@ mod tests {
         // mass (1.0 kt) *exceeded* the hold of the Medium hull R-V9 names as the
         // smallest able to carry them (0.959 kt) — an inconsistency nothing
         // caught, because capacity gates mineral loading only. The Medium hull's
-        // hold is now `Band I` by construction, which is the rung the colony
+        // hold is now `Band I` by construction, which is the whole Band the colony
         // seed is defined at, so the rule and the geometry finally agree.
         let seed_mass = units::population_mass(cfg.colony_seed_pop.band()).kilotons();
         let hold = m.hold_volume(&cfg).hull_units_cubed() * cfg.cargo_unit_size;
@@ -13892,7 +13926,7 @@ mod tests {
 
         // **Shell thickness rises with size**, which is the design arc's
         // requirement, and it is *derived* — §2.3 solves it from the cost and
-        // hold the Band rungs fix, and `η` rising toward the sphere is what
+        // hold the whole Bands fix, and `η` rising toward the sphere is what
         // pays for it. This is also the tripwire stage 2 left behind: it used
         // to assert one unit for every hull.
         assert!(l.shell_thickness() < m.shell_thickness());
@@ -13906,12 +13940,12 @@ mod tests {
         assert!(g.shell_thickness() < HullType::GeneralContactVehicle.shell_thickness());
         assert!(HullType::GeneralContactVehicle.shell_thickness() < HullType::GeneralOffensive.shell_thickness());
 
-        // **The Systems row lands on the Band rungs**, which is the whole point
-        // of the ratified ladder: the hold is the quantity that sits on a rung,
+        // **The Systems row lands on the whole Bands**, which is the whole point
+        // of the ratified ladder: the hold is the quantity that sits on a whole Band,
         // and its steps are the mass ladder's own factors.
         // The factors are the *cost* ladder's, raised to `3/2` — see
         // `the_hold_ladder_is_the_mass_ladder` for why that is no longer the
-        // same thing as `MASS_LADDER` at the bottom rung.
+        // same thing as `MASS_LADDER` at the bottom whole Band.
         let step_lo = m.hold_volume(&cfg) / l.hold_volume(&cfg);
         let step_hi = g.hold_volume(&cfg) / m.hold_volume(&cfg);
         assert!(
@@ -13991,7 +14025,7 @@ mod tests {
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         sim.world.population.insert(home, Kilotons::at_tier(BandTier::IV));
 
-        // Colonist capacity is the hold's rung, and the rungs are the mass
+        // Colonist capacity is the hold's whole Band, and the whole Bands are the mass
         // ladder's.
         let (m_cap, g_cap) = (
             HullType::MediumSystems.colony_seed_capacity(&sim.config),
@@ -14006,23 +14040,23 @@ mod tests {
 
         // **Founding infrastructure is the recycled hull's minerals, read on
         // the infrastructure ladder — which is the mineral ladder (R-O80).**
-        // The rungs *are* the hull costs, so a recycled hull buys exactly the
+        // The whole Bands *are* the hull costs, so a recycled hull buys exactly the
         // infrastructure its minerals would have bought, and every anchor lands
-        // on a whole rung with no rate and no subsidy in between.
-        // (to a tolerance: `band_of` is a log round trip, so a whole rung comes
+        // on a whole Band with no rate and no subsidy in between.
+        // (to a tolerance: `band_of` is a log round trip, so a whole Band comes
         // back as 2.0 minus a couple of ulps)
-        for (hull, rung) in [
+        for (hull, whole_band) in [
             (HullType::LimitedSystems, BandTier::Empty),
             (HullType::MediumSystems, BandTier::I),
             (HullType::GeneralSystems, BandTier::II),
         ] {
             let got = sim.founding_infra(hull);
             let got_band = sim.founding_infra_band(hull);
-            // **Near the rung, not on it, since T-96.** `founding_infra` is the
+            // **Near the whole Band, not on it, since T-96.** `founding_infra` is the
             // recycled hull's minerals, and a hull now masses its drive as well
             // as its shell — so a scrapped ship delivers its engine into the new
             // colony's stock too, which is conservation and not a rounding. The
-            // rung coincidence was never designed: it fell out of
+            // whole Band coincidence was never designed: it fell out of
             // `founding_infra == hull_cost` while hull cost *was* the cost
             // ladder exactly. The drift is +0.003 / +0.038 / +0.119 Bands.
             //
@@ -14031,37 +14065,43 @@ mod tests {
             // because both sides moved together —
             // `a_mineral_buys_the_same_works_whether_it_deepens_or_founds`.
             assert!(
-                (got_band.bands() - rung.band().bands()).abs() < 0.15,
-                "{hull:?} founds at {got_band} ({got}), want within 0.15 Bands of {rung}"
+                (got_band.bands() - whole_band.band().bands()).abs() < 0.15,
+                "{hull:?} founds at {got_band} ({got}), want within 0.15 Bands of {whole_band}"
             );
-            assert!(got_band.bands() >= rung.band().bands(), "{hull:?} founds at or above its rung, never below");
+            assert!(
+                got_band.bands() >= whole_band.band().bands(),
+                "{hull:?} founds at or above its whole Band, never below"
+            );
         }
         let m_infra = sim.founding_infra(HullType::MediumSystems);
         let g_infra = sim.founding_infra(HullType::GeneralSystems);
 
-        // And the prices those rungs correspond to: `Infra I costs minerals I`
-        // (R-O80). **The hull now lands *on or above* its rung rather than
+        // And the prices those whole Bands correspond to: `Infra I costs minerals I`
+        // (R-O80). **The hull now lands *on or above* its whole Band rather than
         // exactly on it** (T-96): `founding_infra` is the recycled hull's
         // minerals and a hull masses its drive as well as its shell, so the
         // excess is the engine going into the melt. R-O80's claim is about the
         // two *ladders* being one ladder and is untouched; what broke is a
-        // coincidence between the hull ladder and the rungs, which nobody chose.
+        // coincidence between the hull ladder and the whole Bands, which nobody chose.
         for hull in [HullType::LimitedSystems, HullType::MediumSystems, HullType::GeneralSystems] {
             let cost = hull_cost(hull, &sim.config);
-            let rung = infra_rung_of(sim.founding_infra(hull), &sim.config);
-            let priced = infra_rung_price(rung, &sim.config);
-            assert!(priced <= cost + Price::new(1e-12), "{hull:?}: rung {rung} prices at {priced}, hull costs {cost}");
+            let whole_band = infra_band_of(sim.founding_infra(hull), &sim.config);
+            let priced = infra_price_at_band(whole_band, &sim.config);
             assert!(
-                infra_rung_price(rung + 1, &sim.config) > cost,
-                "{hull:?} must not reach the rung above: costs {cost}, rung {} prices at {}",
-                rung + 1,
-                infra_rung_price(rung + 1, &sim.config)
+                priced <= cost + Price::new(1e-12),
+                "{hull:?}: whole Band {whole_band} prices at {priced}, hull costs {cost}"
             );
-            // The shell alone is still exactly the rung, which is the half of
+            assert!(
+                infra_price_at_band(whole_band + 1, &sim.config) > cost,
+                "{hull:?} must not reach the whole Band above: costs {cost}, whole Band {} prices at {}",
+                whole_band + 1,
+                infra_price_at_band(whole_band + 1, &sim.config)
+            );
+            // The shell alone is still exactly the whole Band, which is the half of
             // R-O80 that is a statement about the ladders.
             assert!(
                 (priced - hull_shell_mass(hull, &sim.config).on_scale::<units::Cost>()).abs() < Price::new(1e-12),
-                "{hull:?}: the shell must still price at its rung"
+                "{hull:?}: the shell must still price at its whole Band"
             );
         }
 
@@ -14560,7 +14600,7 @@ mod tests {
         };
 
         // **A comfortable center has no unmet demand.** `mineral_pressure` is
-        // zero while the bank covers the next rung, so `D = 0` whatever the
+        // zero while the bank covers the next whole Band, so `D = 0` whatever the
         // yard could fabricate.
         {
             let bank = sim.held_at_mut(center).unwrap();
@@ -14569,7 +14609,7 @@ mod tests {
             bank.yellow = 10_000.0;
         }
         set_ore(&mut sim, 3.0);
-        assert_eq!(sim.mining_crew_for(center, rock), 1, "a center that can afford its rung wants one hull");
+        assert_eq!(sim.mining_crew_for(center, rock), 1, "a center that can afford its whole Band wants one hull");
 
         // Starve it: pressure goes to 1 and the crew is whatever meets the
         // yard's throughput.
@@ -14581,7 +14621,7 @@ mod tests {
         }
         {
             let f = sim.world.factors.get_mut(center).unwrap();
-            f.infra = infra_rung_price(1, &sim.config);
+            f.infra = infra_price_at_band(1, &sim.config);
         }
         assert!(sim.mineral_pressure_of(center) > 0.99, "a broke center must read full pressure");
 
@@ -14615,7 +14655,7 @@ mod tests {
             );
             last = crew;
         }
-        assert!(last < 2, "a Band IV seam meets a rung-I yard's demand with a single hull, got {last}");
+        assert!(last < 2, "a Band IV seam meets a whole Band-I yard's demand with a single hull, got {last}");
 
         // **Monotone in demand.** Raising what the yard can absorb cannot lower
         // the crew, on a body poor enough that the veins are not the binding
@@ -14624,7 +14664,7 @@ mod tests {
         let lean = sim.mining_crew_for(center, rock);
         {
             let f = sim.world.factors.get_mut(center).unwrap();
-            f.infra = infra_rung_price(4, &sim.config);
+            f.infra = infra_price_at_band(4, &sim.config);
         }
         assert!(sim.mining_crew_for(center, rock) >= lean, "a hungrier yard must not want fewer miners: {lean}",);
     }
@@ -14640,13 +14680,13 @@ mod tests {
     #[test]
     fn veins_are_a_decade_per_band_and_crowding_pays_at_scale() {
         let cfg = SimConfig::new(1);
-        for (rung, want) in [(1.0, 1.0), (2.0, 10.0), (3.0, 100.0), (4.0, 1000.0)] {
-            let mass = units::Kilotons::at_band(Band::new(rung));
+        for (whole_band, want) in [(1.0, 1.0), (2.0, 10.0), (3.0, 100.0), (4.0, 1000.0)] {
+            let mass = units::Kilotons::at_band(Band::new(whole_band));
             let got = veins(mass, &cfg);
             // Within `pow_fast`'s bound at `y ≤ 3`: 7.5e-5 + 6.1e-5·3 (T-130).
             assert!(
                 (got / want - 1.0).abs() < 2.6e-4,
-                "Band {rung} holds {mass:?} and should have {want} veins, got {got}"
+                "Band {whole_band} holds {mass:?} and should have {want} veins, got {got}"
             );
         }
 
@@ -14670,10 +14710,13 @@ mod tests {
 
         // A full crew takes the same share of any body, which is the
         // normalization that stops output going as richness squared.
-        for rung in [1.0, 2.0, 3.0, 4.0] {
-            let mass = units::Kilotons::at_band(Band::new(rung));
+        for whole_band in [1.0, 2.0, 3.0, 4.0] {
+            let mass = units::Kilotons::at_band(Band::new(whole_band));
             let n = veins(mass, &cfg);
-            assert!((crowding_factor(n, mass, &cfg) - 1.0).abs() < 1e-9, "a full crew works the whole body at {rung}");
+            assert!(
+                (crowding_factor(n, mass, &cfg) - 1.0).abs() < 1e-9,
+                "a full crew works the whole body at {whole_band}"
+            );
         }
     }
 
@@ -14755,11 +14798,11 @@ mod tests {
         // with no reproducer.
         let mut bad = SimConfig::new(3);
         bad.veins_per_band = 0.0;
-        for rung in [0.0, 1.0, 4.0] {
-            let mass = units::Kilotons::at_band(Band::new(rung));
+        for whole_band in [0.0, 1.0, 4.0] {
+            let mass = units::Kilotons::at_band(Band::new(whole_band));
             let n = veins(mass, &bad);
-            assert!(n.is_finite() && n >= 1.0, "degenerate veins_per_band gave {n} at Band {rung}");
-            assert!(crowding_factor(3.0, mass, &bad).is_finite(), "crowding diverged at Band {rung}");
+            assert!(n.is_finite() && n >= 1.0, "degenerate veins_per_band gave {n} at Band {whole_band}");
+            assert!(crowding_factor(3.0, mass, &bad).is_finite(), "crowding diverged at Band {whole_band}");
         }
 
         // A full crew takes exactly `ε` of the body — the normalization that
@@ -14840,7 +14883,7 @@ mod tests {
         // The default standing layer is unarmed at every role, so a seat that
         // never plays `TIER0[15]` never flies a Contact hull: survey rides
         // `LimitedSystems`, colonization rides `MediumSystems`, and the
-        // colonizer ladder's upper rung is `GeneralSystems`.
+        // colonizer ladder's upper whole Band is `GeneralSystems`.
         //
         // The card is what changes that, and this asserts both halves — that
         // the default is closed, and that the card opens it. A test asserting
@@ -14992,7 +15035,7 @@ mod tests {
         );
     }
 
-    /// **T-70: infrastructure is a stock of minerals; the rung is a reading.**
+    /// **T-70: infrastructure is a stock of minerals; the whole Band is a reading.**
     ///
     /// It was a `Band` — a position on a ladder, stored — which is the thing
     /// `AGENTS.md` §4 says never to do: *a Band is a reading, not a second thing
@@ -15003,34 +15046,38 @@ mod tests {
     /// Three things are pinned, and the third is the one that would have been a
     /// silent disaster:
     ///
-    /// 1. standing at rung `n` means holding exactly what rung `n` costs;
-    /// 2. buying a rung moves the stock by exactly `infra_step_price`, so the
+    /// 1. standing at whole Band `n` means holding exactly what whole Band `n` costs;
+    /// 2. buying a whole Band moves the stock by exactly `infra_step_price`, so the
     ///    ladder is the single source of the number rather than an increment
     ///    that happens to agree with it;
     /// 3. **the reading is taken on the *Cost* ladder, not the mass ladder.**
     ///    `Price` is kilotons, so `in_bands()` compiles and returns a completely
-    ///    different rung — the two ladders are `^1.5` apart (R-MC15). Reading
+    ///    different whole Band — the two ladders are `^1.5` apart (R-MC15). Reading
     ///    infrastructure on the wrong one would move every development gate at
     ///    once and typecheck while doing it, which is precisely the shape of the
     ///    `K = min(hab, bio, infra)` unit error this project already paid for.
     #[test]
-    fn infrastructure_is_a_stock_and_the_rung_is_a_reading() {
+    fn infrastructure_is_a_stock_and_the_band_is_a_reading() {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
 
-        for rung in 1..=4usize {
-            let stock = infra_rung_price(rung, &sim.config);
+        for whole_band in 1..=4usize {
+            let stock = infra_price_at_band(whole_band, &sim.config);
             let f = sim.world.factors.get_mut(home).unwrap();
             f.infra = stock;
-            assert_eq!(infra_rung_of(stock, &sim.config), rung, "standing at rung {rung} must read back as {rung}");
+            assert_eq!(
+                infra_band_of(stock, &sim.config),
+                whole_band,
+                "standing at whole Band {whole_band} must read back as {whole_band}"
+            );
 
-            // Buying the next rung moves the stock by exactly the step price.
+            // Buying the next whole Band moves the stock by exactly the step price.
             let step = infra_step_price(stock, &sim.config);
-            let next = infra_rung_price(rung + 1, &sim.config);
+            let next = infra_price_at_band(whole_band + 1, &sim.config);
             assert!(
                 ((stock + step) - next).kilotons().abs() < 1e-12,
-                "rung {rung} + step must land on rung {}: {} vs {next}",
-                rung + 1,
+                "whole Band {whole_band} + step must land on whole Band {}: {} vs {next}",
+                whole_band + 1,
                 stock + step
             );
         }
@@ -15039,12 +15086,12 @@ mod tests {
         // apart.** This is an assertion that the wrong reading is *available*
         // and wrong — the compile-time guard is the `Scale` marker, and this is
         // the runtime evidence that it is load-bearing rather than decorative.
-        let stock = infra_rung_price(2, &sim.config);
+        let stock = infra_price_at_band(2, &sim.config);
         let on_cost = stock.band_from(cost_anchor(&sim.config));
         let on_mass = stock.on_scale::<units::Mass>().in_bands();
         assert!(
             (on_cost.bands() - on_mass.bands()).abs() > 0.1,
-            "the same kilotons must read a different rung on each ladder: {on_cost} vs {on_mass}"
+            "the same kilotons must read a different whole Band on each ladder: {on_cost} vs {on_mass}"
         );
     }
 
@@ -15053,7 +15100,7 @@ mod tests {
     /// `Hyades_industry.md` §6.7 predicted stage 3 would be neutral; §6.8 then
     /// argued it could not be, because storing the stock moves the rounding out
     /// of exact Band-space addition (`infra.up(1.0)`) and into a `ln` round trip
-    /// (`band_from(rung_price(n))`), and those differ in the last bits. The
+    /// (`band_from(infra_price_at_band(n))`), and those differ in the last bits. The
     /// arithmetic half of that is true. The conclusion was wrong, and the guard
     /// run said so: colony-years came back **identical to the decimal** on both
     /// seeds.
@@ -15062,7 +15109,7 @@ mod tests {
     /// through an integer**, so a difference of ~1e-12 in the Band reading is
     /// washed out before it can change anything:
     ///
-    /// - `infra_rung_of` **rounds**, and it is what `infra_step_price` and
+    /// - `infra_band_of` **rounds**, and it is what `infra_step_price` and
     ///   `mineral_pressure_of` are built on — every pricing path.
     /// - `BaselineAutopilot::rank` does not read infrastructure at all. It
     ///   scores `k_potential`, minerals and position.
@@ -15074,10 +15121,10 @@ mod tests {
     ///   never consulted in practice.
     ///
     /// So this test pins the actual invariant rather than the lucky number: the
-    /// two representations disagree in the Band, agree in the rung, and
+    /// two representations disagree in the Band, agree in the whole Band, and
     /// therefore agree in the price. It survived R-O68's fix — `deepen_census`
     /// reports the whole run bit-identical below `b = 0.96` — and it is the
-    /// thing that will fail if R-O85 ever prices the rungs low enough for that
+    /// thing that will fail if R-O85 ever prices the whole Bands low enough for that
     /// continuous reader to start deciding.
     #[test]
     fn infrastructure_reaches_every_decision_through_an_integer() {
@@ -15093,46 +15140,46 @@ mod tests {
             assert_eq!(old_band.bands().to_bits(), new_band.bands().to_bits(), "founding reads identically");
 
             // Now climb. The old code added 1.0 in Band space; the new code
-            // buys the next rung. These are *not* the same f64 …
+            // buys the next whole Band. These are *not* the same f64 …
             let top = BandTier::MAX_PLAYABLE.band().bands() as usize;
             let mut old = old_band;
             let mut stock = new_stock;
-            while infra_rung_of(stock, cfg) < top {
+            while infra_band_of(stock, cfg) < top {
                 old = old.up(1.0);
-                stock = infra_rung_price(infra_rung_of(stock, cfg) + 1, cfg);
+                stock = infra_price_at_band(infra_band_of(stock, cfg) + 1, cfg);
                 let new = stock.band_from(cost_anchor(cfg));
 
-                // … and the rung they round to is, which is the only thing any
+                // … and the whole Band they round to is, which is the only thing any
                 // live path reads.
                 assert_eq!(
                     old.round().bands() as usize,
-                    infra_rung_of(stock, cfg),
-                    "{hull:?}: the rung must agree even when the Band does not (old {old}, new {new})"
+                    infra_band_of(stock, cfg),
+                    "{hull:?}: the whole Band must agree even when the Band does not (old {old}, new {new})"
                 );
                 assert_eq!(
                     infra_step_price(stock, cfg).kilotons().to_bits(),
-                    (infra_rung_price(infra_rung_of(stock, cfg) + 1, cfg)
-                        - infra_rung_price(infra_rung_of(stock, cfg), cfg))
+                    (infra_price_at_band(infra_band_of(stock, cfg) + 1, cfg)
+                        - infra_price_at_band(infra_band_of(stock, cfg), cfg))
                     .kilotons()
                     .to_bits(),
-                    "and the price follows the rung, not the Band"
+                    "and the price follows the whole Band, not the Band"
                 );
             }
 
             // **The one place the two representations genuinely differ, stated
             // rather than glossed.** The old Band climbed without limit — an
             // `up(1.0)` on a position has no ceiling — while the stock
-            // saturates at the top playable rung, because the ladder does. It
+            // saturates at the top playable whole Band, because the ladder does. It
             // is invisible in play, and for a reason that is checked rather
             // than assumed: deepening is gated on `infra < k_potential`, and
-            // `k_potential = min(hab, bio_max)` cannot exceed the top rung. So
+            // `k_potential = min(hab, bio_max)` cannot exceed the top whole Band. So
             // nothing in a shipped run ever reaches the difference.
             //
             // This is the better behavior of the two — an unbounded
             // infrastructure Band was a quantity with no meaning past `Band IV`
             // — but it is a change, and it is the reason to keep the gate.
-            let over = infra_rung_price(top + 3, cfg);
-            assert_eq!(infra_rung_of(over, cfg), top, "the stock saturates at the top playable rung");
+            let over = infra_price_at_band(top + 3, cfg);
+            assert_eq!(infra_band_of(over, cfg), top, "the stock saturates at the top playable whole Band");
             // The old Band had no such ceiling — `up(1.0)` on a position climbs
             // forever — which is the difference this comment exists to record.
             // It is not asserted, because an assertion about deleted code would
@@ -15151,7 +15198,7 @@ mod tests {
     #[test]
     fn a_mix_card_cannot_change_the_total() {
         let sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
-        let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
+        let step = infra_step_price(infra_price_at_band(1, &sim.config), &sim.config);
 
         // Every mix a card could reach, including the sole-color `1:0:0` that
         // §5.1 allows works and forbids card costs, and degenerate weights.
@@ -15187,7 +15234,7 @@ mod tests {
         }
     }
 
-    /// **T-73: a color-poor center cannot buy the rung, however rich it is.**
+    /// **T-73: a color-poor center cannot buy the whole Band, however rich it is.**
     ///
     /// This is the whole point of the stage, and the thing no total-based
     /// affordability test can express. `Minerals::try_spend_total` debits
@@ -15202,7 +15249,7 @@ mod tests {
     /// center is refused, and a center with the *same total* spread across the
     /// colors the bill names is not.
     #[test]
-    fn a_color_poor_center_cannot_buy_the_rung() {
+    fn a_color_poor_center_cannot_buy_the_whole_band() {
         let step = Price::new(9.0);
         let works = cards::Works::default(); // even thirds: 3.0 of each
         let bill = works_bill(step, &works);
@@ -15254,7 +15301,7 @@ mod tests {
     /// divide a yard's throughput, so those three numbers are `t_lead +
     /// m/F_slip` — the limit an arbitrarily industrialised yard descends
     /// toward and never reaches. What T-74 pins here instead is the *anchor*:
-    /// a rung-I center with default doctrine fabricates at exactly the flat
+    /// a whole Band-I center with default doctrine fabricates at exactly the flat
     /// rate T-68 and the mining model shipped, so the rate curve pivots about
     /// a configuration that was already ratified.
     #[test]
@@ -15262,23 +15309,23 @@ mod tests {
         let mut sim = Simulation::with_baseline(test_galaxy(2, 5), test_cfg(5));
         // **T-74 made `t_build` a property of the yard, so the schedule needs a
         // yard to be read at — and the one it holds at is the anchor.** A center
-        // standing at rung I with default doctrine sits exactly on the knee of
+        // standing at whole Band I with default doctrine sits exactly on the knee of
         // the rate curve, where a berth runs at `fab_cap / 2`. Since R-O88 that
         // is a *per-berth* statement and `fab_cap` is the per-berth ceiling, so
         // §3.3's approved schedule reads off this one constant directly.
         let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         {
             let f = sim.world.factors.get_mut(yard).unwrap();
-            f.infra = infra_rung_price(1, &sim.config);
+            f.infra = infra_price_at_band(1, &sim.config);
         }
         assert!(
             (sim.berth_rate(yard) - sim.config.fab_cap / 2.0).abs() < 1e-12,
-            "a rung-I center sits on the knee, so a berth runs at half the ceiling; got {}",
+            "a whole Band-I center sits on the knee, so a berth runs at half the ceiling; got {}",
             sim.berth_rate(yard)
         );
         // **§3.3's schedule is the limit, not a value any yard reaches** — T-69
         // is what made that distinction real. Before slips, `t_build` was
-        // `t_lead + m/F` and a rung-I center hit 2.2 / 3.0 / 12.0 on the nose.
+        // `t_lead + m/F` and a whole Band-I center hit 2.2 / 3.0 / 12.0 on the nose.
         // Slips divide the throughput, so the table is now the **asymptote**
         // the curve descends toward and every real yard sits above it. Assert
         // the schedule as what it is — the two constants, composed — and assert
@@ -15315,17 +15362,17 @@ mod tests {
         assert!(l < m && m < g, "time must order like mass: {l} {m} {g}");
 
         // And it is one expression over every order, not a hull table: an
-        // infrastructure rung costs minerals, minerals are mass, so a rung has a
+        // infrastructure whole Band costs minerals, minerals are mass, so a whole Band has a
         // build time by the same rule. `Infra I` is priced as a Medium hull
         // (R-O80), so it takes a Medium hull's time.
         // **Against the shell, since T-96**: a Medium *hull* now masses its drive
-        // too, so it takes longer than the rung its shell prices at. The rule
+        // too, so it takes longer than the whole Band its shell prices at. The rule
         // being pinned is that `build_time` is a pure function of mass with no
         // hull table in it, and that is what equal masses giving equal times
         // says.
         let shell = hull_shell_mass(HullType::MediumSystems, &sim.config).on_scale::<units::Cost>();
         assert!(
-            (sim.build_time(yard, infra_rung_price(1, &sim.config)) - sim.build_time(yard, shell)).abs() < 1e-9,
+            (sim.build_time(yard, infra_price_at_band(1, &sim.config)) - sim.build_time(yard, shell)).abs() < 1e-9,
             "equal masses must take equal time, whatever the order is for"
         );
         assert!(m > sim.build_time(yard, shell), "a hull with a drive in it takes longer than its bare shell");
@@ -15339,7 +15386,7 @@ mod tests {
     /// every yard, however rich — equivalently, per-berth throughput stays
     /// strictly *under* `F_slip` and climbs toward it. The reciprocal is what
     /// makes it easy to get backwards, and getting it backwards is not a
-    /// cosmetic error: dropping the `1 +` from `slips` lets a rung-II center
+    /// cosmetic error: dropping the `1 +` from `slips` lets a whole Band-II center
     /// build a Medium hull in 2.55 yr against a 3.0 yr floor, which deletes the
     /// design property while still passing any number-by-number schedule test.
     /// So this asserts the inequality, and the schedule test below asserts the
@@ -15383,29 +15430,32 @@ mod tests {
         }
 
         // Read through `build_time`, since that is what the rest of the engine
-        // sees: strictly above the floor at every rung, and monotonically
+        // sees: strictly above the floor at every whole Band, and monotonically
         // approaching it as the yard grows.
         let mut sim = Simulation::with_baseline(test_galaxy(2, 3), test_cfg(3));
         let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let mut prev = f64::INFINITY;
-        for rung in 1..=4 {
+        for whole_band in 1..=4 {
             {
                 let f = sim.world.factors.get_mut(yard).unwrap();
-                f.infra = infra_rung_price(rung, &sim.config);
+                f.infra = infra_price_at_band(whole_band, &sim.config);
             }
-            // **Staffed for the rung it stands at** (T-125: staffing is on by
+            // **Staffed for the whole Band it stands at** (T-125: staffing is on by
             // default). The claim is about the stock-to-rate curve of a worked
             // yard; a richer yard with the same people is an understaffed one,
             // which is `u`'s question and not this test's.
             let band = sim.world.factors.get(yard).unwrap().infra_band(&sim.config);
             sim.world.population.insert(yard, Kilotons::at_band(band));
-            assert!((sim.staffing(yard) - 1.0).abs() < 1e-9, "the yard must be fully staffed at rung {rung}");
+            assert!(
+                (sim.staffing(yard) - 1.0).abs() < 1e-9,
+                "the yard must be fully staffed at whole Band {whole_band}"
+            );
             let t = sim.build_time(yard, mass);
-            assert!(t > floor, "rung {rung} builds in {t} yr, under the floor {floor}");
+            assert!(t > floor, "whole Band {whole_band} builds in {t} yr, under the floor {floor}");
             assert!(t < prev, "a richer yard must not turn a hull around more slowly: {prev} -> {t}");
             prev = t;
         }
-        assert!(prev < floor * 1.35, "four rungs should be well down the curve, got {prev} against {floor}");
+        assert!(prev < floor * 1.35, "four whole Bands should be well down the curve, got {prev} against {floor}");
     }
 
     /// **A yard with slips uses them** (T-69).
@@ -15429,10 +15479,10 @@ mod tests {
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         {
             let f = sim.world.factors.get_mut(home).unwrap();
-            f.infra = infra_rung_price(1, &sim.config);
+            f.infra = infra_price_at_band(1, &sim.config);
         }
         let berths = sim.free_berths(home);
-        assert!(berths >= 2, "the anchor must give a rung-I yard more than one berth, got {berths}");
+        assert!(berths >= 2, "the anchor must give a whole Band-I yard more than one berth, got {berths}");
 
         // Enough minerals that affordability cannot be what stops it.
         {
@@ -15543,7 +15593,7 @@ mod tests {
         let biomass = bio_max;
         sim.world
             .factors
-            .insert(home, Factors::new(Band::new(4.0), biomass, bio_max, infra_rung_price(4, &sim.config)));
+            .insert(home, Factors::new(Band::new(4.0), biomass, bio_max, infra_price_at_band(4, &sim.config)));
         *sim.world.population.get_mut(home).unwrap() = pop0;
 
         let before = pop0 + sim.world.factors.get(home).unwrap().biomass;
@@ -16148,7 +16198,7 @@ mod tests {
             let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
             let (a, b) = (sim.planet_entity[11], sim.planet_entity[12]);
 
-            // An empty bank makes the center short of the whole rung, which is
+            // An empty bank makes the center short of the whole Band, which is
             // what `color_deficit` reads. The piles are each one color, which
             // is the galaxy's own condition made exact.
             *sim.held_at_mut(center).unwrap() = Minerals::default();
@@ -16319,7 +16369,7 @@ mod tests {
                     Band::new(3.0),
                     Band::new(3.0).in_kilotons(),
                     Band::new(3.0).in_kilotons(),
-                    infra_rung_price(1, &sim.config),
+                    infra_price_at_band(1, &sim.config),
                 ),
             );
             sim.world.position.insert(e, here);
@@ -16327,7 +16377,7 @@ mod tests {
         // Home can pay for everything, so it is never the needy one.
         *sim.held_at_mut(home).unwrap() = Minerals { cyan: 1e6, magenta: 1e6, yellow: 1e6, ..Default::default() };
 
-        let step = infra_step_price(infra_rung_price(1, &sim.config), &sim.config);
+        let step = infra_step_price(infra_price_at_band(1, &sim.config), &sim.config);
         let bill = works_bill(step, &cards::Works::default());
         // `a` has everything except Yellow; `b` has everything except Magenta.
         *sim.held_at_mut(a).unwrap() =
@@ -16363,7 +16413,7 @@ mod tests {
                 Band::new(3.0),
                 Band::new(3.0).in_kilotons(),
                 Band::new(3.0).in_kilotons(),
-                infra_rung_price(1, &sim.config),
+                infra_price_at_band(1, &sim.config),
             ),
         );
         sim.world.position.insert(empty, here);
@@ -16942,7 +16992,7 @@ mod tests {
     /// Two owned centers for the R-MX8 tests: `origin` holds Yellow above its
     /// next bill and nothing else, so it is long Yellow and still under
     /// pressure; `dest` holds nothing, so it wants every color at full
-    /// pressure. Both at rung I, co-located with the homeworld.
+    /// pressure. Both at whole Band I, co-located with the homeworld.
     fn two_centers(sim: &mut Simulation, abundance: f64) -> (Entity, Entity, [Price; 3]) {
         let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
         let here = *sim.world.position.get(home).unwrap();
@@ -16955,7 +17005,7 @@ mod tests {
                     Band::new(3.0),
                     Band::new(3.0).in_kilotons(),
                     Band::new(3.0).in_kilotons(),
-                    infra_rung_price(1, &sim.config),
+                    infra_price_at_band(1, &sim.config),
                 ),
             );
             sim.world.position.insert(e, here);

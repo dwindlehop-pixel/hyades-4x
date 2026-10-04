@@ -7,7 +7,7 @@
 //! bias does depth actually start winning, and what does the objective pay for
 //! it?*
 //!
-//! Reports, per bias: the build mix (infra rungs vs hulls), the infrastructure
+//! Reports, per bias: the build mix (infra whole Bands vs hulls), the infrastructure
 //! the empires ended up standing at against the ceiling they were allowed, and
 //! both objectives — colony count and colony-years.
 //!

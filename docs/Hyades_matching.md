@@ -324,7 +324,7 @@ abundance_c = max(0, held_c(O) − bill_c(O))
 | `wtp(X, c)` | `X`'s willingness to pay for `c` | `$`/kt | `willingness_to_pay` |
 | `t` | the laden leg `O → D` at a full hold | yr | `ship_travel_years` on the hauler's Design |
 
-So a center keeps what its own next rung needs, and ships only where the Exchange
+So a center keeps what its own next whole Band needs, and ships only where the Exchange
 would ship an ask (§8.1's rule with `a_j = wtp(O, c)`). What loads at a center
 goes to `D`, the buyer it was priced against, and is never re-routed. A milk run
 (T-91) may stop at such a center too, scored the same way as any other pile. A
@@ -552,7 +552,7 @@ rather than a second price vector:
   becomes `o*`, its need is recorded, and the policy chooses again seeing only
   `A(X)`, with `o*`'s Design quoted unpayable. `o*` stands until the next
   decision at `X`, which re-records it only if the policy still chooses it.
-- **Every other draw on the holding reads `A(X)`** — another build, a rung of
+- **Every other draw on the holding reads `A(X)`** — another build, a whole Band of
   works, an ask on the Exchange, an offer to a hauler (§8.5). `o*` itself pays
   from the whole holding.
 - **An empire sells only what none of its centers waits on** — its centers'
@@ -619,7 +619,7 @@ tail).
 **10.6 R-MX16 — a forge's works bill is priced, not held. Superseded by galaxy
 §4.5** (the author's ruling: forging is a forge's primary purpose). R-MX16
 resolved how much of its works bill a forge offering capacity keeps back; a
-forge now keeps every basic for synthesis, builds no rung, and sells what it
+forge now keeps every basic for synthesis, builds no whole Band, and sells what it
 has forged rather than capacity, so there is no works bill to hold or price.
 The ruling and its measurements are in appendix §D.25, §D.26 and §D.30.
 

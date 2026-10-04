@@ -327,7 +327,7 @@ impl Hotspots {
 pub struct PopBands {
     /// The four internal edges, **as masses**. They are *generated* as ladder
     /// positions — the Weibull quantiles are Gibrat-spaced, which is a
-    /// statement about rungs — and stored as the population each edge stands
+    /// statement about whole Bands — and stored as the population each edge stands
     /// for, so the comparison in [`PopBands::level`] is a comparison of people
     /// against people (T-64).
     pub edges: [Kilotons; 4],
@@ -356,8 +356,8 @@ impl PopBands {
     #[inline]
     pub fn level(&self, population: Kilotons) -> BandTier {
         // The edges are the *reached* thresholds, so the count of crossings is
-        // the rung index. `BandTier::PLAYABLE` is indexed rather than matched so a
-        // sixth rung cannot silently fall off the end.
+        // the whole Band index. `BandTier::PLAYABLE` is indexed rather than matched so a
+        // sixth whole Band cannot silently fall off the end.
         BandTier::PLAYABLE[self.edges.iter().filter(|&&e| population >= e).count()]
     }
 }

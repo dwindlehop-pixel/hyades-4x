@@ -283,7 +283,7 @@ impl Minerals {
     /// **On the cost ladder** (`Qty<Cost>`), which is where the mass→price
     /// crossing lives: ore in the ground is a mass and reads on the mass
     /// ladder, and the same ore in a bank is what a hull is priced in and reads
-    /// on the cost one. Same kilotons (R-O57); different rungs. Everything
+    /// on the cost one. Same kilotons (R-O57); different whole Bands. Everything
     /// downstream of here — `hull_cost`, `infra_step_price`, the stockpile
     /// comparisons — is typed so a price cannot be compared against a mass
     /// reading by accident.

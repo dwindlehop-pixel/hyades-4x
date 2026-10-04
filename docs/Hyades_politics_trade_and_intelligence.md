@@ -332,7 +332,7 @@ appendix §D.20.
 
 Carries two structural limiters on volume too: **ten clearings per game**
 (`years_per_round = 400`, set by the card layer rather than the market) and a bid
-sized to one infrastructure rung rather than to consumption.
+sized to one infrastructure whole Band rather than to consumption.
 
 **2.16 `RATIFIED` — the book clears at a spatial price equilibrium, no deeper than
 the buyer can move on, and every holding can sell (R-MX7, T-134).**

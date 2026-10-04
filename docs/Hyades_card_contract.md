@@ -164,7 +164,7 @@ Two enforcement points, for two different failure modes, and both are cheap:
 1. **At the card list** — a `const` assertion over `TIER0` that no non-Warfare
    card carries a lethal effect. This is a **static** property of shipped data,
    so it costs nothing at runtime and fails the build rather than a match. It is
-   the same shape as the `compile_fail` doctest that stops a rung being written
+   the same shape as the `compile_fail` doctest that stops a whole Band being written
    as a bare number (`AGENTS.md` §4).
 2. **In `Order::coerce`** — a play of a lethal card from a non-Warfare tree
    coerces to `Order::pass`, like any other illegality. Redundant while the list

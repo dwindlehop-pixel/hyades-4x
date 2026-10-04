@@ -5,7 +5,7 @@
 //! per berth — and re-pricing the ladder against what it *buys* leaves nothing
 //! of the third:
 //!
-//! | rung | stock | berths | output | step cost | **payback** |
+//! | whole Band | stock | berths | output | step cost | **payback** |
 //! |---|---|---|---|---|---|
 //! | I | 0.10 kt | 2 | 0.0500 kt/yr | 0.90 kt | — |
 //! | II | 1.00 kt | 17 | 0.5484 kt/yr | 19.0 kt | **1.8 yr** |
@@ -13,13 +13,13 @@
 //! | IV | 800 kt | 13,334 | 444.4 kt/yr | — | **1.8 yr** |
 //!
 //! Cost and output are both geometric in the stock, so the return is **constant
-//! at every rung**: infrastructure pays for itself in 1.8 years, at any scale.
+//! at every whole Band**: infrastructure pays for itself in 1.8 years, at any scale.
 //! Meanwhile the bed banks **1,714,697 kt** and sits at mean Band **1.442**
 //! against a ceiling of 3.612, with **none** at cap. The money is there, the
 //! return is enormous, and it is not being spent.
 //!
 //! So the question is no longer "what does it cost" but **"which line declines
-//! it"**. `production_choice` can refuse a rung in exactly three places, and
+//! it"**. `production_choice` can refuse a whole Band in exactly three places, and
 //! this counts them against every decision where deepening was *possible*:
 //!
 //! - **gated** — `infra >= k_potential`, so the world allows no more. Not a
@@ -107,7 +107,7 @@ fn main() {
 
     let pct = |n: u64| 100.0 * n as f64 / total.max(1) as f64;
     println!("\n{total} production decisions");
-    println!("  bought a rung          {bought:>9}  {:>6.2}%", pct(bought));
+    println!("  bought a whole Band          {bought:>9}  {:>6.2}%", pct(bought));
     println!(
         "  gated at the ceiling   {gated:>9}  {:>6.2}%   (infra >= k_potential — a fact, not a defect)",
         pct(gated)
@@ -123,12 +123,12 @@ fn main() {
     if !wealth.is_empty() {
         let q = |f: f64| wealth[((wealth.len() - 1) as f64 * f) as usize];
         println!(
-            "\n  bank / rung price, over the outbid decisions:  p50 {:.1}x  p90 {:.1}x  p99 {:.1}x  max {:.1}x",
+            "\n  bank / whole Band price, over the outbid decisions:  p50 {:.1}x  p90 {:.1}x  p99 {:.1}x  max {:.1}x",
             q(0.5),
             q(0.9),
             q(0.99),
             wealth.last().copied().unwrap_or(0.0)
         );
-        println!("  (a center declining a rung it could buy {:.0} times over is the finding)", q(0.9));
+        println!("  (a center declining a whole Band it could buy {:.0} times over is the finding)", q(0.9));
     }
 }

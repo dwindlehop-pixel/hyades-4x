@@ -291,7 +291,7 @@ fn no_nan_or_infinity_reaches_replicated_state() {
     finite(snap.time_years, "snapshot.time_years");
     for (i, p) in snap.players.iter().enumerate() {
         finite(p.total_population.kilotons(), &format!("players[{i}].total_population"));
-        finite(p.stockpiled_total, &format!("players[{i}].stockpiled_total"));
+        finite(p.stockpile_total, &format!("players[{i}].stockpile_total"));
     }
     for pl in &snap.planets {
         let id = pl.id.0;

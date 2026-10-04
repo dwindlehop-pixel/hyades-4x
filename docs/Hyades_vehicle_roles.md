@@ -227,7 +227,7 @@ carries no such information itself.
   - **"Thin" has a floor, and finding it cost 57% of a bed.** Founding at infra
     *zero* is not a price but an absorbing state: `employment_rate` returns
     exactly `0.0` there, so the colony can never mine or build. A departing
-    picket leaves the ladder's floor rung (§8.7, **R-WAR6**).
+    picket leaves the ladder's floor whole Band (§8.7, **R-WAR6**).
   - **A picket whose world gets colonized returns to the frontier** (T-115).
     Its product is a colony somebody does not found; once that world *is* a
     colony there is nothing left to deny, and a hull left parked there is one

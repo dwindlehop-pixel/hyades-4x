@@ -57,7 +57,7 @@ pub struct PlanetSnapshot {
     /// (T-129, within 3e-7 Band), so "the stock never exceeds its ceiling" is
     /// a comparison of two masses, not of a mass and a reconstruction.
     pub bio_max_mass: Kilotons,
-    /// Built infrastructure, read back onto the **Cost** ladder as a rung.
+    /// Built infrastructure, read back onto the **Cost** ladder as a whole Band.
     pub infrastructure: Band,
     /// **The same infrastructure as the mass it actually is** — the minerals
     /// standing in it, in kilotons (T-70, `Hyades_industry.md` §1.3).
@@ -136,7 +136,7 @@ pub struct PlayerSnapshot {
     pub total_population: Kilotons,
     /// Convenience roll-up: total minerals stockpiled across this empire's
     /// planets (the empire does not hold these centrally; this is a sum).
-    pub stockpiled_total: f64,
+    pub stockpile_total: f64,
 }
 
 /// A full read-only picture of the simulation at one instant. Every entity's

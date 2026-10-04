@@ -158,7 +158,8 @@ ecology. Appendix §A.9.
 | `mineral_high` | 2.0 | at/above ⇒ a low-K world is an outpost |
 | `hub_high` | Band 0.8 | at/above ⇒ a high-K world is a production center |
 | `centrality_scale` | 150.0 ly | decay scale of centrality to holdings |
-| `mineral_pressure_gain` | 1.0 | gain on the scarcity term |
+| `mineral_pressure_gain` | 1.0 | gain on the live mineral-pressure term |
+| `holdings_price_gain` | 1.0 | gain on the empire's color prices (§3.9); measured, placeholder against other objectives |
 
 **`k_high = 3.2` is confirmed and is a knife-edge, not a slope** — ±25% collapses
 coverage in *both* directions. **R-AC17 resolved**; appendix §A.7, §A.2.
@@ -172,7 +173,7 @@ measured `[−2, 0]` reaches 5.0e-4, and the range-reduced `2^f` form reaches
 Appendix §D.8.
 
 **3.5 `RATIFIED` — the mineral term reads Bands, memoized on the field's own
-bits.** `rank` scores ore as `Σ_c scarcity_c · Band(m_c)`; `PlanetView` carries
+bits.** `rank` scores ore as `Σ_c color_price_c · Band(m_c)`; `PlanetView` carries
 `mineral_bands: [f64; 3]` rather than a `MineralField`, because nothing in the
 seam read the masses (T-100).
 
@@ -191,12 +192,28 @@ between "colonisable" and the coverage objective's denominator. Lowering the gat
 to widen the ceiling directly shrinks the Mining-outpost class that funds
 expansion — R-AC17 run backwards. **The two knobs must move together.**
 
-**3.9 `OPEN` — the scarcity vector is written once at game start and never
-again.** `scarcity_c` comes from the homeworld archetype, so selection can say
-*mine more* and never *mine Cyan*. Replacing it with the deciding center's live
-shortfall was **implemented, measured and reverted** (−3.30% ± 0.49 colony-years,
-0/4 seeds) — the decision was blind and had nothing to see. Appendix §A.12. The
-defect is real and remains; what is open is whether it matters anywhere.
+**3.9 `RATIFIED` (the author's ruling, T-147) — holdings-based pricing.** An
+empire's price for each color of ore is read from its holdings
+(`Simulation::color_prices`, `RankContext::color_price`):
+
+| symbol | name | unit | set |
+|---|---|---|---|
+| `held_c` | the empire's holding of color `c`, at its worlds and outposts | kt | live |
+| `mix_w[c]` | the empire's works-mix weight for `c` | — | `Works`, card-written |
+| `cover_c` | `held_c / mix_w[c]` | kt | live |
+| `g` | `RankWeights::holdings_price_gain` | — | `1.0`, measured |
+| `color_price_c` | `4 · w_c / Σ w`, `w_c = 1 + g · (1 − cover_c / max cover)` | — | live |
+
+The best-covered color is priced lowest and a color held at zero highest; the
+three sum to 4. At `g = 1` an empire holding two colors and none of the third
+prices that color double, which is the archetype weight `[1, 1, 2]` this
+replaces — fixed at game start from the homeworld's archetype, and the cause of
+much of the spread between empires on `Ground::Identical` and `Ground::Random`
+(appendix §D.39). A scan is counted against the most each price can reach,
+`4 · (1 + g) / (3 + g)`, as `mineral_pressure` is taken at its most.
+**Superseded:** the archetype weight; and the deciding center's live shortfall
+as the weight, implemented, measured at −3.30% ± 0.49 colony-years and
+reverted (appendix §A.12) — a center's shortfall, not the empire's holdings.
 
 ---
 
@@ -221,7 +238,7 @@ law #11, on the exact path the expansion loop runs on. **An exemption from
 conservation is not a modeling shortcut, it is a free resource, and a search
 will find it and call it a strategy.**
 
-**4.4 `RATIFIED` — `colony_seed_pop = BandTier::I`.** Typed as a rung, not a
+**4.4 `RATIFIED` — `colony_seed_pop = BandTier::I`.** Typed as a whole Band, not a
 number. **Placeholder magnitude.**
 
 **4.5 `RATIFIED` — `ColonizerPolicy::CheapestViable`.** The cheapest hull that
@@ -346,7 +363,7 @@ change it.** A center's yard is asked when a berth clears, when minerals land,
 and on an economy tick only once something its last declined decision waited on
 has moved (`Declined`): a card landed; its population crossed a band; its works
 changed; the sentries its Doctrine wants changed; its bank reached the cheapest
-price it could not pay, or its rung became payable in every color; and, unless
+price it could not pay, or its whole Band became payable in every color; and, unless
 it declined while saving, its empire scanned a world that can rank as a colony
 or a mining outpost, targeted a world, any empire claimed one, or its reserve
 changed. The tree's short circuits, cheapest first: a bank below the cheapest
@@ -428,12 +445,12 @@ outward_cost` against `w_k · min(1, headroom) / infra_cost` — so it is an odd
 ratio with a state-dependent crossover.
 
 **The knob cannot move Growth's own objective, by identity** (R-O87): a mineral
-buys the same works whether it deepens or founds, at every rung, at the card-free
+buys the same works whether it deepens or founds, at every whole Band, at the card-free
 `eta_works = 1`. Measured **+0.32% ± 1.42 over eight seeds**. The lever it is
 *not* is `eta_works`, which divides the deepening bill and nothing else.
 Appendix §A.11.
 
-**The branch is still cold at 0.5, and that is correct**: an infra rung above the
+**The branch is still cold at 0.5, and that is correct**: an infra whole Band above the
 founding one costs 0.9 kt against a Medium colonizer's 0.10 kt, so expansion
 returns 24–49× per kilotonne. **R-O68 resolved** — the dead branch was the right
 answer reached for a wrong reason. Appendix §A.10.
@@ -446,7 +463,7 @@ placeholder magnitude**, and a doctrine parameter a Greening card retunes.
 `slips` reads the *fabrication share of the stock* and is unbounded; `fab_cap =
 0.1` bounds the rate **per berth**. Before R-O88 one variable did both jobs and
 the build-wide axis was **closed at two berths** — 10¹² kt of infrastructure still
-bought two. Berths at rung II went 2 → 17; **fleet-years +26–34%** — measured as
+bought two. Berths at whole Band II went 2 → 17; **fleet-years +26–34%** — measured as
 a hull *count*, which is neither the mass nor the volume denomination the
 objective has since carried (R-PROD5); kept as measured, R-TREE10 re-runs it.
 

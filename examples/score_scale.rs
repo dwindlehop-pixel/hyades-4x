@@ -33,7 +33,7 @@ fn main() {
 
     for pressure in [0.0, 1.0] {
         let ctx =
-            RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: home.position, mineral_pressure: pressure };
+            RankContext { color_price: [1.0, 1.0, 1.0], holdings_centroid: home.position, mineral_pressure: pressure };
         let mut colony = Vec::new();
         let mut mining = Vec::new();
         for p in &galaxy.planets {

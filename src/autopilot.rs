@@ -465,7 +465,7 @@ pub struct Doctrine {
     /// reserves 15% of its volume for what makes it armed, and carries a
     /// thicker shell to survive using it. Its settlers-per-mineral (10.95) is
     /// still above a Medium hull's (9.16), so it is not dominated; it is a
-    /// middle rung the ladder did not have.
+    /// middle whole Band the ladder did not have.
     ///
     /// **A colonizer built this way carries `Class::Unnamed`**, which is how
     /// `assign_role` tells it from a scout on the same hull — the same
@@ -640,8 +640,8 @@ pub struct Doctrine {
     ///
     /// Since R-O68 the two sides are `rank` score per kilotonne committed, so
     /// this is an **odds ratio**: depth wins when `b/(1 − b) ≥ expand/deepen`.
-    /// The crossover is state-dependent — a center facing a cheap next rung and
-    /// a mediocre candidate deepens where one facing an expensive rung and a hub
+    /// The crossover is state-dependent — a center facing a cheap next whole Band and
+    /// a mediocre candidate deepens where one facing an expensive whole Band and a hub
     /// does not — and on the shipped ladder it sits between **0.96 and 0.98**.
     ///
     /// **Stays at 0.5, and R-O87 is why it is not worth sweeping again.** The
@@ -660,11 +660,11 @@ pub struct Doctrine {
     /// (`a_mineral_buys_the_same_works_whether_it_deepens_or_founds`).
     ///
     /// **That identity is about stock and it is only half the argument.** On
-    /// *flow* deepening wins: rung I → II is **+29.0% hull/yr for nine
+    /// *flow* deepening wins: whole Band I → II is **+29.0% hull/yr for nine
     /// colonizers**, paid back in 62 years. It still does not reach the
     /// objective, for three reasons that are the engine's rather than the
-    /// knob's — homeworlds start at rung II already, `slips` is pinned at 2 at
-    /// every rung, and **build rate governs only ~19% of a center's timeline**
+    /// knob's — homeworlds start at whole Band II already, `slips` is pinned at 2 at
+    /// every whole Band, and **build rate governs only ~19% of a center's timeline**
     /// because a declined build waits out `cycle_years = 50` (T-88). See
     /// `Hyades_industry.md` §6.19a and `examples/founding_tree`.
     ///
@@ -847,8 +847,10 @@ impl SurveyView {
 /// Context the rank reads about *this* empire's standing state.
 #[derive(Clone, Copy, Debug)]
 pub struct RankContext {
-    /// Per-basic scarcity weight `[C, M, Y]` (higher = scarcer = more valued).
-    pub scarcity: [f64; 3],
+    /// The empire's price for each basic `[C, M, Y]`, relative, summing to 4
+    /// (higher = a larger gap in its holdings = more valued) —
+    /// `Simulation::color_prices`, holdings-based pricing (T-147).
+    pub color_price: [f64; 3],
     /// Centroid of the empire's current holdings (for centrality / hub value).
     pub holdings_centroid: Vec3,
     /// Live mineral pressure `∈ [0, 1]`: 0 when the deciding center can comfortably
@@ -961,7 +963,7 @@ pub struct Tasking {
 #[derive(Clone, Copy, Debug)]
 pub struct ProductionContext {
     pub center_pos: Vec3,
-    /// Current development rung of the center.
+    /// Current development whole Band of the center.
     pub level: BandTier,
     /// Current infrastructure value.
     pub infra: f64,
@@ -978,14 +980,14 @@ pub struct ProductionContext {
     /// Mineral cost to raise infra by one level (= the target level). The
     /// **total**, kept for magnitude comparisons; affordability is per color.
     pub infra_cost: Price,
-    /// **The works bill for the next rung, split by color** — Cyan, Magenta,
+    /// **The works bill for the next whole Band, split by color** — Cyan, Magenta,
     /// Yellow (T-73, `Hyades_industry.md` §5.1).
     ///
     /// A work is payable *in named colors*, not out of a total, which is how
     /// the galaxy's mineral distribution finally bites on development rather
     /// than only on card costs. So the deepen branch cannot ask
     /// `stockpile_total >= infra_cost` any more: a center with plenty of ore and
-    /// none of the color the bill names cannot buy the rung.
+    /// none of the color the bill names cannot buy the whole Band.
     pub infra_bill: [Price; 3],
     /// This center's bank, by color, in the same order — the other half of that
     /// comparison.
@@ -1008,7 +1010,7 @@ pub struct ProductionContext {
     pub medium_founding_infra: Band,
     /// The infrastructure a **General**-hulled colony is founded at. `Band IV`
     /// at the ratified ladder: a General hull costs ten Medium hulls and the
-    /// infra ladder charges `1+2+3+4 = 10` to reach the top playable rung.
+    /// infra ladder charges `1+2+3+4 = 10` to reach the top playable whole Band.
     pub general_founding_infra: Band,
     /// Mineral cost of a Miner + its paired Freighter (an LSV + an MSV),
     /// bundled since they're built together (§4.4).
@@ -1189,9 +1191,9 @@ impl Autopilot for BaselineAutopilot {
 
         let k_potential = view.k_potential();
 
-        // mineral_value: scarcity-weighted tier-1 density (§3), inflated by the
-        // empire's *live* mineral pressure so mining is valued when we're short.
-        // A scarcity-weighted **score** over the three Band readings, not a sum
+        // mineral_value: tier-1 density weighted by the empire's color prices
+        // (§3), inflated by the empire's *live* mineral pressure so mining is
+        // valued when we're short. A price-weighted **score** over the three Band readings, not a sum
         // of quantities — the readings are taken explicitly (`.bands()`) for
         // the same reason `hub_value` does: weights carry the units. Summing
         // the *masses* would be a different question (how much ore is here),
@@ -1200,7 +1202,7 @@ impl Autopilot for BaselineAutopilot {
         // masses here (T-100). Same values, same summation order, so the score
         // is bit-identical — the conversion simply moved to where it can be
         // memoized across the 45.4 M times this runs.
-        let base_mineral = view.mineral_bands.iter().zip(ctx.scarcity.iter()).map(|(b, w)| w * b).sum::<f64>();
+        let base_mineral = view.mineral_bands.iter().zip(ctx.color_price.iter()).map(|(b, w)| w * b).sum::<f64>();
         let mineral_value = base_mineral * (1.0 + w.mineral_pressure_gain * ctx.mineral_pressure);
 
         // hub_value: high-K worlds near the empire's center of mass are hubs.
@@ -1367,13 +1369,13 @@ impl Autopilot for BaselineAutopilot {
         // of 2435 Idle decisions were centers in exactly that state, several
         // holding 3.5–4.7 minerals against a 3-mineral upgrade.
         //
-        // **And only while the ladder has a rung above.** The ladder ends at
-        // rung 4, where the next rung's price is the current one's, so a
+        // **And only while the ladder has a whole Band above.** The ladder ends at
+        // whole Band 4, where the next whole Band's price is the current one's, so a
         // center standing there is billed nothing for an upgrade that buys
         // nothing — and committing it every berth, every two years, was a
         // decision storm (appendix §D.40).
-        let has_next_rung = ctx.infra_bill.iter().any(|b| *b > Price::ZERO);
-        let deepen_possible = ctx.infra < ctx.k_potential - 1e-9 && has_next_rung;
+        let has_next_band = ctx.infra_bill.iter().any(|b| *b > Price::ZERO);
+        let deepen_possible = ctx.infra < ctx.k_potential - 1e-9 && has_next_band;
         // The epsilon is a price too — the whole comparison is on one ladder.
         let eps = Price::new(1e-9);
         // **Every color, not the total** (T-73). `works_bill` in `sim` produces
@@ -1615,26 +1617,26 @@ impl Autopilot for BaselineAutopilot {
         //
         // ```text
         // expand = score / outward_cost                 // this candidate, at its price
-        // deepen = w_k · min(1, headroom) / infra_cost  // one rung, at its price
+        // deepen = w_k · min(1, headroom) / infra_cost  // one whole Band, at its price
         // ```
         //
         // `w_k` is the weight `rank` already puts on one Band of `k_potential`
         // (autopilot-doc §3), and it is the right converter because the two
         // moves trade in one commodity: expansion **acquires** a world's Bands
         // of ceiling, deepening **realizes** a Band of them here. The `min(1, ·)`
-        // is what a rung actually delivers — `apply_build` steps to the next
-        // whole rung whatever the headroom, so a last partial step pays a full
+        // is what a whole Band actually delivers — `apply_build` steps to the next
+        // whole Band whatever the headroom, so a last partial step pays a full
         // price for less than a Band.
         //
         // The comparison is then an odds ratio — depth wins when
         // `b/(1 − b) >= expand/deepen` — and that crossover is **state-
         // dependent**, which is the graded region the old form had nowhere: a
-        // center facing a cheap next rung and a mediocre candidate deepens where
-        // one facing an expensive rung and a hub does not.
+        // center facing a cheap next whole Band and a mediocre candidate deepens where
+        // one facing an expensive whole Band and a hub does not.
         //
         // **What it does not do is revive the branch at the shipped defaults,
         // and that is the finding rather than a shortfall.** The infra ladder
-        // charges 0.9 kt for the rung above the founding one where a Medium
+        // charges 0.9 kt for the whole Band above the founding one where a Medium
         // colonizer costs 0.1 kt, so expansion buys tens of times the score per
         // kilotonne and *ought* to win: the dead branch was the right answer
         // reached for a wrong reason.
@@ -1654,7 +1656,7 @@ impl Autopilot for BaselineAutopilot {
         // **R-O85** carries what that exposes, and it is not a tuning question:
         // infrastructure is priced as if it were scarce on a bed where minerals
         // are the thing piling up unspent, and `fabrication_rate` saturates by
-        // the second rung, so the rungs above it cost 19 kt and 780 kt to buy
+        // the second whole Band, so the whole Bands above it cost 19 kt and 780 kt to buy
         // almost no throughput.
         let b = doctrine.reinvest_bias;
         let deepen_headroom = (ctx.k_potential - ctx.infra).max(0.0);
@@ -1892,11 +1894,11 @@ impl<'a> Standing<'a> {
         self.order_for(Role::Scout)
     }
 
-    /// **The colonizer ladder, cheapest rung first.**
+    /// **The colonizer ladder, cheapest whole Band first.**
     ///
-    /// Two rungs because the Contact ladder has no Medium tier, so a card that
+    /// Two whole Bands because the Contact ladder has no Medium tier, so a card that
     /// arms the colony ship is forced to the General one (T-116). Substituting
-    /// happens *inside* this array — the Medium rung is not the card's to take.
+    /// happens *inside* this array — the Medium whole Band is not the card's to take.
     pub fn colonizer_ladder(&self) -> [HullType; 2] {
         [HullType::MediumSystems, general_colonizer_hull(self.doctrine)]
     }
@@ -2292,7 +2294,7 @@ mod tests {
     fn rich_low_hab_world_is_a_mining_outpost() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let ctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
+        let ctx = RankContext { color_price: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         let v = view(
             1,
             Vec3::new(10.0, 0.0, 0.0),
@@ -2311,7 +2313,7 @@ mod tests {
     fn habitable_central_world_is_a_production_center() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let ctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
+        let ctx = RankContext { color_price: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         let v = view(2, Vec3::new(5.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         assert_eq!(ap.rank(&doctrine, &v, &ctx).class, PlanetClass::ProductionCenter);
     }
@@ -2320,7 +2322,7 @@ mod tests {
     fn distant_habitable_world_is_a_colony() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let ctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
+        let ctx = RankContext { color_price: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         // far from holdings ⇒ low hub value ⇒ colony, not center
         let v = view(3, Vec3::new(900.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         assert_eq!(ap.rank(&doctrine, &v, &ctx).class, PlanetClass::Colony);
@@ -2405,7 +2407,7 @@ mod tests {
             infra_cost: Price::new(infra + 1.0),
             // Even thirds against a bank of even thirds: these cases are about
             // the deepen/expand branch, not about color scarcity, and
-            // `a_color_poor_center_cannot_buy_the_rung` covers that
+            // `a_color_poor_center_cannot_buy_the_whole_band` covers that
             // deliberately.
             infra_bill: [Price::new((infra + 1.0) / 3.0); 3],
             stockpile_by_color: [Price::new(stockpile / 3.0); 3],
@@ -2468,7 +2470,7 @@ mod tests {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
         let ctx = prod_ctx(BandTier::III, 3.0, 2.0);
-        let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
+        let rctx = RankContext { color_price: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         let ranked = ap.rank(&doctrine, &v, &rctx);
         let cands = vec![Candidate {
@@ -2497,7 +2499,7 @@ mod tests {
     fn a_colonizer_prefers_held_ground_to_a_better_unheld_world() {
         let ap = BaselineAutopilot::default();
         let doctrine = Doctrine::default();
-        let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
+        let rctx = RankContext { color_price: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         let cand = |id: u32, hab: f64, held: bool| {
             let v = view(id, Vec3::new(10.0, 0.0, 0.0), hab, hab, MineralField::default());
             let ranked = ap.rank(&doctrine, &v, &rctx);
@@ -2696,8 +2698,8 @@ mod tests {
     /// Settlers per kilotonne of cost, off the ladder
     /// (`examples/hull_compare`): MSV **9.16**, GCV **10.95**, GSV **24.04**.
     /// So a General Systems hull is far and away the best deal, a Contact hull
-    /// on the same rung is less than half of it, and the Contact hull still
-    /// beats the Medium — it is a middle rung, not a dominated one.
+    /// on the same whole Band is less than half of it, and the Contact hull still
+    /// beats the Medium — it is a middle whole Band, not a dominated one.
     #[test]
     fn under_settlers_per_mineral_the_contact_hull_is_chosen_and_is_worse() {
         let ap = BaselineAutopilot::default();
@@ -2771,11 +2773,15 @@ mod tests {
                 // The shell a sentry shares with the arena's warships reads as
                 // a picket without the sentry's name.
                 assert_eq!(st.role_of(HullType::LimitedOffensive, Class::Unnamed), Some(Role::Picket));
-                // Every rung of the colonizer ladder resolves to a colonizer,
+                // Every whole Band of the colonizer ladder resolves to a colonizer,
                 // not only the one `design_for` names — otherwise the General
-                // rung would be built and then tasked as something else.
+                // whole Band would be built and then tasked as something else.
                 for hull in st.colonizer_ladder() {
-                    assert_eq!(st.role_of(hull, Class::Unnamed), Some(Role::Colonizer), "{hull:?} is a colonizer rung");
+                    assert_eq!(
+                        st.role_of(hull, Class::Unnamed),
+                        Some(Role::Colonizer),
+                        "{hull:?} is a colonizer whole Band"
+                    );
                 }
             }
         }
@@ -2867,7 +2873,7 @@ mod tests {
 
     /// One `Candidate` a mature center would happily colonize.
     fn one_colony_candidate(ap: &BaselineAutopilot, doctrine: &Doctrine) -> Vec<Candidate> {
-        let rctx = RankContext { scarcity: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
+        let rctx = RankContext { color_price: [1.0, 1.0, 1.0], holdings_centroid: Vec3::ZERO, mineral_pressure: 0.0 };
         let v = view(5, Vec3::new(10.0, 0.0, 0.0), 3.5, 3.5, MineralField::default());
         let ranked = ap.rank(doctrine, &v, &rctx);
         vec![Candidate {
@@ -2886,12 +2892,12 @@ mod tests {
     /// `production_choice` picks depth when `b · deepen >= (1 − b) · expand`
     /// with both sides in `rank` score per kilotonne committed. So the crossover
     /// is a **price ratio**, `b* = expand / (expand + deepen)`, and it moves
-    /// with the state rather than sitting at one global step: halve the rung's
+    /// with the state rather than sitting at one global step: halve the whole Band's
     /// price and the crossover falls. That graded region is the thing the old
     /// form did not have anywhere, and it is what this pins.
     ///
     /// It also pins the sign of the shipped configuration, which the fix did
-    /// **not** change: an infra rung costs several colonizers, so expansion wins
+    /// **not** change: an infra whole Band costs several colonizers, so expansion wins
     /// at `b = 0.5` and the branch stays cold. That is now a statement about
     /// prices (R-O85) rather than about units.
     #[test]
@@ -2914,7 +2920,7 @@ mod tests {
             expand / (expand + deepen)
         };
 
-        // 1. It is a *dial over state*: a cheaper rung is a lower crossover, and
+        // 1. It is a *dial over state*: a cheaper whole Band is a lower crossover, and
         //    the movement is continuous rather than a single global step.
         let dear = crossover(&ctx);
         let mut cheap_ctx = ctx;
@@ -2923,10 +2929,10 @@ mod tests {
         let cheap = crossover(&cheap_ctx);
         assert!(
             cheap < dear - 0.05,
-            "crossover must track the rung price: {cheap:.3} at 1/8 the price against {dear:.3}"
+            "crossover must track the whole Band price: {cheap:.3} at 1/8 the price against {dear:.3}"
         );
 
-        // 2. The shipped bias still expands, because a rung costs more than a
+        // 2. The shipped bias still expands, because a whole Band costs more than a
         //    colonizer and buys less. Prices, not units.
         doctrine.reinvest_bias = 0.5;
         assert!(
@@ -2943,8 +2949,8 @@ mod tests {
         );
 
         // 3. Above the crossover the same state flips to depth — and the two
-        //    crossovers differ, so there is a band of `b` where the cheap-rung
-        //    center deepens and the dear-rung one does not. That band is the
+        //    crossovers differ, so there is a band of `b` where the cheap-whole Band
+        //    center deepens and the dear-whole Band one does not. That band is the
         //    graded region.
         doctrine.reinvest_bias = (dear + 1.0) / 2.0;
         assert!(
@@ -2958,7 +2964,7 @@ mod tests {
                     ap.production_choice(&doctrine, &ctx, &cands),
                     BuildOrder::Hull { hull_type: HullType::MediumSystems, .. }
                 ),
-            "between the two crossovers the decision must depend on the rung price, not only on b"
+            "between the two crossovers the decision must depend on the whole Band price, not only on b"
         );
     }
 
@@ -3038,6 +3044,21 @@ mod tests {
         let doctrine = Doctrine { survey_avoids_inhabited: true, ..Doctrine::default() };
         let cands = vec![inhabited_survey_view(1, Vec3::new(10.0, 0.0, 0.0))];
         assert_eq!(ap.choose_survey_target(&doctrine, Vec3::ZERO, None, &cands), None);
+    }
+
+    #[test]
+    fn a_center_on_the_top_whole_band_does_not_deepen() {
+        // The ladder ends at whole Band IV: the next whole Band's price is the
+        // current one's, so the bill is zero. A ceiling above it (a homeworld's
+        // `K` is Band 4.2) once let the center buy that free, empty upgrade on
+        // every berth every two years — 370,903 commits in a century on one
+        // seed (appendix §D.40).
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        let mut ctx = prod_ctx(BandTier::II, 2.0, 5.0);
+        ctx.k_potential = 2.86;
+        ctx.infra_bill = [Price::ZERO; 3];
+        assert_ne!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::UpgradeInfrastructure);
     }
 
     #[test]

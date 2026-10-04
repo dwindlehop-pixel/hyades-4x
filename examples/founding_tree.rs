@@ -10,22 +10,22 @@
 //! The flow arithmetic, off the engine's own functions (`t_lead = 2.0`, a Medium
 //! colonizer is 0.10 kt):
 //!
-//! | rung | stock | `F` | slips | `t_build` | hull/yr | next step |
+//! | whole Band | stock | `F` | slips | `t_build` | hull/yr | next step |
 //! |---|---|---|---|---|---|---|
 //! | I | 0.10 kt | 0.1000 | 2 | 4.000 yr | 0.500 | 0.90 kt = **9 colonizers** |
 //! | II | 1.00 kt | 0.1818 | 2 | 3.100 yr | **0.645 (+29.0%)** | 19 kt = 190 colonizers |
 //! | III | 20.0 kt | 0.1990 | 2 | 3.005 yr | 0.666 (+3.2%) | 780 kt = 7,800 colonizers |
 //! | IV | 800 kt | 0.2000 | 2 | 3.000 yr | 0.667 (+0.2%) | — |
 //!
-//! So the objection is right about rung I→II: **+29% build rate for the price of
+//! So the objection is right about whole Band I→II: **+29% build rate for the price of
 //! nine colonizers pays itself back in 62 years** and should be worth ~200 extra
 //! hulls over the horizon. It is wrong about slips, and that is the engine's
 //! fault rather than the argument's — `slips(F) = 1 + ⌊F / slip_throughput⌋`
 //! with `F < fab_cap = 0.2` and `slip_throughput = 0.1`, so **a yard has two
-//! berths at every rung and no amount of infrastructure buys a third** (R-O85).
+//! berths at every whole Band and no amount of infrastructure buys a third** (R-O85).
 //! The whole ladder is worth +33% throughput, and 799 of its 800 kt buy +3.4%.
 //!
-//! Which leaves the question this harness exists to answer: if one rung is worth
+//! Which leaves the question this harness exists to answer: if one whole Band is worth
 //! +29% forever, why is the objective flat? So it counts the thing the argument
 //! is actually about — **how many colonies a homeworld founds itself**, when its
 //! first one lands, and how many hulls it laid down to get there — rather than
@@ -52,8 +52,8 @@ struct Arm {
     home_first: f64,
     /// Hulls of every kind the homeworld laid down.
     home_hulls: f64,
-    /// The homeworld's infrastructure rung at the horizon.
-    home_rung: f64,
+    /// The homeworld's infrastructure whole Band at the horizon.
+    home_band: f64,
     colonies: f64,
     /// Empire-wide, so the ablation arm's zero is visible.
     infra_builds: f64,
@@ -65,14 +65,14 @@ struct Arm {
     fleet_years: f64,
 
     // --- why the yard is not the constraint -------------------------------
-    /// Hulls the homeworld built as a fraction of what its rung could have
+    /// Hulls the homeworld built as a fraction of what its whole Band could have
     /// built over the same span. **If this is small, build rate is not the
     /// binding constraint and no amount of deepening can matter.**
     utilization: f64,
     /// Production decisions taken at the homeworld, and the share of them that
     /// chose `Idle`. A declined build leaves the yard free and the *next*
     /// retry is the economy tick, `cycle_years = 50` — sixteen builds' worth of
-    /// yard time at rung II's 3.1-year `t_build`.
+    /// yard time at whole Band II's 3.1-year `t_build`.
     decisions: f64,
     idle_share: f64,
     /// Mean years between consecutive decisions at the homeworld. Compare
@@ -212,12 +212,12 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Arm {
     }
 
     let snap = sim.snapshot();
-    let home_rung: f64 =
+    let home_band: f64 =
         snap.planets.iter().filter(|p| home_ids.contains(&p.id)).map(|p| p.infrastructure.bands()).sum::<f64>()
             / PLAYERS as f64;
 
-    // What rung II could have built over the span the homeworld was deciding.
-    // `t_build` at rung II is 3.1 yr across 2 berths, i.e. 0.645 hull/yr.
+    // What whole Band II could have built over the span the homeworld was deciding.
+    // `t_build` at whole Band II is 3.1 yr across 2 berths, i.e. 0.645 hull/yr.
     let span = (last_decision - first_decision).max(1e-9);
     let capacity = 0.6452 * span;
     let n = PLAYERS as f64;
@@ -233,7 +233,7 @@ fn run(seed: u64, horizon: f64, bias: f64) -> Arm {
         home_foundings: home_foundings / n,
         home_first,
         home_hulls: home_hulls / n,
-        home_rung,
+        home_band,
         colonies,
         infra_builds,
         work_years,
@@ -261,7 +261,7 @@ fn main() {
         "home kid",
         "first yr",
         "hulls",
-        "rung",
+        "whole Band",
         "colonies",
         "work-years",
         "fleet-years",
@@ -283,7 +283,7 @@ fn main() {
                 a.home_foundings,
                 a.home_first,
                 a.home_hulls,
-                a.home_rung,
+                a.home_band,
                 a.colonies,
                 a.work_years,
                 a.fleet_years,

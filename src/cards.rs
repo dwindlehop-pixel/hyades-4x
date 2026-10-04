@@ -171,7 +171,7 @@ pub enum DoctrineWrite {
     /// **Arm the frontier — Warfare's mouth, and the tree's only Doctrine
     /// write** (`Hyades_warfare_tree.md` §8.2).
     ///
-    /// Moves survey onto the Contact family and opens the General Contact rung
+    /// Moves survey onto the Contact family and opens the General Contact whole Band
     /// of the colonizer ladder, together. They are one write because they are
     /// one decision: an empire that arms what it sends out has armed what it
     /// sends out, and splitting them would let a player buy the cheap half of
@@ -310,7 +310,7 @@ pub const TIER0: [Card; 18] = {
         // **×1.6 is tuned, not ratified** (T-125): the author's target is
         // 1.5–2.0x work-years at P92 on the twelve-seat bed, and ×1.6 reads
         // P92 1.753 [1.583, 1.932] over 11 galaxies (appendix §D.4). ×1.15 was
-        // flat once staffing was on and the rung bill conserved mass.
+        // flat once staffing was on and the whole Band bill conserved mass.
         c(3, Growth, Inscrutable, 0.5, &[WriteDoctrine(DoctrineWrite::GrowthRate(1.6))], false),
         c(4, Growth, Balanced, 0.8, &[WriteDoctrine(DoctrineWrite::GrowthRate(1.35))], false),
         c(5, Growth, LessGuarded, 1.2, &[WriteDoctrine(DoctrineWrite::BiosphereRegen(1.5))], false),

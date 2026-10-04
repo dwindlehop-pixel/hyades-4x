@@ -421,7 +421,7 @@ form should be exponential is **R-IND14**, open.
 E = min( H − S , C(I_0 → I*) , bank(origin) )
 ```
 
-where `C(I_0 → I*)` is the cumulative infrastructure rung price over that range.
+where `C(I_0 → I*)` is the cumulative infrastructure whole Band price over that range.
 Sending more than the destination will spend is freight for ore that then sits
 in a stockpile; sending less means it waits on a freighter for something the
 colonizer had room for.
@@ -511,7 +511,7 @@ kilotonne committed:
 
 ```text
 expand = score / outward_cost                 // this candidate, at its price
-deepen = w_k · min(1, headroom) / infra_cost  // one rung, at its price
+deepen = w_k · min(1, headroom) / infra_cost  // one whole Band, at its price
 ```
 
 `w_k` is a **ranking weight** — how much `rank` likes a Band of `k_potential`.
@@ -519,7 +519,7 @@ It is a coefficient chosen to order candidate worlds, and §6.18 adopted it as
 the converter because the two moves trade in one commodity. That was the right
 fix for the units defect it closed, and it is not a profit: nothing in
 `w_k · min(1, headroom) / infra_cost` is denominated in kilotons per year, so
-the comparison cannot say whether the rung pays for itself, only whether the
+the comparison cannot say whether the whole Band pays for itself, only whether the
 autopilot prefers it.
 
 #### The three terms, and why each is load-bearing
@@ -527,8 +527,8 @@ autopilot prefers it.
 | symbol | name | unit | where it comes from |
 |---|---|---|---|
 | `I` | the center's infrastructure stock | kt | `Factors::infra` |
-| `ΔI` | the next rung's step — **what the stock is short of the next whole rung** (T-124), which is the rung's width only for a stock standing on a rung | kt | `infra_step_price`, geometric in `I` (§6.19c) |
-| `b_c` | the rung's bill in color `c` | kt | `ProductionContext::infra_bill`, a **conjunction** over C/M/Y |
+| `ΔI` | the next whole Band's step — **what the stock is short of the next whole Band** (T-124), which is the whole Band's width only for a stock standing on a whole Band | kt | `infra_step_price`, geometric in `I` (§6.19c) |
+| `b_c` | the whole Band's bill in color `c` | kt | `ProductionContext::infra_bill`, a **conjunction** over C/M/Y |
 | `P` | the center's population | kt | `World::population` (`src/sim.rs:1429`) — **not read by any production path today** |
 | `Y(I, P)` | the center's output at that stock and that population | kt/yr | §4.3 extraction plus §3.2 fabrication |
 | `τ_pay` | payback horizon the policy will accept | yr | **placeholder**, R-IND22 |
@@ -546,8 +546,8 @@ develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
   name, so the affordability half stays a conjunction and is not folded into
   the ratio.
 - **Infrastructure sets both sides.** The ladder is geometric in the stock, and
-  §6.19c measured the consequence: cost and output are both geometric, so a rung
-  pays for itself in **1.8 years at every rung** — scale-free. Read alone, that
+  §6.19c measured the consequence: cost and output are both geometric, so a whole Band
+  pays for itself in **1.8 years at every whole Band** — scale-free. Read alone, that
   makes the payback test a constant `true` and the rule vacuous.
 - **Population is what makes it non-vacuous**, and it is the term that does not
   exist yet.
@@ -572,7 +572,7 @@ develop  iff   ΔI / (Y(I + ΔI, P) − Y(I, P))  ≤  τ_pay
 >   stock-weighted `u` averages 0.63–0.68 on the bed — and every measurement
 >   before T-125 was taken with it off.
 > - **What it did at T-124, with it off** (kept for the record): ~~T-122's reading, "+0.133 ± 0.032 without, +0.126 ±
->   0.028 with"~~, **is retracted (T-124)**: both figures were carried by a rung
+>   0.028 with"~~, **is retracted (T-124)**: both figures were carried by a whole Band
 >   bill that destroyed mass (appendix §D.3). On the conserving engine the card
 >   reads **−0.014 ± 0.023** unstaffed and **+0.056 ± 0.062** staffed; staffed
 >   **with the color conjunction ablated** it reads **+0.121 ± 0.015 (t 8.2)**.
@@ -596,7 +596,7 @@ rather than a refinement:
   of `P`, the population column of the author's ruling has nothing to multiply,
   and the test collapses back to the scale-free 1.8-year payback above.
 - **It is the same question `AGENTS.md` §2 asks of any knob** — *measure whether
-  the resource the change buys is even binding.* A rung of infrastructure with
+  the resource the change buys is even binding.* A whole Band of infrastructure with
   nobody to work it is capacity bought and not staffed. T-88 found the same
   shape one level up: build rate governs ~19% of a center's timeline, so +29%
   of it is +5.5% at best.
@@ -715,7 +715,7 @@ one. This is the "build wide" axis and it scales without limit, as asked.
 > `slips` read the *rate* `F`, and T-74 made `F` a Michaelis–Menten hyperbola
 > bounded by `fab_cap`, so the axis was `fab_cap / F_slip = 2` berths — closed,
 > not short: a yard on 10¹² kt of infrastructure still had two, and homeworlds
-> are *generated* at rung II, already past the only step it had. **`slips` now
+> are *generated* at whole Band II, already past the only step it had. **`slips` now
 > reads the fabrication share of the infrastructure *stock*** and is unbounded,
 > so `F` in the formula above is a stock and `F_slip` is the stock one berth
 > occupies. The per-berth *rate* is where `fab_cap` lives now — §6.19b.
@@ -742,7 +742,7 @@ t_build → t_lead + m / F_slip        (approached from above, never reached)
 > strictly **above** the floor and descends toward it. The `1 +` is therefore
 > load-bearing, not a boundary convenience: **dropping it inverts the design
 > property.** Measured while implementing T-69 — with `slips = max(1, floor(·))`
-> a rung-II center turns a Medium hull around in **2.55 yr against a 3.0 yr
+> a whole Band-II center turns a Medium hull around in **2.55 yr against a 3.0 yr
 > floor**, so a rich empire buys faster single hulls, which §3.2 exists to
 > forbid. `industry_buys_concurrency_and_never_undercuts_the_turnaround_floor`
 > pins the inequality rather than any number, because a number-by-number
@@ -778,10 +778,10 @@ any sweep has confirmed.
 | General Systems | 1.00 kt | **12.0 yr** | 10 yr |
 
 > **What this column means changed at T-69.** T-68 shipped `t_build = t_lead +
-> m/F` with no slips, and a rung-I center hit these three numbers exactly. Once
+> m/F` with no slips, and a whole Band-I center hit these three numbers exactly. Once
 > slips divide the throughput they become the **asymptote** — the limit an
 > arbitrarily industrialised yard descends toward and never reaches (§3.2). At
-> the T-74 anchor a rung-I center sits at `F = F_slip` with two berths, so it
+> the T-74 anchor a whole Band-I center sits at `F = F_slip` with two berths, so it
 > turns a Limited hull around in 2.4 yr rather than 2.2, and buys a second
 > concurrent build for the difference. The schedule is still the design target;
 > it is now a floor rather than a reading.
@@ -803,7 +803,7 @@ the mechanism before tuning the value (`AGENTS.md` §2).
 > the single expression, and it reproduces the table above exactly.
 >
 > **It takes the mass actually committed, not a hull table**, which is what lets
-> one expression cover a hull, an infrastructure rung and a whole mining pair.
+> one expression cover a hull, an infrastructure whole Band and a whole mining pair.
 > Under R-O57 dry mass *is* mineral cost, so "what this build spent" and "how
 > much stuff it is" are one number — and a mining pair drawn partly from Reserve
 > is cheaper *and* quicker, because there is genuinely less to fabricate. To get
@@ -1211,7 +1211,7 @@ those is wanted yet.
 **Buying a work:**
 
 ```
-price_kt   = infra_rung_step(current_rung)      // cost ladder, T-61
+price_kt   = infra_step_price(stock)            // cost ladder, T-61
            / eta_works                          // Design, multiplicative
 price[c]   = price_kt · mix_w[c] / Σ mix_w      // color split, additive-weight
 ```
@@ -1395,7 +1395,7 @@ prediction was wrong and the reason is worth more than the number.**
 
 The arithmetic half of the argument was right: infrastructure was a `Band` and an
 upgrade was `infra.up(1.0)`, exact addition in Band space; stored as the minerals
-standing in it, an upgrade becomes `infra = infra_rung_price(n + 1)` and the rung
+standing in it, an upgrade becomes `infra = infra_price_at_band(n + 1)` and the whole Band
 comes back through a `ln`. Those two really do disagree in the last bits.
 
 The conclusion did not follow, because it assumed `BaselineAutopilot::rank` reads
@@ -1405,7 +1405,7 @@ position. Checking that took one grep and was skipped.
 **Infrastructure reaches every live decision through an integer**, so a `1e-12`
 difference is washed out before it can move anything:
 
-- `infra_rung_of` **rounds**, and every pricing path is built on it —
+- `infra_band_of` **rounds**, and every pricing path is built on it —
   `infra_step_price`, `mineral_pressure_of`.
 - The one continuous reader is `deepen_headroom = k_potential − infra`, and
   that branch is **cold at the shipped `reinvest_bias = 0.5`** — R-O68 first
@@ -1417,17 +1417,17 @@ Measured on the guard (`examples/colony_years`, 3 seats, 4,000 yr): seed 1
 **10,558,680.0 → 10,558,680.0** and seed 7 **10,474,864.5 → 10,474,864.5**,
 colonies and first-founding identical. Pinned by
 `infrastructure_reaches_every_decision_through_an_integer`, which asserts the two
-representations disagree in the Band and agree in the rung — so if a future
+representations disagree in the Band and agree in the whole Band — so if a future
 change makes a *continuous* reader of infrastructure live, the test fails and
 points at the reason. It survived R-O68's own fix — `examples/deepen_census`
 reports the whole run bit-identical below `b = 0.96` — and it is what will fail
-if R-O85 ever prices the rungs low enough for that reader to start deciding.
+if R-O85 ever prices the whole Bands low enough for that reader to start deciding.
 
 **One real difference, found by that test rather than by reasoning.** Past the
-top playable rung the old Band climbed without limit — `up(1.0)` on a position
+top playable whole Band the old Band climbed without limit — `up(1.0)` on a position
 has no ceiling — while the stock saturates, because the ladder does. It is
 invisible in play because deepening is gated on `infra < k_potential` and
-`k_potential = min(hab, bio_max)` cannot exceed the top rung. It is also the
+`k_potential = min(hab, bio_max)` cannot exceed the top whole Band. It is also the
 better behavior: an infrastructure Band above `Band IV` was a number with no
 meaning.
 
@@ -1508,7 +1508,7 @@ layers "deep" means — is **R-IND16**, open.
 ### 6.11 T-81 — freight routes by color
 
 `most_needed_center` scored need on a **total**: how far a center was from
-affording its next rung, with no color term at all. §6.9 measured what that
+affording its next whole Band, with no color term at all. §6.9 measured what that
 cost once bills became color-payable. The routing score is now
 
 ```text
@@ -1521,7 +1521,7 @@ so a hauler carrying Yellow goes where Yellow is what is missing.
 
 **It replaces `mineral_pressure_of` in the score rather than multiplying it.**
 The two ask the same question at different resolutions — *how far is this center
-from affording its next rung*, on a total versus per color — and multiplying
+from affording its next whole Band*, on a total versus per color — and multiplying
 would double-count. `mineral_pressure_of` survives for the deepen/expand
 decision, where a total is what a center weighs.
 
@@ -1711,10 +1711,10 @@ rate(u) = cap · u / (u + half),     u = infra · alloc_share(employment)
 with `cap` the asymptote a Production card raises and `half` the knee a
 Growth or Expansion card lowers. **The anchor is what makes it a pivot rather
 than a retune**: `fab_cap` and `ext_cap` are set to exactly twice the flat
-constants they replace, and `works_knee` is one rung's price split three ways,
-so a **rung-I center under default doctrine sits exactly on the knee and
+constants they replace, and `works_knee` is one whole Band's price split three ways,
+so a **whole Band-I center under default doctrine sits exactly on the knee and
 fabricates and mines at precisely the rates that shipped**. Nothing below or
-above rung I did before; everything does now.
+above whole Band I did before; everything does now.
 
 Measured on `examples/work_years`, 3 seats, 4,000 yr, against the immediately
 preceding commit:
@@ -1821,7 +1821,7 @@ again would be the fourth time that table was wrong about a number nobody ran:
 throughput is unchanged by construction — `slips · (F/slips) = F` — so if the
 mass term were the whole story, slips would be exactly neutral. It is not,
 because the **lead time is per-build and is not divided**. At the T-74 anchor a
-rung-I yard runs two berths at `F_slip/2`:
+whole Band-I yard runs two berths at `F_slip/2`:
 
 | | one build at a time | two berths |
 |---|---|---|
@@ -1983,7 +1983,7 @@ D = fabrication_rate(center) · mineral_pressure(center)
 Both terms already existed and both already ran on this decision path.
 `fabrication_rate` is the rate the yard turns minerals into mass — the only
 sink that consumes ore — and `mineral_pressure` is `1.0` when the center is
-broke for its next rung and `0.0` when it is comfortable. Supply is §4.3's law
+broke for its next whole Band and `0.0` when it is comfortable. Supply is §4.3's law
 read forwards, so the crew is that law inverted:
 
 ```
@@ -2026,7 +2026,7 @@ a retuning.
 Mean crew is now **below the flat 3 it replaced**, and the maximum is 12 rather
 than 204: demand-driven sizing says almost every rock wants one or two hulls,
 because one miner on a rich seam already lifts orders of magnitude more than a
-rung-I yard can absorb.
+whole Band-I yard can absorb.
 
 **And ore per site stops being invariant.** It was 6,491.4 kt to the digit
 across T-69, T-71 and T-72 — every worked rock was mined to `density_floor`, so
@@ -2113,7 +2113,7 @@ obvious uses are checked, and one of them is wide open.
 
 **Why the first measurement missed it, and it is the artifact list's oldest
 shape.** `unmet_color_demand` sums `color_deficit`, which is the shortfall
-against a center's **next rung only**. A center that can afford its next rung
+against a center's **next whole Band only**. A center that can afford its next whole Band
 reports **zero demand** — even with three more Bands of headroom above it. So the
 metric measured *demand the policy had already decided to express*, and the
 policy expresses almost none. **A metric that reads a decision's output cannot
@@ -2144,20 +2144,20 @@ kilotonne committed, and neither half introduces a constant:
 
 ```text
 expand = score / outward_cost                 // this candidate, at its price
-deepen = w_k · min(1, headroom) / infra_cost  // one rung, at its price
+deepen = w_k · min(1, headroom) / infra_cost  // one whole Band, at its price
 ```
 
 `w_k` is the weight `rank` already puts on one Band of `k_potential` (§3 of
 `Hyades_autopilot_colonization_growth.md`), and it is the right converter because
 the two moves trade in one commodity: expansion **acquires** a world's Bands of
-ceiling, deepening **realizes** a Band of them here. `min(1, ·)` is what a rung
-actually delivers, since `apply_build` steps to the next whole rung whatever the
+ceiling, deepening **realizes** a Band of them here. `min(1, ·)` is what a whole Band
+actually delivers, since `apply_build` steps to the next whole Band whatever the
 headroom is — a last partial step pays a full price for less than a Band.
 
 The comparison is then an odds ratio: depth wins when `b/(1 − b) ≥ expand/deepen`.
 That crossover is **state-dependent**, which is the graded region the old form had
-nowhere — a center facing a cheap next rung and a mediocre candidate deepens where
-one facing an expensive rung and a hub does not.
+nowhere — a center facing a cheap next whole Band and a mediocre candidate deepens where
+one facing an expensive whole Band and a hub does not.
 
 **Measured** (`examples/deepen_census`, 600 planets / 1,500 yr, 3 seats):
 
@@ -2189,7 +2189,7 @@ Three things it says, and the first is the guard:
 - **The branch is still cold at the shipped `0.5`, and the reason is now a
   price.** The empirical crossover between 0.96 and 0.98 is an odds ratio of
   **24–49**, which is the infra ladder's own ratio read from the other side: the
-  rung above the founding one costs **0.9 kt** where a Medium colonizer costs
+  whole Band above the founding one costs **0.9 kt** where a Medium colonizer costs
   **0.1 kt**, and the colonizer brings a whole world with its own ceiling, its own
   ore and its own yard. Expansion *ought* to win. **The dead branch was the right
   answer reached for a wrong reason.**
@@ -2201,7 +2201,7 @@ stays unspent:
 
 At the shipped constants, printed off the engine's own functions:
 
-| rung | stock to stand there | step to the next | `fabrication_rate` | `slips` |
+| whole Band | stock to stand there | step to the next | `fabrication_rate` | `slips` |
 |---|---|---|---|---|
 | 0 | 0.02 kt | 0.08 | 0.0333 kt/yr | 1 |
 | **I** | **0.10 kt** | **0.90** | 0.1000 | 2 |
@@ -2212,20 +2212,20 @@ At the shipped constants, printed off the engine's own functions:
 For scale: a Limited hull is 0.02 kt, a **Medium colonizer 0.10 kt**, a General
 hull 1.00 kt, a mining pair 0.12 kt.
 
-- **The step above the founding rung costs nine colonizers**, and every colony is
-  founded at rung I (`founding_infra`), so that is the step every colony in the
+- **The step above the founding whole Band costs nine colonizers**, and every colony is
+  founded at whole Band I (`founding_infra`), so that is the step every colony in the
   empire is looking at.
-- **`fabrication_rate` saturates by rung II.** `fab_cap = 0.2` with
-  `works_knee = rung(1)/3` and an even three-way `alloc_w` puts the whole ladder
+- **`fabrication_rate` saturates by whole Band II.** `fab_cap = 0.2` with
+  `works_knee = whole Band(1)/3` and an even three-way `alloc_w` puts the whole ladder
   inside one hyperbola's knee: the 19-kt step buys **+0.017 kt/yr** and the 780-kt
   step buys **+0.001**.
-- **`slips` is pinned at 2 from rung I onward**, for the same reason.
+- **`slips` is pinned at 2 from whole Band I onward**, for the same reason.
   `slips(F) = 1 + ⌊F / slip_throughput⌋` with `slip_throughput = 0.1` and
   `F < fab_cap = 0.2`, so **no amount of infrastructure ever buys a third berth.**
   T-69's "industry buys more ships at once" is bounded at two by the ratio of two
   constants, and nothing in the engine says so out loud.
-- So rungs III and IV are, today, almost pure cost. The only thing that keeps
-  scaling past rung II is `extraction_rate`, which is linear in the stock — and
+- So whole Bands III and IV are, today, almost pure cost. The only thing that keeps
+  scaling past whole Band II is `extraction_rate`, which is linear in the stock — and
   extraction is not what binds on a bed holding 19,619 kt of unspent ore.
 
 That is the sink's real shape: it is 756 Bands wide and priced at a ladder whose
@@ -2246,16 +2246,16 @@ work-years, `∫ Σ_p infra_p dt`.
 
 | route | what it bills | works it adds | works per mineral |
 |---|---|---|---|
-| **deepen** | `infra_step_price / eta_works` | `infra_step_price` (the stock moves to the next rung) — **exactly, since T-124**; before it the bill was the rounded rung's width, so a stock founded above its rung paid 0.0292 kt per purchase that was never erected | `eta_works` |
+| **deepen** | `infra_step_price / eta_works` | `infra_step_price` (the stock moves to the next whole Band) — **exactly, since T-124**; before it the bill was the rounded whole Band's width, so a stock founded above its whole Band paid 0.0292 kt per purchase that was never erected | `eta_works` |
 | **found** | `hull_cost(colonizer)` | `founding_infra = hull_cost` | **1** |
 
 The second row is design law #11 arriving somewhere nobody was looking for it.
 A recycled hull's minerals *are* the new colony's works stock (T-70) because a
 hull's mass is its cost (R-O57) — so at the card-free `eta_works = 1` the two
-routes are worth the same to the metric, **to the last bit**, at every rung a
+routes are worth the same to the metric, **to the last bit**, at every whole Band a
 center can stand on. `a_mineral_buys_the_same_works_whether_it_deepens_or_founds`
 pins it. The bias is choosing between equals, and everything downstream breaks
-the tie *for expansion*: a colony mines, grows and builds, while a rung past II
+the tie *for expansion*: a colony mines, grows and builds, while a whole Band past II
 buys almost no fabrication and no extra berth at all (§6.18's R-O85 table).
 
 **Measured** (`examples/work_years`, 4,000 yr, 3 seats, paired per seed under
@@ -2304,21 +2304,21 @@ an integral should reward that.
 **Priced off the engine's own functions** (`t_lead = 2.0`, a Medium colonizer is
 0.10 kt):
 
-| rung | stock | `F` kt/yr | slips | `t_build` | hull/yr | next step costs |
+| whole Band | stock | `F` kt/yr | slips | `t_build` | hull/yr | next step costs |
 |---|---|---|---|---|---|---|
 | I | 0.10 kt | 0.1000 | 2 | 4.000 yr | 0.500 | 0.90 kt = **9 colonizers** |
 | **II** | 1.00 kt | 0.1818 | 2 | 3.100 yr | **0.645 (+29.0%)** | 19 kt = 190 colonizers |
 | III | 20.0 kt | 0.1990 | 2 | 3.005 yr | 0.666 (+3.2%) | 780 kt = 7,800 colonizers |
 | IV | 800 kt | 0.2000 | 2 | 3.000 yr | 0.667 (+0.2%) | — |
 
-So the objection is arithmetically right about the rung that matters: **+29% for
+So the objection is arithmetically right about the whole Band that matters: **+29% for
 nine colonizers pays back in 62 years** and should be worth ~200 extra hulls over
 the horizon. §6.19's "everything downstream breaks the tie for expansion" was
 asserted, not measured, and it is wrong.
 
 It is wrong about slips, and that is the engine's fault rather than the
 argument's: `slips(F) = 1 + ⌊F / slip_throughput⌋` with `F < fab_cap = 0.2` and
-`slip_throughput = 0.1` gives **two berths at every rung, forever** (R-O85).
+`slip_throughput = 0.1` gives **two berths at every whole Band, forever** (R-O85).
 
 **Three facts eat the +29%, and none of them is the identity**
 (`examples/founding_tree`, 3 seats, 1,500 yr):
@@ -2328,7 +2328,7 @@ argument's: `slips(F) = 1 + ⌊F / slip_throughput⌋` with `F < fab_cap = 0.2` 
 | colonies the homeworld founds **itself** | **33.3** | **32.3** | **35.7** |
 | year its first one lands | **61.6** | **61.6** | **61.6** |
 | hulls the homeworld built | 176 | 178 | 213 |
-| the homeworld's final rung | **2.000** | **2.000** | **2.000** |
+| the homeworld's final whole Band | **2.000** | **2.000** | **2.000** |
 | infrastructure builds, empire-wide | 620 | **0** | 469 |
 | work-years | 976,147 | 258,752 | 617,858 |
 | **fleet-years** `∫ vehicles dt` | **21,802,650** | 20,584,525 | **17,506,750** |
@@ -2342,13 +2342,13 @@ argument's: `slips(F) = 1 + ⌊F / slip_throughput⌋` with `F < fab_cap = 0.2` 
 
 
 1. **A homeworld never deepens, in any arm.** `galaxy.rs` generates homeworlds at
-   `Band::new(2.0)` — rung II, exactly where fabrication saturates — so the rung
+   `Band::new(2.0)` — whole Band II, exactly where fabrication saturates — so the whole Band
    worth +29% is one they are *born with*, and the next costs 190 colonizers for
    +3.2%. The ablated arm has **zero** infrastructure builds and still reports
-   rung 2.000. This is also why the first founding lands at **61.6 yr in all
+   whole Band 2.000. This is also why the first founding lands at **61.6 yr in all
    three arms**: there is no delayed-first-ship trade to make.
 2. **The yard is not the constraint.** Homeworld utilization is **18.8%** — it
-   builds 176 hulls where rung II could have built ~930 over the same span.
+   builds 176 hulls where whole Band II could have built ~930 over the same span.
 3. **A declined build costs thirty years of yard time.** Mean gap from one
    production decision to the next at a homeworld: **1.5 yr after a committed
    build, 29.6 yr after an `Idle`** (seed 7: 1.6 and 31.8). `commit_one_build`
@@ -2359,7 +2359,7 @@ argument's: `slips(F) = 1 + ⌊F / slip_throughput⌋` with `F < fab_cap = 0.2` 
 
 **So build rate governs about a fifth of a center's timeline, and deepening is
 the only thing this knob can buy.** +29% on 19% of the timeline is +5.5% at the
-absolute best, available only to a center below rung II, against a 50-year retry
+absolute best, available only to a center below whole Band II, against a 50-year retry
 that has nothing to do with infrastructure. That is the bottleneck, and it is
 **T-88** — already open, and now quantified.
 
@@ -2397,7 +2397,7 @@ two constants chosen independently in different landings:
 
 **Closed, not short.** A yard standing on **10¹² kt** of infrastructure still has
 two berths, because the asymptote is never reached. And homeworlds are
-*generated* at `Band::new(2.0)` — rung II — so every homeworld is **born past the
+*generated* at `Band::new(2.0)` — whole Band II — so every homeworld is **born past the
 only step the axis has**. Pinned by
 `the_build_wide_axis_is_two_berths_wide_and_closed`.
 
@@ -2412,7 +2412,7 @@ above.
 
 A berth's cycle is `t_lead + m/per_berth` and **only the second term
 fabricates**, so provisioning berths from a rate alone leaves most of each cycle
-idle. Against the `F` the same rung *allows* (rung II, `F = 0.1818 kt/yr`):
+idle. Against the `F` the same whole Band *allows* (whole Band II, `F = 0.1818 kt/yr`):
 
 | hull | dry mass | `t_build` | sustained output | **as % of `F`** | berths to saturate `F` | lead as % of cycle |
 |---|---|---|---|---|---|---|
@@ -2420,7 +2420,7 @@ idle. Against the `F` the same rung *allows* (rung II, `F = 0.1818 kt/yr`):
 | Medium | 0.10 kt | 3.10 yr | 0.0645 kt/yr | **35%** | 5.6 | 65% |
 | General | 1.00 kt | 13.00 yr | 0.1538 kt/yr | 85% | 2.4 | 15% |
 
-**A rung-II yard building Medium hulls emits a third of the throughput it is
+**A whole Band-II yard building Medium hulls emits a third of the throughput it is
 allowed**, and building Limited hulls, a tenth. This survives whatever happens to
 the cap: even with `F` unbounded, `1 + ⌊F/F_slip⌋` under-provisions by
 `1 + t_lead · F_slip / m` — a factor of **11 for a Limited hull, 3 for a
@@ -2444,10 +2444,10 @@ fabrication_rate = slips × berth_rate                     // the planet's total
 
 **`fab_cap` went 0.2 → 0.1, and that is a re-denomination rather than a retune.**
 The old code divided a planet-wide rate by a `slips` that was *always exactly 2*
-at every rung a center can occupy, so halving the ceiling reproduces the old
+at every whole Band a center can occupy, so halving the ceiling reproduces the old
 per-berth rate **bit-for-bit** —
 `turnaround_is_unchanged_and_only_the_berth_count_opened` asserts it at every
-playable rung. Two things follow for free: §3.3's approved schedule now reads off
+playable whole Band. Two things follow for free: §3.3's approved schedule now reads off
 one constant (`t_lead + m / fab_cap` is 2.2 / 3.0 / 12.0 yr, the table as
 approved), and **turnaround did not move at all** — the only thing that changed
 is how many hulls a yard can have in the water.
@@ -2456,10 +2456,10 @@ is how many hulls a yard can have in the water.
 what `fab_cap` bounds now, and the berth *size* is derived rather than stored:
 one berth occupies one Limited hull's worth of stock, so a slipway is sized like
 the smallest thing it can lay down. That anchor is a **placeholder** — the form
-is what R-O88 settles, not the unit — and it is chosen so a rung-I yard keeps
+is what R-O88 settles, not the unit — and it is chosen so a whole Band-I yard keeps
 exactly the two berths it already had:
 
-| rung | fabrication stock | berths, before | **berths, after** |
+| whole Band | fabrication stock | berths, before | **berths, after** |
 |---|---|---|---|
 | I | 0.033 kt | 2 | **2** |
 | II | 0.333 kt | 2 | **17** |
@@ -2517,7 +2517,7 @@ given a **per-seat-count** horizon instead of a uniform one, which is cheaper
 27.6 s, determinism 36.6 s, smoke 23.1 s.
 
 **What is still open.** The berth anchor is a placeholder (R-IND3's family).
-R-O85's price ladder was the obvious next question — rungs III and IV now buy
+R-O85's price ladder was the obvious next question — whole Bands III and IV now buy
 enormous concurrency but still cost 19 kt and 780 kt — and **§6.19c answers it:
 the ladder is scale-free and correctly priced.** The constraint is freight.
 
@@ -2525,10 +2525,10 @@ the ladder is scale-free and correctly priced.** The constraint is freight.
 
 **R-O85 said infrastructure was priced as if it were the scarce thing.** R-O88
 refuted two of the three facts that rested on — `slips` is unbounded now, and the
-saturation is per berth and intended. Re-pricing the third against what a rung
+saturation is per berth and intended. Re-pricing the third against what a whole Band
 actually *buys* leaves nothing of it either:
 
-| rung | stock | berths | output | step cost | **payback** |
+| whole Band | stock | berths | output | step cost | **payback** |
 |---|---|---|---|---|---|
 | I | 0.10 kt | 2 | 0.0500 kt/yr | 0.90 kt | — |
 | II | 1.00 kt | 17 | 0.5484 kt/yr | 19.0 kt | **1.8 yr** |
@@ -2536,13 +2536,13 @@ actually *buys* leaves nothing of it either:
 | IV | 800 kt | 13,334 | 444.4 kt/yr | — | **1.8 yr** |
 
 **Cost and output are both geometric in the stock, so the return is constant at
-every rung** — 0.555 kt/yr of hull production per kilotonne of infrastructure,
+every whole Band** — 0.555 kt/yr of hull production per kilotonne of infrastructure,
 a **1.8-year payback at any scale.** The ladder is scale-free, which is a
 property worth having on purpose: an empire deepens until its *ore supply*
 saturates its yard, and the price never decides that for it.
 
 Meanwhile the bed banks **1,714,697 kt** and sits at mean Band **1.442** against
-a ceiling of 3.612, with **none** at cap and 7,248 Bands unbuilt. A rung III step
+a ceiling of 3.612, with **none** at cap and 7,248 Bands unbuilt. A whole Band III step
 costs 19 kt. The money is there a hundred thousand times over, the return is
 enormous, and it is not being spent. So the question stopped being *what does it
 cost* and became **which line declines it**.
@@ -2552,7 +2552,7 @@ cost* and became **which line declines it**.
 | | seed 1 | seed 7 |
 |---|---|---|
 | production decisions | 75,471 | 77,573 |
-| bought a rung | 617 (0.82%) | 570 (0.73%) |
+| bought a whole Band | 617 (0.82%) | 570 (0.73%) |
 | **gated at the ceiling** | **0 (0.00%)** | **0 (0.00%)** |
 | **could not pay the bill** | **74,166 (98.27%)** | **76,465 (98.57%)** |
 | — of which **color-short only** | **33,069 (43.82% of all)** | **36,178 (46.64% of all)** |
@@ -2564,7 +2564,7 @@ Three things, and the third is the finding:
    world would allow no more infrastructure. `k_potential` is not the constraint
    and never was.
 2. **The policy is not the constraint either.** The deepen-vs-expand comparison
-   declines an affordable rung in **0.7–0.9%** of decisions. R-O68's crossover,
+   declines an affordable whole Band in **0.7–0.9%** of decisions. R-O68's crossover,
    which three sections of this document have circled, is very nearly irrelevant
    — it almost never gets to choose. *(This is also why R-O87 found the bias
    flat: a knob that is consulted in one decision in a hundred cannot move an
@@ -2626,7 +2626,7 @@ measuring:
 ### 6.20 R-O89 — the *pickup* leg had no color term either, and that is +8.4%
 
 §6.19c ended with the constraint named: **43.8–46.6% of every production decision
-is a center holding the total of its next rung and lacking a color.** The ore
+is a center holding the total of its next whole Band and lacking a color.** The ore
 exists — `examples/freight_gap` puts empire supply at **171x to 2,356x** the
 empire's own color deficit, on every color for every player — so it is not a
 geology problem and not a price problem. It is a **freight** problem, and freight
@@ -2652,10 +2652,10 @@ and the deficit read is `O(1)` — reading the empire's aggregate would be
 `O(owned planets)` on one of the hottest paths in the engine (`AGENTS.md` §4).
 
 The split is **along the deficit vector**, not down it. A works bill is a
-*conjunction* — the rung pays only when every color clears — so what matters is
+*conjunction* — the whole Band pays only when every color clears — so what matters is
 `min_c bank[c] / bill[c]`, not the sum of anything. The hold fills in the
 destination's own ratio and overshoots the shortfall rather than flying home
-light, because the next rung is already queued behind this one. Only when the
+light, because the next whole Band is already queued behind this one. Only when the
 pile *cannot* supply that direction does the remainder load proportionally.
 
 #### The ablation
@@ -2766,7 +2766,7 @@ has landed, and they are now re-measurable. None is re-measured here — that is
 separate ratification each, and this landing moves one default.
 
 
-### 6.21 R-O90 — one freighter hold buys exactly one rung, and the default sits 2.3% above the cliff
+### 6.21 R-O90 — one freighter hold buys exactly one whole Band, and the default sits 2.3% above the cliff
 
 **Found by looking for something else.** `examples/tree_gradient` ranks every
 continuous knob in the engine against a composite of the tree objectives
@@ -2823,18 +2823,18 @@ a sweep prices it. The threshold below the default:
 | | kt |
 |---|---|
 | Medium freighter hold | **0.921** |
-| infra rung 1 → 2, the step above founding | **0.900** |
-| trips per rung | **0.977** |
+| infra whole Band 1 → 2, the step above founding | **0.900** |
+| trips per whole Band | **0.977** |
 
-A colony is founded standing on **rung 1 exactly** — its stock *is* the recycled
+A colony is founded standing on **whole Band 1 exactly** — its stock *is* the recycled
 hull's 0.100 kt (T-70, R-O57) — so the 0.900 kt step is the one every colony in
 the galaxy faces first, and the round trip that pays it is **~124 years**
 (§6.20). One trip or two is a factor of two on the entire development schedule,
 and that is precisely the factor the sweep shows.
 
 Note that this is *why* the step is nearly invisible from just above: past the
-threshold a bigger hold delivers a rung the colony cannot use faster, because the
-next rung costs **19 kt** — 20.6 trips — and no hold change within ±10% reaches
+threshold a bigger hold delivers a whole Band the colony cannot use faster, because the
+next whole Band costs **19 kt** — 20.6 trips — and no hold change within ±10% reaches
 that. The +4.7% at +25% is therefore **not** the same mechanism and has not been
 identified; it is carried under R-O90 rather than explained.
 
@@ -2847,7 +2847,7 @@ it with a 2.3% margin. Three independently MC-tuned constants
 (`general_vehicle_cost`, `medium_fleet_size`, `cargo_unit_size`) can each walk
 off that edge on their own, and nothing else would fail.
 
-`one_freighter_hold_covers_one_infrastructure_rung` pins it. The test asserts the
+`one_freighter_hold_covers_one_infrastructure_band` pins it. The test asserts the
 margin exists, **not that it is correct** — that is R-O90 and it is open. Two
 readings are available and they want opposite fixes:
 
@@ -2857,9 +2857,9 @@ readings are available and they want opposite fixes:
   the margin becomes a stated constant rather than an accident.
 - **It is a latent fault.** A discontinuity of this size next to the operating
   point makes every measurement in its neighborhood untrustworthy, and a card
-  that shrinks holds or raises rung prices would fall off it with no warning.
+  that shrinks holds or raises whole Band prices would fall off it with no warning.
   Then the fix is to make development rate continuous in hold size — part-paying
-  a rung across trips, which the bank already supports.
+  a whole Band across trips, which the bank already supports.
 
 **This does not move a default.** The shipped value is on the good side and the
 sweep says nothing above it is worth taking.
@@ -2944,7 +2944,7 @@ On the standard bed at 1,500 yr, **79.8% of all production decisions return
 > 561 kt.**
 
 Not one idle decision in the run had `can_afford_infra == true`. The bank holds
-the total — 561 kt against a 19 kt rung — and lacks a **color**. That is R-O85's
+the total — 561 kt against a 19 kt whole Band — and lacks a **color**. That is R-O85's
 conjunction arriving from a third direction, after the per-decision census
 (§6.19c) and the supply/deficit ratio (§6.20), and it says the load-leg fix
 moved the right quantity and did not move enough of it.
@@ -2971,7 +2971,7 @@ standard bed, **3,032 non-empty banks**:
 | dominant color share | 0.491 | **0.871** | 0.999 |
 | payable fraction `3·min_c / total` | 0.001 | **0.043** | 0.623 |
 
-> **360,517 kt banked, of which 359,359 kt — 99.7% — cannot pay a balanced rung
+> **360,517 kt banked, of which 359,359 kt — 99.7% — cannot pay a balanced whole Band
 > at any price.**
 
 And the median bank is **more** mono-colored than the sources it came from:
@@ -2981,7 +2981,7 @@ finding measured from the other side, and it survived R-IND17's bill-completion
 routing.
 
 A single example makes the shape plain. Planet 111 holds
-**C 0.59 / M 275.74 / Y 0.54**: a 277 kt bank that cannot buy a 6 kt rung.
+**C 0.59 / M 275.74 / Y 0.54**: a 277 kt bank that cannot buy a 6 kt whole Band.
 
 > ~~No loading rule and no delivery rule reaches that, because both act on ore
 > that has already been mined from the wrong rocks.~~ **Half wrong, and corrected
@@ -3037,7 +3037,7 @@ at that color's **proportional share of the hold**.
 The share cap is not belt-and-braces, and it is worth **+10.2%** over the obvious
 `min(want, room)` rule on the standard bed (284,199 against 257,986 at two
 stops). The reason is the ladder: `infra_step_price` is geometric, so past the
-rung where a bill outgrows a hold, `min(want, room)` *is* `room` — the first pile
+whole Band where a bill outgrows a hold, `min(want, room)` *is* `room` — the first pile
 takes everything and the milk run switches itself off in exactly the regime where
 development happens. `an_intermediate_stop_takes_its_share_and_leaves_the_rest`
 pins all three cases.
@@ -3065,7 +3065,7 @@ arm and T-90:
 | payable fraction, median | 0.043 | **0.052** | 0.053 |
 | infrastructure builds | 268 | **335** | 340 |
 | dominant color share, median | 0.871 | 0.866 | 0.866 |
-| banked kt that cannot pay a rung | 99.7% | 99.5% | 99.5% |
+| banked kt that cannot pay a whole Band | 99.7% | 99.5% | 99.5% |
 
 #### Why 99.5% of the bank is still dead — freight is 1.73% of it
 
@@ -3253,7 +3253,7 @@ and it is the direct reading rather than the objective:
 | hauled into banks | 6,321 kt | **90,563 kt** |
 | outpost ore ever collected | 0.21% | **2.30%** |
 | payable fraction, median | 0.052 | **0.083** |
-| banked kt that cannot pay a rung | 99.5% | **97.5%** |
+| banked kt that cannot pay a whole Band | 99.5% | **97.5%** |
 | infrastructure builds | 335 | **601** |
 
 Bigger haulers on rich rocks move **14× the tonnage**, and because the milk run
@@ -3261,14 +3261,14 @@ Bigger haulers on rich rocks move **14× the tonnage**, and because the milk run
 up mono-colored. The two changes compose; neither would do this alone.
 
 **T-92 is advanced, not closed.** 85% of bank inflow is still the center mining
-its own single-colored ground, and 97.5% of the bank still cannot pay a rung.
+its own single-colored ground, and 97.5% of the bank still cannot pay a whole Band.
 
 #### What it costs, and it is not nothing
 
 **Colony count falls 6.1%** (3,100 → 2,912, mean over eight seeds) while
 colony-*years* rise 9.5%. Worlds are taken markedly earlier and the tail is
 shorter: minerals that used to buy the last few hundred colonizers now buy
-haulers and rungs. On a `k_high`-saturated bed that is a deepen-versus-expand
+haulers and whole Bands. On a `k_high`-saturated bed that is a deepen-versus-expand
 reallocation made on better information, and it is the same shape as R-O66's
 −178 colonies — a policy question for `expand_bias` and T-20, not a defect. It is
 recorded here rather than left for the next reader to find in a table.
@@ -3355,7 +3355,11 @@ one.** λ: freighter routing had no distance component at all (coverage
 (+8.4% work-years). This is the third, and it is one step further back — the
 decision that puts a mining pair on a rock in the first place.
 
-`BaselineAutopilot::rank` scores a world's mineral worth as
+> **Superseded (T-147):** the weight is now the empire's color price read from
+> its holdings (`RankContext::color_price`, autopilot spec §3.9, the author's
+> ruling); the archetype weight below is retired. Kept as the record of R-O91.
+
+`BaselineAutopilot::rank` scored a world's mineral worth as
 
 ```text
 base_mineral = Σ_c  scarcity_c · Band(m_c)
@@ -3635,23 +3639,23 @@ artifact in place contaminates every later measurement.
 | **R-IND19** | §4.3's `ε·S·W` double-counts the deposit — output goes as richness squared and a rich body is stripped in one tick. **Decided: the engine uses `W/N`, i.e. `(n/N)^β`,** which preserves every ratio §4.3 asserts and differs only in an absolute scale `ε` absorbs. Open only in whether the spec's own formula should be rewritten or annotated. | §4.3b |
 | ~~**R-O68**~~ | ~~The deepen/expand comparison is between incommensurable quantities~~ — **resolved (T-51).** Both sides are now `rank` score per kilotonne committed: `score / outward_cost` against `w_k · min(1, headroom) / infra_cost`. `reinvest_bias` is an odds ratio with a state-dependent crossover. Bit-identical below `b = 0.96`; the old form's cliff at 0.9 moved to 1.0. | §6.18 |
 | **R-O86** | ~~Both survey tests read the wrong quantity~~ — **resolved.** `candidate_count` has median **0** and max **164** against a ratified `survey_reserve` of 1024, so the reserve test is a constant `true`; and `candidates.is_empty()` pre-empted the only live deepen path. Worse, `apply_build_with` spent the minerals *before* `launch_survey` declined to spawn anything: **1,779,509 hull builds against 18,093 hulls** at the 4,000-yr horizon, i.e. 99.0% of production was mass destroyed (design law #11). Fixed with `survey_frontier`; colony count identical, colony-years +0.007%, **5.6x throughput**. | autopilot §6b |
-| ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favors deepening (+29% hull/yr for 9 colonizers), and what eats it is a homeworld already at rung II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
-| ~~**R-O88**~~ | ~~There is no build-wide axis~~ — **resolved, option C.** `fab_cap` bounds the rate **per berth** (quality); `slips` reads the fabrication share of the **stock** (quantity, unbounded). `fab_cap` 0.2 → 0.1 is a re-denomination: per-berth turnaround is **bit-identical** at every playable rung, and §3.3's schedule now reads off one constant. `slip_throughput` deleted; berth size derived from the Limited hull (**placeholder anchor**). Berths at rung II: 2 → **17**. Fleet-years **+26–34%**, throughput 88.7 → 110.7 yr/s, colony count flat. Also drops the `t_lead` defect — there is no per-planet rate left to fail to reach — and takes T-88's after-idle gap 29.6 → 7.6 yr. | §3.2, §6.3, §6.19b |
+| ~~**R-O87**~~ | ~~Tune `reinvest_bias` against work-years rather than colony-years~~ — **resolved: there is nothing to tune.** Deepening and founding buy **exactly the same works per mineral** at `eta_works = 1` (design law #11 via R-O57/T-70), so the knob is works-neutral by identity. The best screen point scored +2.33% ± 0.96 on the standard four seeds (4/4 positive) and **−1.70% ± 2.42 on four it was not chosen against**; pooled over eight, **+0.32% ± 1.42**. Held at **0.5**. `eta_works` is the lever this is not. **§6.19a corrects the reasoning**: the identity is about stock, the *flow* argument favors deepening (+29% hull/yr for 9 colonizers), and what eats it is a homeworld already at whole Band II, `slips` pinned at 2, and a declined build costing **29.6 yr** of yard time against 1.5 yr after a build (T-88). | §6.19, §6.19a |
+| ~~**R-O88**~~ | ~~There is no build-wide axis~~ — **resolved, option C.** `fab_cap` bounds the rate **per berth** (quality); `slips` reads the fabrication share of the **stock** (quantity, unbounded). `fab_cap` 0.2 → 0.1 is a re-denomination: per-berth turnaround is **bit-identical** at every playable whole Band, and §3.3's schedule now reads off one constant. `slip_throughput` deleted; berth size derived from the Limited hull (**placeholder anchor**). Berths at whole Band II: 2 → **17**. Fleet-years **+26–34%**, throughput 88.7 → 110.7 yr/s, colony count flat. Also drops the `t_lead` defect — there is no per-planet rate left to fail to reach — and takes T-88's after-idle gap 29.6 → 7.6 yr. | §3.2, §6.3, §6.19b |
 | ~~**R-O94**~~ | ~~The hauler's hull is a constant, and the constant is backwards~~ — **resolved: it is a forecast.** `freighter_hull` sizes the hull to `min(supply_rate, demand_rate) × round_trip` and ranks on delivered kt per year per kilotonne of hull — supply is the rock's own yield, demand is the destination's fabrication throughput, both `O(1)`, and the round trip is solved rather than assumed. **+170.1% ± 16.2 work-years, 8/8 (10.5 SE)**, colony-years +9.54% ± 4.19 (7/8), throughput **+73%** with `ns/event` −46%. **The liquidity term is most of it**: without capping candidates at what the center can pay now, the same rule scores +51% work-years and **−17% colony-years on 1/8 seeds** and founds nothing in forty years — design law #3's *indivisibility as a liability*, which a steady-state rate cannot see. Mechanism check: freight's share of bank inflow **1.73% → 14.70%**, ore collected 0.21% → 2.30%, payable fraction 0.052 → 0.083, infrastructure builds 335 → 601 — so **T-92 is advanced**, with 85% of inflow still the center's own ground. Cost: **colony count −6.1%**, a deepen-versus-expand reallocation on a `k_high`-saturated bed. Demand is a *ceiling*, not this hauler's share — T-99. | §6.26 |
 | ~~**R-O93**~~ | ~~The population logistic is integrated with a forward Euler step at `r·Δ = 0.873`~~ — **resolved: it has a closed form.** `x(t+Δ) = K·x / (x + (K − x)·e^(−rΔ))`; the ceiling is constant across a tick so the step is autonomous, and `settler_target` was already pricing colonization off this solution's inverse. The Euler form was **79% low** at `cycle_years = 50` and still **21% low** at T-88's refined 5. **+6.57% ± 1.14 colony-years, 8/8 seeds (5.7 SE)** replicated on four seeds it was not chosen against, work-years noise, **throughput unchanged** (one `exp` per center per tick is under the run-to-run variance). Retires three things: **design law #11's `r < 2` ceiling** (a property of the Euler map, not the model), the load-bearing **clamp at `K`**, and the **undershoot below `K`** on an over-capacity world — the collapse survives (31.62 → 8.88 kt in one tick), the overshoot does not. Consumes R-O84's ratification of `growth_rate = 0.873`, which is carried rather than re-measured. It does **not** buy the tick back: exact @ 50 beats Euler @ 50 by +33% work-years at the same cost but is still 29% below exact @ 5, so `cycle_years` has a second job — **T-95**. | §6.25 |
 | ~~**R-O92**~~ | ~~Every delivery is mono-colored because a hold is filled from exactly one rock~~ — **resolved: the milk run (T-91).** An outbound leg may visit `max_pickup_stops` piles before turning for its destination; the final stop fills the hold as R-O89 does and every earlier one takes each color capped at what is still wanted **and** at its proportional share of the hold. **Ratified at 2: +55.13% ± 4.65 work-years, 8/8 seeds (11.9 SE)**, replicated on four seeds it was not chosen against, colony-years +2.1%/+3.8% on the two beds, ~12% throughput. Two is a **peak** — 1/2/3/4/6 score 184k/**284k**/261k/236k/190k — and the share cap is worth +10.2% over `min(want, room)` because a geometric bill outgrows a hold. The stated acceptance criterion moved for the first time in four interventions: payable fraction **0.043 → 0.052**, infrastructure builds 268 → 335. `base` stays welded to the hauler's own miner (re-pointing it is −52.3%). **What it does not reach** is carried as T-92: freight is **1.73%** of everything that ever enters a bank, the other 98.3% being `sys_production_tick`'s local mining of the center's own single-colored planet. Scan cost is T-93. | §6.24 |
-| ~~**R-O91**~~ | ~~**The ranking's color term reads a constant.**~~ **Implemented and refuted — the term is a real defect and not the cause.** Live local scarcity moves the payable fraction from 0.043 to 0.043 and the dead share stays at 99.7% **at every gain from 0 to 16**, while costing **−3.30% ± 0.49 colony-years, 0/4 seeds**. Reverted. The reason is provable from the code: the empire already mines a balanced mix (957k/905k/626k kt), a rock is one color (0.789), and **a hold is filled from exactly one rock** — so every delivery is mono-colored and no *selection* over single-source trips can assemble a payable mixture. The successor is **T-91**. Original text: `scarcity_c` is written once at game start from the homeworld archetype and never again, and `mineral_pressure` is live but scalar — so outpost selection can say *mine more* and never *mine Cyan*. Measured consequence: median bank dominant share **0.871** against the field's 0.789, and **99.7% of 360,517 banked kt cannot pay a balanced rung at any price**. Open question is the *shape* of the live term — whose shortfall it reads, and whether reading ore on hand makes it farmable. The work is **T-90**. | §7.4, §6.23 |
-| **R-O90** | **One freighter hold buys exactly one infrastructure rung** — 0.921 kt against a 0.900 kt step, **0.977 trips**, and the shipped defaults sit 2.3% above a cliff that halves colony-years and work-years. Nobody chose it: the hull ladder and the infra ladder were ratified separately and happen to meet there. Open question is *which* way to resolve it — make the coincidence deliberate (derive one anchor from the other) or remove the discontinuity (let a rung be part-paid across trips). Pinned by `one_freighter_hold_covers_one_infrastructure_rung`, which asserts the margin exists and **not** that it is right. | §6.21 |
+| ~~**R-O91**~~ | ~~**The ranking's color term reads a constant.**~~ **Implemented and refuted — the term is a real defect and not the cause.** Live local scarcity moves the payable fraction from 0.043 to 0.043 and the dead share stays at 99.7% **at every gain from 0 to 16**, while costing **−3.30% ± 0.49 colony-years, 0/4 seeds**. Reverted. The reason is provable from the code: the empire already mines a balanced mix (957k/905k/626k kt), a rock is one color (0.789), and **a hold is filled from exactly one rock** — so every delivery is mono-colored and no *selection* over single-source trips can assemble a payable mixture. The successor is **T-91**. Original text: `scarcity_c` is written once at game start from the homeworld archetype and never again, and `mineral_pressure` is live but scalar — so outpost selection can say *mine more* and never *mine Cyan*. Measured consequence: median bank dominant share **0.871** against the field's 0.789, and **99.7% of 360,517 banked kt cannot pay a balanced whole Band at any price**. Open question is the *shape* of the live term — whose shortfall it reads, and whether reading ore on hand makes it farmable. The work is **T-90**. | §7.4, §6.23 |
+| **R-O90** | **One freighter hold buys exactly one infrastructure whole Band** — 0.921 kt against a 0.900 kt step, **0.977 trips**, and the shipped defaults sit 2.3% above a cliff that halves colony-years and work-years. Nobody chose it: the hull ladder and the infra ladder were ratified separately and happen to meet there. Open question is *which* way to resolve it — make the coincidence deliberate (derive one anchor from the other) or remove the discontinuity (let a whole Band be part-paid across trips). Pinned by `one_freighter_hold_covers_one_infrastructure_band`, which asserts the margin exists and **not** that it is right. | §6.21 |
 | ~~**R-O89**~~ | ~~Freight loads in proportion to the pile, not to what the destination is short of~~ — **resolved: the load leg had no color term.** T-81/R-IND17 gave the *delivery* leg one; nothing ever gave the *load* one, so with a single-colored field (mean dominant share 0.789) what went into a hold was decided by geology. `take_for_deficit` fills **along the destination's deficit vector**, topping up proportionally only when the pile cannot supply it. **+8.40% ± 1.86 work-years, 8/8 seeds, 4.5 SE**, replicated on four seeds it was not chosen against — on **the same tonnage** (20,259 → 20,292 kt over 26,800 → 26,746 trips), which is what makes it a color result rather than a hauling one. Deficit-proportional beats neediest-color-first by **+3.84% ± 0.20, 4/4**. The **pickup site stays welded** to the hauler's own miner: need-routing it as well is **−52.3%**, and transit, per-hull throughput and hull recycling are each measured *not* to be the reason — the residual is open under T-76. | §6.20 |
-| ~~**R-O85**~~ | ~~Infrastructure is priced as if it were the scarce thing~~ — **resolved: it is not.** Post-R-O88 the ladder is **scale-free** — 0.555 kt/yr of output per kt of stock, a **1.8-year payback at every rung**. The bed banks 1,714,697 kt against a 19 kt rung and still sits at Band 1.442 with **none** at cap. Counted per decision: **0%** gated, **0.7–0.9%** outbid, **98.3%** cannot pay the bill — and **43.8–46.6% of all decisions hold the total and lack a color**. The constraint is **freight**, not price. See §6.19c; the work is T-76. | §6.19c |
-| ~~R-O85, as originally framed~~ | ~~Infrastructure is priced as if it were the scarce thing.~~ The step above the founding rung costs nine colonizers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by rung II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from rung I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
+| ~~**R-O85**~~ | ~~Infrastructure is priced as if it were the scarce thing~~ — **resolved: it is not.** Post-R-O88 the ladder is **scale-free** — 0.555 kt/yr of output per kt of stock, a **1.8-year payback at every whole Band**. The bed banks 1,714,697 kt against a 19 kt whole Band and still sits at Band 1.442 with **none** at cap. Counted per decision: **0%** gated, **0.7–0.9%** outbid, **98.3%** cannot pay the bill — and **43.8–46.6% of all decisions hold the total and lack a color**. The constraint is **freight**, not price. See §6.19c; the work is T-76. | §6.19c |
+| ~~R-O85, as originally framed~~ | ~~Infrastructure is priced as if it were the scarce thing.~~ The step above the founding whole Band costs nine colonizers (0.9 kt vs 0.10 kt); `fabrication_rate` saturates by whole Band II so the 19-kt and 780-kt steps buy +0.017 and +0.001 kt/yr; and `slips` is pinned at **2** from whole Band I onward because `fab_cap / slip_throughput = 2`. So the 756-Band sink is real and priced out of reach. Every candidate fix moves an MC-tuned surface and needs ratification. | §6.18 |
 | ~~**R-IND21**~~ | ~~The mineral economy has no demand side~~ — **withdrawn, and it was the wrong diagnosis.** Colonies sit at Band 1.05 against a ceiling of 3.60 with **zero** at cap and 756 Bands unbuilt: the sink is enormous and Doctrine never asks for it. The cause was read as R-O68's dead deepen branch; §6.18 refined it — the branch is cold on its merits and the ladder is what prices the sink out (R-O85). | §6.17 |
 | **R-IND22** | **The development profitability test's three unknowns** (§1.8, T-108/T-107): the staffing factor `u`'s shape, the population one unit of stock needs `P_req(I)`, and the payback horizon `τ_pay` the policy will accept. The *form* is proposed — `I_worked = I · u(P / P_req(I))` with `u ≤ 1`, so the first landing is an ablation against a known baseline — and nothing about its size is measured. Distinct from §4.3's `β`: crowding is sublinearity in workers on a fixed deposit, this is whether there are workers at all. | §1.8 |
 | ~~**R-IND23**~~ | ~~Does population reach work-years, and through which gate?~~ **Resolved by the author (T-125): staffing is on by default.** The per-color conjunction stays as ratified (T-73). With staffing on, the first Growth card reaches work-years through its multiplier; tuned to the author's 1.5–2.0x P92 target on the twelve-seat bed (appendix §D.4). The T-124 2x2 that framed the decision is appendix §D.3 | — | §1.8 |
 | **R-IND18** | Magnitudes for the composed extraction law — `ε`, `β`, `VEINS_PER_BAND`, and how `cap_ext`/`half_ext` land on it. The *form* is decided (§4.3a); nothing about its size is measured. | §4.3a |
 | ~~**R-O74**~~ | ~~Founding settlers are conjured~~ — **resolved.** Settlers are debited from the founding center's population and the rest of the hold is loaded from its bank; a contested colonizer unloads both halves back home. | §1.7 |
 | **R-IND12** | How much a colonizer carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |
-| **R-IND13** | The works-value rung `I*`. Placeholder is the Band midpoint of capacity and abundance, i.e. the geometric mean of the two masses — the cheapest form with the required positive cross partial. The real function is §5's and needs T-73/T-74. | §1.7, §5 |
+| **R-IND13** | The works-value whole Band `I*`. Placeholder is the Band midpoint of capacity and abundance, i.e. the geometric mean of the two masses — the cheapest form with the required positive cross partial. The real function is §5's and needs T-73/T-74. | §1.7, §5 |
 | ~~**R-IND15**~~ | ~~The identity works mix~~ — **resolved.** `3:2:1` Yellow : Cyan : Magenta, the §5.1 *Default* point, Yellow-primary because Production is Yellow. The `(1,1,1)` first shipped was a placeholder and contradicted §5.1's "never a true 1:1:1". | §6.10 |
 | ~~**R-IND17**~~ | ~~Score freight by *completion of the bill* rather than relief of one color~~ — **superseded (the author's ruling): freight is routed by demand price** (§6.11, appendix §D.38). | §6.11 |
 | **R-IND16** | How much color weight one deep Production card adds — and therefore how many layers "deep" is, given that Sole is an asymptote approached at `(3+k)/(6+k)`. | §6.10 |

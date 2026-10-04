@@ -334,7 +334,7 @@ statically into kt readings."* Mineral cost curve §2.6 (T-129 note); appendix
 §D.7.
 
 - **Static translations:** `K` is a stored mass (`Factors::k_mass`); the rung
-  test compares squared midpoints (`Qty::nearest_rung_from`); `staffing`'s
+  test compares squared midpoints (`Qty::nearest_whole_band_from`); `staffing`'s
   cost → mass map is a per-segment power law with the `3/2` tie
   (`Price::mass_at_same_band_from`); the seed floor is a rung's own mass
   (`units::population_mass_at_tier`). `at_band` now runs only where the world
@@ -433,7 +433,7 @@ rung paid 0.0292 kt per purchase that was never erected (design law #11). Now it
 bills what the stock is short of the next rung. Found by T-123's conservation
 test on a run **with no card played**; localized by re-running to increasing
 horizons (zero drift through 240 yr, equal quanta after) and then diffing the
-ledger per event. `an_off_rung_upgrade_erects_what_it_bills` pins both
+ledger per event. `an_off_band_upgrade_erects_what_it_bills` pins both
 directions and fails on the old bill. Appendix §D.3.
 
 - **The default bed is inside noise:** colony-years +0.0021 ± 0.0028,
