@@ -102,11 +102,12 @@ deviation of colony count between the empires of a game is about 20. Measured
 (appendix §D.37): median 190 over 12 galaxies on the shipped generator; 45 with
 `GalaxyConfig::rotational_symmetry` (built, off by default); 39 on four seeds
 with an even works mix as well (scratch). Identical ground still ran away once
-(810 / 1,812 / 967). **What would settle it:** the author's choice of (a)
-symmetric starts as the default, (b) an even default works mix or archetype
-bills balanced another way, and (c) a check on the early runaway — then the
-census of contested foundings by seat, and `colony_spread` re-run against the
-target.
+(810 / 1,812 / 967). **Cause found and fixed (appendix §D.38):** an empty hauler's routing
+loop starved homeworlds; freight is now routed by demand price (the author's
+ruling). Spread: random ground median 78 (was 190), identical ground mean 20.4
+— the target. **What would settle the rest:** the author's choice on the
+ground — symmetric starts as the default, or another way to equalize what each
+homeworld has within reach.
 
 ---
 

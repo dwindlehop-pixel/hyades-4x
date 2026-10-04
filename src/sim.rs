@@ -5613,7 +5613,7 @@ impl Simulation {
     }
 
     fn sys_freighter_arrive(&mut self, vehicle: Entity) {
-        let sh = *self.world.shuttle.get(vehicle).unwrap();
+        let mut sh = *self.world.shuttle.get(vehicle).unwrap();
         let p = self.world.owner.get(vehicle).unwrap().0;
         // Capacity is now the *hull's*, not the role's (R-O58): it is a mass
         // derived from usable interior volume, so it must be read off the ship
@@ -5642,6 +5642,24 @@ impl Simulation {
             // this is `cap` and the arithmetic below is the pre-T-91 one.
             let mut aboard = self.world.cargo.get(vehicle).copied().unwrap_or_default();
             let mut room = (cap.on_scale::<units::Cost>() - aboard.total()).max(Price::ZERO);
+            // **At a pile, the buyer is chosen before the load** (the author's
+            // ruling: pricing based on demand). The pile is priced at every
+            // center of the empire — what each wants of it at what it pays,
+            // discounted by the voyage — and the hold is loaded for the best
+            // one. Loading against the last destination's want first left a
+            // hauler empty wherever that center lacked nothing the pile held,
+            // and an empty hold priced every center at zero.
+            let mut priced = false;
+            if !yard_here && sh.stops == 0 {
+                let pile = self.holding(p, sh.outpost).copied().unwrap_or_default();
+                let at = self.position_at(sh.outpost, self.clock).unwrap();
+                let accel = G * self.thrust_to_mass(hull, cap);
+                if let Some(d) = self.best_delivery_center(PlayerId(p), at, &pile, accel) {
+                    sh.destination = d;
+                    self.world.shuttle.get_mut(vehicle).unwrap().destination = d;
+                    priced = true;
+                }
+            }
             let rwant = self.refined_want(sh.destination, &aboard);
             let offer = if yard_here {
                 let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
@@ -5837,7 +5855,8 @@ impl Simulation {
             // against** (R-MX8): the offer passed the Exchange's gate for
             // `sh.destination` and for no other buyer, and re-routing could
             // send it back to the center it came from.
-            let dest = if offer.is_some() && load + refined_loaded > Price::new(1e-9) {
+            // A buyer priced before the load keeps it: the hold was filled for it.
+            let dest = if (offer.is_some() && load + refined_loaded > Price::new(1e-9)) || priced {
                 sh.destination
             } else {
                 self.best_delivery_center(PlayerId(p), here, &cargo, self.laden_accel(vehicle)).unwrap_or(home)
@@ -10192,10 +10211,25 @@ impl Simulation {
         )
     }
 
-    /// **Where a laden freighter should actually take its ore** — need,
-    /// discounted by how long it takes to get there.
+    /// **Where a hauler should take what it carries — priced by demand** (the
+    /// author's ruling). Each center is scored at what the cargo is worth to
+    /// it, discounted by the voyage:
     ///
-    /// `score = mineral_pressure(center) · exp(−λ · t_transit)`
+    /// ```text
+    /// score = exp(−λ · t) · ( Σ_c min(cargo_c, want_c) · wtp_c
+    ///                       + Σ_r min(cargo_r, rwant_r) · rwtp_r )
+    /// ```
+    ///
+    /// `want` is the center's color deficit against its next bill and `wtp`
+    /// its willingness to pay ([`Self::willingness_to_pay`], the price its
+    /// Exchange bid carries); the refined terms are the same for supers and
+    /// apex. `None` when the cargo is worth nothing to any center, and the
+    /// caller falls back to the hauler's own home center rather than a
+    /// tie-break. *Supersedes* R-IND17's completion score, which priced a
+    /// center by the share of its shortfall the cargo closed: an empty hold
+    /// closed nothing anywhere, and a tie-break sent it to the lowest-id
+    /// center, a colony, which it then loaded for and could not serve
+    /// (appendix §D.38).
     ///
     /// This is the *same* `λ` the Exchange discounts a trade by
     /// (`Hyades_politics_trade_and_intelligence.md` §1.3), and that is the
@@ -10224,14 +10258,13 @@ impl Simulation {
         // term is read only when the hold carries some.
         let refined_aboard = cargo.refined_total() > Price::ZERO;
         for &e in &self.owned_planets[owner.0 as usize] {
+            let value = self.demand_value(e, owner, cargo, &doctrine, refined_aboard);
+            if value <= 0.0 {
+                continue;
+            }
             let d = from.distance(*self.world.position.get(e).unwrap());
             let t = math::ship_travel_years(d, accel);
-            let mut completion = self.bill_completion(e, owner, cargo);
-            if refined_aboard {
-                completion += self.refined_completion(e, cargo);
-            }
-            // A forge's pull is priced like its bids (`demand_of`).
-            let score = completion * self.forge_premium_at(e, &doctrine) * transcendental::exp_fast(-lambda * t);
+            let score = value * transcendental::exp_fast(-lambda * t);
             // Entity id breaks ties so the choice is total and deterministic.
             let better = match best {
                 None => true,
@@ -10244,74 +10277,35 @@ impl Simulation {
         best.map(|(e, _)| e)
     }
 
-    /// **How much of this destination's remaining shortfall the cargo closes**
-    /// (R-IND17, `Hyades_industry.md` §6.11).
-    ///
-    /// ```text
-    /// short_before = Σ_c deficit[c]
-    /// short_after  = Σ_c max(0, deficit[c] − cargo[c])
-    /// completion   = (short_before − short_after) / short_before
-    /// ```
-    ///
-    /// **This replaces T-81's `relief`, which was measured counterproductive.**
-    /// That version scored the fraction of the *cargo* that landed on a
-    /// deficit, which sends each color to wherever that color is scarcest —
-    /// by construction a different center per color. Paying a three-color
-    /// bill needs ore to **converge**, so scattering it by color is the
-    /// opposite of what the bill wants: measured, infrastructure builds fell
-    /// 57 → 31 and bank composition did not move at all.
-    ///
-    /// **The denominator is the center's remaining shortfall, not the bill.**
-    /// That distinction is the whole mechanism and it is easy to get wrong — the
-    /// first written form of R-IND17 divided by `Σ bill`, and worked out on
-    /// paper that ties a center needing only Yellow against one needing
-    /// everything, both scoring `0.5` for the same Yellow delivery. No
-    /// concentration at all. Dividing by what is left to find instead:
-    ///
-    /// | destination, given a Yellow cargo | `÷ Σ bill` | `÷ short_before` |
-    /// |---|---|---|
-    /// | needs only Yellow | 0.500 | **1.000** |
-    /// | needs Yellow and Magenta | 0.500 | 0.750 |
-    /// | needs everything | 0.500 | 0.500 |
-    /// | needs only Magenta | 0.000 | 0.000 |
-    ///
-    /// So a center holding two colors and missing the third pulls the third
-    /// hardest, and ore concentrates where it can actually be spent.
-    ///
-    /// Still a dimensionless fraction in `[0, 1]`, because `exp(−λ·t)`
-    /// multiplies it — R-O68 is the standing lesson on mixed-unit comparisons.
-    ///
-    /// **What it cannot do.** No routing rule can give an empire a color its
-    /// own ground does not hold, and the supply is single-colored: 6,725
-    /// sources measured at a mean dominant-color share of **0.789**, 38% of
-    /// them ≥95% one color. That is §8.1's subject and the Exchange's job
-    /// (T-77), with design law #1's counter-graph as the other half.
-    fn bill_completion(&self, center: Entity, owner: PlayerId, cargo: &Minerals) -> f64 {
-        let deficit = self.color_deficit(center, owner);
-        let short_before = deficit.iter().fold(Price::ZERO, |a, &b| a + b);
-        if short_before <= Price::ZERO {
-            return 0.0;
-        }
-        let mut short_after = Price::ZERO;
+    /// **What `cargo` is worth to `center` at its demand prices** — each
+    /// color's want, capped by what is aboard, at what the center pays for it
+    /// (`best_delivery_center`'s numerator).
+    fn demand_value(
+        &self,
+        center: Entity,
+        owner: PlayerId,
+        cargo: &Minerals,
+        doctrine: &Doctrine,
+        refined: bool,
+    ) -> f64 {
+        let want = self.color_deficit(center, owner);
+        let mut value = 0.0;
         for (i, &c) in Basic::ALL.iter().enumerate() {
-            short_after += (deficit[i] - Price::new(cargo.get_basic(c))).max(Price::ZERO);
+            let q = want[i].kilotons().min(cargo.get_basic(c));
+            if q > 0.0 {
+                value += q * self.willingness_to_pay(center, c, doctrine);
+            }
         }
-        (short_before - short_after) / short_before
-    }
-
-    /// **How much of a center's refined shortfall the cargo closes** — the
-    /// refined counterpart of [`Self::bill_completion`], in `[0, 1]`.
-    fn refined_completion(&self, center: Entity, cargo: &Minerals) -> f64 {
-        let short = self.refined_need(center);
-        let before = short.iter().fold(Price::ZERO, |a, &b| a + b);
-        if before <= Price::ZERO {
-            return 0.0;
+        if refined {
+            let rwant = self.refined_need(center);
+            for (i, &m) in Material::REFINED.iter().enumerate() {
+                let q = rwant[i].kilotons().min(cargo.get(m));
+                if q > 0.0 {
+                    value += q * self.refined_wtp(center, i, doctrine);
+                }
+            }
         }
-        let mut after = Price::ZERO;
-        for (i, &m) in Material::REFINED.iter().enumerate() {
-            after += (short[i] - Price::new(cargo.get(m))).max(Price::ZERO);
-        }
-        (before - after) / before
+        value
     }
 
     /// A center's per-color shortfall against its **next works bill** — the
@@ -16322,11 +16316,12 @@ mod tests {
             "and the same route with Magenta aboard must go the other way"
         );
 
-        // **And it concentrates** (R-IND17), which is the property T-81's relief
-        // term did not have. A third center needing *everything* must score
-        // strictly lower on the same Yellow cargo than one needing only Yellow,
-        // or ore scatters by color and a three-color bill is never assembled
-        // anywhere.
+        // **Priced by demand** (the author's ruling; supersedes R-IND17's
+        // completion score). A third center needing *everything* wants the same
+        // Yellow at full pressure — it holds nothing toward its bill — so it
+        // pays more for it than the center that is short only Yellow, and the
+        // hauler goes there. And a hold nobody wants is routed nowhere: the
+        // caller sends it to its own home center, not to a tie-break.
         let empty = sim.planet_entity[17];
         sim.claim_planet(empty, PlayerId(0));
         sim.world.factors.insert(
@@ -16341,16 +16336,17 @@ mod tests {
         sim.world.position.insert(empty, here);
         *sim.held_at_mut(empty).unwrap() = Minerals::default();
 
-        let near = sim.bill_completion(a, PlayerId(0), &yellow);
-        let far = sim.bill_completion(empty, PlayerId(0), &yellow);
-        assert!((near - 1.0).abs() < 1e-12, "a center missing only Yellow is completed by Yellow: {near}");
-        assert!(far > 0.0 && far < near, "and one missing everything scores strictly less: {far} vs {near}");
-        assert_eq!(sim.bill_completion(a, PlayerId(0), &magenta), 0.0, "the wrong color completes nothing");
+        let doctrine = sim.doctrine_of(0);
+        let at_a = sim.demand_value(a, PlayerId(0), &yellow, &doctrine, false);
+        let at_empty = sim.demand_value(empty, PlayerId(0), &yellow, &doctrine, false);
+        assert!(at_empty > at_a, "the center holding nothing pays more for Yellow: {at_empty} vs {at_a}");
         assert_eq!(
-            sim.best_delivery_center(PlayerId(0), here, &yellow, accel),
-            Some(a),
-            "so the hauler goes to the center it can finish, not the emptiest"
+            sim.demand_value(a, PlayerId(0), &magenta, &doctrine, false),
+            0.0,
+            "a color nobody lacks is worth nothing"
         );
+        assert_eq!(sim.best_delivery_center(PlayerId(0), here, &yellow, accel), Some(empty));
+        assert_eq!(sim.best_delivery_center(PlayerId(0), here, &Minerals::default(), accel), None, "an empty hold");
     }
 
     #[test]

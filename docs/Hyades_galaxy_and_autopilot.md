@@ -35,9 +35,9 @@ standard deviation of colony count between the empires of one game is about
 3-seat galaxies: median 190, mean 223 (appendix §D.37). **`OPEN` (T-147):** how
 to meet it. Built and off by default, `GalaxyConfig::rotational_symmetry` —
 one wedge of the disk turned to every seat, its colors stepped as the
-archetypes step — gives median 45, mean 88; the rest is the early economy
-amplifying small differences into a runaway (one symmetric galaxy ends
-810 / 1,812 / 967).
+archetypes step — gave median 45, mean 88 under the old freight routing. The runaway was an
+empty hauler's routing loop (appendix §D.38); with freight routed by demand
+price, random ground spreads median 78 and identical ground mean 20.4.
 
 ---
 

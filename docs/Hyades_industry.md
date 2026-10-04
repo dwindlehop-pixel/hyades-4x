@@ -1595,9 +1595,22 @@ implementing, per `AGENTS.md`'s rule about probing a scaling relationship first:
 `÷ Σ bill` ties the nearly-payable center with the empty one — both absorb the
 same absolute shortfall — so it reproduces exactly the scattering it was written
 to fix. `÷ short_before` puts the center that this cargo *finishes* at `1.0`, so
-ore concentrates where it can actually be spent. **R-IND17** (landed;
-`a_hauler_routes_to_the_color_that_is_missing` asserts the concentration
-property directly).
+ore concentrates where it can actually be spent. **R-IND17** (landed, then
+**superseded** — see below).
+
+**`RATIFIED` (the author's ruling) — freight is routed by demand price.** A
+hauler takes what it carries to the center where it is worth most at that
+center's demand prices, discounted by the voyage: `exp(−λ·t) · Σ_c
+min(cargo_c, want_c) · wtp_c` (and the same for supers and apex), `want` the
+color deficit against the next bill and `wtp` the Exchange bid price
+(`willingness_to_pay`). At a pile the buyer is priced **before** the load, on
+the pile, and the hold is loaded for it; a cargo worth nothing anywhere goes to
+the hauler's home center. *Superseded:* R-IND17's completion score, under
+which an empty hold closed nothing anywhere, a tie-break by entity id sent it to
+a colony (homeworlds are generated last), and loading for that colony left it
+empty again — a loop that left a homeworld with no income for 150 years and was
+the main cause of the spread between empires (appendix §D.38).
+`a_hauler_routes_to_the_color_that_is_missing` asserts the demand rule.
 
 > **A note on the guard, which is about method rather than industry.**
 > Colony-years tracks deepening **inversely, on both seeds**, across four
@@ -3640,7 +3653,7 @@ artifact in place contaminates every later measurement.
 | **R-IND12** | How much a colonizer carries. **Model settled, magnitudes open.** Settlers are priced in time — what the seed saves the destination against what it costs the origin to regrow — discounted by transit; minerals are sized by the destination's intended build-out. The supply-side `endowment_fraction` is retired. | §1.7 |
 | **R-IND13** | The works-value rung `I*`. Placeholder is the Band midpoint of capacity and abundance, i.e. the geometric mean of the two masses — the cheapest form with the required positive cross partial. The real function is §5's and needs T-73/T-74. | §1.7, §5 |
 | ~~**R-IND15**~~ | ~~The identity works mix~~ — **resolved.** `3:2:1` Yellow : Cyan : Magenta, the §5.1 *Default* point, Yellow-primary because Production is Yellow. The `(1,1,1)` first shipped was a placeholder and contradicted §5.1's "never a true 1:1:1". | §6.10 |
-| **R-IND17** | Score freight by *completion of the bill* rather than relief of one color — `(short_before − short_after) / Σ bill`. T-81's relief term anti-concentrates and was measured counterproductive. | §6.11 |
+| ~~**R-IND17**~~ | ~~Score freight by *completion of the bill* rather than relief of one color~~ — **superseded (the author's ruling): freight is routed by demand price** (§6.11, appendix §D.38). | §6.11 |
 | **R-IND16** | How much color weight one deep Production card adds — and therefore how many layers "deep" is, given that Sole is an asymptote approached at `(3+k)/(6+k)`. | §6.10 |
 | **R-IND14** | Whether the travel discount should be hyperbolic (`1/(1+n)`, current, no new constant) or exponential (needs a time constant). | §1.7 |
 | ~~**R-IND10**~~ | ~~Who bears the loss when a carrier is destroyed?~~ **resolved — the register was stale, `Hyades_politics_trade_and_intelligence.md` §3.3 already answered it.** Escrow returns to the buyer minus the burn: the buyer loses the burn, the seller loses the cargo, the loss is shared. That is what makes escorting worth paying for. | §8.1, politics §3.3 |

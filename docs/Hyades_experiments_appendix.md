@@ -3701,6 +3701,52 @@ contested foundings by seat over time, on a symmetric galaxy, would test it;
 meeting the target likely needs a check on that runaway as well as fair
 ground.
 
+## D.38 The cause of the spread between empires: an empty hauler's routing loop
+
+*Supports industry §6.11 (freight routed by demand price), galaxy §2 and
+T-147. The author's direction: find the cause before fixing symptoms; then the
+ruling, pricing based on demand. Beds: `examples/colony_spread` (card-free,
+standard galaxy, 3 seats, 1,500 yr, 12 seeds), scratch harnesses and one
+scratch ablation (never landed), `examples/forge_census` against `ccca4f4`.*
+
+**Where the spread is decided.** Worlds nearest each homeworld that `k_high`
+admits: 1,099–1,243 per seat, near-equal in every galaxy. The five losing seats
+of the 12 random galaxies lost 457–769 of their own nearest worlds to
+neighbors and had founded 3–9 colonies by 200 yr against 19–151 elsewhere. On
+identical ground (seed 19, symmetric) the seats stopped mirroring at 5 yr — a
+scout's target, two candidates at nearly equal distance reordered by rounding —
+and ended 810 / 1,811 / 967.
+
+**The mechanism, traced (symmetric seed 19).** The two losing homeworlds held
+0.01 kt from 20 yr to 170 yr; one mined 636 kt off-world in that time and 2.7 kt
+reached it. Its haulers shuttled between a companion and a colony loading
+0.000 kt: a hauler loaded against its last destination's color deficit, which
+was zero for the companion's color, and then chose its next destination by
+completion of shortfall — zero at every center for an empty hold — with ties
+broken by entity id, which is a colony's (homeworlds are generated last). The
+loop never broke, and the homeworld, which has only trace ore of its own, had
+no income.
+
+**Ablation** (scratch: an empty hauler goes to its home center): seed 19's
+seats reach 88 / 130 / 137 colonies at 190 yr, against 7 / 129 / 8; the 12
+random galaxies spread median 55, mean 99 (against 190, 223).
+
+**Demand pricing, landed** (the author's ruling):
+
+| ground | spread at 1,500 yr, 12 galaxies | median | mean |
+|---|---|---|---|
+| random, completion routing (before) | 19–499 | 190 | 223 |
+| random, demand pricing | 13–111 | 78 | 72 |
+| identical (`rotational_symmetry`), completion routing | 20–440 | 45 | 88 |
+| identical, demand pricing | 5–30 | 20 | 20.4 |
+
+On identical ground demand pricing meets the target; what remains on random
+ground is the ground. Paired against `ccca4f4` (4 seeds, 1,500 yr):
+colony-years **+2.82% ± 0.39** (4/4 higher), work-years +3.15% ± 9.44 (not
+resolved). Cost: seeds 1 and 7 at 800 yr run 6.4–6.6 s against 4.2–4.6 s, with
+7–10% more events and ~34% more time per event; the simulation carries more
+colonies and haulers early, an inference not profiled.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
