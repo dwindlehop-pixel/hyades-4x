@@ -3429,6 +3429,26 @@ work-years fall as spacing grows (−8% at 10 ly to −82% at 210 ly). A seat's
 native share rises past 140 ly (59–66%) while supers crossing between empires
 falls.
 
+**The author's floor: at least 5% of worlds hold two colors** (a color counts
+at `Band I`, 1 kt). The shipped 10 / 5 field gives 4.20% at 3 seats and
+3.95% at 12; `82e5579` gave 3.65%. Generation only, 3 seats, the four seeds:
+a width near 0.55 of the spacing clears it at 10–70 ly (10 / 5.5: 5.37%;
+35 / 19.2: 5.67%; 70 / 38.5: 5.61%) and 0.4 at 140 ly (140 / 56: 5.53%),
+with admitted worlds 13,345–13,924 against `82e5579`'s 13,801. At width =
+spacing the share is 15–34% and admitted falls to 7,814–12,000.
+
+**Two arms at the floor, ore held** (the author chose 70 and 140 ly):
+
+| spacing / width, ly | colony-years | work-years | native share | supers crossing | seats making all three | admitted |
+|---|---|---|---|---|---|---|
+| 70 / 38.5 | −5.0% ± 5.1 | −41.7% ± 11.1 | 42.1% | 5.11% | 10/12 | 13,345 |
+| 140 / 56 | −0.3% ± 2.7 | −71.7% ± 4.3 | 54.9% | 0.92% | 11/12 | 13,725 |
+
+Supers crossing, per seed (1 / 7 / 42 / 31337): 0.0 / 61.2 / 5.6 / 51.3% at
+70 ly, 0.0 / 70.0 / 0.8 / 0.0% at 140 ly, against 84.2 / 70.2 / 1.1 / 33.5%
+on `82e5579`. With habitable worlds held, colony-years do not resolve from
+zero; work-years fall with spacing and a seat's native share rises.
+
 **Inference, stated as one:** at large spacing forges specialize toward one
 super and do not trade the others in; the refined books and freight, not the
 geography, carry the trade that does not happen. Confidence about 60%: four
