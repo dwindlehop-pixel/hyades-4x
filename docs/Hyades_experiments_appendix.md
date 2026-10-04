@@ -3625,6 +3625,19 @@ across before round two's selection at 600 yr, most builds by round three).
 With the card `r` is 0.0279, at which the same formula from the starting
 population gives 373 yr; played at 200 yr, measured 455–690 yr.
 
+**What spreads the first forge across seats: emigration from the homeworld,
+proven by ablation.** Twin bed, card-free, 900 yr, the four seeds (a scratch
+harness, never landed). The first forge follows the homeworld's crossing of
+`Band IV` by 0–15 yr in every seat, so the spread is population, not basics.
+Population at 200 yr runs 17–907 kt against the logistic's ~1,036 kt; every
+colony ship a homeworld launches carries 1 kt of its people, and the seats
+that sent 174–270 ships before 200 yr cross at 721–761 yr or not by 900 yr,
+two of them falling from 39 → 26 kt and 17 → 10 kt between 200 and 300 yr.
+Seats that sent 8–148 cross at 605–641 yr. **Ablation:** with a homeworld's
+population not debited for the settlers it launches (a scratch build), all 12
+seats cross at 601 yr and forge at 600–603 yr, population 952 kt at 200 yr in
+every seat. Which seats launch more early colony ships is not established.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
