@@ -405,7 +405,11 @@ pub enum Homeworlds {
     /// The habitable world alone, holding under `Band I` of every basic (each
     /// reading drawn uniformly in `[0, 1)`), with one color site of each hue
     /// planted at [`GalaxyConfig::homeworld_site_distance_ly`], 120° apart, at
-    /// peak [`GalaxyConfig::homeworld_site_band`] (`OPEN`, T-147).
+    /// peak [`GalaxyConfig::homeworld_site_band`], and one outpost world of
+    /// each hue on the bearing to its site at
+    /// [`GalaxyConfig::homeworld_outpost_distance_ly`], holding
+    /// [`GalaxyConfig::homeworld_outpost_band`] of that color alone (`OPEN`,
+    /// T-147).
     ColorCentered,
 }
 
@@ -551,6 +555,18 @@ pub struct GalaxyConfig {
     /// planted site — the least each color reaches beside a homeworld.
     /// **Placeholder** (`Band 3.0`, the trio companions' density).
     pub homeworld_site_band: f64,
+    /// Under [`Homeworlds::ColorCentered`], the distance from a homeworld to
+    /// each of its three planted outposts, ly — one per hue, on the bearing to
+    /// that hue's planted site. **Placeholder.**
+    pub homeworld_outpost_distance_ly: f64,
+    /// Under [`Homeworlds::ColorCentered`], the deposit (a Band reading) of
+    /// each planted outpost in its one color. **Placeholder** (`Band I`).
+    pub homeworld_outpost_band: f64,
+    /// **A homeworld's starting population**, a Band reading (`Band 2.0`,
+    /// 31.6 kt). It sets the first forge's date: a forge stands at population
+    /// `Band IV`, and growth is the logistic toward the homeworld's ceiling.
+    /// **Placeholder.**
+    pub homeworld_start_band: f64,
 
     pub seed: u64,
 }
@@ -583,6 +599,9 @@ impl GalaxyConfig {
             homeworlds: Homeworlds::Trio,
             homeworld_site_distance_ly: 10.0,
             homeworld_site_band: 3.0,
+            homeworld_outpost_distance_ly: 5.0,
+            homeworld_outpost_band: 1.0,
+            homeworld_start_band: 2.0,
             seed,
         };
         cfg.planet_count = cfg.derived_planet_count();
@@ -1119,25 +1138,45 @@ impl Galaxy {
                 is_homeworld: true,
                 archetype: Some(archetype),
                 owner: Some(PlayerId(p as u32)),
-                population: Kilotons::at_band(Band::new(2.0)), // filled to its starting K
+                population: Kilotons::at_band(Band::new(config.homeworld_start_band)),
             });
             homeworlds.push(id);
 
             // The two companions, one per rich basic, either side of the
             // homeworld along the ring.
             let tangent = Vec3::new(-sin, cos, 0.0);
-            let companions: &[(f64, Basic)] = if centered.is_empty() { &[(1.0, rich_a), (-1.0, rich_b)] } else { &[] };
-            for &(side, rich) in companions {
+            // The worlds beside the homeworld, each rich in one color: the
+            // trio's two companions along the ring, or a color-centered
+            // homeworld's three planted outposts — one per hue, on the bearing
+            // to that hue's planted site, at `homeworld_outpost_distance_ly`.
+            let beside: Vec<(Vec3, Basic, f64)> = match centered.get(p) {
+                None => [(1.0, rich_a), (-1.0, rich_b)]
+                    .map(|(side, rich)| {
+                        let at = Vec3::new(
+                            position.x + side * config.homeworld_companion_ly * tangent.x,
+                            position.y + side * config.homeworld_companion_ly * tangent.y,
+                            0.0,
+                        );
+                        (at, rich, config.homeworld_companion_density)
+                    })
+                    .to_vec(),
+                Some((home, three)) => Basic::ALL
+                    .iter()
+                    .zip(three.iter())
+                    .map(|(&hue, site)| {
+                        let (dx, dy) = (site.x - home.x, site.y - home.y);
+                        let d = (dx * dx + dy * dy).sqrt().max(1e-12);
+                        let r = config.homeworld_outpost_distance_ly / d;
+                        (Vec3::new(home.x + dx * r, home.y + dy * r, 0.0), hue, config.homeworld_outpost_band)
+                    })
+                    .collect(),
+            };
+            for (at, rich, density) in beside {
                 let mut minerals = MineralField::default();
                 for b in Basic::ALL {
-                    let band = if b == rich { config.homeworld_companion_density } else { 0.0 };
+                    let band = if b == rich { density } else { 0.0 };
                     minerals.set(b, Band::new(band).in_kilotons());
                 }
-                let at = Vec3::new(
-                    position.x + side * config.homeworld_companion_ly * tangent.x,
-                    position.y + side * config.homeworld_companion_ly * tangent.y,
-                    0.0,
-                );
                 planets.push(Planet {
                     id: PlanetId(planets.len() as u32),
                     position: at,
@@ -1255,9 +1294,10 @@ mod tests {
         for ground in [Ground::Random, Ground::Identical, Ground::ColorRotated] {
             let cfg = GalaxyConfig { ground, homeworlds: Homeworlds::ColorCentered, ..GalaxyConfig::new(3, 9) };
             let g = Galaxy::generate(cfg).unwrap();
-            // No companions: every planet but the homeworlds is wild ground.
+            // No companions: the wild ground, the homeworlds, and three planted
+            // outposts per seat.
             let wild = cfg.planet_count / cfg.symmetry_turns() * cfg.symmetry_turns();
-            assert_eq!(g.planets.len(), wild + 3, "{ground:?}");
+            assert_eq!(g.planets.len(), wild + 3 * 4, "{ground:?}");
             assert_eq!(g.homeworld_sites.len(), 3);
             let home = |p: usize| &g.planets[g.homeworlds[p].0 as usize];
             for p in 0..3 {
@@ -1267,6 +1307,20 @@ mod tests {
                 for site in g.homeworld_sites[p] {
                     let d = site.distance(home(p).position);
                     assert!((d - cfg.homeworld_site_distance_ly).abs() < 1e-9, "{ground:?} seat {p}: {d}");
+                }
+                // One outpost of each hue, on the bearing to that hue's site,
+                // holding `Band I` of its color and the floor of the others.
+                let id = g.homeworlds[p].0 as usize;
+                for (j, &b) in Basic::ALL.iter().enumerate() {
+                    let o = &g.planets[id + 1 + j];
+                    assert!((o.position.distance(home(p).position) - cfg.homeworld_outpost_distance_ly).abs() < 1e-9);
+                    let toward = o.position.distance(g.homeworld_sites[p][j]);
+                    let d = cfg.homeworld_site_distance_ly - cfg.homeworld_outpost_distance_ly;
+                    assert!((toward - d).abs() < 1e-9, "{ground:?} seat {p} outpost {j} off its bearing");
+                    assert!((o.minerals.get(b).band().bands() - cfg.homeworld_outpost_band).abs() < 1e-6);
+                    for &other in Basic::ALL.iter().filter(|&&c| c != b) {
+                        assert!(o.minerals.get(other).kilotons() < 0.01);
+                    }
                 }
             }
             if ground == Ground::Random {

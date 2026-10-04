@@ -80,14 +80,30 @@ ruling.
 **`OPEN` (T-147) — color-centered homeworlds** (`GalaxyConfig::homeworlds =
 Homeworlds::ColorCentered`, built, off by default). The habitable world stands
 alone, holding under `Band I` of every basic (each reading drawn uniformly in
-`[0, 1)`), on the ring midway between its neighbors' angles, with one color
-site of each hue planted `homeworld_site_distance_ly` (10 ly) away, 120° apart,
-at peak `homeworld_site_band` (`Band 3.0`) — **placeholders**. On identical
-ground seat 0's are planted inside its wedge and turned with it. Measured
-(appendix §D.41): the spread between empires widens on every ground at both
-`Band 3.0` and `Band 4.0` (identical ground 70.6 and 81.8, against 24.3 with
-the trio), and the start runs about a century longer. Equidistance from the
-field's own sites was tried first and cannot carry a threshold.
+`[0, 1)`), on the ring midway between its neighbors' angles. Around it, all
+**placeholders**:
+
+| parameter | meaning | value |
+|---|---|---|
+| `homeworld_site_distance_ly` | distance to each of three planted color sites, one per hue, 120° apart | 10 ly |
+| `homeworld_site_band` | each planted site's peak | `Band 3.0` |
+| `homeworld_outpost_distance_ly` | distance to each of three planted outpost worlds, one per hue, on the bearing to that hue's site | 5 ly |
+| `homeworld_outpost_band` | each outpost's deposit, in its one color | `Band I` |
+
+On identical ground seat 0's are planted inside its wedge and turned with it.
+Measured (appendix §D.41–§D.42): with sites alone the spread widens on every
+ground; equidistance from the field's own sites was tried first and cannot
+carry a threshold.
+
+**The first forge — the author's target: a mean of 400 yr with a 5-yr standard
+deviation. `OPEN` how to meet it.** A forge stands at population `Band IV`, so
+its date is set by the homeworld's starting population
+(`GalaxyConfig::homeworld_start_band`, `Band 2.0` = 31.6 kt, **placeholder**)
+and the logistic toward its ceiling — 597 yr from the shipped start — and
+emigration only delays it. Measured (appendix §D.42): planted outposts and
+starting miners, freighters and colony ships do not bring it earlier; a start
+of `Band 2.785` with them forges at 400.7 yr, standard deviation 0.5 yr, on
+all three grounds. The shipped start is unchanged.
 
 **Eventual self-synthesis.** At **pop Band IV** a homeworld synthesizes its archetype's super from its trio's two rich basics, which are that super's recipe. **R-G4 — resolved (the author's ruling: "forges have to produce supers according to color theory").** "Exactly one super" is a gradient, not a rule: a forge makes any super whose two basics it holds 1:1 (§4.2), and an archetype is native to one super only in that its trio supplies that recipe. Measured with the trio, hex-scale color, the ore cap and a priced works bill: **0.27% of refined mass synthesized crosses between empires** (24 runs, appendix §D.28) — empires make their own supers from basics their own freight brings. With forging a forge's purpose and forges bidding for supers (§4.5), card-free: every forge still makes all three supers, and 3.7% of supers forged cross between empires (appendix §D.31).
 

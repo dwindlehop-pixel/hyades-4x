@@ -3922,6 +3922,47 @@ runs a century longer, and small differences have that century to compound.
 Confidence about 60%; an ablation planting a world at each site's center
 would test it.
 
+## D.42 The first forge's date: planted outposts, starting fleets, and the starting population
+
+*Supports galaxy §3 and T-147. The author's direction: plant three mining
+outposts, 120° apart, within the color regions, `Band I`, single color,
+identical, 5 ly out; add starting freighters, miners and colony ships to
+accelerate the time to forge; the target, a mean of 400 yr with a 5-yr standard
+deviation. Bed: `examples/forge_time` (card-free, 3 seats, each homeworld's
+population read once per simulated year; the economy ticks every 5 yr), on
+`Homeworlds::ColorCentered` with the outposts; starting fleets through
+`FleetSeeding` (one miner, one freighter and one Medium colonizer fleet per
+seat, 0.3 kt each, a 15-ly surveyed start).*
+
+**What sets the date.** `is_forge` is population at `Band IV` and nothing else,
+and population follows the logistic toward the homeworld's `K` (`Band 4.2`,
+2,163,979 kt) at `growth_rate / rate_reference_years` = 0.01746 per yr. From the
+shipped start (`Band 2.0`, 31.6 kt) that is 597.3 yr to `Band IV`
+(715,542 kt); minerals do not enter it. A colony ship's settlers are debited
+from the homeworld (`embark`), so emigration can only delay it.
+
+**First forge, `Identical` ground** (mean, standard deviation over all seats,
+mean standard deviation within a galaxy; seeds 1, 7, 42, 31337):
+
+| arm | mean | sd | within |
+|---|---|---|---|
+| trio (9 of 12 seats forged by 800 yr) | 688.4 | 17.7 | 12.0 |
+| color-centered, outposts | 624.0 | 15.2 | 1.8 |
+| + starting fleets (6 of 12 seats forged by 800 yr) | 676.5 | 4.2 | 4.1 |
+| outposts, start `Band 2.75` | 408.2 | 2.5 | 0.5 |
+| + starting fleets | 410.7 | 0.5 | 0.5 |
+| outposts, start `Band 2.8`, with or without fleets | 395.7 | 0.5 | 0.5 |
+
+The logistic alone predicts 404.2 yr at `Band 2.75` and 391.3 at `Band 2.8`.
+
+**At `Band 2.785` with the starting fleets** (seeds 1, 7, 42, 31337, 2, 3, 5,
+11): first forge **400.7 yr, standard deviation 0.5 yr** on `Random`,
+`Identical` and `ColorRotated` ground alike — seat 0 at 400 and seats 1 and 2
+at 401 in every galaxy, the order in which their economy ticks fall within a
+year. Spread of colonies between empires at 1,500 yr on the same configuration
+(12 galaxies, mean): `Random` 131.9, `Identical` 25.9, `ColorRotated` 55.0,
+against 60.1 / 24.3 / 31.7 with the trio (§D.40).
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
