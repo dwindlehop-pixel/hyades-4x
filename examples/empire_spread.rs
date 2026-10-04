@@ -111,14 +111,15 @@ fn main() {
             let t = sim.clock().min(next).min(horizon);
             if trace && (next % 100.0).abs() < 1e-9 {
                 let mut line = format!("{seed:>5} {next:>5.0} yr");
-                for p in 0..seats {
+                for (p, stock) in now.iter().enumerate() {
                     let top = snap
                         .planets
                         .iter()
                         .filter(|pl| pl.owner == Some(p as u32))
                         .max_by(|a, b| a.works.kilotons().total_cmp(&b.works.kilotons()));
                     let (w, home) = top.map_or((0.0, false), |pl| (pl.works.kilotons(), pl.is_homeworld));
-                    line += &format!(" | s{p} works {:>9.1} top {:>9.1}{}", now[p][1], w, if home { " (home)" } else { "" });
+                    line +=
+                        &format!(" | s{p} works {:>9.1} top {:>9.1}{}", stock[1], w, if home { " (home)" } else { "" });
                 }
                 println!("{line}");
             }
@@ -159,7 +160,14 @@ fn main() {
             let mut last = -100.0;
             for r in sim.log().iter() {
                 if let LogEvent::ProductionDecision {
-                    center, infra, k_potential, stockpile, infra_cost, can_afford_infra, chosen, ..
+                    center,
+                    infra,
+                    k_potential,
+                    stockpile,
+                    infra_cost,
+                    can_afford_infra,
+                    chosen,
+                    ..
                 } = r.event
                 {
                     if center.0 == w && r.time - last >= 10.0 {
@@ -178,21 +186,37 @@ fn main() {
             // of each seat and their share of that seat's deposits.
             let mut by: std::collections::BTreeMap<(u32, u64, u32), f64> = Default::default();
             for r in sim.log().iter() {
-                if let LogEvent::FreighterTransfer { player, leg: hyades_engine::log::FreighterLeg::Deposited, amount, at, .. } =
-                    r.event
+                if let LogEvent::FreighterTransfer {
+                    player,
+                    leg: hyades_engine::log::FreighterLeg::Deposited,
+                    amount,
+                    at,
+                    ..
+                } = r.event
                 {
                     *by.entry((player, (r.time / 100.0) as u64, at.0)).or_default() += amount;
                 }
             }
             for p in 0..seats as u32 {
                 for c in 1..=5u64 {
-                    let mut v: Vec<(u32, f64)> =
-                        by.iter().filter(|((q, cc, _), _)| *q == p && *cc == c).map(|((_, _, w), a)| (*w, *a)).collect();
+                    let mut v: Vec<(u32, f64)> = by
+                        .iter()
+                        .filter(|((q, cc, _), _)| *q == p && *cc == c)
+                        .map(|((_, _, w), a)| (*w, *a))
+                        .collect();
                     let total: f64 = v.iter().map(|x| x.1).sum();
                     v.sort_by(|a, b| b.1.total_cmp(&a.1));
-                    let top: Vec<String> =
-                        v.iter().take(3).map(|(w, a)| format!("{w}: {a:.0} ({:.0}%)", 100.0 * a / total.max(1e-9))).collect();
-                    println!("{seed:>5} freight s{p} {}00s: {total:.0} kt to {} centers; top {}", c, v.len(), top.join(", "));
+                    let top: Vec<String> = v
+                        .iter()
+                        .take(3)
+                        .map(|(w, a)| format!("{w}: {a:.0} ({:.0}%)", 100.0 * a / total.max(1e-9)))
+                        .collect();
+                    println!(
+                        "{seed:>5} freight s{p} {}00s: {total:.0} kt to {} centers; top {}",
+                        c,
+                        v.len(),
+                        top.join(", ")
+                    );
                 }
             }
         }
@@ -203,9 +227,8 @@ fn main() {
                 forged[player as usize][k] += made;
             }
         }
-        let column = |m: usize| -> Vec<f64> {
-            (0..seats).map(|p| if m < 3 { acc[p][m] } else { forged[p][m - 3] }).collect()
-        };
+        let column =
+            |m: usize| -> Vec<f64> { (0..seats).map(|p| if m < 3 { acc[p][m] } else { forged[p][m - 3] }).collect() };
         let row: [f64; 5] = core::array::from_fn(|m| cv(&column(m)));
         println!(
             "{seed:>5}: cv {}",
