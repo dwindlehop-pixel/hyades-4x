@@ -3378,10 +3378,64 @@ Why a wider spacing raises the mean ore Band is not established. An arm with
 the anticorrelation held at the old field's ore levels would settle how much
 of the −19% it carries.
 
-**Open, the author's question:** the hex is meant as a human-legible interface
-and nothing measured should depend on it. In this landing it does — one color
-site per hex makes `hex_side_ly` the color-site spacing. The recommended next
-step separates them (T-146).
+**Superseded at §D.33** (the author: the hex is a human-legible interface, and
+"color sites are of course randomly spaced"). One color site per hex made
+`hex_side_ly` the color-site spacing, so every number above beyond the
+hexes-per-player table measures a 70-ly site spacing with a 61-ly width, not
+the hex.
+
+## D.33 Color sites placed at random: spacing and width swept
+
+*Supports galaxy §4.3, T-146. The author's rulings: the hex is read by no
+generation; color sites are randomly placed, with their own spacing (one site
+per spacing² of area) and width (a Gaussian σ on the Band). The author's
+expectation, to be measured: sites spanning more than one 70-ly hex create
+trade in supers. Bed: `examples/forge_census` with `FC_SITE_SPACING` and
+`FC_SITE_SIGMA` (card-free, standard galaxy, 3 seats, 1,500 yr, seeds 1, 7,
+42, 31337), paired by seed against `82e5579` (sites on a 10-ly jittered
+lattice, width 5 ly).*
+
+| spacing / width, ly | colony-years | work-years | native share | supers crossing | seats making all three | admitted |
+|---|---|---|---|---|---|---|
+| `82e5579` (lattice 10 / 5) | — | — | 29.6% | 3.68% | 10/12 | 13,801 |
+| 10 / 5 | +3.1% ± 0.6 | −8.0% ± 4.6 | 34.3% | 1.04% | 12/12 | 14,211 |
+| 10 / 10 | −16.6% ± 0.3 | +58.1% ± 9.9 | 29.6% | 19.27% | 11/12 | 12,000 |
+| 35 / 17.5 | +3.3% ± 2.0 | −34.1% ± 6.6 | 39.5% | 0.89% | 12/12 | 14,263 |
+| 35 / 35 | −23.5% ± 2.9 | +40.8% ± 17.1 | 32.4% | 1.69% | 11/12 | 11,342 |
+| 70 / 35 | −0.9% ± 4.7 | −46.4% ± 7.5 | 31.0% | 5.34% | 10/12 | 13,814 |
+| 70 / 70 | −36.6% ± 4.5 | +128.7% ± 56.7 | 33.0% | 3.33% | 12/12 | 9,914 |
+| 140 / 70 | −13.6% ± 2.6 | −56.9% ± 10.0 | 65.8% | 0.33% | 10/12 | 12,319 |
+| 140 / 140 | −55.2% ± 1.8 | +164.0% ± 75.5 | 59.1% | 3.78% | 10/12 | 7,814 |
+| 210 / 105 | −10.3% ± 10.0 | −82.0% ± 1.5 | 60.9% | 0.00% | 10/12 | 12,615 |
+| 210 / 210 | −50.0% ± 6.4 | −9.7% ± 41.6 | 49.7% | 1.00% | 7/12 | 7,943 |
+
+Colony-years and work-years are paired differences, mean ± one standard error
+over 4 seeds. Native share and supers crossing are pooled over the four runs;
+admitted is the worlds whose `min(hab, bio)` reaches `k_high` (Band 3.2),
+summed over the four galaxies. *Seats making all three:* each super at least
+1% of the seat's largest.
+
+**Supers crossing, per seed**, is dominated by the run whose forges make the
+most: `82e5579` reads 84.2 / 70.2 / 1.1 / 33.5% on seeds 1 / 7 / 42 / 31337,
+and every arm spans similar ranges up to 140-ly spacing. The pooled share is
+therefore weighted toward one or two runs, and four seeds do not resolve it.
+At 140 and 210 ly, three of four seeds read under 1% in all four arms.
+
+**What moves together.** At width = spacing, sites overlap and the field
+carries more ore: admitted worlds fall (to 7,814 at 140/140), colony-years
+fall and work-years rise, through §4.4's anticorrelation and the works bill.
+At width = half the spacing, admitted stays within 12,319–14,263 and
+work-years fall as spacing grows (−8% at 10 ly to −82% at 210 ly). A seat's
+native share rises past 140 ly (59–66%) while supers crossing between empires
+falls.
+
+**Inference, stated as one:** at large spacing forges specialize toward one
+super and do not trade the others in; the refined books and freight, not the
+geography, carry the trade that does not happen. Confidence about 60%: four
+seeds per arm, and the ore quantity moves with the spacing in every arm. An
+arm holding the admitted count and the mean ore Band at `82e5579`'s while the
+spacing grows would separate the two; a census of refined bids and asks that
+do not clear at 140 ly would test the inference directly.
 
 ## References
 

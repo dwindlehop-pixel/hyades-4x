@@ -97,17 +97,17 @@ T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-1
 
 ### T-146. Make the hex presentation-only; give color its own spacing
 
-**Open — the author's question: "Why is hex size not independent of every
-measurement? It's only intended to be a human legible interface."** As landed,
-galaxy generation lays one color site per hex (§4.3), so `hex_side_ly` is the
-color-site spacing and every run reads it: at a 70-ly side colony-years fall
-19.4% ± 1.3 against the 10-ly field (appendix §D.32). Recommended (`OPEN`):
-no engine code reads `hex_side_ly`; a separate `color_site_spacing_ly` carries
-the empire-scale color ruling. **What would settle it:** the author's choice
-of that spacing — equal to the hex width, so the map reads one color per hex,
-accepting the habitability cost; or first finding why a wider spacing raises
-the mean ore Band (0.456 at 5.8 ly, 0.651 at 70 ly) and holding the count of
-worlds `k_high` admits at today's level.
+**Advanced — built (the author's rulings).** The hex is read by no generation
+(galaxy §1; `the_hex_is_read_by_no_generation`). Color sites are placed at
+random with their own spacing and width (`GalaxyConfig::color_site_spacing_ly`,
+`color_site_sigma_ly`, placeholders 10 and 5 ly; §4.3). First sweep, 10 arms
+from 10 to 210 ly (appendix §D.33): supers crossing between empires do not
+rise with spacing — under 1% on three of four seeds at 140 and 210 ly — while
+a seat's native share rises to 59–66%; the ore quantity, and with it
+habitability and work-years, moves in every arm. **Open — what would settle
+it:** an arm holding the admitted count and the mean ore Band fixed while the
+spacing grows, then a census of refined bids and asks that do not clear; and
+the author's choice of spacing and width.
 
 ---
 

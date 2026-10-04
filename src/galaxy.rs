@@ -3,13 +3,11 @@
 //! Per `Hyades_autopilot_colonization_growth.md` §1 the simulation has *no hexes*:
 //! each star system is one point ("a planet"). This module produces exactly that
 //! field plus the seeded homeworlds. The command-view hex tiling
-//! (`Hyades_galaxy_and_autopilot.md` §1–2) is a *presentation* concern and no
-//! hex is stored — but the **color field is laid out on it** (§4.3): each hex
-//! is one color region, so the hex's size is the scale at which ore color
-//! varies. The author's ruling is that color varies at the scale of an empire,
-//! a modest integer number of hexes per player, so a hex is
-//! [`GalaxyConfig::hex_side_ly`] = **70 ly a side, 121.2 ly across flats**
-//! (R-G1).
+//! (`Hyades_galaxy_and_autopilot.md` §1–2) is a *presentation* concern, and
+//! nothing here reads it: [`GalaxyConfig::hex_side_ly`] (70 ly a side) is
+//! carried for the command view only (R-G1). Ore color varies at the scale
+//! of the **color sites** (§4.3) — randomly placed, with their own spacing and
+//! width.
 //!
 //! The star field's **extent** is sized separately, by a **ring step** of
 //! [`GalaxyConfig::ring_step_ly`] = 10 ly — the hex side before the hex was
@@ -48,9 +46,9 @@
 //!   — see [`GalaxyConfig::derived_planet_count`] for the derivation, an
 //!   approximation validated empirically in `tests`, not a closed form for
 //!   the true inhomogeneous process.
-//! * **§4.3 tier-1 field** — one color site per hex, its hue weighted by the
-//!   three hue hotspots, × exponential decay in Z, matching the star field's
-//!   own shape.
+//! * **§4.3 tier-1 field** — randomly placed color sites, each one hue weighted
+//!   by the three hue hotspots, × exponential decay in Z, matching the star
+//!   field's own shape.
 //! * **§4.4 anticorrelation** — metal-rich planets trend low-habitability; the
 //!   colony-vs-mine tension falls out of this.
 //! * **§3 homeworlds** — identical `4/4/2` shape (`K = min = 2`), super-aligned
@@ -182,119 +180,110 @@ impl Planet {
 /// `√3`, written out: `f64::sqrt` is exact, but a constant needs no call.
 const SQRT_3: f64 = 1.732_050_807_568_877_2;
 
-/// **Color sites** (§4.3; the author: color varies at the scale of an empire).
-/// One site per hex of the command-view tiling — flat-top hexes
-/// [`GalaxyConfig::hex_side_ly`] a side, one centered on the galactic
-/// center — jittered inside its hex, covering the star field. Each site is one
-/// hue, drawn in proportion to the three hotspots' large-scale factors there,
-/// with a peak of `mineral_peak · (floor + (1 − floor) · w / w_max)`: `w` the
-/// hue's factor at the site and `w_max` the largest factor among the sites of
-/// that hue. So each hue's strongest site reaches `mineral_peak` — `Band IV`
-/// (R-O82) — wherever the lattice falls relative to its hotspot, and a world's
-/// deposit is the Gaussian of its strongest site of each hue. Generation only;
-/// nothing is stored.
+/// A color site reaches a world only within this many of its widths: past
+/// `4σ` its Gaussian is under 3.4e-4 of its peak, under 0.0014 Band.
+const COLOR_SITE_REACH_SIGMAS: f64 = 4.0;
+
+/// **Color sites** (§4.3; the author: color varies at the scale of an
+/// empire). Placed at random, uniformly over the square the star field fits
+/// in, one per [`GalaxyConfig::color_site_spacing_ly`]² of area. Each site is
+/// one hue, drawn in proportion to the three hotspots' large-scale factors
+/// there, with a peak of `mineral_peak · (floor + (1 − floor) · w / w_max)`:
+/// `w` the hue's factor at the site and `w_max` the largest factor among the
+/// sites of that hue, so each hue's strongest site reaches `mineral_peak` —
+/// `Band IV` (R-O82) — wherever the draw falls relative to its hotspot. A
+/// world's deposit in a hue is the Gaussian, of width
+/// [`GalaxyConfig::color_site_sigma_ly`], of its strongest site of that hue.
+/// The command-view hex plays no part. Generation only; nothing is stored.
 struct ColorSites {
-    /// Hex side (the circumradius), ly.
-    side: f64,
     sigma: f64,
-    /// Axial coordinates `(q, r)` run over `−half..=half` on both axes.
+    /// Side of a lookup bucket, ly — at least the reach, so a world's sites
+    /// all lie in the 3×3 buckets around it.
+    bucket: f64,
+    /// Buckets per side is `2·half + 1`, centered on the origin.
     half: i64,
-    /// Per hex, indexed `(r + half)·(2·half + 1) + (q + half)`: the site's hue,
-    /// position and peak Band.
-    cells: Vec<(Basic, f64, f64, f64)>,
+    /// Per bucket, the indices of the sites in it, in draw order.
+    buckets: Vec<Vec<u32>>,
+    /// Per site: its hue, position and peak Band.
+    sites: Vec<(Basic, f64, f64, f64)>,
 }
 
 impl ColorSites {
     fn generate(config: &GalaxyConfig, hotspots: &Hotspots, hotspot_sigma: f64, mut rng: Rng) -> ColorSites {
-        let side = config.hex_side_ly.max(1e-6);
-        let across = config.hex_across_flats_ly();
         // The radial profile is Gamma(2, L_xy): ten scale lengths hold all
-        // but ~5e-4 of the stars, and a world past the lattice reads trace.
-        // A hex `k` steps out has its center at least `1.5·k·side` away.
-        let half = (10.0 * config.xy_scale() / (1.5 * side)).ceil() as i64;
-        let width = 2 * half + 1;
+        // but ~5e-4 of the stars, and a world past the square reads trace.
+        let extent = 10.0 * config.xy_scale();
+        let spacing = config.color_site_spacing_ly.max(1e-6);
+        let count = ((2.0 * extent) * (2.0 * extent) / (spacing * spacing)).round().max(3.0) as usize;
         let floor = config.color_site_floor.clamp(0.0, 1.0);
-        let mut cells = Vec::with_capacity((width * width) as usize);
-        for r in -half..=half {
-            for q in -half..=half {
-                let (cx, cy) = Self::center(q, r, side);
-                let x = cx + 0.7 * (rng.unit() - 0.5) * across;
-                let y = cy + 0.7 * (rng.unit() - 0.5) * across;
-                let w = Basic::ALL.map(|b| hotspots.factor(b, x, y, hotspot_sigma));
-                let total: f64 = w.iter().sum();
-                let mut pick = rng.unit() * total;
-                let mut hue = Basic::ALL[2];
-                for (k, &b) in Basic::ALL.iter().enumerate() {
-                    if pick < w[k] {
-                        hue = b;
-                        break;
-                    }
-                    pick -= w[k];
+        let mut sites = Vec::with_capacity(count);
+        for _ in 0..count {
+            let x = rng.range(-extent, extent);
+            let y = rng.range(-extent, extent);
+            let w = Basic::ALL.map(|b| hotspots.factor(b, x, y, hotspot_sigma));
+            let total: f64 = w.iter().sum();
+            let mut pick = rng.unit() * total;
+            let mut hue = Basic::ALL[2];
+            for (k, &b) in Basic::ALL.iter().enumerate() {
+                if pick < w[k] {
+                    hue = b;
+                    break;
                 }
-                cells.push((hue, x, y, w[hue as usize]));
+                pick -= w[k];
             }
+            sites.push((hue, x, y, w[hue as usize]));
         }
-        // Normalize each hue to its strongest site. With sites a hex apart the
-        // nearest one can sit most of a hex from its hotspot, and the peak is
-        // a Band: the one site that happened to land closest would hold most
-        // of the galaxy's ore in one hue.
+        // Normalize each hue to its strongest site. With sites far apart the
+        // nearest one can sit far from its hotspot, and the peak is a Band:
+        // the one site that happened to land closest would hold most of the
+        // galaxy's ore in one hue.
         let mut w_max = [0.0f64; 3];
-        for &(hue, _, _, w) in &cells {
+        for &(hue, _, _, w) in &sites {
             w_max[hue as usize] = w_max[hue as usize].max(w);
         }
-        for cell in &mut cells {
-            let top = w_max[cell.0 as usize];
-            let share = if top > 0.0 { cell.3 / top } else { 0.0 };
-            cell.3 = config.mineral_peak * (floor + (1.0 - floor) * share);
+        for site in &mut sites {
+            let top = w_max[site.0 as usize];
+            let share = if top > 0.0 { site.3 / top } else { 0.0 };
+            site.3 = config.mineral_peak * (floor + (1.0 - floor) * share);
         }
-        ColorSites { side, sigma: across * config.color_site_sigma_frac, half, cells }
-    }
-
-    /// Center of the flat-top hex at axial `(q, r)`, ly.
-    fn center(q: i64, r: i64, side: f64) -> (f64, f64) {
-        (1.5 * side * q as f64, SQRT_3 * side * (r as f64 + 0.5 * q as f64))
-    }
-
-    /// The flat-top hex holding `(x, y)`, as axial `(q, r)`: the fractional
-    /// cube coordinates rounded, the component with the largest rounding error
-    /// recomputed from the other two.
-    fn hex_at(x: f64, y: f64, side: f64) -> (i64, i64) {
-        let fq = (2.0 / 3.0) * x / side;
-        let fr = (-x / 3.0 + (SQRT_3 / 3.0) * y) / side;
-        let fs = -fq - fr;
-        let (mut q, mut r, s) = (fq.round(), fr.round(), fs.round());
-        let (dq, dr, ds) = ((q - fq).abs(), (r - fr).abs(), (s - fs).abs());
-        if dq > dr && dq > ds {
-            q = -r - s;
-        } else if dr > ds {
-            r = -q - s;
+        let sigma = config.color_site_sigma_ly.max(1e-6);
+        let bucket = COLOR_SITE_REACH_SIGMAS * sigma;
+        let half = (extent / bucket).ceil() as i64;
+        let width = 2 * half + 1;
+        let mut buckets = vec![Vec::new(); (width * width) as usize];
+        for (i, &(_, x, y, _)) in sites.iter().enumerate() {
+            let (bx, by) = ((x / bucket).floor() as i64, (y / bucket).floor() as i64);
+            if bx.abs() <= half && by.abs() <= half {
+                buckets[((by + half) * width + (bx + half)) as usize].push(i as u32);
+            }
         }
-        (q as i64, r as i64)
+        ColorSites { sigma, bucket, half, buckets, sites }
     }
 
     /// Each hue's Band at `(x, y)` before the vertical decay and noise: its
-    /// strongest site among the hexes within three steps of the point's own.
-    /// A site four steps out is at least `6·side − side − 0.49·across` =
-    /// 2.39 hex widths away, under 2e-5 of its peak at the default width.
+    /// strongest site within reach.
     fn bands_at(&self, x: f64, y: f64) -> [f64; 3] {
         let width = 2 * self.half + 1;
-        let (cq, cr) = Self::hex_at(x, y, self.side);
+        let (bx, by) = ((x / self.bucket).floor() as i64, (y / self.bucket).floor() as i64);
+        let reach = COLOR_SITE_REACH_SIGMAS * self.sigma;
         let mut out = [0.0f64; 3];
-        for dr in -3i64..=3 {
-            for dq in -3i64..=3 {
-                if (dq + dr).abs() > 3 {
+        for cy in (by - 1)..=(by + 1) {
+            for cx in (bx - 1)..=(bx + 1) {
+                if cx.abs() > self.half || cy.abs() > self.half {
                     continue;
                 }
-                let (q, r) = (cq + dq, cr + dr);
-                if q < -self.half || q > self.half || r < -self.half || r > self.half {
-                    continue;
-                }
-                let (hue, sx, sy, peak) = self.cells[((r + self.half) * width + (q + self.half)) as usize];
-                let (dx, dy) = (x - sx, y - sy);
-                let band = peak * transcendental::exp(-(dx * dx + dy * dy) / (2.0 * self.sigma * self.sigma));
-                let k = hue as usize;
-                if band > out[k] {
-                    out[k] = band;
+                for &i in &self.buckets[((cy + self.half) * width + (cx + self.half)) as usize] {
+                    let (hue, sx, sy, peak) = self.sites[i as usize];
+                    let (dx, dy) = (x - sx, y - sy);
+                    let d2 = dx * dx + dy * dy;
+                    if d2 > reach * reach {
+                        continue;
+                    }
+                    let band = peak * transcendental::exp(-d2 / (2.0 * self.sigma * self.sigma));
+                    let k = hue as usize;
+                    if band > out[k] {
+                        out[k] = band;
+                    }
                 }
             }
         }
@@ -392,17 +381,14 @@ pub struct GalaxyConfig {
     /// plain mutable field, like everything else here, for direct override.
     pub planet_count: usize,
 
-    /// **Hex side, ly — 70, from the author's target of hexes per player**
-    /// (R-G1): color varies at the scale of an empire, so an empire spans a
-    /// modest integer number of hexes — 3–6 per player at 3 seats, 6–12 at 6
-    /// and 12, 3–6 at 18 — and the author's direction for a human-scale number:
-    /// about 70 ly a side, about 120 ly across. Across flats it is `√3 · 70` =
-    /// 121.2 ly ([`Self::hex_across_flats_ly`]). Counted as the hexes holding
-    /// 90% of the worlds an empire owns at 1,500 yr, no one width meets all
-    /// four targets (`examples/hex_census`, appendix §D.32); 6 seats read
-    /// under 6 per player at this width (R-G5, open). Flat-top hexes, one
-    /// centered on the galactic center. The engine stores no hex: this sets the
-    /// color sites (§4.3) and nothing else.
+    /// **Hex side, ly — 70: the command view's hex, read by no engine code**
+    /// (R-G1; the author: "only intended to be a human legible interface").
+    /// Flat-top, one centered on the galactic center, `√3 · 70` = 121.2 ly
+    /// across flats ([`Self::hex_across_flats_ly`]). From the author's target
+    /// of hexes per player — 3–6 at 3 seats, 6–12 at 6 and 12, 3–6 at 18 —
+    /// and a human-scale number; no width meets all four (`examples/hex_census`,
+    /// appendix §D.32; R-G5, open). Nothing generated or simulated depends on
+    /// it, so changing it changes no run.
     pub hex_side_ly: f64,
     /// **Ring step, ly — 10.** The length that sizes the star field's extent:
     /// [`Self::xy_scale`] is [`Self::ring_radius`] ring steps and
@@ -456,11 +442,15 @@ pub struct GalaxyConfig {
     /// shrink.
     pub mineral_peak: f64,
 
-    /// Width of a color site's Gaussian, as a fraction of the spacing between
-    /// sites — one hex across flats, since there is one site per hex. At `0.5`
-    /// a world midway between two sites carries 0.61 of each peak and a world
-    /// beside one carries one. **Placeholder.**
-    pub color_site_sigma_frac: f64,
+    /// **Mean spacing of the color sites, ly**: one site per spacing² of area,
+    /// placed at random (§4.3). With the width below, it is the scale at which
+    /// ore color varies — the author's ruling is that it varies at the scale
+    /// of an empire. **Placeholder** (appendix §D.33).
+    pub color_site_spacing_ly: f64,
+    /// **Width of a color site's Gaussian, ly** (its σ, on the Band). At half
+    /// the spacing, a world midway between two sites carries 0.61 of each
+    /// peak and a world beside one carries one. **Placeholder** (§D.33).
+    pub color_site_sigma_ly: f64,
     /// **The floor on a color site's peak**, as a fraction of `mineral_peak`.
     /// The hotspots' envelope falls to nothing across most of the disk, and
     /// with it every color, so a region far from the hue centers had no hue at
@@ -522,7 +512,8 @@ impl GalaxyConfig {
             hotspot_ring_frac: 0.55,
             hotspot_sigma_frac: 0.42,
             mineral_peak: 4.0,
-            color_site_sigma_frac: 0.5,
+            color_site_spacing_ly: 10.0,
+            color_site_sigma_ly: 5.0,
             color_site_floor: 0.5,
             anticorrelation: 0.7,
             homeworld_ring_frac: 0.5,
@@ -833,7 +824,7 @@ impl Galaxy {
             let common = 0.25 * draws[0];
             for b in Basic::ALL {
                 // The hue's site field: its nearest site of that hue, whose
-                // peak the large-scale hotspots set (§4.3, one site per hex).
+                // peak the large-scale hotspots set (§4.3).
                 let g = peaks[b as usize] / config.mineral_peak.max(1e-12);
                 // **The Gaussian is over Bands (T-62).** Density is a position
                 // on the ladder, so the field is log-normal in mass: a
@@ -1033,43 +1024,59 @@ mod tests {
     }
 
     #[test]
-    fn a_point_reads_the_hex_whose_center_is_nearest() {
-        let cfg = GalaxyConfig::new(3, 1);
-        let side = cfg.hex_side_ly;
-        assert_eq!(side, 70.0);
-        assert!((cfg.hex_across_flats_ly() - 121.243_556_529_821_4).abs() < 1e-9, "√3 · 70 across flats");
-        let mut rng = Rng::new(5);
-        for _ in 0..2000 {
-            let (x, y) = (rng.range(-400.0, 400.0), rng.range(-400.0, 400.0));
-            let (q, r) = ColorSites::hex_at(x, y, side);
-            let d = |q: i64, r: i64| {
-                let (cx, cy) = ColorSites::center(q, r, side);
-                (x - cx) * (x - cx) + (y - cy) * (y - cy)
-            };
-            let mine = d(q, r);
-            for (dq, dr) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, -1), (-1, 1)] {
-                assert!(mine <= d(q + dq, r + dr) + 1e-9, "({x}, {y}) read ({q}, {r})");
+    fn the_hex_is_read_by_no_generation() {
+        // R-G1: the hex is a human-legible interface. Changing it changes no
+        // world.
+        let cfg = GalaxyConfig::new(3, 7);
+        assert_eq!(cfg.hex_side_ly, 70.0);
+        assert!((cfg.hex_across_flats_ly() - 121.243_556_529_821_4).abs() < 1e-9);
+        let a = Galaxy::generate(cfg).unwrap();
+        let b = Galaxy::generate(GalaxyConfig { hex_side_ly: 13.0, ..cfg }).unwrap();
+        for (p, q) in a.planets.iter().zip(&b.planets) {
+            assert_eq!(p.position, q.position);
+            for m in Basic::ALL {
+                assert_eq!(p.minerals.get(m).kilotons().to_bits(), q.minerals.get(m).kilotons().to_bits());
             }
-            assert!(mine <= side * side + 1e-9, "inside its hex's circumradius");
+            assert_eq!(p.habitability.bands().to_bits(), q.habitability.bands().to_bits());
         }
-        for (q, r) in [(0, 0), (3, -1), (-2, 5)] {
-            let (cx, cy) = ColorSites::center(q, r, side);
-            assert_eq!(ColorSites::hex_at(cx, cy, side), (q, r));
+    }
+
+    #[test]
+    fn a_world_reads_its_strongest_site_of_each_hue_within_reach() {
+        let mut cfg = GalaxyConfig::new(3, 3);
+        cfg.color_site_spacing_ly = 40.0;
+        cfg.color_site_sigma_ly = 25.0;
+        let g = Galaxy::generate(cfg).unwrap();
+        let sigma = cfg.mean_xy_radius() * cfg.hotspot_sigma_frac;
+        let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(3));
+        let mut rng = Rng::new(11);
+        for _ in 0..300 {
+            let (x, y) = (rng.range(-200.0, 200.0), rng.range(-200.0, 200.0));
+            // Brute force over every site.
+            let mut want = [0.0f64; 3];
+            for &(hue, sx, sy, peak) in &sites.sites {
+                let d2 = (x - sx) * (x - sx) + (y - sy) * (y - sy);
+                if d2 <= (4.0 * 25.0) * (4.0 * 25.0) {
+                    let band = peak * transcendental::exp(-d2 / (2.0 * 25.0 * 25.0));
+                    want[hue as usize] = want[hue as usize].max(band);
+                }
+            }
+            assert_eq!(sites.bands_at(x, y), want, "at ({x}, {y})");
         }
     }
 
     #[test]
     fn every_hue_reaches_the_peak_at_its_strongest_site() {
-        // R-O82 at a hex lattice: each hue's strongest site is `mineral_peak`
-        // wherever the lattice falls relative to its hotspot.
+        // R-O82 at any spacing: each hue's strongest site is `mineral_peak`
+        // wherever the draw falls relative to its hotspot.
         for seed in [1u64, 7, 42] {
             let g = Galaxy::generate(GalaxyConfig::new(3, seed)).unwrap();
             let cfg = g.config;
             let sigma = cfg.mean_xy_radius() * cfg.hotspot_sigma_frac;
-            // Any stream: the property holds for every draw of the lattice.
+            // Any stream: the property holds for every draw.
             let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(seed));
             let mut top = [0.0f64; 3];
-            for &(hue, _, _, peak) in &sites.cells {
+            for &(hue, _, _, peak) in &sites.sites {
                 top[hue as usize] = top[hue as usize].max(peak);
             }
             for (k, t) in top.iter().enumerate() {
