@@ -3636,7 +3636,36 @@ two of them falling from 39 → 26 kt and 17 → 10 kt between 200 and 300 yr.
 Seats that sent 8–148 cross at 605–641 yr. **Ablation:** with a homeworld's
 population not debited for the settlers it launches (a scratch build), all 12
 seats cross at 601 yr and forge at 600–603 yr, population 952 kt at 200 yr in
-every seat. Which seats launch more early colony ships is not established.
+every seat.
+
+**Why seats launch so differently — measured as far as the early freight.**
+Same bed, 200 yr, the four seeds (scratch harnesses, never landed):
+
+- **Not the neighborhood's colonizable worlds.** Worlds `k_high` admits
+  within 25 ly of a homeworld: 46–76 per seat, with no order matching the
+  ships launched (seed 1: 64 → 8 ships, 66 → 270).
+- **The homeworld's spending.** It launches colony ships out of what it
+  spends, and in 10 of 12 seats what it spends in 200 yr is within 3 kt of the
+  freight delivered to it (2.7 to 190.6 kt). Seed 1 seat 0 spent 5.7 kt and
+  sent 8 ships; the others spent 49–135 kt.
+- **Not the ore within 25 ly**, by total or by color: it is at least 98% one
+  color in 10 of 12 seats and ranges 32,685–1,028,834 kt with no order
+  matching the freight.
+- **The first freight home.** Its time runs 37–136 yr and its size 0.30–31.23
+  kt; delivered home by 100 yr runs 0–69 kt. The seats with 42–69 kt by 100 yr
+  launched 100–270 ships before 200 yr; those with 0–2 kt launched 8–116.
+  Traced on seed 1: seat 1 crewed a 932-kt rock 1.2 ly from home with five
+  miners at 5 yr and landed 31.23 kt at 70 yr, then put ten new crews out;
+  seat 0 crewed its two companions and a 1.3-kt rock one miner each, its
+  haulers carried 0.1–0.9 kt a load, mostly to a colony, and the first 0.91 kt
+  reached home at 114 yr.
+
+**Inference, stated as one:** the spread is the early economy compounding on
+the first outposts — a rich rock in reach of the first decision gets a large
+crew and a General hauler (31.6-kt hold, T-98), and a seat without one hauls
+in Medium holds (0.91 kt) for its first century. Confidence about 60%. The
+hold and crew of each seat's first outposts, and an arm with every homeworld
+given one equal rich rock in reach, would settle it.
 
 ## References
 
