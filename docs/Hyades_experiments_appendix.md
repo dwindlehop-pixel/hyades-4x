@@ -3667,6 +3667,40 @@ in Medium holds (0.91 kt) for its first century. Confidence about 60%. The
 hold and crew of each seat's first outposts, and an arm with every homeworld
 given one equal rich rock in reach, would settle it.
 
+## D.37 Spread of colony count between empires
+
+*Supports galaxy §2 (the author's target: card-free, a standard deviation of
+about 20 colonies between empires) and T-147. Bed: `examples/colony_spread`
+(card-free, standard galaxy, 3 seats, 1,500 yr); the population standard
+deviation of the seats' colony counts within each galaxy.*
+
+**Random starts** (the shipped generator), 12 galaxies (seeds 1, 7, 42, 31337,
+2, 3, 5, 11, 13, 17, 19, 23): 499, 19, 54, 255, 381, 36, 125, 74, 49, 366,
+469, 354 — median 190, mean 223. On the first four, the mean is 34 at 200 yr,
+135 at 400, 181 at 800 and 207 at 1,500: colony counts are nearly final by
+800 yr, so the spread is decided by the race for territory.
+
+**Symmetric starts** (`GalaxyConfig::rotational_symmetry`), same 12 seeds: 40,
+32, 50, 163, 74, 32, 59, 39, 27, 78, 440, 20 — median 45, mean 88. Seed 19
+ends 810 / 1,812 / 967 on identical ground.
+
+**What else differs between seats on identical ground** (scratch arms, never
+landed): the default works mix is 2 : 1 : 3 in Cyan, Magenta, Yellow
+(`WORKS_MIX_DEFAULT`), so the archetypes' bills differ; an even 2 : 2 : 2 mix
+on the symmetric galaxies gives 24, 17, 3, 111 on the first four seeds (mean
+39, against 71). The simulation's own seed changes nothing in a card-free run
+(seed 31337's galaxy under six simulation seeds: 1,289 / 1,326 / 964 every
+time), so what remains is deterministic: seat order in tie-breaks and the
+last bits of rotated coordinates.
+
+**Inference, stated as one:** the early economy compounds (appendix §D.36:
+the first outposts decide a seat's first-century income), and contested
+territory lets an early lead take worlds the others would have taken, so a
+small difference grows into a runaway. Confidence about 60%. A census of
+contested foundings by seat over time, on a symmetric galaxy, would test it;
+meeting the target likely needs a check on that runaway as well as fair
+ground.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

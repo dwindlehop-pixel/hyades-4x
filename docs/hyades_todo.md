@@ -95,6 +95,21 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-147. Bring the card-free spread between empires to about 20 colonies
+
+**Open — the author's target (galaxy §2):** card-free, the standard
+deviation of colony count between the empires of a game is about 20. Measured
+(appendix §D.37): median 190 over 12 galaxies on the shipped generator; 45 with
+`GalaxyConfig::rotational_symmetry` (built, off by default); 39 on four seeds
+with an even works mix as well (scratch). Identical ground still ran away once
+(810 / 1,812 / 967). **What would settle it:** the author's choice of (a)
+symmetric starts as the default, (b) an even default works mix or archetype
+bills balanced another way, and (c) a check on the early runaway — then the
+census of contested foundings by seat, and `colony_spread` re-run against the
+target.
+
+---
+
 ### T-146. Make the hex presentation-only; give color its own spacing
 
 **Advanced — built (the author's rulings).** The hex is read by no generation

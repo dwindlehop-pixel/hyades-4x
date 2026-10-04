@@ -75,9 +75,9 @@ const GAMMA_4_3: f64 = 0.892_979_511_569_249;
 /// exact sampler for that shape) with a uniform angle, giving the
 /// exponential-disk radial profile; Z via a plain two-sided `Exponential`
 /// at its own, independently-set `z_scale`.
-fn sample_flattened_field(rng: &mut Rng, xy_scale: f64, z_scale: f64) -> Vec3 {
+fn sample_flattened_field(rng: &mut Rng, xy_scale: f64, z_scale: f64, arc: f64) -> Vec3 {
     let r = -xy_scale * (transcendental::ln(rng.unit().max(1e-12)) + transcendental::ln(rng.unit().max(1e-12)));
-    let theta = rng.range(0.0, core::f64::consts::TAU);
+    let theta = rng.range(0.0, arc);
     let z = {
         let mag = -z_scale * transcendental::ln(rng.unit().max(1e-12));
         if rng.unit() < 0.5 {
@@ -495,6 +495,15 @@ pub struct GalaxyConfig {
     /// Weibull shape for the pop bands (§5.1, R-P1).
     pub weibull_k: f64,
 
+    /// **Every seat starts on the same ground** (the author's target: card-free,
+    /// a standard deviation of about 20 colonies between empires). One wedge of
+    /// `1/N` of the disk is generated and turned to each of the `N` seats, its
+    /// colors stepped once per seat as the archetypes step, so each seat's
+    /// neighborhood is the next one's with its colors cycled. Applies to seat
+    /// counts that are multiples of 3; the planet count is rounded down to a
+    /// multiple of `N`. **`OPEN`** (T-147).
+    pub rotational_symmetry: bool,
+
     pub seed: u64,
 }
 
@@ -522,10 +531,22 @@ impl GalaxyConfig {
             homeworld_companion_habitability: 0.5,
             homeworld_ceiling: 4.2,
             weibull_k: 1.4,
+            rotational_symmetry: false,
             seed,
         };
         cfg.planet_count = cfg.derived_planet_count();
         cfg
+    }
+
+    /// How many turns of the wedge make the disk: `N` under
+    /// [`Self::rotational_symmetry`] at a seat count that is a multiple of 3,
+    /// `1` otherwise.
+    pub fn symmetry_turns(&self) -> usize {
+        if self.rotational_symmetry && self.players.is_multiple_of(3) && self.players > 0 {
+            self.players
+        } else {
+            1
+        }
     }
 
     pub fn pop_bands(&self) -> PopBands {
@@ -810,10 +831,15 @@ impl Galaxy {
         let mut planets: Vec<Planet> = Vec::with_capacity(config.planet_count + 3 * config.players);
 
         // --- wild field: XY radially Poisson, Z exponential (module doc) ---
-        for i in 0..config.planet_count {
+        // **Rotational symmetry** (`GalaxyConfig::rotational_symmetry`): one
+        // wedge of `1/N` of the disk is generated and turned to every seat,
+        // its colors stepped once per seat the way the archetypes step.
+        let turns = config.symmetry_turns();
+        let wedge = config.planet_count / turns;
+        for i in 0..wedge {
             let mut prng = rng.fork(0x5EED_0000 ^ i as u64);
 
-            let position = sample_flattened_field(&mut prng, xy_scale, z_scale);
+            let position = sample_flattened_field(&mut prng, xy_scale, z_scale, core::f64::consts::TAU / turns as f64);
 
             // tier-1 density: Gaussian(XY to hue hotspot) × exp(−|z|/H), §4.3 —
             // same flattened shape as the star field itself.
@@ -894,18 +920,30 @@ impl Galaxy {
             let biosphere = (habitability * prng.range(0.7, 1.1) + 0.3 * prng.gaussian()).clamp(0.0, 4.0);
             let (habitability, biosphere) = (Band::new(habitability), Band::new(biosphere));
 
-            planets.push(Planet {
-                id: PlanetId(i as u32),
-                position,
-                habitability,
-                biosphere,
-                infrastructure: Band::ZERO, // wild
-                minerals,
-                is_homeworld: false,
-                archetype: None,
-                owner: None,
-                population: Kilotons::ZERO,
-            });
+            for k in 0..turns {
+                let (sin, cos) = transcendental::sin_cos(k as f64 * core::f64::consts::TAU / turns as f64);
+                let at =
+                    Vec3::new(position.x * cos - position.y * sin, position.x * sin + position.y * cos, position.z);
+                // Seat `p + 1`'s archetype is seat `p`'s with every color
+                // stepped Cyan → Magenta → Yellow → Cyan (§3), so the wedge
+                // turned `k` seats over carries its colors stepped `k` times.
+                let mut stepped = MineralField::default();
+                for (j, &b) in Basic::ALL.iter().enumerate() {
+                    stepped.set(Basic::ALL[(j + k) % 3], minerals.get(b));
+                }
+                planets.push(Planet {
+                    id: PlanetId(planets.len() as u32),
+                    position: if turns == 1 { position } else { at },
+                    habitability,
+                    biosphere,
+                    infrastructure: Band::ZERO, // wild
+                    minerals: if turns == 1 { minerals } else { stepped },
+                    is_homeworld: false,
+                    archetype: None,
+                    owner: None,
+                    population: Kilotons::ZERO,
+                });
+            }
         }
 
         // --- homeworlds on a vertex-transitive ring (§2, §3) ---
@@ -1027,6 +1065,35 @@ mod tests {
         }
         assert_eq!(GalaxyConfig::new(3, 1).xy_scale(), 45.0);
         assert_eq!(GalaxyConfig::new(18, 1).xy_scale(), 75.0);
+    }
+
+    #[test]
+    fn a_symmetric_galaxy_turns_one_wedge_to_every_seat_with_its_colors_stepped() {
+        let mut cfg = GalaxyConfig::new(3, 9);
+        cfg.rotational_symmetry = true;
+        let g = Galaxy::generate(cfg).unwrap();
+        let wild: Vec<&Planet> = g.planets.iter().filter(|p| !p.is_homeworld && p.archetype.is_none()).collect();
+        assert_eq!(cfg.symmetry_turns(), 3);
+        let wedge = cfg.planet_count / 3;
+        for i in 0..wedge {
+            let base = wild[3 * i];
+            for k in 1..3 {
+                let p = wild[3 * i + k];
+                let (sin, cos) = transcendental::sin_cos(k as f64 * core::f64::consts::TAU / 3.0);
+                let x = base.position.x * cos - base.position.y * sin;
+                let y = base.position.x * sin + base.position.y * cos;
+                assert!((p.position.x - x).abs() < 1e-9 && (p.position.y - y).abs() < 1e-9);
+                assert_eq!(p.position.z, base.position.z);
+                assert_eq!(p.habitability.bands(), base.habitability.bands());
+                for (j, &b) in Basic::ALL.iter().enumerate() {
+                    let stepped = Basic::ALL[(j + k) % 3];
+                    assert_eq!(p.minerals.get(stepped).kilotons(), base.minerals.get(b).kilotons());
+                }
+            }
+        }
+        // Off by default, and off at a seat count the colors cannot step round.
+        assert_eq!(GalaxyConfig::new(3, 9).symmetry_turns(), 1);
+        assert_eq!(GalaxyConfig { rotational_symmetry: true, ..GalaxyConfig::new(2, 9) }.symmetry_turns(), 1);
     }
 
     #[test]

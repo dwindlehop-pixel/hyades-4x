@@ -29,6 +29,16 @@ Cliques cap at 3, rings come in 6s, 4/5/7 have no equal-adjacency arrangement. A
 
 **R-O12 (resolved): `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12, 18]`.** It had been truncated at 12 while `starting_hex_radius` already carried an `18 => 4.5` branch; all three of its ring radii are exactly `N/6 + 1.5`, so that branch was the third term of the family rather than a stray, and the list was simply one term short. The engine now expresses the family as that closed form instead of three magic numbers. **R-G2:** core contents (supported counts now settled).
 
+**Spread between empires — the author's target, `RATIFIED`: card-free, the
+standard deviation of colony count between the empires of one game is about
+20 colonies; more would not be fun.** Measured at 1,500 yr on 12 standard
+3-seat galaxies: median 190, mean 223 (appendix §D.37). **`OPEN` (T-147):** how
+to meet it. Built and off by default, `GalaxyConfig::rotational_symmetry` —
+one wedge of the disk turned to every seat, its colors stepped as the
+archetypes step — gives median 45, mean 88; the rest is the early economy
+amplifying small differences into a runaway (one symmetric galaxy ends
+810 / 1,812 / 967).
+
 ---
 
 ## 3. Homeworlds — super-aligned, identical in shape, equitable but unequal
