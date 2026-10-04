@@ -603,6 +603,18 @@ pub struct Doctrine {
     /// deep-tier Politics card, which is not built (matching §10.5).
     pub ordnance_market: bool,
 
+    /// **Its forges send supers to its yards** (the author's ruling, T-146): a
+    /// yard whose order lacks a super is sent one by an idle hauler from the
+    /// nearest forge of its own empire that has it to spare. On by default;
+    /// a Doctrine write (`DoctrineWrite::SuperSupply`) sets it.
+    pub forge_supply_runs: bool,
+    /// **Its haulers buy supers at rival forges** (the author's ruling,
+    /// T-146): where no forge of its own can supply a yard, an idle hauler
+    /// flies to the nearest forge of another empire holding supers that
+    /// empire does not need, and buys them at their floor price. On by
+    /// default; a Doctrine write sets it.
+    pub buy_from_rival_forges: bool,
+
     /// **Discount applied to a counterparty by reputation** (politics §3.5,
     /// §10.4). The fourth term of `wtp`. Inert until T-86 ships reputation.
     ///
@@ -729,6 +741,8 @@ impl Default for Doctrine {
             missile_pickets: false,
             point_defense: true,
             ordnance_market: false,
+            forge_supply_runs: true,
+            buy_from_rival_forges: true,
             risk_aversion: 0.0,
             expand_bias: ExpandBias::ProductionCentersFirst,
             // 0.5 — **held, not defaulted** (R-O87). Work-years is flat in this

@@ -137,6 +137,11 @@ enum SideRun {
     AmmoDeliver { source: Entity, post: Entity },
     /// The hauler returning to `center`, where it stands down.
     AmmoHome { center: Entity },
+    /// **A supply run** (T-146): a hauler flying to the forge `source` to load
+    /// the supers `yard` lacks.
+    SuperPickup { source: Entity, yard: Entity },
+    /// The same hauler, laden, flying to `yard`, where it stands down.
+    SuperDeliver { yard: Entity },
 }
 
 /// **What every empire holds, and where** (T-134, the author's ruling).
@@ -895,8 +900,10 @@ impl HullType {
 
 mod fire;
 mod missile;
+mod supply;
 use fire::{FleetKey, Track};
 pub use missile::MissileStats;
+pub use supply::SupplyStats;
 
 /// A named **design** within a hull type — the Banks-convention class name.
 ///
@@ -3677,6 +3684,12 @@ pub struct Simulation {
     /// twin it keeps wanting until it can pay one (`FleetSeeding::twin_bill`).
     /// Empty unless a bed seeds twins.
     twin_design: BTreeMap<u64, (HullType, Class)>,
+    /// **The forges, by `(empire, planet)`**, kept by each center's economy
+    /// tick; a stale entry is filtered on read (`supply::forges_of`).
+    forges: BTreeSet<(u32, u64)>,
+    /// The supply run in flight to each yard (planet entity id).
+    super_runs: BTreeMap<u64, Entity>,
+    supply_stats: SupplyStats,
 }
 
 /// **What a picket saw of a colony ship** — the one observation its guess is
@@ -3868,6 +3881,9 @@ impl Simulation {
             scanned_mining_class: vec![0; n],
             declined: BTreeMap::new(),
             twin_design: BTreeMap::new(),
+            forges: BTreeSet::new(),
+            super_runs: BTreeMap::new(),
+            supply_stats: SupplyStats::default(),
             log: SimLog::with_filter(filter),
         };
         for &e in &sim.planet_entity {
@@ -6205,6 +6221,7 @@ impl Simulation {
             ammo @ (SideRun::AmmoPickup { .. } | SideRun::AmmoDeliver { .. } | SideRun::AmmoHome { .. }) => {
                 self.ammo_leg(vehicle, ammo)
             }
+            supply @ (SideRun::SuperPickup { .. } | SideRun::SuperDeliver { .. }) => self.super_leg(vehicle, supply),
         }
     }
 
@@ -6888,6 +6905,7 @@ impl Simulation {
         // A twin the yard cannot pay is wanted while the Design is built on
         // its own bill (`FleetSeeding::twin_bill`).
         self.want_twin(p, center, &doctrine, order);
+        self.seek_supers(p as u32, center);
         self.log.push(
             self.clock,
             LogEvent::ProductionDecision {
@@ -7610,12 +7628,14 @@ impl Simulation {
     /// Supers its empire's centers wait on, and supers it has sold and not yet
     /// delivered, are kept back from apex.
     fn forge(&mut self, p: usize, center: Entity) {
+        self.note_forge(p, center);
         if !self.is_forge(center) {
             return;
         }
         if let Some(plan) = self.forge_plan(p, center) {
             self.run_synthesis(p, center, plan);
         }
+        self.supply_from_forge(p, center);
     }
 
     /// What [`Self::forge`] would make, without making it. `None` when it
@@ -17199,6 +17219,62 @@ mod tests {
         assert_eq!(sim.held_at(forge).unwrap().red, 0.0, "no forge below Band IV");
         sim.post_exchange_offers();
         assert!(sim.exchange.markets[red].asks.is_empty(), "nothing forged, nothing offered");
+    }
+
+    /// **Supply runs** (T-146, the author's rulings): a yard waiting on a
+    /// super is sent it by an idle hauler from a forge of its own empire, free;
+    /// with that Doctrine off, a hauler buys it at a rival's forge at the
+    /// floor price, purse to purse. Mass is conserved on both runs.
+    #[test]
+    fn a_supply_run_brings_a_yard_its_supers_from_its_own_forge_or_a_rivals() {
+        let run = |own_forge: bool| {
+            let mut sim = Simulation::with_baseline(test_galaxy(2, 71), test_cfg(71));
+            let yard = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+            let forge = if own_forge {
+                let f = sim.planet_entity[40];
+                sim.claim_planet(f, PlayerId(0));
+                f
+            } else {
+                sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap().forge_supply_runs = false;
+                sim.world.player_info.get(sim.player_entity[1]).unwrap().home
+            };
+            let seller = sim.world.owner.get(forge).unwrap().0;
+            sim.world.population.insert(forge, Kilotons::at_tier(BandTier::IV));
+            *sim.held_at_mut(forge).unwrap() = Minerals { red: 1.0, ..Default::default() };
+            sim.note_forge(seller as usize, forge);
+            let need = [Price::new(0.3), Price::ZERO, Price::ZERO, Price::ZERO];
+            sim.standing.insert(yard.0, StandingOrder::refined(need));
+            let from = *sim.world.position.get(yard).unwrap();
+            let rock = sim.planet_entity[30];
+            sim.spawn_freighter(0, yard, from, rock, HullType::MediumSystems, 0.0);
+            let h = Entity(sim.world.next - 1);
+            sim.world.shuttle.remove(h);
+            sim.release_to_reserve(h, Role::Freighter, *sim.world.planet_id.get(yard).unwrap());
+            sim.credit(sim.player_entity[0], 500.0);
+            let purses = (sim.purse_of(PlayerId(0)), sim.purse_of(PlayerId(1)));
+            let before = sim.mass_ledger().total();
+            sim.seek_supers(0, yard);
+            let leg = sim.side_runs.remove(&h.0).expect("a run starts");
+            assert!(matches!(leg, SideRun::SuperPickup { source, .. } if source == forge));
+            sim.super_leg(h, leg);
+            let leg = sim.side_runs.remove(&h.0).expect("it flies to the yard");
+            sim.super_leg(h, leg);
+            assert!((sim.held_at(yard).unwrap().red - 0.3).abs() < 1e-12, "the yard has its Red");
+            assert!((sim.held_at(forge).unwrap().red - 0.7).abs() < 1e-12, "out of the forge");
+            assert!(sim.reserve_freighters[0].contains(&h), "the hauler stands down");
+            let after = sim.mass_ledger().total();
+            assert!((after - before).abs() < 1e-12 * before, "mass conserved: {before} -> {after}");
+            (sim, purses)
+        };
+        let (sim, (b0, b1)) = run(true);
+        assert_eq!((sim.purse_of(PlayerId(0)), sim.purse_of(PlayerId(1))), (b0, b1), "one empire pays itself nothing");
+        assert_eq!(sim.supply_stats().runs_own, 1);
+        let (sim, (b0, b1)) = run(false);
+        let cost = 0.3 * sim.refined_floor(&sim.doctrine_of(1), 0);
+        assert!(cost > 0.0);
+        assert!((sim.purse_of(PlayerId(0)) - (b0 - cost)).abs() < 1e-9, "the buyer pays the floor price");
+        assert!((sim.purse_of(PlayerId(1)) - (b1 + cost)).abs() < 1e-9, "the seller is paid it");
+        assert_eq!(sim.supply_stats().runs_rival, 1);
     }
 
     /// **A forge forges** (galaxy §4.5, the author's ruling). With `9 / 9 / 3`

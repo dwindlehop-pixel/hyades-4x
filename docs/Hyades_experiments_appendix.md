@@ -3578,6 +3578,53 @@ Confidence about 60%; the composition of each yard's refined holding when its
 twin is declined would test it.
 
 
+## D.36 Supply runs for supers, and the Growth card on the twin bed
+
+*Supports galaxy §4.5 (supply runs) and T-146. The author's rulings: forges
+deliver to their own empire's yards; haulers buy at rival forges; both are
+Doctrine. Then: play the Growth card on every seat of the twin bed. Bed:
+`examples/super_census` with `SC_TWINS=1`, and `SC_CARD=3` (the Inscrutable
+Growth card, `growth_rate` × 1.6, 0.5 kt) played on every seat at the first
+barrier, 200 yr; 3 seats, 1,500 yr, seeds 1, 7, 42, 31337, summed.*
+
+**Supply runs, no card.** On seed 1 (10 / 5 ly field): 1,784 runs from own
+forges carrying 56.2 kt, 840 to rival forges buying 17.7 kt for 26.6 `$`;
+hull kilotonnes paid in supers 11.5 → 17.6. Over the four seeds, 0.33–0.46% of
+hull kilotonnes are paid in supers on the three fields. **When hulls are built
+is the limit, measured:** on seed 1, 2,345 of 2,812 kt of hulls (83%) are
+built before 600 yr, and the first forge forges at 605–765 yr; from 700 yr the
+empires build 999 / 1,108 / 1,024 kt of hulls on the three fields and pay
+4.3% / 4.2% / 3.0% of it in supers. Card-free runs are bit-identical to
+`9a30e39` (`forge_census`, seeds 1 and 7, 800 yr).
+
+**The Growth card on every seat** against no card, same bed and seeds:
+
+| color field (spacing / width, ly) | 10 / 5 | 70 / 38.5 | 140 / 56 |
+|---|---|---|---|
+| hull kilotonnes paid in supers | 51.7 → 125.4 | 50.6 → 160.4 | 41.2 → 94.5 |
+| seeds higher with the card | 4/4 | 4/4 | 4/4 |
+| hull kilotonnes built | 11,183 → 11,414 | 13,667 → 13,597 | 12,345 → 12,087 |
+| supers forged | 59,931 → 119,252 kt | 32,865 → 93,341 kt | 19,042 → 58,638 kt |
+| supers delivered between empires | 724 → 1,733 kt | 1,494 → 3,768 kt | 247 → 1,227 kt |
+| supplied from own forges | 224.9 → 290.3 kt | 203.9 → 279.8 kt | 226.2 → 236.1 kt |
+| bought at rival forges | 32.0 → 23.4 kt | 39.5 → 16.8 kt | 28.7 → 17.6 kt |
+| first forge, per seat | 460–670 yr | 460–540 yr | 455–690 yr |
+
+The card brings the first forge from 605–765 yr to 455–690 yr and raises the
+hull kilotonnes paid in supers by 2.3–3.2× on every field; the share of hull
+kilotonnes paid in supers is 0.8–1.2%.
+
+**Why forging starts near 600 yr, derived.** A homeworld starts at population
+`Band II` (31.6 kt) under a ceiling of `Band 4.2` (2,163,979 kt); a forge needs
+`Band IV` (715,542 kt), 22,644× the start. The logistic runs at
+`r = growth_rate / rate_reference_years = 0.873 / 50 = 0.01746` per year (a
+doubling time of 39.7 yr), so `t = ln[x₁(K − x₀) / (x₀(K − x₁))] / r` =
+`ln(33,830) / 0.01746` = **597 yr**. Measured card-free: 605–765 yr. The
+author set the 4.2 ceiling for this timing (§D.23: a growth-dedicated build
+across before round two's selection at 600 yr, most builds by round three).
+With the card `r` is 0.0279, at which the same formula from the starting
+population gives 373 yr; played at 200 yr, measured 455–690 yr.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

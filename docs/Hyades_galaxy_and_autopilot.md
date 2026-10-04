@@ -233,6 +233,28 @@ forged cross between empires (810.6 of 22,040 kt over 4 seeds); a seat's native
 super is 29.6% of what it forges, pooled. *Superseded:* synthesis on demand, for
 an order or a sale only (appendix §D.30).
 
+**Supers to the yards that want them — `RATIFIED` (the author's ruling,
+T-146) and built; Doctrine, so a card can change it.** A yard whose standing
+order lacks a super is sent one by an idle hauler from Reserve, which loads,
+delivers and stands down at the yard (`src/sim/supply.rs`):
+
+- `Doctrine::forge_supply_runs` (on by default) — from the nearest forge of its
+  own empire with any of what it lacks to spare; free, one empire's holding
+  moving between its planets.
+- `Doctrine::buy_from_rival_forges` (on by default) — where no forge of its own
+  can, from the nearest forge of another empire holding supers that empire
+  does not need (its spare less what its empire waits on and what it has sold
+  and not delivered), bought at the supers' floor price, buyer's purse to
+  seller's (**placeholder price**).
+- A run starts when a yard records a want and when a forge of its empire
+  forges; a yard has one run in flight. `DoctrineWrite::SuperSupply` sets both
+  flags; no card writes it yet. **`OPEN`:** the rival forge's stock is read
+  without light-lag, as the Exchange's books are (T-145).
+
+A card-free game has no order that lacks a super, so the runs never start in
+one; on the twin bed (§3.1) they move supers to yards (appendix §D.36). Test:
+`a_supply_run_brings_a_yard_its_supers_from_its_own_forge_or_a_rivals`.
+
 **R-M5 — resolved in part.** Freight now loads against a forge's balanced-set
 want and a forge out-pulls every other center, so precursors are hauled to a
 forge for synthesis's sake, and a forge buys the supers it lacks (R-MX18).

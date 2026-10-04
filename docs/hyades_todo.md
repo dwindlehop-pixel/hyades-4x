@@ -114,9 +114,14 @@ yard can pay it. On it 0.23–0.33% of hull kilotonnes are paid in supers while
 forges hold 16–57× what orders want — supers do not reach the yards within an
 empire. The freight census confirms it: 0.18–0.51% of hauler pickups are at a
 forge, and freight takes 36–70 kt of supers out of forges holding
-10,279–17,010 kt (appendix §D.35). **Open — what would settle it:** a way for
-supers to leave a forge for the yards that want them — the author's choice of
-mechanism; then the spacing sweep on that bed; and the author's choice of
+10,279–17,010 kt (appendix §D.35). **Supply runs built (the author's rulings,
+galaxy §4.5):** own forges deliver to their empire's yards, haulers buy at
+rival forges, both Doctrine. With the Growth card on every seat, 0.8–1.2% of
+hull kilotonnes are paid in supers, 2.3–3.2× the share without it; 83% of hull
+kilotonnes are built before the first forge (appendix §D.36). **Open — what
+would settle it:** the author's call on whether demand for supers should come
+after forging starts (a hull consumer that persists past expansion) or forging
+should start earlier; then the spacing sweep; and the author's choice of
 spacing and width.
 
 ---

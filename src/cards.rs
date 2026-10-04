@@ -203,6 +203,10 @@ pub enum DoctrineWrite {
     /// the author's ruling that a missile belongs on a hull that serves near a
     /// center, where its magazine is refilled without a supply line.
     MissileSentries,
+    /// **How this empire's yards get supers** (T-146): `own` sets
+    /// `Doctrine::forge_supply_runs`, `rival` sets
+    /// `Doctrine::buy_from_rival_forges`. No card in the table writes it yet.
+    SuperSupply { own: bool, rival: bool },
 }
 
 /// **Sentry mass per kilotonne defended that the missile card writes**
@@ -435,6 +439,10 @@ pub fn apply_doctrine_write(d: &mut Doctrine, w: DoctrineWrite) {
         }
         DoctrineWrite::MissileSentries => {
             d.sentry_ratio = d.sentry_ratio.max(MISSILE_SENTRY_RATIO);
+        }
+        DoctrineWrite::SuperSupply { own, rival } => {
+            d.forge_supply_runs = own;
+            d.buy_from_rival_forges = rival;
         }
     }
 }
