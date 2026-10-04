@@ -9,6 +9,10 @@
 //! - **Production over the run**, kilotonnes: basics mined; each super and
 //!   apex made, and the precursors each drew (the `Synthesized` log).
 //! - **Where the supers went**: drawn into apex, and held at the horizon.
+//! - **Freight**: hauler pickups (stops that loaded anything) at the worlds
+//!   that are forges at the horizon and elsewhere, the refined kilotonnes
+//!   loaded at each, and refined kilotonnes delivered to forges and to other
+//!   worlds.
 //!
 //! A refined bid is a center's declined order's refined shortfall, or a
 //! forge's want for the supers that complete a balanced set (galaxy §4.5,
@@ -24,9 +28,10 @@
 //! color sites (§4.3) — the galaxy is the only thing a bed varies.
 use hyades_engine::autopilot::BuildOrder;
 use hyades_engine::galaxy::{FleetSeeding, Galaxy, GalaxyConfig};
-use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
+use hyades_engine::log::{FreighterLeg, LogCategory, LogEvent, LogFilter};
 use hyades_engine::resources::Material;
 use hyades_engine::sim::{DesignBill, SimConfig, Simulation, MATERIALS};
+use hyades_engine::units::BandTier;
 use std::io::Write;
 
 const SEEDS: [u64; 4] = [1, 7, 42, 31337];
@@ -112,9 +117,28 @@ fn main() {
         // Production, from the log.
         let (mut mined, mut made, mut drew) = (0.0f64, [0.0f64; 4], [0.0f64; 4]);
         let (mut hulls, mut super_hulls, mut paid, mut hull_kt) = (0usize, 0usize, 0.0f64, 0.0f64);
+        // Forges at the horizon: population Band IV, owned.
+        let snap = sim.snapshot();
+        let forge: Vec<bool> = snap.planets.iter().map(|p| p.owner.is_some() && p.pop_level == BandTier::IV).collect();
+        // [at a forge, elsewhere]: pickups, refined loaded kt, refined delivered kt.
+        let (mut stops, mut loaded, mut delivered) = ([0usize; 2], [0.0f64; 2], [0.0f64; 2]);
+        let mut forge_haulers = std::collections::BTreeSet::new();
         for r in sim.log().iter() {
             match r.event {
                 LogEvent::MineralsExtracted { amount, .. } => mined += amount,
+                LogEvent::FreighterTransfer { leg, refined, at, vehicle, .. } => {
+                    let k = usize::from(!forge[at.0 as usize]);
+                    match leg {
+                        FreighterLeg::Loaded => {
+                            stops[k] += 1;
+                            loaded[k] += refined;
+                            if k == 0 {
+                                forge_haulers.insert(vehicle.0);
+                            }
+                        }
+                        FreighterLeg::Deposited => delivered[k] += refined,
+                    }
+                }
                 LogEvent::BuildApplied { order: BuildOrder::Hull { .. }, cost, refined_paid, .. } => {
                     hulls += 1;
                     hull_kt += cost;
@@ -136,6 +160,17 @@ fn main() {
         println!(
             "{seed:>5}  production kt: basics mined {mined:.0}; Red {:.2}, Green {:.2}, Blue {:.2}, apex {:.2}",
             made[0], made[1], made[2], made[3]
+        );
+        println!(
+            "{seed:>5}  freight: forges {}; pickups at forges {} of {}, by {} haulers; refined loaded kt at forges {:.2}, elsewhere {:.2}; refined delivered kt to forges {:.2}, to other worlds {:.2}",
+            forge.iter().filter(|&&f| f).count(),
+            stops[0],
+            stops[0] + stops[1],
+            forge_haulers.len(),
+            loaded[0],
+            loaded[1],
+            delivered[0],
+            delivered[1]
         );
         println!("{seed:>5}  hull orders built {hulls} ({hull_kt:.2} kt), paid in supers {super_hulls} ({paid:.2} kt)");
         println!(

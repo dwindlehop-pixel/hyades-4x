@@ -3551,6 +3551,33 @@ freight, would test it directly.
 **Card-free runs are unchanged**: `forge_census` on seeds 1 and 7 at 800 yr
 reproduces `12e59f9` to every printed digit and event count.
 
+**The freight census** (the same bed; `super_census` now reads the refined
+part of every freight transfer, `LogEvent::FreighterTransfer::refined`).
+Forges are the worlds at population `Band IV` at the horizon — 3 per run, the
+homeworlds. Summed over the four seeds:
+
+| color field (spacing / width, ly) | 10 / 5 | 70 / 38.5 | 140 / 56 |
+|---|---|---|---|
+| hauler pickups at forges | 585 of 328,634 (0.18%) | 905 of 320,533 (0.28%) | 1,236 of 243,139 (0.51%) |
+| supers loaded at forges | 36.0 kt | 50.5 kt | 70.0 kt |
+| supers loaded elsewhere (rocks, other centers) | 195.3 kt | 372.7 kt | 98.2 kt |
+| supers delivered to worlds other than forges | 166.9 kt | 260.2 kt | 156.7 kt |
+| hull kilotonnes paid in supers | 35.4 kt | 31.2 kt | 29.6 kt |
+| supers held at forges at 1,400 yr | 17,010 kt | 15,286 kt | 10,279 kt |
+
+**Measured:** freight takes 36–70 kt of supers out of the forges over a whole
+run, against 10,279–17,010 kt standing at them at the last barrier — under 0.7%.
+This confirms §D.35's inference that supers do not reach the yards from the
+forges within an empire.
+
+**A second gap, an inference:** 157–260 kt of supers reach yards by freight,
+yet 30–35 kt of hulls are paid in them. A twin owes all three supers at once,
+and a delivery carries what one forge, rock or Exchange fill held, usually one
+super — the same conjunction as a works bill over the three basics (T-91).
+Confidence about 60%; the composition of each yard's refined holding when its
+twin is declined would test it.
+
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

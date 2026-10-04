@@ -112,9 +112,12 @@ super bid is a forge completing a set for apex. **The twin bed is built** (galax
 appendix §D.35): every Design has a twin paid in supers, built wherever the
 yard can pay it. On it 0.23–0.33% of hull kilotonnes are paid in supers while
 forges hold 16–57× what orders want — supers do not reach the yards within an
-empire. **Open — what would settle it:** a census of hauler stops at forges
-and refined kilotonnes delivered by freight; then the spacing sweep on a bed
-where supers reach yards; and the author's choice of spacing and width.
+empire. The freight census confirms it: 0.18–0.51% of hauler pickups are at a
+forge, and freight takes 36–70 kt of supers out of forges holding
+10,279–17,010 kt (appendix §D.35). **Open — what would settle it:** a way for
+supers to leave a forge for the yards that want them — the author's choice of
+mechanism; then the spacing sweep on that bed; and the author's choice of
+spacing and width.
 
 ---
 

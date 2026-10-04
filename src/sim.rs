@@ -5674,6 +5674,7 @@ impl Simulation {
                         vehicle,
                         leg: FreighterLeg::Loaded,
                         amount: refined_loaded.kilotons(),
+                        refined: refined_loaded.kilotons(),
                         at: outpost_pid,
                     },
                 );
@@ -5728,6 +5729,7 @@ impl Simulation {
                         // What actually came out of the pile, which under
                         // `Fill::Shortfall` is less than the room budgeted.
                         amount: moved.basic_total().kilotons(),
+                        refined: 0.0,
                         at: outpost_pid,
                     },
                 );
@@ -5848,6 +5850,7 @@ impl Simulation {
                         vehicle,
                         leg: FreighterLeg::Deposited,
                         amount: cargo.total().kilotons(),
+                        refined: cargo.refined_total().kilotons(),
                         at: dest_pid,
                     },
                 );
@@ -6218,6 +6221,7 @@ impl Simulation {
                 vehicle,
                 leg: FreighterLeg::Loaded,
                 amount: moved.basic_total().kilotons(),
+                refined: moved.refined_total().kilotons(),
                 at: pid,
             },
         );
@@ -6241,6 +6245,7 @@ impl Simulation {
                 vehicle,
                 leg: FreighterLeg::Deposited,
                 amount: cargo.basic_total().kilotons(),
+                refined: cargo.refined_total().kilotons(),
                 at: pid,
             },
         );

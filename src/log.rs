@@ -208,7 +208,8 @@ pub enum LogEvent {
     /// A body's density crossed the floor; mining there has stopped for good.
     MiningExhausted { planet: PlanetId },
     /// A freighter loaded at an outpost or deposited at a center.
-    FreighterTransfer { player: u32, vehicle: Entity, leg: FreighterLeg, amount: f64, at: PlanetId },
+    /// `refined` is the part of `amount` in supers and apex, kt.
+    FreighterTransfer { player: u32, vehicle: Entity, leg: FreighterLeg, amount: f64, refined: f64, at: PlanetId },
 
     /// A vehicle was built and launched toward a target.
     ///
