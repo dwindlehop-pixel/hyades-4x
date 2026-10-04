@@ -3680,7 +3680,7 @@ deviation of the seats' colony counts within each galaxy.*
 135 at 400, 181 at 800 and 207 at 1,500: colony counts are nearly final by
 800 yr, so the spread is decided by the race for territory.
 
-**Symmetric starts** (`GalaxyConfig::rotational_symmetry`), same 12 seeds: 40,
+**Symmetric starts** (`GalaxyConfig::rotational_symmetry`, now `Ground::ColorRotated`), same 12 seeds: 40,
 32, 50, 163, 74, 32, 59, 39, 27, 78, 440, 20 — median 45, mean 88. Seed 19
 ends 810 / 1,812 / 967 on identical ground.
 
@@ -3736,16 +3736,49 @@ random galaxies spread median 55, mean 99 (against 190, 223).
 | ground | spread at 1,500 yr, 12 galaxies | median | mean |
 |---|---|---|---|
 | random, completion routing (before) | 19–499 | 190 | 223 |
-| random, demand pricing | 13–111 | 78 | 72 |
-| identical (`rotational_symmetry`), completion routing | 20–440 | 45 | 88 |
-| identical, demand pricing | 5–30 | 20 | 20.4 |
+| random, demand pricing | 27–110 | 74.5 | 73.5 |
+| identical, colors stepped (`rotational_symmetry`), completion routing | 20–440 | 45 | 88 |
+| identical, colors stepped (`Ground::ColorRotated`), demand pricing | 4–29 | 21 | 19.3 |
+
+The two demand-pricing rows were first recorded as median 78 / mean 72
+(13–111) and mean 20.4 (5–30). Those runs came from a build before `721127c`
+was final. The rows above were measured on `721127c` and reproduced
+bit-for-bit after `Ground` replaced `rotational_symmetry` (seeds 1, 7, 13).
 
 On identical ground demand pricing meets the target; what remains on random
-ground is the ground. Paired against `ccca4f4` (4 seeds, 1,500 yr):
+ground is the ground (the third kind of ground is below). Paired against `ccca4f4` (4 seeds, 1,500 yr):
 colony-years **+2.82% ± 0.39** (4/4 higher), work-years +3.15% ± 9.44 (not
 resolved). Cost: seeds 1 and 7 at 800 yr run 6.4–6.6 s against 4.2–4.6 s, with
 7–10% more events and ~34% more time per event; the simulation carries more
 colonies and haulers early, an inference not profiled.
+
+### The third kind of ground: identical, colors not stepped
+
+*The author's direction: try a third kind of ground. `Ground::Identical`
+turns one wedge to every seat with the same colors, so each archetype starts
+beside the same deposits as every other; homeworlds and companions are the
+same on every kind. Bed: `examples/colony_spread` with `CS_GROUND`, card-free,
+3 seats, 1,500 yr, the 12 seeds above, one build.*
+
+| seed | 1 | 7 | 42 | 31337 | 2 | 3 | 5 | 11 | 13 | 17 | 19 | 23 | mean | median |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `Random` | 27 | 76 | 73 | 63 | 82 | 69 | 85 | 67 | 86 | 95 | 50 | 110 | 73.5 | 74.5 |
+| `Identical` | 21 | 87 | 33 | 76 | 24 | 64 | 88 | 27 | 51 | 16 | 11 | 77 | 48.0 | 42 |
+| `ColorRotated` | 22 | 27 | 19 | 11 | 20 | 20 | 29 | 8 | 4 | 27 | 24 | 22 | 19.3 | 21 |
+
+Paired by galaxy (difference in spread, mean ± standard error over 12 seeds,
+an estimate): `Identical` − `ColorRotated` **+28.5 ± 8.5** (higher on 9/12);
+`Random` − `Identical` **+25.7 ± 8.3** (higher on 9/12). Both differences are
+about 3 standard errors from zero.
+
+Which seat finishes ahead on `Identical` varies between galaxies: seat 1 in
+five, seat 2 in five, seat 0 in two. **Inference, stated as one:** with the
+colors the same for every seat, each archetype's two rich basics meet a
+different share of the wedge's deposits, so the archetype whose colors match
+the wedge starts ahead; which archetype that is depends on the wedge's colors,
+so it changes between galaxies. Confidence about 60%. A census of the
+deposit within reach of each homeworld by color, against its archetype's
+bill and against the seat's colony count, would test it.
 
 ## References
 

@@ -8,12 +8,14 @@
 //! sample year, the mean of that standard deviation over the seeds.
 //!
 //! `CS_GALAXY=<seed>` holds the galaxy fixed while `CS_SEEDS` varies only the
-//! simulation's seed. `CS_SYMMETRIC=1` generates the galaxy with `GalaxyConfig::rotational_symmetry`.
+//! simulation's seed. `CS_GROUND=identical` or `CS_GROUND=rotated` generates
+//! the galaxy on `Ground::Identical` or `Ground::ColorRotated`; otherwise
+//! `Ground::Random`.
 //!
 //! Run: `cargo run --release --example colony_spread -- <seats> <horizon> [sample years ...]`;
 //! `CS_SEEDS=2,3,5,11`. Defaults: 3 seats, 1,500 yr, samples at 200, 400,
 //! 800, 1,200 and the horizon.
-use hyades_engine::galaxy::{Galaxy, GalaxyConfig};
+use hyades_engine::galaxy::{Galaxy, GalaxyConfig, Ground};
 use hyades_engine::sim::{SimConfig, Simulation};
 use std::io::Write;
 
@@ -40,7 +42,11 @@ fn main() {
         samples = vec![200.0, 400.0, 800.0, 1200.0, horizon];
     }
     samples.retain(|&t| t <= horizon);
-    println!("colony_spread: {seats} seats, horizon {horizon} yr, seeds {:?}", seeds());
+    println!(
+        "colony_spread: {seats} seats, horizon {horizon} yr, ground {:?}, seeds {:?}",
+        std::env::var("CS_GROUND").unwrap_or_else(|_| "random".into()),
+        seeds()
+    );
     std::io::stdout().flush().ok();
     let mut sds: Vec<Vec<f64>> = vec![Vec::new(); samples.len()];
     for seed in seeds() {
@@ -50,7 +56,11 @@ fn main() {
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = horizon;
         let mut g = GalaxyConfig::new(seats, galaxy_seed);
-        g.rotational_symmetry = std::env::var("CS_SYMMETRIC").is_ok_and(|v| v.trim() == "1");
+        g.ground = match std::env::var("CS_GROUND").as_deref().map(str::trim) {
+            Ok("identical") => Ground::Identical,
+            Ok("rotated") => Ground::ColorRotated,
+            _ => Ground::Random,
+        };
         let mut sim = Simulation::with_baseline(Galaxy::generate(g).unwrap(), cfg);
         let mut k = 0;
         let take = |sim: &Simulation, k: usize| {

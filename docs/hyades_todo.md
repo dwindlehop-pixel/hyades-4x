@@ -100,14 +100,15 @@ T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-1
 **Open — the author's target (galaxy §2):** card-free, the standard
 deviation of colony count between the empires of a game is about 20. Measured
 (appendix §D.37): median 190 over 12 galaxies on the shipped generator; 45 with
-`GalaxyConfig::rotational_symmetry` (built, off by default); 39 on four seeds
+`GalaxyConfig::rotational_symmetry` (now `Ground::ColorRotated`); 39 on four seeds
 with an even works mix as well (scratch). Identical ground still ran away once
 (810 / 1,812 / 967). **Cause found and fixed (appendix §D.38):** an empty hauler's routing
 loop starved homeworlds; freight is now routed by demand price (the author's
-ruling). Spread: random ground median 78 (was 190), identical ground mean 20.4
-— the target. **What would settle the rest:** the author's choice on the
-ground — symmetric starts as the default, or another way to equalize what each
-homeworld has within reach.
+ruling). Spread at 1,500 yr on 12 galaxies, one build (`GalaxyConfig::ground`):
+random mean 73.5 (was 223), identical ground with the same colors 48.0,
+identical ground with colors stepped per seat 19.3 — the target. **What would
+settle the rest:** the author's choice of default ground, or another way to
+equalize what each homeworld has within reach.
 
 ---
 

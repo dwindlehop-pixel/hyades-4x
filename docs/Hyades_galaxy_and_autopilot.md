@@ -32,12 +32,16 @@ Cliques cap at 3, rings come in 6s, 4/5/7 have no equal-adjacency arrangement. A
 **Spread between empires — the author's target, `RATIFIED`: card-free, the
 standard deviation of colony count between the empires of one game is about
 20 colonies; more would not be fun.** Measured at 1,500 yr on 12 standard
-3-seat galaxies: median 190, mean 223 (appendix §D.37). **`OPEN` (T-147):** how
-to meet it. Built and off by default, `GalaxyConfig::rotational_symmetry` —
-one wedge of the disk turned to every seat, its colors stepped as the
-archetypes step — gave median 45, mean 88 under the old freight routing. The runaway was an
-empty hauler's routing loop (appendix §D.38); with freight routed by demand
-price, random ground spreads median 78 and identical ground mean 20.4.
+3-seat galaxies: median 190, mean 223 (appendix §D.37). **`OPEN` (T-147):**
+how to meet it. The runaway was an empty hauler's routing loop (appendix
+§D.38); with freight routed by demand price, `GalaxyConfig::ground` selects
+among three kinds of ground, all built, `Ground::Random` the default:
+
+| `Ground` | what each seat starts on | spread at 1,500 yr, 12 galaxies (appendix §D.38) |
+|---|---|---|
+| `Random` | one field over the whole disk | mean 73.5, median 74.5 |
+| `Identical` | one wedge of the disk turned to every seat, same colors | mean 48.0, median 42 |
+| `ColorRotated` | the wedge with its colors stepped once per seat, as the archetypes step | mean 19.3, median 21 — the target |
 
 ---
 

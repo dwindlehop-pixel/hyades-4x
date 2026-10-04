@@ -368,6 +368,24 @@ impl Default for PopBands {
     }
 }
 
+/// **The ground each seat starts on** (galaxy §2, T-147). On both identical
+/// kinds one wedge of `1/N` of the disk is generated and turned to each of the
+/// `N` seats, and the planet count is rounded down to a multiple of `N`;
+/// homeworlds and their companions are the same on every kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ground {
+    /// One field generated over the whole disk (the shipped default).
+    Random,
+    /// The wedge turned to every seat with the same colors, so each archetype
+    /// starts beside the same deposits as every other. Any seat count above 1.
+    Identical,
+    /// The wedge turned to every seat with its colors stepped Cyan → Magenta →
+    /// Yellow → Cyan once per seat, as the archetypes step (§3), so each seat's
+    /// neighborhood is the next one's with its colors cycled. Seat counts that
+    /// are multiples of 3.
+    ColorRotated,
+}
+
 /// Every tunable knob of galaxy generation. Defaults are placeholders pending
 /// R-G/R-M/R-P; the MC balancer sweeps them.
 #[derive(Clone, Copy, Debug)]
@@ -495,14 +513,10 @@ pub struct GalaxyConfig {
     /// Weibull shape for the pop bands (§5.1, R-P1).
     pub weibull_k: f64,
 
-    /// **Every seat starts on the same ground** (the author's target: card-free,
-    /// a standard deviation of about 20 colonies between empires). One wedge of
-    /// `1/N` of the disk is generated and turned to each of the `N` seats, its
-    /// colors stepped once per seat as the archetypes step, so each seat's
-    /// neighborhood is the next one's with its colors cycled. Applies to seat
-    /// counts that are multiples of 3; the planet count is rounded down to a
-    /// multiple of `N`. **`OPEN`** (T-147).
-    pub rotational_symmetry: bool,
+    /// **What ground each seat starts on** (the author's target: card-free, a
+    /// standard deviation of about 20 colonies between empires). See
+    /// [`Ground`]. **`OPEN`** (T-147).
+    pub ground: Ground,
 
     pub seed: u64,
 }
@@ -531,18 +545,23 @@ impl GalaxyConfig {
             homeworld_companion_habitability: 0.5,
             homeworld_ceiling: 4.2,
             weibull_k: 1.4,
-            rotational_symmetry: false,
+            ground: Ground::Random,
             seed,
         };
         cfg.planet_count = cfg.derived_planet_count();
         cfg
     }
 
-    /// How many turns of the wedge make the disk: `N` under
-    /// [`Self::rotational_symmetry`] at a seat count that is a multiple of 3,
-    /// `1` otherwise.
+    /// How many turns of the wedge make the disk: `N` on identical ground (at
+    /// a seat count that is a multiple of 3 when the colors step, since the
+    /// step closes only after three seats), `1` otherwise.
     pub fn symmetry_turns(&self) -> usize {
-        if self.rotational_symmetry && self.players.is_multiple_of(3) && self.players > 0 {
+        let closes = match self.ground {
+            Ground::Random => false,
+            Ground::Identical => self.players > 1,
+            Ground::ColorRotated => self.players.is_multiple_of(3) && self.players > 0,
+        };
+        if closes {
             self.players
         } else {
             1
@@ -831,10 +850,12 @@ impl Galaxy {
         let mut planets: Vec<Planet> = Vec::with_capacity(config.planet_count + 3 * config.players);
 
         // --- wild field: XY radially Poisson, Z exponential (module doc) ---
-        // **Rotational symmetry** (`GalaxyConfig::rotational_symmetry`): one
-        // wedge of `1/N` of the disk is generated and turned to every seat,
-        // its colors stepped once per seat the way the archetypes step.
+        // **Identical ground** (`GalaxyConfig::ground`): one wedge of `1/N` of
+        // the disk is generated and turned to every seat, on
+        // `Ground::ColorRotated` with its colors stepped once per seat the way
+        // the archetypes step.
         let turns = config.symmetry_turns();
+        let steps = config.ground == Ground::ColorRotated;
         let wedge = config.planet_count / turns;
         for i in 0..wedge {
             let mut prng = rng.fork(0x5EED_0000 ^ i as u64);
@@ -925,11 +946,13 @@ impl Galaxy {
                 let at =
                     Vec3::new(position.x * cos - position.y * sin, position.x * sin + position.y * cos, position.z);
                 // Seat `p + 1`'s archetype is seat `p`'s with every color
-                // stepped Cyan → Magenta → Yellow → Cyan (§3), so the wedge
-                // turned `k` seats over carries its colors stepped `k` times.
+                // stepped Cyan → Magenta → Yellow → Cyan (§3), so on
+                // `Ground::ColorRotated` the wedge turned `k` seats over
+                // carries its colors stepped `k` times.
+                let shift = if steps { k } else { 0 };
                 let mut stepped = MineralField::default();
                 for (j, &b) in Basic::ALL.iter().enumerate() {
-                    stepped.set(Basic::ALL[(j + k) % 3], minerals.get(b));
+                    stepped.set(Basic::ALL[(j + shift) % 3], minerals.get(b));
                 }
                 planets.push(Planet {
                     id: PlanetId(planets.len() as u32),
@@ -1068,32 +1091,34 @@ mod tests {
     }
 
     #[test]
-    fn a_symmetric_galaxy_turns_one_wedge_to_every_seat_with_its_colors_stepped() {
-        let mut cfg = GalaxyConfig::new(3, 9);
-        cfg.rotational_symmetry = true;
-        let g = Galaxy::generate(cfg).unwrap();
-        let wild: Vec<&Planet> = g.planets.iter().filter(|p| !p.is_homeworld && p.archetype.is_none()).collect();
-        assert_eq!(cfg.symmetry_turns(), 3);
-        let wedge = cfg.planet_count / 3;
-        for i in 0..wedge {
-            let base = wild[3 * i];
-            for k in 1..3 {
-                let p = wild[3 * i + k];
-                let (sin, cos) = transcendental::sin_cos(k as f64 * core::f64::consts::TAU / 3.0);
-                let x = base.position.x * cos - base.position.y * sin;
-                let y = base.position.x * sin + base.position.y * cos;
-                assert!((p.position.x - x).abs() < 1e-9 && (p.position.y - y).abs() < 1e-9);
-                assert_eq!(p.position.z, base.position.z);
-                assert_eq!(p.habitability.bands(), base.habitability.bands());
-                for (j, &b) in Basic::ALL.iter().enumerate() {
-                    let stepped = Basic::ALL[(j + k) % 3];
-                    assert_eq!(p.minerals.get(stepped).kilotons(), base.minerals.get(b).kilotons());
+    fn identical_ground_turns_one_wedge_to_every_seat_and_steps_colors_only_when_asked() {
+        for (ground, seats) in [(Ground::ColorRotated, 3), (Ground::Identical, 3), (Ground::Identical, 2)] {
+            let cfg = GalaxyConfig { ground, ..GalaxyConfig::new(seats, 9) };
+            let g = Galaxy::generate(cfg).unwrap();
+            let wild: Vec<&Planet> = g.planets.iter().filter(|p| !p.is_homeworld && p.archetype.is_none()).collect();
+            assert_eq!(cfg.symmetry_turns(), seats);
+            let wedge = cfg.planet_count / seats;
+            for i in 0..wedge {
+                let base = wild[seats * i];
+                for k in 1..seats {
+                    let p = wild[seats * i + k];
+                    let (sin, cos) = transcendental::sin_cos(k as f64 * core::f64::consts::TAU / seats as f64);
+                    let x = base.position.x * cos - base.position.y * sin;
+                    let y = base.position.x * sin + base.position.y * cos;
+                    assert!((p.position.x - x).abs() < 1e-9 && (p.position.y - y).abs() < 1e-9);
+                    assert_eq!(p.position.z, base.position.z);
+                    assert_eq!(p.habitability.bands(), base.habitability.bands());
+                    let shift = if ground == Ground::ColorRotated { k } else { 0 };
+                    for (j, &b) in Basic::ALL.iter().enumerate() {
+                        let stepped = Basic::ALL[(j + shift) % 3];
+                        assert_eq!(p.minerals.get(stepped).kilotons(), base.minerals.get(b).kilotons());
+                    }
                 }
             }
         }
-        // Off by default, and off at a seat count the colors cannot step round.
+        // Random by default, and the colors cannot step round two seats.
         assert_eq!(GalaxyConfig::new(3, 9).symmetry_turns(), 1);
-        assert_eq!(GalaxyConfig { rotational_symmetry: true, ..GalaxyConfig::new(2, 9) }.symmetry_turns(), 1);
+        assert_eq!(GalaxyConfig { ground: Ground::ColorRotated, ..GalaxyConfig::new(2, 9) }.symmetry_turns(), 1);
     }
 
     #[test]
