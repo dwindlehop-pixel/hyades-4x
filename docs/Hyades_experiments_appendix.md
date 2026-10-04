@@ -4348,6 +4348,46 @@ for every seat. Confidence about 75% for the random-ground half, from 6 seats on
 two seeds; a census of freight deliveries of the short color to the stalled
 centers, per seat, would raise or refute it.
 
+## D.51 The color a nearly-paid center lacks is outbid by its own empire
+
+*Supports politics §2.11's completion term and T-147. Bed: §D.50's (twin bed,
+new defaults, 3 seats, card-free, `Random` ground); a scratch census (never
+landed) reading each seat at 600 and 900 yr, seeds 1, 7 and 42. A **stalled** center has
+works at Band III, holds its Band IV bill's total and cannot pay it in every
+color; its **color** is the one it is shortest of.*
+
+**Where the color is.** Summed over each seat's stalled centers, the piles of
+their color held by the same empire within 10 ly come to 0–8 kt, and within
+25 ly to 2–3,169 kt. Within 50 ly they reach 836–37,930 kt, against a summed
+shortfall of 515–6,672 kt. The median distance from a stalled center to one
+pile covering its shortfall is 26–81 ly (on one seat at 600 yr no single pile
+covered it); to a center holding that color above
+its own bill, 11–42 ly. Freighters based at rocks of that color within 25 ly
+number 638–2,505 per seat. **Inference:** the color is mined out near each
+stalled center by the haulers based there, and what remains lies one to two
+leg lengths away.
+
+**What the stalled center bids for it.** Comparing the stalled center's price
+for its color (`willingness_to_pay`) with the price every other center of the
+same empire that wants that color posts:
+
+| seed | t (yr) | seats: share of the other centers wanting it that bid more | share of their want |
+|---|---|---|---|
+| 7 | 600 | 70% / 82% / 96% | 67% / 65% / 87% |
+| 1 | 600 | 78% / 92% / 91% | 70% / 91% / 76% |
+| 1 | 900 | 78% / 77% / 86% | 68% / 70% / 79% |
+
+The stalled centers' mean price for their color is 0.67–1.84 against a full
+price of 1–3 per color (`doctrine_demand` 2 : 1 : 3, Cyan : Magenta :
+Yellow). **Inference:** under `1 − held_c / bill_c` a center's price for a
+color falls as it fills, so a center that lacks one color bids less for it
+than a center just starting its bill does, and the freight score, the
+hauler's backlog and the Exchange all rank it below those centers. The
+ablation that tests this is §2.11's completion term (sweep below).
+
+**Smoke test.** `completion_exponent = 0` reproduces the shipped engine to
+every printed digit (seed 1, 1,500 yr).
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

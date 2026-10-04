@@ -14,7 +14,8 @@
 //! kilotonnes paid in refined material.
 //!
 //! Environment: `FS_SEEDS` (default 1,7,42,31337), `FS_PREMIUM`, `FS_FLOOR`,
-//! `FS_SCALE` (the three Doctrine fields; defaults are the shipped ones),
+//! `FS_SCALE`, `FS_COMPLETION` (the forge's three Doctrine fields and
+//! [`Doctrine::completion_exponent`]; defaults are the shipped ones),
 //! `FS_GROUND` (`random`, `identical`, `rotated`; default `random`).
 //!
 //! Run: `cargo run --release --example forge_sweep -- [horizon]`.
@@ -47,11 +48,12 @@ fn main() {
         forge_premium: env("FS_PREMIUM").unwrap_or(base.forge_premium),
         forge_price_floor: env("FS_FLOOR").unwrap_or(base.forge_price_floor),
         forge_holding_scale: env("FS_SCALE").unwrap_or(base.forge_holding_scale),
+        completion_exponent: env("FS_COMPLETION").unwrap_or(base.completion_exponent),
         ..base
     };
     let tag = format!(
-        "premium {} floor {} scale {}",
-        doctrine.forge_premium, doctrine.forge_price_floor, doctrine.forge_holding_scale
+        "premium {} floor {} scale {} completion {}",
+        doctrine.forge_premium, doctrine.forge_price_floor, doctrine.forge_holding_scale, doctrine.completion_exponent
     );
     println!("forge_sweep: {SEATS} seats, horizon {horizon} yr, {ground:?}, twin bed, {tag}");
     std::io::stdout().flush().ok();

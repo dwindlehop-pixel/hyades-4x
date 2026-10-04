@@ -1094,17 +1094,31 @@ impl CenterBook {
         core::array::from_fn(|i| (self.bill[i] - held[i]).max(Price::ZERO))
     }
 
-    /// **Its pressure per color** ([`Simulation::color_pressure_of`]).
-    fn pressure(&self) -> [f64; 3] {
+    /// **Its pressure per color** ([`Simulation::color_pressure_of`]): the
+    /// shortfall share `1 − held_c / bill_c`, clamped to `[0, 1]`, divided by
+    /// `m^γ` — `m` the share of the whole bill still missing and `γ`
+    /// [`Doctrine::completion_exponent`]. The division is skipped at `γ = 0`,
+    /// so that case is the per-color price alone, bit for bit.
+    fn pressure(&self, completion_exponent: f64) -> [f64; 3] {
         if self.forge {
             return [1.0; 3];
         }
-        core::array::from_fn(|i| {
+        let share: [f64; 3] = core::array::from_fn(|i| {
             if self.bill[i] <= Price::ZERO {
                 return 0.0;
             }
             (1.0 - self.bank.get_basic(Basic::ALL[i]) / self.bill[i].kilotons().max(1e-12)).clamp(0.0, 1.0)
-        })
+        });
+        if completion_exponent == 0.0 {
+            return share;
+        }
+        let bill: f64 = self.bill.iter().map(|b| b.kilotons()).sum();
+        let missing: f64 = self.deficit().iter().map(|d| d.kilotons()).sum();
+        if bill <= 0.0 || missing <= 0.0 {
+            return share;
+        }
+        let scale = transcendental::pow_fast(missing / bill, -completion_exponent);
+        share.map(|x| x * scale)
     }
 }
 
@@ -9415,7 +9429,7 @@ impl Simulation {
     /// every other use by the same margin.
     fn demand_of(&self, center: Entity, doctrine: &Doctrine) -> [f64; 3] {
         let premium = self.forge_premium_at(center, doctrine);
-        self.color_pressure_of(center).map(|p| p * premium)
+        self.color_pressure_of(center, doctrine).map(|p| p * premium)
     }
 
     /// **A center's pressure on each color** (T-147, R-P19): the share of its
@@ -9428,12 +9442,12 @@ impl Simulation {
     /// priced the color it lacked at zero: no bid on the Exchange, no hauler
     /// routed to it, and its bank stood there for the rest of the run
     /// (appendix §D.45).
-    fn color_pressure_of(&self, center: Entity) -> [f64; 3] {
+    fn color_pressure_of(&self, center: Entity, doctrine: &Doctrine) -> [f64; 3] {
         if self.is_forge(center) {
             return [1.0; 3];
         }
         let Some(o) = self.world.owner.get(center).copied() else { return [0.0; 3] };
-        self.center_book(center, o).map_or([0.0; 3], |b| b.pressure())
+        self.center_book(center, o).map_or([0.0; 3], |b| b.pressure(doctrine.completion_exponent))
     }
 
     /// **[`Doctrine::forge_premium`] at a forge, falling with what it holds**
@@ -10732,7 +10746,7 @@ impl Simulation {
         let mut value = 0.0;
         if let (true, Some(b)) = (q.iter().any(|&x| x > 0.0), book) {
             let premium = self.forge_premium_at(center, doctrine);
-            let pressure = b.pressure();
+            let pressure = b.pressure(doctrine.completion_exponent);
             for i in 0..3 {
                 if q[i] > 0.0 {
                     value += q[i] * (doctrine.base_value[i] * doctrine.doctrine_demand[i] * (pressure[i] * premium));
@@ -17432,9 +17446,9 @@ mod tests {
         let (origin, dest, _) = two_centers(&mut sim, 0.05);
         let want = sim.wanted_here(dest, PlayerId(0), &Minerals::default());
         assert!(want.iter().all(|w| *w > Price::ZERO), "the empty center wants every color");
-        assert_eq!(sim.color_pressure_of(origin)[2], 0.0, "origin is long Yellow");
-        assert_eq!(sim.color_pressure_of(origin)[0], 1.0, "and holds no Cyan");
-        assert_eq!(sim.color_pressure_of(dest)[2], 1.0);
+        assert_eq!(sim.color_pressure_of(origin, &Doctrine::default())[2], 0.0, "origin is long Yellow");
+        assert_eq!(sim.color_pressure_of(origin, &Doctrine::default())[0], 1.0, "and holds no Cyan");
+        assert_eq!(sim.color_pressure_of(dest, &Doctrine::default())[2], 1.0);
 
         let accel = G * sim.thrust_to_mass(HullType::MediumSystems, Kilotons::new(10.0));
         let none = [Price::ZERO; 4];
@@ -17489,6 +17503,41 @@ mod tests {
         let yellow = Minerals { yellow: 1.0, ..Default::default() };
         assert!(sim.demand_value(dest, PlayerId(0), &cyan, &doctrine, false) > 0.0);
         assert_eq!(sim.demand_value(dest, PlayerId(0), &yellow, &doctrine, false), 0.0);
+    }
+
+    /// **A center one color short of its bill outbids a center that holds
+    /// nothing, under the completion term** (T-147, R-P19): at
+    /// `completion_exponent = 1` a color's price is `Σ bill / bill_c` times
+    /// its full price when it is all the center lacks, an empty bank pays
+    /// what it did, and `0` leaves the per-color price unchanged.
+    #[test]
+    fn a_center_one_color_short_outbids_an_empty_one_under_the_completion_term() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
+        let (origin, dest, _) = two_centers(&mut sim, 0.0);
+        let bill = sim.next_bill(dest, PlayerId(0)).unwrap();
+        let total: f64 = bill.iter().map(|b| b.kilotons()).sum();
+        // `dest` holds all but a tenth of its Cyan; `origin` holds nothing.
+        *sim.held_at_mut(dest).unwrap() = Minerals {
+            cyan: 0.9 * bill[0].kilotons(),
+            magenta: bill[1].kilotons(),
+            yellow: bill[2].kilotons(),
+            ..Default::default()
+        };
+        *sim.held_at_mut(origin).unwrap() = Minerals::default();
+        let base = sim.doctrine_of(0);
+        let flat = Doctrine { completion_exponent: 0.0, ..base };
+        let full = Doctrine { completion_exponent: 1.0, ..base };
+        assert!((sim.color_pressure_of(dest, &flat)[0] - 0.1).abs() < 1e-12, "the per-color price alone");
+        let short = sim.color_pressure_of(dest, &full)[0];
+        let want = total / bill[0].kilotons();
+        assert!((short - want).abs() < 1e-3 * want, "{short} against {want}");
+        assert_eq!(sim.color_pressure_of(dest, &full)[2], 0.0, "a color held in full stays unpriced");
+        let empty = sim.color_pressure_of(origin, &full);
+        let flat_empty = sim.color_pressure_of(origin, &flat);
+        for i in 0..3 {
+            assert!((empty[i] - flat_empty[i]).abs() < 1e-3, "an empty bank pays what it did");
+        }
+        assert!(short > empty[0]);
     }
 
     /// **An empty bank pays a rounding crumb with nothing, never NaN** (T-147).

@@ -567,8 +567,9 @@ pub struct Doctrine {
     /// outweighing almost anything but immediate survival). A center at
     /// population `Band IV` multiplies its willingness to pay for the basics
     /// that complete a balanced set by this, and its pull on its empire's
-    /// freight by the same factor. Any value above `1` puts a forge's bid
-    /// ahead of every other center's, whose pressure is at most `1`.
+    /// freight by the same factor. At [`Self::completion_exponent`] `0`, any
+    /// value above `1` puts a forge's bid ahead of every other center's,
+    /// whose pressure is then at most `1`.
     ///
     /// **Default `0.3`, chosen by Monte Carlo** ([`FORGE_PREMIUM`]).
     pub forge_premium: f64,
@@ -593,6 +594,20 @@ pub struct Doctrine {
     /// **Default `1.0`**: `0.3` and `3` are inside the noise of it (appendix
     /// §D.49).
     pub forge_holding_scale: f64,
+
+    /// **How strongly a center's price for a color rises as its bill nears
+    /// completion** (T-147, R-P19; politics §2.11). A works bill is paid in
+    /// every color at once, so the kilotonnes a center still lacks are what
+    /// complete the purchase. Each color's shortfall pressure
+    /// `1 − held_c / bill_c` is divided by `m^γ`, where `m = Σ shortfall /
+    /// Σ bill` is the share of the bill still missing and `γ` is this field.
+    /// `0` reproduces the per-color price alone; at `1` the price of a color
+    /// is its share of what the center still lacks, scaled so a center
+    /// holding nothing pays what it did, and a center short one color pays up
+    /// to `Σ bill / bill_c` times as much for it.
+    ///
+    /// **Default `0.0` — placeholder pending the sweep.**
+    pub completion_exponent: f64,
 
     /// **Sentry mass per kilotonne defended** (T-139,
     /// `Hyades_technology_tree.md` §9; the author's ruling: "more defense in
@@ -771,6 +786,7 @@ impl Default for Doctrine {
             forge_premium: FORGE_PREMIUM,
             forge_price_floor: 0.0,
             forge_holding_scale: 1.0,
+            completion_exponent: 0.0,
             sentry_ratio: 0.0,
             sentry_loss_price: SENTRY_LOSS_PRICE,
             missile_pickets: false,

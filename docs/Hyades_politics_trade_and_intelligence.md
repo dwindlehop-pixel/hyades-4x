@@ -314,6 +314,27 @@ stalls (a center holding its bill's total, unable to pay it in every color)
 fall 15.2% ± 2.2 in center-years on random ground, 12 of 12 galaxies (appendix
 §D.45).
 
+**`shortfall_pressure` rises as the bill nears completion** (`OPEN` —
+the author's direction to resolve the spread between empires through
+Exchange-based Doctrine, T-147; magnitude under sweep):
+
+```text
+shortfall_pressure(center, c) = (1 − held_c / bill_c) / m^γ
+m = Σ_c max(0, bill_c − held_c) / Σ_c bill_c      // share of the bill still missing
+γ = Doctrine::completion_exponent
+```
+
+A works bill is paid in every color at once, so the kilotonnes a center still
+lacks are what complete the purchase; the per-color price alone fell as a
+center neared completion, and the color a nearly-paid center lacked was
+outbid by most of its own empire (appendix §D.51). `γ = 0` is the per-color
+price alone, bit for bit. At `γ = 1`, under the default works mix, a color's
+price is its share of what the center still lacks: a center holding nothing
+pays what it did, and a center short one color pays up to `Σ bill / bill_c`
+times as much for it. That is R-IND17's concentration (industry §6.11)
+carried by the price, which the Exchange, freight routing and the hauler's
+backlog all read. Shipped default `0.0` pending the sweep.
+
 **`doctrine_demand` is where the works mix enters the market**, and it is
 measured: an empire deep in Production bids a Yellow-heavy bill, and trade flow
 reproduces the `3:2:1` Y:C:M works mix on both seeds without anything in the
