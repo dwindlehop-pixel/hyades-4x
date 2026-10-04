@@ -2072,8 +2072,40 @@ fn missile_loadout(
 /// such purchase on the 3-seat unit bed, starting at 250 yr. Identical for a
 /// stock that stands on a whole Band, which every homeworld does.
 fn infra_step_price(from: Price, cfg: &SimConfig) -> Price {
-    let at = infra_band_of(from, cfg);
-    infra_price_at_band(at + 1, cfg) - from
+    let at = infra_step_of(from, cfg);
+    infra_price_at_step((at + 1).min(infra_steps_to_top()), cfg) - from
+}
+
+/// **How finely infrastructure is bought** (T-147, the author's direction:
+/// a unit smaller than a whole Band, not continuous, at every stage) — the
+/// distance in Bands between the positions an infrastructure stock can stand
+/// at. `1.0` is whole Bands.
+pub const INFRA_STEP_BANDS: f64 = 1.0;
+
+/// The number of steps from `Band Empty` to the top playable whole Band.
+fn infra_steps_to_top() -> usize {
+    (BandTier::MAX_PLAYABLE.band().bands() / INFRA_STEP_BANDS).round() as usize
+}
+
+/// The minerals it takes to stand at step `k` — ladder position
+/// `k · INFRA_STEP_BANDS`. A step on a whole Band reads the whole Band's own
+/// price, so whole-Band steps are the whole-Band ladder exactly.
+fn infra_price_at_step(k: usize, cfg: &SimConfig) -> Price {
+    let at = k as f64 * INFRA_STEP_BANDS;
+    if at.fract() == 0.0 {
+        infra_price_at_band(at as usize, cfg)
+    } else {
+        Price::at_band_from(Band::new(at), cost_anchor(cfg))
+    }
+}
+
+/// The step an infrastructure stock stands nearest.
+fn infra_step_of(stock: Price, cfg: &SimConfig) -> usize {
+    if INFRA_STEP_BANDS == 1.0 {
+        return infra_band_of(stock, cfg);
+    }
+    let at = stock.band_from(cost_anchor(cfg)).bands();
+    (at / INFRA_STEP_BANDS).round().max(0.0) as usize
 }
 
 /// The whole Band an infrastructure stock stands at.
@@ -7203,11 +7235,11 @@ impl Simulation {
                 if payable && billed > Price::ZERO {
                     pay_bill(self.held_at_mut(center).unwrap(), &bill);
                     let f = self.world.factors.get_mut(center).unwrap();
-                    // **A whole Band is bought, not incremented.** The stock moves to
-                    // exactly what standing at the next whole Band costs, so the
-                    // ladder stays the single source of the number (T-70).
-                    let next = infra_band_of(f.infra, &self.config) + 1;
-                    f.infra = infra_price_at_band(next, &self.config);
+                    // **A step is bought, not incremented.** The stock moves to
+                    // exactly what standing at the next step costs, so the ladder
+                    // stays the single source of the number (T-70, T-147).
+                    let next = (infra_step_of(f.infra, &self.config) + 1).min(infra_steps_to_top());
+                    f.infra = infra_price_at_step(next, &self.config);
                     let stockpile_after = self.held_at(center).unwrap().basic_total();
                     self.log.push(
                         self.clock,
