@@ -120,7 +120,13 @@ Band 4.0 (appendix §D.41). **The first forge — the author's target, a mean of
 population, not by fleets. **Ratified and shipped: a homeworld starts at
 `Band II .785`** (was `Band II`); with planted outposts and starting fleets the
 first forge stands at 400.7 ± 0.5 yr on all three grounds, with colony spread random 131.9, identical 25.9, color-rotated 55.0
-(appendix §D.42). **What would settle the rest:** the author's choice of default ground, or another way to
+(appendix §D.42). **Variation across empires in tree stocks and supers forged**
+(appendix §D.43): Growth varies most (coefficient of variation 0.26–0.54
+across grounds) and is bimodal — whether an empire completes the color-split
+780-kt whole-Band-IV bill before its forge draws its freight. Forge premium 1
+and a bill paid in total each cut Growth's spread by moving every level
+(+37% to +2,781%); supers forged vary 0.10–0.15, mechanism not yet traced.
+**What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 
 ---

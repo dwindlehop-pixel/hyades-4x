@@ -3963,6 +3963,59 @@ year. Spread of colonies between empires at 1,500 yr on the same configuration
 (12 galaxies, mean): `Random` 131.9, `Identical` 25.9, `ColorRotated` 55.0,
 against 60.1 / 24.3 / 31.7 with the trio (§D.40).
 
+## D.43 Variation across empires in the tree stocks and in supers forged
+
+*Supports T-147. The author's direction, after ratifying a starting population
+of `Band II .785`: reduce the variation across empires in tree metrics and
+supers forged. Bed: `examples/empire_spread` (card-free, 3 seats, 1,500 yr, the
+12 seeds of §D.37, trio homeworlds). Per seat: Expansion `∫ C dt`, Growth
+`∫ V dt` (works), Production `∫ F dt` (fleet volume), supers and apex forged.
+The spread is the coefficient of variation between the seats of a galaxy
+(standard deviation over mean), averaged over galaxies.*
+
+| ground | Expansion | Growth | Production | supers | apex |
+|---|---|---|---|---|---|
+| `Random` | 0.070 | 0.423 | 0.040 | 0.125 | 0.119 |
+| `Identical` | 0.028 | 0.256 | 0.042 | 0.095 | 0.264 |
+| `ColorRotated` | 0.033 | 0.536 | 0.042 | 0.151 | 0.143 |
+
+**Growth is bimodal.** A seat ends at 250,000–550,000 kt-years of works or at
+1.2–3.1 million. The mechanism, traced on seed 1, `ColorRotated` (`ES_TRACE`,
+`ES_WATCH`):
+
+1. A colony at whole Band III with a ceiling above III saves for whole Band
+   IV, a 780-kt step (the cost ladder's III → IV factor is 40).
+2. Demand pricing values a hold at `Σ_c min(cargo_c, want_c) · price`, so the
+   center with the largest unmet bill draws its empire's freight: one center
+   took 60–82% of a seat's deliveries in the century before its purchase.
+3. The works bill is split by the works mix (2 : 1 : 3 Cyan, Magenta, Yellow)
+   and paid per color. World 2857 completed every color at 969 kt banked and
+   bought whole Band IV at 304 yr; world 2115 held 1,292 kt at 370 yr and could
+   not, one color short.
+4. From about 400 yr the homeworld forges draw 45–96% of each seat's freight,
+   and further Band IV purchases stop (seat 0's next came at 1,459 yr).
+
+A seat that completes a Band IV bill before its forge stands holds its works at
+800 kt on that world for the rest of the run; one that does not stays near
+20 kt per world.
+
+**Two scratch arms** (never landed), paired over the 12 galaxies (arm minus
+shipped; mean ± standard error; levels as the mean relative change):
+
+| arm | ground | Growth cv | Growth level | supers cv | supers level |
+|---|---|---|---|---|---|
+| forge premium 1 (was 10) | `Random` | −0.216 ± 0.063 | +361% ± 76 | +0.175 ± 0.037 | −60.1% ± 2.0 |
+| | `Identical` | −0.047 ± 0.056 | +37% ± 11 | +0.042 ± 0.015 | −26.2% ± 3.5 |
+| infrastructure bill paid in total, any colors | `Random` | −0.151 ± 0.091 | +912% ± 158 | −0.064 ± 0.037 | +28.6% ± 6.3 |
+| | `Identical` | −0.170 ± 0.087 | +2,781% ± 296 | −0.034 ± 0.021 | −0.8% ± 5.0 |
+
+Expansion and Production move by under 0.02 in every arm. **Inference,
+stated as one:** both arms reduce Growth's spread by moving every empire's
+level, not by evening the race — the color conjunction on a lumpy bill is a
+cliff the shipped economy sits against, and the spread is which empires cross
+it before forging begins. Confidence about 65%; the per-galaxy differences
+carry standard errors near half their size.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
