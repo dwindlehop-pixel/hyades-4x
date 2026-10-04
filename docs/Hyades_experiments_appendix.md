@@ -3510,6 +3510,47 @@ supers through a Design write (as §D.25's 25%-refined bills were) is what can
 test it; the refined books also clear only twice after the first forge in a
 1,500-yr run, at the 400-yr round cadence.
 
+## D.35 The twin bed: Designs paid in supers, built preferentially
+
+*Supports galaxy §3.1 and T-146. The author's direction: build alternate
+test hulls that exactly match the basic hulls but are paid in supers, and build
+them preferentially. Bed: `examples/super_census` with `SC_TWINS=1` (twin bill
+a third each of Red, Green and Blue; card-free otherwise; standard galaxy,
+3 seats, 1,500 yr, seeds 1, 7, 42, 31337), summed over the four runs.*
+
+**First build, and why it carried no demand.** A twin want recorded only at a
+decision that chose a hull lasted until the center's next decision, and most
+decisions choose no hull: at the barriers the orders wanted 0.06–0.45 kt of
+supers in all, on seed 1, and 33 of 23,254 hull orders were paid in supers.
+The want now outlives decisions that choose no hull (a center keeps wanting the
+twin of the hull Design it last chose), which raises it to ~25 kt per super at
+each barrier on seed 1.
+
+| color field (spacing / width, ly) | 10 / 5 | 70 / 38.5 | 140 / 56 |
+|---|---|---|---|
+| hull orders built | 91,010 (10,858 kt) | 93,250 (13,326 kt) | 92,672 (12,030 kt) |
+| paid in supers | 293 (35.4 kt, 0.33%) | 229 (31.2 kt, 0.23%) | 205 (29.6 kt, 0.25%) |
+| supers forged | 49,515 kt | 32,329 kt | 15,254 kt |
+| drawn into apex | 28,506 kt (58%) | 11,804 kt (37%) | 3,536 kt (23%) |
+| supers held at the horizon | 20,214 kt | 18,684 kt | 11,332 kt |
+| supers delivered between empires | 725 kt (1.46%) | 1,648 kt (5.10%) | 348 kt (2.28%) |
+| orders' want at 1,000 / 1,400 yr | 297 / 300 kt | 246 / 240 kt | 271 / 265 kt |
+| supers at forges at 1,000 / 1,400 yr | 9,178 / 17,010 kt | 4,801 / 15,286 kt | 4,926 / 10,279 kt |
+
+The supers forged are 1.3–4.6× all the kilotonnes of hulls built in the run,
+and at each barrier the forges hold 16–57× what the orders want; 0.23–0.33% of
+hull kilotonnes are paid in supers.
+
+**Inference, stated as one:** within an empire, supers do not move from forges
+to the yards that want them. A hauler takes refined material from a center
+only as a stop on its own route to the center it serves, and the forges are a
+few homeworlds among hundreds of wanting yards. Confidence about 70%; a census
+of hauler stops at forges, and of refined kilotonnes delivered to centers by
+freight, would test it directly.
+
+**Card-free runs are unchanged**: `forge_census` on seeds 1 and 7 at 800 yr
+reproduces `12e59f9` to every printed digit and event count.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

@@ -106,6 +106,11 @@ pub struct BookCensus {
     /// The part of [`Self::filled`] it bought from itself (zero while
     /// self-routes are dropped).
     pub filled_self: Vec<[f64; MATERIALS]>,
+    /// Refined material its centers' standing orders still lack — what yards
+    /// want for orders, apart from a forge's want for supers to make apex.
+    pub wanted: Vec<[f64; MATERIALS]>,
+    /// Refined material held at its forges.
+    pub at_forges: Vec<[f64; MATERIALS]>,
 }
 
 /// **How many materials the Exchange keeps a book for** — the three basics,
@@ -1015,6 +1020,11 @@ pub struct Roster {
     /// **What each Design is paid in**, where a card has said (sorted by
     /// Design). A Design with no entry is paid in basics alone.
     bills: Vec<((HullType, Class), DesignBill)>,
+    /// **A twin of every Design, paid this way** — the same hull, class,
+    /// mass and stats as the Design it twins, a different bill. A yard pays
+    /// the twin's bill wherever it can, and the Design's own bill otherwise
+    /// ([`Simulation::bill_at`]). Seeded only by a bed (`FleetSeeding::twin_bill`).
+    twin: Option<DesignBill>,
 }
 
 /// **A price no bank can meet** — what the production context quotes for a
@@ -1175,6 +1185,15 @@ impl Roster {
     }
 
     /// What this Design is paid in: the written bill, or basics alone.
+    /// The bill every Design's twin is paid in, if this empire has twins.
+    pub fn twin(&self) -> Option<DesignBill> {
+        self.twin
+    }
+
+    pub fn set_twin(&mut self, bill: Option<DesignBill>) {
+        self.twin = bill;
+    }
+
     pub fn bill_for(&self, hull: HullType, class: Class) -> DesignBill {
         let key = (hull, class);
         self.bills.binary_search_by(|(k, _)| k.cmp(&key)).map_or(DesignBill::BASICS, |at| self.bills[at].1)
@@ -3654,6 +3673,10 @@ pub struct Simulation {
     /// **What each center's last declined decision is waiting on**, keyed by
     /// center ([`Declined`]).
     declined: BTreeMap<u64, Declined>,
+    /// **The hull Design each center last chose** (planet entity id), whose
+    /// twin it keeps wanting until it can pay one (`FleetSeeding::twin_bill`).
+    /// Empty unless a bed seeds twins.
+    twin_design: BTreeMap<u64, (HullType, Class)>,
 }
 
 /// **What a picket saw of a colony ship** — the one observation its guess is
@@ -3844,6 +3867,7 @@ impl Simulation {
             scanned_colony_class: vec![0; n],
             scanned_mining_class: vec![0; n],
             declined: BTreeMap::new(),
+            twin_design: BTreeMap::new(),
             log: SimLog::with_filter(filter),
         };
         for &e in &sim.planet_entity {
@@ -3873,6 +3897,13 @@ impl Simulation {
     /// velocity: parked at rest, or shedding the velocity from there. A
     /// mission hull with nowhere to go stands in Reserve at its home port.
     fn seed_fleets(&mut self, seeding: &crate::galaxy::FleetSeeding) {
+        if let Some(bill) = seeding.twin_bill {
+            for &pe in &self.player_entity {
+                if let Some(r) = self.world.roster.get_mut(pe) {
+                    r.set_twin(Some(bill));
+                }
+            }
+        }
         // **A surveyed start**: each seat has scanned every world within the
         // known radius of its homeworld, so a colonizer or miner fleet has
         // somewhere to go at `t = 0`.
@@ -6649,7 +6680,7 @@ impl Simulation {
         // below, so a forge whose Designs are all paid in basics reads no
         // world and does not walk the pool.
         let forge = self.is_forge(center);
-        let super_billed = self.super_billed_designs(p, &doctrine, general_hull);
+        let super_billed = self.super_billed_designs(p, center, &doctrine, general_hull);
         // **Below the limited tier the policy reads no candidate** — it deepens
         // or saves — so neither does the engine.
         let reads_candidates = level >= self.config.limited_min_level;
@@ -6849,6 +6880,9 @@ impl Simulation {
                 order = self.autopilots[p].production_choice(&doctrine, &ctx, &cands);
             }
         }
+        // A twin the yard cannot pay is wanted while the Design is built on
+        // its own bill (`FleetSeeding::twin_bill`).
+        self.want_twin(p, center, &doctrine, order);
         self.log.push(
             self.clock,
             LogEvent::ProductionDecision {
@@ -7140,6 +7174,7 @@ impl Simulation {
                             center: center_pid,
                             order,
                             cost: billed.kilotons(),
+                            refined_paid: 0.0,
                             stockpile_after: stockpile_after.kilotons(),
                         },
                     );
@@ -7298,17 +7333,33 @@ impl Simulation {
                 // cost in supers is what its Design writes do to production).
                 let refined = {
                     let roster = self.world.roster.get(self.player_entity[p]);
-                    let bill_of = |h: HullType, c: Class| roster.map_or(DesignBill::BASICS, |r| r.bill_for(h, c));
                     let bought = (crew - reused_miners.len().min(crew)) as f64;
-                    let (mut owed, _) = bill_of(hull_type, class).split(hull_cost(hull_type, &self.config) * bought);
-                    if paired_freighter && reused_freighter.is_none() {
-                        let (_, fclass) = Standing::of(&doctrine).design_for(Role::Freighter);
-                        let (more, _) = bill_of(hauler, fclass).split(hull_cost(hauler, &self.config));
-                        for i in 0..4 {
-                            owed[i] += more[i];
+                    let owed_with = |bill_of: &dyn Fn(HullType, Class) -> DesignBill| {
+                        let (mut owed, _) =
+                            bill_of(hull_type, class).split(hull_cost(hull_type, &self.config) * bought);
+                        if paired_freighter && reused_freighter.is_none() {
+                            let (_, fclass) = Standing::of(&doctrine).design_for(Role::Freighter);
+                            let (more, _) = bill_of(hauler, fclass).split(hull_cost(hauler, &self.config));
+                            for i in 0..4 {
+                                owed[i] += more[i];
+                            }
                         }
+                        owed
+                    };
+                    let own = owed_with(&|h, c| roster.map_or(DesignBill::BASICS, |r| r.bill_for(h, c)));
+                    // **The twins, where the yard can pay them for the whole order.**
+                    match roster.and_then(|r| r.twin()) {
+                        Some(twin) => {
+                            let twins = owed_with(&|_, _| twin);
+                            let owed = twins.iter().fold(Price::ZERO, |a, &b| a + b);
+                            if self.payable(center, &twins, (cost - owed).max(Price::ZERO)) {
+                                twins
+                            } else {
+                                own
+                            }
+                        }
+                        None => own,
                     }
-                    owed
                 };
                 let Some(build_mix) = self.take_order(p, center, cost, &refined, Some((hull_type, class))) else {
                     // Put anything taken from Reserve back, or the hulls vanish
@@ -7404,6 +7455,7 @@ impl Simulation {
                         center: center_pid,
                         order,
                         cost: cost.kilotons(),
+                        refined_paid: build_mix.red + build_mix.green + build_mix.blue + build_mix.apex,
                         stockpile_after: stockpile_after.kilotons(),
                     },
                 );
@@ -7749,18 +7801,59 @@ impl Simulation {
     /// chosen, and the yard builds something it can while freight and the
     /// Exchange bring what is missing.
     fn quote(&self, p: usize, center: Entity, hull: HullType, class: Class, price: Price) -> Price {
-        let bill = self.world.roster.get(self.player_entity[p]).map_or(DesignBill::BASICS, |r| r.bill_for(hull, class));
-        if bill.is_basics() {
-            return price;
-        }
+        let bill = self.bill_at(p, center, hull, class, price);
         let (refined, basic) = bill.split(price);
-        let Some(bank) = self.held_at(center) else { return UNPAYABLE };
-        let held = Material::REFINED.iter().enumerate().all(|(i, &m)| bank.get(m) + 1e-9 >= refined[i].kilotons());
-        if held || self.synthesis_plan(center, &refined, basic).is_some() {
+        if bill.is_basics() || self.payable(center, &refined, basic) {
             price
         } else {
             UNPAYABLE
         }
+    }
+
+    /// Can `center` pay `refined` now — from what it holds, or by forging it
+    /// with `basic` kept back?
+    fn payable(&self, center: Entity, refined: &[Price; 4], basic: Price) -> bool {
+        let Some(bank) = self.held_at(center) else { return false };
+        let held = Material::REFINED.iter().enumerate().all(|(i, &m)| bank.get(m) + 1e-9 >= refined[i].kilotons());
+        held || self.synthesis_plan(center, refined, basic).is_some()
+    }
+
+    /// **The bill the yard at `center` pays for this Design**: its twin's
+    /// (`Roster::twin`) where the empire has twins and the center can pay the
+    /// twin's refined part now, the Design's own bill otherwise.
+    fn bill_at(&self, p: usize, center: Entity, hull: HullType, class: Class, price: Price) -> DesignBill {
+        let Some(roster) = self.world.roster.get(self.player_entity[p]) else { return DesignBill::BASICS };
+        if let Some(twin) = roster.twin() {
+            let (refined, basic) = twin.split(price);
+            if self.payable(center, &refined, basic) {
+                return twin;
+            }
+        }
+        roster.bill_for(hull, class)
+    }
+
+    /// **What a twin wants that the yard could not pay** — the refined part of
+    /// the twin of the hull Design this center last chose, recorded as its
+    /// standing order so freight and the Exchange bring it, while the yard
+    /// builds on the Design's own bill meanwhile. The want outlives decisions
+    /// that choose no hull: a yard that builds hulls prefers its twin until it
+    /// can pay one. Nothing when the empire has no twins, the twin is payable
+    /// now, or another order already stands.
+    fn want_twin(&mut self, p: usize, center: Entity, doctrine: &Doctrine, order: BuildOrder) {
+        let Some(twin) = self.world.roster.get(self.player_entity[p]).and_then(|r| r.twin()) else { return };
+        if let BuildOrder::Hull { hull_type, class } = order {
+            self.twin_design.insert(center.0, (hull_type, class));
+        }
+        let Some(&(hull_type, class)) = self.twin_design.get(&center.0) else { return };
+        if self.standing.contains_key(&center.0) {
+            return;
+        }
+        let price = self.design_price(doctrine, hull_type, class);
+        if self.bill_at(p, center, hull_type, class, price) == twin {
+            return;
+        }
+        let (refined, _) = twin.split(price);
+        self.standing.insert(center.0, StandingOrder { design: Some((hull_type, class)), refined, basic: Price::ZERO });
     }
 
     /// May player `p` build `hull`? Always yes while `enforce_roster` is off —
@@ -9151,11 +9244,16 @@ impl Simulation {
     /// **Which of a seat's ordered Designs a Design write bills in supers or
     /// apex**: the Medium and General colonizers, the miner, the scout and the
     /// picket, in that order — the orders whose price a forge's production
-    /// context carries.
-    fn super_billed_designs(&self, p: usize, doctrine: &Doctrine, general_hull: HullType) -> [bool; 5] {
+    /// context carries. A Design whose own bill is basics counts when its twin
+    /// is what `center` would pay ([`Self::bill_at`]): a forge falls back to
+    /// no basics-only order.
+    fn super_billed_designs(&self, p: usize, center: Entity, doctrine: &Doctrine, general_hull: HullType) -> [bool; 5] {
         let Some(roster) = self.world.roster.get(self.player_entity[p]) else { return [false; 5] };
         let standing = Standing::of(doctrine);
-        let billed = |(h, c): (HullType, Class)| !roster.bill_for(h, c).is_basics();
+        let billed = |(h, c): (HullType, Class)| {
+            !roster.bill_for(h, c).is_basics()
+                || !self.bill_at(p, center, h, c, self.design_price(doctrine, h, c)).is_basics()
+        };
         [
             billed((HullType::MediumSystems, class_ordered_for(HullType::MediumSystems))),
             billed((general_hull, class_ordered_for(general_hull))),
@@ -9915,6 +10013,8 @@ impl Simulation {
             banked: vec![[0.0; MATERIALS]; n],
             filled: self.exchange.last_fill.clone(),
             filled_self: self.exchange.last_fill_self.clone(),
+            wanted: vec![[0.0; MATERIALS]; n],
+            at_forges: vec![[0.0; MATERIALS]; n],
         };
         c.filled.resize(n, [0.0; MATERIALS]);
         c.filled_self.resize(n, [0.0; MATERIALS]);
@@ -9945,8 +10045,18 @@ impl Simulation {
         }
         for &e in &self.planet_entity {
             if let (Some(o), Some(m)) = (self.world.owner.get(e), self.held_at(e)) {
+                let o = o.0 as usize;
                 for (i, &col) in Material::ALL.iter().enumerate() {
-                    c.banked[o.0 as usize][i] += m.get(col);
+                    c.banked[o][i] += m.get(col);
+                }
+                let short = self.refined_short(e);
+                for (k, s) in short.iter().enumerate() {
+                    c.wanted[o][3 + k] += s.kilotons();
+                }
+                if self.is_forge(e) {
+                    for (k, &col) in Material::REFINED.iter().enumerate() {
+                        c.at_forges[o][3 + k] += m.get(col);
+                    }
                 }
             }
         }
@@ -16645,8 +16755,11 @@ mod tests {
                 velocity: Vec3::ZERO,
             })
             .collect();
-        let galaxy =
-            Galaxy::generate_with(g, FleetSeeding { spend_kt: spend, known_radius_ly: radius, fleets }).unwrap();
+        let galaxy = Galaxy::generate_with(
+            g,
+            FleetSeeding { spend_kt: spend, known_radius_ly: radius, fleets, twin_bill: None },
+        )
+        .unwrap();
         let aps: Vec<Box<dyn Autopilot>> =
             (0..2).map(|_| Box::new(BaselineAutopilot::default()) as Box<dyn Autopilot>).collect();
         Simulation::new_logged(galaxy, test_cfg(seed), aps, LogFilter::none().with(crate::log::LogCategory::Vehicles))
@@ -17191,6 +17304,78 @@ mod tests {
             .count();
         assert!(made > 0.0, "no forge made Red: the bed must reach population Band IV");
         assert!(red_hulls > 0, "no hull was built out of Red");
+        let after = sim.mass_ledger();
+        let drift = (after.total() - before.total()).abs() / before.total();
+        assert!(drift < 1e-9, "mass is not conserved: {:#?}", before.delta(&after));
+    }
+
+    /// **A twin is built from supers where the yard can pay it, and wanted
+    /// where it cannot** (`FleetSeeding::twin_bill`, appendix §D.35). The
+    /// Design is built on its own bill meanwhile, so the yard is never blocked.
+    #[test]
+    fn a_twin_is_paid_in_supers_where_it_can_be_and_wanted_where_not() {
+        let twin = DesignBill::coerced([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0, 0.0]);
+        let price = Price::new(0.3);
+        let (h, c) = (HullType::MediumSystems, Class::Delta);
+
+        // Holding the supers: the twin.
+        let bank =
+            Minerals { cyan: 1.0, magenta: 1.0, yellow: 1.0, red: 0.2, green: 0.2, blue: 0.2, ..Default::default() };
+        let (mut sim, home) = forge(BandTier::I, bank);
+        sim.world.roster.get_mut(sim.player_entity[0]).unwrap().set_twin(Some(twin));
+        assert_eq!(sim.bill_at(0, home, h, c, price), twin);
+        let doctrine = sim.doctrine_of(0);
+        sim.want_twin(0, home, &doctrine, BuildOrder::Hull { hull_type: h, class: c });
+        assert!(!sim.standing.contains_key(&home.0), "a payable twin is built, not wanted");
+
+        // Not holding them, and no forge to make them: the Design's own bill,
+        // and the twin's supers are the center's standing want.
+        let bank = Minerals { cyan: 1.0, magenta: 1.0, yellow: 1.0, ..Default::default() };
+        let (mut sim, home) = forge(BandTier::I, bank);
+        sim.world.roster.get_mut(sim.player_entity[0]).unwrap().set_twin(Some(twin));
+        assert_eq!(sim.bill_at(0, home, h, c, price), DesignBill::BASICS);
+        let doctrine = sim.doctrine_of(0);
+        sim.want_twin(0, home, &doctrine, BuildOrder::Hull { hull_type: h, class: c });
+        let want = sim.standing.get(&home.0).expect("the twin is wanted").refined;
+        let each = sim.design_price(&doctrine, h, c).kilotons() / 3.0;
+        for (i, w) in want.iter().take(3).enumerate() {
+            assert!((w.kilotons() - each).abs() < 1e-12, "super {i}: {w:?}");
+        }
+        assert_eq!(sim.refined_short(home)[0], want[0], "the want is what the refined book bids for");
+    }
+
+    /// **A bed seeded with twins builds hulls out of supers, bids for them,
+    /// and conserves mass.**
+    #[test]
+    fn a_twin_bed_builds_from_supers_with_mass_conserved() {
+        let twin = DesignBill::coerced([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0, 0.0]);
+        let mut g = GalaxyConfig::new(3, 11);
+        g.planet_count = 200;
+        let seeding = crate::galaxy::FleetSeeding { twin_bill: Some(twin), ..Default::default() };
+        let galaxy = Galaxy::generate_with(g, seeding).unwrap();
+        let mut cfg = test_cfg(11);
+        cfg.horizon_years = SUPER_BED_HORIZON;
+        cfg.biosphere_regen_rate = 0.0;
+        let mut sim = Simulation::with_baseline(galaxy, cfg);
+        sim.set_log_filter(LogFilter::none().with(crate::log::LogCategory::Production));
+        for p in 0..3 {
+            assert_eq!(sim.world.roster.get(sim.player_entity[p]).unwrap().twin(), Some(twin));
+        }
+        let before = sim.mass_ledger();
+        sim.run();
+        // A colonizer's hull becomes its colony's infrastructure, so the
+        // builds are counted where they are paid, not where the hulls stand.
+        let paid: f64 = sim
+            .log()
+            .iter()
+            .filter_map(|r| match r.event {
+                LogEvent::BuildApplied { refined_paid, .. } => Some(refined_paid),
+                _ => None,
+            })
+            .sum();
+        assert!(paid > 0.0, "no hull was paid for in supers");
+        let bids: u64 = (3..6).map(|i| sim.exchange.posted[i].0).sum();
+        assert!(bids > 0, "no center bid for a super");
         let after = sim.mass_ledger();
         let drift = (after.total() - before.total()).abs() / before.total();
         assert!(drift < 1e-9, "mass is not conserved: {:#?}", before.delta(&after));

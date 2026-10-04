@@ -88,6 +88,16 @@ fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
   velocity; a **Sentry** hull stands at its seat's homeworld, counted there as
   the center's sentries (T-139), whatever position the fleet names; a mission
   hull with nowhere to go stands in Reserve at its home port.
+- `twin_bill` (none by default) — **twin Designs paid in supers** (the author's
+  direction for a bed in which supers have a final demand): every seat starts
+  with a twin of every Design, the same hull, class, mass and stats, billed
+  `twin_bill` (`Roster::twin`). A yard pays the twin's bill wherever it holds,
+  or as a forge can make, the supers it owes for the whole order, and the
+  Design's own bill otherwise. A center keeps wanting the twin of the hull
+  Design it last chose — recorded as its standing order, so freight and the
+  Exchange bid for it — until it can pay one. At a forge a Design counts as
+  paid in supers only while its twin is payable, so R-MX17's pricing holds.
+  `BUILT` for beds; appendix §D.35.
 - **A generated missile Design starts with its magazine full** — its rounds
   are generated with it, as its hulls are, and drawn from no bank. A generated
   picket has no post and no voyage, so once dry it is not resupplied: the

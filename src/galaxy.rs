@@ -718,6 +718,12 @@ pub struct FleetSeeding {
     /// start, where only the homeworld is known.
     pub known_radius_ly: f64,
     pub fleets: Vec<SeedFleet>,
+    /// **Twin Designs paid in supers**: every seat starts with a twin of every
+    /// Design — the same hull, class, mass and stats — billed `twin_bill`, and
+    /// its yards build the twin wherever they can pay it (`Roster::twin`).
+    /// `None` — the default — seeds none. A bed's way to give supers a final
+    /// demand without a card (appendix §D.35).
+    pub twin_bill: Option<crate::sim::DesignBill>,
 }
 
 impl Galaxy {

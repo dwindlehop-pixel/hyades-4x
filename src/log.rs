@@ -187,8 +187,16 @@ pub enum LogEvent {
         can_afford_infra: bool,
         chosen: BuildOrder,
     },
-    /// A chosen build was funded and applied this cycle.
-    BuildApplied { player: u32, center: PlanetId, order: BuildOrder, cost: f64, stockpile_after: f64 },
+    /// A chosen build was funded and applied this cycle. `refined_paid` is the
+    /// part of `cost` paid in supers and apex, kt.
+    BuildApplied {
+        player: u32,
+        center: PlanetId,
+        order: BuildOrder,
+        cost: f64,
+        refined_paid: f64,
+        stockpile_after: f64,
+    },
     /// **A center synthesized a refined material** (galaxy §4.2): `made`
     /// kilotonnes of `material` out of `used` kilotonnes of its precursors, the
     /// difference left at the center as slag (R-O59).
@@ -450,9 +458,9 @@ impl fmt::Display for LogEvent {
                  pressure={mineral_pressure:.2} candidates={candidates_seen} -> {chosen:?}",
                 center.0
             ),
-            BuildApplied { player, center, order, cost, stockpile_after } => write!(
+            BuildApplied { player, center, order, cost, refined_paid, stockpile_after } => write!(
                 f,
-                "P{player} planet#{} built {order:?} (cost={cost:.2}, stockpile now {stockpile_after:.2})",
+                "P{player} planet#{} built {order:?} (cost={cost:.2}, {refined_paid:.2} in refined, stockpile now {stockpile_after:.2})",
                 center.0
             ),
             Synthesized { player, center, material, made, used } => write!(

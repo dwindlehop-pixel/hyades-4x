@@ -108,9 +108,13 @@ habitability and work-years, moves in every arm. Arms at the author's 5% two-col
 with habitable worlds held (70 / 38.5 and 140 / 56 ly) do not resolve trade in
 supers either way. **The card-free bed has no final demand for supers**
 (appendix §D.34): no order is billed in them, apex has no bid, and every
-super bid is a forge completing a set for apex. **Open — what would settle
-it:** a bed whose Designs are billed in supers through a Design write, then
-the spacing sweep on it; and the author's choice of spacing and width.
+super bid is a forge completing a set for apex. **The twin bed is built** (galaxy §3.1,
+appendix §D.35): every Design has a twin paid in supers, built wherever the
+yard can pay it. On it 0.23–0.33% of hull kilotonnes are paid in supers while
+forges hold 16–57× what orders want — supers do not reach the yards within an
+empire. **Open — what would settle it:** a census of hauler stops at forges
+and refined kilotonnes delivered by freight; then the spacing sweep on a bed
+where supers reach yards; and the author's choice of spacing and width.
 
 ---
 

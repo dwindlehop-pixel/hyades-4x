@@ -394,7 +394,7 @@ fn combat_run(sc: &Scenario) -> (SimReport, Vec<String>, Fired) {
             velocity,
         })
         .collect();
-    let seeding = FleetSeeding { spend_kt: sc.spend_kt, known_radius_ly: 0.0, fleets };
+    let seeding = FleetSeeding { spend_kt: sc.spend_kt, known_radius_ly: 0.0, fleets, twin_bill: None };
     let galaxy = Galaxy::generate_with(gcfg, seeding).unwrap();
     let mut cfg = SimConfig::new(sc.seed);
     cfg.horizon_years = sc.horizon;
