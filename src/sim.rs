@@ -16812,13 +16812,13 @@ mod tests {
         );
 
         // **Priced by demand** (the author's ruling; supersedes R-IND17's
-        // completion score), **one color at a time** (T-147). A third center
-        // needing *everything* holds no Yellow toward its bill, and neither
-        // does the center short only Yellow, so each pays full pressure for
-        // Yellow and they pay the same: what a center holds of the other
-        // colors does not move the price of this one. And a hold nobody wants
-        // is routed nowhere: the caller sends it to its own home center, not
-        // to a tie-break.
+        // completion score), **one color at a time, rising as the bill nears
+        // completion** (T-147, `Doctrine::completion_exponent`). A third
+        // center needing *everything* holds no Yellow toward its bill, and
+        // neither does the center short only Yellow — but Yellow is all the
+        // second one lacks, so it pays more for it; at `completion_exponent =
+        // 0` the two pay the same. And a hold nobody wants is routed nowhere:
+        // the caller sends it to its own home center, not to a tie-break.
         let empty = sim.planet_entity[17];
         sim.claim_planet(empty, PlayerId(0));
         sim.world.factors.insert(
@@ -16836,13 +16836,19 @@ mod tests {
         let doctrine = sim.doctrine_of(0);
         let at_a = sim.demand_value(a, PlayerId(0), &yellow, &doctrine, false);
         let at_empty = sim.demand_value(empty, PlayerId(0), &yellow, &doctrine, false);
-        assert_eq!(at_empty, at_a, "both hold no Yellow toward a Yellow bill");
+        assert!(at_a > at_empty, "Yellow completes the bill at `a`: {at_a} against {at_empty}");
+        let flat = Doctrine { completion_exponent: 0.0, ..doctrine };
+        assert_eq!(
+            sim.demand_value(empty, PlayerId(0), &yellow, &flat, false),
+            sim.demand_value(a, PlayerId(0), &yellow, &flat, false),
+            "both hold no Yellow toward a Yellow bill"
+        );
         assert_eq!(
             sim.demand_value(a, PlayerId(0), &magenta, &doctrine, false),
             0.0,
             "a color nobody lacks is worth nothing"
         );
-        assert_eq!(sim.best_delivery_center(PlayerId(0), here, &yellow, accel), Some(a), "a tie, broken by entity id");
+        assert_eq!(sim.best_delivery_center(PlayerId(0), here, &yellow, accel), Some(a), "the center it completes");
         assert_eq!(sim.best_delivery_center(PlayerId(0), here, &Minerals::default(), accel), None, "an empty hold");
     }
 
@@ -17447,7 +17453,7 @@ mod tests {
         let want = sim.wanted_here(dest, PlayerId(0), &Minerals::default());
         assert!(want.iter().all(|w| *w > Price::ZERO), "the empty center wants every color");
         assert_eq!(sim.color_pressure_of(origin, &Doctrine::default())[2], 0.0, "origin is long Yellow");
-        assert_eq!(sim.color_pressure_of(origin, &Doctrine::default())[0], 1.0, "and holds no Cyan");
+        assert!(sim.color_pressure_of(origin, &Doctrine::default())[0] > 0.0, "and bids for the Cyan it lacks");
         assert_eq!(sim.color_pressure_of(dest, &Doctrine::default())[2], 1.0);
 
         let accel = G * sim.thrust_to_mass(HullType::MediumSystems, Kilotons::new(10.0));

@@ -314,9 +314,9 @@ stalls (a center holding its bill's total, unable to pay it in every color)
 fall 15.2% ± 2.2 in center-years on random ground, 12 of 12 galaxies (appendix
 §D.45).
 
-**`shortfall_pressure` rises as the bill nears completion** (`OPEN` —
-the author's direction to resolve the spread between empires through
-Exchange-based Doctrine, T-147; magnitude under sweep):
+**`shortfall_pressure` rises as the bill nears completion** (`RATIFIED` as
+the author's direction to set Exchange-based Doctrine by Monte Carlo on the
+twin bed, T-147; the functional form is a placeholder):
 
 ```text
 shortfall_pressure(center, c) = (1 − held_c / bill_c) / m^γ
@@ -333,7 +333,12 @@ price is its share of what the center still lacks: a center holding nothing
 pays what it did, and a center short one color pays up to `Σ bill / bill_c`
 times as much for it. That is R-IND17's concentration (industry §6.11)
 carried by the price, which the Exchange, freight routing and the hauler's
-backlog all read. Shipped default `0.0` pending the sweep.
+backlog all read. **Shipped `γ = 0.75`, chosen by Monte Carlo**: +5.65% ±
+0.79 on the tree composite over eight seeds, 8/8 positive, replicated on four
+seeds it was not chosen against; the rivals inside an empire outbidding a
+stalled center for its color fall from 70–96% to 12–40%. It does **not**
+narrow the spread between empires: Growth's coefficient of variation across
+seats moves −0.001 ± 0.018 (appendix §D.51).
 
 **`doctrine_demand` is where the works mix enters the market**, and it is
 measured: an empire deep in Production bids a Yellow-heavy bill, and trade flow

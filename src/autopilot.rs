@@ -606,7 +606,7 @@ pub struct Doctrine {
     /// holding nothing pays what it did, and a center short one color pays up
     /// to `Σ bill / bill_c` times as much for it.
     ///
-    /// **Default `0.0` — placeholder pending the sweep.**
+    /// **Default `0.75`, chosen by Monte Carlo** ([`COMPLETION_EXPONENT`]).
     pub completion_exponent: f64,
 
     /// **Sentry mass per kilotonne defended** (T-139,
@@ -786,7 +786,7 @@ impl Default for Doctrine {
             forge_premium: FORGE_PREMIUM,
             forge_price_floor: 0.0,
             forge_holding_scale: 1.0,
-            completion_exponent: 0.0,
+            completion_exponent: COMPLETION_EXPONENT,
             sentry_ratio: 0.0,
             sentry_loss_price: SENTRY_LOSS_PRICE,
             missile_pickets: false,
@@ -1899,11 +1899,20 @@ pub struct Standing<'a> {
 /// short of the limit where a center stops replacing after its first loss.
 pub const SENTRY_LOSS_PRICE: f64 = 3.0;
 
+/// **The shipped [`Doctrine::completion_exponent`]** (T-147): chosen by
+/// Monte Carlo on the twin bed (`examples/forge_sweep`, 3 seats, 1,500 yr)
+/// against the tree composite. Over `0, 0.25, 0.5, 0.75, 1, 1.5` on seeds 1,
+/// 7, 42, 31337, `0.75` scored highest, and it replicated on seeds 2, 3, 5, 11:
+/// **+5.65% ± 0.79 pooled, 8/8 seeds** (Growth +16.2%), against `0.5` at
+/// +5.53% ± 1.17 and `1` at +4.14% ± 0.72 (appendix §D.51).
+pub const COMPLETION_EXPONENT: f64 = 0.75;
+
 /// **The forge premium** ([`Doctrine::forge_premium`]): what an empty forge's
 /// bid for a basic is worth against any other center's, whose pressure is at
-/// most `1`. **Chosen by Monte Carlo (T-147, the author's ruling: the forge's
-/// price is set to maximize the tree metrics on the standard bed with the
-/// twin hulls, `examples/forge_sweep`, appendix §D.49).** Pooled over eight
+/// most `1` before [`Doctrine::completion_exponent`] raises it. **Chosen by
+/// Monte Carlo (T-147, the author's ruling: the forge's price is set to
+/// maximize the tree metrics on the standard bed with the twin hulls,
+/// `examples/forge_sweep`, appendix §D.49).** Pooled over eight
 /// seeds, `0.3` scores +8.73% ± 1.06 on the tree composite against `10`, 8/8
 /// seeds positive; `1` is +8.52% ± 1.08, inside the noise of it. Below `1` an
 /// empty forge bids under a center at full pressure, so forging takes the

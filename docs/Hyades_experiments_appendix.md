@@ -4388,6 +4388,55 @@ ablation that tests this is §2.11's completion term (sweep below).
 **Smoke test.** `completion_exponent = 0` reproduces the shipped engine to
 every printed digit (seed 1, 1,500 yr).
 
+**The sweep** (`examples/forge_sweep`, `FS_COMPLETION`; twin bed, 3 seats,
+1,500 yr; composite as in §D.49, against `γ = 0` on the same seed; cv is the
+coefficient of variation of a tree stock across the three seats, averaged
+over seeds). Screen on seeds 1, 7, 42, 31337:
+
+| γ | composite | Growth | Production | Growth cv | apex cv |
+|---|---|---|---|---|---|
+| 0 | 0 | 0 | 0 | 0.156 | 0.350 |
+| 0.25 | +4.5% ± 1.9 | +10.2% | +3.4% | 0.191 | 0.582 |
+| 0.5 | +4.3% ± 2.1 | +12.6% | +0.6% | 0.180 | 0.497 |
+| 0.75 | +5.0% ± 1.2 | +14.6% | +0.9% | 0.139 | 0.448 |
+| 1 | +2.8% ± 1.0 | +9.9% | −0.8% | 0.143 | 0.514 |
+| 1.5 | −2.8% ± 1.8 | −5.2% | −3.1% | 0.084 | 0.623 |
+
+Expansion moves by under 0.3% in every arm. Replication on seeds 2, 3, 5, 11
+(composite as the log of the summed stocks, so the screen column differs from
+the table above in the last digit):
+
+| γ | seeds 1, 7, 42, 31337 | seeds 2, 3, 5, 11 | pooled, n = 8 | Growth cv, paired change, n = 8 |
+|---|---|---|---|---|
+| 0.5 | +4.17% ± 2.05, 3/4 | +6.89% ± 0.98, 4/4 | +5.53% ± 1.17, 7/8 | +0.026 ± 0.024 |
+| **0.75** | +4.83% ± 1.22, 4/4 | +6.46% ± 1.01, 4/4 | **+5.65% ± 0.79, 8/8** | −0.001 ± 0.018 |
+| 1 | +2.80% ± 1.01, 4/4 | +5.49% ± 0.41, 4/4 | +4.14% ± 0.72, 8/8 | +0.007 ± 0.021 |
+
+**Shipped `γ = 0.75`.** `0.5` is inside its noise on the composite; `1` is
+1.5 points lower, about two standard errors.
+
+**The mechanism check** (the census above, seeds 1 and 7, `γ = 0` against
+`0.75`):
+
+| | `γ = 0` | `γ = 0.75` |
+|---|---|---|
+| other centers wanting the color that bid more than the stalled center | 70–96% | 12–40% |
+| their share of the want for that color | 62–91% | 12–46% |
+| stalled center's mean price for its color | 0.67–1.84 | 2.59–4.31 |
+| stalled centers per seat at 1,200 yr, seed 7 | 30 / 30 / 40 | 19 / 19 / 19 |
+| stalled centers per seat at 1,200 yr, seed 1 | 34 / 42 / 34 | 30 / 11 / 34 |
+| centers at Band III short of the total, 1,200 yr, seed 7 | 56 / 61 / 62 | 67 / 67 / 69 |
+
+The price moved what it was written to move: a stalled center now outbids
+most of its empire for the color it lacks, and color stalls fall on both
+seeds. Growth rises 16% pooled. **The spread between seats does not move**
+(Growth cv −0.001 ± 0.018). **Inference, stated as one:** the term raised
+every seat's completions by a similar factor, and what separates seats on
+random ground after it is the count of Band III centers short of the bill's
+total (an income limit) and the count that reach Band III at all, neither of
+which a price between a seat's own centers reaches. Confidence about 60%;
+a census of income per Band III center by seat, at `γ = 0.75`, would test it.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

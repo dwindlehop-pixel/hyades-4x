@@ -160,8 +160,15 @@ IV works** (the spread in Growth, r = 0.94–0.97 against Growth per seat;
 appendix §D.50): purchases = eligible Band III centers × completion share. On
 random ground the stalled centers lack one color that their own empire holds
 at 2.7–64x the shortfall elsewhere (delivery inside the empire); on identical
-ground every seat lacks the same color and no seat has it to sell. **Open:**
-the remedy for the random-ground half (price or freight inside the empire).
+ground every seat lacks the same color and no seat has it to sell. **Landed:
+a center's price for a color rises as its bill nears completion**
+(`Doctrine::completion_exponent`, politics §2.11, appendix §D.51): the
+color a stalled center lacked was outbid by 70–96% of the other centers in
+its empire; `γ = 0.75`, chosen by Monte Carlo, takes that to 12–40% and the
+tree composite +5.65% ± 0.79 (8/8 seeds). **It does not narrow the spread**:
+Growth's cv across seats moves −0.001 ± 0.018. **Open:** what separates seats
+after it — Band III centers short of the bill's total, and the count that
+reach Band III (appendix §D.51's inference, untested).
 **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 
