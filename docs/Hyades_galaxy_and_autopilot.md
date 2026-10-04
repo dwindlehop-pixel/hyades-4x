@@ -77,6 +77,18 @@ ruling.
 
 **`RATIFIED` (the author's ruling) — a homeworld is a trio.** The habitable world, where the seat's population grows and its forge will stand, holds only a trace of every basic; beside it, one companion world is rich in each of the archetype's two rich basics. **Every forge's precursors therefore arrive by freight** (§4.5). Built: companions at `Band 3.0` in their one color, trace in the others, habitability and biosphere `Band 0.5`, `2 ly` from the homeworld on either side along the ring (`GalaxyConfig::homeworld_companion_*`, all **placeholders**); they start wild, and the opening's outposts take them. Card-free, 4 seeds, 1,500 yr: colony-years and colonies unchanged within two standard errors; the first colony comes later (appendix §D.26).
 
+**`OPEN` (T-147) — color-centered homeworlds** (`GalaxyConfig::homeworlds =
+Homeworlds::ColorCentered`, built, off by default). The habitable world stands
+alone, holding under `Band I` of every basic (each reading drawn uniformly in
+`[0, 1)`), on the ring midway between its neighbors' angles, with one color
+site of each hue planted `homeworld_site_distance_ly` (10 ly) away, 120° apart,
+at peak `homeworld_site_band` (`Band 3.0`) — **placeholders**. On identical
+ground seat 0's are planted inside its wedge and turned with it. Measured
+(appendix §D.41): the spread between empires widens on every ground at both
+`Band 3.0` and `Band 4.0` (identical ground 70.6 and 81.8, against 24.3 with
+the trio), and the start runs about a century longer. Equidistance from the
+field's own sites was tried first and cannot carry a threshold.
+
 **Eventual self-synthesis.** At **pop Band IV** a homeworld synthesizes its archetype's super from its trio's two rich basics, which are that super's recipe. **R-G4 — resolved (the author's ruling: "forges have to produce supers according to color theory").** "Exactly one super" is a gradient, not a rule: a forge makes any super whose two basics it holds 1:1 (§4.2), and an archetype is native to one super only in that its trio supplies that recipe. Measured with the trio, hex-scale color, the ore cap and a priced works bill: **0.27% of refined mass synthesized crosses between empires** (24 runs, appendix §D.28) — empires make their own supers from basics their own freight brings. With forging a forge's purpose and forges bidding for supers (§4.5), card-free: every forge still makes all three supers, and 3.7% of supers forged cross between empires (appendix §D.31).
 
 ---

@@ -4,12 +4,17 @@
 //! Card-free, standard galaxy on the ground `GC_GROUND` names (`random`,
 //! `identical`, `rotated`; default `identical`). Per seed and seat: the
 //! archetype's poor color, the wild deposit by color within `GC_REACH` ly of
-//! the homeworld (default 40), and at each sample year the seat's colonies and
-//! its stockpile by color, summed over the worlds it owns.
+//! the homeworld (default 40), and at each sample year the seat's colonies, its
+//! mining outposts and its stockpile by color, summed over the worlds it owns.
+//!
+//! `GC_HOMEWORLDS=centered` makes the homeworlds `Homeworlds::ColorCentered`,
+//! and each seat's line then carries its distance to its three planted sites;
+//! `GC_SITE_BAND` and `GC_SITE_LY` override `homeworld_site_band` and
+//! `homeworld_site_distance_ly`.
 //!
 //! Run: `cargo run --release --example ground_census -- <seats> <horizon> [sample years ...]`;
 //! `GC_SEEDS=2,3,5,11`.
-use hyades_engine::galaxy::{Galaxy, GalaxyConfig, Ground};
+use hyades_engine::galaxy::{Galaxy, GalaxyConfig, Ground, Homeworlds};
 use hyades_engine::resources::Basic;
 use hyades_engine::sim::{SimConfig, Simulation};
 use std::io::Write;
@@ -41,12 +46,32 @@ fn main() {
     println!("ground_census: {seats} seats, {ground:?}, horizon {horizon} yr, reach {reach} ly");
     std::io::stdout().flush().ok();
     for seed in env_seeds() {
-        let galaxy = Galaxy::generate(GalaxyConfig { ground, ..GalaxyConfig::new(seats, seed) }).unwrap();
+        let homeworlds = if std::env::var("GC_HOMEWORLDS").is_ok_and(|v| v.trim() == "centered") {
+            Homeworlds::ColorCentered
+        } else {
+            Homeworlds::Trio
+        };
+        let mut gcfg = GalaxyConfig { ground, homeworlds, ..GalaxyConfig::new(seats, seed) };
+        if let Some(b) = std::env::var("GC_SITE_BAND").ok().and_then(|v| v.trim().parse().ok()) {
+            gcfg.homeworld_site_band = b;
+        }
+        if let Some(d) = std::env::var("GC_SITE_LY").ok().and_then(|v| v.trim().parse().ok()) {
+            gcfg.homeworld_site_distance_ly = d;
+        }
+        let galaxy = match Galaxy::generate(gcfg) {
+            Ok(g) => g,
+            Err(e) => {
+                println!("{seed:>5}: {e}");
+                continue;
+            }
+        };
         for (seat, &h) in galaxy.homeworlds.iter().enumerate() {
             let home = &galaxy.planets[h.0 as usize];
             let (_, _, poor) = home.archetype.unwrap().alignment();
             let mut kt = [0.0f64; 3];
             let mut rich = [0usize; 3];
+            // The richest world of each color within reach, and its distance.
+            let mut best = [(0.0f64, 0.0f64); 3];
             for p in &galaxy.planets {
                 if p.is_homeworld || p.position.distance(home.position) > reach {
                     continue;
@@ -55,11 +80,27 @@ fn main() {
                     let m = p.minerals.get(b).kilotons();
                     kt[c] += m;
                     rich[c] += usize::from(m >= 1.0);
+                    if m > best[c].0 {
+                        best[c] = (m, p.position.distance(home.position));
+                    }
                 }
             }
+            let sites = galaxy
+                .homeworld_sites
+                .get(seat)
+                .map(|s| {
+                    format!(
+                        " | sites at {:.2}/{:.2}/{:.2} ly",
+                        s[0].distance(home.position),
+                        s[1].distance(home.position),
+                        s[2].distance(home.position)
+                    )
+                })
+                .unwrap_or_default();
             println!(
-                "{seed:>5} seat {seat}: poor {poor:?} | within {reach} ly C/M/Y {:.0}/{:.0}/{:.0} kt, worlds >= 1 kt {}/{}/{}",
-                kt[0], kt[1], kt[2], rich[0], rich[1], rich[2]
+                "{seed:>5} seat {seat}: poor {poor:?} | home at ({:.1}, {:.1}) | within {reach} ly C/M/Y {:.0}/{:.0}/{:.0} kt, worlds >= 1 kt {}/{}/{}, richest {:.0} kt at {:.1} ly / {:.0} at {:.1} / {:.0} at {:.1}{sites}",
+                home.position.x, home.position.y, kt[0], kt[1], kt[2], rich[0], rich[1], rich[2],
+                best[0].0, best[0].1, best[1].0, best[1].1, best[2].0, best[2].1
             );
         }
         let mut cfg = SimConfig::new(seed);
@@ -77,8 +118,9 @@ fn main() {
                     }
                 }
                 line += &format!(
-                    " | s{seat} col {:>4} stock C/M/Y {:>7.1}/{:>7.1}/{:>7.1}",
+                    " | s{seat} col {:>4} out {:>4} stock C/M/Y {:>7.1}/{:>7.1}/{:>7.1}",
                     sim.tree_stock(seat).0,
+                    snap.players[seat].mining_outposts,
                     stock[0],
                     stock[1],
                     stock[2]

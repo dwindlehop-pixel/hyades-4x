@@ -10,12 +10,14 @@
 //! `CS_GALAXY=<seed>` holds the galaxy fixed while `CS_SEEDS` varies only the
 //! simulation's seed. `CS_GROUND=identical` or `CS_GROUND=rotated` generates
 //! the galaxy on `Ground::Identical` or `Ground::ColorRotated`; otherwise
-//! `Ground::Random`.
+//! `Ground::Random`. `CS_HOMEWORLDS=centered` makes the homeworlds
+//! `Homeworlds::ColorCentered`; otherwise `Homeworlds::Trio`. `CS_SITE_BAND`
+//! and `CS_SITE_LY` override its planted sites' peak and distance.
 //!
 //! Run: `cargo run --release --example colony_spread -- <seats> <horizon> [sample years ...]`;
 //! `CS_SEEDS=2,3,5,11`. Defaults: 3 seats, 1,500 yr, samples at 200, 400,
 //! 800, 1,200 and the horizon.
-use hyades_engine::galaxy::{Galaxy, GalaxyConfig, Ground};
+use hyades_engine::galaxy::{Galaxy, GalaxyConfig, Ground, Homeworlds};
 use hyades_engine::sim::{SimConfig, Simulation};
 use std::io::Write;
 
@@ -43,8 +45,9 @@ fn main() {
     }
     samples.retain(|&t| t <= horizon);
     println!(
-        "colony_spread: {seats} seats, horizon {horizon} yr, ground {:?}, seeds {:?}",
+        "colony_spread: {seats} seats, horizon {horizon} yr, ground {:?}, homeworlds {:?}, seeds {:?}",
         std::env::var("CS_GROUND").unwrap_or_else(|_| "random".into()),
+        std::env::var("CS_HOMEWORLDS").unwrap_or_else(|_| "trio".into()),
         seeds()
     );
     std::io::stdout().flush().ok();
@@ -61,6 +64,15 @@ fn main() {
             Ok("rotated") => Ground::ColorRotated,
             _ => Ground::Random,
         };
+        if std::env::var("CS_HOMEWORLDS").is_ok_and(|v| v.trim() == "centered") {
+            g.homeworlds = Homeworlds::ColorCentered;
+        }
+        if let Some(b) = std::env::var("CS_SITE_BAND").ok().and_then(|v| v.trim().parse().ok()) {
+            g.homeworld_site_band = b;
+        }
+        if let Some(d) = std::env::var("CS_SITE_LY").ok().and_then(|v| v.trim().parse().ok()) {
+            g.homeworld_site_distance_ly = d;
+        }
         let mut sim = Simulation::with_baseline(Galaxy::generate(g).unwrap(), cfg);
         let mut k = 0;
         let take = |sim: &Simulation, k: usize| {

@@ -3869,6 +3869,59 @@ summing the empire's holdings at every production decision and outpost
 ranking — O(worlds and outposts held) per call. A running total kept at each
 of the ~90 sites that write holdings would make it O(1); not done.
 
+## D.41 Color-centered homeworlds on three grounds
+
+*Supports galaxy §3 (`Homeworlds::ColorCentered`, built, off by default) and
+T-147. The author's direction: homeworlds generated at random with under
+`Band I` of every basic, no trio, each equidistant from a region's center of
+each color, on `ColorRotated`, `Identical` and `Random` ground, with a minimum
+threshold of each color if needed. Beds: `examples/ground_census` (deposit by
+color within reach of each homeworld, richest world of each color, colonies,
+outposts and stock over time) and `examples/colony_spread` (card-free, 3
+seats, 1,500 yr, the 12 seeds of §D.37), holdings-based pricing in both.*
+
+**Equidistance from the field's own sites cannot carry a threshold.** A
+search over every Cyan–Magenta–Yellow triple of sites, for the circumcenter
+nearest each seat's nominal point inside the seat's own sector (built, then
+replaced): with no threshold on the sites' peaks, seeds 7 and 42 had a sector
+with no triple at a common distance up to 30 ly; where one existed the colors
+within 30 ly of it differed 10³–10⁴-fold (seed 31337: 549 / 4,815 /
+968,944 kt), because a site's peak runs from Band 2.0 far from its hue's
+hotspot to Band IV near it. With every peak at least Band 3.0, no seat on
+seeds 1, 7, 42 or 31337 had a triple in its sector at any distance from 5 to
+30 ly. Without the sector rule, two and three seats took the same point.
+**Inference, stated as one:** sites of all three hues at strength coexist only
+where the three hotspots overlap, near the galactic center.
+
+**Built instead: planted sites.** One site of each hue is planted at
+`homeworld_site_distance_ly` (10 ly) from the homeworld, 120° apart, at peak
+`homeworld_site_band`; on identical ground seat 0's are planted inside its
+wedge and turned with it. Within 20 ly of seat 0 the planted colors read
+43–1,991 kt at Band 3.0 and 1,632–21,727 kt at Band 4.0, against 24,459–293,852
+kt of the sector's own dominant hue; Cyan, whose site sits on the outward side
+of the triangle where the disk is thinner, was the weakest on every seed.
+
+**Spread at 1,500 yr** (12 galaxies; mean, median; colonies summed over seats):
+
+| homeworlds | `Random` | `Identical` | `ColorRotated` |
+|---|---|---|---|
+| trio (§D.40) | 60.1, 64.3; 3,547.2 | 24.3, 18.8; 3,474.9 | 31.7, 25.4; 3,475.2 |
+| color-centered, planted Band 3.0 | 322.3, 338.8; 3,521.5 | 70.6, 31.4; 3,449.1 | 129.8, 80.2; 3,449.2 |
+| color-centered, planted Band 4.0 | 191.8, 154.7; 3,510.7 | 81.8, 41.2; 3,439.4 | 86.7, 60.5; 3,439.9 |
+
+**The start is what differs** (seed 2, `Identical`, seat 0). With the trio:
+2 outposts at 25 yr, 24 colonies at 100, 74 at 200. Color-centered at Band
+4.0: 3 outposts at 25 yr and 8 at 100, one colony until ~110 yr, 10 at 200;
+the home bank held 0.0 kt through 100 yr. Within 5 ly of the homeworld the
+trio holds 2,828 kt of each companion color at 2.0 ly; the color-centered
+homeworld holds 1–7 kt of its two scarce colors there, and its richest world
+of each color lies 4–14 ly out. The seats stay identical to 125 yr and part
+by 400 yr (41 / 94 / 40 colonies at Band 3.0). **Inference, stated as one:**
+the outposts a color-centered empire opens first are small or far, the start
+runs a century longer, and small differences have that century to compound.
+Confidence about 60%; an ablation planting a world at each site's center
+would test it.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

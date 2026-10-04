@@ -112,8 +112,10 @@ poor color and by its companions' colors (appendix §D.39); removing both
 reaches 17.3, and a live weight priced from the empire's holdings plus equal
 companions 19.4, while the live weight alone raises `ColorRotated` to 31.5
 (scratch). **Holdings-based pricing is ratified and landed** (appendix
-§D.40): spread random 60.1, identical 24.3, color-rotated 31.7. **What would
-settle the rest:** the author's choice of default ground, or another way to
+§D.40): spread random 60.1, identical 24.3, color-rotated 31.7.
+Color-centered homeworlds (no trio, three planted color sites; built, off by
+default) widen it on every ground: identical 70.6 at Band 3.0 and 81.8 at
+Band 4.0 (appendix §D.41). **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 
 ---
