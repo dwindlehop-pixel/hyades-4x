@@ -1069,6 +1069,65 @@ struct SynthesisPlan {
     apex_draw: f64,
 }
 
+/// **A center's next works bill, its bank, and whether it forges** — the
+/// three things its color wants and its color prices are both read from
+/// ([`Simulation::center_book`]).
+#[derive(Clone, Copy, Debug)]
+struct CenterBook {
+    bill: [Price; 3],
+    bank: Minerals,
+    forge: bool,
+}
+
+impl CenterBook {
+    /// **Its shortfall per color** against the bill. **A forge wants a
+    /// balanced set** (galaxy §4.5): every color up to the largest of what it
+    /// holds and of its next whole Band's colors. Each super draws its two
+    /// basics 1:1 and apex the three supers equally, so a balanced set of
+    /// basics is what synthesis turns wholly into apex.
+    fn deficit(&self) -> [Price; 3] {
+        let held = Basic::ALL.map(|c| Price::new(self.bank.get_basic(c)));
+        if self.forge {
+            let top = held.iter().chain(self.bill.iter()).fold(Price::ZERO, |a, &b| a.max(b));
+            return held.map(|h| (top - h).max(Price::ZERO));
+        }
+        core::array::from_fn(|i| (self.bill[i] - held[i]).max(Price::ZERO))
+    }
+
+    /// **Its pressure per color** ([`Simulation::color_pressure_of`]).
+    fn pressure(&self) -> [f64; 3] {
+        if self.forge {
+            return [1.0; 3];
+        }
+        core::array::from_fn(|i| {
+            if self.bill[i] <= Price::ZERO {
+                return 0.0;
+            }
+            (1.0 - self.bank.get_basic(Basic::ALL[i]) / self.bill[i].kilotons().max(1e-12)).clamp(0.0, 1.0)
+        })
+    }
+}
+
+/// **An empire's shipping backlog** (T-147, R-P19), read once per economy
+/// tick: the prices its centers post per color, weighted by what each wants,
+/// and per rock the wanted ore waiting beyond the holds of the haulers based
+/// there. What [`Simulation::hauler_quote`] prices a new hauler against.
+#[derive(Clone, Debug, Default)]
+struct Shipping {
+    /// When it was last read; `None` before the first read.
+    at: Option<f64>,
+    /// `$`/kt per color, Cyan, Magenta, Yellow.
+    price: [f64; 3],
+    /// `(rock, kt waiting beyond the holds based there per color, share of the
+    /// haulers sent there not lost there)`, rock-id order.
+    backlog: Vec<(u64, [f64; 3], f64)>,
+    /// The entry in `backlog` worth most to a hauler.
+    best: Option<usize>,
+    /// Counts the reads at which a backlog appeared where there was none, so
+    /// a declined decision that waits on events is asked again.
+    appeared: u64,
+}
+
 /// **What a declined decision is waiting on** (the author's rulings: no
 /// decision has a cadence of its own, and a decision is conditioned on the
 /// events that can change it). A center whose yard declined is not asked again
@@ -1078,7 +1137,8 @@ struct SynthesisPlan {
 ///   bank short of the cheapest price it could not pay, or its whole Band unpayable
 ///   in some color), its empire scanned a world that can rank as a colony or
 ///   a mining outpost, targeted a world, any empire claimed one, or its
-///   reserve changed;
+///   reserve changed, or a shipping backlog appeared where it had none
+///   ([`Shipping`]);
 /// - `level` — its population crossed a band;
 /// - `infra` — its works changed;
 /// - `sentries` — the sentries its Doctrine wants;
@@ -1089,7 +1149,7 @@ struct SynthesisPlan {
 #[derive(Clone, Copy, Debug)]
 struct Declined {
     saving: bool,
-    events: (u64, u64, usize, u64, usize, u64),
+    events: (u64, u64, usize, u64, usize, u64, u64),
     level: BandTier,
     infra: Price,
     sentries: u32,
@@ -3683,6 +3743,12 @@ pub struct Simulation {
     /// distance to the new target, not by position in the pool.
     reserve_miners: Vec<Vec<Entity>>,
     reserve_freighters: Vec<Vec<Entity>>,
+    /// Per seat, [`Shipping`].
+    shipping: Vec<Shipping>,
+    /// **Haulers sent to each rock, and lost there** — wrecked, or withdrawn
+    /// from it under fire — keyed `(seat, rock)` (T-147). What a hauler's price
+    /// reads to see the loss (R-WAR47's rule, applied to freight).
+    hauler_record: BTreeMap<(u32, u64), (u32, u32)>,
     /// **Each center's standing order** — the order it wants most and cannot
     /// yet pay, because it owes a refined material the center neither holds nor
     /// can synthesize (`Hyades_matching.md` §10.4, the author's ruling on
@@ -3903,6 +3969,8 @@ impl Simulation {
             exchange_settlement: true,
             reserve_miners: vec![Vec::new(); n],
             reserve_freighters: vec![Vec::new(); n],
+            shipping: vec![Shipping::default(); n],
+            hauler_record: BTreeMap::new(),
             standing: BTreeMap::new(),
             current_round: 0,
             inert_card_plays: 0,
@@ -6827,6 +6895,8 @@ impl Simulation {
             self.world.knowledge.get_mut(pe).unwrap().scanned.live = live;
         }
         let cands: Vec<Candidate> = flatten_candidate_slots(&best);
+        self.refresh_shipping(p);
+        let (hauler, hauler_cost, hauler_value, hauler_cost_value) = self.hauler_quote(p, center);
         // Built after `cands`, so the survey decision can see how much frontier
         // this empire has left to aim at.
         let mut ctx = ProductionContext {
@@ -6889,6 +6959,10 @@ impl Simulation {
             candidate_count: count,
             survey_frontier,
             forge,
+            hauler,
+            hauler_cost,
+            hauler_value,
+            hauler_cost_value,
         };
 
         // **At a forge, an order paid only in basics is priced out**: its
@@ -6898,6 +6972,7 @@ impl Simulation {
         if forge {
             ctx.infra_cost = UNPAYABLE;
             ctx.infra_bill = [UNPAYABLE; 3];
+            ctx.hauler_cost = UNPAYABLE;
             let [colonizer, general, miner, scout, picket] = super_billed;
             for (billed, cost) in [
                 (colonizer, &mut ctx.colonizer_cost),
@@ -6989,6 +7064,7 @@ impl Simulation {
                 ctx.light_vehicle_cost,
                 ctx.picket_cost,
                 ctx.sentry_cost,
+                if ctx.hauler.is_some() { ctx.hauler_cost } else { UNPAYABLE },
             ]
             .into_iter()
             .filter(|&c| c > stock_total)
@@ -7301,6 +7377,23 @@ impl Simulation {
                     return None;
                 }
                 let target = blockade_port.map(|e| *self.world.planet_id.get(e).unwrap()).or(target);
+                // **A hauler goes to the rock whose backlog is worth most**
+                // (T-147), chosen before the bill, so a hauler with no backlog
+                // to serve is never paid for.
+                let target = if role == Role::Freighter {
+                    let rock = self.shipping[p].best.map(|i| Entity(self.shipping[p].backlog[i].0))?;
+                    // One in Reserve goes first: it is already paid for.
+                    let at = *self.world.position.get(rock).unwrap();
+                    if let Some(e) = self.take_nearest_reserve(p, false, at) {
+                        let hold = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
+                        self.retask_freighter(e, p, center, rock);
+                        self.ship_backlog(p, rock, hold.cargo_capacity(&self.config).kilotons());
+                        return Some(Price::ZERO);
+                    }
+                    self.world.planet_id.get(rock).copied()
+                } else {
+                    target
+                };
 
                 // A Miner is produced together with the Freighter that hauls for
                 // it (roles §5: the nearest center produces both), so the pair is
@@ -7385,7 +7478,7 @@ impl Simulation {
                 // (`picket_blocks` tests `holder != seat`); it must not deny
                 // its owner.
                 if let Some(t) = target {
-                    if role != Role::Picket {
+                    if role != Role::Picket && role != Role::Freighter {
                         self.mark_targeted(p, t);
                     }
                 }
@@ -7491,6 +7584,11 @@ impl Simulation {
                             center,
                             launch_delay,
                         );
+                    }
+                    (Role::Freighter, Some(t)) => {
+                        let te = self.planet_entity[t.0 as usize];
+                        self.spawn_freighter(p, center, center_pos, te, hull_type, launch_delay);
+                        self.ship_backlog(p, te, hull_type.cargo_capacity(&self.config).kilotons());
                     }
                     (r, Some(t)) => {
                         let te = self.planet_entity[t.0 as usize];
@@ -8252,6 +8350,7 @@ impl Simulation {
         self.world.role.insert(e, Role::Freighter);
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { base: outpost, outpost, destination: center, outbound: true, stops: 0 });
+        self.hauler_record.entry((p as u32, outpost.0)).or_default().0 += 1;
         let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, from, dest, accel, 0.0);
         self.schedule_at(arrive, EventKind::FreighterArrive { vehicle: e });
@@ -8852,6 +8951,7 @@ impl Simulation {
         self.world.cargo.insert(e, Minerals::default());
         self.world.home_center.insert(e, center);
         self.world.shuttle.insert(e, Shuttle { base: outpost, outpost, destination: center, outbound: true, stops: 0 });
+        self.hauler_record.entry((p as u32, outpost.0)).or_default().0 += 1;
         let accel = self.laden_accel(e);
         let arrive = self.set_leg(e, from, dest, accel, launch_delay);
         self.schedule_at(arrive, EventKind::FreighterArrive { vehicle: e });
@@ -9281,8 +9381,8 @@ impl Simulation {
         self.centroid_cache[owner.0 as usize] = None;
     }
 
-    /// **What a center will pay for one kilotonne of a color, in `$`/kt**
-    /// (politics §3.2, T-84).
+    /// **What a center will pay for one kilotonne of each color, in `$`/kt**
+    /// (politics §3.2, T-84), Cyan, Magenta, Yellow.
     ///
     /// ```text
     /// wtp_c = base_value[c] · doctrine_demand[c] · color_pressure_c(center) · forge premium
@@ -9295,21 +9395,26 @@ impl Simulation {
     /// The two Doctrine fields default to the works mix
     /// (`Hyades_industry.md` §6.10) rather than to a second independent
     /// statement of what an empire wants.
-    fn willingness_to_pay(&self, center: Entity, color: Basic, doctrine: &Doctrine) -> f64 {
-        let i = color as usize;
-        doctrine.base_value[i] * doctrine.doctrine_demand[i] * self.demand_of(center, i, doctrine)
+    ///
+    /// All three colors at once, because every caller reads more than one and
+    /// each color's pressure reads the same bill (appendix §D.47: per-color
+    /// calls re-read it and doubled the cost of an event).
+    fn willingness_to_pay(&self, center: Entity, doctrine: &Doctrine) -> [f64; 3] {
+        let d = self.demand_of(center, doctrine);
+        core::array::from_fn(|i| doctrine.base_value[i] * doctrine.doctrine_demand[i] * d[i])
     }
 
-    /// **How hard a center pulls on color `i`**: its [`Self::color_pressure_of`],
-    /// times [`Doctrine::forge_premium`] at a forge — the one factor the
-    /// Exchange's bids, a center's offer test and freight's delivery score all
-    /// read, so a forge outbids and out-pulls every other use by the same
-    /// margin.
-    fn demand_of(&self, center: Entity, i: usize, doctrine: &Doctrine) -> f64 {
-        self.color_pressure_of(center, i) * self.forge_premium_at(center, doctrine)
+    /// **How hard a center pulls on each color**: its
+    /// [`Self::color_pressure_of`], times [`Doctrine::forge_premium`] at a
+    /// forge — the one factor the Exchange's bids, a center's offer test and
+    /// freight's delivery score all read, so a forge outbids and out-pulls
+    /// every other use by the same margin.
+    fn demand_of(&self, center: Entity, doctrine: &Doctrine) -> [f64; 3] {
+        let premium = self.forge_premium_at(center, doctrine);
+        self.color_pressure_of(center).map(|p| p * premium)
     }
 
-    /// **A center's pressure on one color** (T-147, R-P19): the share of its
+    /// **A center's pressure on each color** (T-147, R-P19): the share of its
     /// next works bill in that color it does not hold, `1 − held_c / bill_c`,
     /// clamped to `[0, 1]`; `1` at a forge, which forges whatever it holds.
     ///
@@ -9319,23 +9424,33 @@ impl Simulation {
     /// priced the color it lacked at zero: no bid on the Exchange, no hauler
     /// routed to it, and its bank stood there for the rest of the run
     /// (appendix §D.45).
-    fn color_pressure_of(&self, center: Entity, i: usize) -> f64 {
+    fn color_pressure_of(&self, center: Entity) -> [f64; 3] {
         if self.is_forge(center) {
-            return 1.0;
+            return [1.0; 3];
         }
-        let Some(o) = self.world.owner.get(center).copied() else { return 0.0 };
-        let Some(bill) = self.next_bill(center, o) else { return 0.0 };
-        if bill[i] <= Price::ZERO {
-            return 0.0;
-        }
-        let held = self.held_at(center).map_or(0.0, |m| m.get_basic(Basic::ALL[i]));
-        (1.0 - held / bill[i].kilotons().max(1e-12)).clamp(0.0, 1.0)
+        let Some(o) = self.world.owner.get(center).copied() else { return [0.0; 3] };
+        self.center_book(center, o).map_or([0.0; 3], |b| b.pressure())
     }
 
-    /// [`Doctrine::forge_premium`] at a forge, `1` elsewhere.
+    /// **[`Doctrine::forge_premium`] at a forge, falling with what it holds**
+    /// (T-147, the author's ruling: a forge's price varies with its holding);
+    /// `1` elsewhere.
+    ///
+    /// ```text
+    /// premium · B / (B + H)
+    /// ```
+    ///
+    /// `H` is everything the forge holds, every tier, kt; `B` the price of a
+    /// whole Band IV works stock, kt — the ladder's own scale, no new constant.
+    /// An empty forge bids the full premium, one holding `B` half of it, and
+    /// one holding `(premium − 1)·B` what an ordinary center pays at full
+    /// pressure. Nothing consumes supers or apex card-free, so a forge's
+    /// holding grows and its pull on freight falls (appendix §D.46).
     fn forge_premium_at(&self, center: Entity, doctrine: &Doctrine) -> f64 {
         if self.is_forge(center) {
-            doctrine.forge_premium
+            let b = infra_price_at_band(BandTier::MAX_PLAYABLE.band().bands() as usize, &self.config).kilotons();
+            let h = self.held_at(center).map_or(0.0, |m| m.total().kilotons());
+            doctrine.forge_premium * b / (b + h)
         } else {
             1.0
         }
@@ -9364,7 +9479,7 @@ impl Simulation {
     }
 
     /// The event counters a declined decision at `center` is conditioned on.
-    fn decision_events(&self, center: Entity) -> Option<(u64, u64, usize, u64, usize, u64)> {
+    fn decision_events(&self, center: Entity) -> Option<(u64, u64, usize, u64, usize, u64, u64)> {
         let p = self.world.owner.get(center)?.0 as usize;
         let k = self.world.knowledge.get(self.player_entity[p])?;
         let reserve = self.reserve_miners[p].len() + self.reserve_freighters[p].len();
@@ -9375,6 +9490,7 @@ impl Simulation {
             self.claims,
             reserve,
             self.cards_played,
+            self.shipping[p].appeared,
         ))
     }
 
@@ -9517,10 +9633,11 @@ impl Simulation {
                 let bank = self.available_at(e);
                 let pos = *self.world.position.get(e).unwrap();
                 let at = [pos.x, pos.y, pos.z];
+                let wtp = self.willingness_to_pay(e, &doctrine);
                 for (i, &c) in Basic::ALL.iter().enumerate() {
                     let short = deficit[i].kilotons();
                     if short > 1e-9 {
-                        let price = self.willingness_to_pay(e, c, &doctrine);
+                        let price = wtp[i];
                         if price > 0.0 {
                             self.exchange.posted[i].0 += 1;
                             self.exchange.markets[i].bids.push(matching::Offer {
@@ -9541,7 +9658,7 @@ impl Simulation {
                             self.exchange.posted[i].1 += 1;
                             self.exchange.markets[i].asks.push(matching::Offer {
                                 entity: e.0,
-                                price: self.willingness_to_pay(e, c, &doctrine),
+                                price: wtp[i],
                                 qty: spare,
                                 pos: at,
                                 owner,
@@ -10089,6 +10206,137 @@ impl Simulation {
         out
     }
 
+    /// **Read an empire's shipping backlog** ([`Shipping`]), at most once per
+    /// economy tick: per color, the want-weighted mean of the prices its
+    /// centers post ([`Self::willingness_to_pay`]); per rock it holds ore at,
+    /// the ore its centers want ([`Self::color_deficit`], summed) beyond the
+    /// holds of the haulers already based there, flying or not, which lift it
+    /// on their next visits.
+    fn refresh_shipping(&mut self, p: usize) {
+        if self.shipping[p].at.is_some_and(|t| self.clock - t < self.config.cycle_years) {
+            return;
+        }
+        let owner = PlayerId(p as u32);
+        let doctrine = self.doctrine_of(p);
+        let (mut want, mut paid) = ([0.0f64; 3], [0.0f64; 3]);
+        for &e in &self.owned_planets[p] {
+            let d = self.color_deficit(e, owner);
+            if d.iter().all(|w| *w <= Price::ZERO) {
+                continue;
+            }
+            let wtp = self.willingness_to_pay(e, &doctrine);
+            for i in 0..3 {
+                let w = d[i].kilotons();
+                if w > 0.0 {
+                    want[i] += w;
+                    paid[i] += w * wtp[i];
+                }
+            }
+        }
+        let price: [f64; 3] = core::array::from_fn(|i| if want[i] > 0.0 { paid[i] / want[i] } else { 0.0 });
+        let hold = HullType::MediumSystems.cargo_capacity(&self.config).kilotons();
+        // The holds already based at each rock.
+        let mut based: BTreeMap<u64, f64> = BTreeMap::new();
+        for (k, sh) in self.world.shuttle.items.iter().enumerate() {
+            let Some(sh) = sh else { continue };
+            let e = Entity(k as u64);
+            if self.world.owner.get(e).copied() != Some(owner)
+                || self.world.role.get(e).copied() != Some(Role::Freighter)
+            {
+                continue;
+            }
+            let h = self.world.hull_type.get(e).copied().unwrap_or(HullType::MediumSystems);
+            *based.entry(sh.base.0).or_default() += h.cargo_capacity(&self.config).kilotons();
+        }
+        let mut backlog = Vec::new();
+        for (&(_, rock), pile) in self.holdings.elsewhere.range((p as u32, 0)..=(p as u32, u64::MAX)) {
+            let wanted: [f64; 3] = core::array::from_fn(|i| pile.get_basic(Basic::ALL[i]).min(want[i]).max(0.0));
+            let total: f64 = wanted.iter().sum();
+            let lifted = based.get(&rock).copied().unwrap_or(0.0);
+            if total > lifted {
+                let keep = (total - lifted) / total;
+                let (sent, lost) = self.hauler_record.get(&(p as u32, rock)).copied().unwrap_or((0, 0));
+                let survives = if sent > 0 { 1.0 - f64::from(lost.min(sent)) / f64::from(sent) } else { 1.0 };
+                backlog.push((rock, wanted.map(|w| w * keep), survives));
+            }
+        }
+        let had = self.shipping[p].best.is_some();
+        let s = &mut self.shipping[p];
+        s.at = Some(self.clock);
+        s.price = price;
+        s.backlog = backlog;
+        s.best = Self::best_backlog(&s.backlog, &s.price, hold);
+        if !had && s.best.is_some() {
+            s.appeared += 1;
+        }
+    }
+
+    /// **What one hold of a rock's backlog is worth**, `$`: up to `hold` kt
+    /// of the waiting ore at `price`, times the share of haulers sent there
+    /// that were not lost there — a trip that does not come back delivers
+    /// nothing (the risk premium of politics §3, read from the empire's own
+    /// record rather than set).
+    fn trip_worth(b: &[f64; 3], survives: f64, price: &[f64; 3], hold: f64) -> f64 {
+        let total: f64 = b.iter().sum();
+        let take = if total > 0.0 { (hold / total).min(1.0) } else { 0.0 };
+        survives * (0..3).map(|i| b[i] * take * price[i]).sum::<f64>()
+    }
+
+    /// The entry of `backlog` one hold of which is worth most at `price`;
+    /// rock id breaks ties.
+    fn best_backlog(backlog: &[(u64, [f64; 3], f64)], price: &[f64; 3], hold: f64) -> Option<usize> {
+        let mut best: Option<(usize, f64)> = None;
+        for (k, (_, b, survives)) in backlog.iter().enumerate() {
+            let w = Self::trip_worth(b, *survives, price, hold);
+            if w > 0.0 && best.is_none_or(|(_, bw)| w > bw) {
+                best = Some((k, w));
+            }
+        }
+        best.map(|(k, _)| k)
+    }
+
+    /// **The hauler `center` would build, and both sides of its price**
+    /// ([`ProductionContext::hauler`]): the hull for the best rock, its cost,
+    /// one trip's worth at the empire's prices, and its cost at this center's.
+    fn hauler_quote(&self, p: usize, center: Entity) -> (Option<HullType>, Price, f64, f64) {
+        let s = &self.shipping[p];
+        let Some((rock, b, survives)) = s.best.map(|i| s.backlog[i]) else {
+            return (None, UNPAYABLE, 0.0, 0.0);
+        };
+        let hull = self.freighter_hull(p, center, Entity(rock), 1);
+        // A hauler in Reserve is already paid for (`mining_pair_price`).
+        let cost = if self.reserve_freighters[p].is_empty() { hull_cost(hull, &self.config) } else { Price::ZERO };
+        let value = Self::trip_worth(&b, survives, &s.price, hull.cargo_capacity(&self.config).kilotons());
+        // What the payment draws is proportional to the bank, so its worth here
+        // is the bank-weighted price.
+        let bank = self.held_at(center).copied().unwrap_or_default();
+        let doctrine = self.doctrine_of(p);
+        let held: f64 = Basic::ALL.iter().map(|&c| bank.get_basic(c)).sum();
+        let own = if held > 0.0 {
+            let wtp = self.willingness_to_pay(center, &doctrine);
+            Basic::ALL.iter().enumerate().map(|(i, &c)| bank.get_basic(c) * wtp[i]).sum::<f64>() / held
+        } else {
+            0.0
+        };
+        (Some(hull), cost, value, cost.kilotons() * own)
+    }
+
+    /// A hauler sent to `rock` takes one hold off its backlog.
+    fn ship_backlog(&mut self, p: usize, rock: Entity, hold: f64) {
+        let s = &mut self.shipping[p];
+        if let Some(k) = s.backlog.iter().position(|(r, _, _)| *r == rock.0) {
+            let b = &mut s.backlog[k].1;
+            let total: f64 = b.iter().sum();
+            let keep = if total > hold { (total - hold) / total } else { 0.0 };
+            for x in b.iter_mut() {
+                *x *= keep;
+            }
+        }
+        let medium = HullType::MediumSystems.cargo_capacity(&self.config).kilotons();
+        let s = &mut self.shipping[p];
+        s.best = Self::best_backlog(&s.backlog, &s.price, medium);
+    }
+
     /// **An empire's ore waiting at outposts**, summed over every pile it holds.
     ///
     /// Delivered ore lands here, not in a bank (§10.6) — so a census that reads
@@ -10427,12 +10675,18 @@ impl Simulation {
         doctrine: &Doctrine,
         refined: bool,
     ) -> f64 {
-        let want = self.color_deficit(center, owner);
+        // One read of the bill for both the want and the price.
+        let book = self.center_book(center, owner);
+        let want = book.map_or([Price::ZERO; 3], |b| b.deficit());
+        let q: [f64; 3] = core::array::from_fn(|i| want[i].kilotons().min(cargo.get_basic(Basic::ALL[i])));
         let mut value = 0.0;
-        for (i, &c) in Basic::ALL.iter().enumerate() {
-            let q = want[i].kilotons().min(cargo.get_basic(c));
-            if q > 0.0 {
-                value += q * self.willingness_to_pay(center, c, doctrine);
+        if let (true, Some(b)) = (q.iter().any(|&x| x > 0.0), book) {
+            let premium = self.forge_premium_at(center, doctrine);
+            let pressure = b.pressure();
+            for i in 0..3 {
+                if q[i] > 0.0 {
+                    value += q[i] * (doctrine.base_value[i] * doctrine.doctrine_demand[i] * (pressure[i] * premium));
+                }
             }
         }
         if refined {
@@ -10450,24 +10704,18 @@ impl Simulation {
     /// A center's per-color shortfall against its **next works bill** — the
     /// quantity T-73 made meaningful and nothing was measuring.
     fn color_deficit(&self, center: Entity, owner: PlayerId) -> [Price; 3] {
-        let Some(bill) = self.next_bill(center, owner) else {
-            return [Price::ZERO; 3];
-        };
-        let bank = self.held_at(center).copied().unwrap_or_default();
-        // **A forge wants a balanced set** (galaxy §4.5): every color up to
-        // the largest of what it holds and of its next whole Band's colors. Each
-        // super draws its two basics 1:1 and apex the three supers equally, so
-        // a balanced set of basics is what synthesis turns wholly into apex.
-        if self.is_forge(center) {
-            let held = Basic::ALL.map(|c| Price::new(bank.get_basic(c)));
-            let top = held.iter().chain(bill.iter()).fold(Price::ZERO, |a, &b| a.max(b));
-            return held.map(|h| (top - h).max(Price::ZERO));
-        }
-        let mut out = [Price::ZERO; 3];
-        for (i, &c) in Basic::ALL.iter().enumerate() {
-            out[i] = (bill[i] - Price::new(bank.get_basic(c))).max(Price::ZERO);
-        }
-        out
+        self.center_book(center, owner).map_or([Price::ZERO; 3], |b| b.deficit())
+    }
+
+    /// **What a center's color prices and wants are read from** — its next
+    /// works bill, its bank and whether it forges — read once for a caller
+    /// that wants both ([`CenterBook`]). `None` for a planet with no economy.
+    fn center_book(&self, center: Entity, owner: PlayerId) -> Option<CenterBook> {
+        Some(CenterBook {
+            bill: self.next_bill(center, owner)?,
+            bank: self.held_at(center).copied().unwrap_or_default(),
+            forge: self.is_forge(center),
+        })
     }
 
     /// A center's next works bill, per color — what its next whole Band costs. `None`
@@ -10506,7 +10754,7 @@ impl Simulation {
         Some(CenterBid {
             dest,
             at: *self.world.position.get(dest)?,
-            pressure: core::array::from_fn(|i| self.demand_of(dest, i, &self.doctrine_of(owner.0 as usize))),
+            pressure: self.demand_of(dest, &self.doctrine_of(owner.0 as usize)),
             doctrine: self.doctrine_of(owner.0 as usize),
             works: self.world.works.get(self.player_entity[owner.0 as usize]).copied().unwrap_or_default(),
             want: want.basic,
@@ -10553,13 +10801,13 @@ impl Simulation {
         let t = math::ship_travel_years(from.distance(bid.at), accel);
         let discount = transcendental::exp_fast(-self.config.trade_decay_lambda * t);
         // `willingness_to_pay`, term for term, on both sides of §8.1's test.
+        let own = self.demand_of(origin, &bid.doctrine);
         for i in 0..3 {
             if abundance[i] <= Price::ZERO {
                 continue;
             }
             let k = bid.doctrine.base_value[i] * bid.doctrine.doctrine_demand[i];
-            let own = self.color_pressure_of(origin, i);
-            if k * bid.pressure[i] * discount > k * own {
+            if k * bid.pressure[i] * discount > k * own[i] {
                 out.basic[i] = abundance[i].min(bid.want[i]);
             }
         }
@@ -14320,6 +14568,14 @@ mod tests {
             let mut cfg = test_cfg(51);
             cfg.horizon_years = 1600.0; // several barriers, and time to open outposts
             let mut sim = Simulation::with_baseline(galaxy, cfg);
+            // **The one channel clearing has into the world is a forge's
+            // holding** (T-147): a forge that sold supers keeps them back from
+            // apex, so it holds more, and its price reads what it holds. A
+            // premium of zero prices a forge at nothing whatever it holds,
+            // which closes that channel and leaves the claim this test makes.
+            for &pe in &sim.player_entity {
+                sim.world.doctrine.get_mut(pe).unwrap().forge_premium = 0.0;
+            }
             sim.exchange_posting = clear;
             // **Stage 4 only.** T-77 schedules settlement, which does move ore;
             // holding it off is what keeps this a test of clearing alone.
@@ -17126,9 +17382,9 @@ mod tests {
         let (origin, dest, _) = two_centers(&mut sim, 0.05);
         let want = sim.wanted_here(dest, PlayerId(0), &Minerals::default());
         assert!(want.iter().all(|w| *w > Price::ZERO), "the empty center wants every color");
-        assert_eq!(sim.color_pressure_of(origin, 2), 0.0, "origin is long Yellow");
-        assert_eq!(sim.color_pressure_of(origin, 0), 1.0, "and holds no Cyan");
-        assert_eq!(sim.color_pressure_of(dest, 2), 1.0);
+        assert_eq!(sim.color_pressure_of(origin)[2], 0.0, "origin is long Yellow");
+        assert_eq!(sim.color_pressure_of(origin)[0], 1.0, "and holds no Cyan");
+        assert_eq!(sim.color_pressure_of(dest)[2], 1.0);
 
         let accel = G * sim.thrust_to_mass(HullType::MediumSystems, Kilotons::new(10.0));
         let none = [Price::ZERO; 4];
@@ -17177,12 +17433,71 @@ mod tests {
             Minerals { magenta: 2.0 * bill[1].kilotons(), yellow: 2.0 * bill[2].kilotons(), ..Default::default() };
         assert_eq!(sim.mineral_pressure_of(dest), 0.0, "the total passes the bill");
         let doctrine = sim.doctrine_of(0);
-        assert!(sim.willingness_to_pay(dest, Basic::Cyan, &doctrine) > 0.0);
-        assert_eq!(sim.willingness_to_pay(dest, Basic::Yellow, &doctrine), 0.0);
+        assert!(sim.willingness_to_pay(dest, &doctrine)[0] > 0.0);
+        assert_eq!(sim.willingness_to_pay(dest, &doctrine)[2], 0.0);
         let cyan = Minerals { cyan: 1.0, ..Default::default() };
         let yellow = Minerals { yellow: 1.0, ..Default::default() };
         assert!(sim.demand_value(dest, PlayerId(0), &cyan, &doctrine, false) > 0.0);
         assert_eq!(sim.demand_value(dest, PlayerId(0), &yellow, &doctrine, false), 0.0);
+    }
+
+    /// **A forge's price falls with what it holds** (T-147, the author's
+    /// ruling): the full premium on an empty bank, half of it at one Band IV
+    /// works stock held, and an ordinary center's full price at
+    /// `premium − 1` of them.
+    #[test]
+    fn a_forges_price_falls_with_what_it_holds() {
+        let (mut sim, home) = forge(BandTier::IV, Minerals::default());
+        assert!(sim.is_forge(home));
+        let doctrine = sim.doctrine_of(0);
+        let premium = doctrine.forge_premium;
+        assert!(premium > 1.0, "the shipped premium is above an ordinary center's");
+        let b = infra_price_at_band(BandTier::MAX_PLAYABLE.band().bands() as usize, &sim.config).kilotons();
+        let at = |sim: &Simulation| sim.demand_of(home, &doctrine)[0];
+        assert!((at(&sim) - premium).abs() < 1e-12);
+        *sim.held_at_mut(home).unwrap() = Minerals { yellow: b, ..Default::default() };
+        assert!((at(&sim) - premium / 2.0).abs() < 1e-12);
+        *sim.held_at_mut(home).unwrap() = Minerals { yellow: (premium - 1.0) * b, ..Default::default() };
+        assert!((at(&sim) - 1.0).abs() < 1e-12);
+    }
+
+    /// **A hauler is priced against the shipping backlog** (T-147, R-P19).
+    /// Wanted ore waiting at a rock beyond the holds based there is a backlog,
+    /// one trip of a new hauler is worth that ore at the price the short center
+    /// posts, and a hauler based at the rock takes its hold off the backlog.
+    #[test]
+    fn a_haulers_price_rises_with_the_ore_waiting_for_one() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let (_, dest, _) = two_centers(&mut sim, 0.0);
+        // A center saving for whole Band IV, holding nothing toward it.
+        sim.world.factors.get_mut(dest).unwrap().infra = infra_price_at_band(3, &sim.config);
+        *sim.held_at_mut(dest).unwrap() = Minerals::default();
+        // What the empire's centers want of Yellow, summed.
+        let want = sim.unmet_color_demand(PlayerId(0))[2].kilotons();
+        let hold = HullType::MediumSystems.cargo_capacity(&sim.config).kilotons();
+        assert!(want > 2.0 * hold, "the fixture wants more Yellow than two holds: {want} vs {hold}");
+        // Its Yellow waits at a rock no hauler serves.
+        let rock =
+            (0..sim.planet_entity.len()).map(|k| sim.planet_entity[k]).find(|&e| !sim.world.owner.contains(e)).unwrap();
+        *sim.holding_mut(0, rock) = Minerals { yellow: 10.0 * want, ..Default::default() };
+        sim.refresh_shipping(0);
+        let s = &sim.shipping[0];
+        let (r, b, _) = s.backlog[s.best.unwrap()];
+        assert_eq!(r, rock.0);
+        assert!((b[2] - want).abs() < 1e-9, "the wanted part, none of it lifted yet: {b:?}");
+        let (hull, _, value, _) = sim.hauler_quote(0, home);
+        assert!(hull.is_some() && value > 0.0, "one trip is worth something: {value}");
+        // A hauler based there lifts one hold of it.
+        let from = *sim.world.position.get(home).unwrap();
+        sim.spawn_freighter(0, home, from, rock, HullType::MediumSystems, 0.0);
+        sim.shipping[0].at = None;
+        sim.refresh_shipping(0);
+        let s = &sim.shipping[0];
+        let (_, b, _) = s.backlog[s.best.unwrap()];
+        assert!((b[2] - (want - hold)).abs() < 1e-9, "one hold lifted: {b:?}");
+        let (_, _, less, _) = sim.hauler_quote(0, home);
+        assert!(less <= value);
     }
 
     /// **The end-to-end form, with the ledger.** A hauler standing on a

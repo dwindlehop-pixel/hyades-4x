@@ -262,6 +262,15 @@ forge (R-O59). What is left is one basic, waiting on the colors that pair it.
   next whole Band's colors — at `Doctrine::forge_premium` times its price
   (`10`, **placeholder**; every other center's pressure is at most `1`), and
   its pull on its own empire's freight is scaled by the same factor.
+- **The premium falls with what the forge holds — `RATIFIED` as the author's
+  direction (T-147: "forge price should vary with its holding").** The factor
+  is `forge_premium · B / (B + H)`, where `H` is everything the forge holds,
+  every tier, in kt, and `B` the price of a whole Band IV works stock in kt
+  (the ladder's own scale; no new constant). An empty forge bids the full
+  premium, one holding `B` half of it, and one holding `(forge_premium − 1)·B`
+  an ordinary center's full price. Card-free nothing consumes supers or apex,
+  so a forge's holding grows and its pull on freight falls (appendix §D.46).
+  The functional form is a placeholder.
 - **Its empire first.** Supers its empire's centers wait on, and supers it has
   sold and not yet delivered, are kept back from apex.
 - **It bids for the supers it has demand for — `RATIFIED` (R-MX18, the author's

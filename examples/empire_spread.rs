@@ -246,7 +246,7 @@ fn main() {
                 .map(|(k, _)| k as u32)
                 .collect();
             for p in 0..seats as u32 {
-                for c in 1..=5u64 {
+                for c in 0..=((horizon - 1e-9) / 100.0) as u64 {
                     let mut v: Vec<(u32, f64)> = by
                         .iter()
                         .filter(|((q, cc, _), _)| *q == p && *cc == c)
@@ -261,8 +261,8 @@ fn main() {
                         .collect();
                     let to_forges: f64 = v.iter().filter(|(w, _)| forges.contains(w)).map(|x| x.1).sum();
                     println!(
-                        "{seed:>5} freight s{p} {}00s: {total:.0} kt to {} centers, {:.0}% to forges; top {}",
-                        c,
+                        "{seed:>5} freight s{p} {:>4} yr: {total:.0} kt to {} centers, {:.0}% to forges; top {}",
+                        c * 100,
                         v.len(),
                         100.0 * to_forges / total.max(1e-9),
                         top.join(", ")

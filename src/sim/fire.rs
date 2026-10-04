@@ -1047,6 +1047,14 @@ impl Simulation {
                     }
                 }
             }
+            // **A hauler that leaves is a loss to the rock it served** (T-147):
+            // its price reads the share of haulers sent there that were not
+            // lost there (`Simulation::trip_worth`).
+            Role::Freighter => {
+                if let Some(base) = self.world.shuttle.get(e).map(|sh| sh.base) {
+                    self.hauler_record.entry((seat, base.0)).or_default().1 += 1;
+                }
+            }
             _ => {}
         }
         let p = seat as usize;

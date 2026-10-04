@@ -38,7 +38,9 @@ use hyades_engine::log::LogFilter;
 use hyades_engine::prelude::*;
 use std::time::Instant;
 
-const PLANETS: usize = 800;
+/// 800 until T-147, whose haulers raised the events per run; 400 keeps the
+/// event count and the cost of the old bed (36,826 events against 42,023).
+const PLANETS: usize = 400;
 const PLAYERS: usize = 3;
 const HORIZON: f64 = 600.0;
 /// **Nine, and five was measured to be too few.** At five this test flaked at
@@ -61,7 +63,12 @@ const REPEATS: usize = 9;
 ///
 /// | planets x horizon | events | ratio |
 /// |---|---|---|
-/// | 800 x 600 (shipped) | 15,602 | **1.001** (min of 9; per-pair 0.948–1.067) |
+/// | 400 x 600 (shipped since T-147) | 36,826 | 1.021, 1.076, 0.932 over three runs |
+/// | 800 x 600 before T-147, same container | 42,023 | 0.982, 1.092, 1.027 over three runs |
+/// | 800 x 600 (as first measured) | 15,602 | **1.001** (min of 9; per-pair 0.948–1.067) |
+///
+/// On the ephemeral container both of the first two beds exceed the bound on one
+/// run in three (1.076, 1.092), so that flake predates T-147 and is open there.
 /// | 1,500 x 800 | 59,197 | **0.974** |
 /// | 2,500 x 1,000 | 148,622 | **1.020** |
 ///

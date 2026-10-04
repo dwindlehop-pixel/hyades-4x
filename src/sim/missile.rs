@@ -775,7 +775,7 @@ impl Simulation {
             return;
         }
         let book = Material::Ordnance as usize;
-        let price = Basic::ALL.iter().map(|&c| self.willingness_to_pay(e, c, doctrine)).sum::<f64>() / 3.0;
+        let price = self.willingness_to_pay(e, doctrine).iter().sum::<f64>() / 3.0;
         let pos = *self.world.position.get(e).unwrap();
         let at = [pos.x, pos.y, pos.z];
         let short = self.ordnance_short.get(&e.0).copied().unwrap_or(0.0).min(self.rounds_wanted_at(owner.0, e));

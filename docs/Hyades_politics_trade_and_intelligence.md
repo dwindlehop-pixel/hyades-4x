@@ -300,7 +300,7 @@ unique.
 wtp(mineral) = base_value(mineral)
              × doctrine_demand(mineral)      // Doctrine that wants it, wants it more
              × shortfall_pressure(center, mineral)  // Simulation::color_pressure_of
-             × forge_premium(center)         // Doctrine::forge_premium at a forge, else 1
+             × forge_premium(center)         // Doctrine::forge_premium · B/(B + H) at a forge, else 1
              × risk_discount(counterparty)   // §3
 ```
 

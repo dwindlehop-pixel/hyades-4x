@@ -1075,6 +1075,19 @@ pub struct ProductionContext {
     /// its Doctrine wants first, and otherwise only what its context still
     /// prices — Designs paid in supers (R-MX17).
     pub forge: bool,
+    /// **A hauler for the empire's shipping backlog** (T-147, R-P19): the hull
+    /// the engine would lay down for the rock whose waiting ore is worth most.
+    /// `None` when no rock holds more wanted ore than one hold.
+    pub hauler: Option<HullType>,
+    /// What that hull costs this center, kt.
+    pub hauler_cost: Price,
+    /// **What one trip of it is worth**, `$`: the wanted ore waiting beyond one
+    /// hold at that rock, up to the hull's hold, at the prices the empire's
+    /// centers post for it. It rises with the backlog and with those prices.
+    pub hauler_value: f64,
+    /// **What the minerals it is built from are worth here**, `$`: its cost at
+    /// this center's own prices for what the payment draws.
+    pub hauler_cost_value: f64,
 }
 
 impl ProductionContext {
@@ -1340,9 +1353,14 @@ impl Autopilot for BaselineAutopilot {
             // posts it there, so it needs no target from the candidate list.
             Role::Sentry => Some(Tasking { role: Role::Sentry, target: None }),
 
+            // **A hauler goes to the shipping backlog** (T-147); the engine
+            // picks the rock, so it needs no target from the candidate list,
+            // which holds no worked rock.
+            Role::Freighter => Some(Tasking { role: Role::Freighter, target: None }),
+
             // Nothing else is tasked from a finished hull; hold rather than
             // invent a mission.
-            Role::Freighter | Role::Reserve | Role::Scrapped => None,
+            Role::Reserve | Role::Scrapped => None,
         }
     }
 
@@ -1438,6 +1456,19 @@ impl Autopilot for BaselineAutopilot {
             };
         }
 
+        // **A hauler, where one trip of it is worth more than it costs**
+        // (T-147, R-P19): the value is the shipping backlog at the prices the
+        // empire's centers post, the cost its minerals at this center's own
+        // prices, so the order rises with demand for shipping and falls as
+        // haulers drain the backlog. Taken where survey would be, ahead of it,
+        // so it spends a cycle expansion would not.
+        let hauler_order = ctx
+            .hauler
+            .filter(|_| {
+                ctx.hauler_value > ctx.hauler_cost_value && ctx.stockpile_total + Price::new(1e-9) >= ctx.hauler_cost
+            })
+            .map(|h| BuildOrder::Hull { hull_type: h, class: Class::freighter_for(h) });
+
         // With nothing known left to expand to, survey is the only move that can
         // ever restart expansion — **if there is anything left to survey.**
         //
@@ -1467,6 +1498,9 @@ impl Autopilot for BaselineAutopilot {
         // unless the missile card was played.
         if candidates.is_empty() && wants_sentry && can_afford_sentry {
             return Standing::of(doctrine).order_for(Role::Sentry);
+        }
+        if let (true, Some(order)) = (candidates.is_empty(), hauler_order) {
+            return order;
         }
         if candidates.is_empty() && can_afford_light && ctx.survey_frontier > 0 {
             return Standing::of(doctrine).scout_order();
@@ -1707,6 +1741,8 @@ impl Autopilot for BaselineAutopilot {
         }
         let survey_fallback = if wants_sentry && can_afford_sentry {
             Standing::of(doctrine).order_for(Role::Sentry)
+        } else if let Some(order) = hauler_order {
+            order
         } else if wants_survey && can_afford_light {
             Standing::of(doctrine).scout_order()
         } else if wants_picket && can_afford_picket {
@@ -1943,6 +1979,14 @@ impl<'a> Standing<'a> {
             .iter()
             .copied()
             .find(|&r| self.design_for(r) == (hull, class))
+            // **A freighter Design is a hauler** (T-147): Ford and Strait share
+            // the Systems hulls with the colonizer, and the class is what tells
+            // the two roles apart (T-121).
+            .or_else(|| {
+                (matches!(hull, HullType::MediumSystems | HullType::GeneralSystems)
+                    && class == Class::freighter_for(hull))
+                .then_some(Role::Freighter)
+            })
             .or_else(|| ASSIGNABLE.iter().copied().find(|&r| self.mounts(r, hull)))
             .or_else(|| competent_role(hull))
     }
@@ -2425,7 +2469,38 @@ mod tests {
             // is the one that closes it.
             survey_frontier: 1,
             forge: false,
+            hauler: None,
+            hauler_cost: Price::new(0.1),
+            hauler_value: 0.0,
+            hauler_cost_value: 0.0,
         }
+    }
+
+    /// **A hauler is built where one trip of it is worth more than its
+    /// minerals** (T-147, R-P19), and not where it is worth less; a freighter
+    /// Design reads back as a hauler on both Systems hulls.
+    #[test]
+    fn a_hauler_is_built_where_its_trip_is_worth_its_minerals() {
+        let ap = BaselineAutopilot::default();
+        let doctrine = Doctrine::default();
+        let st = Standing::of(&doctrine);
+        for hull in [HullType::MediumSystems, HullType::GeneralSystems] {
+            assert_eq!(st.role_of(hull, Class::freighter_for(hull)), Some(Role::Freighter));
+        }
+        assert_eq!(
+            ap.assign_role(&doctrine, HullType::MediumSystems, Class::Ford, &[]),
+            Some(Tasking { role: Role::Freighter, target: None })
+        );
+        // Nothing to deepen and nothing to survey, so the fallback decides.
+        let mut ctx = prod_ctx(BandTier::III, 4.0, 50.0);
+        ctx.survey_frontier = 0;
+        ctx.hauler = Some(HullType::MediumSystems);
+        ctx.hauler_value = 2.0;
+        ctx.hauler_cost_value = 1.0;
+        let hauler = BuildOrder::Hull { hull_type: HullType::MediumSystems, class: Class::Ford };
+        assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), hauler);
+        ctx.hauler_value = 0.5;
+        assert_eq!(ap.production_choice(&doctrine, &ctx, &[]), BuildOrder::Idle);
     }
 
     /// **A lost sentry is replaced by a priced build** (T-139, R-WAR46 ruled:

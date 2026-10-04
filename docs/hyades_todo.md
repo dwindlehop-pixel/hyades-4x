@@ -140,7 +140,16 @@ resolved. Stalls remain on about 1,100 centers per galaxy: the shortfall is
 held above bills elsewhere in the same empire (98–100%), mostly at outposts,
 and a standing forge takes 72–96% of its seat's freight (seed 1). **Open —
 the next price:** a forge whose price falls as its holding rises, measured on
-the 12 galaxies (R-P19 rules out a cap).
+the 12 galaxies (R-P19 rules out a cap). **Landed (the author's rulings):
+a forge's price falls with its holding** (`premium · B/(B + H)`, appendix
+§D.46) **and a hauler is ordered on its own, valued against the shipping
+backlog at the empire's prices and the survival share of its rock** (roles
+§4.4, appendix §D.47). Together, against per-color prices alone: Growth's
+spread −0.263 ± 0.068 on random ground (11/12 galaxies) and −0.175 ± 0.061 on
+color-rotated, Growth +634% to +922%, supers +53–64%, apex +68–73%; on identical
+ground apex −58% ± 14. Engine cost +78% instructions per event on the telemetry
+bed. **Open:** the price's functional form (placeholder); whether a forge's
+price recovers once a final demand for supers draws its holding down (T-146).
 **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 

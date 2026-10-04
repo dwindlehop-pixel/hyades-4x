@@ -4120,6 +4120,100 @@ whose forge price falls as its holding rises, would settle it. Landed: the
 per-color price (`Simulation::color_pressure_of`), bit-identical to the
 measured arm on seeds 1 and 7.
 
+## D.46 A forge's price falls with what it holds
+
+*Supports T-147 and galaxy §4.5. The author's ruling: "forge price should vary
+with its holding." Built as `forge_premium · B / (B + H)` — `H` everything the
+forge holds, every tier, kt; `B` the price of a whole Band IV works stock, kt.
+Bed: `examples/empire_spread`, 3 seats, 1,500 yr, the 12 seeds of §D.37,
+against the engine with per-color prices (§D.45). Paired over galaxies: cv
+difference and relative level change, mean ± standard error.*
+
+| ground | Growth level | Growth cv | supers level | supers cv | apex level | apex cv | stalled center-years |
+|---|---|---|---|---|---|---|---|
+| `Random` | +172.1% ± 7.1 | −0.266 ± 0.081 (11/12 lower) | −53.3% ± 5.0 | −0.084 ± 0.024 | −52.2% ± 3.8 | +0.057 ± 0.028 | +10.4% ± 1.4 |
+| `ColorRotated` | +162.3% ± 10.1 | −0.129 ± 0.072 | −56.9% ± 5.8 | −0.087 ± 0.024 | −55.2% ± 6.8 | +0.099 ± 0.053 | +11.7% ± 1.7 |
+| `Identical` | +23.5% ± 3.7 | −0.018 ± 0.036 | −33.4% ± 3.8 | +0.002 ± 0.010 | −38.7% ± 6.7 | +0.108 ± 0.027 | +9.2% ± 2.8 |
+
+Expansion and Production move by under 0.5% in level and 0.003 in cv.
+
+**The mechanism, by trace** (seed 1, `ColorRotated`, seat 0, `ES_TRACE`): the
+forge's share of its seat's freight is 81% in the 500s on both engines, then
+falls under the holding-priced premium to 61% in the 800s, 27% in the 1000s and
+2–5% from 1,200 yr, against 67–85% throughout on the old engine; freight
+delivered elsewhere rises (in the 1,200s, 7,517 kt against 5,554). The basics a
+forge stops drawing go to ordinary centers, which buy Bands (Growth) and then
+wait on larger bills (stalls). **Inference, stated as one:** forging falls by
+half because nothing card-free consumes supers or apex, so every forge's holding
+only grows and its price only falls. Confidence about 75%; a bed with final
+demand for supers (T-146's twin bed) would show whether the price recovers when
+a forge's holding is drawn down.
+
+**And it moved the Exchange.** `clearing_strikes_escrowed_contracts_without_moving_the_world`
+failed under this change alone: a forge that has sold supers keeps them back
+from apex, apex synthesis leaves slag, so the seller holds more and its price
+reads it. The test now pins the premium at zero, which prices a forge at
+nothing whatever it holds, and states that channel.
+
+## D.47 A hauler priced against the shipping backlog
+
+*Supports T-147, R-P19 and roles §4.4. The author's direction: "price of
+building a new hauler should increase with high demand in shipping", read (the
+author's choice) as the hauler's value rising so more are built; the bill stays
+the hull's dry mass (design law #11). Built: a freighter Design ordered on its
+own; per rock, the wanted ore beyond the holds based there; one trip valued at
+the empire's want-weighted prices times the share of haulers sent to that rock
+not lost there; the cost valued at the building center's own prices; built in
+the fallback slot ahead of survey; Reserve first. Bed as §D.46.*
+
+**First build: it ran away.** The backlog was read off the pile, which cannot
+see haulers flying to it: seed 1 built **152,874** freighters by 1,500 yr
+against 5,620, events 1.0 M → 3.55 M (`hauler_census`, scratch). Subtracting the
+holds of the haulers based at each rock bounded it at **33,217**, events 1.43 M,
+ore waiting at outposts 302 Mt against 764 Mt.
+
+**Hauler alone** (paired against §D.45's engine):
+
+| ground | Growth level | Production level | supers level | apex level | supers cv | apex cv | stalled center-years |
+|---|---|---|---|---|---|---|---|
+| `Random` | +155.4% ± 15.6 | +585.2% ± 5.3 | +416.6% ± 7.9 | +455.6% ± 6.0 | −0.060 ± 0.026 | +0.006 ± 0.033 | +25.0% ± 2.3 |
+| `ColorRotated` | +104.4% ± 13.1 | +526.6% ± 4.8 | +357.8% ± 7.0 | +479.6% ± 5.9 | −0.079 ± 0.032 | −0.071 ± 0.026 | +24.3% ± 2.9 |
+| `Identical` | −29.8% ± 9.0 | +370.9% ± 7.9 | +55.3% ± 17.5 | −32.0% ± 12.5 | −0.010 ± 0.016 | −0.121 ± 0.055 | +24.4% ± 3.1 |
+
+**Forge price and hauler together** (what lands):
+
+| ground | Growth level | Growth cv | Production level | supers level | apex level | stalled center-years |
+|---|---|---|---|---|---|---|
+| `Random` | +921.6% ± 18.4 | −0.263 ± 0.068 (11/12 lower) | +693.0% ± 6.0 | +64.0% ± 6.2 | +67.6% ± 4.6 | +31.3% ± 3.3 |
+| `ColorRotated` | +633.8% ± 13.9 | −0.175 ± 0.061 (9/12 lower) | +618.0% ± 5.4 | +52.8% ± 5.7 | +72.6% ± 5.6 | +30.2% ± 2.6 |
+| `Identical` | +8.5% ± 11.8 | −0.120 ± 0.088 | +391.0% ± 6.3 | +2.0% ± 14.3 | −58.3% ± 13.8 | +38.6% ± 2.8 |
+
+Expansion falls 0.8–1.0% (standard error 0.1–0.2) on every ground and arm.
+Production is `∫` fleet volume, so it counts the haulers themselves. No hull is
+armed card-free, so the survival share is 1 there; the landed engine
+reproduces the measured combined arm bit for bit on seeds 1 and 7.
+
+**The loss in the price.** On the determinism card bed (six seats, Warfare,
+Growth and missile cards, 350 yr), seed 7 ran 3.43 M events against 0.97 M:
+haulers sent to rocks among the Warfare card's pickets, wrecked or withdrawn,
+and replaced while the backlog stood (in the last 50 years, 616 freighters
+spawned, encounters 11,063 → 19,397, withdrawals 1,338 → 2,324). Valuing a trip
+at the share of haulers that came back (R-WAR47's rule) took it to 2.64 M
+events and 459 freighters spawned. **Inference, stated as one:** the rest is
+haulers flying among rival pickets, which is the conflict R-P19 asks for,
+paid in fire events. Confidence about 55%; a census of encounters by role
+would settle it.
+
+**Cost.** Telemetry bed (3 seats, 500 planets, 600 yr, seed 1), release:
+29,753 → 44,360 events, 1,455–1,871 → 2,300–2,933 ns per event, 12,455 → 22,147
+instructions per event — routing decisions (`best_delivery_center`,
+`offer_from`) are each `O(centers)` and there are six times the haulers to make
+them. Pricing all three colors from one read of the bill took instructions
+1,029 M → 982 M with the run bit-identical; per-color calls had re-read it. Test
+targets, unloaded, old → new before the scenery changes: unit 5.9 → 20.4 s,
+determinism 40.3 → 105.4 s, telemetry 32.8 → 68.0 s; after (card bed 600 → 400
+planets, telemetry 800 → 400): 19.4 / 33.5 / 9.3 / 29.5 s.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
