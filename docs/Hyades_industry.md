@@ -3006,7 +3006,12 @@ against that and the reason was structural rather than statistical:
 > is not a routing problem.**
 
 An outbound leg may now visit `SimConfig::max_pickup_stops` piles before turning
-for its destination. **Ratified at 2 (R-O92).**
+for its destination. **Ratified at 2 (R-O92); re-chosen at 6 with
+`trade_decay_lambda = 0.04` by Monte Carlo on the tree composite (T-147,
+appendix §D.53)** — the operating point moved under per-color works bills, and
+stops and the voyage discount interact. The table below is R-O92's bed; a
+hauler retires only with an empty hold, since a leg of three or more stops can
+return to its own base laden (appendix §D.53).
 
 | | work-years, standard bed | work-years, replication bed |
 |---|---|---|

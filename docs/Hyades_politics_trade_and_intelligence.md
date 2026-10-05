@@ -112,12 +112,16 @@ the transit share).
 Three rejected models and why are in appendix §B.2 — the shortest reason to keep
 them on record is that **volume-minting *pays* for collusion**, inverting §0.
 
-**1.4 `RATIFIED` — `trade_decay_lambda = 0.01`** (half-life 69 yr). Ratified
-first as the **internal freighter routing rule**, where `λ = 0` reduces exactly to
-`most_needed_center` — design law #5's single-supply oracle — so one function
-checks two independent degeneracies. **Confirmed on 3 seeds, which is thin**;
-direction and order of magnitude hold, the precise optimum wants a ten-seed bed.
-Appendix §B.1.
+**1.4 `RATIFIED` — `trade_decay_lambda = 0.04`** (half-life 17 yr), **chosen
+by Monte Carlo on the tree composite jointly with `max_pickup_stops = 6`**
+(T-147, the author's direction to sweep the levers behind the appendix's
+largest shifts and commit what improves the centers built): +8.95% ± 0.78 on
+the composite and +29.3% ± 1.4 centers built to Band IV works, 16/16 runs on
+the twin bed (appendix §D.53). It was first ratified at `0.01` as the
+**internal freighter routing rule**, on coverage alone and 3 seeds (appendix
+§B.1); `λ = 0` still reduces exactly to `most_needed_center` — design law #5's
+single-supply oracle — so one function checks two independent degeneracies.
+Placeholder magnitude inside a plateau: `0.02`–`0.04` with four to six stops.
 
 **The condition of ratification was that the discount must be *the* solution to
 freighter routing, not merely compatible with it, and it is:** the mechanism paid
@@ -148,11 +152,11 @@ T-74 rather than quietly keeping it.**
 **1.7 `OPEN` — R-P2: the base income rate and the Politics depth multiplier.**
 Both are unset. MC.
 
-**1.8 `OPEN` — λ is a cross-tree conflict and was ratified on one metric.**
-`trade_decay_lambda` measures **+0.002 on Expansion and −0.348 on Growth**
-(`examples/tree_gradient`). It is the largest ratification in this project's
-history and coverage was the only objective it was taken against. Re-ratify on
-the composite.
+**1.8 ~~`OPEN` — λ is a cross-tree conflict and was ratified on one metric.~~
+`RESOLVED` at T-147:** re-chosen on the tree composite (§1.4, appendix §D.53).
+The conflict it named stands in a new form: at `0.04` with six stops Growth
+rises 26–28% and Expansion falls 2.5–3.7%, and supers and apex forged fall by
+about four fifths — the cost the composite does not price.
 
 ---
 
@@ -715,7 +719,7 @@ as the intra-empire matcher and `most_needed_center`'s oracle (design law #5).
 |---|---|---|---|
 | `$` | the means of exchange | `$` — **not mass** (§1.1) | per-player ledger, §9.3 |
 | `E` | escrow locked at match | `$` | §1.3 |
-| `λ` | transit discount and burn rate | 1/yr | `SimConfig::trade_decay_lambda = 0.01` |
+| `λ` | transit discount and burn rate | 1/yr | `SimConfig::trade_decay_lambda = 0.04` |
 | `t` | one-way transit of the settling leg | yr | `math::ship_travel_years` |
 | `wtp` | a center's willingness to pay | `$`/kt | §2.11 |
 | `base_value[c]` | a color's floor price | `$`/kt | `Doctrine`, §2.12 |
@@ -762,7 +766,7 @@ bed before anything switches on.**
 | Code | Decision |
 |---|---|
 | R-P1 | `$` has zero mass and sits outside the mass ledger; the digest gains a `$` leaf |
-| R-P2 (part) | `trade_decay_lambda = 0.01` — **3 seeds, thin**, and measured on coverage alone |
+| R-P2 (part) | `trade_decay_lambda = 0.04`, chosen with `max_pickup_stops = 6` on the tree composite, 16 runs (§1.4, appendix §D.53) |
 | R-P3 | the faucet is production, not population |
 | R-P4 | reputation public by default; a card switches the buyer to per-observer |
 | R-P6 | disclosure recipient bifurcates with depth; broadcast is the win path |

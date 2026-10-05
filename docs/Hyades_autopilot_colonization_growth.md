@@ -297,15 +297,12 @@ it is actually going to buy** (it quoted the full price even when hulls sat in
 Reserve).
 
 **5.6 `RATIFIED` — freight routes by distance-discounted need.**
-`argmax` over owned centers of `mineral_pressure(center) · exp(−λ · t_transit)`,
-`trade_decay_lambda = 0.01` (half-life 69 yr). **`λ = 0` reduces exactly to
-`most_needed_center`**, which design law #5 keeps as the single-supply oracle, so
-one function checks two independent degeneracies. **Confirmed on 3 seeds** —
-thin for a ratified constant; appendix §B.1.
-
-> **Cross-tree conflict, open:** λ is +0.002 on Expansion and **−0.348 on
-> Growth**. It is the largest ratification in this project's history and it was
-> measured on coverage alone.
+`argmax` over owned centers of the cargo's value at their demand prices times
+`exp(−λ · t_transit)`, `trade_decay_lambda = 0.04` (half-life 17 yr), chosen by
+Monte Carlo on the tree composite jointly with §5.8's stops (T-147, politics
+§1.4, appendix §D.53). **`λ = 0` reduces exactly to `most_needed_center`**,
+which design law #5 keeps as the single-supply oracle, so one function checks
+two independent degeneracies.
 
 **5.7 `RATIFIED` — a hold is filled against the destination's color deficit**,
 not in proportion to the pile the hauler happens to be standing on. **+8.40% ±
@@ -313,10 +310,13 @@ not in proportion to the pile the hauler happens to be standing on. **+8.40% ±
 against**, on *the same tonnage* and the same trips — only the colors in the
 hold changed. **R-O89.**
 
-**5.8 `RATIFIED` — one outbound leg may visit two piles.**
-`max_pickup_stops = 2`. A hold used to be filled from one map entry, so **every
-delivery was mono-colored by construction** and no routing fix could reach it.
-**+55.13% ± 4.65 work-years, 8/8 seeds** (**R-O92**), and the intermediate stop
+**5.8 `RATIFIED` — one outbound leg may visit up to six piles.**
+`max_pickup_stops = 6`, chosen by Monte Carlo with §5.6's `λ = 0.04` (T-147,
+appendix §D.53): +8.95% ± 0.78 on the tree composite and +29.3% ± 1.4 centers
+built to Band IV works, 16/16 runs. A hold used to be filled from one map
+entry, so **every delivery was mono-colored by construction** and no routing
+fix could reach it; two stops were first ratified at **+55.13% ± 4.65
+work-years, 8/8 seeds** (**R-O92**) on a bed where two was a peak. The intermediate stop
 caps each color at what is wanted **and** at its proportional share of the
 hold — the second cap is worth +10.2% on its own and is inert at today's
 magnitudes, load-bearing at the ones development reaches.
@@ -600,7 +600,7 @@ count, not a fraction — and the guard is kept rather than deleted.
 | R-O93 | the population logistic is solved, not stepped | 8/8 seeds |
 | R-O94 | a hauler's hull is a forecast under a liquidity cap | 8/8 and 7/8 seeds |
 | R-MC16 | thrust is drawn from mounted drive | placeholder magnitudes |
-| R-P2 | `trade_decay_lambda = 0.01` for internal routing | 3 seeds — thin |
+| R-P2 | `trade_decay_lambda = 0.04` with `max_pickup_stops = 6`, on the tree composite | 16/16 runs |
 
 ### Open
 

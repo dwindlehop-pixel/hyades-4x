@@ -256,7 +256,7 @@ uploaded.
 | `P_B` | buyer `B`'s price for the color this round | `$`/kt | the clearing's dual |
 | `a_j` | ask `j`'s reservation | `$`/kt | `willingness_to_pay` at a yard; `0` away from one |
 | `b_i` | bid `i`'s value | `$`/kt | `willingness_to_pay`, politics §2.11 |
-| `λ` | transit burn rate | 1/yr | `trade_decay_lambda = 0.01` (R-P2) |
+| `λ` | transit burn rate | 1/yr | `trade_decay_lambda = 0.04` (R-P2, T-147) |
 | `t_jB` | the seller's laden leg to the shared rock nearest it | yr | `ship_travel_years` on the seller's Freighter Design |
 | `H_(B,v)` | what `B`'s haulers based at rock `v` carry away in one round | kt | `haul_per_round`: hold × `years_per_round` / laden round trip |
 | `R_(B,v,c)` | `B`'s delivery room at `v` for color `c` | kt | `H_(B,v)` − what `B` already holds there in `c`, floored at 0; unlimited where `B` owns `v` |

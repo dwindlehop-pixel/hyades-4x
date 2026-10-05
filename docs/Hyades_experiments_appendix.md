@@ -4437,6 +4437,145 @@ total (an income limit) and the count that reach Band III at all, neither of
 which a price between a seat's own centers reaches. Confidence about 60%;
 a census of income per Band III center by seat, at `γ = 0.75`, would test it.
 
+## D.52 Income per Band III center, and why a center short one color stays short
+
+*Supports T-147. Bed: the twin bed of §D.49 at `completion_exponent = 0.75`,
+3 seats, 1,500 yr, card-free, seeds 1 and 7, `Random` and `ColorRotated`
+ground. Scratch census builds (never landed) counting, per center, the
+kilotonnes that enter its bank by source and color while its works stand at
+Band III. **Bought:** reached Band IV works by the horizon. **Short one
+color:** holds its Band IV bill's total and cannot pay it in every color.
+**Short in total:** holds less than the total.*
+
+**Income per Band III center, by class** (kt/yr per center, summed over
+colors; ranges over the 12 seats):
+
+| class | centers per seat | years at Band III, mean | freight in | own mining | Exchange in |
+|---|---|---|---|---|---|
+| bought | 79–137 | 195–282 | 8.6–18.2 | 0.1–3.5 | 0 |
+| short one color | 7–34 | 358–528 | 2.5–7.1 | 0.0–7.9 | 0 |
+| short in total | 73–140 | 339–493 | 0.6–0.9 | 0.0–0.9 | 0 |
+
+Freight is the income of a Band III center: its own planet yields nothing on
+most seats, and the Exchange delivers to rocks, never to a center. A center
+short one color receives that color at **0.24–0.47 kt/yr** (per center, since
+reaching Band III), against a shortfall of 100–300 kt.
+
+**Where that color is** (§D.51's census): mined out within 25 ly of the
+stalled center; 50–80 ly away in piles; 11–42 ly away at centers holding it
+above their own bills.
+
+**Who gets it.** Each time a hauler prices a pile holding a stalled center's
+missing color (`best_delivery_center`, at the pile), the stalled center won
+10–55% of the pile tonnage priced, cumulative to 1,500 yr (seeds 1 and 7
+`Random`, seed 1 `ColorRotated`); another center also wanting the color won
+45–90%, a center not wanting it under 1.3%. The winner averaged 46–53 ly from
+the pile against 50–63 ly to the nearest stalled center.
+
+**The shipping backlog is empty.** From 600 yr on, every seat's backlog
+(`Simulation::refresh_shipping`) reads 0 kt in every color while 6–94 Mt of ore
+waits at outposts, and each seat has ordered 14,000–17,000 haulers by 1,500 yr.
+Hauler count is not short.
+
+**Two arms refuted.**
+
+- *Price a pile at what the hold carries* (a pile capped per material at the
+  hold's room before pricing): centers built **−8.2%** (`Random`) and
+  **−5.0%** (`ColorRotated`), tree composite −2.80% ± 1.52 and −3.80% ± 0.75
+  (seeds 1 and 7). Priced whole, the center wanting most wins and the hold is
+  filled; priced at the hold, centers with small wants win and the last stop
+  fills the hold beyond their want.
+- *A works supply run* (an idle Reserve hauler fetches a stalled center's
+  missing color from its empire's pile or a center whose abundance passes
+  R-MX8's test; a Doctrine flag): 75 runs loaded **1.2 kt** by 600 yr on
+  seed 7, because Reserve holds only small hulls, and choosing the largest
+  Reserve hold reproduced the run exactly. Not landed.
+
+**The rate, priced.** A General hold is 31.2 kt and a Band IV bill is 130–390
+kt per color, so a missing color needs 4–12 holds. Over 50 ly a laden hull
+flies at nearly `c`, so a round trip is at least 100 years whatever its drive.
+**Inference:** one hauler serving one stalled center delivers about 0.3 kt/yr,
+which is what the census measures; the delivery rate to a stalled center is
+set by how many hauler round trips end there, and the levers on that are the
+voyage discount `λ` (who wins a pile) and the stops a leg may make (what one
+trip assembles). Confidence about 70%; §D.53 tests both.
+
+## D.53 The voyage discount and the stops a leg may make, swept together
+
+*Supports T-147, politics §1.4/§1.8 and industry §6.20. The author's
+direction: sweep the levers behind the appendix's shifts larger than 2x, and
+commit what improves the centers built. Bed: `examples/forge_sweep`
+(`FS_LAMBDA`, `FS_STOPS`; twin bed, 3 seats, 1,500 yr, `completion_exponent =
+0.75`). Score: the tree composite (§D.49) and **centers built** — owned worlds
+whose works stand at Band IV at the horizon — both against `λ = 0.01`, `2`
+stops on the same seed and ground. Screen on seeds 1, 7, 42, 31337, on
+`Random` and `ColorRotated` ground. Of the appendix's >2x shifts, `λ`
+(§A, 2.7x coverage) and the forge premium (§D.43, done at §D.49) are knobs;
+the color-site spacing (§D.41) is the ground, and the backlog hauler (§D.47)
+and the hull-sized hauler (T-98) are mechanisms already shipped.*
+
+Mean over both grounds (each cell four seeds per ground):
+
+| `λ` \ stops | 1 | 2 | 3 | 4 | 5 | 6 | 8 |
+|---|---|---|---|---|---|---|---|
+| 0.0025 | | −9.65% / −25.9% | | | | | |
+| 0.005 | | −3.85% / −12.1% | | | | | |
+| 0.01 | −43.26% / −65.0% | **0** | +2.98% / +10.3% | +4.58% / +14.9% | +3.36% / +14.2% | +4.42% / +16.4% | +2.62% / +13.8% |
+| 0.02 | | +1.33% / +6.8% | | +6.86% / +25.0% | +7.69% / +26.4% | +7.57% / +29.3% | |
+| 0.03 | | −1.67% / +3.1% | | +7.94% / +28.5% | +7.50% / +30.8% | +8.34% / +29.8% | |
+| 0.04 | | | | +6.50% / +27.5% | +7.63% / +29.9% | **+9.12% / +30.7%** | |
+| 0.05 | | −4.54% / −0.5% | | | | +7.94% / +26.8% | |
+
+(composite / centers built.) Expansion falls with stops — about −0.9% at 3,
+−1.7% at 4, −2.7% at 5, −3.6% at 6, −5.0% at 8 — and supers and apex forged
+fall 60–85% in every arm with four or more stops. **The two levers interact:**
+a sharper discount alone gains nothing past `0.02`, and more stops alone peak
+near +4.6%; together they reach +9%.
+
+**Replication** on seeds 2, 3, 5, 11, both grounds (16 runs per arm):
+
+| arm | seeds 1, 7, 42, 31337 | seeds 2, 3, 5, 11 | pooled, n = 16 | centers built, pooled |
+|---|---|---|---|---|
+| `λ 0.04`, 6 stops | +9.12% ± 0.87, 8/8 | +8.47% ± 1.36, 8/8 | +8.79% ± 0.78, 16/16 | +28.2% ± 1.6 |
+| `λ 0.03`, 4 stops | +7.94% ± 0.87, 8/8 | +6.88% ± 1.19, 8/8 | +7.41% ± 0.72, 16/16 | +25.5% ± 1.5 |
+
+Paired, `0.04 / 6` minus `0.03 / 4`: composite +1.38% ± 0.60 (12/16), centers
+built +2.76% ± 1.01, Expansion −1.40% ± 0.23 (16/16 lower).
+
+**A mass leak the sweep exposed.** At `λ = 0.04` with three or more stops,
+`a_twin_bed_builds_from_supers_with_mass_conserved` lost about 1.0 kt.
+Checking the ledger after every event named the first loss: a `DutyArrive` at
+723.5 yr, where cargo fell 0.1595 kt with nothing gained elsewhere. The hauler
+had been parked in Reserve at 689.8 yr *laden*: a milk run of three or more
+stops can come back to its own base, and the retirement test there (an
+exhausted rock, nothing loaded at this stop) ignored what the earlier stops had
+put in the hold; the side run that took it from Reserve wrote over the hold. At
+two stops a leg's second stop is never its base, so the shipped engine could
+not reach it. **Fixed:** a hauler retires only with an empty hold. `λ 0.01`,
+2 stops reproduces the prior binary to every printed digit (seed 1).
+
+**Shipped `λ = 0.04`, 6 stops**, measured on the fixed engine, 16 runs:
+
+| ground | composite | centers built | Growth | Production | Expansion | supers | apex | Growth cv, paired |
+|---|---|---|---|---|---|---|---|---|
+| `Random` | +8.55% ± 1.23, 8/8 | +29.7% ± 2.4 | +26.2% ± 2.6 | +6.3% ± 1.1 | −3.7% ± 0.5 | −80.6% ± 8.3 | −81.6% ± 8.2 | −0.002 ± 0.020 |
+| `ColorRotated` | +9.34% ± 1.02, 8/8 | +28.8% ± 1.7 | +28.0% ± 1.7 | +6.0% ± 1.5 | −2.5% ± 0.7 | −78.3% ± 14.1 | −75.8% ± 11.5 | −0.040 ± 0.021 |
+| both | **+8.95% ± 0.78, 16/16** | **+29.3% ± 1.4** | | | | | | |
+
+**Cost.** Seed 1, 800 yr, one run each: 589,595 → 712,729 events (+21%) and
+44,247 → 64,443 ns/event (+46%), 26.1 → 45.9 s. More work and dearer work;
+the dearer part is `next_pickup`'s scan of every pile and center, run up to
+five times per leg. Test targets on this container: unit 27.3 s, smoke 13.2 s,
+telemetry 46.6 s, determinism 49.0 s.
+
+**Inference, stated as one:** a sharper discount sends each pile's color to the
+nearest center that wants it, and more stops let one leg assemble the colors a
+bill lacks from several piles; together a leg finishes more bills per round
+trip, and the forges, which want basics without end, receive less. Confidence
+about 60%; a per-leg census of how many bills each delivery completes, at both
+settings, would test it. The supers and apex lost are the cost the tree
+composite does not price (§D.49's caveat).
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

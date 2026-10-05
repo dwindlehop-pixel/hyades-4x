@@ -16,7 +16,13 @@
 //! Environment: `FS_SEEDS` (default 1,7,42,31337), `FS_PREMIUM`, `FS_FLOOR`,
 //! `FS_SCALE`, `FS_COMPLETION` (the forge's three Doctrine fields and
 //! [`Doctrine::completion_exponent`]; defaults are the shipped ones),
-//! `FS_GROUND` (`random`, `identical`, `rotated`; default `random`).
+//! `FS_GROUND` (`random`, `identical`, `rotated`; default `random`),
+//! `FS_LAMBDA` and `FS_STOPS` ([`SimConfig::trade_decay_lambda`] and
+//! [`SimConfig::max_pickup_stops`]; defaults are the shipped ones).
+//!
+//! Each seat's line also counts its **centers built to `Band IV` works** at
+//! the horizon (`band4`): owned worlds whose infrastructure stands at the top
+//! whole Band. A line per seed gives the run's event count.
 //!
 //! Run: `cargo run --release --example forge_sweep -- [horizon]`.
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
@@ -24,6 +30,7 @@ use hyades_engine::galaxy::{FleetSeeding, Galaxy, GalaxyConfig, Ground};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::resources::Material;
 use hyades_engine::sim::{DesignBill, SimConfig, Simulation};
+use hyades_engine::units::BandTier;
 use std::io::Write;
 
 const SEATS: usize = 3;
@@ -65,8 +72,11 @@ fn main() {
         let galaxy = Galaxy::generate_with(GalaxyConfig { ground, ..GalaxyConfig::new(SEATS, seed) }, seeding).unwrap();
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = horizon;
+        cfg.trade_decay_lambda = env("FS_LAMBDA").unwrap_or(cfg.trade_decay_lambda);
+        cfg.max_pickup_stops = env("FS_STOPS").unwrap_or(cfg.max_pickup_stops);
         let autopilots: Vec<Box<dyn Autopilot>> =
             (0..SEATS).map(|_| Box::new(BaselineAutopilot::new(doctrine)) as Box<dyn Autopilot>).collect();
+        let top = BandTier::MAX_PLAYABLE.band().bands() - 1e-6;
         let mut sim = Simulation::new(galaxy, cfg, autopilots);
         sim.set_log_filter(LogFilter::none().with(LogCategory::Production));
         let mut acc = [[0.0f64; 3]; SEATS];
@@ -115,10 +125,17 @@ fn main() {
                 _ => {}
             }
         }
+        let mut band4 = [0usize; SEATS];
+        for pl in &sim.snapshot().planets {
+            if let (Some(o), true) = (pl.owner, pl.infrastructure.bands() >= top) {
+                band4[o as usize] += 1;
+            }
+        }
+        println!("{seed:>5} events {}", sim.events_processed());
         for p in 0..SEATS {
             println!(
-                "{seed:>5} s{p} expansion {:.1} growth {:.1} production {:.1} supers {:.1} apex {:.1} refined_paid {:.3}",
-                acc[p][0], acc[p][1], acc[p][2], forged[p][0], forged[p][1], forged[p][2]
+                "{seed:>5} s{p} expansion {:.1} growth {:.1} production {:.1} supers {:.1} apex {:.1} refined_paid {:.3} band4 {}",
+                acc[p][0], acc[p][1], acc[p][2], forged[p][0], forged[p][1], forged[p][2], band4[p]
             );
         }
         std::io::stdout().flush().ok();

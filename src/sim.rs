@@ -2941,17 +2941,17 @@ pub struct SimConfig {
     /// in the dimension you need to mix, mixing is not a routing problem.** This
     /// is the knob that removes the atomicity.
     ///
-    /// **Ratified at 2** (R-O92): **+55.13% ± 4.65 work-years, 8/8 seeds**, on
-    /// the standard bed and on four seeds it was not chosen against. The
-    /// mechanism check moved with it — `bank_mix`'s payable fraction **0.043 →
-    /// 0.052** and infrastructure builds 268 → 335 — after sitting at 0.043
-    /// through three interventions that did not touch it.
-    ///
-    /// **Two is a peak, not a direction**, which is what probing past it is for.
-    /// Work-years against the standard bed: `1` 184,338 · **`2` 284,199** ·
-    /// `3` 261,395 · `4` 235,971 · `6` 190,465. Every extra stop is a detour
-    /// paid in transit the hold is not earning, and past two the hauler is
-    /// shopping for colors the destination is no longer short of.
+    /// **`6`, chosen by Monte Carlo with [`Self::trade_decay_lambda`]** (T-147,
+    /// on the twin bed, `examples/forge_sweep`; appendix §D.53): jointly with
+    /// `λ = 0.04`, **+8.79% ± 0.78 on the tree composite and +28.2% ± 1.6
+    /// centers built to Band IV works**, 16/16 runs over eight seeds on
+    /// `Random` and `ColorRotated` ground. The two interact: more stops alone
+    /// peak lower (`λ = 0.01`: 3 → +3.0%, 4 → +4.6%, 6 → +4.4%, 8 → +2.6%) and
+    /// a sharper `λ` alone gains nothing past 0.02. Expansion pays −3.5%.
+    /// *Supersedes* R-O92's `2`, ratified on the standard bed before the works
+    /// bill was priced per color, where `2` was a peak and `6` gave back the
+    /// gain (industry §6.20 keeps that table). `1` against `2` is still the
+    /// largest effect in the sweep: −65% centers built.
     ///
     /// **`1` is the pre-T-91 engine, bit-identically** — one stop means the
     /// first stop is also the last, so the hauler loads exactly as it did.
@@ -3290,9 +3290,13 @@ pub struct SimConfig {
     /// `λ = 0` still reduces exactly to `most_needed_center`, which remains the
     /// permanent oracle (design law #5) and is still tested as such.
     ///
-    /// Three seeds is thin for a ratified constant; the value is confirmed in
-    /// *direction and order of magnitude*, and the precise optimum wants the
-    /// ten-seed bed (T-44).
+    /// **Re-chosen at `0.04` by Monte Carlo on the tree composite** (T-147,
+    /// politics §1.8's re-ratification, with [`Self::max_pickup_stops`] at `6`;
+    /// appendix §D.53). The table above is coverage alone at the old operating
+    /// point. On the twin bed with per-color works bills, `λ` and the stops a
+    /// leg may make interact: at two stops nothing above `0.02` gains, and at
+    /// four to six `0.02`–`0.04` is a plateau, `0.04` highest and `0.05` below
+    /// it. Placeholder magnitude within that plateau.
     pub trade_decay_lambda: f64,
     /// **`Y_super`** — super mass out per basic mass in (galaxy §4.2, cost curve
     /// §5.0): `3 basics → 2 supers + 1 slag`. R-M2's value; placeholder.
@@ -3422,7 +3426,7 @@ impl SimConfig {
             drive_specific_thrust: 18.21,
             structural_drive_fraction: 0.05,
             drive_volume_fraction: 0.01,
-            max_pickup_stops: 2,
+            max_pickup_stops: 6,
             build_lead_years: 2.0,
             fab_cap: 0.1,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
@@ -3455,7 +3459,7 @@ impl SimConfig {
             mining_tick_years: 50.0,
             density_floor: 0.01,
             cargo_unit_size: 1.0,
-            trade_decay_lambda: 0.01,
+            trade_decay_lambda: 0.04,
             super_yield: 2.0 / 3.0,
             apex_yield: 0.5,
             dollar_per_fabrication: 1.0,
@@ -5910,7 +5914,13 @@ impl Simulation {
                 // without the clock moving. The pair's mission is over the same
                 // way an exhausted rock's is.
                 let settled = self.world.owner.get(sh.base).is_some_and(|o| o.0 == p);
-                if load + refined_loaded <= Price::new(1e-9) && (exhausted || settled) {
+                // **And only with an empty hold** (T-147). A milk run of three
+                // or more stops can come back to its own base with what the
+                // earlier stops loaded; retiring it there put a laden hull in
+                // Reserve, and the next side run to take it wrote over the
+                // hold (appendix §D.53).
+                let empty = self.world.cargo.get(vehicle).is_none_or(|c| c.total() <= Price::new(1e-9));
+                if load + refined_loaded <= Price::new(1e-9) && (exhausted || settled) && empty {
                     let here = self.position_at(sh.base, self.clock).unwrap();
                     let outpost_pid = *self.world.planet_id.get(sh.base).unwrap();
                     self.park(vehicle, here);
@@ -18103,6 +18113,13 @@ mod tests {
         assert!(paid > 0.0, "no hull was paid for in supers");
         let bids: u64 = (3..6).map(|i| sim.exchange.posted[i].0).sum();
         assert!(bids > 0, "no center bid for a super");
+        // A hull in Reserve carries nothing: a side run that takes one writes
+        // its hold (appendix §D.53).
+        for p in 0..3 {
+            for &e in &sim.reserve_freighters[p] {
+                assert!(sim.world.cargo.get(e).is_none_or(|c| c.total() <= Price::new(1e-9)), "laden in Reserve");
+            }
+        }
         let after = sim.mass_ledger();
         let drift = (after.total() - before.total()).abs() / before.total();
         assert!(drift < 1e-9, "mass is not conserved: {:#?}", before.delta(&after));

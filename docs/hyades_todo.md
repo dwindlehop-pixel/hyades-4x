@@ -168,7 +168,21 @@ its empire; `γ = 0.75`, chosen by Monte Carlo, takes that to 12–40% and the
 tree composite +5.65% ± 0.79 (8/8 seeds). **It does not narrow the spread**:
 Growth's cv across seats moves −0.001 ± 0.018. **Open:** what separates seats
 after it — Band III centers short of the bill's total, and the count that
-reach Band III (appendix §D.51's inference, untested).
+reach Band III (appendix §D.51's inference, untested). **Measured (appendix
+§D.52):** a Band III center's income is freight (own mining ~0, Exchange
+deliveries land at rocks); bought centers received 8.6–18.2 kt/yr, centers short
+in total 0.6–0.9, and a center short one color receives that color at
+0.24–0.47 kt/yr — one General hold (31 kt) per round trip of a century or more,
+won in 10–55% of the pricings of piles that hold it. Pricing a pile at what the
+hold carries (−8.2% / −5.0% centers built) and a Reserve works run (1.2 kt
+moved) were refuted. **Landed: `trade_decay_lambda` 0.01 → 0.04 and
+`max_pickup_stops` 2 → 6, chosen by Monte Carlo** (appendix §D.53): +8.95% ±
+0.78 tree composite, **+29.3% ± 1.4 centers built**, 16/16 runs; supers and
+apex forged fall ~80%, Expansion −2.5% to −3.7%; Growth's cv −0.002 ± 0.020
+on random ground and −0.040 ± 0.021 on rotated. And a mass leak it exposed:
+a laden hauler retired to Reserve at its own base on a milk run of three or
+more stops, and a side run wrote over its hold; a hauler now retires only
+empty. **Open:** the supers lost; `next_pickup`'s cost (+46% ns/event).
 **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 
@@ -4108,6 +4122,11 @@ Claude's to write. The cost ratios are a separate, mechanical job and can land
 without them.
 
 ### T-44. Confirm `trade_decay_lambda` on the ten-seed bed
+
+**Superseded at T-147:** re-chosen at `0.04` on the tree composite jointly with
+`max_pickup_stops = 6`, 16 runs over eight seeds and two grounds (politics §1.4,
+appendix §D.53). The coverage question below was asked of an operating point
+that no longer exists.
 
 Ratified at **0.01** (half-life 69 yr) on 3 seeds — an interior optimum, 39.0%
 against 14.35% at λ=0. Direction and order of magnitude are not in doubt; the
