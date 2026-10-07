@@ -133,7 +133,7 @@ change). Current costs:
 |---|---|
 | `cargo test --all-targets` (unit + determinism + smoke) | ~85 s (unit target ~35 s) |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
-| `coverage_trace` | in the slow job; ~30 min for the whole `balance` job post-T-68 |
+| `coverage_trace` | in the slow job; **97 s** on an 800-world galaxy with a 2,000-yr baseline (T-147, measured on a loaded 4-core container) — the full galaxy took 51 min on a runner and passed the job's 60-min limit once the freight planner landed. Every verdict matched the full-galaxy run |
 | ~~`coverage_time`~~ | **out of CI** — ~8 min, *and* its doctrine comparison is now vacuous (below) |
 | `montecarlo` | 48 s — pinned to a 1,000-yr horizon at T-68; it was 6 full 4,000-yr runs and blew a 25-minute job budget |
 
