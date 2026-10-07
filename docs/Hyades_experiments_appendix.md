@@ -4720,7 +4720,8 @@ Production +21.0% ± 2.9.
 | a hauler may not detour to the pile it stands on | −2.37%, −1.85%, −2.77% | −2.8%, −6.9%, +2.8% | 0/3 |
 
 Stop cap 6 is inside two standard errors of 16 on both measures and runs
-20–28% fewer events, so `max_pickup_stops` stays at 6; at 6 against shipped,
+20–28% fewer events, so `max_pickup_stops` stayed at 6 (since lowered to 2
+with a kept, netted price table, §D.56); at 6 against shipped,
 seeds 1, 7, 42, 31337: composite +23.63% ± 3.86, centers built +43.4% ± 8.6,
 4/4. The zero-length detour is how a stop loads past its share of the room
 (each color at most its share per stop, `take_for_deficit`), and removing it
@@ -4754,6 +4755,89 @@ a hauler could load at except the one whose share of freight grows after
 reverses the sign on four, and a replication on four seeds and a second
 ground; a census of where the planner's center loads go (to which buyers, and
 how far each bill was from completion) would raise it or lower it.
+
+## D.56 A cheaper freight doctrine: a kept price table, netted as haulers commit
+
+*Supports T-147. The author's direction: approximate the per-stop freight
+planner (§D.55) with a cheaper doctrine that improves yr/s at under 5% loss
+of work-years. Bed: the twin bed (3 seats, 1,500 yr, `λ = 0.04`), work-years
+= the Growth stock, scored against the exact planner (§D.55 at stop cap 6,
+shortlist 3, prices read fresh) on the same seed; throughput is wall time of
+one run at 800 yr, seed 1, run one at a time on an idle machine, interleaved
+over two rounds where stated. Levers are two Doctrine fields,
+`freight_shortlist` and `freight_price_age_years`, and
+`SimConfig::max_pickup_stops`.*
+
+**The levers alone** (four seeds; work-years vs exact; wall at 800 yr, exact
+183.8 / 187.7 s, the engine before the planner 47.7 / 47.9 s):
+
+| stop cap / shortlist / price age | work-years | composite | wall |
+|---|---|---|---|
+| 2 / 3 / fresh | −3.05% ± 0.70 | +1.09% ± 0.70 | — |
+| 6 / 2 / fresh | −2.56% ± 3.18 | −1.85% ± 1.00 | — |
+| 6 / 1 / fresh | −5.78% ± 1.16 | −2.56% ± 0.59 | 146.1 / 147.3 s |
+| 3 / 3 / fresh | — | — | 140.0 / 143.6 s |
+| 6 / 3 / 5 yr, not netted | −4.92% ± 4.34 | −7.27% ± 1.07 | 152.8 s |
+| 2 / 1 / 5 yr, not netted | −8.25% ± 0.84 | −5.29% ± 0.71 | 77.2 s |
+
+An exact pruning of the buyer search (sort centers by their best price,
+stop at the first that cannot win) was bit-identical and slower, 263.9 s:
+the bound ignores the voyage discount, which cuts a score to about a third.
+
+**Netting.** A kept table is the centers' shortfalls and prices as read; when
+a hauler turns for a buyer, that buyer's shortfall in the table falls by what
+the hauler carries. Same price age, with and without it:
+
+| price age | not netted | netted |
+|---|---|---|
+| 5 yr | −4.92% ± 4.34 | **+42.73% ± 6.87**, 4/4 |
+| 25 yr | — | **+46.78% ± 5.50**, 4/4 |
+| 50 yr | — | +34.04% ± 5.29, 4/4 |
+| 100 yr | — | +10.05% ± 5.33, 3 seeds |
+
+**Why the exact planner is far from optimal — the overshoot census** (scratch
+build, seed 1, 1,500 yr): the share of kilotonnes delivered that exceeded
+the buyer's shortfall when the hauler arrived.
+
+| arm | deliveries | kt delivered | beyond the shortfall on arrival |
+|---|---|---|---|
+| exact | 1,179,000 | 5,660,513 | **0.930** |
+| 25 yr, netted | 596,000 | 1,340,576 | **0.592** |
+
+Every hauler prices the same unfilled shortfall, so haulers deciding close
+together converge on one buyer and most of what arrives is past what it
+needed. Some of it banks toward the next bill, so 0.930 bounds the waste
+rather than estimating it.
+
+**Netted, with the cheap levers** (price age 25 yr):
+
+| stop cap / shortlist | work-years | composite | centers built | wall |
+|---|---|---|---|---|
+| 6 / 3 | +46.78% ± 5.50 | +20.06% ± 2.13 | +37.5% ± 8.4 | 175.5 / 174.9 s |
+| 6 / 1 | +42.78% ± 5.53 | +18.90% ± 2.55 | +36.5% ± 9.2 | 136.9 s |
+| 2 / 3 | +40.02% ± 5.59 | +20.47% ± 2.80 | +33.3% ± 8.9 | 102.6 s |
+| **2 / 1** | **+39.33% ± 5.70** | **+20.11% ± 2.82** | **+33.6% ± 8.3** | **78.6 s** |
+| 1 / 1 | +24.01% ± 5.05 | +21.24% ± 2.14 | +25.0% ± 6.4 | 67.1 s |
+
+**Shipped: stop cap 2, shortlist 1, price age 25 yr.** Replicated on seeds
+2, 3, 5, 11 (+30.95% ± 7.13 work-years, 4/4) and on `ColorRotated` ground
+(+35.92% ± 7.64, 4/4); pooled over twelve runs **work-years +35.40% ± 3.74,
+composite +18.78% ± 1.73, centers built +28.5% ± 4.2, 12/12**, at 2.4x the
+exact planner's throughput. Against stop cap 6, shortlist 3 with the same
+netting (+40.69% ± 3.97 pooled) it gives up 3.8% of work-years for 2.2x the
+throughput. Against the engine before the planner, pooled twelve: composite
++40.68% ± 3.08, centers built +67.9% ± 7.5; that engine is still 1.6x faster
+per simulated year (47.8 s against 78.6 s). Apex forged over twelve
+seat-runs: 81 kt, against 144 exact and 1,370 before the planner (galaxy
+§4.5's open question). The default's price age is a placeholder inside the
+25-yr peak; the stop cap and shortlist were chosen for throughput.
+
+**Inference, stated as one:** the exact planner's gap is coordination, not
+precision — a fresher price helps one hauler and nothing tells the next one
+it has been spoken for. Confidence about 80%, from a four-seed ablation at
+one price age and the census on one seed; netting in-flight cargo against a
+table read fresh at every decision would separate the netting from the
+staleness, and would say whether a fresh read is worth its cost at all.
 
 ## References
 

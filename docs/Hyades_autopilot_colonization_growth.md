@@ -311,7 +311,10 @@ against**, on *the same tonnage* and the same trips — only the colors in the
 hold changed. **R-O89.** Since T-147 a stop takes only what its buyer wants;
 the top-up past the deficit is retired (§5.10).
 
-**5.8 `RATIFIED` — one outbound leg may visit up to six piles.**
+**5.8 `RATIFIED` — one outbound leg may visit up to two piles** (since T-147's
+freight planner, §5.10: every stop re-runs the planner, so the cap is chosen
+with its cost; appendix §D.56). The record below is the cap of six it
+replaced.
 `max_pickup_stops = 6`, chosen by Monte Carlo with §5.6's `λ = 0.04` (T-147,
 appendix §D.53): +8.95% ± 0.78 on the tree composite and +29.3% ± 1.4 centers
 built to Band IV works, 16/16 runs. A hold used to be filled from one map
@@ -334,8 +337,13 @@ choice) and discounted over every leg, `exp(−λ · Σ t)`. Detours are priced
 over this empire's outpost piles **and** its centers' abundance — what a
 center holds above its own next works bill, capped at the Exchange's gate
 for that buyer (`center_offer`, R-MX8) — each net of what haulers flying to
-it have claimed. The three best of each by an upper bound at the empire's
-posted prices are priced exactly (`PLAN_SHORTLIST = 3`, placeholder). The
+it have claimed. The best of each by an upper bound at the empire's posted
+prices are priced exactly, as many as `Doctrine::freight_shortlist` (`1`,
+placeholder). **The centers' side of the price is a table an empire keeps**
+(`Doctrine::freight_price_age_years`, 25 yr, placeholder): read from its
+banks and bills at most that often, and when a hauler turns for a buyer the
+buyer's shortfall in the table falls by what the hauler carries, so the next
+hauler does not price the same shortfall. The
 pile or center chosen after a delivery becomes the hauler's `base`. A stop
 loads only what the buyer wants (§5.7). Measured against the routing it
 replaces, on the twin bed at 1,500 yr with a stop cap of 16: tree composite
@@ -343,6 +351,14 @@ replaces, on the twin bed at 1,500 yr with a stop cap of 16: tree composite
 runs over eight seeds and two grounds; at §5.8's cap of 6, +23.63% ± 3.86 and
 +43.4% ± 8.6 on four seeds, inside two standard errors of 16 (appendix §D.55). Supers forged fall and apex falls to
 zero at the shipped forge premium — `OPEN`, galaxy §4.5 (appendix §D.55).
+
+**The kept, netted table and the cheap levers are the shipped doctrine**
+(the author's direction: a cheaper doctrine that improves yr/s at under 5%
+loss of work-years; appendix §D.56). Against reading every center fresh at
+every decision with three of each priced over six stops: **work-years
++35.40% ± 3.74, composite +18.78% ± 1.73, centers built +28.5% ± 4.2, 12/12
+runs, at 2.4x the throughput.** Reading fresh herds: 93% of the kilotonnes it
+delivered landed beyond the buyer's shortfall, against 59% netted.
 
 Two properties of it are **`OPEN`**:
 
@@ -354,9 +370,14 @@ Two properties of it are **`OPEN`**:
   own detours scored −1.85% to −2.77% on three of three seeds and is not
   shipped (appendix §D.55). What would settle it: a valuation that prices the
   bill's completion by the cargo, measured on the same bed.
-- **Cost.** The planner scans this empire's piles and centers at every stop;
-  events per run on the bed rise 2.1–2.3x at the cap of 6 (appendix §D.55). Throughput is set aside
-  by the author's direction until the scheduling is found.
+- **Cost.** The planner scans this empire's piles and centers at every stop.
+  At the shipped doctrine a twin-bed run of 800 yr takes 78.6 s against
+  47.8 s before the planner (appendix §D.56). What would settle it: a
+  throughput target from the author, and a profile at that doctrine.
+- **Netting against a fresh read.** The table's age and its netting are
+  measured together; netting committed cargo against a table read at every
+  decision has not been tried, and would say whether a fresh read is worth
+  its cost at all (appendix §D.56).
 
 **5.9 `RATIFIED` — a hauler's hull is sized to its rock, under a liquidity
 cap.** `freighter_hull` scores candidate hulls on `load / round_trip / hull_cost`
@@ -634,8 +655,9 @@ count, not a fraction — and the guard is kept rather than deleted.
 | R-O93 | the population logistic is solved, not stepped | 8/8 seeds |
 | R-O94 | a hauler's hull is a forecast under a liquidity cap | 8/8 and 7/8 seeds |
 | T-147 | the next leg is priced at every stop, over piles and centers (§5.10) | 12/12 runs |
+| T-147 | a kept freight price table netted as haulers commit; stop cap 2, shortlist 1, age 25 yr (§5.10) | 12/12 runs |
 | R-MC16 | thrust is drawn from mounted drive | placeholder magnitudes |
-| R-P2 | `trade_decay_lambda = 0.04` with `max_pickup_stops = 6`, on the tree composite | 16/16 runs |
+| R-P2 | `trade_decay_lambda = 0.04` with `max_pickup_stops = 6`, on the tree composite; stops since 2 (§5.8) | 16/16 runs |
 
 ### Open
 

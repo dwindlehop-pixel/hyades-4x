@@ -200,6 +200,14 @@ noise of 16). **Open:** apex forged falls to zero at the forge premium 0.3
 (galaxy §4.5, the author's call); the planner values colors linearly, so a
 hold can fill with one color at one pile (autopilot §5.10); `λ` is not
 re-swept under the planner (politics §1.4); events per run 2.1–2.3x.
+**Landed: a cheaper doctrine** (the author's direction; appendix §D.56): a
+kept price table netted as haulers commit (`freight_price_age_years` 25),
+`freight_shortlist` 1, `max_pickup_stops` 2 — work-years +35.40% ± 3.74 and
+composite +18.78% ± 1.73 against the exact planner, 12/12, at 2.4x its
+throughput. The exact planner herded: 93% of the kilotonnes it delivered
+landed beyond the buyer's shortfall. **Open:** netting against a fresh read;
+a throughput target (the shipped doctrine is 1.6x slower per simulated year
+than the engine before the planner).
 **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 

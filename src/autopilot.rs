@@ -608,6 +608,26 @@ pub struct Doctrine {
     ///
     /// **Default `0.75`, chosen by Monte Carlo** ([`COMPLETION_EXPONENT`]).
     pub completion_exponent: f64,
+    /// **How many piles and how many centers a hauler prices exactly at each
+    /// stop** (T-147; autopilot §5.10): the rest are ruled out by an upper
+    /// bound at the empire's posted prices. Each one priced exactly is one
+    /// search over the empire's centers for its best buyer, so this is what an
+    /// empire spends deciding where its freight goes. Default
+    /// [`FREIGHT_SHORTLIST`]; `0` prices no detour and delivers what is
+    /// aboard.
+    pub freight_shortlist: usize,
+    /// **How old the centers' side of a freight price may be**, yr (T-147;
+    /// autopilot §5.10). Every freight decision prices cargo at every center
+    /// of the empire — its shortfall against its next works bill and what it
+    /// pays per color. At `0` those are read fresh at every decision; above
+    /// it, an empire reads them once and prices against that table until it
+    /// is this many years old, so decisions in between see banks and bills
+    /// as they stood then, **less what haulers have since committed to
+    /// deliver there**. That netting is what reading fresh lacks: every hauler
+    /// then prices the same shortfall, and on the twin bed 92% of the
+    /// kilotonnes delivered landed beyond the buyer's shortfall (appendix
+    /// §D.56). Default [`FREIGHT_PRICE_AGE_YEARS`].
+    pub freight_price_age_years: f64,
 
     /// **Sentry mass per kilotonne defended** (T-139,
     /// `Hyades_technology_tree.md` §9; the author's ruling: "more defense in
@@ -787,6 +807,8 @@ impl Default for Doctrine {
             forge_price_floor: 0.0,
             forge_holding_scale: 1.0,
             completion_exponent: COMPLETION_EXPONENT,
+            freight_shortlist: FREIGHT_SHORTLIST,
+            freight_price_age_years: FREIGHT_PRICE_AGE_YEARS,
             sentry_ratio: 0.0,
             sentry_loss_price: SENTRY_LOSS_PRICE,
             missile_pickets: false,
@@ -1906,6 +1928,18 @@ pub const SENTRY_LOSS_PRICE: f64 = 3.0;
 /// **+5.65% ± 0.79 pooled, 8/8 seeds** (Growth +16.2%), against `0.5` at
 /// +5.53% ± 1.17 and `1` at +4.14% ± 0.72 (appendix §D.51).
 pub const COMPLETION_EXPONENT: f64 = 0.75;
+
+/// [`Doctrine::freight_shortlist`]'s default: one pile and one center, chosen
+/// with [`FREIGHT_PRICE_AGE_YEARS`] for throughput (appendix §D.56).
+/// Placeholder.
+pub const FREIGHT_SHORTLIST: usize = 1;
+
+/// [`Doctrine::freight_price_age_years`]'s default, yr: an empire reads its
+/// centers' prices every 25 years and nets each committed delivery against
+/// the buyer in between (appendix §D.56) — work-years +46.8% ± 5.5 against
+/// reading them fresh at every decision, from 5 / 25 / 50 / 100 yr scoring
+/// +42.7 / +46.8 / +34.0 / +10.1%. Placeholder inside that peak.
+pub const FREIGHT_PRICE_AGE_YEARS: f64 = 25.0;
 
 /// **The forge premium** ([`Doctrine::forge_premium`]): what an empty forge's
 /// bid for a basic is worth against any other center's, whose pressure is at

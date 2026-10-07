@@ -16,6 +16,8 @@
 //! Environment: `FS_SEEDS` (default 1,7,42,31337), `FS_PREMIUM`, `FS_FLOOR`,
 //! `FS_SCALE`, `FS_COMPLETION` (the forge's three Doctrine fields and
 //! [`Doctrine::completion_exponent`]; defaults are the shipped ones),
+//! `FS_SHORTLIST` and `FS_AGE` ([`Doctrine::freight_shortlist`] and
+//! [`Doctrine::freight_price_age_years`]; `FS_AGE=0` reads prices fresh),
 //! `FS_GROUND` (`random`, `identical`, `rotated`; default `random`),
 //! `FS_LAMBDA` and `FS_STOPS` ([`SimConfig::trade_decay_lambda`] and
 //! [`SimConfig::max_pickup_stops`]; defaults are the shipped ones).
@@ -56,11 +58,18 @@ fn main() {
         forge_price_floor: env("FS_FLOOR").unwrap_or(base.forge_price_floor),
         forge_holding_scale: env("FS_SCALE").unwrap_or(base.forge_holding_scale),
         completion_exponent: env("FS_COMPLETION").unwrap_or(base.completion_exponent),
+        freight_shortlist: env("FS_SHORTLIST").unwrap_or(base.freight_shortlist),
+        freight_price_age_years: env("FS_AGE").unwrap_or(base.freight_price_age_years),
         ..base
     };
     let tag = format!(
-        "premium {} floor {} scale {} completion {}",
-        doctrine.forge_premium, doctrine.forge_price_floor, doctrine.forge_holding_scale, doctrine.completion_exponent
+        "premium {} floor {} scale {} completion {} shortlist {} price age {}",
+        doctrine.forge_premium,
+        doctrine.forge_price_floor,
+        doctrine.forge_holding_scale,
+        doctrine.completion_exponent,
+        doctrine.freight_shortlist,
+        doctrine.freight_price_age_years
     );
     println!("forge_sweep: {SEATS} seats, horizon {horizon} yr, {ground:?}, twin bed, {tag}");
     std::io::stdout().flush().ok();

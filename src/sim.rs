@@ -51,8 +51,10 @@
 //! the categories you want before (or during) a run, then read
 //! [`Simulation::log`] to see exactly what each `sys_*` system did and why.
 
+use std::cell::RefCell;
 use std::cmp::{Ordering, Reverse};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
+use std::rc::Rc;
 
 use crate::autopilot::{
     class_ordered_for, Autopilot, BaselineAutopilot, BuildOrder, Candidate, Doctrine, PlanetView, ProductionContext,
@@ -127,10 +129,15 @@ enum Next {
     Pickup(Entity, [f64; 3], Entity),
 }
 
+/// A seat's table of its centers' freight prices and the time it was read
+/// ([`Doctrine::freight_price_age_years`]).
+type PriceTable = (f64, Rc<Vec<DemandRow>>);
+
 /// **One center's side of a delivery's price** ([`Simulation::demand_rows`]):
 /// what [`Simulation::demand_value`] reads, read once per
 /// [`Simulation::plan_next`] rather than once per candidate buyer per
 /// candidate leg.
+#[derive(Clone)]
 struct DemandRow {
     center: Entity,
     at: Vec3,
@@ -169,11 +176,6 @@ impl DemandRow {
         value
     }
 }
-
-/// **How many piles a hauler prices exactly at each stop** ([`Simulation::plan_next`]):
-/// the rest are ruled out by an upper bound at the empire's posted prices.
-/// Placeholder.
-const PLAN_SHORTLIST: usize = 3;
 
 /// **A hull away from its standing duty for one freight run** (T-134 stage 2),
 /// and the leg it is on. Its role reads `Freighter` for the run; the duty it
@@ -2999,10 +3001,12 @@ pub struct SimConfig {
     /// gain (industry §6.20 keeps that table). `1` against `2` is still the
     /// largest effect in the sweep: −65% centers built.
     ///
-    /// **`1` is the pre-T-91 engine, bit-identically** — one stop means the
-    /// first stop is also the last, so the hauler loads exactly as it did.
-    /// Verified against the prior binary on seeds 1 and 7: work-years,
-    /// colony-years, colonies, vehicles and event count all match to the digit.
+    /// **`2` since the freight planner prices every stop** (T-147, appendix
+    /// §D.56): with [`Doctrine::freight_shortlist`] `1` and
+    /// [`Doctrine::freight_price_age_years`] `25`, the cheapest planning that
+    /// keeps its gain — 2.4x the throughput of pricing six stops exactly, with
+    /// work-years up rather than down. Every stop re-runs the planner, so the
+    /// cap is a cost as well as a route length.
     pub max_pickup_stops: usize,
     /// **Irreducible per-hull lead time, `t_lead`** (`Hyades_industry.md` §3.2,
     /// T-68) — tooling and crew, the part of a build that does not scale with
@@ -3472,7 +3476,7 @@ impl SimConfig {
             drive_specific_thrust: 18.21,
             structural_drive_fraction: 0.05,
             drive_volume_fraction: 0.01,
-            max_pickup_stops: 6,
+            max_pickup_stops: 2,
             build_lead_years: 2.0,
             fab_cap: 0.1,
             // "requires 1 pop as cargo to start a new colony" — confirmed,
@@ -3824,6 +3828,9 @@ pub struct Simulation {
     /// The same claims summed per `(seat, pile)`, so a pile is priced net of
     /// what haulers already flying to it will lift.
     route_reserved: BTreeMap<(u32, u64), [f64; 3]>,
+    /// Each seat's last table of its centers' freight prices and when it was
+    /// read ([`Doctrine::freight_price_age_years`]).
+    demand_cache: RefCell<Vec<Option<PriceTable>>>,
     /// **Each center's standing order** — the order it wants most and cannot
     /// yet pay, because it owes a refined material the center neither holds nor
     /// can synthesize (`Hyades_matching.md` §10.4, the author's ruling on
@@ -4048,6 +4055,7 @@ impl Simulation {
             hauler_record: BTreeMap::new(),
             route_claims: BTreeMap::new(),
             route_reserved: BTreeMap::new(),
+            demand_cache: RefCell::new(vec![None; n]),
             standing: BTreeMap::new(),
             current_round: 0,
             inert_card_plays: 0,
@@ -5832,7 +5840,7 @@ impl Simulation {
             // The centers' side of the price, kept for the next leg's planning
             // at this stop (nothing here moves a center's bank), keyed by
             // whether the cargo it priced carried supers or apex.
-            let mut rows: Option<(bool, Vec<DemandRow>)> = None;
+            let mut rows: Option<(bool, Rc<Vec<DemandRow>>)> = None;
             if !yard_here {
                 let pile = self.holding(p, sh.outpost).copied().unwrap_or_default();
                 let mut probe = aboard;
@@ -5844,7 +5852,7 @@ impl Simulation {
                 let lambda = self.config.trade_decay_lambda;
                 let d = if lambda > 0.0 {
                     let refined = probe.refined_total() > Price::ZERO;
-                    let table = self.demand_rows(PlayerId(p), &self.doctrine_of(p as usize), refined);
+                    let table = self.shared_demand_rows(PlayerId(p), &self.doctrine_of(p as usize), refined);
                     let d = Self::best_row(&table, lambda, at, &probe, refined, accel).map(|k| table[k].center);
                     rows = Some((refined, table));
                     d
@@ -6041,6 +6049,8 @@ impl Simulation {
                 }
             };
             self.world.shuttle.get_mut(vehicle).unwrap().destination = dest;
+            let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
+            self.net_committed_delivery(p, dest, &cargo);
 
             let from = self.position_at(sh.outpost, self.clock).unwrap();
             let to = *self.world.position.get(dest).unwrap();
@@ -10437,6 +10447,41 @@ impl Simulation {
         rows
     }
 
+    /// [`Self::demand_rows`] as `owner`'s Doctrine lets it be read: fresh, or
+    /// from the table read within [`Doctrine::freight_price_age_years`]. A
+    /// cargo carrying supers or apex is always priced fresh.
+    fn shared_demand_rows(&self, owner: PlayerId, doctrine: &Doctrine, refined: bool) -> Rc<Vec<DemandRow>> {
+        let age = doctrine.freight_price_age_years;
+        if age <= 0.0 || refined {
+            return Rc::new(self.demand_rows(owner, doctrine, refined));
+        }
+        let mut cache = self.demand_cache.borrow_mut();
+        let slot = &mut cache[owner.0 as usize];
+        if let Some((read, rows)) = slot.as_ref() {
+            if self.clock - *read < age {
+                return rows.clone();
+            }
+        }
+        let rows = Rc::new(self.demand_rows(owner, doctrine, false));
+        *slot = Some((self.clock, rows.clone()));
+        rows
+    }
+
+    /// **A delivery committed against a seat's price table** (T-147): while
+    /// [`Doctrine::freight_price_age_years`] keeps the table, the buyer's
+    /// shortfall in it falls by what the hauler carries, so the next hauler
+    /// deciding before the table is read again does not price the same
+    /// shortfall. Nothing to do when the seat reads its centers fresh.
+    fn net_committed_delivery(&mut self, seat: u32, buyer: Entity, cargo: &Minerals) {
+        let mut cache = self.demand_cache.borrow_mut();
+        let Some((_, rows)) = cache[seat as usize].as_mut() else { return };
+        let Some(k) = rows.iter().position(|r| r.center == buyer) else { return };
+        let row = &mut Rc::make_mut(rows)[k];
+        for (i, &c) in Basic::ALL.iter().enumerate() {
+            row.want[i] = (row.want[i] - cargo.get_basic(c)).max(0.0);
+        }
+    }
+
     /// [`Self::best_delivery_center`] over precomputed rows at `λ > 0`: the
     /// same scores in the same order.
     fn best_row(
@@ -10482,7 +10527,7 @@ impl Simulation {
     ///   what the center holds above its own next works bill (R-MX8), net of
     ///   what other haulers have claimed there, and deliver `aboard` plus
     ///   what that source adds — up to `room` kt, in the colors the empire pays
-    ///   most for. The [`PLAN_SHORTLIST`] best piles and best centers by an
+    ///   most for. The [`Doctrine::freight_shortlist`] best piles and best centers by an
     ///   upper bound at the prices the empire's centers post
     ///   ([`Shipping::price`]) are priced exactly; a center's load is capped
     ///   at what the Exchange's gate lets it ship to that buyer
@@ -10536,7 +10581,7 @@ impl Simulation {
         let rows = match rows {
             Some(r) => r,
             None => {
-                built = self.demand_rows(owner, &doctrine, refined);
+                built = self.shared_demand_rows(owner, &doctrine, refined);
                 &built[..]
             }
         };
@@ -10565,6 +10610,10 @@ impl Simulation {
         if price.iter().all(|x| *x <= 0.0) {
             return best;
         }
+        let shortlist = doctrine.freight_shortlist;
+        if shortlist == 0 {
+            return best;
+        }
         let mut order = [0usize, 1, 2];
         order.sort_by(|&a, &b| price[b].total_cmp(&price[a]).then(a.cmp(&b)));
         let leg = G * self.thrust_to_mass(hull, Kilotons::new(aboard.total().kilotons()));
@@ -10591,9 +10640,9 @@ impl Simulation {
         // discount is at most 1, and the margin keeps a bound computed by a
         // different sum of roundings from excluding what the exact sum admits.
         let may_enter = |short: &[(f64, u64, [f64; 3], f64, bool)], value: f64| {
-            value > 0.0 && (short.len() < PLAN_SHORTLIST || value * (1.0 + 1e-9) > short[short.len() - 1].0)
+            value > 0.0 && (short.len() < shortlist || value * (1.0 + 1e-9) > short[short.len() - 1].0)
         };
-        let mut short: Vec<(f64, u64, [f64; 3], f64, bool)> = Vec::with_capacity(2 * PLAN_SHORTLIST + 1);
+        let mut short: Vec<(f64, u64, [f64; 3], f64, bool)> = Vec::with_capacity(2 * shortlist + 1);
         for (&(_, rock), pile) in self.holdings.elsewhere.range((seat, 0)..=(seat, u64::MAX)) {
             let offer = Basic::ALL.map(|c| pile.get_basic(c));
             if !may_enter(&short, fill(offer).1) {
@@ -10601,23 +10650,23 @@ impl Simulation {
             }
             let held = self.route_reserved.get(&(seat, rock)).copied().unwrap_or([0.0; 3]);
             let (take, value) = fill(core::array::from_fn(|i| offer[i] - held[i]));
-            if value <= 0.0 || (short.len() == PLAN_SHORTLIST && value <= short[short.len() - 1].0) {
+            if value <= 0.0 || (short.len() == shortlist && value <= short[short.len() - 1].0) {
                 continue;
             }
             let Some(&at) = self.world.position.get(Entity(rock)) else { continue };
             let t1 = math::ship_travel_years(from.distance(at), leg);
             let bound = value * transcendental::exp_fast(-lambda * t1);
-            if short.len() < PLAN_SHORTLIST || bound > short[short.len() - 1].0 {
+            if short.len() < shortlist || bound > short[short.len() - 1].0 {
                 let k = short.iter().position(|x| bound > x.0 || (bound == x.0 && rock < x.1)).unwrap_or(short.len());
                 short.insert(k, (bound, rock, take, t1, false));
-                short.truncate(PLAN_SHORTLIST);
+                short.truncate(shortlist);
             }
         }
         // **And a center's abundance** (R-MX8): what it holds above its own
         // next works bill, net of what haulers have already claimed there.
         // Priced exactly below at the Exchange's gate for its buyer.
         {
-            let mut cshort: Vec<(f64, u64, [f64; 3], f64, bool)> = Vec::with_capacity(PLAN_SHORTLIST + 1);
+            let mut cshort: Vec<(f64, u64, [f64; 3], f64, bool)> = Vec::with_capacity(shortlist + 1);
             for r in rows {
                 let (e, at) = (r.center, r.at);
                 let Some(bill) = r.bill else { continue };
@@ -10631,16 +10680,16 @@ impl Simulation {
                 let held = self.route_reserved.get(&(seat, e.0)).copied().unwrap_or([0.0; 3]);
                 let (take, value) =
                     fill(core::array::from_fn(|i| bank.get_basic(Basic::ALL[i]) - bill[i].kilotons() - held[i]));
-                if value <= 0.0 || (cshort.len() == PLAN_SHORTLIST && value <= cshort[cshort.len() - 1].0) {
+                if value <= 0.0 || (cshort.len() == shortlist && value <= cshort[cshort.len() - 1].0) {
                     continue;
                 }
                 let t1 = math::ship_travel_years(from.distance(at), leg);
                 let bound = value * transcendental::exp_fast(-lambda * t1);
-                if cshort.len() < PLAN_SHORTLIST || bound > cshort[cshort.len() - 1].0 {
+                if cshort.len() < shortlist || bound > cshort[cshort.len() - 1].0 {
                     let k =
                         cshort.iter().position(|x| bound > x.0 || (bound == x.0 && e.0 < x.1)).unwrap_or(cshort.len());
                     cshort.insert(k, (bound, e.0, take, t1, true));
-                    cshort.truncate(PLAN_SHORTLIST);
+                    cshort.truncate(shortlist);
                 }
             }
             short.extend(cshort);
@@ -17792,6 +17841,37 @@ mod tests {
         assert!(sim.route_reserved.is_empty() && sim.route_claims.is_empty());
         let aboard = Minerals { cyan: small, ..Default::default() };
         assert!(matches!(sim.plan_next(0, hull, here, &aboard, 0.0, None), Some(Next::Deliver(_))));
+    }
+
+    /// **A committed delivery is netted against the buyer in a kept price
+    /// table, and a seat that reads fresh keeps none** (T-147, appendix §D.56).
+    /// Without the netting every hauler deciding before the next read prices
+    /// the same shortfall.
+    #[test]
+    fn a_committed_delivery_nets_against_the_buyer_in_the_price_table() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        *sim.held_at_mut(home).unwrap() = Minerals::default();
+        let doctrine = sim.doctrine_of(0);
+        assert!(doctrine.freight_price_age_years > 0.0, "the shipped doctrine keeps a table");
+        let want = |sim: &Simulation| {
+            let rows = sim.shared_demand_rows(PlayerId(0), &sim.doctrine_of(0), false);
+            rows.iter().find(|r| r.center == home).unwrap().want
+        };
+        let before = want(&sim);
+        assert!(before[0] > 1.0, "an empty bank is short of Cyan: {before:?}");
+        sim.net_committed_delivery(0, home, &Minerals { cyan: 1.0, ..Default::default() });
+        let after = want(&sim);
+        assert!((before[0] - after[0] - 1.0).abs() < 1e-9, "{before:?} -> {after:?}");
+        assert_eq!(before[1], after[1], "only the color carried");
+
+        // Read fresh: no table, nothing to net.
+        sim.world.doctrine.get_mut(sim.player_entity[0]).unwrap().freight_price_age_years = 0.0;
+        sim.demand_cache.borrow_mut()[0] = None;
+        let fresh = want(&sim);
+        sim.net_committed_delivery(0, home, &Minerals { cyan: 1.0, ..Default::default() });
+        assert!(sim.demand_cache.borrow()[0].is_none());
+        assert_eq!(want(&sim), fresh);
     }
 
     /// **An empty bank pays a rounding crumb with nothing, never NaN** (T-147).
