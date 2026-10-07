@@ -122,6 +122,9 @@ the twin bed (appendix §D.53). It was first ratified at `0.01` as the
 §B.1); `λ = 0` still reduces exactly to `most_needed_center` — design law #5's
 single-supply oracle — so one function checks two independent degeneracies.
 Placeholder magnitude inside a plateau: `0.02`–`0.04` with four to six stops.
+**`OPEN` since T-147's freight planner** (autopilot §5.10): `λ` now also
+discounts every leg the planner compares, and its plateau was found under the
+routing the planner replaced; it has not been re-swept (appendix §D.55).
 
 **The condition of ratification was that the discount must be *the* solution to
 freighter routing, not merely compatible with it, and it is:** the mechanism paid

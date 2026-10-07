@@ -38,9 +38,11 @@ use hyades_engine::log::LogFilter;
 use hyades_engine::prelude::*;
 use std::time::Instant;
 
-/// 800 until T-147, whose haulers raised the events per run; 400 keeps the
+/// 800 until T-147, whose haulers raised the events per run; 400 kept the
 /// event count and the cost of the old bed (36,826 events against 42,023).
-const PLANETS: usize = 400;
+/// 150 since T-147's freight planner, which prices every stop: the 400-planet
+/// bed went to 74,148 events at ~12.7 s a debug run; 150 is 25,415 at ~2.1 s.
+const PLANETS: usize = 150;
 const PLAYERS: usize = 3;
 const HORIZON: f64 = 600.0;
 /// **Nine, and five was measured to be too few.** At five this test flaked at
@@ -53,7 +55,11 @@ const HORIZON: f64 = 600.0;
 /// The fix for a flaky timing test is more samples, never a looser budget: the
 /// threshold is what the test is *for*, and a threshold widened to cover
 /// measurement noise no longer bounds anything.
-const REPEATS: usize = 9;
+///
+/// **Thirteen since T-147's freight planner.** The bed that keeps this target
+/// inside its budget runs ~1.5 s, and at nine it read 1.041, 1.000 and 1.055
+/// over three runs.
+const REPEATS: usize = 13;
 
 /// The budget. Telemetry costing more than this makes every instrumented
 /// measurement in the project a measurement of a different system.
@@ -63,7 +69,8 @@ const REPEATS: usize = 9;
 ///
 /// | planets x horizon | events | ratio |
 /// |---|---|---|
-/// | 400 x 600 (shipped since T-147) | 36,826 | 1.021, 1.076, 0.932 over three runs |
+/// | 150 x 600 (shipped since T-147's freight planner) | 19,782 | 0.994, 0.992, 1.001 over three runs, min of 13 |
+/// | 400 x 600 (T-147, before the planner) | 36,826 | 1.021, 1.076, 0.932 over three runs |
 /// | 800 x 600 before T-147, same container | 42,023 | 0.982, 1.092, 1.027 over three runs |
 /// | 800 x 600 (as first measured) | 15,602 | **1.001** (min of 9; per-pair 0.948–1.067) |
 ///

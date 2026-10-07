@@ -326,8 +326,10 @@ abundance_c = max(0, held_c(O) − bill_c(O))
 
 So a center keeps what its own next whole Band needs, and ships only where the Exchange
 would ship an ask (§8.1's rule with `a_j = wtp(O, c)`). What loads at a center
-goes to `D`, the buyer it was priced against, and is never re-routed. A milk run
-(T-91) may stop at such a center too, scored the same way as any other pile. A
+goes to `D`, the buyer it was priced against, and is never re-routed. Since
+T-147 a hauler prices centers beside piles at every stop and after every
+delivery (`plan_next`, autopilot §5.10): a center's abundance, net of what
+haulers have claimed there, valued at its best buyer and capped by this gate. A
 hauler whose own rock is settled keeps working while `O` offers something, and
 stands down as before once it offers nothing. No new constant. Measured on the
 8-seed bed: colony-years **+1.29% ± 0.22, 8/8 seeds**; work-years +6.22% ±

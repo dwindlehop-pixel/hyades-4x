@@ -187,8 +187,19 @@ appendix §D.54): four scratch arms, none landed. Repricing the next leg at
 each stop delivers two to four times the freight before 500 yr and loses
 41.5% ± 3.6 of the tree composite by 1,500 yr, because no fleet-size rule
 tried prices a roaming fleet correctly (2.2k to 30k haulers per seat across
-the rules). **Open:** a hauler order priced against the piles' refill rate,
-or a per-cycle assignment of haulers to piles and buyers.
+the rules). ~~**Open:** a hauler order priced against the piles' refill rate,
+or a per-cycle assignment of haulers to piles and buyers.~~ **Refuted and
+fixed (appendix §D.55):** the fleet-size and load-size ablations moved
+kilotonnes per delivery by about 1 kt; a census of loads by source showed
+shipped's center-to-center freight (R-MX8) growing to the size of outpost
+freight after 500 yr, and the planner priced piles only. **Landed: the next
+leg priced at every stop over piles and centers' abundance** (autopilot
+§5.10): tree composite +21.12% ± 1.64, **centers built +38.1% ± 3.2**, 12/12
+runs over eight seeds and two grounds; `max_pickup_stops` stays 6 (inside
+noise of 16). **Open:** apex forged falls to zero at the forge premium 0.3
+(galaxy §4.5, the author's call); the planner values colors linearly, so a
+hold can fill with one color at one pile (autopilot §5.10); `λ` is not
+re-swept under the planner (politics §1.4); events per run 2.1–2.3x.
 **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 

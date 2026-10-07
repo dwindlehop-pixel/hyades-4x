@@ -1054,6 +1054,7 @@ impl Simulation {
                 if let Some(base) = self.world.shuttle.get(e).map(|sh| sh.base) {
                     self.hauler_record.entry((seat, base.0)).or_default().1 += 1;
                 }
+                self.release_route(e);
             }
             _ => {}
         }

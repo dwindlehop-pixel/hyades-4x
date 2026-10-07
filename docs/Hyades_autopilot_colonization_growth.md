@@ -308,7 +308,8 @@ two independent degeneracies.
 not in proportion to the pile the hauler happens to be standing on. **+8.40% ±
 1.86 work-years, 8/8 seeds, replicated on four the candidate was not chosen
 against**, on *the same tonnage* and the same trips — only the colors in the
-hold changed. **R-O89.**
+hold changed. **R-O89.** Since T-147 a stop takes only what its buyer wants;
+the top-up past the deficit is retired (§5.10).
 
 **5.8 `RATIFIED` — one outbound leg may visit up to six piles.**
 `max_pickup_stops = 6`, chosen by Monte Carlo with §5.6's `λ = 0.04` (T-147,
@@ -323,6 +324,39 @@ magnitudes, load-bearing at the ones development reaches.
 
 **Two is a peak, not merely better than one**: one stop through six scores
 184k / **284k** / 261k / 236k / 190k work-years.
+
+**5.10 `RATIFIED` — the next leg is priced at every stop, over piles and
+centers** (T-147, the author's direction: dynamic routing priced in `$`).
+At every pile and after every delivery, `Simulation::plan_next` compares
+delivering what is aboard now with detouring to load more first, each valued
+at its best buyer's prices (`demand_value` at `best_delivery_center`'s
+choice) and discounted over every leg, `exp(−λ · Σ t)`. Detours are priced
+over this empire's outpost piles **and** its centers' abundance — what a
+center holds above its own next works bill, capped at the Exchange's gate
+for that buyer (`center_offer`, R-MX8) — each net of what haulers flying to
+it have claimed. The three best of each by an upper bound at the empire's
+posted prices are priced exactly (`PLAN_SHORTLIST = 3`, placeholder). The
+pile or center chosen after a delivery becomes the hauler's `base`. A stop
+loads only what the buyer wants (§5.7). Measured against the routing it
+replaces, on the twin bed at 1,500 yr with a stop cap of 16: tree composite
+**+21.12% ± 1.64**, centers built to Band IV works **+38.1% ± 3.2**, 12/12
+runs over eight seeds and two grounds; at §5.8's cap of 6, +23.63% ± 3.86 and
++43.4% ± 8.6 on four seeds, inside two standard errors of 16 (appendix §D.55). Supers forged fall and apex falls to
+zero at the shipped forge premium — `OPEN`, galaxy §4.5 (appendix §D.55).
+
+Two properties of it are **`OPEN`**:
+
+- **Value is linear per color.** `demand_value` prices each color at its
+  center's per-color pressure; it does not price what a second color does for
+  a conjunctive bill, so a hauler with an empty-banked buyer can load one color
+  across several stops at the same pile (staying costs no transit) rather than
+  fetch the second color a leg away. Excluding the pile it stands on from its
+  own detours scored −1.85% to −2.77% on three of three seeds and is not
+  shipped (appendix §D.55). What would settle it: a valuation that prices the
+  bill's completion by the cargo, measured on the same bed.
+- **Cost.** The planner scans this empire's piles and centers at every stop;
+  events per run on the bed rise 2.1–2.3x at the cap of 6 (appendix §D.55). Throughput is set aside
+  by the author's direction until the scheduling is found.
 
 **5.9 `RATIFIED` — a hauler's hull is sized to its rock, under a liquidity
 cap.** `freighter_hull` scores candidate hulls on `load / round_trip / hull_cost`
@@ -599,6 +633,7 @@ count, not a fraction — and the guard is kept rather than deleted.
 | R-O92 | one outbound leg visits two piles | 8/8 seeds |
 | R-O93 | the population logistic is solved, not stepped | 8/8 seeds |
 | R-O94 | a hauler's hull is a forecast under a liquidity cap | 8/8 and 7/8 seeds |
+| T-147 | the next leg is priced at every stop, over piles and centers (§5.10) | 12/12 runs |
 | R-MC16 | thrust is drawn from mounted drive | placeholder magnitudes |
 | R-P2 | `trade_decay_lambda = 0.04` with `max_pickup_stops = 6`, on the tree composite | 16/16 runs |
 

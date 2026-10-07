@@ -4644,6 +4644,117 @@ competes for. Confidence about 60%; a fleet-size rule priced against the
 piles' refill rate (or a per-cycle assignment of haulers to piles and
 buyers), measured on the same bed, would test it.
 
+**Refuted by §D.55.** The fleet-size and load-size ablations moved
+kilotonnes per delivery by about 1 kt; the cause was that these arms priced
+outpost piles only, which drops center-to-center freight.
+
+
+## D.55 Why per-stop routing fell behind after 500 years: it never loaded at a center
+
+*Supports T-147. The author's direction: run experiments to explain §D.54's
+turnaround after 500 yr, then fix it. Bed: §D.53's twin bed (3 seats,
+1,500 yr, `λ = 0.04`), `Random` ground, scored against the shipped engine
+(`max_pickup_stops = 6`) on the same seed. Arms are scratch builds; a scratch
+census (`freight_census`) reports per seat every 250 yr: ore mined at outposts
+and at centers, kilotonnes loaded at outposts and at centers, colonies, and
+centers with works at Band III and Band IV.*
+
+**Two hypotheses refuted on seed 1, at 500 yr** (arm 3, stop cap 16):
+
+| arm | kt per delivery, 250–500 yr | freighters at 500 yr |
+|---|---|---|
+| arm 3 | 2.3–3.1 | 4.7k–6.9k |
+| + fill the hold on departure | 3.0–3.4 | 5.0k–5.6k |
+| + base not moved (shipped fleet accounting) | 2.4–3.2 | 3.9k–4.2k |
+| both | 3.0–3.6 | 3.5k–3.7k |
+
+Neither the load cap nor the fleet count moves kilotonnes per delivery by
+more than about 1 kt.
+
+**Extraction is not it either.** Over 500–750 yr arm 3 mines 75–84 Mt per seat
+at outposts against shipped's 77–88 Mt (seed 1) and lifts as much or more
+from them (68–82 Mt against 65–72 Mt).
+
+**The census that named it — loads by source, per seat per 250 yr:**
+
+| window | shipped, at outposts | shipped, at centers | arm 3, at outposts | arm 3, at centers |
+|---|---|---|---|---|
+| seed 1, 250–500 | 11–17 Mt | 1.6–3.1 Mt | 30–33 Mt | 0 |
+| seed 1, 500–750 | 65–72 Mt | 21–25 Mt | 68–82 Mt | 0.001–0.002 Mt |
+| seed 1, 750–1,000 | 54–61 Mt | 54–72 Mt | — | — |
+| seed 7, 500–750 | 72–100 Mt | 15–27 Mt | 108–146 Mt | 0.001–0.002 Mt |
+| seed 7, 750–1,000 | 92–112 Mt | 61–74 Mt | — | — |
+
+In shipped, freight that moves a center's abundance — its holding above its
+own next works bill — to another center short of it (R-MX8) grows from 0.5–3 Mt
+before 500 yr to the same size as outpost freight by 1,000 yr. Arm 3's planner
+priced outpost piles only, so that freight stopped. Band III centers at 750 yr,
+seed 1: shipped 48–77, arm 3 22–30.
+
+**The ablation: centers in the planner.** Each center's abundance, net of what
+haulers have claimed there, is ranked by the same upper bound as a pile; the
+three best are priced exactly at their best buyer, capped by what the
+Exchange's gate lets the center ship to that buyer (`center_offer`). At
+750 yr, Band IV centers per seat: seed 1 30 / 26 / 16 against shipped
+17 / 12 / 10 (arm 3 13 / 9 / 8); seed 7 25 / 30 / 44 against 19 / 14 / 16.
+Loads at centers run 190–334 Mt per seat over 500–750 yr, three to five times
+the outpost loads. At 1,500 yr, stop cap 16, against shipped on the same seed
+(mean ± standard error over seeds; "runs" counts seed × ground):
+
+| ground | seeds | composite | centers built | runs positive |
+|---|---|---|---|---|
+| — | arm 3 alone (§D.54), 1, 7, 42, 31337 | −41.50% ± 3.59 | about −65% | 0/4 |
+| `Random` | 1, 7, 42, 31337 | +24.07% ± 3.70 | +41.3% ± 7.4 | 4/4 |
+| `Random` | 2, 3, 5, 11 (chosen against nothing) | +21.16% ± 1.07 | +37.9% ± 5.7 | 4/4 |
+| `ColorRotated` | 1, 7, 42, 31337 | +18.14% ± 2.96 | +35.1% ± 4.5 | 4/4 |
+| **both** | **all twelve** | **+21.12% ± 1.64** | **+38.1% ± 3.2** | **12/12** |
+
+Per tree over the twelve: Expansion +2.8% ± 0.5, Growth +39.6% ± 2.8,
+Production +21.0% ± 2.9.
+
+**Two variants, against that arm on the same seeds:**
+
+| variant | composite | centers built | runs |
+|---|---|---|---|
+| stop cap 6 (the shipped `max_pickup_stops`) | −0.44% ± 0.33 | +2.1% ± 1.2 | 1/4 positive |
+| a hauler may not detour to the pile it stands on | −2.37%, −1.85%, −2.77% | −2.8%, −6.9%, +2.8% | 0/3 |
+
+Stop cap 6 is inside two standard errors of 16 on both measures and runs
+20–28% fewer events, so `max_pickup_stops` stays at 6; at 6 against shipped,
+seeds 1, 7, 42, 31337: composite +23.63% ± 3.86, centers built +43.4% ± 8.6,
+4/4. The zero-length detour is how a stop loads past its share of the room
+(each color at most its share per stop, `take_for_deficit`), and removing it
+costs on all three seeds measured; it is shipped as measured. Bit-identity of
+the landed source with the scratch arm: seed 1, 600 yr, identical output.
+
+**Supers and apex.** Under the new routing each seat's one forge holds
+1.4–1.9 Mt of a single basic and none of the other two (seed 1), makes
+238–520 kt of supers once near 500 yr and nothing after; apex is 0 on 24 of
+24 seat-runs at stop cap 16 (shipped: 47–264 kt per seat) and −89.8% ± 8.4 at
+6. Arm 3 alone had the same: 0–8 kt apex. The forge bids
+`premium · B/(B+H)` at pressure 1 against centers whose completion term raises
+theirs, so at the shipped premium 0.3 it wins no delivery of a color it lacks,
+and the full-hold top-up that used to carry those colors in incidentally is
+gone. Forge premium against 0.3 under the new routing, seeds 1 and 7:
+
+| premium | composite | centers built | supers per seat | apex per seat |
+|---|---|---|---|---|
+| 1 | +0.04%, +0.83% | +1.1%, −5.7% | 0.5–5.4 Mt | 0–10.5 kt |
+| 3 | +0.06%, −1.06% | −4.5%, −3.2% | 5.7–19.0 Mt | 32–623 kt |
+
+A pass routing supers by the planner (each forge's supers priced against every
+center owed them) left seed 1 unchanged: apex 0, supers within 45 kt. Not
+shipped. Premium stays 0.3; what the card-free bed should forge is the
+author's call (galaxy §4.5).
+
+**Inference, stated as one:** the turnaround was the loss of center-to-center
+freight, not a fleet-size or load-size effect; the planner priced every source
+a hauler could load at except the one whose share of freight grows after
+500 yr. Confidence about 85%, from the census on two seeds, an ablation that
+reverses the sign on four, and a replication on four seeds and a second
+ground; a census of where the planner's center loads go (to which buyers, and
+how far each bill was from completion) would raise it or lower it.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

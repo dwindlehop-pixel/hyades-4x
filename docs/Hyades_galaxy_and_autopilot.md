@@ -268,7 +268,16 @@ forge (R-O59). What is left is one basic, waiting on the colors that pair it.
   bids under a center at full pressure and forging takes the freight
   development does not. Supers and apex forged fall about 94%. The forge's yard
   still builds survival first and Designs paid in supers next; only its price
-  for freight and the Exchange moved.
+  for freight and the Exchange moved. **`OPEN` since T-147's freight planner
+  (autopilot §5.10, appendix §D.55):** a stop now loads only what its buyer
+  wants, so a forge long one color and short two receives the two only when it
+  outbids every center, which at `0.3` it does not — apex forged is **0 on every
+  seat** (seed 1) and supers fall to one batch near 500 yr. Premium `1` and `3`
+  move the composite by −1.1% to +0.8% on two seeds; `3` restores 32–623 kt of
+  apex per seat and costs 3–5% of centers built. The composite cannot price
+  apex card-free (nothing consumes it), so this is the author's call: what
+  would settle it is a final demand for apex, or a ruling on how much forging
+  the card-free bed should carry.
 - **The premium falls with what the forge holds — `RATIFIED` as the author's
   direction (T-147: "forge price should vary with its holding").** The factor
   is `floor + (forge_premium − floor) · B / (B + H)`, where `H` is everything

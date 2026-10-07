@@ -118,6 +118,63 @@ pub struct BookCensus {
 /// book (T-139) is posted to only by an empire whose Doctrine opens it.
 pub const MATERIALS: usize = 8;
 
+/// **A hauler's next move** ([`Simulation::plan_next`], T-147): deliver what
+/// it carries to a center, or detour to a pile to load `claim` kt more first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Next {
+    Deliver(Entity),
+    /// Load `claim` kt at a pile or center, priced for delivery to the buyer.
+    Pickup(Entity, [f64; 3], Entity),
+}
+
+/// **One center's side of a delivery's price** ([`Simulation::demand_rows`]):
+/// what [`Simulation::demand_value`] reads, read once per
+/// [`Simulation::plan_next`] rather than once per candidate buyer per
+/// candidate leg.
+struct DemandRow {
+    center: Entity,
+    at: Vec3,
+    /// The center's per-color shortfall against its next works bill, kt.
+    want: [f64; 3],
+    /// What it pays per kt of each color, `$`/kt (`demand_value`'s factor).
+    pays: [f64; 3],
+    /// Its next works bill; `None` for a planet with no economy.
+    bill: Option<[Price; 3]>,
+    /// Supers and apex it wants, kt, and what it pays for each, `$`/kt —
+    /// read only when the cargo priced carries some.
+    refined_want: [f64; 4],
+    refined_pays: [f64; 4],
+}
+
+impl DemandRow {
+    /// [`Simulation::demand_value`], term for term; `refined` as there.
+    fn value(&self, cargo: &Minerals, refined: bool) -> f64 {
+        let q: [f64; 3] = core::array::from_fn(|i| self.want[i].min(cargo.get_basic(Basic::ALL[i])));
+        let mut value = 0.0;
+        if q.iter().any(|&x| x > 0.0) && self.bill.is_some() {
+            for (q, pays) in q.iter().zip(self.pays) {
+                if *q > 0.0 {
+                    value += q * pays;
+                }
+            }
+        }
+        if refined {
+            for (i, &m) in Material::REFINED.iter().enumerate() {
+                let q = self.refined_want[i].min(cargo.get(m));
+                if q > 0.0 {
+                    value += q * self.refined_pays[i];
+                }
+            }
+        }
+        value
+    }
+}
+
+/// **How many piles a hauler prices exactly at each stop** ([`Simulation::plan_next`]):
+/// the rest are ruled out by an upper bound at the empire's posted prices.
+/// Placeholder.
+const PLAN_SHORTLIST: usize = 3;
+
 /// **A hull away from its standing duty for one freight run** (T-134 stage 2),
 /// and the leg it is on. Its role reads `Freighter` for the run; the duty it
 /// returns to is its voyage target, which the run does not touch.
@@ -187,13 +244,6 @@ struct CenterBid {
 struct Amounts {
     basic: [Price; 3],
     refined: [Price; 4],
-}
-
-impl Amounts {
-    fn total(&self) -> Price {
-        let b = self.basic.iter().fold(Price::ZERO, |a, &x| a + x);
-        self.refined.iter().fold(b, |a, &x| a + x)
-    }
 }
 
 /// Dense component storage keyed by entity index; iteration is index-ordered for
@@ -608,22 +658,18 @@ struct Voyage {
 /// Freighter shuttle state: cycle `center → outpost → center`.
 #[derive(Clone, Copy, Debug)]
 struct Shuttle {
-    /// **The mining site this freighter's own paired Miner works.** Fixed for
-    /// the life of the hull: the source side of hauling stays 1:1 with the Miner
-    /// it was built alongside, and every outbound leg starts here.
-    ///
-    /// Re-pointing *this* is what R-O89's rejected arm did, and it costs
-    /// **−52.3%** (§6.20). T-91 leaves it alone and adds stops after it instead.
+    /// **The pile or center this hauler last set out to load at** (T-147).
+    /// It is chosen after every delivery by what one hold is worth there
+    /// ([`Simulation::plan_next`]), so it moves; the backlog, the Exchange's
+    /// delivery room and the loss record all count the hauler here. A new
+    /// hauler starts at the rock its order was placed for.
     base: Entity,
     /// The pile the hauler is at, or heading to, **on this leg**. Equal to
-    /// [`Self::base`] at the start of every outbound leg; a milk run (T-91)
-    /// moves it on to further piles before delivering, and the delivery leg
-    /// resets it.
+    /// [`Self::base`] at the start of every outbound leg; each detour priced
+    /// at a stop moves it on before delivering, and the delivery leg resets it.
     outpost: Entity,
-    /// Where this leg's cargo is headed. **Recomputed on every load**, not
-    /// fixed at spawn — confirmed this conversation: "autopilot must haul
-    /// minerals to where they are needed," not back to one hardcoded
-    /// partner. See `Simulation::most_needed_center`.
+    /// Where this leg's cargo is headed: the buyer the last stop was priced
+    /// against ([`Simulation::plan_next`]).
     destination: Entity,
     /// `true` while heading out to the outpost to load; `false` heading to
     /// `destination` with cargo.
@@ -3771,6 +3817,13 @@ pub struct Simulation {
     /// from it under fire — keyed `(seat, rock)` (T-147). What a hauler's price
     /// reads to see the loss (R-WAR47's rule, applied to freight).
     hauler_record: BTreeMap<(u32, u64), (u32, u32)>,
+    /// **What each hauler has set out to load** (T-147): `(seat, pile, kt per
+    /// color)` by hauler, from the delivery that chose the pile to its arrival
+    /// there ([`Simulation::best_source`]).
+    route_claims: BTreeMap<u64, (u32, u64, [f64; 3])>,
+    /// The same claims summed per `(seat, pile)`, so a pile is priced net of
+    /// what haulers already flying to it will lift.
+    route_reserved: BTreeMap<(u32, u64), [f64; 3]>,
     /// **Each center's standing order** — the order it wants most and cannot
     /// yet pay, because it owes a refined material the center neither holds nor
     /// can synthesize (`Hyades_matching.md` §10.4, the author's ruling on
@@ -3993,6 +4046,8 @@ impl Simulation {
             reserve_freighters: vec![Vec::new(); n],
             shipping: vec![Shipping::default(); n],
             hauler_record: BTreeMap::new(),
+            route_claims: BTreeMap::new(),
+            route_reserved: BTreeMap::new(),
             standing: BTreeMap::new(),
             current_round: 0,
             inert_card_plays: 0,
@@ -5742,6 +5797,7 @@ impl Simulation {
         let cap = hull.cargo_capacity(&self.config);
 
         if sh.outbound {
+            self.release_route(vehicle);
             // At the outpost: load ore from its stockpile into cargo.
             // **Its owner's pile, not the rock's.** Outposts are never claimed,
             // so a per-planet heap let either empire haul away what the other's
@@ -5768,12 +5824,34 @@ impl Simulation {
             // one. Loading against the last destination's want first left a
             // hauler empty wherever that center lacked nothing the pile held,
             // and an empty hold priced every center at zero.
+            //
+            // **Re-priced at every stop** (T-147): on what is aboard plus what
+            // this pile could add, so a later stop loads for the buyer the
+            // whole hold is worth most to.
             let mut priced = false;
-            if !yard_here && sh.stops == 0 {
+            // The centers' side of the price, kept for the next leg's planning
+            // at this stop (nothing here moves a center's bank), keyed by
+            // whether the cargo it priced carried supers or apex.
+            let mut rows: Option<(bool, Vec<DemandRow>)> = None;
+            if !yard_here {
                 let pile = self.holding(p, sh.outpost).copied().unwrap_or_default();
+                let mut probe = aboard;
+                for c in Basic::ALL {
+                    probe.add_basic(c, pile.get_basic(c).min(room.kilotons()));
+                }
                 let at = self.position_at(sh.outpost, self.clock).unwrap();
                 let accel = G * self.thrust_to_mass(hull, cap);
-                if let Some(d) = self.best_delivery_center(PlayerId(p), at, &pile, accel) {
+                let lambda = self.config.trade_decay_lambda;
+                let d = if lambda > 0.0 {
+                    let refined = probe.refined_total() > Price::ZERO;
+                    let table = self.demand_rows(PlayerId(p), &self.doctrine_of(p as usize), refined);
+                    let d = Self::best_row(&table, lambda, at, &probe, refined, accel).map(|k| table[k].center);
+                    rows = Some((refined, table));
+                    d
+                } else {
+                    self.best_delivery_center(PlayerId(p), at, &probe, accel)
+                };
+                if let Some(d) = d {
                     sh.destination = d;
                     self.world.shuttle.get_mut(vehicle).unwrap().destination = d;
                     priced = true;
@@ -5839,22 +5917,12 @@ impl Simulation {
                 None => self.holding_mut(p, sh.outpost).basic_total(),
             };
             let load = room.min(avail);
-            // Is this the last pile this leg will see? The final stop fills the
-            // hold; every earlier one takes only what is wanted and leaves the
-            // room for the piles still ahead.
-            let last_stop = sh.stops as usize + 1 >= self.config.max_pickup_stops;
+            // Whether this leg may still detour to another pile or center.
+            let stop_left = (sh.stops as usize + 1) < self.config.max_pickup_stops;
             if load > Price::ZERO {
-                // **Load against what the center this hauler serves is short
-                // of** (R-O89), rather than in the ratio this rock happens to
-                // hold. `destination` is the center it delivered to last, so the
-                // pairing is a standing relationship and not a lookup: serve a
-                // center, learn what it lacks, fetch that. `O(1)`, where reading
-                // the empire's aggregate deficit would be `O(owned planets)` on
-                // one of the hottest paths in the engine (§4).
-                //
-                // The *pickup site* is deliberately still welded to this
-                // hauler's own miner. Re-routing that as well was measured and
-                // is **-52.3%** — see [`take_for_deficit`] and §6.20.
+                // **Load against what the buyer is short of** (R-O89), rather
+                // than in the ratio this rock happens to hold. `destination` is
+                // the buyer this stop was priced against, just above.
                 //
                 // **Net of what is already aboard** (T-91): an earlier stop on
                 // this leg may already have covered a color, and a want that
@@ -5863,14 +5931,14 @@ impl Simulation {
                 //
                 // At a center the offer is the want, and a hold is never topped
                 // up past it: what the center keeps is its own to spend.
-                let (want, fill) = match offer {
-                    Some(o) => (o.basic, Fill::Shortfall),
-                    None => (
-                        self.wanted_here(sh.destination, PlayerId(p), &aboard),
-                        if last_stop { Fill::Hold } else { Fill::Shortfall },
-                    ),
+                let want = match offer {
+                    Some(o) => o.basic,
+                    // **Only what the buyer wants** (T-147): ore it does not
+                    // want is worth nothing on this leg, and the next stop is
+                    // priced rather than filled ([`Self::plan_next`]).
+                    None => self.wanted_here(sh.destination, PlayerId(p), &aboard),
                 };
-                let moved = take_for_deficit(self.holding_mut(p, sh.outpost), &want, load, fill);
+                let moved = take_for_deficit(self.holding_mut(p, sh.outpost), &want, load);
                 self.world.cargo.get_mut(vehicle).unwrap().add_basics(&moved);
                 let outpost_pid = *self.world.planet_id.get(sh.outpost).unwrap();
                 self.log.push(
@@ -5879,8 +5947,8 @@ impl Simulation {
                         player: p,
                         vehicle,
                         leg: FreighterLeg::Loaded,
-                        // What actually came out of the pile, which under
-                        // `Fill::Shortfall` is less than the room budgeted.
+                        // What actually came out of the pile, which is at most
+                        // what the buyer wants and can be less than the room.
                         amount: moved.basic_total().kilotons(),
                         refined: 0.0,
                         at: outpost_pid,
@@ -5935,22 +6003,29 @@ impl Simulation {
                     return;
                 }
             }
-            // **The milk run** (T-91). If the hold still has room, the
-            // destination is still short of something, and this leg has a stop
-            // left, go and get it rather than delivering a hold that cannot pay
-            // a whole Band. Nothing below this point runs at `max_pickup_stops = 1`.
-            if !last_stop {
-                let aboard = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-                let room = (cap.on_scale::<units::Cost>() - aboard.total()).max(Price::ZERO);
-                let want = self.wanted_here(sh.destination, PlayerId(p), &aboard);
-                let rwant = self.refined_want(sh.destination, &aboard);
-                let wanted = want.iter().chain(rwant.iter()).fold(Price::ZERO, |a, &b| a + b);
-                if room > Price::new(1e-9) && wanted > Price::ZERO {
-                    let here = self.position_at(sh.outpost, self.clock).unwrap();
-                    let accel = self.laden_accel(vehicle);
-                    let wants = Amounts { basic: want, refined: rwant };
-                    if let Some(next) = self.next_pickup(PlayerId(p), sh.outpost, sh.destination, &wants, room, accel) {
+            // **The next leg is priced at every stop** (T-147, the author's
+            // direction): deliver what is aboard now, or detour to a pile to
+            // load more first — whichever is worth more at its buyer's prices,
+            // discounted over the legs ([`Self::plan_next`]). A load a center
+            // let go of goes to the center it was priced against (R-MX8): the
+            // offer passed the Exchange's gate for that buyer and no other.
+            let home = *self.world.home_center.get(vehicle).unwrap_or(&sh.outpost);
+            let here = self.position_at(sh.outpost, self.clock).unwrap();
+            let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
+            let dest = if offer.is_some() && load + refined_loaded > Price::new(1e-9) {
+                sh.destination
+            } else {
+                self.refresh_shipping(p as usize);
+                let room = (cap.on_scale::<units::Cost>() - cargo.total()).max(Price::ZERO).kilotons();
+                let refined = cargo.refined_total() > Price::ZERO;
+                let table = rows.as_ref().filter(|(r, _)| *r == refined).map(|(_, t)| t.as_slice());
+                let room = if stop_left { room } else { 0.0 };
+                match self.plan_next(p, hull, here, &cargo, room, table) {
+                    Some(Next::Pickup(next, claim, buyer)) => {
+                        self.claim_route(vehicle, p, next, claim);
+                        self.world.shuttle.get_mut(vehicle).unwrap().destination = buyer;
                         let to = *self.world.position.get(next).unwrap();
+                        let accel = self.laden_accel(vehicle);
                         let arrive = self.set_leg(vehicle, here, to, accel, 0.0);
                         {
                             let s = self.world.shuttle.get_mut(vehicle).unwrap();
@@ -5960,31 +6035,10 @@ impl Simulation {
                         self.schedule_at(arrive, EventKind::FreighterArrive { vehicle });
                         return;
                     }
+                    Some(Next::Deliver(d)) => d,
+                    None if priced => sh.destination,
+                    None => home,
                 }
-            }
-            // Route to whichever owned production center offers the best
-            // *discounted* need — confirmed: "autopilot must haul minerals to
-            // where they are needed," not back to one hardcoded partner, and
-            // (R-P2) not across the galaxy to a marginally needier one either.
-            // At `trade_decay_lambda = 0` this reduces exactly to
-            // `most_needed_center`; the shipped value is 0.01, so the discounted
-            // path is live. Since T-81 the need term is **per color** and reads
-            // the cargo actually aboard, so a hauler carrying Yellow goes where
-            // Yellow is what is missing. Falls back to the outpost's own paired
-            // home center only if this owner holds no production center at all
-            // (shouldn't happen; the homeworld always counts).
-            let home = *self.world.home_center.get(vehicle).unwrap_or(&sh.outpost);
-            let here = self.position_at(sh.outpost, self.clock).unwrap();
-            let cargo = self.world.cargo.get(vehicle).copied().unwrap_or_default();
-            // **A load a center let go of goes to the center it was priced
-            // against** (R-MX8): the offer passed the Exchange's gate for
-            // `sh.destination` and for no other buyer, and re-routing could
-            // send it back to the center it came from.
-            // A buyer priced before the load keeps it: the hold was filled for it.
-            let dest = if (offer.is_some() && load + refined_loaded > Price::new(1e-9)) || priced {
-                sh.destination
-            } else {
-                self.best_delivery_center(PlayerId(p), here, &cargo, self.laden_accel(vehicle)).unwrap_or(home)
             };
             self.world.shuttle.get_mut(vehicle).unwrap().destination = dest;
 
@@ -6034,23 +6088,34 @@ impl Simulation {
             if cargo.total() > Price::ZERO {
                 self.wake_on_minerals(sh.destination);
             }
-            // Return leg always goes back to the fixed mining source — only
-            // the delivery side is need-routed, not the pickup side.
-            //
-            // **`base`, not `outpost`** (T-91): a milk run ends wherever its
-            // last pile was, and the hauler is welded to its own miner's rock,
-            // not to that. This is also where the per-leg stop counter resets,
-            // which is what makes it a counter for *this* voyage rather than a
-            // lifetime total. Identical at `max_pickup_stops = 1`, where
-            // `outpost` never leaves `base`.
+            // **The next pile is chosen by what it is worth** (T-147, the
+            // author's direction: dynamically pick a route based on `$`). The
+            // hauler goes where one hold is worth most at its buyer's prices,
+            // discounted over both legs ([`Self::plan_next`]), and that pile
+            // becomes its base, so the
+            // backlog and the Exchange's delivery room count it there. With
+            // nothing worth carrying anywhere it goes back to its base. This
+            // is also where the per-leg stop counter resets (T-91).
             let from = self.position_at(sh.destination, self.clock).unwrap();
-            let to = *self.world.position.get(sh.base).unwrap();
+            self.refresh_shipping(p as usize);
+            let room = cap.kilotons();
+            let (source, claim, buyer) = match self.plan_next(p, hull, from, &Minerals::default(), room, None) {
+                Some(Next::Pickup(s, claim, b)) => (s, claim, b),
+                _ => (sh.base, [0.0; 3], sh.destination),
+            };
+            if source != sh.base {
+                self.hauler_record.entry((p, source.0)).or_default().0 += 1;
+            }
+            self.claim_route(vehicle, p, source, claim);
+            let to = *self.world.position.get(source).unwrap();
             let accel = self.laden_accel(vehicle);
             let arrive = self.set_leg(vehicle, from, to, accel, 0.0);
             {
                 let s = self.world.shuttle.get_mut(vehicle).unwrap();
                 s.outbound = true;
-                s.outpost = sh.base;
+                s.base = source;
+                s.outpost = source;
+                s.destination = buyer;
                 s.stops = 0;
             }
             self.schedule_at(arrive, EventKind::FreighterArrive { vehicle });
@@ -6284,7 +6349,7 @@ impl Simulation {
         let Some(dest) = self.best_delivery_center(owner, here, &probe, probe_accel) else { return };
         let want = self.wanted_here(dest, owner, &Minerals::default());
         let mut load = pile;
-        let moved = take_for_deficit(&mut load, &want, hold.min(pile.basic_total()), Fill::Shortfall);
+        let moved = take_for_deficit(&mut load, &want, hold.min(pile.basic_total()));
         if moved.basic_total() <= Price::ZERO {
             return;
         }
@@ -6337,7 +6402,7 @@ impl Simulation {
                 let want = self.wanted_here(center, owner, &Minerals::default());
                 let mut left = self.holding(owner.0, pile).copied().unwrap_or_default();
                 let room = hold.min(left.basic_total());
-                let moved = take_for_deficit(&mut left, &want, room, Fill::Shortfall);
+                let moved = take_for_deficit(&mut left, &want, room);
                 if moved.basic_total() > Price::ZERO {
                     self.load_side_cargo(vehicle, owner, pile, left, moved);
                 }
@@ -8309,6 +8374,7 @@ impl Simulation {
     /// a standing state, not a recall — so the flight it will eventually make is
     /// paid from wherever the rock left it.
     fn release_to_reserve(&mut self, vehicle: Entity, role: Role, at: PlanetId) {
+        self.release_route(vehicle);
         let Some(&owner) = self.world.owner.get(vehicle) else { return };
         let p = owner.0 as usize;
         self.world.role.insert(vehicle, Role::Reserve);
@@ -10334,6 +10400,316 @@ impl Simulation {
         best.map(|(k, _)| k)
     }
 
+    /// Every center of `owner`'s demand rows ([`DemandRow`]), in
+    /// `owned_planets` order.
+    fn demand_rows(&self, owner: PlayerId, doctrine: &Doctrine, refined: bool) -> Vec<DemandRow> {
+        let owned = &self.owned_planets[owner.0 as usize];
+        let mut rows = Vec::with_capacity(owned.len());
+        for &e in owned {
+            let book = self.center_book(e, owner);
+            let want = book.map_or([Price::ZERO; 3], |b| b.deficit());
+            let mut pays = [0.0; 3];
+            if let Some(b) = book {
+                let premium = self.forge_premium_at(e, doctrine);
+                let pressure = b.pressure(doctrine.completion_exponent);
+                for i in 0..3 {
+                    pays[i] = doctrine.base_value[i] * doctrine.doctrine_demand[i] * (pressure[i] * premium);
+                }
+            }
+            let (mut refined_want, mut refined_pays) = ([0.0; 4], [0.0; 4]);
+            if refined {
+                let rwant = self.refined_need(e);
+                for i in 0..4 {
+                    refined_want[i] = rwant[i].kilotons();
+                    refined_pays[i] = self.refined_wtp(e, i, doctrine);
+                }
+            }
+            rows.push(DemandRow {
+                center: e,
+                at: *self.world.position.get(e).unwrap(),
+                want: want.map(|w| w.kilotons()),
+                pays,
+                bill: book.map(|b| b.bill),
+                refined_want,
+                refined_pays,
+            });
+        }
+        rows
+    }
+
+    /// [`Self::best_delivery_center`] over precomputed rows at `λ > 0`: the
+    /// same scores in the same order.
+    fn best_row(
+        rows: &[DemandRow],
+        lambda: f64,
+        from: Vec3,
+        cargo: &Minerals,
+        refined: bool,
+        accel: f64,
+    ) -> Option<usize> {
+        let mut best: Option<(usize, f64)> = None;
+        for (k, r) in rows.iter().enumerate() {
+            let value = r.value(cargo, refined);
+            if value <= 0.0 {
+                continue;
+            }
+            // The discount is at most 1, so a value already below the best
+            // score cannot reach it: skip the leg.
+            if best.is_some_and(|(_, bs)| value < bs) {
+                continue;
+            }
+            let t = math::ship_travel_years(from.distance(r.at), accel);
+            let score = value * transcendental::exp_fast(-lambda * t);
+            let better = match best {
+                None => true,
+                Some((bk, bs)) => score > bs || (score == bs && r.center.0 < rows[bk].center.0),
+            };
+            if better {
+                best = Some((k, score));
+            }
+        }
+        best.map(|(k, _)| k)
+    }
+
+    /// **Where a hauler at `from` goes next** (T-147, the author's direction:
+    /// reprice the next leg at each stop). Two kinds of move, each valued at
+    /// the buyer its cargo would be worth most to ([`Self::demand_value`] at
+    /// [`Self::best_delivery_center`]'s choice), discounted by every leg before
+    /// the delivery, `exp(−λ · Σ t)`:
+    ///
+    /// - **deliver** what is `aboard` now;
+    /// - **detour** to one of `seat`'s piles, or to one of its centers for
+    ///   what the center holds above its own next works bill (R-MX8), net of
+    ///   what other haulers have claimed there, and deliver `aboard` plus
+    ///   what that source adds — up to `room` kt, in the colors the empire pays
+    ///   most for. The [`PLAN_SHORTLIST`] best piles and best centers by an
+    ///   upper bound at the prices the empire's centers post
+    ///   ([`Shipping::price`]) are priced exactly; a center's load is capped
+    ///   at what the Exchange's gate lets it ship to that buyer
+    ///   ([`Self::center_offer`]).
+    ///
+    /// The larger wins; a detour carries what its buyer wants beyond what is
+    /// aboard, which is what the hauler claims. `None` when nothing is worth
+    /// carrying anywhere. Detours are offered only while there is `room` (a
+    /// caller with no stop left passes none), and the pile the hauler stands
+    /// on is one of them: each stop takes a color only
+    /// up to its share of the room, so staying can be the best next stop
+    /// (appendix §D.55). `rows` is the centers' side of the price when the
+    /// caller already read it for a cargo of the same kind.
+    ///
+    /// Without centers among the sources the planner lost 41.5% of the tree
+    /// composite by 1,500 yr: center-to-center freight is as large as outpost
+    /// freight after 500 yr, and it stopped (appendix §D.54–§D.55).
+    fn plan_next(
+        &self,
+        seat: u32,
+        hull: HullType,
+        from: Vec3,
+        aboard: &Minerals,
+        room: f64,
+        rows: Option<&[DemandRow]>,
+    ) -> Option<Next> {
+        self.plan_next_valued(seat, hull, from, aboard, room, rows).map(|(n, _)| n)
+    }
+
+    /// [`Self::plan_next`] with the move's discounted value, `$`.
+    fn plan_next_valued(
+        &self,
+        seat: u32,
+        hull: HullType,
+        from: Vec3,
+        aboard: &Minerals,
+        room: f64,
+        rows: Option<&[DemandRow]>,
+    ) -> Option<(Next, f64)> {
+        let owner = PlayerId(seat);
+        let doctrine = self.doctrine_of(seat as usize);
+        let lambda = self.config.trade_decay_lambda;
+        let refined = aboard.refined_total() > Price::ZERO;
+        let laden = aboard.total() > Price::new(1e-9);
+        if !laden && room <= 1e-9 {
+            return None;
+        }
+        // Every center's side of the price, read once for every buyer this
+        // call weighs.
+        let built;
+        let rows = match rows {
+            Some(r) => r,
+            None => {
+                built = self.demand_rows(owner, &doctrine, refined);
+                &built[..]
+            }
+        };
+        let pick = |at: Vec3, cargo: &Minerals, accel: f64| -> Option<usize> {
+            if lambda <= 0.0 {
+                let b = self.best_delivery_center(owner, at, cargo, accel)?;
+                rows.iter().position(|r| r.center == b)
+            } else {
+                Self::best_row(rows, lambda, at, cargo, refined, accel)
+            }
+        };
+        let mut best: Option<(Next, f64)> = None;
+        if laden {
+            let accel = G * self.thrust_to_mass(hull, Kilotons::new(aboard.total().kilotons()));
+            if let Some(k) = pick(from, aboard, accel) {
+                let r = &rows[k];
+                let t = math::ship_travel_years(from.distance(r.at), accel);
+                let v = r.value(aboard, refined) * transcendental::exp_fast(-lambda * t);
+                best = Some((Next::Deliver(r.center), v));
+            }
+        }
+        if room <= 1e-9 {
+            return best;
+        }
+        let price = self.shipping.get(seat as usize)?.price;
+        if price.iter().all(|x| *x <= 0.0) {
+            return best;
+        }
+        let mut order = [0usize, 1, 2];
+        order.sort_by(|&a, &b| price[b].total_cmp(&price[a]).then(a.cmp(&b)));
+        let leg = G * self.thrust_to_mass(hull, Kilotons::new(aboard.total().kilotons()));
+        // One hold filled in the order the empire pays most for, from what a
+        // source offers per color: what it takes and what that is worth at the
+        // posted prices. More offered never fills for less, so a fill from an
+        // upper bound on the offer bounds the fill from the offer.
+        let fill = |offer: [f64; 3]| -> ([f64; 3], f64) {
+            let mut left = room;
+            let mut take = [0.0; 3];
+            let mut value = 0.0;
+            for &i in &order {
+                if price[i] <= 0.0 || left <= 0.0 {
+                    continue;
+                }
+                let q = offer[i].max(0.0).min(left);
+                take[i] = q;
+                left -= q;
+                value += q * price[i];
+            }
+            (take, value)
+        };
+        // Whether a source worth at most `value` can enter a shortlist: the
+        // discount is at most 1, and the margin keeps a bound computed by a
+        // different sum of roundings from excluding what the exact sum admits.
+        let may_enter = |short: &[(f64, u64, [f64; 3], f64, bool)], value: f64| {
+            value > 0.0 && (short.len() < PLAN_SHORTLIST || value * (1.0 + 1e-9) > short[short.len() - 1].0)
+        };
+        let mut short: Vec<(f64, u64, [f64; 3], f64, bool)> = Vec::with_capacity(2 * PLAN_SHORTLIST + 1);
+        for (&(_, rock), pile) in self.holdings.elsewhere.range((seat, 0)..=(seat, u64::MAX)) {
+            let offer = Basic::ALL.map(|c| pile.get_basic(c));
+            if !may_enter(&short, fill(offer).1) {
+                continue;
+            }
+            let held = self.route_reserved.get(&(seat, rock)).copied().unwrap_or([0.0; 3]);
+            let (take, value) = fill(core::array::from_fn(|i| offer[i] - held[i]));
+            if value <= 0.0 || (short.len() == PLAN_SHORTLIST && value <= short[short.len() - 1].0) {
+                continue;
+            }
+            let Some(&at) = self.world.position.get(Entity(rock)) else { continue };
+            let t1 = math::ship_travel_years(from.distance(at), leg);
+            let bound = value * transcendental::exp_fast(-lambda * t1);
+            if short.len() < PLAN_SHORTLIST || bound > short[short.len() - 1].0 {
+                let k = short.iter().position(|x| bound > x.0 || (bound == x.0 && rock < x.1)).unwrap_or(short.len());
+                short.insert(k, (bound, rock, take, t1, false));
+                short.truncate(PLAN_SHORTLIST);
+            }
+        }
+        // **And a center's abundance** (R-MX8): what it holds above its own
+        // next works bill, net of what haulers have already claimed there.
+        // Priced exactly below at the Exchange's gate for its buyer.
+        {
+            let mut cshort: Vec<(f64, u64, [f64; 3], f64, bool)> = Vec::with_capacity(PLAN_SHORTLIST + 1);
+            for r in rows {
+                let (e, at) = (r.center, r.at);
+                let Some(bill) = r.bill else { continue };
+                // The bank bounds what is free of orders and forging.
+                let Some(held_bank) = self.held_at(e) else { continue };
+                let ub = Basic::ALL.map(|c| held_bank.get_basic(c));
+                if !may_enter(&cshort, fill(core::array::from_fn(|i| ub[i] - bill[i].kilotons())).1) {
+                    continue;
+                }
+                let bank = self.available_at(e);
+                let held = self.route_reserved.get(&(seat, e.0)).copied().unwrap_or([0.0; 3]);
+                let (take, value) =
+                    fill(core::array::from_fn(|i| bank.get_basic(Basic::ALL[i]) - bill[i].kilotons() - held[i]));
+                if value <= 0.0 || (cshort.len() == PLAN_SHORTLIST && value <= cshort[cshort.len() - 1].0) {
+                    continue;
+                }
+                let t1 = math::ship_travel_years(from.distance(at), leg);
+                let bound = value * transcendental::exp_fast(-lambda * t1);
+                if cshort.len() < PLAN_SHORTLIST || bound > cshort[cshort.len() - 1].0 {
+                    let k =
+                        cshort.iter().position(|x| bound > x.0 || (bound == x.0 && e.0 < x.1)).unwrap_or(cshort.len());
+                    cshort.insert(k, (bound, e.0, take, t1, true));
+                    cshort.truncate(PLAN_SHORTLIST);
+                }
+            }
+            short.extend(cshort);
+        }
+        for &(_, rock, take, t1, center) in &short {
+            let at = *self.world.position.get(Entity(rock)).unwrap();
+            let mut probe = *aboard;
+            for (i, &c) in Basic::ALL.iter().enumerate() {
+                probe.add_basic(c, take[i]);
+            }
+            let laden = G * self.thrust_to_mass(hull, Kilotons::new(probe.total().kilotons()));
+            let Some(k) = pick(at, &probe, laden) else { continue };
+            let buyer = &rows[k];
+            let b = buyer.center;
+            if center && b.0 == rock {
+                continue;
+            }
+            let mut claim: [f64; 3] =
+                core::array::from_fn(|i| take[i].min((buyer.want[i] - aboard.get_basic(Basic::ALL[i])).max(0.0)));
+            if center {
+                // What the Exchange would let this center ship to `b`.
+                let wants = Amounts { basic: self.wanted_here(b, owner, aboard), refined: [Price::ZERO; 4] };
+                let o = self.center_offer(owner, Entity(rock), b, &wants, laden);
+                for (q, o) in claim.iter_mut().zip(o.basic) {
+                    *q = q.min(o.kilotons());
+                }
+            }
+            let mut probe = *aboard;
+            for (i, &c) in Basic::ALL.iter().enumerate() {
+                probe.add_basic(c, claim[i]);
+            }
+            if claim.iter().all(|q| *q <= 1e-9) {
+                continue;
+            }
+            let t2 = math::ship_travel_years(at.distance(buyer.at), laden);
+            let v = buyer.value(&probe, refined) * transcendental::exp_fast(-lambda * (t1 + t2));
+            if best.as_ref().is_none_or(|(_, bv)| v > *bv) {
+                best = Some((Next::Pickup(Entity(rock), claim, b), v));
+            }
+        }
+        best.filter(|(_, v)| *v > 0.0)
+    }
+
+    /// Book `claim` kt at `pile` for `vehicle`.
+    fn claim_route(&mut self, vehicle: Entity, seat: u32, pile: Entity, claim: [f64; 3]) {
+        self.release_route(vehicle);
+        if claim.iter().all(|q| *q <= 0.0) {
+            return;
+        }
+        self.route_claims.insert(vehicle.0, (seat, pile.0, claim));
+        let r = self.route_reserved.entry((seat, pile.0)).or_default();
+        for i in 0..3 {
+            r[i] += claim[i];
+        }
+    }
+
+    /// Release whatever `vehicle` had booked.
+    pub(super) fn release_route(&mut self, vehicle: Entity) {
+        let Some((seat, pile, claim)) = self.route_claims.remove(&vehicle.0) else { return };
+        if let Some(r) = self.route_reserved.get_mut(&(seat, pile)) {
+            for i in 0..3 {
+                r[i] = (r[i] - claim[i]).max(0.0);
+            }
+            if r.iter().all(|q| *q <= 1e-9) {
+                self.route_reserved.remove(&(seat, pile));
+            }
+        }
+    }
+
     /// **The hauler `center` would build, and both sides of its price**
     /// ([`ProductionContext::hauler`]): the hull for the best rock, its cost,
     /// one trip's worth at the empire's prices, and its cost at this center's.
@@ -11000,99 +11376,6 @@ impl Simulation {
         want
     }
 
-    /// **The next pile on a milk run** (T-91) — the stop that closes most of
-    /// what is still wanted, discounted by how long it takes to get there.
-    ///
-    /// ```text
-    /// useful = min(room, Σ_c min(want[c], pile[c]))
-    /// score  = useful · exp(−λ · t_transit)
-    /// ```
-    ///
-    /// `useful` is a **conjunction-aware** quantity and that is the whole point
-    /// of the function: it counts only ore in a color the destination is short
-    /// of, so a rock holding a mountain of the color already aboard scores
-    /// zero however close it is. A works bill pays when every color clears
-    /// (T-73), and the census that opened T-91 found **99.7% of banked ore
-    /// unable to pay a whole Band** precisely because tonnage and usefulness had come
-    /// apart (`Hyades_industry.md` §6.23).
-    ///
-    /// `λ` is `trade_decay_lambda` — the same discount [`Self::best_delivery_center`]
-    /// prices a delivery with, and R-P2's claim that one constant should price a
-    /// voyage whichever leg it is on. A detour is a voyage like any other
-    /// (§8.1), and it is paid for in transit the hold is not earning.
-    ///
-    /// **Centers are stops too** (R-MX8): a center this empire owns scores
-    /// what it would let the hauler carry to `dest` ([`Self::offer_from`]).
-    ///
-    /// **Cost.** `O(piles this player works + centers it owns)` per stop, on
-    /// every leg with a stop left (`max_pickup_stops = 2` ships). The centers
-    /// come from `owned_planets` rather than a walk of the galaxy, and a
-    /// center long nothing `dest` wants exits before its leg is priced; with
-    /// both, the bed's per-event cost is within 2.2% ± 1.1 of the engine's
-    /// before R-MX8 (appendix §D.22). Deterministic: `elsewhere` is a
-    /// `BTreeMap`, `owned_planets` is in entity order, and entity id breaks
-    /// ties.
-    fn next_pickup(
-        &self,
-        owner: PlayerId,
-        current: Entity,
-        dest: Entity,
-        want: &Amounts,
-        room: Price,
-        accel: f64,
-    ) -> Option<Entity> {
-        let lambda = self.config.trade_decay_lambda;
-        let from = self.position_at(current, self.clock)?;
-        let mut best: Option<(Entity, f64)> = None;
-        let consider = |e: Entity, useful: Price, best: &mut Option<(Entity, f64)>| {
-            let useful = useful.min(room);
-            if useful <= Price::ZERO {
-                return;
-            }
-            let Some(&pos) = self.world.position.get(e) else {
-                return;
-            };
-            let t = math::ship_travel_years(from.distance(pos), accel);
-            let score = useful.kilotons() * transcendental::exp_fast(-lambda * t);
-            let better = match *best {
-                None => true,
-                Some((be, bs)) => score > bs || (score == bs && e.0 < be.0),
-            };
-            if better {
-                *best = Some((e, score));
-            }
-        };
-        let wants_refined = want.refined.iter().any(|w| *w > Price::ZERO);
-        for (&(_, rock), pile) in self.holdings.elsewhere.range((owner.0, 0)..=(owner.0, u64::MAX)) {
-            let e = Entity(rock);
-            if e == current || self.world.owner.get(e).copied() == Some(owner) {
-                continue;
-            }
-            let mut useful = Price::ZERO;
-            for (i, &c) in Basic::ALL.iter().enumerate() {
-                useful += want.basic[i].min(Price::new(pile.get_basic(c)));
-            }
-            if wants_refined {
-                for (i, &m) in Material::REFINED.iter().enumerate() {
-                    useful += want.refined[i].min(Price::new(pile.get(m)));
-                }
-            }
-            consider(e, useful, &mut best);
-        }
-        // **And a center with an abundance** (R-MX8): what it would let this
-        // hauler carry to the center it serves ([`Self::center_offer`]).
-        if let Some(bid) = self.center_bid(owner, dest, want) {
-            for &e in &self.owned_planets[owner.0 as usize] {
-                if e == current {
-                    continue;
-                }
-                let offer = self.offer_from(e, &bid, accel);
-                consider(e, offer.total(), &mut best);
-            }
-        }
-        best.map(|(e, _)| e)
-    }
-
     /// The nearest planet owned by player `p` to `from` — used to send an
     /// exhausted Scout home to scrap (`sys_contact_arrive`). `None` only if
     /// the player owns nothing at all (shouldn't happen; the homeworld always
@@ -11480,24 +11763,6 @@ fn logistic_step(x: f64, k: f64, r_dt: f64) -> f64 {
     (k * x / denom).clamp(x.min(k), x.max(k))
 }
 
-/// **How far one stop may fill a hold** (T-91) — the parameter that makes a
-/// milk run differ from a sequence of ordinary pickups.
-///
-/// [`Fill::Hold`] is R-O89's rule and the whole of the pre-T-91 engine: this
-/// pile is the only one this leg will see, so a hauler that would otherwise fly
-/// home light overshoots along the destination's deficit ratio and then tops up
-/// with bulk. [`Fill::Shortfall`] is the intermediate stop: the room is owed to
-/// the piles still ahead, and spending it here on a color the destination is
-/// not short of would land the same mono-colored hold one stop later.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Fill {
-    /// Fill the hold: overshoot along the deficit ratio, then top up with bulk.
-    Hold,
-    /// Take at most the stated shortfall, color by color, and leave the rest
-    /// of the room for the next stop.
-    Shortfall,
-}
-
 /// **Fill a hold against the destination's shortfall, not in proportion to the
 /// pile** (R-O89, T-76).
 ///
@@ -11538,54 +11803,32 @@ enum Fill {
 /// still buys hulls even when it buys no whole Band. A center that is short of nothing
 /// skips the first pass entirely and this reduces to [`take_basics`].
 ///
-/// **Both of those are [`Fill::Hold`].** Under [`Fill::Shortfall`] neither
-/// happens: each color is capped at what is wanted, and unspent room is left
-/// for the next pile on the run.
-fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price, fill: Fill) -> Minerals {
+/// **Only what is wanted** (T-147): each color at most its shortfall, and the
+/// rest of the room is left for the next stop. Ore a buyer does not want is
+/// worth nothing on this leg, and whether to stop again is priced
+/// ([`Simulation::plan_next`]) rather than filled. The full-hold top-up this
+/// replaced is appendix §D.55.
+fn take_for_deficit(bank: &mut Minerals, deficit: &[Price; 3], capacity: Price) -> Minerals {
     let mut out = Minerals::default();
     let mut room = capacity.max(Price::ZERO);
     if room <= Price::ZERO {
         return out;
     }
     let short = deficit.iter().fold(Price::ZERO, |a, &b| a + b);
-    if fill == Fill::Shortfall {
-        // An intermediate stop on a milk run (T-91). The hold is a *shared*
-        // resource across the remaining stops, so filling it here with whatever
-        // this rock holds is exactly the atomicity the milk run exists to break:
-        // one pile taking all the room re-creates the mono-colored load one
-        // stop later.
-        //
-        // So each color is capped **twice** — at what is wanted, and at its
-        // proportional share of the hold. The second cap is the one that does
-        // the work, and it is not belt-and-braces: the infrastructure ladder is
-        // geometric, so a whole Band's bill outgrows a hold, and past that point
-        // `min(want, room)` is just `room` and the first pile takes everything.
-        // That is the regime where development actually happens, and without the
-        // share cap the milk run switches itself off exactly there.
-        for (i, &c) in Basic::ALL.iter().enumerate() {
-            let share = if short > Price::ZERO { capacity * (deficit[i] / short) } else { Price::ZERO };
-            let take = deficit[i].min(share).min(Price::new(bank.get_basic(c))).min(room).max(Price::ZERO);
-            if take > Price::ZERO {
-                bank.add_basic(c, -take.kilotons());
-                out.add_basic(c, take.kilotons());
-                room -= take;
-            }
+    // Each color is capped **twice** — at what is wanted, and at its
+    // proportional share of the hold. The second cap is the one that does the
+    // work: the infrastructure ladder is geometric, so a whole Band's bill
+    // outgrows a hold, and past that point `min(want, room)` is just `room` and
+    // one pile of one color takes everything — the atomicity the milk run
+    // exists to break (T-91).
+    for (i, &c) in Basic::ALL.iter().enumerate() {
+        let share = if short > Price::ZERO { capacity * (deficit[i] / short) } else { Price::ZERO };
+        let take = deficit[i].min(share).min(Price::new(bank.get_basic(c))).min(room).max(Price::ZERO);
+        if take > Price::ZERO {
+            bank.add_basic(c, -take.kilotons());
+            out.add_basic(c, take.kilotons());
+            room -= take;
         }
-        return out;
-    }
-    if short > Price::ZERO {
-        for (i, &c) in Basic::ALL.iter().enumerate() {
-            let take = (room * (deficit[i] / short)).min(Price::new(bank.get_basic(c))).max(Price::ZERO);
-            if take > Price::ZERO {
-                bank.add_basic(c, -take.kilotons());
-                out.add_basic(c, take.kilotons());
-            }
-        }
-        room = capacity - out.basic_total();
-    }
-    if room > Price::ZERO {
-        let extra = take_basics(bank, room);
-        out.add_basics(&extra);
     }
     out
 }
@@ -11940,72 +12183,6 @@ mod tests {
         );
     }
 
-    /// **A hold fetches the colors the destination is short of, and only the
-    /// slack goes to bulk** (R-O89).
-    ///
-    /// The rule this pins is not "carry the deficit" but *how* the deficit is
-    /// split: **along the deficit vector**, so all three colors advance
-    /// together toward a bill that pays only when every color clears. The
-    /// obvious alternative — neediest color first — maximizes tonnage against
-    /// the largest single shortfall and lands mono-colored loads, and it
-    /// measures **-3.84% ± 0.20 work-years, 4/4 seeds** (`Hyades_industry.md`
-    /// §6.20). Nothing in the types distinguishes the two, so this is the guard.
-    ///
-    /// The third case is the one that keeps a hauler honest: a center short of
-    /// nothing must still fill up, because banked ore buys hulls even when it
-    /// buys no whole Band.
-    #[test]
-    fn a_hold_is_filled_along_the_deficit_and_topped_up_with_bulk() {
-        let pile = || Minerals { cyan: 100.0, magenta: 100.0, yellow: 100.0, ..Default::default() };
-        let kt = Price::new;
-
-        // Deficit 1:3:0 — the load mirrors the *deficit's* ratio, not the pile's
-        // (which is flat), and Yellow is untouched because nothing wants it.
-        let mut bank = pile();
-        let got = take_for_deficit(&mut bank, &[kt(1.0), kt(3.0), kt(0.0)], kt(4.0), Fill::Hold);
-        assert!((got.cyan - 1.0).abs() < 1e-9, "cyan {}", got.cyan);
-        assert!((got.magenta - 3.0).abs() < 1e-9, "magenta {}", got.magenta);
-        assert!(got.yellow.abs() < 1e-9, "yellow {}", got.yellow);
-        assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must fill");
-        assert!((bank.basic_total().kilotons() - 296.0).abs() < 1e-9, "mass is conserved out of the pile");
-
-        // Deficit smaller than the hold: the hold fills *along* the direction
-        // rather than stopping at the shortfall, so 1:1:0 over a 4 kt hold is
-        // 2:2:0 and not 1:1 plus two of bulk. Overshooting in the right ratio
-        // banks ore the *next* whole Band can spend; stopping short banks ore no whole Band
-        // can.
-        let mut bank = pile();
-        let got = take_for_deficit(&mut bank, &[kt(1.0), kt(1.0), kt(0.0)], kt(4.0), Fill::Hold);
-        assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must still fill");
-        assert!((got.cyan - 2.0).abs() < 1e-9 && (got.magenta - 2.0).abs() < 1e-9, "along the deficit: {got:?}");
-        assert!(got.yellow.abs() < 1e-9, "and nothing the destination cannot use");
-
-        // The top-up is what runs when the *pile* cannot supply that direction.
-        // No Magenta here, so the wanted half is short by 2 kt and the rest of
-        // the hold takes whatever the rock does hold rather than flying light.
-        let mut lopsided = Minerals { cyan: 100.0, yellow: 100.0, ..Default::default() };
-        let got = take_for_deficit(&mut lopsided, &[kt(1.0), kt(1.0), kt(0.0)], kt(4.0), Fill::Hold);
-        assert!((got.basic_total().kilotons() - 4.0).abs() < 1e-9, "hold must still fill");
-        assert!(got.yellow > 0.0, "the top-up is proportional, so Yellow rides along: {}", got.yellow);
-        assert!(got.cyan > got.yellow, "but the wanted color still leads");
-
-        // No deficit at all: identical to the proportional rule it replaces.
-        let mut a = pile();
-        let mut b = pile();
-        let want_nothing = take_for_deficit(&mut a, &[Price::ZERO; 3], kt(6.0), Fill::Hold);
-        let plain = take_basics(&mut b, kt(6.0));
-        assert_eq!(want_nothing.cyan, plain.cyan);
-        assert_eq!(want_nothing.magenta, plain.magenta);
-        assert_eq!(want_nothing.yellow, plain.yellow);
-
-        // A pile that cannot cover the deficit gives what it has, and nothing
-        // goes negative.
-        let mut thin = Minerals { cyan: 0.5, ..Default::default() };
-        let got = take_for_deficit(&mut thin, &[kt(2.0), kt(2.0), kt(2.0)], kt(6.0), Fill::Hold);
-        assert!((got.basic_total().kilotons() - 0.5).abs() < 1e-9);
-        assert!(thin.basic_total().kilotons() >= -1e-12 && thin.basic_total().kilotons() < 1e-9);
-    }
-
     /// **An intermediate stop keeps the room for the piles still ahead**
     /// (T-91) — the whole difference between a milk run and a sequence of
     /// ordinary pickups.
@@ -12023,20 +12200,14 @@ mod tests {
         // An even three-color want over a 6 kt hold gives Cyan a 2 kt share.
         // The pile holds nothing else, so 4 kt of room survives the stop.
         let mut pile = cyan_only();
-        let got = take_for_deficit(&mut pile, &[kt(3.0), kt(3.0), kt(3.0)], kt(6.0), Fill::Shortfall);
+        let got = take_for_deficit(&mut pile, &[kt(3.0), kt(3.0), kt(3.0)], kt(6.0));
         assert!((got.cyan - 2.0).abs() < 1e-9, "cyan {}", got.cyan);
         assert!((got.basic_total().kilotons() - 2.0).abs() < 1e-9, "and no bulk top-up: {got:?}");
-
-        // The same call under `Fill::Hold` is the pre-T-91 engine and takes the
-        // lot — which is the atomicity, stated as a test rather than as prose.
-        let mut pile = cyan_only();
-        let hold = take_for_deficit(&mut pile, &[kt(3.0), kt(3.0), kt(3.0)], kt(6.0), Fill::Hold);
-        assert!((hold.basic_total().kilotons() - 6.0).abs() < 1e-9, "{hold:?}");
 
         // A bill far larger than the hold: the want cap is inert and only the
         // share cap stops this pile from filling the hull.
         let mut pile = cyan_only();
-        let big = take_for_deficit(&mut pile, &[kt(90.0), kt(90.0), kt(90.0)], kt(6.0), Fill::Shortfall);
+        let big = take_for_deficit(&mut pile, &[kt(90.0), kt(90.0), kt(90.0)], kt(6.0));
         assert!((big.cyan - 2.0).abs() < 1e-9, "still one third of the hold, not all of it: {big:?}");
     }
 
@@ -13318,7 +13489,9 @@ mod tests {
     #[test]
     fn mass_is_conserved_through_the_blockade() {
         let mut cfg = test_cfg(5);
-        cfg.horizon_years = 300.0;
+        // 40 years past the barrier the card is played at (T-147): 30 strikes
+        // here, 2 at 200 yr and 166 at 250 yr, where the run costs 11 s.
+        cfg.horizon_years = 240.0;
         cfg.biosphere_regen_rate = 0.0;
         let autopilots: Vec<Box<dyn Autopilot>> = (0..3)
             .map(|i| {
@@ -14585,10 +14758,15 @@ mod tests {
     fn the_exchange_books_fill_on_both_sides() {
         let run = |post: bool| {
             let mut gcfg = GalaxyConfig::new(3, 33);
-            gcfg.planet_count = 400;
+            // **Two barriers on a small galaxy** (T-147): every color is
+            // posted on both sides from the first barrier at 200 yr, and
+            // nothing before it (150 yr posts nothing). The 400-planet,
+            // 900-yr bed this replaced cost 32 s once freight was planned at
+            // every stop.
+            gcfg.planet_count = 200;
             let galaxy = Galaxy::generate(gcfg).unwrap();
             let mut cfg = test_cfg(33);
-            cfg.horizon_years = 900.0; // two round barriers at the default cadence
+            cfg.horizon_years = 400.0;
             let mut sim = Simulation::with_baseline(galaxy, cfg);
             sim.exchange_posting = post;
             // Posting and *pricing* are what this stage is about; settlement is
@@ -14637,10 +14815,14 @@ mod tests {
     fn clearing_strikes_escrowed_contracts_without_moving_the_world() {
         let run = |clear: bool| {
             let mut gcfg = GalaxyConfig::new(3, 51);
-            gcfg.planet_count = 500;
+            // **Two barriers on a small galaxy** (T-147): contracts are struck
+            // from the first barrier at 200 yr — 55 of them here — and none
+            // before it (150 yr strikes 0). The 500-planet, 1,600-yr bed this
+            // replaced cost 89 s once freight was planned at every stop.
+            gcfg.planet_count = 200;
             let galaxy = Galaxy::generate(gcfg).unwrap();
             let mut cfg = test_cfg(51);
-            cfg.horizon_years = 1600.0; // several barriers, and time to open outposts
+            cfg.horizon_years = 400.0;
             let mut sim = Simulation::with_baseline(galaxy, cfg);
             // **The one channel clearing has into the world is a forge's
             // holding** (T-147): a forge that sold supers keeps them back from
@@ -16605,12 +16787,11 @@ mod tests {
     /// works bill is a conjunction over three colors (T-73). Two piles, two
     /// colors, one voyage.
     ///
-    /// The same setup at `max_pickup_stops = 1` is the second half of the test,
-    /// and it is the one that pins the default: one stop is the pre-T-91 engine,
-    /// verified bit-identical against the prior binary on seeds 1 and 7.
+    /// The same setup at `max_pickup_stops = 1` is the second half of the test:
+    /// one stop delivers what the first pile holds.
     #[test]
     fn a_milk_run_lands_a_hold_no_single_rock_could_have_filled() {
-        let bed = |stops: usize| {
+        let bed = |stops: usize, cyan_at_a: f64| {
             let galaxy = test_galaxy(2, 5);
             let mut cfg = test_cfg(5);
             cfg.max_pickup_stops = stops;
@@ -16618,13 +16799,27 @@ mod tests {
                 (0..2).map(|_| Box::new(BaselineAutopilot::default()) as Box<_>).collect();
             let mut sim = Simulation::new(galaxy, cfg, autopilots);
             let center = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
-            let (a, b) = (sim.planet_entity[11], sim.planet_entity[12]);
+            // The second pile is the unowned world nearest the first, so the
+            // detour is short against the voyage it adds to.
+            let a = sim.planet_entity[11];
+            let at = *sim.world.position.get(a).unwrap();
+            let b = sim
+                .planet_entity
+                .iter()
+                .copied()
+                .filter(|&e| e != a && sim.world.owner.get(e).is_none())
+                .min_by(|&x, &y| {
+                    let dx = sim.world.position.get(x).unwrap().distance(at);
+                    let dy = sim.world.position.get(y).unwrap().distance(at);
+                    dx.total_cmp(&dy).then(x.0.cmp(&y.0))
+                })
+                .unwrap();
 
             // An empty bank makes the center short of the whole Band, which is
             // what `color_deficit` reads. The piles are each one color, which
             // is the galaxy's own condition made exact.
             *sim.held_at_mut(center).unwrap() = Minerals::default();
-            sim.holdings.elsewhere.insert((0, a.0), Minerals { cyan: 50.0, ..Default::default() });
+            sim.holdings.elsewhere.insert((0, a.0), Minerals { cyan: cyan_at_a, ..Default::default() });
             sim.holdings.elsewhere.insert((0, b.0), Minerals { magenta: 50.0, ..Default::default() });
 
             let f = sim.world.spawn();
@@ -16639,29 +16834,34 @@ mod tests {
             (sim, f, b)
         };
 
-        // Two stops: the first pile cannot close a three-color bill on its own,
-        // so the hauler goes on rather than delivering what it has.
-        let (mut sim, f, b) = bed(2);
-        sim.sys_freighter_arrive(f);
-        let sh = *sim.world.shuttle.get(f).unwrap();
-        assert!(sh.outbound, "still outbound — the run is not over");
-        assert_eq!(sh.stops, 1, "one stop spent");
-        assert_eq!(sh.outpost, b, "and the next pile is the one holding what is still missing");
-        let after_one = *sim.world.cargo.get(f).unwrap();
-        assert!(after_one.cyan > 0.0 && after_one.magenta == 0.0, "one color so far: {after_one:?}");
-
-        // Arrive at the second pile: it turns for the center with both colors.
-        let there = *sim.world.position.get(b).unwrap();
-        sim.park(f, there);
-        sim.sys_freighter_arrive(f);
+        // At the shipped stop count the hauler is priced at every stop. The
+        // first pile holds less Cyan than one stop takes, so once it is empty
+        // the next leg is priced at the pile holding the Magenta the center
+        // also lacks, before it turns for the center. (A pile with more left
+        // can win the next stop itself: each stop takes a color only up to
+        // its share of the room, and staying costs no transit.)
+        let (mut sim, f, b) = bed(SimConfig::new(5).max_pickup_stops, 0.05);
+        sim.shipping[0].at = None;
+        let mut visited_b = false;
+        for _ in 0..64 {
+            sim.sys_freighter_arrive(f);
+            let sh = *sim.world.shuttle.get(f).unwrap();
+            if !sh.outbound {
+                break;
+            }
+            visited_b |= sh.outpost == b;
+            let there = *sim.world.position.get(sh.outpost).unwrap();
+            sim.park(f, there);
+        }
         let sh = *sim.world.shuttle.get(f).unwrap();
         assert!(!sh.outbound, "laden and heading for a center");
+        assert!(visited_b, "the run reached the pile holding the missing color");
         let laden = *sim.world.cargo.get(f).unwrap();
         assert!(laden.cyan > 0.0 && laden.magenta > 0.0, "a two-colored hold: {laden:?}");
 
-        // One stop is the shipped default and the engine as it was: the same
-        // hauler on the same pile delivers a single color.
-        let (mut sim, f, _) = bed(1);
+        // One stop is the engine before T-91: the same hauler on the same
+        // pile delivers a single color.
+        let (mut sim, f, _) = bed(1, 50.0);
         sim.sys_freighter_arrive(f);
         let sh = *sim.world.shuttle.get(f).unwrap();
         assert!(!sh.outbound, "no detour at one stop");
@@ -17554,6 +17754,44 @@ mod tests {
             assert!((empty[i] - flat_empty[i]).abs() < 1e-3, "an empty bank pays what it did");
         }
         assert!(short > empty[0]);
+    }
+
+    /// **A hauler's next leg is priced at every stop, and a claim holds a pile
+    /// for it** (T-147). An empty hold detours to the pile of a color its
+    /// empire wants, claiming what the buyer wants of it; once one hauler has
+    /// claimed all of a small pile, a second is not sent there, and releasing
+    /// the claim frees it. A hold already carrying what a center wants, with
+    /// no detour allowed, delivers.
+    #[test]
+    fn a_hauler_prices_its_next_leg_and_claims_the_pile() {
+        let mut sim = Simulation::with_baseline(test_galaxy(2, 3), SimConfig::new(3));
+        let home = sim.world.player_info.get(sim.player_entity[0]).unwrap().home;
+        let here = *sim.world.position.get(home).unwrap();
+        *sim.held_at_mut(home).unwrap() = Minerals::default();
+        let (empty, full) = (sim.planet_entity[20], sim.planet_entity[21]);
+        assert!(sim.world.owner.get(empty).is_none() && sim.world.owner.get(full).is_none());
+        *sim.holding_mut(0, empty) = Minerals::default();
+        let small = 0.01 * sim.next_bill(home, PlayerId(0)).unwrap()[0].kilotons();
+        *sim.holding_mut(0, full) = Minerals { cyan: small, ..Default::default() };
+        sim.shipping[0].at = None;
+        sim.refresh_shipping(0);
+        assert!(sim.shipping[0].price[0] > 0.0, "an empty bank wants Cyan");
+        let hull = HullType::MediumSystems;
+        let room = hull.cargo_capacity(&sim.config).kilotons();
+        let none = Minerals::default();
+        let Some(Next::Pickup(pile, claim, _)) = sim.plan_next(0, hull, here, &none, room, None) else {
+            panic!("an empty hold detours to the pile");
+        };
+        assert_eq!(pile, full);
+        assert_eq!(claim[0], small.min(room), "what the pile holds, inside the room");
+        let v = Entity(u64::MAX - 1);
+        sim.claim_route(v, 0, full, claim);
+        assert_eq!(sim.plan_next(0, hull, here, &none, room, None), None, "the pile is claimed");
+        sim.release_route(v);
+        assert!(matches!(sim.plan_next(0, hull, here, &none, room, None), Some(Next::Pickup(p, _, _)) if p == full));
+        assert!(sim.route_reserved.is_empty() && sim.route_claims.is_empty());
+        let aboard = Minerals { cyan: small, ..Default::default() };
+        assert!(matches!(sim.plan_next(0, hull, here, &aboard, 0.0, None), Some(Next::Deliver(_))));
     }
 
     /// **An empty bank pays a rounding crumb with nothing, never NaN** (T-147).
