@@ -695,6 +695,7 @@ the measurement into the target (§4.10).
 | R-TECH18 | **an unlock reaches no build** — no Design resolver reads the roster. **Advanced (T-139):** the missile card reaches builds through its Doctrine write, which `Standing::design_for(Sentry)` reads; an unlock alone still reaches none (§9.5) | a resolver; T-25 |
 | R-TECH19 | the offensive beds' judge read as dry mass **holding the field** (neither wrecked nor withdrawn), horizon 1 yr — *recommended* | author |
 | R-TECH3 | the card surface beyond `UnlockDesign` | blocked on R-L0 and R-O65 |
+| R-TECH26 | drawing energy from a neutron star (§7.1.3; galaxy R-G7, T-148) | R-G7's choice of where energy enters a mass-conserving model, then a card-workflow pass |
 | R-TECH4 | a miniaturization analogue inside this tree? | a decision — *recommend no* |
 | T-25 | `enforce_roster` defaults off because there is no unlock path | the card system |
 | R-TECH20 | magnetar matter as a Technology option (§7.1.2) | a design pass naming the write and its mass cost |
@@ -932,6 +933,17 @@ cohesion and the response to light are set by the field's strength and direction
 rather than by chemistry alone. **What would settle R-TECH20:** a design pass
 saying which Technology write — a component stat, a hull material, a sensor
 signature — this becomes, and what it costs under design law #11.
+
+**7.1.3 `OPEN` — R-TECH26: drawing energy from a neutron star.** The
+author's idea (T-148, galaxy §4.9's R-G7): a civilization whose whole
+technological effort, until recently, went into understanding a neutron star
+in its own system and siphoning energy from it. It belongs in the **deep**
+tiers of this tree: what a card would write is an inward-precision gain (§0)
+reached only through the site. It sits beside R-TECH20, since a magnetar is
+a neutron star whose field passes `B_Q`. **What would settle R-TECH26:** R-G7's
+choice of where energy enters a mass-conserving model, then a card-workflow
+pass naming the Design or Doctrine write, its counter-graph edges (§3) and its
+price under design law #11.
 
 ### 7.2 `OPEN` — inspirations
 

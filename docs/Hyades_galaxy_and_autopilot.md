@@ -348,6 +348,28 @@ A homeworld rich in two colors is **cheap in those four trees, expensive in the 
 
 ---
 
+### 4.9 `OPEN` — R-G7: a neutron star as the third star of a system
+
+**The author's idea (T-148):** a trinary system whose third star is a neutron
+star, and a civilization there whose whole technological effort, until
+recently, went into understanding the star and drawing energy from it. It is
+meant to inform **galaxy generation** (a body that is an energy site, not a
+mineral site) and **deep Technology cards** (technology §7.1.3).
+
+Nothing is decided. **What would settle R-G7:**
+
+- **Where energy enters a mass-conserving model.** The engine has no energy
+  stock; every quantity is mass (design law #11), and a drive's thrust is
+  `drive_specific_thrust × drive mass`. A neutron-star yield has to become a
+  rate or a coefficient — thrust per kilotonne of drive, a fabrication rate, a
+  synthesis yield — or a new conserved quantity with its own ledger. The
+  author's choice among those decides what the site is worth.
+- **How many, and where.** One per galaxy, one per seat or one per hex ring,
+  and whether its placement must be equitable to every homeworld under galaxy
+  §3's rule (equitable but unequal).
+- **Who is there.** Whether the siphoning civilization is a seat, a neutral
+  presence the engine has to model, or only history written into the site.
+
 ## 5. Population — Bands, Gibrat meaning, hard gate
 
 ### 5.1 Theater vs. command
@@ -440,6 +462,7 @@ Turn-1 state: co-located homeworlds at **Band IV/IV/I** (pop ~Band I, **no pop-B
 
 - **R-G0** sim §1/§6 absorb 3D/2D · **R-G1** hex side ratified at 70 ly (§1); prism depth open · **R-G5** the hex misses the per-seat hexes-per-player target at 6 seats (§1; open) · **R-G2** counts + core · **R-G3** archetype placement · ~~**R-G4**~~ self-synth yield + "exactly one" (resolved: color theory, no archetype barred, §3)
 - ~~**R-M1**~~ names — **resolved**: Cage Ice, Rosepeter, Voltslate, Strange Matter (§4.1); super names are placeholders under T-142 · **R-M2** ratios+wastage · **R-M3** Z scale-height · **R-M4** anticorrelation · **R-M5** supply chain (resolved in part, §4.5) · **R-M6** super aspect-sets · **R-M7** use-domains+apex · **R-M8** Growth↔Cyan soft fit (rest intended)
+- **R-G7** a neutron star as the third star of a system: an energy site for galaxy generation and deep Technology cards (§4.9; open)
 - **R-P1** Weibull `k`+bands · **R-P2** pop→design gating · **R-P3** infra rate vs. clock
 - **R-A1** expand-bias · **R-A2** formation/posture · **R-A3** trade/NAP in verb model
 - **R-N1** lock the six saga arcs as modes of love winning; Warfare voice now Hollywood-Western (Those Who Stand; saga alt 'The Gun and the Garden'); confirm the believed Beloved Republic win-state · **R-N2** tier-crossing named events carrying the elimination drumbeat

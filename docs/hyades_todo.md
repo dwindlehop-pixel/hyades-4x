@@ -182,7 +182,13 @@ apex forged fall ~80%, Expansion −2.5% to −3.7%; Growth's cv −0.002 ± 0.0
 on random ground and −0.040 ± 0.021 on rotated. And a mass leak it exposed:
 a laden hauler retired to Reserve at its own base on a milk run of three or
 more stops, and a side run wrote over its hold; a hauler now retires only
-empty. **Open:** the supers lost; `next_pickup`'s cost (+46% ns/event).
+empty. **Open:** the supers lost; `next_pickup`'s cost (+46% ns/event). **Freight routed by `$` at every stop** (the author's direction,
+appendix §D.54): four scratch arms, none landed. Repricing the next leg at
+each stop delivers two to four times the freight before 500 yr and loses
+41.5% ± 3.6 of the tree composite by 1,500 yr, because no fleet-size rule
+tried prices a roaming fleet correctly (2.2k to 30k haulers per seat across
+the rules). **Open:** a hauler order priced against the piles' refill rate,
+or a per-cycle assignment of haulers to piles and buyers.
 **What would settle the rest:** the author's choice of default ground, or another way to
 equalize what each homeworld has within reach.
 
@@ -4763,6 +4769,17 @@ retire the numbers. Listed here so the gap is tracked rather than silently
 inherited; numbers are never reused, so retiring them costs nothing.
 
 ---
+
+### T-148. A neutron star as the third star of a system
+
+**Opened (the author's idea).** A trinary system whose third star is a neutron
+star, and a civilization there whose whole technological effort, until
+recently, went into understanding the star and siphoning energy from it. To
+inform galaxy generation (galaxy §4.9, R-G7) and deep Technology cards
+(technology §7.1.3, R-TECH26). **What is missing:** where energy enters a model
+whose every quantity is mass (design law #11), how many such sites a galaxy
+has and where, and who is there. No engine work until the author decides the
+first.
 
 ## Band E — parking lot
 

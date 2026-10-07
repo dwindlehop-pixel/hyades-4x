@@ -4576,6 +4576,74 @@ about 60%; a per-leg census of how many bills each delivery completes, at both
 settings, would test it. The supers and apex lost are the cost the tree
 composite does not price (§D.49's caveat).
 
+## D.54 Freight routed by `$` at every stop: four arms, none landed
+
+*Supports T-147. The author's direction: the missing unlock is dynamic
+routing priced in `$`, not stop count; reprice the next leg at each stop,
+deciding whether to take on cargo; throughput is not the goal until the
+scheduling is found. Bed: §D.53's (twin bed, 3 seats, 1,500 yr, `λ = 0.04`),
+scored against the shipped engine (`max_pickup_stops = 6`) on the same seed.
+Each arm is a scratch build (never landed); the patch is kept outside the
+repository. A scratch census (`freight_census`) splits freight into deliveries
+× kt per delivery and reports the fleet every 250 yr.*
+
+**Arm 1 — the next pile by the empire's posted price.** After each delivery a
+hauler goes to the pile whose one hold is worth most at its empire's
+want-weighted color prices, discounted by the empty leg; a claim book keeps
+haulers off a pile already claimed, and the pile becomes its base.
+
+| stops | composite | centers built | runs |
+|---|---|---|---|
+| 6 | −6.87% ± 1.18 | −27.0% ± 3.1 | 0/8 positive |
+| 2 | −23.33% ± 2.06 | −58.5% ± 4.0 | 0/8 |
+
+Decomposition (seeds 1 and 7, `Random`, per seat, against shipped):
+deliveries +65–80%, kt per delivery 6.0–8.1 → 3.0–5.4, total kt delivered 0
+to −22%, ore left at outposts −30% to −75%, leg lengths unchanged (30–39 ly).
+The stockpiles move; each hold carries half as much.
+
+**Arm 2 — the same, with the four best piles priced at their real buyer
+over both legs.** −6.11% ± 1.40, centers built −28.9% ± 3.3, 0/8.
+
+**Arm 3 — the next leg priced at every stop** (the author's direction):
+deliver now, or detour to one of the three best piles and deliver the larger
+load — whichever is worth more at its best buyer's prices, discounted over
+every leg; each pile loads only what that buyer wants; stop cap 16. Seed 1,
+500 yr, against shipped: Growth 54k → 371k, 53k → 231k, 71k → 83k kt-years
+per seat; Expansion +6% to +51%; centers built 3 → 9; cost 69 s against 6 s.
+At 1,500 yr (4 seeds, `Random`): **composite −41.50% ± 3.59, centers built
+down about two thirds, 0/4.** The time series (seed 1) says when:
+
+| per seat | shipped | arm 3 |
+|---|---|---|
+| freight, 250–500 yr | 5.5–10.2 Mt | 19.2–23.5 Mt |
+| freight, 750–1,000 yr | 112–133 Mt | 66–82 Mt |
+| freighters at 1,000 yr | 9.1k–9.9k | 12.4k–15.8k |
+| miners at 1,000 yr | 1.8k–2.6k | 1.6k–1.7k |
+| kt per delivery, 750–1,000 yr | 5.9–6.5 | 2.1–3.2 |
+| ore at outposts, 1,000 yr | 53–95 Mt | 15–46 Mt |
+
+**Arm 3 with two fleet-size rules.** The hauler order priced a per-rock
+backlog net of the haulers *based* at each rock, and a roaming hauler moves
+its base every trip.
+- *The whole fleet against the whole stock:* freighters fall to about 2,200
+  per seat, ore at outposts climbs to 128–158 Mt by 1,000 yr, freight 22–27 Mt
+  per 250 yr.
+- *A new hauler priced by the route it would fly* (the order fires when a
+  fresh hauler's best move from the center is worth more than the hull):
+  freighters reach 26k–30k per seat by 750 yr, 0.6–2.9 kt per delivery.
+
+**Inference, stated as one:** pricing each leg at its buyer routes freight
+better than the welded base — arm 3 delivers two to four times as much in
+its first 500 years — but nothing in these arms prices the *size of the
+fleet* correctly once haulers roam. A route's value says what one more trip
+earns now, the backlog compares a stock with holds per trip, and the claim
+book reserves only piles that haulers are flying to; none of them sees the
+rate at which mining refills the piles, which is what a marginal hauler
+competes for. Confidence about 60%; a fleet-size rule priced against the
+piles' refill rate (or a per-cycle assignment of haulers to piles and
+buyers), measured on the same bed, would test it.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
