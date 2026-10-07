@@ -78,7 +78,15 @@ fn main() {
             twin_bill: Some(DesignBill::coerced([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0, 0.0])),
             ..Default::default()
         };
-        let galaxy = Galaxy::generate_with(GalaxyConfig { ground, ..GalaxyConfig::new(SEATS, seed) }, seeding).unwrap();
+        let galaxy = Galaxy::generate_with(
+            GalaxyConfig {
+                ground,
+                fair_start_ly: std::env::var("FS_FAIR").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0.0),
+                ..GalaxyConfig::new(SEATS, seed)
+            },
+            seeding,
+        )
+        .unwrap();
         let mut cfg = SimConfig::new(seed);
         cfg.horizon_years = horizon;
         cfg.trade_decay_lambda = env("FS_LAMBDA").unwrap_or(cfg.trade_decay_lambda);

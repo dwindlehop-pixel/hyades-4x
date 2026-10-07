@@ -548,6 +548,14 @@ pub struct GalaxyConfig {
     /// **How each seat's homeworld is made.** See [`Homeworlds`]. **`OPEN`**
     /// (T-147).
     pub homeworlds: Homeworlds,
+    /// **The fair start on random ground**, ly: on [`Ground::Random`] the wild
+    /// worlds within this distance of each seat's homeworld are seat 0's,
+    /// turned to the seat and with their colors stepped once per seat as the
+    /// archetypes step (as on [`Ground::ColorRotated`]); the field past it
+    /// stays random. `0` turns it off. Must stay under half the homeworld
+    /// spacing (77.9 ly at 3 seats) or two seats' starts overlap.
+    /// **`OPEN`** (T-147), placeholder `0`.
+    pub fair_start_ly: f64,
     /// Under [`Homeworlds::ColorCentered`], the distance from a homeworld to
     /// each of its three planted color sites, ly. **Placeholder.**
     pub homeworld_site_distance_ly: f64,
@@ -598,6 +606,7 @@ impl GalaxyConfig {
             weibull_k: 1.4,
             ground: Ground::Random,
             homeworlds: Homeworlds::Trio,
+            fair_start_ly: 0.0,
             homeworld_site_distance_ly: 10.0,
             homeworld_site_band: 3.0,
             homeworld_outpost_distance_ly: 5.0,
@@ -1077,6 +1086,44 @@ impl Galaxy {
                     owner: None,
                     population: Kilotons::ZERO,
                 });
+            }
+        }
+
+        // **The fair start** (`GalaxyConfig::fair_start_ly`): on random ground,
+        // every seat's wild worlds within the radius are seat 0's, turned to
+        // the seat and color-stepped as the archetypes step.
+        if turns == 1 && config.fair_start_ly > 0.0 && config.players > 1 {
+            let home = |p: usize| {
+                centered.get(p).map_or_else(
+                    || {
+                        let a = (p as f64) * core::f64::consts::TAU / (config.players as f64);
+                        let (sin, cos) = transcendental::sin_cos(a);
+                        Vec3::new(homeworld_ring * cos, homeworld_ring * sin, 0.0)
+                    },
+                    |c| c.0,
+                )
+            };
+            let homes: Vec<Vec3> = (0..config.players).map(home).collect();
+            let r = config.fair_start_ly;
+            let start: Vec<Planet> = planets.iter().filter(|w| w.position.distance(homes[0]) < r).cloned().collect();
+            planets.retain(|w| homes.iter().skip(1).all(|h| w.position.distance(*h) >= r));
+            for k in 1..config.players {
+                let (sin, cos) = transcendental::sin_cos(k as f64 * core::f64::consts::TAU / config.players as f64);
+                for w in &start {
+                    let mut minerals = MineralField::default();
+                    for (j, &b) in Basic::ALL.iter().enumerate() {
+                        minerals.set(Basic::ALL[(j + k) % 3], w.minerals.get(b));
+                    }
+                    let (x, y) = (w.position.x, w.position.y);
+                    planets.push(Planet {
+                        position: Vec3::new(x * cos - y * sin, x * sin + y * cos, w.position.z),
+                        minerals,
+                        ..w.clone()
+                    });
+                }
+            }
+            for (i, w) in planets.iter_mut().enumerate() {
+                w.id = PlanetId(i as u32);
             }
         }
 
