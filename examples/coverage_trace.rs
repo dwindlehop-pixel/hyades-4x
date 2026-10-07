@@ -68,6 +68,24 @@ const SEED: u64 = 1;
 /// run rather than comparing two of them.
 const ISOLATE_HORIZON: f64 = 2000.0;
 
+/// Part 2/3's horizon. Pinned rather than read from `SimConfig`'s default,
+/// because the questions Part 2/3 ask — is hauling running, is survey
+/// replenished, does the horizon bind — need the run to have saturated, not to
+/// have run to 4,000 yr.
+const BASELINE_HORIZON: f64 = 2000.0;
+
+/// **The galaxy the trace runs on.** Every question here is whether a
+/// mechanism fires or a knob reaches the run at all, so the scenery is the
+/// smallest galaxy that exercises them (AGENTS.md §2, "reduce the galaxy
+/// before the horizon"). The full 6,731-world galaxy took 51 min on a CI
+/// runner before T-147's freight planner and ran past the job's 60-min limit
+/// after it.
+const TRACE_PLANETS: usize = 800;
+
+fn trace_galaxy(seed: u64) -> Galaxy {
+    Galaxy::generate(GalaxyConfig { planet_count: TRACE_PLANETS, ..GalaxyConfig::new(PLAYERS, seed) }).unwrap()
+}
+
 /// Same definition `min_time_search` and `coverage_time` score against.
 fn coverage_targets(galaxy: &Galaxy) -> HashSet<PlanetId> {
     galaxy.planets.iter().filter(|p| p.habitability.min(p.biosphere) > Band::new(0.01)).map(|p| p.id).collect()
@@ -135,7 +153,7 @@ struct Outcome {
 }
 
 fn run(seed: u64, cfg: SimConfig, doctrine: Doctrine) -> Outcome {
-    let galaxy = Galaxy::generate(GalaxyConfig::new(PLAYERS, seed)).unwrap();
+    let galaxy = trace_galaxy(seed);
     let targets = coverage_targets(&galaxy);
 
     let autopilots: Vec<Box<dyn Autopilot>> =
@@ -371,7 +389,9 @@ fn main() {
     });
 
     println!("\n\n=== Part 2: where the run actually spends its decisions (baseline) ===");
-    let o = run(SEED, SimConfig::new(SEED), Doctrine::default());
+    let mut base_cfg = SimConfig::new(SEED);
+    base_cfg.horizon_years = BASELINE_HORIZON;
+    let o = run(SEED, base_cfg, Doctrine::default());
 
     println!(
         "\ncoverage {}/{} ({:.2}%)   last colony founded t={:.0} yr of {:.0}",
@@ -379,7 +399,7 @@ fn main() {
         o.targets,
         o.fp.covered as f64 / o.targets as f64 * 100.0,
         o.last_colony_time,
-        SimConfig::new(SEED).horizon_years
+        BASELINE_HORIZON
     );
     println!("distinct (player, center) pairs: {}", o.centers_seen);
     println!(
@@ -395,7 +415,8 @@ fn main() {
     // the run routinely exceeds it. Reported as a ratio so the line stays true
     // either way instead of asserting a ceiling that no longer holds.
     let doctrine = Doctrine::default();
-    let cfg = SimConfig::new(SEED);
+    let mut cfg = SimConfig::new(SEED);
+    cfg.horizon_years = BASELINE_HORIZON;
     let bootstrap_reach = PLAYERS * doctrine.survey_vehicles * cfg.max_survey_hops;
     println!(
         "  bootstrap survey allowance = players({}) x survey_vehicles({}) x max_survey_hops({}) = {}",
