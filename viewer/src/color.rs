@@ -148,6 +148,12 @@ pub fn contrast(x: Rgb, y: Rgb) -> f64 {
     (p.max(q) + 0.05) / (p.min(q) + 0.05)
 }
 
+/// `a` moved fraction `t` of the way to `b`, in OKLab.
+pub fn mix(a: Rgb, b: Rgb, t: f64) -> Rgb {
+    let (p, q) = (to_oklab(a), to_oklab(b));
+    from_oklab(Lab { l: p.l + (q.l - p.l) * t, a: p.a + (q.a - p.a) * t, b: p.b + (q.b - p.b) * t })
+}
+
 /// Euclidean distance in OKLab.
 pub fn delta_e(x: Rgb, y: Rgb) -> f64 {
     let (p, q) = (to_oklab(x), to_oklab(y));
@@ -196,6 +202,15 @@ mod tests {
     fn delta_e_is_the_oklab_distance() {
         assert_eq!(delta_e(Rgb::from_hex("#123456"), Rgb::from_hex("#123456")), 0.0);
         assert!(delta_e(Rgb::from_hex("#000000"), Rgb::from_hex("#ffffff")) > 0.99);
+    }
+
+    #[test]
+    fn mix_runs_from_one_color_to_the_other() {
+        let (a, b) = (Rgb::from_hex("#268bd2"), Rgb::from_hex("#002b36"));
+        assert_eq!(mix(a, b, 0.0).to_hex(), "#268bd2");
+        assert_eq!(mix(a, b, 1.0).to_hex(), "#002b36");
+        let m = mix(a, b, 0.5);
+        assert!((delta_e(a, m) - delta_e(m, b)).abs() < 0.005, "halfway in OKLab");
     }
 
     #[test]

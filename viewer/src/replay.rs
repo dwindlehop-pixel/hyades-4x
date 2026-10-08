@@ -18,6 +18,8 @@ pub struct Meta {
     pub hex_side_ly: f64,
     pub hex_origin: [f64; 2],
     pub ground: String,
+    /// Where the replay opens: `[x, y, radius]`, ly.
+    pub focus: Option<[f64; 3]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -192,6 +194,10 @@ impl Replay {
                 origin.get(1).and_then(Value::as_f64).unwrap_or(0.0),
             ],
             ground: m.get("ground").and_then(Value::as_str).unwrap_or("").into(),
+            focus: m.get("focus").and_then(Value::as_arr).and_then(|f| match f {
+                [x, y, r] => Some([x.as_f64()?, y.as_f64()?, r.as_f64()?]),
+                _ => None,
+            }),
         };
         let seats = v
             .get("seats")
@@ -377,7 +383,8 @@ pub(crate) mod tests {
     pub(crate) const TINY: &str = r#"{
       "format": "hyades-replay", "version": 1,
       "meta": {"label": "tiny", "seed": 3, "seats": 2, "planets": 3, "horizon_years": 20, "frame_years": 10,
-               "hex_side_ly": 70, "hex_origin": [52.5, 30.311], "ground": "Random"},
+               "hex_side_ly": 70, "hex_origin": [52.5, 30.311], "ground": "Random",
+               "focus": [20, 0, 2]},
       "seats": [{"archetype": "Blue", "home": 0}, {"archetype": "Red", "home": 1}],
       "enums": {"kind": ["Scout","Colonizer","Miner","Freighter","Picket","Sentry","Reserve","Scrapped"],
                 "hull": ["LSV","MSV","GSV","LCV","LCU","GCV","GCU","LOU","ROU","GOU"],
@@ -413,6 +420,7 @@ pub(crate) mod tests {
         let r = tiny();
         assert_eq!(r.meta.label, "tiny");
         assert_eq!((r.meta.seats, r.meta.frame_years, r.meta.hex_origin), (2, 10.0, [52.5, 30.311]));
+        assert_eq!(r.meta.focus, Some([20.0, 0.0, 2.0]));
         assert_eq!(r.seats[1], Seat { archetype: "Red".into(), home: 1 });
         assert_eq!(r.planets.len(), 3);
         assert_eq!(r.planets[2].pos, [10.0, 5.0, 1.0]);

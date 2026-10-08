@@ -10,7 +10,16 @@
 //! Compiled to `wasm32-unknown-unknown` it is the module the web shell
 //! (`web/`) loads, through [`ffi`]'s plain C interface.
 
+pub mod app;
+pub mod camera;
 pub mod color;
+pub mod ffi;
+pub mod glyph;
 pub mod json;
+pub mod juicy;
+pub mod logview;
 pub mod palette;
+pub mod raster;
 pub mod replay;
+pub mod tactical;
+pub mod timeline;

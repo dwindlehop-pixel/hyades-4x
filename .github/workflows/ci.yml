@@ -22,7 +22,7 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  # Build + the whole test suite: 79 unit, 4 determinism, 4 smoke.
+  # Build + the whole test suite, engine and viewer (the workspace).
   test:
     name: test
     runs-on: ubuntu-latest
@@ -35,13 +35,13 @@ jobs:
           rustup default stable
           rustc --version && cargo --version
       - name: Build
-        run: cargo build --all-targets --verbose
+        run: cargo build --workspace --all-targets --verbose
       - name: Test
-        run: cargo test --all-targets --verbose
+        run: cargo test --workspace --all-targets --verbose
       # --all-targets skips doctests; the module docs carry the spec prose, so
       # run them separately rather than letting them rot uncompiled.
       - name: Doctests
-        run: cargo test --doc --verbose
+        run: cargo test --workspace --doc --verbose
 
   lint:
     name: fmt + clippy
@@ -56,7 +56,7 @@ jobs:
       - name: rustfmt
         run: cargo fmt --all -- --check
       - name: clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   # lib.rs states the portability contract: no clock, no filesystem, no network,
   # no threads, no OS RNG — which is exactly what makes the engine wasm-targetable.
@@ -73,6 +73,31 @@ jobs:
           rustup default stable
       - name: cargo check (wasm32-unknown-unknown)
         run: cargo check --lib --target wasm32-unknown-unknown --verbose
+
+  # The replay viewer (docs/Hyades_interface.md §8): the site Pages deploys,
+  # built and opened. smoke.mjs drives the wasm module headless over every
+  # replay in both modes; browser.mjs opens the page in the runner's Chrome
+  # and checks the WebGL2 juicy frame against the module's CPU frame.
+  viewer:
+    name: viewer (wasm + browser)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --no-self-update
+          rustup default stable
+      - name: Build the site
+        run: web/build.sh _site --quick
+      - name: Module smoke test
+        run: node web/test/smoke.mjs _site/hyades_viewer.wasm _site/replays
+      - name: Playwright
+        run: npm install --no-save --no-package-lock playwright@1.56.1
+      - name: Browser test
+        env:
+          HYADES_CHROME_CHANNEL: chrome
+        run: node web/test/browser.mjs _site
 
   # The short drivers, run for real so a panic or a NaN-poisoned sweep fails CI.
   examples:

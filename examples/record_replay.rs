@@ -121,7 +121,18 @@ fn main() {
         cfg.horizon_years = sc.horizon;
         let mut sim = Simulation::with_baseline(galaxy.clone(), cfg);
         sim.set_log_filter(sc.filter);
-        let rc = ReplayConfig { frame_years: sc.frame_years, max_events: 50_000, label: sc.label.into() };
+        // A fight opens on its fleets: the circle around their starting
+        // places, with room for the closing stack's run in.
+        let focus = sc.fleets.first().map(|_| {
+            let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+            for f in &sc.fleets {
+                let p = home.add(f.4);
+                (lo[0], lo[1], hi[0], hi[1]) = (lo[0].min(p.x), lo[1].min(p.y), hi[0].max(p.x), hi[1].max(p.y));
+            }
+            let r = 0.5 * (hi[0] - lo[0]).max(hi[1] - lo[1]) + 0.05;
+            (0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), r)
+        });
+        let rc = ReplayConfig { frame_years: sc.frame_years, max_events: 50_000, label: sc.label.into(), focus };
         let json = record_run(&galaxy, sim, &rc);
         let file = format!("{}.json", sc.name);
         std::fs::write(format!("{out}/{file}"), &json).expect("write the replay");

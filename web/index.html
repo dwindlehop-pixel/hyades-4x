@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hyades Replay Viewer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Hyades</h1>
+  <label class="field">Replay
+    <select id="replay"></select>
+  </label>
+  <label class="button file">Open file…<input id="file" type="file" accept=".json,application/json"></label>
+  <div class="segmented" role="group" aria-label="Mode">
+    <button id="mode-tactical" class="on" title="Tactical mode (T)">Tactical</button>
+    <button id="mode-juicy" title="Juicy mode (T)">Juicy</button>
+  </div>
+  <button id="fit" title="Frame everything (F)">Fit</button>
+  <button id="focus" title="Frame the replay's focus (G)">Focus</button>
+  <a class="button" href="palette.html" target="_blank" rel="noopener">Palette</a>
+  <span id="label" class="dim"></span>
+</header>
+
+<main>
+  <section id="stage">
+    <canvas id="view" tabindex="0" aria-label="The theater"></canvas>
+    <div id="message" hidden></div>
+  </section>
+
+  <aside id="side">
+    <h2>Selection</h2>
+    <pre id="inspector">Nothing selected.</pre>
+    <button id="follow" title="Center on the selection (C)">Center on selection</button>
+    <h2>Seats</h2>
+    <ul id="legend"></ul>
+    <h2>Keys</h2>
+    <dl class="keys">
+      <dt>Space</dt><dd>play / pause</dd>
+      <dt>J K L</dt><dd>rewind · pause · play</dd>
+      <dt>← →</dt><dd>step a frame</dd>
+      <dt>T</dt><dd>tactical / juicy</dd>
+      <dt>F G C</dt><dd>fit · focus · center</dd>
+      <dt>wheel, drag</dt><dd>zoom, pan</dd>
+    </dl>
+  </aside>
+</main>
+
+<footer>
+  <div id="transport">
+    <button id="back" title="Step back a frame (←)">⏮</button>
+    <button id="rewind" title="Play backward (J)">◀</button>
+    <button id="play" title="Play / pause (Space)">▶</button>
+    <button id="step" title="Step forward a frame (→)">⏭</button>
+    <label class="field">Rate
+      <select id="rate">
+        <option value="0.0625">×1/16</option>
+        <option value="0.25">×1/4</option>
+        <option value="1" selected>×1</option>
+        <option value="4">×4</option>
+        <option value="16">×16</option>
+      </select>
+    </label>
+    <input id="scrub" type="range" min="0" max="10000" value="0" aria-label="Time">
+    <span id="status" class="mono"></span>
+  </div>
+
+  <div id="logbar">
+    <div id="filters">
+      <span id="categories"></span>
+      <span id="seats"></span>
+      <label><input id="unseated" type="checkbox" checked> no seat</label>
+      <select id="kind"><option value="">every kind</option></select>
+      <input id="text" type="search" placeholder="find in log…">
+      <select id="window">
+        <option value="0">whole log</option>
+        <option value="1" selected>up to now</option>
+        <option value="2">±1 frame</option>
+      </select>
+      <label><input id="followlog" type="checkbox" checked> follow</label>
+      <span id="logcount" class="dim"></span>
+    </div>
+    <div id="log" class="mono" tabindex="0"></div>
+  </div>
+</footer>
+
+<script type="module" src="shell.js"></script>
+</body>
+</html>

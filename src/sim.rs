@@ -4719,6 +4719,14 @@ impl Simulation {
 
     // --- the run loop ------------------------------------------------------
 
+    /// When the next event falls, if the run has one before its horizon.
+    pub fn next_event_time(&self) -> Option<f64> {
+        match self.queue.peek() {
+            Some(Reverse(ev)) if ev.time <= self.config.horizon_years => Some(ev.time),
+            _ => None,
+        }
+    }
+
     pub fn step(&mut self) -> bool {
         match self.queue.peek() {
             Some(Reverse(ev)) if ev.time <= self.config.horizon_years => {}
@@ -11654,6 +11662,16 @@ impl Simulation {
     }
 
     pub fn snapshot(&self) -> Snapshot {
+        self.snapshot_at(self.clock)
+    }
+
+    /// **The theater at `t`**, for `t` from the clock up to the next event
+    /// ([`Self::next_event_time`]): every state an event writes is as the
+    /// last event left it, and every hull is where its motion has it at `t`.
+    /// A replay frame is taken this way, so frames fall on their own years
+    /// and not on whichever event came first after them.
+    pub fn snapshot_at(&self, t: f64) -> Snapshot {
+        debug_assert!(t >= self.clock, "a snapshot cannot look back before the clock");
         let planets = self
             .planet_entity
             .iter()
@@ -11689,7 +11707,6 @@ impl Simulation {
         for i in 0..self.world.entity_count() {
             let e = self.world.entity_at(i);
             if let Some(&role) = self.world.role.get(e) {
-                let t = self.clock;
                 let motion = self.world.motion.get(e);
                 let wreck = self.world.wreck.get(e);
                 if role == Role::Scrapped && wreck.is_none() {
@@ -11757,7 +11774,7 @@ impl Simulation {
             })
             .collect();
 
-        Snapshot { time_years: self.clock, players, planets, vehicles }
+        Snapshot { time_years: t, players, planets, vehicles }
     }
 
     /// Fleet = same owner + same [`Role`] + co-located, computed fresh —

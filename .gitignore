@@ -5,3 +5,9 @@
 # (The comment must be on its own line — git only treats `#` as a comment at the
 # start of a line, so a trailing one would become part of the pattern.)
 Cargo.lock
+
+# The viewer site is assembled in CI (docs/Hyades_interface.md §8).
+web/hyades_viewer.wasm
+web/replays/
+_site/
+node_modules/

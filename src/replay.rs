@@ -31,6 +31,10 @@ pub struct ReplayConfig {
     pub max_events: usize,
     /// A human label for the replay's index.
     pub label: String,
+    /// Where a viewer opens: a circle on the galaxy plane, `(x, y, radius)`
+    /// in ly, around the action a replay was recorded to show. `None` opens
+    /// on the whole galaxy.
+    pub focus: Option<(f64, f64, f64)>,
 }
 
 /// Vehicle kinds, in the order a replay indexes them.
@@ -64,9 +68,10 @@ const EVENT_FIELDS: [&str; 5] = ["t", "category", "kind", "seat", "text"];
 /// Record `sim` from where it stands to its horizon, a frame every
 /// `cfg.frame_years`, with whatever events its log filter collects.
 ///
-/// A frame is taken at the first instant the clock reaches its year — the
-/// same instant a harness stepping the run would see — and the last at the
-/// horizon or where the run stopped.
+/// Frame `k` is the theater at `k · frame_years` exactly: every event at or
+/// before that year applied, every hull where its motion has it then
+/// ([`Simulation::snapshot_at`]). A run whose events stop early still has a
+/// frame at every year to its horizon, with hulls coasting or at rest.
 pub fn record_run(galaxy: &Galaxy, mut sim: Simulation, cfg: &ReplayConfig) -> String {
     let mut out = String::with_capacity(1 << 20);
     header(&mut out, galaxy, &sim, cfg);
@@ -76,11 +81,13 @@ pub fn record_run(galaxy: &Galaxy, mut sim: Simulation, cfg: &ReplayConfig) -> S
     let mut hulls: std::collections::BTreeMap<u64, crate::snapshot::VehicleSnapshot> = Default::default();
     for k in 0..=frames {
         let t = k as f64 * cfg.frame_years;
-        while sim.clock() < t && sim.step() {}
+        while sim.next_event_time().is_some_and(|n| n <= t) {
+            sim.step();
+        }
         if k > 0 {
             out.push(',');
         }
-        let snap = sim.snapshot();
+        let snap = sim.snapshot_at(t);
         for v in &snap.vehicles {
             hulls.entry(v.id).or_insert(*v);
         }
@@ -129,6 +136,16 @@ fn header(out: &mut String, galaxy: &Galaxy, sim: &Simulation, cfg: &ReplayConfi
     write_num(out, oy, 3);
     out.push_str("],\"ground\":");
     string(out, &format!("{:?}", g.ground));
+    if let Some((x, y, r)) = cfg.focus {
+        out.push_str(",\"focus\":[");
+        for (i, v) in [x, y, r].into_iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            write_num(out, v, 4);
+        }
+        out.push(']');
+    }
     out.push_str("},\"seats\":[");
     for (i, id) in galaxy.homeworlds.iter().enumerate() {
         let p = &galaxy.planets[id.0 as usize];
@@ -488,7 +505,7 @@ mod tests {
     }
 
     fn rc() -> ReplayConfig {
-        ReplayConfig { frame_years: 10.0, max_events: 100_000, label: "test".into() }
+        ReplayConfig { frame_years: 10.0, max_events: 100_000, label: "test".into(), focus: None }
     }
 
     /// **Every hull of every frame is in the replay, with every field the
@@ -515,9 +532,11 @@ mod tests {
         let mut hulls_seen = 0;
         for (k, f) in frames.iter().enumerate() {
             let t = k as f64 * 10.0;
-            while twin.clock() < t && twin.step() {}
-            let snap = twin.snapshot();
-            assert!((f.get("t").num() - snap.time_years).abs() < 1e-3, "frame {k} at its clock");
+            while twin.next_event_time().is_some_and(|n| n <= t) {
+                twin.step();
+            }
+            let snap = twin.snapshot_at(t);
+            assert_eq!(f.get("t").num(), t, "frame {k} falls on its own year");
             let vs = f.get("vehicles").arr();
             assert_eq!(vs.len(), snap.vehicles.len(), "frame {k}: every hull");
             assert!(vs.iter().all(|v| v.arr().len() == vf), "frame {k}: every field");
