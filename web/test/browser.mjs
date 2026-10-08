@@ -51,6 +51,9 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const errors = [];
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 page.on("pageerror", (e) => errors.push(String(e)));
+// Name the resource behind a "Failed to load resource" console error.
+const failed = (r) => { if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`); };
+page.on("response", failed);
 
 let failures = 0;
 const check = (ok, what) => {
