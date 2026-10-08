@@ -46,7 +46,140 @@ function applyPalette() {
     const [, name, , shown] = line.split("\t");
     if (vars[name] && shown) document.documentElement.style.setProperty(vars[name], shown);
   }
+  refreshLegend();
 }
+
+// --- the live palette editor (docs/Hyades_interface.md §6.2) ---------------
+//
+// The module owns the palette: the editor sends it the settings line
+// (`ink=… paper=… … hy_red=#c83a2c`), and reads back the canonical line and
+// the sheet of resulting colors. The line also rides in the page's link, so a
+// tuned palette can be sent, reopened and ratified as it was seen.
+
+const SLIDERS = [
+  ["ink", "ink", 0, 0.4, 0.005],
+  ["paper", "paper", 0.6, 1, 0.005],
+  ["warm", "warm chroma", 0, 1.5, 0.01],
+  ["cool", "cool chroma", 0, 1.5, 0.01],
+  ["pull", "hue pull", 0, 1, 0.01],
+  ["anchor0", "anchor 1 °", 0, 360, 1],
+  ["anchor1", "anchor 2 °", 0, 360, 1],
+  ["anchor2", "anchor 3 °", 0, 360, 1],
+  ["anchor3", "anchor 4 °", 0, 360, 1],
+  ["fill", "glyph fill dim", 0, 0.9, 0.01],
+];
+
+let tune = null;  // {ink, paper, warm, cool, pull, anchor0..3, fill, overrides: {name: hex}}
+
+function readSettings(line) {
+  const t = { overrides: {} };
+  for (const pair of line.split(/[\s&]+/).filter(Boolean)) {
+    const [k, v] = pair.split("=");
+    if (k === "anchors") v.split(",").forEach((a, i) => (t[`anchor${i}`] = Number(a)));
+    else if (v.startsWith("#")) t.overrides[k] = v;
+    else t[k] = Number(v);
+  }
+  return t;
+}
+
+function settingsLine(t) {
+  const base = `ink=${t.ink} paper=${t.paper} warm=${t.warm} cool=${t.cool} pull=${t.pull} ` +
+    `anchors=${t.anchor0},${t.anchor1},${t.anchor2},${t.anchor3} fill=${t.fill}`;
+  return [base, ...Object.entries(t.overrides).map(([k, v]) => `${k}=${v}`)].join(" ");
+}
+
+/// Sends `line` to the module. On success the editor, the link and the
+/// chrome follow the module's canonical line; on failure nothing changes.
+function setPalette(line) {
+  put(new TextEncoder().encode(line));
+  const bad = hv.hv_palette_set() !== 0;
+  $("tune-error").hidden = !bad;
+  if (bad) {
+    $("tune-error").textContent = text(3);
+    return false;
+  }
+  const canonical = text(9);
+  tune = readSettings(canonical);
+  $("tune-text").value = canonical;
+  const url = new URL(location);
+  url.hash = `palette=${encodeURIComponent(canonical)}`;
+  history.replaceState(null, "", url);
+  applyPalette();
+  buildTuner();
+  dirty = true;
+  return true;
+}
+
+function buildTuner() {
+  for (const [key, label, min, max, step] of SLIDERS) {
+    let input = document.getElementById(`tune-${key}`);
+    if (!input) {
+      const row = document.createElement("label");
+      row.className = "slider";
+      input = Object.assign(document.createElement("input"), { type: "range", id: `tune-${key}`, min, max, step });
+      input.addEventListener("input", () => {
+        tune[key] = Number(input.value);
+        setPalette(settingsLine(tune));
+      });
+      row.append(label, input, document.createElement("output"));
+      $("tune-sliders").append(row);
+    }
+    if (document.activeElement !== input) input.value = tune[key];
+    input.parentElement.querySelector("output").textContent = tune[key];
+  }
+  const lines = text(7).split("\n").slice(1).map((l) => l.split("\t"));
+  const box = $("tune-colors");
+  for (const [sec, name, , shown] of lines) {
+    if (sec !== "source" && sec !== "status") continue;
+    let row = box.querySelector(`label[data-name="${name}"]`);
+    if (!row) {
+      row = document.createElement("label");
+      row.dataset.name = name;
+      const input = Object.assign(document.createElement("input"), { type: "color" });
+      input.addEventListener("input", () => {
+        tune.overrides[name] = input.value;
+        setPalette(settingsLine(tune));
+      });
+      const clear = Object.assign(document.createElement("button"), { textContent: "×", title: "Back to the tone map" });
+      clear.addEventListener("click", (e) => {
+        e.preventDefault();
+        delete tune.overrides[name];
+        setPalette(settingsLine(tune));
+      });
+      row.append(input, name.replace(/^hy_/, ""), clear);
+      box.append(row);
+    }
+    const set = name in tune.overrides;
+    row.className = "swatch" + (set ? " set" : "");
+    row.title = set ? `${name}, set by hand` : `${name}, from the tone map`;
+    row.querySelector("button").hidden = !set;
+    const input = row.querySelector("input");
+    if (document.activeElement !== input) input.value = shown;
+  }
+}
+
+function refreshLegend() {
+  const seats = text(4).split("\n").filter(Boolean).map((l) => l.split("\t"));
+  $("legend").querySelectorAll("i").forEach((sw, i) => { if (seats[i]) sw.style.background = seats[i][1]; });
+  document.querySelectorAll('#seats label').forEach((l, i) => { if (seats[i]) l.style.color = seats[i][1]; });
+}
+
+async function copy(textValue, button) {
+  try {
+    await navigator.clipboard.writeText(textValue);
+    button.textContent = "Copied";
+  } catch {
+    $("tune-text").select();
+    button.textContent = "Selected — copy it";
+  }
+  setTimeout(() => { button.textContent = button.dataset.label; }, 1500);
+}
+
+for (const id of ["tune-copy", "tune-link"]) $(id).dataset.label = $(id).textContent;
+$("tune-copy").addEventListener("click", () => copy($("tune-text").value, $("tune-copy")));
+$("tune-link").addEventListener("click", () => copy(location.href, $("tune-link")));
+$("tune-reset").addEventListener("click", () => { if (hv) setPalette(""); });
+$("tune-text").addEventListener("change", () => { if (hv && !setPalette($("tune-text").value)) $("tune-text").focus(); });
 
 // --- loading --------------------------------------------------------------
 
@@ -312,7 +445,7 @@ canvas.addEventListener("wheel", (e) => {
 }, { passive: false });
 
 window.addEventListener("keydown", (e) => {
-  if (!hv || e.target.matches("input[type=search], select")) return;
+  if (!hv || e.target.closest("input, select, textarea, button, summary")) return;
   const keys = {
     " ": () => hv.hv_play(2),
     k: () => hv.hv_play(0),
@@ -351,7 +484,8 @@ $("replay").addEventListener("change", (e) => {
 async function start() {
   const { instance } = await WebAssembly.instantiateStreaming(fetch("hyades_viewer.wasm"), {});
   hv = instance.exports;
-  applyPalette();
+  const fromLink = new URLSearchParams(location.hash.slice(1)).get("palette");
+  if (!(fromLink && setPalette(fromLink))) setPalette(text(9));
   const constants = {
     downsample: hv.hv_juicy_constant(0), weight: hv.hv_juicy_constant(1), exposure: hv.hv_juicy_constant(2),
     radius: hv.hv_juicy_constant(3), passes: hv.hv_juicy_constant(4),
@@ -360,7 +494,7 @@ async function start() {
   gpu = params.get("gpu") === "0" ? null : createGpu(canvas, constants);
   if (!gpu) ctx2d = canvas.getContext("2d");
   document.body.dataset.renderer = gpu ? "webgl2" : "cpu";
-  window.hyades = { hv: () => hv, gpu: () => gpu, draw: () => draw() };
+  window.hyades = { hv: () => hv, gpu: () => gpu, draw: () => draw(), text };
   requestAnimationFrame(frame);
   try {
     const index = await (await fetch("replays/index.json")).json();

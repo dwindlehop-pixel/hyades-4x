@@ -111,6 +111,7 @@ new §3.2.1 split between weighted **observer seats** (overlay members) and unwe
 | Command layer presents **perfect information** | The only secret in the protocol is the in-round simultaneous order; everything else is public by design |
 | The simulation must **not** act on that perfect information | The presentation seam is read-only and one-directional (§2.1) |
 | Web standards wherever possible | WebRTC / SCTP / DTLS / ICE / STUN / TURN / WebSocket / WebTransport / WebCrypto / WASM / CBOR |
+| The networking layer **may link upstream packages** (the author's ruling, T-150) | The engine's zero-dependency rule does not bind the network code. What crosses into the engine is still only `apply_orders` (§2.1), so a package can change how a frame travels, never what the simulation computes |
 
 **The enabling design decision is already made.** Card contract §1 — *"a card is `(costs,
 target)`, and targets are drawn from a determinable finite set"* — is what makes a

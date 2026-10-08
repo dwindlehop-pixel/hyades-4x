@@ -35,6 +35,23 @@
     <button id="follow" title="Center on the selection (C)">Center on selection</button>
     <h2>Seats</h2>
     <ul id="legend"></ul>
+    <details id="tuner">
+      <summary>Palette (proposed) — tune it here</summary>
+      <p class="dim">Every change redraws the game as you make it. The settings ride in this page's link;
+        send the link or the line below to ratify.</p>
+      <div id="tune-sliders"></div>
+      <h2>Colors set by hand</h2>
+      <div id="tune-colors"></div>
+      <label class="stack">Settings
+        <input id="tune-text" type="text" spellcheck="false" aria-label="Palette settings">
+      </label>
+      <p id="tune-error" class="error" hidden></p>
+      <div class="row">
+        <button id="tune-copy">Copy settings</button>
+        <button id="tune-link">Copy link</button>
+        <button id="tune-reset">Reset</button>
+      </div>
+    </details>
     <h2>Keys</h2>
     <dl class="keys">
       <dt>Space</dt><dd>play / pause</dd>

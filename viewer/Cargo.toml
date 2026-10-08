@@ -2,7 +2,7 @@
 name = "hyades-viewer"
 version = "0.1.0"
 edition = "2021"
-description = "Hyades replay viewer: reads a recorded replay, plays it back, filters its log, and draws the tactical and juicy modes into a pixel framebuffer. Dependency-free; it does not link the engine (docs/Hyades_interface.md)."
+description = "Hyades replay viewer: reads a recorded replay, plays it back, filters its log, and draws the tactical and juicy modes into a pixel framebuffer. It does not link the engine (docs/Hyades_interface.md)."
 license = "Apache-2.0"
 
 [dependencies]

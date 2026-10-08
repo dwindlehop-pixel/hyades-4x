@@ -12,7 +12,7 @@
 use crate::camera::{Camera, Lod};
 use crate::color::{mix, Rgb};
 use crate::glyph::{glyph, Glyph};
-use crate::palette::{status, Palette, Status};
+use crate::palette::{Palette, Status};
 use crate::raster::Raster;
 use crate::replay::{Replay, View};
 use std::collections::BTreeMap;
@@ -30,9 +30,6 @@ pub const STACK_PX: i64 = 3;
 /// How far apart unalike stacks in one place are drawn, tactical pixels: a
 /// General glyph, a gap, and a three-digit count.
 pub const FAN_PX: i64 = 22;
-/// A glyph's fill is its seat's color this far toward the ground, so the
-/// edge reads first.
-pub const FILL_DIM: f64 = 0.45;
 
 /// Something the viewer can select.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,11 +137,11 @@ pub fn plan(s: &Scene) -> Vec<Op> {
             GlyphKey { hull: h.hull.hull, design: h.hull.design, beams: h.hull.beams > 0, tubes: h.hull.tubes > 0 };
         let role = r.kinds.get(row.kind).map_or("", String::as_str);
         let (outline, core, marks) = if row.wrecked {
-            (status(Status::Wreck), pal.roles.grid, pal.roles.grid)
+            (pal.status(Status::Wreck), pal.roles.grid, pal.roles.grid)
         } else {
             (pal.seat(h.hull.owner), pal.role(role), pal.roles.text_bright)
         };
-        let inner = mix(outline, pal.roles.ground, FILL_DIM);
+        let inner = mix(outline, pal.roles.ground, pal.fill_dim());
         ops.push(Op::Hull {
             id: h.hull.id,
             s: sp,
@@ -224,9 +221,9 @@ fn vector(s: &Scene, row: crate::replay::Row, here: [i64; 2]) -> Option<([i64; 2
         [d[0] / n, d[1] / n]
     };
     let color = match row.burn {
-        b if b > 0 && row.accel >= HOT_ACCEL => status(Status::DriveHot),
-        b if b > 0 => status(Status::Drive),
-        b if b < 0 => status(Status::Braking),
+        b if b > 0 && row.accel >= HOT_ACCEL => s.palette.status(Status::DriveHot),
+        b if b > 0 => s.palette.status(Status::Drive),
+        b if b < 0 => s.palette.status(Status::Braking),
         _ => s.palette.roles.grid,
     };
     let len = 3.0 + 6.0 * speed.min(1.0);
@@ -246,7 +243,7 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
                 r.circle(at[0], at[1], rad + 2.0, *c);
             }
             if *selected {
-                brackets(r, *at, *rad as i64 + 3);
+                brackets(r, *at, *rad as i64 + 3, pal.status(Status::Selected));
             }
         }
     }
@@ -287,19 +284,19 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
         r.stamp(&g.marks, gw, ax, ay, at[0], at[1], *marks);
         let half = ax as i64 - 2;
         if *laden {
-            r.set(at[0], at[1], status(Status::Laden));
+            r.set(at[0], at[1], pal.status(Status::Laden));
         }
         if *damage > 0.0 {
             let n = (damage * (2 * half + 1) as f64).ceil() as i64;
             for k in 0..n {
-                r.set(at[0] - half - 3, at[1] + half - k, status(Status::Damage));
+                r.set(at[0] - half - 3, at[1] + half - k, pal.status(Status::Damage));
             }
         }
         if *hit {
-            r.circle(at[0], at[1], (half + 4) as f64, status(Status::Hit));
+            r.circle(at[0], at[1], (half + 4) as f64, pal.status(Status::Hit));
         }
         if *selected {
-            brackets(r, *at, half + 5);
+            brackets(r, *at, half + 5, pal.status(Status::Selected));
         }
         if *count > 1 {
             r.number(at[0] + half + 4, at[1] - 2, *count, pal.roles.text_bright);
@@ -308,8 +305,7 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
 }
 
 /// Four corner brackets `d` pixels out from `at`, in the selection color.
-fn brackets(r: &mut Raster, at: [i64; 2], d: i64) {
-    let c = status(Status::Selected);
+fn brackets(r: &mut Raster, at: [i64; 2], d: i64, c: Rgb) {
     for (sx, sy) in [(-1, -1), (1, -1), (-1, 1), (1, 1)] {
         let (x, y) = (at[0] + sx * d, at[1] + sy * d);
         r.line(x, y, x - sx * 2, y, c);
@@ -441,7 +437,7 @@ mod tests {
         let freighter = ops.iter().find(|o| matches!(o, Op::Hull { id: 5, .. })).unwrap();
         let Op::Hull { outline, inner, core, key, laden, .. } = freighter else { unreachable!() };
         assert_eq!(*outline, f.palette.seat(0));
-        assert_eq!(*inner, mix(f.palette.seat(0), f.palette.roles.ground, FILL_DIM));
+        assert_eq!(*inner, mix(f.palette.seat(0), f.palette.roles.ground, f.palette.fill_dim()));
         assert_eq!(*core, f.palette.role("Freighter"));
         assert_eq!(f.replay.designs[key.design], "Ford");
         assert_eq!(f.replay.hulls[key.hull], "MSV");
@@ -460,7 +456,7 @@ mod tests {
         else {
             panic!("a burning hull has a vector")
         };
-        assert_eq!(*color, status(Status::Drive));
+        assert_eq!(*color, f.palette.status(Status::Drive));
         assert!(end[0] > at[0] && end[1] < at[1], "{at:?} → {end:?}");
         // Hull 5 has stopped: no drive, no vector.
         assert!(matches!(
@@ -479,13 +475,13 @@ mod tests {
         else {
             panic!()
         };
-        assert_eq!(*outline, status(Status::Wreck));
+        assert_eq!(*outline, f.palette.status(Status::Wreck));
         assert!(*hit);
         assert_eq!(*damage, 1.0);
         let mut r = raster(&f.camera);
         paint(&s, &ops, &mut r);
-        assert!(r.count(status(Status::Hit)) > 0, "the hit ring is drawn");
-        assert!(r.count(status(Status::Damage)) > 0, "the damage bar is drawn");
+        assert!(r.count(f.palette.status(Status::Hit)) > 0, "the hit ring is drawn");
+        assert!(r.count(f.palette.status(Status::Damage)) > 0, "the damage bar is drawn");
     }
 
     #[test]
@@ -572,7 +568,7 @@ mod tests {
         };
         let mut r = raster(&f.camera);
         render(&s, &mut r);
-        assert!(r.count(status(Status::Selected)) > 0);
+        assert!(r.count(f.palette.status(Status::Selected)) > 0);
     }
 
     #[test]

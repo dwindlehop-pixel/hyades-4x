@@ -91,6 +91,21 @@ main {
 #legend { list-style: none; margin: 0; padding: 0; }
 #legend li { display: flex; gap: 8px; align-items: center; }
 #legend i { display: inline-block; width: 12px; height: 12px; }
+#tuner { margin-top: 14px; }
+#tuner summary { cursor: pointer; color: var(--text-bright); }
+#tuner p { margin: 6px 0; }
+.slider { display: grid; grid-template-columns: 6.5em 1fr 3.6em; gap: 6px; align-items: center; }
+.slider input { width: 100%; accent-color: var(--text); }
+.slider output { text-align: right; color: var(--text-dim); }
+#tune-colors { max-height: 260px; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+.swatch { display: flex; align-items: center; gap: 6px; font-size: 11px; white-space: nowrap; }
+.swatch input[type="color"] { width: 22px; height: 18px; padding: 0; border: 1px solid var(--grid); background: none; cursor: pointer; }
+.swatch.set { color: var(--text-bright); }
+.swatch button { padding: 0 4px; font-size: 11px; }
+.stack { display: grid; gap: 4px; margin-top: 8px; color: var(--text-dim); }
+#tune-text { font: 11px var(--mono); color: var(--text); background: var(--ground); border: 1px solid var(--grid); padding: 3px 6px; width: 100%; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.error { color: var(--combat); }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; color: var(--text-dim); }
 .keys dt { color: var(--text); }
 .keys dd { margin: 0; }

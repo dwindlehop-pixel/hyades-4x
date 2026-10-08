@@ -126,19 +126,148 @@ pub struct Roles {
     pub yellow: Rgb,
 }
 
-/// The whole tactical palette: every [`SOURCE`] color tone-mapped, and the
-/// interface's roles assigned to them.
+/// How much a glyph's fill is moved from its seat's color toward the ground,
+/// so the edge reads first (proposed).
+pub const DEFAULT_FILL_DIM: f64 = 0.45;
+
+/// **Everything the author tunes**, as one value with a one-line text form
+/// (`docs/Hyades_interface.md` §6.2): the tone map, the glyph fill's dimming,
+/// and colors set by hand — a [`SOURCE`] name (`hy_red`) replaces that color
+/// after the tone map, a [`Status`] name (`Hit`) replaces that status color.
+///
+/// The text form is `key=value` pairs separated by spaces or `&`:
+/// `ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228
+/// fill=0.45 hy_red=#c83a2c Hit=#ff2d6f`. It is what the live editor puts in
+/// the page's link and what the author sends back to ratify.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Settings {
+    pub map: ToneMap,
+    pub fill_dim: f64,
+    /// `(name, color)`, sorted by name, one per name.
+    pub overrides: Vec<(String, Rgb)>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings { map: EARTHRISE, fill_dim: DEFAULT_FILL_DIM, overrides: Vec::new() }
+    }
+}
+
+fn number(v: f64) -> String {
+    let s = format!("{v:.4}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" {
+        "0".into()
+    } else {
+        s.into()
+    }
+}
+
+impl std::fmt::Display for Settings {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let m = &self.map;
+        let anchors: Vec<String> = m.anchors.iter().map(|a| number(*a)).collect();
+        write!(
+            f,
+            "ink={} paper={} warm={} cool={} pull={} anchors={} fill={}",
+            number(m.ink),
+            number(m.paper),
+            number(m.warm_chroma),
+            number(m.cool_chroma),
+            number(m.pull),
+            anchors.join(","),
+            number(self.fill_dim)
+        )?;
+        for (name, c) in &self.overrides {
+            write!(f, " {name}={}", c.to_hex())?;
+        }
+        Ok(())
+    }
+}
+
+impl Settings {
+    /// Reads the text form. Keys left out keep their defaults; an unknown key,
+    /// a malformed color or a value out of its range is an error naming it.
+    pub fn parse(text: &str) -> Result<Settings, String> {
+        let mut out = Settings::default();
+        for pair in text.split(|c: char| c.is_whitespace() || c == '&').filter(|p| !p.is_empty()) {
+            let (key, value) = pair.split_once('=').ok_or_else(|| format!("'{pair}' is not key=value"))?;
+            let num = |lo: f64, hi: f64| -> Result<f64, String> {
+                let x: f64 = value.parse().map_err(|_| format!("{key}: '{value}' is not a number"))?;
+                if x.is_finite() && (lo..=hi).contains(&x) {
+                    Ok(x)
+                } else {
+                    Err(format!("{key}: {value} is outside {lo} to {hi}"))
+                }
+            };
+            match key {
+                "ink" => out.map.ink = num(0.0, 1.0)?,
+                "paper" => out.map.paper = num(0.0, 1.0)?,
+                "warm" => out.map.warm_chroma = num(0.0, 2.0)?,
+                "cool" => out.map.cool_chroma = num(0.0, 2.0)?,
+                "pull" => out.map.pull = num(0.0, 1.0)?,
+                "fill" => out.fill_dim = num(0.0, 1.0)?,
+                "anchors" => {
+                    let a: Vec<f64> = value
+                        .split(',')
+                        .map(|x| x.parse::<f64>().ok().filter(|h| h.is_finite() && (0.0..=360.0).contains(h)))
+                        .collect::<Option<_>>()
+                        .ok_or_else(|| format!("anchors: '{value}' is not four hues from 0 to 360"))?;
+                    out.map.anchors = a.try_into().map_err(|_| format!("anchors: '{value}' is not four hues"))?;
+                }
+                name if SOURCE.iter().any(|(n, _)| *n == name)
+                    || STATUS.iter().any(|(st, _)| status_name(*st) == name) =>
+                {
+                    let hex = value.trim_start_matches('#');
+                    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                        return Err(format!("{name}: '{value}' is not a #rrggbb color"));
+                    }
+                    out.overrides.retain(|(n, _)| n != name);
+                    out.overrides.push((name.into(), Rgb::from_hex(hex)));
+                }
+                _ => return Err(format!("'{key}' is not a palette setting")),
+            }
+        }
+        if out.map.ink >= out.map.paper {
+            return Err(format!("ink {} must be below paper {}", out.map.ink, out.map.paper));
+        }
+        out.overrides.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(out)
+    }
+
+    fn color(&self, name: &str) -> Option<Rgb> {
+        self.overrides.iter().find(|(n, _)| n == name).map(|(_, c)| *c)
+    }
+}
+
+/// The name a [`Status`] takes in [`Settings`] and in the palette sheet.
+pub fn status_name(s: Status) -> String {
+    format!("{s:?}")
+}
+
+/// The whole tactical palette: every [`SOURCE`] color tone-mapped (or set by
+/// hand), the interface's roles assigned to them, and the status colors.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Palette {
-    pub map: ToneMap,
+    pub settings: Settings,
     pub named: Vec<(&'static str, Rgb)>,
     pub roles: Roles,
+    /// In [`STATUS`] order.
+    pub status: [Rgb; 9],
 }
 
 impl Palette {
     pub fn new(map: ToneMap) -> Palette {
-        let named: Vec<(&'static str, Rgb)> =
-            SOURCE.iter().map(|&(n, [r, g, b])| (n, tone_map(Rgb::from_ints(r, g, b), &map))).collect();
+        Palette::with(Settings { map, ..Settings::default() })
+    }
+
+    pub fn with(settings: Settings) -> Palette {
+        let named: Vec<(&'static str, Rgb)> = SOURCE
+            .iter()
+            .map(|&(n, [r, g, b])| {
+                (n, settings.color(n).unwrap_or_else(|| tone_map(Rgb::from_ints(r, g, b), &settings.map)))
+            })
+            .collect();
         let get = |n: &str| named.iter().find(|(k, _)| *k == n).map(|(_, c)| *c).unwrap();
         let roles = Roles {
             ground: get("hy_base03"),
@@ -154,7 +283,18 @@ impl Palette {
             magenta: get("hy_magenta"),
             yellow: get("hy_yellow"),
         };
-        Palette { map, named, roles }
+        let status = STATUS.map(|(st, hex)| settings.color(&status_name(st)).unwrap_or_else(|| Rgb::from_hex(hex)));
+        Palette { settings, named, roles, status }
+    }
+
+    /// A status color.
+    pub fn status(&self, s: Status) -> Rgb {
+        self.status[STATUS.iter().position(|(k, _)| *k == s).unwrap()]
+    }
+
+    /// The glyph fill's share of the way from the seat's color to the ground.
+    pub fn fill_dim(&self) -> f64 {
+        self.settings.fill_dim
     }
 
     pub fn get(&self, name: &str) -> Rgb {
@@ -191,7 +331,7 @@ impl Palette {
 
 impl Default for Palette {
     fn default() -> Self {
-        Palette::new(EARTHRISE)
+        Palette::with(Settings::default())
     }
 }
 
@@ -230,10 +370,6 @@ pub const STATUS: [(Status, &str); 9] = [
     (Status::Selected, "#f2fff6"),
 ];
 
-pub fn status(s: Status) -> Rgb {
-    Rgb::from_hex(STATUS.iter().find(|(k, _)| *k == s).map(|(_, h)| *h).unwrap())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -252,6 +388,58 @@ mod tests {
                 assert!(SOURCE.iter().any(|(k, _)| *k == n), "{n}");
             }
         }
+    }
+
+    #[test]
+    fn settings_print_and_read_back_and_the_default_is_the_proposal() {
+        let d = Settings::default();
+        assert_eq!(d.to_string(), "ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.45");
+        assert_eq!(Settings::parse(&d.to_string()), Ok(d.clone()));
+        assert_eq!(Settings::parse(""), Ok(d), "every key left out keeps its default");
+        let s = Settings::parse("pull=0.5&Hit=#00ff00  hy_red=C83A2C ink=0.1").unwrap();
+        assert_eq!((s.map.pull, s.map.ink), (0.5, 0.1));
+        assert_eq!(
+            s.to_string(),
+            "ink=0.1 paper=0.95 warm=0.92 cool=0.6 pull=0.5 anchors=38,78,118,228 fill=0.45 Hit=#00ff00 hy_red=#c83a2c"
+        );
+        assert_eq!(Settings::parse(&s.to_string()), Ok(s));
+    }
+
+    #[test]
+    fn a_setting_out_of_range_or_unknown_is_refused_by_name() {
+        for (bad, says) in [
+            ("ink=2", "ink"),
+            ("paper=0.01", "below paper"),
+            ("anchors=1,2,3", "anchors"),
+            ("anchors=1,2,3,400", "anchors"),
+            ("hy_red=#12345", "hy_red"),
+            ("hy_rouge=#123456", "hy_rouge"),
+            ("pull", "key=value"),
+            ("warm=NaN", "warm"),
+        ] {
+            let e = Settings::parse(bad).unwrap_err();
+            assert!(e.contains(says), "{bad}: {e}");
+        }
+    }
+
+    #[test]
+    fn a_color_set_by_hand_reaches_every_role_and_seat_that_uses_it() {
+        let red = Rgb::from_hex("#c83a2c");
+        let p = Palette::with(Settings::parse("hy_red=#c83a2c hy_base03=#101010 Wreck=#123456").unwrap());
+        assert_eq!(p.seat(1), red, "seat 1 is the Red archetype's own color");
+        assert_eq!(p.roles.ground.to_hex(), "#101010");
+        assert_eq!(p.status(Status::Wreck).to_hex(), "#123456");
+        assert_eq!(p.status(Status::Hit).to_hex(), "#ff2d6f", "others keep the proposal");
+        assert_eq!(p.get("hy_blue"), Palette::default().get("hy_blue"));
+    }
+
+    #[test]
+    fn the_tone_map_parameters_move_the_mapped_colors() {
+        let a = Palette::default();
+        let b = Palette::with(Settings::parse("ink=0.15").unwrap());
+        assert!(to_oklch(b.roles.ground).l > to_oklch(a.roles.ground).l + 0.05);
+        let c = Palette::with(Settings::parse("cool=0.2").unwrap());
+        assert!(to_oklch(c.get("hy_blue")).c < to_oklch(a.get("hy_blue")).c);
     }
 
     #[test]

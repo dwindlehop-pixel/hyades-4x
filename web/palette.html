@@ -23,7 +23,8 @@
 <body>
 <h1>Hyades tactical palette</h1>
 <div class="status" id="status">Loading…</div>
-<p class="note">The author's palette (left half of each chip) through the proposed Earthrise tone map (right half).
+<p class="note">A reference sheet; ratify on the <a href="index.html" style="color:inherit">live viewer</a>, whose side panel tunes these colors as the game is drawn.
+The author's palette (left half of each chip) through the proposed Earthrise tone map (right half).
 Roles, seats and status colors are what the tactical mode draws with. Status colors are deliberately off the
 palette, so damage, drive and the rest read as simulation state. Specification: <code>docs/Hyades_interface.md</code> §6.2.</p>
 <h2>Source → shown</h2><div class="grid" id="source"></div>
@@ -33,13 +34,21 @@ palette, so damage, drive and the rest read as simulation state. Specification: 
 <script type="module">
   const { instance } = await WebAssembly.instantiateStreaming(fetch("hyades_viewer.wasm"), {});
   const hv = instance.exports;
+  const fromLink = new URLSearchParams(location.hash.slice(1)).get("palette");
+  if (fromLink) {
+    const bytes = new TextEncoder().encode(fromLink);
+    const ip = hv.hv_input(bytes.length);
+    new Uint8Array(hv.memory.buffer, ip, bytes.length).set(bytes);
+    hv.hv_palette_set();
+  }
   const p = hv.hv_text(7, 0, 0);
   const sheet = new TextDecoder().decode(new Uint8Array(hv.memory.buffer, p, hv.hv_text_len()).slice());
   const [head, ...lines] = sheet.trim().split("\n");
-  const [status, ink, paper, warm, cool, pull] = head.split("\t");
+  const [status, settings] = head.split("\t");
   document.getElementById("status").innerHTML =
-    `Status: <b>${status.toUpperCase()}</b> — awaiting the author's approval (R-UI1).<br>` +
-    `Earthrise tone map: ink L ${ink}, paper L ${paper}, chroma ×${warm} warm → ×${cool} cool, hue pull ${pull}.`;
+    `Status: <b>${status.toUpperCase()}</b> — to be ratified on the live viewer (R-UI1), where it can be tuned.<br>` +
+    `Settings: <code></code>`;
+  document.querySelector("#status code").textContent = settings;
   for (const line of lines) {
     const [section, name, src, shown] = line.split("\t");
     const chip = document.createElement("div");

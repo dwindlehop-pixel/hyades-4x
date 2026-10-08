@@ -19,7 +19,8 @@ dependency-free, presentation-free, deterministic, and WASM-targetable.
 
 ## Build and test
 
-No third-party dependencies — everything is std-only.
+No third-party dependencies in the engine — everything is std-only. The game
+interface and networking may link upstream packages (the author's ruling).
 
 ```bash
 cargo build

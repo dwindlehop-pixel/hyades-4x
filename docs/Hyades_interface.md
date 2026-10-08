@@ -45,6 +45,16 @@ RATIFIED (T-149, the author's request that opened this spec):
 12. **Test-driven:** the interface is specified by tests written before the
     code they test.
 
+RATIFIED (T-150, the author's rulings after the first deployment):
+
+13. **The palette is ratified on a live design, not on a palette sheet.** The
+    author judges colors as the game is drawn in them, so the viewer carries a
+    live editor (§6.2.1) and a ratification names the settings it was made on.
+14. **The game interface and networking may link upstream packages.** The
+    engine stays dependency-free (`AGENTS.md` §4); the viewer links the engine
+    only as a test dependency, and nothing an interface package computes enters
+    replicated state.
+
 ---
 
 ## 2. The seam
@@ -161,9 +171,10 @@ screen is OPEN (**R-UI7**).
 The tactical palette is the author's 40 colors (`hyades_palette.js`: eight base
 tones, eight accents each with tints `3`, `2` and shade `1`), held verbatim in
 `viewer/src/palette.rs::SOURCE`, passed through a tone map. **Every value below
-is a proposal.** The page `palette.html` on the deployed site shows each source
-color beside its mapped color, and every role, seat and status color, for the
-author's review.
+is a proposal**, to be ratified on the live viewer (ruling 13, §6.2.1). The
+page `palette.html` is a reference sheet of the same values — each source color
+beside its mapped color, every role, seat and status color — and opens a link's
+settings too.
 
 **The proposed tone map, "Earthrise"**, in OKLCH (Björn Ottosson, *A perceptual
 color space for image processing*, 2020):
@@ -177,6 +188,31 @@ color space for image processing*, 2020):
 Out-of-gamut results are brought in by reducing chroma at fixed lightness and
 hue. `ink = 0.02` is the highest value tried at which every one of the first
 eighteen seat colors still reaches 3:1 contrast on the ground (§D.58.3).
+
+#### 6.2.1 The live editor
+
+BUILT (T-150). The viewer's side panel tunes every value in this section while
+the game is drawn — the tone map's six parameters and four anchors, the glyph
+fill's dimming (`fill`, proposed 0.45, §6.3), and any of the 40 palette colors
+or 9 status colors set by hand (a hand-set color replaces the tone map's
+result for that name, and every role and seat drawn from it follows). Each
+change redraws both modes.
+
+**The settings are one line of text** (`viewer/src/palette.rs::Settings`),
+owned by the module — the page sends it and reads back the canonical form:
+
+```
+ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.45 hy_red=#c83a2c Hit=#ff2d6f
+```
+
+Keys left out keep the proposal; a key that is unknown, a value out of range
+(`ink` and `paper` 0–1 with `ink` below `paper`, chroma scales 0–2, `pull` and
+`fill` 0–1, anchors 0–360°) or a malformed color refuses the whole line and
+names the key. The line rides in the page's link (`#palette=…`), so a tuned
+palette can be reopened, sent and ratified as it was seen; the replay picker
+and reloads keep it. **To ratify, the author sends the line or the link**; the
+values then replace the proposal in `palette.rs` and this section, and
+`PALETTE_STATUS` becomes `ratified`.
 
 **The proposed assignments:**
 
@@ -307,7 +343,7 @@ OPEN — part of R-UI2.
 
 BUILT.
 
-- **`viewer/`** — Rust, no dependencies, compiled to `wasm32-unknown-unknown`
+- **`viewer/`** — Rust, no dependencies today (ruling 14 permits them; R-UI8), compiled to `wasm32-unknown-unknown`
   as a module with no imports. Its plain C interface (`viewer/src/ffi.rs`,
   `hv_*`) takes and returns numbers; bytes cross through one input buffer, the
   framebuffer and one text buffer. **Everything the page shows as text is
@@ -319,7 +355,8 @@ BUILT.
 - **Controls**: play/pause, rewind, step, a rate multiplier, a scrubber; Space,
   J/K/L, ←/→, T (mode), F (fit everything), G (the replay's focus), C (center
   on the selection); wheel zooms about the pointer, drag pans, click selects; a
-  replay file can be opened from disk.
+  replay file can be opened from disk; the side panel's palette editor tunes the
+  palette live (§6.2.1).
 - **`web/build.sh <out> [--quick]`** assembles the site: the module, the page,
   and replays recorded by `examples/record_replay` at that commit (expansion,
   a beam fight, a missile-sentry fight).
@@ -328,7 +365,10 @@ BUILT.
 `web/test/smoke.mjs`, which drives the module headless over every replay in
 both modes; and `web/test/browser.mjs`, which opens the site in headless
 Chrome, checks it renders on WebGL2 without a console error, compares GPU and
-CPU juicy (§7.3), and plays, filters the log and seeks from a row.
+CPU juicy (§7.3), plays, filters the log and seeks from a row, and drives the
+palette editor (a link's settings open with the page; a slider redraws the
+canvas and rewrites the link; a hand-set color reaches the settings line;
+reset returns to the proposal).
 
 **Deployment**: `.github/workflows/pages.yml` builds and tests the site on
 every push to `main` and publishes it to GitHub Pages. The repository's Pages
@@ -341,13 +381,14 @@ job runs the same build and tests on every pull request.
 
 | code | decision | status | what would settle it |
 |---|---|---|---|
-| **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors (§6.2) | OPEN — proposal built, `PALETTE_STATUS = "proposed"` | the author's approval or correction of `palette.html`; on approval, flip `PALETTE_STATUS` and mark the values ratified here |
+| **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"` | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
 | **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — proposal built | the author's review on the deployed site |
 | **R-UI4** | stacking: the stack square, the fan spacing, what a stack carries (§6.4) | OPEN — proposal built | the author's review; a census of stack sizes on a long replay if counts prove unreadable |
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |
 | **R-UI6** | replay size (§3) | OPEN — recommendation attached | the first replay the author wants to keep that passes ~50 MB |
 | **R-UI7** | showing height `z` in the galaxy view (§6.1) | OPEN | the author's ruling on whether the view stays top-down |
+| **R-UI8** | which upstream packages the interface takes up now that it may (ruling 14) | OPEN — recommendation attached | a need the current code cannot meet. Recommendation: none yet; the first candidates are `wasm-bindgen`/`web-sys` (to retire the hand-written C interface and `shell.js`'s byte copying) and `wgpu` (to move `gpu.js` into Rust), each taken when a change would otherwise be built on the hand-rolled path |
 
 ## References
 

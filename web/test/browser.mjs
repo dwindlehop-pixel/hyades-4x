@@ -134,6 +134,35 @@ try {
   });
   check(Math.abs(seek[0] - seek[1]) < 1e-3, `a log row seeks to its event: ${seek[0]} vs ${seek[1].toFixed(4)}`);
 
+  // The live palette editor: a palette in the link opens with the page, a
+  // slider redraws the canvas and rewrites the link, a hand-set color reaches
+  // the settings line, and reset returns to the proposal.
+  const tuned = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  tuned.on("pageerror", (e) => errors.push(String(e)));
+  await tuned.goto(`${base}/?replay=sentries#palette=${encodeURIComponent("ink=0.1 Hit=#00ff00")}`);
+  await tuned.waitForFunction(() => window.hyades?.hv() && document.getElementById("label").textContent !== "", null, { timeout: 30000 });
+  const line = await tuned.evaluate(() => window.hyades.text(9));
+  check(line.startsWith("ink=0.1 ") && line.endsWith("Hit=#00ff00"), `a palette in the link opens with the page: ${line}`);
+  const groundAt = () => tuned.evaluate(() => {
+    window.hyades.draw();
+    const c = document.getElementById("view");
+    const gl = c.getContext("webgl2");
+    const px = new Uint8Array(4);
+    gl.readPixels(2, 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    return Array.from(px.slice(0, 3));
+  });
+  const before = await groundAt();
+  await tuned.click("#tuner summary");
+  await tuned.$eval("#tune-ink", (el) => { el.value = "0.25"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+  const after = await groundAt();
+  const hash = decodeURIComponent(await tuned.evaluate(() => location.hash));
+  check(after.join() !== before.join() && hash.includes("ink=0.25"), `the ink slider redraws the ground (${before} → ${after}) and rewrites the link`);
+  await tuned.$eval('#tune-colors label[data-name="hy_red"] input', (el) => { el.value = "#123456"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+  check((await tuned.inputValue("#tune-text")).includes("hy_red=#123456"), "a hand-set color reaches the settings line");
+  await tuned.click("#tune-reset");
+  check(await tuned.evaluate(() => window.hyades.text(9)) === "ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.45", "reset returns to the proposal");
+  if (shots) await tuned.screenshot({ path: path.join(shots, "tuner.png") });
+
   const palette = await browser.newPage();
   await palette.goto(`${base}/palette.html`);
   await palette.waitForFunction(() => document.querySelectorAll("#source .chip").length === 40, null, { timeout: 15000 });

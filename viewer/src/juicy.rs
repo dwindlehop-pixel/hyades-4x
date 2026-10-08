@@ -16,7 +16,7 @@
 
 use crate::camera::Lod;
 use crate::color::Rgb;
-use crate::palette::{status, Status};
+use crate::palette::Status;
 use crate::raster::Raster;
 use crate::tactical::{Op, Scene};
 
@@ -304,20 +304,20 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
     for op in ops {
         let Op::Hull { s: sp, at, outline, vector, hit, .. } = op else { continue };
         let p = pos(*sp);
-        let wreck = *outline == status(Status::Wreck);
+        let wreck = *outline == s.palette.status(Status::Wreck);
         if let Some((end, c)) = vector {
             // The plume trails opposite the vector for a drive, ahead of it
             // when braking. The vector's end is in tactical pixels; keep its
             // offset from the hull and apply it at the hull's exact position.
             let k = crate::tactical::PIXEL / PIXEL;
             let e = [p[0] + (end[0] - at[0]) as f64 * k, p[1] + (end[1] - at[1]) as f64 * k];
-            let tail = if *c == status(Status::Braking) { e } else { [2.0 * p[0] - e[0], 2.0 * p[1] - e[1]] };
+            let tail = if *c == s.palette.status(Status::Braking) { e } else { [2.0 * p[0] - e[0], 2.0 * p[1] - e[1]] };
             streak(&mut out.scene, p, tail, hull_r, linear(*c), 2.5);
         }
-        let (c, k) = if wreck { (linear(status(Status::Wreck)), 0.6) } else { (linear(*outline), 2.0) };
+        let (c, k) = if wreck { (linear(s.palette.status(Status::Wreck)), 0.6) } else { (linear(*outline), 2.0) };
         out.scene.push(light(p[0], p[1], hull_r, c, k));
         if *hit {
-            out.scene.push(light(p[0], p[1], 3.0 * hull_r, linear(status(Status::Hit)), 6.0));
+            out.scene.push(light(p[0], p[1], 3.0 * hull_r, linear(s.palette.status(Status::Hit)), 6.0));
         }
     }
     out

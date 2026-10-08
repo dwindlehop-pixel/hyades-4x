@@ -101,7 +101,8 @@ dependency-free, presentation-decoupled, and deterministic.
 
 ## 2. Build & test
 
-No third-party dependencies — everything is std-only.
+No third-party dependencies in the engine — everything is std-only. The
+interface (`viewer/`, `web/`) and networking may link upstream packages (§4).
 
 ```bash
 cargo build
@@ -1704,7 +1705,12 @@ cheap audit of the first**, and neither defect was findable by reading.
     `clippy::disallowed_methods` since early on, and there was no
     `clippy.toml`, so it denied nothing. When a lint names a list, check the
     list exists.
-- **Zero dependencies.** Do not add crates to `Cargo.toml`.
+- **Zero dependencies in the engine.** Do not add crates to the engine's
+  `Cargo.toml`. **The game interface and networking are exempt** (the author's
+  ruling, T-150): `viewer/`, `web/` and the network layer may link upstream
+  packages. The exemption does not reach the engine through them — the viewer
+  links the engine only as a test dependency, and nothing an interface package
+  computes may enter replicated state (design law #15).
 - **Entities evaluate on their own arrival events — never on a tick sweep, and never
   by rescanning the galaxy.** This is a discrete-event engine: a ship decides what to
   do next *when it arrives somewhere* (`ContactArrive`, `FreighterArrive`,

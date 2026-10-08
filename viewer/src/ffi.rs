@@ -12,7 +12,7 @@
 
 use crate::app::{Mode, Viewer};
 use crate::logview::Window;
-use crate::palette::{self, Palette};
+use crate::palette::{self, Palette, Settings};
 use std::cell::RefCell;
 use std::fmt::Write as _;
 
@@ -21,6 +21,12 @@ thread_local! {
     static INPUT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static TEXT: RefCell<String> = const { RefCell::new(String::new()) };
     static ERROR: RefCell<String> = const { RefCell::new(String::new()) };
+    /// The palette the author is tuning; kept across replays.
+    static PALETTE: RefCell<Option<Palette>> = const { RefCell::new(None) };
+}
+
+fn palette() -> Palette {
+    PALETTE.with(|p| p.borrow_mut().get_or_insert_with(Palette::default).clone())
 }
 
 fn with<R: Default>(f: impl FnOnce(&mut Viewer) -> R) -> R {
@@ -47,7 +53,8 @@ pub extern "C" fn hv_input(len: usize) -> *mut u8 {
 #[no_mangle]
 pub extern "C" fn hv_load(w: f64, h: f64) -> i32 {
     match Viewer::load(&input(), w, h) {
-        Ok(v) => {
+        Ok(mut v) => {
+            v.palette = palette();
             VIEWER.with(|x| *x.borrow_mut() = Some(v));
             0
         }
@@ -288,6 +295,25 @@ pub extern "C" fn hv_log_seek(row: usize) {
     with(|v| v.seek_log_row(row))
 }
 
+/// **Sets the palette** from the settings text in the input buffer
+/// ([`Settings`]'s text form) and redraws with it. Returns 0, or 1 with the
+/// reason in text 3 and the palette unchanged.
+#[no_mangle]
+pub extern "C" fn hv_palette_set() -> i32 {
+    match Settings::parse(&input()) {
+        Ok(settings) => {
+            let p = Palette::with(settings);
+            PALETTE.with(|x| *x.borrow_mut() = Some(p.clone()));
+            with(|v| v.palette = p);
+            0
+        }
+        Err(e) => {
+            ERROR.with(|x| *x.borrow_mut() = e);
+            1
+        }
+    }
+}
+
 /// Text `which`, its length in [`hv_text_len`]:
 ///
 /// | which | text |
@@ -301,11 +327,13 @@ pub extern "C" fn hv_log_seek(row: usize) {
 /// | 6 | the log's event kinds, one per line |
 /// | 7 | the palette sheet, for the author's approval ([`palette_sheet`]) |
 /// | 8 | the replay's label and seed |
+/// | 9 | the palette's settings, in their text form |
 #[no_mangle]
 pub extern "C" fn hv_text(which: i32, first: i32, rows: usize) -> *const u8 {
     let s = match which {
         3 => ERROR.with(|e| e.borrow().clone()),
-        7 => palette_sheet(&Palette::default()),
+        7 => palette_sheet(&palette()),
+        9 => palette().settings.to_string(),
         _ => with(|v| match which {
             0 => v.status(),
             1 => v.inspector(),
@@ -334,21 +362,11 @@ pub extern "C" fn hv_text_len() -> usize {
     TEXT.with(|t| t.borrow().len())
 }
 
-/// **The palette sheet**, tab-separated, for the approval page: a header line
-/// `status \t ink \t paper \t warm_chroma \t cool_chroma \t pull`, then
-/// sections `source`, `role`, `seat` and `status`, each line
-/// `section \t name \t #source \t #shown`.
+/// **The palette sheet**, tab-separated, for the live editor and the approval
+/// page: a header line `status \t settings`, then sections `source`, `role`,
+/// `seat` and `status`, each line `section \t name \t #source \t #shown`.
 pub fn palette_sheet(p: &Palette) -> String {
-    let m = &p.map;
-    let mut out = format!(
-        "{}\t{}\t{}\t{}\t{}\t{}\n",
-        palette::PALETTE_STATUS,
-        m.ink,
-        m.paper,
-        m.warm_chroma,
-        m.cool_chroma,
-        m.pull
-    );
+    let mut out = format!("{}\t{}\n", palette::PALETTE_STATUS, p.settings);
     for &(name, [r, g, b]) in palette::SOURCE.iter() {
         let src = crate::color::Rgb::from_ints(r, g, b);
         let _ = writeln!(out, "source\t{name}\t{}\t{}", src.to_hex(), p.get(name).to_hex());
@@ -377,7 +395,7 @@ pub fn palette_sheet(p: &Palette) -> String {
         let _ = writeln!(out, "seat\tP{i}\t\t{}", p.seat(i).to_hex());
     }
     for (s, hex) in palette::STATUS.iter() {
-        let _ = writeln!(out, "status\t{s:?}\t\t{hex}");
+        let _ = writeln!(out, "status\t{}\t{hex}\t{}", palette::status_name(*s), p.status(*s).to_hex());
     }
     out
 }
@@ -425,6 +443,24 @@ mod tests {
         hv_log_seek(0);
         assert_eq!(hv_time(), 9.5);
         assert_eq!(text(5, 0, 0).lines().count(), 7);
+    }
+
+    #[test]
+    fn the_palette_is_set_from_text_kept_across_replays_and_refused_whole_when_wrong() {
+        put("ink=0.1 Hit=#00ff00");
+        assert_eq!(hv_palette_set(), 0);
+        assert_eq!(
+            text(9, 0, 0),
+            "ink=0.1 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.45 Hit=#00ff00"
+        );
+        put(TINY);
+        assert_eq!(hv_load(320.0, 200.0), 0);
+        assert!(text(7, 0, 0).contains("status\tHit\t#ff2d6f\t#00ff00"), "a replay opens in the tuned palette");
+        hv_render();
+        put("ink=7");
+        assert_eq!(hv_palette_set(), 1);
+        assert!(text(3, 0, 0).contains("ink"));
+        assert!(text(9, 0, 0).starts_with("ink=0.1 "), "a refused setting changes nothing");
     }
 
     #[test]
