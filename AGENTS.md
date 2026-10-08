@@ -101,7 +101,8 @@ dependency-free, presentation-decoupled, and deterministic.
 
 ## 2. Build & test
 
-No third-party dependencies — everything is std-only.
+No third-party dependencies in the engine — everything is std-only. The
+interface (`viewer/`, `web/`) and networking may link upstream packages (§4).
 
 ```bash
 cargo build
@@ -1538,13 +1539,16 @@ things it will fail you on:
 
 ```bash
 cargo fmt --all -- --check                          # rustfmt.toml: 120 cols, Max heuristics
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-targets && cargo test --doc
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-targets && cargo test --workspace --doc
 cargo check --lib --target wasm32-unknown-unknown   # holds the §1 portability claim honest
 ```
 
 `RUSTFLAGS: -D warnings` is set workflow-wide, so a bare rustc warning is a
-build failure too. The slow work runs in its own `balance` job so it does not
+build failure too. The workspace has two crates — the engine and
+`hyades-viewer` — so run fmt, clippy and the tests with `--workspace`; CI does.
+The `viewer` job builds the site with `web/build.sh` and runs
+`web/test/smoke.mjs` and `web/test/browser.mjs` (headless Chrome, WebGL2). The slow work runs in its own `balance` job so it does not
 block fast feedback: `tests/balance.rs` (the tuned combat goldens) and
 `coverage_trace`.
 
@@ -1574,7 +1578,10 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/arena.rs` | Ship Testing Arena — *scenario seeder only*, owns no combat logic |
 | `src/matching.rs` | the Exchange (order-book matching) — wired in at T-01; **it was never in the module list, so it did not compile as part of the crate and its tests never ran in CI** |
 | `src/log.rs` | optional diagnostic event log (the interrogation seam) |
-| `src/snapshot.rs` | read-only views for the presentation layer |
+| `src/snapshot.rs` | read-only views for the presentation layer; `Simulation::snapshot_at(t)` reads the theater at any time up to the next event |
+| `src/replay.rs` | **the recorder**: a run as a versioned JSON replay, a frame at exactly every `frame_years` — the only thing the viewer reads (`docs/Hyades_interface.md` §3) |
+| `viewer/` | **`hyades-viewer`**, a second workspace crate: playback, the log filter, the tactical and juicy renderers, compiled to wasm32. It does not link the engine (design law #15); a dev-dependency for the contract test is its only tie |
+| `web/` | the page, the WebGL2 renderer, `build.sh` for the site, and the module and browser tests. Deployed to Pages from `main` |
 
 ### The combat/arena split (load-bearing)
 
@@ -1698,7 +1705,12 @@ cheap audit of the first**, and neither defect was findable by reading.
     `clippy::disallowed_methods` since early on, and there was no
     `clippy.toml`, so it denied nothing. When a lint names a list, check the
     list exists.
-- **Zero dependencies.** Do not add crates to `Cargo.toml`.
+- **Zero dependencies in the engine.** Do not add crates to the engine's
+  `Cargo.toml`. **The game interface and networking are exempt** (the author's
+  ruling, T-150): `viewer/`, `web/` and the network layer may link upstream
+  packages. The exemption does not reach the engine through them — the viewer
+  links the engine only as a test dependency, and nothing an interface package
+  computes may enter replicated state (design law #15).
 - **Entities evaluate on their own arrival events — never on a tick sweep, and never
   by rescanning the galaxy.** This is a discrete-event engine: a ship decides what to
   do next *when it arrives somewhere* (`ContactArrive`, `FreighterArrive`,
@@ -2142,7 +2154,7 @@ one, stop and flag it.
 - **Make concrete decisions; flag open questions as R-codes.** A decision plus a
   flagged R-code beats an open-ended clarifying question. Existing families:
   `R-MC*` (mineral cost / combat), `R-L*` (loadout), `R-ARENA*`, `R-MX*` (matching),
-  `R-CG*` (counter-graph), `R-XM*` (exotic matter).
+  `R-CG*` (counter-graph), `R-XM*` (exotic matter), `R-UI*` (the interface).
 - **Never silently change globally Monte-Carlo-tuned parameters.** They require
   explicit ratification. This includes everything in `combat::CombatConfig`.
 - **Annotate superseded values; don't silently replace them.** Mark placeholders as

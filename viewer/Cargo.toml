@@ -1,0 +1,24 @@
+[package]
+name = "hyades-viewer"
+version = "0.1.0"
+edition = "2021"
+description = "Hyades replay viewer: reads a recorded replay, plays it back, filters its log, and draws the tactical and juicy modes into a pixel framebuffer. It does not link the engine (docs/Hyades_interface.md)."
+license = "Apache-2.0"
+
+[dependencies]
+
+# Tests only: the contract test records a replay with the engine and reads it
+# here. The library itself never links the engine (design law #15).
+[dev-dependencies]
+hyades-engine = { path = ".." }
+
+[lib]
+# cdylib is the wasm32 module the web shell loads; rlib is what `cargo test`
+# links.
+crate-type = ["cdylib", "rlib"]
+
+# The engine bans the host libm because native and wasm32 runs must agree to
+# the last bit (T-127). The viewer draws pixels and never reaches replicated
+# state, so the ban does not apply to it.
+[lints.clippy]
+disallowed_methods = "allow"

@@ -1,0 +1,64 @@
+name: Pages
+
+# Continuous deployment of the replay viewer (docs/Hyades_interface.md §8):
+# every push to main rebuilds the site — the viewer module for wasm32, the
+# page, and replays recorded by the engine at that commit — tests it, and
+# publishes it to GitHub Pages. The repository's Pages source must be set to
+# "GitHub Actions" (Settings → Pages).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push waits rather than cancelling one
+# that is already publishing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  build:
+    name: build and test the site
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --no-self-update
+          rustup default stable
+      - name: Build the site
+        run: web/build.sh _site
+      - name: Module smoke test
+        run: node web/test/smoke.mjs _site/hyades_viewer.wasm _site/replays
+      - name: Playwright
+        run: npm install --no-save --no-package-lock playwright@1.56.1
+      - name: Browser test
+        env:
+          HYADES_CHROME_CHANNEL: chrome
+        run: node web/test/browser.mjs _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

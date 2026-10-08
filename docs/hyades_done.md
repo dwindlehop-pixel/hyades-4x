@@ -24,6 +24,8 @@ row below, and leave its code in the Band A pointer line of
 
 | code | status | open follow-ups, and where they live |
 |---|---|---|
+| **T-150** | Built: the live palette editor; the author's rulings on ratifying live and on upstream packages | R-UI1 (awaits ratification on the live viewer), R-UI8 — `Hyades_interface.md` §9 |
+| **T-149** | Built: the replay viewer, its two modes, and deployment to Pages | R-UI1 … R-UI7 — `Hyades_interface.md` §9 |
 | **T-133** | Closed (sixth landing): fire on the main loop | R-WAR35, R-WAR37 — warfare register |
 | **T-132** | Closed (engine): damage as beam power over time, structure on volume | R-WAR19, R-WAR21 — warfare register |
 | **T-130** | Closed: `exp`/`ln` as four-multiply polynomials | — |
@@ -114,6 +116,8 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **T-94 / R-O93** — the logistic is solved, not stepped | **T-94**, **R-O93** | T-24 | **T-95** | `AGENTS.md` §2's **replicate on seeds the candidate was not chosen against** (8/8, 5.7 SE); its `yr/s` **and** `ns/event` rule, which is what shows the `exp` is free rather than assumed to be; design law #16 at the denominator | **Design law #11's `r < 2` ceiling**, which T-64 derived from the conjugacy to the logistic map and which is a property of the *Euler step*, not of the model — the closed form is monotone at any rate. **R-O84's ratification of `growth_rate = 0.873`**, whose operating point and plateau map are both consumed; the value is carried, not re-measured. And **the undershoot below `K`**, which T-67 cited as supporting evidence for taking infrastructure out of the minimum — T-67's conclusion stands on its own (razing works must not move people) but that particular argument was resting on truncation error |
 | **T-96 / R-MC16** — the drive is a mass, not a stat | **T-96**, **R-MC16** | R-O65 (still blocked), T-24 | **T-97**, **T-98** | R-MC16's own words — volume is the ENG ceiling, realized thrust is a Design quantity paid for in minerals; design law #11 (the drive masses and costs what it occupies) and #3 (the consolidation advantage stops being repaid in turnaround); R-O57 (cost stays exactly dry mass); `AGENTS.md` §2's replication rule and its instruction to write the mechanism check down first — the round-trip ratio, which moved 1.252 → 1.011 | **R-O58's `a_empty` is size-independent**, which was true only while thrust *was* dry mass — empty acceleration now rises with size (1.00 / 2.37 / 5.06 g), which is the point. **§3.3's build schedule** 2.2/3.0/12.0 → 2.201/3.092/15.154, because `t_build` tracks hull mass and a hull now masses its drive. **The founding-infra rung coincidence** drifts +0.003/+0.038/+0.119 Bands — R-O80's claim about the two ladders is untouched (the shell still prices exactly at its rung) and R-O87's works identity survives, because both sides moved together |
 | **T-98 / R-O94** — the hauler's hull is a forecast | **T-98**, **R-O94** | **T-92** (freight 1.73% -> 14.70% of bank inflow), T-24 | **T-99** | `AGENTS.md`'s **ablate them apart before you believe either** — the liquidity term is the whole difference between +170%/+9.5% and +51%/-17%, and landed as one change the honest response would have been to revert; the mechanism check written down in advance (freight's share of bank inflow, not the objective); design law #3 in both directions — its cost basis *and* its named counterweight, indivisibility; `AGENTS.md` section 4's `O(1)` rule at the decision | **`role_hull_type(Role::Freighter)`'s stated rationale**, "spec: MSV/GSV, picking the cheaper" — correct under the pre-R-O58 ladder and backwards since R-O58 made cost per kilotonne hauled 0.109 against 0.032. It survived because the General hull's turnaround made it a bad idea for an unrelated reason, which T-96 removed. **And colony count falls 6.1%** — recorded rather than left to be found, and not a defect: colony-years rise 9.5% on the same bed |
+| **T-149** — the game interface: replay, viewer, Pages | **T-149** | — | **R-UI1 … R-UI7** | Design law #15 (the viewer reads a replay and does not link the engine; `snapshot_at` and `next_event_time` are reads); design law #16 (the recorder refuses a non-finite number); `AGENTS.md` §4's determinism (one seed, one replay, byte for byte) and its 60-second rule (every test target measured, the longest 34.5 s) | **The recorder's own first frame rule**, one commit earlier: frames at the first event after their year drifted onto event times and repeated once a run's events stopped (appendix §D.58.1); replaced by `snapshot_at` |
+| **T-150** — the palette is tuned and ratified live | **T-150** | R-UI1 | **R-UI8** | The author's rulings 13 (ratify on a live design) and 14 (the interface and networking may link upstream packages; the engine stays dependency-free); design law #15 (the palette is presentation state and never reaches the engine) | **`Hyades_interface.md` §9's own settle-by for R-UI1** ("approval of `palette.html`"), one landing old — the author ruled a sheet cannot ratify a palette; replaced by a settings line or link from the live editor. **`AGENTS.md` §4's zero-dependency rule**, narrowed by the author's ruling to the engine |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -139,6 +143,31 @@ description of the change.
 ---
 
 ## Entries moved from Band A
+
+### T-150. The palette is ratified on a live design — a live editor, and the settings it ratifies on
+
+*Opened and built in one landing at the author's direction after the first
+deployment: "I can't ratify based on a palette. I need to ratify on a live
+design." and "For the game interface and networking, I relax my prohibition
+against linking against upstream packages."* The viewer's side panel tunes the
+tone map, the glyph fill's dimming and any palette or status color by hand
+while the game is drawn; the settings are one line of text the module parses
+(`palette::Settings`), carried in the page's link. Both rulings are in
+`docs/Hyades_interface.md` §1 (13, 14); the editor is §6.2.1. Open: R-UI1
+(the author's ratification) and R-UI8 (which packages, if any, to take up).
+
+### T-149. The game interface — replay, rewind, seek, filter; a tactical and a juicy mode; deployed from `main`
+
+*Opened and built in one landing at the author's request; it never sat in Band
+A.* The decisions are in `docs/Hyades_interface.md`, the measurements in the
+appendix §D.58. What landed: the replay format (engine, `src/replay.rs`,
+`Simulation::snapshot_at`), the `hyades-viewer` crate (playback, the log
+filter, the camera and levels of detail, Design glyphs, the tactical renderer
+with stacks, the juicy light list with a CPU reference renderer, the C
+interface for wasm32), the web shell with a WebGL2 juicy renderer, the
+palette sheet for the author's approval, a module smoke test, a browser test,
+CI's `viewer` job and the Pages workflow. Open: R-UI1 (the palette awaits
+approval) through R-UI7.
 
 ### T-133. No engagements and no fight sites — encounters along trajectories, decided by Doctrine
 

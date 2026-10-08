@@ -1726,4 +1726,86 @@ mod tests {
         let range = sim.position_at(ship, seen).unwrap().distance(world_pos);
         assert!((lag - range).abs() < 1e-9, "light travelled {lag}, the ship's range {range}");
     }
+
+    /// **The snapshot shows every hull, as its Design, its damage and its
+    /// wreck** (the presentation contract, `Hyades_interface.md` §2). A hull
+    /// wrecked in passing keeps coasting, so the snapshot after the fight still
+    /// carries it — wrecked, at the wreck's position and velocity, its drive
+    /// dead — and taking the snapshot does not panic on a hull without a motion.
+    #[test]
+    fn a_snapshot_reports_every_hull_with_its_design_damage_and_wreck() {
+        let mut sim = bed(21);
+        enemies(&mut sim);
+        let at = open_space(&sim);
+        let gun = design_loadout(HullType::GeneralContactVehicle, Class::Scarp, &sim.config, &sim.combat);
+        let scarp = stand(&mut sim, 0, HullType::GeneralContactVehicle, Class::Scarp, gun, at);
+        let prey = stand(&mut sim, 1, HullType::MediumSystems, Class::Delta, Loadout::UNARMED, at);
+        let side = Vec3::new(0.0, 0.3 * gun.fire_enemy_ly, 0.0);
+        let leg = Motion::leg(
+            at.add(side).add(Vec3::new(-1.0, 0.0, 0.0)),
+            at.add(side).add(Vec3::new(1.0, 0.0, 0.0)),
+            0.0,
+            2.0,
+        );
+        sim.world.motion.insert(prey, leg);
+        sim.track_changed(prey);
+
+        let find = |snap: &crate::snapshot::Snapshot, e: Entity| {
+            *snap.vehicles.iter().find(|v| v.id == e.0).expect("every hull is in the snapshot")
+        };
+        let before = sim.snapshot();
+        let ids: std::collections::BTreeSet<u64> = before.vehicles.iter().map(|v| v.id).collect();
+        assert_eq!(ids.len(), before.vehicles.len(), "ids are distinct");
+        let (s, p) = (find(&before, scarp), find(&before, prey));
+        assert_eq!((s.hull, s.design, p.hull, p.design), ("GCV", "Scarp", "MSV", "Delta"));
+        assert!(s.beams > 0 && p.beams == 0 && p.tubes == 0, "armament is the Design's");
+        assert!(!s.wrecked && !p.wrecked && s.damage == 0.0);
+        assert_eq!(p.burn, 1, "at the start of its leg the prey is accelerating");
+        assert!((p.accel - 2.0).abs() < 1e-12, "it flies its leg's proper acceleration");
+
+        run_to(&mut sim, leg.arrive);
+        let w = *sim.world.wreck.get(prey).expect("the Scarp wrecks it in passing");
+        let after = sim.snapshot();
+        let p = find(&after, prey);
+        assert!(p.wrecked && p.damage == 1.0, "a wreck reads as wrecked, at full damage");
+        assert!(p.position.distance(sim.position_at(prey, sim.clock).unwrap()) < 1e-12, "where the wreck is now");
+        assert!(p.velocity.distance(w.velocity) < 1e-12, "coasting at the velocity it had");
+        assert_eq!((p.accel, p.burn, p.in_flight), (0.0, 0, true), "its drive is dead, and it still moves");
+        assert!(!find(&after, scarp).wrecked);
+    }
+
+    /// **A hull recycled for its minerals is gone from the theater**: its mass
+    /// is back in a bank (roles §4.6), so the snapshot no longer shows it,
+    /// where a wreck — still coasting, still mass — stays.
+    #[test]
+    fn a_snapshot_leaves_out_a_hull_recycled_for_its_minerals() {
+        let mut sim = bed(4);
+        let at = open_space(&sim);
+        let e = stand(&mut sim, 0, HullType::LimitedSystems, Class::Spur, Loadout::UNARMED, at);
+        assert!(sim.snapshot().vehicles.iter().any(|v| v.id == e.0));
+        sim.world.role.insert(e, Role::Scrapped);
+        sim.world.motion.remove(e);
+        assert!(!sim.snapshot().vehicles.iter().any(|v| v.id == e.0), "recycled, so not in the theater");
+    }
+
+    /// **Damage reads as the share of the hull's structure it has absorbed**
+    /// (T-133): a hull that has taken fire short of its wreck point shows a
+    /// fraction strictly between nothing and its whole structure.
+    #[test]
+    fn a_snapshot_reads_damage_as_a_share_of_structure() {
+        let (mut sim, [e0, e1]) = duel(3, cairn_gun, popgun);
+        enemies(&mut sim);
+        sim.track_changed(e0);
+        sim.track_changed(e1);
+        let gun = *sim.world.loadout.get(e0).unwrap();
+        let power = gun.beams as f64 * gun.beam_power_kj_per_year;
+        let kill = sim.structure_of(e1) / power;
+        let t0 = sim.clock;
+        run_to(&mut sim, t0 + 0.5 * kill);
+        let v = *sim.snapshot().vehicles.iter().find(|v| v.id == e1.0).unwrap();
+        let want = damage(&sim, e1) / sim.structure_of(e1);
+        assert!(want > 0.0 && want < 1.0, "the bed lands part way: {want}");
+        assert!((v.damage - want).abs() < 1e-12, "{} against {want}", v.damage);
+        assert!(!v.wrecked);
+    }
 }

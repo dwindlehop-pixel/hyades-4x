@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hyades Tactical Palette</title>
+<style>
+  :root { --ground: #0b2730; --panel: #133340; --text: #ece5d2; --dim: #8a9a9b; --grid: #4f6a73; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--ground); color: var(--text); font: 13px/1.45 ui-monospace, Menlo, Consolas, monospace; }
+  h1 { font-size: 16px; letter-spacing: 0.1em; text-transform: uppercase; }
+  h2 { font-size: 12px; margin-top: 28px; color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase; font-weight: normal; }
+  .status { border: 1px solid var(--grid); background: var(--panel); padding: 8px 12px; max-width: 70ch; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .chip { background: var(--panel); border: 1px solid var(--grid); }
+  .chip .sw { display: flex; height: 44px; }
+  .chip .sw i { flex: 1; }
+  .chip p { margin: 0; padding: 4px 6px; font-size: 11px; overflow-wrap: anywhere; }
+  .chip p span { color: var(--dim); }
+  p.note { color: var(--dim); max-width: 70ch; }
+</style>
+</head>
+<body>
+<h1>Hyades tactical palette</h1>
+<div class="status" id="status">Loading…</div>
+<p class="note">A reference sheet; ratify on the <a href="index.html" style="color:inherit">live viewer</a>, whose side panel tunes these colors as the game is drawn.
+The author's palette (left half of each chip) through the proposed Earthrise tone map (right half).
+Roles, seats and status colors are what the tactical mode draws with. Status colors are deliberately off the
+palette, so damage, drive and the rest read as simulation state. Specification: <code>docs/Hyades_interface.md</code> §6.2.</p>
+<h2>Source → shown</h2><div class="grid" id="source"></div>
+<h2>Interface roles and Doctrine roles</h2><div class="grid" id="role"></div>
+<h2>Seats</h2><div class="grid" id="seat"></div>
+<h2>Status (off-palette)</h2><div class="grid" id="statusc"></div>
+<script type="module">
+  const { instance } = await WebAssembly.instantiateStreaming(fetch("hyades_viewer.wasm"), {});
+  const hv = instance.exports;
+  const fromLink = new URLSearchParams(location.hash.slice(1)).get("palette");
+  if (fromLink) {
+    const bytes = new TextEncoder().encode(fromLink);
+    const ip = hv.hv_input(bytes.length);
+    new Uint8Array(hv.memory.buffer, ip, bytes.length).set(bytes);
+    hv.hv_palette_set();
+  }
+  const p = hv.hv_text(7, 0, 0);
+  const sheet = new TextDecoder().decode(new Uint8Array(hv.memory.buffer, p, hv.hv_text_len()).slice());
+  const [head, ...lines] = sheet.trim().split("\n");
+  const [status, settings] = head.split("\t");
+  document.getElementById("status").innerHTML =
+    `Status: <b>${status.toUpperCase()}</b> — to be ratified on the live viewer (R-UI1), where it can be tuned.<br>` +
+    `Settings: <code></code>`;
+  document.querySelector("#status code").textContent = settings;
+  for (const line of lines) {
+    const [section, name, src, shown] = line.split("\t");
+    const chip = document.createElement("div");
+    chip.className = "chip";
+    const sw = document.createElement("div");
+    sw.className = "sw";
+    for (const c of src ? [src, shown] : [shown]) {
+      const i = document.createElement("i");
+      i.style.background = c;
+      sw.append(i);
+    }
+    const label = document.createElement("p");
+    label.innerHTML = `${name}<br><span>${src ? src + " → " : ""}${shown}</span>`;
+    chip.append(sw, label);
+    document.getElementById(section === "status" ? "statusc" : section).append(chip);
+  }
+  for (const line of lines) {
+    const [section, name, , shown] = line.split("\t");
+    if (section === "role" && name === "ground") document.body.style.background = shown;
+    if (section === "role" && name === "panel") document.documentElement.style.setProperty("--panel", shown);
+  }
+</script>
+</body>
+</html>
