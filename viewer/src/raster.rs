@@ -25,7 +25,7 @@ impl Raster {
 
     pub fn clear(&mut self, c: Rgb) {
         let [r, g, b] = c.to_ints();
-        for p in self.px.chunks_exact_mut(4) {
+        for p in self.px.as_chunks_mut::<4>().0 {
             p.copy_from_slice(&[r, g, b, 255]);
         }
     }
@@ -154,7 +154,7 @@ impl Raster {
     /// Pixels of exactly color `c`.
     pub fn count(&self, c: Rgb) -> usize {
         let [r, g, b] = c.to_ints();
-        self.px.chunks_exact(4).filter(|p| p[0] == r && p[1] == g && p[2] == b).count()
+        self.px.as_chunks::<4>().0.iter().filter(|p| p[0] == r && p[1] == g && p[2] == b).count()
     }
 }
 

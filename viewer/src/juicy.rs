@@ -185,7 +185,7 @@ impl Hdr {
     /// Tone-maps into an 8-bit raster of the same size, through [`ToneLut`].
     pub fn resolve(&self, out: &mut Raster, lut: &ToneLut) {
         out.resize(self.w, self.h);
-        for (p, o) in self.px.iter().zip(out.px.chunks_exact_mut(4)) {
+        for (p, o) in self.px.iter().zip(out.px.as_chunks_mut::<4>().0) {
             o.copy_from_slice(&[lut.get(p[0]), lut.get(p[1]), lut.get(p[2]), 255]);
         }
     }
