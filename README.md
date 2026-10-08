@@ -10,8 +10,8 @@ dependency-free, presentation-free, deterministic, and WASM-targetable.
 - **Design specs** live in [`docs/`](docs/) and are authoritative.
 - **[`AGENTS.md`](AGENTS.md)** is the standing working agreement: design laws,
   open R-codes, and guardrails. Read it before changing engine behavior.
-- **The replay viewer** (`viewer/`, `web/`) plays recorded games back in a
-  browser, in a tactical and a juicy mode — see
+- **The game client** (`viewer/`, `web/`) runs in a browser. Its Replays menu
+  plays recorded games back in a tactical and a juicy mode — see
   [`docs/Hyades_interface.md`](docs/Hyades_interface.md). It is deployed to
   GitHub Pages from `main`.
 - **[`MIGRATION.md`](MIGRATION.md)** records how this tree was assembled and
@@ -59,7 +59,7 @@ src/         the engine (lib.rs wires the modules)
 examples/    MC sweeps + arena drivers; record_replay writes the viewer's replays
 tests/       smoke.rs, determinism.rs, telemetry.rs, balance.rs
 viewer/      hyades-viewer: the replay viewer, Rust, compiled to wasm32
-web/         the viewer's page, WebGL2 renderer, site build and browser tests
+web/         the game client (menu, replays, palette), WebGL2 renderer, site build and browser tests
 docs/        the design specs
 ```
 

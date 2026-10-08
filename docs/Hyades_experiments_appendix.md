@@ -5002,6 +5002,49 @@ been measured. The test's tolerance (mean < 1, 99th percentile ≤ 4, maximum
 The GPU's frame time has not been measured: SwiftShader's would describe the
 CPU it runs on, and no hardware GPU is available to the test.
 
+### D.58.5 The first deployment on a phone, and the overlay that took every tap (T-151)
+
+**The theater's size.** The deployed site under Playwright's Pixel 7 emulation
+(412 × 839 CSS pixels): the canvas was **623 × 148 CSS pixels**, wider than the
+screen, with sideways scroll. The header, the side panel and the log were laid
+out below and beside it as on a wide screen. After the client restructure
+(§8 of `Hyades_interface.md`), the same emulation gives **412 × 700** (83% of the
+height) with no sideways scroll, and opening the panel or the log does not
+change it (`web/test/browser.mjs` asserts ≥ 60% and no scroll).
+
+**Selection.** Picking through the module (`hv_pick` at a drawn hull's position)
+selected the hull; a mouse click at the same point selected nothing, and a
+`pointerup` listener on the canvas never fired. `#message`, the full-stage
+overlay that carries loading and error text, had its own `display: grid`, which
+overrides the `hidden` attribute's `display: none`; so a hidden message still
+covered the canvas and received every pointer event. The deployed `style.css`
+carried the same rule. A `[hidden] { display: none !important; }` rule fixed
+it; the browser test now clicks and taps a hull the module reports drawn
+(`hv_text(10)`). Inference: this overlay is why the author could not select
+anything on a phone. Confidence: high for the overlay, since the same rule and
+the same page structure were deployed; it would be lower if a tap on the
+deployed site had ever selected anything.
+
+**Juicy legibility.** The test `a_hull_outshines_any_world_but_a_homeworld`
+renders the viewer's three-seat test replay at 320 × 200 and compares the
+dimmest lone hull against the brightest lone non-home world, as the sum of the
+8-bit channels at their pixels. Under the first lights (world core 1.5, halo
+0.35, bloom weight 0.6): **hull 341, world 562** — a world outshone every hull.
+Under the dimmed lights (world core 0.3, an unowned world at half that, halo
+0.03, territory 0.12 at a homeworld and 0.025 at a colony, bloom weight 0.35):
+**hull 341, world 278**. One frame of one replay; a bound on nothing beyond it.
+
+**The 503.** Not reproduced. The session's container cannot reach the deployed
+site (its proxy refuses the connection), and the local server the browser test
+runs never answers 503. The page builds no URL that differs between modes, so a
+503 in juicy mode came from the server. Inference: it was GitHub Pages
+answering while a deployment replaced the site; confidence low, and a 503
+reproduced outside a deployment window would refute it. The client now fetches
+the module, the index and a replay up to four times on a 5xx or a dropped
+connection, 0.5, 1 and 2 s apart, and shows the status with a "Try again"
+button if all fail; the browser test serves one 503 and checks the second
+request loads.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
