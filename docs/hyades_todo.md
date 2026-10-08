@@ -95,6 +95,170 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 that is ready to build and not yet done. Moved there, with a status line each:
 T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
+### T-147. Bring the card-free spread between empires to about 20 colonies
+
+**Open — the author's target (galaxy §2):** card-free, the standard
+deviation of colony count between the empires of a game is about 20. Measured
+(appendix §D.37): median 190 over 12 galaxies on the shipped generator; 45 with
+`GalaxyConfig::rotational_symmetry` (now `Ground::ColorRotated`); 39 on four seeds
+with an even works mix as well (scratch). Identical ground still ran away once
+(810 / 1,812 / 967). **Cause found and fixed (appendix §D.38):** an empty hauler's routing
+loop starved homeworlds; freight is now routed by demand price (the author's
+ruling). Spread at 1,500 yr on 12 galaxies, one build (`GalaxyConfig::ground`):
+random mean 73.5 (was 223), identical ground with the same colors 48.0,
+identical ground with colors stepped per seat 19.3 — the target. On
+identical ground the seats differ by the archetype's fixed rank weight on its
+poor color and by its companions' colors (appendix §D.39); removing both
+reaches 17.3, and a live weight priced from the empire's holdings plus equal
+companions 19.4, while the live weight alone raises `ColorRotated` to 31.5
+(scratch). **Holdings-based pricing is ratified and landed** (appendix
+§D.40): spread random 60.1, identical 24.3, color-rotated 31.7.
+Color-centered homeworlds (no trio, three planted color sites; built, off by
+default) widen it on every ground: identical 70.6 at Band 3.0 and 81.8 at
+Band 4.0 (appendix §D.41). **The first forge — the author's target, a mean of
+400 yr with a 5-yr standard deviation:** set by the homeworld's starting
+population, not by fleets. **Ratified and shipped: a homeworld starts at
+`Band II .785`** (was `Band II`); with planted outposts and starting fleets the
+first forge stands at 400.7 ± 0.5 yr on all three grounds, with colony spread random 131.9, identical 25.9, color-rotated 55.0
+(appendix §D.42). **Variation across empires in tree stocks and supers forged**
+(appendix §D.43): Growth varies most (coefficient of variation 0.26–0.54
+across grounds) and is bimodal — whether an empire completes the color-split
+780-kt whole-Band-IV bill before its forge draws its freight. Forge premium 1
+and a bill paid in total each cut Growth's spread by moving every level
+(+37% to +2,781%); supers forged vary 0.10–0.15, mechanism not yet traced.
+**Infrastructure in fractions of a Band** (`sim::INFRA_STEP_BANDS`, shipped
+1.0; appendix §D.44): steps of 0.5–0.0625 Band lower Growth's spread by
+0.06–0.16, none of those differences beyond 2 standard errors, and at 0.25
+Band or finer they cut Production and supers by 24–43%. The author's choice.
+**The color a saving center lacks was priced at zero** (appendix §D.45):
+prices read the bank's total against the bill's, so a center long two colors
+bid nothing for the third. **Landed: each color is priced by its own
+shortfall** (`Simulation::color_pressure_of`, R-P19): color stalls −15.2% ±
+2.2 center-years on random ground, 12/12 galaxies; supers +13–15% on random
+and color-rotated ground; apex −16% on identical; Growth's spread not
+resolved. Stalls remain on about 1,100 centers per galaxy: the shortfall is
+held above bills elsewhere in the same empire (98–100%), mostly at outposts,
+and a standing forge takes 72–96% of its seat's freight (seed 1). **Open —
+the next price:** a forge whose price falls as its holding rises, measured on
+the 12 galaxies (R-P19 rules out a cap). **Landed (the author's rulings):
+a forge's price falls with its holding** (`premium · B/(B + H)`, appendix
+§D.46) **and a hauler is ordered on its own, valued against the shipping
+backlog at the empire's prices and the survival share of its rock** (roles
+§4.4, appendix §D.47). Together, against per-color prices alone: Growth's
+spread −0.263 ± 0.068 on random ground (11/12 galaxies) and −0.175 ± 0.061 on
+color-rotated, Growth +634% to +922%, supers +53–64%, apex +68–73%; on identical
+ground apex −58% ± 14. Engine cost +78% instructions per event on the telemetry
+bed. **Open:** the price's functional form (placeholder); whether a forge's
+price recovers once a final demand for supers draws its holding down (T-146).
+**Forge price chosen by Monte Carlo on the twin bed** (the author's
+ruling, appendix §D.49): `forge_premium` 10 → **0.3**, floor 0, scale 1;
++8.73% ± 1.06 on the tree composite, 8/8 seeds; supers forged fall ~94%.
+Three defects found on the way and fixed (appendix §D.48): NaN from an empty
+bank, Limited freighter orders resolving to the miner role, and a hauler storm
+after Exchange settlement. **Why empires buy a different number of whole Band
+IV works** (the spread in Growth, r = 0.94–0.97 against Growth per seat;
+appendix §D.50): purchases = eligible Band III centers × completion share. On
+random ground the stalled centers lack one color that their own empire holds
+at 2.7–64x the shortfall elsewhere (delivery inside the empire); on identical
+ground every seat lacks the same color and no seat has it to sell. **Landed:
+a center's price for a color rises as its bill nears completion**
+(`Doctrine::completion_exponent`, politics §2.11, appendix §D.51): the
+color a stalled center lacked was outbid by 70–96% of the other centers in
+its empire; `γ = 0.75`, chosen by Monte Carlo, takes that to 12–40% and the
+tree composite +5.65% ± 0.79 (8/8 seeds). **It does not narrow the spread**:
+Growth's cv across seats moves −0.001 ± 0.018. **Open:** what separates seats
+after it — Band III centers short of the bill's total, and the count that
+reach Band III (appendix §D.51's inference, untested). **Measured (appendix
+§D.52):** a Band III center's income is freight (own mining ~0, Exchange
+deliveries land at rocks); bought centers received 8.6–18.2 kt/yr, centers short
+in total 0.6–0.9, and a center short one color receives that color at
+0.24–0.47 kt/yr — one General hold (31 kt) per round trip of a century or more,
+won in 10–55% of the pricings of piles that hold it. Pricing a pile at what the
+hold carries (−8.2% / −5.0% centers built) and a Reserve works run (1.2 kt
+moved) were refuted. **Landed: `trade_decay_lambda` 0.01 → 0.04 and
+`max_pickup_stops` 2 → 6, chosen by Monte Carlo** (appendix §D.53): +8.95% ±
+0.78 tree composite, **+29.3% ± 1.4 centers built**, 16/16 runs; supers and
+apex forged fall ~80%, Expansion −2.5% to −3.7%; Growth's cv −0.002 ± 0.020
+on random ground and −0.040 ± 0.021 on rotated. And a mass leak it exposed:
+a laden hauler retired to Reserve at its own base on a milk run of three or
+more stops, and a side run wrote over its hold; a hauler now retires only
+empty. **Open:** the supers lost; `next_pickup`'s cost (+46% ns/event). **Freight routed by `$` at every stop** (the author's direction,
+appendix §D.54): four scratch arms, none landed. Repricing the next leg at
+each stop delivers two to four times the freight before 500 yr and loses
+41.5% ± 3.6 of the tree composite by 1,500 yr, because no fleet-size rule
+tried prices a roaming fleet correctly (2.2k to 30k haulers per seat across
+the rules). ~~**Open:** a hauler order priced against the piles' refill rate,
+or a per-cycle assignment of haulers to piles and buyers.~~ **Refuted and
+fixed (appendix §D.55):** the fleet-size and load-size ablations moved
+kilotonnes per delivery by about 1 kt; a census of loads by source showed
+shipped's center-to-center freight (R-MX8) growing to the size of outpost
+freight after 500 yr, and the planner priced piles only. **Landed: the next
+leg priced at every stop over piles and centers' abundance** (autopilot
+§5.10): tree composite +21.12% ± 1.64, **centers built +38.1% ± 3.2**, 12/12
+runs over eight seeds and two grounds; `max_pickup_stops` stays 6 (inside
+noise of 16). **Open:** apex forged falls to zero at the forge premium 0.3
+(galaxy §4.5, the author's call); the planner values colors linearly, so a
+hold can fill with one color at one pile (autopilot §5.10); `λ` is not
+re-swept under the planner (politics §1.4); events per run 2.1–2.3x.
+**Landed: a cheaper doctrine** (the author's direction; appendix §D.56): a
+kept price table netted as haulers commit (`freight_price_age_years` 25),
+`freight_shortlist` 1, `max_pickup_stops` 2 — work-years +35.40% ± 3.74 and
+composite +18.78% ± 1.73 against the exact planner, 12/12, at 2.4x its
+throughput. The exact planner herded: 93% of the kilotonnes it delivered
+landed beyond the buyer's shortfall. **Open:** netting against a fresh read;
+a throughput target (the shipped doctrine is 1.6x slower per simulated year
+than the engine before the planner).
+**The spread of colony-years per empire on random ground — the author's
+target: at most 1.5x the lowest on identical or color-rotated ground**
+(appendix §D.57): random 0.098 ± 0.016 against identical 0.055, so 0.083, not
+met; whole Band IV works per empire is inside 1.5x (0.137 against 0.126). The
+seats part in their first few foundings — a seat's colony count at 150 yr
+correlates with its colony-years at r = 0.84 — and what each seat's region
+holds at generation predicts that count at |r| ≤ 0.53. Refuted: `λ` 0.02 and
+0.08, color sites kept 20 or 35 ly from homeworlds, color-centered homeworlds.
+**Landed (the author's rulings, galaxy §2): every homeworld in its own hex**,
+each homeworld hex bordering its two neighbors', the homeworld ring drawn in
+by `homeworld_inset_ly` (placeholder 25; bit-identical at 3 seats). **Built,
+`OPEN`:** the fair start (`GalaxyConfig::fair_start_ly`), 0.081 ± 0.023 at
+35 ly with Growth +12%. **Opened:** R-G6, the star field's scale at 6+ seats
+against the hex-placed homeworld ring.
+**What would settle the rest:** the stepped fair start on eight more galaxies,
+the author's choice of its radius, or another way to equalize what each
+homeworld has within reach.
+
+---
+
+### T-146. Make the hex presentation-only; give color its own spacing
+
+**Advanced — built (the author's rulings).** The hex is read by no generation
+(galaxy §1; `the_hex_is_read_by_no_generation`). Color sites are placed at
+random with their own spacing and width (`GalaxyConfig::color_site_spacing_ly`,
+`color_site_sigma_ly`, placeholders 10 and 5 ly; §4.3). First sweep, 10 arms
+from 10 to 210 ly (appendix §D.33): supers crossing between empires do not
+rise with spacing — under 1% on three of four seeds at 140 and 210 ly — while
+a seat's native share rises to 59–66%; the ore quantity, and with it
+habitability and work-years, moves in every arm. Arms at the author's 5% two-color floor
+with habitable worlds held (70 / 38.5 and 140 / 56 ly) do not resolve trade in
+supers either way. **The card-free bed has no final demand for supers**
+(appendix §D.34): no order is billed in them, apex has no bid, and every
+super bid is a forge completing a set for apex. **The twin bed is built** (galaxy §3.1,
+appendix §D.35): every Design has a twin paid in supers, built wherever the
+yard can pay it. On it 0.23–0.33% of hull kilotonnes are paid in supers while
+forges hold 16–57× what orders want — supers do not reach the yards within an
+empire. The freight census confirms it: 0.18–0.51% of hauler pickups are at a
+forge, and freight takes 36–70 kt of supers out of forges holding
+10,279–17,010 kt (appendix §D.35). **Supply runs built (the author's rulings,
+galaxy §4.5):** own forges deliver to their empire's yards, haulers buy at
+rival forges, both Doctrine. With the Growth card on every seat, 0.8–1.2% of
+hull kilotonnes are paid in supers, 2.3–3.2× the share without it; 83% of hull
+kilotonnes are built before the first forge (appendix §D.36). **Open — what
+would settle it:** the author's call on whether demand for supers should come
+after forging starts (a hull consumer that persists past expansion) or forging
+should start earlier; then the spacing sweep; and the author's choice of
+spacing and width.
+
+---
+
 ### T-145. Raise the yomi of super and apex forging
 
 **Open — the author's direction: "we may need to increase the Yomi of super
@@ -159,9 +323,12 @@ share 4.7–93% per seat; no super crosses between empires (appendix §D.30).
 **Step 2 built (the author's rulings):** R-MX17 — a Design paid in supers is
 priced higher than forging, so a forge's yard builds it and forges after;
 R-MX18 — forges bid on the supers they lack. 3.7% of supers forged now cross
-between empires; native share 29.6% pooled (appendix §D.31). **Open:** the
-author's direction is not yet met — every forge still makes all three supers.
-R-M5's remainder.
+between empires; native share 29.6% pooled (appendix §D.31). **Step 3 built
+(the author's ruling): color varies at the scale of an empire** — one color
+site per 70-ly hex (galaxy §1, §4.3). 9 of 12 seats still make all three
+supers, native share 37.0%, 5.17% of supers cross between empires (appendix
+§D.32). **Open:** the author's direction is not yet met — most forges still
+make all three supers; T-146; R-M5's remainder.
 
 ---
 
@@ -516,7 +683,7 @@ Band C:
 
 - **`Hyades_industry.md` §1.8's profitability test cannot be written without
   it.** With output independent of population the payback ratio is scale-free
-  (§6.19c measured 1.8 years at every rung), the test is a constant `true`, and
+  (§6.19c measured 1.8 years at every whole Band), the test is a constant `true`, and
   the author's ruling has nothing to bite on.
 - **A population kill costs its target nothing per year.** §1.1 removed
   infrastructure from `K` so that an industrial strike would not be a population
@@ -1015,7 +1182,7 @@ a population, because those are genuinely a world's capacity to hold people.
 
 **T-76 is part-landed (R-O89, `Hyades_industry.md` §6.20).** R-O85 promoted it to
 first work because 43.8–46.6% of every production decision holds the total of its
-next rung and lacks a *color*. The **load leg** is now fixed: a hauler fills
+next whole Band and lacks a *color*. The **load leg** is now fixed: a hauler fills
 against the destination's color deficit instead of in proportion to the pile —
 **+8.40% ± 1.86 work-years, 8/8 seeds**, on the *same tonnage*, which is what
 identifies it as a color result rather than a hauling one.
@@ -1082,7 +1249,7 @@ colony's stockpile; a contested colonizer unloads both halves back home. The
 amount is a **demand-side** question (**R-IND12**): settlers priced in time —
 what the seed saves the destination against what it costs the origin to regrow,
 discounted by the voyage — and minerals sized by the destination's intended
-build-out, whose rung comes from works value and is superadditive in capacity and
+build-out, whose whole Band comes from works value and is superadditive in capacity and
 mineral density (**R-IND13**, placeholder). The supply-side `endowment_fraction`
 is retired: *a fraction of hold is irrelevant.*
 
@@ -1117,7 +1284,7 @@ since the channel is closed.)
   across a **50×** mass ratio; `t_build = t_lead + m / F_slip` now gives the
   approved schedule — Limited **2.2 yr**, Medium **3.0**, General **12.0**. It
   takes the *committed mass*, so one expression covers a hull, an infrastructure
-  rung and a whole mining pair, and `apply_build_with` returns the committed
+  whole Band and a whole mining pair, and `apply_build_with` returns the committed
   `Price` rather than a `bool` because recycling means the real price is only
   known inside it. Guard is `examples/colony_years`; the prediction was up.
 - **It cost 6x the unit-test time before any of it was about the tests** — 87 s
@@ -1564,7 +1731,7 @@ accident of units.
 `Qty<S>` is `#[repr(transparent)]` over one `f64` of kilotons with a zero-sized
 `Scale` marker (`Mass`, `Cost`); `Kilotons` is now an alias for `Qty<Mass>`.
 Crossing ladders is `Qty::on_scale` — explicit, free, and a no-op on the bits,
-because a cost *is* a mass and only the rungs it reads against change.
+because a cost *is* a mass and only the whole Bands it reads against change.
 
 #### It costs nothing to wrap an f64
 
@@ -1586,7 +1753,7 @@ which is worth more than any timing run.
 #### The numeric contract, and the test that earned its keep immediately
 
 Accuracy is pinned at **one metric tonne, absolute**, on both ladders: either
-representation writes the same amount, rung-plus-fraction round trips, every
+representation writes the same amount, whole Band-plus-fraction round trips, every
 operator matches the bare `f64` with operands written at opposite ends of the
 contract, and 200,000 mixed deposits and withdrawals do not drift.
 
@@ -1769,18 +1936,18 @@ segment**, and it flattened them all against the floor: a 0.1 kt quantity read
 as `Band 0.046`. At one tonne it reads `Band 0.667`.
 
 The implementation is `units::KILOTONS_AT_BAND_EMPTY = 0.001`, with
-`MASS_LADDER[0]` derived from it. **`Band I` and every rung above it are
+`MASS_LADDER[0]` derived from it. **`Band I` and every whole Band above it are
 untouched** — pinned by `widening_band_empty_does_not_move_band_i`, whose whole
 job is to catch a re-anchoring that would silently rescale every mass in the
 engine.
 
 **It amends R-MC15, and the amendment is in the spec (§2.6).** `Band Empty` is
-not a rung of the ratified ladder; it is where the ladder stops naming
+not a whole Band of the ratified ladder; it is where the ladder stops naming
 magnitudes. The two ratified rules — `1 < F₍ₙ₊₁₎/Fₙ < 10` and
 `F_mass = F_cost^(3/2)` — are about how the ladder *grows* and now read across
 `I → II → III → IV`. `1000` is neither `5^1.5` nor within a decade of `31.6`,
 and the tests say so in those words. The **cost** ladder's floor is untouched at
-5: that step is the Limited hull's price, a real rung, and §2.6 already says the
+5: that step is the Limited hull's price, a real whole Band, and §2.6 already says the
 two ladders share ratios rather than anchors.
 
 **The cost is real and worth a ratification of its own: a Limited hull's hold no
@@ -1836,7 +2003,7 @@ long tail of rocks not worth the freighter.
 **One number, stored as the mass.** A Band is a reading of it. The first attempt
 stored Bands in `MineralField` and it destroyed ore: the field *depletes*, and
 writing a depleted mass back as a Band floors it at `BAND_FLOOR`, so anything
-worn below the `Empty` rung became nothing. Measured — three miners extracted
+worn below the `Empty` whole Band became nothing. Measured — three miners extracted
 **4.20×** what one did instead of 3.00×. `MineralField` therefore carries
 kilotons, `total_mass()` and `abundance()` are the two readings of it, and the
 generator does its Gaussian in Band space and converts once.
@@ -1909,7 +2076,7 @@ Same ratification, second symptom.
 **Two further consequences to watch, neither yet measured:**
 
 - **There are no barren worlds any more.** `Band(0).in_kilotons()` is the
-  `Empty` rung, not zero, so the Gaussian's tail floors at ~0.089 kt per
+  `Empty` whole Band, not zero, so the Gaussian's tail floors at ~0.089 kt per
   color rather than decaying to nothing. Every rock in the galaxy now carries a
   trace. That is consistent with `Empty > 0` — the ladder does not name zero —
   but it is a free-money floor the linear field did not have, and it is a
@@ -1933,11 +2100,11 @@ import (`dc8e334`) with no derivation beyond its doc line, *"infrastructure
 upgrades cost minerals equal to the target level"*, and survived every review
 because `Band` still had an `Add`.
 
-Infrastructure is bought with minerals, so its rungs are the **cost ladder's**
-rungs, anchored at `general_vehicle_cost` = cost `Band II` (§2.6) through the
+Infrastructure is bought with minerals, so its whole Bands are the **cost ladder's**
+whole Bands, anchored at `general_vehicle_cost` = cost `Band II` (§2.6) through the
 ratified factors `5, 10, 20, 40`:
 
-| rung | minerals to be at it | step | old price |
+| whole Band | minerals to be at it | step | old price |
 |---|---|---|---|
 | `Empty` | 0.02 | — | — |
 | `I` | 0.10 | 0.08 | 1 |
@@ -1945,13 +2112,13 @@ ratified factors `5, 10, 20, 40`:
 | `III` | 20.0 | **19.0** | 3 |
 | `IV` | 800 | 780 | 4 |
 
-**The rungs are exactly the hull costs** (`Limited` 0.02, `Medium` 0.10,
+**The whole Bands are exactly the hull costs** (`Limited` 0.02, `Medium` 0.10,
 `General` 1.00), so `founding_infra` needs no rate at all: a recycled hull buys
 precisely the infrastructure its minerals would have bought, landing on
 `Band Empty` / `Band I` / `Band II` on the nose. R-O77's subsidy is gone and
 nothing replaced it.
 
-**And the two ladders now agree rung for rung**, which is the same hull cost
+**And the two ladders now agree whole Band for whole Band**, which is the same hull cost
 read twice: a Medium carries `Band I` and leaves `Band I`, a General carries
 `Band II` and leaves `Band II`. Nothing is wasted at either end — no hold flying
 empty for want of somewhere to put people, no infrastructure idle for want of
@@ -1966,7 +2133,7 @@ by `K = min(hab, bio_max, infra)`, and `Band III` now costs 20 minerals
 cumulative against 6. Homeworlds reach `Band II`, stall, and never build
 anything.
 
-**An expansion gate cannot sit one rung above a step that costs 20× the last
+**An expansion gate cannot sit one whole Band above a step that costs 20× the last
 one.** `medium_min_level` is ratified down to `Band II`, and the schedule's
 "2 = limited, 3 = medium/rapid, 4 = all" is retired with it — that schedule was
 written against a linear price ladder.
@@ -2058,7 +2225,7 @@ anything to work on.**
 | unfilled population headroom | **0 kt** | **0 kt** |
 
 **Not one colony is under-supplied.** Every colony that exists climbed off its
-founding rung, none is below `Band I`, and the empire-wide gap between `K` and
+founding whole Band, none is below `Band I`, and the empire-wide gap between `K` and
 population is *exactly zero* — every colony sits at its ceiling. Mean
 infrastructure is **1.78 against the 1.443 recorded before the subsidy came
 out**: the survivors are *deeper*, not poorer.
@@ -2079,7 +2246,7 @@ exactly those destinations maximally — the term was not missing.
 measured:
 
 1. **Let a Medium hull found again** by lowering what a viable colony needs,
-   rather than by restoring the subsidy — e.g. a founding rung below `Band I`
+   rather than by restoring the subsidy — e.g. a founding whole Band below `Band I`
    that a Medium's 0.1 kt can reach, with the colony genuinely fragile.
 2. **Re-anchor `general_vehicle_cost`** so that one kiloton of hull is not one
    General hull. The coincidence that `KT(I) = 1.0 kt = general_vehicle_cost` is
@@ -2118,7 +2285,7 @@ III + IV` is not `X`: Band numerals are positions on a multiplicative ladder, so
 summing or differencing them yields a number with no meaning. The gap between
 two Bands is a **mass**, and `Kilotons` is what that is for.
 
-- To move along the ladder: **`Band::up(rungs)`**, documented as *multiplying*
+- To move along the ladder: **`Band::up(whole Bands)`**, documented as *multiplying*
   the mass rather than adding to it.
 - To ask how much more stuff: **`Measure::gap_to(other) -> Kilotons`**, which
   names the unit in its return type.
@@ -2131,7 +2298,7 @@ where scaling a log-scale reading is legitimate but was worth spelling out.
 **Bug 1: `founding_infra` summed Band numerals.** R-O76 computed a hull's
 infrastructure budget as `b(b+1)/2` — the cumulative `1+2+3+4 = 10` of the
 linear price ladder — and concluded a General hull founds at `Band IV`. Redone
-in kilotons, ten times the hull mass is `log_F(10) = 0.67` of a rung at
+in kilotons, ten times the hull mass is `log_F(10) = 0.67` of a whole Band at
 `F = 31.62`:
 
 | hull | cost | infra mass | founding infra |
@@ -2148,7 +2315,7 @@ Limited hull's seed capacity is below `colony_seed_pop` whatever infrastructure
 it would leave.
 
 **Bug 2, recorded not fixed — R-O80: the infra price is Band-additive.**
-`round(infra) + 1` minerals per rung is a linear count, and it is now named
+`round(infra) + 1` minerals per whole Band is a linear count, and it is now named
 (`infra_step_price`) rather than inlined at two call sites, because naming it is
 what makes it visible. Priced correctly as `KT(b+1) − KT(b)` the `I → II` step
 costs **≈31 minerals against the 2 charged today**, and `II → III` about 2,800 —
@@ -2550,8 +2717,8 @@ them moves before ratification.
 
 Ratified this conversation, and it changes three things Stage 1c had guessed at.
 
-- **There is no `Band 0`. The bottom rung is `Band Empty`, and `Band Empty > 0`.**
-  Renamed throughout `docs/` and in the `BandTier` rustdoc. The rung is a
+- **There is no `Band 0`. The bottom whole Band is `Band Empty`, and `Band Empty > 0`.**
+  Renamed throughout `docs/` and in the `BandTier` rustdoc. The whole Band is a
   positive magnitude beneath `Band I`, not an absence — a quantity that is
   genuinely zero is *off* the ladder, not at its bottom.
 - **The `[4, 8]` window on step factors is superseded and removed**, and with it
@@ -2573,7 +2740,7 @@ fixed by the ladder instead: it is the `Empty → I` cost step times
 **The ratified default progression** (uniform step-ratio 2, subject to
 Monte-Carlo verification that it creates no colony-years bottleneck):
 
-| step | `F_cost` | `F_mass` | rung | cost | hold (kt) | population |
+| step | `F_cost` | `F_mass` | whole Band | cost | hold (kt) | population |
 |---|---|---|---|---|---|---|
 | — | — | — | `Empty` | 0.02 | 0.086 | 286 |
 | `Empty → I` | 5 | 11.18 | `I` | 0.10 | 0.96 | 3,200 |
@@ -2583,11 +2750,11 @@ Monte-Carlo verification that it creates no colony-years bottleneck):
 
 ⇒ `medium_fleet_size = 10`, `limited_fleet_size = 50`, `cargo_unit_size = 0.96`,
 and `units::BAND_STEP` becomes **piecewise** — the ratified progression has a
-different factor per rung, so `KT(b) = KT_I · BAND_STEP^(b−1)` can no longer be
+different factor per whole Band, so `KT(b) = KT_I · BAND_STEP^(b−1)` can no longer be
 a single exponential.
 
 **The best result of the ratification is one nobody asked for.** With cost and
-hold both fixed by the rung, shell thickness stops being a dial and becomes an
+hold both fixed by the whole Band, shell thickness stops being a dial and becomes an
 *output* — and it comes out **`Limited (0.0277) < Medium (0.0325) <
 General (0.0339)`**, which is exactly the ordering the design arc wanted. The
 mechanism is `η`: a bigger hull is rounder, gets more interior per unit of skin,
@@ -2599,7 +2766,7 @@ sphere there is no more shape to spend: a `Band III` General would need
 `τ` that *did* keep rising costs 1.5× at `τ = 0.05` and **2.94× at `τ = 0.10`**.
 So a mid-game `Band III` General Systems Hull must be a Design requiring
 **Supers**, and a `Band IV` one a Design requiring **apex** — the tier reset on
-absolute thickness is what keeps the hull at its rung's price. This is now a
+absolute thickness is what keeps the hull at its whole Band's price. This is now a
 geometric consequence rather than a balance decision, and it is the mechanical
 content of "Design level resets thickness."
 
@@ -2637,7 +2804,7 @@ named:
 |---|---|---|
 | `HullType::shell_thickness` | **`τ`** — the model's one free geometric input | `1.0` for every hull, which is exactly what `cargo_capacity`'s `(r − 1)` meant |
 | `HullType::hold_radius` | `r − τ`, floored at zero | unchanged arithmetic |
-| `HullType::hold_volume` | `(r − τ)³` — the quantity that sits on a Band rung | unchanged arithmetic |
+| `HullType::hold_volume` | `(r − τ)³` — the quantity that sits on a whole Band | unchanged arithmetic |
 | `HullType::shell_volume` | `r³ − (r − τ)³` — the material bought, i.e. cost and dry mass | **not yet on the cost path**; `cost_fraction` is still the fleet-size ratio, and reconciling the two is stage 3 |
 
 `hull_radius` now returns `Length` and `hull_dry_mass` returns `Kilotons`.
@@ -2664,15 +2831,15 @@ golden. The comment says so at the site.
 Both from the ratification pass; behavior-preserving, colony-years unchanged
 at 7,819,401.0 / 8,480,172.0.
 
-**`BandTier::Zero`.** Ratifying `Band Empty > 0` took away the rung that used
+**`BandTier::Zero`.** Ratifying `Band Empty > 0` took away the whole Band that used
 to mean "none of this quantity", so a `> 0` check went back to being a bare
 `0.0` — the exact failure this type exists to close. `Zero` is now the bottom
 sentinel, the mirror of `V` at the top: nothing in a game reaches it, and its
 ladder position is `Band(-1.0)`, deliberately outside `BAND_FLOOR`, **so every
-rung above it kept the index it had.** `index()` is now `i8`.
+whole Band above it kept the index it had.** `index()` is now `i8`.
 
 One real hazard that came with it: `PopBands::level` indexed `BandTier::ALL` by
-a crossing count, and adding a rung at the *bottom* of `ALL` would have shifted
+a crossing count, and adding a whole Band at the *bottom* of `ALL` would have shifted
 every world's population level by one, silently. It now indexes `PLAYABLE`,
 whose positions are the ladder's by construction, and the test asserts both
 arrays' indexing conventions separately so the two cannot be confused again.
@@ -2697,7 +2864,7 @@ becomes:
 | GSV | 1.00 | 31.62 | 0.0330 | 31.54 | 31.5 |
 
 `τ` still comes out `Limited < Medium < General`, and a `Band III` hold at
-`τ = 0.10` still costs **3.02×** its rung, so the Supers gate is unchanged.
+`τ = 0.10` still costs **3.02×** its whole Band, so the Supers gate is unchanged.
 
 
 #### Stage 3a — the piecewise mass ladder, and why it moved nothing
@@ -2733,10 +2900,10 @@ exactly the case R-O66's unit fix was about. Recorded here rather than
 discovered later.
 
 **One hazard closed on the way.** The bridge now has three interior joins, and
-a discontinuity at any of them is mass created or destroyed at a rung boundary,
+a discontinuity at any of them is mass created or destroyed at a whole Band boundary,
 since the growth draw is `KT(after) − KT(before)`.
 `the_piecewise_bridge_is_continuous_and_monotone_across_every_join` pins
-continuity to 1e-6 at every rung from both sides and monotonicity across
+continuity to 1e-6 at every whole Band from both sides and monotonicity across
 `[-0.5, 5.0]`, including the extrapolated ends.
 
 
@@ -2837,7 +3004,7 @@ derived quantity in a denominator.
 
 with the hold steps landing on `F_mass` to **+0.00% and −0.00%**. Usable cargo
 does *not* walk the ladder (88.2× then 34.3×), and `V_reserved` is why — the
-rung is the hold, the reserve is deducted after it, and it bites hardest at the
+whole Band is the hold, the reserve is deducted after it, and it bites hardest at the
 bottom where a Limited hull's core eats 88% of a `Band Empty` hold.
 
 **Cost: −0.31%, which is to say free.** Four-seed CRN bed, 4,000 yr:
@@ -2856,13 +3023,13 @@ still `cost_fraction × general_vehicle_cost`, so nothing in `combat.rs` moved.
 
 **The four-decimal `τ` in the spec table is not precise enough to use.** §2.3
 *solves* `τ = (cost·η + hold)^(1/3) − hold^(1/3)` from the ratified cost and the
-ratified hold, so a rounded value misses its rung: at four decimals the Medium
+ratified hold, so a rounded value misses its whole Band: at four decimals the Medium
 hull's hold came out 0.9977 kt against a `Band I` of 1.000, 0.2% low — and
 enough to make a Colonizer unable to carry a colony seed defined at exactly that
-rung. The constants are carried at full width, and they reproduce the rungs at
+whole Band. The constants are carried at full width, and they reproduce the whole Bands at
 the **ratified cost ladder**; a config that moves `medium_fleet_size` without
 moving the mass ladder has broken `F_mass = F_cost^(3/2)` and the hold drifts
-off its rung, which is the tie being visible rather than a bug.
+off its whole Band, which is the tie being visible rather than a bug.
 
 **Three tests changed meaning, each deliberately.**
 
@@ -2919,7 +3086,7 @@ the round trip that used to hold by luck.
 
 **4b — a colony ship's seed is the Band its hold masses.** `Simulation::colony_seed_for`
 replaces the flat `colony_seed_pop` at `spawn_courier`. This is the ratified hold
-ladder doing the work: the hold rungs *are* the mass rungs, so a Medium hull
+ladder doing the work: the hold whole Bands *are* the mass whole Bands, so a Medium hull
 seeds `Band I` (exactly `colony_seed_pop` — neutral at the hull the baseline
 builds) and a General hull seeds `Band II`.
 
@@ -3090,7 +3257,7 @@ The ladder charges `round(infra)+1` per level, so reaching Band `b` costs
 | Medium | 0.10 | 1.0 | **`Band I`** (unchanged) |
 | General | 1.00 | 10.0 | **`Band IV`** |
 
-**The General hull landing exactly on the top playable rung is arithmetic, not
+**The General hull landing exactly on the top playable whole Band is arithmetic, not
 a fit:** `medium_fleet_size = 10` and `1+2+3+4 = 10`. And the Limited hull
 buying a fifth of a Band is R-V9 arriving for the *third* time from a different
 direction — first the hold ladder, then the seed floor, now the infra ladder.
@@ -3336,7 +3503,7 @@ ladders touch, and it currently bridges them with a straight line. Under any
 **This sits exactly on T-51's critical path.** The expansion-loop time constant
 is the pre-`medium_min_level` staircase: mine `round(infra)+1`, deepen, grow,
 repeat. Making that price multiplicative changes the staircase's shape directly,
-and at `F ∈ [27, 100]` it makes the upper rungs enormously more expensive — 2 /
+and at `F ∈ [27, 100]` it makes the upper whole Bands enormously more expensive — 2 /
 3 / 4 minerals today against 1 / `F` / `F²` under the ladder. **This is very
 likely a larger effect on coverage than anything else in this entry, and it is
 not optional if the Band ladder is taken seriously.** Measure it alone, first,
@@ -3420,10 +3587,10 @@ should move until it is made**, because the anchor and `F₃` are both determine
 by whichever branch is taken.
 
 **Settled — the ladder is named, and Band V is a ceiling.** `Band Empty` is now
-**`BandTier::Empty`**, named rather than numbered because it is the one rung
+**`BandTier::Empty`**, named rather than numbered because it is the one whole Band
 that is a *condition* (no colony, no hold, an uncolonizable world) rather than a
 magnitude. **`BandTier::V` is the maximum for comparison and clamping and is not
-achievable in play** — it gives a bounds check a rung one past the end instead
+achievable in play** — it gives a bounds check a whole Band one past the end instead
 of a magic number, and `band_v_is_one_past_the_playable_end` pins that it stays
 unreachable. `BandTier::MAX_PLAYABLE` is `IV`, matching every spec.
 
@@ -3627,7 +3794,7 @@ operating point.
 >
 > **What closing it revealed is the important part, and it is `T-89`/R-O85:**
 > the branch is still cold at the shipped `0.5`, and now for a price reason.
-> The rung above the founding one costs **0.9 kt** against a Medium colonizer's
+> The whole Band above the founding one costs **0.9 kt** against a Medium colonizer's
 > **0.10 kt**, so the odds ratio at the crossover — 24 to 49, measured — is the
 > infra ladder's own ratio read from the other side. **The dead branch was the
 > right answer reached for a wrong reason**, and the mineral-side results that
@@ -3732,7 +3899,7 @@ dimensionally coherent (§6.18 of `Hyades_industry.md`), the deepen branch is
 price ladder rather than a unit mismatch. Printed off the engine's own
 functions at the shipped constants:
 
-| rung | stock to stand there | step to the next | `fabrication_rate` | `slips` |
+| whole Band | stock to stand there | step to the next | `fabrication_rate` | `slips` |
 |---|---|---|---|---|
 | 0 | 0.02 kt | 0.08 | 0.0333 kt/yr | 1 |
 | **I** | **0.10 kt** | **0.90** | 0.1000 | 2 |
@@ -3744,13 +3911,13 @@ A Limited hull is 0.02 kt, a **Medium colonizer 0.10 kt**, a General hull
 1.00 kt, a mining pair 0.12 kt. Three separate facts, each sufficient on its
 own:
 
-1. **Every colony in the empire is founded at rung I** (`founding_infra`), so the
+1. **Every colony in the empire is founded at whole Band I** (`founding_infra`), so the
    step every one of them faces is **nine colonizers**.
-2. **`fabrication_rate` saturates by rung II.** `fab_cap = 0.2` with
-   `works_knee = infra_rung_price(1)/3` puts the entire ladder inside one
+2. **`fabrication_rate` saturates by whole Band II.** `fab_cap = 0.2` with
+   `works_knee = infra_price_at_band(1)/3` puts the entire ladder inside one
    hyperbola's knee: the 19-kt step buys **+0.017 kt/yr**, the 780-kt step
    **+0.001**.
-3. **`slips` is pinned at 2 from rung I onward.** `slips(F) = 1 + ⌊F /
+3. **`slips` is pinned at 2 from whole Band I onward.** `slips(F) = 1 + ⌊F /
    slip_throughput⌋` with `slip_throughput = 0.1` and `F < fab_cap = 0.2`, so
    **no amount of infrastructure ever buys a third berth.** T-69's "industry buys
    more ships at once, never faster ships" is bounded at *two* by the ratio of
@@ -3762,7 +3929,7 @@ the `outward == None` deepen fallback moved mean infrastructure **Band 1.027 →
 1.462** at the 4,000-year horizon and infrastructure builds **88 → 1,539** —
 so centers *will* deepen the moment they are allowed to, and they still stop
 nowhere near the ceiling (3.612, **zero colonies at cap**). The crossover
-between 0.96 and 0.98 is unchanged by it. What is left is the price. The only thing still scaling past rung II is `extraction_rate`
+between 0.96 and 0.98 is unchanged by it. What is left is the price. The only thing still scaling past whole Band II is `extraction_rate`
 (linear in the stock), and extraction is not what binds on a bed holding
 19,619 kt of unspent ore.
 
@@ -3778,8 +3945,8 @@ and the cost anchor are all globally MC-tuned surfaces and need ratification
    nobody needs. A sink has to buy something the empire is actually short of —
    which, on the current bed, is **build throughput and berths**, not ore. The
    candidates are `fab_cap` (raise the asymptote), `works_knee` (move the knee up
-   the ladder so rungs III/IV sit on the rising part), the cost anchor (make the
-   rungs affordable), or a *new* consumer of infrastructure. They are not
+   the ladder so whole Bands III/IV sit on the rising part), the cost anchor (make the
+   whole Bands affordable), or a *new* consumer of infrastructure. They are not
    equivalent and the tree meanings in §5.3 constrain which is legitimate.
 3. **Re-measure everything mineral-side afterwards.** `outpost_mining_fraction`,
    both retired crew policies (§6.15), the Exchange (politics §10.6a) and T-76's
@@ -3995,6 +4162,11 @@ Claude's to write. The cost ratios are a separate, mechanical job and can land
 without them.
 
 ### T-44. Confirm `trade_decay_lambda` on the ten-seed bed
+
+**Superseded at T-147:** re-chosen at `0.04` on the tree composite jointly with
+`max_pickup_stops = 6`, 16 runs over eight seeds and two grounds (politics §1.4,
+appendix §D.53). The coverage question below was asked of an operating point
+that no longer exists.
 
 Ratified at **0.01** (half-life 69 yr) on 3 seeds — an interior optimum, 39.0%
 against 14.35% at λ=0. Direction and order of magnitude are not in doubt; the
@@ -4631,6 +4803,17 @@ retire the numbers. Listed here so the gap is tracked rather than silently
 inherited; numbers are never reused, so retiring them costs nothing.
 
 ---
+
+### T-148. A neutron star as the third star of a system
+
+**Opened (the author's idea).** A trinary system whose third star is a neutron
+star, and a civilization there whose whole technological effort, until
+recently, went into understanding the star and siphoning energy from it. To
+inform galaxy generation (galaxy §4.9, R-G7) and deep Technology cards
+(technology §7.1.3, R-TECH26). **What is missing:** where energy enters a model
+whose every quantity is mass (design law #11), how many such sites a galaxy
+has and where, and who is there. No engine work until the author decides the
+first.
 
 ## Band E — parking lot
 

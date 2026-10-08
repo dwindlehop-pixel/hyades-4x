@@ -256,7 +256,7 @@ uploaded.
 | `P_B` | buyer `B`'s price for the color this round | `$`/kt | the clearing's dual |
 | `a_j` | ask `j`'s reservation | `$`/kt | `willingness_to_pay` at a yard; `0` away from one |
 | `b_i` | bid `i`'s value | `$`/kt | `willingness_to_pay`, politics §2.11 |
-| `λ` | transit burn rate | 1/yr | `trade_decay_lambda = 0.01` (R-P2) |
+| `λ` | transit burn rate | 1/yr | `trade_decay_lambda = 0.04` (R-P2, T-147) |
 | `t_jB` | the seller's laden leg to the shared rock nearest it | yr | `ship_travel_years` on the seller's Freighter Design |
 | `H_(B,v)` | what `B`'s haulers based at rock `v` carry away in one round | kt | `haul_per_round`: hold × `years_per_round` / laden round trip |
 | `R_(B,v,c)` | `B`'s delivery room at `v` for color `c` | kt | `H_(B,v)` − what `B` already holds there in `c`, floored at 0; unlimited where `B` owns `v` |
@@ -324,10 +324,12 @@ abundance_c = max(0, held_c(O) − bill_c(O))
 | `wtp(X, c)` | `X`'s willingness to pay for `c` | `$`/kt | `willingness_to_pay` |
 | `t` | the laden leg `O → D` at a full hold | yr | `ship_travel_years` on the hauler's Design |
 
-So a center keeps what its own next rung needs, and ships only where the Exchange
+So a center keeps what its own next whole Band needs, and ships only where the Exchange
 would ship an ask (§8.1's rule with `a_j = wtp(O, c)`). What loads at a center
-goes to `D`, the buyer it was priced against, and is never re-routed. A milk run
-(T-91) may stop at such a center too, scored the same way as any other pile. A
+goes to `D`, the buyer it was priced against, and is never re-routed. Since
+T-147 a hauler prices centers beside piles at every stop and after every
+delivery (`plan_next`, autopilot §5.10): a center's abundance, net of what
+haulers have claimed there, valued at its best buyer and capped by this gate. A
 hauler whose own rock is settled keeps working while `O` offers something, and
 stands down as before once it offers nothing. No new constant. Measured on the
 8-seed bed: colony-years **+1.29% ± 0.22, 8/8 seeds**; work-years +6.22% ±
@@ -552,7 +554,7 @@ rather than a second price vector:
   becomes `o*`, its need is recorded, and the policy chooses again seeing only
   `A(X)`, with `o*`'s Design quoted unpayable. `o*` stands until the next
   decision at `X`, which re-records it only if the policy still chooses it.
-- **Every other draw on the holding reads `A(X)`** — another build, a rung of
+- **Every other draw on the holding reads `A(X)`** — another build, a whole Band of
   works, an ask on the Exchange, an offer to a hauler (§8.5). `o*` itself pays
   from the whole holding.
 - **An empire sells only what none of its centers waits on** — its centers'
@@ -619,7 +621,7 @@ tail).
 **10.6 R-MX16 — a forge's works bill is priced, not held. Superseded by galaxy
 §4.5** (the author's ruling: forging is a forge's primary purpose). R-MX16
 resolved how much of its works bill a forge offering capacity keeps back; a
-forge now keeps every basic for synthesis, builds no rung, and sells what it
+forge now keeps every basic for synthesis, builds no whole Band, and sells what it
 has forged rather than capacity, so there is no works bill to hold or price.
 The ruling and its measurements are in appendix §D.25, §D.26 and §D.30.
 

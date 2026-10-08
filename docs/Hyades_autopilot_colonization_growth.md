@@ -158,7 +158,8 @@ ecology. Appendix §A.9.
 | `mineral_high` | 2.0 | at/above ⇒ a low-K world is an outpost |
 | `hub_high` | Band 0.8 | at/above ⇒ a high-K world is a production center |
 | `centrality_scale` | 150.0 ly | decay scale of centrality to holdings |
-| `mineral_pressure_gain` | 1.0 | gain on the scarcity term |
+| `mineral_pressure_gain` | 1.0 | gain on the live mineral-pressure term |
+| `holdings_price_gain` | 1.0 | gain on the empire's color prices (§3.9); measured, placeholder against other objectives |
 
 **`k_high = 3.2` is confirmed and is a knife-edge, not a slope** — ±25% collapses
 coverage in *both* directions. **R-AC17 resolved**; appendix §A.7, §A.2.
@@ -172,7 +173,7 @@ measured `[−2, 0]` reaches 5.0e-4, and the range-reduced `2^f` form reaches
 Appendix §D.8.
 
 **3.5 `RATIFIED` — the mineral term reads Bands, memoized on the field's own
-bits.** `rank` scores ore as `Σ_c scarcity_c · Band(m_c)`; `PlanetView` carries
+bits.** `rank` scores ore as `Σ_c color_price_c · Band(m_c)`; `PlanetView` carries
 `mineral_bands: [f64; 3]` rather than a `MineralField`, because nothing in the
 seam read the masses (T-100).
 
@@ -191,12 +192,28 @@ between "colonisable" and the coverage objective's denominator. Lowering the gat
 to widen the ceiling directly shrinks the Mining-outpost class that funds
 expansion — R-AC17 run backwards. **The two knobs must move together.**
 
-**3.9 `OPEN` — the scarcity vector is written once at game start and never
-again.** `scarcity_c` comes from the homeworld archetype, so selection can say
-*mine more* and never *mine Cyan*. Replacing it with the deciding center's live
-shortfall was **implemented, measured and reverted** (−3.30% ± 0.49 colony-years,
-0/4 seeds) — the decision was blind and had nothing to see. Appendix §A.12. The
-defect is real and remains; what is open is whether it matters anywhere.
+**3.9 `RATIFIED` (the author's ruling, T-147) — holdings-based pricing.** An
+empire's price for each color of ore is read from its holdings
+(`Simulation::color_prices`, `RankContext::color_price`):
+
+| symbol | name | unit | set |
+|---|---|---|---|
+| `held_c` | the empire's holding of color `c`, at its worlds and outposts | kt | live |
+| `mix_w[c]` | the empire's works-mix weight for `c` | — | `Works`, card-written |
+| `cover_c` | `held_c / mix_w[c]` | kt | live |
+| `g` | `RankWeights::holdings_price_gain` | — | `1.0`, measured |
+| `color_price_c` | `4 · w_c / Σ w`, `w_c = 1 + g · (1 − cover_c / max cover)` | — | live |
+
+The best-covered color is priced lowest and a color held at zero highest; the
+three sum to 4. At `g = 1` an empire holding two colors and none of the third
+prices that color double, which is the archetype weight `[1, 1, 2]` this
+replaces — fixed at game start from the homeworld's archetype, and the cause of
+much of the spread between empires on `Ground::Identical` and `Ground::Random`
+(appendix §D.39). A scan is counted against the most each price can reach,
+`4 · (1 + g) / (3 + g)`, as `mineral_pressure` is taken at its most.
+**Superseded:** the archetype weight; and the deciding center's live shortfall
+as the weight, implemented, measured at −3.30% ± 0.49 colony-years and
+reverted (appendix §A.12) — a center's shortfall, not the empire's holdings.
 
 ---
 
@@ -221,7 +238,7 @@ law #11, on the exact path the expansion loop runs on. **An exemption from
 conservation is not a modeling shortcut, it is a free resource, and a search
 will find it and call it a strategy.**
 
-**4.4 `RATIFIED` — `colony_seed_pop = BandTier::I`.** Typed as a rung, not a
+**4.4 `RATIFIED` — `colony_seed_pop = BandTier::I`.** Typed as a whole Band, not a
 number. **Placeholder magnitude.**
 
 **4.5 `RATIFIED` — `ColonizerPolicy::CheapestViable`.** The cheapest hull that
@@ -280,32 +297,87 @@ it is actually going to buy** (it quoted the full price even when hulls sat in
 Reserve).
 
 **5.6 `RATIFIED` — freight routes by distance-discounted need.**
-`argmax` over owned centers of `mineral_pressure(center) · exp(−λ · t_transit)`,
-`trade_decay_lambda = 0.01` (half-life 69 yr). **`λ = 0` reduces exactly to
-`most_needed_center`**, which design law #5 keeps as the single-supply oracle, so
-one function checks two independent degeneracies. **Confirmed on 3 seeds** —
-thin for a ratified constant; appendix §B.1.
-
-> **Cross-tree conflict, open:** λ is +0.002 on Expansion and **−0.348 on
-> Growth**. It is the largest ratification in this project's history and it was
-> measured on coverage alone.
+`argmax` over owned centers of the cargo's value at their demand prices times
+`exp(−λ · t_transit)`, `trade_decay_lambda = 0.04` (half-life 17 yr), chosen by
+Monte Carlo on the tree composite jointly with §5.8's stops (T-147, politics
+§1.4, appendix §D.53). **`λ = 0` reduces exactly to `most_needed_center`**,
+which design law #5 keeps as the single-supply oracle, so one function checks
+two independent degeneracies.
 
 **5.7 `RATIFIED` — a hold is filled against the destination's color deficit**,
 not in proportion to the pile the hauler happens to be standing on. **+8.40% ±
 1.86 work-years, 8/8 seeds, replicated on four the candidate was not chosen
 against**, on *the same tonnage* and the same trips — only the colors in the
-hold changed. **R-O89.**
+hold changed. **R-O89.** Since T-147 a stop takes only what its buyer wants;
+the top-up past the deficit is retired (§5.10).
 
-**5.8 `RATIFIED` — one outbound leg may visit two piles.**
-`max_pickup_stops = 2`. A hold used to be filled from one map entry, so **every
-delivery was mono-colored by construction** and no routing fix could reach it.
-**+55.13% ± 4.65 work-years, 8/8 seeds** (**R-O92**), and the intermediate stop
+**5.8 `RATIFIED` — one outbound leg may visit up to two piles** (since T-147's
+freight planner, §5.10: every stop re-runs the planner, so the cap is chosen
+with its cost; appendix §D.56). The record below is the cap of six it
+replaced.
+`max_pickup_stops = 6`, chosen by Monte Carlo with §5.6's `λ = 0.04` (T-147,
+appendix §D.53): +8.95% ± 0.78 on the tree composite and +29.3% ± 1.4 centers
+built to Band IV works, 16/16 runs. A hold used to be filled from one map
+entry, so **every delivery was mono-colored by construction** and no routing
+fix could reach it; two stops were first ratified at **+55.13% ± 4.65
+work-years, 8/8 seeds** (**R-O92**) on a bed where two was a peak. The intermediate stop
 caps each color at what is wanted **and** at its proportional share of the
 hold — the second cap is worth +10.2% on its own and is inert at today's
 magnitudes, load-bearing at the ones development reaches.
 
 **Two is a peak, not merely better than one**: one stop through six scores
 184k / **284k** / 261k / 236k / 190k work-years.
+
+**5.10 `RATIFIED` — the next leg is priced at every stop, over piles and
+centers** (T-147, the author's direction: dynamic routing priced in `$`).
+At every pile and after every delivery, `Simulation::plan_next` compares
+delivering what is aboard now with detouring to load more first, each valued
+at its best buyer's prices (`demand_value` at `best_delivery_center`'s
+choice) and discounted over every leg, `exp(−λ · Σ t)`. Detours are priced
+over this empire's outpost piles **and** its centers' abundance — what a
+center holds above its own next works bill, capped at the Exchange's gate
+for that buyer (`center_offer`, R-MX8) — each net of what haulers flying to
+it have claimed. The best of each by an upper bound at the empire's posted
+prices are priced exactly, as many as `Doctrine::freight_shortlist` (`1`,
+placeholder). **The centers' side of the price is a table an empire keeps**
+(`Doctrine::freight_price_age_years`, 25 yr, placeholder): read from its
+banks and bills at most that often, and when a hauler turns for a buyer the
+buyer's shortfall in the table falls by what the hauler carries, so the next
+hauler does not price the same shortfall. The
+pile or center chosen after a delivery becomes the hauler's `base`. A stop
+loads only what the buyer wants (§5.7). Measured against the routing it
+replaces, on the twin bed at 1,500 yr with a stop cap of 16: tree composite
+**+21.12% ± 1.64**, centers built to Band IV works **+38.1% ± 3.2**, 12/12
+runs over eight seeds and two grounds; at §5.8's cap of 6, +23.63% ± 3.86 and
++43.4% ± 8.6 on four seeds, inside two standard errors of 16 (appendix §D.55). Supers forged fall and apex falls to
+zero at the shipped forge premium — `OPEN`, galaxy §4.5 (appendix §D.55).
+
+**The kept, netted table and the cheap levers are the shipped doctrine**
+(the author's direction: a cheaper doctrine that improves yr/s at under 5%
+loss of work-years; appendix §D.56). Against reading every center fresh at
+every decision with three of each priced over six stops: **work-years
++35.40% ± 3.74, composite +18.78% ± 1.73, centers built +28.5% ± 4.2, 12/12
+runs, at 2.4x the throughput.** Reading fresh herds: 93% of the kilotonnes it
+delivered landed beyond the buyer's shortfall, against 59% netted.
+
+Two properties of it are **`OPEN`**:
+
+- **Value is linear per color.** `demand_value` prices each color at its
+  center's per-color pressure; it does not price what a second color does for
+  a conjunctive bill, so a hauler with an empty-banked buyer can load one color
+  across several stops at the same pile (staying costs no transit) rather than
+  fetch the second color a leg away. Excluding the pile it stands on from its
+  own detours scored −1.85% to −2.77% on three of three seeds and is not
+  shipped (appendix §D.55). What would settle it: a valuation that prices the
+  bill's completion by the cargo, measured on the same bed.
+- **Cost.** The planner scans this empire's piles and centers at every stop.
+  At the shipped doctrine a twin-bed run of 800 yr takes 78.6 s against
+  47.8 s before the planner (appendix §D.56). What would settle it: a
+  throughput target from the author, and a profile at that doctrine.
+- **Netting against a fresh read.** The table's age and its netting are
+  measured together; netting committed cargo against a table read at every
+  decision has not been tried, and would say whether a fresh read is worth
+  its cost at all (appendix §D.56).
 
 **5.9 `RATIFIED` — a hauler's hull is sized to its rock, under a liquidity
 cap.** `freighter_hull` scores candidate hulls on `load / round_trip / hull_cost`
@@ -346,7 +418,7 @@ change it.** A center's yard is asked when a berth clears, when minerals land,
 and on an economy tick only once something its last declined decision waited on
 has moved (`Declined`): a card landed; its population crossed a band; its works
 changed; the sentries its Doctrine wants changed; its bank reached the cheapest
-price it could not pay, or its rung became payable in every color; and, unless
+price it could not pay, or its whole Band became payable in every color; and, unless
 it declined while saving, its empire scanned a world that can rank as a colony
 or a mining outpost, targeted a world, any empire claimed one, or its reserve
 changed. The tree's short circuits, cheapest first: a bank below the cheapest
@@ -428,12 +500,12 @@ outward_cost` against `w_k · min(1, headroom) / infra_cost` — so it is an odd
 ratio with a state-dependent crossover.
 
 **The knob cannot move Growth's own objective, by identity** (R-O87): a mineral
-buys the same works whether it deepens or founds, at every rung, at the card-free
+buys the same works whether it deepens or founds, at every whole Band, at the card-free
 `eta_works = 1`. Measured **+0.32% ± 1.42 over eight seeds**. The lever it is
 *not* is `eta_works`, which divides the deepening bill and nothing else.
 Appendix §A.11.
 
-**The branch is still cold at 0.5, and that is correct**: an infra rung above the
+**The branch is still cold at 0.5, and that is correct**: an infra whole Band above the
 founding one costs 0.9 kt against a Medium colonizer's 0.10 kt, so expansion
 returns 24–49× per kilotonne. **R-O68 resolved** — the dead branch was the right
 answer reached for a wrong reason. Appendix §A.10.
@@ -446,7 +518,7 @@ placeholder magnitude**, and a doctrine parameter a Greening card retunes.
 `slips` reads the *fabrication share of the stock* and is unbounded; `fab_cap =
 0.1` bounds the rate **per berth**. Before R-O88 one variable did both jobs and
 the build-wide axis was **closed at two berths** — 10¹² kt of infrastructure still
-bought two. Berths at rung II went 2 → 17; **fleet-years +26–34%** — measured as
+bought two. Berths at whole Band II went 2 → 17; **fleet-years +26–34%** — measured as
 a hull *count*, which is neither the mass nor the volume denomination the
 objective has since carried (R-PROD5); kept as measured, R-TREE10 re-runs it.
 
@@ -582,8 +654,10 @@ count, not a fraction — and the guard is kept rather than deleted.
 | R-O92 | one outbound leg visits two piles | 8/8 seeds |
 | R-O93 | the population logistic is solved, not stepped | 8/8 seeds |
 | R-O94 | a hauler's hull is a forecast under a liquidity cap | 8/8 and 7/8 seeds |
+| T-147 | the next leg is priced at every stop, over piles and centers (§5.10) | 12/12 runs |
+| T-147 | a kept freight price table netted as haulers commit; stop cap 2, shortlist 1, age 25 yr (§5.10) | 12/12 runs |
 | R-MC16 | thrust is drawn from mounted drive | placeholder magnitudes |
-| R-P2 | `trade_decay_lambda = 0.01` for internal routing | 3 seeds — thin |
+| R-P2 | `trade_decay_lambda = 0.04` with `max_pickup_stops = 6`, on the tree composite; stops since 2 (§5.8) | 16/16 runs |
 
 ### Open
 

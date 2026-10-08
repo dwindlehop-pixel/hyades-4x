@@ -617,7 +617,7 @@ retrofit a vulnerability window rather than a power spike.
 
 "Taking down an LOU with LSVs should require numbers or a sufficiently large
 Design advantage" is [Lanchester's square law](https://en.wikipedia.org/wiki/Lanchester%27s_laws).
-With `k` the baseline quality ratio between rungs and `m` the multiplier Design
+With `k` the baseline quality ratio between whole Bands and `m` the multiplier Design
 buys, `N` LSVs beat one LOU when **`N > √(k/m)`**:
 
 | k | m=1 | m=2 | m=4 | m=8 | m=16 |
@@ -633,7 +633,7 @@ step is worth a fixed *fraction* of fleet size, not a fixed count, which is why
 the substitution stays meaningful at every scale and why the right combo can
 lift an LSV into contention with an LCU without breaking the LOU relationship.
 
-Setting `k` per rung is the design decision; **the Ship Testing Arena is where
+Setting `k` per whole Band is the design decision; **the Ship Testing Arena is where
 `q` gets measured**, since per-class values cannot be derived analytically.
 Ratified by Monte Carlo (R-C7). The square law is the imperial-scale
 abstraction; the individual-vehicle arena calibrates its parameters.
@@ -892,7 +892,7 @@ Four consequences:
    foundry hauling munitions. That tail is a visible, attackable board object,
    and it gives cmd §8's **Blockade** a concrete target rather than an abstract
    one.
-2. **A durable intransitivity, not a ladder rung.** Under Lanchester (§8.2), a
+2. **A durable intransitivity, not a ladder whole Band.** Under Lanchester (§8.2), a
    fleet out of ammunition has collapsed `q`. So **ordnance wins the opening
    exchange and energy wins the long one** — a genuine cycle that pairs with
    the range/kinematics counter to give a two-axis counter-graph.
@@ -1216,7 +1216,7 @@ than a power spike.
 | R-O34 | ratify L1 as a stated law |
 | ~~R-O42b~~ | ~~confirm class names~~ — **ratified** as Meadow / Spur / Tor / Cairn / Delta / Ford / Range / Strait / Scarp, one class per hull (Technology §1.6) |
 | R-O47b | does a retrofit apply retroactively, or `on_new_production` only? |
-| R-O49b | set `k` per ladder rung and `m` per Design card, arena-measured |
+| R-O49b | set `k` per ladder whole Band and `m` per Design card, arena-measured |
 | **R-O51** | ratify the three-way σ decomposition — σ_commit / σ_kinetic / σ_vector — with σ_kinetic derived from the acceleration signature, not mass or hull count |
 | **R-O52** | concealment-by-offset: cost the thrust-and-armament combo that holds `a` constant while σ_commit is large. Concealment is a combo property, not a card property |
 | **R-O53** | the observable-channel enumeration is **open**. Specify the structural channel (infrastructure, orbitals) and the economic channel (drawdown, exchange pressure), each with its own range / latency / maskability profile |

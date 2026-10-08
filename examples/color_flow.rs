@@ -156,7 +156,7 @@ fn main() {
         );
         // **The question that matters.** Idle ore is only a problem if somebody
         // wants it. Demand here is what centers cannot afford for their next
-        // infrastructure rung — a purchase they would make and cannot.
+        // infrastructure whole Band — a purchase they would make and cannot.
         println!("  unmet demand: {demand:.0} kt   ({:.0}x covered by the idle pile)", piled / demand.max(1e-9));
 
         let traded = sim.exchange_traded();

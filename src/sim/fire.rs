@@ -1047,6 +1047,15 @@ impl Simulation {
                     }
                 }
             }
+            // **A hauler that leaves is a loss to the rock it served** (T-147):
+            // its price reads the share of haulers sent there that were not
+            // lost there (`Simulation::trip_worth`).
+            Role::Freighter => {
+                if let Some(base) = self.world.shuttle.get(e).map(|sh| sh.base) {
+                    self.hauler_record.entry((seat, base.0)).or_default().1 += 1;
+                }
+                self.release_route(e);
+            }
             _ => {}
         }
         let p = seat as usize;
@@ -1515,7 +1524,12 @@ mod tests {
         let drift = Vec3::new(0.3, 0.0, 0.0);
         let under_way = fleet(1, HullType::LimitedContactVehicle, Class::Tor, drift);
         let spend = 2.2;
-        let seeding = FleetSeeding { spend_kt: spend, known_radius_ly: 0.0, fleets: vec![cairn, scarp, under_way] };
+        let seeding = FleetSeeding {
+            spend_kt: spend,
+            known_radius_ly: 0.0,
+            fleets: vec![cairn, scarp, under_way],
+            twin_bill: None,
+        };
         let galaxy = Galaxy::generate_with(g, seeding.clone()).unwrap();
         let mut cfg = SimConfig::new(31);
         cfg.horizon_years = 60.0;
@@ -1539,12 +1553,18 @@ mod tests {
                 assert!(mo.velocity_at(0.0).distance(f.velocity) < 1e-9, "at the velocity it says");
             }
         }
-        let bad = FleetSeeding { spend_kt: spend, known_radius_ly: 0.0, fleets: vec![SeedFleet { seat: 2, ..cairn }] };
+        let bad = FleetSeeding {
+            spend_kt: spend,
+            known_radius_ly: 0.0,
+            fleets: vec![SeedFleet { seat: 2, ..cairn }],
+            twin_bill: None,
+        };
         assert!(matches!(Galaxy::generate_with(g, bad), Err(GenError::BadFleet(0))));
         let fast = FleetSeeding {
             spend_kt: spend,
             known_radius_ly: 0.0,
             fleets: vec![SeedFleet { velocity: Vec3::new(1.0, 0.0, 0.0), ..cairn }],
+            twin_bill: None,
         };
         assert!(matches!(Galaxy::generate_with(g, fast), Err(GenError::BadFleet(0))));
 

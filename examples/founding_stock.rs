@@ -7,7 +7,7 @@
 //! against −120 on `W_0`). Flat against an objective is not a mechanism, and
 //! `AGENTS.md` §2's rule for it is to **measure how much of the time the
 //! resource the knob buys is even binding** — here, how often the erected share
-//! is larger than the floor rung it has to beat to matter at all.
+//! is larger than the floor whole Band it has to beat to matter at all.
 //!
 //! Three arms on one seed, printing the distribution rather than a mean, because
 //! a mean over a stock that is pinned at a floor most of the time says nothing
@@ -52,8 +52,8 @@ fn run(seed: u64, share: f64) -> Vec<f64> {
 
 fn main() {
     let cfg = SimConfig::new(1);
-    let floor = hyades_engine::sim::infra_rung_price(0, &cfg).kilotons();
-    println!("floor rung (Band Empty): {floor:.9} kt");
+    let floor = hyades_engine::sim::infra_price_at_band(0, &cfg).kilotons();
+    println!("floor whole Band (Band Empty): {floor:.9} kt");
     println!(
         "{:>8}  {:>7}  {:>12}  {:>12}  {:>12}  {:>10}",
         "share", "founded", "median", "mean", "max", "above floor"

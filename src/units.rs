@@ -26,11 +26,11 @@
 //! Band to the next is not 'one more unit'; it is a jump of several times the
 //! previous Band's magnitude". R-MC15 withdrew the idea of one shared step and
 //! ratified a **ladder** of them ([`MASS_LADDER`]), so the conversion is
-//! exponential *piecewise*, one segment per rung:
+//! exponential *piecewise*, one segment per whole Band:
 //!
 //! ```text
-//! kilotons(b) = rung_mass(n) · MASS_LADDER[n]^(b − n)      n = segment of b
-//! band(m)     = n + log(m / rung_mass(n)) / log(MASS_LADDER[n])
+//! kilotons(b) = whole_band_mass(n) · MASS_LADDER[n]^(b − n)      n = segment of b
+//! band(m)     = n + log(m / whole_band_mass(n)) / log(MASS_LADDER[n])
 //! ```
 //!
 //! The map is exact and unclamped in the Band→mass direction, because the
@@ -43,8 +43,8 @@
 //!
 //! **Neither direction is on the simulation's run path** (T-129). A Band is a
 //! reading for design, thresholds and presentation, so the engine compares and
-//! computes in kilotons: `K` is a stored mass, a rung test compares against
-//! static squared midpoints ([`Qty::nearest_rung_from`]), and a position carried
+//! computes in kilotons: `K` is a stored mass, a whole Band test compares against
+//! static squared midpoints ([`Qty::nearest_whole_band_from`]), and a position carried
 //! from the cost ladder to the mass ladder is a per-segment power law with
 //! static constants ([`Price::mass_at_same_band_from`]). Where a reading is
 //! still wanted — `rank`'s scores, a view, a log line — `band()` computes it
@@ -92,7 +92,7 @@ pub const KILOTONS_AT_BAND_I: f64 = 1.0;
 
 /// **The ratified mass ladder** (`Hyades_mineral_cost_curve.md` §2.6, R-MC15).
 ///
-/// `MASS_LADDER[n]` is the factor from rung `n` to rung `n+1`, indexed the way
+/// `MASS_LADDER[n]` is the factor from whole Band `n` to whole Band `n+1`, indexed the way
 /// [`BandTier::index`] indexes: `0 = Empty→I`, `1 = I→II`, `2 = II→III`,
 /// `3 = III→IV`. There is no single "band step" any more, which is the whole
 /// point — the ratified constraint is on how the factors *grow*
@@ -122,7 +122,7 @@ pub const MASS_LADDER: [f64; 4] = [
 /// ton… I want to change the *width* of `Band Empty`, not reset the ladder from
 /// there."*
 ///
-/// `Band Empty` is not a rung of the ratified ladder; it is the ladder's
+/// `Band Empty` is not a whole Band of the ratified ladder; it is the ladder's
 /// **floor**, and its width is the one degree of freedom R-MC15 does not fix.
 /// R-MC15 ratified the step factors and the `F_mass = F_cost^(3/2)` tie between
 /// the two ladders; both statements are about how the ladder *grows*, and they
@@ -132,7 +132,7 @@ pub const MASS_LADDER: [f64; 4] = [
 /// per-quantity: every quantity anchors its own scale and only the ratios are
 /// shared. So the two ladders' Empty widths are **not** tied to each other, and
 /// [`COST_LADDER`]`[0] = 5` is untouched by this: it is the Limited hull's
-/// price, which is a real rung on a real ladder.
+/// price, which is a real whole Band on a real ladder.
 ///
 /// **What it buys.** Everything sub-`Band I` is read on this segment, and at
 /// the old `1/11.18 ≈ 0.089 kt` floor the segment was far too narrow to
@@ -147,30 +147,30 @@ pub const MASS_LADDER: [f64; 4] = [
 /// say so in those words.
 pub const KILOTONS_AT_BAND_EMPTY: f64 = 0.001;
 
-/// The mass at rung `n` — [`Qty::rung`] on the mass ladder, kept as a free
+/// The mass at whole Band `n` — [`Qty::whole Band`] on the mass ladder, kept as a free
 /// function because the ladder's own tests read more clearly with it.
 #[inline]
-pub fn rung_mass(n: usize) -> f64 {
-    Kilotons::rung(n)
+pub fn whole_band_mass(n: usize) -> f64 {
+    Kilotons::whole_band(n)
 }
 
-/// The bottom rung the ladder is willing to name.
+/// The bottom whole Band the ladder is willing to name.
 ///
 /// `band(m)` diverges as `m → 0`, and design law #16 makes a non-finite value
 /// in replicated state a fatal error rather than a number. Masses at or below
 /// `Band(BAND_FLOOR).in_kilotons()` therefore read as `BAND_FLOOR`. This is a
 /// statement about the *ladder* — it does not describe quantities beneath its
-/// first rung — not a claim that such a mass is zero.
+/// first whole Band — not a claim that such a mass is zero.
 pub const BAND_FLOOR: f64 = 0.0;
 
-/// **A named rung on the Band ladder** — the discrete tier, as distinct from
-/// [`Band`], which is a *position* and can sit anywhere between rungs.
+/// **A named whole Band on the Band ladder** — the discrete tier, as distinct from
+/// [`Band`], which is a *position* and can sit anywhere between whole Bands.
 ///
 /// This type exists so that a Band-valued constant cannot be written as a bare
 /// number. `colony_seed_pop = 1.0` compiled for the entire life of the project
 /// and meant "Band I" only by convention; the same `1.0` could as easily have
 /// been a mass, a mineral count or a multiplier, and R-O66 is what happens when
-/// that convention slips. A rung is now a *name*, and naming it is the only way
+/// that convention slips. A whole Band is now a *name*, and naming it is the only way
 /// to write it.
 ///
 /// ```compile_fail
@@ -179,13 +179,13 @@ pub const BAND_FLOOR: f64 = 0.0;
 /// cfg.colony_seed_pop = 1.0; // a Band level is not a float
 /// ```
 ///
-/// ## The rungs
+/// ## The whole Bands
 ///
 /// - [`Zero`](Self::Zero) — **the bottom sentinel, one past the start of the
 ///   ladder, and the mirror of [`V`](Self::V) at the other end.** It is not a
 ///   small quantity; it is the *absence* of one, and no live quantity is ever
 ///   at it — `BAND_FLOOR` puts the smallest representable magnitude at
-///   `Empty`. Its job is to give a `> Zero` guard a rung to compare against
+///   `Empty`. Its job is to give a `> Zero` guard a whole Band to compare against
 ///   instead of a magic number, now that `Empty > 0` and `Empty` can no longer
 ///   do that job. Its ladder position is `Band(-1.0)`, deliberately outside
 ///   `[BAND_FLOOR, …]`, so adding it shifts nothing above it.
@@ -194,7 +194,7 @@ pub const BAND_FLOOR: f64 = 0.0;
 ///   Limited hull's token hold. Ratified this way explicitly — there is no
 ///   `Band 0`, and `Band Empty > 0`. It is named rather than numbered so it
 ///   cannot be read as the integer zero, which is the one value that is *off*
-///   the ladder rather than on its bottom rung.
+///   the ladder rather than on its bottom whole Band.
 /// - [`I`](Self::I) — the first crossed threshold, and **each quantity's own
 ///   reference scale**: a small town, the cost of one General-class hull, a
 ///   Medium hull's reference hold. §2.6 is explicit that these are anchored
@@ -209,7 +209,7 @@ pub const BAND_FLOOR: f64 = 0.0;
 /// - [`IV`](Self::IV) is the top of the playable ladder.
 /// - [`V`](Self::V) — **the maximum, for comparison and clamping only. It is
 ///   not reachable in play**, and `no_quantity_reaches_band_v` pins that. Its
-///   job is to give bounds checks a top end that is a rung rather than a
+///   job is to give bounds checks a top end that is a whole Band rather than a
 ///   magic number, the way a half-open range wants one past the end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum BandTier {
@@ -223,33 +223,33 @@ pub enum BandTier {
 }
 
 impl BandTier {
-    /// Every rung, in order — including both sentinels, [`Zero`](Self::Zero)
-    /// and [`V`](Self::V), which is why callers that mean "every rung a world
+    /// Every whole Band, in order — including both sentinels, [`Zero`](Self::Zero)
+    /// and [`V`](Self::V), which is why callers that mean "every whole Band a world
     /// can actually be at" must use [`PLAYABLE`](Self::PLAYABLE).
     ///
     /// **Do not index this by a crossing count.** `PLAYABLE` is the array whose
     /// positions are the ladder's; this one is offset by the bottom sentinel.
     pub const ALL: [BandTier; 7] =
         [BandTier::Zero, BandTier::Empty, BandTier::I, BandTier::II, BandTier::III, BandTier::IV, BandTier::V];
-    /// The rungs a quantity can actually occupy in a game. Both sentinels are
-    /// excluded by construction, and position `i` in this array is the rung a
+    /// The whole Bands a quantity can actually occupy in a game. Both sentinels are
+    /// excluded by construction, and position `i` in this array is the whole Band a
     /// quantity has reached after crossing `i` thresholds.
     pub const PLAYABLE: [BandTier; 5] = [BandTier::Empty, BandTier::I, BandTier::II, BandTier::III, BandTier::IV];
-    /// The highest rung anything in a game may reach.
+    /// The highest whole Band anything in a game may reach.
     pub const MAX_PLAYABLE: BandTier = BandTier::IV;
-    /// The lowest rung anything in a game may reach. `Zero` is beneath it and
+    /// The lowest whole Band anything in a game may reach. `Zero` is beneath it and
     /// is not a magnitude.
     pub const MIN_PLAYABLE: BandTier = BandTier::Empty;
 
-    /// This rung's position on the continuous ladder.
+    /// This whole Band's position on the continuous ladder.
     #[inline]
     pub const fn band(self) -> Band {
         Band(self.index() as f64)
     }
 
-    /// How many rungs above [`Empty`](Self::Empty) — the integer the engine
+    /// How many whole Bands above [`Empty`](Self::Empty) — the integer the engine
     /// used before these were named. Signed, because [`Zero`](Self::Zero) sits
-    /// one *below* the origin; every other rung keeps the index it had, so
+    /// one *below* the origin; every other whole Band keeps the index it had, so
     /// adding the bottom sentinel moved no ladder position.
     #[inline]
     pub const fn index(self) -> i8 {
@@ -264,7 +264,7 @@ impl BandTier {
         }
     }
 
-    /// The rung a continuous position has *reached* — the largest rung at or
+    /// The whole Band a continuous position has *reached* — the largest whole Band at or
     /// below it. Saturates at [`V`](Self::V).
     #[inline]
     pub fn containing(b: Band) -> BandTier {
@@ -312,7 +312,7 @@ pub struct Band(f64);
 /// genuinely differ: `F_mass = F_cost^(3/2)` is the shell model's own exponent,
 /// because cost tracks surface area and the hold tracks volume. A General hull
 /// costs 10x a Medium and holds 31.6x, so its price and its hold cannot both
-/// land on the same rung of one ladder. That is geometry, not an accident of
+/// land on the same whole Band of one ladder. That is geometry, not an accident of
 /// units, so the ladder has to travel with the value.
 ///
 /// It travels as a **type parameter**, which is what keeps the arithmetic free:
@@ -321,7 +321,7 @@ pub struct Band(f64);
 /// vectorization of a bare `f64`. Only the Band *conversion* costs anything,
 /// and it is not on any hot path.
 pub trait Scale: Copy + 'static {
-    /// Step factors between adjacent rungs, indexed the way [`BandTier::index`]
+    /// Step factors between adjacent whole Bands, indexed the way [`BandTier::index`]
     /// indexes: `0 = Empty→I`, `1 = I→II`, `2 = II→III`, `3 = III→IV`.
     const STEPS: [f64; 4];
     /// `ln` of each step, evaluated at compile time — the Band reading's
@@ -335,7 +335,7 @@ pub trait Scale: Copy + 'static {
     ];
     /// `1 / log₂(step)` for each segment, evaluated at compile time — the
     /// factor that turns `log2_approx` of a ratio within the segment into a
-    /// fraction of a rung, so a reading needs no logarithm of a constant
+    /// fraction of a whole Band, so a reading needs no logarithm of a constant
     /// (T-129).
     const INV_LOG2_STEPS: [f64; 4] = [
         core::f64::consts::LN_2 / transcendental::ln_const(Self::STEPS[0]),
@@ -415,7 +415,7 @@ pub type Kilotons = Qty<Mass>;
 /// The same kilotons read on the **cost** ladder — a hull's price, an
 /// infrastructure step, a stockpile that can be spent. `Price` and [`Kilotons`]
 /// hold the same scalar (R-O57: a hull's price *is* its dry mass); they differ
-/// only in which rungs they are read against, and crossing is
+/// only in which whole Bands they are read against, and crossing is
 /// [`Qty::on_scale`].
 pub type Price = Qty<Cost>;
 
@@ -459,7 +459,7 @@ impl<S> Qty<S> {
     /// **Reinterpret the same amount on another ladder.**
     ///
     /// A no-op on the bits, because a cost *is* a mass (R-O57) — what changes
-    /// is only which rungs it will be read against. Explicit so that the one
+    /// is only which whole Bands it will be read against. Explicit so that the one
     /// place the two ladders meet is visible rather than inferred.
     #[inline]
     pub const fn on_scale<T>(self) -> Qty<T> {
@@ -495,10 +495,10 @@ impl<S: Scale> Qty<S> {
         Qty(v, core::marker::PhantomData)
     }
 
-    /// The magnitude at whole rung `n`, `n` indexed like [`BandTier::index`]
+    /// The magnitude at whole Band `n`, `n` indexed like [`BandTier::index`]
     /// with `Empty = 0`. Saturates at `IV`.
     #[inline]
-    pub fn rung(n: usize) -> f64 {
+    pub fn whole_band(n: usize) -> f64 {
         match n {
             0 => S::BAND_I / S::STEPS[0],
             1 => S::BAND_I,
@@ -508,10 +508,10 @@ impl<S: Scale> Qty<S> {
         }
     }
 
-    /// **Write it as a rung plus a fraction of the way to the next** — the
+    /// **Write it as a whole Band plus a fraction of the way to the next** — the
     /// other half of the "either representation" contract.
     ///
-    /// `fraction` is the position *within* the rung, in `[0, 1)`; it is a
+    /// `fraction` is the position *within* the whole Band, in `[0, 1)`; it is a
     /// position on a log scale, so `0.5` is the geometric midpoint of the
     /// segment, not its arithmetic one.
     #[inline]
@@ -519,13 +519,13 @@ impl<S: Scale> Qty<S> {
         Self::at_band(Band(tier.index() as f64 + fraction))
     }
 
-    /// Write it as a whole rung — the rung's own mass, a product of ladder
+    /// Write it as a whole Band — the whole Band's own mass, a product of ladder
     /// constants, so no exponential is taken (T-129). The sentinels `Zero` and
     /// `V` are off the playable ladder and read through [`Self::at_band`].
     #[inline]
     pub fn at_tier(tier: BandTier) -> Self {
         match tier.index() {
-            i @ 0..=4 => Qty(Self::rung(i as usize), core::marker::PhantomData),
+            i @ 0..=4 => Qty(Self::whole_band(i as usize), core::marker::PhantomData),
             _ => Self::at_band(tier.band()),
         }
     }
@@ -545,12 +545,12 @@ impl<S: Scale> Qty<S> {
             b.0.floor()
         };
         Qty(
-            Self::rung(n as usize) * transcendental::exp((b.0 - n) * S::LN_STEPS[n as usize]),
+            Self::whole_band(n as usize) * transcendental::exp((b.0 - n) * S::LN_STEPS[n as usize]),
             core::marker::PhantomData,
         )
     }
 
-    /// The magnitude at whole rung `n` on a ladder whose `Band I` sits at
+    /// The magnitude at whole Band `n` on a ladder whose `Band I` sits at
     /// `band_i` rather than at [`Scale::BAND_I`].
     ///
     /// §2.6 fixes the *ratios* and leaves the anchor per-quantity, and the cost
@@ -559,8 +559,8 @@ impl<S: Scale> Qty<S> {
     /// `_from` methods are that freedom, and they are the only place the ladder
     /// takes a runtime parameter.
     #[inline]
-    pub fn rung_from(n: usize, band_i: f64) -> f64 {
-        Self::rung(n) * (band_i / S::BAND_I)
+    pub fn whole_band_from(n: usize, band_i: f64) -> f64 {
+        Self::whole_band(n) * (band_i / S::BAND_I)
     }
 
     /// [`Self::at_band`] against a runtime anchor.
@@ -584,11 +584,11 @@ impl<S: Scale> Qty<S> {
     /// kilotons, which is why storage is never the reading.
     ///
     /// **No logarithm is taken** (T-129). Within a segment the reading is
-    /// `n + log₂(m / rung_n) / log₂(step_n)`; the rung and `1 / log₂(step_n)` are
-    /// static per segment, and `log2_approx` is the exponent bits plus a
+    /// `n + log₂(m / m_n) / log₂(step_n)`, with `m_n` the amount at whole Band
+    /// `n`; `m_n` and `1 / log₂(step_n)` are static per segment, and `log2_approx` is the exponent bits plus a
     /// degree-7 polynomial. It is an approximation with a stated bound: within
     /// **3e-7 Band** of the exact reading (`the_band_reading_is_within_its_bound`),
-    /// and **exact at every rung**, so a mass standing on a rung reads a whole
+    /// and **exact at every whole Band**, so a mass standing on a whole Band reads a whole
     /// number and a tier never flips at its own edge.
     #[inline]
     pub fn band(self) -> Band {
@@ -598,48 +598,48 @@ impl<S: Scale> Qty<S> {
         // Segments run to `IV`, and above it the top step extends; `IV` is a
         // segment start of its own so that it, too, reads a whole number.
         let mut n = 0usize;
-        while n < 4 && self.0 >= Self::rung(n + 1) {
+        while n < 4 && self.0 >= Self::whole_band(n + 1) {
             n += 1;
         }
-        Band((n as f64 + log2_approx(self.0 / Self::rung(n)) * S::INV_LOG2_STEPS[n.min(3)]).max(BAND_FLOOR))
+        Band((n as f64 + log2_approx(self.0 / Self::whole_band(n)) * S::INV_LOG2_STEPS[n.min(3)]).max(BAND_FLOOR))
     }
 
-    /// **The whole rung nearest this amount** on a ladder anchored at `band_i`
+    /// **The whole Band nearest this amount** on a ladder anchored at `band_i`
     /// — `band_from(band_i).round()`, floored at zero, **without taking the
     /// reading** (T-129).
     ///
-    /// A reading rounds up from rung `k − 1` to `k` at the segment's geometric
-    /// midpoint `rung_{k−1} · √step_{k−1}`, so the rung is the count of
-    /// midpoints the amount has passed. Compared in squares, `x² ≥ rung² ·
-    /// step`, every threshold is a product of ladder constants: no root and no
+    /// A reading rounds up from whole Band `k − 1` to `k` at the segment's geometric
+    /// midpoint `m_{k−1} · √step_{k−1}`, with `m_k` the amount at whole Band
+    /// `k`, so the whole Band is the count of midpoints the amount has passed.
+    /// Compared in squares, `x² ≥ m_{k−1}² · step_{k−1}`, every threshold is a product of ladder constants: no root and no
     /// logarithm. Above `Band IV` the top segment's step extends, as
     /// [`Self::at_band`] extrapolates.
     #[inline]
-    pub fn nearest_rung_from(self, band_i: f64) -> usize {
+    pub fn nearest_whole_band_from(self, band_i: f64) -> usize {
         let x = self.0 * (S::BAND_I / band_i);
         if x.is_nan() || x <= 0.0 {
             return 0;
         }
         let x2 = x * x;
         let mut k = 0usize;
-        let mut rung = Self::rung(0);
+        let mut whole_band = Self::whole_band(0);
         loop {
             let step = S::STEPS[k.min(3)];
-            if x2 < rung * rung * step {
+            if x2 < whole_band * whole_band * step {
                 return k;
             }
-            rung *= step;
+            whole_band *= step;
             k += 1;
         }
     }
 
-    /// Read it as the rung it has reached.
+    /// Read it as the whole Band it has reached.
     #[inline]
     pub fn tier(self) -> BandTier {
         BandTier::containing(self.band())
     }
 
-    /// Read how far it stands into its rung, in `[0, 1)`.
+    /// Read how far it stands into its whole Band, in `[0, 1)`.
     #[inline]
     pub fn fraction(self) -> f64 {
         let b = self.band().0;
@@ -658,20 +658,20 @@ impl Price {
     /// segment is not tied (its width is set on its own, T-63): there the
     /// exponent is `ln 1000 / ln 5`, a static constant, and the power goes
     /// through [`transcendental::pow`]. Below cost `Band Empty` the reading
-    /// floors at zero, so the map returns the mass ladder's floor rung.
+    /// floors at zero, so the map returns the mass ladder's floor whole Band.
     #[inline]
     pub fn mass_at_same_band_from(self, band_i: f64) -> Kilotons {
         let x = self.0 * (Cost::BAND_I / band_i);
-        if x < Price::rung(0) {
-            return Kilotons::new(Kilotons::rung(0));
+        if x < Price::whole_band(0) {
+            return Kilotons::new(Kilotons::whole_band(0));
         }
         let mut n = 0usize;
-        while n < 3 && x >= Price::rung(n + 1) {
+        while n < 3 && x >= Price::whole_band(n + 1) {
             n += 1;
         }
-        let y = x / Price::rung(n);
+        let y = x / Price::whole_band(n);
         let scaled = if n == 0 { transcendental::pow(y, EMPTY_SEGMENT_EXPONENT) } else { y * y.sqrt() };
-        Kilotons::new(Kilotons::rung(n) * scaled)
+        Kilotons::new(Kilotons::whole_band(n) * scaled)
     }
 }
 
@@ -764,7 +764,7 @@ pub struct Length(f64);
 pub struct Area(f64);
 
 /// A volume, in hull units cubed — the shell model's **value basis**, and the
-/// quantity that sits on a Band rung (§2.3: the rung is the *hold*, and
+/// quantity that sits on a whole Band (§2.3: the whole Band is the *hold*, and
 /// `V_reserved` is deducted after it).
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 pub struct Volume(f64);
@@ -944,22 +944,22 @@ impl Band {
     pub fn clamp(self, lo: Band, hi: Band) -> Band {
         Band(self.0.clamp(lo.0, hi.0))
     }
-    /// Nearest whole rung. Infrastructure is built a level at a time, so its
+    /// Nearest whole Band. Infrastructure is built a level at a time, so its
     /// "next level" is a rounding on the ladder, not on a mass.
     #[inline]
     pub fn round(self) -> Band {
         Band(self.0.round())
     }
-    /// **Move `rungs` along the ladder** — the one sanctioned way to change a
+    /// **Move `whole Bands` along the ladder** — the one sanctioned way to change a
     /// Band, and deliberately not spelled `+`.
     ///
-    /// A Band is a *position* on a logarithmic scale, so moving one rung up
-    /// does not add anything: it **multiplies the mass** by that rung's ladder
+    /// A Band is a *position* on a logarithmic scale, so moving one whole Band up
+    /// does not add anything: it **multiplies the mass** by that whole Band's ladder
     /// factor. `Band::new(1.0).up(1.0)` is `Band II`, which is 31.6× the stuff
     /// of `Band I`, not one more of it.
     #[inline]
-    pub fn up(self, rungs: f64) -> Band {
-        Band(self.0 + rungs)
+    pub fn up(self, whole_bands: f64) -> Band {
+        Band(self.0 + whole_bands)
     }
     #[inline]
     pub fn is_finite(self) -> bool {
@@ -1010,8 +1010,8 @@ pub fn population_mass(pop: Band) -> Kilotons {
     }
 }
 
-/// The mass of a population standing on rung `t` — [`population_mass`] of a
-/// named rung, taken as the rung's own mass (a product of ladder constants)
+/// The mass of a population standing on whole Band `t` — [`population_mass`] of a
+/// named whole Band, taken as the whole Band's own mass (a product of ladder constants)
 /// rather than through an exponential (T-129). `Zero` and `Empty` hold no people
 /// by the same rule as a Band at or below zero.
 #[inline]
@@ -1027,7 +1027,7 @@ pub fn population_mass_at_tier(t: BandTier) -> Kilotons {
 ///
 /// The logistic has a fixed point at zero, so a colony seeded at nothing stays
 /// at nothing however habitable its world. One tonne is the mass ladder's own
-/// bottom rung (`Band Empty`), which makes this the smallest population the
+/// bottom whole Band (`Band Empty`), which makes this the smallest population the
 /// design names rather than an arbitrary epsilon — and it is the amount the
 /// biosphere is actually charged for, so the bump is paid for like any other
 /// growth rather than conjured.
@@ -1039,7 +1039,7 @@ pub const POPULATION_SEED_FLOOR: Kilotons = Kilotons::new(KILOTONS_AT_BAND_EMPTY
 /// one `f64`, in one instruction — which is the whole reason storage is the
 /// mass. Nothing in these operators touches a ladder, so nothing here can cost
 /// a `ln` or a `powf`, and two terms written at opposite ends of the contract
-/// (one as kilotons, one as a rung) add exactly as if both had been written
+/// (one as kilotons, one as a whole Band) add exactly as if both had been written
 /// the same way.
 ///
 /// The scale rides along on the type, so a mass and a price cannot be summed
@@ -1158,7 +1158,7 @@ arith!(Volume);
 /// with no meaning: the "gap" between two Bands is a *mass*, and masses are
 /// what [`Kilotons`] is for. R-O66 was one instance of this (a `min` across a
 /// mass and two levels); an infrastructure ladder priced at `b + 1` minerals
-/// per rung was another, and a colony-ship budget summed as `b(b+1)/2` was a
+/// per whole Band was another, and a colony-ship budget summed as `b(b+1)/2` was a
 /// third, made *after* R-O66 landed and by someone who had read it.
 ///
 /// So the arithmetic is gone from the type. To change a Band, move along the
@@ -1167,9 +1167,34 @@ arith!(Volume);
 /// one call and names the unit in its return type.
 /// Printed with its unit, for the same reason it is typed: a bare number in a
 /// log line is the thing this module exists to stop.
+///
+/// **A whole Band and a fraction of the way to the next** (the author's
+/// ruling): `Band II .785` is position 2.785, `Band III` is position 3 exactly,
+/// `Band Empty .500` is 0.5. The fraction is read to three places, and a
+/// position that rounds onto a whole Band prints as that whole Band. A position
+/// below `Band Empty` or past `Band V` has no whole Band to name and prints as
+/// the bare reading.
 impl fmt::Display for Band {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Band {:.3}", self.0)
+        let milli = (self.0 * 1000.0).round();
+        if !milli.is_finite() || !(0.0..6000.0).contains(&milli) {
+            return write!(f, "Band {:.3}", self.0);
+        }
+        let whole = (milli / 1000.0).floor();
+        let fraction = (milli - whole * 1000.0) as u32;
+        let name = match whole as u8 {
+            0 => "Band Empty",
+            1 => "Band I",
+            2 => "Band II",
+            3 => "Band III",
+            4 => "Band IV",
+            _ => "Band V",
+        };
+        if fraction == 0 {
+            f.write_str(name)
+        } else {
+            write!(f, "{name} .{fraction:03}")
+        }
     }
 }
 impl fmt::Display for Length {
@@ -1227,7 +1252,7 @@ mod tests {
     /// end a term came from.
     ///
     /// Checked on both ladders, because the ladder rides on the type and a
-    /// scale that got its rungs wrong would still round-trip against itself.
+    /// scale that got its whole Bands wrong would still round-trip against itself.
     #[test]
     fn either_representation_writes_the_same_amount() {
         fn check<S: Scale>() {
@@ -1236,7 +1261,7 @@ mod tests {
                 let by_kt = Qty::<S>::new(by_band.kilotons());
                 assert_eq!(by_band, by_kt, "{}: writing the kilotons back must be the same bits", S::NAME);
 
-                // ...and the rung-plus-fraction form is the same again, for
+                // ...and the whole Band-plus-fraction form is the same again, for
                 // every position the ladder actually names.
                 if (0.0..5.0).contains(&b) {
                     let split = Qty::<S>::at(by_band.tier(), by_band.fraction());
@@ -1255,7 +1280,7 @@ mod tests {
     /// (design law #16). An amount beneath the floor therefore reads the floor
     /// and would *write back larger than it is*. That is exactly why storage is
     /// the mass and never the reading: the kilotons of such an amount are
-    /// untouched and exact, and only the shorthand runs out of rungs.
+    /// untouched and exact, and only the shorthand runs out of whole Bands.
     ///
     /// This is checked on both ladders because the floors sit at different
     /// masses — 0.001 kt and 0.02 minerals — and the mass ladder happens to
@@ -1270,13 +1295,13 @@ mod tests {
                     close_read(Qty::<S>::at_band(q.band()).kilotons(), q.kilotons(), S::NAME);
                 } else {
                     assert_eq!(q.band(), Band::new(BAND_FLOOR), "{}: below the floor must read the floor", S::NAME);
-                    assert!(q.kilotons() < Qty::<S>::rung(0), "{}: and still hold its true amount", S::NAME);
+                    assert!(q.kilotons() < Qty::<S>::whole_band(0), "{}: and still hold its true amount", S::NAME);
                 }
             }
             // And from the other end: an amount written as kilotons reads a
             // position that writes the same amount back, once it is on the
             // ladder at all.
-            let floor = Qty::<S>::rung(0);
+            let floor = Qty::<S>::whole_band(0);
             for k in [1.0, 2.7, 50.0, 316.0, 2_828.0, 100_000.0, 715_541.0] {
                 let m = floor * k;
                 close_read(Qty::<S>::at_band(Qty::<S>::new(m).band()).kilotons(), m, S::NAME);
@@ -1289,7 +1314,7 @@ mod tests {
     /// **Every operator agrees with the bare `f64` it is standing in for**, and
     /// agrees whichever way each operand was written. This is the "commutes
     /// regardless of representation" requirement made checkable: the left
-    /// operand is written as a rung, the right as kilotons, and the answer must
+    /// operand is written as a whole Band, the right as kilotons, and the answer must
     /// match doing it in plain `f64` throughout.
     #[test]
     fn operators_match_bare_f64_across_both_representations() {
@@ -1326,7 +1351,7 @@ mod tests {
     }
 
     /// A long accumulation must not drift. Two hundred thousand alternating
-    /// deposits and withdrawals, half written as rungs and half as kilotons,
+    /// deposits and withdrawals, half written as whole Bands and half as kilotons,
     /// must land back within a tonne of where they started — which is the
     /// conservation claim (L6) stated as an arithmetic one.
     #[test]
@@ -1421,12 +1446,20 @@ mod tests {
     #[test]
     fn a_runtime_anchor_rescales_the_ladder_and_nothing_else() {
         for n in 0..=4 {
-            close(Qty::<Cost>::rung_from(n, Cost::BAND_I), Qty::<Cost>::rung(n), "the default anchor is the default");
+            close(
+                Qty::<Cost>::whole_band_from(n, Cost::BAND_I),
+                Qty::<Cost>::whole_band(n),
+                "the default anchor is the default",
+            );
         }
         for &k in &[0.5, 1.0, 17.0] {
             let anchor = Cost::BAND_I * k;
             for n in 0..=4 {
-                close(Qty::<Cost>::rung_from(n, anchor), Qty::<Cost>::rung(n) * k, "rungs scale with the anchor");
+                close(
+                    Qty::<Cost>::whole_band_from(n, anchor),
+                    Qty::<Cost>::whole_band(n) * k,
+                    "whole Bands scale with the anchor",
+                );
             }
             // And the two directions still invert each other under the anchor.
             for &b in &[0.0, 0.5, 1.0, 2.0, 3.5, 4.0] {
@@ -1443,10 +1476,10 @@ mod tests {
     /// **The two ladders are genuinely different, and the type is what keeps
     /// them apart.** This is the incompatibility the scan turned up, pinned so
     /// it cannot be quietly "simplified" back into one ladder: the same number
-    /// of kilotons reads a different rung depending on which ladder it is on,
+    /// of kilotons reads a different whole Band depending on which ladder it is on,
     /// because cost tracks area and the hold tracks volume.
     #[test]
-    fn the_same_amount_reads_a_different_rung_on_each_ladder() {
+    fn the_same_amount_reads_a_different_whole_band_on_each_ladder() {
         // One General hull: 1.0 kt of minerals, which is its dry mass too
         // (R-O57). Cost `Band II` by ratification; mass `Band I` by anchor.
         let general = 1.0;
@@ -1455,7 +1488,7 @@ mod tests {
         // A Medium hull, the cost ladder's own anchor.
         assert_eq!(Qty::<Cost>::new(0.1).tier(), BandTier::I);
         assert!(Kilotons::new(0.1).band() < BandTier::I.band());
-        // Crossing is explicit and costs nothing — same bits, new rungs.
+        // Crossing is explicit and costs nothing — same bits, new whole Bands.
         let price = Qty::<Cost>::new(general);
         assert_eq!(price.on_scale::<Mass>().kilotons(), price.kilotons());
     }
@@ -1465,21 +1498,21 @@ mod tests {
     /// the same class of error the types exist to prevent.
     #[test]
     fn a_band_step_is_multiplicative_not_additive() {
-        // Each rung is its ladder factor times the last, and the factors are
+        // Each whole Band is its ladder factor times the last, and the factors are
         // the ratified ones — not one shared step, which is what R-MC15
         // withdrew.
         for (n, &step) in MASS_LADDER.iter().enumerate() {
             let lo = Band::new(n as f64).in_kilotons().kilotons();
             let hi = Band::new(n as f64 + 1.0).in_kilotons().kilotons();
             let got = hi / lo;
-            assert!((got - step).abs() < 1e-9, "rung {n}→{} must step by {step}, got {got}", n + 1);
+            assert!((got - step).abs() < 1e-9, "whole Band {n}→{} must step by {step}, got {got}", n + 1);
         }
 
         // The ratified constraint is on how the factors *grow*: strictly
         // increasing, and by less than a decade each time.
         //
         // **It is a claim about the playable ladder, `I → II → III → IV`.**
-        // `MASS_LADDER[0]` is not a rung factor at all — it is the width of
+        // `MASS_LADDER[0]` is not a whole Band factor at all — it is the width of
         // `Band Empty`, the ladder's floor, which R-MC15 does not fix and which
         // is set independently per quantity (§2.6). See
         // `KILOTONS_AT_BAND_EMPTY`.
@@ -1490,11 +1523,11 @@ mod tests {
 
         // And the tie to the cost ladder is the shell model's exponent: cost
         // tracks r², the hold tracks r³. A cost ladder of 10, 20, 40 across the
-        // playable rungs — the floor is excluded for the same reason.
+        // playable whole Bands — the floor is excluded for the same reason.
         for (n, cost_step) in [10.0_f64, 20.0, 40.0].into_iter().enumerate() {
             assert!(
                 (MASS_LADDER[n + 1] - transcendental::pow(cost_step, 1.5)).abs() < 1e-9,
-                "F_mass must be F_cost^(3/2) at rung {}",
+                "F_mass must be F_cost^(3/2) at whole Band {}",
                 n + 1
             );
         }
@@ -1504,12 +1537,12 @@ mod tests {
     /// (`KILOTONS_AT_BAND_EMPTY`), so pin both halves of that: where the floor
     /// is, and that widening it left `Band I` exactly where it was. The failure
     /// this guards against is re-anchoring — moving the bottom of the ladder and
-    /// dragging every rung above it along, which would silently rescale every
+    /// dragging every whole Band above it along, which would silently rescale every
     /// mass in the engine.
     #[test]
     fn widening_band_empty_does_not_move_band_i() {
-        assert_eq!(rung_mass(0), 0.001, "Band Empty is one metric tonne");
-        assert_eq!(rung_mass(1), KILOTONS_AT_BAND_I, "Band I must not move when the floor widens");
+        assert_eq!(whole_band_mass(0), 0.001, "Band Empty is one metric tonne");
+        assert_eq!(whole_band_mass(1), KILOTONS_AT_BAND_I, "Band I must not move when the floor widens");
         for n in 1..=4 {
             let expect = match n {
                 1 => 1.0,
@@ -1517,24 +1550,34 @@ mod tests {
                 3 => 31.622_776_601_683_793 * 89.442_719_099_991_59,
                 _ => 31.622_776_601_683_793 * 89.442_719_099_991_59 * 252.982_212_813_470_36,
             };
-            assert!((rung_mass(n) - expect).abs() < 1e-9 * expect.max(1.0), "rung {n} moved: {}", rung_mass(n));
+            assert!(
+                (whole_band_mass(n) - expect).abs() < 1e-9 * expect.max(1.0),
+                "whole Band {n} moved: {}",
+                whole_band_mass(n)
+            );
         }
     }
 
     /// The bridge is piecewise now, so it has three interior joins where it
     /// could silently develop a step. It must not: the growth draw is
     /// `KT(after) − KT(before)`, and a discontinuity there is mass created or
-    /// destroyed at a rung boundary (L6).
+    /// destroyed at a whole Band boundary (L6).
     #[test]
     fn the_piecewise_bridge_is_continuous_and_monotone_across_every_join() {
-        for rung in 0..=4 {
-            let b = rung as f64;
+        for whole_band in 0..=4 {
+            let b = whole_band as f64;
             let below = Band::new(b - 1e-9).in_kilotons().kilotons();
             let at = Band::new(b).in_kilotons().kilotons();
             let above = Band::new(b + 1e-9).in_kilotons().kilotons();
-            assert!((below / at - 1.0).abs() < 1e-6, "join at rung {rung} steps from below: {below} vs {at}");
-            assert!((above / at - 1.0).abs() < 1e-6, "join at rung {rung} steps from above: {above} vs {at}");
-            assert!(below <= at && at <= above, "not monotone at rung {rung}");
+            assert!(
+                (below / at - 1.0).abs() < 1e-6,
+                "join at whole Band {whole_band} steps from below: {below} vs {at}"
+            );
+            assert!(
+                (above / at - 1.0).abs() < 1e-6,
+                "join at whole Band {whole_band} steps from above: {above} vs {at}"
+            );
+            assert!(below <= at && at <= above, "not monotone at whole Band {whole_band}");
         }
 
         // Monotone everywhere, including the extrapolated ends.
@@ -1551,7 +1594,7 @@ mod tests {
 
     /// **Band V is a comparison ceiling, not a destination.**
     ///
-    /// It exists so a bounds check has a rung one past the end instead of a
+    /// It exists so a bounds check has a whole Band one past the end instead of a
     /// magic number, and the design is that nothing in a game ever reaches it.
     /// Pinned here because an unreachable value that quietly becomes reachable
     /// is the worst kind of sentinel — every `< V` guard would keep compiling
@@ -1571,13 +1614,13 @@ mod tests {
         assert_eq!(BandTier::containing(Band::new(5.0)), BandTier::V);
     }
 
-    /// The rungs are ordered, and the order is the ladder's.
+    /// The whole Bands are ordered, and the order is the ladder's.
     #[test]
-    fn the_rungs_are_ordered_and_indexed_consistently() {
+    fn the_whole_bands_are_ordered_and_indexed_consistently() {
         for (i, t) in BandTier::ALL.iter().enumerate() {
-            let rung = i as i8 - 1; // ALL leads with the bottom sentinel
-            assert_eq!(t.index(), rung);
-            assert_eq!(t.band(), Band::new(rung as f64));
+            let whole_band = i as i8 - 1; // ALL leads with the bottom sentinel
+            assert_eq!(t.index(), whole_band);
+            assert_eq!(t.band(), Band::new(whole_band as f64));
         }
         // PLAYABLE, by contrast, is indexed by crossing count — which is what
         // `PopBands::level` relies on.
@@ -1591,7 +1634,7 @@ mod tests {
     /// **`Zero` is the bottom sentinel and nothing in a game reaches it** — the
     /// mirror of `band_v_is_one_past_the_playable_end`.
     ///
-    /// It exists because ratifying `Empty > 0` took away the rung that used to
+    /// It exists because ratifying `Empty > 0` took away the whole Band that used to
     /// mean "none of this quantity". A `> Zero` comparison now has a name to
     /// make; without one the check goes back to being a bare `0.0`, which is
     /// the whole failure mode this type exists to close.
@@ -1613,7 +1656,7 @@ mod tests {
         }
     }
 
-    /// `Empty` is the rung that is a *condition*, not a magnitude — no colony,
+    /// `Empty` is the whole Band that is a *condition*, not a magnitude — no colony,
     /// no hold, an uncolonizable world — which is why it is named rather than
     /// numbered. It sits at the ladder's origin.
     #[test]
@@ -1631,17 +1674,17 @@ mod tests {
         }
     }
 
-    /// Zero biomass is the ladder's floor — "below the first rung" — and must
+    /// Zero biomass is the ladder's floor — "below the first whole Band" — and must
     /// not be a negative infinity that poisons replicated state (design law
     /// #16). Neither may any mass *near* zero, which is the case the naive
     /// `if m <= 0` guard misses: `ln` of a denormal is about −745, finite but
     /// meaningless, and it is the value a nearly-extinct biosphere produces.
     #[test]
-    fn a_vanishing_mass_floors_at_the_bottom_rung_and_never_diverges() {
+    fn a_vanishing_mass_floors_at_the_bottom_whole_band_and_never_diverges() {
         for m in [0.0, f64::MIN_POSITIVE, 1e-300, 1e-12] {
             let b = Kilotons::new(m).in_bands();
             assert!(b.is_finite(), "{m} kt read as a non-finite Band");
-            assert_eq!(b, Band::new(BAND_FLOOR), "{m} kt should floor at the bottom rung");
+            assert_eq!(b, Band::new(BAND_FLOOR), "{m} kt should floor at the bottom whole Band");
         }
     }
 
@@ -1669,20 +1712,20 @@ mod tests {
         assert!(population_mass(Band::new(1e-9)) > Kilotons::ZERO);
     }
 
-    /// The exact reading the approximation replaced: `n + ln(m / rung_n) /
-    /// ln(step_n)`, floored at zero. The reference for the three tests below.
+    /// The exact reading the approximation replaced: `n + ln(m / m_n) /
+    /// ln(step_n)`, `m_n` the amount at whole Band `n`, floored at zero. The reference for the three tests below.
     fn exact_band<S: Scale>(m: f64) -> f64 {
         if m <= 0.0 {
             return BAND_FLOOR;
         }
         let mut n = 0usize;
-        while n < 3 && m >= Qty::<S>::rung(n + 1) {
+        while n < 3 && m >= Qty::<S>::whole_band(n + 1) {
             n += 1;
         }
-        (n as f64 + transcendental::ln(m / Qty::<S>::rung(n)) / S::LN_STEPS[n]).max(BAND_FLOOR)
+        (n as f64 + transcendental::ln(m / Qty::<S>::whole_band(n)) / S::LN_STEPS[n]).max(BAND_FLOOR)
     }
 
-    /// Masses log-uniform from a millionth of the floor rung to a thousand
+    /// Masses log-uniform from a millionth of the floor whole Band to a thousand
     /// times the top one — every segment, both extrapolations, and the floor.
     fn sweep(n: usize) -> impl Iterator<Item = f64> {
         let (lo, hi) = (transcendental::ln(1e-9), transcendental::ln(1e9));
@@ -1702,27 +1745,38 @@ mod tests {
         assert!(worst > 0.0, "the sweep never reached the approximation");
     }
 
-    /// A rung reads its own number, exactly — so no tier flips at its own edge.
+    /// A whole Band reads its own number, exactly — so no tier flips at its own edge.
     #[test]
-    fn a_rung_reads_a_whole_number() {
+    fn a_band_prints_as_a_whole_band_and_a_fraction() {
+        assert_eq!(Band::new(2.785).to_string(), "Band II .785");
+        assert_eq!(Band::new(3.0).to_string(), "Band III");
+        assert_eq!(Band::new(0.5).to_string(), "Band Empty .500");
+        assert_eq!(Band::new(4.2).to_string(), "Band IV .200");
+        assert_eq!(Band::new(1.0625).to_string(), "Band I .063");
+        assert_eq!(Band::new(2.9996).to_string(), "Band III", "rounds onto the whole Band");
+        assert_eq!(Band::new(-0.25).to_string(), "Band -0.250", "below Empty there is no whole Band to name");
+    }
+
+    #[test]
+    fn a_whole_band_reads_as_an_integer() {
         for n in 0..=4 {
-            assert_eq!(Kilotons::new(Kilotons::rung(n)).band().bands(), n as f64, "mass rung {n}");
-            assert_eq!(Price::new(Price::rung(n)).band().bands(), n as f64, "cost rung {n}");
-            assert_eq!(Kilotons::at_tier(BandTier::PLAYABLE[n]).kilotons(), Kilotons::rung(n));
+            assert_eq!(Kilotons::new(Kilotons::whole_band(n)).band().bands(), n as f64, "mass whole Band {n}");
+            assert_eq!(Price::new(Price::whole_band(n)).band().bands(), n as f64, "cost whole Band {n}");
+            assert_eq!(Kilotons::at_tier(BandTier::PLAYABLE[n]).kilotons(), Kilotons::whole_band(n));
         }
     }
 
-    /// `nearest_rung_from` is `band_from(..).round()` without the reading. The
+    /// `nearest_whole_band_from` is `band_from(..).round()` without the reading. The
     /// two can only disagree for an amount within rounding of a geometric
     /// midpoint, so the test counts disagreements rather than forbidding them,
     /// and requires they sit at a midpoint.
     #[test]
-    fn the_nearest_rung_is_the_rounded_reading_without_the_reading() {
+    fn the_nearest_whole_band_is_the_rounded_reading_without_the_reading() {
         let anchor = 0.37; // a runtime anchor unlike the scale's own
         let mut disagree = 0;
         for m in sweep(200_000) {
             let exact = exact_band::<Cost>(m * (Cost::BAND_I / anchor)).round().max(0.0) as usize;
-            let fast = Price::new(m).nearest_rung_from(anchor);
+            let fast = Price::new(m).nearest_whole_band_from(anchor);
             if exact != fast {
                 disagree += 1;
                 let frac = exact_band::<Cost>(m * (Cost::BAND_I / anchor)).fract();
@@ -1730,7 +1784,7 @@ mod tests {
             }
         }
         assert!(disagree <= 2, "{disagree} disagreements");
-        assert_eq!(Price::ZERO.nearest_rung_from(anchor), 0);
+        assert_eq!(Price::ZERO.nearest_whole_band_from(anchor), 0);
     }
 
     /// The cost-to-mass map at equal Band position, held against the round

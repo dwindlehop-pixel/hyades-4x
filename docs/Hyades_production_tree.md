@@ -63,8 +63,8 @@ is simultaneously valuable, visible, and destructible without killing people.
 That is what gives Warfare something to hit that is neither hulls nor a
 population (`Hyades_warfare_tree.md` §4).
 
-**1.4 `RATIFIED` — the rung ladder is scale-free.** Cost and output are both
-geometric in the stock, so **a rung pays for itself in 1.8 years at every rung**.
+**1.4 `RATIFIED` — the whole Band ladder is scale-free.** Cost and output are both
+geometric in the stock, so **a whole Band pays for itself in 1.8 years at every whole Band**.
 **R-O85 is resolved as false**: infrastructure was never priced out of reach.
 Counted per decision on the standard bed, 0% of decisions are gated at the
 ceiling, 0.7–0.9% are outbid, and **98.3% simply cannot pay the bill** — of which
@@ -160,7 +160,7 @@ unbounded; `fab_cap = 0.1` bounds the rate **per berth**.
 
 Before **R-O88** one symbol did both jobs and the build-wide axis was **closed at
 two berths** — 10¹² kt of infrastructure still bought two — while §3.2 of the
-industry spec said the axis "scales without limit". Berths at rung II went
+industry spec said the axis "scales without limit". Berths at whole Band II went
 **2 → 17**; **fleet-years +26–34%** on both seeds, and throughput *improved*
 because a quarter of all events had been decisions that declined and stalled.
 
@@ -321,7 +321,7 @@ industry landings. The build-mix census (`examples/bank_mix`) is what actually
 caught every defect on that branch. Appendix §B.5.
 
 **6.3 `RATIFIED` — the mechanism check is the payable fraction.** `bank_mix`
-reports what share of banked ore can actually pay a rung. It held at **0.043
+reports what share of banked ore can actually pay a whole Band. It held at **0.043
 through three interventions** that each claimed to move it and moved it to 0.043,
 and finally moved to 0.052 under R-O92. **An objective answers "did anything
 change"; only a mechanism check answers "did the thing I described change".**
@@ -363,7 +363,7 @@ world. **R-IND8 — open**, and it is the join with Warfare.
 | R-IND19 | the deposit law is normalized by `N` — output is not richness squared |
 | R-O57 | dry mass *is* mineral cost |
 | R-O58 | the shell model — cost on area, hold on volume |
-| R-O85 | **resolved false** — the rung ladder is scale-free; color is the constraint |
+| R-O85 | **resolved false** — the whole Band ladder is scale-free; color is the constraint |
 | R-O88 | `slips` is quantity, `fab_cap` is quality |
 | R-O94 | a hauler's hull is a forecast under a liquidity cap |
 | R-MC15 | `F_mass = F_cost^(3/2)` |

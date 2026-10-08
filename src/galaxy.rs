@@ -3,31 +3,30 @@
 //! Per `Hyades_autopilot_colonization_growth.md` §1 the simulation has *no hexes*:
 //! each star system is one point ("a planet"). This module produces exactly that
 //! field plus the seeded homeworlds. The command-view hex tiling
-//! (`Hyades_galaxy_and_autopilot.md` §1–2) is a *presentation* concern and is
-//! deliberately **not** generated here — but its **scale** is authoritative for
-//! sizing the continuous field. `Hyades_galaxy_and_autopilot.md` §1 originally
-//! stated `s ∈ [50,250] ly` per side (R-G1 explicitly left "final `s` and
-//! depth" open); this conversation revised the *side* down to **10 ly**,
-//! measured against real simulation throughput — see
-//! [`GalaxyConfig::hex_side_ly`] — while keeping the stated prism depth
-//! (`1×–5× s`, "start `3×`") as-is. The playable galaxy still spans a
-//! **hex-grid radius** built from the fair-count starting cluster (§2's
-//! tri-hex clique / ring / radius-`r` ring — "three hexes for a minimum
-//! player count start") plus **2–4 hex-steps outward in each direction**.
-//! [`GalaxyConfig::hex_grid_radius`] turns that into one number;
+//! (`Hyades_galaxy_and_autopilot.md` §1–2) is a *presentation* concern, and
+//! nothing here reads it: [`GalaxyConfig::hex_side_ly`] (70 ly a side) is
+//! carried for the command view only (R-G1). Ore color varies at the scale
+//! of the **color sites** (§4.3) — randomly placed, with their own spacing and
+//! width.
+//!
+//! The star field's **extent** is sized separately, by a **ring step** of
+//! [`GalaxyConfig::ring_step_ly`] = 10 ly — the hex side before the hex was
+//! resized, kept under its own name so the planet field (every position, and
+//! the count) did not move when the hex did. The playable galaxy spans a
+//! **ring radius** built from the fair-count starting cluster (§2's tri-hex
+//! clique / ring / radius-`r` ring) plus **2–4 ring steps outward in each
+//! direction**. [`GalaxyConfig::ring_radius`] turns that into one number;
 //! [`GalaxyConfig::xy_scale`]/[`GalaxyConfig::z_scale`] turn *that* into the
 //! two physical scale lengths below. Star **count** is not an independent
 //! knob — it's *derived* from those scales plus the target local spacing
-//! (kept exactly, per this conversation: *"lots of empty space between
-//! planets does not create drama and tension... keep the 7 ly mean spacing
-//! and reduce the size of a hex"* — not the earlier turn's planet-count
-//! cap, which diluted density instead and was reversed), so more hexes
-//! (more players) means more stars at the same density, not the same stars
-//! spread thinner.
+//! (kept exactly: *"lots of empty space between planets does not create drama
+//! and tension... keep the 7 ly mean spacing"*), so more ring steps (more
+//! players) means more stars at the same density, not the same stars spread
+//! thinner.
 //!
 //! What the generator encodes from the world model:
 //! * **Star positions — XY radially Poisson (exponential-disk profile), Z
-//!   exponential**, independently scaled from the hex grid (previous turns
+//!   exponential**, independently scaled from the ring radius (previous turns
 //!   tied both to one shared length; that was this module's own invention,
 //!   not what the hex spec actually says — corrected here). Not a hard-edged
 //!   uniform disc (no real galaxy has a wall) and not isotropic (an isotropic
@@ -38,7 +37,7 @@
 //!   `Σ(r) ∝ exp(−r/L_xy)` — the radial marginal of that is `Gamma(shape=2,
 //!   scale=L_xy)` (area grows as `r`, so density-times-area peaks at
 //!   `r=L_xy`, not at the center). Z is a plain two-sided exponential at its
-//!   own scale `L_z`, set from the hex-prism depth. Mean *near-typical-
+//!   own scale `L_z`, a multiple of the ring step. Mean *near-typical-
 //!   radius* nearest-neighbor spacing is targeted at
 //!   [`GalaxyConfig::star_spacing_ly`] (default 7 ly, matched to real
 //!   interstellar spacing near a Sun-like star —
@@ -47,8 +46,9 @@
 //!   — see [`GalaxyConfig::derived_planet_count`] for the derivation, an
 //!   approximation validated empirically in `tests`, not a closed form for
 //!   the true inhomogeneous process.
-//! * **§4.3 tier-1 field** — Gaussian in XY around each hue's hotspot ×
-//!   exponential decay in Z, matching the star field's own shape.
+//! * **§4.3 tier-1 field** — randomly placed color sites, each one hue weighted
+//!   by the three hue hotspots, × exponential decay in Z, matching the star
+//!   field's own shape.
 //! * **§4.4 anticorrelation** — metal-rich planets trend low-habitability; the
 //!   colony-vs-mine tension falls out of this.
 //! * **§3 homeworlds** — identical `4/4/2` shape (`K = min = 2`), super-aligned
@@ -75,9 +75,9 @@ const GAMMA_4_3: f64 = 0.892_979_511_569_249;
 /// exact sampler for that shape) with a uniform angle, giving the
 /// exponential-disk radial profile; Z via a plain two-sided `Exponential`
 /// at its own, independently-set `z_scale`.
-fn sample_flattened_field(rng: &mut Rng, xy_scale: f64, z_scale: f64) -> Vec3 {
+fn sample_flattened_field(rng: &mut Rng, xy_scale: f64, z_scale: f64, arc: f64) -> Vec3 {
     let r = -xy_scale * (transcendental::ln(rng.unit().max(1e-12)) + transcendental::ln(rng.unit().max(1e-12)));
-    let theta = rng.range(0.0, core::f64::consts::TAU);
+    let theta = rng.range(0.0, arc);
     let z = {
         let mag = -z_scale * transcendental::ln(rng.unit().max(1e-12));
         if rng.unit() < 0.5 {
@@ -177,72 +177,122 @@ impl Planet {
     }
 }
 
-/// **Color sites** (§4.3; the author: a hex has a distinct slant or two). A
-/// jittered square lattice, [`GalaxyConfig::color_site_spacing_hex`] hex sides
-/// apart, covering the star field. Each site is one hue, drawn in proportion
-/// to the three hotspots' large-scale factors there, with a peak of
-/// `mineral_peak` times that hue's factor — so the galaxy keeps its hue
-/// regions and its `Band IV` seams, and a world's deposit is the Gaussian of
-/// its nearest site of each hue. Generation only; nothing is stored.
+/// `√3`, written out: `f64::sqrt` is exact, but a constant needs no call.
+const SQRT_3: f64 = 1.732_050_807_568_877_2;
+
+/// A color site reaches a world only within this many of its widths: past
+/// `4σ` its Gaussian is under 3.4e-4 of its peak, under 0.0014 Band.
+const COLOR_SITE_REACH_SIGMAS: f64 = 4.0;
+
+/// **Color sites** (§4.3; the author: color varies at the scale of an
+/// empire). Placed at random, uniformly over the square the star field fits
+/// in, one per [`GalaxyConfig::color_site_spacing_ly`]² of area. Each site is
+/// one hue, drawn in proportion to the three hotspots' large-scale factors
+/// there, with a peak of `mineral_peak · (floor + (1 − floor) · w / w_max)`:
+/// `w` the hue's factor at the site and `w_max` the largest factor among the
+/// sites of that hue, so each hue's strongest site reaches `mineral_peak` —
+/// `Band IV` (R-O82) — wherever the draw falls relative to its hotspot. A
+/// world's deposit in a hue is the Gaussian, of width
+/// [`GalaxyConfig::color_site_sigma_ly`], of its strongest site of that hue.
+/// The command-view hex plays no part. Generation only; nothing is stored.
 struct ColorSites {
-    spacing: f64,
     sigma: f64,
-    /// Cells per side is `2·half + 1`, centered on the origin.
+    /// Side of a lookup bucket, ly — at least the reach, so a world's sites
+    /// all lie in the 3×3 buckets around it.
+    bucket: f64,
+    /// Buckets per side is `2·half + 1`, centered on the origin.
     half: i64,
-    /// Per cell: the site's hue, position and peak Band.
-    cells: Vec<(Basic, f64, f64, f64)>,
+    /// Per bucket, the indices of the sites in it, in draw order.
+    buckets: Vec<Vec<u32>>,
+    /// Per site: its hue, position and peak Band.
+    sites: Vec<(Basic, f64, f64, f64)>,
 }
 
 impl ColorSites {
-    fn generate(config: &GalaxyConfig, hotspots: &Hotspots, hotspot_sigma: f64, mut rng: Rng) -> ColorSites {
-        let spacing = (config.hex_side_ly * config.color_site_spacing_hex).max(1e-6);
+    fn generate(
+        config: &GalaxyConfig,
+        hotspots: &Hotspots,
+        hotspot_sigma: f64,
+        mut rng: Rng,
+        planted: &[(Basic, f64, f64, f64)],
+    ) -> ColorSites {
         // The radial profile is Gamma(2, L_xy): ten scale lengths hold all
-        // but ~5e-4 of the stars, and a world past the lattice reads trace.
-        let half = (10.0 * config.xy_scale() / spacing).ceil() as i64;
-        let side = 2 * half + 1;
-        let mut cells = Vec::with_capacity((side * side) as usize);
-        for iy in -half..=half {
-            for ix in -half..=half {
-                let x = (ix as f64 + 0.5 + 0.7 * (rng.unit() - 0.5)) * spacing;
-                let y = (iy as f64 + 0.5 + 0.7 * (rng.unit() - 0.5)) * spacing;
-                let w = Basic::ALL.map(|b| hotspots.factor(b, x, y, hotspot_sigma));
-                let total: f64 = w.iter().sum();
-                let mut pick = rng.unit() * total;
-                let mut hue = Basic::ALL[2];
-                for (k, &b) in Basic::ALL.iter().enumerate() {
-                    if pick < w[k] {
-                        hue = b;
-                        break;
-                    }
-                    pick -= w[k];
+        // but ~5e-4 of the stars, and a world past the square reads trace.
+        let extent = 10.0 * config.xy_scale();
+        let spacing = config.color_site_spacing_ly.max(1e-6);
+        let count = ((2.0 * extent) * (2.0 * extent) / (spacing * spacing)).round().max(3.0) as usize;
+        let floor = config.color_site_floor.clamp(0.0, 1.0);
+        let mut sites = Vec::with_capacity(count);
+        for _ in 0..count {
+            let x = rng.range(-extent, extent);
+            let y = rng.range(-extent, extent);
+            let w = Basic::ALL.map(|b| hotspots.factor(b, x, y, hotspot_sigma));
+            let total: f64 = w.iter().sum();
+            let mut pick = rng.unit() * total;
+            let mut hue = Basic::ALL[2];
+            for (k, &b) in Basic::ALL.iter().enumerate() {
+                if pick < w[k] {
+                    hue = b;
+                    break;
                 }
-                let floor = config.color_site_floor.clamp(0.0, 1.0);
-                cells.push((hue, x, y, config.mineral_peak * (floor + (1.0 - floor) * w[hue as usize])));
+                pick -= w[k];
+            }
+            sites.push((hue, x, y, w[hue as usize]));
+        }
+        // Normalize each hue to its strongest site. With sites far apart the
+        // nearest one can sit far from its hotspot, and the peak is a Band:
+        // the one site that happened to land closest would hold most of the
+        // galaxy's ore in one hue.
+        let mut w_max = [0.0f64; 3];
+        for &(hue, _, _, w) in &sites {
+            w_max[hue as usize] = w_max[hue as usize].max(w);
+        }
+        for site in &mut sites {
+            let top = w_max[site.0 as usize];
+            let share = if top > 0.0 { site.3 / top } else { 0.0 };
+            site.3 = config.mineral_peak * (floor + (1.0 - floor) * share);
+        }
+        // Planted sites (`Homeworlds::ColorCentered`) keep the peak they were
+        // given: they are what guarantees a homeworld its threshold.
+        sites.extend_from_slice(planted);
+        let sigma = config.color_site_sigma_ly.max(1e-6);
+        let bucket = COLOR_SITE_REACH_SIGMAS * sigma;
+        let half = (extent / bucket).ceil() as i64;
+        let width = 2 * half + 1;
+        let mut buckets = vec![Vec::new(); (width * width) as usize];
+        for (i, &(_, x, y, _)) in sites.iter().enumerate() {
+            let (bx, by) = ((x / bucket).floor() as i64, (y / bucket).floor() as i64);
+            if bx.abs() <= half && by.abs() <= half {
+                buckets[((by + half) * width + (bx + half)) as usize].push(i as u32);
             }
         }
-        ColorSites { spacing, sigma: spacing * config.color_site_sigma_frac, half, cells }
+        ColorSites { sigma, bucket, half, buckets, sites }
     }
 
     /// Each hue's Band at `(x, y)` before the vertical decay and noise: its
-    /// strongest site among the 5×5 cells around the point (a site two cells
-    /// out is at least 1.3 spacings away, under 4e-4 of its peak at the
-    /// default width).
+    /// strongest site within reach.
     fn bands_at(&self, x: f64, y: f64) -> [f64; 3] {
-        let side = 2 * self.half + 1;
-        let cx = (x / self.spacing).floor() as i64;
-        let cy = (y / self.spacing).floor() as i64;
+        let width = 2 * self.half + 1;
+        let (bx, by) = ((x / self.bucket).floor() as i64, (y / self.bucket).floor() as i64);
+        let reach = COLOR_SITE_REACH_SIGMAS * self.sigma;
         let mut out = [0.0f64; 3];
-        for iy in (cy - 2)..=(cy + 2) {
-            for ix in (cx - 2)..=(cx + 2) {
-                if ix < -self.half || ix > self.half || iy < -self.half || iy > self.half {
+        for cy in (by - 1)..=(by + 1) {
+            for cx in (bx - 1)..=(bx + 1) {
+                if cx.abs() > self.half || cy.abs() > self.half {
                     continue;
                 }
-                let (hue, sx, sy, peak) = self.cells[((iy + self.half) * side + (ix + self.half)) as usize];
-                let (dx, dy) = (x - sx, y - sy);
-                let band = peak * transcendental::exp(-(dx * dx + dy * dy) / (2.0 * self.sigma * self.sigma));
-                let k = hue as usize;
-                if band > out[k] {
-                    out[k] = band;
+                for &i in &self.buckets[((cy + self.half) * width + (cx + self.half)) as usize] {
+                    let (hue, sx, sy, peak) = self.sites[i as usize];
+                    let (dx, dy) = (x - sx, y - sy);
+                    let d2 = dx * dx + dy * dy;
+                    if d2 > reach * reach {
+                        continue;
+                    }
+                    let band = peak * transcendental::exp(-d2 / (2.0 * self.sigma * self.sigma));
+                    let k = hue as usize;
+                    if band > out[k] {
+                        out[k] = band;
+                    }
                 }
             }
         }
@@ -286,7 +336,7 @@ impl Hotspots {
 pub struct PopBands {
     /// The four internal edges, **as masses**. They are *generated* as ladder
     /// positions — the Weibull quantiles are Gibrat-spaced, which is a
-    /// statement about rungs — and stored as the population each edge stands
+    /// statement about whole Bands — and stored as the population each edge stands
     /// for, so the comparison in [`PopBands::level`] is a comparison of people
     /// against people (T-64).
     pub edges: [Kilotons; 4],
@@ -315,8 +365,8 @@ impl PopBands {
     #[inline]
     pub fn level(&self, population: Kilotons) -> BandTier {
         // The edges are the *reached* thresholds, so the count of crossings is
-        // the rung index. `BandTier::PLAYABLE` is indexed rather than matched so a
-        // sixth rung cannot silently fall off the end.
+        // the whole Band index. `BandTier::PLAYABLE` is indexed rather than matched so a
+        // sixth whole Band cannot silently fall off the end.
         BandTier::PLAYABLE[self.edges.iter().filter(|&&e| population >= e).count()]
     }
 }
@@ -327,6 +377,42 @@ impl Default for PopBands {
     }
 }
 
+/// **The ground each seat starts on** (galaxy §2, T-147). On both identical
+/// kinds one wedge of `1/N` of the disk is generated and turned to each of the
+/// `N` seats, and the planet count is rounded down to a multiple of `N`;
+/// homeworlds and their companions are the same on every kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ground {
+    /// One field generated over the whole disk (the shipped default).
+    Random,
+    /// The wedge turned to every seat with the same colors, so each archetype
+    /// starts beside the same deposits as every other. Any seat count above 1.
+    Identical,
+    /// The wedge turned to every seat with its colors stepped Cyan → Magenta →
+    /// Yellow → Cyan once per seat, as the archetypes step (§3), so each seat's
+    /// neighborhood is the next one's with its colors cycled. Seat counts that
+    /// are multiples of 3.
+    ColorRotated,
+}
+
+/// **How each seat's homeworld is made** (galaxy §3, T-147).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Homeworlds {
+    /// The habitable world holds a trace of every basic, and beside it one
+    /// companion world is rich in each of the archetype's two rich basics
+    /// (the shipped default, `RATIFIED`).
+    Trio,
+    /// The habitable world alone, holding under `Band I` of every basic (each
+    /// reading drawn uniformly in `[0, 1)`), with one color site of each hue
+    /// planted at [`GalaxyConfig::homeworld_site_distance_ly`], 120° apart, at
+    /// peak [`GalaxyConfig::homeworld_site_band`], and one outpost world of
+    /// each hue on the bearing to its site at
+    /// [`GalaxyConfig::homeworld_outpost_distance_ly`], holding
+    /// [`GalaxyConfig::homeworld_outpost_band`] of that color alone (`OPEN`,
+    /// T-147).
+    ColorCentered,
+}
+
 /// Every tunable knob of galaxy generation. Defaults are placeholders pending
 /// R-G/R-M/R-P; the MC balancer sweeps them.
 #[derive(Clone, Copy, Debug)]
@@ -334,47 +420,44 @@ pub struct GalaxyConfig {
     /// Seat count. Must be a *fair* count (2, 3, 6, 12) — vertex-transitive (§2).
     pub players: usize,
     /// Number of wild (un-seeded) planets scattered in the field. Defaulted
-    /// by [`Self::new`] via [`Self::derived_planet_count`] — the hex grid
-    /// and target spacing are what actually size the galaxy now (confirmed
-    /// this conversation), star count follows from them — but left as a
+    /// by [`Self::new`] via [`Self::derived_planet_count`] — the ring radius
+    /// and target spacing are what size the galaxy, star count follows from
+    /// them — but left as a
     /// plain mutable field, like everything else here, for direct override.
     pub planet_count: usize,
 
-    /// Hex side length (ly) — the command-view hex-prism footprint
-    /// (`Hyades_galaxy_and_autopilot.md` §1 originally stated `s ∈
-    /// [50,250] ly`; **revised down** this conversation on measured
-    /// simulation-speed grounds — R-G1 was always explicitly open on the
-    /// final value, and *"lots of empty space between planets does not
-    /// create drama and tension"* independently favors the smaller end
-    /// anyway). **10 ly**, chosen from `examples/bench_hex_size.rs`'s
-    /// measured throughput: at the 12-player worst case this clears the
-    /// confirmed 2.5-simulated-years/real-second target by an **847×**
-    /// margin (2,116 yr/s measured), leaving headroom for combat/loadout
-    /// costs that don't exist in the engine yet. The empirically-
-    /// extrapolated crossover (where throughput would actually drop to
-    /// 2.5 yr/s) is ≈47 ly, from the measured local scaling trend, not a
-    /// guess — so this isn't a photo-finish choice, it's the smaller,
-    /// higher-tension end of a wide comfortably-safe range. Hexes are
-    /// never represented in the engine itself ("no hexes in the sim" —
-    /// `Hyades_autopilot_colonization_growth.md` §1); this exists purely
-    /// to size the continuous star field to the *right scale*.
+    /// **Hex side, ly — 70: the command view's hex, read by no engine code**
+    /// (R-G1; the author: "only intended to be a human legible interface").
+    /// Flat-top, one centered on the galactic center, `√3 · 70` = 121.2 ly
+    /// across flats ([`Self::hex_across_flats_ly`]). From the author's target
+    /// of hexes per player — 3–6 at 3 seats, 6–12 at 6 and 12, 3–6 at 18 —
+    /// and a human-scale number; no width meets all four (`examples/hex_census`,
+    /// appendix §D.32; R-G5, open). Nothing generated or simulated depends on
+    /// it, so changing it changes no run.
     pub hex_side_ly: f64,
-    /// Hex-prism depth as a multiple of `hex_side_ly` (§1: `1×–5×`, *"start
-    /// 3×"* — not a placeholder, the spec's own stated default).
-    pub hex_depth_multiple: f64,
-    /// How many hex-steps the playable galaxy extends beyond the starting
-    /// cluster, in each direction (confirmed this conversation: *"at least
-    /// two and maybe as many as four hexes... outward... in each
-    /// direction"* — 3 here is the middle of that stated range).
-    pub hex_rings_beyond_start: f64,
+    /// **Ring step, ly — 10.** The length that sizes the star field's extent:
+    /// [`Self::xy_scale`] is [`Self::ring_radius`] ring steps and
+    /// [`Self::z_scale`] is [`Self::depth_multiple`] of them. It was the hex
+    /// side until the hex was resized to the scale of an empire (R-G1); it
+    /// keeps the value so the planet field — every position, and the count —
+    /// is unchanged. 10 ly was chosen against measured throughput (at the time
+    /// 2,116 yr/s at 12 seats, a figure `AGENTS.md` §7 records as stale).
+    pub ring_step_ly: f64,
+    /// Vertical scale length as a multiple of [`Self::ring_step_ly`] — `3`,
+    /// carried from the prism depth `1×–5×` ("start `3×`") of the old 10-ly hex.
+    pub depth_multiple: f64,
+    /// How many ring steps the playable galaxy extends beyond the starting
+    /// cluster, in each direction (*"at least two and maybe as many as four
+    /// ... outward ... in each direction"* — 3 is the middle of that range).
+    pub rings_beyond_start: f64,
 
     /// Target **mean near-typical-radius nearest-neighbor spacing** (ly) of
     /// the star field. Default 7 ly ([real interstellar spacing runs roughly
     /// 4–7 ly by method](https://www.astronomy.com/science/how-close-can-stars-get-to-each-other-in-galaxy-cores/)).
-    /// No longer what sizes the galaxy (the hex grid does, above) — this now
-    /// sizes [`Self::derived_planet_count`] instead, given the hex-derived
-    /// scale, so more hexes at the same target spacing means more stars, not
-    /// the same stars spread thinner.
+    /// No longer what sizes the galaxy (the ring radius does, above) — this
+    /// now sizes [`Self::derived_planet_count`] instead, given the ring-derived
+    /// scale, so more ring steps at the same target spacing means more stars,
+    /// not the same stars spread thinner.
     pub star_spacing_ly: f64,
 
     /// Radius of the hue-hotspot ring, as a **fraction of the mean XY
@@ -404,17 +487,15 @@ pub struct GalaxyConfig {
     /// shrink.
     pub mineral_peak: f64,
 
-    /// **Spacing of the color sites, in hex sides** (§4.3; the author: "size
-    /// the color regions so a hex has a distinct slant or two"). The three hue
-    /// hotspots set where each hue is strong across the galaxy; inside that
-    /// envelope the ore sits at color sites on a jittered lattice this far
-    /// apart, each one hue, so a world's deposit leans to the hue of its
-    /// nearest site or two. **Placeholder**: `1.0`, one site per hex side.
-    pub color_site_spacing_hex: f64,
-    /// Width of a color site's Gaussian, as a fraction of the site spacing.
-    /// At `0.5` two sites of different hue overlap little, so a world between
-    /// them carries both and a world beside one carries one. **Placeholder.**
-    pub color_site_sigma_frac: f64,
+    /// **Mean spacing of the color sites, ly**: one site per spacing² of area,
+    /// placed at random (§4.3). With the width below, it is the scale at which
+    /// ore color varies — the author's ruling is that it varies at the scale
+    /// of an empire. **Placeholder** (appendix §D.33).
+    pub color_site_spacing_ly: f64,
+    /// **Width of a color site's Gaussian, ly** (its σ, on the Band). At half
+    /// the spacing, a world midway between two sites carries 0.61 of each
+    /// peak and a world beside one carries one. **Placeholder** (§D.33).
+    pub color_site_sigma_ly: f64,
     /// **The floor on a color site's peak**, as a fraction of `mineral_peak`.
     /// The hotspots' envelope falls to nothing across most of the disk, and
     /// with it every color, so a region far from the hue centers had no hue at
@@ -427,8 +508,14 @@ pub struct GalaxyConfig {
     /// (§4.4, R-M4). `0` = independent, `1` = metal-rich worlds are dead.
     pub anticorrelation: f64,
 
-    /// Radius of the homeworld ring, as a fraction of the mean XY radius (§2).
-    pub homeworld_ring_frac: f64,
+    /// **How far the homeworld ring is drawn in**, ly: the outermost
+    /// homeworld stands this far inward of its hex's center, toward the
+    /// galactic center, and every other homeworld by the same factor
+    /// ([`Self::homeworld_positions`]). Must be under the hex's inradius
+    /// (60.6 ly) so every homeworld stays in its own hex. **Placeholder**
+    /// `25`: at 3 seats it puts the homeworlds 45 ly from the center, where
+    /// the ring stood before homeworlds were placed by hex (T-147).
+    pub homeworld_inset_ly: f64,
     /// **A homeworld is a trio** (the author's ruling): the habitable world
     /// where the seat's population grows — and where its forge will stand —
     /// holding only a trace of ore, and two companion worlds beside it, one
@@ -459,6 +546,43 @@ pub struct GalaxyConfig {
     /// Weibull shape for the pop bands (§5.1, R-P1).
     pub weibull_k: f64,
 
+    /// **What ground each seat starts on** (the author's target: card-free, a
+    /// standard deviation of about 20 colonies between empires). See
+    /// [`Ground`]. **`OPEN`** (T-147).
+    pub ground: Ground,
+
+    /// **How each seat's homeworld is made.** See [`Homeworlds`]. **`OPEN`**
+    /// (T-147).
+    pub homeworlds: Homeworlds,
+    /// **The fair start on random ground**, ly: on [`Ground::Random`] the wild
+    /// worlds within this distance of each seat's homeworld are seat 0's,
+    /// turned to the seat and with their colors stepped once per seat as the
+    /// archetypes step (as on [`Ground::ColorRotated`]); the field past it
+    /// stays random. `0` turns it off. Must stay under half the homeworld
+    /// spacing (77.9 ly at 3 seats) or two seats' starts overlap.
+    /// **`OPEN`** (T-147), placeholder `0`.
+    pub fair_start_ly: f64,
+    /// Under [`Homeworlds::ColorCentered`], the distance from a homeworld to
+    /// each of its three planted color sites, ly. **Placeholder.**
+    pub homeworld_site_distance_ly: f64,
+    /// Under [`Homeworlds::ColorCentered`], the peak (a Band reading) of each
+    /// planted site — the least each color reaches beside a homeworld.
+    /// **Placeholder** (`Band 3.0`, the trio companions' density).
+    pub homeworld_site_band: f64,
+    /// Under [`Homeworlds::ColorCentered`], the distance from a homeworld to
+    /// each of its three planted outposts, ly — one per hue, on the bearing to
+    /// that hue's planted site. **Placeholder.**
+    pub homeworld_outpost_distance_ly: f64,
+    /// Under [`Homeworlds::ColorCentered`], the deposit (a Band reading) of
+    /// each planted outpost in its one color. **Placeholder** (`Band I`).
+    pub homeworld_outpost_band: f64,
+    /// **A homeworld's starting population**, a whole Band and a fraction of
+    /// the way to the next: `Band II .785` (`RATIFIED`, the author's ruling,
+    /// T-147), 1,076 kt. It sets the first forge's date — a forge stands at
+    /// population `Band IV`, and growth is the logistic toward the
+    /// homeworld's ceiling — at about 400 yr (appendix §D.42).
+    pub homeworld_start_population: (BandTier, f64),
+
     pub seed: u64,
 }
 
@@ -468,41 +592,69 @@ impl GalaxyConfig {
         let mut cfg = GalaxyConfig {
             players,
             planet_count: 0, // set below, once the rest of self exists
-            hex_side_ly: 10.0,
-            hex_depth_multiple: 3.0,
-            hex_rings_beyond_start: 3.0,
+            hex_side_ly: 70.0,
+            ring_step_ly: 10.0,
+            depth_multiple: 3.0,
+            rings_beyond_start: 3.0,
             star_spacing_ly: 7.0,
             hotspot_ring_frac: 0.55,
             hotspot_sigma_frac: 0.42,
             mineral_peak: 4.0,
-            color_site_spacing_hex: 1.0,
-            color_site_sigma_frac: 0.5,
+            color_site_spacing_ly: 10.0,
+            color_site_sigma_ly: 5.0,
             color_site_floor: 0.5,
             anticorrelation: 0.7,
-            homeworld_ring_frac: 0.5,
+            homeworld_inset_ly: 25.0,
             homeworld_companion_density: 3.0,
             homeworld_companion_ly: 2.0,
             homeworld_companion_habitability: 0.5,
             homeworld_ceiling: 4.2,
             weibull_k: 1.4,
+            ground: Ground::Random,
+            homeworlds: Homeworlds::Trio,
+            fair_start_ly: 0.0,
+            homeworld_site_distance_ly: 10.0,
+            homeworld_site_band: 3.0,
+            homeworld_outpost_distance_ly: 5.0,
+            homeworld_outpost_band: 1.0,
+            homeworld_start_population: (BandTier::II, 0.785),
             seed,
         };
         cfg.planet_count = cfg.derived_planet_count();
         cfg
     }
 
+    /// How many turns of the wedge make the disk: `N` on identical ground (at
+    /// a seat count that is a multiple of 3 when the colors step, since the
+    /// step closes only after three seats), `1` otherwise.
+    pub fn symmetry_turns(&self) -> usize {
+        let closes = match self.ground {
+            Ground::Random => false,
+            Ground::Identical => self.players > 1,
+            Ground::ColorRotated => self.players.is_multiple_of(3) && self.players > 0,
+        };
+        // Homeworlds stand at hex centers (§2), and a hex ring of radius 2 or
+        // more repeats every 60°, not every seat: at 12 and 18 seats each turn
+        // of the wedge carries two or three seats.
+        if closes {
+            self.players.min(6)
+        } else {
+            1
+        }
+    }
+
     pub fn pop_bands(&self) -> PopBands {
         PopBands::from_weibull(self.weibull_k, 4.0)
     }
 
-    /// Hex-grid radius (in hex-steps) of the **starting cluster** for
+    /// Radius (in ring steps) of the **starting cluster** for
     /// `players` seats — a *scale* reference, not the exact vertex-
     /// transitive topology from `Hyades_galaxy_and_autopilot.md` §2 (that's
     /// a command-view rendering concern, out of scope for sizing the
     /// continuous sim). *"Three hexes for a minimum player count start"*
     /// (this conversation) sets the floor; larger fair counts (6/12/18, the
     /// ring / radius-`r` ring configurations) get proportionally more.
-    fn starting_hex_radius(players: usize) -> f64 {
+    fn starting_ring_radius(players: usize) -> f64 {
         match players {
             0..=3 => 1.5, // ~3 hexes' worth of starting radius (tri-hex clique)
             // The `6r` ring family, as one closed form instead of three magic
@@ -513,7 +665,7 @@ impl GalaxyConfig {
             n if n % 6 == 0 => (n / 6) as f64 + 1.5,
             // Unreachable for a generated galaxy: `Galaxy::generate` rejects
             // non-fair counts before this runs. It survives only for callers
-            // poking `hex_grid_radius` on an unvalidated config, and is
+            // poking `ring_radius` on an unvalidated config, and is
             // deliberately *not* the ring formula — at 18 it would say 3.95
             // against the ring's 4.5, so letting it serve the family would
             // silently mis-size the galaxy.
@@ -521,17 +673,107 @@ impl GalaxyConfig {
         }
     }
 
-    /// Total hex-grid radius: starting cluster + the outward extension.
-    /// *"A game with more players will have more hexes"* (this
-    /// conversation) — a galaxy generation parameter, not a fixed constant.
-    pub fn hex_grid_radius(&self) -> f64 {
-        Self::starting_hex_radius(self.players) + self.hex_rings_beyond_start
+    /// Total ring radius, in ring steps: starting cluster + the outward
+    /// extension. *"A game with more players will have more hexes"* — a galaxy
+    /// generation parameter, not a fixed constant.
+    pub fn ring_radius(&self) -> f64 {
+        Self::starting_ring_radius(self.players) + self.rings_beyond_start
+    }
+
+    /// Hex width across flats, ly: `√3 ·` [`Self::hex_side_ly`] — the spacing
+    /// between neighboring hex centers.
+    pub fn hex_across_flats_ly(&self) -> f64 {
+        SQRT_3 * self.hex_side_ly
+    }
+
+    /// **The hex each seat's homeworld stands in, by its center** (§2, the
+    /// author's ruling). The hexes holding homeworlds form a ring in which
+    /// each borders the two holding its neighbors' homeworlds. At 3 seats that
+    /// is the tri-hex clique around a vertex at the galactic center; at `6r`
+    /// seats the radius-`r` hex ring around a hex centered there; at 2 the
+    /// domino, two hexes sharing an edge whose midpoint is the galactic
+    /// center. Seats go round the ring in order, so consecutive seats are
+    /// neighbors. Flat-top hexes.
+    pub fn homeworld_hexes(&self) -> Vec<Vec3> {
+        let width = self.hex_across_flats_ly();
+        // A neighbor's bearing from a flat-top hex: 30° + 60°·d.
+        const NEIGHBOR: [(f64, f64); 6] = [
+            (SQRT_3 / 2.0, 0.5),
+            (0.0, 1.0),
+            (-SQRT_3 / 2.0, 0.5),
+            (-SQRT_3 / 2.0, -0.5),
+            (0.0, -1.0),
+            (SQRT_3 / 2.0, -0.5),
+        ];
+        match self.players {
+            0 => Vec::new(),
+            1 => vec![Vec3::ZERO],
+            2 => {
+                let (x, y) = (0.5 * width * NEIGHBOR[0].0, 0.5 * width * NEIGHBOR[0].1);
+                vec![Vec3::new(x, y, 0.0), Vec3::new(-x, -y, 0.0)]
+            }
+            3 => {
+                // Three hexes around one vertex: their centers are a hex side
+                // from it, 120° apart.
+                const TURN: [(f64, f64); 3] = [(1.0, 0.0), (-0.5, SQRT_3 / 2.0), (-0.5, -SQRT_3 / 2.0)];
+                TURN.iter().map(|&(c, s)| Vec3::new(self.hex_side_ly * c, self.hex_side_ly * s, 0.0)).collect()
+            }
+            n => {
+                // The radius-`r` ring: from the corner on bearing `d`, `r`
+                // steps along bearing `d + 2`, for each of the six sides.
+                let r = n.div_ceil(6);
+                let mut out = Vec::with_capacity(6 * r);
+                for d in 0..6 {
+                    let (cx, cy) = NEIGHBOR[d];
+                    let (sx, sy) = NEIGHBOR[(d + 2) % 6];
+                    for j in 0..r {
+                        let (a, b) = (r as f64, j as f64);
+                        out.push(Vec3::new(width * (a * cx + b * sx), width * (a * cy + b * sy), 0.0));
+                    }
+                }
+                out.truncate(n);
+                out
+            }
+        }
+    }
+
+    /// **Where each seat's homeworld stands** (§2, the author's ruling): in
+    /// its own hex ([`Self::homeworld_hexes`]), with the ring of homeworlds
+    /// drawn in toward the galactic center — every hex center scaled by one
+    /// factor, so the ring's radius and the spacing between neighbors are
+    /// smaller than the hex ring's and every homeworld stays equidistant from
+    /// its nearest two. The factor puts the outermost homeworld
+    /// [`Self::homeworld_inset_ly`] inward of its hex's center; an inset under
+    /// the hex's inradius keeps every homeworld inside its hex.
+    pub fn homeworld_positions(&self) -> Vec<Vec3> {
+        let hexes = self.homeworld_hexes();
+        let outer = hexes.iter().map(|h| (h.x * h.x + h.y * h.y).sqrt()).fold(0.0, f64::max);
+        if outer <= 0.0 {
+            return hexes;
+        }
+        let f = 1.0 - self.homeworld_inset_ly / outer;
+        hexes.iter().map(|h| Vec3::new(f * h.x, f * h.y, 0.0)).collect()
+    }
+
+    /// The hex's inradius, ly: center to the middle of a side.
+    pub fn hex_inradius_ly(&self) -> f64 {
+        0.5 * self.hex_across_flats_ly()
+    }
+
+    /// A hex center of the command view's grid: the grid is laid so every
+    /// homeworld stands in its own hex ([`Self::homeworld_hexes`]).
+    /// Presentation only; no generation reads it.
+    pub fn hex_grid_origin(&self) -> (f64, f64) {
+        match self.players {
+            2 | 3 => self.homeworld_hexes().first().map_or((0.0, 0.0), |h| (h.x, h.y)),
+            _ => (0.0, 0.0),
+        }
     }
 
     /// XY scale length `L_xy` (ly) for the `Gamma(2, L_xy)` radial profile —
-    /// derived from the hex grid, **not** from star count (confirmed this
-    /// conversation, replacing the earlier count-derived approach): the
-    /// hex-grid radius converted straight to ly. (An earlier pass here
+    /// derived from the ring radius, **not** from star count (replacing the
+    /// earlier count-derived approach): the ring radius converted straight to
+    /// ly. (An earlier pass here
     /// divided by 2, reasoning `L_xy` as "half the mean reach" — that made
     /// `z_scale` rival or exceed this at small player counts, undermining
     /// the flattening `Hyades_vehicle_roles.md`-era "don't let empires find
@@ -539,17 +781,15 @@ impl GalaxyConfig {
     /// which keeps XY meaningfully ahead of Z at every fair player count —
     /// see `tests`.)
     pub fn xy_scale(&self) -> f64 {
-        self.hex_grid_radius() * self.hex_side_ly
+        self.ring_radius() * self.ring_step_ly
     }
 
     /// Z scale length `L_z` (ly) for the two-sided `Exponential(L_z)`
-    /// vertical profile — the hex-prism depth directly (`hex_side_ly ×
-    /// hex_depth_multiple`), independent of the XY scale (confirmed this
-    /// conversation: earlier tying both to one shared length was this
-    /// module's own invention, not the actual hex spec, which defines depth
-    /// on its own terms).
+    /// vertical profile — `ring_step_ly × depth_multiple`, independent of the
+    /// XY scale (earlier tying both to one shared length was this module's own
+    /// invention, not the hex spec, which defines depth on its own terms).
     pub fn z_scale(&self) -> f64 {
-        self.hex_side_ly * self.hex_depth_multiple
+        self.ring_step_ly * self.depth_multiple
     }
 
     /// Mean XY radius (`2·L_xy`) — the natural "typical extent" reference
@@ -559,30 +799,9 @@ impl GalaxyConfig {
     }
 
     /// Star count that gives [`Self::star_spacing_ly`] average near-typical-
-    /// radius nearest-neighbor spacing, **given** the hex-derived
+    /// radius nearest-neighbor spacing, **given** the ring-derived
     /// [`Self::xy_scale`]/[`Self::z_scale`] (an inversion of the derivation
-    /// used before the hex grid became authoritative for scale — solving for
-    /// `N` given fixed `L_xy, L_z`, instead of solving for `L` given `N`) —
-    /// an approximation, not a closed form for the true inhomogeneous
-    /// process:
-    ///
-    /// The exponential-disk areal density is `Σ(r) = N·e^{-r/L_xy} /
-    /// (2πL_xy²)`; at `r = L_xy`: `Σ(L_xy) = N·e^{-1}/(2πL_xy²)`. `Z`'s peak
-    /// (midplane) density is `1/(2L_z)`. Treating their product as the
-    /// local 3-D density near the typical star's location, `λ ≈
-    /// N·e^{-1}/(4πL_xy²L_z)`, as locally homogeneous, and reusing the
-    /// homogeneous-process nearest-neighbor mean `E[R_nn] = Γ(4/3) /
-    /// (λ·(4/3)π)^{1/3}` (Weibull(k=3) mean), solving `E[R_nn] =
-    /// star_spacing_ly` for `N` gives a first-pass closed form, corrected by
-    /// the same empirically-measured factor as before (~1.87× on `L`,
-    /// applied here as `1.87³` on `N` since `N ∝ L³` at fixed spacing — `r =
-    /// L_xy` is the radial marginal's peak, but a star actually there
-    /// doesn't also sit at the Z-peak `z=0`, so the naive product overstates
-    /// true local density) — see `tests` for the empirical check.
-    /// Star count that gives [`Self::star_spacing_ly`] average near-typical-
-    /// radius nearest-neighbor spacing, **given** the hex-derived
-    /// [`Self::xy_scale`]/[`Self::z_scale`] (an inversion of the derivation
-    /// used before the hex grid became authoritative for scale — solving for
+    /// used before the ring radius became authoritative for scale — solving for
     /// `N` given fixed `L_xy, L_z`, instead of solving for `L` given `N`) —
     /// an approximation, not a closed form for the true inhomogeneous
     /// process:
@@ -604,10 +823,8 @@ impl GalaxyConfig {
     /// **No longer capped** (confirmed this conversation, reversing the
     /// previous turn's `MAX_PLANET_COUNT`): *"lots of empty space between
     /// planets does not create drama and tension... keep the 7 ly mean
-    /// spacing and reduce the size of a hex"* instead — the right
-    /// `hex_side_ly` for a tractable, genuinely-7-ly-dense galaxy is a
-    /// question for `examples/bench_hex_size.rs`'s measured throughput, not
-    /// a cap on this method.
+    /// spacing"* instead — the extent is set by [`Self::ring_step_ly`], chosen
+    /// against measured throughput, not by a cap on this method.
     pub fn derived_planet_count(&self) -> usize {
         /// Same empirical correction as before (`Hyades_habitability.md`-style
         /// honesty: measured, not derived), cubed since this solves for `N`
@@ -630,13 +847,16 @@ impl GalaxyConfig {
 }
 
 /// Why generation refused a configuration.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GenError {
     /// `players` is not a vertex-transitive (fair) count.
     UnfairPlayerCount(usize),
     /// A seeded fleet names a seat the galaxy does not have, moves at or past
     /// `c`, or is given no spend to build it with.
     BadFleet(usize),
+    /// [`GalaxyConfig::homeworld_inset_ly`] is negative or reaches the hex's
+    /// inradius, so a homeworld would leave its own hex.
+    HomeworldOutsideItsHex(f64),
 }
 
 impl core::fmt::Display for GenError {
@@ -644,6 +864,9 @@ impl core::fmt::Display for GenError {
         match self {
             GenError::UnfairPlayerCount(n) => {
                 write!(f, "player count {n} has no vertex-transitive arrangement; fair counts are 2, 3, 6, 12")
+            }
+            GenError::HomeworldOutsideItsHex(d) => {
+                write!(f, "homeworld inset {d} ly is not inside the hex's inradius, so a homeworld leaves its hex")
             }
             GenError::BadFleet(i) => {
                 write!(f, "seeded fleet {i} names no seat, moves at or past c, or has no spend")
@@ -664,6 +887,10 @@ pub struct Galaxy {
     pub config: GalaxyConfig,
     /// Fleets generated with the galaxy — none unless a bed asks for them.
     pub fleets: FleetSeeding,
+    /// Under [`Homeworlds::ColorCentered`], `homeworld_sites[p]` is the
+    /// position of the planted site of each color, in [`Basic`] order, around
+    /// seat `p`'s homeworld; empty under [`Homeworlds::Trio`].
+    pub homeworld_sites: Vec<[Vec3; 3]>,
 }
 
 /// **A fleet generated with the galaxy** (the author's ruling, T-133 follow-up:
@@ -700,6 +927,12 @@ pub struct FleetSeeding {
     /// start, where only the homeworld is known.
     pub known_radius_ly: f64,
     pub fleets: Vec<SeedFleet>,
+    /// **Twin Designs paid in supers**: every seat starts with a twin of every
+    /// Design — the same hull, class, mass and stats — billed `twin_bill`, and
+    /// its yards build the twin wherever they can pay it (`Roster::twin`).
+    /// `None` — the default — seeds none. A bed's way to give supers a final
+    /// demand without a card (appendix §D.35).
+    pub twin_bill: Option<crate::sim::DesignBill>,
 }
 
 impl Galaxy {
@@ -766,6 +999,9 @@ impl Galaxy {
         if !Galaxy::FAIR_COUNTS.contains(&config.players) {
             return Err(GenError::UnfairPlayerCount(config.players));
         }
+        if !(0.0..config.hex_inradius_ly()).contains(&config.homeworld_inset_ly) {
+            return Err(GenError::HomeworldOutsideItsHex(config.homeworld_inset_ly));
+        }
         let mut rng = Rng::new(config.seed);
         let xy_scale = config.xy_scale();
         let z_scale = config.z_scale();
@@ -781,15 +1017,72 @@ impl Galaxy {
             Vec3::new(hotspot_ring * cos, hotspot_ring * sin, 0.0)
         };
         let hotspots = Hotspots { cyan: hotspot(0.0), magenta: hotspot(1.0), yellow: hotspot(2.0) };
-        let sites = ColorSites::generate(&config, &hotspots, hotspot_sigma, rng.fork(0xC010_5173));
+        // Every seat's homeworld, in its own hex (§2, the author's rulings):
+        // read by the fair start and the homeworld loop alike.
+        let homes = config.homeworld_positions();
+        let turns = config.symmetry_turns();
+        let per_turn = config.players / turns;
+        // **Color-centered homeworlds** (`Homeworlds::ColorCentered`): one site
+        // of each hue planted around each homeworld, equidistant and 120°
+        // apart, the first pointing away from the galactic center. On
+        // identical ground the first wedge's seats' sites are planted and the
+        // wedge carries them to every seat — turned, and color-stepped on
+        // `Ground::ColorRotated`.
+        let centered: Vec<[Vec3; 3]> = if config.homeworlds == Homeworlds::ColorCentered {
+            let place = |home: Vec3| -> [Vec3; 3] {
+                let r = (home.x * home.x + home.y * home.y).sqrt().max(1e-12);
+                let (ux, uy) = (home.x / r, home.y / r);
+                // cos and sin of 0°, 120°, 240°.
+                const TURN: [(f64, f64); 3] = [(1.0, 0.0), (-0.5, SQRT_3 / 2.0), (-0.5, -SQRT_3 / 2.0)];
+                let d = config.homeworld_site_distance_ly;
+                TURN.map(|(c, s)| Vec3::new(home.x + d * (ux * c - uy * s), home.y + d * (ux * s + uy * c), 0.0))
+            };
+            if turns > 1 {
+                let arc = core::f64::consts::TAU / turns as f64;
+                (0..config.players)
+                    .map(|p| {
+                        let (turn_k, first) = (p / per_turn, p % per_turn);
+                        let three = place(homes[first]);
+                        let (sin, cos) = transcendental::sin_cos(turn_k as f64 * arc);
+                        let turn = |v: Vec3| Vec3::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos, v.z);
+                        let shift = if config.ground == Ground::ColorRotated { turn_k * per_turn } else { 0 };
+                        let mut turned = [Vec3::ZERO; 3];
+                        for j in 0..3 {
+                            turned[(j + shift) % 3] = turn(three[j]);
+                        }
+                        turned
+                    })
+                    .collect()
+            } else {
+                homes.iter().map(|&h| place(h)).collect()
+            }
+        } else {
+            Vec::new()
+        };
+        // Planted where generation reads them: every seat's on a random
+        // ground, the first wedge's seats' alone where the wedge is turned.
+        let planted: Vec<(Basic, f64, f64, f64)> = centered
+            .iter()
+            .take(if turns > 1 { per_turn } else { centered.len() })
+            .flat_map(|three| {
+                Basic::ALL.iter().zip(three.iter()).map(|(&b, v)| (b, v.x, v.y, config.homeworld_site_band))
+            })
+            .collect();
+        let sites = ColorSites::generate(&config, &hotspots, hotspot_sigma, rng.fork(0xC010_5173), &planted);
 
         let mut planets: Vec<Planet> = Vec::with_capacity(config.planet_count + 3 * config.players);
 
         // --- wild field: XY radially Poisson, Z exponential (module doc) ---
-        for i in 0..config.planet_count {
+        // **Identical ground** (`GalaxyConfig::ground`): one wedge of `1/N` of
+        // the disk is generated and turned to every seat, on
+        // `Ground::ColorRotated` with its colors stepped once per seat the way
+        // the archetypes step.
+        let steps = config.ground == Ground::ColorRotated;
+        let wedge = config.planet_count / turns;
+        for i in 0..wedge {
             let mut prng = rng.fork(0x5EED_0000 ^ i as u64);
 
-            let position = sample_flattened_field(&mut prng, xy_scale, z_scale);
+            let position = sample_flattened_field(&mut prng, xy_scale, z_scale, core::f64::consts::TAU / turns as f64);
 
             // tier-1 density: Gaussian(XY to hue hotspot) × exp(−|z|/H), §4.3 —
             // same flattened shape as the star field itself.
@@ -806,7 +1099,7 @@ impl Galaxy {
             let common = 0.25 * draws[0];
             for b in Basic::ALL {
                 // The hue's site field: its nearest site of that hue, whose
-                // peak the large-scale hotspots set (§4.3, hex-scale slant).
+                // peak the large-scale hotspots set (§4.3).
                 let g = peaks[b as usize] / config.mineral_peak.max(1e-12);
                 // **The Gaussian is over Bands (T-62).** Density is a position
                 // on the ladder, so the field is log-normal in mass: a
@@ -870,37 +1163,109 @@ impl Galaxy {
             let biosphere = (habitability * prng.range(0.7, 1.1) + 0.3 * prng.gaussian()).clamp(0.0, 4.0);
             let (habitability, biosphere) = (Band::new(habitability), Band::new(biosphere));
 
-            planets.push(Planet {
-                id: PlanetId(i as u32),
-                position,
-                habitability,
-                biosphere,
-                infrastructure: Band::ZERO, // wild
-                minerals,
-                is_homeworld: false,
-                archetype: None,
-                owner: None,
-                population: Kilotons::ZERO,
-            });
+            for k in 0..turns {
+                let (sin, cos) = transcendental::sin_cos(k as f64 * core::f64::consts::TAU / turns as f64);
+                let at =
+                    Vec3::new(position.x * cos - position.y * sin, position.x * sin + position.y * cos, position.z);
+                // Seat `p + 1`'s archetype is seat `p`'s with every color
+                // stepped Cyan → Magenta → Yellow → Cyan (§3), so on
+                // `Ground::ColorRotated` the wedge turned `k` seats over
+                // carries its colors stepped `k` times.
+                let shift = if steps { k * per_turn } else { 0 };
+                let mut stepped = MineralField::default();
+                for (j, &b) in Basic::ALL.iter().enumerate() {
+                    stepped.set(Basic::ALL[(j + shift) % 3], minerals.get(b));
+                }
+                planets.push(Planet {
+                    id: PlanetId(planets.len() as u32),
+                    position: if turns == 1 { position } else { at },
+                    habitability,
+                    biosphere,
+                    infrastructure: Band::ZERO, // wild
+                    minerals: if turns == 1 { minerals } else { stepped },
+                    is_homeworld: false,
+                    archetype: None,
+                    owner: None,
+                    population: Kilotons::ZERO,
+                });
+            }
         }
 
-        // --- homeworlds on a vertex-transitive ring (§2, §3) ---
-        let homeworld_ring = mean_xy * config.homeworld_ring_frac;
-        let mut homeworlds = Vec::with_capacity(config.players);
-        for p in 0..config.players {
-            let a = (p as f64) * core::f64::consts::TAU / (config.players as f64);
-            let (sin, cos) = transcendental::sin_cos(a);
-            let position = Vec3::new(homeworld_ring * cos, homeworld_ring * sin, 0.0);
+        // **The fair start** (`GalaxyConfig::fair_start_ly`): on random ground,
+        // every seat's wild worlds within the radius are seat 0's, carried to
+        // the seat's homeworld — turned so seat 0's outward bearing becomes
+        // the seat's — and color-stepped as the archetypes step.
+        if turns == 1 && config.fair_start_ly > 0.0 && config.players > 1 {
+            let r = config.fair_start_ly;
+            let start: Vec<Planet> = planets.iter().filter(|w| w.position.distance(homes[0]) < r).cloned().collect();
+            planets.retain(|w| homes.iter().skip(1).all(|h| w.position.distance(*h) >= r));
+            let bearing = |h: Vec3| {
+                let n = (h.x * h.x + h.y * h.y).sqrt().max(1e-12);
+                (h.x / n, h.y / n)
+            };
+            let (u0x, u0y) = bearing(homes[0]);
+            for (k, &home) in homes.iter().enumerate().skip(1) {
+                let (ukx, uky) = bearing(home);
+                let (cos, sin) = (u0x * ukx + u0y * uky, u0x * uky - u0y * ukx);
+                for w in &start {
+                    let mut minerals = MineralField::default();
+                    for (j, &b) in Basic::ALL.iter().enumerate() {
+                        minerals.set(Basic::ALL[(j + k) % 3], w.minerals.get(b));
+                    }
+                    let (x, y) = (w.position.x - homes[0].x, w.position.y - homes[0].y);
+                    planets.push(Planet {
+                        position: Vec3::new(home.x + x * cos - y * sin, home.y + x * sin + y * cos, w.position.z),
+                        minerals,
+                        ..w.clone()
+                    });
+                }
+            }
+            for (i, w) in planets.iter_mut().enumerate() {
+                w.id = PlanetId(i as u32);
+            }
+        }
 
+        // --- homeworlds at hex centers on a vertex-transitive ring (§2, §3) ---
+        let mut homeworlds = Vec::with_capacity(config.players);
+        // A color-centered homeworld's own deposit: each basic under `Band I`,
+        // drawn once and turned with the wedge on identical ground.
+        let deposit = |p: usize| {
+            let mut hrng = rng.fork(0x40E3_0000 ^ p as u64);
+            let mut m = MineralField::default();
+            for b in Basic::ALL {
+                m.set(b, Band::new(hrng.unit()).in_kilotons());
+            }
+            m
+        };
+        let home_deposits: Vec<MineralField> = (0..centered.len())
+            .map(|k| {
+                if turns == 1 {
+                    return deposit(k);
+                }
+                let base = deposit(k % per_turn);
+                let shift = if config.ground == Ground::ColorRotated { k / per_turn * per_turn } else { 0 };
+                let mut m = MineralField::default();
+                for (j, &b) in Basic::ALL.iter().enumerate() {
+                    m.set(Basic::ALL[(j + shift) % 3], base.get(b));
+                }
+                m
+            })
+            .collect();
+        let homeworld_sites: Vec<[Vec3; 3]> = centered.clone();
+        for (p, &position) in homes.iter().enumerate() {
             // rotational archetype assignment: B-R-G cycling (§3).
             let archetype = Archetype::ALL[p % 3];
             let (rich_a, rich_b, _) = archetype.alignment();
 
             // The habitable world of the trio holds a trace of every color: its
-            // forge's precursors come from its companions, by freight.
+            // forge's precursors come from its companions, by freight. A
+            // color-centered homeworld holds its own draw under `Band I`.
             let mut minerals = MineralField::default();
             for b in Basic::ALL {
                 minerals.set(b, Band::ZERO.in_kilotons());
+            }
+            if let Some(m) = home_deposits.get(p) {
+                minerals = *m;
             }
 
             let id = PlanetId(planets.len() as u32);
@@ -914,24 +1279,47 @@ impl Galaxy {
                 is_homeworld: true,
                 archetype: Some(archetype),
                 owner: Some(PlayerId(p as u32)),
-                population: Kilotons::at_band(Band::new(2.0)), // filled to its starting K
+                population: Kilotons::at(config.homeworld_start_population.0, config.homeworld_start_population.1),
             });
             homeworlds.push(id);
 
             // The two companions, one per rich basic, either side of the
-            // homeworld along the ring.
-            let tangent = Vec3::new(-sin, cos, 0.0);
-            for (side, rich) in [(1.0, rich_a), (-1.0, rich_b)] {
+            // homeworld across its bearing from the galactic center.
+            let n = (position.x * position.x + position.y * position.y).sqrt().max(1e-12);
+            let tangent = Vec3::new(-position.y / n, position.x / n, 0.0);
+            // The worlds beside the homeworld, each rich in one color: the
+            // trio's two companions along the ring, or a color-centered
+            // homeworld's three planted outposts — one per hue, on the bearing
+            // to that hue's planted site, at `homeworld_outpost_distance_ly`.
+            let beside: Vec<(Vec3, Basic, f64)> = match centered.get(p) {
+                None => [(1.0, rich_a), (-1.0, rich_b)]
+                    .map(|(side, rich)| {
+                        let at = Vec3::new(
+                            position.x + side * config.homeworld_companion_ly * tangent.x,
+                            position.y + side * config.homeworld_companion_ly * tangent.y,
+                            0.0,
+                        );
+                        (at, rich, config.homeworld_companion_density)
+                    })
+                    .to_vec(),
+                Some(three) => Basic::ALL
+                    .iter()
+                    .zip(three.iter())
+                    .map(|(&hue, site)| {
+                        let home = position;
+                        let (dx, dy) = (site.x - home.x, site.y - home.y);
+                        let d = (dx * dx + dy * dy).sqrt().max(1e-12);
+                        let r = config.homeworld_outpost_distance_ly / d;
+                        (Vec3::new(home.x + dx * r, home.y + dy * r, 0.0), hue, config.homeworld_outpost_band)
+                    })
+                    .collect(),
+            };
+            for (at, rich, density) in beside {
                 let mut minerals = MineralField::default();
                 for b in Basic::ALL {
-                    let band = if b == rich { config.homeworld_companion_density } else { 0.0 };
+                    let band = if b == rich { density } else { 0.0 };
                     minerals.set(b, Band::new(band).in_kilotons());
                 }
-                let at = Vec3::new(
-                    position.x + side * config.homeworld_companion_ly * tangent.x,
-                    position.y + side * config.homeworld_companion_ly * tangent.y,
-                    0.0,
-                );
                 planets.push(Planet {
                     id: PlanetId(planets.len() as u32),
                     position: at,
@@ -947,7 +1335,15 @@ impl Galaxy {
             }
         }
 
-        Ok(Galaxy { planets, homeworlds, hotspots, bands: config.pop_bands(), config, fleets: FleetSeeding::default() })
+        Ok(Galaxy {
+            planets,
+            homeworlds,
+            hotspots,
+            bands: config.pop_bands(),
+            config,
+            fleets: FleetSeeding::default(),
+            homeworld_sites,
+        })
     }
 }
 
@@ -986,9 +1382,232 @@ mod tests {
             let expected = (n / 6) as f64 + 1.5;
             let cfg = GalaxyConfig { players: n, ..GalaxyConfig::new(6, 1) };
             assert!(
-                (cfg.hex_grid_radius() - (expected + cfg.hex_rings_beyond_start)).abs() < 1e-12,
+                (cfg.ring_radius() - (expected + cfg.rings_beyond_start)).abs() < 1e-12,
                 "N={n} radius drifted off the 6r closed form"
             );
+        }
+    }
+
+    #[test]
+    fn resizing_the_hex_left_the_planet_field_alone() {
+        // R-G1: the hex grew to the scale of an empire and the star field kept
+        // its extent and its count — the ring step is the old 10-ly hex side.
+        for (n, count) in [(2usize, 6723usize), (3, 6722), (6, 10041), (12, 14020), (18, 18664)] {
+            let cfg = GalaxyConfig::new(n, 1);
+            assert_eq!(cfg.planet_count, count, "{n} seats");
+            assert_eq!(cfg.z_scale(), 30.0);
+        }
+        assert_eq!(GalaxyConfig::new(3, 1).xy_scale(), 45.0);
+        assert_eq!(GalaxyConfig::new(18, 1).xy_scale(), 75.0);
+    }
+
+    #[test]
+    fn identical_ground_turns_one_wedge_to_every_seat_and_steps_colors_only_when_asked() {
+        for (ground, seats) in [(Ground::ColorRotated, 3), (Ground::Identical, 3), (Ground::Identical, 2)] {
+            let cfg = GalaxyConfig { ground, ..GalaxyConfig::new(seats, 9) };
+            let g = Galaxy::generate(cfg).unwrap();
+            let wild: Vec<&Planet> = g.planets.iter().filter(|p| !p.is_homeworld && p.archetype.is_none()).collect();
+            assert_eq!(cfg.symmetry_turns(), seats);
+            let wedge = cfg.planet_count / seats;
+            for i in 0..wedge {
+                let base = wild[seats * i];
+                for k in 1..seats {
+                    let p = wild[seats * i + k];
+                    let (sin, cos) = transcendental::sin_cos(k as f64 * core::f64::consts::TAU / seats as f64);
+                    let x = base.position.x * cos - base.position.y * sin;
+                    let y = base.position.x * sin + base.position.y * cos;
+                    assert!((p.position.x - x).abs() < 1e-9 && (p.position.y - y).abs() < 1e-9);
+                    assert_eq!(p.position.z, base.position.z);
+                    assert_eq!(p.habitability.bands(), base.habitability.bands());
+                    let shift = if ground == Ground::ColorRotated { k } else { 0 };
+                    for (j, &b) in Basic::ALL.iter().enumerate() {
+                        let stepped = Basic::ALL[(j + shift) % 3];
+                        assert_eq!(p.minerals.get(stepped).kilotons(), base.minerals.get(b).kilotons());
+                    }
+                }
+            }
+        }
+        // Random by default, and the colors cannot step round two seats.
+        assert_eq!(GalaxyConfig::new(3, 9).symmetry_turns(), 1);
+        assert_eq!(GalaxyConfig { ground: Ground::ColorRotated, ..GalaxyConfig::new(2, 9) }.symmetry_turns(), 1);
+    }
+
+    #[test]
+    fn a_color_centered_homeworld_stands_alone_among_one_site_of_each_color() {
+        for ground in [Ground::Random, Ground::Identical, Ground::ColorRotated] {
+            let cfg = GalaxyConfig { ground, homeworlds: Homeworlds::ColorCentered, ..GalaxyConfig::new(3, 9) };
+            let g = Galaxy::generate(cfg).unwrap();
+            // No companions: the wild ground, the homeworlds, and three planted
+            // outposts per seat.
+            let wild = cfg.planet_count / cfg.symmetry_turns() * cfg.symmetry_turns();
+            assert_eq!(g.planets.len(), wild + 3 * 4, "{ground:?}");
+            assert_eq!(g.homeworld_sites.len(), 3);
+            let home = |p: usize| &g.planets[g.homeworlds[p].0 as usize];
+            for p in 0..3 {
+                for b in Basic::ALL {
+                    assert!(home(p).minerals.get(b).kilotons() < 1.0, "{ground:?} seat {p} holds Band I of {b:?}");
+                }
+                for site in g.homeworld_sites[p] {
+                    let d = site.distance(home(p).position);
+                    assert!((d - cfg.homeworld_site_distance_ly).abs() < 1e-9, "{ground:?} seat {p}: {d}");
+                }
+                // One outpost of each hue, on the bearing to that hue's site,
+                // holding `Band I` of its color and the floor of the others.
+                let id = g.homeworlds[p].0 as usize;
+                for (j, &b) in Basic::ALL.iter().enumerate() {
+                    let o = &g.planets[id + 1 + j];
+                    assert!((o.position.distance(home(p).position) - cfg.homeworld_outpost_distance_ly).abs() < 1e-9);
+                    let toward = o.position.distance(g.homeworld_sites[p][j]);
+                    let d = cfg.homeworld_site_distance_ly - cfg.homeworld_outpost_distance_ly;
+                    assert!((toward - d).abs() < 1e-9, "{ground:?} seat {p} outpost {j} off its bearing");
+                    assert!((o.minerals.get(b).band().bands() - cfg.homeworld_outpost_band).abs() < 1e-6);
+                    for &other in Basic::ALL.iter().filter(|&&c| c != b) {
+                        assert!(o.minerals.get(other).kilotons() < 0.01);
+                    }
+                }
+            }
+            if ground == Ground::Random {
+                continue;
+            }
+            // Identical ground turns seat 0's homeworld and sites to every
+            // seat, colors stepped on `ColorRotated`.
+            for k in 1..3 {
+                let (sin, cos) = transcendental::sin_cos(k as f64 * core::f64::consts::TAU / 3.0);
+                let turn = |v: Vec3| Vec3::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos, v.z);
+                assert!(turn(home(0).position).distance(home(k).position) < 1e-9);
+                let shift = if ground == Ground::ColorRotated { k } else { 0 };
+                for (j, &b) in Basic::ALL.iter().enumerate() {
+                    let stepped = Basic::ALL[(j + shift) % 3];
+                    assert!(turn(g.homeworld_sites[0][j]).distance(g.homeworld_sites[k][(j + shift) % 3]) < 1e-9);
+                    assert_eq!(home(k).minerals.get(stepped).kilotons(), home(0).minerals.get(b).kilotons());
+                }
+            }
+        }
+        // The default is the trio.
+        assert_eq!(GalaxyConfig::new(3, 9).homeworlds, Homeworlds::Trio);
+        assert!(Galaxy::generate(GalaxyConfig::new(3, 9)).unwrap().homeworld_sites.is_empty());
+    }
+
+    #[test]
+    fn the_hex_places_the_homeworlds_and_nothing_else() {
+        // R-G1 and §2: the hex is a human-legible interface, and each
+        // homeworld stands at the center of one. Changing the hex moves the
+        // homeworlds and their companions and no wild world.
+        let cfg = GalaxyConfig::new(3, 7);
+        assert_eq!(cfg.hex_side_ly, 70.0);
+        assert!((cfg.hex_across_flats_ly() - 121.243_556_529_821_4).abs() < 1e-9);
+        let a = Galaxy::generate(cfg).unwrap();
+        let b = Galaxy::generate(GalaxyConfig { hex_side_ly: 90.0, ..cfg }).unwrap();
+        let wild = |g: &Galaxy| g.planets.iter().filter(|p| !p.is_homeworld && p.owner.is_none()).count();
+        assert_eq!(wild(&a), wild(&b));
+        let mut moved = 0;
+        for (p, q) in a.planets.iter().zip(&b.planets) {
+            for m in Basic::ALL {
+                assert_eq!(p.minerals.get(m).kilotons().to_bits(), q.minerals.get(m).kilotons().to_bits());
+            }
+            assert_eq!(p.habitability.bands().to_bits(), q.habitability.bands().to_bits());
+            if p.position != q.position {
+                moved += 1;
+            }
+        }
+        // Three homeworlds and two companions each.
+        assert_eq!(moved, 9);
+    }
+
+    #[test]
+    fn every_homeworld_stands_in_its_own_hex_beside_its_two_neighbors() {
+        // §2, the author's rulings: each homeworld in its own hex, each such
+        // hex bordering the two holding its neighbors' homeworlds, and the
+        // ring of homeworlds drawn in — smaller and closer than the hex ring —
+        // with homeworlds equidistant from their nearest neighbors.
+        let hex_of = |cfg: &GalaxyConfig, x: f64, y: f64| {
+            let (ox, oy) = cfg.hex_grid_origin();
+            let side = cfg.hex_side_ly;
+            let fq = (2.0 / 3.0) * (x - ox) / side;
+            let fr = (-(x - ox) / 3.0 + (SQRT_3 / 3.0) * (y - oy)) / side;
+            let fs = -fq - fr;
+            let (mut q, mut r, s) = (fq.round(), fr.round(), fs.round());
+            let (dq, dr, ds) = ((q - fq).abs(), (r - fr).abs(), (s - fs).abs());
+            if dq > dr && dq > ds {
+                q = -r - s;
+            } else if dr > ds {
+                r = -q - s;
+            }
+            (q as i64, r as i64)
+        };
+        for n in Galaxy::FAIR_COUNTS {
+            let cfg = GalaxyConfig::new(n, 1);
+            let width = cfg.hex_across_flats_ly();
+            let hexes = cfg.homeworld_hexes();
+            let homes = cfg.homeworld_positions();
+            assert_eq!(homes.len(), n);
+            let mut cells = std::collections::BTreeSet::new();
+            for (h, c) in homes.iter().zip(&hexes) {
+                let cell = hex_of(&cfg, h.x, h.y);
+                assert_eq!(cell, hex_of(&cfg, c.x, c.y), "{n} seats: {h:?} left its hex");
+                assert!(cells.insert(cell), "{n} seats: two homeworlds share a hex");
+            }
+            let spacing = homes[0].distance(homes[1 % n]);
+            assert!(spacing < width, "{n} seats: the homeworld ring is not drawn in");
+            for p in 0..n {
+                assert!((hexes[p].distance(hexes[(p + 1) % n]) - width).abs() < 1e-9, "{n} seats: hexes not neighbors");
+                let nearest =
+                    (0..n).filter(|&q| q != p).map(|q| homes[p].distance(homes[q])).fold(f64::INFINITY, f64::min);
+                assert!(
+                    (nearest - spacing).abs() < 1e-9,
+                    "{n} seats: seat {p}'s nearest homeworld is {nearest} ly away"
+                );
+            }
+            let galaxy = Galaxy::generate(cfg).unwrap();
+            for (p, &id) in galaxy.homeworlds.iter().enumerate() {
+                assert_eq!(galaxy.planets[id.0 as usize].position, homes[p]);
+            }
+        }
+        let too_far = GalaxyConfig { homeworld_inset_ly: 61.0, ..GalaxyConfig::new(3, 1) };
+        assert_eq!(Galaxy::generate(too_far).err(), Some(GenError::HomeworldOutsideItsHex(61.0)));
+    }
+
+    #[test]
+    fn a_world_reads_its_strongest_site_of_each_hue_within_reach() {
+        let mut cfg = GalaxyConfig::new(3, 3);
+        cfg.color_site_spacing_ly = 40.0;
+        cfg.color_site_sigma_ly = 25.0;
+        let g = Galaxy::generate(cfg).unwrap();
+        let sigma = cfg.mean_xy_radius() * cfg.hotspot_sigma_frac;
+        let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(3), &[]);
+        let mut rng = Rng::new(11);
+        for _ in 0..300 {
+            let (x, y) = (rng.range(-200.0, 200.0), rng.range(-200.0, 200.0));
+            // Brute force over every site.
+            let mut want = [0.0f64; 3];
+            for &(hue, sx, sy, peak) in &sites.sites {
+                let d2 = (x - sx) * (x - sx) + (y - sy) * (y - sy);
+                if d2 <= (4.0 * 25.0) * (4.0 * 25.0) {
+                    let band = peak * transcendental::exp(-d2 / (2.0 * 25.0 * 25.0));
+                    want[hue as usize] = want[hue as usize].max(band);
+                }
+            }
+            assert_eq!(sites.bands_at(x, y), want, "at ({x}, {y})");
+        }
+    }
+
+    #[test]
+    fn every_hue_reaches_the_peak_at_its_strongest_site() {
+        // R-O82 at any spacing: each hue's strongest site is `mineral_peak`
+        // wherever the draw falls relative to its hotspot.
+        for seed in [1u64, 7, 42] {
+            let g = Galaxy::generate(GalaxyConfig::new(3, seed)).unwrap();
+            let cfg = g.config;
+            let sigma = cfg.mean_xy_radius() * cfg.hotspot_sigma_frac;
+            // Any stream: the property holds for every draw.
+            let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(seed), &[]);
+            let mut top = [0.0f64; 3];
+            for &(hue, _, _, peak) in &sites.sites {
+                top[hue as usize] = top[hue as usize].max(peak);
+            }
+            for (k, t) in top.iter().enumerate() {
+                assert!((t - cfg.mineral_peak).abs() < 1e-12, "seed {seed} hue {k} peaks at {t}");
+            }
         }
     }
 
@@ -1027,11 +1646,15 @@ mod tests {
     }
 
     #[test]
-    fn homeworld_starts_at_pop_level_two() {
-        // K = 2, pop ~2 ⇒ the level-2 "limited vehicles" production gate (§5.1).
+    fn a_homeworld_starts_at_band_ii_785() {
+        // The ratified start (T-147): `Band II .785`, 1,076 kt, which the
+        // Weibull population bands read as level III — so a homeworld clears
+        // the level-III build gate from the start.
         let g = Galaxy::generate(GalaxyConfig::new(3, 7)).unwrap();
         for &hw in &g.homeworlds {
-            assert_eq!(g.pop_level(hw), BandTier::II, "homeworld should start at Band II");
+            assert_eq!(g.planet(hw).population, Kilotons::at(BandTier::II, 0.785));
+            assert!((g.planet(hw).population.kilotons() - 1076.373).abs() < 1e-3);
+            assert_eq!(g.pop_level(hw), BandTier::III);
         }
     }
 
@@ -1142,8 +1765,8 @@ mod tests {
         // The actual design intent: don't let the autopilot find room
         // "vertically" — Z spread must be meaningfully tighter than XY
         // spread. The ratio is no longer a fixed 2:1 (it grows with the
-        // hex-grid radius, hence with player count — more hexes spanning
-        // XY, Z pinned to one hex-prism's depth regardless) — just check it
+        // ring radius, hence with player count — more ring steps spanning
+        // XY, Z pinned to a multiple of the ring step regardless) — just check it
         // lands clearly on the flattened side, with margin for sampling
         // noise. Median/RMS, not max: Z's exponential tail is technically
         // unbounded, so a single rare outlier isn't a fair way to judge the
@@ -1171,9 +1794,9 @@ mod tests {
     }
 
     #[test]
-    fn hex_grid_and_scale_grow_with_player_count() {
-        // "A game with more players will have more hexes" (this
-        // conversation) — the hex grid radius, and therefore both physical
+    fn ring_radius_and_scale_grow_with_player_count() {
+        // "A game with more players will have more hexes" — the ring radius,
+        // and therefore both physical
         // scales, must grow monotonically with player count across the fair
         // counts, not stay fixed or shrink.
         let mut prev_radius = 0.0;
@@ -1181,19 +1804,19 @@ mod tests {
         let mut prev_z = 0.0;
         for &n in &Galaxy::FAIR_COUNTS {
             let cfg = GalaxyConfig::new(n, 1);
-            let radius = cfg.hex_grid_radius();
+            let radius = cfg.ring_radius();
             // 2 and 3 players share the same "minimum start" cluster size
             // (both read as "3 hexes" per this conversation), so this is
             // non-decreasing, not strictly increasing, across every step.
-            assert!(radius >= prev_radius, "hex_grid_radius should not shrink as player count grows (n={n})");
+            assert!(radius >= prev_radius, "ring_radius should not shrink as player count grows (n={n})");
             assert!(cfg.xy_scale() >= prev_xy, "xy_scale should not shrink as player count grows (n={n})");
             prev_radius = radius;
             prev_xy = cfg.xy_scale();
             prev_z = cfg.z_scale();
         }
         // and it must grow at least once across the full span of fair counts.
-        assert!(GalaxyConfig::new(18, 1).hex_grid_radius() > GalaxyConfig::new(2, 1).hex_grid_radius());
-        // z_scale is pinned to one hex-prism's depth, independent of player
+        assert!(GalaxyConfig::new(18, 1).ring_radius() > GalaxyConfig::new(2, 1).ring_radius());
+        // z_scale is pinned to a multiple of the ring step, independent of player
         // count — confirm it's the same across every fair count.
         let z0 = GalaxyConfig::new(2, 1).z_scale();
         for &n in &Galaxy::FAIR_COUNTS {
@@ -1221,9 +1844,9 @@ mod tests {
     fn derived_planet_count_grows_uncapped_with_player_count() {
         // Corrected this conversation: no more artificial cap diluting
         // density ("lots of empty space... does not create drama and
-        // tension") — hex_side_ly was shrunk instead (10 ly, measured
-        // against real throughput in examples/bench_hex_size.rs). Star
-        // count should now genuinely grow with the hex grid, uncapped.
+        // tension") — the sizing length was shrunk instead (10 ly, measured
+        // against throughput; now `ring_step_ly`). Star count should
+        // genuinely grow with the ring radius, uncapped.
         let small = GalaxyConfig::new(2, 1).derived_planet_count();
         let large = GalaxyConfig::new(18, 1).derived_planet_count();
         assert!(large > small, "should grow, not sit at a shared cap");

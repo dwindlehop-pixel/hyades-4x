@@ -283,7 +283,7 @@ impl Minerals {
     /// **On the cost ladder** (`Qty<Cost>`), which is where the mass→price
     /// crossing lives: ore in the ground is a mass and reads on the mass
     /// ladder, and the same ore in a bank is what a hull is priced in and reads
-    /// on the cost one. Same kilotons (R-O57); different rungs. Everything
+    /// on the cost one. Same kilotons (R-O57); different whole Bands. Everything
     /// downstream of here — `hull_cost`, `infra_step_price`, the stockpile
     /// comparisons — is typed so a price cannot be compared against a mass
     /// reading by accident.
@@ -401,6 +401,14 @@ impl Minerals {
         let total = self.basic_total();
         if total + Price::new(1e-9) < amount {
             return None;
+        }
+        // **An empty bank pays a crumb with nothing** (T-147). The tolerance
+        // above admits an `amount` up to 1e-9 against a bank of exactly zero —
+        // what an order paid wholly in supers leaves as its basic part, a
+        // rounding residue of `price − owed` — and `amount / 0` made every
+        // color `0 · ∞`, NaN, in replicated state (design law #16).
+        if total <= Price::ZERO {
+            return Some(Minerals::default());
         }
         let f = amount / total;
         let taken = Minerals { cyan: self.cyan * f, magenta: self.magenta * f, yellow: self.yellow * f, ..*self };

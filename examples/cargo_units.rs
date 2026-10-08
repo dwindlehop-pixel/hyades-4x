@@ -12,7 +12,7 @@
 //! `r³`. So the harness now prints the *agreement*, and where it is inexact and
 //! why.
 //!
-//! The distinction that does the work: **the Band rung is the hold**, and
+//! The distinction that does the work: **the whole Band is the hold**, and
 //! `V_reserved` (the role's engine/crew core plus its scaling payload) is
 //! deducted after it. So the hold walks the ladder and the usable cargo does
 //! not — most visibly at the bottom, where a Limited hull's core eats ~88% of
@@ -76,7 +76,7 @@ fn main() {
         println!("  {:>7} -> {:<8} = {:>8.2}x   against F_mass[{i}] = {:.2}", a.0, b.0, b.1 / a.1, MASS_LADDER[i]);
     }
 
-    println!("\nwhere the rungs sit, in kilotons:");
+    println!("\nwhere the whole Bands sit, in kilotons:");
     for b in [0.0, 1.0, 2.0] {
         println!("  Band {b:.0} = {:>10.4} kt", Band::new(b).in_kilotons().kilotons());
     }

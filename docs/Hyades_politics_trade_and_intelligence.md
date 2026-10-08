@@ -57,6 +57,20 @@ can be a genuine continuous double auction with escrow, risk premia and
 distance-discounted clearing, running at simulation speed, because nobody is
 clicking.
 
+**Allocation is done by price, not by caps or standing orders** (`RATIFIED`,
+R-P19, the author's ruling). When the economy sends goods to the wrong place
+or leaves a center short, the remedy is a price that moves with the
+shortfall, cleared through the Exchange and read by freight routing. The
+non-preferred remedies are a cap on what a center may take, a quota, a
+reserved order that pins stock to a buyer, and a rule that routes a hauler
+by fiat. The reason is the game, not the market's efficiency: a price is
+posted, so a rival can read it, outbid it, corner it or cut the route that
+fills it. That is yomi (reading an opponent's intent from what they show)
+and conflict. A cap or an order allocates the same goods out of sight and
+leaves nothing to contest. The standing orders (§10.4) and delivery-room
+caps (§2.16) already in the engine are kept, and each is a candidate to be
+replaced by a price when one can be found that does the same work.
+
 ---
 
 ## 1. `$` — the means of exchange
@@ -98,12 +112,23 @@ the transit share).
 Three rejected models and why are in appendix §B.2 — the shortest reason to keep
 them on record is that **volume-minting *pays* for collusion**, inverting §0.
 
-**1.4 `RATIFIED` — `trade_decay_lambda = 0.01`** (half-life 69 yr). Ratified
-first as the **internal freighter routing rule**, where `λ = 0` reduces exactly to
-`most_needed_center` — design law #5's single-supply oracle — so one function
-checks two independent degeneracies. **Confirmed on 3 seeds, which is thin**;
-direction and order of magnitude hold, the precise optimum wants a ten-seed bed.
-Appendix §B.1.
+**1.4 `RATIFIED` — `trade_decay_lambda = 0.04`** (half-life 17 yr), **chosen
+by Monte Carlo on the tree composite jointly with `max_pickup_stops = 6`**
+(T-147, the author's direction to sweep the levers behind the appendix's
+largest shifts and commit what improves the centers built): +8.95% ± 0.78 on
+the composite and +29.3% ± 1.4 centers built to Band IV works, 16/16 runs on
+the twin bed (appendix §D.53). It was first ratified at `0.01` as the
+**internal freighter routing rule**, on coverage alone and 3 seeds (appendix
+§B.1); `λ = 0` still reduces exactly to `most_needed_center` — design law #5's
+single-supply oracle — so one function checks two independent degeneracies.
+Placeholder magnitude inside a plateau: `0.02`–`0.04` with four to six stops.
+**`OPEN` since T-147's freight planner** (autopilot §5.10): `λ` now also
+discounts every leg the planner compares, and its plateau was found under the
+routing the planner replaced; it has not been re-swept on the composite
+(appendix §D.55). On random ground at 0.02 and 0.08 the composite moves
+−0.3% ± 0.4 and +0.6% ± 0.4 (8 and 5 seeds) and the spread between empires
+neither way beyond its error (appendix §D.57).
+`max_pickup_stops` is 2 since the planner's cheaper doctrine (appendix §D.56).
 
 **The condition of ratification was that the discount must be *the* solution to
 freighter routing, not merely compatible with it, and it is:** the mechanism paid
@@ -134,11 +159,11 @@ T-74 rather than quietly keeping it.**
 **1.7 `OPEN` — R-P2: the base income rate and the Politics depth multiplier.**
 Both are unset. MC.
 
-**1.8 `OPEN` — λ is a cross-tree conflict and was ratified on one metric.**
-`trade_decay_lambda` measures **+0.002 on Expansion and −0.348 on Growth**
-(`examples/tree_gradient`). It is the largest ratification in this project's
-history and coverage was the only objective it was taken against. Re-ratify on
-the composite.
+**1.8 ~~`OPEN` — λ is a cross-tree conflict and was ratified on one metric.~~
+`RESOLVED` at T-147:** re-chosen on the tree composite (§1.4, appendix §D.53).
+The conflict it named stands in a new form: at `0.04` with six stops Growth
+rises 26–28% and Expansion falls 2.5–3.7%, and supers and apex forged fall by
+about four fifths — the cost the composite does not price.
 
 ---
 
@@ -285,9 +310,46 @@ unique.
 ```text
 wtp(mineral) = base_value(mineral)
              × doctrine_demand(mineral)      // Doctrine that wants it, wants it more
-             × shortfall_pressure(center)    // Simulation::mineral_pressure_of
+             × shortfall_pressure(center, mineral)  // Simulation::color_pressure_of
+             × forge_premium(center)         // Doctrine::forge_premium · B/(B + H) at a forge, else 1
              × risk_discount(counterparty)   // §3
 ```
+
+**`shortfall_pressure` is per color** (`RATIFIED` as the author's direction
+R-P19, built at T-147): `1 − held_c / bill_c` against the center's next works
+bill, clamped to `[0, 1]`, and `1` at a forge. It replaced a pressure read off
+the bank's total against the bill's total, which priced a color at zero
+whenever the center held more than its bill in the other colors. Under that
+rule the color a center lacked drew no bid and no hauler. Measured: color
+stalls (a center holding its bill's total, unable to pay it in every color)
+fall 15.2% ± 2.2 in center-years on random ground, 12 of 12 galaxies (appendix
+§D.45).
+
+**`shortfall_pressure` rises as the bill nears completion** (`RATIFIED` as
+the author's direction to set Exchange-based Doctrine by Monte Carlo on the
+twin bed, T-147; the functional form is a placeholder):
+
+```text
+shortfall_pressure(center, c) = (1 − held_c / bill_c) / m^γ
+m = Σ_c max(0, bill_c − held_c) / Σ_c bill_c      // share of the bill still missing
+γ = Doctrine::completion_exponent
+```
+
+A works bill is paid in every color at once, so the kilotonnes a center still
+lacks are what complete the purchase; the per-color price alone fell as a
+center neared completion, and the color a nearly-paid center lacked was
+outbid by most of its own empire (appendix §D.51). `γ = 0` is the per-color
+price alone, bit for bit. At `γ = 1`, under the default works mix, a color's
+price is its share of what the center still lacks: a center holding nothing
+pays what it did, and a center short one color pays up to `Σ bill / bill_c`
+times as much for it. That is R-IND17's concentration (industry §6.11)
+carried by the price, which the Exchange, freight routing and the hauler's
+backlog all read. **Shipped `γ = 0.75`, chosen by Monte Carlo**: +5.65% ±
+0.79 on the tree composite over eight seeds, 8/8 positive, replicated on four
+seeds it was not chosen against; the rivals inside an empire outbidding a
+stalled center for its color fall from 70–96% to 12–40%. It does **not**
+narrow the spread between empires: Growth's coefficient of variation across
+seats moves −0.001 ± 0.018 (appendix §D.51).
 
 **`doctrine_demand` is where the works mix enters the market**, and it is
 measured: an empire deep in Production bids a Yellow-heavy bill, and trade flow
@@ -332,7 +394,7 @@ appendix §D.20.
 
 Carries two structural limiters on volume too: **ten clearings per game**
 (`years_per_round = 400`, set by the card layer rather than the market) and a bid
-sized to one infrastructure rung rather than to consumption.
+sized to one infrastructure whole Band rather than to consumption.
 
 **2.16 `RATIFIED` — the book clears at a spatial price equilibrium, no deeper than
 the buyer can move on, and every holding can sell (R-MX7, T-134).**
@@ -664,7 +726,7 @@ as the intra-empire matcher and `most_needed_center`'s oracle (design law #5).
 |---|---|---|---|
 | `$` | the means of exchange | `$` — **not mass** (§1.1) | per-player ledger, §9.3 |
 | `E` | escrow locked at match | `$` | §1.3 |
-| `λ` | transit discount and burn rate | 1/yr | `SimConfig::trade_decay_lambda = 0.01` |
+| `λ` | transit discount and burn rate | 1/yr | `SimConfig::trade_decay_lambda = 0.04` |
 | `t` | one-way transit of the settling leg | yr | `math::ship_travel_years` |
 | `wtp` | a center's willingness to pay | `$`/kt | §2.11 |
 | `base_value[c]` | a color's floor price | `$`/kt | `Doctrine`, §2.12 |
@@ -711,7 +773,7 @@ bed before anything switches on.**
 | Code | Decision |
 |---|---|
 | R-P1 | `$` has zero mass and sits outside the mass ledger; the digest gains a `$` leaf |
-| R-P2 (part) | `trade_decay_lambda = 0.01` — **3 seeds, thin**, and measured on coverage alone |
+| R-P2 (part) | `trade_decay_lambda = 0.04`, chosen with `max_pickup_stops = 6` on the tree composite, 16 runs (§1.4, appendix §D.53) |
 | R-P3 | the faucet is production, not population |
 | R-P4 | reputation public by default; a card switches the buyer to per-observer |
 | R-P6 | disclosure recipient bifurcates with depth; broadcast is the win path |
@@ -723,6 +785,7 @@ bed before anything switches on.**
 | R-MX7 | the book clears at a spatial price equilibrium, capped by delivery room; every holding can sell (§2.16) |
 | R-IND5 | the market is free; everything that bends it is a card |
 | R-IND10 | non-delivery returns escrow minus the burn; the loss is shared |
+| R-P19 | allocation is by dynamic price through the Exchange, not by caps or standing orders (§0) |
 | — | settlement is at a shared outpost (§2.3); the obligation is instant, the goods are not (§2.5) |
 
 ### Open

@@ -19,7 +19,7 @@
 //!   is inheriting the geology rather than mixing it.
 //! - **payable fraction** — `3·min_c(bank_c) / total`. A works bill is a
 //!   conjunction, so this is the share of the bank that could pay a balanced one
-//!   and `1 − it` is ore that is banked and cannot be spent on a rung at any
+//!   and `1 − it` is ore that is banked and cannot be spent on a whole Band at any
 //!   price. It is the direct measure of what R-O89's load-leg fix was reaching
 //!   for and could not get all of.
 //!
@@ -214,7 +214,7 @@ fn main() {
         pct(&pay, 0.9)
     );
     println!(
-        "  banked {banked:.0} kt, of which {dead:.0} kt ({:.1}%) cannot pay a balanced rung at any price",
+        "  banked {banked:.0} kt, of which {dead:.0} kt ({:.1}%) cannot pay a balanced whole Band at any price",
         100.0 * dead / banked.max(1e-9)
     );
 }

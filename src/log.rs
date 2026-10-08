@@ -178,7 +178,7 @@ pub enum LogEvent {
         ///
         /// A works bill is payable in *named colors*, and the galaxy's supply
         /// is single-colored (mean dominant-color share 0.789, 38% of sources
-        /// ≥95% one color), so "could this center afford the rung" and "did
+        /// ≥95% one color), so "could this center afford the whole Band" and "did
         /// this center hold enough ore" are different questions with different
         /// answers. Reconstructing the first from `stockpile` and `infra_cost`
         /// counts a color-short center as having *chosen* not to deepen, which
@@ -187,8 +187,16 @@ pub enum LogEvent {
         can_afford_infra: bool,
         chosen: BuildOrder,
     },
-    /// A chosen build was funded and applied this cycle.
-    BuildApplied { player: u32, center: PlanetId, order: BuildOrder, cost: f64, stockpile_after: f64 },
+    /// A chosen build was funded and applied this cycle. `refined_paid` is the
+    /// part of `cost` paid in supers and apex, kt.
+    BuildApplied {
+        player: u32,
+        center: PlanetId,
+        order: BuildOrder,
+        cost: f64,
+        refined_paid: f64,
+        stockpile_after: f64,
+    },
     /// **A center synthesized a refined material** (galaxy §4.2): `made`
     /// kilotonnes of `material` out of `used` kilotonnes of its precursors, the
     /// difference left at the center as slag (R-O59).
@@ -200,7 +208,8 @@ pub enum LogEvent {
     /// A body's density crossed the floor; mining there has stopped for good.
     MiningExhausted { planet: PlanetId },
     /// A freighter loaded at an outpost or deposited at a center.
-    FreighterTransfer { player: u32, vehicle: Entity, leg: FreighterLeg, amount: f64, at: PlanetId },
+    /// `refined` is the part of `amount` in supers and apex, kt.
+    FreighterTransfer { player: u32, vehicle: Entity, leg: FreighterLeg, amount: f64, refined: f64, at: PlanetId },
 
     /// A vehicle was built and launched toward a target.
     ///
@@ -245,7 +254,7 @@ pub enum LogEvent {
     ///
     /// `infra` is the founding stock in kilotons, *after* every term that can
     /// set it: the recycled hull, the share of the hold erected on arrival, and
-    /// the floor rung. It is logged because zero there is an absorbing state
+    /// the floor whole Band. It is logged because zero there is an absorbing state
     /// rather than a small number (`Hyades_warfare_tree.md` §8.7), so the
     /// distribution of this one figure is what says whether a Doctrine write
     /// aimed at it is doing anything — and reconstructing it from the hull type
@@ -272,7 +281,7 @@ pub enum LogEvent {
     /// `population` is **kilotons of people** and `k` is the ceiling as a Band
     /// — the two units the pair genuinely are since T-64, rather than two
     /// readings of one ladder. The logistic runs on the mass; `k` is a
-    /// classification, and reading it as a rung is what makes it comparable to
+    /// classification, and reading it as a whole Band is what makes it comparable to
     /// habitability and infrastructure.
     PopulationStep { planet: PlanetId, population: f64, k: f64 },
 
@@ -450,9 +459,9 @@ impl fmt::Display for LogEvent {
                  pressure={mineral_pressure:.2} candidates={candidates_seen} -> {chosen:?}",
                 center.0
             ),
-            BuildApplied { player, center, order, cost, stockpile_after } => write!(
+            BuildApplied { player, center, order, cost, refined_paid, stockpile_after } => write!(
                 f,
-                "P{player} planet#{} built {order:?} (cost={cost:.2}, stockpile now {stockpile_after:.2})",
+                "P{player} planet#{} built {order:?} (cost={cost:.2}, {refined_paid:.2} in refined, stockpile now {stockpile_after:.2})",
                 center.0
             ),
             Synthesized { player, center, material, made, used } => write!(

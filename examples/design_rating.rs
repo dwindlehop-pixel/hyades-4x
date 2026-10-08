@@ -159,7 +159,7 @@ fn play(bed: Bed, seed: u64, a: usize, b: usize) -> [f64; 2] {
             Bed::Scout => fleets.push(fleet(seat, d, Role::Scout, homes[seat], Vec3::ZERO)),
         }
     }
-    let seeding = FleetSeeding { spend_kt: spend, known_radius_ly: bed.known_radius(), fleets };
+    let seeding = FleetSeeding { spend_kt: spend, known_radius_ly: bed.known_radius(), fleets, twin_bill: None };
     let galaxy = Galaxy::generate_with(g, seeding).unwrap();
     let mut run_cfg = cfg;
     run_cfg.horizon_years = bed.horizon();

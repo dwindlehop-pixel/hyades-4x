@@ -10,8 +10,15 @@
 //! (the clearing never pairs an empire with itself, so every delivered
 //! kilotonne crossed).
 //!
+//! Per run, also the worlds whose ceiling `min(hab, bio)` reaches `k_high`
+//! (`Band 3.2`, the colonization classifier), which the color field moves
+//! through §4.4's anticorrelation.
+//!
 //! Run: `cargo run --release --example forge_census -- [horizon]`;
-//! `FC_SEEDS=2,3,5,11` for another seed set.
+//! `FC_SEEDS=2,3,5,11` for another seed set; `FC_SITE_SPACING` and
+//! `FC_SITE_SIGMA` (ly) set the color sites' spacing and width (§4.3) — the
+//! galaxy is the only thing a bed varies.
+use hyades_engine::autopilot::RankWeights;
 use hyades_engine::galaxy::{Galaxy, GalaxyConfig};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::resources::{Material, Super};
@@ -31,13 +38,36 @@ fn seeds() -> Vec<u64> {
     }
 }
 
+fn env_f64(name: &str) -> Option<f64> {
+    std::env::var(name).ok().and_then(|v| v.trim().parse().ok())
+}
+
+fn galaxy_config(seed: u64) -> GalaxyConfig {
+    let mut cfg = GalaxyConfig::new(SEATS, seed);
+    if let Some(v) = env_f64("FC_SITE_SPACING") {
+        cfg.color_site_spacing_ly = v;
+    }
+    if let Some(v) = env_f64("FC_SITE_SIGMA") {
+        cfg.color_site_sigma_ly = v;
+    }
+    cfg
+}
+
 fn main() {
     let horizon: f64 = std::env::args().nth(1).and_then(|a| a.parse().ok()).unwrap_or(DEFAULT_HORIZON);
-    println!("forge_census: {SEATS} seats, horizon {horizon} yr, seeds {:?}", seeds());
+    let probe = galaxy_config(1);
+    println!(
+        "forge_census: {SEATS} seats, horizon {horizon} yr, seeds {:?}, color sites {} ly apart, width {} ly",
+        seeds(),
+        probe.color_site_spacing_ly,
+        probe.color_site_sigma_ly
+    );
     println!("seed seat native first_yr     red   green    blue    apex native% colony_yr work_yr");
     std::io::stdout().flush().ok();
     for seed in seeds() {
-        let galaxy = Galaxy::generate(GalaxyConfig::new(SEATS, seed)).unwrap();
+        let galaxy = Galaxy::generate(galaxy_config(seed)).unwrap();
+        let k_high = RankWeights::default().k_high;
+        let admitted = galaxy.planets.iter().filter(|p| !p.is_homeworld && p.k_potential() >= k_high).count();
         let native: Vec<Super> = galaxy
             .homeworlds
             .iter()
@@ -96,7 +126,7 @@ fn main() {
         let names: Vec<String> =
             Material::ALL.iter().zip(traded.iter()).map(|(m, t)| format!("{m:?} {t:.2}")).collect();
         println!(
-            "{seed:>4} traded between empires (kt): {} | {} events, {:.1} s",
+            "{seed:>4} traded between empires (kt): {} | admitted {admitted} | {} events, {:.1} s",
             names.join(", "),
             sim.events_processed(),
             secs

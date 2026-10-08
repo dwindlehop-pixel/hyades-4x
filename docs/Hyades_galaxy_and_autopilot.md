@@ -7,7 +7,7 @@
 
 The **theater is 3D** (X, Y, Z): movement, combat, encirclement, and retreat happen in a volume, so heading/velocity/formation/encirclement (sim §6) become **3-vectors** and egress can be cut in three dimensions. The **command view is 2D** (X, Y): the strategic map is the flat hex tiling, Z collapsed. Plan in 2D, render in 3D. **R-G0 / sim cross-ref:** sim §1/§6 absorb this — encirclement and retreat are volumetric.
 
-**Hex dimensions.** Hexagonal **prism**: side `s ∈ [50, 250] ly`, depth `1×–5× s` (**start 3×**). Light crosses a hex in 50–250 yr, so under the *c*-cap (sim §1a) a round spans **long epochs** and intercepts are slow. **R-G1:** final `s` and depth.
+**Hex dimensions — `RATIFIED` in part (the author's rulings; R-G1).** A hex is a flat-top hexagon **70 ly a side, 121.2 ly across flats** (`GalaxyConfig::hex_side_ly`), the grid laid so every homeworld stands in its own hex (§2; `GalaxyConfig::hex_grid_origin`): three hexes meet at the galactic center at 3 seats, a hex is centered there at 6, 12 and 18, an edge's midpoint is there at 2; light crosses one in about 120 yr. **Color varies at the scale of an empire** (§4.3), so an empire spans a modest integer number of hexes, with the target per seat count: **3–6 hexes per player at 3 seats, 6–12 at 6 and 12, 3–6 at 18**, and the side a human-scale number (about 70 ly a side, about 120 ly across). Counted as the hexes holding 90% of the worlds an empire owns at 1,500 yr, no one width meets all four targets; the side is the author's choice near the width that minimizes the worst miss (116 ly), and 6 seats read below their target at it (**R-G5, open**; appendix §D.32). **The hex is a human-legible interface, and the one thing generated from it is where the homeworlds stand** (the author's rulings; §2) — changing it moves the homeworlds and their companions and no other world (`the_hex_places_the_homeworlds_and_nothing_else`); ore color varies at the scale of the color sites (§4.3), a separate pair of parameters. **The star field's extent is sized by a separate 10-ly ring step** (`GalaxyConfig::ring_step_ly`, the previous hex side), so resizing the hex moved no planet and changed no planet count; the field's vertical scale length is 3 ring steps, 30 ly. **R-G1 remainder (open):** the command view's prism depth. *Superseded:* side `s ∈ [50, 250] ly` with depth `1×–5× s`; then a 10-ly side chosen against throughput, at which every empire's reach held every color (appendix §D.32).
 
 ---
 
@@ -25,9 +25,59 @@ Homeworlds seed in **adjacent hexes forming a vertex-transitive cluster** where 
 
 Cliques cap at 3, rings come in 6s, 4/5/7 have no equal-adjacency arrangement. A radius-`r` ring holds exactly **6r** cells, so the ring family is **6, 12, 18, 24, …** — note that 9 and 15 are multiples of 3 but form *no* ring, so a `% 3` rule would be the wrong predicate. The **neutral core** is equidistant from all — early contested space.
 
+**Each start stands in its own hex — `RATIFIED` (the author's rulings, T-147).** Each hex holding a homeworld borders the two holding its neighbors' homeworlds (the domino's one at 2 seats), and seats go round that ring in order (`GalaxyConfig::homeworld_hexes`). The homeworlds are not at the hex centers: the ring of homeworlds is drawn in toward the galactic center, every hex center scaled by one factor, so the ring's radius and the spacing between neighbors are smaller than the hex ring's and every homeworld is equidistant from its nearest two (`GalaxyConfig::homeworld_positions`, pinned by `every_homeworld_stands_in_its_own_hex_beside_its_two_neighbors`). The factor puts the outermost homeworld `homeworld_inset_ly` inward of its hex's center; generation refuses an inset at or past the hex's inradius (60.6 ly), where a homeworld would leave its hex. **Placeholder: 25 ly** — at 3 seats it is the 45-ly ring the homeworlds stood on before, and the 3-seat galaxy and its runs are bit-identical to that placement.
+
+| seats | homeworlds from the galactic center | spacing between neighbors | in star-field scale lengths `L_xy` |
+|---|---|---|---|
+| 2 | 35.6 ly | 71.2 ly | 0.79 |
+| 3 | 45.0 ly | 77.9 ly | 1.00 |
+| 6 | 96.2 ly | 96.2 ly | 1.75 |
+| 12 | 188.3–217.5 ly | 108.7 ly | 2.90–3.35 |
+| 18 | 298.7–338.7 ly | 112.9 ly | 3.98–4.52 |
+
+**R-G6 — `OPEN`:** the star field's scale at 6 seats and more. It is still sized from the ring step (§1), so at 12 and 18 seats the homeworlds stand 3–4.5 scale lengths out, where the field's areal density is 3–8% of its density at one. Settled by choosing whether the field scales with the homeworld ring (planet count, and every run's cost, then grows with it) and by a 6-, 12- and 18-seat run of each.
+
 **Balance targets the 2-neighbor configurations — 3, 6, 12, 18 — where every seat borders exactly two others.** **N=2 is supported but is not a balance target** (ratified): the domino gives each player *one* neighbor, and the `p % 3` archetype cycle leaves it with Blue and Red and no Green. Both are accepted consequences of a configuration nothing is tuned around — which **resolves R-O9** as "known and accepted" rather than as a defect to fix.
 
 **R-O12 (resolved): `Galaxy::FAIR_COUNTS` is `[2, 3, 6, 12, 18]`.** It had been truncated at 12 while `starting_hex_radius` already carried an `18 => 4.5` branch; all three of its ring radii are exactly `N/6 + 1.5`, so that branch was the third term of the family rather than a stray, and the list was simply one term short. The engine now expresses the family as that closed form instead of three magic numbers. **R-G2:** core contents (supported counts now settled).
+
+**Spread between empires — the author's target, `RATIFIED`: card-free, the
+standard deviation of colony count between the empires of one game is about
+20 colonies; more would not be fun.** Measured at 1,500 yr on 12 standard
+3-seat galaxies: median 190, mean 223 (appendix §D.37). **`OPEN` (T-147):**
+how to meet it. The runaway was an empty hauler's routing loop (appendix
+§D.38); with freight routed by demand price, `GalaxyConfig::ground` selects
+among three kinds of ground, all built, `Ground::Random` the default:
+
+| `Ground` | what each seat starts on | spread, archetype weight (§D.38) | spread, holdings-based pricing (§D.40) |
+|---|---|---|---|
+| `Random` | one field over the whole disk | 73.5 | 60.1 |
+| `Identical` | one wedge of the disk turned to every seat, same colors | 48.0 | 24.3 |
+| `ColorRotated` | the wedge with its colors stepped once per seat, as the archetypes step | 19.3 | 31.7 |
+
+Mean spread at 1,500 yr over 12 galaxies. Holdings-based pricing is ratified
+(autopilot spec §3.9); under it no ground meets the target with trio
+homeworlds.
+
+**The spread of colony-years per empire on random ground — the author's
+target, `RATIFIED`: no more than 1.5x the lowest spread on identical or
+color-rotated ground.** Measured as the coefficient of variation across the
+seats of one galaxy, averaged over 8 galaxies on the twin bed (3 seats,
+1,500 yr): random 0.098 ± 0.016 against identical 0.055 ± 0.012, so the target
+is 0.083 and is **not met** (appendix §D.57). The same reading of whole Band IV
+works per empire is 0.137 on random ground against color-rotated 0.126, inside
+1.5x. `trade_decay_lambda` at 0.02 and 0.08 moves neither by more than its
+error, and keeping color sites away from the homeworlds (20 and 35 ly) or
+planting them equidistant around each (`Homeworlds::ColorCentered`) widens the
+Band IV spread by 0.049–0.073 — refuted, the clearance not landed.
+**`OPEN` (T-147) — the fair start** (`GalaxyConfig::fair_start_ly`, off by
+default): every seat's wild worlds within the radius of its homeworld are seat
+0's, carried to it and color-stepped as the archetypes step. At 35 ly it reads
+0.081 ± 0.023 with Growth +12% — at the target, not resolved from it on 8
+galaxies; copying the start with its colors unstepped reads 0.050 and costs
+73% of Growth. Settled by the stepped fair start on eight more galaxies, and by
+the author's choice of radius against the hex border (39 ly from each
+3-seat homeworld).
 
 ---
 
@@ -59,6 +109,38 @@ ruling.
 
 **`RATIFIED` (the author's ruling) — a homeworld is a trio.** The habitable world, where the seat's population grows and its forge will stand, holds only a trace of every basic; beside it, one companion world is rich in each of the archetype's two rich basics. **Every forge's precursors therefore arrive by freight** (§4.5). Built: companions at `Band 3.0` in their one color, trace in the others, habitability and biosphere `Band 0.5`, `2 ly` from the homeworld on either side along the ring (`GalaxyConfig::homeworld_companion_*`, all **placeholders**); they start wild, and the opening's outposts take them. Card-free, 4 seeds, 1,500 yr: colony-years and colonies unchanged within two standard errors; the first colony comes later (appendix §D.26).
 
+**`OPEN` (T-147) — color-centered homeworlds** (`GalaxyConfig::homeworlds =
+Homeworlds::ColorCentered`, built, off by default). The habitable world stands
+alone, holding under `Band I` of every basic (each reading drawn uniformly in
+`[0, 1)`), on the ring midway between its neighbors' angles. Around it, all
+**placeholders**:
+
+| parameter | meaning | value |
+|---|---|---|
+| `homeworld_site_distance_ly` | distance to each of three planted color sites, one per hue, 120° apart | 10 ly |
+| `homeworld_site_band` | each planted site's peak | `Band 3.0` |
+| `homeworld_outpost_distance_ly` | distance to each of three planted outpost worlds, one per hue, on the bearing to that hue's site | 5 ly |
+| `homeworld_outpost_band` | each outpost's deposit, in its one color | `Band I` |
+
+On identical ground seat 0's are planted inside its wedge and turned with it.
+Measured (appendix §D.41–§D.42): with sites alone the spread widens on every
+ground; equidistance from the field's own sites was tried first and cannot
+carry a threshold.
+
+**The first forge — the author's target: a mean of 400 yr with a 5-yr standard
+deviation.** A forge stands at population `Band IV`, so its date is set by the
+homeworld's starting population and the logistic toward its ceiling, and
+emigration only delays it. **`RATIFIED` (the author's ruling): a homeworld
+starts at population `Band II .785`** — a whole Band and a fraction of the way
+to the next, the form this quantity is written in —
+(`GalaxyConfig::homeworld_start_population = (BandTier::II, 0.785)`, 1,076 kt),
+which the population bands read as level III, so a homeworld clears the
+level-III build gate from the start. Measured (appendix §D.42): from the old
+start, `Band II` (31.6 kt), the logistic takes 597 yr; planted outposts and
+starting miners, freighters and colony ships do not bring it earlier; from
+`Band II .785` with them the first forge stands at 400.7 yr, standard deviation
+0.5 yr, on all three grounds.
+
 **Eventual self-synthesis.** At **pop Band IV** a homeworld synthesizes its archetype's super from its trio's two rich basics, which are that super's recipe. **R-G4 — resolved (the author's ruling: "forges have to produce supers according to color theory").** "Exactly one super" is a gradient, not a rule: a forge makes any super whose two basics it holds 1:1 (§4.2), and an archetype is native to one super only in that its trio supplies that recipe. Measured with the trio, hex-scale color, the ore cap and a priced works bill: **0.27% of refined mass synthesized crosses between empires** (24 runs, appendix §D.28) — empires make their own supers from basics their own freight brings. With forging a forge's purpose and forges bidding for supers (§4.5), card-free: every forge still makes all three supers, and 3.7% of supers forged cross between empires (appendix §D.31).
 
 ---
@@ -88,6 +170,16 @@ fleets face to face while varying nothing but the galaxy (Technology §4.4.5).
   velocity; a **Sentry** hull stands at its seat's homeworld, counted there as
   the center's sentries (T-139), whatever position the fleet names; a mission
   hull with nowhere to go stands in Reserve at its home port.
+- `twin_bill` (none by default) — **twin Designs paid in supers** (the author's
+  direction for a bed in which supers have a final demand): every seat starts
+  with a twin of every Design, the same hull, class, mass and stats, billed
+  `twin_bill` (`Roster::twin`). A yard pays the twin's bill wherever it holds,
+  or as a forge can make, the supers it owes for the whole order, and the
+  Design's own bill otherwise. A center keeps wanting the twin of the hull
+  Design it last chose — recorded as its standing order, so freight and the
+  Exchange bid for it — until it can pay one. At a forge a Design counts as
+  paid in supers only while its twin is payable, so R-MX17's pricing holds.
+  `BUILT` for beds; appendix §D.35.
 - **A generated missile Design starts with its magazine full** — its rounds
   are generated with it, as its hulls are, and drawn from no bank. A generated
   picket has no post and no voyage, so once dry it is not resupplied: the
@@ -123,11 +215,11 @@ that spec) the two used to share notation with. **No direct substitution.**
 `Hyades_mineral_cost_curve.md` §5.0 only names them.
 
 ### 4.3 Tier-1 distribution — 3D field, XY-dominant, **Gaussian over Bands** (T-62)
-**Gaussian in X & Y** (each hue's hotspot) **× exponential decay in Z from the midplane**. **`RATIFIED` (the author's direction) — color is sized to the hex: "a hex has a distinct slant or two."** The three hotspots set where each hue is strong across the galaxy; inside that envelope the ore sits at **color sites** on a jittered lattice one hex side apart, each a single hue drawn in proportion to the hotspots' weights there, with a peak of `mineral_peak · (floor + (1 − floor) · w)`. A world's deposit in a hue is its nearest site of that hue (`Band IV` seams stay at the hue centers). One noise draw per world is added to every color, so the noise does not reorder a world's colors. Spacing `1.0` hex side, width `0.5` of the spacing, floor `0.5` — **placeholders** (`GalaxyConfig::color_site_*`). *Superseded:* sites carrying a recipe pair 1:1 — the author: 1:1 is wrong for galaxy generation (appendix §D.27).
+**Gaussian in X & Y** (each hue's hotspot) **× exponential decay in Z from the midplane**. **`RATIFIED` (the author's ruling) — color varies at the scale of an empire.** The three hotspots set where each hue is strong across the galaxy; inside that envelope the ore sits at **color sites, placed at random** — one per `color_site_spacing_ly`² of area, independent of the hex — each a single hue drawn in proportion to the hotspots' weights at the site. A site's peak is `mineral_peak · (floor + (1 − floor) · w / w_max)`, `w` its hue's weight and `w_max` the largest weight among that hue's sites, so **each hue's strongest site is `Band IV`** (R-O82) wherever the lattice falls relative to its hotspot — without it, the one site that landed nearest its hotspot held most of a 3-seat galaxy's ore in one hue (appendix §D.32). A world's deposit in a hue is the Gaussian, of width `color_site_sigma_ly`, of its strongest site of that hue. One noise draw per world is added to every color, so the noise does not reorder a world's colors. Spacing `10 ly`, width `5 ly`, floor `0.5` — **placeholders** (`GalaxyConfig::color_site_*`); **`RATIFIED` (the author's ruling): at least 5% of worlds hold two colors** (a color counts at `Band I`, 1 kt); the shipped placeholders give 4.20% and do not yet meet it. **OPEN:** the spacing and width that put color at the scale of an empire within that floor, measured against trade in supers and the balance they move (appendix §D.33). *Superseded:* sites on a jittered lattice one 10-ly hex side apart ("a hex has a distinct slant or two"), at which each empire's reach held every color (appendix §D.26); then one site per 70-ly hex, which made the hex a generation parameter (§D.32); sites carrying a recipe pair 1:1 — the author: 1:1 is wrong for galaxy generation (appendix §D.27).
 
 **`RATIFIED` (the author's ruling) — a world's total ore is its richest color, shared in its rolled proportions.** The three colors as the field rolls them are rescaled to sum to the largest of them, keeping their ratios: a one-color world barely changes, a balanced one keeps a third. §4.4's anticorrelation reads the capped deposit.
 
-**Slant is measured by an absolute threshold per mineral** (the author's direction: trace amounts do not count): a mineral is present in a region when it holds at least the threshold, and the region's slant is how many are present. Over 10-ly cells at `Band I` (1.0 kt): 42.1% none, 48.9% one, 7.8% two, 1.2% three; 58.0% of worlds hold no mineral at `Band I` (appendix §D.28). A turtler mines the **Z-column** for a modest baseline, but the mass sits near Z=0 and one hex captures only its XY footprint, so **the lion's share needs X-Y expansion**. **R-M3:** Z scale-height / ratio.
+**Slant is measured by an absolute threshold per mineral** (the author's direction: trace amounts do not count): a mineral is present in a region when it holds at least the threshold, and the region's slant is how many are present. On the superseded 10-ly-site field, over 10-ly cells at `Band I` (1.0 kt): 42.1% none, 48.9% one, 7.8% two, 1.2% three; 58.0% of worlds hold no mineral at `Band I` (appendix §D.28). A turtler mines the **Z-column** for a modest baseline, but the mass sits near Z=0 and one hex captures only its XY footprint, so **the lion's share needs X-Y expansion**. **R-M3:** Z scale-height / ratio.
 
 **The Gaussian is over the *Band*, not over the mass.** That is the design
 statement, and it is the only reading under which the shape means anything: a
@@ -195,13 +287,40 @@ forge (R-O59). What is left is one basic, waiting on the colors that pair it.
   build a Design a write bills in supers or apex; every order paid only in
   basics is quoted unpayable at a forge. The forge runs after the yard's
   decision, never ahead of it.
-- **Its basics are its synthesis's.** No other build, rung, Exchange ask or
+- **Its basics are its synthesis's.** No other build, whole Band, Exchange ask or
   hauler draws on them (`available_at`).
-- **Priced above every other use.** A forge bids for the basics that complete
-  a balanced set — every color up to the largest of what it holds and of its
-  next rung's colors — at `Doctrine::forge_premium` times its price
-  (`10`, **placeholder**; every other center's pressure is at most `1`), and
-  its pull on its own empire's freight is scaled by the same factor.
+- ~~**Priced above every other use.**~~ *Contradicted by the author's ruling
+  at T-147 (appendix §D.49): the forge's price is set to maximize the tree
+  metrics on the twin bed.* A forge bids for the basics that complete a
+  balanced set — every color up to the largest of what it holds and of its next
+  whole Band's colors — at `Doctrine::forge_premium` times its price, and its
+  pull on its own empire's freight is scaled by the same factor. **`RATIFIED`
+  default `0.3`, by Monte Carlo** (`examples/forge_sweep`; +8.73% ± 1.06 on the
+  tree composite against `10`, 8/8 seeds): below `1`, so an empty forge now
+  bids under a center at full pressure and forging takes the freight
+  development does not. Supers and apex forged fall about 94%. The forge's yard
+  still builds survival first and Designs paid in supers next; only its price
+  for freight and the Exchange moved. **`OPEN` since T-147's freight planner
+  (autopilot §5.10, appendix §D.55):** a stop now loads only what its buyer
+  wants, so a forge long one color and short two receives the two only when it
+  outbids every center, which at `0.3` it does not — apex forged is **0 on every
+  seat** (seed 1) and supers fall to one batch near 500 yr. Premium `1` and `3`
+  move the composite by −1.1% to +0.8% on two seeds; `3` restores 32–623 kt of
+  apex per seat and costs 3–5% of centers built. The composite cannot price
+  apex card-free (nothing consumes it), so this is the author's call: what
+  would settle it is a final demand for apex, or a ruling on how much forging
+  the card-free bed should carry.
+- **The premium falls with what the forge holds — `RATIFIED` as the author's
+  direction (T-147: "forge price should vary with its holding").** The factor
+  is `floor + (forge_premium − floor) · B / (B + H)`, where `H` is everything
+  the forge holds, every tier, in kt, `B` is `Doctrine::forge_holding_scale`
+  whole Band IV works stocks in kt, and `floor` is `Doctrine::forge_price_floor`
+  (defaults `1` and `0`; neither moved the composite beyond the noise,
+  appendix §D.49). An empty forge bids the full
+  premium, one holding `B` half of it, and one holding `(forge_premium − 1)·B`
+  an ordinary center's full price. Card-free nothing consumes supers or apex,
+  so a forge's holding grows and its pull on freight falls (appendix §D.46).
+  The functional form is a placeholder.
 - **Its empire first.** Supers its empire's centers wait on, and supers it has
   sold and not yet delivered, are kept back from apex.
 - **It bids for the supers it has demand for — `RATIFIED` (R-MX18, the author's
@@ -222,6 +341,28 @@ against `a50ef75` unchanged within two standard errors; 3.7% of the supers
 forged cross between empires (810.6 of 22,040 kt over 4 seeds); a seat's native
 super is 29.6% of what it forges, pooled. *Superseded:* synthesis on demand, for
 an order or a sale only (appendix §D.30).
+
+**Supers to the yards that want them — `RATIFIED` (the author's ruling,
+T-146) and built; Doctrine, so a card can change it.** A yard whose standing
+order lacks a super is sent one by an idle hauler from Reserve, which loads,
+delivers and stands down at the yard (`src/sim/supply.rs`):
+
+- `Doctrine::forge_supply_runs` (on by default) — from the nearest forge of its
+  own empire with any of what it lacks to spare; free, one empire's holding
+  moving between its planets.
+- `Doctrine::buy_from_rival_forges` (on by default) — where no forge of its own
+  can, from the nearest forge of another empire holding supers that empire
+  does not need (its spare less what its empire waits on and what it has sold
+  and not delivered), bought at the supers' floor price, buyer's purse to
+  seller's (**placeholder price**).
+- A run starts when a yard records a want and when a forge of its empire
+  forges; a yard has one run in flight. `DoctrineWrite::SuperSupply` sets both
+  flags; no card writes it yet. **`OPEN`:** the rival forge's stock is read
+  without light-lag, as the Exchange's books are (T-145).
+
+A card-free game has no order that lacks a super, so the runs never start in
+one; on the twin bed (§3.1) they move supers to yards (appendix §D.36). Test:
+`a_supply_run_brings_a_yard_its_supers_from_its_own_forge_or_a_rivals`.
 
 **R-M5 — resolved in part.** Freight now loads against a forge's balanced-set
 want and a forge out-pulls every other center, so precursors are hauled to a
@@ -247,6 +388,28 @@ Card costs are **specific-color**, two-trees-per-domain (Politics↔Yellow and T
 A homeworld rich in two colors is **cheap in those four trees, expensive in the other two** (§3). **T1_any is a rare exception.** **R-M8:** the swap leaves **Growth↔Cyan** as the lone soft fit (biosphere ≠ structure); **Technology↔Magenta** (military-tech axis) and **Politics↔Yellow** (economic leverage) are intended.
 
 ---
+
+### 4.9 `OPEN` — R-G7: a neutron star as the third star of a system
+
+**The author's idea (T-148):** a trinary system whose third star is a neutron
+star, and a civilization there whose whole technological effort, until
+recently, went into understanding the star and drawing energy from it. It is
+meant to inform **galaxy generation** (a body that is an energy site, not a
+mineral site) and **deep Technology cards** (technology §7.1.3).
+
+Nothing is decided. **What would settle R-G7:**
+
+- **Where energy enters a mass-conserving model.** The engine has no energy
+  stock; every quantity is mass (design law #11), and a drive's thrust is
+  `drive_specific_thrust × drive mass`. A neutron-star yield has to become a
+  rate or a coefficient — thrust per kilotonne of drive, a fabrication rate, a
+  synthesis yield — or a new conserved quantity with its own ledger. The
+  author's choice among those decides what the site is worth.
+- **How many, and where.** One per galaxy, one per seat or one per hex ring,
+  and whether its placement must be equitable to every homeworld under galaxy
+  §3's rule (equitable but unequal).
+- **Who is there.** Whether the siphoning civilization is a seat, a neutral
+  presence the engine has to model, or only history written into the site.
 
 ## 5. Population — Bands, Gibrat meaning, hard gate
 
@@ -338,8 +501,9 @@ Turn-1 state: co-located homeworlds at **Band IV/IV/I** (pop ~Band I, **no pop-B
 
 ## 9. Ratification points (consolidated)
 
-- **R-G0** sim §1/§6 absorb 3D/2D · **R-G1** hex `s`+depth · **R-G2** counts + core · **R-G3** archetype placement · ~~**R-G4**~~ self-synth yield + "exactly one" (resolved: color theory, no archetype barred, §3)
+- **R-G0** sim §1/§6 absorb 3D/2D · **R-G1** hex side ratified at 70 ly (§1); prism depth open · **R-G6** star-field scale against the hex-placed homeworld ring at 6+ seats (§2; open) · **R-G5** the hex misses the per-seat hexes-per-player target at 6 seats (§1; open) · **R-G2** counts + core · **R-G3** archetype placement · ~~**R-G4**~~ self-synth yield + "exactly one" (resolved: color theory, no archetype barred, §3)
 - ~~**R-M1**~~ names — **resolved**: Cage Ice, Rosepeter, Voltslate, Strange Matter (§4.1); super names are placeholders under T-142 · **R-M2** ratios+wastage · **R-M3** Z scale-height · **R-M4** anticorrelation · **R-M5** supply chain (resolved in part, §4.5) · **R-M6** super aspect-sets · **R-M7** use-domains+apex · **R-M8** Growth↔Cyan soft fit (rest intended)
+- **R-G7** a neutron star as the third star of a system: an energy site for galaxy generation and deep Technology cards (§4.9; open)
 - **R-P1** Weibull `k`+bands · **R-P2** pop→design gating · **R-P3** infra rate vs. clock
 - **R-A1** expand-bias · **R-A2** formation/posture · **R-A3** trade/NAP in verb model
 - **R-N1** lock the six saga arcs as modes of love winning; Warfare voice now Hollywood-Western (Those Who Stand; saga alt 'The Gun and the Garden'); confirm the believed Beloved Republic win-state · **R-N2** tier-crossing named events carrying the elimination drumbeat

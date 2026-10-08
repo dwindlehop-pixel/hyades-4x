@@ -988,8 +988,8 @@ stock above its rung paid for mass it never received; one below would have
 received mass it never paid for. `founding_infra` is a hull's cost, so colonies
 start between rungs routinely.
 
-**Fix:** bill `infra_rung_price(at + 1) − stock`. Identical for a stock on a
-rung. `an_off_rung_upgrade_erects_what_it_bills` asserts both directions and
+**Fix:** bill `infra_price_at_band(at + 1) − stock`. Identical for a stock on a
+rung. `an_off_band_upgrade_erects_what_it_bills` asserts both directions and
 fails on the old bill with −0.02921 kt.
 
 ### The default bed barely moves
@@ -1388,7 +1388,7 @@ A temporary `#[track_caller]` counter on every conversion, on T-127's engine
 | 322,600 | `capacity_of`: `population_mass(K)` | round trip — `K` is a minimum of two masses |
 | 235,350 | `Factors::infra_band` | reading |
 | 228,890 | `staffing`: `at_band(infra_band)` | round trip cost → mass |
-| 203,342 | `infra_rung_of`: `round(band)` | threshold |
+| 203,342 | `infra_band_of`: `round(band)` | threshold |
 | 54,443 | `veins` | reading (unchanged by instruction) |
 | 16,713 | `mineral_bands` memo misses | reading (`rank`) |
 | 12,082 | `founding_infra_band` | reading |
@@ -3301,6 +3301,1630 @@ first run.
 **Test targets:** unit 4.0 s, determinism 35.9 s, smoke 10.6 s, telemetry
 23.2 s (debug, one run each). `shrinking_the_economy_tick_does_not_multiply_decisions`
 is retired: it pinned the retry floor.
+
+## D.32 Empire-scale color: the hex width, one color site per hex
+
+*Supports galaxy §1 and §4.3, R-G1, R-G5. The author's rulings: color varies
+at the scale of an empire; a modest integer number of hexes per player (3–6 at
+3 seats, 6–12 at 6 and 12, 3–6 at 18); planet count untouched; a human-scale
+hex, about 70 ly a side and about 120 ly across. Beds: `examples/hex_census`
+(card-free, standard galaxy, 1,500 yr, seeds 1, 7, 42, 31337), scratch
+generation-only probes (never landed), `examples/forge_census` and
+`examples/bank_mix` against `82e5579`.*
+
+**Hexes per player.** Counted two ways, with flat-top hexes centered on the
+galactic center. *Proxy* — the hexes holding 90% of the worlds nearest each
+homeworld, from generation alone: every count falls with seat count at a fixed
+width (at 100 ly across: 5.92 / 6.00 / 5.04 / 5.96 per player at 3 / 6 / 12 /
+18 seats), so no width can put 3 seats at or under 6 and 6 seats at or over 6.
+*Owned territory* — the hexes holding 90% of the worlds each empire owns at
+1,500 yr (75–97% of them nearest the empire's own homeworld), measured on the
+100-ly field:
+
+| width across flats | 3 seats | 6 seats | 12 seats | 18 seats |
+|---|---|---|---|---|
+| 100 ly | 7.58 (2/12) | 7.08 (23/24) | 7.46 (44/48) | 7.99 (14/72) |
+| 110 ly | 6.58 (5/12) | 5.96 (16/24) | 6.52 (40/48) | 7.08 (23/72) |
+| 116 ly | 5.83 (9/12) | 5.58 (13/24) | 6.00 (36/48) | 6.51 (34/72) |
+| 120 ly | 5.58 (11/12) | 5.25 (10/24) | 5.75 (33/48) | 6.26 (39/72) |
+| 130 ly | 4.83 (12/12) | 4.75 (3/24) | 5.27 (18/48) | 5.61 (57/72) |
+
+Mean per player, and seats inside the target. The proxy ranked 12 seats
+lowest; owned territory does not, because empires reach past their own cell.
+6 seats need a width of at most ~110 ly, 3 and 18 seats at least ~114 and
+~125, so no width meets all four. 116 ly minimizes the worst miss; the author
+chose a side of 70 ly (121.2 ly across). Re-measured on the 70-ly field, 3
+seats read 5.83 per player at 121.2 ly, 10/12 inside the target.
+
+**Each hue's strongest site at `Band IV`.** With one site per 100-ly hex and
+the peak `mineral_peak · (floor + (1 − floor) · w)`, the site that landed
+nearest its hotspot held most of a 3-seat galaxy's ore in one hue: 93 / 99 / 95
+/ 95% on the four seeds, by mass. Normalizing each hue to its strongest site
+gives 53 / 59 / 57 / 79%; the old 10-ly field read 39–59%.
+
+**Color per empire.** Kilotonnes generated on the worlds each empire owns at
+1,500 yr: on the old field 9 of 12 seats already held 86–99% of it in one
+color, and every empire owned at least 5 worlds holding `Band I` (1 kt) of
+every color. On the 100-ly field 4 of 12 seats owned no `Band I` world in one
+color. An empire's forge draws on outposts and freight, not only on the worlds
+it owns, which is why the old field forged every super everywhere.
+
+**The card-free economy at a 70-ly side**, paired by seed against `82e5579`,
+3 seats, 1,500 yr: colony-years **−19.39% ± 1.28** (4/4 lower), work-years
+−28.1% ± 11.2 (+4.7% to −45.3%, not resolved). Supers forged 65,284 kt against
+22,040; a seat's native super 37.0% of its forging against 29.6%; supers
+crossing between empires 5.17% against 3.68%; seats making all three supers
+(each at least 1% of the largest) 9/12 against 10/12. Basics traded between
+empires fell from 258k–338k kt per seed to 146k–254k. `bank_mix`, seed 1,
+800 yr: works purchases 977 → 574, hulls 23,583 → 24,795, payable fraction
+median 0.050 → 0.043.
+
+**Why colony-years fell — an inference, not proven.** Worlds with
+`k_potential ≥ k_high` (3.2), summed over the four 3-seat galaxies: 13,801 on
+the old field, 11,680 on the 70-ly field (−15.4%); mean ore Band per world
+0.43 → 0.62–0.69. §4.4's anticorrelation lowers habitability as ore rises, and
+the standard bed is limited by the worlds `k_high` admits. Varying only the
+site spacing on the new code:
+
+| hex side (= site spacing) | admitted | mean ore Band |
+|---|---|---|
+| 5.8 ly | 13,560 | 0.456 |
+| 11.5 ly | 13,524 | 0.460 |
+| 23.1 ly | 13,303 | 0.488 |
+| 46.2 ly | 12,478 | 0.561 |
+| 70.0 ly | 11,680 | 0.651 |
+
+Why a wider spacing raises the mean ore Band is not established. An arm with
+the anticorrelation held at the old field's ore levels would settle how much
+of the −19% it carries.
+
+**Superseded at §D.33** (the author: the hex is a human-legible interface, and
+"color sites are of course randomly spaced"). One color site per hex made
+`hex_side_ly` the color-site spacing, so every number above beyond the
+hexes-per-player table measures a 70-ly site spacing with a 61-ly width, not
+the hex.
+
+## D.33 Color sites placed at random: spacing and width swept
+
+*Supports galaxy §4.3, T-146. The author's rulings: the hex is read by no
+generation; color sites are randomly placed, with their own spacing (one site
+per spacing² of area) and width (a Gaussian σ on the Band). The author's
+expectation, to be measured: sites spanning more than one 70-ly hex create
+trade in supers. Bed: `examples/forge_census` with `FC_SITE_SPACING` and
+`FC_SITE_SIGMA` (card-free, standard galaxy, 3 seats, 1,500 yr, seeds 1, 7,
+42, 31337), paired by seed against `82e5579` (sites on a 10-ly jittered
+lattice, width 5 ly).*
+
+| spacing / width, ly | colony-years | work-years | native share | supers crossing | seats making all three | admitted |
+|---|---|---|---|---|---|---|
+| `82e5579` (lattice 10 / 5) | — | — | 29.6% | 3.68% | 10/12 | 13,801 |
+| 10 / 5 | +3.1% ± 0.6 | −8.0% ± 4.6 | 34.3% | 1.04% | 12/12 | 14,211 |
+| 10 / 10 | −16.6% ± 0.3 | +58.1% ± 9.9 | 29.6% | 19.27% | 11/12 | 12,000 |
+| 35 / 17.5 | +3.3% ± 2.0 | −34.1% ± 6.6 | 39.5% | 0.89% | 12/12 | 14,263 |
+| 35 / 35 | −23.5% ± 2.9 | +40.8% ± 17.1 | 32.4% | 1.69% | 11/12 | 11,342 |
+| 70 / 35 | −0.9% ± 4.7 | −46.4% ± 7.5 | 31.0% | 5.34% | 10/12 | 13,814 |
+| 70 / 70 | −36.6% ± 4.5 | +128.7% ± 56.7 | 33.0% | 3.33% | 12/12 | 9,914 |
+| 140 / 70 | −13.6% ± 2.6 | −56.9% ± 10.0 | 65.8% | 0.33% | 10/12 | 12,319 |
+| 140 / 140 | −55.2% ± 1.8 | +164.0% ± 75.5 | 59.1% | 3.78% | 10/12 | 7,814 |
+| 210 / 105 | −10.3% ± 10.0 | −82.0% ± 1.5 | 60.9% | 0.00% | 10/12 | 12,615 |
+| 210 / 210 | −50.0% ± 6.4 | −9.7% ± 41.6 | 49.7% | 1.00% | 7/12 | 7,943 |
+
+Colony-years and work-years are paired differences, mean ± one standard error
+over 4 seeds. Native share and supers crossing are pooled over the four runs;
+admitted is the worlds whose `min(hab, bio)` reaches `k_high` (Band 3.2),
+summed over the four galaxies. *Seats making all three:* each super at least
+1% of the seat's largest.
+
+**Supers crossing, per seed**, is dominated by the run whose forges make the
+most: `82e5579` reads 84.2 / 70.2 / 1.1 / 33.5% on seeds 1 / 7 / 42 / 31337,
+and every arm spans similar ranges up to 140-ly spacing. The pooled share is
+therefore weighted toward one or two runs, and four seeds do not resolve it.
+At 140 and 210 ly, three of four seeds read under 1% in all four arms.
+
+**What moves together.** At width = spacing, sites overlap and the field
+carries more ore: admitted worlds fall (to 7,814 at 140/140), colony-years
+fall and work-years rise, through §4.4's anticorrelation and the works bill.
+At width = half the spacing, admitted stays within 12,319–14,263 and
+work-years fall as spacing grows (−8% at 10 ly to −82% at 210 ly). A seat's
+native share rises past 140 ly (59–66%) while supers crossing between empires
+falls.
+
+**The author's floor: at least 5% of worlds hold two colors** (a color counts
+at `Band I`, 1 kt). The shipped 10 / 5 field gives 4.20% at 3 seats and
+3.95% at 12; `82e5579` gave 3.65%. Generation only, 3 seats, the four seeds:
+a width near 0.55 of the spacing clears it at 10–70 ly (10 / 5.5: 5.37%;
+35 / 19.2: 5.67%; 70 / 38.5: 5.61%) and 0.4 at 140 ly (140 / 56: 5.53%),
+with admitted worlds 13,345–13,924 against `82e5579`'s 13,801. At width =
+spacing the share is 15–34% and admitted falls to 7,814–12,000.
+
+**Two arms at the floor, ore held** (the author chose 70 and 140 ly):
+
+| spacing / width, ly | colony-years | work-years | native share | supers crossing | seats making all three | admitted |
+|---|---|---|---|---|---|---|
+| 70 / 38.5 | −5.0% ± 5.1 | −41.7% ± 11.1 | 42.1% | 5.11% | 10/12 | 13,345 |
+| 140 / 56 | −0.3% ± 2.7 | −71.7% ± 4.3 | 54.9% | 0.92% | 11/12 | 13,725 |
+
+Supers crossing, per seed (1 / 7 / 42 / 31337): 0.0 / 61.2 / 5.6 / 51.3% at
+70 ly, 0.0 / 70.0 / 0.8 / 0.0% at 140 ly, against 84.2 / 70.2 / 1.1 / 33.5%
+on `82e5579`. With habitable worlds held, colony-years do not resolve from
+zero; work-years fall with spacing and a seat's native share rises.
+
+**Inference, stated as one:** at large spacing forges specialize toward one
+super and do not trade the others in; the refined books and freight, not the
+geography, carry the trade that does not happen. Confidence about 60%: four
+seeds per arm, and the ore quantity moves with the spacing in every arm. An
+arm holding the admitted count and the mean ore Band at `82e5579`'s while the
+spacing grows would separate the two; a census of refined bids and asks that
+do not clear at 140 ly would test the inference directly.
+
+## D.34 Demand for supers in the card-free bed
+
+*Supports T-146 and R-M5. The author's question: is there sufficient demand
+for supers in the test bed? Bed: `examples/super_census` (card-free, standard
+galaxy, 3 seats, 1,500 yr, seeds 1, 7, 42, 31337) on three color fields;
+every figure is summed over the four runs.*
+
+**Where super demand can come from.** A refined bid is a center's declined
+order's refined shortfall, or a forge's want for the supers that complete a
+balanced set for apex (R-MX18). An order is billed in refined material only by
+a Design write (`Roster::bill_for` returns basics otherwise), so in a
+card-free game every super bid is a forge's, and its only use is apex. Apex
+has no consumer in the engine: its book carried no bid at any barrier in any
+run.
+
+| color field (spacing / width, ly) | 10 / 5 | 70 / 38.5 | 140 / 56 |
+|---|---|---|---|
+| basics mined | 6,257,724 kt | 20,764,703 kt | 27,529,826 kt |
+| basics drawn into supers | 93,503 kt (1.49%) | 44,805 kt (0.22%) | 28,950 kt (0.11%) |
+| supers forged | 62,335 kt | 29,870 kt | 19,300 kt |
+| supers drawn into apex | 48,061 kt (77.1%) | 12,806 kt (42.9%) | 4,981 kt (25.8%) |
+| apex made, all held at the horizon | 24,031 kt | 6,403 kt | 2,491 kt |
+| supers held at the horizon | 14,267 kt | 17,033 kt | 14,297 kt |
+| supers delivered between empires | 651 kt (1.04%) | 1,527 kt (5.11%) | 178 kt (0.92%) |
+
+**The books at the two barriers that follow the first forges** (barriers at
+200, 600, 1,000 and 1,400 yr; the first forge stands at 605–765 yr), supers
+summed over the three books:
+
+| field | barrier | bid | asked | per-book min(bid, ask) | filled | bid in books with no ask | asked in books with no bid |
+|---|---|---|---|---|---|---|---|
+| 10 / 5 | 1,000 | 8,708 | 5,935 | 479 | 479 | 5,344 | 0 |
+| 10 / 5 | 1,400 | 16,260 | 9,999 | 187 | 172 | 8,018 | 8,022 |
+| 70 / 38.5 | 1,000 | 5,316 | 3,272 | 856 | 856 | 3,797 | 964 |
+| 70 / 38.5 | 1,400 | 14,026 | 9,775 | 719 | 671 | 9,696 | 5,326 |
+| 140 / 56 | 1,000 | 6,553 | 3,850 | 126 | 126 | 5,515 | 2,917 |
+| 140 / 56 | 1,400 | 16,662 | 9,807 | 66 | 52 | 15,102 | 6,571 |
+
+Kilotonnes; "per-book min" is taken per seed and book, then summed. The
+clearing fills 79–100% of what each book could match. What does not trade is
+volume posted where the other side is absent: a forge bids for the supers it
+holds least of and asks only the one it holds most of, so where a seed's
+forges hold the same super most, that book has asks and no bids and the other
+two have bids and no asks.
+
+**Answer to the question: no.** The card-free bed carries no final demand for
+supers — no order is billed in them, and the one use, apex, is bid for by no
+one — so a measurement of trade in supers on it measures forges completing
+sets for a material nothing consumes. A bed in which Designs are billed in
+supers through a Design write (as §D.25's 25%-refined bills were) is what can
+test it; the refined books also clear only twice after the first forge in a
+1,500-yr run, at the 400-yr round cadence.
+
+## D.35 The twin bed: Designs paid in supers, built preferentially
+
+*Supports galaxy §3.1 and T-146. The author's direction: build alternate
+test hulls that exactly match the basic hulls but are paid in supers, and build
+them preferentially. Bed: `examples/super_census` with `SC_TWINS=1` (twin bill
+a third each of Red, Green and Blue; card-free otherwise; standard galaxy,
+3 seats, 1,500 yr, seeds 1, 7, 42, 31337), summed over the four runs.*
+
+**First build, and why it carried no demand.** A twin want recorded only at a
+decision that chose a hull lasted until the center's next decision, and most
+decisions choose no hull: at the barriers the orders wanted 0.06–0.45 kt of
+supers in all, on seed 1, and 33 of 23,254 hull orders were paid in supers.
+The want now outlives decisions that choose no hull (a center keeps wanting the
+twin of the hull Design it last chose), which raises it to ~25 kt per super at
+each barrier on seed 1.
+
+| color field (spacing / width, ly) | 10 / 5 | 70 / 38.5 | 140 / 56 |
+|---|---|---|---|
+| hull orders built | 91,010 (10,858 kt) | 93,250 (13,326 kt) | 92,672 (12,030 kt) |
+| paid in supers | 293 (35.4 kt, 0.33%) | 229 (31.2 kt, 0.23%) | 205 (29.6 kt, 0.25%) |
+| supers forged | 49,515 kt | 32,329 kt | 15,254 kt |
+| drawn into apex | 28,506 kt (58%) | 11,804 kt (37%) | 3,536 kt (23%) |
+| supers held at the horizon | 20,214 kt | 18,684 kt | 11,332 kt |
+| supers delivered between empires | 725 kt (1.46%) | 1,648 kt (5.10%) | 348 kt (2.28%) |
+| orders' want at 1,000 / 1,400 yr | 297 / 300 kt | 246 / 240 kt | 271 / 265 kt |
+| supers at forges at 1,000 / 1,400 yr | 9,178 / 17,010 kt | 4,801 / 15,286 kt | 4,926 / 10,279 kt |
+
+The supers forged are 1.3–4.6× all the kilotonnes of hulls built in the run,
+and at each barrier the forges hold 16–57× what the orders want; 0.23–0.33% of
+hull kilotonnes are paid in supers.
+
+**Inference, stated as one:** within an empire, supers do not move from forges
+to the yards that want them. A hauler takes refined material from a center
+only as a stop on its own route to the center it serves, and the forges are a
+few homeworlds among hundreds of wanting yards. Confidence about 70%; a census
+of hauler stops at forges, and of refined kilotonnes delivered to centers by
+freight, would test it directly.
+
+**Card-free runs are unchanged**: `forge_census` on seeds 1 and 7 at 800 yr
+reproduces `12e59f9` to every printed digit and event count.
+
+**The freight census** (the same bed; `super_census` now reads the refined
+part of every freight transfer, `LogEvent::FreighterTransfer::refined`).
+Forges are the worlds at population `Band IV` at the horizon — 3 per run, the
+homeworlds. Summed over the four seeds:
+
+| color field (spacing / width, ly) | 10 / 5 | 70 / 38.5 | 140 / 56 |
+|---|---|---|---|
+| hauler pickups at forges | 585 of 328,634 (0.18%) | 905 of 320,533 (0.28%) | 1,236 of 243,139 (0.51%) |
+| supers loaded at forges | 36.0 kt | 50.5 kt | 70.0 kt |
+| supers loaded elsewhere (rocks, other centers) | 195.3 kt | 372.7 kt | 98.2 kt |
+| supers delivered to worlds other than forges | 166.9 kt | 260.2 kt | 156.7 kt |
+| hull kilotonnes paid in supers | 35.4 kt | 31.2 kt | 29.6 kt |
+| supers held at forges at 1,400 yr | 17,010 kt | 15,286 kt | 10,279 kt |
+
+**Measured:** freight takes 36–70 kt of supers out of the forges over a whole
+run, against 10,279–17,010 kt standing at them at the last barrier — under 0.7%.
+This confirms §D.35's inference that supers do not reach the yards from the
+forges within an empire.
+
+**A second gap, an inference:** 157–260 kt of supers reach yards by freight,
+yet 30–35 kt of hulls are paid in them. A twin owes all three supers at once,
+and a delivery carries what one forge, rock or Exchange fill held, usually one
+super — the same conjunction as a works bill over the three basics (T-91).
+Confidence about 60%; the composition of each yard's refined holding when its
+twin is declined would test it.
+
+
+## D.36 Supply runs for supers, and the Growth card on the twin bed
+
+*Supports galaxy §4.5 (supply runs) and T-146. The author's rulings: forges
+deliver to their own empire's yards; haulers buy at rival forges; both are
+Doctrine. Then: play the Growth card on every seat of the twin bed. Bed:
+`examples/super_census` with `SC_TWINS=1`, and `SC_CARD=3` (the Inscrutable
+Growth card, `growth_rate` × 1.6, 0.5 kt) played on every seat at the first
+barrier, 200 yr; 3 seats, 1,500 yr, seeds 1, 7, 42, 31337, summed.*
+
+**Supply runs, no card.** On seed 1 (10 / 5 ly field): 1,784 runs from own
+forges carrying 56.2 kt, 840 to rival forges buying 17.7 kt for 26.6 `$`;
+hull kilotonnes paid in supers 11.5 → 17.6. Over the four seeds, 0.33–0.46% of
+hull kilotonnes are paid in supers on the three fields. **When hulls are built
+is the limit, measured:** on seed 1, 2,345 of 2,812 kt of hulls (83%) are
+built before 600 yr, and the first forge forges at 605–765 yr; from 700 yr the
+empires build 999 / 1,108 / 1,024 kt of hulls on the three fields and pay
+4.3% / 4.2% / 3.0% of it in supers. Card-free runs are bit-identical to
+`9a30e39` (`forge_census`, seeds 1 and 7, 800 yr).
+
+**The Growth card on every seat** against no card, same bed and seeds:
+
+| color field (spacing / width, ly) | 10 / 5 | 70 / 38.5 | 140 / 56 |
+|---|---|---|---|
+| hull kilotonnes paid in supers | 51.7 → 125.4 | 50.6 → 160.4 | 41.2 → 94.5 |
+| seeds higher with the card | 4/4 | 4/4 | 4/4 |
+| hull kilotonnes built | 11,183 → 11,414 | 13,667 → 13,597 | 12,345 → 12,087 |
+| supers forged | 59,931 → 119,252 kt | 32,865 → 93,341 kt | 19,042 → 58,638 kt |
+| supers delivered between empires | 724 → 1,733 kt | 1,494 → 3,768 kt | 247 → 1,227 kt |
+| supplied from own forges | 224.9 → 290.3 kt | 203.9 → 279.8 kt | 226.2 → 236.1 kt |
+| bought at rival forges | 32.0 → 23.4 kt | 39.5 → 16.8 kt | 28.7 → 17.6 kt |
+| first forge, per seat | 460–670 yr | 460–540 yr | 455–690 yr |
+
+The card brings the first forge from 605–765 yr to 455–690 yr and raises the
+hull kilotonnes paid in supers by 2.3–3.2× on every field; the share of hull
+kilotonnes paid in supers is 0.8–1.2%.
+
+**Why forging starts near 600 yr, derived.** A homeworld starts at population
+`Band II` (31.6 kt) under a ceiling of `Band 4.2` (2,163,979 kt); a forge needs
+`Band IV` (715,542 kt), 22,644× the start. The logistic runs at
+`r = growth_rate / rate_reference_years = 0.873 / 50 = 0.01746` per year (a
+doubling time of 39.7 yr), so `t = ln[x₁(K − x₀) / (x₀(K − x₁))] / r` =
+`ln(33,830) / 0.01746` = **597 yr**. Measured card-free: 605–765 yr. The
+author set the 4.2 ceiling for this timing (§D.23: a growth-dedicated build
+across before round two's selection at 600 yr, most builds by round three).
+With the card `r` is 0.0279, at which the same formula from the starting
+population gives 373 yr; played at 200 yr, measured 455–690 yr.
+
+**What spreads the first forge across seats: emigration from the homeworld,
+proven by ablation.** Twin bed, card-free, 900 yr, the four seeds (a scratch
+harness, never landed). The first forge follows the homeworld's crossing of
+`Band IV` by 0–15 yr in every seat, so the spread is population, not basics.
+Population at 200 yr runs 17–907 kt against the logistic's ~1,036 kt; every
+colony ship a homeworld launches carries 1 kt of its people, and the seats
+that sent 174–270 ships before 200 yr cross at 721–761 yr or not by 900 yr,
+two of them falling from 39 → 26 kt and 17 → 10 kt between 200 and 300 yr.
+Seats that sent 8–148 cross at 605–641 yr. **Ablation:** with a homeworld's
+population not debited for the settlers it launches (a scratch build), all 12
+seats cross at 601 yr and forge at 600–603 yr, population 952 kt at 200 yr in
+every seat.
+
+**Why seats launch so differently — measured as far as the early freight.**
+Same bed, 200 yr, the four seeds (scratch harnesses, never landed):
+
+- **Not the neighborhood's colonizable worlds.** Worlds `k_high` admits
+  within 25 ly of a homeworld: 46–76 per seat, with no order matching the
+  ships launched (seed 1: 64 → 8 ships, 66 → 270).
+- **The homeworld's spending.** It launches colony ships out of what it
+  spends, and in 10 of 12 seats what it spends in 200 yr is within 3 kt of the
+  freight delivered to it (2.7 to 190.6 kt). Seed 1 seat 0 spent 5.7 kt and
+  sent 8 ships; the others spent 49–135 kt.
+- **Not the ore within 25 ly**, by total or by color: it is at least 98% one
+  color in 10 of 12 seats and ranges 32,685–1,028,834 kt with no order
+  matching the freight.
+- **The first freight home.** Its time runs 37–136 yr and its size 0.30–31.23
+  kt; delivered home by 100 yr runs 0–69 kt. The seats with 42–69 kt by 100 yr
+  launched 100–270 ships before 200 yr; those with 0–2 kt launched 8–116.
+  Traced on seed 1: seat 1 crewed a 932-kt rock 1.2 ly from home with five
+  miners at 5 yr and landed 31.23 kt at 70 yr, then put ten new crews out;
+  seat 0 crewed its two companions and a 1.3-kt rock one miner each, its
+  haulers carried 0.1–0.9 kt a load, mostly to a colony, and the first 0.91 kt
+  reached home at 114 yr.
+
+**Inference, stated as one:** the spread is the early economy compounding on
+the first outposts — a rich rock in reach of the first decision gets a large
+crew and a General hauler (31.6-kt hold, T-98), and a seat without one hauls
+in Medium holds (0.91 kt) for its first century. Confidence about 60%. The
+hold and crew of each seat's first outposts, and an arm with every homeworld
+given one equal rich rock in reach, would settle it.
+
+## D.37 Spread of colony count between empires
+
+*Supports galaxy §2 (the author's target: card-free, a standard deviation of
+about 20 colonies between empires) and T-147. Bed: `examples/colony_spread`
+(card-free, standard galaxy, 3 seats, 1,500 yr); the population standard
+deviation of the seats' colony counts within each galaxy.*
+
+**Random starts** (the shipped generator), 12 galaxies (seeds 1, 7, 42, 31337,
+2, 3, 5, 11, 13, 17, 19, 23): 499, 19, 54, 255, 381, 36, 125, 74, 49, 366,
+469, 354 — median 190, mean 223. On the first four, the mean is 34 at 200 yr,
+135 at 400, 181 at 800 and 207 at 1,500: colony counts are nearly final by
+800 yr, so the spread is decided by the race for territory.
+
+**Symmetric starts** (`GalaxyConfig::rotational_symmetry`, now `Ground::ColorRotated`), same 12 seeds: 40,
+32, 50, 163, 74, 32, 59, 39, 27, 78, 440, 20 — median 45, mean 88. Seed 19
+ends 810 / 1,812 / 967 on identical ground.
+
+**What else differs between seats on identical ground** (scratch arms, never
+landed): the default works mix is 2 : 1 : 3 in Cyan, Magenta, Yellow
+(`WORKS_MIX_DEFAULT`), so the archetypes' bills differ; an even 2 : 2 : 2 mix
+on the symmetric galaxies gives 24, 17, 3, 111 on the first four seeds (mean
+39, against 71). The simulation's own seed changes nothing in a card-free run
+(seed 31337's galaxy under six simulation seeds: 1,289 / 1,326 / 964 every
+time), so what remains is deterministic: seat order in tie-breaks and the
+last bits of rotated coordinates.
+
+**Inference, stated as one:** the early economy compounds (appendix §D.36:
+the first outposts decide a seat's first-century income), and contested
+territory lets an early lead take worlds the others would have taken, so a
+small difference grows into a runaway. Confidence about 60%. A census of
+contested foundings by seat over time, on a symmetric galaxy, would test it;
+meeting the target likely needs a check on that runaway as well as fair
+ground.
+
+## D.38 The cause of the spread between empires: an empty hauler's routing loop
+
+*Supports industry §6.11 (freight routed by demand price), galaxy §2 and
+T-147. The author's direction: find the cause before fixing symptoms; then the
+ruling, pricing based on demand. Beds: `examples/colony_spread` (card-free,
+standard galaxy, 3 seats, 1,500 yr, 12 seeds), scratch harnesses and one
+scratch ablation (never landed), `examples/forge_census` against `ccca4f4`.*
+
+**Where the spread is decided.** Worlds nearest each homeworld that `k_high`
+admits: 1,099–1,243 per seat, near-equal in every galaxy. The five losing seats
+of the 12 random galaxies lost 457–769 of their own nearest worlds to
+neighbors and had founded 3–9 colonies by 200 yr against 19–151 elsewhere. On
+identical ground (seed 19, symmetric) the seats stopped mirroring at 5 yr — a
+scout's target, two candidates at nearly equal distance reordered by rounding —
+and ended 810 / 1,811 / 967.
+
+**The mechanism, traced (symmetric seed 19).** The two losing homeworlds held
+0.01 kt from 20 yr to 170 yr; one mined 636 kt off-world in that time and 2.7 kt
+reached it. Its haulers shuttled between a companion and a colony loading
+0.000 kt: a hauler loaded against its last destination's color deficit, which
+was zero for the companion's color, and then chose its next destination by
+completion of shortfall — zero at every center for an empty hold — with ties
+broken by entity id, which is a colony's (homeworlds are generated last). The
+loop never broke, and the homeworld, which has only trace ore of its own, had
+no income.
+
+**Ablation** (scratch: an empty hauler goes to its home center): seed 19's
+seats reach 88 / 130 / 137 colonies at 190 yr, against 7 / 129 / 8; the 12
+random galaxies spread median 55, mean 99 (against 190, 223).
+
+**Demand pricing, landed** (the author's ruling):
+
+| ground | spread at 1,500 yr, 12 galaxies | median | mean |
+|---|---|---|---|
+| random, completion routing (before) | 19–499 | 190 | 223 |
+| random, demand pricing | 27–110 | 74.5 | 73.5 |
+| identical, colors stepped (`rotational_symmetry`), completion routing | 20–440 | 45 | 88 |
+| identical, colors stepped (`Ground::ColorRotated`), demand pricing | 4–29 | 21 | 19.3 |
+
+The two demand-pricing rows were first recorded as median 78 / mean 72
+(13–111) and mean 20.4 (5–30). Those runs came from a build before `721127c`
+was final. The rows above were measured on `721127c` and reproduced
+bit-for-bit after `Ground` replaced `rotational_symmetry` (seeds 1, 7, 13).
+
+On identical ground demand pricing meets the target; what remains on random
+ground is the ground (the third kind of ground is below). Paired against `ccca4f4` (4 seeds, 1,500 yr):
+colony-years **+2.82% ± 0.39** (4/4 higher), work-years +3.15% ± 9.44 (not
+resolved). Cost: seeds 1 and 7 at 800 yr run 6.4–6.6 s against 4.2–4.6 s, with
+7–10% more events and ~34% more time per event; the simulation carries more
+colonies and haulers early, an inference not profiled.
+
+### The third kind of ground: identical, colors not stepped
+
+*The author's direction: try a third kind of ground. `Ground::Identical`
+turns one wedge to every seat with the same colors, so each archetype starts
+beside the same deposits as every other; homeworlds and companions are the
+same on every kind. Bed: `examples/colony_spread` with `CS_GROUND`, card-free,
+3 seats, 1,500 yr, the 12 seeds above, one build.*
+
+| seed | 1 | 7 | 42 | 31337 | 2 | 3 | 5 | 11 | 13 | 17 | 19 | 23 | mean | median |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `Random` | 27 | 76 | 73 | 63 | 82 | 69 | 85 | 67 | 86 | 95 | 50 | 110 | 73.5 | 74.5 |
+| `Identical` | 21 | 87 | 33 | 76 | 24 | 64 | 88 | 27 | 51 | 16 | 11 | 77 | 48.0 | 42 |
+| `ColorRotated` | 22 | 27 | 19 | 11 | 20 | 20 | 29 | 8 | 4 | 27 | 24 | 22 | 19.3 | 21 |
+
+Paired by galaxy (difference in spread, mean ± standard error over 12 seeds,
+an estimate): `Identical` − `ColorRotated` **+28.5 ± 8.5** (higher on 9/12);
+`Random` − `Identical` **+25.7 ± 8.3** (higher on 9/12). Both differences are
+about 3 standard errors from zero.
+
+Which seat finishes ahead on `Identical` varies between galaxies: seat 1 in
+five, seat 2 in five, seat 0 in two. **Inference, stated as one:** with the
+colors the same for every seat, each archetype's two rich basics meet a
+different share of the wedge's deposits, so the archetype whose colors match
+the wedge starts ahead; which archetype that is depends on the wedge's colors,
+so it changes between galaxies. Confidence about 60%. A census of the
+deposit within reach of each homeworld by color, against its archetype's
+bill and against the seat's colony count, would test it.
+
+## D.39 Identical ground: what separates the seats, and pricing by an empire's color gaps
+
+*Supports galaxy §2 and T-147. The author's direction: bring `Ground::Identical`'s
+spread toward `ColorRotated`'s; the thought, an empire with mineral gaps should
+raise prices. Beds: `examples/ground_census` (deposits within 40 ly of each
+homeworld, colonies and stockpile by color per seat over time) and
+`examples/colony_spread` (card-free, 3 seats, 1,500 yr, the 12 seeds of §D.37),
+against scratch builds of `HEAD` that never land.*
+
+**Where the seats differ.** On `Identical` ground the deposit within 40 ly of
+each homeworld differs between seats only by the two companions (about 2,800 kt
+each, against 10⁵–10⁶ kt of the wedge's main color). Seats mirror exactly to
+50 yr and part between 100 and 200 yr. The archetype enters the simulation in
+two places: the companions' colors (galaxy §3) and `scarcity_for`, a fixed
+rank weight of 2 on the archetype's poor color in every mineral score.
+
+**Arms** (mean spread over 12 galaxies; colonies summed over seats move by
+at most 0.5 of 3,475 on `Identical` and 3,547 on `Random` in every arm):
+
+| arm (scratch) | `Random` | `Identical` | `ColorRotated` |
+|---|---|---|---|
+| shipped: archetype weight `[1, 1, 2]` on the poor color | 73.5 | 48.0 | 19.3 |
+| weight off: `[1, 1, 1]` | 47.8 | 32.1 | 33.6 |
+| live weight from the empire's gap to its next bills, gain 1 | — | 28.5 | — |
+| same, gain 3 | — | 31.6 | — |
+| live weight from holdings, gain 1 | 60.0 | 24.3 | 31.5 |
+| same, gain 3 | — | 35.1 | — |
+| weight off, every seat's companions Cyan + Magenta | — | 17.3 | — |
+| live weight from holdings, gain 1, same companions | — | 19.4 | — |
+
+The two live weights, each normalized so the three sum to 4 as `[1, 1, 2]`
+does: *gap to next bills*, `1 + g·Σ deficit_c / Σ bill_c` over the empire's
+centers; *holdings*, `1 + g·(1 − cover_c / max cover)` with `cover_c` the
+empire's holding of color `c` (owned worlds and outposts) over its works-mix
+weight. At the start, with the companions' colors mined and the third empty,
+the holdings weight at gain 1 is `[1, 1, 2]` on the empty color — the
+archetype weight, read from the bank.
+
+Paired by galaxy (mean ± standard error of the per-galaxy difference, an
+estimate): on `Identical`, weight off −16.1 ± 8.4 against shipped (1.9 SE);
+holdings weight −23.6 ± 9.7 (2.4 SE); holdings against weight off −7.5 ± 5.5
+(1.4 SE, not resolved). On `ColorRotated`, weight off +14.2 ± 5.2 (2.8 SE) and
+holdings weight +12.0 ± 4.7 (2.6 SE): both raise the spread there. On
+`Random`, weight off −25.8 ± 7.6 (3.4 SE, 11/12 lower).
+
+**Inference, stated as one:** the fixed weight compensates each archetype for
+the color its companions lack. It fits the ground only when the ground's colors
+turn with the archetype (`ColorRotated`); on `Identical` and `Random` ground it
+sends each seat after a different color of the same deposits. Removing both
+per-seat differences on `Identical` ground (weight and companions) reaches the
+target. Confidence about 70%: the same-companion arms rest on 12 galaxies, and
+a second set of 12 seeds the arms were not chosen against would change it if
+their spread came out above 30.
+
+## D.40 Holdings-based pricing, landed; the free upgrade at whole Band IV
+
+*Supports autopilot spec §3.9 (holdings-based pricing, the author's ruling),
+galaxy §2 and T-147. Beds: `examples/colony_spread` (card-free, 3 seats,
+1,500 yr, the 12 seeds of §D.37); single 800-yr runs on seeds 1 and 7 timed
+against `ac086e9`'s parent, two runs each; a scratch event census by kind and
+century (never landed).*
+
+**A decision storm, found by removing the archetype weight.** With the weight
+off, seed 7 ran 893,303 events at 26.6 µs each against the shipped engine's
+404,959 at 15.9 µs. Counted by kind and century, build decisions ran ~13,000
+per century to 500 yr, then 87,041 and 375,509, and one center — seat 0's
+homeworld — committed `UpgradeInfrastructure` 370,903 times between 600 and
+700 yr, each holding a berth for the 2-yr lead time. The center stood at
+800 kt, whole Band IV, where the ladder ends (`Qty::whole_band(n)` is the
+Band IV amount for every `n ≥ 4`), so `infra_step_price` billed zero for an
+upgrade that moved nothing; the decision's headroom test compared against the
+homeworld's `K` of Band 4.2 and kept choosing it. **Fixed at the source:** the
+decision deepens only while a whole Band above exists, and the yard declines a
+zero bill (`a_center_on_the_top_whole_band_does_not_deepen`). The shipped
+engine was exposed to it wherever a center reached whole Band IV.
+
+**Landed against the arm measured in §D.39.** Seed 1 reproduces the scratch
+holdings arm's colony counts exactly (1,050 / 1,077 / 1,049). Spread at
+1,500 yr, 12 galaxies (mean; scratch arm in brackets): `Random` 60.1 (60.0),
+`Identical` 24.3 (24.3, every galaxy equal), `ColorRotated` 31.7 (31.5; seed 7
+14 against 12, the Band IV guard).
+
+**Cost** (an estimate from two runs per seed): per event +2.0% on seed 1
+(16,446 against 16,117 ns) and +7.6% on seed 7 (≈17,100 against 15,897 ns),
+with events within 1.5% of the shipped engine. The cost is `color_prices`
+summing the empire's holdings at every production decision and outpost
+ranking — O(worlds and outposts held) per call. A running total kept at each
+of the ~90 sites that write holdings would make it O(1); not done.
+
+## D.41 Color-centered homeworlds on three grounds
+
+*Supports galaxy §3 (`Homeworlds::ColorCentered`, built, off by default) and
+T-147. The author's direction: homeworlds generated at random with under
+`Band I` of every basic, no trio, each equidistant from a region's center of
+each color, on `ColorRotated`, `Identical` and `Random` ground, with a minimum
+threshold of each color if needed. Beds: `examples/ground_census` (deposit by
+color within reach of each homeworld, richest world of each color, colonies,
+outposts and stock over time) and `examples/colony_spread` (card-free, 3
+seats, 1,500 yr, the 12 seeds of §D.37), holdings-based pricing in both.*
+
+**Equidistance from the field's own sites cannot carry a threshold.** A
+search over every Cyan–Magenta–Yellow triple of sites, for the circumcenter
+nearest each seat's nominal point inside the seat's own sector (built, then
+replaced): with no threshold on the sites' peaks, seeds 7 and 42 had a sector
+with no triple at a common distance up to 30 ly; where one existed the colors
+within 30 ly of it differed 10³–10⁴-fold (seed 31337: 549 / 4,815 /
+968,944 kt), because a site's peak runs from Band 2.0 far from its hue's
+hotspot to Band IV near it. With every peak at least Band 3.0, no seat on
+seeds 1, 7, 42 or 31337 had a triple in its sector at any distance from 5 to
+30 ly. Without the sector rule, two and three seats took the same point.
+**Inference, stated as one:** sites of all three hues at strength coexist only
+where the three hotspots overlap, near the galactic center.
+
+**Built instead: planted sites.** One site of each hue is planted at
+`homeworld_site_distance_ly` (10 ly) from the homeworld, 120° apart, at peak
+`homeworld_site_band`; on identical ground seat 0's are planted inside its
+wedge and turned with it. Within 20 ly of seat 0 the planted colors read
+43–1,991 kt at Band 3.0 and 1,632–21,727 kt at Band 4.0, against 24,459–293,852
+kt of the sector's own dominant hue; Cyan, whose site sits on the outward side
+of the triangle where the disk is thinner, was the weakest on every seed.
+
+**Spread at 1,500 yr** (12 galaxies; mean, median; colonies summed over seats):
+
+| homeworlds | `Random` | `Identical` | `ColorRotated` |
+|---|---|---|---|
+| trio (§D.40) | 60.1, 64.3; 3,547.2 | 24.3, 18.8; 3,474.9 | 31.7, 25.4; 3,475.2 |
+| color-centered, planted Band 3.0 | 322.3, 338.8; 3,521.5 | 70.6, 31.4; 3,449.1 | 129.8, 80.2; 3,449.2 |
+| color-centered, planted Band 4.0 | 191.8, 154.7; 3,510.7 | 81.8, 41.2; 3,439.4 | 86.7, 60.5; 3,439.9 |
+
+**The start is what differs** (seed 2, `Identical`, seat 0). With the trio:
+2 outposts at 25 yr, 24 colonies at 100, 74 at 200. Color-centered at Band
+4.0: 3 outposts at 25 yr and 8 at 100, one colony until ~110 yr, 10 at 200;
+the home bank held 0.0 kt through 100 yr. Within 5 ly of the homeworld the
+trio holds 2,828 kt of each companion color at 2.0 ly; the color-centered
+homeworld holds 1–7 kt of its two scarce colors there, and its richest world
+of each color lies 4–14 ly out. The seats stay identical to 125 yr and part
+by 400 yr (41 / 94 / 40 colonies at Band 3.0). **Inference, stated as one:**
+the outposts a color-centered empire opens first are small or far, the start
+runs a century longer, and small differences have that century to compound.
+Confidence about 60%; an ablation planting a world at each site's center
+would test it.
+
+## D.42 The first forge's date: planted outposts, starting fleets, and the starting population
+
+*Supports galaxy §3 and T-147. The author's direction: plant three mining
+outposts, 120° apart, within the color regions, `Band I`, single color,
+identical, 5 ly out; add starting freighters, miners and colony ships to
+accelerate the time to forge; the target, a mean of 400 yr with a 5-yr standard
+deviation. Bed: `examples/forge_time` (card-free, 3 seats, each homeworld's
+population read once per simulated year; the economy ticks every 5 yr), on
+`Homeworlds::ColorCentered` with the outposts; starting fleets through
+`FleetSeeding` (one miner, one freighter and one Medium colonizer fleet per
+seat, 0.3 kt each, a 15-ly surveyed start).*
+
+**What sets the date.** `is_forge` is population at `Band IV` and nothing else,
+and population follows the logistic toward the homeworld's `K` (`Band 4.2`,
+2,163,979 kt) at `growth_rate / rate_reference_years` = 0.01746 per yr. From the
+shipped start (`Band 2.0`, 31.6 kt) that is 597.3 yr to `Band IV`
+(715,542 kt); minerals do not enter it. A colony ship's settlers are debited
+from the homeworld (`embark`), so emigration can only delay it.
+
+**First forge, `Identical` ground** (mean, standard deviation over all seats,
+mean standard deviation within a galaxy; seeds 1, 7, 42, 31337):
+
+| arm | mean | sd | within |
+|---|---|---|---|
+| trio (9 of 12 seats forged by 800 yr) | 688.4 | 17.7 | 12.0 |
+| color-centered, outposts | 624.0 | 15.2 | 1.8 |
+| + starting fleets (6 of 12 seats forged by 800 yr) | 676.5 | 4.2 | 4.1 |
+| outposts, start `Band 2.75` | 408.2 | 2.5 | 0.5 |
+| + starting fleets | 410.7 | 0.5 | 0.5 |
+| outposts, start `Band 2.8`, with or without fleets | 395.7 | 0.5 | 0.5 |
+
+The logistic alone predicts 404.2 yr at `Band 2.75` and 391.3 at `Band 2.8`.
+
+**At `Band 2.785` with the starting fleets** (seeds 1, 7, 42, 31337, 2, 3, 5,
+11): first forge **400.7 yr, standard deviation 0.5 yr** on `Random`,
+`Identical` and `ColorRotated` ground alike — seat 0 at 400 and seats 1 and 2
+at 401 in every galaxy, the order in which their economy ticks fall within a
+year. Spread of colonies between empires at 1,500 yr on the same configuration
+(12 galaxies, mean): `Random` 131.9, `Identical` 25.9, `ColorRotated` 55.0,
+against 60.1 / 24.3 / 31.7 with the trio (§D.40).
+
+## D.43 Variation across empires in the tree stocks and in supers forged
+
+*Supports T-147. The author's direction, after ratifying a starting population
+of `Band II .785`: reduce the variation across empires in tree metrics and
+supers forged. Bed: `examples/empire_spread` (card-free, 3 seats, 1,500 yr, the
+12 seeds of §D.37, trio homeworlds). Per seat: Expansion `∫ C dt`, Growth
+`∫ V dt` (works), Production `∫ F dt` (fleet volume), supers and apex forged.
+The spread is the coefficient of variation between the seats of a galaxy
+(standard deviation over mean), averaged over galaxies.*
+
+| ground | Expansion | Growth | Production | supers | apex |
+|---|---|---|---|---|---|
+| `Random` | 0.070 | 0.423 | 0.040 | 0.125 | 0.119 |
+| `Identical` | 0.028 | 0.256 | 0.042 | 0.095 | 0.264 |
+| `ColorRotated` | 0.033 | 0.536 | 0.042 | 0.151 | 0.143 |
+
+**Growth is bimodal.** A seat ends at 250,000–550,000 kt-years of works or at
+1.2–3.1 million. The mechanism, traced on seed 1, `ColorRotated` (`ES_TRACE`,
+`ES_WATCH`):
+
+1. A colony at whole Band III with a ceiling above III saves for whole Band
+   IV, a 780-kt step (the cost ladder's III → IV factor is 40).
+2. Demand pricing values a hold at `Σ_c min(cargo_c, want_c) · price`, so the
+   center with the largest unmet bill draws its empire's freight: one center
+   took 60–82% of a seat's deliveries in the century before its purchase.
+3. The works bill is split by the works mix (2 : 1 : 3 Cyan, Magenta, Yellow)
+   and paid per color. World 2857 completed every color at 969 kt banked and
+   bought whole Band IV at 304 yr; world 2115 held 1,292 kt at 370 yr and could
+   not, one color short.
+4. From about 400 yr the homeworld forges draw 45–96% of each seat's freight,
+   and further Band IV purchases stop (seat 0's next came at 1,459 yr).
+
+A seat that completes a Band IV bill before its forge stands holds its works at
+800 kt on that world for the rest of the run; one that does not stays near
+20 kt per world.
+
+**Two scratch arms** (never landed), paired over the 12 galaxies (arm minus
+shipped; mean ± standard error; levels as the mean relative change):
+
+| arm | ground | Growth cv | Growth level | supers cv | supers level |
+|---|---|---|---|---|---|
+| forge premium 1 (was 10) | `Random` | −0.216 ± 0.063 | +361% ± 76 | +0.175 ± 0.037 | −60.1% ± 2.0 |
+| | `Identical` | −0.047 ± 0.056 | +37% ± 11 | +0.042 ± 0.015 | −26.2% ± 3.5 |
+| infrastructure bill paid in total, any colors | `Random` | −0.151 ± 0.091 | +912% ± 158 | −0.064 ± 0.037 | +28.6% ± 6.3 |
+| | `Identical` | −0.170 ± 0.087 | +2,781% ± 296 | −0.034 ± 0.021 | −0.8% ± 5.0 |
+
+Expansion and Production move by under 0.02 in every arm. **Inference,
+stated as one:** both arms reduce Growth's spread by moving every empire's
+level, not by evening the race — the color conjunction on a lumpy bill is a
+cliff the shipped economy sits against, and the spread is which empires cross
+it before forging begins. Confidence about 65%; the per-galaxy differences
+carry standard errors near half their size.
+
+## D.44 Infrastructure bought in fractions of a Band
+
+*Supports T-147. The author's direction: buy infrastructure in a unit smaller
+than a whole Band, at every stage, to smooth the variation between empires —
+try 0.5, 0.25, 0.125 and 0.0625 Band. Built as `sim::INFRA_STEP_BANDS`
+(shipped 1.0, bit-identical to the whole-Band engine); each arm a scratch
+build with the constant changed. Bed: `examples/empire_spread`, `Random`
+ground, the 12 seeds of §D.37, 3 seats, 1,500 yr. Paired over galaxies, arm
+minus shipped, mean ± standard error; levels are the mean relative change of
+the galaxy total.*
+
+| step (Band) | Expansion cv | Growth cv | Production cv | supers cv | apex cv | Growth level | Production level | supers level |
+|---|---|---|---|---|---|---|---|---|
+| 1.0 (shipped) | 0.070 | 0.423 | 0.040 | 0.125 | 0.119 | — | — | — |
+| 0.5 | +0.002 ± 0.004 | −0.059 ± 0.092 | +0.001 ± 0.010 | +0.039 ± 0.042 | +0.048 ± 0.029 | +2.4% ± 16.2 | −10.1% ± 1.1 | −7.8% ± 5.1 |
+| 0.25 | +0.020 ± 0.017 | −0.156 ± 0.088 | +0.042 ± 0.019 | +0.007 ± 0.044 | +0.019 ± 0.032 | −26.5% ± 16.7 | −24.0% ± 1.9 | −32.7% ± 5.1 |
+| 0.125 | +0.066 ± 0.033 | −0.136 ± 0.095 | +0.107 ± 0.023 | +0.083 ± 0.028 | +0.099 ± 0.037 | −51.3% ± 19.0 | −32.1% ± 2.4 | −41.9% ± 5.7 |
+| 0.0625 | −0.029 ± 0.010 | −0.162 ± 0.084 | +0.076 ± 0.027 | +0.048 ± 0.052 | +0.053 ± 0.018 | −54.3% ± 18.7 | −31.4% ± 1.7 | −42.7% ± 5.1 |
+
+Every finer step lowers Growth's spread by 0.06–0.16, and none of those
+differences reaches 2 standard errors (the largest, at 0.0625, is 1.9). At
+0.25 Band and below the spread in Production, supers and apex rises, and the
+levels of Production and supers fall by 24–43%.
+
+**One mechanism is measured, in §D.45:** at 0.0625 Band, pricing each color by
+its own shortfall raises Growth's level +86.7% ± 7.2 over the 0.0625-Band arm
+alone, 12 of 12 galaxies. A smaller step is a smaller bill, and the
+total-based pressure that priced a color reached zero once a bank passed it.
+Against the shipped engine the combined arm still moves Production −28.4% ±
+2.0, supers −39.1% ± 4.7 and apex −32.8% ± 4.0, so that mechanism is not the
+whole of the loss. **Inference, stated as one:** the remaining loss comes
+from more, smaller purchases displacing hull builds at the yard. Confidence
+about 40%; a per-decision census of what the yard builds at each step size
+would settle it.
+
+## D.45 The color a saving center lacks was priced at zero
+
+*Supports T-147 and R-P19. The author's question: "Help the saving colony
+finish its colors. Why aren't haulers being directed towards the potential
+forge?" Bed: `examples/empire_spread` (now printing color stalls, the
+shortfall census and freight to forges), 3 seats, 1,500 yr, the 12 seeds of
+§D.37.*
+
+**The case.** Seed 1, `ColorRotated`, world 2115 (`ES_WATCH=2115`): bank
+C/M/Y 145.7 / 671.2 / 854.1 kt at 400 yr against a 780-kt whole-Band-IV bill
+that asks about 260 / 130 / 390 at the works mix. It held 1,292–1,672 kt from
+370 yr to the end of the run without paying. Its ceiling is Band III .850, so
+its population can never reach Band IV and it is not a potential forge; the
+forge in each seat is the homeworld, standing from about 400 yr.
+
+**The mechanism, from the code and then by ablation.** Every price a center
+posts — its Exchange bid, freight's delivery score and the center-to-center
+offer test — was `base · demand · mineral_pressure`, and `mineral_pressure`
+was `1 − bank total / bill total`. At 1,671 kt against 780 it read 0, so Cyan
+was priced at 0: no bid, and a hold of Cyan worth nothing to the center that
+lacked it. The scratch arm priced each color by its own shortfall,
+`1 − held_c / bill_c`, and changed nothing else.
+
+**Color stalls** — a center holding at least its next bill's total and unable
+to pay it in every color — are not rare: about 1,300 centers per galaxy on
+`Random` and `ColorRotated` (1,800 on `Identical`) and about 1 million
+center-years per galaxy, about 740 years per stalled center. Paired, per-color
+arm against shipped (log-ratio mean, standard error):
+
+| ground | stalled center-years | stalled centers |
+|---|---|---|
+| `Random` | −15.2% ± 2.2, 12/12 lower | −18.0% ± 2.9, 12/12 |
+| `ColorRotated` | −12.9% ± 2.4, 11/12 | −14.4% ± 3.0, 11/12 |
+| `Identical` | −4.0% ± 1.2, 12/12 | −4.1% ± 1.0, 11/12 |
+
+**Tree metrics,** same pairing (cv difference; level relative change):
+
+| ground | Growth cv | Growth level | supers cv | supers level | apex cv | apex level |
+|---|---|---|---|---|---|---|
+| `Random` | +0.057 ± 0.088 | +1.9% ± 16.7 | +0.037 ± 0.037 | +15.2% ± 5.3 | +0.068 ± 0.029 | +5.5% ± 5.7 |
+| `ColorRotated` | −0.174 ± 0.119 | +25.8% ± 16.7 | +0.006 ± 0.044 | +13.4% ± 4.8 | +0.042 ± 0.043 | −3.7% ± 4.2 |
+| `Identical` | −0.005 ± 0.098 | +9.3% ± 14.1 | −0.019 ± 0.016 | +2.0% ± 3.5 | +0.004 ± 0.052 | −16.3% ± 6.6 |
+
+Expansion and Production move by under 0.011 in cv and under 1% in level on
+every ground. No Growth-spread difference reaches 2 standard errors. Supers
+forged rise by 2.8 and 2.9 standard errors on `Random` and `ColorRotated`;
+apex's spread on `Random` rises by 2.3 and its level on `Identical` falls by
+2.5.
+
+**What the per-color price does not fix — delivery.** Shortfall census at 500,
+1,000 and 1,500 yr, 4 seeds, `Random`: the color shortfall summed over an
+empire's centers is 1.3–7.6 Mt per color, and the same empire holds 39–634 Mt
+of that color above its centers' own bills: 98.0–100% of the shortfall is
+covered color by color, on both engines. On seed 1, 62–95% of that surplus
+is ore waiting at outposts, and center banks above their own bills hold
+7–60 Mt per color, 4.6–10.8 times the whole shortfall. Per-color pricing did not lower the summed shortfall.
+**Freight to forges**, seed 1, `ColorRotated`, both engines: a seat's forge
+takes 40–70% of its deliveries in the 400s and 72–96% in the 500s. A forge's
+price is full on every color times `forge_premium` = 10, and its want is a
+balanced set up to the most it holds of any color, so it rises as it fills.
+
+**Inference, stated as one:** the remaining stalls are set by where haulers
+go, and the forge's fixed 10× price with a want that grows as it fills is what
+outbids the stalled centers once a forge stands. Confidence about 60%, from
+one galaxy's freight trace; the forge share on all 12 galaxies, and an arm
+whose forge price falls as its holding rises, would settle it. Landed: the
+per-color price (`Simulation::color_pressure_of`), bit-identical to the
+measured arm on seeds 1 and 7.
+
+## D.46 A forge's price falls with what it holds
+
+*Supports T-147 and galaxy §4.5. The author's ruling: "forge price should vary
+with its holding." Built as `forge_premium · B / (B + H)` — `H` everything the
+forge holds, every tier, kt; `B` the price of a whole Band IV works stock, kt.
+Bed: `examples/empire_spread`, 3 seats, 1,500 yr, the 12 seeds of §D.37,
+against the engine with per-color prices (§D.45). Paired over galaxies: cv
+difference and relative level change, mean ± standard error.*
+
+| ground | Growth level | Growth cv | supers level | supers cv | apex level | apex cv | stalled center-years |
+|---|---|---|---|---|---|---|---|
+| `Random` | +172.1% ± 7.1 | −0.266 ± 0.081 (11/12 lower) | −53.3% ± 5.0 | −0.084 ± 0.024 | −52.2% ± 3.8 | +0.057 ± 0.028 | +10.4% ± 1.4 |
+| `ColorRotated` | +162.3% ± 10.1 | −0.129 ± 0.072 | −56.9% ± 5.8 | −0.087 ± 0.024 | −55.2% ± 6.8 | +0.099 ± 0.053 | +11.7% ± 1.7 |
+| `Identical` | +23.5% ± 3.7 | −0.018 ± 0.036 | −33.4% ± 3.8 | +0.002 ± 0.010 | −38.7% ± 6.7 | +0.108 ± 0.027 | +9.2% ± 2.8 |
+
+Expansion and Production move by under 0.5% in level and 0.003 in cv.
+
+**The mechanism, by trace** (seed 1, `ColorRotated`, seat 0, `ES_TRACE`): the
+forge's share of its seat's freight is 81% in the 500s on both engines, then
+falls under the holding-priced premium to 61% in the 800s, 27% in the 1000s and
+2–5% from 1,200 yr, against 67–85% throughout on the old engine; freight
+delivered elsewhere rises (in the 1,200s, 7,517 kt against 5,554). The basics a
+forge stops drawing go to ordinary centers, which buy Bands (Growth) and then
+wait on larger bills (stalls). **Inference, stated as one:** forging falls by
+half because nothing card-free consumes supers or apex, so every forge's holding
+only grows and its price only falls. Confidence about 75%; a bed with final
+demand for supers (T-146's twin bed) would show whether the price recovers when
+a forge's holding is drawn down.
+
+**And it moved the Exchange.** `clearing_strikes_escrowed_contracts_without_moving_the_world`
+failed under this change alone: a forge that has sold supers keeps them back
+from apex, apex synthesis leaves slag, so the seller holds more and its price
+reads it. The test now pins the premium at zero, which prices a forge at
+nothing whatever it holds, and states that channel.
+
+## D.47 A hauler priced against the shipping backlog
+
+> **Superseded measurement (§D.48).** The tables below were taken on an engine
+> with two defects in this change: a backlog hauler was sized to the rock's
+> mining rate, so a pile the Exchange dropped at a small rock got Limited
+> hulls and seed 1 built hundreds of thousands of them after the 1,000-year
+> barrier; and a Limited freighter order resolved to the miner role. Read the
+> tables as a record of that engine; §D.49 measures the corrected one.
+
+*Supports T-147, R-P19 and roles §4.4. The author's direction: "price of
+building a new hauler should increase with high demand in shipping", read (the
+author's choice) as the hauler's value rising so more are built; the bill stays
+the hull's dry mass (design law #11). Built: a freighter Design ordered on its
+own; per rock, the wanted ore beyond the holds based there; one trip valued at
+the empire's want-weighted prices times the share of haulers sent to that rock
+not lost there; the cost valued at the building center's own prices; built in
+the fallback slot ahead of survey; Reserve first. Bed as §D.46.*
+
+**First build: it ran away.** The backlog was read off the pile, which cannot
+see haulers flying to it: seed 1 built **152,874** freighters by 1,500 yr
+against 5,620, events 1.0 M → 3.55 M (`hauler_census`, scratch). Subtracting the
+holds of the haulers based at each rock bounded it at **33,217**, events 1.43 M,
+ore waiting at outposts 302 Mt against 764 Mt.
+
+**Hauler alone** (paired against §D.45's engine):
+
+| ground | Growth level | Production level | supers level | apex level | supers cv | apex cv | stalled center-years |
+|---|---|---|---|---|---|---|---|
+| `Random` | +155.4% ± 15.6 | +585.2% ± 5.3 | +416.6% ± 7.9 | +455.6% ± 6.0 | −0.060 ± 0.026 | +0.006 ± 0.033 | +25.0% ± 2.3 |
+| `ColorRotated` | +104.4% ± 13.1 | +526.6% ± 4.8 | +357.8% ± 7.0 | +479.6% ± 5.9 | −0.079 ± 0.032 | −0.071 ± 0.026 | +24.3% ± 2.9 |
+| `Identical` | −29.8% ± 9.0 | +370.9% ± 7.9 | +55.3% ± 17.5 | −32.0% ± 12.5 | −0.010 ± 0.016 | −0.121 ± 0.055 | +24.4% ± 3.1 |
+
+**Forge price and hauler together** (what lands):
+
+| ground | Growth level | Growth cv | Production level | supers level | apex level | stalled center-years |
+|---|---|---|---|---|---|---|
+| `Random` | +921.6% ± 18.4 | −0.263 ± 0.068 (11/12 lower) | +693.0% ± 6.0 | +64.0% ± 6.2 | +67.6% ± 4.6 | +31.3% ± 3.3 |
+| `ColorRotated` | +633.8% ± 13.9 | −0.175 ± 0.061 (9/12 lower) | +618.0% ± 5.4 | +52.8% ± 5.7 | +72.6% ± 5.6 | +30.2% ± 2.6 |
+| `Identical` | +8.5% ± 11.8 | −0.120 ± 0.088 | +391.0% ± 6.3 | +2.0% ± 14.3 | −58.3% ± 13.8 | +38.6% ± 2.8 |
+
+Expansion falls 0.8–1.0% (standard error 0.1–0.2) on every ground and arm.
+Production is `∫` fleet volume, so it counts the haulers themselves. No hull is
+armed card-free, so the survival share is 1 there; the landed engine
+reproduces the measured combined arm bit for bit on seeds 1 and 7.
+
+**The loss in the price.** On the determinism card bed (six seats, Warfare,
+Growth and missile cards, 350 yr), seed 7 ran 3.43 M events against 0.97 M:
+haulers sent to rocks among the Warfare card's pickets, wrecked or withdrawn,
+and replaced while the backlog stood (in the last 50 years, 616 freighters
+spawned, encounters 11,063 → 19,397, withdrawals 1,338 → 2,324). Valuing a trip
+at the share of haulers that came back (R-WAR47's rule) took it to 2.64 M
+events and 459 freighters spawned. **Inference, stated as one:** the rest is
+haulers flying among rival pickets, which is the conflict R-P19 asks for,
+paid in fire events. Confidence about 55%; a census of encounters by role
+would settle it.
+
+**Cost.** Telemetry bed (3 seats, 500 planets, 600 yr, seed 1), release:
+29,753 → 44,360 events, 1,455–1,871 → 2,300–2,933 ns per event, 12,455 → 22,147
+instructions per event — routing decisions (`best_delivery_center`,
+`offer_from`) are each `O(centers)` and there are six times the haulers to make
+them. Pricing all three colors from one read of the bill took instructions
+1,029 M → 982 M with the run bit-identical; per-color calls had re-read it. Test
+targets, unloaded, old → new before the scenery changes: unit 5.9 → 20.4 s,
+determinism 40.3 → 105.4 s, telemetry 32.8 → 68.0 s; after (card bed 600 → 400
+planets, telemetry 800 → 400): 19.4 / 33.5 / 9.3 / 29.5 s.
+
+## D.48 Three defects the forge-price sweep surfaced
+
+*Supports T-147. Found running `examples/forge_sweep` (twin bed) at low forge
+premiums; each is fixed, and each is pinned by a test.*
+
+1. **NaN from an empty bank.** `Minerals::try_take_total` admits an amount up
+   to 1e-9 against a bank of exactly zero, and divided by the zero total. An
+   order paid wholly in supers leaves its basic part as a rounding residue of
+   `price − owed` (~1e-18); a forge that had synthesized its last basic held
+   exactly zero; every color became `0 · ∞`. Seen as `supers inf apex inf` in 3
+   of 80 sweep runs, first at 1,421.88 yr on seed 42 (premium 0.8), located by
+   checking `Simulation::mass_ledger` after every event. The defect predates
+   T-147; the twin bed at a low premium is what drains a forge to zero. Fixed:
+   an empty bank pays a crumb with nothing (`an_empty_bank_pays_a_crumb_with_nothing`).
+2. **A Limited freighter order resolved to the miner role.** `role_of` read
+   the freighter Design only on the Medium and General hulls, and the T-98
+   sizing builds Limited haulers too. Fixed by reading it on every Systems
+   hull (`a_hauler_is_built_where_its_trip_is_worth_its_minerals`).
+3. **A barrier storm.** With (2) fixed, seed 1 at the shipped premium built
+   25,301 → 648,743 freighters between 1,000 and 1,060 yr, while 707 Exchange
+   contracts settled and ore held at rocks rose 222 → 274 Mt. The backlog
+   hauler was sized by `freighter_hull`, which reads the rock's mining rate, so
+   a delivered pile at a small rock got a Limited hull whose hold is a sliver
+   of the pile. Fixed: a backlog hauler takes the Systems hull, of those the
+   center can pay for now, that lifts the most of the backlog per kilotonne
+   (`Simulation::backlog_hull`). After the fix, seed 1 holds 27,000–31,700
+   freighters to 1,500 yr at premiums 10 and 0.6, 87 s a run.
+
+## D.49 The forge's price, swept on the twin bed
+
+*Supports T-147. The author's ruling: forging cannot be evaluated without
+demand from the alt Designs paid in supers, and the forge-price decisions are
+made to maximize the tree metrics on the standard bed with those Designs, then
+made default. Bed: `examples/forge_sweep` — the standard galaxy (`Random`
+ground, trio homeworlds), 3 seats, 1,500 yr, every seat seeded twin Designs
+billed a third each in Red, Green and Blue. Objective: the geometric mean over
+Expansion, Growth and Production of each tree's stock divided by its value at
+the old default (`premium 10, floor 0, scale 1`) on the same seed (`AGENTS.md`
+§2's composite). Engine: after §D.48's fixes; the first two passes ran on the
+defective engine and are discarded.*
+
+Screen, seeds 1, 7, 42, 31337 (mean ± standard error of the composite):
+
+| premium | floor | scale | composite | Growth | Production | supers | apex |
+|---|---|---|---|---|---|---|---|
+| 0.3 | 0 | 1 | +9.5% ± 1.8 | +33.8% | −1.8% | −93.3% | −93.5% |
+| 1 | 0 | 1 | +9.0% ± 2.1 | +31.5% | −1.4% | −85.9% | −92.3% |
+| 0.6 | 0 | 0.3 | +8.5% ± 2.2 | +27.2% | +0.5% | −93.0% | −94.3% |
+| 0.6 | 0.3 | 1 | +8.4% ± 2.2 | +28.8% | −0.9% | −92.4% | −93.4% |
+| 1 | 0.5 | 1 | +8.4% ± 2.4 | +28.0% | −0.4% | −80.5% | −85.1% |
+| 0.6 | 0 | 1 | +8.1% ± 2.0 | +29.0% | −1.8% | −92.0% | −93.1% |
+| 0.6 | 0 | 3 | +7.0% ± 2.1 | +25.3% | −2.1% | −91.5% | −93.3% |
+| 3 | 0 | 1 | +5.5% ± 0.9 | +19.0% | −1.1% | −61.2% | −67.8% |
+| 3 | 0.5 | 1 | +3.5% ± 1.0 | +12.2% | −1.0% | −37.0% | −37.6% |
+| 10 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+
+Expansion moves by under 0.25% in every arm. Replication on seeds 2, 3, 5, 11
+(chosen against nothing) and the pooled eight:
+
+| config | seeds 1, 7, 42, 31337 | seeds 2, 3, 5, 11 | pooled, n = 8 |
+|---|---|---|---|
+| premium 0.3 | +9.47% ± 1.82, 4/4 | +7.99% ± 1.26, 4/4 | **+8.73% ± 1.06, 8/8** |
+| premium 1 | +9.01% ± 2.12, 4/4 | +8.04% ± 0.89, 4/4 | +8.52% ± 1.08, 8/8 |
+| premium 1, floor 0.5 | +8.37% ± 2.45, 4/4 | +7.24% ± 1.52, 4/4 | +7.80% ± 1.35, 8/8 |
+
+**Shipped: premium 0.3, floor 0, scale 1** — the highest pooled composite;
+premium 1 is inside its noise. The surface is a plateau below a premium of
+about 1 and falls above it: every arm that raises supers and apex lowers
+Growth, Expansion does not move, and Production moves by under 2.1% because
+the hulls paid in supers are a small part of the fleet (183–234 kt of hull per
+seat at the old default). **Inference, stated as one:** the tree composite
+prices forging only through those hulls, so it prefers basics spent on works
+to basics spent on supers; a final demand for supers larger than the twin
+hulls' would move the optimum up. Confidence about 70%; a bed whose Designs
+bill more of their price in supers would settle it.
+
+## D.50 Why empires buy a different number of whole Band IV works
+
+*Supports T-147. Bed: the twin bed of §D.49 at the new default (premium 0.3),
+3 seats, 1,500 yr, card-free; scratch census builds of `examples/empire_spread`
+reading the snapshot at the horizon and the Production log. Seeds 1, 7, 42,
+31337 on `Random` and `Identical` ground.*
+
+**Growth per seat tracks the count of whole Band IV works purchases**: the
+correlation (Pearson r) between a seat's Growth stock and its count of
+purchases is 0.94–0.97 across the grounds measured. The count decomposes as
+
+> purchases = centers eligible (works at Band III, ceiling above III) × share of them that completed the purchase
+
+and each factor varies, by different causes on the two grounds.
+
+| ground | seed | eligible per seat | bought per seat | completion | unbought, holding the 780 kt total but short a color | unbought, short in total |
+|---|---|---|---|---|---|---|
+| Random | 1 | 197 / 199 / 167 | 72 / 70 / 65 | 37% / 35% / 39% | 44 / 41 / 44 | 81 / 88 / 58 |
+| Random | 7 | 214 / 218 / 211 | 125 / 104 / 70 | 58% / 48% / 33% | 28 / 40 / 62 | 61 / 74 / 79 |
+| Identical | 1 | 44 / 41 / 45 | 5 / 0 / 1 | 11% / 0% / 2% | 32 / 37 / 40 | 7 / 4 / 4 |
+| Identical | 7 | 22 / 35 / 17 | 3 / 2 / 2 | 14% / 6% / 12% | 19 / 32 / 15 | 0 / 1 / 0 |
+
+Across the four seeds per ground, eligible centers run 167–260 per seat on
+random ground and 12–45 on identical ground; completion runs 29–58% and 0–11%.
+
+**Random ground: the missing color is in the same empire.** Seed 7's three
+seats are equally eligible (214 / 218 / 211) and complete 58 / 48 / 33%. The
+unbought centers that hold the total lack one color, and the empire holds that
+color above its bills elsewhere: seed 7 seat 0 is short 15.0 Mt of Cyan at its
+stalled centers and holds 106.7 Mt of Cyan above bills; seat 1 is short
+22.2 Mt of Yellow and holds 110.2 Mt above bills; seed 42 seat 0 is short
+35.5 Mt of Yellow and holds 131.4 Mt. Every seat measured (6 of 6) holds at
+least 2.7x its shortfall in each color it is short. The limit on random ground
+is delivery inside the empire, not supply.
+
+**Identical ground: the missing color is absent from every seat.** Unbought
+centers hold 2.5–6.3 Mt, 3–8x the 780 kt bill, and every seat on a seed lacks
+the same color: seed 1 is short 8.3–12.4 Mt of Cyan per seat against 1–7 kt
+of Cyan held above bills; seed 7 is short 1.7–5.1 Mt of Magenta against
+0–1 kt. Because all seats share the gap, no seat has Cyan (seed 1) or Magenta
+(seed 7) to sell, and an Exchange trade cannot fill it.
+
+**Inference, stated as one:** on random ground the spread in Growth is a spread
+in how much of each empire's own surplus color reaches its stalled Band III
+centers, so a remedy acts on freight priority or price inside the empire; on
+identical ground the spread comes from which seat happens to complete the few
+purchases the shared supply allows, and no change to trade can raise the count
+for every seat. Confidence about 75% for the random-ground half, from 6 seats on
+two seeds; a census of freight deliveries of the short color to the stalled
+centers, per seat, would raise or refute it.
+
+## D.51 The color a nearly-paid center lacks is outbid by its own empire
+
+*Supports politics §2.11's completion term and T-147. Bed: §D.50's (twin bed,
+new defaults, 3 seats, card-free, `Random` ground); a scratch census (never
+landed) reading each seat at 600 and 900 yr, seeds 1, 7 and 42. A **stalled** center has
+works at Band III, holds its Band IV bill's total and cannot pay it in every
+color; its **color** is the one it is shortest of.*
+
+**Where the color is.** Summed over each seat's stalled centers, the piles of
+their color held by the same empire within 10 ly come to 0–8 kt, and within
+25 ly to 2–3,169 kt. Within 50 ly they reach 836–37,930 kt, against a summed
+shortfall of 515–6,672 kt. The median distance from a stalled center to one
+pile covering its shortfall is 26–81 ly (on one seat at 600 yr no single pile
+covered it); to a center holding that color above
+its own bill, 11–42 ly. Freighters based at rocks of that color within 25 ly
+number 638–2,505 per seat. **Inference:** the color is mined out near each
+stalled center by the haulers based there, and what remains lies one to two
+leg lengths away.
+
+**What the stalled center bids for it.** Comparing the stalled center's price
+for its color (`willingness_to_pay`) with the price every other center of the
+same empire that wants that color posts:
+
+| seed | t (yr) | seats: share of the other centers wanting it that bid more | share of their want |
+|---|---|---|---|
+| 7 | 600 | 70% / 82% / 96% | 67% / 65% / 87% |
+| 1 | 600 | 78% / 92% / 91% | 70% / 91% / 76% |
+| 1 | 900 | 78% / 77% / 86% | 68% / 70% / 79% |
+
+The stalled centers' mean price for their color is 0.67–1.84 against a full
+price of 1–3 per color (`doctrine_demand` 2 : 1 : 3, Cyan : Magenta :
+Yellow). **Inference:** under `1 − held_c / bill_c` a center's price for a
+color falls as it fills, so a center that lacks one color bids less for it
+than a center just starting its bill does, and the freight score, the
+hauler's backlog and the Exchange all rank it below those centers. The
+ablation that tests this is §2.11's completion term (sweep below).
+
+**Smoke test.** `completion_exponent = 0` reproduces the shipped engine to
+every printed digit (seed 1, 1,500 yr).
+
+**The sweep** (`examples/forge_sweep`, `FS_COMPLETION`; twin bed, 3 seats,
+1,500 yr; composite as in §D.49, against `γ = 0` on the same seed; cv is the
+coefficient of variation of a tree stock across the three seats, averaged
+over seeds). Screen on seeds 1, 7, 42, 31337:
+
+| γ | composite | Growth | Production | Growth cv | apex cv |
+|---|---|---|---|---|---|
+| 0 | 0 | 0 | 0 | 0.156 | 0.350 |
+| 0.25 | +4.5% ± 1.9 | +10.2% | +3.4% | 0.191 | 0.582 |
+| 0.5 | +4.3% ± 2.1 | +12.6% | +0.6% | 0.180 | 0.497 |
+| 0.75 | +5.0% ± 1.2 | +14.6% | +0.9% | 0.139 | 0.448 |
+| 1 | +2.8% ± 1.0 | +9.9% | −0.8% | 0.143 | 0.514 |
+| 1.5 | −2.8% ± 1.8 | −5.2% | −3.1% | 0.084 | 0.623 |
+
+Expansion moves by under 0.3% in every arm. Replication on seeds 2, 3, 5, 11
+(composite as the log of the summed stocks, so the screen column differs from
+the table above in the last digit):
+
+| γ | seeds 1, 7, 42, 31337 | seeds 2, 3, 5, 11 | pooled, n = 8 | Growth cv, paired change, n = 8 |
+|---|---|---|---|---|
+| 0.5 | +4.17% ± 2.05, 3/4 | +6.89% ± 0.98, 4/4 | +5.53% ± 1.17, 7/8 | +0.026 ± 0.024 |
+| **0.75** | +4.83% ± 1.22, 4/4 | +6.46% ± 1.01, 4/4 | **+5.65% ± 0.79, 8/8** | −0.001 ± 0.018 |
+| 1 | +2.80% ± 1.01, 4/4 | +5.49% ± 0.41, 4/4 | +4.14% ± 0.72, 8/8 | +0.007 ± 0.021 |
+
+**Shipped `γ = 0.75`.** `0.5` is inside its noise on the composite; `1` is
+1.5 points lower, about two standard errors.
+
+**The mechanism check** (the census above, seeds 1 and 7, `γ = 0` against
+`0.75`):
+
+| | `γ = 0` | `γ = 0.75` |
+|---|---|---|
+| other centers wanting the color that bid more than the stalled center | 70–96% | 12–40% |
+| their share of the want for that color | 62–91% | 12–46% |
+| stalled center's mean price for its color | 0.67–1.84 | 2.59–4.31 |
+| stalled centers per seat at 1,200 yr, seed 7 | 30 / 30 / 40 | 19 / 19 / 19 |
+| stalled centers per seat at 1,200 yr, seed 1 | 34 / 42 / 34 | 30 / 11 / 34 |
+| centers at Band III short of the total, 1,200 yr, seed 7 | 56 / 61 / 62 | 67 / 67 / 69 |
+
+The price moved what it was written to move: a stalled center now outbids
+most of its empire for the color it lacks, and color stalls fall on both
+seeds. Growth rises 16% pooled. **The spread between seats does not move**
+(Growth cv −0.001 ± 0.018). **Inference, stated as one:** the term raised
+every seat's completions by a similar factor, and what separates seats on
+random ground after it is the count of Band III centers short of the bill's
+total (an income limit) and the count that reach Band III at all, neither of
+which a price between a seat's own centers reaches. Confidence about 60%;
+a census of income per Band III center by seat, at `γ = 0.75`, would test it.
+
+## D.52 Income per Band III center, and why a center short one color stays short
+
+*Supports T-147. Bed: the twin bed of §D.49 at `completion_exponent = 0.75`,
+3 seats, 1,500 yr, card-free, seeds 1 and 7, `Random` and `ColorRotated`
+ground. Scratch census builds (never landed) counting, per center, the
+kilotonnes that enter its bank by source and color while its works stand at
+Band III. **Bought:** reached Band IV works by the horizon. **Short one
+color:** holds its Band IV bill's total and cannot pay it in every color.
+**Short in total:** holds less than the total.*
+
+**Income per Band III center, by class** (kt/yr per center, summed over
+colors; ranges over the 12 seats):
+
+| class | centers per seat | years at Band III, mean | freight in | own mining | Exchange in |
+|---|---|---|---|---|---|
+| bought | 79–137 | 195–282 | 8.6–18.2 | 0.1–3.5 | 0 |
+| short one color | 7–34 | 358–528 | 2.5–7.1 | 0.0–7.9 | 0 |
+| short in total | 73–140 | 339–493 | 0.6–0.9 | 0.0–0.9 | 0 |
+
+Freight is the income of a Band III center: its own planet yields nothing on
+most seats, and the Exchange delivers to rocks, never to a center. A center
+short one color receives that color at **0.24–0.47 kt/yr** (per center, since
+reaching Band III), against a shortfall of 100–300 kt.
+
+**Where that color is** (§D.51's census): mined out within 25 ly of the
+stalled center; 50–80 ly away in piles; 11–42 ly away at centers holding it
+above their own bills.
+
+**Who gets it.** Each time a hauler prices a pile holding a stalled center's
+missing color (`best_delivery_center`, at the pile), the stalled center won
+10–55% of the pile tonnage priced, cumulative to 1,500 yr (seeds 1 and 7
+`Random`, seed 1 `ColorRotated`); another center also wanting the color won
+45–90%, a center not wanting it under 1.3%. The winner averaged 46–53 ly from
+the pile against 50–63 ly to the nearest stalled center.
+
+**The shipping backlog is empty.** From 600 yr on, every seat's backlog
+(`Simulation::refresh_shipping`) reads 0 kt in every color while 6–94 Mt of ore
+waits at outposts, and each seat has ordered 14,000–17,000 haulers by 1,500 yr.
+Hauler count is not short.
+
+**Two arms refuted.**
+
+- *Price a pile at what the hold carries* (a pile capped per material at the
+  hold's room before pricing): centers built **−8.2%** (`Random`) and
+  **−5.0%** (`ColorRotated`), tree composite −2.80% ± 1.52 and −3.80% ± 0.75
+  (seeds 1 and 7). Priced whole, the center wanting most wins and the hold is
+  filled; priced at the hold, centers with small wants win and the last stop
+  fills the hold beyond their want.
+- *A works supply run* (an idle Reserve hauler fetches a stalled center's
+  missing color from its empire's pile or a center whose abundance passes
+  R-MX8's test; a Doctrine flag): 75 runs loaded **1.2 kt** by 600 yr on
+  seed 7, because Reserve holds only small hulls, and choosing the largest
+  Reserve hold reproduced the run exactly. Not landed.
+
+**The rate, priced.** A General hold is 31.2 kt and a Band IV bill is 130–390
+kt per color, so a missing color needs 4–12 holds. Over 50 ly a laden hull
+flies at nearly `c`, so a round trip is at least 100 years whatever its drive.
+**Inference:** one hauler serving one stalled center delivers about 0.3 kt/yr,
+which is what the census measures; the delivery rate to a stalled center is
+set by how many hauler round trips end there, and the levers on that are the
+voyage discount `λ` (who wins a pile) and the stops a leg may make (what one
+trip assembles). Confidence about 70%; §D.53 tests both.
+
+## D.53 The voyage discount and the stops a leg may make, swept together
+
+*Supports T-147, politics §1.4/§1.8 and industry §6.20. The author's
+direction: sweep the levers behind the appendix's shifts larger than 2x, and
+commit what improves the centers built. Bed: `examples/forge_sweep`
+(`FS_LAMBDA`, `FS_STOPS`; twin bed, 3 seats, 1,500 yr, `completion_exponent =
+0.75`). Score: the tree composite (§D.49) and **centers built** — owned worlds
+whose works stand at Band IV at the horizon — both against `λ = 0.01`, `2`
+stops on the same seed and ground. Screen on seeds 1, 7, 42, 31337, on
+`Random` and `ColorRotated` ground. Of the appendix's >2x shifts, `λ`
+(§A, 2.7x coverage) and the forge premium (§D.43, done at §D.49) are knobs;
+the color-site spacing (§D.41) is the ground, and the backlog hauler (§D.47)
+and the hull-sized hauler (T-98) are mechanisms already shipped.*
+
+Mean over both grounds (each cell four seeds per ground):
+
+| `λ` \ stops | 1 | 2 | 3 | 4 | 5 | 6 | 8 |
+|---|---|---|---|---|---|---|---|
+| 0.0025 | | −9.65% / −25.9% | | | | | |
+| 0.005 | | −3.85% / −12.1% | | | | | |
+| 0.01 | −43.26% / −65.0% | **0** | +2.98% / +10.3% | +4.58% / +14.9% | +3.36% / +14.2% | +4.42% / +16.4% | +2.62% / +13.8% |
+| 0.02 | | +1.33% / +6.8% | | +6.86% / +25.0% | +7.69% / +26.4% | +7.57% / +29.3% | |
+| 0.03 | | −1.67% / +3.1% | | +7.94% / +28.5% | +7.50% / +30.8% | +8.34% / +29.8% | |
+| 0.04 | | | | +6.50% / +27.5% | +7.63% / +29.9% | **+9.12% / +30.7%** | |
+| 0.05 | | −4.54% / −0.5% | | | | +7.94% / +26.8% | |
+
+(composite / centers built.) Expansion falls with stops — about −0.9% at 3,
+−1.7% at 4, −2.7% at 5, −3.6% at 6, −5.0% at 8 — and supers and apex forged
+fall 60–85% in every arm with four or more stops. **The two levers interact:**
+a sharper discount alone gains nothing past `0.02`, and more stops alone peak
+near +4.6%; together they reach +9%.
+
+**Replication** on seeds 2, 3, 5, 11, both grounds (16 runs per arm):
+
+| arm | seeds 1, 7, 42, 31337 | seeds 2, 3, 5, 11 | pooled, n = 16 | centers built, pooled |
+|---|---|---|---|---|
+| `λ 0.04`, 6 stops | +9.12% ± 0.87, 8/8 | +8.47% ± 1.36, 8/8 | +8.79% ± 0.78, 16/16 | +28.2% ± 1.6 |
+| `λ 0.03`, 4 stops | +7.94% ± 0.87, 8/8 | +6.88% ± 1.19, 8/8 | +7.41% ± 0.72, 16/16 | +25.5% ± 1.5 |
+
+Paired, `0.04 / 6` minus `0.03 / 4`: composite +1.38% ± 0.60 (12/16), centers
+built +2.76% ± 1.01, Expansion −1.40% ± 0.23 (16/16 lower).
+
+**A mass leak the sweep exposed.** At `λ = 0.04` with three or more stops,
+`a_twin_bed_builds_from_supers_with_mass_conserved` lost about 1.0 kt.
+Checking the ledger after every event named the first loss: a `DutyArrive` at
+723.5 yr, where cargo fell 0.1595 kt with nothing gained elsewhere. The hauler
+had been parked in Reserve at 689.8 yr *laden*: a milk run of three or more
+stops can come back to its own base, and the retirement test there (an
+exhausted rock, nothing loaded at this stop) ignored what the earlier stops had
+put in the hold; the side run that took it from Reserve wrote over the hold. At
+two stops a leg's second stop is never its base, so the shipped engine could
+not reach it. **Fixed:** a hauler retires only with an empty hold. `λ 0.01`,
+2 stops reproduces the prior binary to every printed digit (seed 1).
+
+**Shipped `λ = 0.04`, 6 stops**, measured on the fixed engine, 16 runs:
+
+| ground | composite | centers built | Growth | Production | Expansion | supers | apex | Growth cv, paired |
+|---|---|---|---|---|---|---|---|---|
+| `Random` | +8.55% ± 1.23, 8/8 | +29.7% ± 2.4 | +26.2% ± 2.6 | +6.3% ± 1.1 | −3.7% ± 0.5 | −80.6% ± 8.3 | −81.6% ± 8.2 | −0.002 ± 0.020 |
+| `ColorRotated` | +9.34% ± 1.02, 8/8 | +28.8% ± 1.7 | +28.0% ± 1.7 | +6.0% ± 1.5 | −2.5% ± 0.7 | −78.3% ± 14.1 | −75.8% ± 11.5 | −0.040 ± 0.021 |
+| both | **+8.95% ± 0.78, 16/16** | **+29.3% ± 1.4** | | | | | | |
+
+**Cost.** Seed 1, 800 yr, one run each: 589,595 → 712,729 events (+21%) and
+44,247 → 64,443 ns/event (+46%), 26.1 → 45.9 s. More work and dearer work;
+the dearer part is `next_pickup`'s scan of every pile and center, run up to
+five times per leg. Test targets on this container: unit 27.3 s, smoke 13.2 s,
+telemetry 46.6 s, determinism 49.0 s.
+
+**Inference, stated as one:** a sharper discount sends each pile's color to the
+nearest center that wants it, and more stops let one leg assemble the colors a
+bill lacks from several piles; together a leg finishes more bills per round
+trip, and the forges, which want basics without end, receive less. Confidence
+about 60%; a per-leg census of how many bills each delivery completes, at both
+settings, would test it. The supers and apex lost are the cost the tree
+composite does not price (§D.49's caveat).
+
+## D.54 Freight routed by `$` at every stop: four arms, none landed
+
+*Supports T-147. The author's direction: the missing unlock is dynamic
+routing priced in `$`, not stop count; reprice the next leg at each stop,
+deciding whether to take on cargo; throughput is not the goal until the
+scheduling is found. Bed: §D.53's (twin bed, 3 seats, 1,500 yr, `λ = 0.04`),
+scored against the shipped engine (`max_pickup_stops = 6`) on the same seed.
+Each arm is a scratch build (never landed); the patch is kept outside the
+repository. A scratch census (`freight_census`) splits freight into deliveries
+× kt per delivery and reports the fleet every 250 yr.*
+
+**Arm 1 — the next pile by the empire's posted price.** After each delivery a
+hauler goes to the pile whose one hold is worth most at its empire's
+want-weighted color prices, discounted by the empty leg; a claim book keeps
+haulers off a pile already claimed, and the pile becomes its base.
+
+| stops | composite | centers built | runs |
+|---|---|---|---|
+| 6 | −6.87% ± 1.18 | −27.0% ± 3.1 | 0/8 positive |
+| 2 | −23.33% ± 2.06 | −58.5% ± 4.0 | 0/8 |
+
+Decomposition (seeds 1 and 7, `Random`, per seat, against shipped):
+deliveries +65–80%, kt per delivery 6.0–8.1 → 3.0–5.4, total kt delivered 0
+to −22%, ore left at outposts −30% to −75%, leg lengths unchanged (30–39 ly).
+The stockpiles move; each hold carries half as much.
+
+**Arm 2 — the same, with the four best piles priced at their real buyer
+over both legs.** −6.11% ± 1.40, centers built −28.9% ± 3.3, 0/8.
+
+**Arm 3 — the next leg priced at every stop** (the author's direction):
+deliver now, or detour to one of the three best piles and deliver the larger
+load — whichever is worth more at its best buyer's prices, discounted over
+every leg; each pile loads only what that buyer wants; stop cap 16. Seed 1,
+500 yr, against shipped: Growth 54k → 371k, 53k → 231k, 71k → 83k kt-years
+per seat; Expansion +6% to +51%; centers built 3 → 9; cost 69 s against 6 s.
+At 1,500 yr (4 seeds, `Random`): **composite −41.50% ± 3.59, centers built
+down about two thirds, 0/4.** The time series (seed 1) says when:
+
+| per seat | shipped | arm 3 |
+|---|---|---|
+| freight, 250–500 yr | 5.5–10.2 Mt | 19.2–23.5 Mt |
+| freight, 750–1,000 yr | 112–133 Mt | 66–82 Mt |
+| freighters at 1,000 yr | 9.1k–9.9k | 12.4k–15.8k |
+| miners at 1,000 yr | 1.8k–2.6k | 1.6k–1.7k |
+| kt per delivery, 750–1,000 yr | 5.9–6.5 | 2.1–3.2 |
+| ore at outposts, 1,000 yr | 53–95 Mt | 15–46 Mt |
+
+**Arm 3 with two fleet-size rules.** The hauler order priced a per-rock
+backlog net of the haulers *based* at each rock, and a roaming hauler moves
+its base every trip.
+- *The whole fleet against the whole stock:* freighters fall to about 2,200
+  per seat, ore at outposts climbs to 128–158 Mt by 1,000 yr, freight 22–27 Mt
+  per 250 yr.
+- *A new hauler priced by the route it would fly* (the order fires when a
+  fresh hauler's best move from the center is worth more than the hull):
+  freighters reach 26k–30k per seat by 750 yr, 0.6–2.9 kt per delivery.
+
+**Inference, stated as one:** pricing each leg at its buyer routes freight
+better than the welded base — arm 3 delivers two to four times as much in
+its first 500 years — but nothing in these arms prices the *size of the
+fleet* correctly once haulers roam. A route's value says what one more trip
+earns now, the backlog compares a stock with holds per trip, and the claim
+book reserves only piles that haulers are flying to; none of them sees the
+rate at which mining refills the piles, which is what a marginal hauler
+competes for. Confidence about 60%; a fleet-size rule priced against the
+piles' refill rate (or a per-cycle assignment of haulers to piles and
+buyers), measured on the same bed, would test it.
+
+**Refuted by §D.55.** The fleet-size and load-size ablations moved
+kilotonnes per delivery by about 1 kt; the cause was that these arms priced
+outpost piles only, which drops center-to-center freight.
+
+
+## D.55 Why per-stop routing fell behind after 500 years: it never loaded at a center
+
+*Supports T-147. The author's direction: run experiments to explain §D.54's
+turnaround after 500 yr, then fix it. Bed: §D.53's twin bed (3 seats,
+1,500 yr, `λ = 0.04`), `Random` ground, scored against the shipped engine
+(`max_pickup_stops = 6`) on the same seed. Arms are scratch builds; a scratch
+census (`freight_census`) reports per seat every 250 yr: ore mined at outposts
+and at centers, kilotonnes loaded at outposts and at centers, colonies, and
+centers with works at Band III and Band IV.*
+
+**Two hypotheses refuted on seed 1, at 500 yr** (arm 3, stop cap 16):
+
+| arm | kt per delivery, 250–500 yr | freighters at 500 yr |
+|---|---|---|
+| arm 3 | 2.3–3.1 | 4.7k–6.9k |
+| + fill the hold on departure | 3.0–3.4 | 5.0k–5.6k |
+| + base not moved (shipped fleet accounting) | 2.4–3.2 | 3.9k–4.2k |
+| both | 3.0–3.6 | 3.5k–3.7k |
+
+Neither the load cap nor the fleet count moves kilotonnes per delivery by
+more than about 1 kt.
+
+**Extraction is not it either.** Over 500–750 yr arm 3 mines 75–84 Mt per seat
+at outposts against shipped's 77–88 Mt (seed 1) and lifts as much or more
+from them (68–82 Mt against 65–72 Mt).
+
+**The census that named it — loads by source, per seat per 250 yr:**
+
+| window | shipped, at outposts | shipped, at centers | arm 3, at outposts | arm 3, at centers |
+|---|---|---|---|---|
+| seed 1, 250–500 | 11–17 Mt | 1.6–3.1 Mt | 30–33 Mt | 0 |
+| seed 1, 500–750 | 65–72 Mt | 21–25 Mt | 68–82 Mt | 0.001–0.002 Mt |
+| seed 1, 750–1,000 | 54–61 Mt | 54–72 Mt | — | — |
+| seed 7, 500–750 | 72–100 Mt | 15–27 Mt | 108–146 Mt | 0.001–0.002 Mt |
+| seed 7, 750–1,000 | 92–112 Mt | 61–74 Mt | — | — |
+
+In shipped, freight that moves a center's abundance — its holding above its
+own next works bill — to another center short of it (R-MX8) grows from 0.5–3 Mt
+before 500 yr to the same size as outpost freight by 1,000 yr. Arm 3's planner
+priced outpost piles only, so that freight stopped. Band III centers at 750 yr,
+seed 1: shipped 48–77, arm 3 22–30.
+
+**The ablation: centers in the planner.** Each center's abundance, net of what
+haulers have claimed there, is ranked by the same upper bound as a pile; the
+three best are priced exactly at their best buyer, capped by what the
+Exchange's gate lets the center ship to that buyer (`center_offer`). At
+750 yr, Band IV centers per seat: seed 1 30 / 26 / 16 against shipped
+17 / 12 / 10 (arm 3 13 / 9 / 8); seed 7 25 / 30 / 44 against 19 / 14 / 16.
+Loads at centers run 190–334 Mt per seat over 500–750 yr, three to five times
+the outpost loads. At 1,500 yr, stop cap 16, against shipped on the same seed
+(mean ± standard error over seeds; "runs" counts seed × ground):
+
+| ground | seeds | composite | centers built | runs positive |
+|---|---|---|---|---|
+| — | arm 3 alone (§D.54), 1, 7, 42, 31337 | −41.50% ± 3.59 | about −65% | 0/4 |
+| `Random` | 1, 7, 42, 31337 | +24.07% ± 3.70 | +41.3% ± 7.4 | 4/4 |
+| `Random` | 2, 3, 5, 11 (chosen against nothing) | +21.16% ± 1.07 | +37.9% ± 5.7 | 4/4 |
+| `ColorRotated` | 1, 7, 42, 31337 | +18.14% ± 2.96 | +35.1% ± 4.5 | 4/4 |
+| **both** | **all twelve** | **+21.12% ± 1.64** | **+38.1% ± 3.2** | **12/12** |
+
+Per tree over the twelve: Expansion +2.8% ± 0.5, Growth +39.6% ± 2.8,
+Production +21.0% ± 2.9.
+
+**Two variants, against that arm on the same seeds:**
+
+| variant | composite | centers built | runs |
+|---|---|---|---|
+| stop cap 6 (the shipped `max_pickup_stops`) | −0.44% ± 0.33 | +2.1% ± 1.2 | 1/4 positive |
+| a hauler may not detour to the pile it stands on | −2.37%, −1.85%, −2.77% | −2.8%, −6.9%, +2.8% | 0/3 |
+
+Stop cap 6 is inside two standard errors of 16 on both measures and runs
+20–28% fewer events, so `max_pickup_stops` stayed at 6 (since lowered to 2
+with a kept, netted price table, §D.56); at 6 against shipped,
+seeds 1, 7, 42, 31337: composite +23.63% ± 3.86, centers built +43.4% ± 8.6,
+4/4. The zero-length detour is how a stop loads past its share of the room
+(each color at most its share per stop, `take_for_deficit`), and removing it
+costs on all three seeds measured; it is shipped as measured. Bit-identity of
+the landed source with the scratch arm: seed 1, 600 yr, identical output.
+
+**Supers and apex.** Under the new routing each seat's one forge holds
+1.4–1.9 Mt of a single basic and none of the other two (seed 1), makes
+238–520 kt of supers once near 500 yr and nothing after; apex is 0 on 24 of
+24 seat-runs at stop cap 16 (shipped: 47–264 kt per seat) and −89.8% ± 8.4 at
+6. Arm 3 alone had the same: 0–8 kt apex. The forge bids
+`premium · B/(B+H)` at pressure 1 against centers whose completion term raises
+theirs, so at the shipped premium 0.3 it wins no delivery of a color it lacks,
+and the full-hold top-up that used to carry those colors in incidentally is
+gone. Forge premium against 0.3 under the new routing, seeds 1 and 7:
+
+| premium | composite | centers built | supers per seat | apex per seat |
+|---|---|---|---|---|
+| 1 | +0.04%, +0.83% | +1.1%, −5.7% | 0.5–5.4 Mt | 0–10.5 kt |
+| 3 | +0.06%, −1.06% | −4.5%, −3.2% | 5.7–19.0 Mt | 32–623 kt |
+
+A pass routing supers by the planner (each forge's supers priced against every
+center owed them) left seed 1 unchanged: apex 0, supers within 45 kt. Not
+shipped. Premium stays 0.3; what the card-free bed should forge is the
+author's call (galaxy §4.5).
+
+**Inference, stated as one:** the turnaround was the loss of center-to-center
+freight, not a fleet-size or load-size effect; the planner priced every source
+a hauler could load at except the one whose share of freight grows after
+500 yr. Confidence about 85%, from the census on two seeds, an ablation that
+reverses the sign on four, and a replication on four seeds and a second
+ground; a census of where the planner's center loads go (to which buyers, and
+how far each bill was from completion) would raise it or lower it.
+
+## D.56 A cheaper freight doctrine: a kept price table, netted as haulers commit
+
+*Supports T-147. The author's direction: approximate the per-stop freight
+planner (§D.55) with a cheaper doctrine that improves yr/s at under 5% loss
+of work-years. Bed: the twin bed (3 seats, 1,500 yr, `λ = 0.04`), work-years
+= the Growth stock, scored against the exact planner (§D.55 at stop cap 6,
+shortlist 3, prices read fresh) on the same seed; throughput is wall time of
+one run at 800 yr, seed 1, run one at a time on an idle machine, interleaved
+over two rounds where stated. Levers are two Doctrine fields,
+`freight_shortlist` and `freight_price_age_years`, and
+`SimConfig::max_pickup_stops`.*
+
+**The levers alone** (four seeds; work-years vs exact; wall at 800 yr, exact
+183.8 / 187.7 s, the engine before the planner 47.7 / 47.9 s):
+
+| stop cap / shortlist / price age | work-years | composite | wall |
+|---|---|---|---|
+| 2 / 3 / fresh | −3.05% ± 0.70 | +1.09% ± 0.70 | — |
+| 6 / 2 / fresh | −2.56% ± 3.18 | −1.85% ± 1.00 | — |
+| 6 / 1 / fresh | −5.78% ± 1.16 | −2.56% ± 0.59 | 146.1 / 147.3 s |
+| 3 / 3 / fresh | — | — | 140.0 / 143.6 s |
+| 6 / 3 / 5 yr, not netted | −4.92% ± 4.34 | −7.27% ± 1.07 | 152.8 s |
+| 2 / 1 / 5 yr, not netted | −8.25% ± 0.84 | −5.29% ± 0.71 | 77.2 s |
+
+An exact pruning of the buyer search (sort centers by their best price,
+stop at the first that cannot win) was bit-identical and slower, 263.9 s:
+the bound ignores the voyage discount, which cuts a score to about a third.
+
+**Netting.** A kept table is the centers' shortfalls and prices as read; when
+a hauler turns for a buyer, that buyer's shortfall in the table falls by what
+the hauler carries. Same price age, with and without it:
+
+| price age | not netted | netted |
+|---|---|---|
+| 5 yr | −4.92% ± 4.34 | **+42.73% ± 6.87**, 4/4 |
+| 25 yr | — | **+46.78% ± 5.50**, 4/4 |
+| 50 yr | — | +34.04% ± 5.29, 4/4 |
+| 100 yr | — | +10.05% ± 5.33, 3 seeds |
+
+**Why the exact planner is far from optimal — the overshoot census** (scratch
+build, seed 1, 1,500 yr): the share of kilotonnes delivered that exceeded
+the buyer's shortfall when the hauler arrived.
+
+| arm | deliveries | kt delivered | beyond the shortfall on arrival |
+|---|---|---|---|
+| exact | 1,179,000 | 5,660,513 | **0.930** |
+| 25 yr, netted | 596,000 | 1,340,576 | **0.592** |
+
+Every hauler prices the same unfilled shortfall, so haulers deciding close
+together converge on one buyer and most of what arrives is past what it
+needed. Some of it banks toward the next bill, so 0.930 bounds the waste
+rather than estimating it.
+
+**Netted, with the cheap levers** (price age 25 yr):
+
+| stop cap / shortlist | work-years | composite | centers built | wall |
+|---|---|---|---|---|
+| 6 / 3 | +46.78% ± 5.50 | +20.06% ± 2.13 | +37.5% ± 8.4 | 175.5 / 174.9 s |
+| 6 / 1 | +42.78% ± 5.53 | +18.90% ± 2.55 | +36.5% ± 9.2 | 136.9 s |
+| 2 / 3 | +40.02% ± 5.59 | +20.47% ± 2.80 | +33.3% ± 8.9 | 102.6 s |
+| **2 / 1** | **+39.33% ± 5.70** | **+20.11% ± 2.82** | **+33.6% ± 8.3** | **78.6 s** |
+| 1 / 1 | +24.01% ± 5.05 | +21.24% ± 2.14 | +25.0% ± 6.4 | 67.1 s |
+
+**Shipped: stop cap 2, shortlist 1, price age 25 yr.** Replicated on seeds
+2, 3, 5, 11 (+30.95% ± 7.13 work-years, 4/4) and on `ColorRotated` ground
+(+35.92% ± 7.64, 4/4); pooled over twelve runs **work-years +35.40% ± 3.74,
+composite +18.78% ± 1.73, centers built +28.5% ± 4.2, 12/12**, at 2.4x the
+exact planner's throughput. Against stop cap 6, shortlist 3 with the same
+netting (+40.69% ± 3.97 pooled) it gives up 3.8% of work-years for 2.2x the
+throughput. Against the engine before the planner, pooled twelve: composite
++40.68% ± 3.08, centers built +67.9% ± 7.5; that engine is still 1.6x faster
+per simulated year (47.8 s against 78.6 s). Apex forged over twelve
+seat-runs: 81 kt, against 144 exact and 1,370 before the planner (galaxy
+§4.5's open question). The default's price age is a placeholder inside the
+25-yr peak; the stop cap and shortlist were chosen for throughput.
+
+**Inference, stated as one:** the exact planner's gap is coordination, not
+precision — a fresher price helps one hauler and nothing tells the next one
+it has been spoken for. Confidence about 80%, from a four-seed ablation at
+one price age and the census on one seed; netting in-flight cargo against a
+table read fresh at every decision would separate the netting from the
+staleness, and would say whether a fresh read is worth its cost at all.
+
+## D.57 The spread of colony-years between empires on random ground
+
+*Supports galaxy §2 and T-147. The author's direction: reduce the variation in
+colony-years per empire on random ground — by Exchange pricing, by sweeping
+`trade_decay_lambda`, or by constraints on galaxy generation — until it is no
+more than 1.5x the lowest variation measured on identical or color-rotated
+ground; then, the variation in whole Band IV works per empire. Bed: the twin
+bed (`examples/forge_sweep`, 3 seats, 1,500 yr, card-free, shipped freight
+doctrine), seeds 1, 7, 42, 31337, 2, 3, 5, 11. The spread is the coefficient of
+variation (standard deviation over mean) of a per-seat stock across the seats
+of one galaxy, averaged over the eight galaxies, ± its standard error; "paired"
+differences are per galaxy against random ground on the same seed. Every arm
+but the shipped one is a scratch configuration of galaxy generation or of
+`SimConfig` (beds vary only the galaxy).*
+
+**The target, as read.** The lowest mean spread of colony-years on the two
+symmetric grounds is identical ground's, 0.055 ± 0.012, so the target is
+**0.083**. The pooled reading (one coefficient of variation over all 24
+seat-runs of a ground) puts random ground at 0.108 against rotated ground's
+0.073, under 1.5x already; it mixes the spread between galaxies, which every
+seat of one game shares, into the spread between seats, so it is not the
+reading used.
+
+**Baseline** (shipped engine):
+
+| ground | spread of colony-years | spread of Band IV centers |
+|---|---|---|
+| random | 0.098 ± 0.016 | 0.137 ± 0.040 |
+| identical | 0.055 ± 0.012 | 0.787 ± 0.202 (2.7 Band IV centers per seat) |
+| color-rotated | 0.060 ± 0.005 | 0.126 ± 0.022 |
+
+So the Band IV spread on random ground is 1.09x color-rotated ground's and
+meets the 1.5x reading; colony-years is the one above it.
+
+**When the seats part** (`examples/seat_race`, the same bed to 400 yr): a
+seat's colony count at 150 yr, relative to its galaxy's mean, correlates with
+its colony-years at 1,500 yr at r = 0.84 (24 seats). At 50 yr the spread of
+colony count is 0.27 on random ground and 0.02 on both symmetric grounds; by
+150 yr the symmetric grounds have reached 0.16–0.17 too, and they fall back
+to 0.10–0.12 by 400 yr while random ground holds 0.20. What each seat's region
+holds at generation (`examples/seat_ground`: worlds `k_high` admits, their
+distance-weighted count, deposits by color within 8–40 ly and over the whole
+region) correlates with the 150-yr count at |r| ≤ 0.53. Each seat's region is
+93–99% one color.
+
+**Arms on random ground** (paired against random ground):
+
+| arm | spread of colony-years | Δ | spread of Band IV centers | Δ | Growth | composite |
+|---|---|---|---|---|---|---|
+| `trade_decay_lambda` 0.02 | 0.094 ± 0.014 | −0.004 ± 0.011 | 0.128 ± 0.050 | −0.009 ± 0.017 | −0.6% | −0.3% ± 0.4 |
+| `trade_decay_lambda` 0.08 (5 seeds) | 0.110 ± 0.029 | −0.006 ± 0.016 | 0.152 ± 0.060 | +0.007 ± 0.012 | −3.5% | +0.6% ± 0.4 |
+| fair start 20 ly, colors stepped | 0.097 ± 0.014 | −0.002 ± 0.025 | 0.129 ± 0.035 | −0.009 ± 0.024 | +8.8% | +5.6% ± 2.9 |
+| **fair start 35 ly, colors stepped** | **0.081 ± 0.023** | −0.017 ± 0.031 | 0.153 ± 0.024 | +0.016 ± 0.043 | **+12.1%** | +5.2% ± 8.1 |
+| fair start 35 ly, same colors | 0.050 ± 0.013 | −0.048 ± 0.019 | 0.220 ± 0.063 | +0.083 ± 0.075 | −73.2% | −37.9% ± 6.2 |
+| color sites kept 20 ly from homeworlds | 0.113 ± 0.032 | +0.015 ± 0.025 | 0.187 ± 0.048 | +0.049 ± 0.026 | −19.2% | −14.5% ± 3.5 |
+| color sites kept 35 ly from homeworlds | 0.075 ± 0.015 | −0.023 ± 0.022 | 0.211 ± 0.033 | +0.073 ± 0.054 | −67.3% | −48.8% ± 3.4 |
+| color-centered homeworlds (equidistant sites) | 0.335 ± 0.063 | +0.237 ± 0.077 | 0.194 ± 0.050 | +0.056 ± 0.016 | −2.2% | −1.0% ± 0.8 |
+
+The fair start (`GalaxyConfig::fair_start_ly`) makes every seat's wild worlds
+within the radius seat 0's, carried to the seat and color-stepped as the
+archetypes step; "same colors" is a scratch build that does not step them. The
+color clearance was a scratch `GalaxyConfig` field, never landed: no random
+color site within the distance of any homeworld.
+
+**What the stepped fair start leaves.** On seeds 2 and 3 its spread rises to
+0.185 and 0.186: the seats part by 150 yr inside their copied starts (seed 3:
+43 / 26 / 61 colonies, none in a rival's region before 200 yr). The starts
+differ only in color, against one works mix for every seat (2 : 1 : 3 Cyan :
+Magenta : Yellow, ratified); seats whose start is Magenta average 0.945 of
+their galaxy's mean colony-years and Cyan 1.050 (7 seats each, about 2
+standard errors apart; Yellow 1.005, which the works mix alone would rank
+first).
+
+**The homeworlds placed by hex** (the author's rulings, galaxy §2): at 3 seats
+with the 25-ly inset, the ground census of all eight seeds and the twin-bed
+runs of seeds 1 and 7 to 300 yr are bit-identical to the ring they replace, so
+every 3-seat number above holds under the new placement.
+
+**Inference, stated as one:** the spread on random ground is set by the first
+few foundings, and what separates them is not any one stock near the
+homeworld but the order in which a seat's ground lets it found — which no
+freight price reaches, since the race is decided before 150 yr when freight
+is small. Confidence about 60%. Fixing the ground near home either removes
+color from the economy (same colors, clearance: Growth −19% to −73%) or leaves
+the color asymmetry against the shared works mix; a stepped fair start on
+eight more seeds would say whether its 0.081 is under the target or at it.
 
 ## References
 

@@ -797,7 +797,7 @@ Stated as the design question rather than left as a failure:
   is ahead of it. That is a production order, not a founding side effect, and it
   is a different card.
 
-**R-WAR6** carries the two magnitudes this left behind: the founding rung a
+**R-WAR6** carries the two magnitudes this left behind: the founding whole Band a
 departing picket leaves (§8.7) and the picket's own cost.
 
 ### 8.7 The first arm was an absorbing zero, and the floor is why
@@ -807,7 +807,7 @@ and because it is a shape that recurs.
 
 The first implementation charged the card honestly: roles §4.2 makes a colony's
 `Band I` stock the **recycled hull**, so a hull that leaves should leave nothing.
-It debited the founding rung to zero. Measured, that took seat 0 from **769
+It debited the founding whole Band to zero. Measured, that took seat 0 from **769
 colonies to 10** and *raised* the neighbors **+20.0%**: the empire had removed
 itself from the game, and the neighbors' gain was one fewer competitor rather
 than any denial at all.
@@ -817,12 +817,12 @@ stock of zero, and `fabrication_rate` is `slips × berth_rate`, so a colony
 founded at infra 0 can never mine, never build and never recover. Zero is not a
 price, it is an **absorbing state**.
 
-The founding rung is now floored at the ladder's own floor (`Band Empty`,
-design law #11/T-63) — the smallest rung that is a real quantity. Three arms,
+The founding whole Band is now floored at the ladder's own floor (`Band Empty`,
+design law #11/T-63) — the smallest whole Band that is a real quantity. Three arms,
 same bed, and the monotonicity is the evidence that the floor is the term that
 matters:
 
-| founding rung under the card | own colonies | neighbor colonies | `W_0` |
+| founding whole Band under the card | own colonies | neighbor colonies | `W_0` |
 |---|---|---|---|
 | zero | −57.2% | **+20.0%** | −688 |
 | **floor (shipped)** | −9.6% | **+4.4%** | −133 |
@@ -834,7 +834,7 @@ denial. Even the arm that charges the card *nothing* only moves the neighbors
 −0.71% ± 0.54 — inside noise, and nowhere near "greatly decrease".
 
 `a_picketed_founding_still_leaves_a_workable_colony` pins the floor against the
-absorbing zero. **R-WAR6**: whether `Band Empty` is the right rung, or whether a
+absorbing zero. **R-WAR6**: whether `Band Empty` is the right whole Band, or whether a
 departing picket should instead found at whatever its mineral endowment buys
 (§1.7), is unratified.
 
@@ -955,10 +955,10 @@ on it would not obviously help either.
 #### Erecting the hold is flat because the hold has nothing in it
 
 `founding_infra_share` measures −8.33 against −8.30: no change. §8.7 establishes
-that the founding rung matters enormously — floor against an unchanged `Band I`
+that the founding whole Band matters enormously — floor against an unchanged `Band I`
 is a twelve-point swing — so flat here is a claim about the *quantity*, and
 `examples/founding_stock` measures it directly (seed 1, 800 yr, seat 0's own
-foundings, floor rung `Band Empty` = 0.020 kt):
+foundings, floor whole Band `Band Empty` = 0.020 kt):
 
 | `founding_infra_share` | foundings | median stock | mean | max | above the floor |
 |---|---|---|---|---|---|
@@ -1320,7 +1320,7 @@ handover; below it, some of the loss is worlds nobody takes.
 | `SettlersPerMineral` alone | +287.8 | −107.1 | **+394.9** | 8,836 | 469 | 4,713 | — |
 | …+ the Design write | +220.0 | −93.1 | **+313.1** | 7,415 | 639 | 4,442 | — |
 | **Doctrine write alone** | **−197.2** | **+90.5** | **−287.8** | 5,665 | 0 | 2,773 | **0.46** |
-| …with the founding rung restored *(ablation)* | −1.0 | +1.0 | **−2.0** | 6,492 | 0 | 3,558 | 1.00 |
+| …with the founding whole Band restored *(ablation)* | −1.0 | +1.0 | **−2.0** | 6,492 | 0 | 3,558 | 1.00 |
 | the card as §8.2 specifies it | −197.2 | +90.5 | −287.8 | 5,665 | 0 | 2,773 | 0.46 |
 | **both halves, both live** | **−337.5** | **+153.6** | **−491.1** | 4,162 | 637 | 2,212 | 0.46 |
 
@@ -1330,7 +1330,7 @@ card *is* its Doctrine half.
 
 #### The cause, by ablation
 
-**Restoring the founding rung takes the Doctrine write from −287.8 to −2.0.**
+**Restoring the founding whole Band takes the Doctrine write from −287.8 to −2.0.**
 That is `SimConfig::ablate_picket_founding_cost` (deleted at T-133 with every harness-only switch), which violates conservation and
 must never ship — its only job is to remove the suspected cause and watch the
 effect go, which is the one method that can refute (`AGENTS.md` §2).
@@ -1339,7 +1339,7 @@ So the chain is:
 
 ```text
 colonizer keeps its hull
-  → the colony gets no recycled stock: floor rung 0.020 kt, not 0.109  (5.5x)
+  → the colony gets no recycled stock: floor whole Band 0.020 kt, not 0.109  (5.5x)
   → that colony produces less, forever
   → the empire builds 18% fewer colony ships   (6,889 → 5,665)
   → it founds 22% fewer colonies               (3,562 → 2,773)
@@ -1349,7 +1349,7 @@ colonizer keeps its hull
 
 **Everything else the card does is worth about two colonies.** Pickets,
 engagements, diversions and kills are all still present in the ablation arm —
-5,000-odd pickets, 20,000-odd kills — and with the founding rung restored the
+5,000-odd pickets, 20,000-odd kills — and with the founding whole Band restored the
 whole apparatus nets −2.0. The denial mechanic is not *losing* the objective; it
 is not *touching* it.
 
@@ -1438,7 +1438,7 @@ entirely from the Doctrine half.**
   beyond it being positive). Measured: **zero General colonizers built across
   four seeds**, and the arm is bit-identical to peace.
   `the_cheapest_viable_policy_never_names_a_general_colonizer` pins the algebra.
-  **The Contact ladder has no Medium rung** — `HullType` runs Limited and
+  **The Contact ladder has no Medium whole Band** — `HullType` runs Limited and
   General only for Contact — so a card that mounts the colony role on a Contact
   hull is forced to the General tier, which is the tier nothing selects.
 - **`SettlersPerMineral` is worth more than any card measured so far**, at
@@ -1461,7 +1461,7 @@ questions instead of exposing flags:
 | call | answers |
 |---|---|
 | `design_for(role)` | the hull **and class** this layer lays down for a role |
-| `colonizer_ladder()` | the colonizer rungs, cheapest first |
+| `colonizer_ladder()` | the colonizer whole Bands, cheapest first |
 | `mounts(role, hull)` | whether this layer puts that role on that hull |
 | `role_of(hull, class)` | **the inverse** — what a finished design is for |
 | `recycles_on_founding()` | whether a colony ship is consumed by its colony |
@@ -1492,7 +1492,7 @@ time is not one.
 
 #### The hold erects in ratio, not in total — `R-IND20`
 
-**An infrastructure rung is billed per color** (`works_bill` splits it by
+**An infrastructure whole Band is billed per color** (`works_bill` splits it by
 `works.mix_share(c)`; `can_pay_bill` tests each color separately), so minerals
 standing in a colony ship's hold are worth only what their **scarcest** color
 allows:
@@ -1510,7 +1510,7 @@ exactly.
 
 The version this replaces treated the hold as a scalar total, which let a
 single-color hold stand up as infrastructure **no center could have bought with
-the same minerals** — a rung obtainable by arriving that was not obtainable by
+the same minerals** — a whole Band obtainable by arriving that was not obtainable by
 paying for it.
 
 **`eta_works` multiplies here because `works_bill` divides by it**, which is
@@ -1736,7 +1736,7 @@ specification, and it resolves **R-WAR13**.*
 |---|---|---|---|
 | Scout | `LimitedContactVehicle` / `Tor` | **`LimitedSystems` / `Tor`** (renamed `Spur` at T-133: a class names one hull) | a Contact hull is armed; the default is not |
 | Colonizer | `MediumSystems` / `Unnamed` | unchanged | already unarmed |
-| Colonizer, upper rung | `GeneralSystems` | unchanged | ditto |
+| Colonizer, upper whole Band | `GeneralSystems` | unchanged | ditto |
 | Miner | `LimitedSystems` / `Meadow` | unchanged | — |
 | Picket | `LimitedOffensive` / `Unnamed` | **`LimitedContactVehicle` / `Unnamed`** | one armed family, one key |
 | seeded roster | LSV(Meadow) + LCV(Tor) | **LSV(Meadow)** | see the contradiction below |
@@ -1837,7 +1837,7 @@ of the three have a reason to be nearly inert: an LSV and an LCV share a
 `cost_fraction` so the survey hull's *price* is unchanged, a scout carries no
 cargo so the hold geometry does not bind, and `hull_thrust_to_mass` is read only
 by `arena`/`combat` — while §8.3 already established that the General Contact
-colonizer rung is unreachable under `CheapestViable`, because a Medium hull
+colonizer whole Band is unreachable under `CheapestViable`, because a Medium hull
 always wins on price. No mechanism is established here and none is asserted.
 
 #### Three duplications this removed, because they are the failure mode
@@ -2907,7 +2907,7 @@ cut is T-141.
 | — | the wreck roll is the only stochastic beat, bounded in (0, 1) |
 | **R-WAR9** | **the colonization leg is flown at the rate its own load implies** — `spawn_courier` read `civilian_accel_g · G` before the hold was loaded, so a colony ship flew like an empty hull and R-O32 was closed for the arena but not for this dispatcher. A laden Medium colonizer makes **0.241 ly/yr² against 2.446 empty**. It **invalidates every transit-dependent magnitude measured before it**, §8.6–8.8's arms included (§8.9.6) |
 | **R-IND21** | **a hull carries the minerals it was built from** and hands them back in the same proportions — scrap salvage, wreckage, the founding ceiling's overflow. So a hull built from supers or apex drops supers or apex, with no rule beyond the composition itself. `World::hull_minerals`, captured by `Minerals::try_take_total` at the moment the bank pays (T-119) |
-| **R-IND22** | **the founding center pays the floor-rung top-up**, so the absorbing-zero guard (§8.7) is a *transfer* rather than mass appearing from nowhere. A parent too poor to pay leaves its child at whatever it could afford — the guard degrades rather than conjuring. **Design law #11 now holds with no exceptions**, card played or not |
+| **R-IND22** | **the founding center pays the top-up to the floor whole Band**, so the absorbing-zero guard (§8.7) is a *transfer* rather than mass appearing from nowhere. A parent too poor to pay leaves its child at whatever it could afford — the guard degrades rather than conjuring. **Design law #11 now holds with no exceptions**, card played or not |
 | **R-WAR13** | **resolved (T-121)** — `DoctrineWrite::ArmedFrontier` is the Warfare write, and `TIER0[15]` carries it alongside the two Design unlocks. §8.2's *third* write, `picket_after_founding`, stays out: §8.10 measured it at −287.8 `W_0`, so it is R-WAR6's question (§8.14) |
 | **T-123** | **a blockader strikes the colony ships its rival launches from a port it stands at**, at range zero, as the defender (R-WAR5). Placement reads only launches whose light has reached the seat's capital. `DoctrineWrite::ArmedFrontier` writes it, with the claim-target supply and a reserve floor of `ARMED_FRONTIER_BLOCKADERS = 8` (placeholder) (§8.16) |
 | ~~**T-123**~~ | ~~**`fight_at` is the one fight between hulls standing at a site**~~ — **superseded (T-133):** there are no fight sites; every fight is discharges on the event loop (§8.19.3) |
@@ -2918,13 +2918,13 @@ cut is T-141.
 | **T-120** | **the head-to-head bed §8.4 asked for exists** — `examples/card_table`, 12 seats, three arms, cards at earliest legal play, `g` fitted by least squares on `ln X(t)` as §2.4 requires. Growth card value **+0.1134 ± 0.0592** (n=18 seat-seeds over 3 independent seeds, mean `R²` 0.911); Warfare **−0.0371 ± 0.1609**, inside one SE of zero (§8.13) |
 | **R-WAR10** | **a picket guesses its target from the observed bearing**, out of worlds *it* has scanned, and re-reads the trajectory as fresh light arrives. Two worlds on one bearing are indistinguishable at range, so a colony ship aimed at the far one puts a picket on the near one for free — **deception is a move now, not a wish** (§8.12) |
 | **T-117** | **the standing layer answers; it is not switched on.** `Standing::role_of` is *derived* from `design_for`, so a card that moves a role to a different hull needs no edit in `assign_role` — pinned by `role_of_inverts_design_for_every_role` across every combination of the writes (§8.11). Bit-identical on four seeds |
-| **T-117** | **a hold erects infrastructure in the works mix, not in total** — `erectable = eta_works · min_c(aboard[c] / mix_share(c))`, the same per-color conjunction `works_bill` charges a rung with, so a single-color hold erects nothing (§8.11) |
-| **T-116** | **the card's negative `W_0` is one cost and it compounds** — the forfeited founding rung. Ablated, the Doctrine write goes −287.8 → **−2.0**, so pickets, engagements and kills are together worth about two colonies (§8.10) |
+| **T-117** | **a hold erects infrastructure in the works mix, not in total** — `erectable = eta_works · min_c(aboard[c] / mix_share(c))`, the same per-color conjunction `works_bill` charges a whole Band with, so a single-color hold erects nothing (§8.11) |
+| **T-116** | **the card's negative `W_0` is one cost and it compounds** — the forfeited founding whole Band. Ablated, the Doctrine write goes −287.8 → **−2.0**, so pickets, engagements and kills are together worth about two colonies (§8.10) |
 | **T-116** | **`founding_infra` is `hull_cost`**, so the Doctrine write's price scales with the hull the Design write enlarges — 10.07× on a GCV — which is why the whole card (−491.1) is worse than either half or their sum (§8.10) |
 | **T-115** | **there are two responders to a picket, not one** — the home center issues an order and the crew notices, and light reaches a closing hull sooner than a standing observer. Because light outruns a colony ship, *whether the warning arrives* stopped discriminating; **turnover** replaces it, and it is kinematics rather than a constant (§8.9.1–8.9.2) |
 | **T-115** | **a picket whose world is colonized returns to the frontier**, off station and off the books in one function — which is the situation T-113's held-ground preference creates (§8.9.3) |
 | **T-113** | the per-class candidate reduction (R-O70) is exact only for a consumer reading the argmax of a **class**; a consumer reading the argmax of a *subset* needs its own slot, and got one (§8.8) |
-| **T-112** | a colony founded at infrastructure **zero** is an absorbing state, not a price — `employment_rate` returns exactly `0.0` there, so it can never mine or build. A departing picket leaves the ladder's floor rung instead (§8.7) |
+| **T-112** | a colony founded at infrastructure **zero** is an absorbing state, not a price — `employment_rate` returns exactly `0.0` there, so it can never mine or build. A departing picket leaves the ladder's floor whole Band instead (§8.7) |
 | **T-111** | ~~`combat::resolve_engagement` is called from `sim.rs`~~ — **amended (T-133):** the simulation fights through its own discharge events (`src/sim/fire.rs`) with the arena's fire-control rule and tuned station-keeping spread from `combat.rs`; the arena keeps `resolve_engagement` for its own sweeps and seeds no production |
 | law #11 | a destroyed hull's mass becomes **slag** — inert (R-O59), conserved, and never a salvage yield; a wrecked hull keeps its course (R-WAR34) |
 | **T-133** | **no engagements, no fight sites, and fire on the main loop** — detection on every trajectory change, discharges every `τ`, a wreck point per hull, belief events A and B, one decision per fleet per shooter, course changes from a moving start, colonists that retarget (§8.19) |
@@ -2946,8 +2946,8 @@ cut is T-141.
 | **R-WAR14** | **`Sim::inert_card_plays` counts `NotYetImplemented` only**, so a card writing real state into a component with no live consumer reads as working. It measures which match arm ran, not whether the write reached a decision (§8.13) | a definition of "reached a decision" that a counter can test — the candidate is whether the written component is read on a live path |
 | **R-WAR12** | **the two guess magnitudes** — `intercept_cone_radians` (0.15 rad) and `intercept_reassess_years` (25 yr). Neither is physical: the cone sets how wide a guess may be and therefore what a feint is worth, and the cadence sets how long one stays bought. They are the first magnitudes in this tree whose job is to price a **bluff** rather than a kinetic outcome | a bed on which the yomi channel is readable — not `W_0`, which a bluff does not move directly |
 | **R-WAR8** | **the two supply writes' magnitudes** — `scout_hull_offensive` (the armed hull takes the survey slot) and `picket_intercepts` (a picket leaves station for a race it can win). Both ship off. Note that the first is inert in **price** until hull types carry differentiated cost (§8.9.7, R-O64/R-L0), and live in speed since the survey leg reads the hull's drive (appendix §D.19) | the census arms in `examples/denial_census`; for the scout write, a cost ladder that distinguishes Limited hulls |
-| **R-WAR7** | **a colonizer's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor rung in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
-| **R-WAR6** | **the denial magnitudes** — the founding rung a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole colonizer loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
+| **R-WAR7** | **a colonizer's hold is nearly all settlers**, so erecting a share of it as the new colony's stock moves the median founding not at all and clears the floor whole Band in 21–22% of foundings at *any* share (§8.8). Loading a colony ship with a mix is a **reservation against the hold** — a change to `settler_target` (R-IND12) — not a share of what is left over | a `settler_target` that reserves mineral volume, then the same census |
+| **R-WAR6** | **the denial magnitudes** — the founding whole Band a departing picket leaves (`Band Empty` shipped, or the mineral endowment instead, §8.7), and what a picket ought to cost. §8.6's arithmetic says a denial bought with a whole colonizer loses at any table wider than two seats, so this is a *design* question before it is a magnitude. **T-113 built the cheaper hull and it did not settle the question**: the hull is fielded 12–23 times a run because its branch sits behind a survey test R-O86 measured a constant `true`, so cost is not what binds (§8.8). The remaining exit is a denial covering more than one world, which needs a spatial object the engine does not have | a blockade over an approach rather than a point |
 | ~~**R-WAR5**~~ | ~~which side carries which weapon~~ **Resolved for the simulation (T-125): a ship carries what its Design mounts** (§8.17). Every simulation fight is discharges on the event loop (§8.19.3). The convention survives only in the arena's laser-side-vs-missile-side sweep, where `carrier_accel` still reads the laser side's first hull — kept because it is what `tests/balance.rs`'s goldens were tuned on | — |
 | **R-WAR20** | **the first Warfare card is below the author's 1.5–2.0x P92 target** — P92 1.309 [1.267, 1.370] with simultaneous fire on the event loop (T-133, appendix §D.17), 1.204 before; bound by transit latency: coverage of rival launches must reach ~30–45% and the port strike reaches ~10% in the expansion peak (§8.17.6) | the author's choice among an earlier first barrier, a different meeting site, a latency-aware Warfare target, or accepting the card below the band |
 | ~~**R-WAR18**~~ | ~~blockade placement has no recency~~ **Implemented (T-125), measured null**: ranking by launches seen in the last `intercept_reassess_years` and moving a blockader off a port that went quiet changed `ln S` by less than its standard error, because latency, not placement, binds (§8.17.5) | — |

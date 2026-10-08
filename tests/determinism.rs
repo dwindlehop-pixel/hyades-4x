@@ -291,7 +291,7 @@ fn no_nan_or_infinity_reaches_replicated_state() {
     finite(snap.time_years, "snapshot.time_years");
     for (i, p) in snap.players.iter().enumerate() {
         finite(p.total_population.kilotons(), &format!("players[{i}].total_population"));
-        finite(p.stockpiled_total, &format!("players[{i}].stockpiled_total"));
+        finite(p.stockpile_total, &format!("players[{i}].stockpile_total"));
     }
     for pl in &snap.planets {
         let id = pl.id.0;
@@ -394,7 +394,7 @@ fn combat_run(sc: &Scenario) -> (SimReport, Vec<String>, Fired) {
             velocity,
         })
         .collect();
-    let seeding = FleetSeeding { spend_kt: sc.spend_kt, known_radius_ly: 0.0, fleets };
+    let seeding = FleetSeeding { spend_kt: sc.spend_kt, known_radius_ly: 0.0, fleets, twin_bill: None };
     let galaxy = Galaxy::generate_with(gcfg, seeding).unwrap();
     let mut cfg = SimConfig::new(sc.seed);
     cfg.horizon_years = sc.horizon;
@@ -538,8 +538,12 @@ fn missile_defense_is_bit_identical() {
 }
 
 /// **A played game** — the card bed's protocol on a small galaxy: six seats,
-/// 600 planets, the Warfare, Growth and missile cards in rotation at the first
-/// round barrier, as a game plays them. Whatever fights the cards produce must
+/// 120 planets, the Warfare, Growth and missile cards in rotation at the first
+/// round barrier, as a game plays them. 600 planets until T-147: haulers
+/// ordered for the shipping backlog fly among the Warfare card's pickets, and
+/// the target went 40 → 105 s; 400 planets brought it to 27 s, and the swept
+/// forge premium (0.3) to 61 s again. At 120 it is 19–21 s with 3,530–12,057
+/// encounters per seed; the floors still hold at 60 planets (5,990). Whatever fights the cards produce must
 /// reproduce; the floors are on beams and the belief path, which every seed
 /// reaches, and not on missiles, which the seeded tests above carry.
 #[test]
@@ -548,7 +552,7 @@ fn a_card_play_game_is_bit_identical() {
         let sc = Scenario {
             seats: 6,
             seed,
-            planets: 600,
+            planets: 120,
             spend_kt: 0.0,
             fleets: Vec::new(),
             cards: Some(vec![15, 3, 13]),

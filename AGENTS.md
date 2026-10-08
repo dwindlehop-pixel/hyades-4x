@@ -133,7 +133,7 @@ change). Current costs:
 |---|---|
 | `cargo test --all-targets` (unit + determinism + smoke) | ~85 s (unit target ~35 s) |
 | `tests/balance.rs` (release, `--ignored`) | ~52 s |
-| `coverage_trace` | in the slow job; ~30 min for the whole `balance` job post-T-68 |
+| `coverage_trace` | in the slow job; **97 s** on an 800-world galaxy with a 2,000-yr baseline (T-147, measured on a loaded 4-core container) — the full galaxy took 51 min on a runner and passed the job's 60-min limit once the freight planner landed. Every verdict matched the full-galaxy run |
 | ~~`coverage_time`~~ | **out of CI** — ~8 min, *and* its doctrine comparison is now vacuous (below) |
 | `montecarlo` | 48 s — pinned to a 1,000-yr horizon at T-68; it was 6 full 4,000-yr runs and blew a 25-minute job budget |
 
@@ -635,7 +635,7 @@ exactly the same works per mineral — and it is true, and it is about **stock**
 The knob's actual channel is **flow**: a colony is founded with a recycled hull
 and cannot keep improving that way, so deepening buys build *rate* forever.
 Priced off the engine's own functions that is **+29.0% hull/yr for nine
-colonizers at rung I → II, paid back in 62 years** against a 1,500-year horizon.
+colonizers at whole Band I → II, paid back in 62 years** against a 1,500-year horizon.
 The flat result had nothing to do with the identity.
 
 **A flat objective means the knob's mechanism is throttled somewhere, and the
@@ -664,14 +664,14 @@ Three habits from it, and the first is the general one:
 **A zero in a multiplicative chain is not a small number, it is an absorbing
 state (T-112).** A Warfare card was charged its honest price — a colonizer that
 keeps its hull leaves the colony without the recycled stock roles §4.2 makes its
-`Band I` infrastructure — by debiting the founding rung to zero. That took the
+`Band I` infrastructure — by debiting the founding whole Band to zero. That took the
 card's own player from **769 colonies to 10** and *raised* its neighbors 20%.
 The line is `employment_rate`, which returns exactly `0.0` for a stock of zero,
 and `fabrication_rate` is `slips × berth_rate`: the colony could never mine,
 never build and never recover. **Before charging a cost against a stock, check
 whether the stock multiplies anything** — a price that can reach zero on a term
 that gates production is not a price, and the measurement it produces is of the
-player deleting itself rather than of the mechanic. The ladder's floor rung
+player deleting itself rather than of the mechanic. The ladder's floor whole Band
 exists for this (design law #11/T-63).
 
 **And the tell was in the split, not the total.** The neighbors' gain tracked
@@ -757,7 +757,7 @@ best-arm gain understated it. The tell is `S(+δ)` and `S(−δ)` being wildly
 asymmetric; the fix is a sweep, not a better difference.
 
 This also corrected a story that was half right. The three hull-ladder knobs
-share a *cliff* — all three drop the Medium hold below the 0.900 kt rung
+share a *cliff* — all three drop the Medium hold below the 0.900 kt whole Band
 (R-O90) — but they do **not** share an upside: +19% of hold via the ladder's
 geometry is worth **+7.8%**, while +10% of hold for free via `cargo_unit_size` is
 worth **nothing**. "They are the same knob" was true of the collapse and false of
@@ -861,7 +861,7 @@ landing earlier.** `BaselineAutopilot::rank` scores a world's minerals as
 `Σ_c scarcity_c · Band(m_c)`, and `scarcity_c` is written once at game start from
 the homeworld archetype and never again — so outpost selection could say *mine
 more* and never *mine **Cyan***. That is a real defect, it is visible in the
-code, and it is **not** why 99.7% of banked ore cannot pay a rung.
+code, and it is **not** why 99.7% of banked ore cannot pay a whole Band.
 
 Replacing it with the deciding center's live shortfall moved the mechanism check
 from **0.043 to 0.043**, cost **−3.30% ± 0.49 colony-years on 0/4 seeds**, and
@@ -950,7 +950,7 @@ Three things from it that generalise past freight:
 - **Cap a shared resource at its share, not at the need.** An intermediate stop
   takes each color capped at what is wanted **and** at its proportional share of
   the hold. The second cap is worth **+10.2%** on its own, because the bill is
-  geometric in the rung: past the point where a bill outgrows a hold,
+  geometric in the whole Band: past the point where a bill outgrows a hold,
   `min(want, room)` *is* `room` and the first pile takes everything — so the cap
   is inert at today's magnitudes and load-bearing at the ones development
   actually reaches. Inert-now is not redundant.
@@ -1254,7 +1254,7 @@ price was **the largest effect either first card had**: ~550 colonies on one
 seed, reproduced exactly by an inert card of the same price. At the barrier the
 same price is invisible, and the Growth card, which had read as flat, clears
 **t 4.18** with no engine change. *(Retracted at T-124: that t 4.18 was carried
-by a rung bill that destroyed mass. See the next section.)*
+by a whole Band bill that destroyed mass. See the next section.)*
 
 - **"Earliest legal play" is a protocol fact, not an affordability fact.** I
   had checked `empire_can_afford` and a test even pinned "round 0 is legal" —
@@ -1282,8 +1282,8 @@ give it the answer and see whether anything moves.
 
 **T-124 is the worked example.** A conservation test written for a new Warfare
 mechanic failed on a run **with no card played**: `infra_step_price` billed the
-width of the rung a stock rounds to, the purchase snapped the stock to the next
-rung, and a colony founded between rungs paid 0.0292 kt per purchase that was
+width of the whole Band a stock rounds to, the purchase snapped the stock to the next
+whole Band, and a colony founded between whole Bands paid 0.0292 kt per purchase that was
 never built. On the default bed, fixing it moves colony-years **+0.0021 ±
 0.0028**, inside noise. It also moved the first Growth card from **+0.133 ±
 0.032 (t 4.18, 8/8 seeds)** to **−0.014 ± 0.023**, a result T-122 had recorded
@@ -1291,16 +1291,16 @@ as the card passing with no engine change needed.
 
 - **A card's value is a difference, and a defect can sit entirely inside it.**
   "The baseline barely moved" says nothing about a paired difference: a 3% price
-  error on off-rung colonies was invisible in the aggregate and was the whole of
+  error on off-Band colonies was invisible in the aggregate and was the whole of
   a treatment effect. Re-measure every card result after a conservation fix.
 - **Zero drift then equal steps means a transfer, not rounding.** Re-running to
   increasing horizons gave 0 through 240 yr, then −0.0292 twice over. Equal
   quanta name a discrete event. Diffing the ledger per event then named the
   line in one run.
 - **Ablate a two-sided error one side at a time.** The old bill both overcharged
-  stocks above their rung and topped up stocks below it. Keeping each half alone
-  reproduced the old and new engines **bit-identically**. So below-rung
-  upgrades never happen in play, and the overcharge alone carried the card.
+  stocks above their whole Band and topped up stocks below it. Keeping each half alone
+  reproduced the old and new engines **bit-identically**. So upgrades from
+  below a whole Band never happen in play, and the overcharge alone carried the card.
 
 **And price the meeting site before building the fight (T-123).** A colony ship
 picks one of thousands of destinations, and T-122 showed a picket cannot meet it
@@ -1629,12 +1629,12 @@ cheap audit of the first**, and neither defect was findable by reading.
     a loop over entities. `Factors::bio_max_band` exists only because a `ln` got
     onto the hot path (R-O70); denominating the ceilings in mass deletes it.
 
-    **Since T-129 no threshold or rung on the run path is converted.** They
+    **Since T-129 no threshold or whole Band on the run path is converted.** They
     are translated into kilotons statically (`K` is a stored mass,
-    `nearest_rung_from` compares squared midpoints, `mass_at_same_band_from`
+    `nearest_whole_band_from` compares squared midpoints, `mass_at_same_band_from`
     carries a position between ladders per segment), and where a Band is
     consumed as a *value* — `rank`, views, the snapshot — `band()` is a
-    polynomial on the mantissa bits within 3e-7 Band, exact at every rung.
+    polynomial on the mantissa bits within 3e-7 Band, exact at every whole Band.
     Two habits from it: **sort the sites into thresholds and values before
     rewriting any** — a threshold translates exactly and a value does not, and
     only the second needs an approximation or the author; and **check an
@@ -1647,7 +1647,7 @@ cheap audit of the first**, and neither defect was findable by reading.
     31.6x. `general_vehicle_cost = 1.0` is kilotons (R-O57) and reads **`Band I`
     as a mass and `Band II` as a cost.** That is geometry, not a units bug;
     crossing is `Qty::on_scale`, free and explicit. Do not "simplify" the two
-    ladders into one — `the_same_amount_reads_a_different_rung_on_each_ladder`
+    ladders into one — `the_same_amount_reads_a_different_whole_band_on_each_ladder`
     is there to stop it.
 
   They are different types because the engine
@@ -1658,12 +1658,12 @@ cheap audit of the first**, and neither defect was findable by reading.
   could have caught it. Do not add a bare `f64` for a quantity that has a unit,
   and do not add a second conversion between the two — `src/units.rs` owns it.
 
-  **A named rung is a name, not a number.** `BandTier` (`Empty, I, II, III, IV,
+  **A named whole Band is a name, not a number.** `BandTier` (`Empty, I, II, III, IV,
   V`) is the discrete ladder; `Band` is a *position* on it and can sit anywhere
-  between rungs. Config constants that mean a rung are typed as the rung —
+  between whole Bands. Config constants that mean a whole Band are typed as the whole Band —
   `colony_seed_pop = 1.0` no longer compiles, and a `compile_fail` doctest keeps
   it that way. `V` is a **comparison ceiling that is unreachable in play**, so a
-  bounds check has a rung one past the end instead of a magic number;
+  bounds check has a whole Band one past the end instead of a magic number;
   `band_v_is_one_past_the_playable_end` pins that it stays unreachable, because
   a sentinel that quietly becomes attainable leaves every `< V` guard compiling
   and meaning nothing.
@@ -1921,7 +1921,7 @@ one, stop and flag it.
    **`Band Empty` is the mass ladder's *floor*, one metric tonne, and its width
    is set on its own** (T-63) — `KILOTONS_AT_BAND_EMPTY`, not `KT(I)/F₀`. R-MC15's
    growth rule and the `F_mass = F_cost^(3/2)` tie are claims about the playable
-   rungs `I → II → III → IV`; the floor is a per-quantity anchor and the cost
+   whole Bands `I → II → III → IV`; the floor is a per-quantity anchor and the cost
    ladder's floor (5, the Limited hull's price) is untouched. Consequence to
    remember: a Limited hull's hold no longer sits on `Band Empty` — hull holds
    are geometry (`5^1.5`) and that coincided with the old floor width.
@@ -2152,6 +2152,24 @@ one, stop and flag it.
   No hand-waved numbers presented as derived.
 - **Validate numerically before committing to a design.** Probe the scaling
   relationship (Python or a throwaway harness) *first*, then commit.
+- **Engine identifiers use the docs' terms** (the author's ruling). An
+  identifier that names a design concept uses the word the specs define for
+  it, and a tunable is named in the docs by its identifier. A second word for
+  one concept means a reader of the code cannot check it against the spec, nor
+  the reverse — the author could not tell what "rung" meant, because no spec
+  defines it: the defined term is a **whole Band** (mineral cost curve §2.6,
+  `BandTier`), and the engine now says `band` (`infra_price_at_band`,
+  `Qty::whole_band`). Concretely:
+  - **When a term changes, rename the identifier and update the docs in the
+    same change**, including the identifier's every mention in `docs/`.
+  - **Reuse a word only for one concept.** "Tier" already names mineral tiers,
+    card tiers and hull cost tiers, so a whole Band is not a tier in an
+    identifier.
+  - **When a mechanism's meaning changes, its name changes with it.**
+    `RankContext::scarcity` became `color_price` when holdings-based pricing
+    replaced the archetype's fixed weight.
+  - Generic programming words (`pid`, `dest`, `idx`, `cands`) are exempt; a
+    term of the design is not.
 - **Define every term and variable before you use it.** A symbol that appears in
   a formula, a table, a comment or a commit message without a stated meaning is a
   defect, not a shorthand — the reader cannot check the claim, and neither can
@@ -2250,6 +2268,17 @@ one, stop and flag it.
   write at a time is not one. A second property is worth asserting beside it:
   the resolver must be **total**, because a hull with no mission is a hull the
   yard was already charged for.
+- **Fix an allocation with a price, not a cap or an order** (the author's
+  ruling, politics §0, R-P19). When goods go to the wrong center, or a
+  center sits short of one color, the preferred remedy is a price that moves
+  with the shortfall. That price is posted to the Exchange and read by
+  freight routing. Do not add a quota, a cap on what a center may take, a
+  stock reserved for one buyer, or a rule that sends a hauler somewhere by
+  fiat. A posted price can be read, outbid, cornered and interdicted by a
+  rival, and that is where yomi and conflict come from. A cap allocates the
+  same goods with nothing for a rival to contest. Where a cap or a standing
+  order already exists, it is a candidate for replacement, not a precedent
+  to copy.
 - **A harness or test bed carries no special sim code; the only thing a bed
   varies is the galaxy** (T-133, the author's ruling). No `SimConfig` switch,
   ablation or oracle exists for a measurement, and a bed plays cards through
@@ -2472,6 +2501,9 @@ changes how you *work*, not what is left to do:
   | T-134 stage 2 (side duties: miner and colony-ship freight runs, picket sorties), 3 seats, 1,500 yr, 3 interleaved rounds: `ns/event` min-of-3 **+2.5% / −2.6%** on seeds 1 / 7, events +0.9% / +1.1%; combat bench seed 1, 2 rounds: **11.17–11.34 → 10.87–10.92 yr/s**, fewer events at higher `ns/event`, the new code ≤0.4% of instructions | — | not resolved / **about −3%** | — |
   | R-MX8 (a center's abundance hauled to a center with demand), 3 seats, 1,000 yr, 2 interleaved rounds against `main`: first build **18,366–21,232** against **14,915–16,633 `ns/event`**; with the buyer's side read once and a per-seat owned-planet index, **14,276–15,080**, bit-identical to the first build; events +16% / +8% ; 8 seeds × 4,000 yr: `ns/event` **+2.18% ± 1.06**, events +2.62% | — | **122–127 against 128–137 yr/s** at 1,000 yr; **−4.64% ± 0.93** at 4,000 | — |
   | T-139 (the missile card; sentries in proportion to holding and population), 3 seats, 800 yr, seed 1, sequential single runs: card-free **6.6 s / 384,448 events**, missile card on one seat **6.5 s / 386,441**; with the Warfare card on another seat 19.4 s / 3,187,036 against Warfare alone 12.0 s / 2,740,602 — the extra events are blockade traffic, not missiles (appendix §D.24) | — | not resolved at one run | — |
+  | T-147 (`trade_decay_lambda` 0.01 → 0.04, `max_pickup_stops` 2 → 6), twin bed, 3 seats, 800 yr, seed 1, sequential single runs: **589,595 → 712,729 events (+21%), 44,247 → 64,443 `ns/event` (+46%)**, 26.1 → 45.9 s — more work and dearer work; the dearer half is `next_pickup`'s scan, run up to five times per leg (appendix §D.53) | — | **−43% yr/s** | — |
+  | T-147 freight planner, exact (every stop priced over piles and centers, prices read fresh), twin bed, 3 seats, 800 yr, seed 1, two interleaved rounds: **715,302 → 1,293,915 events, ~66,700 → ~142,000 `ns/event`**, 47.8 → 183.8 / 187.7 s (appendix §D.55–§D.56) | — | **−74% yr/s** | — |
+  | **T-147 cheaper doctrine** (kept price table netted as haulers commit, 25 yr; shortlist 1; stop cap 2), same bed: **962,362 events, ~81,700 `ns/event`**, 78.6 s — 2.4x the exact planner, 1.6x slower than before it, with work-years +35% over the exact planner (appendix §D.56) | — | **−39% yr/s against the engine before the planner** | — |
 
   **R-WAR9's row is a case where the workload changed and the columns must be
   read that way** (§2's T-111 caveat). Flying colony ships at the rate their
@@ -2705,7 +2737,7 @@ changes how you *work*, not what is left to do:
   founding bills the colonizer's price and the new colony's stock is
   `founding_infra = hull_cost` — the recycled hull's minerals *are* the stock
   (T-70) because a hull's mass is its cost (R-O57, design law #11). At the
-  card-free `eta_works = 1` those are identical to the last bit, at every rung,
+  card-free `eta_works = 1` those are identical to the last bit, at every whole Band,
   and `a_mineral_buys_the_same_works_whether_it_deepens_or_founds` pins it.
   Measured to match: **+0.32% ± 1.42 over eight seeds** at 4,000 yr. It stays at
   **0.5**, and the lever it is not is `eta_works` — which divides the deepening
@@ -2718,9 +2750,9 @@ changes how you *work*, not what is left to do:
   ratio with a state-dependent crossover. And the result is the lesson: the run
   is **bit-identical below `b = 0.96`** on both seeds (`examples/deepen_census`),
   the old cliff at 0.9 moved to 1.0, and **the branch is still cold at the
-  shipped `0.5`**. The infra rung above the founding one costs 0.9 kt against a
-  Medium colonizer's 0.10 kt, `fabrication_rate` saturates by rung II, and
-  `slips` is pinned at 2 from rung I onward because `fab_cap / slip_throughput =
+  shipped `0.5`**. The infra whole Band above the founding one costs 0.9 kt against a
+  Medium colonizer's 0.10 kt, `fabrication_rate` saturates by whole Band II, and
+  `slips` is pinned at 2 from whole Band I onward because `fab_cap / slip_throughput =
   2` — so expansion returns 24–49x per kilotonne and *should* win. **The dead
   branch was the right answer reached for a wrong reason**, and the cause moved
   to the price ladder (R-O85/T-89) rather than going away.
@@ -2737,7 +2769,7 @@ changes how you *work*, not what is left to do:
   bounds the rate **per berth** (quality) and `slips` reads the fabrication share
   of the **stock** (quantity, unbounded) — so both sections are true at once and
   §5.3's tree table reads off the engine directly: Production buys fast berths,
-  Expansion buys many slow ones. Berths at rung II went 2 → 17; **fleet-years
+  Expansion buys many slow ones. Berths at whole Band II went 2 → 17; **fleet-years
   +26–34%** on both seeds, colony count flat (the bed is `k_high`-saturated, so
   more yard cannot buy worlds the classifier does not admit), and **throughput
   *improved* 88.7 → 110.7 yr/s** because a quarter of the events had been
@@ -2793,12 +2825,12 @@ changes how you *work*, not what is left to do:
   closing R-O68 left the number unmoved, and **R-O86 then moved it to Band
   1.462** by unblocking the `outward == None` fallback that a survey pre-emption
   had been swallowing. Still zero at cap against a 3.61 ceiling, so the residual
-  cause is **the price of a rung** (R-O85).
+  cause is **the price of a whole Band** (R-O85).
 
   **And R-O85 — "infrastructure is priced out of reach" — is resolved as false
   (§6.19c).** Post-R-O88 the ladder is **scale-free**: cost and output are both
-  geometric in the stock, so a rung pays for itself in **1.8 years at every
-  rung**. Counted per decision on the bed, **0%** are gated at the ceiling,
+  geometric in the stock, so a whole Band pays for itself in **1.8 years at every
+  whole Band**. Counted per decision on the bed, **0%** are gated at the ceiling,
   **0.7–0.9%** are outbid — so R-O68's crossover, which three sections of that
   document circled, is consulted in one decision per hundred and cannot have been
   causing anything — and **98.3% simply cannot pay the bill**, of which
@@ -2832,7 +2864,7 @@ changes how you *work*, not what is left to do:
   above is lifted; each of those knobs is now its own re-measurement. And:
   **a metric that reads a decision's output cannot tell you what the decision
   declined to ask for** —
-  `unmet_color_demand` summed each center's shortfall against its *next* rung,
+  `unmet_color_demand` summed each center's shortfall against its *next* whole Band,
   so a center with three Bands of headroom it never tried to buy reported zero
   demand, and the first conclusion drawn from it ("the economy has no demand
   side") was exactly backwards.
@@ -2947,7 +2979,7 @@ changes how you *work*, not what is left to do:
   log-normal in kilotons: a `Band IV` seam holds ~715,000× a `Band I` one, which is
   the design's "very high value planets located near each other" and not a bug. Two
   traps follow. **There are no barren worlds** — `Band(0).in_kilotons()` is the
-  `Empty` rung, not zero, so the Gaussian's tail floors at a trace rather than
+  `Empty` whole Band, not zero, so the Gaussian's tail floors at a trace rather than
   decaying to nothing. And **"is this world rich?" has two readings that now differ by
   more than a Band**: `MineralField::abundance()` (the Band of the *total* mass,
   dominated by the richest color) and the per-color Band sum that

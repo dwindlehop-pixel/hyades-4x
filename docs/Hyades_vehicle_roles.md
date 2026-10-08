@@ -227,7 +227,7 @@ carries no such information itself.
   - **"Thin" has a floor, and finding it cost 57% of a bed.** Founding at infra
     *zero* is not a price but an absorbing state: `employment_rate` returns
     exactly `0.0` there, so the colony can never mine or build. A departing
-    picket leaves the ladder's floor rung (§8.7, **R-WAR6**).
+    picket leaves the ladder's floor whole Band (§8.7, **R-WAR6**).
   - **A picket whose world gets colonized returns to the frontier** (T-115).
     Its product is a colony somebody does not found; once that world *is* a
     colony there is nothing left to deny, and a hull left parked there is one
@@ -279,6 +279,23 @@ carries no such information itself.
   for the same §6 reason a Limited Colonizer seeds nothing.
 - **Default:** shuttle cargo between a Miner's outpost and its production
   center, until the outpost is exhausted.
+- **Ordered on its own for the shipping backlog — `RATIFIED` as the author's
+  direction (T-147, R-P19: "the price of building a new hauler should increase
+  with high demand in shipping").** Besides the one built with each Miner, a
+  center may order a freighter Design (Ford on the Medium hull, Strait on the
+  General) by itself. The engine reads each empire's backlog once per economy
+  tick: per rock, the ore its centers want waiting beyond the holds of the
+  haulers already based there. One trip of a new hauler is valued at the
+  want-weighted prices the empire's centers post, and its minerals at the
+  building center's own prices for what the payment draws. The center orders
+  one where the first exceeds the second, in the fallback slot ahead of
+  survey, and the engine sends it to the rock whose backlog is worth most. A
+  trip's value is multiplied by the share of haulers sent to that rock that
+  were not lost there, wrecked or withdrawn under fire (R-WAR47's rule: the
+  price sees the loss). A hauler in Reserve is retasked before a new one is
+  built. Mineral cost stays
+  the hull's dry mass (design law #11): the price that rises with demand is
+  the value side, not the bill (appendix §D.47).
 - **Contingent — threatened.** May become **Tribute**: yield the ship/cargo
   to a raider rather than fight or flee into a losing engagement — a link to
   `Privateer` / piracy (`command_cards.md` §8). Confirmed this conversation:
