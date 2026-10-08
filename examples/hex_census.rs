@@ -5,8 +5,8 @@
 //! prints the worlds the empire owns, the share of them nearest its own
 //! homeworld, and the deposit its owned worlds were generated with, by color
 //! (kilotonne share, and the count holding at least `Band I` = 1 kt). Then, for
-//! each hex width given, the number of flat-top hexes — centered on the
-//! galactic center, as the color sites are laid out — holding 90% of each
+//! each hex width given, the number of flat-top hexes — laid so every
+//! homeworld stands in its own hex (`GalaxyConfig::hex_grid_origin`) — holding 90% of each
 //! empire's owned worlds, against the author's target for the seat count.
 //!
 //! Run: `cargo run --release --example hex_census -- <seats> <horizon> [width ly ...]`;
@@ -51,12 +51,13 @@ fn hex_at(x: f64, y: f64, side: f64) -> (i64, i64) {
     (q as i64, r as i64)
 }
 
-/// Hexes, fewest first, holding 90% of `points`.
-fn hexes_for_90(points: &[(f64, f64)], width: f64) -> usize {
+/// Hexes, fewest first, holding 90% of `points`, on the grid laid from
+/// `origin` (a hex center).
+fn hexes_for_90(points: &[(f64, f64)], width: f64, origin: (f64, f64)) -> usize {
     let side = width / SQRT_3;
     let mut counts: BTreeMap<(i64, i64), usize> = BTreeMap::new();
     for &(x, y) in points {
-        *counts.entry(hex_at(x, y, side)).or_default() += 1;
+        *counts.entry(hex_at(x - origin.0, y - origin.1, side)).or_default() += 1;
     }
     let mut v: Vec<usize> = counts.into_values().collect();
     v.sort_unstable_by(|a, b| b.cmp(a));
@@ -145,7 +146,9 @@ fn main() {
     }
     let (lo, hi) = target(seats);
     for w in widths {
-        let k: Vec<usize> = empires.iter().map(|e| hexes_for_90(e, w)).collect();
+        // The grid each width lays, anchored as the command view anchors it.
+        let origin = GalaxyConfig { hex_side_ly: w / SQRT_3, ..GalaxyConfig::new(seats, 1) }.hex_grid_origin();
+        let k: Vec<usize> = empires.iter().map(|e| hexes_for_90(e, w, origin)).collect();
         let mean = k.iter().sum::<usize>() as f64 / k.len().max(1) as f64;
         let inside = k.iter().filter(|&&x| (lo..=hi).contains(&x)).count();
         println!(

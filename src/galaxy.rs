@@ -215,6 +215,7 @@ impl ColorSites {
         hotspot_sigma: f64,
         mut rng: Rng,
         planted: &[(Basic, f64, f64, f64)],
+        homes: &[Vec3],
     ) -> ColorSites {
         // The radial profile is Gamma(2, L_xy): ten scale lengths hold all
         // but ~5e-4 of the stars, and a world past the square reads trace.
@@ -238,6 +239,15 @@ impl ColorSites {
                 pick -= w[k];
             }
             sites.push((hue, x, y, w[hue as usize]));
+        }
+        // Color kept away from the starts (`GalaxyConfig::color_site_clearance_ly`).
+        // Dropped after every draw, so the stream — and every other site —
+        // is the same at any clearance.
+        let clear = config.color_site_clearance_ly;
+        if clear > 0.0 {
+            sites.retain(|&(_, x, y, _)| {
+                homes.iter().all(|h| (x - h.x) * (x - h.x) + (y - h.y) * (y - h.y) >= clear * clear)
+            });
         }
         // Normalize each hue to its strongest site. With sites far apart the
         // nearest one can sit far from its hotspot, and the peak is a Band:
@@ -508,8 +518,14 @@ pub struct GalaxyConfig {
     /// (§4.4, R-M4). `0` = independent, `1` = metal-rich worlds are dead.
     pub anticorrelation: f64,
 
-    /// Radius of the homeworld ring, as a fraction of the mean XY radius (§2).
-    pub homeworld_ring_frac: f64,
+    /// **How far the homeworld ring is drawn in**, ly: the outermost
+    /// homeworld stands this far inward of its hex's center, toward the
+    /// galactic center, and every other homeworld by the same factor
+    /// ([`Self::homeworld_positions`]). Must be under the hex's inradius
+    /// (60.6 ly) so every homeworld stays in its own hex. **Placeholder**
+    /// `25`: at 3 seats it puts the homeworlds 45 ly from the center, where
+    /// the ring stood before homeworlds were placed by hex (T-147).
+    pub homeworld_inset_ly: f64,
     /// **A homeworld is a trio** (the author's ruling): the habitable world
     /// where the seat's population grows — and where its forge will stand —
     /// holding only a trace of ore, and two companion worlds beside it, one
@@ -556,6 +572,12 @@ pub struct GalaxyConfig {
     /// spacing (77.9 ly at 3 seats) or two seats' starts overlap.
     /// **`OPEN`** (T-147), placeholder `0`.
     pub fair_start_ly: f64,
+    /// **Color kept away from the starts**, ly: no randomly placed color
+    /// site stands within this distance of any homeworld, so every seat's
+    /// nearest ore of every hue lies at least this far out (the planted
+    /// sites of [`Homeworlds::ColorCentered`] are exempt). `0` turns it off.
+    /// **`OPEN`** (T-147), placeholder `0`.
+    pub color_site_clearance_ly: f64,
     /// Under [`Homeworlds::ColorCentered`], the distance from a homeworld to
     /// each of its three planted color sites, ly. **Placeholder.**
     pub homeworld_site_distance_ly: f64,
@@ -598,7 +620,7 @@ impl GalaxyConfig {
             color_site_sigma_ly: 5.0,
             color_site_floor: 0.5,
             anticorrelation: 0.7,
-            homeworld_ring_frac: 0.5,
+            homeworld_inset_ly: 25.0,
             homeworld_companion_density: 3.0,
             homeworld_companion_ly: 2.0,
             homeworld_companion_habitability: 0.5,
@@ -607,6 +629,7 @@ impl GalaxyConfig {
             ground: Ground::Random,
             homeworlds: Homeworlds::Trio,
             fair_start_ly: 0.0,
+            color_site_clearance_ly: 0.0,
             homeworld_site_distance_ly: 10.0,
             homeworld_site_band: 3.0,
             homeworld_outpost_distance_ly: 5.0,
@@ -627,8 +650,11 @@ impl GalaxyConfig {
             Ground::Identical => self.players > 1,
             Ground::ColorRotated => self.players.is_multiple_of(3) && self.players > 0,
         };
+        // Homeworlds stand at hex centers (§2), and a hex ring of radius 2 or
+        // more repeats every 60°, not every seat: at 12 and 18 seats each turn
+        // of the wedge carries two or three seats.
         if closes {
-            self.players
+            self.players.min(6)
         } else {
             1
         }
@@ -675,6 +701,90 @@ impl GalaxyConfig {
     /// between neighboring hex centers.
     pub fn hex_across_flats_ly(&self) -> f64 {
         SQRT_3 * self.hex_side_ly
+    }
+
+    /// **The hex each seat's homeworld stands in, by its center** (§2, the
+    /// author's ruling). The hexes holding homeworlds form a ring in which
+    /// each borders the two holding its neighbors' homeworlds. At 3 seats that
+    /// is the tri-hex clique around a vertex at the galactic center; at `6r`
+    /// seats the radius-`r` hex ring around a hex centered there; at 2 the
+    /// domino, two hexes sharing an edge whose midpoint is the galactic
+    /// center. Seats go round the ring in order, so consecutive seats are
+    /// neighbors. Flat-top hexes.
+    pub fn homeworld_hexes(&self) -> Vec<Vec3> {
+        let width = self.hex_across_flats_ly();
+        // A neighbor's bearing from a flat-top hex: 30° + 60°·d.
+        const NEIGHBOR: [(f64, f64); 6] = [
+            (SQRT_3 / 2.0, 0.5),
+            (0.0, 1.0),
+            (-SQRT_3 / 2.0, 0.5),
+            (-SQRT_3 / 2.0, -0.5),
+            (0.0, -1.0),
+            (SQRT_3 / 2.0, -0.5),
+        ];
+        match self.players {
+            0 => Vec::new(),
+            1 => vec![Vec3::ZERO],
+            2 => {
+                let (x, y) = (0.5 * width * NEIGHBOR[0].0, 0.5 * width * NEIGHBOR[0].1);
+                vec![Vec3::new(x, y, 0.0), Vec3::new(-x, -y, 0.0)]
+            }
+            3 => {
+                // Three hexes around one vertex: their centers are a hex side
+                // from it, 120° apart.
+                const TURN: [(f64, f64); 3] = [(1.0, 0.0), (-0.5, SQRT_3 / 2.0), (-0.5, -SQRT_3 / 2.0)];
+                TURN.iter().map(|&(c, s)| Vec3::new(self.hex_side_ly * c, self.hex_side_ly * s, 0.0)).collect()
+            }
+            n => {
+                // The radius-`r` ring: from the corner on bearing `d`, `r`
+                // steps along bearing `d + 2`, for each of the six sides.
+                let r = n.div_ceil(6);
+                let mut out = Vec::with_capacity(6 * r);
+                for d in 0..6 {
+                    let (cx, cy) = NEIGHBOR[d];
+                    let (sx, sy) = NEIGHBOR[(d + 2) % 6];
+                    for j in 0..r {
+                        let (a, b) = (r as f64, j as f64);
+                        out.push(Vec3::new(width * (a * cx + b * sx), width * (a * cy + b * sy), 0.0));
+                    }
+                }
+                out.truncate(n);
+                out
+            }
+        }
+    }
+
+    /// **Where each seat's homeworld stands** (§2, the author's ruling): in
+    /// its own hex ([`Self::homeworld_hexes`]), with the ring of homeworlds
+    /// drawn in toward the galactic center — every hex center scaled by one
+    /// factor, so the ring's radius and the spacing between neighbors are
+    /// smaller than the hex ring's and every homeworld stays equidistant from
+    /// its nearest two. The factor puts the outermost homeworld
+    /// [`Self::homeworld_inset_ly`] inward of its hex's center; an inset under
+    /// the hex's inradius keeps every homeworld inside its hex.
+    pub fn homeworld_positions(&self) -> Vec<Vec3> {
+        let hexes = self.homeworld_hexes();
+        let outer = hexes.iter().map(|h| (h.x * h.x + h.y * h.y).sqrt()).fold(0.0, f64::max);
+        if outer <= 0.0 {
+            return hexes;
+        }
+        let f = 1.0 - self.homeworld_inset_ly / outer;
+        hexes.iter().map(|h| Vec3::new(f * h.x, f * h.y, 0.0)).collect()
+    }
+
+    /// The hex's inradius, ly: center to the middle of a side.
+    pub fn hex_inradius_ly(&self) -> f64 {
+        0.5 * self.hex_across_flats_ly()
+    }
+
+    /// A hex center of the command view's grid: the grid is laid so every
+    /// homeworld stands in its own hex ([`Self::homeworld_hexes`]).
+    /// Presentation only; no generation reads it.
+    pub fn hex_grid_origin(&self) -> (f64, f64) {
+        match self.players {
+            2 | 3 => self.homeworld_hexes().first().map_or((0.0, 0.0), |h| (h.x, h.y)),
+            _ => (0.0, 0.0),
+        }
     }
 
     /// XY scale length `L_xy` (ly) for the `Gamma(2, L_xy)` radial profile —
@@ -754,13 +864,16 @@ impl GalaxyConfig {
 }
 
 /// Why generation refused a configuration.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GenError {
     /// `players` is not a vertex-transitive (fair) count.
     UnfairPlayerCount(usize),
     /// A seeded fleet names a seat the galaxy does not have, moves at or past
     /// `c`, or is given no spend to build it with.
     BadFleet(usize),
+    /// [`GalaxyConfig::homeworld_inset_ly`] is negative or reaches the hex's
+    /// inradius, so a homeworld would leave its own hex.
+    HomeworldOutsideItsHex(f64),
 }
 
 impl core::fmt::Display for GenError {
@@ -768,6 +881,9 @@ impl core::fmt::Display for GenError {
         match self {
             GenError::UnfairPlayerCount(n) => {
                 write!(f, "player count {n} has no vertex-transitive arrangement; fair counts are 2, 3, 6, 12")
+            }
+            GenError::HomeworldOutsideItsHex(d) => {
+                write!(f, "homeworld inset {d} ly is not inside the hex's inradius, so a homeworld leaves its hex")
             }
             GenError::BadFleet(i) => {
                 write!(f, "seeded fleet {i} names no seat, moves at or past c, or has no spend")
@@ -900,6 +1016,9 @@ impl Galaxy {
         if !Galaxy::FAIR_COUNTS.contains(&config.players) {
             return Err(GenError::UnfairPlayerCount(config.players));
         }
+        if !(0.0..config.hex_inradius_ly()).contains(&config.homeworld_inset_ly) {
+            return Err(GenError::HomeworldOutsideItsHex(config.homeworld_inset_ly));
+        }
         let mut rng = Rng::new(config.seed);
         let xy_scale = config.xy_scale();
         let z_scale = config.z_scale();
@@ -915,58 +1034,59 @@ impl Galaxy {
             Vec3::new(hotspot_ring * cos, hotspot_ring * sin, 0.0)
         };
         let hotspots = Hotspots { cyan: hotspot(0.0), magenta: hotspot(1.0), yellow: hotspot(2.0) };
-        // **Color-centered homeworlds** (`Homeworlds::ColorCentered`): each
-        // seat's homeworld stands on the ring between its neighbors' angles,
-        // and one site of each hue is planted around it, equidistant and 120°
-        // apart. On identical ground seat 0's are planted inside its wedge and
-        // the wedge carries them to every seat — turned, and color-stepped on
-        // `Ground::ColorRotated`.
+        // Every seat's homeworld, at the center of its own hex (§2, the
+        // author's ruling): read by the color clearance, the fair start and
+        // the homeworld loop alike.
+        let homes = config.homeworld_positions();
         let turns = config.symmetry_turns();
-        let homeworld_ring = mean_xy * config.homeworld_ring_frac;
-        let centered: Vec<(Vec3, [Vec3; 3])> = if config.homeworlds == Homeworlds::ColorCentered {
-            let sector = core::f64::consts::TAU / config.players as f64;
-            let place = |p: usize| {
-                let theta = (p as f64 + 0.5) * sector;
-                let (sin, cos) = transcendental::sin_cos(theta);
-                let home = Vec3::new(homeworld_ring * cos, homeworld_ring * sin, 0.0);
-                let three: [Vec3; 3] = core::array::from_fn(|j| {
-                    let (s3, c3) = transcendental::sin_cos(theta + j as f64 * core::f64::consts::TAU / 3.0);
-                    let d = config.homeworld_site_distance_ly;
-                    Vec3::new(home.x + d * c3, home.y + d * s3, 0.0)
-                });
-                (home, three)
+        let per_turn = config.players / turns;
+        // **Color-centered homeworlds** (`Homeworlds::ColorCentered`): one site
+        // of each hue planted around each homeworld, equidistant and 120°
+        // apart, the first pointing away from the galactic center. On
+        // identical ground the first wedge's seats' sites are planted and the
+        // wedge carries them to every seat — turned, and color-stepped on
+        // `Ground::ColorRotated`.
+        let centered: Vec<[Vec3; 3]> = if config.homeworlds == Homeworlds::ColorCentered {
+            let place = |home: Vec3| -> [Vec3; 3] {
+                let r = (home.x * home.x + home.y * home.y).sqrt().max(1e-12);
+                let (ux, uy) = (home.x / r, home.y / r);
+                // cos and sin of 0°, 120°, 240°.
+                const TURN: [(f64, f64); 3] = [(1.0, 0.0), (-0.5, SQRT_3 / 2.0), (-0.5, -SQRT_3 / 2.0)];
+                let d = config.homeworld_site_distance_ly;
+                TURN.map(|(c, s)| Vec3::new(home.x + d * (ux * c - uy * s), home.y + d * (ux * s + uy * c), 0.0))
             };
             if turns > 1 {
                 let arc = core::f64::consts::TAU / turns as f64;
-                let (home, three) = place(0);
                 (0..config.players)
-                    .map(|k| {
-                        let (sin, cos) = transcendental::sin_cos(k as f64 * arc);
+                    .map(|p| {
+                        let (turn_k, first) = (p / per_turn, p % per_turn);
+                        let three = place(homes[first]);
+                        let (sin, cos) = transcendental::sin_cos(turn_k as f64 * arc);
                         let turn = |v: Vec3| Vec3::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos, v.z);
-                        let shift = if config.ground == Ground::ColorRotated { k } else { 0 };
+                        let shift = if config.ground == Ground::ColorRotated { turn_k * per_turn } else { 0 };
                         let mut turned = [Vec3::ZERO; 3];
                         for j in 0..3 {
                             turned[(j + shift) % 3] = turn(three[j]);
                         }
-                        (turn(home), turned)
+                        turned
                     })
                     .collect()
             } else {
-                (0..config.players).map(place).collect()
+                homes.iter().map(|&h| place(h)).collect()
             }
         } else {
             Vec::new()
         };
         // Planted where generation reads them: every seat's on a random
-        // ground, seat 0's alone where the wedge is turned.
+        // ground, the first wedge's seats' alone where the wedge is turned.
         let planted: Vec<(Basic, f64, f64, f64)> = centered
             .iter()
-            .take(if turns > 1 { 1 } else { centered.len() })
-            .flat_map(|(_, three)| {
+            .take(if turns > 1 { per_turn } else { centered.len() })
+            .flat_map(|three| {
                 Basic::ALL.iter().zip(three.iter()).map(|(&b, v)| (b, v.x, v.y, config.homeworld_site_band))
             })
             .collect();
-        let sites = ColorSites::generate(&config, &hotspots, hotspot_sigma, rng.fork(0xC010_5173), &planted);
+        let sites = ColorSites::generate(&config, &hotspots, hotspot_sigma, rng.fork(0xC010_5173), &planted, &homes);
 
         let mut planets: Vec<Planet> = Vec::with_capacity(config.planet_count + 3 * config.players);
 
@@ -1069,7 +1189,7 @@ impl Galaxy {
                 // stepped Cyan → Magenta → Yellow → Cyan (§3), so on
                 // `Ground::ColorRotated` the wedge turned `k` seats over
                 // carries its colors stepped `k` times.
-                let shift = if steps { k } else { 0 };
+                let shift = if steps { k * per_turn } else { 0 };
                 let mut stepped = MineralField::default();
                 for (j, &b) in Basic::ALL.iter().enumerate() {
                     stepped.set(Basic::ALL[(j + shift) % 3], minerals.get(b));
@@ -1090,33 +1210,29 @@ impl Galaxy {
         }
 
         // **The fair start** (`GalaxyConfig::fair_start_ly`): on random ground,
-        // every seat's wild worlds within the radius are seat 0's, turned to
-        // the seat and color-stepped as the archetypes step.
+        // every seat's wild worlds within the radius are seat 0's, carried to
+        // the seat's homeworld — turned so seat 0's outward bearing becomes
+        // the seat's — and color-stepped as the archetypes step.
         if turns == 1 && config.fair_start_ly > 0.0 && config.players > 1 {
-            let home = |p: usize| {
-                centered.get(p).map_or_else(
-                    || {
-                        let a = (p as f64) * core::f64::consts::TAU / (config.players as f64);
-                        let (sin, cos) = transcendental::sin_cos(a);
-                        Vec3::new(homeworld_ring * cos, homeworld_ring * sin, 0.0)
-                    },
-                    |c| c.0,
-                )
-            };
-            let homes: Vec<Vec3> = (0..config.players).map(home).collect();
             let r = config.fair_start_ly;
             let start: Vec<Planet> = planets.iter().filter(|w| w.position.distance(homes[0]) < r).cloned().collect();
             planets.retain(|w| homes.iter().skip(1).all(|h| w.position.distance(*h) >= r));
-            for k in 1..config.players {
-                let (sin, cos) = transcendental::sin_cos(k as f64 * core::f64::consts::TAU / config.players as f64);
+            let bearing = |h: Vec3| {
+                let n = (h.x * h.x + h.y * h.y).sqrt().max(1e-12);
+                (h.x / n, h.y / n)
+            };
+            let (u0x, u0y) = bearing(homes[0]);
+            for (k, &home) in homes.iter().enumerate().skip(1) {
+                let (ukx, uky) = bearing(home);
+                let (cos, sin) = (u0x * ukx + u0y * uky, u0x * uky - u0y * ukx);
                 for w in &start {
                     let mut minerals = MineralField::default();
                     for (j, &b) in Basic::ALL.iter().enumerate() {
                         minerals.set(Basic::ALL[(j + k) % 3], w.minerals.get(b));
                     }
-                    let (x, y) = (w.position.x, w.position.y);
+                    let (x, y) = (w.position.x - homes[0].x, w.position.y - homes[0].y);
                     planets.push(Planet {
-                        position: Vec3::new(x * cos - y * sin, x * sin + y * cos, w.position.z),
+                        position: Vec3::new(home.x + x * cos - y * sin, home.y + x * sin + y * cos, w.position.z),
                         minerals,
                         ..w.clone()
                     });
@@ -1127,7 +1243,7 @@ impl Galaxy {
             }
         }
 
-        // --- homeworlds on a vertex-transitive ring (§2, §3) ---
+        // --- homeworlds at hex centers on a vertex-transitive ring (§2, §3) ---
         let mut homeworlds = Vec::with_capacity(config.players);
         // A color-centered homeworld's own deposit: each basic under `Band I`,
         // drawn once and turned with the wedge on identical ground.
@@ -1144,8 +1260,8 @@ impl Galaxy {
                 if turns == 1 {
                     return deposit(k);
                 }
-                let base = deposit(0);
-                let shift = if config.ground == Ground::ColorRotated { k } else { 0 };
+                let base = deposit(k % per_turn);
+                let shift = if config.ground == Ground::ColorRotated { k / per_turn * per_turn } else { 0 };
                 let mut m = MineralField::default();
                 for (j, &b) in Basic::ALL.iter().enumerate() {
                     m.set(Basic::ALL[(j + shift) % 3], base.get(b));
@@ -1153,13 +1269,8 @@ impl Galaxy {
                 m
             })
             .collect();
-        let homeworld_sites: Vec<[Vec3; 3]> = centered.iter().map(|c| c.1).collect();
-        for p in 0..config.players {
-            let a = (p as f64) * core::f64::consts::TAU / (config.players as f64);
-            let (sin, cos) = transcendental::sin_cos(a);
-            let ring_position = Vec3::new(homeworld_ring * cos, homeworld_ring * sin, 0.0);
-            let position = centered.get(p).map_or(ring_position, |c| c.0);
-
+        let homeworld_sites: Vec<[Vec3; 3]> = centered.clone();
+        for (p, &position) in homes.iter().enumerate() {
             // rotational archetype assignment: B-R-G cycling (§3).
             let archetype = Archetype::ALL[p % 3];
             let (rich_a, rich_b, _) = archetype.alignment();
@@ -1191,8 +1302,9 @@ impl Galaxy {
             homeworlds.push(id);
 
             // The two companions, one per rich basic, either side of the
-            // homeworld along the ring.
-            let tangent = Vec3::new(-sin, cos, 0.0);
+            // homeworld across its bearing from the galactic center.
+            let n = (position.x * position.x + position.y * position.y).sqrt().max(1e-12);
+            let tangent = Vec3::new(-position.y / n, position.x / n, 0.0);
             // The worlds beside the homeworld, each rich in one color: the
             // trio's two companions along the ring, or a color-centered
             // homeworld's three planted outposts — one per hue, on the bearing
@@ -1208,10 +1320,11 @@ impl Galaxy {
                         (at, rich, config.homeworld_companion_density)
                     })
                     .to_vec(),
-                Some((home, three)) => Basic::ALL
+                Some(three) => Basic::ALL
                     .iter()
                     .zip(three.iter())
                     .map(|(&hue, site)| {
+                        let home = position;
                         let (dx, dy) = (site.x - home.x, site.y - home.y);
                         let d = (dx * dx + dy * dy).sqrt().max(1e-12);
                         let r = config.homeworld_outpost_distance_ly / d;
@@ -1394,21 +1507,82 @@ mod tests {
     }
 
     #[test]
-    fn the_hex_is_read_by_no_generation() {
-        // R-G1: the hex is a human-legible interface. Changing it changes no
-        // world.
+    fn the_hex_places_the_homeworlds_and_nothing_else() {
+        // R-G1 and §2: the hex is a human-legible interface, and each
+        // homeworld stands at the center of one. Changing the hex moves the
+        // homeworlds and their companions and no wild world.
         let cfg = GalaxyConfig::new(3, 7);
         assert_eq!(cfg.hex_side_ly, 70.0);
         assert!((cfg.hex_across_flats_ly() - 121.243_556_529_821_4).abs() < 1e-9);
         let a = Galaxy::generate(cfg).unwrap();
-        let b = Galaxy::generate(GalaxyConfig { hex_side_ly: 13.0, ..cfg }).unwrap();
+        let b = Galaxy::generate(GalaxyConfig { hex_side_ly: 90.0, ..cfg }).unwrap();
+        let wild = |g: &Galaxy| g.planets.iter().filter(|p| !p.is_homeworld && p.owner.is_none()).count();
+        assert_eq!(wild(&a), wild(&b));
+        let mut moved = 0;
         for (p, q) in a.planets.iter().zip(&b.planets) {
-            assert_eq!(p.position, q.position);
             for m in Basic::ALL {
                 assert_eq!(p.minerals.get(m).kilotons().to_bits(), q.minerals.get(m).kilotons().to_bits());
             }
             assert_eq!(p.habitability.bands().to_bits(), q.habitability.bands().to_bits());
+            if p.position != q.position {
+                moved += 1;
+            }
         }
+        // Three homeworlds and two companions each.
+        assert_eq!(moved, 9);
+    }
+
+    #[test]
+    fn every_homeworld_stands_in_its_own_hex_beside_its_two_neighbors() {
+        // §2, the author's rulings: each homeworld in its own hex, each such
+        // hex bordering the two holding its neighbors' homeworlds, and the
+        // ring of homeworlds drawn in — smaller and closer than the hex ring —
+        // with homeworlds equidistant from their nearest neighbors.
+        let hex_of = |cfg: &GalaxyConfig, x: f64, y: f64| {
+            let (ox, oy) = cfg.hex_grid_origin();
+            let side = cfg.hex_side_ly;
+            let fq = (2.0 / 3.0) * (x - ox) / side;
+            let fr = (-(x - ox) / 3.0 + (SQRT_3 / 3.0) * (y - oy)) / side;
+            let fs = -fq - fr;
+            let (mut q, mut r, s) = (fq.round(), fr.round(), fs.round());
+            let (dq, dr, ds) = ((q - fq).abs(), (r - fr).abs(), (s - fs).abs());
+            if dq > dr && dq > ds {
+                q = -r - s;
+            } else if dr > ds {
+                r = -q - s;
+            }
+            (q as i64, r as i64)
+        };
+        for n in Galaxy::FAIR_COUNTS {
+            let cfg = GalaxyConfig::new(n, 1);
+            let width = cfg.hex_across_flats_ly();
+            let hexes = cfg.homeworld_hexes();
+            let homes = cfg.homeworld_positions();
+            assert_eq!(homes.len(), n);
+            let mut cells = std::collections::BTreeSet::new();
+            for (h, c) in homes.iter().zip(&hexes) {
+                let cell = hex_of(&cfg, h.x, h.y);
+                assert_eq!(cell, hex_of(&cfg, c.x, c.y), "{n} seats: {h:?} left its hex");
+                assert!(cells.insert(cell), "{n} seats: two homeworlds share a hex");
+            }
+            let spacing = homes[0].distance(homes[1 % n]);
+            assert!(spacing < width, "{n} seats: the homeworld ring is not drawn in");
+            for p in 0..n {
+                assert!((hexes[p].distance(hexes[(p + 1) % n]) - width).abs() < 1e-9, "{n} seats: hexes not neighbors");
+                let nearest =
+                    (0..n).filter(|&q| q != p).map(|q| homes[p].distance(homes[q])).fold(f64::INFINITY, f64::min);
+                assert!(
+                    (nearest - spacing).abs() < 1e-9,
+                    "{n} seats: seat {p}'s nearest homeworld is {nearest} ly away"
+                );
+            }
+            let galaxy = Galaxy::generate(cfg).unwrap();
+            for (p, &id) in galaxy.homeworlds.iter().enumerate() {
+                assert_eq!(galaxy.planets[id.0 as usize].position, homes[p]);
+            }
+        }
+        let too_far = GalaxyConfig { homeworld_inset_ly: 61.0, ..GalaxyConfig::new(3, 1) };
+        assert_eq!(Galaxy::generate(too_far).err(), Some(GenError::HomeworldOutsideItsHex(61.0)));
     }
 
     #[test]
@@ -1418,7 +1592,7 @@ mod tests {
         cfg.color_site_sigma_ly = 25.0;
         let g = Galaxy::generate(cfg).unwrap();
         let sigma = cfg.mean_xy_radius() * cfg.hotspot_sigma_frac;
-        let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(3), &[]);
+        let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(3), &[], &[]);
         let mut rng = Rng::new(11);
         for _ in 0..300 {
             let (x, y) = (rng.range(-200.0, 200.0), rng.range(-200.0, 200.0));
@@ -1444,7 +1618,7 @@ mod tests {
             let cfg = g.config;
             let sigma = cfg.mean_xy_radius() * cfg.hotspot_sigma_frac;
             // Any stream: the property holds for every draw.
-            let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(seed), &[]);
+            let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(seed), &[], &[]);
             let mut top = [0.0f64; 3];
             for &(hue, _, _, peak) in &sites.sites {
                 top[hue as usize] = top[hue as usize].max(peak);
