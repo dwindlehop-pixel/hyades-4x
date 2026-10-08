@@ -15,7 +15,8 @@ use std::fmt::Write as _;
 
 /// A replay opens at a rate that plays it through in this many seconds.
 pub const OPENING_PLAY_SECONDS: f64 = 60.0;
-/// A pick takes the nearest entity within this many screen pixels.
+/// A pick with a mouse takes the nearest entity within this many screen
+/// pixels; a touch passes a wider radius, a fingertip's.
 pub const PICK_RADIUS: f64 = 10.0;
 /// Fit leaves this many screen pixels clear at each edge.
 pub const FIT_MARGIN: f64 = 24.0;
@@ -127,6 +128,20 @@ impl Viewer {
         &self.out
     }
 
+    /// Every drawn hull glyph or marker as `id \t x \t y \t count`, in screen
+    /// pixels at the glyph's center — where a pick at that point lands.
+    pub fn drawn(&self) -> String {
+        let (_, ops) = self.planned();
+        let mut out = String::new();
+        for op in &ops {
+            if let Op::Hull { id, draw, count: count @ 1.., .. } = op {
+                let p = tactical::PIXEL;
+                let _ = writeln!(out, "{id}\t{}\t{}\t{count}", (draw[0] as f64 + 0.5) * p, (draw[1] as f64 + 0.5) * p);
+            }
+        }
+        out
+    }
+
     /// Works out the juicy mode's lights at the current instant into
     /// [`Self::lights`], for a renderer outside the module to draw.
     pub fn prepare_lights(&mut self) -> &Lights {
@@ -136,8 +151,8 @@ impl Viewer {
     }
 
     /// Selects the hull, else the world, nearest screen point `(x, y)` within
-    /// [`PICK_RADIUS`]; clears the selection when nothing is that near.
-    pub fn pick(&mut self, x: f64, y: f64) -> Option<Pick> {
+    /// `radius` screen pixels; clears the selection when nothing is that near.
+    pub fn pick(&mut self, x: f64, y: f64, radius: f64) -> Option<Pick> {
         let (_, ops) = self.planned();
         let near = |s: [f64; 2]| (s[0] - x).hypot(s[1] - y);
         let best = |want_hull: bool| {
@@ -150,7 +165,7 @@ impl Viewer {
                     Op::World { id, s, .. } if !want_hull => Some((near(*s), Pick::World(*id))),
                     _ => None,
                 })
-                .filter(|(d, _)| *d <= PICK_RADIUS)
+                .filter(|(d, _)| *d <= radius)
                 .min_by(|a, b| a.0.total_cmp(&b.0))
                 .map(|(_, p)| p)
         };
@@ -205,12 +220,27 @@ impl Viewer {
                 let speed = (row.vel[0].powi(2) + row.vel[1].powi(2) + row.vel[2].powi(2)).sqrt();
                 let _ = writeln!(out, "Hull {id} · P{}", h.hull.owner);
                 let (_, ops) = self.planned();
-                let n = ops.iter().find_map(|o| match o {
-                    Op::Hull { id: i, count, .. } if *i == id => Some(*count),
+                let members = ops.iter().find_map(|o| match o {
+                    Op::Hull { id: i, members, .. } if *i == id && members.len() > 1 => Some(members.clone()),
                     _ => None,
                 });
-                if let Some(n @ 2..) = n {
-                    let _ = writeln!(out, "stack      {n} alike hulls here; this one shown");
+                if let Some(members) = members {
+                    let _ = writeln!(out, "stack      {} hulls here:", members.len());
+                    let mut kinds: std::collections::BTreeMap<(String, String, String), usize> = Default::default();
+                    for m in &members {
+                        if let Some(h) = view.hulls.iter().find(|h| h.hull.id == *m) {
+                            let k = (
+                                name(&r.designs, h.hull.design),
+                                name(&r.hulls, h.hull.hull),
+                                name(&r.kinds, h.row.kind),
+                            );
+                            *kinds.entry(k).or_default() += 1;
+                        }
+                    }
+                    for ((design, hull, role), n) in kinds {
+                        let _ = writeln!(out, "  {n:>4} × {design} on {hull}, {role}");
+                    }
+                    let _ = writeln!(out, "shown      hull {id}:");
                 }
                 let _ =
                     writeln!(out, "design     {} on {}", name(&r.designs, h.hull.design), name(&r.hulls, h.hull.hull));
@@ -318,10 +348,24 @@ mod tests {
         let mut v = viewer();
         v.timeline.seek(10.0);
         let hull = v.camera.project([21.0, 0.0, 0.0]);
-        assert_eq!(v.pick(hull[0] + 2.0, hull[1]), Some(Pick::Hull(6)));
+        assert_eq!(v.pick(hull[0] + 2.0, hull[1], PICK_RADIUS), Some(Pick::Hull(6)));
         let world = v.camera.project(v.replay.planets[2].pos);
-        assert_eq!(v.pick(world[0], world[1]), Some(Pick::World(2)));
-        assert_eq!(v.pick(-500.0, -500.0), None);
+        assert_eq!(v.pick(world[0], world[1], PICK_RADIUS), Some(Pick::World(2)));
+        assert_eq!(v.pick(-500.0, -500.0, PICK_RADIUS), None);
+    }
+
+    #[test]
+    fn a_wider_radius_picks_what_a_mouse_radius_misses_and_a_stack_lists_its_makeup() {
+        let mut v = viewer();
+        v.timeline.seek(10.0);
+        let hull = v.camera.project([21.0, 0.0, 0.0]);
+        assert_eq!(v.pick(hull[0] + 20.0, hull[1], PICK_RADIUS), None);
+        assert_eq!(v.pick(hull[0] + 20.0, hull[1], 24.0), Some(Pick::Hull(6)), "a fingertip's radius");
+        let drawn = v.drawn();
+        let row: Vec<&str> = drawn.lines().find(|l| l.starts_with("6\t")).unwrap().split('\t').collect();
+        let (x, y): (f64, f64) = (row[1].parse().unwrap(), row[2].parse().unwrap());
+        v.selected = None;
+        assert_eq!(v.pick(x, y, PICK_RADIUS), Some(Pick::Hull(6)), "a drawn position picks its hull");
     }
 
     #[test]

@@ -25,7 +25,18 @@ pub const PIXEL: f64 = 1.0;
 /// The bloom works at this fraction of the resolution.
 pub const BLOOM_DOWNSAMPLE: usize = 4;
 /// How much of the blurred light is added back.
-pub const BLOOM_WEIGHT: f32 = 0.6;
+pub const BLOOM_WEIGHT: f32 = 0.35;
+/// Light intensities (proposed, R-UI2). Worlds are faint points and an
+/// empire's glow is a tint, so the hulls — the things that move and fight —
+/// carry the scene; the author found brighter worlds made everything
+/// illegible.
+pub const WORLD_CORE: f32 = 0.3;
+/// An unowned world's core, as a share of an owned one's.
+pub const UNOWNED_SHARE: f32 = 0.5;
+pub const HOME_CORE: f32 = 0.9;
+pub const WORLD_HALO: f32 = 0.03;
+pub const TERRITORY_HOME: f32 = 0.12;
+pub const TERRITORY_WORLD: f32 = 0.025;
 /// The bloom's box blur: radius in bloom pixels, and passes (three approach
 /// a Gaussian).
 pub const BLUR_RADIUS: usize = 2;
@@ -293,12 +304,14 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
     for op in ops {
         if let Op::World { s: sp, color, ring, .. } = op {
             let p = pos(*sp);
-            if *color != s.palette.roles.world_dim {
-                let strength = if ring.is_some() { 0.5 } else { 0.12 };
+            let owned = *color != s.palette.roles.world_dim;
+            if owned {
+                let strength = if ring.is_some() { TERRITORY_HOME } else { TERRITORY_WORLD };
                 out.territory.push(light(p[0], p[1], glow, linear(*color), strength));
             }
-            out.scene.push(light(p[0], p[1], halo, star, 0.35));
-            out.scene.push(light(p[0], p[1], core, star, if ring.is_some() { 4.0 } else { 1.5 }));
+            let share = if owned { 1.0 } else { UNOWNED_SHARE };
+            out.scene.push(light(p[0], p[1], halo, star, WORLD_HALO * share));
+            out.scene.push(light(p[0], p[1], core, star, if ring.is_some() { HOME_CORE } else { WORLD_CORE * share }));
         }
     }
     for op in ops {
@@ -448,6 +461,46 @@ mod tests {
         assert!(replay.planets.iter().all(|p| lit(p.pos)));
         assert_eq!(l.territory.len(), 3, "the three owned worlds glow");
         assert_eq!(std::mem::size_of::<Light>(), LIGHT_FLOATS * 4);
+    }
+
+    #[test]
+    fn a_hull_outshines_any_world_but_a_homeworld() {
+        // The author found bright worlds made the scene illegible: the things
+        // that move and fight carry it, and a world is a faint point.
+        let replay = Replay::from_json(TINY).unwrap();
+        let mut camera = Camera::new(320.0, 200.0);
+        camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
+        let palette = Palette::default();
+        let view = replay.view_at(10.0);
+        let s =
+            crate::tactical::Scene { replay: &replay, view: &view, camera: &camera, palette: &palette, selected: None };
+        let ops = plan(&s);
+        let (mut hdr, mut out) = (Hdr::new(1, 1), Raster::new(1, 1));
+        render(&s, &ops, &mut hdr, &mut out, &ToneLut::new());
+        let lum = |p: [f64; 3]| {
+            let at = to_raster(camera.project(p), PIXEL);
+            out.get(at[0], at[1]).unwrap().iter().map(|&c| c as u32).sum::<u32>()
+        };
+        let apart = |p: [f64; 3], others: &[[f64; 3]]| {
+            let q = camera.project(p);
+            others.iter().all(|&o| {
+                let r = camera.project(o);
+                (q[0] - r[0]).hypot(q[1] - r[1]) > 8.0
+            })
+        };
+        let hull_at: Vec<[f64; 3]> = view.hulls.iter().map(|h| h.row.pos).collect();
+        let world_at: Vec<[f64; 3]> = replay.planets.iter().map(|p| p.pos).collect();
+        let worlds: Vec<u32> =
+            replay.planets.iter().filter(|p| !p.home && apart(p.pos, &hull_at)).map(|p| lum(p.pos)).collect();
+        let hulls: Vec<u32> = view
+            .hulls
+            .iter()
+            .filter(|h| !h.row.wrecked && apart(h.row.pos, &world_at))
+            .map(|h| lum(h.row.pos))
+            .collect();
+        assert!(!worlds.is_empty() && !hulls.is_empty(), "the scene has a lone world and a lone hull");
+        let (brightest_world, dimmest_hull) = (worlds.iter().max().unwrap(), hulls.iter().min().unwrap());
+        assert!(dimmest_hull > brightest_world, "hull {dimmest_hull} against world {brightest_world}");
     }
 
     #[test]
