@@ -124,7 +124,10 @@ single-supply oracle — so one function checks two independent degeneracies.
 Placeholder magnitude inside a plateau: `0.02`–`0.04` with four to six stops.
 **`OPEN` since T-147's freight planner** (autopilot §5.10): `λ` now also
 discounts every leg the planner compares, and its plateau was found under the
-routing the planner replaced; it has not been re-swept (appendix §D.55).
+routing the planner replaced; it has not been re-swept on the composite
+(appendix §D.55). On random ground at 0.02 and 0.08 the composite moves
+−0.3% ± 0.4 and +0.6% ± 0.4 (8 and 5 seeds) and the spread between empires
+neither way beyond its error (appendix §D.57).
 `max_pickup_stops` is 2 since the planner's cheaper doctrine (appendix §D.56).
 
 **The condition of ratification was that the discount must be *the* solution to

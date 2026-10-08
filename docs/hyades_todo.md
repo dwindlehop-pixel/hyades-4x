@@ -208,8 +208,23 @@ throughput. The exact planner herded: 93% of the kilotonnes it delivered
 landed beyond the buyer's shortfall. **Open:** netting against a fresh read;
 a throughput target (the shipped doctrine is 1.6x slower per simulated year
 than the engine before the planner).
-**What would settle the rest:** the author's choice of default ground, or another way to
-equalize what each homeworld has within reach.
+**The spread of colony-years per empire on random ground — the author's
+target: at most 1.5x the lowest on identical or color-rotated ground**
+(appendix §D.57): random 0.098 ± 0.016 against identical 0.055, so 0.083, not
+met; whole Band IV works per empire is inside 1.5x (0.137 against 0.126). The
+seats part in their first few foundings — a seat's colony count at 150 yr
+correlates with its colony-years at r = 0.84 — and what each seat's region
+holds at generation predicts that count at |r| ≤ 0.53. Refuted: `λ` 0.02 and
+0.08, color sites kept 20 or 35 ly from homeworlds, color-centered homeworlds.
+**Landed (the author's rulings, galaxy §2): every homeworld in its own hex**,
+each homeworld hex bordering its two neighbors', the homeworld ring drawn in
+by `homeworld_inset_ly` (placeholder 25; bit-identical at 3 seats). **Built,
+`OPEN`:** the fair start (`GalaxyConfig::fair_start_ly`), 0.081 ± 0.023 at
+35 ly with Growth +12%. **Opened:** R-G6, the star field's scale at 6+ seats
+against the hex-placed homeworld ring.
+**What would settle the rest:** the stepped fair start on eight more galaxies,
+the author's choice of its radius, or another way to equalize what each
+homeworld has within reach.
 
 ---
 

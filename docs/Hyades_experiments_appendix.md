@@ -4839,6 +4839,93 @@ one price age and the census on one seed; netting in-flight cargo against a
 table read fresh at every decision would separate the netting from the
 staleness, and would say whether a fresh read is worth its cost at all.
 
+## D.57 The spread of colony-years between empires on random ground
+
+*Supports galaxy §2 and T-147. The author's direction: reduce the variation in
+colony-years per empire on random ground — by Exchange pricing, by sweeping
+`trade_decay_lambda`, or by constraints on galaxy generation — until it is no
+more than 1.5x the lowest variation measured on identical or color-rotated
+ground; then, the variation in whole Band IV works per empire. Bed: the twin
+bed (`examples/forge_sweep`, 3 seats, 1,500 yr, card-free, shipped freight
+doctrine), seeds 1, 7, 42, 31337, 2, 3, 5, 11. The spread is the coefficient of
+variation (standard deviation over mean) of a per-seat stock across the seats
+of one galaxy, averaged over the eight galaxies, ± its standard error; "paired"
+differences are per galaxy against random ground on the same seed. Every arm
+but the shipped one is a scratch configuration of galaxy generation or of
+`SimConfig` (beds vary only the galaxy).*
+
+**The target, as read.** The lowest mean spread of colony-years on the two
+symmetric grounds is identical ground's, 0.055 ± 0.012, so the target is
+**0.083**. The pooled reading (one coefficient of variation over all 24
+seat-runs of a ground) puts random ground at 0.108 against rotated ground's
+0.073, under 1.5x already; it mixes the spread between galaxies, which every
+seat of one game shares, into the spread between seats, so it is not the
+reading used.
+
+**Baseline** (shipped engine):
+
+| ground | spread of colony-years | spread of Band IV centers |
+|---|---|---|
+| random | 0.098 ± 0.016 | 0.137 ± 0.040 |
+| identical | 0.055 ± 0.012 | 0.787 ± 0.202 (2.7 Band IV centers per seat) |
+| color-rotated | 0.060 ± 0.005 | 0.126 ± 0.022 |
+
+So the Band IV spread on random ground is 1.09x color-rotated ground's and
+meets the 1.5x reading; colony-years is the one above it.
+
+**When the seats part** (`examples/seat_race`, the same bed to 400 yr): a
+seat's colony count at 150 yr, relative to its galaxy's mean, correlates with
+its colony-years at 1,500 yr at r = 0.84 (24 seats). At 50 yr the spread of
+colony count is 0.27 on random ground and 0.02 on both symmetric grounds; by
+150 yr the symmetric grounds have reached 0.16–0.17 too, and they fall back
+to 0.10–0.12 by 400 yr while random ground holds 0.20. What each seat's region
+holds at generation (`examples/seat_ground`: worlds `k_high` admits, their
+distance-weighted count, deposits by color within 8–40 ly and over the whole
+region) correlates with the 150-yr count at |r| ≤ 0.53. Each seat's region is
+93–99% one color.
+
+**Arms on random ground** (paired against random ground):
+
+| arm | spread of colony-years | Δ | spread of Band IV centers | Δ | Growth | composite |
+|---|---|---|---|---|---|---|
+| `trade_decay_lambda` 0.02 | 0.094 ± 0.014 | −0.004 ± 0.011 | 0.128 ± 0.050 | −0.009 ± 0.017 | −0.6% | −0.3% ± 0.4 |
+| `trade_decay_lambda` 0.08 (5 seeds) | 0.110 ± 0.029 | −0.006 ± 0.016 | 0.152 ± 0.060 | +0.007 ± 0.012 | −3.5% | +0.6% ± 0.4 |
+| fair start 20 ly, colors stepped | 0.097 ± 0.014 | −0.002 ± 0.025 | 0.129 ± 0.035 | −0.009 ± 0.024 | +8.8% | +5.6% ± 2.9 |
+| **fair start 35 ly, colors stepped** | **0.081 ± 0.023** | −0.017 ± 0.031 | 0.153 ± 0.024 | +0.016 ± 0.043 | **+12.1%** | +5.2% ± 8.1 |
+| fair start 35 ly, same colors | 0.050 ± 0.013 | −0.048 ± 0.019 | 0.220 ± 0.063 | +0.083 ± 0.075 | −73.2% | −37.9% ± 6.2 |
+| color sites kept 20 ly from homeworlds | 0.113 ± 0.032 | +0.015 ± 0.025 | 0.187 ± 0.048 | +0.049 ± 0.026 | −19.2% | −14.5% ± 3.5 |
+| color sites kept 35 ly from homeworlds | 0.075 ± 0.015 | −0.023 ± 0.022 | 0.211 ± 0.033 | +0.073 ± 0.054 | −67.3% | −48.8% ± 3.4 |
+| color-centered homeworlds (equidistant sites) | 0.335 ± 0.063 | +0.237 ± 0.077 | 0.194 ± 0.050 | +0.056 ± 0.016 | −2.2% | −1.0% ± 0.8 |
+
+The fair start (`GalaxyConfig::fair_start_ly`) makes every seat's wild worlds
+within the radius seat 0's, carried to the seat and color-stepped as the
+archetypes step; "same colors" is a scratch build that does not step them. The
+color clearance was a scratch `GalaxyConfig` field, never landed: no random
+color site within the distance of any homeworld.
+
+**What the stepped fair start leaves.** On seeds 2 and 3 its spread rises to
+0.185 and 0.186: the seats part by 150 yr inside their copied starts (seed 3:
+43 / 26 / 61 colonies, none in a rival's region before 200 yr). The starts
+differ only in color, against one works mix for every seat (2 : 1 : 3 Cyan :
+Magenta : Yellow, ratified); seats whose start is Magenta average 0.945 of
+their galaxy's mean colony-years and Cyan 1.050 (7 seats each, about 2
+standard errors apart; Yellow 1.005, which the works mix alone would rank
+first).
+
+**The homeworlds placed by hex** (the author's rulings, galaxy §2): at 3 seats
+with the 25-ly inset, the ground census of all eight seeds and the twin-bed
+runs of seeds 1 and 7 to 300 yr are bit-identical to the ring they replace, so
+every 3-seat number above holds under the new placement.
+
+**Inference, stated as one:** the spread on random ground is set by the first
+few foundings, and what separates them is not any one stock near the
+homeworld but the order in which a seat's ground lets it found — which no
+freight price reaches, since the race is decided before 150 yr when freight
+is small. Confidence about 60%. Fixing the ground near home either removes
+color from the economy (same colors, clearance: Growth −19% to −73%) or leaves
+the color asymmetry against the shared works mix; a stepped fair start on
+eight more seeds would say whether its 0.081 is under the target or at it.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

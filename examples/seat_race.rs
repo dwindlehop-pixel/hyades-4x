@@ -7,6 +7,7 @@
 //! and how many worlds of its own cell a rival owns (`lost`); and colony-years
 //! so far (`∫ C dt`, sampled every 25 yr).
 //!
+//! `SR_FAIR` (`GalaxyConfig::fair_start_ly`), `SR_HOMEWORLDS=centered`,
 //! `SR_SEEDS` (default 1, 7, 42, 31337), `SR_GROUND` (`random`, `identical`,
 //! `rotated`), `SR_LAMBDA` and `SR_STOPS` as `forge_sweep`'s.
 //!
@@ -46,10 +47,6 @@ fn main() {
             GalaxyConfig {
                 ground,
                 fair_start_ly: std::env::var("SR_FAIR").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0.0),
-                color_site_clearance_ly: std::env::var("SR_CLEAR")
-                    .ok()
-                    .and_then(|v| v.trim().parse().ok())
-                    .unwrap_or(0.0),
                 homeworlds: if std::env::var("SR_HOMEWORLDS").is_ok_and(|v| v.trim() == "centered") {
                     hyades_engine::galaxy::Homeworlds::ColorCentered
                 } else {

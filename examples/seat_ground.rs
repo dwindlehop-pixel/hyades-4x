@@ -14,6 +14,7 @@
 //! | `rC rM rY` | wild deposit by color within the reach, Mt |
 //!
 //! `SG_GROUND` (`random`, `identical`, `rotated`; default `random`),
+//! `SG_FAIR` (`GalaxyConfig::fair_start_ly`), `SG_HOMEWORLDS=centered`,
 //! `SG_SEEDS` (default 1, 7, 42, 31337, 2, 3, 5, 11).
 //!
 //! Run: `cargo run --release --example seat_ground -- <seats>`.
@@ -41,7 +42,6 @@ fn main() {
         let g = Galaxy::generate(GalaxyConfig {
             ground,
             fair_start_ly: std::env::var("SG_FAIR").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0.0),
-            color_site_clearance_ly: std::env::var("SG_CLEAR").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0.0),
             homeworlds: if std::env::var("SG_HOMEWORLDS").is_ok_and(|v| v.trim() == "centered") {
                 hyades_engine::galaxy::Homeworlds::ColorCentered
             } else {

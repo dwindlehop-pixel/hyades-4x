@@ -20,7 +20,9 @@
 //! [`Doctrine::freight_price_age_years`]; `FS_AGE=0` reads prices fresh),
 //! `FS_GROUND` (`random`, `identical`, `rotated`; default `random`),
 //! `FS_LAMBDA` and `FS_STOPS` ([`SimConfig::trade_decay_lambda`] and
-//! [`SimConfig::max_pickup_stops`]; defaults are the shipped ones).
+//! [`SimConfig::max_pickup_stops`]; defaults are the shipped ones),
+//! `FS_FAIR` ([`GalaxyConfig::fair_start_ly`], default 0) and
+//! `FS_HOMEWORLDS=centered` ([`Homeworlds::ColorCentered`]).
 //!
 //! Each seat's line also counts its **centers built to `Band IV` works** at
 //! the horizon (`band4`): owned worlds whose infrastructure stands at the top
@@ -28,7 +30,7 @@
 //!
 //! Run: `cargo run --release --example forge_sweep -- [horizon]`.
 use hyades_engine::autopilot::{Autopilot, BaselineAutopilot, Doctrine};
-use hyades_engine::galaxy::{FleetSeeding, Galaxy, GalaxyConfig, Ground};
+use hyades_engine::galaxy::{FleetSeeding, Galaxy, GalaxyConfig, Ground, Homeworlds};
 use hyades_engine::log::{LogCategory, LogEvent, LogFilter};
 use hyades_engine::resources::Material;
 use hyades_engine::sim::{DesignBill, SimConfig, Simulation};
@@ -82,14 +84,10 @@ fn main() {
             GalaxyConfig {
                 ground,
                 fair_start_ly: std::env::var("FS_FAIR").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0.0),
-                color_site_clearance_ly: std::env::var("FS_CLEAR")
-                    .ok()
-                    .and_then(|v| v.trim().parse().ok())
-                    .unwrap_or(0.0),
                 homeworlds: if std::env::var("FS_HOMEWORLDS").is_ok_and(|v| v.trim() == "centered") {
-                    hyades_engine::galaxy::Homeworlds::ColorCentered
+                    Homeworlds::ColorCentered
                 } else {
-                    hyades_engine::galaxy::Homeworlds::Trio
+                    Homeworlds::Trio
                 },
                 ..GalaxyConfig::new(SEATS, seed)
             },

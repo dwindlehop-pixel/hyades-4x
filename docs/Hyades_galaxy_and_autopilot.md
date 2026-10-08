@@ -59,6 +59,26 @@ Mean spread at 1,500 yr over 12 galaxies. Holdings-based pricing is ratified
 (autopilot spec §3.9); under it no ground meets the target with trio
 homeworlds.
 
+**The spread of colony-years per empire on random ground — the author's
+target, `RATIFIED`: no more than 1.5x the lowest spread on identical or
+color-rotated ground.** Measured as the coefficient of variation across the
+seats of one galaxy, averaged over 8 galaxies on the twin bed (3 seats,
+1,500 yr): random 0.098 ± 0.016 against identical 0.055 ± 0.012, so the target
+is 0.083 and is **not met** (appendix §D.57). The same reading of whole Band IV
+works per empire is 0.137 on random ground against color-rotated 0.126, inside
+1.5x. `trade_decay_lambda` at 0.02 and 0.08 moves neither by more than its
+error, and keeping color sites away from the homeworlds (20 and 35 ly) or
+planting them equidistant around each (`Homeworlds::ColorCentered`) widens the
+Band IV spread by 0.049–0.073 — refuted, the clearance not landed.
+**`OPEN` (T-147) — the fair start** (`GalaxyConfig::fair_start_ly`, off by
+default): every seat's wild worlds within the radius of its homeworld are seat
+0's, carried to it and color-stepped as the archetypes step. At 35 ly it reads
+0.081 ± 0.023 with Growth +12% — at the target, not resolved from it on 8
+galaxies; copying the start with its colors unstepped reads 0.050 and costs
+73% of Growth. Settled by the stepped fair start on eight more galaxies, and by
+the author's choice of radius against the hex border (39 ly from each
+3-seat homeworld).
+
 ---
 
 ## 3. Homeworlds — super-aligned, identical in shape, equitable but unequal

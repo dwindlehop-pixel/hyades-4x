@@ -215,7 +215,6 @@ impl ColorSites {
         hotspot_sigma: f64,
         mut rng: Rng,
         planted: &[(Basic, f64, f64, f64)],
-        homes: &[Vec3],
     ) -> ColorSites {
         // The radial profile is Gamma(2, L_xy): ten scale lengths hold all
         // but ~5e-4 of the stars, and a world past the square reads trace.
@@ -239,15 +238,6 @@ impl ColorSites {
                 pick -= w[k];
             }
             sites.push((hue, x, y, w[hue as usize]));
-        }
-        // Color kept away from the starts (`GalaxyConfig::color_site_clearance_ly`).
-        // Dropped after every draw, so the stream — and every other site —
-        // is the same at any clearance.
-        let clear = config.color_site_clearance_ly;
-        if clear > 0.0 {
-            sites.retain(|&(_, x, y, _)| {
-                homes.iter().all(|h| (x - h.x) * (x - h.x) + (y - h.y) * (y - h.y) >= clear * clear)
-            });
         }
         // Normalize each hue to its strongest site. With sites far apart the
         // nearest one can sit far from its hotspot, and the peak is a Band:
@@ -572,12 +562,6 @@ pub struct GalaxyConfig {
     /// spacing (77.9 ly at 3 seats) or two seats' starts overlap.
     /// **`OPEN`** (T-147), placeholder `0`.
     pub fair_start_ly: f64,
-    /// **Color kept away from the starts**, ly: no randomly placed color
-    /// site stands within this distance of any homeworld, so every seat's
-    /// nearest ore of every hue lies at least this far out (the planted
-    /// sites of [`Homeworlds::ColorCentered`] are exempt). `0` turns it off.
-    /// **`OPEN`** (T-147), placeholder `0`.
-    pub color_site_clearance_ly: f64,
     /// Under [`Homeworlds::ColorCentered`], the distance from a homeworld to
     /// each of its three planted color sites, ly. **Placeholder.**
     pub homeworld_site_distance_ly: f64,
@@ -629,7 +613,6 @@ impl GalaxyConfig {
             ground: Ground::Random,
             homeworlds: Homeworlds::Trio,
             fair_start_ly: 0.0,
-            color_site_clearance_ly: 0.0,
             homeworld_site_distance_ly: 10.0,
             homeworld_site_band: 3.0,
             homeworld_outpost_distance_ly: 5.0,
@@ -1034,9 +1017,8 @@ impl Galaxy {
             Vec3::new(hotspot_ring * cos, hotspot_ring * sin, 0.0)
         };
         let hotspots = Hotspots { cyan: hotspot(0.0), magenta: hotspot(1.0), yellow: hotspot(2.0) };
-        // Every seat's homeworld, at the center of its own hex (§2, the
-        // author's ruling): read by the color clearance, the fair start and
-        // the homeworld loop alike.
+        // Every seat's homeworld, in its own hex (§2, the author's rulings):
+        // read by the fair start and the homeworld loop alike.
         let homes = config.homeworld_positions();
         let turns = config.symmetry_turns();
         let per_turn = config.players / turns;
@@ -1086,7 +1068,7 @@ impl Galaxy {
                 Basic::ALL.iter().zip(three.iter()).map(|(&b, v)| (b, v.x, v.y, config.homeworld_site_band))
             })
             .collect();
-        let sites = ColorSites::generate(&config, &hotspots, hotspot_sigma, rng.fork(0xC010_5173), &planted, &homes);
+        let sites = ColorSites::generate(&config, &hotspots, hotspot_sigma, rng.fork(0xC010_5173), &planted);
 
         let mut planets: Vec<Planet> = Vec::with_capacity(config.planet_count + 3 * config.players);
 
@@ -1592,7 +1574,7 @@ mod tests {
         cfg.color_site_sigma_ly = 25.0;
         let g = Galaxy::generate(cfg).unwrap();
         let sigma = cfg.mean_xy_radius() * cfg.hotspot_sigma_frac;
-        let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(3), &[], &[]);
+        let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(3), &[]);
         let mut rng = Rng::new(11);
         for _ in 0..300 {
             let (x, y) = (rng.range(-200.0, 200.0), rng.range(-200.0, 200.0));
@@ -1618,7 +1600,7 @@ mod tests {
             let cfg = g.config;
             let sigma = cfg.mean_xy_radius() * cfg.hotspot_sigma_frac;
             // Any stream: the property holds for every draw.
-            let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(seed), &[], &[]);
+            let sites = ColorSites::generate(&cfg, &g.hotspots, sigma, Rng::new(seed), &[]);
             let mut top = [0.0f64; 3];
             for &(hue, _, _, peak) in &sites.sites {
                 top[hue as usize] = top[hue as usize].max(peak);
