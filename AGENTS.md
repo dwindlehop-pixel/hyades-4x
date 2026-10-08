@@ -1581,7 +1581,7 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/snapshot.rs` | read-only views for the presentation layer; `Simulation::snapshot_at(t)` reads the theater at any time up to the next event |
 | `src/replay.rs` | **the recorder**: a run as a versioned JSON replay, a frame at exactly every `frame_years` — the only thing the viewer reads (`docs/Hyades_interface.md` §3) |
 | `viewer/` | **`hyades-viewer`**, a second workspace crate: playback, the log filter, the tactical and juicy renderers, compiled to wasm32. It does not link the engine (design law #15); a dev-dependency for the contract test is its only tie |
-| `web/` | the page, the WebGL2 renderer, `build.sh` for the site, and the module and browser tests. Deployed to Pages from `main` |
+| `web/` | the game client (its menu, replay viewer and palette screens), the WebGL2 renderer, `build.sh` for the site, and the module and browser tests. Deployed to Pages from `main` |
 
 ### The combat/arena split (load-bearing)
 

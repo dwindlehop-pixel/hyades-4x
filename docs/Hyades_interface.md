@@ -10,7 +10,7 @@ ratified decision; **OPEN** — a decision not yet made, with a recommendation
 where one is attached. Every magnitude marked *placeholder* is unratified.
 
 Code: the engine's recorder is `src/replay.rs` and `Simulation::snapshot_at`;
-the viewer is the `viewer/` crate (`hyades-viewer`); the web shell is `web/`;
+the viewer is the `viewer/` crate (`hyades-viewer`); the web client is `web/`;
 deployment is `.github/workflows/pages.yml`.
 
 ---
@@ -54,6 +54,12 @@ RATIFIED (T-150, the author's rulings after the first deployment):
     engine stays dependency-free (`AGENTS.md` §4); the viewer links the engine
     only as a test dependency, and nothing an interface package computes enters
     replicated state.
+
+RATIFIED (T-151, the author's ruling after the first phone review):
+
+15. **The replay viewer is a menu option of the game client, not a separate
+    page.** The site opens on the client's menu; replays, the palette sheet and
+    (when it is built) a new game are its screens (§8.1).
 
 ---
 
@@ -172,9 +178,9 @@ The tactical palette is the author's 40 colors (`hyades_palette.js`: eight base
 tones, eight accents each with tints `3`, `2` and shade `1`), held verbatim in
 `viewer/src/palette.rs::SOURCE`, passed through a tone map. **Every value below
 is a proposal**, to be ratified on the live viewer (ruling 13, §6.2.1). The
-page `palette.html` is a reference sheet of the same values — each source color
-beside its mapped color, every role, seat and status color — and opens a link's
-settings too.
+client's **Palette** screen (§8.1) is a reference sheet of the same values —
+each source color beside its mapped color, every role, seat and status color —
+and shows a link's settings too.
 
 **The proposed tone map, "Earthrise"**, in OKLCH (Björn Ottosson, *A perceptual
 color space for image processing*, 2020):
@@ -267,20 +273,35 @@ is two screen pixels (*placeholder*), scaled up without smoothing.
 
 ### 6.4 Stacks — OPEN (R-UI4)
 
-Proposed and built: hulls whose positions fall in one 3-tactical-pixel square
-(*placeholder*) **with one owner, Design, role and wreck state** are one glyph
-with a count beside it in a 3×5 pixel font. The glyph carries the worst damage
-and any hit, cargo or selection among its members. Unalike stacks in one place
-fan out to the right 22 tactical pixels apart (*placeholder*), each joined to
-the place by a leader line; the largest stack keeps the place. A pick selects a
-stack's lowest-id hull, and the inspector says how many it stands for.
+Proposed and built, every magnitude a *placeholder*. Hulls whose positions
+fall in one square **with one owner, Design, role and wreck state** are one
+glyph with a count beside it in a 3×5 pixel font. The square widens as the view
+pulls back: **3 tactical pixels at the System level, 5 at Sector, 8 at Galaxy**.
+The glyph carries the worst damage and any hit, cargo or selection among its
+members.
+
+- **At the Galaxy level a place's hulls are grouped by owner alone** and each
+  group is drawn as a **marker**: a filled square in the seat's color, 3, 5, 7
+  or 9 tactical pixels across for 1, 2–9, 10–99 and 100 or more hulls, with the
+  count beside it. At that scale a glyph's Design and role cannot be read, and
+  the author found one glyph per Design and role illegible.
+- **Below it**, unalike stacks in one place fan out to the right 22 tactical
+  pixels apart, each joined to the place by a leader line; the largest stack
+  keeps the place. **At most four fan out**; the rest of the place's hulls of
+  each owner are one marker in the fourth position.
+- A pick selects the nearest drawn stack within a radius (§8.3) and stands on
+  its lowest-id hull; **the inspector lists what the stack is made of** — the
+  count of each Design, hull and role — and then the hull it stands on.
 
 ### 6.5 Worlds, hexes and levels of detail
 
 BUILT, magnitudes *placeholders*. A world is a dot in its owner's seat color
 (an unowned world dim), a homeworld one pixel larger with a ring. The command
 view's hexes (flat-top, `hex_side_ly`, one centered on `hex_origin` — galaxy
-§2) are drawn when a hex is at least 6 tactical pixels across. The level of
+§2) are drawn when a hex is at least 6 tactical pixels across, and **only the
+active ones: a hex holding a world or a hull** (`tactical::active_hexes`). A
+point's hex is found by axial coordinates with cube rounding
+(`tactical::hex_of`). The level of
 detail is set by the camera's scale: **Galaxy** below 2 screen pixels per ly,
 **Sector** to 40, **System** above; worlds grow a pixel per level.
 
@@ -297,8 +318,8 @@ modes cannot disagree about where anything is.
 
 | entity | light |
 |---|---|
-| a world | a star: a white core and a halo |
-| an owned world | the star, plus a wide dim glow in its seat's color — at the Galaxy level an empire reads as a colored nebula |
+| a world | a faint star: a small white core and a fainter halo; an unowned world at half an owned one's |
+| an owned world | the star, plus a wide dim tint in its seat's color, stronger at a homeworld — at the Galaxy level an empire reads as a faint colored nebula |
 | a hull | a point in its seat's color |
 | a burning drive | a plume behind the hull (ahead of it when braking), in the drive's status color |
 | a hit | a flash in the hit color |
@@ -306,10 +327,15 @@ modes cannot disagree about where anything is.
 
 A light of intensity `I` and radius `r` adds `I / (1 + d²/r²)²` at distance
 `d`, cut at `4r`. The bloom is the buffer averaged in 4×4 blocks, box-blurred
-(radius 2, three passes) and added back at weight 0.6. The tone curve is
+(radius 2, three passes) and added back at weight 0.35. The tone curve is
 `1 − e^(−x)` per channel, then sRGB encoding. Every magnitude here is a
-*placeholder*; the light sizes grow with the level of detail
-(`light_scale`).
+*placeholder* (`juicy.rs`'s constants); the light sizes grow with the level of
+detail (`light_scale`).
+
+**The hulls carry the scene and the worlds recede** (proposed, R-UI2): the
+author found that bright worlds made everything illegible.
+`a_hull_outshines_any_world_but_a_homeworld` pins that a lone hull renders
+brighter than any lone world other than a homeworld (appendix §D.58.5).
 
 ### 7.2 Style — OPEN (R-UI2)
 
@@ -339,24 +365,74 @@ OPEN — part of R-UI2.
 
 ---
 
-## 8. The viewer and the site
+## 8. The client and the site
 
-BUILT.
+BUILT (T-149, T-150; the client, phone layout and touch at T-151).
+
+### 8.1 The client
+
+The site is one page, the game client, showing **one screen at a time**
+(ruling 15):
+
+| screen | what it holds | link |
+|---|---|---|
+| **Menu** | New game (shown, not built yet), Replays, Palette | `./` |
+| **Replays** | the recorded replays at this commit, and "Open a replay file…" | `?view=replays` |
+| **Palette** | the palette sheet (§6.2) | `?view=palette` |
+| **Viewer** | one replay, with a back button to the menu (and Esc) | `?replay=<name>` |
+
+The browser's back and forward buttons move between screens. The palette's
+settings ride in the link's hash on every screen (§6.2.1), so a tuned palette
+survives moving between them. The former `palette.html` forwards to the
+Palette screen with its hash.
+
+### 8.2 Layout
+
+On a wide screen the viewer has a header, the theater, a side panel (the
+selection, the seats, the palette editor, the keys) and a footer (the transport
+and the log). The header's **Panel** and **Log** tabs hide and show the side
+panel and the log.
+
+**On a phone (760 CSS pixels wide or less)** the theater takes the screen
+between a one-row header and the transport. The side panel and the log open as
+**sheets over the bottom of the theater**, one at a time, so opening one does
+not resize it; a selection is shown in a small box at the theater's top left,
+which opens the panel. Nothing scrolls sideways. The browser test asserts on a
+Pixel 7 emulation that the theater is at least 60% of the screen's height
+(*placeholder*) and that nothing scrolls sideways.
+
+### 8.3 Input
+
+- **Keys**: Space, J/K/L, ←/→, T (mode), F (fit everything), G (the replay's
+  focus), C (center on the selection), Esc (menu).
+- **Pointer**: the wheel zooms about the pointer; one pointer drags the view;
+  **two fingers pinch** to zoom about their midpoint and pan with it. A press
+  that moves no farther than a slop (4 CSS pixels for a mouse, 8 for a pen, 10
+  for a finger) is a **pick**, which selects the nearest drawn stack within a
+  radius (10 CSS pixels for a mouse, 14 for a pen, 24 for a finger — a finger
+  covers more of the screen than a cursor), else the nearest world. Every
+  magnitude is a *placeholder*.
+- **Robustness**: the module, the replay index and a replay are fetched up to
+  four times on a server error (5xx) or a dropped connection, 0.5, 1 and 2 s
+  apart; a load that still fails says why and offers "Try again". A WebGL2
+  error or a lost context moves drawing to the module's CPU renderer for the
+  rest of the session (§7.3).
+
+### 8.4 The parts
 
 - **`viewer/`** — Rust, no dependencies today (ruling 14 permits them; R-UI8), compiled to `wasm32-unknown-unknown`
   as a module with no imports. Its plain C interface (`viewer/src/ffi.rs`,
   `hv_*`) takes and returns numbers; bytes cross through one input buffer, the
   framebuffer and one text buffer. **Everything the page shows as text is
   formatted by the module.**
-- **`web/`** — `index.html`, `style.css`, `shell.js` (input, layout, the log as
-  a virtual list), `gpu.js` (§7.3) and `palette.html` (§6.2). The page chrome
-  takes its colors from the module's palette, so chrome and canvas cannot
-  differ.
-- **Controls**: play/pause, rewind, step, a rate multiplier, a scrubber; Space,
-  J/K/L, ←/→, T (mode), F (fit everything), G (the replay's focus), C (center
-  on the selection); wheel zooms about the pointer, drag pans, click selects; a
-  replay file can be opened from disk; the side panel's palette editor tunes the
-  palette live (§6.2.1).
+- **`web/`** — `index.html` (the client's screens), `style.css`, `shell.js`
+  (screens and the link, input, layout, the log as a virtual list), `gpu.js`
+  (§7.3), and `palette.html`, which forwards to the Palette screen. The page
+  chrome takes its colors from the module's palette, so chrome and canvas
+  cannot differ.
+- **Controls**: play/pause, rewind, step, a rate multiplier, a scrubber, and
+  the input of §8.3; the side panel's palette editor tunes the palette live
+  (§6.2.1).
 - **`web/build.sh <out> [--quick]`** assembles the site: the module, the page,
   and replays recorded by `examples/record_replay` at that commit (expansion,
   a beam fight, a missile-sentry fight).
@@ -364,11 +440,17 @@ BUILT.
 **Tests**: the viewer crate's unit tests; the contract test (§2);
 `web/test/smoke.mjs`, which drives the module headless over every replay in
 both modes; and `web/test/browser.mjs`, which opens the site in headless
-Chrome, checks it renders on WebGL2 without a console error, compares GPU and
-CPU juicy (§7.3), plays, filters the log and seeks from a row, and drives the
-palette editor (a link's settings open with the page; a slider redraws the
-canvas and rewrites the link; a hand-set color reaches the settings line;
-reset returns to the proposal).
+Chrome, goes from the menu through Replays to a replay, checks it renders on
+WebGL2 without a console error, clicks a drawn hull and checks it is selected,
+compares GPU and CPU juicy (§7.3), plays, filters the log and seeks from a row,
+drives the palette editor (a link's settings open with the page; a slider
+redraws the canvas and rewrites the link; a hand-set color reaches the settings
+line; reset returns to the proposal), returns to the menu and opens the
+Palette screen, follows the old `palette.html` link, serves one 503 and checks
+the replay loads on the second request, loses the WebGL context and checks
+the CPU renderer draws and a click still selects, and on a Pixel 7 emulation checks the
+theater's size, that nothing scrolls sideways, and that a tap beside a drawn
+hull selects it.
 
 **Deployment**: `.github/workflows/pages.yml` builds and tests the site on
 every push to `main` and publishes it to GitHub Pages. The repository's Pages
@@ -382,13 +464,14 @@ job runs the same build and tests on every pull request.
 | code | decision | status | what would settle it |
 |---|---|---|---|
 | **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"` | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
-| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built | the author's judgment against recorded games |
+| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — proposal built | the author's review on the deployed site |
-| **R-UI4** | stacking: the stack square, the fan spacing, what a stack carries (§6.4) | OPEN — proposal built | the author's review; a census of stack sizes on a long replay if counts prove unreadable |
+| **R-UI4** | stacking: the stack square per level, the Galaxy-level owner markers, the fan spacing and limit, what a stack carries (§6.4) | OPEN — revised proposal built at T-151 after the author found one glyph per Design and role too many | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |
 | **R-UI6** | replay size (§3) | OPEN — recommendation attached | the first replay the author wants to keep that passes ~50 MB |
 | **R-UI7** | showing height `z` in the galaxy view (§6.1) | OPEN | the author's ruling on whether the view stays top-down |
 | **R-UI8** | which upstream packages the interface takes up now that it may (ruling 14) | OPEN — recommendation attached | a need the current code cannot meet. Recommendation: none yet; the first candidates are `wasm-bindgen`/`web-sys` (to retire the hand-written C interface and `shell.js`'s byte copying) and `wgpu` (to move `gpu.js` into Rust), each taken when a change would otherwise be built on the hand-rolled path |
+| **R-UI9** | the client's phone layout and touch magnitudes: the 760-pixel breakpoint, the sheets, the tap slop and pick radius (§8.2–8.3) | OPEN — proposal built | the author's use of the deployed site on a phone |
 
 ## References
 

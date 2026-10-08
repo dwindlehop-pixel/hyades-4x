@@ -2,106 +2,141 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hyades Replay Viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hyades</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
-<header>
-  <h1>Hyades</h1>
-  <label class="field">Replay
-    <select id="replay"></select>
-  </label>
-  <label class="button file">Open file…<input id="file" type="file" accept=".json,application/json"></label>
-  <div class="segmented" role="group" aria-label="Mode">
-    <button id="mode-tactical" class="on" title="Tactical mode (T)">Tactical</button>
-    <button id="mode-juicy" title="Juicy mode (T)">Juicy</button>
-  </div>
-  <button id="fit" title="Frame everything (F)">Fit</button>
-  <button id="focus" title="Frame the replay's focus (G)">Focus</button>
-  <a class="button" href="palette.html" target="_blank" rel="noopener">Palette</a>
-  <span id="label" class="dim"></span>
-</header>
+<body data-screen="menu">
 
-<main>
-  <section id="stage">
-    <canvas id="view" tabindex="0" aria-label="The theater"></canvas>
-    <div id="message" hidden></div>
-  </section>
+<!-- The client's screens (docs/Hyades_interface.md §8). One is shown at a
+     time, chosen by body[data-screen]; the link names it (?view=, ?replay=). -->
 
-  <aside id="side">
-    <h2>Selection</h2>
-    <pre id="inspector">Nothing selected.</pre>
-    <button id="follow" title="Center on the selection (C)">Center on selection</button>
-    <h2>Seats</h2>
-    <ul id="legend"></ul>
-    <details id="tuner">
-      <summary>Palette (proposed) — tune it here</summary>
-      <p class="dim">Every change redraws the game as you make it. The settings ride in this page's link;
-        send the link or the line below to ratify.</p>
-      <div id="tune-sliders"></div>
-      <h2>Colors set by hand</h2>
-      <div id="tune-colors"></div>
-      <label class="stack">Settings
-        <input id="tune-text" type="text" spellcheck="false" aria-label="Palette settings">
-      </label>
-      <p id="tune-error" class="error" hidden></p>
-      <div class="row">
-        <button id="tune-copy">Copy settings</button>
-        <button id="tune-link">Copy link</button>
-        <button id="tune-reset">Reset</button>
-      </div>
-    </details>
-    <h2>Keys</h2>
-    <dl class="keys">
-      <dt>Space</dt><dd>play / pause</dd>
-      <dt>J K L</dt><dd>rewind · pause · play</dd>
-      <dt>← →</dt><dd>step a frame</dd>
-      <dt>T</dt><dd>tactical / juicy</dd>
-      <dt>F G C</dt><dd>fit · focus · center</dd>
-      <dt>wheel, drag</dt><dd>zoom, pan</dd>
-    </dl>
-  </aside>
-</main>
+<section id="screen-menu" class="screen page">
+  <h1 class="title">Hyades</h1>
+  <nav class="menu" aria-label="Main menu">
+    <button id="menu-new" disabled title="Not built yet">New game <span class="dim">— not built yet</span></button>
+    <button id="menu-replays">Replays</button>
+    <button id="menu-palette">Palette</button>
+  </nav>
+</section>
 
-<footer>
-  <div id="transport">
-    <button id="back" title="Step back a frame (←)">⏮</button>
-    <button id="rewind" title="Play backward (J)">◀</button>
-    <button id="play" title="Play / pause (Space)">▶</button>
-    <button id="step" title="Step forward a frame (→)">⏭</button>
-    <label class="field">Rate
-      <select id="rate">
+<section id="screen-replays" class="screen page">
+  <div class="bar"><button class="to-menu">← Menu</button><h1>Replays</h1></div>
+  <ul id="replay-list" class="list"></ul>
+  <label class="button file">Open a replay file…<input id="file" type="file" accept=".json,application/json"></label>
+  <p id="replays-message" class="dim"></p>
+</section>
+
+<section id="screen-palette" class="screen page">
+  <div class="bar"><button class="to-menu">← Menu</button><h1>Palette</h1></div>
+  <div class="status" id="palette-status">Loading…</div>
+  <p class="note">The author's palette (left half of each chip) through the proposed Earthrise tone map (right half).
+    Roles, seats and status colors are what the tactical mode draws with. Status colors are off the palette, so
+    damage, drive and the rest read as simulation state. Ratify it on a replay, whose side panel tunes these colors
+    while the game is drawn. Specification: <code>docs/Hyades_interface.md</code> §6.2.</p>
+  <h2>Source → shown</h2><div class="chips" id="chips-source"></div>
+  <h2>Interface roles and Doctrine roles</h2><div class="chips" id="chips-role"></div>
+  <h2>Seats</h2><div class="chips" id="chips-seat"></div>
+  <h2>Status (off-palette)</h2><div class="chips" id="chips-status"></div>
+</section>
+
+<section id="screen-viewer" class="screen">
+  <header>
+    <button class="to-menu" title="Back to the menu (Esc)">←<span class="wide"> Menu</span></button>
+    <div class="segmented" role="group" aria-label="Mode">
+      <button id="mode-tactical" class="on" title="Tactical mode (T)">Tactical</button>
+      <button id="mode-juicy" title="Juicy mode (T)">Juicy</button>
+    </div>
+    <button id="fit" title="Frame everything (F)">Fit</button>
+    <button id="focus" title="Frame the replay's focus (G)">Focus</button>
+    <span id="label" class="dim"></span>
+    <div class="tabs" role="group" aria-label="Panels">
+      <button id="tab-side" title="Selection, seats and palette">Panel</button>
+      <button id="tab-log" title="The event log">Log</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="stage">
+      <canvas id="view" tabindex="0" aria-label="The theater"></canvas>
+      <pre id="badge" hidden></pre>
+      <div id="message" hidden></div>
+    </section>
+
+    <aside id="side" class="sheet">
+      <h2>Selection</h2>
+      <pre id="inspector">Nothing selected.</pre>
+      <button id="follow" title="Center on the selection (C)">Center on selection</button>
+      <h2>Seats</h2>
+      <ul id="legend"></ul>
+      <details id="tuner">
+        <summary>Palette (proposed) — tune it here</summary>
+        <p class="dim">Every change redraws the game as you make it. The settings ride in this page's link;
+          send the link or the line below to ratify.</p>
+        <div id="tune-sliders"></div>
+        <h2>Colors set by hand</h2>
+        <div id="tune-colors"></div>
+        <label class="stack">Settings
+          <input id="tune-text" type="text" spellcheck="false" aria-label="Palette settings">
+        </label>
+        <p id="tune-error" class="error" hidden></p>
+        <div class="row">
+          <button id="tune-copy">Copy settings</button>
+          <button id="tune-link">Copy link</button>
+          <button id="tune-reset">Reset</button>
+        </div>
+      </details>
+      <h2>Keys</h2>
+      <dl class="keys">
+        <dt>Space</dt><dd>play / pause</dd>
+        <dt>J K L</dt><dd>rewind · pause · play</dd>
+        <dt>← →</dt><dd>step a frame</dd>
+        <dt>T</dt><dd>tactical / juicy</dd>
+        <dt>F G C</dt><dd>fit · focus · center</dd>
+        <dt>Esc</dt><dd>menu</dd>
+        <dt>wheel, drag</dt><dd>zoom, pan</dd>
+        <dt>pinch, drag</dt><dd>zoom, pan (touch)</dd>
+      </dl>
+    </aside>
+  </main>
+
+  <footer>
+    <div id="transport">
+      <button id="back" title="Step back a frame (←)">⏮</button>
+      <button id="rewind" title="Play backward (J)">◀</button>
+      <button id="play" title="Play / pause (Space)">▶</button>
+      <button id="step" title="Step forward a frame (→)">⏭</button>
+      <select id="rate" aria-label="Rate">
         <option value="0.0625">×1/16</option>
         <option value="0.25">×1/4</option>
         <option value="1" selected>×1</option>
         <option value="4">×4</option>
         <option value="16">×16</option>
       </select>
-    </label>
-    <input id="scrub" type="range" min="0" max="10000" value="0" aria-label="Time">
-    <span id="status" class="mono"></span>
-  </div>
-
-  <div id="logbar">
-    <div id="filters">
-      <span id="categories"></span>
-      <span id="seats"></span>
-      <label><input id="unseated" type="checkbox" checked> no seat</label>
-      <select id="kind"><option value="">every kind</option></select>
-      <input id="text" type="search" placeholder="find in log…">
-      <select id="window">
-        <option value="0">whole log</option>
-        <option value="1" selected>up to now</option>
-        <option value="2">±1 frame</option>
-      </select>
-      <label><input id="followlog" type="checkbox" checked> follow</label>
-      <span id="logcount" class="dim"></span>
+      <input id="scrub" type="range" min="0" max="10000" value="0" aria-label="Time">
+      <span id="status" class="mono"></span>
     </div>
-    <div id="log" class="mono" tabindex="0"></div>
-  </div>
-</footer>
+
+    <div id="logbar" class="sheet">
+      <div id="filters">
+        <span id="categories"></span>
+        <span id="seats"></span>
+        <label><input id="unseated" type="checkbox" checked> no seat</label>
+        <select id="kind"><option value="">every kind</option></select>
+        <input id="text" type="search" placeholder="find in log…">
+        <select id="window">
+          <option value="0">whole log</option>
+          <option value="1" selected>up to now</option>
+          <option value="2">±1 frame</option>
+        </select>
+        <label><input id="followlog" type="checkbox" checked> follow</label>
+        <span id="logcount" class="dim"></span>
+      </div>
+      <div id="log" class="mono" tabindex="0"></div>
+    </div>
+  </footer>
+</section>
 
 <script type="module" src="shell.js"></script>
 </body>

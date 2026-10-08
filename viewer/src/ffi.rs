@@ -227,10 +227,11 @@ pub extern "C" fn hv_focus() {
     with(|v| v.focus())
 }
 
-/// Selects what is under screen point `(x, y)`; 1 when something is.
+/// Selects what is within `radius` screen pixels of `(x, y)`; 1 when
+/// something is.
 #[no_mangle]
-pub extern "C" fn hv_pick(x: f64, y: f64) -> i32 {
-    with(|v| v.pick(x, y).is_some() as i32)
+pub extern "C" fn hv_pick(x: f64, y: f64, radius: f64) -> i32 {
+    with(|v| v.pick(x, y, radius).is_some() as i32)
 }
 
 /// Centers the camera on the selection, keeping the zoom.
@@ -328,12 +329,14 @@ pub extern "C" fn hv_palette_set() -> i32 {
 /// | 7 | the palette sheet, for the author's approval ([`palette_sheet`]) |
 /// | 8 | the replay's label and seed |
 /// | 9 | the palette's settings, in their text form |
+/// | 10 | every drawn hull glyph's screen position — see [`Viewer::drawn`] |
 #[no_mangle]
 pub extern "C" fn hv_text(which: i32, first: i32, rows: usize) -> *const u8 {
     let s = match which {
         3 => ERROR.with(|e| e.borrow().clone()),
         7 => palette_sheet(&palette()),
         9 => palette().settings.to_string(),
+        10 => with(|v| v.drawn()),
         _ => with(|v| match which {
             0 => v.status(),
             1 => v.inspector(),

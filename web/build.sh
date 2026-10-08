@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assemble the replay viewer site (docs/Hyades_interface.md §8) into <out>:
+# Assemble the client site (docs/Hyades_interface.md §8) into <out>:
 # the page, the viewer module built for wasm32, and replays recorded by the
 # engine. CI's viewer job and the Pages deployment both run this.
 #

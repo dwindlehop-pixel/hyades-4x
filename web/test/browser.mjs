@@ -1,10 +1,17 @@
-// Browser test of the deployed page (docs/Hyades_interface.md §8): serves
-// web/ as Pages will, opens it in headless Chromium, and checks that
-//   - the page starts on WebGL2 with no console error, and draws;
+// Browser test of the deployed client (docs/Hyades_interface.md §8): serves
+// the site as Pages will, opens it in headless Chromium, and checks that
+//   - the menu leads to the replay list and a replay opens in the viewer, on
+//     WebGL2, with no console error, and draws;
+//   - a click on a drawn hull selects it;
 //   - the GPU juicy frame matches the module's CPU juicy frame (the
 //     reference) within a stated tolerance;
-//   - play, the log text filter and a log row's seek work.
-// With --shots <dir>, saves screenshots of both modes.
+//   - play, the log text filter and a log row's seek work;
+//   - the palette editor, the palette screen and the old palette.html link;
+//   - a replay answered 503 once is fetched again;
+//   - a lost WebGL context falls back to the CPU renderer, which draws and picks;
+//   - on a phone (Pixel 7 emulation) the theater fills most of the screen with
+//     no sideways scroll, and a tap on a drawn hull selects it.
+// With --shots <dir>, saves screenshots.
 //
 // Usage: node web/test/browser.mjs <site dir> [--shots <dir>]
 // Needs Playwright (npm) and a Chromium it can launch.
@@ -55,6 +62,18 @@ page.on("pageerror", (e) => errors.push(String(e)));
 const failed = (r) => { if (r.status() >= 400) errors.push(`${r.status()} ${r.url()}`); };
 page.on("response", failed);
 
+/// Clicks (or taps) the first hull the module reports drawn inside the
+/// canvas, and returns the inspector's text.
+async function clickDrawn(p, press) {
+  const box = await p.locator("#view").boundingBox();
+  const drawn = await p.evaluate(() => window.hyades.text(10).split("\n").filter(Boolean).map((l) => l.split("\t").map(Number)));
+  const hit = drawn.find(([, x, y]) => x > 20 && y > 20 && x < box.width - 20 && y < box.height - 20);
+  if (!hit) return "nothing drawn";
+  await press(box, hit[1], hit[2]);
+  await p.waitForTimeout(200);
+  return p.textContent("#inspector");
+}
+
 let failures = 0;
 const check = (ok, what) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${what}`);
@@ -62,8 +81,14 @@ const check = (ok, what) => {
 };
 
 try {
-  await page.goto(`${base}/?replay=sentries`);
-  await page.waitForFunction(() => window.hyades?.hv() && document.getElementById("label").textContent !== "", null, { timeout: 30000 });
+  await page.goto(`${base}/`);
+  await page.waitForFunction(() => window.hyades?.hv(), null, { timeout: 30000 });
+  check(await page.evaluate(() => document.body.dataset.screen) === "menu", "the client opens on the menu");
+  check(await page.isDisabled("#menu-new"), "New game is shown and not built yet");
+  await page.click("#menu-replays");
+  await page.click('button[data-replay="sentries"]');
+  await page.waitForFunction(() => window.hyades.loaded() === "sentries" && document.getElementById("message").hidden, null, { timeout: 30000 });
+  check(new URL(page.url()).search === "?replay=sentries", `the viewer's link names the replay: ${new URL(page.url()).search}`);
   const renderer = await page.evaluate(() => document.body.dataset.renderer);
   check(renderer === "webgl2", `the page renders with ${renderer}`);
 
@@ -80,6 +105,10 @@ try {
   });
   check(colors >= 4, `tactical draws: ${colors} distinct colors sampled`);
   if (shots) await page.screenshot({ path: path.join(shots, "tactical.png") });
+
+  // A click on a drawn hull selects it.
+  const picked = await clickDrawn(page, (box, x, y) => page.mouse.click(box.x + x + 2, box.y + y + 2));
+  check(picked.startsWith("Hull "), `a click on a drawn hull selects it: ${picked.split("\n")[0]}`);
 
   // GPU juicy against the module's CPU juicy, frame by frame.
   const diff = await page.evaluate(() => {
@@ -166,11 +195,64 @@ try {
   check(await tuned.evaluate(() => window.hyades.text(9)) === "ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.45", "reset returns to the proposal");
   if (shots) await tuned.screenshot({ path: path.join(shots, "tuner.png") });
 
-  const palette = await browser.newPage();
-  await palette.goto(`${base}/palette.html`);
-  await palette.waitForFunction(() => document.querySelectorAll("#source .chip").length === 40, null, { timeout: 15000 });
-  check(true, "the palette sheet lists 40 source colors");
-  if (shots) await palette.screenshot({ path: path.join(shots, "palette.png"), fullPage: true });
+  // Back to the menu, then the palette screen; the old palette.html link
+  // lands there too, with the palette it carried.
+  await page.click("#screen-viewer .to-menu");
+  check(await page.evaluate(() => document.body.dataset.screen) === "menu", "the viewer's back button returns to the menu");
+  await page.click("#menu-palette");
+  check(await page.evaluate(() => document.querySelectorAll("#chips-source .chip").length) === 40, "the palette screen lists 40 source colors");
+  if (shots) await page.screenshot({ path: path.join(shots, "palette.png"), fullPage: true });
+  const old = await browser.newPage();
+  await old.goto(`${base}/palette.html#palette=${encodeURIComponent("ink=0.1")}`);
+  await old.waitForFunction(() => window.hyades?.hv() && document.querySelectorAll("#chips-source .chip").length === 40, null, { timeout: 15000 });
+  check((await old.evaluate(() => window.hyades.text(9))).startsWith("ink=0.1 "), "the old palette.html link opens the palette screen with its palette");
+
+  // A replay the server answers 503 once is fetched again.
+  const flaky = await browser.newPage();
+  let refused = 0;
+  await flaky.route("**/replays/sentries.json", (route) => {
+    if (refused++ === 0) route.fulfill({ status: 503, body: "busy" });
+    else route.continue();
+  });
+  await flaky.goto(`${base}/?replay=sentries`);
+  await flaky.waitForFunction(() => window.hyades?.loaded() === "sentries" && document.getElementById("message").hidden, null, { timeout: 30000 });
+  check(refused === 2, `a replay answered 503 is fetched again (${refused} requests)`);
+
+  // A lost WebGL context moves drawing to the module's CPU renderer, on a
+  // fresh canvas that still draws and still takes a click.
+  await flaky.evaluate(() => window.hyades.gpu().gl.getExtension("WEBGL_lose_context").loseContext());
+  await flaky.waitForFunction(() => document.body.dataset.renderer === "cpu", null, { timeout: 5000 });
+  await flaky.click("#mode-juicy");
+  await flaky.waitForTimeout(300);
+  const cpuLit = await flaky.evaluate(() => {
+    const c = document.getElementById("view");
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    let lit = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 30) lit++;
+    return lit;
+  });
+  check(cpuLit > 100, `after a lost context the CPU renderer draws: ${cpuLit} lit pixels`);
+  const afterLoss = await clickDrawn(flaky, (box, x, y) => flaky.mouse.click(box.x + x + 2, box.y + y + 2));
+  check(afterLoss.startsWith("Hull "), `after a lost context a click still selects: ${afterLoss.split("\n")[0]}`);
+
+  // A phone: the theater fills most of the screen, nothing scrolls sideways,
+  // and a tap on a drawn hull selects it.
+  const phone = await browser.newContext({ ...playwright.devices["Pixel 7"] });
+  const mobile = await phone.newPage();
+  mobile.on("pageerror", (e) => errors.push(String(e)));
+  await mobile.goto(`${base}/?replay=expansion`);
+  await mobile.waitForFunction(() => window.hyades?.loaded() === "expansion" && document.getElementById("message").hidden, null, { timeout: 30000 });
+  const geo = await mobile.evaluate(() => ({
+    scroll: document.documentElement.scrollWidth, width: innerWidth, height: innerHeight,
+    canvas: document.getElementById("view").clientHeight,
+  }));
+  check(geo.scroll <= geo.width, `no sideways scroll on a phone: ${geo.scroll} ≤ ${geo.width}`);
+  check(geo.canvas >= 0.6 * geo.height, `the theater is at least 60% of a phone's height: ${geo.canvas} of ${geo.height}`);
+  const tapped = await clickDrawn(mobile, (box, x, y) => mobile.touchscreen.tap(box.x + x + 6, box.y + y + 6));
+  check(tapped.startsWith("Hull "), `a tap beside a drawn hull selects it: ${tapped.split("\n")[0]}`);
+  check(await mobile.evaluate(() => !document.getElementById("badge").hidden), "a phone shows the selection over the theater");
+  if (shots) await mobile.screenshot({ path: path.join(shots, "phone.png") });
+  await phone.close();
 
   check(errors.length === 0, `no console errors${errors.length ? ": " + errors.join(" | ") : ""}`);
 } catch (e) {

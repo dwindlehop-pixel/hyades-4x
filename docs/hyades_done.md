@@ -24,6 +24,7 @@ row below, and leave its code in the Band A pointer line of
 
 | code | status | open follow-ups, and where they live |
 |---|---|---|
+| **T-151** | Built: one client with a menu; phone layout and touch; Galaxy-level stacks, active hexes, dimmer worlds; the overlay that took every tap removed | R-UI2, R-UI4, R-UI9 — `Hyades_interface.md` §9 |
 | **T-150** | Built: the live palette editor; the author's rulings on ratifying live and on upstream packages | R-UI1 (awaits ratification on the live viewer), R-UI8 — `Hyades_interface.md` §9 |
 | **T-149** | Built: the replay viewer, its two modes, and deployment to Pages | R-UI1 … R-UI7 — `Hyades_interface.md` §9 |
 | **T-133** | Closed (sixth landing): fire on the main loop | R-WAR35, R-WAR37 — warfare register |
@@ -118,6 +119,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **T-98 / R-O94** — the hauler's hull is a forecast | **T-98**, **R-O94** | **T-92** (freight 1.73% -> 14.70% of bank inflow), T-24 | **T-99** | `AGENTS.md`'s **ablate them apart before you believe either** — the liquidity term is the whole difference between +170%/+9.5% and +51%/-17%, and landed as one change the honest response would have been to revert; the mechanism check written down in advance (freight's share of bank inflow, not the objective); design law #3 in both directions — its cost basis *and* its named counterweight, indivisibility; `AGENTS.md` section 4's `O(1)` rule at the decision | **`role_hull_type(Role::Freighter)`'s stated rationale**, "spec: MSV/GSV, picking the cheaper" — correct under the pre-R-O58 ladder and backwards since R-O58 made cost per kilotonne hauled 0.109 against 0.032. It survived because the General hull's turnaround made it a bad idea for an unrelated reason, which T-96 removed. **And colony count falls 6.1%** — recorded rather than left to be found, and not a defect: colony-years rise 9.5% on the same bed |
 | **T-149** — the game interface: replay, viewer, Pages | **T-149** | — | **R-UI1 … R-UI7** | Design law #15 (the viewer reads a replay and does not link the engine; `snapshot_at` and `next_event_time` are reads); design law #16 (the recorder refuses a non-finite number); `AGENTS.md` §4's determinism (one seed, one replay, byte for byte) and its 60-second rule (every test target measured, the longest 34.5 s) | **The recorder's own first frame rule**, one commit earlier: frames at the first event after their year drifted onto event times and repeated once a run's events stopped (appendix §D.58.1); replaced by `snapshot_at` |
 | **T-150** — the palette is tuned and ratified live | **T-150** | R-UI1 | **R-UI8** | The author's rulings 13 (ratify on a live design) and 14 (the interface and networking may link upstream packages; the engine stays dependency-free); design law #15 (the palette is presentation state and never reaches the engine) | **`Hyades_interface.md` §9's own settle-by for R-UI1** ("approval of `palette.html`"), one landing old — the author ruled a sheet cannot ratify a palette; replaced by a settings line or link from the live editor. **`AGENTS.md` §4's zero-dependency rule**, narrowed by the author's ruling to the engine |
+| **T-151** — the replay viewer is a menu option of one client; phones | **T-151** | R-UI2, R-UI4 | **R-UI9** | The author's ruling 15 (the replay viewer is a menu option of the game client); design law #15 (the client reads replays and the palette is presentation state); `AGENTS.md` §2's rule to assert that a mechanism fires (the browser test now clicks and taps a hull the module reports drawn — before, nothing tested a pick through the page, and an invisible overlay took every one) | **`Hyades_interface.md` §6.4's stack rule** (one glyph per owner, Design, role and wreck state in a 3-pixel square at every level), replaced at the author's report that tactical stacked too many glyphs; **§6.5's hexes** (every hex drawn), replaced by active hexes at the author's report; **§7.1's world lights** (core 1.5, halo 0.35, bloom 0.6), dimmed at the author's report that glowing worlds made everything illegible — all placeholders, none ratified; **`palette.html` as a page** (§6.2), now a screen |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -143,6 +145,26 @@ description of the change.
 ---
 
 ## Entries moved from Band A
+
+### T-151. The replay viewer is a menu option of one client; the client works on a phone
+
+*Opened and built in one landing at the author's reports after the first phone
+review: "Juicy gets a 503 on sentries", "Glowing planets make everything
+illegible", "Tactical is stacking too many glyphs", "The galaxy viewport is way
+too small on my phone", "The galaxy view is showing a huge number of empty
+hexes. It should only show active hexes", "I can't select any entity on my
+phone", and "Replay viewer should be a menu option outside the game client, not
+separate".* The site opens on a menu (New game, shown as not built; Replays;
+Palette); the viewer is a screen with a back button, and the link names the
+screen (`Hyades_interface.md` §8.1, ruling 15). On a phone the theater fills
+the screen and the panel and log open as sheets over it (§8.2); a tap picks
+over a wider radius than a click, two fingers pinch, and loads retry on a
+server error (§8.3). At the Galaxy level a place's hulls are one marker per
+owner and a fan stops at four (§6.4); only hexes holding a world or a hull are
+drawn (§6.5); worlds are faint and hulls carry the juicy scene (§7.1). A hidden
+overlay that took every pointer event is removed; it is the likely reason
+nothing could be selected (appendix §D.58.5). The 503 was not reproduced.
+Open: R-UI2, R-UI4, R-UI9.
 
 ### T-150. The palette is ratified on a live design — a live editor, and the settings it ratifies on
 

@@ -24,12 +24,33 @@ pub const HOT_ACCEL: f64 = 1.0;
 /// Hexes narrower than this many tactical pixels are not drawn: the grid
 /// would be a fill.
 pub const MIN_HEX_PX: f64 = 6.0;
-/// Hulls whose positions fall in one square this many tactical pixels wide
-/// are in one place: alike, they stack; unalike, they fan out.
-pub const STACK_PX: i64 = 3;
 /// How far apart unalike stacks in one place are drawn, tactical pixels: a
 /// General glyph, a gap, and a three-digit count.
 pub const FAN_PX: i64 = 22;
+/// At most this many stacks are drawn side by side in one place; the rest
+/// are drawn together as one marker in the last place.
+pub const FAN_MAX: usize = 4;
+
+/// Hulls whose positions fall in one square this many tactical pixels wide
+/// are in one place (proposed, R-UI4). The square grows as the view zooms
+/// out, so a galaxy reads as clusters and a fight as single hulls.
+pub fn stack_px(lod: Lod) -> i64 {
+    match lod {
+        Lod::Galaxy => 8,
+        Lod::Sector => 5,
+        Lod::System => 3,
+    }
+}
+
+/// A marker's side, tactical pixels: larger for more hulls.
+pub fn marker_px(count: usize) -> i64 {
+    match count {
+        0..=1 => 3,
+        2..=9 => 5,
+        10..=99 => 7,
+        _ => 9,
+    }
+}
 
 /// Something the viewer can select.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +93,12 @@ pub enum Op {
         /// Hulls this glyph stands for: its stack's size on the stack's
         /// lowest id, 0 on the others, which are not drawn.
         count: u32,
+        /// The ids of the hulls this glyph stands for, on the drawn one.
+        members: Vec<u64>,
+        /// Drawn as a marker, a square in the seat's color sized by count:
+        /// a cluster at the galaxy level, or stacks past [`FAN_MAX`] in one
+        /// place. Its members can differ in Design and role.
+        marker: bool,
         key: GlyphKey,
         /// The seat's color, or the wreck color.
         outline: Rgb,
@@ -148,6 +175,8 @@ pub fn plan(s: &Scene) -> Vec<Op> {
             at: here,
             draw: here,
             count: 1,
+            members: Vec::new(),
+            marker: false,
             key,
             outline,
             inner,
@@ -168,14 +197,19 @@ pub fn plan(s: &Scene) -> Vec<Op> {
 /// owner, Design, role and wreck state are one glyph with a count, carrying
 /// the worst damage and any hit, cargo or selection among them. The largest
 /// stack in a place is drawn there; unalike stacks fan out to its right, each
-/// joined to the place by a leader line.
+/// joined to the place by a leader line, up to [`FAN_MAX`] — past it the rest
+/// are one marker. At the galaxy level a place is wider and a stack is every
+/// hull of one owner there, drawn as a marker sized by count.
 fn stack(ops: &mut [Op], s: &Scene) {
-    type Group = (i64, i64, usize, GlyphKey, usize, bool);
+    let lod = s.camera.lod();
+    let cell_px = stack_px(lod);
+    type Group = (i64, i64, usize, Option<(GlyphKey, usize, bool)>);
     let mut groups: BTreeMap<Group, Vec<usize>> = BTreeMap::new();
     for (i, h) in s.view.hulls.iter().enumerate() {
         let Op::Hull { at, key, .. } = ops[i] else { continue };
-        let cell = (at[0].div_euclid(STACK_PX), at[1].div_euclid(STACK_PX));
-        groups.entry((cell.0, cell.1, h.hull.owner, key, h.row.kind, h.row.wrecked)).or_default().push(i);
+        let cell = (at[0].div_euclid(cell_px), at[1].div_euclid(cell_px));
+        let kind = (lod != Lod::Galaxy).then_some((key, h.row.kind, h.row.wrecked));
+        groups.entry((cell.0, cell.1, h.hull.owner, kind)).or_default().push(i);
     }
     // The largest stack in a place keeps the place; the rest fan out by size,
     // then by key.
@@ -185,19 +219,57 @@ fn stack(ops: &mut [Op], s: &Scene) {
     }
     for (_, mut stacks) in places {
         stacks.sort_by_key(|m| std::cmp::Reverse(m.len()));
-        for (slot, members) in stacks.iter().enumerate() {
+        if stacks.len() > FAN_MAX {
+            let rest: Vec<usize> = stacks.drain(FAN_MAX - 1..).flatten().collect();
+            stacks.push(rest);
+        }
+        let n_stacks = stacks.len();
+        let mut x = 0i64;
+        for (slot, mut members) in stacks.into_iter().enumerate() {
+            members.sort_unstable();
+            let marker = lod == Lod::Galaxy
+                || (slot == FAN_MAX - 1 && n_stacks == FAN_MAX && members.len() > 1 && {
+                    let first = &ops[members[0]];
+                    members.iter().any(|&m| !same_kind(&ops[m], first))
+                });
             let (mut damage, mut hit, mut laden, mut selected) = (0.0f64, false, false, false);
-            for &m in members {
-                if let Op::Hull { damage: d, hit: h, laden: l, selected: sel, count, .. } = &mut ops[m] {
+            let mut ids = Vec::with_capacity(members.len());
+            for &m in &members {
+                if let Op::Hull { id, damage: d, hit: h, laden: l, selected: sel, count, .. } = &mut ops[m] {
                     (damage, hit, laden, selected) = (damage.max(*d), hit | *h, laden | *l, selected | *sel);
                     *count = 0;
+                    ids.push(*id);
                 }
             }
-            if let Op::Hull { at, draw, count, damage: d, hit: h, laden: l, selected: sel, .. } = &mut ops[members[0]] {
-                *draw = [at[0] + slot as i64 * FAN_PX, at[1]];
-                (*count, *d, *h, *l, *sel) = (members.len() as u32, damage, hit, laden, selected);
+            let step = if lod == Lod::Galaxy { marker_px(members.len()) + 2 } else { FAN_PX };
+            if let Op::Hull {
+                at,
+                draw,
+                count,
+                members: mem,
+                marker: mk,
+                damage: d,
+                hit: h,
+                laden: l,
+                selected: sel,
+                ..
+            } = &mut ops[members[0]]
+            {
+                *draw = [at[0] + x, at[1]];
+                (*count, *mk, *d, *h, *l, *sel) = (members.len() as u32, marker, damage, hit, laden, selected);
+                *mem = ids;
             }
+            x += step;
         }
+    }
+}
+
+fn same_kind(a: &Op, b: &Op) -> bool {
+    match (a, b) {
+        (Op::Hull { key: ka, core: ca, outline: oa, .. }, Op::Hull { key: kb, core: cb, outline: ob, .. }) => {
+            ka == kb && ca == cb && oa == ob
+        }
+        _ => false,
     }
 }
 
@@ -248,11 +320,11 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
         }
     }
     for op in ops {
-        if let Op::Hull { at, draw, count: 1.., vector, .. } = op {
+        if let Op::Hull { at, draw, count: 1.., vector, marker, .. } = op {
             if draw != at {
                 r.line(at[0], at[1], draw[0], draw[1], pal.roles.grid);
             }
-            if let Some((end, c)) = vector {
+            if let (Some((end, c)), false) = (vector, marker) {
                 let (dx, dy) = (end[0] - at[0], end[1] - at[1]);
                 r.line(draw[0], draw[1], draw[0] + dx, draw[1] + dy, *c);
             }
@@ -271,11 +343,32 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
             hit,
             laden,
             selected,
+            marker,
             ..
         } = op
         else {
             continue;
         };
+        if *marker {
+            let side = marker_px(*count as usize);
+            let h = side / 2;
+            for y in -h..=h {
+                for x in -h..=h {
+                    let edge = x.abs() == h || y.abs() == h;
+                    r.set(at[0] + x, at[1] + y, if edge { *outline } else { *inner });
+                }
+            }
+            if *hit {
+                r.circle(at[0], at[1], (h + 3) as f64, pal.status(Status::Hit));
+            }
+            if *selected {
+                brackets(r, *at, h + 3, pal.status(Status::Selected));
+            }
+            if *count > 1 && s.camera.lod() != Lod::Galaxy {
+                r.number(at[0] + h + 2, at[1] - 2, *count, pal.roles.text_bright);
+            }
+            continue;
+        }
         let g = cache.get(s.replay, *key);
         let (gw, ax, ay) = (g.w, g.ax, g.ay);
         r.stamp(&g.outline, gw, ax, ay, at[0], at[1], *outline);
@@ -313,40 +406,58 @@ fn brackets(r: &mut Raster, at: [i64; 2], d: i64, c: Rgb) {
     }
 }
 
-/// The command view's hexes (flat-top, a side of `hex_side_ly`, one centered
-/// on `hex_origin`), each drawing its three upper edges so every edge is drawn
-/// once.
+/// The hex a galaxy point stands in, as lattice coordinates `(i, j)`: its
+/// center is `hex_origin + i·a + j·b` with `a = w·(cos 30°, sin 30°)`,
+/// `b = w·(0, 1)` and `w = √3 · hex_side_ly` (flat-top hexes, galaxy §2).
+pub fn hex_of(replay: &Replay, p: [f64; 3]) -> (i64, i64) {
+    let side = replay.meta.hex_side_ly;
+    let o = replay.meta.hex_origin;
+    let (x, y) = (p[0] - o[0], p[1] - o[1]);
+    // Axial coordinates of a flat-top hex: q = i, r = j.
+    let q = (2.0 / 3.0 * x) / side;
+    let r = (-x / 3.0 + 3f64.sqrt() / 3.0 * y) / side;
+    let cube = [q, r, -q - r];
+    let mut rd = cube.map(f64::round);
+    let diff = [0, 1, 2].map(|k| (rd[k] - cube[k]).abs());
+    if diff[0] > diff[1] && diff[0] > diff[2] {
+        rd[0] = -rd[1] - rd[2];
+    } else if diff[1] > diff[2] {
+        rd[1] = -rd[0] - rd[2];
+    }
+    (rd[0] as i64, rd[1] as i64)
+}
+
+/// The center of hex `(i, j)`, ly.
+pub fn hex_center(replay: &Replay, (i, j): (i64, i64)) -> [f64; 2] {
+    let w = 3f64.sqrt() * replay.meta.hex_side_ly;
+    let o = replay.meta.hex_origin;
+    [o[0] + i as f64 * w * 3f64.sqrt() / 2.0, o[1] + i as f64 * w / 2.0 + j as f64 * w]
+}
+
+/// **The hexes worth drawing**: those a world or a hull stands in at this
+/// instant. Empty space draws no grid.
+pub fn active_hexes(s: &Scene) -> std::collections::BTreeSet<(i64, i64)> {
+    let worlds = s.replay.planets.iter().map(|p| p.pos);
+    let hulls = s.view.hulls.iter().map(|h| h.row.pos);
+    worlds.chain(hulls).map(|p| hex_of(s.replay, p)).collect()
+}
+
+/// The command view's active hexes (flat-top, a side of `hex_side_ly`, one
+/// centered on `hex_origin`), all six edges each.
 fn hex_grid(s: &Scene, r: &mut Raster) {
     let side = s.replay.meta.hex_side_ly;
-    let width = 3f64.sqrt() * side;
-    if side <= 0.0 || width * s.camera.scale / PIXEL < MIN_HEX_PX {
+    if side <= 0.0 || 3f64.sqrt() * side * s.camera.scale / PIXEL < MIN_HEX_PX {
         return;
     }
-    let o = s.replay.meta.hex_origin;
-    // Lattice: center(i, j) = o + i·a + j·b, a = width·(cos 30°, sin 30°), b = width·(0, 1).
-    let (ax, ay) = (width * 3f64.sqrt() / 2.0, width / 2.0);
-    let corners = [[0.0, 0.0], [s.camera.width, 0.0], [0.0, s.camera.height], [s.camera.width, s.camera.height]]
-        .map(|c| s.camera.unproject(c));
-    let (mut i0, mut i1, mut j0, mut j1) = (i64::MAX, i64::MIN, i64::MAX, i64::MIN);
-    for c in corners {
-        let i = (c[0] - o[0]) / ax;
-        let j = (c[1] - o[1] - i * ay) / width;
-        i0 = i0.min(i.floor() as i64 - 1);
-        i1 = i1.max(i.ceil() as i64 + 1);
-        j0 = j0.min(j.floor() as i64 - 2);
-        j1 = j1.max(j.ceil() as i64 + 2);
-    }
-    let vertex = |cx: f64, cy: f64, k: i32| {
-        let a = (60.0 * k as f64).to_radians();
-        to_raster(s.camera.project([cx + side * a.cos(), cy + side * a.sin(), 0.0]), PIXEL)
-    };
-    for i in i0..=i1 {
-        for j in j0..=j1 {
-            let (cx, cy) = (o[0] + i as f64 * ax, o[1] + i as f64 * ay + j as f64 * width);
-            for k in 0..3 {
-                let (p, q) = (vertex(cx, cy, k), vertex(cx, cy, k + 1));
-                r.line(p[0], p[1], q[0], q[1], s.palette.roles.hex);
-            }
+    for h in active_hexes(s) {
+        let c = hex_center(s.replay, h);
+        let vertex = |k: i32| {
+            let a = (60.0 * k as f64).to_radians();
+            to_raster(s.camera.project([c[0] + side * a.cos(), c[1] + side * a.sin(), 0.0]), PIXEL)
+        };
+        for k in 0..6 {
+            let (p, q) = (vertex(k), vertex(k + 1));
+            r.line(p[0], p[1], q[0], q[1], s.palette.roles.hex);
         }
     }
 }
@@ -580,6 +691,89 @@ mod tests {
         let _ = cache.get(&Replay::from_json(TINY).unwrap(), k);
         assert_eq!(cache.len(), 1);
         assert_eq!(a, glyph("MSV", "Ford", 0, 0));
+    }
+
+    #[test]
+    fn a_point_lands_in_the_hex_whose_center_is_nearest() {
+        let r = Replay::from_json(TINY).unwrap();
+        let side = r.meta.hex_side_ly;
+        for h in [(0, 0), (1, 0), (0, 1), (-2, 3), (5, -4)] {
+            let c = hex_center(&r, h);
+            assert_eq!(hex_of(&r, [c[0], c[1], 0.0]), h, "a center is its own hex");
+            for k in 0..6 {
+                // Just inside each vertex, still this hex.
+                let a = (60.0 * k as f64).to_radians();
+                let p = [c[0] + 0.95 * side * a.cos(), c[1] + 0.95 * side * a.sin(), 0.0];
+                assert_eq!(hex_of(&r, p), h, "{h:?} vertex {k}");
+            }
+        }
+        let a = hex_center(&r, (0, 0));
+        let b = hex_center(&r, (1, 0));
+        assert!(((b[0] - a[0]).hypot(b[1] - a[1]) - 3f64.sqrt() * side).abs() < 1e-9, "neighbors one width apart");
+    }
+
+    #[test]
+    fn only_hexes_holding_a_world_or_a_hull_are_active() {
+        let f = fixture();
+        let view = f.replay.view_at(10.0);
+        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let active = active_hexes(&s);
+        let mut want: std::collections::BTreeSet<(i64, i64)> =
+            f.replay.planets.iter().map(|p| hex_of(&f.replay, p.pos)).collect();
+        want.extend(view.hulls.iter().map(|h| hex_of(&f.replay, h.row.pos)));
+        assert_eq!(active, want);
+        assert!(active.len() <= f.replay.planets.len() + view.hulls.len());
+    }
+
+    /// A camera far enough out that the view is a galaxy.
+    fn galaxy_camera(f: &Fixture) -> Camera {
+        let mut c = f.camera;
+        c.scale = crate::camera::SECTOR_PX_PER_LY / 2.0;
+        c.center = [10.0, 0.0];
+        c
+    }
+
+    #[test]
+    fn at_the_galaxy_level_one_owners_hulls_in_a_place_are_one_marker() {
+        let f = fixture();
+        let view = crowd(&f, 4);
+        let cam = galaxy_camera(&f);
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let ops = plan(&s);
+        let drawn: Vec<&Op> = ops.iter().filter(|o| matches!(o, Op::Hull { count: 1.., .. })).collect();
+        let total: u32 = drawn.iter().map(|o| if let Op::Hull { count, .. } = o { *count } else { 0 }).sum();
+        assert_eq!(total as usize, view.hulls.len(), "every hull is counted");
+        assert!(drawn.iter().all(|o| matches!(o, Op::Hull { marker: true, .. })), "the galaxy draws markers");
+        let five = drawn.iter().find(|o| matches!(o, Op::Hull { members, .. } if members.contains(&5))).unwrap();
+        let Op::Hull { count, members, .. } = five else { unreachable!() };
+        assert_eq!(*count, 6, "the five Fords and the Delta are one owner's cluster");
+        assert_eq!(members.len(), 6);
+        let mut r = raster(&cam);
+        paint(&s, &ops, &mut r);
+        assert!(r.count(f.palette.seat(0)) > 0, "the marker is in the seat's color");
+    }
+
+    #[test]
+    fn past_the_fan_limit_the_rest_of_a_place_is_one_marker() {
+        let f = fixture();
+        let mut view = f.replay.view_at(0.0);
+        let five = *view.hulls.iter().find(|h| h.hull.id == 5).unwrap();
+        for d in 0..7 {
+            let mut c = five;
+            (c.hull.id, c.row.id, c.hull.design) = (300 + d as u64, 300 + d as u64, d);
+            view.hulls.push(c);
+        }
+        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let ops = plan(&s);
+        let drawn: Vec<&Op> = ops.iter().filter(|o| matches!(o, Op::Hull { count: 1.., .. })).collect();
+        let at_place = drawn
+            .iter()
+            .filter(|o| matches!(o, Op::Hull { at, .. } if *at == to_raster(f.camera.project(five.row.pos), PIXEL)))
+            .count();
+        assert_eq!(at_place, FAN_MAX, "no more than the limit side by side");
+        assert_eq!(drawn.iter().filter(|o| matches!(o, Op::Hull { marker: true, .. })).count(), 1);
+        let total: u32 = drawn.iter().map(|o| if let Op::Hull { count, .. } = o { *count } else { 0 }).sum();
+        assert_eq!(total as usize, view.hulls.len());
     }
 }
 
