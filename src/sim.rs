@@ -626,6 +626,23 @@ impl Motion {
         t < self.arrive || self.brake.is_some_and(|b| t < b.end)
     }
 
+    /// **The drive's state at `t`**: the proper acceleration flown, and its
+    /// sense — `1` gaining speed, `-1` shedding it (a braking prefix, or a leg
+    /// past its turnover, which is half its time: the leg is symmetric), `0`
+    /// at rest. What the presentation shows as a drive plume.
+    fn drive_at(&self, t: f64) -> (f64, i8) {
+        if let Some(b) = self.brake {
+            if t >= b.start && t < b.end {
+                return (b.accel, -1);
+            }
+        }
+        if t >= self.depart && t < self.arrive {
+            let turnover = 0.5 * (self.depart + self.arrive);
+            return (self.accel, if t < turnover { 1 } else { -1 });
+        }
+        (0.0, 0)
+    }
+
     /// **Where and when the hull can be at rest, starting now** (T-133): the
     /// stop point, the time it gets there, and the braking segment that takes
     /// it there — `None` when it is already at rest.
@@ -933,6 +950,24 @@ pub enum HullFamily {
 }
 
 impl HullType {
+    /// The hull's abbreviation in the docs' taxonomy (`Hyades_vehicle_roles.md`
+    /// §3): Systems `LSV/MSV/GSV`, Contact `LCV/LCU/GCV/GCU`, Offensive
+    /// `LOU/ROU/GOU`.
+    pub fn code(self) -> &'static str {
+        match self {
+            HullType::LimitedSystems => "LSV",
+            HullType::MediumSystems => "MSV",
+            HullType::GeneralSystems => "GSV",
+            HullType::LimitedContactVehicle => "LCV",
+            HullType::LimitedContactUnit => "LCU",
+            HullType::GeneralContactVehicle => "GCV",
+            HullType::GeneralContactUnit => "GCU",
+            HullType::LimitedOffensive => "LOU",
+            HullType::RapidOffensive => "ROU",
+            HullType::GeneralOffensive => "GOU",
+        }
+    }
+
     /// Which taxonomy class this hull belongs to.
     pub const fn family(self) -> HullFamily {
         use HullType::*;
@@ -1016,6 +1051,25 @@ pub enum Class {
 }
 
 impl Class {
+    /// The Design's name, as the docs write it (`Hyades_vehicle_roles.md`
+    /// §7.1, R-O42b) — what the presentation labels a hull with.
+    pub fn name(self) -> &'static str {
+        match self {
+            Class::Meadow => "Meadow",
+            Class::Spur => "Spur",
+            Class::Tor => "Tor",
+            Class::Cairn => "Cairn",
+            Class::Delta => "Delta",
+            Class::Range => "Range",
+            Class::Scarp => "Scarp",
+            Class::Ford => "Ford",
+            Class::Strait => "Strait",
+            Class::Butte => "Butte",
+            Class::Mesa => "Mesa",
+            Class::Unnamed => "Unnamed",
+        }
+    }
+
     /// **The freighter Design for a hull** its rock called for (T-98): Ford on
     /// the Medium hull, Strait on the General one.
     pub fn freighter_for(hull: HullType) -> Class {
@@ -4276,6 +4330,11 @@ impl Simulation {
     #[inline]
     pub fn clock(&self) -> f64 {
         self.clock
+    }
+    /// The year the run stops at (`SimConfig::horizon_years`).
+    #[inline]
+    pub fn horizon_years(&self) -> f64 {
+        self.config.horizon_years
     }
     #[inline]
     pub fn events_processed(&self) -> u64 {
@@ -11622,21 +11681,58 @@ impl Simulation {
             })
             .collect();
 
-        // Vehicles are every entity carrying a role.
+        // Vehicles are every hull in the theater, a wreck included: its role
+        // is `Scrapped` and it has no motion, only a wreck's coast. A hull
+        // scrapped without a wreck was recycled — its mass is back in a bank —
+        // and is no longer anywhere.
         let mut vehicles = Vec::new();
         for i in 0..self.world.entity_count() {
             let e = self.world.entity_at(i);
             if let Some(&role) = self.world.role.get(e) {
-                let m = self.world.motion.get(e).unwrap();
+                let t = self.clock;
+                let motion = self.world.motion.get(e);
+                let wreck = self.world.wreck.get(e);
+                if role == Role::Scrapped && wreck.is_none() {
+                    continue;
+                }
                 let hull = self.world.hull_type.get(e).copied().unwrap_or_else(|| role_hull_type(role));
+                let class = self.world.design_class.get(e).copied().unwrap_or(Class::Unnamed);
+                let loadout = self.world.loadout.get(e).copied().unwrap_or(crate::combat::Loadout::UNARMED);
+                let (velocity, (accel, burn), in_flight) = match (motion, wreck) {
+                    (Some(m), _) => (m.velocity_at(t), m.drive_at(t), m.arrive > t),
+                    (None, Some(w)) => (w.velocity, (0.0, 0), w.velocity.norm() > 0.0),
+                    (None, None) => (Vec3::ZERO, (0.0, 0), false),
+                };
+                let damage = if wreck.is_some() {
+                    1.0
+                } else {
+                    let carried = self.world.hull_damage.get(e).copied().unwrap_or(0.0);
+                    if carried > 0.0 {
+                        carried / self.structure_of(e)
+                    } else {
+                        0.0
+                    }
+                };
                 vehicles.push(VehicleSnapshot {
+                    id: e.0,
                     owner: self.world.owner.get(e).map(|o| o.0).unwrap_or(0),
                     kind: role.kind(),
-                    position: self.position_at(e, self.clock).unwrap(),
+                    position: self.position_at(e, t).unwrap_or(Vec3::ZERO),
                     cargo: *self.world.cargo.get(e).unwrap_or(&Minerals::default()),
                     dry_mass: hull_dry_mass(hull, &self.config),
                     volume: hull.hull_volume(&self.config),
-                    in_flight: m.arrive > self.clock,
+                    in_flight,
+                    hull: hull.code(),
+                    design: class.name(),
+                    beams: loadout.beams,
+                    tubes: loadout.tubes,
+                    damage,
+                    wrecked: wreck.is_some(),
+                    velocity,
+                    accel,
+                    burn,
+                    destination: self.world.voyage.get(e).and_then(|v| self.world.planet_id.get(v.target).copied()),
+                    settlers: self.world.pop_cargo.get(e).copied().unwrap_or(Kilotons::ZERO),
                 });
             }
         }

@@ -12,6 +12,12 @@ license = "Apache-2.0"
 #   * deterministic     (hand-rolled seeded PRNG, ordered event queue)
 [dependencies]
 
+# The replay viewer (docs/Hyades_interface.md) is its own crate: it reads the
+# replay format and nothing else, so the presentation cannot reach the
+# simulation (design law #15). Also dependency-free.
+[workspace]
+members = ["viewer"]
+
 [lib]
 # crate-type rlib keeps it linkable by the native MC harness AND by a wasm
 # host crate (which would add wasm-bindgen itself — NOT here, to keep the

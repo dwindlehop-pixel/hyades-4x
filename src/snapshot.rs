@@ -90,8 +90,15 @@ pub struct PlanetSnapshot {
 }
 
 /// One ship's externally-visible state, including its exact position now.
+///
+/// Every hull the engine holds is here, a wreck included: the presentation's
+/// tactical mode draws every entity at its position (`Hyades_interface.md`
+/// §6), and a wreck still coasts through the theater.
 #[derive(Clone, Copy, Debug)]
 pub struct VehicleSnapshot {
+    /// **The hull's entity id**, stable for its whole life and never reused —
+    /// what a replay matches one frame's hull to the next's by.
+    pub id: u64,
     pub owner: u32,
     pub kind: VehicleKind,
     pub position: Vec3,
@@ -120,6 +127,34 @@ pub struct VehicleSnapshot {
     pub volume: Volume,
     /// `true` while in flight; `false` when on station / idle.
     pub in_flight: bool,
+    /// **The hull type**, by the docs' abbreviation (`Hyades_vehicle_roles.md`
+    /// §3): `LSV`, `MSV`, `GSV`, `LCV`, `LCU`, `GCV`, `GCU`, `LOU`, `ROU`, `GOU`.
+    pub hull: &'static str,
+    /// **The Design class it was built to** (R-O42b): `Meadow`, `Spur`, `Tor`,
+    /// `Cairn`, `Delta`, `Range`, `Scarp`, `Ford`, `Strait`, `Butte`, `Mesa`,
+    /// or `Unnamed`.
+    pub design: &'static str,
+    /// Beam mounts its Design carries (T-125). Zero is unarmed.
+    pub beams: u32,
+    /// Missile tubes its Design carries (T-139).
+    pub tubes: u32,
+    /// **Damage absorbed, as a share of the hull's structure** (T-133): `0` is
+    /// undamaged; a hull is wrecked at a point drawn past its structure, so a
+    /// standing hull can read above `1`. A wreck reads exactly `1`.
+    pub damage: f64,
+    /// **Wrecked, and coasting on the course it had** (T-133).
+    pub wrecked: bool,
+    /// Coordinate velocity now, ly/yr (`c = 1`).
+    pub velocity: Vec3,
+    /// **Proper acceleration the drive is flying now**, ly/yr²; `0` at rest
+    /// and for a wreck. The observable of design law #10.
+    pub accel: f64,
+    /// **The drive's sense**: `1` gaining speed, `-1` shedding it, `0` at rest.
+    pub burn: i8,
+    /// The world its voyage is bound for, when it has one.
+    pub destination: Option<PlanetId>,
+    /// People aboard, kt (a colonizer's settlers).
+    pub settlers: Kilotons,
 }
 
 /// One empire's aggregate state. (No `minerals` field — empires do not hold
