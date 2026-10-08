@@ -4926,6 +4926,82 @@ color from the economy (same colors, clearance: Growth −19% to −73%) or leav
 the color asymmetry against the shared works mix; a stepped fair start on
 eight more seeds would say whether its 0.081 is under the target or at it.
 
+## D.58 The replay viewer: frames, sizes, the palette's ink, and the GPU against the CPU
+
+*Supports `docs/Hyades_interface.md` and T-149. Bed: the three replays
+`examples/record_replay` writes — `expansion` (3 seats, seed 7, 300 planets
+requested, 400 yr), `beams` (2 seats, seed 32, a 20-hull Tor
+stack closing on a 20-hull Cairn stack), `sentries` (3 seats, seed 42, missile
+sentries against a Tor raider). Timings are single-container readings, not
+benchmarks: each is a median of 5 frames per run, on a shared container, and
+carries no error bar.*
+
+### D.58.1 Frames fell on event times, and repeated once a run's events stopped
+
+The first recorder stepped the run until its clock reached a frame's year and
+snapshotted at the clock — the time of the **first event at or after** that
+year. Two defects followed. Frame times drifted onto event times (the `beams`
+replay's frames 1–5 read 0.023, 0.082, 0.082, 0.082, 0.1 yr against 0.02 …
+0.1), and once the run's queue held no event before the horizon, every
+remaining frame repeated the last event's time: `beams` ended at **1.644 yr**
+and `sentries` at **0.257 yr**, against a 3-year horizon, with the last
+frames identical. Replaced by `Simulation::snapshot_at(t)` after applying every
+event at or before `t`; both replays now end at 3.000 yr and every frame falls
+on `k · 0.02`. `a_replay_carries_every_hull_and_world_of_every_frame` asserts
+the frame time exactly.
+
+### D.58.2 Replay sizes and load times
+
+| replay | frames | size | load in the wasm module |
+|---|---|---|---|
+| `expansion`, 400 yr, a frame every 5 yr | 81 | 8,863 kB (2.1 MB gzip) | 237–276 ms |
+| `beams`, 3 yr, every 0.02 yr | 151 | 674 kB | 14–17 ms |
+| `sentries`, 3 yr, every 0.02 yr | 151 | 561 kB | 11–15 ms |
+
+The first `expansion` replay, on a larger and longer scenario, was 37.6 MB;
+writing each hull's static fields once in a table after the frames, leaving out
+hulls recycled for their minerals, and shortening the scenario brought it to
+the row above. The count of worlds is what galaxy generation produces, which
+exceeds `planet_count` (150 requested gives 159 on the contract test's bed).
+
+### D.58.3 The tone map's ink against the seat colors
+
+Seat 1's color (Red archetype, `hy_red` through the tone map) on the ground,
+WCAG 2 contrast, by the `ink` parameter: **2.91 at 0.07, 2.98 at 0.04**, and at
+or above 3.0 at 0.02 and at 0.0. The other seventeen tested seats pass at all
+four. So 0.02 is the highest of the four values tried at which every seat
+reaches 3:1; values between 0.02 and 0.04 were not tried.
+
+### D.58.4 What a frame costs, and the GPU against the CPU
+
+Rendered by the wasm module under Node at 960 × 600 screen pixels
+(`web/test/smoke.mjs`):
+
+| | tactical | juicy, first CPU version (one run) | juicy, after the two optimizations below (range over five runs) |
+|---|---|---|---|
+| `expansion` at 400 yr | 2.4–6.0 ms | 85.2 ms | 27.1–38.9 ms |
+| `beams` | 0.1–0.4 ms | 66.2 ms | 15.7–19.6 ms |
+| `sentries` | 0.1–0.3 ms | 61.3 ms | 16.1–17.4 ms |
+
+The CPU juicy renderer's passes, native release, 960 × 600, 50 repetitions each
+(`viewer/examples/juicy_phases`): before — upsample 8.61 ms, resolve 5.95 ms,
+blur 1.50, downsample 1.03; after precomputing the bilinear weights per row and
+column and tabulating the tone curve indexed by the light's float bits —
+upsample 1.91–2.53 ms, resolve 2.03 ms. These are one run each on a shared
+container; the blur's two readings (1.47 and 1.89 ms) with no change to it
+bound the run-to-run spread at about ±0.4 ms.
+
+**GPU against CPU** (`web/test/browser.mjs`, headless Chromium with SwiftShader,
+the `sentries` replay at 30% of its span, 690 lights, the canvas's size in a
+1280 × 800 window): per-pixel maximum channel difference **mean 0.17 codes, 99th
+percentile 2, maximum 6**, over one frame, two runs with identical results.
+SwiftShader is a software rasterizer; the difference on a hardware GPU has not
+been measured. The test's tolerance (mean < 1, 99th percentile ≤ 4, maximum
+≤ 24) leaves room for a hardware GPU's half-float rounding.
+
+The GPU's frame time has not been measured: SwiftShader's would describe the
+CPU it runs on, and no hardware GPU is available to the test.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

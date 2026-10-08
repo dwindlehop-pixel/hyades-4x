@@ -10,6 +10,10 @@ dependency-free, presentation-free, deterministic, and WASM-targetable.
 - **Design specs** live in [`docs/`](docs/) and are authoritative.
 - **[`AGENTS.md`](AGENTS.md)** is the standing working agreement: design laws,
   open R-codes, and guardrails. Read it before changing engine behavior.
+- **The replay viewer** (`viewer/`, `web/`) plays recorded games back in a
+  browser, in a tactical and a juicy mode — see
+  [`docs/Hyades_interface.md`](docs/Hyades_interface.md). It is deployed to
+  GitHub Pages from `main`.
 - **[`MIGRATION.md`](MIGRATION.md)** records how this tree was assembled and
   which propulsion helpers are reconstructed placeholders.
 
@@ -19,7 +23,7 @@ No third-party dependencies — everything is std-only.
 
 ```bash
 cargo build
-cargo test          # 79 unit + 4 determinism + 4 smoke
+cargo test --workspace   # engine and viewer
 cargo test arena::  # combat/arena primitives only
 ```
 
@@ -34,6 +38,16 @@ cargo run --release --example min_time_search    # coverage parameter search (of
 cargo run --release --example trace              # single-run diagnostic log
 ```
 
+The replay viewer, built and opened locally:
+
+```bash
+web/build.sh /tmp/site              # the wasm module, the page, three recorded replays
+python3 -m http.server -d /tmp/site # then open http://localhost:8000
+cargo test -p hyades-viewer         # the viewer's tests, and the engine–viewer contract
+node web/test/smoke.mjs /tmp/site/hyades_viewer.wasm /tmp/site/replays
+node web/test/browser.mjs /tmp/site # needs Playwright
+```
+
 ## Layout
 
 ```
@@ -41,8 +55,10 @@ AGENTS.md    standing context: design laws, R-codes, guardrails
 Cargo.toml
 rustfmt.toml
 src/         the engine (lib.rs wires the modules)
-examples/    MC sweeps + arena drivers
-tests/       smoke.rs, determinism.rs
+examples/    MC sweeps + arena drivers; record_replay writes the viewer's replays
+tests/       smoke.rs, determinism.rs, telemetry.rs, balance.rs
+viewer/      hyades-viewer: the replay viewer, Rust, compiled to wasm32
+web/         the viewer's page, WebGL2 renderer, site build and browser tests
 docs/        the design specs
 ```
 
@@ -50,15 +66,21 @@ docs/        the design specs
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and
 pull request. It uses only first-party `actions/*` plus `rustup`, keeping the
-zero-dependency posture out to the build system.
+zero-dependency posture out to the build system — except the `viewer` job,
+which installs Playwright from npm to drive the runner's Chrome.
 
 | job | gate |
 |---|---|
-| `test` | `cargo build --all-targets`, the full test suite, doctests |
-| `lint` | `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` |
+| `test` | `cargo build --workspace --all-targets`, the full test suite, doctests |
+| `lint` | `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings` |
 | `wasm` | `cargo check --lib --target wasm32-unknown-unknown` |
 | `examples` | builds every example, runs the four fast ones |
 | `balance` | `tests/balance.rs` (tuned combat) and `coverage_trace` |
+| `viewer` | builds the site, drives the wasm module over every replay, opens the page in headless Chrome |
+
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds and tests
+the same site on every push to `main` and deploys it to GitHub Pages (the
+repository's Pages source must be set to "GitHub Actions").
 
 `RUSTFLAGS: -D warnings` is set workflow-wide, so a plain rustc warning fails
 the build too, not just a clippy lint.

@@ -133,11 +133,6 @@ pub fn from_oklch(c: Lch) -> Rgb {
     from_oklab(lab_of(c.l, lo, c.h))
 }
 
-/// OKLCH to sRGB with no gamut mapping (for testing what mapping fixes).
-pub fn from_oklch_unclipped(c: Lch) -> Rgb {
-    oklab_raw(lab_of(c.l, c.c, c.h))
-}
-
 fn luminance(c: Rgb) -> f64 {
     0.2126 * to_linear(c.r) + 0.7152 * to_linear(c.g) + 0.0722 * to_linear(c.b)
 }
@@ -211,6 +206,11 @@ mod tests {
         assert_eq!(mix(a, b, 1.0).to_hex(), "#002b36");
         let m = mix(a, b, 0.5);
         assert!((delta_e(a, m) - delta_e(m, b)).abs() < 0.005, "halfway in OKLab");
+    }
+
+    /// OKLCH to sRGB with no gamut mapping: what the mapping fixes.
+    fn from_oklch_unclipped(c: Lch) -> Rgb {
+        oklab_raw(lab_of(c.l, c.c, c.h))
     }
 
     #[test]

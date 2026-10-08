@@ -1,3 +1,9 @@
+//! **What a CPU juicy frame costs, by phase** (`docs/Hyades_interface.md`
+//! §7.3): clear, downsample, blur, upsample, resolve and one light, at
+//! 960 × 600. The CPU renderer is the GPU's reference and its fallback; this
+//! names which pass to work on when the fallback is slow.
+//!
+//! Run: `cargo run --release -p hyades-viewer --example juicy_phases`.
 use hyades_viewer::juicy::*;
 use hyades_viewer::raster::Raster;
 use std::time::Instant;

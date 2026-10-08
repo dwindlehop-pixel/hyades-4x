@@ -49,18 +49,6 @@ impl Raster {
         }
     }
 
-    /// Mixes `c` over the pixel at opacity `a` in `[0, 1]`.
-    pub fn blend(&mut self, x: i64, y: i64, c: Rgb, a: f64) {
-        if let Some(i) = self.at(x, y) {
-            let a = a.clamp(0.0, 1.0);
-            let [r, g, b] = c.to_ints();
-            for (k, v) in [r, g, b].into_iter().enumerate() {
-                let old = self.px[i + k] as f64;
-                self.px[i + k] = (old + (v as f64 - old) * a).round() as u8;
-            }
-        }
-    }
-
     /// A one-pixel line, endpoints included (Bresenham).
     pub fn line(&mut self, x0: i64, y0: i64, x1: i64, y1: i64, c: Rgb) {
         // A line far off the buffer is clipped to a box around it first, so a
@@ -238,13 +226,6 @@ mod tests {
         assert_eq!(r.count(INK), 7 + 8, "a 1 is seven pixels, a 7 eight");
         assert_eq!((r.get(1, 0), r.get(4, 0)), (Some([255, 0, 0]), Some([255, 0, 0])), "each digit's top row");
         assert_eq!(r.get(3, 0), Some([0, 0, 0]), "a column between digits");
-    }
-
-    #[test]
-    fn blend_mixes_toward_the_color() {
-        let mut r = black(1, 1);
-        r.blend(0, 0, INK, 0.5);
-        assert_eq!(r.get(0, 0), Some([128, 0, 0]));
     }
 
     #[test]

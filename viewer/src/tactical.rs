@@ -233,13 +233,8 @@ fn vector(s: &Scene, row: crate::replay::Row, here: [i64; 2]) -> Option<([i64; 2
     Some(([here[0] + (dir[0] * len).round() as i64, here[1] - (dir[1] * len).round() as i64], color))
 }
 
-/// Draws the hex grid and then every op, worlds under hulls.
-pub fn paint(s: &Scene, ops: &[Op], r: &mut Raster) {
-    let mut cache = GlyphCache::default();
-    paint_with(s, ops, r, &mut cache);
-}
-
-/// [`paint`] with a glyph cache kept between frames.
+/// Draws the hex grid and then every op, worlds under hulls, with glyphs from
+/// `cache` (kept between frames).
 pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache) {
     let pal = s.palette;
     r.clear(pal.roles.ground);
@@ -360,14 +355,18 @@ fn hex_grid(s: &Scene, r: &mut Raster) {
     }
 }
 
-pub fn render(s: &Scene, r: &mut Raster) {
-    paint(s, &plan(s), r);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::replay::tests::TINY;
+
+    fn paint(s: &Scene, ops: &[Op], r: &mut Raster) {
+        paint_with(s, ops, r, &mut GlyphCache::default());
+    }
+
+    fn render(s: &Scene, r: &mut Raster) {
+        paint(s, &plan(s), r);
+    }
 
     struct Fixture {
         replay: Replay,
