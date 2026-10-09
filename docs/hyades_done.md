@@ -152,6 +152,17 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-158. Wrecks fade to pinpoints after 250 ms
+
+*Opened and built in one landing at the author's ruling: "Wrecks should fade
+to pinpoints after 250 ms."* The snapshot carries the time a hull was wrecked
+(`VehicleSnapshot::wrecked_at`, replacing the `wrecked` flag, which is now a
+method), and the replay's hull table writes it (`wrecked_at`). The viewer shows
+a wreck from that instant, and the tactical glyph fades toward the ground over
+0.25 s of wall time at the playback rate, leaving one pixel in the wreck
+color; the juicy ember narrows to a pinpoint with it (`Hyades_interface.md`
+ruling 22, §3, §6.6, §7.1).
+
 ### T-157. Play forward after playing backward
 
 *Opened and built in one landing at the author's report: "Playing replay

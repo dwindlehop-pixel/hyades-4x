@@ -39,6 +39,10 @@ pub const TERRITORY_HOME: f32 = 0.12;
 pub const TERRITORY_WORLD: f32 = 0.025;
 /// A quiet hull's light (a scout, unladen traffic), against 2.0 for the rest.
 pub const QUIET_HULL: f32 = 0.5;
+/// A wreck's ember, and the radius it narrows to once its glyph has faded
+/// (T-158), juicy pixels.
+pub const WRECK_EMBER: f32 = 0.6;
+pub const WRECK_PINPOINT_R: f64 = 0.5;
 /// The bloom's box blur: radius in bloom pixels, and passes (three approach
 /// a Gaussian).
 pub const BLUR_RADIUS: usize = 2;
@@ -317,9 +321,8 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
         }
     }
     for op in ops {
-        let Op::Hull { s: sp, at, outline, vector, hit, quiet, .. } = op else { continue };
+        let Op::Hull { s: sp, at, outline, vector, hit, quiet, wreck, .. } = op else { continue };
         let p = pos(*sp);
-        let wreck = *outline == s.palette.status(Status::Wreck);
         if let Some((end, c)) = vector {
             // The plume trails opposite the vector for a drive, ahead of it
             // when braking. The vector's end is in tactical pixels; keep its
@@ -331,12 +334,17 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
         }
         // A quiet hull — a scout, unladen traffic — is a faint point, as in
         // tactical mode.
-        let (c, k) = if wreck {
-            (linear(s.palette.status(Status::Wreck)), 0.6)
-        } else {
-            (linear(*outline), if *quiet { QUIET_HULL } else { 2.0 })
+        // A wreck is a dim ember that narrows to a pinpoint as its tactical
+        // glyph fades (T-158).
+        let (c, k, r) = match wreck {
+            Some(share) => (
+                linear(s.palette.status(Status::Wreck)),
+                WRECK_EMBER,
+                WRECK_PINPOINT_R + (hull_r - WRECK_PINPOINT_R).max(0.0) * share,
+            ),
+            None => (linear(*outline), if *quiet { QUIET_HULL } else { 2.0 }, hull_r),
         };
-        out.scene.push(light(p[0], p[1], hull_r, c, k));
+        out.scene.push(light(p[0], p[1], r, c, k));
         if *hit {
             out.scene.push(light(p[0], p[1], 3.0 * hull_r, linear(s.palette.status(Status::Hit)), 6.0));
         }
@@ -458,8 +466,14 @@ mod tests {
         camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
         let palette = Palette::default();
         let view = replay.view_at(10.0);
-        let s =
-            crate::tactical::Scene { replay: &replay, view: &view, camera: &camera, palette: &palette, selected: None };
+        let s = crate::tactical::Scene {
+            replay: &replay,
+            view: &view,
+            camera: &camera,
+            palette: &palette,
+            selected: None,
+            rate: 1.0,
+        };
         let l = lights(&s, &plan(&s));
         let lit = |p: [f64; 3]| {
             let q = camera.project(p);
@@ -480,8 +494,14 @@ mod tests {
         camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
         let palette = Palette::default();
         let view = replay.view_at(10.0);
-        let s =
-            crate::tactical::Scene { replay: &replay, view: &view, camera: &camera, palette: &palette, selected: None };
+        let s = crate::tactical::Scene {
+            replay: &replay,
+            view: &view,
+            camera: &camera,
+            palette: &palette,
+            selected: None,
+            rate: 1.0,
+        };
         let ops = plan(&s);
         let (mut hdr, mut out) = (Hdr::new(1, 1), Raster::new(1, 1));
         render(&s, &ops, &mut hdr, &mut out, &ToneLut::new());
@@ -518,8 +538,14 @@ mod tests {
         camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
         let palette = Palette::default();
         let view = replay.view_at(10.0);
-        let s =
-            crate::tactical::Scene { replay: &replay, view: &view, camera: &camera, palette: &palette, selected: None };
+        let s = crate::tactical::Scene {
+            replay: &replay,
+            view: &view,
+            camera: &camera,
+            palette: &palette,
+            selected: None,
+            rate: 1.0,
+        };
         let ops = plan(&s);
         let (mut hdr, mut out) = (Hdr::new(1, 1), Raster::new(1, 1));
         render(&s, &ops, &mut hdr, &mut out, &ToneLut::new());

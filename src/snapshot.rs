@@ -142,8 +142,10 @@ pub struct VehicleSnapshot {
     /// undamaged; a hull is wrecked at a point drawn past its structure, so a
     /// standing hull can read above `1`. A wreck reads exactly `1`.
     pub damage: f64,
-    /// **Wrecked, and coasting on the course it had** (T-133).
-    pub wrecked: bool,
+    /// **When it was wrecked**, years, and since then coasting on the course
+    /// it had (T-133); `None` while it stands. A replay carries the time so
+    /// a viewer can show the wreck from that instant (T-158).
+    pub wrecked_at: Option<f64>,
     /// Coordinate velocity now, ly/yr (`c = 1`).
     pub velocity: Vec3,
     /// **Proper acceleration the drive is flying now**, ly/yr²; `0` at rest
@@ -155,6 +157,13 @@ pub struct VehicleSnapshot {
     pub destination: Option<PlanetId>,
     /// People aboard, kt (a colonizer's settlers).
     pub settlers: Kilotons,
+}
+
+impl VehicleSnapshot {
+    /// **Wrecked, and coasting on the course it had** (T-133).
+    pub fn wrecked(&self) -> bool {
+        self.wrecked_at.is_some()
+    }
 }
 
 /// One empire's aggregate state. (No `minerals` field — empires do not hold

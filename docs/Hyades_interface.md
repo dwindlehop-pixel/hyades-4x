@@ -92,6 +92,10 @@ RATIFIED (T-155, the author's ruling):
     names are placeholders (T-142), so the client shows a super by its color —
     Red, Green, Blue — until they are ratified.
 
+RATIFIED (T-158, the author's ruling):
+
+22. **A wreck fades to a pinpoint after 250 ms** of wall time (§6.6, §7.1).
+
 ---
 
 ## 2. The seam
@@ -134,7 +138,7 @@ breaking it.
 | `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight and bit 1 wrecked, dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
 | `holding_fields` | per holding per frame: `planet, seat, cyan … ordnance` — each material a **Band reading on the cost ladder** (a holding is a stock that can be spent), `null` where none of it is held (T-152) |
 | `frames` | `{t, owner[], pop[], works[], vehicles[[…]], holdings[[…]]}` — `holdings` lists every non-empty holding, an empire's at worlds it owns and at rocks it only mines, by planet and then seat |
-| `hull_fields`, `hulls` | static per hull: `id, owner, hull, design, beams, tubes` — written once, after the frames |
+| `hull_fields`, `hulls` | static per hull: `id, owner, hull, design, beams, tubes, wrecked_at` — written once, after the frames; `wrecked_at` the year it was wrecked to six decimals, or `null` (T-158) |
 | `event_fields`, `events`, `events_truncated` | `[t, category, kind, seat, text]` for every event the run's log filter collected, in time order; past the recorder's cap the list stops and the flag says so |
 
 Decisions in the format:
@@ -145,6 +149,9 @@ Decisions in the format:
   replaced).
 - **Every hull in the theater is in every frame**, a wreck included (it coasts,
   `damage = 1`). A hull recycled for its minerals is not: its mass is in a bank.
+- **A wreck carries the time it was wrecked** (T-158), and the viewer shows
+  the wreck from that instant rather than from the next frame: a fight's frame
+  is 0.02 yr, over a second of wall time at the rate a fight opens at.
 - **A number that is not finite is a fatal error** in the recorder (design law
   #16), not a value in the file.
 - **One seed records one replay, byte for byte** — a replay is a pure function
@@ -403,6 +410,13 @@ Proposed and built (T-152, the author's direction):
   material, kt, and a world's ore and holdings by material, all by in-game
   name (ruling 21). The page's glyph legend keys each stripe color to its
   material's name, from the module (`hv_text(12)`).
+- **Wrecks** — RATIFIED (ruling 22, T-158). A wreck's glyph is drawn in the
+  wreck color, unstriped, and fades toward the ground over
+  `WRECK_FADE_SECONDS` = **0.25 s of wall time** at the playback rate, leaving
+  a pinpoint: one pixel in the wreck color, which it stays. The fade is read
+  from the clock — `1 − (t − wrecked_at) / (|rate| · 0.25)` — so playing,
+  rewinding and seeking show the same frame at the same instant. A wreck in a
+  replay without wreck times is a pinpoint.
 
 ---
 
@@ -422,7 +436,7 @@ modes cannot disagree about where anything is.
 | a hull | a point in its seat's color; a quiet hull (§6.6) a quarter as bright |
 | a burning drive | a plume behind the hull (ahead of it when braking), in the drive's status color |
 | a hit | a flash in the hit color |
-| a wreck | a dim ember |
+| a wreck | a dim ember, narrowing to a pinpoint (radius 0.5 px) as its tactical glyph fades (§6.6) |
 
 A light of intensity `I` and radius `r` adds `I / (1 + d²/r²)²` at distance
 `d`, cut at `4r`. The bloom is the buffer averaged in 4×4 blocks, box-blurred

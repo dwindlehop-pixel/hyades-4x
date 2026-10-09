@@ -52,6 +52,9 @@ pub struct Hull {
     pub design: usize,
     pub beams: u32,
     pub tubes: u32,
+    /// When it was wrecked, years; `None` while it stands, and in a replay
+    /// recorded before the field (T-158).
+    pub wrecked_at: Option<f64>,
 }
 
 /// One hull in one frame.
@@ -261,6 +264,7 @@ impl Replay {
         for row in v.get("hulls").and_then(Value::as_arr).ok_or("no hulls")? {
             let [id, owner, hull, design, beams, tubes] =
                 hf.read(row, ["id", "owner", "hull", "design", "beams", "tubes"])?;
+            let [wrecked_at] = hf.read_opt(row, ["wrecked_at"]);
             let id = id as u64;
             hull_table.insert(
                 id,
@@ -271,6 +275,7 @@ impl Replay {
                     design: design as usize,
                     beams: beams as u32,
                     tubes: tubes as u32,
+                    wrecked_at,
                 },
             );
         }
@@ -407,7 +412,7 @@ impl Replay {
                 if let Some(n) = next.and_then(|n| find(n, r.id)) {
                     (row.pos, row.vel) = hermite(r.pos, r.vel, n.pos, n.vel, span, frac);
                 }
-                let hit =
+                let mut hit =
                     prev.and_then(|p| find(p, r.id)).is_some_and(|p| r.damage > p.damage || (r.wrecked && !p.wrecked));
                 let hull = self.hull_table.get(&r.id).copied().unwrap_or(Hull {
                     id: r.id,
@@ -416,7 +421,13 @@ impl Replay {
                     design: self.designs.len().saturating_sub(1),
                     beams: 0,
                     tubes: 0,
+                    wrecked_at: None,
                 });
+                // A wreck between frames shows from the instant it happened,
+                // not from the next frame (T-158).
+                if !row.wrecked && hull.wrecked_at.is_some_and(|w| w <= t) {
+                    (row.wrecked, row.damage, hit) = (true, 1.0, true);
+                }
                 HullView { hull, row, hit, laden: r.cargo > 0.0 || r.settlers > 0.0 }
             })
             .collect();
@@ -477,8 +488,8 @@ pub(crate) mod tests {
          "holdings": [[0, 0, 2.2, 1.7, 3.3, 0.5, null, null, null, null],
                       [1, 1, 1.5, 1.5, 1.5, null, null, null, null, null]]}
       ],
-      "hull_fields": ["id","owner","hull","design","beams","tubes"],
-      "hulls": [[5, 0, 1, 7, 0, 0], [6, 1, 3, 3, 2, 0], [9, 0, 0, 1, 0, 0]],
+      "hull_fields": ["id","owner","hull","design","beams","tubes","wrecked_at"],
+      "hulls": [[5, 0, 1, 7, 0, 0, null], [6, 1, 3, 3, 2, 0, 9.5], [9, 0, 0, 1, 0, 0, null]],
       "event_fields": ["t","category","kind","seat","text"],
       "events": [[2.5, 2, "VehicleSpawned", 0, "P0 builds a Spur"], [9.5, 6, "HullWrecked", 1, "P1 hull wrecked by P0"],
                  [9.9, 2, "ColonyFounded", 0, "P0 founds a colony at planet#2"]],
@@ -500,7 +511,11 @@ pub(crate) mod tests {
         assert_eq!(r.planets[2].pos, [10.0, 5.0, 1.0]);
         assert_eq!(r.planets[2].ore, [2.5, 0.0, 0.1]);
         assert!(r.planets[0].home && !r.planets[2].home);
-        assert_eq!(r.hull_table[&6], Hull { id: 6, owner: 1, hull: 3, design: 3, beams: 2, tubes: 0 });
+        assert_eq!(
+            r.hull_table[&6],
+            Hull { id: 6, owner: 1, hull: 3, design: 3, beams: 2, tubes: 0, wrecked_at: Some(9.5) }
+        );
+        assert_eq!(r.hull_table[&5].wrecked_at, None);
         assert_eq!(r.designs[r.hull_table[&5].design], "Ford");
         assert_eq!(r.frames.len(), 2);
         assert_eq!(r.frames[1].owner, vec![Some(0), Some(1), Some(0)]);
@@ -617,5 +632,14 @@ pub(crate) mod tests {
         let later = picket(10.0);
         assert!(later.hit && later.row.wrecked, "0.25 then wrecked");
         assert!(!r.view_at(10.0).hulls.iter().find(|h| h.row.id == 5).unwrap().hit);
+    }
+
+    #[test]
+    fn a_wreck_shows_from_the_instant_it_happened_not_the_next_frame() {
+        let r = tiny();
+        let picket = |t: f64| *r.view_at(t).hulls.iter().find(|h| h.row.id == 6).unwrap();
+        assert!(!picket(9.49).row.wrecked && picket(9.49).row.damage == 0.25, "standing until 9.5");
+        let w = picket(9.5);
+        assert!(w.row.wrecked && w.row.damage == 1.0 && w.hit, "wrecked at 9.5, a frame early");
     }
 }

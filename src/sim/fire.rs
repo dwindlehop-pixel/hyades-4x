@@ -1759,7 +1759,7 @@ mod tests {
         let (s, p) = (find(&before, scarp), find(&before, prey));
         assert_eq!((s.hull, s.design, p.hull, p.design), ("GCV", "Scarp", "MSV", "Delta"));
         assert!(s.beams > 0 && p.beams == 0 && p.tubes == 0, "armament is the Design's");
-        assert!(!s.wrecked && !p.wrecked && s.damage == 0.0);
+        assert!(!s.wrecked() && !p.wrecked() && s.damage == 0.0);
         assert_eq!(p.burn, 1, "at the start of its leg the prey is accelerating");
         assert!((p.accel - 2.0).abs() < 1e-12, "it flies its leg's proper acceleration");
 
@@ -1767,11 +1767,13 @@ mod tests {
         let w = *sim.world.wreck.get(prey).expect("the Scarp wrecks it in passing");
         let after = sim.snapshot();
         let p = find(&after, prey);
-        assert!(p.wrecked && p.damage == 1.0, "a wreck reads as wrecked, at full damage");
+        assert!(p.wrecked() && p.damage == 1.0, "a wreck reads as wrecked, at full damage");
+        assert_eq!(p.wrecked_at, Some(w.since), "and carries the time it was wrecked");
+        assert!(w.since <= sim.clock);
         assert!(p.position.distance(sim.position_at(prey, sim.clock).unwrap()) < 1e-12, "where the wreck is now");
         assert!(p.velocity.distance(w.velocity) < 1e-12, "coasting at the velocity it had");
         assert_eq!((p.accel, p.burn, p.in_flight), (0.0, 0, true), "its drive is dead, and it still moves");
-        assert!(!find(&after, scarp).wrecked);
+        assert!(!find(&after, scarp).wrecked());
     }
 
     /// **A hull recycled for its minerals is gone from the theater**: its mass
@@ -1806,6 +1808,6 @@ mod tests {
         let want = damage(&sim, e1) / sim.structure_of(e1);
         assert!(want > 0.0 && want < 1.0, "the bed lands part way: {want}");
         assert!((v.damage - want).abs() < 1e-12, "{} against {want}", v.damage);
-        assert!(!v.wrecked);
+        assert!(!v.wrecked());
     }
 }

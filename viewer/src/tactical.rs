@@ -127,6 +127,9 @@ pub enum Op {
         /// [`display_order`].
         order: u64,
         key: GlyphKey,
+        /// On a wreck, how much of its glyph still shows: 1 at the instant,
+        /// 0 a pinpoint ([`wreck_glyph_share`]). `None` on a standing hull.
+        wreck: Option<f64>,
         /// The seat's color, or the wreck color.
         outline: Rgb,
         /// The outline's color, dimmed toward the ground.
@@ -158,6 +161,26 @@ pub struct Scene<'a> {
     pub camera: &'a Camera,
     pub palette: &'a Palette,
     pub selected: Option<Pick>,
+    /// Years of game time per second of wall time, the playback's rate as a
+    /// magnitude: what a wreck's fade is timed against.
+    pub rate: f64,
+}
+
+/// **Wall-clock seconds a wreck's glyph takes to fade to a pinpoint**
+/// (the author's ruling, T-158).
+pub const WRECK_FADE_SECONDS: f64 = 0.25;
+
+/// **How much of a wreck's glyph still shows at `t`**: 1 at the instant it
+/// was wrecked, falling to 0 — a pinpoint — [`WRECK_FADE_SECONDS`] of wall
+/// time later at playback rate `rate` (years per second). Read from the
+/// clock, so playing, rewinding and seeking all show the same fade. A wreck
+/// whose time the replay does not carry is a pinpoint.
+pub fn wreck_glyph_share(wrecked_at: Option<f64>, t: f64, rate: f64) -> f64 {
+    let span = rate.abs() * WRECK_FADE_SECONDS;
+    match wrecked_at {
+        Some(w) if span > 0.0 => (1.0 - (t - w) / span).clamp(0.0, 1.0),
+        _ => 0.0,
+    }
 }
 
 /// A screen point to the tactical pixel it falls in.
@@ -277,6 +300,7 @@ pub fn plan(s: &Scene) -> Vec<Op> {
             quiet,
             order: display_order(row.wrecked, quiet, role, glyph::size(code), from_home),
             key,
+            wreck: row.wrecked.then(|| wreck_glyph_share(h.hull.wrecked_at, s.view.t, s.rate)),
             outline,
             inner,
             core,
@@ -480,11 +504,26 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
             selected,
             marker,
             quiet,
+            wreck,
             ..
         } = &ops[i]
         else {
             continue;
         };
+        // A wreck fades toward the ground to a pinpoint in the wreck color.
+        let share = wreck.unwrap_or(1.0);
+        if share <= 0.0 && !*marker {
+            r.set(at[0], at[1], *outline);
+            if *hit {
+                r.circle(at[0], at[1], 3.0, pal.status(Status::Hit));
+            }
+            if *selected {
+                brackets(r, *at, 3, pal.status(Status::Selected));
+            }
+            continue;
+        }
+        let fade = |c: Rgb| if share < 1.0 { mix(c, pal.roles.ground, 1.0 - share) } else { c };
+        let (outline, inner, core, marks) = (&fade(*outline), &fade(*inner), &fade(*core), &fade(*marks));
         if *quiet {
             r.set(at[0], at[1], *inner);
             if *hit {
@@ -525,7 +564,8 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
         // body of an unarmed hull and the bottom two rows of an armed one.
         let solid = armed;
         r.stamp(&g.inner, gw, ax, ay, at[0], at[1], if solid { *outline } else { *inner });
-        if *laden {
+        // A wreck's hold is wreckage: it shows in the wreck color, unstriped.
+        if *laden && wreck.is_none() {
             let last = (0..g.h).rev().find(|&y| (0..g.w).any(|x| g.inner[y * g.w + x])).unwrap_or(0);
             stripes(r, pal, g, *at, cargo, if solid { last.saturating_sub(1) } else { 0 });
         }
@@ -538,8 +578,11 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
         if *damage > 0.0 {
             let n = (damage * (2 * half + 1) as f64).ceil() as i64;
             for k in 0..n {
-                r.set(at[0] - half - 3, at[1] + half - k, pal.status(Status::Damage));
+                r.set(at[0] - half - 3, at[1] + half - k, fade(pal.status(Status::Damage)));
             }
+        }
+        if wreck.is_some() {
+            r.set(at[0], at[1], pal.status(Status::Wreck));
         }
         if *hit {
             r.circle(at[0], at[1], (half + 4) as f64, pal.status(Status::Hit));
@@ -704,7 +747,14 @@ mod tests {
         let f = fixture();
         for t in [0.0, 2.5, 7.0, 10.0] {
             let view = f.replay.view_at(t);
-            let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+            let s = Scene {
+                replay: &f.replay,
+                view: &view,
+                camera: &f.camera,
+                palette: &f.palette,
+                selected: None,
+                rate: 1.0,
+            };
             let ops = plan(&s);
             let mut worlds: Vec<u32> = Vec::new();
             let mut hulls: Vec<u64> = Vec::new();
@@ -733,7 +783,8 @@ mod tests {
     fn every_planned_entity_leaves_pixels_at_its_position() {
         let f = fixture();
         let view = f.replay.view_at(10.0);
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let mut r = raster(&f.camera);
         let ops = plan(&s);
         paint(&s, &ops, &mut r);
@@ -750,7 +801,8 @@ mod tests {
     fn a_hull_wears_its_seat_on_its_body_and_its_role_at_its_center() {
         let f = fixture();
         let view = f.replay.view_at(0.0);
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         let freighter = ops.iter().find(|o| matches!(o, Op::Hull { id: 5, .. })).unwrap();
         let Op::Hull { outline, inner, core, mark, key, laden, .. } = freighter else { unreachable!() };
@@ -772,7 +824,7 @@ mod tests {
         let mut cam = f.camera;
         cam.scale = crate::camera::SYSTEM_PX_PER_LY * 2.0;
         cam.center = [view.hulls[0].row.pos[0], view.hulls[0].row.pos[1]];
-        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None, rate: 1.0 };
         let mut r = raster(&cam);
         render(&s, &mut r);
         (r, to_raster(cam.project(view.hulls[0].row.pos), PIXEL))
@@ -836,7 +888,7 @@ mod tests {
         (armed.hull.id, armed.row.id, armed.hull.beams) = (400, 400, 1);
         view.hulls.push(armed);
         let cam = galaxy_camera(&f);
-        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         let marker_of = |id| {
             ops.iter().find_map(|o| match o {
@@ -852,7 +904,8 @@ mod tests {
     fn the_drive_vector_reads_burn_and_points_where_the_hull_goes() {
         let f = fixture();
         let view = f.replay.view_at(0.0);
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         // Hull 5 burns at rest toward world 2, which lies up and to the right.
         let Some(Op::Hull { at, vector: Some((end, color)), .. }) =
@@ -863,7 +916,8 @@ mod tests {
         assert_eq!(*color, f.palette.status(Status::Drive));
         assert!(end[0] > at[0] && end[1] < at[1], "{at:?} → {end:?}");
         let view = f.replay.view_at(10.0);
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         assert!(
             matches!(ops.iter().find(|o| matches!(o, Op::Hull { id: 9, .. })), Some(Op::Hull { vector: None, .. })),
@@ -879,20 +933,66 @@ mod tests {
     #[test]
     fn a_wreck_is_drawn_in_the_wreck_color_and_a_hit_rings() {
         let f = fixture();
-        let view = f.replay.view_at(10.0);
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        // Hull 6 is wrecked at 9.5 yr: its whole glyph at the instant.
+        let view = f.replay.view_at(9.5);
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
-        let Some(Op::Hull { outline, hit, damage, .. }) = ops.iter().find(|o| matches!(o, Op::Hull { id: 6, .. }))
+        let Some(Op::Hull { outline, hit, damage, wreck, .. }) =
+            ops.iter().find(|o| matches!(o, Op::Hull { id: 6, .. }))
         else {
             panic!()
         };
         assert_eq!(*outline, f.palette.status(Status::Wreck));
         assert!(*hit);
         assert_eq!(*damage, 1.0);
+        assert_eq!(*wreck, Some(1.0));
         let mut r = raster(&f.camera);
         paint(&s, &ops, &mut r);
         assert!(r.count(f.palette.status(Status::Hit)) > 0, "the hit ring is drawn");
         assert!(r.count(f.palette.status(Status::Damage)) > 0, "the damage bar is drawn");
+    }
+
+    /// **A wreck fades to a pinpoint in a quarter second of wall time**
+    /// (T-158): at 1 yr/s, half faded 0.125 yr after, and one pixel in the
+    /// wreck color from 0.25 yr on — whether the clock got there forward or
+    /// back.
+    #[test]
+    fn a_wreck_fades_to_a_pinpoint_after_a_quarter_second() {
+        assert_eq!(wreck_glyph_share(Some(9.5), 9.5, 1.0), 1.0);
+        assert!((wreck_glyph_share(Some(9.5), 9.625, 1.0) - 0.5).abs() < 1e-12);
+        assert_eq!(wreck_glyph_share(Some(9.5), 9.75, 1.0), 0.0);
+        assert!((wreck_glyph_share(Some(9.5), 9.5125, 0.1) - 0.5).abs() < 1e-12, "timed in wall seconds");
+        assert!((wreck_glyph_share(Some(9.5), 9.5125, -0.1) - 0.5).abs() < 1e-12, "the same rewinding");
+        assert_eq!(wreck_glyph_share(None, 9.5, 1.0), 0.0, "no wreck time: a pinpoint");
+        assert_eq!(wreck_glyph_share(Some(9.5), 9.5, 0.0), 0.0, "no rate: a pinpoint");
+
+        let f = fixture();
+        let wreck = f.palette.status(Status::Wreck);
+        let count = |t: f64| {
+            let view = f.replay.view_at(t);
+            let s = Scene {
+                replay: &f.replay,
+                view: &view,
+                camera: &f.camera,
+                palette: &f.palette,
+                selected: None,
+                rate: 1.0,
+            };
+            let mut r = raster(&f.camera);
+            paint(&s, &plan(&s), &mut r);
+            (r.count(wreck), r.count(f.palette.status(Status::Damage)))
+        };
+        let (whole, bar) = count(9.5);
+        let (half, half_bar) = count(9.625);
+        let (point, no_bar) = count(9.8);
+        assert!(whole > 1 && bar > 0, "the whole glyph: {whole} wreck pixels");
+        assert_eq!(
+            (half, half_bar),
+            (1, 0),
+            "half faded: the glyph toward the ground, the pinpoint in the wreck color"
+        );
+        assert_eq!((point, no_bar), (1, 0), "a pinpoint: one pixel");
     }
 
     #[test]
@@ -902,12 +1002,12 @@ mod tests {
         let hex = f.palette.roles.hex;
         let mut cam = f.camera;
         cam.scale = 1.0;
-        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None, rate: 1.0 };
         let mut r = raster(&cam);
         paint(&s, &[], &mut r);
         assert!(r.count(hex) > 0, "a 121-ly hex is 60 tactical pixels across");
         cam.scale = MIN_HEX_PX / 121.0;
-        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None, rate: 1.0 };
         paint(&s, &[], &mut r);
         assert_eq!(r.count(hex), 0);
     }
@@ -932,7 +1032,8 @@ mod tests {
     fn every_hull_is_drawn_or_counted_in_a_drawn_stack() {
         let f = fixture();
         let view = crowd(&f, 4);
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         let total: u32 = ops.iter().map(|o| if let Op::Hull { count, .. } = o { *count } else { 0 }).sum();
         assert_eq!(total as usize, view.hulls.len());
@@ -960,7 +1061,8 @@ mod tests {
             (c.hull.id, c.row.id, c.hull.design) = (300 + d as u64, 300 + d as u64, d);
             view.hulls.push(c);
         }
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         for op in &ops {
             if let Op::Hull { id, at, .. } = op {
@@ -998,21 +1100,36 @@ mod tests {
     fn a_scout_and_unladen_traffic_are_one_dim_pixel_and_a_laden_hull_is_a_glyph() {
         let f = fixture();
         let view = f.replay.view_at(10.0);
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         let quiet = |id| ops.iter().any(|o| matches!(o, Op::Hull { id: i, quiet: true, .. } if *i == id));
         assert!(quiet(9), "the scout");
         assert!(!quiet(5), "the laden freighter");
         assert!(!quiet(6), "a wreck is not traffic");
         let view0 = f.replay.view_at(0.0);
-        let s0 = Scene { replay: &f.replay, view: &view0, camera: &f.camera, palette: &f.palette, selected: None };
+        let s0 = Scene {
+            replay: &f.replay,
+            view: &view0,
+            camera: &f.camera,
+            palette: &f.palette,
+            selected: None,
+            rate: 1.0,
+        };
         assert!(
             plan(&s0).iter().any(|o| matches!(o, Op::Hull { id: 6, quiet: false, .. })),
             "an armed Contact picket, unladen, is not traffic"
         );
         let mut view0 = f.replay.view_at(0.0);
         view0.hulls.iter_mut().find(|h| h.hull.id == 5).unwrap().laden = false;
-        let s = Scene { replay: &f.replay, view: &view0, camera: &f.camera, palette: &f.palette, selected: None };
+        let s = Scene {
+            replay: &f.replay,
+            view: &view0,
+            camera: &f.camera,
+            palette: &f.palette,
+            selected: None,
+            rate: 1.0,
+        };
         let ops = plan(&s);
         assert!(ops.iter().any(|o| matches!(o, Op::Hull { id: 5, quiet: true, vector: None, .. })), "unladen MSV");
         let mut r = raster(&f.camera);
@@ -1034,7 +1151,8 @@ mod tests {
     fn a_hull_in_flight_draws_a_faint_route_to_its_destination() {
         let f = fixture();
         let view = f.replay.view_at(0.0);
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         let Some(Op::Hull { route: Some((to, c)), .. }) = ops.iter().find(|o| matches!(o, Op::Hull { id: 5, .. }))
         else {
@@ -1056,7 +1174,8 @@ mod tests {
         let f = fixture();
         let (v0, v1) = (f.replay.view_at(0.0), f.replay.view_at(10.0));
         let world2 = |view: &View| {
-            let s = Scene { replay: &f.replay, view, camera: &f.camera, palette: &f.palette, selected: None };
+            let s =
+                Scene { replay: &f.replay, view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
             plan(&s).into_iter().find_map(|o| match o {
                 Op::World { id: 2, r, color, .. } => Some((r, color)),
                 _ => None,
@@ -1084,7 +1203,7 @@ mod tests {
         let view = f.replay.view_at(0.0);
         let mut cam = f.camera;
         cam.scale = crate::camera::SECTOR_PX_PER_LY * 2.0;
-        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         let held = |id| {
             ops.iter().find_map(|o| match o {
@@ -1106,8 +1225,14 @@ mod tests {
         assert_eq!(r.get(x0, base), Some(f.palette.seat(0).to_ints()), "the base in the holder's color");
         assert!(base - (BAR_MAX as i64) > at[1] + *rad as i64, "the bars clear the world");
         // The galaxy level draws none.
-        let s =
-            Scene { replay: &f.replay, view: &view, camera: &galaxy_camera(&f), palette: &f.palette, selected: None };
+        let s = Scene {
+            replay: &f.replay,
+            view: &view,
+            camera: &galaxy_camera(&f),
+            palette: &f.palette,
+            selected: None,
+            rate: 1.0,
+        };
         assert!(plan(&s).iter().all(|o| !matches!(o, Op::World { holdings, .. } if !holdings.is_empty())));
     }
 
@@ -1118,7 +1243,7 @@ mod tests {
         let mut cam = f.camera;
         cam.scale = crate::camera::SECTOR_PX_PER_LY * 2.0;
         cam.center = [0.0, 0.0];
-        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None, rate: 1.0 };
         let mut r = raster(&cam);
         render(&s, &mut r);
         let (cyan, yellow) = (r.count(f.palette.material(0)), r.count(f.palette.material(2)));
@@ -1133,7 +1258,8 @@ mod tests {
         let text = f.palette.roles.text_bright;
         let mut counts = Vec::new();
         for view in [&one, &many] {
-            let s = Scene { replay: &f.replay, view, camera: &f.camera, palette: &f.palette, selected: None };
+            let s =
+                Scene { replay: &f.replay, view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
             let mut r = raster(&f.camera);
             render(&s, &mut r);
             counts.push(r.count(text));
@@ -1151,6 +1277,7 @@ mod tests {
             camera: &f.camera,
             palette: &f.palette,
             selected: Some(Pick::Hull(5)),
+            rate: 1.0,
         };
         let mut r = raster(&f.camera);
         render(&s, &mut r);
@@ -1191,7 +1318,8 @@ mod tests {
     fn only_hexes_holding_a_world_or_a_hull_are_active() {
         let f = fixture();
         let view = f.replay.view_at(10.0);
-        let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let active = active_hexes(&s);
         let mut want: std::collections::BTreeSet<(i64, i64)> =
             f.replay.planets.iter().map(|p| hex_of(&f.replay, p.pos)).collect();
@@ -1213,7 +1341,7 @@ mod tests {
         let f = fixture();
         let view = crowd(&f, 4);
         let cam = galaxy_camera(&f);
-        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         let drawn: Vec<&Op> = ops.iter().filter(|o| matches!(o, Op::Hull { count: 1.., .. })).collect();
         let total: u32 = drawn.iter().map(|o| if let Op::Hull { count, .. } = o { *count } else { 0 }).sum();

@@ -106,7 +106,14 @@ impl Viewer {
     }
 
     fn scene<'a>(&'a self, view: &'a View) -> Scene<'a> {
-        Scene { replay: &self.replay, view, camera: &self.camera, palette: &self.palette, selected: self.selected }
+        Scene {
+            replay: &self.replay,
+            view,
+            camera: &self.camera,
+            palette: &self.palette,
+            selected: self.selected,
+            rate: self.timeline.rate.abs(),
+        }
     }
 
     /// Draws the current instant in the current mode into [`Self::out`].
