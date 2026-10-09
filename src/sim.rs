@@ -68,7 +68,7 @@ use crate::matching;
 use crate::math::{self, Vec3, G};
 use crate::resources::{Archetype, Basic, Material, MineralField, Minerals, Super};
 use crate::rng::Rng;
-use crate::snapshot::{PlanetSnapshot, PlayerSnapshot, Snapshot, VehicleKind, VehicleSnapshot};
+use crate::snapshot::{HoldingSnapshot, PlanetSnapshot, PlayerSnapshot, Snapshot, VehicleKind, VehicleSnapshot};
 use crate::transcendental;
 use crate::units::{self, Band, BandTier, Kilotons, Length, Measure, Price, Volume};
 
@@ -11774,7 +11774,24 @@ impl Simulation {
             })
             .collect();
 
-        Snapshot { time_years: t, players, planets, vehicles }
+        let mut holdings: Vec<HoldingSnapshot> = Vec::new();
+        for &e in &self.planet_entity {
+            if let (Some(o), Some(m)) = (self.world.owner.get(e), self.held_at(e)) {
+                holdings.push(HoldingSnapshot {
+                    planet: *self.world.planet_id.get(e).unwrap(),
+                    owner: o.0,
+                    minerals: *m,
+                });
+            }
+        }
+        for (&(p, at), m) in &self.holdings.elsewhere {
+            let planet = *self.world.planet_id.get(Entity(at)).unwrap();
+            holdings.push(HoldingSnapshot { planet, owner: p, minerals: *m });
+        }
+        holdings.retain(|h| h.minerals.total().kilotons() > 0.0);
+        holdings.sort_by_key(|h| (h.planet.0, h.owner));
+
+        Snapshot { time_years: t, players, planets, vehicles, holdings }
     }
 
     /// Fleet = same owner + same [`Role`] + co-located, computed fresh —

@@ -44,6 +44,11 @@ const HULLS: [&str; 10] = ["LSV", "MSV", "GSV", "LCV", "LCU", "GCV", "GCU", "LOU
 /// Design classes, in the order a replay indexes them.
 const DESIGNS: [&str; 12] =
     ["Meadow", "Spur", "Tor", "Cairn", "Delta", "Range", "Scarp", "Ford", "Strait", "Butte", "Mesa", "Unnamed"];
+/// The materials on the Exchange's books, in [`Material`] order — what a
+/// hold carries and a holding keeps.
+///
+/// [`Material`]: crate::resources::Material
+const MATERIALS: [&str; 8] = ["Cyan", "Magenta", "Yellow", "Red", "Green", "Blue", "Apex", "Ordnance"];
 /// Log categories, in [`LogCategory::ALL`] order.
 const CATEGORIES: [&str; 7] = ["Production", "Mining", "Vehicles", "Population", "Scanning", "Cards", "Combat"];
 
@@ -60,9 +65,39 @@ const HULL_FIELDS: [&str; 6] = ["id", "owner", "hull", "design", "beams", "tubes
 /// One hull per row per frame: its id, the role its Doctrine has it on
 /// (`kind`), position ly, velocity ly/yr, acceleration ly/yr², `burn` the
 /// drive's sense, `damage` a share of structure, `flags` bit 0 in flight and
-/// bit 1 wrecked, `dest` a planet id or `-1`, cargo and settlers kt.
-const VEHICLE_FIELDS: [&str; 15] =
-    ["id", "kind", "x", "y", "z", "vx", "vy", "vz", "accel", "burn", "damage", "flags", "dest", "cargo", "settlers"];
+/// bit 1 wrecked, `dest` a planet id or `-1`, cargo and settlers kt, and the
+/// cargo by material, kt, in [`MATERIALS`] order.
+const VEHICLE_FIELDS: [&str; 23] = [
+    "id",
+    "kind",
+    "x",
+    "y",
+    "z",
+    "vx",
+    "vy",
+    "vz",
+    "accel",
+    "burn",
+    "damage",
+    "flags",
+    "dest",
+    "cargo",
+    "settlers",
+    "cargo_cyan",
+    "cargo_magenta",
+    "cargo_yellow",
+    "cargo_red",
+    "cargo_green",
+    "cargo_blue",
+    "cargo_apex",
+    "cargo_ordnance",
+];
+/// Per frame, one row per non-empty holding: the planet, the holding seat,
+/// and each material in [`MATERIALS`] order as a Band reading on the cost
+/// ladder — a holding is a stock that can be spent — or `null` where it holds
+/// none of that material.
+const HOLDING_FIELDS: [&str; 10] =
+    ["planet", "seat", "cyan", "magenta", "yellow", "red", "green", "blue", "apex", "ordnance"];
 const EVENT_FIELDS: [&str; 5] = ["t", "category", "kind", "seat", "text"];
 
 /// Record `sim` from where it stands to its horizon, a frame every
@@ -164,6 +199,8 @@ fn header(out: &mut String, galaxy: &Galaxy, sim: &Simulation, cfg: &ReplayConfi
     strings(out, &DESIGNS);
     out.push_str(",\"category\":");
     strings(out, &CATEGORIES);
+    out.push_str(",\"material\":");
+    strings(out, &MATERIALS);
     out.push_str("},\"planet_fields\":");
     strings(out, &PLANET_FIELDS);
     out.push_str(",\"planets\":[");
@@ -190,6 +227,15 @@ fn header(out: &mut String, galaxy: &Galaxy, sim: &Simulation, cfg: &ReplayConfi
     strings(out, &FRAME_PLANET_FIELDS);
     out.push_str(",\"vehicle_fields\":");
     strings(out, &VEHICLE_FIELDS);
+    out.push_str(",\"holding_fields\":");
+    strings(out, &HOLDING_FIELDS);
+}
+
+/// A [`Minerals`] in [`MATERIALS`] order, kt.
+///
+/// [`Minerals`]: crate::resources::Minerals
+fn materials(m: &crate::resources::Minerals) -> [f64; 8] {
+    [m.cyan, m.magenta, m.yellow, m.red, m.green, m.blue, m.apex, m.ordnance]
 }
 
 /// A mass's Band reading, with nothing read as `0` rather than as the
@@ -248,6 +294,26 @@ fn frame(out: &mut String, snap: &Snapshot) {
         write_num(out, v.cargo.total().kilotons(), 3);
         out.push(',');
         write_num(out, v.settlers.kilotons(), 3);
+        for x in materials(&v.cargo) {
+            out.push(',');
+            write_sig(out, x);
+        }
+        out.push(']');
+    }
+    out.push_str("],\"holdings\":[");
+    for (i, h) in snap.holdings.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!("[{},{}", h.planet.0, h.owner));
+        for x in materials(&h.minerals) {
+            out.push(',');
+            if x > 0.0 {
+                write_num(out, crate::units::Price::new(x).band().bands(), 2);
+            } else {
+                out.push_str("null");
+            }
+        }
         out.push(']');
     }
     out.push_str("]}");
@@ -330,6 +396,27 @@ pub fn write_num(out: &mut String, x: f64, dp: usize) {
         s = "0".into();
     }
     out.push_str(&s);
+}
+
+/// Write `x` to four significant figures: in decimals from 0.001 to below a
+/// million, in exponent form outside that. A holding runs from tonnes to
+/// millions of kilotonnes, which a fixed number of decimals cannot carry.
+/// Non-finite is fatal, as in [`write_num`].
+pub fn write_sig(out: &mut String, x: f64) {
+    assert!(x.is_finite(), "non-finite number in a replay: {x}");
+    if x == 0.0 {
+        out.push('0');
+        return;
+    }
+    let e = format!("{x:.3e}");
+    let (mantissa, exp) = e.split_once('e').unwrap();
+    let exp: i32 = exp.parse().unwrap();
+    if (-3..6).contains(&exp) {
+        write_num(out, x, (3 - exp).max(0) as usize);
+    } else {
+        out.push_str(mantissa.trim_end_matches('0').trim_end_matches('.'));
+        out.push_str(&format!("e{exp}"));
+    }
 }
 
 #[cfg(test)]
@@ -530,6 +617,11 @@ mod tests {
         let frames = doc.get("frames").arr();
         assert_eq!(frames.len(), 13, "frames at 0, 10, …, 120 yr");
         let mut hulls_seen = 0;
+        let mut holdings_seen = 0;
+        let mut laden_seen = 0;
+        let fields: Vec<String> = doc.get("vehicle_fields").arr().iter().map(|f| f.str().to_string()).collect();
+        assert_eq!(doc.get("holding_fields").arr().len(), 10);
+        assert_eq!(doc.get("enums").get("material").arr().len(), 8);
         for (k, f) in frames.iter().enumerate() {
             let t = k as f64 * 10.0;
             while twin.next_event_time().is_some_and(|n| n <= t) {
@@ -550,9 +642,36 @@ mod tests {
                 assert!((v.arr()[2].num() - s.position.x).abs() <= 0.005, "frame {k}: at its position");
             }
             assert_eq!(f.get("owner").arr().len(), galaxy.planets.len());
+            // Cargo by material sums to the cargo, within the written figures.
+            let at = |name: &str| fields.iter().position(|f| f == name).unwrap();
+            for (v, s) in vs.iter().zip(&snap.vehicles) {
+                let row = v.arr();
+                let mix: f64 = (at("cargo_cyan")..=at("cargo_ordnance")).map(|i| row[i].num()).sum();
+                let total = s.cargo.total().kilotons();
+                assert!((mix - total).abs() <= 1e-3 * total.max(1.0), "frame {k}: hull {} {mix} vs {total}", s.id);
+                laden_seen += usize::from(mix > 0.0);
+            }
+            // Every holding, by planet and seat, with what it holds.
+            let rows = f.get("holdings").arr();
+            assert_eq!(rows.len(), snap.holdings.len(), "frame {k}: every holding");
+            for (row, h) in rows.iter().zip(&snap.holdings) {
+                let row = row.arr();
+                assert_eq!((row[0].num(), row[1].num()), (h.planet.0 as f64, h.owner as f64));
+                for (cell, kt) in row[2..].iter().zip(materials(&h.minerals)) {
+                    if kt > 0.0 {
+                        let band = crate::units::Price::new(kt).band().bands();
+                        assert!((cell.num() - band).abs() <= 0.005, "frame {k}: the Band reading of {kt} kt");
+                    } else {
+                        assert_eq!(cell, &J::Null, "frame {k}: none held is null, not Band 0");
+                    }
+                }
+            }
+            holdings_seen += rows.len();
             hulls_seen += vs.len();
         }
         assert!(hulls_seen > 20, "the bed puts hulls in the frames: {hulls_seen}");
+        assert!(laden_seen > 0, "the bed puts cargo in a hold");
+        assert!(holdings_seen > 13, "every frame holds at least the homeworlds' banks: {holdings_seen}");
     }
 
     /// **One seed records one replay, byte for byte** (`AGENTS.md` §4): a
@@ -605,6 +724,19 @@ mod tests {
             s.push(' ');
         }
         assert_eq!(s, "1 -0.5 1.235 0 0 120 ");
+    }
+
+    #[test]
+    fn significant_figures_carry_a_holding_from_tonnes_to_millions_of_kilotonnes() {
+        let mut s = String::new();
+        for x in [0.0, 1234.5678, 0.012345, 2.5, 123_456_789.0, 0.000_012_34, -0.5, 999_999.0] {
+            write_sig(&mut s, x);
+            s.push(' ');
+        }
+        assert_eq!(s, "0 1235 0.01235 2.5 1.235e8 1.234e-5 -0.5 1e6 ");
+        for w in s.split_whitespace() {
+            assert!(w.parse::<f64>().is_ok(), "{w} reads back as a number");
+        }
     }
 
     #[test]

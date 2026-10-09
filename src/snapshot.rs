@@ -174,6 +174,17 @@ pub struct PlayerSnapshot {
     pub stockpile_total: f64,
 }
 
+/// **One empire's materials at one planet** (T-134's holding) — what it has
+/// mined, hauled or forged there and not yet spent, by material on the
+/// Exchange's books. An empire holds at worlds it owns and at rocks it only
+/// mines, and several empires can hold at one rock.
+#[derive(Clone, Copy, Debug)]
+pub struct HoldingSnapshot {
+    pub planet: PlanetId,
+    pub owner: u32,
+    pub minerals: Minerals,
+}
+
 /// A full read-only picture of the simulation at one instant. Every entity's
 /// `(x, y, z)` for `time_years` is recoverable from `planets` + `vehicles`.
 #[derive(Clone, Debug)]
@@ -182,4 +193,6 @@ pub struct Snapshot {
     pub players: Vec<PlayerSnapshot>,
     pub planets: Vec<PlanetSnapshot>,
     pub vehicles: Vec<VehicleSnapshot>,
+    /// Every non-empty holding, by planet id and then by owner.
+    pub holdings: Vec<HoldingSnapshot>,
 }
