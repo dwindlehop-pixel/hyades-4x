@@ -74,6 +74,24 @@ RATIFIED (T-152, the author's rulings on the tactical mode):
     Contact hulls are drawn unobtrusively; a hull with a beam mount or a
     missile tube never is, laden or not (§6.6).
 
+RATIFIED (T-154, the author's rulings after the `beams` replay):
+
+19. **A seat's identity never overlaps the identity of a material.** The
+    basics are cyan, magenta and yellow, the supers red, green and blue, the
+    apex platinum; no seat is drawn in any of them (§6.2).
+20. **The display reflects smooth, continuous acceleration and
+    deceleration**, as the sim flies it: no hull moves in steps or eases in
+    and out at each frame (§3, §4).
+
+RATIFIED (T-155, the author's ruling):
+
+21. **The game client uses the ratified fictional names for resources**
+    (`Hyades_galaxy_and_autopilot.md` §4.1): Cage Ice, Rosepeter and Voltslate
+    for the basics, Strange Matter for the apex. The replay keeps the engine's
+    color names (`enums.material`, §3), and the client maps them. The supers'
+    names are placeholders (T-142), so the client shows a super by its color —
+    Red, Green, Blue — until they are ratified.
+
 ---
 
 ## 2. The seam
@@ -113,7 +131,7 @@ breaking it.
 | `enums` | `kind` (role), `hull` (the docs' codes, LSV … GOU), `design` (the class names, Meadow … Unnamed), `category` (log categories), `material` (the eight on the Exchange's books: Cyan, Magenta, Yellow, Red, Green, Blue, Apex, Ordnance) |
 | `planet_fields`, `planets` | static per world: `id, x, y, z, hab, bio_max, cyan, magenta, yellow, home` — Bands |
 | `frame_planet_fields` | per world per frame: `owner` (−1 none), `pop`, `works` — Bands |
-| `vehicle_fields` | per hull per frame: `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight and bit 1 wrecked, dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
+| `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight and bit 1 wrecked, dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
 | `holding_fields` | per holding per frame: `planet, seat, cyan … ordnance` — each material a **Band reading on the cost ladder** (a holding is a stock that can be spent), `null` where none of it is held (T-152) |
 | `frames` | `{t, owner[], pop[], works[], vehicles[[…]], holdings[[…]]}` — `holdings` lists every non-empty holding, an empire's at worlds it owns and at rocks it only mines, by planet and then seat |
 | `hull_fields`, `hulls` | static per hull: `id, owner, hull, design, beams, tubes` — written once, after the frames |
@@ -147,8 +165,12 @@ BUILT (`viewer/src/timeline.rs`).
 - **Play at the end it is heading for starts over** from the other end.
 - **Seek** holds the clock inside the replay's span; **step** moves to the next
   or previous frame time and pauses.
-- Between frames, a hull is drawn on the straight line between its two frame
-  positions. Every other quantity is the earlier frame's.
+- Between frames, a hull is drawn on the **cubic Hermite curve** through its
+  position and velocity at both frames (`replay::hermite`), and its velocity is
+  that curve's (ruling 20). The curve meets both frames' positions and
+  velocities, so speed changes smoothly through a frame, and a constant
+  acceleration — a drive leg — is reproduced exactly. Every other quantity is
+  the earlier frame's.
 - A replay opens paused at its start, at a rate that plays it through in **60
   seconds** (*placeholder*), framed on its `focus` when it has one.
 
@@ -242,11 +264,15 @@ values then replace the proposal in `palette.rs` and this section, and
 | text (dim, normal, bright) | base0, base2, base3 |
 | a world (unowned) | base01 |
 | the basics cyan, magenta, yellow | cyan, magenta, yellow |
-| seat `i` | archetype `i mod 3`'s family, step `⌊i/3⌋`: Blue — blue, violet2, blue3, violet3, cyan2, blue2; Red — red, magenta2, orange3, red3, magenta3, orange; Green — green, yellow3, cyan, green3, yellow, cyan3 |
+| seat `i` | **off the palette** (ruling 19): OKLCH hue `SEAT_HUES[i mod 4]` = 300°, 160°, 335°, 280°, lightness `SEAT_LIGHTNESS[⌊i/4⌋ mod 5]` = 0.70, 0.60, 0.78, 0.65, 0.74, chroma 0.13 brought into gamut |
 | Doctrine roles | Scout base3, Colonizer green3, Miner yellow3, Freighter orange3, Picket violet3, Sentry magenta3, Reserve base0, Scrapped base01 |
 
-The first three seats are the three supers' own colors, so on a 3-seat table
-an empire wears its archetype.
+Seats take the hues between the materials' (magenta 8°, red 30°, rounds 39°,
+yellow 83°, green 118°, cyan 200°, blue 240° on the proposed palette): every
+seat is at least 25° of hue and 0.08 in OKLab from every material, and every
+two seats are at least 0.03 apart (`no_seat_shares_an_identity_with_a_basic_super_or_the_apex`,
+appendix §D.58.7). An empire no longer wears its archetype's super; that
+identity is the material's alone.
 
 **The proposed status colors — off the palette on purpose.** Each is at least
 0.04 from every palette color and 0.06 from every other status color in OKLab,
@@ -266,7 +292,8 @@ and reads at 3:1 on the ground (`status_colors_sit_off_the_palette_apart_and_leg
 
 **Materials** are drawn in the palette's own hue of their names — Cyan
 `hy_cyan`, Magenta `hy_magenta`, Yellow `hy_yellow`, Red `hy_red`, Green
-`hy_green`, Blue `hy_blue` — with Strange Matter `hy_violet3`, rounds
+`hy_green`, Blue `hy_blue` — with Strange Matter **platinum** (ruling 19:
+OKLCH L 0.84, C 0.012, h 250, `palette::PLATINUM`), rounds
 `hy_orange` and settlers `hy_base2` (proposed, part of R-UI1). They color a
 holding's bars and a hold's stripes (§6.5, §6.6).
 
@@ -373,7 +400,9 @@ Proposed and built (T-152, the author's direction):
   cargo's mass, in book order, in the material colors (§6.2) — the whole body of
   an unarmed hull, and the bottom two rows of an armed one, whose solid body
   says it is armed (a sentry carries rounds). The inspector lists the hold by
-  material, kt.
+  material, kt, and a world's ore and holdings by material, all by in-game
+  name (ruling 21). The page's glyph legend keys each stripe color to its
+  material's name, from the module (`hv_text(12)`).
 
 ---
 
@@ -475,6 +504,11 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
 
 - **Keys**: Space, J/K/L, ←/→, T (mode), F (fit everything), G (the replay's
   focus), C (center on the selection), Esc (menu).
+- **Direction** (T-157): ▶ plays forward and ◀ backward. Each pauses when the
+  replay is already playing its way and otherwise turns the replay and plays,
+  so neither direction can be left stuck. Space pauses whichever way the
+  replay is playing, and plays forward when it is paused; L and J play forward
+  and backward, K pauses.
 - **Pointer**: the wheel zooms about the pointer; one pointer drags the view;
   **two fingers pinch** to zoom about their midpoint and pan with it. A press
   that moves no farther than a slop (4 CSS pixels for a mouse, 8 for a pen, 10
@@ -500,7 +534,7 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
   (§7.3), and `palette.html`, which forwards to the Palette screen. The page
   chrome takes its colors from the module's palette, so chrome and canvas
   cannot differ.
-- **Controls**: play/pause, rewind, step, a rate multiplier, a scrubber, and
+- **Controls**: play forward/pause, play backward/pause (§8.3), step, a rate multiplier, a scrubber, and
   the input of §8.3; the side panel's palette editor tunes the palette live
   (§6.2.1).
 - **`web/build.sh <out> [--quick]`** assembles the site: the module, the page,
@@ -512,7 +546,7 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
 both modes; and `web/test/browser.mjs`, which opens the site in headless
 Chrome, goes from the menu through Replays to a replay, checks it renders on
 WebGL2 without a console error, checks the glyph legend shows every role's
-mark, clicks a drawn hull and checks it is selected,
+mark and keys the materials by in-game name, clicks a drawn hull and checks it is selected,
 compares GPU and CPU juicy (§7.3), plays, filters the log and seeks from a row,
 drives the palette editor (a link's settings open with the page; a slider
 redraws the canvas and rewrites the link; a hand-set color reaches the settings

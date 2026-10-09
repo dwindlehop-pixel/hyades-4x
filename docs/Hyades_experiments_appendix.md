@@ -5081,6 +5081,74 @@ records, before and after cargo by material and holdings were written: `beams`
 `sentries` 221,107 → 261,268 (+18%). One build each; the recording is
 deterministic, so these are exact for this commit.
 
+### D.58.7 Steps in a fight, the `beams` setup, and the seat hues (T-154)
+
+**The steps were the replay's precision.** Positions were written to two
+decimals of a light year. The `beams` fight spans 0.03 ly — the Tor stack
+starts 0.03 ly from the Cairns and fire opens at about 0.009 ly — so every hull
+moved in 0.01-ly jumps whatever the sim did, and the viewer's straight-line
+interpolation between equal positions read as stops. Velocities, written to
+four decimals, were smooth all along: a withdrawing Cairn's recorded `vx`
+falls −0.018, −0.036, −0.055 … ly/yr per 0.02-yr frame, a constant 0.94
+ly/yr². Positions are now written to four decimals, and the viewer
+interpolates on the cubic Hermite curve through both frames' positions and
+velocities. Sampled every 0.005 yr through the viewer on the re-recorded
+replay, that Cairn's finite-difference speed tracks its interpolated velocity
+within 0.003 ly/yr from 0.12 to 0.48 yr (−0.016 against −0.018 at the start,
+−0.335 against −0.335 at the end). One hull, one replay.
+
+**What each stack in `beams` is doing.** The replay recorder seeds both fleets
+in open space in the picket role (`examples/record_replay.rs`): 20 Cairns
+parked 0.5 ly from seat 0's homeworld, and 20 Tors 0.03 ly beyond them moving
+toward them at 0.3 ly/yr. A seeded station-role fleet takes its position and
+velocity — "parked at rest, or shedding the velocity from there" — so the Tors
+brake at 0.94 ly/yr² with no destination; their stopping distance, 0.048 ly,
+carries them through the Cairns. Neither stack has a post (`dest` −1 in every
+frame), a target or an objective. With no diplomacy (T-11) each seat regards
+the other as neutral, and the default Doctrine fires on neutrals only in the
+picket role, so both open fire when in reach. A hull returning fire on a
+neutral breaks off only if it believes it can outrun the shooter, and a hull
+past its structure heads home (`Standing::under_fire`, warfare §8.19): all 20
+Tors turned for home past their structure at t ≈ 0.094–0.108 and were wrecked;
+two Cairns, at 1.21 and 1.16 of structure, withdrew; the other 18 (damage 0.95,
+0.21, 0.03 and fifteen untouched) received no further event and stayed parked
+for the rest of the run. *Superseded for the replay by §D.58.8: the Tors'
+starting speed is now one they can shed in the gap.*
+
+**Seat hues.** On the proposed palette the materials sit at OKLCH hues magenta
+8°, red 30°, rounds 39°, yellow 83°, green 118°, cyan 200°, blue 240°, and the
+old seat 0–2 colors were the blue, red and green materials themselves. A fifth
+seat hue at 145° came within 0.063 of green at L 0.6; a fourth at 270° within
+0.072 of blue at L 0.65. Swept over 265°–290°, the worst seat-to-material
+distance rose 0.065 → 0.090 and the worst seat-to-seat distance fell 0.040 →
+0.023; 280° keeps both bounds (0.086, 0.040). Lightness stays at or below 0.78,
+because a pale violet at 0.84 came within 0.069 of platinum.
+
+### D.58.8 The `beams` Tors close at a speed they can shed (T-156)
+
+At the author's report that the Tors' starting speed was too large for them to
+match velocity with the Cairns: at 0.3 ly/yr and a proper braking acceleration
+of 0.94 ly/yr², a Tor needs 0.048 ly to stop and starts 0.03 ly out, so no
+course it could fly ends at rest beside the Cairns. The recorder now reads the
+Tors' braking acceleration off the hull at `t = 0` (0.9399 ly/yr²) and sets
+their speed to the one that braking sheds in exactly the gap,
+`v = √(γ² − 1)/γ` with `γ = 1 + a·L`: **0.2326 ly/yr**. The determinism
+suite's arm keeps 0.3 ly/yr, because it pins the braking-through mechanism.
+
+Re-recorded, seed 32, 3 yr, frames every 0.02 yr (one run):
+
+| | before (0.3 ly/yr) | after (0.2326 ly/yr) |
+|---|---|---|
+| Tors at rest beside the Cairns possible | no — 0.018 ly overshoot | yes — rest at the Cairns' place |
+| fire opens | the stacks overlapping | t ≈ 0.13 yr, the Tors 0.006 ly out, closing at 0.11 ly/yr |
+| Tors wrecked | 20, past structure at t ≈ 0.094–0.108 | 20, all by t 0.18 |
+| Cairns past structure, withdrawn home | 2 | 9 (worst 1.48 of structure) |
+| Cairns standing at the site at the end | 18 | 11 |
+
+The Tors still brake on the course they started on and close into the Cairns'
+reach while still moving, because a picket with no post has no decision that
+holds it off at range; under fire it holds that course (warfare §8.19).
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

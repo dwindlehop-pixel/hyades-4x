@@ -11,7 +11,9 @@
 //! | `sentries` | missile sentries at a center firing on an armed raider, rounds and point defense |
 //!
 //! The fights are the determinism suite's seeded fleets
-//! (`tests/determinism.rs`), placed where the mechanism must fire.
+//! (`tests/determinism.rs`), placed where the mechanism must fire — except
+//! that `beams`' Tors close at the speed their drive can shed in the gap, so
+//! they can come to rest at the Cairns rather than overshoot them.
 //!
 //! Run: `cargo run --release --example record_replay -- <out dir> [--quick]`.
 //! `--quick` records short, small versions — the fixture the viewer's tests
@@ -31,11 +33,17 @@ struct Scenario {
     planets: usize,
     horizon: f64,
     frame_years: f64,
-    /// `(seat, hull, class, role, offset from seat 0's homeworld ly, velocity ly/yr)`.
-    fleets: Vec<(usize, HullType, Class, Role, Vec3, Vec3)>,
+    fleets: Vec<Fleet>,
+    /// A fleet, by index, whose speed is set so that braking at its drive's
+    /// acceleration brings it to rest at fleet 0's place: its velocity above
+    /// gives only the direction.
+    closing: Option<usize>,
     spend_kt: f64,
     filter: LogFilter,
 }
+
+/// `(seat, hull, class, role, offset from seat 0's homeworld ly, velocity ly/yr)`.
+type Fleet = (usize, HullType, Class, Role, Vec3, Vec3);
 
 const STILL: Vec3 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
 
@@ -55,6 +63,7 @@ fn scenarios(quick: bool) -> Vec<Scenario> {
             horizon: if quick { 60.0 } else { 400.0 },
             frame_years: 5.0,
             fleets: Vec::new(),
+            closing: None,
             spend_kt: 0.0,
             filter: LogFilter::none().with(LogCategory::Vehicles).with(LogCategory::Combat).with(LogCategory::Cards),
         },
@@ -68,8 +77,9 @@ fn scenarios(quick: bool) -> Vec<Scenario> {
             frame_years: 0.02,
             fleets: vec![
                 picket(0, Class::Cairn, near, STILL),
-                picket(1, Class::Tor, near.add(Vec3::new(0.03, 0.0, 0.0)), Vec3::new(-0.3, 0.0, 0.0)),
+                picket(1, Class::Tor, near.add(Vec3::new(0.03, 0.0, 0.0)), Vec3::new(-1.0, 0.0, 0.0)),
             ],
+            closing: Some(1),
             spend_kt: 0.4,
             filter: fights,
         },
@@ -85,10 +95,36 @@ fn scenarios(quick: bool) -> Vec<Scenario> {
                 (0, HullType::LimitedOffensive, Class::Butte, Role::Sentry, STILL, STILL),
                 picket(1, Class::Tor, Vec3::new(0.04, 0.0, 0.0), Vec3::new(-0.2, 0.0, 0.0)),
             ],
+            closing: None,
             spend_kt: 0.2,
             filter: fights,
         },
     ]
+}
+
+/// The galaxy with `fleets` seeded at their offsets from `home`.
+fn generate(gcfg: GalaxyConfig, sc: &Scenario, home: Vec3, fleets: &[Fleet]) -> Galaxy {
+    let fleets = fleets
+        .iter()
+        .map(|&(seat, hull, class, role, offset, velocity)| SeedFleet {
+            seat,
+            hull,
+            class,
+            role,
+            position: home.add(offset),
+            velocity,
+        })
+        .collect();
+    let seeding = FleetSeeding { spend_kt: sc.spend_kt, known_radius_ly: 0.0, fleets, twin_bill: None };
+    Galaxy::generate_with(gcfg, seeding).unwrap()
+}
+
+/// **The speed a hull sheds in exactly `length` ly** braking at proper
+/// acceleration `accel` (ly/yr², `c = 1`): the braking length is
+/// `(γ − 1) / accel`, so `γ = 1 + accel · length` and `v = √(γ² − 1) / γ`.
+fn stopping_speed(accel: f64, length: f64) -> f64 {
+    let gamma = 1.0 + accel * length;
+    (gamma * gamma - 1.0).sqrt() / gamma
 }
 
 fn main() {
@@ -103,20 +139,26 @@ fn main() {
         gcfg.planet_count = sc.planets;
         let bare = Galaxy::generate(gcfg).unwrap();
         let home = bare.planets[bare.homeworlds[0].0 as usize].position;
-        let fleets = sc
-            .fleets
-            .iter()
-            .map(|&(seat, hull, class, role, offset, velocity)| SeedFleet {
-                seat,
-                hull,
-                class,
-                role,
-                position: home.add(offset),
-                velocity,
-            })
-            .collect();
-        let seeding = FleetSeeding { spend_kt: sc.spend_kt, known_radius_ly: 0.0, fleets, twin_bill: None };
-        let galaxy = Galaxy::generate_with(gcfg, seeding).unwrap();
+        let mut fleets = sc.fleets.clone();
+        if let Some(i) = sc.closing {
+            let gap = fleets[i].4.distance(fleets[0].4);
+            let dir = fleets[i].5.normalized();
+            // The drive's braking acceleration, read off the hull itself at
+            // `t = 0` while it sheds a probe speed.
+            fleets[i].5 = dir.scale(0.1);
+            let probe = Simulation::with_baseline(generate(gcfg, sc, home, &fleets), SimConfig::new(sc.seed));
+            let accel = probe
+                .snapshot_at(0.0)
+                .vehicles
+                .iter()
+                .find(|v| v.owner == fleets[i].0 as u32 && v.burn < 0)
+                .expect("the closing fleet is braking")
+                .accel;
+            let v = stopping_speed(accel, gap);
+            fleets[i].5 = dir.scale(v);
+            println!("{:<10} closing at {v:.4} ly/yr, braking {accel:.4} ly/yr² to rest in {gap:.4} ly", sc.name);
+        }
+        let galaxy = generate(gcfg, sc, home, &fleets);
         let mut cfg = SimConfig::new(sc.seed);
         cfg.horizon_years = sc.horizon;
         let mut sim = Simulation::with_baseline(galaxy.clone(), cfg);

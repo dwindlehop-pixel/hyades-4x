@@ -24,6 +24,7 @@ row below, and leave its code in the Band A pointer line of
 
 | code | status | open follow-ups, and where they live |
 |---|---|---|
+| **T-154** | Built: seats off every material's hue, platinum apex, positions to 0.0001 ly, Hermite interpolation | R-UI1 — `Hyades_interface.md` §9; the `beams` setup and the picket under-fire rule are put to the author |
 | **T-153** | Built: armed bodies solid and unarmed hollow; a 3×3 mark per role; a glyph legend from the module | R-UI3 — `Hyades_interface.md` §9 |
 | **T-152** | Built: glyphs only where their hulls stand, a display order, routes, holdings by material (Band bars), colonies by seat color, quiet traffic, cargo stripes | R-UI4 — `Hyades_interface.md` §9 |
 | **T-151** | Built: one client with a menu; phone layout and touch; Galaxy-level stacks, active hexes, dimmer worlds; the overlay that took every tap removed | R-UI2, R-UI4, R-UI9 — `Hyades_interface.md` §9 |
@@ -124,6 +125,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **T-151** — the replay viewer is a menu option of one client; phones | **T-151** | R-UI2, R-UI4 | **R-UI9** | The author's ruling 15 (the replay viewer is a menu option of the game client); design law #15 (the client reads replays and the palette is presentation state); `AGENTS.md` §2's rule to assert that a mechanism fires (the browser test now clicks and taps a hull the module reports drawn — before, nothing tested a pick through the page, and an invisible overlay took every one) | **`Hyades_interface.md` §6.4's stack rule** (one glyph per owner, Design, role and wreck state in a 3-pixel square at every level), replaced at the author's report that tactical stacked too many glyphs; **§6.5's hexes** (every hex drawn), replaced by active hexes at the author's report; **§7.1's world lights** (core 1.5, halo 0.35, bloom 0.6), dimmed at the author's report that glowing worlds made everything illegible — all placeholders, none ratified; **`palette.html` as a page** (§6.2), now a screen |
 | **T-152** — the tactical layer: glyphs in place, routes, holdings, cargo | **T-152** | R-UI4, R-UI1 (material colors proposed) | — | The author's rulings 16 (a glyph only centered on its hull's location), 17 (Band math, not a log) and 18 (armed hulls stay prominent); design law #15 (the snapshot gains holdings as a read; nothing flows back); `AGENTS.md` §4 (a Band is a reading the engine takes — the replay carries it, the viewer does not re-derive it) | **`Hyades_interface.md` §6.4's fan** (unalike stacks offset with leader lines), moved to appendix §D.58.6; **§6.5's world dot** (a colony now a pixel wider than an unowned world); **§6.2's Laden status** (a center pixel, now the fill only where a replay lacks cargo by material); **the author's literal quiet rule**, narrowed to unarmed hulls because it drew the `beams` fight as one pixel — then ratified as ruling 18 |
 | **T-153** — armed and role at a glance | **T-153** | R-UI3, R-UI1 (`fill` 0.45 → 0.7, proposed) | — | Ruling 18 (armed hulls stay prominent — now by body as well as by quietness); design law #15 (the legend is presentation, read from the module) | **`Hyades_interface.md` §6.3's role plus and armament-only marks**, replaced at the author's report that neither armed state nor role read at a glance; **the proposed `fill` 0.45**, moved to 0.7 so a hollow body reads against a solid one — both placeholders |
+| **T-154** — seats apart from materials; smooth motion | **T-154** | R-UI1 | — | The author's rulings 19 (a seat never wears a material's identity; the apex is platinum) and 20 (smooth continuous acceleration in the display); design law #15 | **`Hyades_interface.md` §6.2's seat families** (each archetype's seats from its own super's hues — the first three seats were the blue, red and green materials), replaced; **§6.2's Strange Matter `hy_violet3`**, now platinum; **§4's straight-line interpolation** and **§3's two-decimal positions**, which together drew a fight in 0.01-ly steps (appendix §D.58.7) |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -149,6 +151,53 @@ description of the change.
 ---
 
 ## Entries moved from Band A
+
+### T-157. Play forward after playing backward
+
+*Opened and built in one landing at the author's report: "Playing replay
+backwards seems to lock the viewer into negative timeflow. I can't get the
+viewer to play forward again."* ▶ and Space toggled play without resetting the
+direction ◀ had set, so they paused and resumed the backward run; only the L
+key turned it. ▶ now plays forward and ◀ backward, each pausing when already
+playing its way; Space pauses, or plays forward (`Hyades_interface.md` §8.3).
+The browser test plays backward, presses ▶ and checks the clock runs forward;
+it fails on the previous `shell.js`.
+
+### T-156. The `beams` Tors can match the Cairns' velocity
+
+*Opened and built in one landing at the author's report: "the Tor initial
+delta V is too large. They need the option to match velocity with the Cairn
+stack without overshooting."* The replay recorder sets the Tors' starting
+speed from their own braking acceleration so that they come to rest at the
+Cairns' place: 0.2326 ly/yr in place of 0.3 (appendix §D.58.8). The
+determinism suite keeps 0.3 ly/yr.
+
+### T-155. The client names resources by their ratified fiction
+
+*Opened and built in one landing at the author's direction: "The game client
+should use the ratified fictional names for resources."* The inspector and a
+new material key on the page's glyph legend show Cage Ice, Rosepeter,
+Voltslate and Strange Matter (`Hyades_galaxy_and_autopilot.md` §4.1;
+`Hyades_interface.md` ruling 21, §6.6). The supers keep their colors as names
+until T-142 ratifies theirs. The replay format and the engine's log keep the
+engine's color names.
+
+### T-154. Seats apart from the materials; smooth motion
+
+*Opened and built in one landing at the author's report on the `beams`
+replay: "The player/seat distinctions cannot overlap with the CMY/RGB/Platinum
+identity of basics/supers/apex" and "the animation shows discrete steps with
+separate slow in/slow out … The sim and the display should both reflect smooth
+continuous acceleration and deceleration."* Seats take OKLCH hues between the
+materials', tested at least 25° and 0.08 in OKLab from every material
+(`Hyades_interface.md` §6.2, ruling 19); Strange Matter is platinum. The steps
+were two-decimal positions on a fight 0.03 ly across; positions are written to
+four decimals and the viewer interpolates on the Hermite curve through each
+frame's position and velocity (§3, §4, ruling 20). The sim's motion was
+already continuous: constant-acceleration legs with a braking prefix
+(appendix §D.58.7). The fight's own behavior — the Tors closing to fire
+distance and the 18 Cairns staying — follows the replay's setup and the
+ratified under-fire rule, and is put to the author.
 
 ### T-153. Armed or not, and role, at a glance
 

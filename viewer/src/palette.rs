@@ -126,6 +126,24 @@ pub struct Roles {
     pub yellow: Rgb,
 }
 
+/// **Strange Matter's color**: platinum, a light neutral with a cool cast
+/// (the author's ruling: the apex is platinum). OKLCH L 0.84, C 0.012, h 250.
+pub const PLATINUM: Rgb = Rgb { r: 0.7655, g: 0.7905, b: 0.8135 };
+
+/// **Seat hues**, OKLCH degrees, in the gaps between the materials' hues
+/// (magenta 8°, red 30°, rounds 39°, yellow 83°, green 118°, cyan 200°, blue
+/// 240° on the proposed palette), each at least 25° from every one of them
+/// and at least 0.08 from every material in OKLab at every seat lightness
+/// (proposed; 280° was chosen over 265°–290° as the hue farthest from blue
+/// that keeps the seats 0.03 apart).
+pub const SEAT_HUES: [f64; 4] = [300.0, 160.0, 335.0, 280.0];
+/// Seat lightness levels, OKLCH: one seat of each hue at each level before
+/// the next — twenty seats, two more than the largest table — all below
+/// platinum's 0.84.
+pub const SEAT_LIGHTNESS: [f64; 5] = [0.7, 0.6, 0.78, 0.65, 0.74];
+/// Seat chroma, OKLCH, before the gamut brings it in.
+pub const SEAT_CHROMA: f64 = 0.13;
+
 /// The slot after the eight materials: people aboard (see [`Palette::material`]).
 pub const PEOPLE: usize = 8;
 
@@ -305,24 +323,25 @@ impl Palette {
         self.named.iter().find(|(k, _)| *k == name).map(|(_, c)| *c).unwrap_or(self.roles.world)
     }
 
-    /// **A seat's color.** Each archetype's seats draw from its own families
-    /// (galaxy §3) — Blue from blue and violet, Red from red, magenta and
-    /// orange, Green from green, cyan and yellow. Seat `i` has archetype
-    /// `i % 3`, so the first three seats are the three supers' own colors.
+    /// **A seat's color** (T-154, the author's ruling: a seat's identity never
+    /// overlaps the CMY/RGB/platinum identity of the basics, supers and
+    /// apex). Seats take the hues between the materials' — [`SEAT_HUES`], in
+    /// OKLCH degrees — at one of [`SEAT_LIGHTNESS`], with chroma
+    /// [`SEAT_CHROMA`] brought into gamut. They are off the author's palette
+    /// on purpose, as the status colors are: the palette's eight hues are the
+    /// materials' and their neighbors (proposed, R-UI1).
     pub fn seat(&self, seat: usize) -> Rgb {
-        const FAMILIES: [[&str; 6]; 3] = [
-            ["hy_blue", "hy_violet2", "hy_blue3", "hy_violet3", "hy_cyan2", "hy_blue2"],
-            ["hy_red", "hy_magenta2", "hy_orange3", "hy_red3", "hy_magenta3", "hy_orange"],
-            ["hy_green", "hy_yellow3", "hy_cyan", "hy_green3", "hy_yellow", "hy_cyan3"],
-        ];
-        self.get(FAMILIES[seat % 3][(seat / 3) % 6])
+        let hue = SEAT_HUES[seat % SEAT_HUES.len()];
+        let l = SEAT_LIGHTNESS[(seat / SEAT_HUES.len()) % SEAT_LIGHTNESS.len()];
+        from_oklch(Lch { l, c: SEAT_CHROMA, h: hue })
     }
 
     /// **A material on the Exchange's books** (`crate::replay::MATERIALS`
     /// order), and at [`PEOPLE`] the settlers a colonizer carries: the color a
     /// holding's bar and a hold's stripe are drawn in. The basics and supers
-    /// are the palette's own hues of their names; Strange Matter is the pale
-    /// violet, rounds the orange, people the paper (proposed, part of R-UI1).
+    /// are the palette's own hues of their names; Strange Matter is
+    /// [`PLATINUM`], rounds the orange, people the paper (proposed, part of
+    /// R-UI1).
     pub fn material(&self, i: usize) -> Rgb {
         self.get(match i {
             0 => "hy_cyan",
@@ -331,7 +350,7 @@ impl Palette {
             3 => "hy_red",
             4 => "hy_green",
             5 => "hy_blue",
-            6 => "hy_violet3",
+            6 => return PLATINUM,
             7 => "hy_orange",
             _ => "hy_base2",
         })
@@ -446,10 +465,10 @@ mod tests {
     }
 
     #[test]
-    fn a_color_set_by_hand_reaches_every_role_and_seat_that_uses_it() {
+    fn a_color_set_by_hand_reaches_every_role_and_material_that_uses_it() {
         let red = Rgb::from_hex("#c83a2c");
         let p = Palette::with(Settings::parse("hy_red=#c83a2c hy_base03=#101010 Wreck=#123456").unwrap());
-        assert_eq!(p.seat(1), red, "seat 1 is the Red archetype's own color");
+        assert_eq!(p.material(3), red, "Red, the super, is hy_red");
         assert_eq!(p.roles.ground.to_hex(), "#101010");
         assert_eq!(p.status(Status::Wreck).to_hex(), "#123456");
         assert_eq!(p.status(Status::Hit).to_hex(), "#ff2d6f", "others keep the proposal");
@@ -525,10 +544,29 @@ mod tests {
         }
     }
 
+    /// **A seat never reads as a material** (the author's ruling, T-154):
+    /// every seat is at least 25° of hue from every chromatic material and
+    /// 0.08 apart in OKLab from every material, platinum included.
     #[test]
-    fn the_three_archetypes_take_their_own_supers_family() {
+    fn no_seat_shares_an_identity_with_a_basic_super_or_the_apex() {
         let p = Palette::default();
-        assert_eq!((p.seat(0), p.seat(1), p.seat(2)), (p.get("hy_blue"), p.get("hy_red"), p.get("hy_green")));
+        for i in 0..18 {
+            let seat = p.seat(i);
+            let s = to_oklch(seat);
+            assert!(s.c >= 0.06, "seat {i} keeps a hue, apart from platinum: C {:.3}", s.c);
+            for m in 0..8 {
+                let mat = p.material(m);
+                let c = to_oklch(mat);
+                assert!(delta_e(seat, mat) >= 0.08, "seat {i} and material {m}: ΔE {:.3}", delta_e(seat, mat));
+                if c.c >= 0.05 {
+                    let d = (s.h - c.h).abs() % 360.0;
+                    let d = d.min(360.0 - d);
+                    assert!(d >= 25.0, "seat {i} h {:.0} and material {m} h {:.0}", s.h, c.h);
+                }
+            }
+        }
+        let pt = to_oklch(PLATINUM);
+        assert!((pt.l - 0.84).abs() < 0.01 && pt.c < 0.02, "platinum: L {:.3} C {:.3}", pt.l, pt.c);
     }
 
     #[test]
