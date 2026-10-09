@@ -11,7 +11,7 @@
 
 use crate::camera::{Camera, Lod};
 use crate::color::{mix, Rgb};
-use crate::glyph::{self, glyph, Family, Glyph, Size};
+use crate::glyph::{self, glyph, role_mark, Family, Glyph, Size};
 use crate::palette::{Palette, Status, PEOPLE};
 use crate::raster::Raster;
 use crate::replay::{Replay, View};
@@ -133,6 +133,8 @@ pub enum Op {
         inner: Rgb,
         /// The Doctrine role's accent.
         core: Rgb,
+        /// The role's 3×3 mark ([`role_mark`]), drawn at the glyph's pip.
+        mark: Option<[bool; 9]>,
         marks: Rgb,
         /// The drive vector's far end and color.
         vector: Option<([i64; 2], Rgb)>,
@@ -278,6 +280,7 @@ pub fn plan(s: &Scene) -> Vec<Op> {
             outline,
             inner,
             core,
+            mark: role_mark(role),
             marks,
             vector: if quiet { None } else { vector(s, h.row, here) },
             route,
@@ -302,13 +305,16 @@ pub fn plan(s: &Scene) -> Vec<Op> {
 fn stack(ops: &mut [Op], s: &Scene) {
     let lod = s.camera.lod();
     let cell_px = stack_px(lod);
-    type Group = (i64, i64, usize, Option<(GlyphKey, usize, bool, bool)>);
+    // At the galaxy level a group is one owner's armed or unarmed hulls in a
+    // place; below it, one owner's hulls of one Design, role, wreck state and
+    // quietness.
+    type Group = (i64, i64, usize, bool, Option<(GlyphKey, usize, bool, bool)>);
     let mut groups: BTreeMap<Group, Vec<usize>> = BTreeMap::new();
     for (i, h) in s.view.hulls.iter().enumerate() {
         let Op::Hull { at, key, quiet, .. } = ops[i] else { continue };
         let cell = (at[0].div_euclid(cell_px), at[1].div_euclid(cell_px));
         let kind = (lod != Lod::Galaxy).then_some((key, h.row.kind, h.row.wrecked, quiet));
-        groups.entry((cell.0, cell.1, h.hull.owner, kind)).or_default().push(i);
+        groups.entry((cell.0, cell.1, h.hull.owner, key.beams || key.tubes, kind)).or_default().push(i);
     }
     let mut places: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
     for ((cx, cy, ..), mut members) in groups {
@@ -464,6 +470,7 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
             outline,
             inner,
             core,
+            mark,
             marks,
             vector,
             damage,
@@ -488,13 +495,15 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
             }
             continue;
         }
+        let armed = key.beams || key.tubes;
         if *marker {
+            // Solid for armed hulls, hollow for the rest, as a glyph's body.
             let side = marker_px(*count as usize);
             let h = side / 2;
             for y in -h..=h {
                 for x in -h..=h {
                     let edge = x.abs() == h || y.abs() == h;
-                    r.set(at[0] + x, at[1] + y, if edge { *outline } else { *inner });
+                    r.set(at[0] + x, at[1] + y, if edge || armed { *outline } else { *inner });
                 }
             }
             if *hit {
@@ -511,12 +520,19 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
         let g = cache.get(s.replay, *key);
         let (gw, ax, ay) = (g.w, g.ax, g.ay);
         r.stamp(&g.outline, gw, ax, ay, at[0], at[1], *outline);
+        // The body: solid when armed, hollow otherwise — armed and unarmed
+        // read apart before anything else. A hold's cargo stripes the whole
+        // body of an unarmed hull and the bottom two rows of an armed one.
+        let solid = armed;
+        r.stamp(&g.inner, gw, ax, ay, at[0], at[1], if solid { *outline } else { *inner });
         if *laden {
-            stripes(r, pal, g, *at, cargo);
-        } else {
-            r.stamp(&g.inner, gw, ax, ay, at[0], at[1], *inner);
+            let last = (0..g.h).rev().find(|&y| (0..g.w).any(|x| g.inner[y * g.w + x])).unwrap_or(0);
+            stripes(r, pal, g, *at, cargo, if solid { last.saturating_sub(1) } else { 0 });
         }
-        r.stamp(&g.core, gw, ax, ay, at[0], at[1], *core);
+        if let Some(m) = mark {
+            let (px, py) = (at[0] + g.pip.0 as i64 - ax as i64, at[1] + g.pip.1 as i64 - ay as i64);
+            r.stamp(m, 3, 1, 1, px, py, if solid { pal.roles.ground } else { *core });
+        }
         r.stamp(&g.marks, gw, ax, ay, at[0], at[1], *marks);
         let half = ax as i64 - 2;
         if *damage > 0.0 {
@@ -537,13 +553,13 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
     }
 }
 
-/// **A hold's composition**: the glyph's fill in vertical stripes, one per
-/// material carried, each as wide as its share of the cargo's mass, in book
-/// order and then people. A hold whose composition the replay does not carry
-/// is filled in the laden color.
-fn stripes(r: &mut Raster, pal: &Palette, g: &Glyph, at: [i64; 2], cargo: &[f64; 9]) {
+/// **A hold's composition**: the glyph's body from row `from` down, in
+/// vertical stripes, one per material carried, each as wide as its share of
+/// the cargo's mass, in book order and then people. A hold whose composition
+/// the replay does not carry is filled in the laden color.
+fn stripes(r: &mut Raster, pal: &Palette, g: &Glyph, at: [i64; 2], cargo: &[f64; 9], from: usize) {
     let total: f64 = cargo.iter().sum();
-    let cols: Vec<usize> = (0..g.w).filter(|&x| (0..g.h).any(|y| g.inner[y * g.w + x])).collect();
+    let cols: Vec<usize> = (0..g.w).filter(|&x| (from..g.h).any(|y| g.inner[y * g.w + x])).collect();
     for (k, &x) in cols.iter().enumerate() {
         let color = if total > 0.0 {
             let f = (k as f64 + 0.5) / cols.len() as f64 * total;
@@ -556,7 +572,7 @@ fn stripes(r: &mut Raster, pal: &Palette, g: &Glyph, at: [i64; 2], cargo: &[f64;
         } else {
             pal.status(Status::Laden)
         };
-        for y in 0..g.h {
+        for y in from..g.h {
             if g.inner[y * g.w + x] {
                 r.set(at[0] + x as i64 - g.ax as i64, at[1] + y as i64 - g.ay as i64, color);
             }
@@ -737,13 +753,99 @@ mod tests {
         let s = Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None };
         let ops = plan(&s);
         let freighter = ops.iter().find(|o| matches!(o, Op::Hull { id: 5, .. })).unwrap();
-        let Op::Hull { outline, inner, core, key, laden, .. } = freighter else { unreachable!() };
+        let Op::Hull { outline, inner, core, mark, key, laden, .. } = freighter else { unreachable!() };
         assert_eq!(*outline, f.palette.seat(0));
         assert_eq!(*inner, mix(f.palette.seat(0), f.palette.roles.ground, f.palette.fill_dim()));
         assert_eq!(*core, f.palette.role("Freighter"));
+        assert_eq!(*mark, role_mark("Freighter"));
         assert_eq!(f.replay.designs[key.design], "Ford");
         assert_eq!(f.replay.hulls[key.hull], "MSV");
         assert!(*laden);
+    }
+
+    /// One hull of `id` at the frame of `t`, zoomed so a glyph is drawn whole,
+    /// alone in its view, painted; and where it stands.
+    fn alone(f: &Fixture, t: f64, id: u64, tweak: impl Fn(&mut crate::replay::HullView)) -> (Raster, [i64; 2]) {
+        let mut view = f.replay.view_at(t);
+        view.hulls.retain(|h| h.hull.id == id);
+        tweak(&mut view.hulls[0]);
+        let mut cam = f.camera;
+        cam.scale = crate::camera::SYSTEM_PX_PER_LY * 2.0;
+        cam.center = [view.hulls[0].row.pos[0], view.hulls[0].row.pos[1]];
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let mut r = raster(&cam);
+        render(&s, &mut r);
+        (r, to_raster(cam.project(view.hulls[0].row.pos), PIXEL))
+    }
+
+    /// Hull 6 unarmed and moved onto an LOU, the Offensive family's Limited
+    /// hull, so it is drawn as a glyph and not as quiet traffic.
+    fn unarmed_lou(h: &mut crate::replay::HullView) {
+        (h.hull.beams, h.hull.hull) = (0, 7);
+    }
+
+    #[test]
+    fn an_armed_body_is_solid_and_an_unarmed_body_hollow() {
+        let f = fixture();
+        let seat = f.palette.seat(1).to_ints();
+        let hollow = mix(f.palette.seat(1), f.palette.roles.ground, f.palette.fill_dim()).to_ints();
+        // Hull 6, a picket on an LCV with a beam mount, at t 0: a diamond.
+        let (armed, at) = alone(&f, 0.0, 6, |_| {});
+        assert_eq!(armed.get(at[0] + 2, at[1]), Some(seat), "solid in the seat's color");
+        // Unarmed, it would be quiet traffic on its Contact hull; on an
+        // Offensive hull (an LOU triangle) it is a glyph, hollow.
+        let (bare, at) = alone(&f, 0.0, 6, unarmed_lou);
+        assert_eq!(bare.get(at[0] + 2, at[1] + 2), Some(hollow), "hollow: the seat's color dimmed");
+    }
+
+    #[test]
+    fn an_armed_hull_carrying_rounds_stays_solid_with_its_cargo_along_the_bottom() {
+        let f = fixture();
+        let (r, at) = alone(&f, 0.0, 6, |h| {
+            h.laden = true;
+            h.row.mix[7] = 0.2;
+        });
+        let rounds = f.palette.material(7).to_ints();
+        assert_eq!(r.get(at[0] + 2, at[1]), Some(f.palette.seat(1).to_ints()), "the body stays solid");
+        assert_eq!(r.get(at[0], at[1] + 3), Some(rounds), "the diamond's bottom interior row is the cargo");
+        assert_ne!(r.get(at[0] + 2, at[1] + 1), Some(rounds), "and only the bottom two rows");
+    }
+
+    #[test]
+    fn the_role_is_a_mark_at_the_center_and_reads_on_either_body() {
+        let f = fixture();
+        // An armed picket: an X in the ground color on its solid body.
+        let (r, at) = alone(&f, 0.0, 6, |_| {});
+        let ground = f.palette.roles.ground.to_ints();
+        for (dx, dy) in [(-1, -1), (1, -1), (0, 0), (-1, 1), (1, 1)] {
+            assert_eq!(r.get(at[0] + dx, at[1] + dy), Some(ground), "the X at {dx},{dy}");
+        }
+        assert_eq!(r.get(at[0], at[1] - 1), Some(f.palette.seat(1).to_ints()), "and the body between its arms");
+        // Unarmed, the same mark in the role's accent on the hollow body —
+        // a pixel low on a triangle, whose interior sits low.
+        let (r, at) = alone(&f, 0.0, 6, unarmed_lou);
+        assert_eq!(r.get(at[0], at[1] + 1), Some(f.palette.role("Picket").to_ints()));
+        assert_eq!(r.get(at[0] - 1, at[1]), Some(f.palette.role("Picket").to_ints()));
+    }
+
+    #[test]
+    fn at_the_galaxy_level_armed_and_unarmed_hulls_are_separate_markers() {
+        let f = fixture();
+        let mut view = crowd(&f, 2);
+        let mut armed = view.hulls[0];
+        (armed.hull.id, armed.row.id, armed.hull.beams) = (400, 400, 1);
+        view.hulls.push(armed);
+        let cam = galaxy_camera(&f);
+        let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None };
+        let ops = plan(&s);
+        let marker_of = |id| {
+            ops.iter().find_map(|o| match o {
+                Op::Hull { members, count: 1.., marker: true, .. } if members.contains(&id) => Some(members.clone()),
+                _ => None,
+            })
+        };
+        assert_eq!(marker_of(400), Some(vec![400]), "the armed hull is its own marker");
+        assert!(!marker_of(5).unwrap().contains(&400), "apart from the unarmed Fords");
     }
 
     #[test]
@@ -924,8 +1026,8 @@ mod tests {
         let mut laden = raster(&f.camera);
         render(&Scene { view: &f.replay.view_at(0.0), ..s }, &mut laden);
         let seat = f.palette.seat(0).to_ints();
-        assert_eq!(laden.get(at[0] + 4, at[1] + 4), Some(seat), "laden: the glyph's corner");
-        assert_ne!(r.get(at[0] + 4, at[1] + 4), Some(seat), "quiet: no glyph");
+        assert_eq!(laden.get(at[0] + 5, at[1] + 5), Some(seat), "laden: the glyph's corner");
+        assert_ne!(r.get(at[0] + 5, at[1] + 5), Some(seat), "quiet: no glyph");
     }
 
     #[test]

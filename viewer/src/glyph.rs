@@ -5,14 +5,15 @@
 //! | what | from | drawn as |
 //! |---|---|---|
 //! | hull family | `LSV`… → Systems, Contact, Offensive | square, diamond, triangle |
-//! | hull size | Limited, Medium, General | 7, 9, 11 px across |
-//! | armament | beam mounts, missile tubes | a spike ahead, ears either side |
+//! | hull size | Limited, Medium, General | 9, 11, 13 px across |
+//! | armament | beam mounts, missile tubes | a spike ahead, ears either side — and the renderer fills an armed body solid |
 //! | Design class | the class's index | a 4-bit tag in a row under the shape |
+//! | Doctrine role | the role a hull is on | a 3×3 mark at [`Glyph::pip`] ([`role_mark`]) |
 //!
-//! Four layers come back as masks so the renderer can color them apart: the
-//! **outline** and the **inner** fill in the seat's color (the fill dimmer),
-//! the **core** — a plus at the center — in the Doctrine role's accent, and
-//! the **marks** (armament and tag) in bright text.
+//! Three layers come back as masks so the renderer can color them apart: the
+//! **outline** and the **inner** body in the seat's color, and the **marks**
+//! (armament and tag) in bright text. The role mark is stamped at the pip,
+//! which sits where every shape has a 3×3 interior.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Family {
@@ -60,14 +61,33 @@ pub struct Glyph {
     pub ay: usize,
     pub outline: Vec<bool>,
     pub inner: Vec<bool>,
-    pub core: Vec<bool>,
     pub marks: Vec<bool>,
+    /// The center of the role mark: the anchor, or a pixel below it on a
+    /// triangle, whose 3×3 interior sits low.
+    pub pip: (usize, usize),
+}
+
+/// **A role's mark** (proposed, R-UI3): a 3×3 mask, row-major, distinct by
+/// shape so it reads without color. `None` for a role with no mark.
+pub fn role_mark(role: &str) -> Option<[bool; 9]> {
+    const X: bool = true;
+    const O: bool = false;
+    Some(match role {
+        "Colonizer" => [O, X, O, X, X, X, O, X, O],
+        "Miner" => [O, X, O, O, X, O, O, X, O],
+        "Freighter" => [O, O, O, X, X, X, O, O, O],
+        "Picket" => [X, O, X, O, X, O, X, O, X],
+        "Sentry" => [X, X, X, X, O, X, X, X, X],
+        "Scout" => [O, O, O, O, X, O, O, O, O],
+        "Reserve" => [X, O, X, O, O, O, X, O, X],
+        _ => return None,
+    })
 }
 
 impl Glyph {
     fn blank(w: usize, h: usize, ax: usize, ay: usize) -> Glyph {
         let blank = vec![false; w * h];
-        Glyph { w, h, ax, ay, outline: blank.clone(), inner: blank.clone(), core: blank.clone(), marks: blank }
+        Glyph { w, h, ax, ay, outline: blank.clone(), inner: blank.clone(), marks: blank, pip: (ax, ay) }
     }
 
     fn put(layer: &mut [bool], w: usize, x: i64, y: i64) {
@@ -82,9 +102,9 @@ impl Glyph {
 /// The glyph for a hull of `code` built to `design`, with its mounts.
 pub fn glyph(code: &str, design: &str, beams: u32, tubes: u32) -> Glyph {
     let s: i64 = match size(code) {
-        Size::Limited => 7,
-        Size::Medium => 9,
-        Size::General => 11,
+        Size::Limited => 9,
+        Size::Medium => 11,
+        Size::General => 13,
     };
     let r = s / 2;
     // Two columns either side for ears, two rows above for the spike, two
@@ -107,15 +127,12 @@ pub fn glyph(code: &str, design: &str, beams: u32, tubes: u32) -> Glyph {
                 continue;
             }
             let edge = !(inside(x - 1, y) && inside(x + 1, y) && inside(x, y - 1) && inside(x, y + 1));
-            let layer = if edge {
-                &mut g.outline
-            } else if x.abs() + y.abs() <= 1 {
-                &mut g.core
-            } else {
-                &mut g.inner
-            };
+            let layer = if edge { &mut g.outline } else { &mut g.inner };
             Glyph::put(layer, w, ax + x, ay + y);
         }
+    }
+    if family(code) == Family::Offensive {
+        g.pip = (ax as usize, ay as usize + 1);
     }
     if beams > 0 {
         let top = (-r..=r).find(|&y| inside(0, y)).unwrap_or(-r);
@@ -158,16 +175,32 @@ mod tests {
     }
 
     #[test]
-    fn every_glyph_has_an_outline_around_a_filled_inside() {
+    fn every_glyph_has_an_outline_around_a_filled_inside_with_room_for_a_role_mark() {
         for h in HULLS {
             let g = glyph(h, "Unnamed", 0, 0);
             assert!(count(&g.outline) > 0 && count(&g.inner) > 0, "{h}");
-            assert!(count(&g.core) >= 3, "{h}: the role's plus, clipped to the inside on a small triangle");
             for i in 0..g.w * g.h {
-                assert!((g.outline[i] as u8 + g.inner[i] as u8 + g.core[i] as u8) <= 1, "{h}: layers are disjoint");
+                assert!(!(g.outline[i] && g.inner[i]), "{h}: layers are disjoint");
             }
-            assert!(g.core[g.ay * g.w + g.ax], "{h}: the role sits on the anchor");
+            let (px, py) = g.pip;
+            for dy in 0..3 {
+                for dx in 0..3 {
+                    assert!(g.inner[(py + dy - 1) * g.w + px + dx - 1], "{h}: the 3×3 at the pip is inside the body");
+                }
+            }
         }
+    }
+
+    #[test]
+    fn every_role_mark_differs_from_every_other() {
+        let roles = ["Colonizer", "Miner", "Freighter", "Picket", "Sentry", "Scout", "Reserve"];
+        let marks: Vec<[bool; 9]> = roles.iter().map(|r| role_mark(r).unwrap()).collect();
+        for i in 0..marks.len() {
+            for j in i + 1..marks.len() {
+                assert_ne!(marks[i], marks[j], "{} and {}", roles[i], roles[j]);
+            }
+        }
+        assert_eq!(role_mark("Scrapped"), None);
     }
 
     #[test]
@@ -212,7 +245,7 @@ mod tests {
         assert_eq!(count(&bare.marks), 0);
         assert_eq!(count(&beam.marks), 2, "a two-pixel spike");
         assert_eq!(count(&tube.marks), 2, "an ear either side");
-        assert!(beam.marks[(beam.ay - 4) * beam.w + beam.ax], "the spike sits ahead of the apex");
+        assert!(beam.marks[(beam.ay - 5) * beam.w + beam.ax], "the spike sits ahead of the apex");
         assert_eq!(beam.outline, bare.outline, "marks leave the shape alone");
     }
 }

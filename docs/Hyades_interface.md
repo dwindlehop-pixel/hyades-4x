@@ -213,7 +213,7 @@ eighteen seat colors still reaches 3:1 contrast on the ground (§D.58.3).
 
 BUILT (T-150). The viewer's side panel tunes every value in this section while
 the game is drawn — the tone map's six parameters and four anchors, the glyph
-fill's dimming (`fill`, proposed 0.45, §6.3), and any of the 40 palette colors
+dimming of an unarmed glyph's hollow body (`fill`, proposed 0.7, §6.3), and any of the 40 palette colors
 or 9 status colors set by hand (a hand-set color replaces the tone map's
 result for that name, and every role and seat drawn from it follows). Each
 change redraws both modes.
@@ -222,7 +222,7 @@ change redraws both modes.
 owned by the module — the page sends it and reads back the canonical form:
 
 ```
-ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.45 hy_red=#c83a2c Hit=#ff2d6f
+ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.7 hy_red=#c83a2c Hit=#ff2d6f
 ```
 
 Keys left out keep the proposal; a key that is unknown, a value out of range
@@ -276,20 +276,26 @@ ground and at least 0.03 apart in OKLab, and every role accent at 3:1.
 
 ### 6.3 The glyph grammar — OPEN (R-UI3)
 
-Proposed, and built as proposed (`viewer/src/glyph.rs`):
+Proposed, and built as proposed (`viewer/src/glyph.rs`), revised at T-153
+after the author could not tell armed from unarmed hulls, nor role at a glance:
 
 | what | read from | drawn as |
 |---|---|---|
 | hull family | the hull code | Systems a square, Contact a diamond, Offensive a triangle |
-| hull size | the hull code | Limited 7, Medium 9, General 11 tactical pixels across |
-| armament | the hull's beam and tube mounts | a two-pixel spike ahead for beams, a pixel either side for tubes |
+| hull size | the hull code | Limited 9, Medium 11, General 13 tactical pixels across |
+| **armed or not** | the hull's beam and tube mounts | **an armed body is solid in the seat's color; an unarmed body is hollow**, the seat's color 70% toward the ground (`fill`, *placeholder*) — and a two-pixel spike ahead for beams, a pixel either side for tubes |
+| **Doctrine role** | the role | **a 3×3 mark at the body's center, one shape per role**: Colonizer `+`, Miner `│`, Freighter `─`, Picket `×`, Sentry `□`, Scout a dot, Reserve the four corners (`glyph::role_mark`) — in the role's accent on a hollow body and in the ground's color on a solid one, so it reads on either; a triangle's mark sits a pixel low, where its interior is |
+| cargo | the hold, by material | an unarmed body striped whole, an armed body's bottom two rows (§6.6) |
 | Design class | the class | a 4-bit tag under the shape: the class's index plus one; Unnamed has none |
-| seat | the owner | the outline in the seat's color, the fill the same color 45% toward the ground |
-| Doctrine role | the role | a plus at the center in the role's accent |
+| seat | the owner | the outline in the seat's color |
 
-Every Design reads differently on every hull, and the three families differ at
-every size (`every_design_reads_differently_on_every_hull`). A tactical pixel
-is two screen pixels (*placeholder*), scaled up without smoothing.
+Every Design reads differently on every hull, the three families differ at
+every size, and every role's mark differs from every other
+(`every_design_reads_differently_on_every_hull`,
+`every_role_mark_differs_from_every_other`). The side panel's legend draws each
+mark from the module (`hv_text(11)`), so it is the mark the renderer stamps. A
+tactical pixel is two screen pixels (*placeholder*), scaled up without
+smoothing.
 
 ### 6.4 Stacks and the display order — OPEN (R-UI4)
 
@@ -313,10 +319,11 @@ Proposed and built, every magnitude a *placeholder*:
   visible; then by distance from the seat's homeworld, the frontier over home.
 - **A place's count** — every hull in the square, whatever its owner — is drawn
   once, in a 3×5 pixel font, beside the glyph on top.
-- **At the Galaxy level a place's hulls are grouped by owner alone** and each
-  group is drawn as a **marker**: a filled square in the seat's color, 3, 5, 7
-  or 9 tactical pixels across for 1, 2–9, 10–99 and 100 or more hulls,
-  centered on its lowest-id hull. A group of quiet hulls is one dim pixel.
+- **At the Galaxy level a place's hulls are grouped by owner and by whether
+  they are armed**, and each group is drawn as a **marker**: a square in the
+  seat's color, solid for armed hulls and hollow for unarmed, 3, 5, 7 or 9
+  tactical pixels across for 1, 2–9, 10–99 and 100 or more hulls, centered on
+  its lowest-id hull. A group of quiet hulls is one dim pixel.
 - A pick selects the nearest drawn glyph within a radius (§8.3), the one on top
   where two are equally near; **the inspector lists what the place is made
   of** — the count of each Design, hull and role — and then the hull picked.
@@ -361,10 +368,12 @@ Proposed and built (T-152, the author's direction):
   never quiet** — RATIFIED (ruling 18, T-152): the `beams` replay's whole
   fight is unladen Contact pickets, which the unarmed condition keeps visible
   (appendix §D.58.6).
-- **Cargo.** A laden hull's fill is striped vertically, one stripe per material
-  in its hold and then its settlers, each as wide as its share of the cargo's
-  mass, in book order, in the material colors (§6.2). The inspector lists the
-  hold by material, kt.
+- **Cargo.** A laden hull's body is striped vertically, one stripe per
+  material in its hold and then its settlers, each as wide as its share of the
+  cargo's mass, in book order, in the material colors (§6.2) — the whole body of
+  an unarmed hull, and the bottom two rows of an armed one, whose solid body
+  says it is armed (a sentry carries rounds). The inspector lists the hold by
+  material, kt.
 
 ---
 
@@ -502,7 +511,8 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
 `web/test/smoke.mjs`, which drives the module headless over every replay in
 both modes; and `web/test/browser.mjs`, which opens the site in headless
 Chrome, goes from the menu through Replays to a replay, checks it renders on
-WebGL2 without a console error, clicks a drawn hull and checks it is selected,
+WebGL2 without a console error, checks the glyph legend shows every role's
+mark, clicks a drawn hull and checks it is selected,
 compares GPU and CPU juicy (§7.3), plays, filters the log and seeks from a row,
 drives the palette editor (a link's settings open with the page; a slider
 redraws the canvas and rewrites the link; a hand-set color reaches the settings
@@ -526,7 +536,7 @@ job runs the same build and tests on every pull request.
 |---|---|---|---|
 | **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"` | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
 | **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible | the author's judgment against recorded games |
-| **R-UI3** | the glyph grammar (§6.3) | OPEN — proposal built | the author's review on the deployed site |
+| **R-UI3** | the glyph grammar (§6.3) | OPEN — revised at T-153: armed bodies solid and unarmed hollow; a 3×3 role mark per role; glyphs a pixel wider each side; a legend | the author's review on the deployed site |
 | **R-UI4** | stacking and the tactical layer: the stack square per level, the Galaxy-level owner markers, the display order, the place count, routes, holding bars, quiet hulls and cargo stripes (§6.4–§6.6) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; routes, holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18) | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |
 | **R-UI6** | replay size (§3) | OPEN — recommendation attached | the first replay the author wants to keep that passes ~50 MB |

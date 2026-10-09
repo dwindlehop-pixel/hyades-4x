@@ -106,6 +106,10 @@ try {
   check(colors >= 4, `tactical draws: ${colors} distinct colors sampled`);
   if (shots) await page.screenshot({ path: path.join(shots, "tactical.png") });
 
+  // The glyph legend shows every role's mark, from the module.
+  const roles = await page.evaluate(() => [...document.querySelectorAll("#roles li")].map((li) => [li.dataset.role, li.querySelectorAll(".mark i[style]").length]));
+  check(roles.length === 7 && roles.some(([r, n]) => r === "Picket" && n === 5), `the legend shows the role marks: ${JSON.stringify(roles)}`);
+
   // A click on a drawn hull selects it.
   const picked = await clickDrawn(page, (box, x, y) => page.mouse.click(box.x + x + 2, box.y + y + 2));
   check(picked.startsWith("Hull "), `a click on a drawn hull selects it: ${picked.split("\n")[0]}`);
@@ -192,7 +196,7 @@ try {
   await tuned.$eval('#tune-colors label[data-name="hy_red"] input', (el) => { el.value = "#123456"; el.dispatchEvent(new Event("input", { bubbles: true })); });
   check((await tuned.inputValue("#tune-text")).includes("hy_red=#123456"), "a hand-set color reaches the settings line");
   await tuned.click("#tune-reset");
-  check(await tuned.evaluate(() => window.hyades.text(9)) === "ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.45", "reset returns to the proposal");
+  check(await tuned.evaluate(() => window.hyades.text(9)) === "ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.7", "reset returns to the proposal");
   if (shots) await tuned.screenshot({ path: path.join(shots, "tuner.png") });
 
   // Back to the menu, then the palette screen; the old palette.html link

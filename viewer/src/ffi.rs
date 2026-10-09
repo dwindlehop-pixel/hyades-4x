@@ -330,6 +330,7 @@ pub extern "C" fn hv_palette_set() -> i32 {
 /// | 8 | the replay's label and seed |
 /// | 9 | the palette's settings, in their text form |
 /// | 10 | every drawn hull glyph's screen position — see [`Viewer::drawn`] |
+/// | 11 | the role marks, for a legend: `role \t mark \t accent`, the mark nine `0`/`1` row-major |
 #[no_mangle]
 pub extern "C" fn hv_text(which: i32, first: i32, rows: usize) -> *const u8 {
     let s = match which {
@@ -337,6 +338,7 @@ pub extern "C" fn hv_text(which: i32, first: i32, rows: usize) -> *const u8 {
         7 => palette_sheet(&palette()),
         9 => palette().settings.to_string(),
         10 => with(|v| v.drawn()),
+        11 => role_legend(&palette()),
         _ => with(|v| match which {
             0 => v.status(),
             1 => v.inspector(),
@@ -403,10 +405,31 @@ pub fn palette_sheet(p: &Palette) -> String {
     out
 }
 
+/// **The role marks** ([`crate::glyph::role_mark`]) with their accents, so
+/// the page's legend shows the marks the renderer stamps.
+fn role_legend(p: &Palette) -> String {
+    let mut out = String::new();
+    for role in ["Colonizer", "Miner", "Freighter", "Picket", "Sentry", "Scout", "Reserve"] {
+        if let Some(m) = crate::glyph::role_mark(role) {
+            let bits: String = m.iter().map(|&b| if b { '1' } else { '0' }).collect();
+            let _ = writeln!(out, "{role}\t{bits}\t{}", p.role(role).to_hex());
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::replay::tests::TINY;
+
+    #[test]
+    fn the_role_legend_lists_each_mark_as_the_renderer_stamps_it() {
+        let legend = text(11, 0, 0);
+        assert_eq!(legend.lines().count(), 7);
+        assert!(legend.contains("Picket\t101010101\t#"), "{legend}");
+        assert!(legend.contains("Freighter\t000111000\t#"));
+    }
 
     fn text(which: i32, first: i32, rows: usize) -> String {
         let p = hv_text(which, first, rows);
@@ -454,7 +477,7 @@ mod tests {
         assert_eq!(hv_palette_set(), 0);
         assert_eq!(
             text(9, 0, 0),
-            "ink=0.1 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.45 Hit=#00ff00"
+            "ink=0.1 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.7 Hit=#00ff00"
         );
         put(TINY);
         assert_eq!(hv_load(320.0, 200.0), 0);

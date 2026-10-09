@@ -136,14 +136,33 @@ function applyPalette() {
   const vars = {
     ground: "--ground", panel: "--panel", grid: "--grid",
     text_dim: "--text-dim", text: "--text", text_bright: "--text-bright",
-    Selected: "--selected", Combat: "--combat",
+    Selected: "--selected", Combat: "--combat", hy_cyan: "--mat-cyan", hy_yellow: "--mat-yellow",
   };
   for (const line of text(7).split("\n").slice(1)) {
     const [, name, , shown] = line.split("\t");
     if (vars[name] && shown) document.documentElement.style.setProperty(vars[name], shown);
   }
   refreshLegend();
+  buildRoleLegend();
   if (document.body.dataset.screen === "palette") buildSheet();
+}
+
+/// Each role's mark as the module stamps it (`hv_text(11)`), in its accent.
+function buildRoleLegend() {
+  $("roles").replaceChildren(...text(11).split("\n").filter(Boolean).map((line) => {
+    const [role, bits, color] = line.split("\t");
+    const mark = document.createElement("span");
+    mark.className = "mark";
+    for (const b of bits) {
+      const px = document.createElement("i");
+      if (b === "1") px.style.background = color;
+      mark.append(px);
+    }
+    const li = document.createElement("li");
+    li.dataset.role = role;
+    li.append(mark, role.toLowerCase());
+    return li;
+  }));
 }
 
 // --- the live palette editor (docs/Hyades_interface.md §6.2) ---------------
