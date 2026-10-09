@@ -134,9 +134,9 @@ impl Viewer {
         let (_, ops) = self.planned();
         let mut out = String::new();
         for op in &ops {
-            if let Op::Hull { id, draw, count: count @ 1.., .. } = op {
+            if let Op::Hull { id, at, count: count @ 1.., .. } = op {
                 let p = tactical::PIXEL;
-                let _ = writeln!(out, "{id}\t{}\t{}\t{count}", (draw[0] as f64 + 0.5) * p, (draw[1] as f64 + 0.5) * p);
+                let _ = writeln!(out, "{id}\t{}\t{}\t{count}", (at[0] as f64 + 0.5) * p, (at[1] as f64 + 0.5) * p);
             }
         }
         out
@@ -150,26 +150,34 @@ impl Viewer {
         &self.lights
     }
 
-    /// Selects the hull, else the world, nearest screen point `(x, y)` within
-    /// `radius` screen pixels; clears the selection when nothing is that near.
+    /// Selects the drawn hull, else the world, nearest screen point `(x, y)`
+    /// within `radius` screen pixels — of glyphs at one distance, the one drawn
+    /// on top; clears the selection when nothing is that near.
     pub fn pick(&mut self, x: f64, y: f64, radius: f64) -> Option<Pick> {
         let (_, ops) = self.planned();
         let near = |s: [f64; 2]| (s[0] - x).hypot(s[1] - y);
-        let best = |want_hull: bool| {
+        let p = tactical::PIXEL;
+        // Drawn hulls bottom first, so of equal distances the last wins.
+        let hull = tactical::drawing_order(&ops)
+            .into_iter()
+            .filter_map(|i| match &ops[i] {
+                Op::Hull { id, at, .. } => Some((near([(at[0] as f64 + 0.5) * p, (at[1] as f64 + 0.5) * p]), *id)),
+                Op::World { .. } => None,
+            })
+            .filter(|(d, _)| *d <= radius)
+            .reduce(|a, b| if b.0 <= a.0 { b } else { a })
+            .map(|(_, id)| Pick::Hull(id));
+        let world = || {
             ops.iter()
                 .filter_map(|op| match op {
-                    Op::Hull { id, draw, count: 1.., .. } if want_hull => {
-                        let s = [(draw[0] as f64 + 0.5) * tactical::PIXEL, (draw[1] as f64 + 0.5) * tactical::PIXEL];
-                        Some((near(s), Pick::Hull(*id)))
-                    }
-                    Op::World { id, s, .. } if !want_hull => Some((near(*s), Pick::World(*id))),
-                    _ => None,
+                    Op::World { id, s, .. } => Some((near(*s), Pick::World(*id))),
+                    Op::Hull { .. } => None,
                 })
                 .filter(|(d, _)| *d <= radius)
                 .min_by(|a, b| a.0.total_cmp(&b.0))
                 .map(|(_, p)| p)
         };
-        self.selected = best(true).or_else(|| best(false));
+        self.selected = hull.or_else(world);
         self.selected
     }
 
@@ -208,6 +216,15 @@ impl Viewer {
                 let _ = writeln!(out, "hab        Band {:.3}", p.hab);
                 let _ = writeln!(out, "bio_max    Band {:.3}", p.bio_max);
                 let _ = write!(out, "ore C/M/Y  Band {:.2} / {:.2} / {:.2}", p.ore[0], p.ore[1], p.ore[2]);
+                let first = f.holdings.partition_point(|h| h.planet < id);
+                for h in f.holdings[first..].iter().take_while(|h| h.planet == id) {
+                    let _ = write!(out, "\nheld by P{} (Band, cost ladder):", h.seat);
+                    for (m, b) in h.bands.iter().enumerate() {
+                        if let Some(b) = b {
+                            let _ = write!(out, "\n  {:<9}{b:.2}", crate::replay::MATERIALS[m]);
+                        }
+                    }
+                }
             }
             Some(Pick::Hull(id)) => {
                 let view = self.view();
@@ -220,12 +237,14 @@ impl Viewer {
                 let speed = (row.vel[0].powi(2) + row.vel[1].powi(2) + row.vel[2].powi(2)).sqrt();
                 let _ = writeln!(out, "Hull {id} · P{}", h.hull.owner);
                 let (_, ops) = self.planned();
+                // The makeup of the place the hull's glyph tops, or of its stack.
                 let members = ops.iter().find_map(|o| match o {
+                    Op::Hull { id: i, place, .. } if *i == id && place.len() > 1 => Some(place.clone()),
                     Op::Hull { id: i, members, .. } if *i == id && members.len() > 1 => Some(members.clone()),
                     _ => None,
                 });
                 if let Some(members) = members {
-                    let _ = writeln!(out, "stack      {} hulls here:", members.len());
+                    let _ = writeln!(out, "here       {} hulls:", members.len());
                     let mut kinds: std::collections::BTreeMap<(String, String, String), usize> = Default::default();
                     for m in &members {
                         if let Some(h) = view.hulls.iter().find(|h| h.hull.id == *m) {
@@ -261,6 +280,9 @@ impl Viewer {
                     if row.wrecked { " · WRECK" } else { "" }
                 );
                 let _ = writeln!(out, "cargo      {:.4} kt · settlers {:.4} kt", row.cargo, row.settlers);
+                for (m, kt) in row.mix.iter().enumerate().filter(|(_, kt)| **kt > 0.0) {
+                    let _ = writeln!(out, "  {:<9}{kt:.4} kt", crate::replay::MATERIALS[m]);
+                }
                 let _ = write!(out, "bound for  {}", row.dest.map_or("—".into(), |d| format!("world {d}")));
             }
         }
@@ -375,12 +397,20 @@ mod tests {
         v.selected = Some(Pick::Hull(5));
         let text = v.inspector();
         assert!(text.contains("Ford on MSV") && text.contains("Freighter") && text.contains("burning"), "{text}");
+        assert!(
+            text.contains("Cyan     3.0000 kt") && text.contains("Yellow   1.5000 kt"),
+            "cargo by material: {text}"
+        );
         v.timeline.seek(10.0);
         v.selected = Some(Pick::Hull(6));
         assert!(v.inspector().contains("WRECK"));
         v.selected = Some(Pick::World(2));
         let text = v.inspector();
         assert!(text.contains("owner      P0") && text.contains("ore C/M/Y  Band 2.50"), "{text}");
+        v.timeline.seek(0.0);
+        v.selected = Some(Pick::World(2));
+        let text = v.inspector();
+        assert!(text.contains("held by P1") && text.contains("Cyan     -0.40"), "a rival's holding at a rock: {text}");
     }
 
     #[test]

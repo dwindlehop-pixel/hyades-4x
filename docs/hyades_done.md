@@ -24,6 +24,7 @@ row below, and leave its code in the Band A pointer line of
 
 | code | status | open follow-ups, and where they live |
 |---|---|---|
+| **T-152** | Built: glyphs only where their hulls stand, a display order, routes, holdings by material (Band bars), colonies by seat color, quiet traffic, cargo stripes | R-UI4 — `Hyades_interface.md` §9 |
 | **T-151** | Built: one client with a menu; phone layout and touch; Galaxy-level stacks, active hexes, dimmer worlds; the overlay that took every tap removed | R-UI2, R-UI4, R-UI9 — `Hyades_interface.md` §9 |
 | **T-150** | Built: the live palette editor; the author's rulings on ratifying live and on upstream packages | R-UI1 (awaits ratification on the live viewer), R-UI8 — `Hyades_interface.md` §9 |
 | **T-149** | Built: the replay viewer, its two modes, and deployment to Pages | R-UI1 … R-UI7 — `Hyades_interface.md` §9 |
@@ -120,6 +121,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **T-149** — the game interface: replay, viewer, Pages | **T-149** | — | **R-UI1 … R-UI7** | Design law #15 (the viewer reads a replay and does not link the engine; `snapshot_at` and `next_event_time` are reads); design law #16 (the recorder refuses a non-finite number); `AGENTS.md` §4's determinism (one seed, one replay, byte for byte) and its 60-second rule (every test target measured, the longest 34.5 s) | **The recorder's own first frame rule**, one commit earlier: frames at the first event after their year drifted onto event times and repeated once a run's events stopped (appendix §D.58.1); replaced by `snapshot_at` |
 | **T-150** — the palette is tuned and ratified live | **T-150** | R-UI1 | **R-UI8** | The author's rulings 13 (ratify on a live design) and 14 (the interface and networking may link upstream packages; the engine stays dependency-free); design law #15 (the palette is presentation state and never reaches the engine) | **`Hyades_interface.md` §9's own settle-by for R-UI1** ("approval of `palette.html`"), one landing old — the author ruled a sheet cannot ratify a palette; replaced by a settings line or link from the live editor. **`AGENTS.md` §4's zero-dependency rule**, narrowed by the author's ruling to the engine |
 | **T-151** — the replay viewer is a menu option of one client; phones | **T-151** | R-UI2, R-UI4 | **R-UI9** | The author's ruling 15 (the replay viewer is a menu option of the game client); design law #15 (the client reads replays and the palette is presentation state); `AGENTS.md` §2's rule to assert that a mechanism fires (the browser test now clicks and taps a hull the module reports drawn — before, nothing tested a pick through the page, and an invisible overlay took every one) | **`Hyades_interface.md` §6.4's stack rule** (one glyph per owner, Design, role and wreck state in a 3-pixel square at every level), replaced at the author's report that tactical stacked too many glyphs; **§6.5's hexes** (every hex drawn), replaced by active hexes at the author's report; **§7.1's world lights** (core 1.5, halo 0.35, bloom 0.6), dimmed at the author's report that glowing worlds made everything illegible — all placeholders, none ratified; **`palette.html` as a page** (§6.2), now a screen |
+| **T-152** — the tactical layer: glyphs in place, routes, holdings, cargo | **T-152** | R-UI4, R-UI1 (material colors proposed) | — | The author's rulings 16 (a glyph only centered on its hull's location), 17 (Band math, not a log) and 18 (armed hulls stay prominent); design law #15 (the snapshot gains holdings as a read; nothing flows back); `AGENTS.md` §4 (a Band is a reading the engine takes — the replay carries it, the viewer does not re-derive it) | **`Hyades_interface.md` §6.4's fan** (unalike stacks offset with leader lines), moved to appendix §D.58.6; **§6.5's world dot** (a colony now a pixel wider than an unowned world); **§6.2's Laden status** (a center pixel, now the fill only where a replay lacks cargo by material); **the author's literal quiet rule**, narrowed to unarmed hulls because it drew the `beams` fight as one pixel — then ratified as ruling 18 |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -145,6 +147,27 @@ description of the change.
 ---
 
 ## Entries moved from Band A
+
+### T-152. The tactical layer: glyphs where their hulls stand, routes, holdings and cargo
+
+*Opened and built in one landing at the author's direction after the T-151
+deployment: "The tactical view has weird distracting glitches with the little
+lines. Let's define a display order based on role, hull, and distance from
+homeworld rather than utilize the offset line. Glyphs should only appear
+centered on their actual location. The tactical view needs to show routes as
+very faint lines. I want to see colony by seat via color. I want to see
+Holdings by vertical line per item on the book in each glyph. I also want to
+have scouts and unladen systems/contact vehicles to be unobtrusive. Loaded
+vehicles should reflect the composition of their cargo graphically." — and,
+during it, "Use Band math instead of log."* The engine's snapshot gains every
+empire's holdings (`Snapshot::holdings`); the replay carries each hull's cargo
+by material and each holding as cost-ladder Band readings (`Hyades_interface.md`
+§3). Tactical mode draws every glyph at its own position in a display order
+(§6.4), faint routes and colonies in their seat's color (§6.5), holding bars at
+two pixels per Band (§6.5), quiet traffic as one dim pixel and laden holds as
+stripes of their materials (§6.6). Armed hulls are exempt from quietness: the
+direction as written drew the `beams` fight as one pixel (appendix §D.58.6),
+and the author ruled that armed hulls stay prominent (ruling 18). Open: R-UI4.
 
 ### T-151. The replay viewer is a menu option of one client; the client works on a phone
 

@@ -5045,6 +5045,42 @@ connection, 0.5, 1 and 2 s apart, and shows the status with a "Try again"
 button if all fail; the browser test serves one 503 and checks the second
 request loads.
 
+### D.58.6 The fan, retired; quiet traffic and the armed exception (T-152)
+
+**Superseded design — the fan** (T-151, `Hyades_interface.md` §6.4 before
+T-152). Unalike stacks in one place were drawn side by side to the right of the
+place, 22 tactical pixels apart, each joined back to the place by a one-pixel
+leader line in the grid color, at most four, the rest merged into a marker.
+What it was wrong about: a glyph was drawn where its hull was not, and the
+leader lines — one per offset glyph, redrawn every frame as stacks formed and
+split — read to the author as "weird distracting glitches with the little
+lines". Replaced by drawing every glyph at its own position and ordering the
+overlap (`tactical::display_order`).
+
+**The literal quiet rule hid a fight.** Taken as written, "unladen Systems and
+Contact vehicles are unobtrusive" made every unladen Contact hull one dim
+pixel. The `beams` replay's two fleets are LCV pickets with one beam mount each
+(20 Cairn, 20 Tor), never laden. At the replay's end, tactical mode drew 16
+stacks and **one** pixel that was not the ground, out of 144,000; the module
+smoke test failed on it ("1 colors"). Exempting armed hulls draws the surviving
+fleet as one glyph with a count of 18 at the replay's midpoint, and the smoke
+test passes on all three replays. The author then ruled that armed hulls stay
+prominent (`Hyades_interface.md` ruling 18).
+
+**Holdings in the recorded replays.** In `expansion` (60 yr, three seats, 150
+worlds requested) the only holdings are the three homeworlds' banks: Band 2.00
+of each basic at year 0, read on the cost ladder, and Band 0.00 of each from
+year 30, because a homeworld spends its bank as fast as it fills. No outpost
+holding appears inside 60 years. The engine–viewer contract test's bed (three
+seats, 150 worlds, 80 yr, seed 7) does record holdings at worlds their holder
+does not own, and asserts at least one.
+
+**What the new fields cost in size.** The three replays `web/build.sh --quick`
+records, before and after cargo by material and holdings were written: `beams`
+274,915 → 322,279 bytes (+17%), `expansion` 234,967 → 282,410 (+20%),
+`sentries` 221,107 → 261,268 (+18%). One build each; the recording is
+deterministic, so these are exact for this commit.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the
