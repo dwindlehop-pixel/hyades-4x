@@ -101,6 +101,9 @@ pub struct Frame {
     pub owner: Vec<Option<usize>>,
     pub pop: Vec<f64>,
     pub works: Vec<f64>,
+    /// Per planet, works as a mass, kt; empty in a replay recorded before the
+    /// field (T-159).
+    pub works_kt: Vec<f64>,
     /// Hulls in id order.
     pub rows: Vec<Row>,
     /// Every non-empty holding, by planet and then by seat.
@@ -335,6 +338,7 @@ impl Replay {
                 owner: col("owner").into_iter().map(seat_of).collect(),
                 pop: col("pop"),
                 works: col("works"),
+                works_kt: col("works_kt"),
                 rows,
                 holdings,
             });
@@ -470,18 +474,18 @@ pub(crate) mod tests {
                 "material": ["Cyan","Magenta","Yellow","Red","Green","Blue","Apex","Ordnance"]},
       "planet_fields": ["id","x","y","z","hab","bio_max","cyan","magenta","yellow","home"],
       "planets": [[0, 0, 0, 0, 4.2, 4.2, 0, 0, 0, 1], [1, 20, 0, 0, 4.2, 4.2, 0, 0, 0, 1], [2, 10, 5, 1, 3.1, 3, 2.5, 0, 0.1, 0]],
-      "frame_planet_fields": ["owner","pop","works"],
+      "frame_planet_fields": ["owner","pop","works","works_kt"],
       "vehicle_fields": ["id","kind","x","y","z","vx","vy","vz","accel","burn","damage","flags","dest","cargo","settlers",
                          "cargo_cyan","cargo_magenta","cargo_yellow","cargo_red","cargo_green","cargo_blue",
                          "cargo_apex","cargo_ordnance"],
       "holding_fields": ["planet","seat","cyan","magenta","yellow","red","green","blue","apex","ordnance"],
       "frames": [
-        {"t": 0, "owner": [0, 1, -1], "pop": [2.8, 2.8, 0], "works": [2, 2, 0],
+        {"t": 0, "owner": [0, 1, -1], "pop": [2.8, 2.8, 0], "works": [2, 2, 0], "works_kt": [1, 1, 0],
          "vehicles": [[5, 3, 0, 0, 0, 0, 0, 0, 0.2, 1, 0, 1, 2, 4.5, 0, 3, 0, 1.5, 0, 0, 0, 0, 0],
                       [6, 4, 20, 0, 0, 0, 0, 0, 0, 0, 0.25, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
          "holdings": [[0, 0, 2.1, 1.8, 3.25, null, null, null, null, null],
                       [2, 1, -0.4, null, null, null, null, null, null, null]]},
-        {"t": 10, "owner": [0, 1, 0], "pop": [2.9, 2.8, 1.1], "works": [2, 2, 1],
+        {"t": 10, "owner": [0, 1, 0], "pop": [2.9, 2.8, 1.1], "works": [2, 2, 1], "works_kt": [1, 2, 0.5],
          "vehicles": [[5, 3, 10, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 4.5, 0, 3, 0, 1.5, 0, 0, 0, 0, 0],
                       [6, 7, 21, 0, 0, 0.1, 0, 0, 0, 0, 1, 3, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                       [9, 0, 0, 0, 0, 0, 0, 0, 0.5, 1, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],

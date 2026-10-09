@@ -66,8 +66,10 @@ const CATEGORIES: [&str; 7] = ["Production", "Mining", "Vehicles", "Population",
 /// whether it is a homeworld.
 const PLANET_FIELDS: [&str; 10] = ["id", "x", "y", "z", "hab", "bio_max", "cyan", "magenta", "yellow", "home"];
 /// Per frame, one array per field, aligned to `planets`: the owning seat
-/// (`-1` unowned), population and works as Band readings.
-const FRAME_PLANET_FIELDS: [&str; 3] = ["owner", "pop", "works"];
+/// (`-1` unowned), population and works as Band readings, and works as the
+/// mass it is, kt to four significant figures — the quantity a viewer can
+/// add across worlds (T-159).
+const FRAME_PLANET_FIELDS: [&str; 4] = ["owner", "pop", "works", "works_kt"];
 /// What a hull is for its whole life, once per hull: its id, owning seat,
 /// hull type and Design (indices into `enums`), beam mounts and missile tubes,
 /// and the time it was wrecked, yr, or `null` (T-158).
@@ -289,6 +291,13 @@ fn frame(out: &mut String, snap: &Snapshot) {
             out.push(',');
         }
         write_num(out, p.infrastructure.bands(), 2);
+    }
+    out.push_str("],\"works_kt\":[");
+    for (i, p) in snap.planets.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        write_sig(out, p.works.kilotons());
     }
     out.push_str("],\"vehicles\":[");
     for (i, v) in snap.vehicles.iter().enumerate() {
@@ -647,6 +656,11 @@ mod tests {
             }
             let snap = twin.snapshot_at(t);
             assert_eq!(f.get("t").num(), t, "frame {k} falls on its own year");
+            for (cell, p) in f.get("works_kt").arr().iter().zip(&snap.planets) {
+                let want = p.works.kilotons();
+                assert!((cell.num() - want).abs() <= 5e-4 * want, "frame {k}: works {} kt vs {want}", cell.num());
+            }
+            assert_eq!(f.get("works_kt").arr().len(), snap.planets.len());
             let vs = f.get("vehicles").arr();
             assert_eq!(vs.len(), snap.vehicles.len(), "frame {k}: every hull");
             assert!(vs.iter().all(|v| v.arr().len() == vf), "frame {k}: every field");

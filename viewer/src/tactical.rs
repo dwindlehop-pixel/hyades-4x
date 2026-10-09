@@ -692,21 +692,66 @@ pub fn active_hexes(s: &Scene) -> std::collections::BTreeSet<(i64, i64)> {
     worlds.chain(hulls).map(|p| hex_of(s.replay, p)).collect()
 }
 
+/// **Whether hexes are drawn at all**: a hex at least [`MIN_HEX_PX`]
+/// tactical pixels across. Smaller, the grid would be a fill. Both modes ask.
+pub fn hexes_shown(s: &Scene) -> bool {
+    let side = s.replay.meta.hex_side_ly;
+    side > 0.0 && 3f64.sqrt() * side * s.camera.scale / PIXEL >= MIN_HEX_PX
+}
+
+/// **A hex's six corners on screen**, screen pixels, in order around it.
+pub fn hex_corners(s: &Scene, h: (i64, i64)) -> [[f64; 2]; 6] {
+    let side = s.replay.meta.hex_side_ly;
+    let c = hex_center(s.replay, h);
+    std::array::from_fn(|k| {
+        let (sin, cos) = (60.0 * k as f64).to_radians().sin_cos();
+        s.camera.project([c[0] + side * cos, c[1] + side * sin, 0.0])
+    })
+}
+
+/// Frames a hex's works trend looks back over (proposed, R-UI2, T-159).
+pub const TREND_FRAMES: usize = 4;
+/// The change in a hex's works, as a share of what stood there
+/// [`TREND_FRAMES`] frames before, read as the whole trend (proposed): a
+/// doubling.
+pub const TREND_FULL: f64 = 1.0;
+
+/// **The works trend in each hex** (T-159), from −1 (falling to nothing) to
+/// +1 (doubling or more, or built where nothing stood): the change in the
+/// hex's total works, as a mass, from [`TREND_FRAMES`] frames before the
+/// frame shown, as a share of what stood then, over [`TREND_FULL`]. Masses
+/// add across worlds where Band readings do not. Empty for a replay that
+/// does not carry works as a mass, and for hexes with no works then or now.
+pub fn works_trend(s: &Scene) -> BTreeMap<(i64, i64), f64> {
+    let frames = &s.replay.frames;
+    let now = &frames[s.view.frame];
+    let then = &frames[s.view.frame.saturating_sub(TREND_FRAMES)];
+    let mut sums: BTreeMap<(i64, i64), [f64; 2]> = BTreeMap::new();
+    for (k, f) in [now, then].into_iter().enumerate() {
+        for (p, &kt) in s.replay.planets.iter().zip(&f.works_kt) {
+            if kt > 0.0 {
+                sums.entry(hex_of(s.replay, p.pos)).or_default()[k] += kt;
+            }
+        }
+    }
+    sums.into_iter()
+        .map(|(h, [now, then])| {
+            let share = if then > 0.0 { (now - then) / then } else { f64::INFINITY };
+            (h, (share / TREND_FULL).clamp(-1.0, 1.0))
+        })
+        .collect()
+}
+
 /// The command view's active hexes (flat-top, a side of `hex_side_ly`, one
 /// centered on `hex_origin`), all six edges each.
 fn hex_grid(s: &Scene, r: &mut Raster) {
-    let side = s.replay.meta.hex_side_ly;
-    if side <= 0.0 || 3f64.sqrt() * side * s.camera.scale / PIXEL < MIN_HEX_PX {
+    if !hexes_shown(s) {
         return;
     }
     for h in active_hexes(s) {
-        let c = hex_center(s.replay, h);
-        let vertex = |k: i32| {
-            let a = (60.0 * k as f64).to_radians();
-            to_raster(s.camera.project([c[0] + side * a.cos(), c[1] + side * a.sin(), 0.0]), PIXEL)
-        };
+        let v = hex_corners(s, h).map(|p| to_raster(p, PIXEL));
         for k in 0..6 {
-            let (p, q) = (vertex(k), vertex(k + 1));
+            let (p, q) = (v[k], v[(k + 1) % 6]);
             r.line(p[0], p[1], q[0], q[1], s.palette.roles.hex);
         }
     }
@@ -1010,6 +1055,41 @@ mod tests {
         let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None, rate: 1.0 };
         paint(&s, &[], &mut r);
         assert_eq!(r.count(hex), 0);
+    }
+
+    /// **A hex's works trend is its works as a mass, then against now**
+    /// (T-159): summed over the hex's worlds, as a share of what stood
+    /// [`TREND_FRAMES`] frames before — here the first frame — over
+    /// [`TREND_FULL`].
+    #[test]
+    fn a_hexs_works_trend_is_the_change_in_its_summed_works_mass() {
+        let f = fixture();
+        let trend_at = |t: f64| {
+            let view = f.replay.view_at(t);
+            let s = Scene {
+                replay: &f.replay,
+                view: &view,
+                camera: &f.camera,
+                palette: &f.palette,
+                selected: None,
+                rate: 1.0,
+            };
+            works_trend(&s)
+        };
+        // The fixture's works, kt: [1, 1, 0] at 0 yr, [1, 2, 0.5] at 10 yr.
+        let mut want: BTreeMap<(i64, i64), [f64; 2]> = BTreeMap::new();
+        for (p, (a, b)) in f.replay.planets.iter().zip([(1.0, 1.0), (1.0, 2.0), (0.0, 0.5)]) {
+            let e = want.entry(hex_of(&f.replay, p.pos)).or_default();
+            (e[0], e[1]) = (e[0] + a, e[1] + b);
+        }
+        let later = trend_at(10.0);
+        assert_eq!(later.len(), want.len());
+        for (h, [then, now]) in want {
+            let expect = if then > 0.0 { ((now - then) / then / TREND_FULL).clamp(-1.0, 1.0) } else { 1.0 };
+            assert!((later[&h] - expect).abs() < 1e-12, "hex {h:?}: {} against {expect}", later[&h]);
+        }
+        assert!(later.values().any(|&t| t > 0.0), "works grew somewhere");
+        assert!(trend_at(0.0).values().all(|&t| t == 0.0), "no frame before the first: flat");
     }
 
     /// A view with copies of hull 5 at its place: `alike` more of the same

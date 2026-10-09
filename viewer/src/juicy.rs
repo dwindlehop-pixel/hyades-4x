@@ -13,9 +13,10 @@
 //! | a burning drive | a plume behind the hull, in the drive's status color, brighter with acceleration |
 //! | a hit | a flash in the hit color |
 //! | a wreck | a dim ember |
+//! | a hex | a dim line of lights inset from its edge, brighter and whiter as the works in it grow, darker as they fall |
 
 use crate::camera::Lod;
-use crate::color::Rgb;
+use crate::color::{mix, Rgb};
 use crate::palette::Status;
 use crate::raster::Raster;
 use crate::tactical::{Op, Scene};
@@ -43,6 +44,18 @@ pub const QUIET_HULL: f32 = 0.5;
 /// (T-158), juicy pixels.
 pub const WRECK_EMBER: f32 = 0.6;
 pub const WRECK_PINPOINT_R: f64 = 0.5;
+/// **A hex's outline** (T-159, proposed, R-UI2): lights every `HEX_DOT_PX`
+/// juicy pixels of radius `HEX_DOT_R`, `HEX_INSET_PX` inside the edge so
+/// neighbors each keep their own line, at `HEX_GLOW` in the hex color where
+/// the works trend is flat. A rising trend brightens it up to
+/// `1 + HEX_RISE` times and whitens it; a falling one darkens it to
+/// `1 − HEX_FALL` times.
+pub const HEX_DOT_PX: f64 = 1.5;
+pub const HEX_DOT_R: f64 = 1.0;
+pub const HEX_INSET_PX: f64 = 2.0;
+pub const HEX_GLOW: f32 = 0.1;
+pub const HEX_RISE: f32 = 2.0;
+pub const HEX_FALL: f32 = 0.7;
 /// The bloom's box blur: radius in bloom pixels, and passes (three approach
 /// a Gaussian).
 pub const BLUR_RADIUS: usize = 2;
@@ -320,6 +333,7 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
             out.scene.push(light(p[0], p[1], core, star, if ring.is_some() { HOME_CORE } else { WORLD_CORE * share }));
         }
     }
+    hexes(s, &mut out.scene);
     for op in ops {
         let Op::Hull { s: sp, at, outline, vector, hit, quiet, wreck, .. } = op else { continue };
         let p = pos(*sp);
@@ -350,6 +364,61 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
         }
     }
     out
+}
+
+/// **The active hexes as lines of light** (T-159): each hex's outline, inset
+/// so a shared edge reads as two lines, one per hex, each telling its own
+/// hex's works trend ([`crate::tactical::works_trend`]). Only the part of an
+/// edge on screen is lit, so a hex many screens wide costs what one does.
+fn hexes(s: &Scene, out: &mut Vec<Light>) {
+    if !crate::tactical::hexes_shown(s) {
+        return;
+    }
+    let trend = crate::tactical::works_trend(s);
+    let (w, h) = (s.camera.width / PIXEL, s.camera.height / PIXEL);
+    for hex in crate::tactical::active_hexes(s) {
+        let v = crate::tactical::hex_corners(s, hex).map(|p| [p[0] / PIXEL, p[1] / PIXEL]);
+        let c = [v.iter().map(|p| p[0]).sum::<f64>() / 6.0, v.iter().map(|p| p[1]).sum::<f64>() / 6.0];
+        let inset = |p: [f64; 2]| {
+            let (dx, dy) = (c[0] - p[0], c[1] - p[1]);
+            let d = dx.hypot(dy);
+            let k = if d > 2.0 * HEX_INSET_PX { HEX_INSET_PX / d } else { 0.0 };
+            [p[0] + dx * k, p[1] + dy * k]
+        };
+        let tr = trend.get(&hex).copied().unwrap_or(0.0);
+        let color = linear(mix(s.palette.roles.hex, s.palette.roles.text_bright, tr.max(0.0)));
+        let k = HEX_GLOW * if tr >= 0.0 { 1.0 + HEX_RISE * tr as f32 } else { 1.0 + HEX_FALL * tr as f32 };
+        for e in 0..6 {
+            let Some((a, b)) = clip(inset(v[e]), inset(v[(e + 1) % 6]), w, h, 4.0 * HEX_DOT_R) else { continue };
+            let n = ((b[0] - a[0]).hypot(b[1] - a[1]) / HEX_DOT_PX).floor() as usize;
+            for i in 0..=n {
+                let f = if n == 0 { 0.0 } else { i as f64 / n as f64 };
+                out.push(light(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, HEX_DOT_R, color, k));
+            }
+        }
+    }
+}
+
+/// The part of segment `a`–`b` inside `[−m, w + m] × [−m, h + m]`
+/// (Liang–Barsky), or `None` when none of it is.
+fn clip(a: [f64; 2], b: [f64; 2], w: f64, h: f64, m: f64) -> Option<([f64; 2], [f64; 2])> {
+    let d = [b[0] - a[0], b[1] - a[1]];
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (p, q) in [(-d[0], a[0] + m), (d[0], w + m - a[0]), (-d[1], a[1] + m), (d[1], h + m - a[1])] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return None;
+            }
+        } else {
+            let r = q / p;
+            if p < 0.0 {
+                t0 = t0.max(r);
+            } else {
+                t1 = t1.min(r);
+            }
+        }
+    }
+    (t0 <= t1).then(|| ([a[0] + d[0] * t0, a[1] + d[1] * t0], [a[0] + d[0] * t1, a[1] + d[1] * t1]))
 }
 
 /// **The CPU renderer**: adds `lights` into `hdr` (`w × h`), blooms them and
@@ -483,6 +552,64 @@ mod tests {
         assert!(replay.planets.iter().all(|p| lit(p.pos)));
         assert_eq!(l.territory.len(), 3, "the three owned worlds glow");
         assert_eq!(std::mem::size_of::<Light>(), LIGHT_FLOATS * 4);
+    }
+
+    /// **Hexes are lines of light in juicy mode too, and tell the works
+    /// trend** (T-159): every active hex is lit when the tactical grid would
+    /// be drawn and not when it would be a fill; a hex whose works grew is
+    /// brighter than the same hex flat; and a view zoomed until one hex is
+    /// many screens wide lights only what is on screen.
+    #[test]
+    fn hexes_are_lines_of_light_brighter_where_works_grow() {
+        let replay = Replay::from_json(TINY).unwrap();
+        let palette = Palette::default();
+        let hex_lights = |camera: &Camera, t: f64| {
+            let view = replay.view_at(t);
+            let s = crate::tactical::Scene {
+                replay: &replay,
+                view: &view,
+                camera,
+                palette: &palette,
+                selected: None,
+                rate: 1.0,
+            };
+            let mut out = Vec::new();
+            hexes(&s, &mut out);
+            (out, crate::tactical::hexes_shown(&s), crate::tactical::works_trend(&s))
+        };
+        let mut camera = Camera::new(320.0, 200.0);
+        camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
+        let (flat, shown, trend) = hex_lights(&camera, 0.0);
+        assert!(shown && !flat.is_empty(), "a hex 121 ly across at this zoom is lit");
+        assert!(trend.values().all(|&t| t == 0.0));
+        let (grown, _, trend) = hex_lights(&camera, 10.0);
+        assert!(trend.values().any(|&t| t > 0.0));
+        let sum = |l: &[Light]| l.iter().map(|g| g.color.iter().sum::<f32>()).sum::<f32>();
+        assert_eq!(grown.len(), flat.len(), "the same hexes, the same lines");
+        assert!(sum(&grown) > 1.5 * sum(&flat), "growing works brighten their hex: {} vs {}", sum(&grown), sum(&flat));
+        for g in &flat {
+            let c = linear(palette.roles.hex).map(|c| c * HEX_GLOW);
+            assert!(g.color.iter().zip(c).all(|(a, b)| (a - b).abs() < 1e-6), "a flat hex is its color at the glow");
+        }
+
+        let mut far = camera;
+        far.scale = crate::tactical::MIN_HEX_PX * crate::tactical::PIXEL / 121.0 * 0.9;
+        assert!(hex_lights(&far, 10.0).0.is_empty(), "too small to draw: no lights");
+
+        let mut near = camera;
+        near.scale *= 1.0e4;
+        let (close, _, _) = hex_lights(&near, 10.0);
+        let screen = (320.0f64 + 200.0) * 2.0 / HEX_DOT_PX;
+        assert!(close.len() as f64 <= 2.0 * screen, "a hex wider than the screen lights the screen: {}", close.len());
+        assert!(close.iter().all(|g| (-5.0..=325.0).contains(&g.x) && (-5.0..=205.0).contains(&g.y)));
+    }
+
+    #[test]
+    fn clipping_keeps_the_part_of_a_segment_on_screen() {
+        assert_eq!(clip([-10.0, 5.0], [20.0, 5.0], 10.0, 10.0, 0.0), Some(([0.0, 5.0], [10.0, 5.0])));
+        assert_eq!(clip([2.0, 2.0], [3.0, 3.0], 10.0, 10.0, 0.0), Some(([2.0, 2.0], [3.0, 3.0])));
+        assert_eq!(clip([-5.0, -5.0], [-1.0, 20.0], 10.0, 10.0, 0.0), None);
+        assert_eq!(clip([5.0, -5.0], [5.0, 15.0], 10.0, 10.0, 1.0), Some(([5.0, -1.0], [5.0, 11.0])));
     }
 
     #[test]

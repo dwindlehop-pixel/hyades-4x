@@ -152,6 +152,18 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-159. Juicy hexes and the works trend within each
+
+*Opened and built in one landing at the author's rulings: "Juicy needs to
+display hexes" and "Juicy should provide a visual indication of the works
+trend within a hex."* The replay writes each world's works as a mass
+(`works_kt`), which the viewer sums per hex — hexes stay a presentation
+concept. Juicy draws each active hex as a dim line of lights inset from its
+edge, lit only where it is on screen; the line brightens and whitens as the
+hex's works grow over the last four frames and darkens as they fall
+(`Hyades_interface.md` rulings 23–24, §3, §7.1; magnitudes placeholders under
+R-UI2).
+
 ### T-158. Wrecks fade to pinpoints after 250 ms
 
 *Opened and built in one landing at the author's ruling: "Wrecks should fade

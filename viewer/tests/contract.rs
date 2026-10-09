@@ -37,6 +37,7 @@ fn the_viewer_reads_every_world_hull_and_event_the_engine_recorded() {
     let r = Replay::from_json(&json).expect("the viewer reads the engine's replay");
     assert_eq!(r.frames.len(), 9);
     let (mut hulls, mut laden, mut rival_mines) = (0, 0, 0);
+    let mut works = 0.0;
     for (k, f) in r.frames.iter().enumerate() {
         let t = k as f64 * 10.0;
         while twin.next_event_time().is_some_and(|n| n <= t) {
@@ -81,12 +82,16 @@ fn the_viewer_reads_every_world_hull_and_event_the_engine_recorded() {
         }
         for (i, p) in snap.planets.iter().enumerate() {
             assert_eq!(f.owner[i], p.owner.map(|o| o as usize), "frame {k}: world {i}'s owner");
+            let want = p.works.kilotons();
+            assert!((f.works_kt[i] - want).abs() <= 5e-4 * want, "frame {k}: world {i}'s works, kt");
+            works += want;
         }
         hulls += f.rows.len();
     }
     assert!(hulls > 50, "the run put hulls in the frames: {hulls}");
     assert!(laden > 0, "and cargo in a hold");
     assert!(rival_mines > 0, "and a holding at a world its holder does not own");
+    assert!(works > 0.0, "and works standing on a world");
     assert!(!r.events.is_empty() && r.events.windows(2).all(|w| w[0].t <= w[1].t));
 }
 
