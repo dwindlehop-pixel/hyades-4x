@@ -37,6 +37,8 @@ pub const HOME_CORE: f32 = 0.9;
 pub const WORLD_HALO: f32 = 0.03;
 pub const TERRITORY_HOME: f32 = 0.12;
 pub const TERRITORY_WORLD: f32 = 0.025;
+/// A quiet hull's light (a scout, unladen traffic), against 2.0 for the rest.
+pub const QUIET_HULL: f32 = 0.5;
 /// The bloom's box blur: radius in bloom pixels, and passes (three approach
 /// a Gaussian).
 pub const BLUR_RADIUS: usize = 2;
@@ -315,7 +317,7 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
         }
     }
     for op in ops {
-        let Op::Hull { s: sp, at, outline, vector, hit, .. } = op else { continue };
+        let Op::Hull { s: sp, at, outline, vector, hit, quiet, .. } = op else { continue };
         let p = pos(*sp);
         let wreck = *outline == s.palette.status(Status::Wreck);
         if let Some((end, c)) = vector {
@@ -327,7 +329,13 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
             let tail = if *c == s.palette.status(Status::Braking) { e } else { [2.0 * p[0] - e[0], 2.0 * p[1] - e[1]] };
             streak(&mut out.scene, p, tail, hull_r, linear(*c), 2.5);
         }
-        let (c, k) = if wreck { (linear(s.palette.status(Status::Wreck)), 0.6) } else { (linear(*outline), 2.0) };
+        // A quiet hull — a scout, unladen traffic — is a faint point, as in
+        // tactical mode.
+        let (c, k) = if wreck {
+            (linear(s.palette.status(Status::Wreck)), 0.6)
+        } else {
+            (linear(*outline), if *quiet { QUIET_HULL } else { 2.0 })
+        };
         out.scene.push(light(p[0], p[1], hull_r, c, k));
         if *hit {
             out.scene.push(light(p[0], p[1], 3.0 * hull_r, linear(s.palette.status(Status::Hit)), 6.0));

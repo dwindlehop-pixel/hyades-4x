@@ -70,6 +70,21 @@ pub struct Row {
     pub dest: Option<u32>,
     pub cargo: f64,
     pub settlers: f64,
+    /// The cargo by material, kt, in [`MATERIALS`] order; all zero in a
+    /// replay that does not carry it.
+    pub mix: [f64; 8],
+}
+
+/// The materials on the Exchange's books, in the order a replay writes them.
+pub const MATERIALS: [&str; 8] = ["Cyan", "Magenta", "Yellow", "Red", "Green", "Blue", "Apex", "Ordnance"];
+
+/// One empire's materials at one planet, in [`MATERIALS`] order: each a Band
+/// reading on the cost ladder, `None` where it holds none of that material.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Holding {
+    pub planet: u32,
+    pub seat: usize,
+    pub bands: [Option<f64>; 8],
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -81,6 +96,8 @@ pub struct Frame {
     pub works: Vec<f64>,
     /// Hulls in id order.
     pub rows: Vec<Row>,
+    /// Every non-empty holding, by planet and then by seat.
+    pub holdings: Vec<Holding>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -148,6 +165,14 @@ impl Fields {
             out[i] = row.get(self.at(n)?).and_then(Value::as_f64).ok_or_else(|| format!("{n} is not a number"))?;
         }
         Ok(out)
+    }
+
+    /// The numbers of `row` by `names`, `None` for a `null` or a field the
+    /// header does not name: for fields a replay gained after its version was
+    /// set, and for values that may be absent.
+    fn read_opt<const N: usize>(&self, row: &Value, names: [&str; N]) -> [Option<f64>; N] {
+        let row = row.as_arr().unwrap_or(&[]);
+        names.map(|n| self.at(n).ok().and_then(|i| row.get(i)).and_then(Value::as_f64))
     }
 }
 
@@ -247,6 +272,18 @@ impl Replay {
         }
 
         let vf = Fields::of(v, "vehicle_fields")?;
+        let hf = Fields::of(v, "holding_fields").unwrap_or(Fields(Vec::new()));
+        const MIX: [&str; 8] = [
+            "cargo_cyan",
+            "cargo_magenta",
+            "cargo_yellow",
+            "cargo_red",
+            "cargo_green",
+            "cargo_blue",
+            "cargo_apex",
+            "cargo_ordnance",
+        ];
+        const HELD: [&str; 8] = ["cyan", "magenta", "yellow", "red", "green", "blue", "apex", "ordnance"];
         let mut frames = Vec::new();
         for f in v.get("frames").and_then(Value::as_arr).ok_or("no frames")? {
             let col = |k: &str| -> Vec<f64> {
@@ -275,15 +312,22 @@ impl Replay {
                     dest: if dest >= 0.0 { Some(dest as u32) } else { None },
                     cargo,
                     settlers,
+                    mix: vf.read_opt(r, MIX).map(|x| x.unwrap_or(0.0)),
                 });
             }
             rows.sort_by_key(|r| r.id);
+            let mut holdings = Vec::new();
+            for h in f.get("holdings").and_then(Value::as_arr).unwrap_or(&[]) {
+                let [planet, seat] = hf.read(h, ["planet", "seat"])?;
+                holdings.push(Holding { planet: planet as u32, seat: seat as usize, bands: hf.read_opt(h, HELD) });
+            }
             frames.push(Frame {
                 t: num(f, "t")?,
                 owner: col("owner").into_iter().map(seat_of).collect(),
                 pop: col("pop"),
                 works: col("works"),
                 rows,
+                holdings,
             });
         }
         if frames.is_empty() {
@@ -389,19 +433,27 @@ pub(crate) mod tests {
       "enums": {"kind": ["Scout","Colonizer","Miner","Freighter","Picket","Sentry","Reserve","Scrapped"],
                 "hull": ["LSV","MSV","GSV","LCV","LCU","GCV","GCU","LOU","ROU","GOU"],
                 "design": ["Meadow","Spur","Tor","Cairn","Delta","Range","Scarp","Ford","Strait","Butte","Mesa","Unnamed"],
-                "category": ["Production","Mining","Vehicles","Population","Scanning","Cards","Combat"]},
+                "category": ["Production","Mining","Vehicles","Population","Scanning","Cards","Combat"],
+                "material": ["Cyan","Magenta","Yellow","Red","Green","Blue","Apex","Ordnance"]},
       "planet_fields": ["id","x","y","z","hab","bio_max","cyan","magenta","yellow","home"],
       "planets": [[0, 0, 0, 0, 4.2, 4.2, 0, 0, 0, 1], [1, 20, 0, 0, 4.2, 4.2, 0, 0, 0, 1], [2, 10, 5, 1, 3.1, 3, 2.5, 0, 0.1, 0]],
       "frame_planet_fields": ["owner","pop","works"],
-      "vehicle_fields": ["id","kind","x","y","z","vx","vy","vz","accel","burn","damage","flags","dest","cargo","settlers"],
+      "vehicle_fields": ["id","kind","x","y","z","vx","vy","vz","accel","burn","damage","flags","dest","cargo","settlers",
+                         "cargo_cyan","cargo_magenta","cargo_yellow","cargo_red","cargo_green","cargo_blue",
+                         "cargo_apex","cargo_ordnance"],
+      "holding_fields": ["planet","seat","cyan","magenta","yellow","red","green","blue","apex","ordnance"],
       "frames": [
         {"t": 0, "owner": [0, 1, -1], "pop": [2.8, 2.8, 0], "works": [2, 2, 0],
-         "vehicles": [[5, 3, 0, 0, 0, 0, 0, 0, 0.2, 1, 0, 1, 2, 4.5, 0],
-                      [6, 4, 20, 0, 0, 0, 0, 0, 0, 0, 0.25, 0, -1, 0, 0]]},
+         "vehicles": [[5, 3, 0, 0, 0, 0, 0, 0, 0.2, 1, 0, 1, 2, 4.5, 0, 3, 0, 1.5, 0, 0, 0, 0, 0],
+                      [6, 4, 20, 0, 0, 0, 0, 0, 0, 0, 0.25, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+         "holdings": [[0, 0, 2.1, 1.8, 3.25, null, null, null, null, null],
+                      [2, 1, -0.4, null, null, null, null, null, null, null]]},
         {"t": 10, "owner": [0, 1, 0], "pop": [2.9, 2.8, 1.1], "works": [2, 2, 1],
-         "vehicles": [[5, 3, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4.5, 0],
-                      [6, 7, 21, 0, 0, 0.1, 0, 0, 0, 0, 1, 3, -1, 0, 0],
-                      [9, 0, 0, 0, 0, 0, 0, 0, 0.5, 1, 0, 1, 2, 0, 0]]}
+         "vehicles": [[5, 3, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4.5, 0, 3, 0, 1.5, 0, 0, 0, 0, 0],
+                      [6, 7, 21, 0, 0, 0.1, 0, 0, 0, 0, 1, 3, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                      [9, 0, 0, 0, 0, 0, 0, 0, 0.5, 1, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
+         "holdings": [[0, 0, 2.2, 1.7, 3.3, 0.5, null, null, null, null],
+                      [1, 1, 1.5, 1.5, 1.5, null, null, null, null, null]]}
       ],
       "hull_fields": ["id","owner","hull","design","beams","tubes"],
       "hulls": [[5, 0, 1, 7, 0, 0], [6, 1, 3, 3, 2, 0], [9, 0, 0, 1, 0, 0]],
@@ -436,6 +488,15 @@ pub(crate) mod tests {
             (5, 3, 1, true, false, Some(2), 4.5)
         );
         assert!(r.frames[1].rows[1].wrecked);
+        assert_eq!(f.mix, [3.0, 0.0, 1.5, 0.0, 0.0, 0.0, 0.0, 0.0], "the cargo by material");
+        assert_eq!(
+            r.frames[0].holdings,
+            vec![
+                Holding { planet: 0, seat: 0, bands: [Some(2.1), Some(1.8), Some(3.25), None, None, None, None, None] },
+                Holding { planet: 2, seat: 1, bands: [Some(-0.4), None, None, None, None, None, None, None] },
+            ],
+            "a seat holds at a rock it does not own"
+        );
         assert_eq!(r.events.len(), 3);
         assert_eq!(r.events[1].kind, "HullWrecked");
         assert_eq!(r.events[1].seat, Some(1));
@@ -449,6 +510,16 @@ pub(crate) mod tests {
         assert!(Replay::from_json(&TINY.replace("hyades-replay", "other")).unwrap_err().contains("format"));
         assert!(Replay::from_json(&TINY.replace("\"version\": 1", "\"version\": 2")).unwrap_err().contains("version"));
         assert!(Replay::from_json("{").is_err());
+    }
+
+    #[test]
+    fn a_replay_without_the_material_fields_reads_with_none() {
+        // A replay recorded before cargo by material and holdings were
+        // written still opens: those read as empty.
+        let older = TINY.replace("\"cargo_cyan\"", "\"unknown\"").replace("\"holdings\":", "\"ignored\":");
+        let r = Replay::from_json(&older).unwrap();
+        assert_eq!(r.frames[0].rows[0].mix[0], 0.0);
+        assert!(r.frames.iter().all(|f| f.holdings.is_empty()));
     }
 
     #[test]

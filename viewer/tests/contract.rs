@@ -8,6 +8,7 @@
 use hyades_engine::log::{LogCategory, LogFilter};
 use hyades_engine::prelude::*;
 use hyades_engine::replay::{record_run, ReplayConfig};
+use hyades_engine::units::Price;
 use hyades_viewer::camera::Camera;
 use hyades_viewer::palette::Palette;
 use hyades_viewer::replay::Replay;
@@ -35,7 +36,7 @@ fn the_viewer_reads_every_world_hull_and_event_the_engine_recorded() {
     let (json, mut twin) = recorded();
     let r = Replay::from_json(&json).expect("the viewer reads the engine's replay");
     assert_eq!(r.frames.len(), 9);
-    let mut hulls = 0;
+    let (mut hulls, mut laden, mut rival_mines) = (0, 0, 0);
     for (k, f) in r.frames.iter().enumerate() {
         let t = k as f64 * 10.0;
         while twin.next_event_time().is_some_and(|n| n <= t) {
@@ -53,6 +54,27 @@ fn the_viewer_reads_every_world_hull_and_event_the_engine_recorded() {
             assert_eq!(hull.owner, v.owner as usize, "its seat");
             assert_eq!(r.kinds[row.kind], format!("{:?}", v.kind), "its role");
             assert!((row.pos[0] - v.position.x).abs() <= 0.005, "its position");
+            let c = v.cargo;
+            let want = [c.cyan, c.magenta, c.yellow, c.red, c.green, c.blue, c.apex, c.ordnance];
+            for (got, want) in row.mix.iter().zip(want) {
+                assert!((got - want).abs() <= 5e-4 * want.max(1e-3), "its cargo by material: {got} vs {want}");
+            }
+            laden += usize::from(want.iter().any(|&x| x > 0.0));
+        }
+        assert_eq!(f.holdings.len(), snap.holdings.len(), "frame {k}: every holding");
+        for (got, h) in f.holdings.iter().zip(&snap.holdings) {
+            assert_eq!((got.planet, got.seat), (h.planet.0, h.owner as usize));
+            let m = h.minerals;
+            let kt = [m.cyan, m.magenta, m.yellow, m.red, m.green, m.blue, m.apex, m.ordnance];
+            for (b, kt) in got.bands.iter().zip(kt) {
+                match b {
+                    None => assert_eq!(kt, 0.0, "none held reads None"),
+                    Some(b) => {
+                        assert!((b - Price::new(kt).band().bands()).abs() <= 0.005, "the Band reading of {kt} kt")
+                    }
+                }
+            }
+            rival_mines += usize::from(snap.planets[h.planet.0 as usize].owner != Some(h.owner));
         }
         for (i, p) in snap.planets.iter().enumerate() {
             assert_eq!(f.owner[i], p.owner.map(|o| o as usize), "frame {k}: world {i}'s owner");
@@ -60,6 +82,8 @@ fn the_viewer_reads_every_world_hull_and_event_the_engine_recorded() {
         hulls += f.rows.len();
     }
     assert!(hulls > 50, "the run put hulls in the frames: {hulls}");
+    assert!(laden > 0, "and cargo in a hold");
+    assert!(rival_mines > 0, "and a holding at a world its holder does not own");
     assert!(!r.events.is_empty() && r.events.windows(2).all(|w| w[0].t <= w[1].t));
 }
 

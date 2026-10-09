@@ -126,6 +126,9 @@ pub struct Roles {
     pub yellow: Rgb,
 }
 
+/// The slot after the eight materials: people aboard (see [`Palette::material`]).
+pub const PEOPLE: usize = 8;
+
 /// How much a glyph's fill is moved from its seat's color toward the ground,
 /// so the edge reads first (proposed).
 pub const DEFAULT_FILL_DIM: f64 = 0.45;
@@ -312,6 +315,25 @@ impl Palette {
             ["hy_green", "hy_yellow3", "hy_cyan", "hy_green3", "hy_yellow", "hy_cyan3"],
         ];
         self.get(FAMILIES[seat % 3][(seat / 3) % 6])
+    }
+
+    /// **A material on the Exchange's books** (`crate::replay::MATERIALS`
+    /// order), and at [`PEOPLE`] the settlers a colonizer carries: the color a
+    /// holding's bar and a hold's stripe are drawn in. The basics and supers
+    /// are the palette's own hues of their names; Strange Matter is the pale
+    /// violet, rounds the orange, people the paper (proposed, part of R-UI1).
+    pub fn material(&self, i: usize) -> Rgb {
+        self.get(match i {
+            0 => "hy_cyan",
+            1 => "hy_magenta",
+            2 => "hy_yellow",
+            3 => "hy_red",
+            4 => "hy_green",
+            5 => "hy_blue",
+            6 => "hy_violet3",
+            7 => "hy_orange",
+            _ => "hy_base2",
+        })
     }
 
     /// **The role a hull's Doctrine has it on**, as an accent.
