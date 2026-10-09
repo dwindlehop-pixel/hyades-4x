@@ -144,6 +144,7 @@ function applyPalette() {
   }
   refreshLegend();
   buildRoleLegend();
+  buildMaterialLegend();
   if (document.body.dataset.screen === "palette") buildSheet();
 }
 
@@ -161,6 +162,20 @@ function buildRoleLegend() {
     const li = document.createElement("li");
     li.dataset.role = role;
     li.append(mark, role.toLowerCase());
+    return li;
+  }));
+}
+
+/// Each cargo stripe's color under the material's in-game name (`hv_text(12)`).
+function buildMaterialLegend() {
+  $("materials").replaceChildren(...text(12).split("\n").filter(Boolean).map((line) => {
+    const [name, color] = line.split("\t");
+    const swatch = document.createElement("span");
+    swatch.className = "swatch";
+    swatch.style.background = color;
+    const li = document.createElement("li");
+    li.dataset.material = name;
+    li.append(swatch, name);
     return li;
   }));
 }

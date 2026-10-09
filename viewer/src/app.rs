@@ -215,13 +215,16 @@ impl Viewer {
                 let _ = writeln!(out, "works      Band {:.3}", f.works.get(id as usize).copied().unwrap_or(0.0));
                 let _ = writeln!(out, "hab        Band {:.3}", p.hab);
                 let _ = writeln!(out, "bio_max    Band {:.3}", p.bio_max);
-                let _ = write!(out, "ore C/M/Y  Band {:.2} / {:.2} / {:.2}", p.ore[0], p.ore[1], p.ore[2]);
+                let _ = write!(out, "ore (Band):");
+                for (m, b) in p.ore.iter().enumerate() {
+                    let _ = write!(out, "\n  {:<15}{b:.2}", crate::replay::MATERIALS[m]);
+                }
                 let first = f.holdings.partition_point(|h| h.planet < id);
                 for h in f.holdings[first..].iter().take_while(|h| h.planet == id) {
                     let _ = write!(out, "\nheld by P{} (Band, cost ladder):", h.seat);
                     for (m, b) in h.bands.iter().enumerate() {
                         if let Some(b) = b {
-                            let _ = write!(out, "\n  {:<9}{b:.2}", crate::replay::MATERIALS[m]);
+                            let _ = write!(out, "\n  {:<15}{b:.2}", crate::replay::MATERIALS[m]);
                         }
                     }
                 }
@@ -281,7 +284,7 @@ impl Viewer {
                 );
                 let _ = writeln!(out, "cargo      {:.4} kt · settlers {:.4} kt", row.cargo, row.settlers);
                 for (m, kt) in row.mix.iter().enumerate().filter(|(_, kt)| **kt > 0.0) {
-                    let _ = writeln!(out, "  {:<9}{kt:.4} kt", crate::replay::MATERIALS[m]);
+                    let _ = writeln!(out, "  {:<15}{kt:.4} kt", crate::replay::MATERIALS[m]);
                 }
                 let _ = write!(out, "bound for  {}", row.dest.map_or("—".into(), |d| format!("world {d}")));
             }
@@ -398,7 +401,7 @@ mod tests {
         let text = v.inspector();
         assert!(text.contains("Ford on MSV") && text.contains("Freighter") && text.contains("burning"), "{text}");
         assert!(
-            text.contains("Cyan     3.0000 kt") && text.contains("Yellow   1.5000 kt"),
+            text.contains("Cage Ice       3.0000 kt") && text.contains("Voltslate      1.5000 kt"),
             "cargo by material: {text}"
         );
         v.timeline.seek(10.0);
@@ -406,11 +409,14 @@ mod tests {
         assert!(v.inspector().contains("WRECK"));
         v.selected = Some(Pick::World(2));
         let text = v.inspector();
-        assert!(text.contains("owner      P0") && text.contains("ore C/M/Y  Band 2.50"), "{text}");
+        assert!(text.contains("owner      P0") && text.contains("Cage Ice       2.50"), "{text}");
         v.timeline.seek(0.0);
         v.selected = Some(Pick::World(2));
         let text = v.inspector();
-        assert!(text.contains("held by P1") && text.contains("Cyan     -0.40"), "a rival's holding at a rock: {text}");
+        assert!(
+            text.contains("held by P1") && text.contains("Cage Ice       -0.40"),
+            "a rival's holding at a rock: {text}"
+        );
     }
 
     #[test]

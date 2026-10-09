@@ -152,6 +152,16 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-155. The client names resources by their ratified fiction
+
+*Opened and built in one landing at the author's direction: "The game client
+should use the ratified fictional names for resources."* The inspector and a
+new material key on the page's glyph legend show Cage Ice, Rosepeter,
+Voltslate and Strange Matter (`Hyades_galaxy_and_autopilot.md` §4.1;
+`Hyades_interface.md` ruling 21, §6.6). The supers keep their colors as names
+until T-142 ratifies theirs. The replay format and the engine's log keep the
+engine's color names.
+
 ### T-154. Seats apart from the materials; smooth motion
 
 *Opened and built in one landing at the author's report on the `beams`

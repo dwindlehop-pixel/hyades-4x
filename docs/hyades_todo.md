@@ -1493,6 +1493,9 @@ law #1). Green's link to Growth is already a weak fit.
 **What would settle it:** R-M6, R-M7 and R-TECH25 resolved far enough to list,
 per super, the Design writes and trees it is the general key for. Then confirm
 or replace each name against that list and mark the §4.1 rows `RATIFIED`.
+When they are ratified, the client's `MATERIALS` (`viewer/src/replay.rs`)
+takes them in place of the colors it shows now (`Hyades_interface.md`
+ruling 21).
 
 ### T-08. `on_refit` retrofit realization — R-O47b / R-O55
 

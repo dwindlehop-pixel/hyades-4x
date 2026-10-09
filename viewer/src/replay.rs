@@ -75,8 +75,12 @@ pub struct Row {
     pub mix: [f64; 8],
 }
 
-/// The materials on the Exchange's books, in the order a replay writes them.
-pub const MATERIALS: [&str; 8] = ["Cyan", "Magenta", "Yellow", "Red", "Green", "Blue", "Apex", "Ordnance"];
+/// The materials on the Exchange's books, in the order a replay writes them,
+/// by their in-game names (galaxy §4.1). The replay carries the engine's
+/// color names; the client shows the ratified ones. The supers' names are
+/// placeholders (T-142), so a super shows its color until they are ratified.
+pub const MATERIALS: [&str; 8] =
+    ["Cage Ice", "Rosepeter", "Voltslate", "Red", "Green", "Blue", "Strange Matter", "Ordnance"];
 
 /// One empire's materials at one planet, in [`MATERIALS`] order: each a Band
 /// reading on the cost ladder, `None` where it holds none of that material.

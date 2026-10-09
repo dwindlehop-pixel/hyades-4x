@@ -83,6 +83,15 @@ RATIFIED (T-154, the author's rulings after the `beams` replay):
     deceleration**, as the sim flies it: no hull moves in steps or eases in
     and out at each frame (§3, §4).
 
+RATIFIED (T-155, the author's ruling):
+
+21. **The game client uses the ratified fictional names for resources**
+    (`Hyades_galaxy_and_autopilot.md` §4.1): Cage Ice, Rosepeter and Voltslate
+    for the basics, Strange Matter for the apex. The replay keeps the engine's
+    color names (`enums.material`, §3), and the client maps them. The supers'
+    names are placeholders (T-142), so the client shows a super by its color —
+    Red, Green, Blue — until they are ratified.
+
 ---
 
 ## 2. The seam
@@ -391,7 +400,9 @@ Proposed and built (T-152, the author's direction):
   cargo's mass, in book order, in the material colors (§6.2) — the whole body of
   an unarmed hull, and the bottom two rows of an armed one, whose solid body
   says it is armed (a sentry carries rounds). The inspector lists the hold by
-  material, kt.
+  material, kt, and a world's ore and holdings by material, all by in-game
+  name (ruling 21). The page's glyph legend keys each stripe color to its
+  material's name, from the module (`hv_text(12)`).
 
 ---
 
@@ -530,7 +541,7 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
 both modes; and `web/test/browser.mjs`, which opens the site in headless
 Chrome, goes from the menu through Replays to a replay, checks it renders on
 WebGL2 without a console error, checks the glyph legend shows every role's
-mark, clicks a drawn hull and checks it is selected,
+mark and keys the materials by in-game name, clicks a drawn hull and checks it is selected,
 compares GPU and CPU juicy (§7.3), plays, filters the log and seeks from a row,
 drives the palette editor (a link's settings open with the page; a slider
 redraws the canvas and rewrites the link; a hand-set color reaches the settings

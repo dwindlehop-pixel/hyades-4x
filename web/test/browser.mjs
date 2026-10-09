@@ -109,6 +109,9 @@ try {
   // The glyph legend shows every role's mark, from the module.
   const roles = await page.evaluate(() => [...document.querySelectorAll("#roles li")].map((li) => [li.dataset.role, li.querySelectorAll(".mark i[style]").length]));
   check(roles.length === 7 && roles.some(([r, n]) => r === "Picket" && n === 5), `the legend shows the role marks: ${JSON.stringify(roles)}`);
+  // The material key uses the ratified in-game names (galaxy §4.1).
+  const mats = await page.evaluate(() => [...document.querySelectorAll("#materials li")].map((li) => li.dataset.material));
+  check(mats.length === 9 && mats[0] === "Cage Ice" && mats[2] === "Voltslate" && mats.includes("Strange Matter"), `the material key uses the in-game names: ${JSON.stringify(mats)}`);
 
   // A click on a drawn hull selects it.
   const picked = await clickDrawn(page, (box, x, y) => page.mouse.click(box.x + x + 2, box.y + y + 2));

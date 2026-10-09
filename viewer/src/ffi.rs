@@ -331,6 +331,7 @@ pub extern "C" fn hv_palette_set() -> i32 {
 /// | 9 | the palette's settings, in their text form |
 /// | 10 | every drawn hull glyph's screen position — see [`Viewer::drawn`] |
 /// | 11 | the role marks, for a legend: `role \t mark \t accent`, the mark nine `0`/`1` row-major |
+/// | 12 | the cargo stripes' colors, for a legend: `material \t color`, by in-game name |
 #[no_mangle]
 pub extern "C" fn hv_text(which: i32, first: i32, rows: usize) -> *const u8 {
     let s = match which {
@@ -339,6 +340,7 @@ pub extern "C" fn hv_text(which: i32, first: i32, rows: usize) -> *const u8 {
         9 => palette().settings.to_string(),
         10 => with(|v| v.drawn()),
         11 => role_legend(&palette()),
+        12 => material_legend(&palette()),
         _ => with(|v| match which {
             0 => v.status(),
             1 => v.inspector(),
@@ -418,10 +420,30 @@ fn role_legend(p: &Palette) -> String {
     out
 }
 
+/// **The cargo stripes' colors** ([`Palette::material`]) under the
+/// materials' in-game names, and the settlers a colonizer carries.
+fn material_legend(p: &Palette) -> String {
+    let mut out = String::new();
+    for (i, name) in crate::replay::MATERIALS.iter().chain(["settlers"].iter()).enumerate() {
+        let _ = writeln!(out, "{name}\t{}", p.material(i).to_hex());
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::replay::tests::TINY;
+
+    #[test]
+    fn the_material_legend_names_each_stripe_color() {
+        let legend = text(12, 0, 0);
+        let p = palette();
+        assert_eq!(legend.lines().count(), crate::palette::PEOPLE + 1);
+        assert!(legend.starts_with(&format!("Cage Ice\t{}\n", p.material(0).to_hex())), "{legend}");
+        assert!(legend.contains(&format!("Strange Matter\t{}\n", p.material(6).to_hex())), "{legend}");
+        assert!(legend.ends_with(&format!("settlers\t{}\n", p.material(crate::palette::PEOPLE).to_hex())));
+    }
 
     #[test]
     fn the_role_legend_lists_each_mark_as_the_renderer_stamps_it() {

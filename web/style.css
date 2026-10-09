@@ -144,6 +144,8 @@ body:not(.side-open) #side, body:not(.log-open) #logbar { display: none; }
 .glyphs .body.hollow { background: var(--ground); }
 .glyphs .body.striped { background: linear-gradient(90deg, var(--mat-cyan) 0 50%, var(--mat-yellow) 50% 100%); }
 .glyphs .body.dot { border: none; width: 14px; background: radial-gradient(circle, var(--text-dim) 0 2px, transparent 2.5px); }
+.swatches { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.swatch { display: inline-block; width: 14px; height: 6px; }
 .mark { display: inline-grid; grid-template-columns: repeat(3, 4px); grid-auto-rows: 4px; gap: 1px; padding: 2px; background: var(--ground); }
 .mark i { display: block; }
 #tuner { margin-top: 14px; }
