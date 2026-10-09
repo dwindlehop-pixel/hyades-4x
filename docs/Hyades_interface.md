@@ -504,6 +504,11 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
 
 - **Keys**: Space, J/K/L, ←/→, T (mode), F (fit everything), G (the replay's
   focus), C (center on the selection), Esc (menu).
+- **Direction** (T-157): ▶ plays forward and ◀ backward. Each pauses when the
+  replay is already playing its way and otherwise turns the replay and plays,
+  so neither direction can be left stuck. Space pauses whichever way the
+  replay is playing, and plays forward when it is paused; L and J play forward
+  and backward, K pauses.
 - **Pointer**: the wheel zooms about the pointer; one pointer drags the view;
   **two fingers pinch** to zoom about their midpoint and pan with it. A press
   that moves no farther than a slop (4 CSS pixels for a mouse, 8 for a pen, 10
@@ -529,7 +534,7 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
   (§7.3), and `palette.html`, which forwards to the Palette screen. The page
   chrome takes its colors from the module's palette, so chrome and canvas
   cannot differ.
-- **Controls**: play/pause, rewind, step, a rate multiplier, a scrubber, and
+- **Controls**: play forward/pause, play backward/pause (§8.3), step, a rate multiplier, a scrubber, and
   the input of §8.3; the side panel's palette editor tunes the palette live
   (§6.2.1).
 - **`web/build.sh <out> [--quick]`** assembles the site: the module, the page,

@@ -152,6 +152,17 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-157. Play forward after playing backward
+
+*Opened and built in one landing at the author's report: "Playing replay
+backwards seems to lock the viewer into negative timeflow. I can't get the
+viewer to play forward again."* ▶ and Space toggled play without resetting the
+direction ◀ had set, so they paused and resumed the backward run; only the L
+key turned it. ▶ now plays forward and ◀ backward, each pausing when already
+playing its way; Space pauses, or plays forward (`Hyades_interface.md` §8.3).
+The browser test plays backward, presses ▶ and checks the clock runs forward;
+it fails on the previous `shell.js`.
+
 ### T-156. The `beams` Tors can match the Cairns' velocity
 
 *Opened and built in one landing at the author's report: "the Tor initial

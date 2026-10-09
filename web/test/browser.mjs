@@ -158,6 +158,20 @@ try {
   const t1 = await page.evaluate(() => window.hyades.hv().hv_time());
   check(t1 > t0, `space plays: t ${t0.toFixed(4)} → ${t1.toFixed(4)}`);
 
+  // Backward, then ▶: the clock turns and runs forward again.
+  const now = () => page.evaluate(() => window.hyades.hv().hv_time());
+  await page.click("#rewind");
+  await page.waitForTimeout(400);
+  const back = await now();
+  await page.click("#play");
+  await page.waitForTimeout(400);
+  const fwd = await now();
+  await page.waitForTimeout(400);
+  const fwd2 = await now();
+  await page.click("#play");
+  check(back < t1 && fwd2 > fwd, `▶ after ◀ plays forward: t ${t1.toFixed(4)} → ${back.toFixed(4)} ◀, then ${fwd.toFixed(4)} → ${fwd2.toFixed(4)} ▶`);
+  check(!(await page.evaluate(() => window.hyades.hv().hv_playing())), "▶ while playing forward pauses");
+
   // The text filter narrows the log; a row seeks the clock to its event.
   await page.selectOption("#window", "0");
   const all = Number((await page.textContent("#logcount")).split(" ")[0]);

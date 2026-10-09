@@ -588,7 +588,9 @@ function frame(now) {
       $("badge").hidden = !selected || document.body.classList.contains("side-open");
       if (selected) $("badge").textContent = inspector.split("\n").slice(0, 3).join("\n");
       $("scrub").value = String(Math.round(hv.hv_fraction() * 10000));
-      $("play").textContent = hv.hv_playing() ? "❚❚" : "▶";
+      const playing = hv.hv_playing();
+      $("play").textContent = playing && direction > 0 ? "❚❚" : "▶";
+      $("rewind").textContent = playing && direction < 0 ? "❚❚" : "◀";
       const t = hv.hv_time();
       if (t !== lastTime && now - lastLog > 100) {
         lastTime = t;
@@ -606,6 +608,19 @@ function setRate() {
   hv.hv_set_rate(direction * baseRate * Number($("rate").value));
 }
 
+/// Plays in `dir` (+1 forward, −1 backward). Already playing that way, it
+/// pauses; playing the other way or paused, it turns and plays — so ▶ always
+/// leads forward and ◀ backward.
+function playToward(dir) {
+  if (direction === dir && hv.hv_playing()) {
+    hv.hv_play(0);
+    return;
+  }
+  direction = dir;
+  setRate();
+  hv.hv_play(1);
+}
+
 function setMode(m) {
   hv.hv_set_mode(m);
   $("mode-tactical").classList.toggle("on", m === 0);
@@ -617,8 +632,8 @@ function act(fn) {
   return () => { if (loaded) { fn(); dirty = true; } };
 }
 
-$("play").addEventListener("click", act(() => hv.hv_play(2)));
-$("rewind").addEventListener("click", act(() => { direction = -1; setRate(); hv.hv_play(1); }));
+$("play").addEventListener("click", act(() => playToward(1)));
+$("rewind").addEventListener("click", act(() => playToward(-1)));
 $("back").addEventListener("click", act(() => hv.hv_step(-1)));
 $("step").addEventListener("click", act(() => hv.hv_step(1)));
 $("rate").addEventListener("change", act(setRate));
@@ -706,7 +721,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (!loaded) return;
   const keys = {
-    " ": () => hv.hv_play(2),
+    " ": () => (hv.hv_playing() ? hv.hv_play(0) : playToward(1)),
     k: () => hv.hv_play(0),
     l: () => { direction = 1; setRate(); hv.hv_play(1); },
     j: () => { direction = -1; setRate(); hv.hv_play(1); },
