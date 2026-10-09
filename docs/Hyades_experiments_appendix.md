@@ -5064,8 +5064,8 @@ pixel. The `beams` replay's two fleets are LCV pickets with one beam mount each
 stacks and **one** pixel that was not the ground, out of 144,000; the module
 smoke test failed on it ("1 colors"). Exempting armed hulls draws the surviving
 fleet as one glyph with a count of 18 at the replay's midpoint, and the smoke
-test passes on all three replays. One replay; whether an armed Contact hull at
-rest should be quiet is left open (R-UI4).
+test passes on all three replays. The author then ruled that armed hulls stay
+prominent (`Hyades_interface.md` ruling 18).
 
 **Holdings in the recorded replays.** In `expansion` (60 yr, three seats, 150
 worlds requested) the only holdings are the three homeworlds' banks: Band 2.00

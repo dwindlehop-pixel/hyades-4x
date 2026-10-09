@@ -70,6 +70,9 @@ RATIFIED (T-152, the author's rulings on the tactical mode):
 17. **Magnitudes are drawn with Band math, not with a logarithm of the
     viewer's own.** A holding's bar reads the engine's Band reading of it
     (§6.5).
+18. **Armed hulls stay prominent.** Scouts and unladen, unarmed Systems and
+    Contact hulls are drawn unobtrusively; a hull with a beam mount or a
+    missile tube never is, laden or not (§6.6).
 
 ---
 
@@ -355,10 +358,9 @@ Proposed and built (T-152, the author's direction):
   Contact family, is **one tactical pixel in its seat's dimmed color** — no
   glyph, no drive vector, no count — and is drawn under every other live hull.
   A hit still rings it and a selection still brackets it. **An armed hull is
-  never quiet**: the author asked for unladen Systems and Contact vehicles to be
-  unobtrusive, and the `beams` replay's whole fight is unladen Contact pickets,
-  which that rule taken literally drew as one pixel (appendix §D.58.6). Whether
-  armed Contact hulls at rest should also be quiet is OPEN under R-UI4.
+  never quiet** — RATIFIED (ruling 18, T-152): the `beams` replay's whole
+  fight is unladen Contact pickets, which the unarmed condition keeps visible
+  (appendix §D.58.6).
 - **Cargo.** A laden hull's fill is striped vertically, one stripe per material
   in its hold and then its settlers, each as wide as its share of the cargo's
   mass, in book order, in the material colors (§6.2). The inspector lists the
@@ -525,7 +527,7 @@ job runs the same build and tests on every pull request.
 | **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"` | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
 | **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — proposal built | the author's review on the deployed site |
-| **R-UI4** | stacking and the tactical layer: the stack square per level, the Galaxy-level owner markers, the display order, the place count, routes, holding bars, quiet hulls and cargo stripes (§6.4–§6.6) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; routes, holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; whether an armed Contact hull at rest is quiet is open | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
+| **R-UI4** | stacking and the tactical layer: the stack square per level, the Galaxy-level owner markers, the display order, the place count, routes, holding bars, quiet hulls and cargo stripes (§6.4–§6.6) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; routes, holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18) | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |
 | **R-UI6** | replay size (§3) | OPEN — recommendation attached | the first replay the author wants to keep that passes ~50 MB |
 | **R-UI7** | showing height `z` in the galaxy view (§6.1) | OPEN | the author's ruling on whether the view stays top-down |

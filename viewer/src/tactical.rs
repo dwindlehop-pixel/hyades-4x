@@ -121,7 +121,7 @@ pub enum Op {
         /// **Drawn as one dim pixel**: a scout, or an unladen, unarmed hull of
         /// the Systems or Contact family — traffic, kept out of the way. An
         /// armed hull is never quiet: a picket of the Contact family is what a
-        /// fight is made of.
+        /// fight is made of (ruling 18).
         quiet: bool,
         /// Where it is drawn among overlapping glyphs: higher on top. See
         /// [`display_order`].
