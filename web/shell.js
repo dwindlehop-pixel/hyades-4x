@@ -384,7 +384,7 @@ function buildFilters() {
     const li = document.createElement("li");
     const sw = document.createElement("i");
     sw.style.background = color;
-    li.append(sw, `${name} · ${arch}`);
+    li.append(sw, `${name} · ${arch} archetype`);
     return li;
   });
   $("legend").replaceChildren(...legend);

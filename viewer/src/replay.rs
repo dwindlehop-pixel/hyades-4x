@@ -382,13 +382,18 @@ impl Replay {
     }
 
     /// **The theater at `t`**: every hull of the frame at or before `t`, each
-    /// moved along the straight line to where the next frame has it.
+    /// moved along the cubic Hermite curve through its position and velocity
+    /// at that frame and the next (T-154). The curve meets both frames'
+    /// positions and velocities, so a hull's speed changes smoothly across a
+    /// frame instead of jumping, and a constant acceleration — the drive's
+    /// whole leg — is reproduced exactly.
     pub fn view_at(&self, t: f64) -> View {
         let i = self.frame_at(t);
         let f = &self.frames[i];
         let next = self.frames.get(i + 1);
         let prev = if i > 0 { self.frames.get(i - 1) } else { None };
-        let frac = next.map_or(0.0, |n| ((t - f.t) / (n.t - f.t).max(1e-12)).clamp(0.0, 1.0));
+        let span = next.map_or(0.0, |n| n.t - f.t);
+        let frac = if span > 0.0 { ((t - f.t) / span).clamp(0.0, 1.0) } else { 0.0 };
         let find = |fr: &Frame, id: u64| fr.rows.binary_search_by_key(&id, |r| r.id).ok().map(|k| fr.rows[k]);
         let hulls = f
             .rows
@@ -396,9 +401,7 @@ impl Replay {
             .map(|r| {
                 let mut row = *r;
                 if let Some(n) = next.and_then(|n| find(n, r.id)) {
-                    for k in 0..3 {
-                        row.pos[k] = r.pos[k] + (n.pos[k] - r.pos[k]) * frac;
-                    }
+                    (row.pos, row.vel) = hermite(r.pos, r.vel, n.pos, n.vel, span, frac);
                 }
                 let hit =
                     prev.and_then(|p| find(p, r.id)).is_some_and(|p| r.damage > p.damage || (r.wrecked && !p.wrecked));
@@ -415,6 +418,21 @@ impl Replay {
             .collect();
         View { t, frame: i, hulls }
     }
+}
+
+/// **A cubic Hermite step**: the position and velocity at a share `s` of a
+/// span of `dt` years from `(p0, v0)` to `(p1, v1)`.
+pub fn hermite(p0: [f64; 3], v0: [f64; 3], p1: [f64; 3], v1: [f64; 3], dt: f64, s: f64) -> ([f64; 3], [f64; 3]) {
+    let (s2, s3) = (s * s, s * s * s);
+    let (h00, h10, h01, h11) = (2.0 * s3 - 3.0 * s2 + 1.0, s3 - 2.0 * s2 + s, -2.0 * s3 + 3.0 * s2, s3 - s2);
+    let (d00, d10, d01, d11) = (6.0 * s2 - 6.0 * s, 3.0 * s2 - 4.0 * s + 1.0, -6.0 * s2 + 6.0 * s, 3.0 * s2 - 2.0 * s);
+    let mut p = [0.0; 3];
+    let mut v = [0.0; 3];
+    for k in 0..3 {
+        p[k] = h00 * p0[k] + h10 * dt * v0[k] + h01 * p1[k] + h11 * dt * v1[k];
+        v[k] = if dt > 0.0 { (d00 * p0[k] + d01 * p1[k]) / dt + d10 * v0[k] + d11 * v1[k] } else { v0[k] };
+    }
+    (p, v)
 }
 
 #[cfg(test)]
@@ -449,7 +467,7 @@ pub(crate) mod tests {
          "holdings": [[0, 0, 2.1, 1.8, 3.25, null, null, null, null, null],
                       [2, 1, -0.4, null, null, null, null, null, null, null]]},
         {"t": 10, "owner": [0, 1, 0], "pop": [2.9, 2.8, 1.1], "works": [2, 2, 1],
-         "vehicles": [[5, 3, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 4.5, 0, 3, 0, 1.5, 0, 0, 0, 0, 0],
+         "vehicles": [[5, 3, 10, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 4.5, 0, 3, 0, 1.5, 0, 0, 0, 0, 0],
                       [6, 7, 21, 0, 0, 0.1, 0, 0, 0, 0, 1, 3, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                       [9, 0, 0, 0, 0, 0, 0, 0, 0.5, 1, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
          "holdings": [[0, 0, 2.2, 1.7, 3.3, 0.5, null, null, null, null],
@@ -547,12 +565,28 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn a_hull_between_frames_is_interpolated_along_its_two_positions() {
+    fn a_hull_between_frames_follows_its_acceleration_and_not_a_straight_line() {
+        // Hull 5 leaves rest at 0 and reaches 10 ly at 2 ly/yr after 10 yr: a
+        // constant 0.2 ly/yr², which the interpolation reproduces exactly.
         let v = tiny().view_at(2.5);
         let f = v.hulls.iter().find(|h| h.row.id == 5).unwrap();
-        assert_eq!(f.row.pos, [2.5, 0.0, 0.0]);
+        assert!((f.row.pos[0] - 0.5 * 0.2 * 2.5 * 2.5).abs() < 1e-12, "{:?}", f.row.pos);
+        assert!((f.row.vel[0] - 0.2 * 2.5).abs() < 1e-12, "and its velocity: {:?}", f.row.vel);
         assert!(f.laden, "it carries 4.5 kt");
         assert_eq!(v.frame, 0);
+    }
+
+    #[test]
+    fn interpolated_motion_has_no_kink_at_a_frame() {
+        // The velocity just before a frame equals the frame's own: speed
+        // changes smoothly through it rather than stepping.
+        let (p, v) = hermite([0.0; 3], [1.0, 0.0, 0.0], [3.0, 0.0, 0.0], [5.0, 0.0, 0.0], 1.0, 1.0);
+        assert_eq!((p[0], v[0]), (3.0, 5.0));
+        let (p, v) = hermite([0.0; 3], [1.0, 0.0, 0.0], [3.0, 0.0, 0.0], [5.0, 0.0, 0.0], 1.0, 0.0);
+        assert_eq!((p[0], v[0]), (0.0, 1.0));
+        // Constant velocity is a straight line at that velocity.
+        let (p, v) = hermite([1.0; 3], [2.0; 3], [3.0; 3], [2.0; 3], 1.0, 0.25);
+        assert!(p.iter().all(|x| (x - 1.5).abs() < 1e-12) && v.iter().all(|x| (x - 2.0).abs() < 1e-12));
     }
 
     #[test]

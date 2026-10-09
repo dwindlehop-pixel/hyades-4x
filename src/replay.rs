@@ -44,6 +44,11 @@ const HULLS: [&str; 10] = ["LSV", "MSV", "GSV", "LCV", "LCU", "GCV", "GCU", "LOU
 /// Design classes, in the order a replay indexes them.
 const DESIGNS: [&str; 12] =
     ["Meadow", "Spur", "Tor", "Cairn", "Delta", "Range", "Scarp", "Ford", "Strait", "Butte", "Mesa", "Unnamed"];
+/// **Decimals a position is written to, ly** — 0.0001 ly, about 6 au. A fight
+/// spans hundredths of a light year, and at two decimals (the first format)
+/// every hull in one moved in 0.01-ly jumps whatever the sim did (T-154).
+const POSITION_DECIMALS: usize = 4;
+
 /// The materials on the Exchange's books, in [`Material`] order — what a
 /// hold carries and a holding keeps.
 ///
@@ -211,7 +216,7 @@ fn header(out: &mut String, galaxy: &Galaxy, sim: &Simulation, cfg: &ReplayConfi
         out.push_str(&format!("[{}", p.id.0));
         for x in [p.position.x, p.position.y, p.position.z] {
             out.push(',');
-            write_num(out, x, 2);
+            write_num(out, x, POSITION_DECIMALS);
         }
         for x in [p.habitability.bands(), p.biosphere.bands()] {
             out.push(',');
@@ -280,7 +285,7 @@ fn frame(out: &mut String, snap: &Snapshot) {
         out.push_str(&format!("[{},{}", v.id, index(&KINDS, &format!("{:?}", v.kind))));
         for x in [v.position.x, v.position.y, v.position.z] {
             out.push(',');
-            write_num(out, x, 2);
+            write_num(out, x, POSITION_DECIMALS);
         }
         for x in [v.velocity.x, v.velocity.y, v.velocity.z, v.accel] {
             out.push(',');
@@ -639,7 +644,7 @@ mod tests {
                 let hull = hulls.iter().find(|h| h.arr()[0].num() == s.id as f64).expect("every hull is in the table");
                 assert_eq!(hull.arr()[1].num(), s.owner as f64, "its owner");
                 assert_eq!(doc.get("enums").get("design").arr()[hull.arr()[3].num() as usize].str(), s.design);
-                assert!((v.arr()[2].num() - s.position.x).abs() <= 0.005, "frame {k}: at its position");
+                assert!((v.arr()[2].num() - s.position.x).abs() <= 0.00005, "frame {k}: at its position");
             }
             assert_eq!(f.get("owner").arr().len(), galaxy.planets.len());
             // Cargo by material sums to the cargo, within the written figures.

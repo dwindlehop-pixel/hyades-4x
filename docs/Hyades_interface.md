@@ -74,6 +74,15 @@ RATIFIED (T-152, the author's rulings on the tactical mode):
     Contact hulls are drawn unobtrusively; a hull with a beam mount or a
     missile tube never is, laden or not (§6.6).
 
+RATIFIED (T-154, the author's rulings after the `beams` replay):
+
+19. **A seat's identity never overlaps the identity of a material.** The
+    basics are cyan, magenta and yellow, the supers red, green and blue, the
+    apex platinum; no seat is drawn in any of them (§6.2).
+20. **The display reflects smooth, continuous acceleration and
+    deceleration**, as the sim flies it: no hull moves in steps or eases in
+    and out at each frame (§3, §4).
+
 ---
 
 ## 2. The seam
@@ -113,7 +122,7 @@ breaking it.
 | `enums` | `kind` (role), `hull` (the docs' codes, LSV … GOU), `design` (the class names, Meadow … Unnamed), `category` (log categories), `material` (the eight on the Exchange's books: Cyan, Magenta, Yellow, Red, Green, Blue, Apex, Ordnance) |
 | `planet_fields`, `planets` | static per world: `id, x, y, z, hab, bio_max, cyan, magenta, yellow, home` — Bands |
 | `frame_planet_fields` | per world per frame: `owner` (−1 none), `pop`, `works` — Bands |
-| `vehicle_fields` | per hull per frame: `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight and bit 1 wrecked, dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
+| `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight and bit 1 wrecked, dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
 | `holding_fields` | per holding per frame: `planet, seat, cyan … ordnance` — each material a **Band reading on the cost ladder** (a holding is a stock that can be spent), `null` where none of it is held (T-152) |
 | `frames` | `{t, owner[], pop[], works[], vehicles[[…]], holdings[[…]]}` — `holdings` lists every non-empty holding, an empire's at worlds it owns and at rocks it only mines, by planet and then seat |
 | `hull_fields`, `hulls` | static per hull: `id, owner, hull, design, beams, tubes` — written once, after the frames |
@@ -147,8 +156,12 @@ BUILT (`viewer/src/timeline.rs`).
 - **Play at the end it is heading for starts over** from the other end.
 - **Seek** holds the clock inside the replay's span; **step** moves to the next
   or previous frame time and pauses.
-- Between frames, a hull is drawn on the straight line between its two frame
-  positions. Every other quantity is the earlier frame's.
+- Between frames, a hull is drawn on the **cubic Hermite curve** through its
+  position and velocity at both frames (`replay::hermite`), and its velocity is
+  that curve's (ruling 20). The curve meets both frames' positions and
+  velocities, so speed changes smoothly through a frame, and a constant
+  acceleration — a drive leg — is reproduced exactly. Every other quantity is
+  the earlier frame's.
 - A replay opens paused at its start, at a rate that plays it through in **60
   seconds** (*placeholder*), framed on its `focus` when it has one.
 
@@ -242,11 +255,15 @@ values then replace the proposal in `palette.rs` and this section, and
 | text (dim, normal, bright) | base0, base2, base3 |
 | a world (unowned) | base01 |
 | the basics cyan, magenta, yellow | cyan, magenta, yellow |
-| seat `i` | archetype `i mod 3`'s family, step `⌊i/3⌋`: Blue — blue, violet2, blue3, violet3, cyan2, blue2; Red — red, magenta2, orange3, red3, magenta3, orange; Green — green, yellow3, cyan, green3, yellow, cyan3 |
+| seat `i` | **off the palette** (ruling 19): OKLCH hue `SEAT_HUES[i mod 4]` = 300°, 160°, 335°, 280°, lightness `SEAT_LIGHTNESS[⌊i/4⌋ mod 5]` = 0.70, 0.60, 0.78, 0.65, 0.74, chroma 0.13 brought into gamut |
 | Doctrine roles | Scout base3, Colonizer green3, Miner yellow3, Freighter orange3, Picket violet3, Sentry magenta3, Reserve base0, Scrapped base01 |
 
-The first three seats are the three supers' own colors, so on a 3-seat table
-an empire wears its archetype.
+Seats take the hues between the materials' (magenta 8°, red 30°, rounds 39°,
+yellow 83°, green 118°, cyan 200°, blue 240° on the proposed palette): every
+seat is at least 25° of hue and 0.08 in OKLab from every material, and every
+two seats are at least 0.03 apart (`no_seat_shares_an_identity_with_a_basic_super_or_the_apex`,
+appendix §D.58.7). An empire no longer wears its archetype's super; that
+identity is the material's alone.
 
 **The proposed status colors — off the palette on purpose.** Each is at least
 0.04 from every palette color and 0.06 from every other status color in OKLab,
@@ -266,7 +283,8 @@ and reads at 3:1 on the ground (`status_colors_sit_off_the_palette_apart_and_leg
 
 **Materials** are drawn in the palette's own hue of their names — Cyan
 `hy_cyan`, Magenta `hy_magenta`, Yellow `hy_yellow`, Red `hy_red`, Green
-`hy_green`, Blue `hy_blue` — with Strange Matter `hy_violet3`, rounds
+`hy_green`, Blue `hy_blue` — with Strange Matter **platinum** (ruling 19:
+OKLCH L 0.84, C 0.012, h 250, `palette::PLATINUM`), rounds
 `hy_orange` and settlers `hy_base2` (proposed, part of R-UI1). They color a
 holding's bars and a hold's stripes (§6.5, §6.6).
 
