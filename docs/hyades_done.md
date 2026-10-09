@@ -152,6 +152,15 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-156. The `beams` Tors can match the Cairns' velocity
+
+*Opened and built in one landing at the author's report: "the Tor initial
+delta V is too large. They need the option to match velocity with the Cairn
+stack without overshooting."* The replay recorder sets the Tors' starting
+speed from their own braking acceleration so that they come to rest at the
+Cairns' place: 0.2326 ly/yr in place of 0.3 (appendix §D.58.8). The
+determinism suite keeps 0.3 ly/yr.
+
 ### T-155. The client names resources by their ratified fiction
 
 *Opened and built in one landing at the author's direction: "The game client

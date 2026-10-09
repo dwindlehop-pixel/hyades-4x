@@ -5112,7 +5112,8 @@ past its structure heads home (`Standing::under_fire`, warfare §8.19): all 20
 Tors turned for home past their structure at t ≈ 0.094–0.108 and were wrecked;
 two Cairns, at 1.21 and 1.16 of structure, withdrew; the other 18 (damage 0.95,
 0.21, 0.03 and fifteen untouched) received no further event and stayed parked
-for the rest of the run.
+for the rest of the run. *Superseded for the replay by §D.58.8: the Tors'
+starting speed is now one they can shed in the gap.*
 
 **Seat hues.** On the proposed palette the materials sit at OKLCH hues magenta
 8°, red 30°, rounds 39°, yellow 83°, green 118°, cyan 200°, blue 240°, and the
@@ -5122,6 +5123,31 @@ seat hue at 145° came within 0.063 of green at L 0.6; a fourth at 270° within
 distance rose 0.065 → 0.090 and the worst seat-to-seat distance fell 0.040 →
 0.023; 280° keeps both bounds (0.086, 0.040). Lightness stays at or below 0.78,
 because a pale violet at 0.84 came within 0.069 of platinum.
+
+### D.58.8 The `beams` Tors close at a speed they can shed (T-156)
+
+At the author's report that the Tors' starting speed was too large for them to
+match velocity with the Cairns: at 0.3 ly/yr and a proper braking acceleration
+of 0.94 ly/yr², a Tor needs 0.048 ly to stop and starts 0.03 ly out, so no
+course it could fly ends at rest beside the Cairns. The recorder now reads the
+Tors' braking acceleration off the hull at `t = 0` (0.9399 ly/yr²) and sets
+their speed to the one that braking sheds in exactly the gap,
+`v = √(γ² − 1)/γ` with `γ = 1 + a·L`: **0.2326 ly/yr**. The determinism
+suite's arm keeps 0.3 ly/yr, because it pins the braking-through mechanism.
+
+Re-recorded, seed 32, 3 yr, frames every 0.02 yr (one run):
+
+| | before (0.3 ly/yr) | after (0.2326 ly/yr) |
+|---|---|---|
+| Tors at rest beside the Cairns possible | no — 0.018 ly overshoot | yes — rest at the Cairns' place |
+| fire opens | the stacks overlapping | t ≈ 0.13 yr, the Tors 0.006 ly out, closing at 0.11 ly/yr |
+| Tors wrecked | 20, past structure at t ≈ 0.094–0.108 | 20, all by t 0.18 |
+| Cairns past structure, withdrawn home | 2 | 9 (worst 1.48 of structure) |
+| Cairns standing at the site at the end | 18 | 11 |
+
+The Tors still brake on the course they started on and close into the Cairns'
+reach while still moving, because a picket with no post has no decision that
+holds it off at range; under fire it holds that course (warfare §8.19).
 
 ## References
 
