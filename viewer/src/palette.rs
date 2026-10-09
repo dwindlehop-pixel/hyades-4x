@@ -129,9 +129,10 @@ pub struct Roles {
 /// The slot after the eight materials: people aboard (see [`Palette::material`]).
 pub const PEOPLE: usize = 8;
 
-/// How much a glyph's fill is moved from its seat's color toward the ground,
-/// so the edge reads first (proposed).
-pub const DEFAULT_FILL_DIM: f64 = 0.45;
+/// How much an unarmed glyph's body is moved from its seat's color toward the
+/// ground: unarmed hulls read hollow beside an armed hull's solid body
+/// (proposed).
+pub const DEFAULT_FILL_DIM: f64 = 0.7;
 
 /// **Everything the author tunes**, as one value with a one-line text form
 /// (`docs/Hyades_interface.md` §6.2): the tone map, the glyph fill's dimming,
@@ -140,7 +141,7 @@ pub const DEFAULT_FILL_DIM: f64 = 0.45;
 ///
 /// The text form is `key=value` pairs separated by spaces or `&`:
 /// `ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228
-/// fill=0.45 hy_red=#c83a2c Hit=#ff2d6f`. It is what the live editor puts in
+/// fill=0.7 hy_red=#c83a2c Hit=#ff2d6f`. It is what the live editor puts in
 /// the page's link and what the author sends back to ratify.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
@@ -415,14 +416,14 @@ mod tests {
     #[test]
     fn settings_print_and_read_back_and_the_default_is_the_proposal() {
         let d = Settings::default();
-        assert_eq!(d.to_string(), "ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.45");
+        assert_eq!(d.to_string(), "ink=0.02 paper=0.95 warm=0.92 cool=0.6 pull=0.3 anchors=38,78,118,228 fill=0.7");
         assert_eq!(Settings::parse(&d.to_string()), Ok(d.clone()));
         assert_eq!(Settings::parse(""), Ok(d), "every key left out keeps its default");
         let s = Settings::parse("pull=0.5&Hit=#00ff00  hy_red=C83A2C ink=0.1").unwrap();
         assert_eq!((s.map.pull, s.map.ink), (0.5, 0.1));
         assert_eq!(
             s.to_string(),
-            "ink=0.1 paper=0.95 warm=0.92 cool=0.6 pull=0.5 anchors=38,78,118,228 fill=0.45 Hit=#00ff00 hy_red=#c83a2c"
+            "ink=0.1 paper=0.95 warm=0.92 cool=0.6 pull=0.5 anchors=38,78,118,228 fill=0.7 Hit=#00ff00 hy_red=#c83a2c"
         );
         assert_eq!(Settings::parse(&s.to_string()), Ok(s));
     }

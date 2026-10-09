@@ -24,6 +24,7 @@ row below, and leave its code in the Band A pointer line of
 
 | code | status | open follow-ups, and where they live |
 |---|---|---|
+| **T-153** | Built: armed bodies solid and unarmed hollow; a 3×3 mark per role; a glyph legend from the module | R-UI3 — `Hyades_interface.md` §9 |
 | **T-152** | Built: glyphs only where their hulls stand, a display order, routes, holdings by material (Band bars), colonies by seat color, quiet traffic, cargo stripes | R-UI4 — `Hyades_interface.md` §9 |
 | **T-151** | Built: one client with a menu; phone layout and touch; Galaxy-level stacks, active hexes, dimmer worlds; the overlay that took every tap removed | R-UI2, R-UI4, R-UI9 — `Hyades_interface.md` §9 |
 | **T-150** | Built: the live palette editor; the author's rulings on ratifying live and on upstream packages | R-UI1 (awaits ratification on the live viewer), R-UI8 — `Hyades_interface.md` §9 |
@@ -122,6 +123,7 @@ these rows keep the table continuous so the ledger can be read in one place.
 | **T-150** — the palette is tuned and ratified live | **T-150** | R-UI1 | **R-UI8** | The author's rulings 13 (ratify on a live design) and 14 (the interface and networking may link upstream packages; the engine stays dependency-free); design law #15 (the palette is presentation state and never reaches the engine) | **`Hyades_interface.md` §9's own settle-by for R-UI1** ("approval of `palette.html`"), one landing old — the author ruled a sheet cannot ratify a palette; replaced by a settings line or link from the live editor. **`AGENTS.md` §4's zero-dependency rule**, narrowed by the author's ruling to the engine |
 | **T-151** — the replay viewer is a menu option of one client; phones | **T-151** | R-UI2, R-UI4 | **R-UI9** | The author's ruling 15 (the replay viewer is a menu option of the game client); design law #15 (the client reads replays and the palette is presentation state); `AGENTS.md` §2's rule to assert that a mechanism fires (the browser test now clicks and taps a hull the module reports drawn — before, nothing tested a pick through the page, and an invisible overlay took every one) | **`Hyades_interface.md` §6.4's stack rule** (one glyph per owner, Design, role and wreck state in a 3-pixel square at every level), replaced at the author's report that tactical stacked too many glyphs; **§6.5's hexes** (every hex drawn), replaced by active hexes at the author's report; **§7.1's world lights** (core 1.5, halo 0.35, bloom 0.6), dimmed at the author's report that glowing worlds made everything illegible — all placeholders, none ratified; **`palette.html` as a page** (§6.2), now a screen |
 | **T-152** — the tactical layer: glyphs in place, routes, holdings, cargo | **T-152** | R-UI4, R-UI1 (material colors proposed) | — | The author's rulings 16 (a glyph only centered on its hull's location), 17 (Band math, not a log) and 18 (armed hulls stay prominent); design law #15 (the snapshot gains holdings as a read; nothing flows back); `AGENTS.md` §4 (a Band is a reading the engine takes — the replay carries it, the viewer does not re-derive it) | **`Hyades_interface.md` §6.4's fan** (unalike stacks offset with leader lines), moved to appendix §D.58.6; **§6.5's world dot** (a colony now a pixel wider than an unowned world); **§6.2's Laden status** (a center pixel, now the fill only where a replay lacks cargo by material); **the author's literal quiet rule**, narrowed to unarmed hulls because it drew the `beams` fight as one pixel — then ratified as ruling 18 |
+| **T-153** — armed and role at a glance | **T-153** | R-UI3, R-UI1 (`fill` 0.45 → 0.7, proposed) | — | Ruling 18 (armed hulls stay prominent — now by body as well as by quietness); design law #15 (the legend is presentation, read from the module) | **`Hyades_interface.md` §6.3's role plus and armament-only marks**, replaced at the author's report that neither armed state nor role read at a glance; **the proposed `fill` 0.45**, moved to 0.7 so a hollow body reads against a solid one — both placeholders |
 
 **Two things this retrospective surfaced that no individual commit had said out
 loud.**
@@ -147,6 +149,19 @@ description of the change.
 ---
 
 ## Entries moved from Band A
+
+### T-153. Armed or not, and role, at a glance
+
+*Opened and built in one landing at the author's report on the T-152
+deployment: "I can't distinguish the glyphs between armed and unarmed ships. I
+can't tell role at a glance."* Armament was a two-pixel spike or two ear
+pixels; role was a plus at the center in a pale accent, and the accents are
+all pale tints. A glyph's body is now solid when the hull is armed and hollow
+when it is not, galaxy markers split the same way, and the role is a 3×3 mark
+distinct by shape — so neither reading depends on color
+(`Hyades_interface.md` §6.3). Glyphs grew a pixel each side to hold the mark in
+every shape. The side panel's legend draws the marks from the module. Open:
+R-UI3.
 
 ### T-152. The tactical layer: glyphs where their hulls stand, routes, holdings and cargo
 
