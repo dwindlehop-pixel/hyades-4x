@@ -182,11 +182,11 @@ ruling 2 excludes them.
 
 Recommendation: **a seat that reaches no peer publishes and reads its frames
 as rendezvous events.** The volume is small because the protocol is
-round-barrier lockstep (netcode §1). Estimated, at 18 seats with three frame
-kinds per seat per round and ~640 bytes per Nostr event carrying one
-base64-encoded frame (estimate; not measured against a relay): **~35 kB
-published per round across all seats**. A seat on this path reads every
-seat's frames from the relay, so its download per round is the same estimate.
+round-barrier lockstep (netcode §1). Computed: one Nostr event carrying one
+base64-encoded frame is **629 bytes**, so 18 seats with three frame kinds each
+publish **~34 kB per round** across all seats, and a seat on this path reads
+the same amount. Measured against no relay; §4.3.1 compares it with the
+relays' published limits.
 
 Two limits:
 
@@ -198,7 +198,81 @@ Two limits:
   events, so a seat that reconnects can backfill from the relay as well as
   from peers (netcode §9.3). Whether relays honor the expiration is the
   relay's choice; frames are public by design (netcode §2(c)), so a relay
-  keeping them leaks nothing.
+  keeping them leaks nothing. (strfry, a common relay, rejects ephemeral
+  events older than 60 s and deletes them after 300 s by default, which rules
+  out ephemeral events for frames a reconnecting seat must fetch.)
+
+#### 4.3.1 Load against published relay limits — OPEN (R-SES16)
+
+Estimates and sources: appendix §D.60. No public relay this container could
+reach published its limits (the network policy refused every relay host), so
+the comparison is against the **default and example configurations of four
+relay implementations** and NIP-11's example document — what an operator gets
+without changing anything, not what any named relay runs.
+
+| limit | source | value | this design |
+|---|---|---|---|
+| writes per IP | khatru `ApplySaneDefaults` | 2 per 3 min, burst 10 | **binding** below |
+| writes per IP | noteguard (Damus's strfry plugin) README example | 8 per min | 2.7x–18x headroom per seat |
+| writes per IP | a khatru relay's documented defaults | 30 per min, burst 60 | ample |
+| writes | nostr-rs-relay example config | 5 per s, averaged over a minute | ample |
+| writes | strfry default config | none | — |
+| event size | NIP-11 example / strfry / nostr-rs-relay | 16 KiB / 64 KiB / 128 KiB | 629 B |
+| proof-of-work | NIP-11 example `min_pow_difficulty` | 30 | **excludes the relay** for frames: every frame would cost ~2³⁰ hashes |
+
+**What binds is the write rate, per IP address, against the wall time of a
+round.** A match is 10 barriers (a 4,000-year horizon, the first at 200 years,
+then one every 400), and a 30–45 minute match therefore has **180–270 s of
+wall time per round** (estimate). At three frames per round a seat writes 1
+event per minute at 180 s; khatru's defaults allow two-thirds of one, so its
+burst of 10, less the four lobby events, empties in **~18 minutes** and the
+relay rejects the seat mid-match. At the spec's earlier placeholder of 60 s per
+round it empties in ~3 minutes.
+
+Recommendations:
+
+1. **Two events per seat per round, not three.** `CHECKPOINT(r)` rides in the
+   same event as `COMMIT(r+1)`; `REVEAL(r+1)` follows the barrier alone. Commit
+   and reveal cannot share an event, because the barrier separates them, so two
+   is the floor. At 180 s per round that is two-thirds of an event per minute:
+   inside khatru's defaults with **no margin**, and 12x inside noteguard's
+   example.
+2. **A floor on wall time per round of 180 s** (*placeholder*), which the
+   30–45 minute target implies anyway, and which replaces §6's 60 s
+   placeholder.
+3. **Relays are chosen by their NIP-11 document.** The client reads each pinned
+   relay's document at startup (a fetch to a pinned origin, §4.5 rule 2) and
+   uses a relay for frames only if it requires no proof-of-work, no NIP-42
+   authentication and no payment, and its `max_content_length` holds a frame.
+   The pinned list favors relays whose operators state a write allowance of at
+   least 2 events per minute per IP.
+4. **Seats behind one address share a bucket.** Per-IP limits count every seat
+   behind one carrier-grade NAT or one LAN together: at 8 per minute and 180 s
+   rounds, 12 batched seats fit behind one address; at khatru's defaults, one.
+   The client spreads a seat's writes across the pinned relays rather than
+   sending every event to every relay only when it detects `rate-limited:`
+   replies (NIP-01's prefix).
+5. **Spectators read from relays only as a fallback.** Reads are not
+   rate-limited in any configuration above, but they are bandwidth no operator
+   prices for us: one 18-seat match read by **50,000 spectators** through one
+   relay is **~1.7 GB per round, ~76 Mbit/s sustained at 180 s rounds, ~17 GB
+   per match** (estimate), against **~0.6 MB per round** for the 18 seats
+   alone. No implementation above publishes a bandwidth allowance; the
+   inference is that a relay operator would treat the first figure as abuse.
+   Spectators therefore gossip (netcode §3.2), and §4.4's relay-only default
+   applies to seats.
+6. **Join and `QUEUE` requests go to the host's inbox, not the room topic.**
+   A request is tagged with the host's key and only the host's tab subscribes
+   to that tag. On the room topic, each of 50,000 requests would be delivered
+   to every one of 50,000 subscribers — ~1.6 TB at 629 bytes each (estimate).
+   The host publishes the room's state (filling, full, queue full) on the room
+   topic, and a client reads it before writing a request, so a full room draws
+   no writes.
+
+What would settle R-SES16: the NIP-11 documents and stated policies of the
+candidate relays, read from a network that can reach them; then the R-SES1
+prototype running one 18-seat match at 180 s rounds through each and counting
+`rate-limited:` replies.
 
 ### 4.4 IP addresses — RATIFIED (ruling 7) for the link and public messages; peer connections OPEN (R-SES4)
 
@@ -221,8 +295,11 @@ the rendezvous (§4.3); no participant or spectator learns another's address,
 and the relays learn each client's address as any web server does. Direct
 WebRTC is offered only when every party has opted in — the natural case is a
 league whose roster knows each other. Cost: every frame takes a relay round
-trip, once per barrier, and relay-only spectators read the relays rather than
-the gossip tier, which reopens §4.3's fan-out concern for a large audience.
+trip, once per barrier. **The default covers seats, not spectators**: a large
+audience reading relays costs ~76 Mbit/s per relay for one popular match
+(§4.3.1), so spectators gossip among themselves by default. A spectator's
+gossip links expose its address to other spectators, not to any seat; a
+spectator who opts into relay-only accepts the fallback's cost.
 What would settle it: the author's ruling on the default, and R-SES1's
 prototype measuring relay latency per barrier at 18 seats.
 
@@ -496,8 +573,9 @@ quantities set it:
 
 - **Live play.** Between barriers every seat simulates a round. At
   `years_per_round = 400` and a wall time per round of *T* seconds, a seat
-  must sustain `400 / T` simulated years per second. At *T* = 60 s
-  (placeholder) that is 6.7 yr/s, above T-24's floor of 2.5 yr/s.
+  must sustain `400 / T` simulated years per second. At *T* = 180 s
+  (placeholder, §4.3.1) that is 2.2 yr/s, which T-24's floor of 2.5 yr/s
+  covers; at 60 s it would be 6.7 yr/s.
 - **Late spectators.** A spectator who arrives at round *r* must replay *r*
   rounds before it sees the present. If it simulates at the same rate the
   seats do, it never catches up while the match runs. **A spectator arriving
@@ -676,6 +754,7 @@ a pointer here meanwhile.
 | **R-SES13** | retention of old engine builds on Pages | OPEN | the repository's size after a year of builds |
 | **R-SES14** | a host kick after genesis: the seat goes to the autopilot, or no kick after the start | OPEN — recommended: autopilot (§5.1) | the author's ruling |
 | **R-SES15** | the streamer threat model's six rules: no peer connection from a private client, fetches only from pinned origins, fresh keys per session, no free text, proof-of-work on joins, the pending order kept off the shared view | OPEN — recommended (§4.5); the threat model itself is RATIFIED (ruling 9) | the author's ruling; a test recording every host a streamer-mode browser contacts when it opens a viewer-made link |
+| **R-SES16** | relay load: two events per seat per round, a 180 s floor on wall time per round, relays chosen by their NIP-11 document, spectators off the relays, join requests to the host's inbox | OPEN — recommended (§4.3.1) | the candidate relays' NIP-11 documents and policies, read from a network that reaches them; one 18-seat match through each, counting `rate-limited:` replies |
 
 Engine work this spec depends on, already tracked: **T-30/T-42** (commit and
 reveal in the engine), **T-31** (cards; R-NET4's field widths), **T-32** (the

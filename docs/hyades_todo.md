@@ -4762,7 +4762,8 @@ trigger to **optimize, not to shrink the scenario**.
 ### T-166. wasm32 throughput at 18 seats, on a phone and a laptop
 
 Sessions spec §6. Live play needs `years_per_round / T` simulated years per
-second for a wall time `T` per round (6.7 yr/s at a placeholder `T = 60 s`),
+second for a wall time `T` per round (2.2 yr/s at the placeholder `T = 180 s`
+of sessions spec §4.3.1),
 and a spectator who arrives mid-match needs several times that, or R-NET7's
 snapshot catch-up. No wasm32 figure exists; the native figures in `AGENTS.md`
 §7 are another target and mostly 3 seats. The test: the wasm32 build, 18
