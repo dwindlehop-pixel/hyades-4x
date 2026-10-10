@@ -3,7 +3,7 @@
 The presentation of a Hyades game: how a run leaves the engine, how it is
 played back, and how it is drawn. **This spec carries ratified and open
 decisions only** (`AGENTS.md` §6). The measurements behind it are in
-`docs/Hyades_experiments_appendix.md` §D.58.
+`docs/experiments/` §D.58.
 
 Status key: **RATIFIED** — the author's ruling; **BUILT** — implemented to a
 ratified decision; **OPEN** — a decision not yet made, with a recommendation

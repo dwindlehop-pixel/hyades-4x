@@ -226,7 +226,7 @@ cell marked DRAFT until the author approves it.
 
 - The tree spec gets the card's section: ratified decisions and open ones only,
   each open one with what would settle it.
-- `docs/Hyades_experiments_appendix.md` gets every run, refuted hypothesis and
+- `docs/experiments/` (its `AGENTS.md` says where) gets every run, refuted hypothesis and
   scratch arm, linked from the decision it supports.
 - `docs/hyades_todo.md` gets the T-code's state: closed, advanced or opened.
 - `AGENTS.md` gets a lesson only if one was learned that changes how to work.

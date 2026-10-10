@@ -5,7 +5,7 @@ Band A of `docs/hyades_todo.md` so that Band A lists only work that is ready to
 build and not yet done. Each entry is moved **verbatim**, in the order it held in
 Band A; its `T-nn` is permanent and is not reused (the register's own rule).
 Nothing here is normative: the decisions an entry produced live in the spec it
-cites, and its measurements in `docs/Hyades_experiments_appendix.md`.
+cites, and its measurements in `docs/experiments/`.
 
 **Where the open work went.** An entry here may name questions it left open.
 They are not open here — each one lives in a spec's register or as its own
@@ -24,6 +24,7 @@ row below, and leave its code in the Band A pointer line of
 
 | code | status | open follow-ups, and where they live |
 |---|---|---|
+| **T-168** | Built: the experiments appendix is the directory `docs/experiments/` — a table of contents mapping every entry identifier to its file, an `AGENTS.md` on organization, size (≤ ~50k tokens per Markdown file) and data, §A–§C as files and §D split into nine subject files; identifiers unchanged, every entry moved whole | — |
 | **T-154** | Built: seats off every material's hue, platinum apex, positions to 0.0001 ly, Hermite interpolation | R-UI1 — `Hyades_interface.md` §9; the `beams` setup and the picket under-fire rule are put to the author |
 | **T-153** | Built: armed bodies solid and unarmed hollow; a 3×3 mark per role; a glyph legend from the module | R-UI3 — `Hyades_interface.md` §9 |
 | **T-152** | Built: glyphs only where their hulls stand, a display order, routes, holdings by material (Band bars), colonies by seat color, quiet traffic, cargo stripes | R-UI4 — `Hyades_interface.md` §9 |

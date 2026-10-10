@@ -73,11 +73,13 @@ specified at T-131, a static per-role Elo rating of every Design, with a first
 table in `data/design_ratings.tsv` that nothing reads yet; Warfare is blocked on T-30's missing accept/decline site — so read their
 registers before assuming a question is unasked.
 
-**`docs/Hyades_experiments_appendix.md` is where the measurement record lives.**
-Nothing in it is normative. It holds the runs, the refuted hypotheses and the
-superseded design that used to be inlined in the specs, each linked from the
-decision it supports, and its §C collects all seven measurement-artifact shapes
-in one table. **Check it before re-opening a question** — several were closed by
+**`docs/experiments/` is where the measurement record lives.** Nothing in it is
+normative. It holds the runs, the refuted hypotheses and the superseded design
+that used to be inlined in the specs, each linked from the decision it supports,
+and its §C collects all seven measurement-artifact shapes in one table. Its
+`README.md` maps every entry identifier (`appendix §D.24`) to a file, and its
+`AGENTS.md` says how the directory is organized, how to add an entry, how big a
+file may grow, and where the data lives. **Check it before re-opening a question** — several were closed by
 a measurement whose bed no longer exists, and the entry says so.
 
 ---
@@ -2080,7 +2082,7 @@ one, stop and flag it.
   been ratified**, or **a decision that is still open**. Everything else — the
   runs, the tables, the refuted hypotheses, the superseded design, the
   measurement that turned out to be an artifact — belongs in
-  `docs/Hyades_experiments_appendix.md`, **linked from the decision it
+  `docs/experiments/`, **linked from the decision it
   supports**, never deleted.
 
   **A proposal is an open decision, not a third category.** A recommendation

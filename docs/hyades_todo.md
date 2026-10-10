@@ -93,7 +93,7 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 
 **Implemented entries are in `docs/hyades_done.md`.** Band A lists only work
 that is ready to build and not yet done. Moved there, with a status line each:
-T-154, T-153, T-152, T-151, T-150, T-149, T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
+T-168, T-154, T-153, T-152, T-151, T-150, T-149, T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
 ### T-147. Bring the card-free spread between empires to about 20 colonies
 
@@ -593,7 +593,7 @@ galaxy digests of every seat count, and gate it in CI's slow job.
 
 **Opened by the Rev 4 / Rev 2 split.** `AGENTS.md` §6 now says a spec carries
 **ratified decisions and open decisions only**, and everything else goes to
-`docs/Hyades_experiments_appendix.md` linked from the decision it supports.
+`docs/experiments/` linked from the decision it supports.
 
 **Done:** `Hyades_autopilot_colonization_growth.md` (430 → the Rev 4 register,
 history to appendix §A) and `Hyades_politics_trade_and_intelligence.md`
