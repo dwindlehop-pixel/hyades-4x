@@ -19,6 +19,13 @@ work rather than describing game content: it makes bit-reproducibility a
 engine-status block lists the five implementation blockers, audited — and what
 is already clean, which is most of the foundation.
 
+**`docs/Hyades_sessions_discovery_and_security.md` (Rev 1, all OPEN)** is how a
+player reaches a seat with no server we run — a link, a league roster, a public
+room list, a verifiable match record — and which attacks a colluding majority
+can make undetected (§7: censorship by timeout, from one transcript). It
+proposes amendments to netcode; read its §9 before treating netcode §10 as the
+plan.
+
 **`docs/Hyades_industry.md` (Rev 1)** is the newest spec and the one that
 **amends the planet model**: `K = min(hab, bio_max)` — infrastructure leaves the
 carrying-capacity minimum and becomes an industrial stock that mines and
