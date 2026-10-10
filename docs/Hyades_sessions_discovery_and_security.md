@@ -61,6 +61,14 @@ RATIFIED (T-164, the author's ruling on the threat model):
    participant and every spectator in a streamer's room is that adversary
    (§4.5).
 
+RATIFIED (T-164, the author's ruling on the relay-load estimate):
+
+10. **The recommended fixes are adopted**: the relay rules of §4.3.1, relay-only
+    transport as the default for seats (§4.4), and binding a direct
+    connection's DTLS fingerprint to the seat key (§4.4). Every magnitude in
+    them stays a *placeholder*. §7.5 records what they change in the two
+    threat models.
+
 ---
 
 ## 2. Terms
@@ -170,8 +178,8 @@ A frame is self-authenticating, so every transport below carries the same
 2. **WebRTC through another seat** — netcode §9.2's flood-with-dedup relay.
 3. **The rendezvous itself** (§4.3), for a seat that reaches no peer.
 
-Under §4.4's recommended default, link and practice games use rung 3 alone;
-the first two rungs apply when every party has opted in to direct
+Under §4.4's default (ruling 10), a seat in a link or practice game uses rung 3
+alone; the first two rungs apply when every party has opted in to direct
 connections.
 
 ### 4.3 No TURN; frames over the rendezvous as the fallback — OPEN (R-SES3)
@@ -202,7 +210,7 @@ Two limits:
   events older than 60 s and deletes them after 300 s by default, which rules
   out ephemeral events for frames a reconnecting seat must fetch.)
 
-#### 4.3.1 Load against published relay limits — OPEN (R-SES16)
+#### 4.3.1 Load against published relay limits — RATIFIED (ruling 10, R-SES16); magnitudes placeholders
 
 Estimates and sources: appendix §D.60. No public relay this container could
 reach published its limits (the network policy refused every relay host), so
@@ -229,17 +237,20 @@ burst of 10, less the four lobby events, empties in **~18 minutes** and the
 relay rejects the seat mid-match. At the spec's earlier placeholder of 60 s per
 round it empties in ~3 minutes.
 
-Recommendations:
+Rules (ruling 10):
 
 1. **Two events per seat per round, not three.** `CHECKPOINT(r)` rides in the
    same event as `COMMIT(r+1)`; `REVEAL(r+1)` follows the barrier alone. Commit
    and reveal cannot share an event, because the barrier separates them, so two
    is the floor. At 180 s per round that is two-thirds of an event per minute:
    inside khatru's defaults with **no margin**, and 12x inside noteguard's
-   example.
+   example. **The last barrier's `CHECKPOINT` goes out alone**, with the
+   match's end, because no `COMMIT` follows it — otherwise the final state
+   would never be signed.
 2. **A floor on wall time per round of 180 s** (*placeholder*), which the
-   30–45 minute target implies anyway, and which replaces §6's 60 s
-   placeholder.
+   30–45 minute target implies anyway, and which replaces §6's earlier 60 s
+   placeholder. It is a floor on when a seat's client emits its commit, never
+   a clock the state reads (netcode §1.1).
 3. **Relays are chosen by their NIP-11 document.** The client reads each pinned
    relay's document at startup (a fetch to a pinned origin, §4.5 rule 2) and
    uses a relay for frames only if it requires no proof-of-work, no NIP-42
@@ -249,9 +260,10 @@ Recommendations:
 4. **Seats behind one address share a bucket.** Per-IP limits count every seat
    behind one carrier-grade NAT or one LAN together: at 8 per minute and 180 s
    rounds, 12 batched seats fit behind one address; at khatru's defaults, one.
-   The client spreads a seat's writes across the pinned relays rather than
-   sending every event to every relay only when it detects `rate-limited:`
-   replies (NIP-01's prefix).
+   **Every event goes to every usable pinned relay.** A relay that answers
+   `rate-limited:` (NIP-01's prefix) is skipped for that seat until its bucket
+   would have refilled, and the event still reaches the others; a seat is cut
+   off only if every relay rejects it.
 5. **Spectators read from relays only as a fallback.** Reads are not
    rate-limited in any configuration above, but they are bandwidth no operator
    prices for us: one 18-seat match read by **50,000 spectators** through one
@@ -260,21 +272,34 @@ Recommendations:
    alone. No implementation above publishes a bandwidth allowance; the
    inference is that a relay operator would treat the first figure as abuse.
    Spectators therefore gossip (netcode §3.2), and §4.4's relay-only default
-   applies to seats.
+   applies to seats. A spectator reads a relay in three cases only: to
+   bootstrap before it has a gossip peer, when it has none (the fallback), and
+   for one targeted event (rule 7).
 6. **Join and `QUEUE` requests go to the host's inbox, not the room topic.**
    A request is tagged with the host's key and only the host's tab subscribes
    to that tag. On the room topic, each of 50,000 requests would be delivered
    to every one of 50,000 subscribers — ~1.6 TB at 629 bytes each (estimate).
    The host publishes the room's state (filling, full, queue full) on the room
    topic, and a client reads it before writing a request, so a full room draws
-   no writes.
+   no writes. A tag is a filter, not access control: anyone may subscribe to
+   the host's inbox, and a request therefore carries nothing a stranger may not
+   read — a key, a display name, proof-of-work, no address.
 
-What would settle R-SES16: the NIP-11 documents and stated policies of the
-candidate relays, read from a network that can reach them; then the R-SES1
-prototype running one 18-seat match at 180 s rounds through each and counting
-`rate-limited:` replies.
+7. **A spectator fetches a missing reveal directly.** When a spectator's log
+   holds a timeout quorum against seat *s* for round *r* and no reveal from
+   *s*, it requests that one event, by seat and round, from a relay. One event
+   per incident, so it costs nothing at any audience size; it is what keeps an
+   observer a witness to censorship when its gossip peers are not honest
+   (§7.5).
 
-### 4.4 IP addresses — RATIFIED (ruling 7) for the link and public messages; peer connections OPEN (R-SES4)
+Still OPEN under R-SES16, the magnitudes: the 180 s floor, the write
+allowance the pinned list requires, and the pinned list itself. What would
+settle them: the NIP-11 documents and stated policies of the candidate relays,
+read from a network that can reach them; then the R-SES1 prototype running one
+18-seat match at 180 s rounds through each and counting `rate-limited:`
+replies.
+
+### 4.4 IP addresses — RATIFIED (rulings 7 and 10); magnitudes placeholders
 
 There are three places an address could appear, and they need separate rules.
 
@@ -282,15 +307,15 @@ There are three places an address could appear, and they need separate rules.
 |---|---|---|
 | **the link** | everyone in the chat | RATIFIED: carries no address. It is the Pages URL, a room id, an engine hash, the host's public key and parameters (§5.1) |
 | **rendezvous messages** (room descriptor, join requests, announcements, signaling) | anyone holding the link, and the relay operators | RATIFIED: carry no address in readable form. Signaling, which contains WebRTC's SDP and ICE candidates and therefore addresses, is **encrypted to its one recipient** (X25519 from WebCrypto's Secure Curves, or NIP-44) |
-| **a WebRTC connection** | the one peer at the other end | OPEN, below |
+| **a WebRTC connection** | the one peer at the other end | RATIFIED (ruling 10): none for a seat by default; below |
 
 **A WebRTC connection reveals each end's public IP address to the peer it
 connects to.** That is a property of WebRTC. In a link game the peers are
 strangers from the chat, so a direct connection to them gives a stranger the
 address even though the chat never sees it.
 
-Recommendation: **relay-only is the default for link games and public
-practice.** The client opens no WebRTC connection and sends every frame over
+**Relay-only is the default for seats in link games and public practice**
+(ruling 10). The client opens no WebRTC connection and sends every frame over
 the rendezvous (§4.3); no participant or spectator learns another's address,
 and the relays learn each client's address as any web server does. Direct
 WebRTC is offered only when every party has opted in — the natural case is a
@@ -300,8 +325,20 @@ audience reading relays costs ~76 Mbit/s per relay for one popular match
 (§4.3.1), so spectators gossip among themselves by default. A spectator's
 gossip links expose its address to other spectators, not to any seat; a
 spectator who opts into relay-only accepts the fallback's cost.
-What would settle it: the author's ruling on the default, and R-SES1's
-prototype measuring relay latency per barrier at 18 seats.
+
+**A direct connection's DTLS fingerprint is signed by the seat key** (ruling
+10). WebRTC's DTLS proves only that a link reached whoever answered the
+signaling, and whoever carries the signaling — a relay — can substitute both
+fingerprints and sit in the middle (RFC 8827 §7). Each side's signaling
+message therefore carries its DTLS fingerprint signed with its Ed25519 seat or
+spectator key, and a client closes any connection whose negotiated fingerprint
+does not match the signed one. Frames were already end-to-end signed, so a
+relay in the middle could never forge a move; the binding removes its ability
+to read the link and drop frames selectively. It applies only where direct
+connections are used, so it does not touch a relay-only seat.
+
+What would settle the remaining magnitudes: R-SES1's prototype measuring relay
+latency per barrier at 18 seats.
 
 ### 4.5 The streamer's audience as the adversary — OPEN (R-SES15)
 
@@ -356,15 +393,17 @@ recommendations below:
 5. **Joining costs the joiner, not the streamer.** An audience of tens of
    thousands can open the link at once. A Nostr key costs nothing to make, so
    a per-key rate limit (§7.4) bounds nothing; instead each join and `QUEUE`
-   request carries NIP-13 proof-of-work, the streamer's tab keeps a bounded
-   queue (*placeholder*: 64 entries) and drops the rest unread, and it stops
-   reading the room topic for joins once the seats and queue are full.
+   request carries NIP-13 proof-of-work and goes to the streamer's inbox, not
+   the room topic (§4.3.1 rule 6); the streamer's tab keeps a bounded queue
+   (*placeholder*: 64 entries), drops the rest unread, publishes "full" on the
+   room topic, and stops reading its inbox once the seats and queue are full.
 6. **Stream sniping is a game-integrity issue in the same scenario.** A
    participant who watches the stream sees the streamer's pending order
    before the reveal, which deletes the yomi of netcode §2(b). Rule: the
    streamer-mode UI does not draw the pending order in the shared view; the
-   streamer sees it in a panel they keep out of the capture, or streams with
-   a delay longer than a round's commit window.
+   streamer sees it in a panel they keep out of the capture. A stream delay
+   longer than a round's commit window also works, but with 180 s rounds
+   (§4.3.1) that is a delay of minutes, so the panel is the default.
 
 **Residual exposure, stated so it is not mistaken for zero:**
 
@@ -383,6 +422,10 @@ recommendations below:
   frames delayed by two relay hops of unknown length. This is an inference,
   not a measurement; the R-SES1 prototype could measure how well frame
   arrival times on the relay predict the streamer's distance.
+- **The audience's own addresses**: spectators gossip directly (§4.3.1 rule
+  5), so each spectator's address reaches the spectators it links to. No
+  seat's address does, the streamer's included. A spectator who objects opts
+  into relay-only.
 - **Sybil participants**: the audience can fill every seat but the streamer's
   with one coordinated group (§5.1). That is a game-integrity problem; it
   learns nothing about the streamer that rules 1–4 leave visible.
@@ -448,8 +491,9 @@ not start. Recommendation: the client says so, and offers to make a new link
 with the same parameters.
 
 **Waiting spectators and the kick** (ruling 6). While the room fills and after
-it is full, a spectator may sign a `QUEUE` request; the originator's tab keeps
-the requests in the order it received them.
+it is full, a spectator may sign a `QUEUE` request, sent to the originator's
+inbox (§4.3.1 rule 6) only while the room's published state says the queue has
+room; the originator's tab keeps the requests in the order it received them.
 
 - **Before genesis**, the originator signs a `KICK` naming a seated key. The
   seat is removed from the seat table and offered to the **first spectator in
@@ -470,7 +514,7 @@ the requests in the order it received them.
   player is handled by the timeout and dropout paths alone.
 
 **Rematch.** At the match's end every seat may sign a `REMATCH` intent (yes or
-no), and every spectator may sign a `QUEUE` request.
+no), and every spectator may sign a `QUEUE` request to the new host's inbox.
 
 - The new room's parameters are the old room's. The new galaxy seed is jointly
   random again (netcode §7.1).
@@ -611,7 +655,7 @@ is.
 |---|---|---|---|
 | **A. State forgery** | sign `CHECKPOINT` roots that the pinned engine does not produce — to eject a conforming minority under `ContinueWithQuorum`, or to play on in an altered state | the minority is ejected, or the colluders play a game nobody else's engine reproduces | **any single transcript containing their checkpoints**, by anyone with the pinned engine; and live, by every observer |
 | **B. Equivocation** | sign two different frames for one `(seat, round, kind)`, sent to different peers | different peers act on different orders until the pair meets | **any transcript holding both frames** — non-repudiable proof (netcode §4.4) |
-| **C. Censorship** | cast `TIMEOUT_VOTE`s against a seat that did reveal, so its order defaults to `pass`; or withhold its frames from the overlay | the victim's orders are discarded while the protocol runs correctly | **not from a transcript the colluders assembled.** Detectable by comparing it with **one witness transcript** — the victim's, or any observer's that received the victim's reveals |
+| **C. Censorship** | cast `TIMEOUT_VOTE`s against a seat that did reveal, so its order defaults to `pass`; or withhold its frames from the overlay | the victim's orders are discarded while the protocol runs correctly | **not from a transcript the colluders assembled alone.** Detectable by comparing it with **one witness transcript** — the victim's, or any observer's that received the victim's reveals; or by querying the relays for the victim's reveal while they keep it (§7.5) |
 
 **Class A cannot succeed silently even at 100%.** The outcome of a match is
 the replay of its inputs, so colluders who sign false roots gain no outcome
@@ -636,6 +680,9 @@ someone else's hands. So:
 - **A match record may carry witness transcripts**: the verifier merges
   them, and reports every round where a seat's reveal exists in a witness and
   the main transcript defaulted it.
+- **The relays are a witness too** (§7.5): a relay-only seat's reveal sits on
+  every usable pinned relay, so a reader can query them for any seat and round
+  a timeout quorum defaulted.
 
 ### 7.2 The verifier's report — OPEN (R-SES10)
 
@@ -649,7 +696,9 @@ Recommendation, per round, one of:
   frame removed produces exactly this;
 - **equivocation by seat *s*** — class B, with the frame pair;
 - **seat *s* defaulted while a witness holds its reveal** — class C, from a
-  merged witness.
+  merged witness;
+- **seat *s* defaulted while a pinned relay holds its reveal** — class C, from
+  a relay query (§7.5).
 
 **R-SES11 — OPEN.** Should each seat also sign, per round, a hash of the order
 set it applied (a `ROUND_INPUTS` frame, or an inputs leaf in netcode §8.1's
@@ -677,14 +726,67 @@ There is no server to flood. What remains:
   Joining a room costs nothing, because the originator's tab admits joiners and
   can remove them.
 - **Join floods against an originator**: join and `QUEUE` requests carry
-  proof-of-work, the originator's tab keeps a bounded queue and drops the rest
-  unread, and it stops reading the room topic for joins once the seats and
-  queue are full (§4.5 rule 5). A per-key rate limit bounds nothing, because a
+  proof-of-work and go to the originator's inbox rather than the room topic,
+  so the audience does not receive each other's requests; the originator's tab
+  keeps a bounded queue, drops the rest unread, and publishes the room's state
+  so clients stop writing once the seats and queue are full (§4.3.1 rule 6,
+  §4.5 rule 5). A per-key rate limit bounds nothing, because a
   Nostr key costs nothing to make.
 - **Frame floods**: netcode §4.3 is unchanged — the length check, the window
   and the token bucket come before signature verification.
 - **Relay censorship**: a relay that drops a room's events is one of several
   (R-SES1); a room is lost only if every relay the participants share drops it.
+
+
+### 7.5 What the relay rules change in the two threat models — RATIFIED (ruling 10) where it states a rule; analysis otherwise
+
+Ruling 10 adopts §4.3.1's rules, relay-only seats (§4.4) and the fingerprint
+binding (§4.4). Each was chosen for load or privacy; this section checks each
+against the majority model (§7.1) and the streamer model (§4.5). Statements
+marked *inference* are reasoning, not measurement.
+
+| fix | majority model (§7.1) | streamer model (§4.5) |
+|---|---|---|
+| relay-only seats | **class C gets a public witness**, below; a new censor appears, below | no seat address reaches anyone but relay operators; unchanged for the streamer, who was relay-only under rule 1 already |
+| two events per round | **class A detection is delayed** by one decision: `CHECKPOINT(r)` is published when the seat commits for `r+1`, not when it finishes resolving. Equivocation proof is unchanged, because each frame inside an event is still signed alone. The last barrier's checkpoint goes out alone (§4.3.1 rule 1) | none |
+| 180 s floor per round | none: the floor gates when a client emits, never what the state becomes | stream delay stops being a practical sniping defense; the out-of-capture panel is the default (§4.5 rule 6) |
+| relays chosen by NIP-11 | fewer usable relays concentrate the transport: a seat is censored by the transport only if every usable relay drops it, and fewer relays make that cheaper (*inference*) | none: NIP-11 is fetched from pinned origins only |
+| spectators gossip, relays as fallback | **an observer can be fed by colluders**: if every gossip peer and bridge an observer has is run by the majority, they can withhold the victim's reveal and the observer loses its witness. Rule 7 closes this: a timeout quorum without a reveal triggers a one-event relay fetch | **spectators' addresses reach other spectators** (§4.5 residuals); the streamer's does not |
+| join requests to the host's inbox | none: queue order was trusted to the host before and still is | the audience no longer receives each other's requests; anyone can still read the inbox, so a request carries nothing private |
+| DTLS fingerprint signed by the seat key | removes a relay's ability to sit inside a direct link and drop frames selectively, which was a way to manufacture class C without a colluding seat | none for the streamer, who opens no direct link |
+
+**Class C gets a public witness.** A relay-only seat publishes its reveal to
+every usable pinned relay (§4.3.1 rule 4). So whenever a majority votes a seat
+timed out, anyone — an observer during the match, a verifier holding only the
+colluders' file afterwards, while the relays keep the events — can query the
+relays for that seat's reveal for that round. Finding it does not prove the
+majority received it; it proves the seat sent it to public infrastructure the
+majority also reads. One round of it is consistent with relay trouble; many
+rounds against one seat is the pattern of censorship (*inference*). This
+changes §7.1's statement that class C is "not detectable from a transcript the
+colluders assembled": it still is not detectable **from the file**, and is now
+detectable **from the file plus the relays**, for as long as the relays keep the
+events. The verifier gains a sixth verdict (R-SES10): *seat s defaulted while a
+pinned relay holds its reveal*.
+
+**A new censor: the transport.** Under relay-only, a seat reaches the match
+only through relays, so a relay that drops a seat's events — by policy, by
+fault, or because someone sharing the seat's IP address has spent its per-IP
+bucket — makes the seat time out with no colluding seat at all. Every
+conforming seat then votes the timeout correctly. Two things bound it: the
+event goes to every usable relay, so all of them must drop it; and the same
+relay query above tells a reader whether the seat's reveal reached any relay,
+which separates "the seat sent nothing" from "the relays the voters read did not
+carry it". A neighbor exhausting a shared carrier NAT's bucket is the one form
+that needs no relay operator's cooperation; it works only against seats behind
+a shared address and only on relays whose bucket it can drain (*inference*).
+
+**Net effect.** The majority model is stronger: class C, the one attack that
+succeeds, becomes visible to anyone who can query the relays. Class A is seen
+one decision later. The streamer model is unchanged for the streamer and costs
+the audience their addresses among themselves. One threat is new — censorship
+by the transport — and it is bounded by publishing to every relay and detected
+by the same relay query.
 
 ---
 
@@ -726,7 +828,7 @@ There is no server to flood. What remains:
 | netcode §7 | "the lobby publishes the descriptor with the full signature set" | the originator publishes it on the rendezvous; genesis gains `room_id`, `host_pubkey` and `rematch_of` |
 | netcode §10 | room creation gated by a challenge token | room announcement gated by proof-of-work (§7.4) |
 | netcode §11 | CSP as a response header | a meta tag; Pages sends no custom headers (§8) |
-| netcode §8.3 | the vote's failures "are identifiable — the transcript names who signed what" | true of classes A and B; **false of class C from one transcript** (§7.1) |
+| netcode §8.3 | the vote's failures "are identifiable — the transcript names who signed what" | true of classes A and B; **false of class C from one transcript**, true of it from a transcript plus the relays (§7.1, §7.5) |
 | interface §8.1 | New game "shown, not built yet" | the menu's play entries are §5's four |
 
 These are amendments **proposed** by an OPEN spec. Netcode is not edited to
@@ -742,19 +844,19 @@ a pointer here meanwhile.
 | **R-SES1** | Nostr as the rendezvous; relay count; a second backend | OPEN — recommended (§3.1) | a week-long prototype measuring join completion through the pinned relays and any rate limiting at an 18-seat signaling burst |
 | **R-SES2** | identity: per-tab keys for casual play, persistent backed-up keys for roster play; name plus fingerprint | OPEN — recommended (§4.1) | the author's ruling; a test of key survival in Safari |
 | **R-SES3** | no TURN; frames over the rendezvous as the last transport | OPEN — recommended (§4.3) | the R-SES1 prototype, plus the fraction of seats that reach no peer |
-| **R-SES4** | relay-only as the default for link and practice games; direct WebRTC only when every party opts in | OPEN — recommended (§4.4); the link and public messages carrying no address is RATIFIED (ruling 7) | the author's ruling on the default; R-SES1's relay latency per barrier |
+| **R-SES4** | relay-only seats by default in link and practice games; direct WebRTC only when every party opts in; DTLS fingerprints signed by the seat key | **RATIFIED** (ruling 10); the link and public messages carrying no address is RATIFIED (ruling 7) | — (relay latency per barrier is measured under R-SES1) |
 | **R-SES5** | link format, originator sequencing, the spectator queue, rematch host and queue order; the pre-genesis kick is RATIFIED (ruling 6) | OPEN — recommended (§5.1) | the author's ruling; whether first-received queue order is acceptable or a lottery is wanted (a lottery seeded by the rematch's joint seed resists timing races but not sybils) |
 | **R-SES6** | roster links: the seat table fixed in the link, a short watch link for chat; standings and results outside the design (ruling 8) | OPEN — recommended (§5.2) | one roster match run end to end |
 | **R-SES7** | practice modes as a static table; room announcements; no ranking of the list | OPEN — recommended (§5.3) | the author choosing the two or three modes |
 | **R-SES8** | match record format and verification steps | OPEN — recommended (§5.4) | T-32 (the digest) and T-165 (the engine in the browser) |
 | **R-SES9** | light, unverified spectators | OPEN — build only if needed (§6) | T-166 |
-| **R-SES10** | the verifier's five verdicts | OPEN — recommended (§7.2) | the author's ruling |
+| **R-SES10** | the verifier's six verdicts | OPEN — recommended (§7.2) | the author's ruling |
 | **R-SES11** | a per-round inputs hash | OPEN — recommended as a digest leaf (§7.2) | T-32 |
 | **R-SES12** | ejected seats keep replaying and showing their roots | OPEN — recommended (§7.3) | the author's ruling |
 | **R-SES13** | retention of old engine builds on Pages | OPEN | the repository's size after a year of builds |
 | **R-SES14** | a host kick after genesis: the seat goes to the autopilot, or no kick after the start | OPEN — recommended: autopilot (§5.1) | the author's ruling |
 | **R-SES15** | the streamer threat model's six rules: no peer connection from a private client, fetches only from pinned origins, fresh keys per session, no free text, proof-of-work on joins, the pending order kept off the shared view | OPEN — recommended (§4.5); the threat model itself is RATIFIED (ruling 9) | the author's ruling; a test recording every host a streamer-mode browser contacts when it opens a viewer-made link |
-| **R-SES16** | relay load: two events per seat per round, a 180 s floor on wall time per round, relays chosen by their NIP-11 document, spectators off the relays, join requests to the host's inbox | OPEN — recommended (§4.3.1) | the candidate relays' NIP-11 documents and policies, read from a network that reaches them; one 18-seat match through each, counting `rate-limited:` replies |
+| **R-SES16** | relay load: two events per seat per round (the last checkpoint alone), a 180 s floor per round, relays chosen by NIP-11, every event to every usable relay, spectators off the relays but for a targeted reveal fetch, join requests to the host's inbox | **RATIFIED** (ruling 10); the magnitudes (180 s, the required write allowance, the pinned list) are placeholders | the candidate relays' NIP-11 documents and policies, read from a network that reaches them; one 18-seat match through each, counting `rate-limited:` replies |
 
 Engine work this spec depends on, already tracked: **T-30/T-42** (commit and
 reveal in the engine), **T-31** (cards; R-NET4's field widths), **T-32** (the

@@ -19,11 +19,13 @@ work rather than describing game content: it makes bit-reproducibility a
 engine-status block lists the five implementation blockers, audited — and what
 is already clean, which is most of the foundation.
 
-**`docs/Hyades_sessions_discovery_and_security.md` (Rev 1, all OPEN)** is how a
+**`docs/Hyades_sessions_discovery_and_security.md` (Rev 1)** is how a
 player reaches a seat with no server we run — a link, a league roster, a public
 room list, a verifiable match record — and which attacks a colluding majority
-can make undetected (§7: censorship by timeout, from one transcript). It
-proposes amendments to netcode; read its §9 before treating netcode §10 as the
+can make undetected (§7: censorship by timeout, from one transcript; §7.5:
+visible once the relays are queried). Its rulings 1–10 are ratified, including
+relay-only seats and the relay-load rules; the rest is OPEN. It proposes
+amendments to netcode; read its §9 before treating netcode §10 as the
 plan.
 
 **`docs/Hyades_industry.md` (Rev 1)** is the newest spec and the one that
