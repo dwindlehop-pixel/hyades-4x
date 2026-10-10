@@ -1616,8 +1616,12 @@ cheap audit of the first**, and neither defect was findable by reading.
 
 - **No presentation in the engine.** Nothing renders, reads input, touches the clock,
   the filesystem, the network, threads, or the OS RNG.
-- **No hexes in the engine.** The simulation is continuous 3D space; each star system
-  is a point. Hexes are a *command-view* concept owned by the presentation layer.
+- **No hexes in the simulation.** The simulation is continuous 3D space; each star
+  system is a point, and no decision reads a hex. Hexes are a *command-view*
+  concept owned by the presentation layer — with two exceptions in galaxy
+  *generation*, both the author's rulings: homeworlds stand one to a hex (§2),
+  and a generated world outside the prescribed hexes is discarded (T-161,
+  `GalaxyConfig::kept_hexes`).
 - **A quantity carries its unit in the type, not in a comment.** `Band` is a
   magnitude *tier* on the ladder (`Hyades_mineral_cost_curve.md` §2.6);
   `Kilotons` is an amount of stuff. **A Band is a *reading*, not a second thing
