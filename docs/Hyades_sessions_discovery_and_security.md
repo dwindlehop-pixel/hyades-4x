@@ -53,6 +53,14 @@ RATIFIED (T-164, the author's rulings on the second draft):
    verifiable match record (§5.2); what an organizer does with records is
    theirs.
 
+RATIFIED (T-164, the author's ruling on the threat model):
+
+9. **The adversary to design against is a very popular streamer's audience.**
+   The streamer plays with viewers as participants; the audience is large,
+   parasocial, and wants to learn everything it can about the streamer. Every
+   participant and every spectator in a streamer's room is that adversary
+   (§4.5).
+
 ---
 
 ## 2. Terms
@@ -102,8 +110,9 @@ extended to the rendezvous and to the lobby.
 
 Recommendation: **Nostr relays** ([NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md)),
 publishing to and subscribing from 3–5 relays at once (*placeholder*), with
-the relay list pinned in the client build and overridable by relay hints in a
-link.
+the relay list pinned in the client build. **A link cannot name a relay**
+(§4.5): a relay named by whoever made a link learns the IP address of
+everyone who opens it.
 
 - Many independent operators run public relays, and a client can use several,
   so the loss of one relay costs nothing.
@@ -217,6 +226,94 @@ the gossip tier, which reopens §4.3's fan-out concern for a large audience.
 What would settle it: the author's ruling on the default, and R-SES1's
 prototype measuring relay latency per barrier at 18 seats.
 
+### 4.5 The streamer's audience as the adversary — OPEN (R-SES15)
+
+Ruling 9 sets the threat model. The streamer is one client among up to 17
+viewer-participants and an audience of any size, any of whom may collect
+what the client lets them collect. What they want, in order of harm: the
+streamer's **IP address** (location, ISP, a target for denial of service or
+swatting), **identifiers that link sessions** (other games, other accounts,
+the streamer's friends), and **behavior** (when the streamer plays, on what
+hardware).
+
+**What reaches a member of the audience, by channel**, under the
+recommendations below:
+
+| channel | what crosses it | rule |
+|---|---|---|
+| the link | Pages URL, room id, engine hash, host key, parameters | no address (ruling 7) |
+| rendezvous events | signed frames, a throwaway Nostr key, the event's client-set timestamp | no address; signaling encrypted (§4.4) |
+| WebRTC | — | **the streamer's client opens no peer connection** (below) |
+| the match record | keys, display names, frames | keys are per session (below) |
+| any URL the client fetches | the client's IP address, to that host's operator | **the client fetches only from origins pinned in its build** (below) |
+
+**Recommended rules, each closing one path:**
+
+1. **No peer connection from the streamer's client, ever.** Privacy is a
+   property of one client, so the rule is per client: a client in private mode
+   creates no `RTCPeerConnection` and reaches the match through the relays
+   alone (§4.3). Other participants and the audience may still connect to
+   each other directly, which keeps spectator fan-out off the relays (§4.3's
+   limit); the streamer's address is in none of those connections. §4.4
+   recommends private mode as the default for everyone in link and practice
+   games; this rule is the minimum that holds whatever that default becomes.
+2. **The client fetches only from origins pinned in its build**: the Pages
+   origin, the pinned relays, nothing else. A link that named a relay, an
+   image, a font or an engine mirror would let a viewer who made the link log
+   the IP address of everyone who opened it — including a streamer who opens
+   a viewer's room. The CSP's `connect-src`, `img-src` and `font-src` (§8)
+   enforce this in the browser rather than by review, and `default-src
+   'self'` refuses everything else.
+3. **A fresh key per session.** The streamer's Ed25519 key and Nostr key are
+   generated for the room and discarded after its rematch chain ends, so
+   match records, which publish freely (netcode R-NET9), do not link one
+   session to the next. Persistent keys exist only for roster play (§4.1), and
+   the client warns when one is about to be used in a room the user did not
+   make.
+4. **No free text in the protocol.** Frames carry a card and a target
+   (netcode §4); there is no chat, and none should be added — a chat channel
+   is a harassment channel addressed to the streamer. Display names are the
+   only text: bounded length and character set, rendered as text, never as
+   markup, and a streamer-mode switch replaces other players' names with seat
+   colors on screen.
+5. **Joining costs the joiner, not the streamer.** An audience of tens of
+   thousands can open the link at once. A Nostr key costs nothing to make, so
+   a per-key rate limit (§7.4) bounds nothing; instead each join and `QUEUE`
+   request carries NIP-13 proof-of-work, the streamer's tab keeps a bounded
+   queue (*placeholder*: 64 entries) and drops the rest unread, and it stops
+   reading the room topic for joins once the seats and queue are full.
+6. **Stream sniping is a game-integrity issue in the same scenario.** A
+   participant who watches the stream sees the streamer's pending order
+   before the reveal, which deletes the yomi of netcode §2(b). Rule: the
+   streamer-mode UI does not draw the pending order in the shared view; the
+   streamer sees it in a panel they keep out of the capture, or streams with
+   a delay longer than a round's commit window.
+
+**Residual exposure, stated so it is not mistaken for zero:**
+
+- **Relay operators see the streamer's IP address**, as every web server the
+  streamer visits does. The pinned list is chosen by the project, not by the
+  audience (rule 2). A streamer who wants more runs the client over a VPN, or
+  adds a relay they operate to their own settings.
+- **GitHub sees the page load**, as for any Pages site.
+- **Commit timing** shows when the streamer acts each round and, coarsely,
+  how fast their machine simulates. The first is on the stream anyway; the
+  second is one bit of hardware class. Not mitigated; a client could hold its
+  commit to a fixed minimum time if it matters.
+- **Latency-based geolocation** needs round-trip times to the target from
+  several vantage points. Under rule 1 the only party exchanging packets with
+  the streamer's client is a relay, so a participant sees the streamer's
+  frames delayed by two relay hops of unknown length. This is an inference,
+  not a measurement; the R-SES1 prototype could measure how well frame
+  arrival times on the relay predict the streamer's distance.
+- **Sybil participants**: the audience can fill every seat but the streamer's
+  with one coordinated group (§5.1). That is a game-integrity problem; it
+  learns nothing about the streamer that rules 1–4 leave visible.
+
+What would settle R-SES15: the author's ruling on rules 1–6, and a test that
+opens a streamer-mode room from a viewer-made link and records every host the
+streamer's browser contacts.
+
 ---
 
 ## 5. The four entry points
@@ -247,7 +344,7 @@ base64url:
 
 Estimated length: **89 bytes → 167 characters** with this repository's Pages
 host (computed; the full parameter set is not yet fixed). Twitch chat's
-message limit is 500 characters, so the link fits with room for relay hints.
+message limit is 500 characters.
 
 **Joining.**
 
@@ -501,9 +598,11 @@ There is no server to flood. What remains:
   difficulty set in the client (*placeholder*: one to two seconds on a laptop).
   Joining a room costs nothing, because the originator's tab admits joiners and
   can remove them.
-- **Join floods against an originator**: the originator's tab rate-limits join
-  requests per Nostr key and stops reading the room topic once the seats are
-  full.
+- **Join floods against an originator**: join and `QUEUE` requests carry
+  proof-of-work, the originator's tab keeps a bounded queue and drops the rest
+  unread, and it stops reading the room topic for joins once the seats and
+  queue are full (§4.5 rule 5). A per-key rate limit bounds nothing, because a
+  Nostr key costs nothing to make.
 - **Frame floods**: netcode §4.3 is unchanged — the length check, the window
   and the token bucket come before signature verification.
 - **Relay censorship**: a relay that drops a room's events is one of several
@@ -576,6 +675,7 @@ a pointer here meanwhile.
 | **R-SES12** | ejected seats keep replaying and showing their roots | OPEN — recommended (§7.3) | the author's ruling |
 | **R-SES13** | retention of old engine builds on Pages | OPEN | the repository's size after a year of builds |
 | **R-SES14** | a host kick after genesis: the seat goes to the autopilot, or no kick after the start | OPEN — recommended: autopilot (§5.1) | the author's ruling |
+| **R-SES15** | the streamer threat model's six rules: no peer connection from a private client, fetches only from pinned origins, fresh keys per session, no free text, proof-of-work on joins, the pending order kept off the shared view | OPEN — recommended (§4.5); the threat model itself is RATIFIED (ruling 9) | the author's ruling; a test recording every host a streamer-mode browser contacts when it opens a viewer-made link |
 
 Engine work this spec depends on, already tracked: **T-30/T-42** (commit and
 reveal in the engine), **T-31** (cards; R-NET4's field widths), **T-32** (the
