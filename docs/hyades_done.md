@@ -152,6 +152,18 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-165. A workflow for root-causing and fixing Design and Doctrine changes
+
+*Opened and built in one landing at the author's request: "generalize the
+effort to debug the behavior and performance cost of settling hauling routes
+in `$` into a new workflow for root causing and fixing Design and Doctrine
+changes".* `.claude/skills/design-doctrine-workflow` writes T-147's freight
+routing (appendix §D.53–§D.56) and the drive-read legs (§D.19) as ten gated
+stages: brief, the decision as algebra with an inventory of what the old rule
+did, bed and census, arms, read, root cause, confirmation with a coordination
+census, cost, landing and record. `AGENTS.md` §6 and the card workflow point
+to it. No engine change.
+
 ### T-164. Counts are of hulls on their role; retreat apart; no wrecks
 
 *Opened and built in one landing at the author's ruling: "Only count hulls
