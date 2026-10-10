@@ -571,15 +571,17 @@ The site is one page, the game client, showing **one screen at a time**
 
 | screen | what it holds | link |
 |---|---|---|
-| **Menu** | New game (shown, not built yet), Replays, Palette | `./` |
+| **Menu** | New game, Replays, Palette | `./` |
+| **New game** | the relay test (T-169): make a link, open one, Open games, the room, the match, the relays and the log; saves the diagnostics and the match record (`docs/Hyades_sessions_discovery_and_security.md` §11) | `?view=new`, or a room link `#j=<payload>` |
 | **Replays** | the recorded replays at this commit, and "Open a replay file…" | `?view=replays` |
 | **Palette** | the palette sheet (§6.2) | `?view=palette` |
 | **Viewer** | one replay, with a back button to the menu (and Esc) | `?replay=<name>` |
 
 The browser's back and forward buttons move between screens. The palette's
 settings ride in the link's hash on every screen (§6.2.1), so a tuned palette
-survives moving between them. The former `palette.html` forwards to the
-Palette screen with its hash.
+survives moving between them; the palette writes its own key and keeps the
+hash's others, because a room link rides there too (`#j=`). The former
+`palette.html` forwards to the Palette screen with its hash.
 
 ### 8.2 Layout
 
@@ -625,9 +627,18 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
   `hv_*`) takes and returns numbers; bytes cross through one input buffer, the
   framebuffer and one text buffer. **Everything the page shows as text is
   formatted by the module.**
+- **`net/`** — `hyades-net`, Rust with upstream packages (ruling 14), the
+  sessions spec's transport as a state machine plus a `wasm-bindgen` layer
+  (R-UI8's first use of it). It does not link the engine. Built by
+  `web/build.sh` into `net/` beside the page; the `wasm-bindgen` CLI must match
+  `net/Cargo.toml`'s exact pin (`web/install-wasm-bindgen.sh` installs it).
 - **`web/`** — `index.html` (the client's screens), `style.css`, `shell.js`
   (screens and the link, input, layout, the log as a virtual list), `gpu.js`
-  (§7.3), and `palette.html`, which forwards to the Palette screen. The page
+  (§7.3), `newgame.js` (the New game screen; loaded only when that screen
+  opens, so the replay viewer never fetches the networking module), and
+  `palette.html`, which forwards to the Palette screen. A
+  Content-Security-Policy meta tag pins scripts to the site and connections to
+  the pinned relays and loopback (sessions spec §4.5 rule 2, §8). The page
   chrome takes its colors from the module's palette, so chrome and canvas
   cannot differ.
 - **Controls**: play forward/pause, play backward/pause (§8.3), step, a rate multiplier, a scrubber, and
@@ -651,7 +662,9 @@ Palette screen, follows the old `palette.html` link, serves one 503 and checks
 the replay loads on the second request, loses the WebGL context and checks
 the CPU renderer draws and a click still selects, and on a Pixel 7 emulation checks the
 theater's size, that nothing scrolls sideways, and that a tap beside a drawn
-hull selects it.
+hull selects it. `web/test/relay-match.mjs` runs a loopback Nostr relay that
+rate-limits writes with a backoff hint, and plays a three-seat match in three
+headless tabs through the New game screen (sessions spec §11).
 
 **Deployment**: `.github/workflows/pages.yml` builds and tests the site on
 every push to `main` and publishes it to GitHub Pages. The repository's Pages
@@ -671,7 +684,7 @@ job runs the same build and tests on every pull request.
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |
 | **R-UI6** | replay size (§3) | OPEN — recommendation attached | the first replay the author wants to keep that passes ~50 MB |
 | **R-UI7** | showing height `z` in the galaxy view (§6.1) | OPEN | the author's ruling on whether the view stays top-down |
-| **R-UI8** | which upstream packages the interface takes up now that it may (ruling 14) | OPEN — recommendation attached | a need the current code cannot meet. Recommendation: none yet; the first candidates are `wasm-bindgen`/`web-sys` (to retire the hand-written C interface and `shell.js`'s byte copying) and `wgpu` (to move `gpu.js` into Rust), each taken when a change would otherwise be built on the hand-rolled path |
+| **R-UI8** | which upstream packages the interface takes up now that it may (ruling 14) | OPEN — recommendation attached; `wasm-bindgen`/`web-sys` taken up by `net/` at T-169 (the author's choice), the viewer still on its C interface | a need the current code cannot meet. Recommendation: none yet; the first candidates are `wasm-bindgen`/`web-sys` (to retire the hand-written C interface and `shell.js`'s byte copying) and `wgpu` (to move `gpu.js` into Rust), each taken when a change would otherwise be built on the hand-rolled path |
 | **R-UI9** | the client's phone layout and touch magnitudes: the 760-pixel breakpoint, the sheets, the tap slop and pick radius (§8.2–8.3) | OPEN — proposal built | the author's use of the deployed site on a phone |
 
 ## References

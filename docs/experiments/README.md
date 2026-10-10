@@ -137,6 +137,7 @@ an identifier to its file.
 ### [`D-mechanisms/sessions.md`](D-mechanisms/sessions.md)
 
 - **§D.60** — Relay load against published relay limits (T-164, R-SES16)
+- **§D.61** — The relay field test: protocol (T-169, R-SES16, R-SES17, R-SES18)
 
 ## References
 

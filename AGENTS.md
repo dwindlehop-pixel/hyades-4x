@@ -1556,10 +1556,13 @@ cargo check --lib --target wasm32-unknown-unknown   # holds the §1 portability 
 ```
 
 `RUSTFLAGS: -D warnings` is set workflow-wide, so a bare rustc warning is a
-build failure too. The workspace has two crates — the engine and
-`hyades-viewer` — so run fmt, clippy and the tests with `--workspace`; CI does.
+build failure too. The workspace has three crates — the engine,
+`hyades-viewer` and `hyades-net` — so run fmt, clippy and the tests with
+`--workspace`; CI does. `net/src/web.rs` compiles only for wasm32, so CI also
+runs `cargo clippy -p hyades-net --target wasm32-unknown-unknown -- -D warnings`.
 The `viewer` job builds the site with `web/build.sh` and runs
-`web/test/smoke.mjs` and `web/test/browser.mjs` (headless Chrome, WebGL2). The slow work runs in its own `balance` job so it does not
+`web/test/smoke.mjs`, `web/test/browser.mjs` (headless Chrome, WebGL2) and
+`web/test/relay-match.mjs` (three tabs through a loopback Nostr relay). The slow work runs in its own `balance` job so it does not
 block fast feedback: `tests/balance.rs` (the tuned combat goldens) and
 `coverage_trace`.
 
@@ -1592,7 +1595,8 @@ around 40 minutes locally and longer on a runner. Run it by hand when tuning.
 | `src/snapshot.rs` | read-only views for the presentation layer; `Simulation::snapshot_at(t)` reads the theater at any time up to the next event |
 | `src/replay.rs` | **the recorder**: a run as a versioned JSON replay, a frame at exactly every `frame_years` — the only thing the viewer reads (`docs/Hyades_interface.md` §3) |
 | `viewer/` | **`hyades-viewer`**, a second workspace crate: playback, the log filter, the tactical and juicy renderers, compiled to wasm32. It does not link the engine (design law #15); a dev-dependency for the contract test is its only tie |
-| `web/` | the game client (its menu, replay viewer and palette screens), the WebGL2 renderer, `build.sh` for the site, and the module and browser tests. Deployed to Pages from `main` |
+| `net/` | **`hyades-net`**, the third workspace crate: the sessions spec's transport (rooms, rounds, Nostr relays, §4.3.2's rate-limit handling) as a state machine with no I/O, plus a `wasm-bindgen` layer for the browser. Links upstream packages (interface ruling 14), not the engine. `net/tests/sim.rs` plays matches through simulated relays on a simulated clock |
+| `web/` | the game client (its menu, New game, replay viewer and palette screens), the WebGL2 renderer, `build.sh` for the site, and the module and browser tests. Deployed to Pages from `main`; the build needs the `wasm-bindgen` CLI at `net/Cargo.toml`'s exact pin (`web/install-wasm-bindgen.sh`) |
 
 ### The combat/arena split (load-bearing)
 

@@ -1721,7 +1721,22 @@ relay transport as the last rung, the room list, rematch and queue. Waits on
 R-SES1's prototype for the relay choice. Subsumes the topology, genesis and
 server items of T-37.
 
+**Advanced at T-169:** the link payload, room sequencing, join and queue to the
+host's inbox, kick, genesis and acceptances, Open games, the relay transport
+with §4.3.2's rate-limit handling and the carrier are built in `net/`
+(sessions spec §11). Remaining: rematch, roster links, direct connections and
+gossip, the jointly random seed, CBOR genesis, and everything T-165 gates.
+
 ## Band C — open question with a concrete test
+
+### T-169. Run the relay field test
+
+The relay test is built (sessions spec §11: `net/`, `web/newgame.js`, the New
+game screen) and tested against simulated relays and a loopback relay. What is
+open is the measurement: a match with real players on the pinned public relays,
+by the protocol of appendix §D.61, whose diagnostics settle R-SES16's write
+allowance and pinned list, R-SES17's magnitudes and R-SES18 (late votes).
+Needs the site deployed from `main`.
 
 
 ### T-64. One quantity type; the logistic runs on people (R-O83 closed)

@@ -68,3 +68,57 @@ Sources: [strfry.conf](https://github.com/hoytech/strfry/blob/master/strfry.conf
 [nostr-relay-khatru](https://github.com/rzazo24/nostr-relay-khatru),
 [NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md),
 [NIP-11](https://github.com/nostr-protocol/nips/blob/master/11.md).
+
+---
+
+## D.61 The relay field test: protocol (T-169, R-SES16, R-SES17, R-SES18)
+
+Supports `Hyades_sessions_discovery_and_security.md` §11. **A protocol; no
+results yet.** The question: on the pinned public relays, with real players on
+real networks, how often is a write rate-limited or refused, does any relay
+send nips#2498's backoff hint, how often is a seat timed out, and does a round
+ever resolve differently on two clients (R-SES18)?
+
+**Bed.** The deployed site (GitHub Pages, from `main`), the five pinned relays
+(`web/newgame.js`), three to eighteen players, each in their own browser on
+their own network. Placeholders as shipped: 180 s per round, 10 rounds,
+patience 120 s. A shorter arm (30 s per round, patience 60 s) loads the relays
+harder per minute and finishes faster; run it as a second match.
+
+**Steps.**
+
+1. The host opens New game, types a name, sets seats to the number of players,
+   and presses **Make a link**, then sends the link (Discord or any chat).
+2. Each player opens the link, types a name, and presses **Take a seat**.
+3. When the seats are full, the host presses **Start the match**; every player
+   presses **Accept the parameters and sign**.
+4. Leave **Play automatically** on (or pick orders by hand) and keep the tab
+   open and in front until the round table shows every round. A background tab
+   may have its timers slowed by the browser, which is itself worth recording.
+5. Every player presses **Save diagnostics (.tsv)** and **Save match record
+   (.json)** and sends both files back, saying which browser and network
+   (home, mobile, VPN) they used.
+
+**What the files hold.** The diagnostics TSV has one row per relay reply and
+protocol event: `connect`, `open`, `closed`, `screen-pass`/`screen-exclude`/
+`screen-unavailable`, `accepted` (with latency), `rate-limited` (with the
+relay's message, its hint as sent or `none`, and the wait chosen), `rejected`,
+`write-timeout`, `sub-closed`, `notice`, `carry`, `timeout-vote`,
+`round-resolved` (with its duration and who was timed out), `late-change`,
+`equivocation`. The match record holds the genesis, every acceptance and every
+frame the player held.
+
+**What settles what.**
+
+| quantity, from the TSVs | settles |
+|---|---|
+| `rate-limited` rows per relay per player-minute, with and without a hint | R-SES16's write allowance and pinned list; whether hints are sent at all |
+| `rejected` rows by message prefix (`blocked`, `restricted`, `pow`, …) | which pinned relays refuse kind 7860 or this client |
+| `screen-*` rows | which relays publish NIP-11 with CORS, and what they demand |
+| `round-resolved` durations, and seats timed out per round | whether 180 s and 120 s are enough (R-SES17's magnitudes) |
+| `carry` rows | how often the carrier is needed |
+| `late-change` rows; checkpoint agreement in the round table | R-SES18 |
+
+**Data.** Files go in `docs/experiments/data/D.61-<date>-<player>.tsv` and
+`.json`, per `docs/experiments/AGENTS.md`, with the browser and network noted
+in this entry when results are added.

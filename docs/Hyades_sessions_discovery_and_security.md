@@ -941,7 +941,10 @@ by the same relay query.
 | netcode §10 | room creation gated by a challenge token | room announcement gated by proof-of-work (§7.4) |
 | netcode §11 | CSP as a response header | a meta tag; Pages sends no custom headers (§8) |
 | netcode §8.3 | the vote's failures "are identifiable — the transcript names who signed what" | true of classes A and B; **false of class C from one transcript**, true of it from a transcript plus the relays (§7.1, §7.5) |
-| interface §8.1 | New game "shown, not built yet" | the menu's play entries are §5's four |
+| interface §8.1 | New game "shown, not built yet" | the menu's play entries are §5's four; the relay test of §11 is BUILT there |
+| netcode §5.2 | timeout quorum ⌊N/2⌋+1 excluding the subject | capped at N−1, the seats able to vote, so two seats can time each other out (§11, R-SES19) |
+| netcode §4.3 step 9 | one frame stored per `(seat, round, kind)` | a timeout vote's key adds its subject and phase, or a seat could vote on one seat per round (§11, R-SES19) |
+| netcode §5.2 | timeout votes make "every client … the same call at the same logical point" | false when a reveal and a quorum of votes reach clients in different orders (§11, R-SES18) |
 
 These are amendments **proposed** by an OPEN spec. Netcode is not edited to
 match until the author ratifies the R-codes involved; netcode's header carries
@@ -965,6 +968,8 @@ a pointer here meanwhile.
 | **R-SES10** | the verifier's six verdicts | OPEN — recommended (§7.2) | the author's ruling |
 | **R-SES11** | a per-round inputs hash | OPEN — recommended as a digest leaf (§7.2) | T-32 |
 | **R-SES12** | ejected seats keep replaying and showing their roots | OPEN — recommended (§7.3) | the author's ruling |
+| **R-SES18** | late timeout votes can make clients resolve a round differently (§11) | OPEN | the field test's `late-change` count; a rule if it is not zero |
+| **R-SES19** | the relay test's departures from this spec and netcode: no engine, JSON genesis without a seed, everyone relay-only, Rust verification, quorum capped at N−1, vote key with subject and phase, carrier for acceptances (§11) | OPEN — each reconciled when T-165 lands; the quorum, vote key and acceptance carrier recommended for ratification | the author's ruling on each; T-165 |
 | **R-SES13** | retention of old engine builds on Pages | OPEN | the repository's size after a year of builds |
 | **R-SES14** | a host kick after genesis: the seat goes to the autopilot, or no kick after the start | OPEN — recommended: autopilot (§5.1) | the author's ruling |
 | **R-SES15** | the streamer threat model's six rules: no peer connection from a private client, fetches only from pinned origins, fresh keys per session, no free text, proof-of-work on joins, the pending order kept off the shared view | OPEN — recommended (§4.5); the threat model itself is RATIFIED (ruling 9) | the author's ruling; a test recording every host a streamer-mode browser contacts when it opens a viewer-made link |
@@ -978,6 +983,87 @@ crate, which this spec now gives a design). New: **T-164** (this spec),
 **T-165** (the engine as a browser module and the transcript verifier),
 **T-166** (wasm32 throughput at 18 seats on a phone), **T-167** (the
 rendezvous layer and the link flow).
+
+---
+
+## 11. The relay test as built (T-169)
+
+BUILT. The New game screen runs the transport of this spec without the
+engine: seats play rounds of hidden orders through public Nostr relays —
+commit, reveal, timeout votes, checkpoints — and every relay reply is logged.
+Its purpose is R-SES16 and R-SES17's measurement: a field test with real
+players on the pinned relays (protocol: appendix §D.61).
+
+**Code.** `net/` (`hyades-net`, Rust; interface ruling 14 permits its
+packages): a state machine that does no I/O (`session.rs`, `relay.rs`,
+`frame.rs`, `nostr.rs`, `link.rs`) and a `wasm-bindgen` layer for the browser
+(`web.rs`). `web/newgame.js` draws it. The seat's Ed25519 key is generated
+non-extractable in WebCrypto and signs there (§4.1).
+
+**What it implements**, by section: the link payload (§5.1, 89 bytes);
+originator sequencing, join and `QUEUE` requests to the host's inbox with
+NIP-13 proof-of-work, the bounded queue, and the pre-genesis kick with the
+first queued player promoted (ruling 6, §4.5 rule 5); genesis and every
+seat's signed acceptance (§5.2's audit); Open games (§5.3); relay-only seats
+with no address in the link or any readable message (rulings 7 and 10); the
+pinned relays, a CSP meta tag and the NIP-11 screen (§4.5 rule 2, §4.3.1 rule
+3, §8); §4.3.1 rules 1, 4 and 6; §4.3.2 rules 1–8; the diagnostics TSV and
+the match record (§5.4).
+
+**Magnitudes**, all *placeholders*: event kind 7860, expiry 6 h, join
+proof-of-work 8 bits, queue cap 64, carrier delay 20 s, announcement every
+60 s, final-checkpoint grace 5 s, the NIP-11 screen excluding a relay whose
+`max_content_length` is under 2,048, backoff 15–120 s ±50%, a lost reply
+after 15 s.
+
+**Departures, each OPEN under R-SES19** until the engine runs in the browser
+(T-165):
+
+- **No engine.** An order is a card number nobody applies, and a checkpoint is
+  the hash of the orders every seat applied (R-SES11's inputs leaf), not a
+  state root. Class A detection (§7.1) is therefore of disagreement about
+  inputs only.
+- **Genesis is canonical JSON** (keys sorted at every level), not CBOR
+  (netcode §7), and carries no galaxy seed, so netcode §7.1's jointly random
+  seed is not built.
+- **Everyone is relay-only**, spectators included: no WebRTC and no gossip
+  tier. §4.3.1 rule 5 is not met, so this build must not be used with a large
+  audience; rule 7's targeted fetch is moot because a spectator reads every
+  relay.
+- **Verification is in Rust** (`ed25519-dalek`'s strict check), signing in
+  WebCrypto. One verifier on every client means no two browsers can disagree
+  about which frames are valid; netcode §4.1's "no signing library bundled"
+  still holds for signing.
+- **The timeout quorum is capped at N−1**, and **a vote's key includes its
+  subject and phase** (§9's two netcode rows).
+- **The carrier also carries a predecessor's signed acceptance.** Found by the
+  simulated-relay test: a relay refusing one seat also never receives that
+  seat's acceptance, so a reader of only that relay could never see the match
+  start. Recommended for ratification under R-SES17.
+- **An acceptance that arrives before its genesis is held** until the genesis
+  does, rather than dropped.
+- Not built: rematch, roster links (§5.2), the kick after genesis (R-SES14
+  is open), direct connections and their fingerprint binding.
+
+**A finding the build makes measurable — R-SES18, OPEN.** A client resolves a
+round once it holds, for every seat, a valid reveal or a timeout quorum, and a
+quorum overrides a reveal. Two clients that receive a seat's reveal and the
+votes against it in different orders can resolve the round differently,
+contrary to netcode §5.2's claim that every client makes the same call at the
+same logical point. The build defers each checkpoint to the next commit,
+which absorbs a late vote that arrives within one round, and logs
+`late-change` when a round resolves differently after this seat signed its
+checkpoint; the round's checkpoints then disagree, which is class A's signal
+without a forger. What would settle it: the `late-change` count in the field
+test's diagnostics; if it is not zero, a protocol rule — for instance, that a
+seat's commit for round r+1 names the set of votes it applied in round r.
+
+**Tests.** 17 unit tests and five simulated matches in `net/tests/sim.rs`
+(generous relays; rate limits with and without a hint, asserting no write
+before a hint ran out; a relay that refuses one seat, read by a spectator
+that reads only that relay; a seat that falls silent; kick with promotion),
+3.2 s. `web/test/relay-match.mjs`: three headless tabs through a loopback
+relay that rate-limits with a hint, 21 s.
 
 ---
 
