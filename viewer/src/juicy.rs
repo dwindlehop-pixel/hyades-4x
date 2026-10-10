@@ -13,10 +13,10 @@
 //! | a burning drive | a plume behind the hull, in the drive's status color, brighter with acceleration |
 //! | a hit | a flash in the hit color |
 //! | a wreck | a dim ember |
-//! | a hex | a dim line of lights inset from its edge, brighter and whiter as the works in it grow, darker as they fall |
+//! | a hex | a dim line of lights inset from its edge; inside it a line per seat with works there, brighter with the seat's work-years; dashed bright where a world holds `Band IV` works |
 
 use crate::camera::Lod;
-use crate::color::{mix, Rgb};
+use crate::color::Rgb;
 use crate::palette::Status;
 use crate::raster::Raster;
 use crate::tactical::{Op, Scene};
@@ -40,22 +40,41 @@ pub const TERRITORY_HOME: f32 = 0.12;
 pub const TERRITORY_WORLD: f32 = 0.025;
 /// A quiet hull's light (a scout, unladen traffic), against 2.0 for the rest.
 pub const QUIET_HULL: f32 = 0.5;
+/// **A stack below the galaxy level is a cluster** (T-163, proposed, R-UI2):
+/// a dot of radius `CLUSTER_DOT_R` hull radii per hull, `CLUSTER_DOT_SPACING`
+/// hull radii apart in a sunflower spiral, up to `CLUSTER_MAX_DOTS` (more
+/// hulls brighten the dots instead). Seats sharing a stack square stand
+/// `CLUSTER_GAP` hull radii apart at their nearest.
+pub const CLUSTER_DOT_R: f64 = 1.0;
+pub const CLUSTER_DOT_SPACING: f64 = 2.0;
+pub const CLUSTER_MAX_DOTS: usize = 64;
+pub const CLUSTER_GAP: f64 = 3.0;
+/// The sunflower spiral's turn between dots, radians: 360°/φ².
+pub const GOLDEN_ANGLE: f64 = 2.399_963_229_728_653;
+/// A hit is a ring of lights of radius `HIT_RING_R` hull radii at intensity
+/// `HIT_RING` each (T-163, proposed): a ring, not a flash, so the hull's own
+/// color shows inside it.
+pub const HIT_RING_R: f64 = 0.5;
+pub const HIT_RING: f32 = 1.2;
 /// A wreck's ember, and the radius it narrows to once its glyph has faded
 /// (T-158), juicy pixels.
 pub const WRECK_EMBER: f32 = 0.6;
 pub const WRECK_PINPOINT_R: f64 = 0.5;
-/// **A hex's outline** (T-159, proposed, R-UI2): lights every `HEX_DOT_PX`
-/// juicy pixels of radius `HEX_DOT_R`, `HEX_INSET_PX` inside the edge so
-/// neighbors each keep their own line, at `HEX_GLOW` in the hex color where
-/// the works trend is flat. A rising trend brightens it up to
-/// `1 + HEX_RISE` times and whitens it; a falling one darkens it to
-/// `1 − HEX_FALL` times.
+/// **A hex's lines** (T-159, T-162; proposed, R-UI2): lights every
+/// `HEX_DOT_PX` juicy pixels of radius `HEX_DOT_R`. The grid's line stands
+/// `HEX_INSET_PX` inside the edge, so neighbors each keep their own, at
+/// `HEX_GLOW` in the hex color. Each seat with works in the hex adds a line
+/// [`crate::tactical::HEX_LINE_STEP_PX`] further in, in its color at
+/// `HEX_SEAT_GLOW` × its brightness — `HEX_ESTABLISHED` times that once the
+/// seat is established. A hex holding `Band IV` works has its grid line
+/// dashed in the bright text color at `HEX_BAND_IV_GLOW`.
 pub const HEX_DOT_PX: f64 = 1.5;
 pub const HEX_DOT_R: f64 = 1.0;
 pub const HEX_INSET_PX: f64 = 2.0;
 pub const HEX_GLOW: f32 = 0.1;
-pub const HEX_RISE: f32 = 2.0;
-pub const HEX_FALL: f32 = 0.7;
+pub const HEX_SEAT_GLOW: f32 = 0.25;
+pub const HEX_ESTABLISHED: f32 = 2.0;
+pub const HEX_BAND_IV_GLOW: f32 = 0.6;
 /// The bloom's box blur: radius in bloom pixels, and passes (three approach
 /// a Gaussian).
 pub const BLUR_RADIUS: usize = 2;
@@ -334,22 +353,24 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
         }
     }
     hexes(s, &mut out.scene);
-    for op in ops {
+    // Below the galaxy level a stack is a cluster of dots, one per hull, so
+    // its count reads and a hit does not hide whose it is (T-163).
+    let clustered = s.camera.lod() != Lod::Galaxy;
+    let mut groups: std::collections::BTreeMap<((i64, i64), usize), Vec<usize>> = Default::default();
+    let hull_ops: Vec<&Op> = ops.iter().filter(|o| matches!(o, Op::Hull { .. })).collect();
+    for (i, (op, h)) in hull_ops.iter().zip(&s.view.hulls).enumerate() {
         let Op::Hull { s: sp, at, outline, vector, hit, quiet, wreck, .. } = op else { continue };
         let p = pos(*sp);
+        if clustered && wreck.is_none() && !*quiet {
+            groups.entry((crate::tactical::stack_cell(s, h.row.pos), h.hull.owner)).or_default().push(i);
+            continue;
+        }
         if let Some((end, c)) = vector {
-            // The plume trails opposite the vector for a drive, ahead of it
-            // when braking. The vector's end is in tactical pixels; keep its
-            // offset from the hull and apply it at the hull's exact position.
-            let k = crate::tactical::PIXEL / PIXEL;
-            let e = [p[0] + (end[0] - at[0]) as f64 * k, p[1] + (end[1] - at[1]) as f64 * k];
-            let tail = if *c == s.palette.status(Status::Braking) { e } else { [2.0 * p[0] - e[0], 2.0 * p[1] - e[1]] };
-            streak(&mut out.scene, p, tail, hull_r, linear(*c), 2.5);
+            plume(&mut out.scene, s, p, *at, *end, *c, hull_r);
         }
         // A quiet hull — a scout, unladen traffic — is a faint point, as in
-        // tactical mode.
-        // A wreck is a dim ember that narrows to a pinpoint as its tactical
-        // glyph fades (T-158).
+        // tactical mode. A wreck is a dim ember that narrows to a pinpoint as
+        // its tactical glyph fades (T-158).
         let (c, k, r) = match wreck {
             Some(share) => (
                 linear(s.palette.status(Status::Wreck)),
@@ -360,41 +381,146 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
         };
         out.scene.push(light(p[0], p[1], r, c, k));
         if *hit {
-            out.scene.push(light(p[0], p[1], 3.0 * hull_r, linear(s.palette.status(Status::Hit)), 6.0));
+            ring(&mut out.scene, p, 3.0 * hull_r, hull_r, linear(s.palette.status(Status::Hit)));
+        }
+    }
+    // The clusters: each stack square's hulls of one seat about their mean
+    // position. Clusters that would overlap on screen are one place; in a
+    // place each seat's hulls are one cluster, and where seats share it each
+    // seat's cluster is set to its own side.
+    let spacing = CLUSTER_DOT_SPACING * hull_r;
+    let radius = |n: usize| spacing * (n.min(CLUSTER_MAX_DOTS) as f64).sqrt();
+    let mean = |members: &[usize]| {
+        let mut c = [0.0, 0.0];
+        for &i in members {
+            if let Op::Hull { s: sp, .. } = hull_ops[i] {
+                let p = pos(*sp);
+                (c[0], c[1]) = (c[0] + p[0], c[1] + p[1]);
+            }
+        }
+        [c[0] / members.len() as f64, c[1] / members.len() as f64]
+    };
+    let found: Vec<(usize, Vec<usize>, [f64; 2])> =
+        groups.into_iter().map(|((_, seat), m)| (seat, m.clone(), mean(&m))).collect();
+    // Places: clusters joined while any two are within reach of each other.
+    let mut place: Vec<usize> = (0..found.len()).collect();
+    fn root(p: &mut [usize], i: usize) -> usize {
+        let mut r = i;
+        while p[r] != r {
+            r = p[r];
+        }
+        p[i] = r;
+        r
+    }
+    for a in 0..found.len() {
+        for b in a + 1..found.len() {
+            let (pa, pb) = (found[a].2, found[b].2);
+            let d = ((pa[0] - pb[0]) * (pa[0] - pb[0]) + (pa[1] - pb[1]) * (pa[1] - pb[1])).sqrt();
+            if d < radius(found[a].1.len()) + radius(found[b].1.len()) + CLUSTER_GAP * hull_r {
+                let (ra, rb) = (root(&mut place, a), root(&mut place, b));
+                place[ra.max(rb)] = ra.min(rb);
+            }
+        }
+    }
+    let mut places: std::collections::BTreeMap<usize, std::collections::BTreeMap<usize, Vec<usize>>> =
+        Default::default();
+    for (i, (seat, members, _)) in found.iter().enumerate() {
+        let r = root(&mut place, i);
+        places.entry(r).or_default().entry(*seat).or_default().extend(members);
+    }
+    for seats in places.values() {
+        let widest = seats.values().map(|m| radius(m.len())).fold(0.0, f64::max);
+        let m = seats.len();
+        let apart = if m > 1 { (widest + CLUSTER_GAP * hull_r) / (std::f64::consts::PI / m as f64).sin() } else { 0.0 };
+        let all: Vec<usize> = seats.values().flatten().copied().collect();
+        let middle = mean(&all);
+        for (k, (seat, members)) in seats.iter().enumerate() {
+            let (sin, cos) = (std::f64::consts::TAU * k as f64 / m as f64).sin_cos();
+            let c = if m > 1 { [middle[0] + apart * cos, middle[1] + apart * sin] } else { mean(members) };
+            let color = linear(s.palette.seat(*seat));
+            let n = members.len();
+            let dots = n.min(CLUSTER_MAX_DOTS);
+            let k_dot = 2.0 * n as f32 / dots as f32;
+            for d in 0..dots {
+                let (sin, cos) = (GOLDEN_ANGLE * d as f64).sin_cos();
+                // The first dot at the center: a lone hull is where it stands.
+                let r = spacing * (d as f64).sqrt();
+                out.scene.push(light(c[0] + r * cos, c[1] + r * sin, CLUSTER_DOT_R * hull_r, color, k_dot));
+            }
+            if let Some(Op::Hull { at, vector: Some((end, col)), .. }) = members.first().map(|&i| hull_ops[i]) {
+                plume(&mut out.scene, s, c, *at, *end, *col, hull_r);
+            }
+            if members.iter().any(|&i| matches!(hull_ops[i], Op::Hull { hit: true, .. })) {
+                ring(&mut out.scene, c, radius(n) + 2.0 * hull_r, hull_r, linear(s.palette.status(Status::Hit)));
+            }
         }
     }
     out
 }
 
-/// **The active hexes as lines of light** (T-159): each hex's outline, inset
-/// so a shared edge reads as two lines, one per hex, each telling its own
-/// hex's works trend ([`crate::tactical::works_trend`]). Only the part of an
-/// edge on screen is lit, so a hex many screens wide costs what one does.
+/// A drive's plume from `p`: behind the vector for a drive, ahead of it when
+/// braking. The vector's end is in tactical pixels from the glyph's pixel
+/// `at`; its offset is applied at `p`.
+fn plume(out: &mut Vec<Light>, s: &Scene, p: [f64; 2], at: [i64; 2], end: [i64; 2], c: Rgb, r: f64) {
+    let k = crate::tactical::PIXEL / PIXEL;
+    let e = [p[0] + (end[0] - at[0]) as f64 * k, p[1] + (end[1] - at[1]) as f64 * k];
+    let tail = if c == s.palette.status(Status::Braking) { e } else { [2.0 * p[0] - e[0], 2.0 * p[1] - e[1]] };
+    streak(out, p, tail, r, linear(c), 2.5);
+}
+
+/// A hit: a thin ring of lights of radius `radius` about `c`, so what was hit
+/// still shows inside it in its own color.
+fn ring(out: &mut Vec<Light>, c: [f64; 2], radius: f64, hull_r: f64, color: [f32; 3]) {
+    let n = ((std::f64::consts::TAU * radius / (1.5 * hull_r)).ceil() as usize).max(8);
+    for i in 0..n {
+        let (sin, cos) = (std::f64::consts::TAU * i as f64 / n as f64).sin_cos();
+        out.push(light(c[0] + radius * cos, c[1] + radius * sin, HIT_RING_R * hull_r, color, HIT_RING));
+    }
+}
+
+/// **The active hexes as lines of light** (T-159, T-162): the grid's line,
+/// inset so a shared edge reads as two lines, one per hex; inside it a line
+/// per seat with works in the hex ([`crate::tactical::hex_lines`]); and the
+/// grid's line dashed bright where a world holds `Band IV` works. Only the
+/// part of a line on screen is lit, so a hex many screens wide costs what
+/// one does.
 fn hexes(s: &Scene, out: &mut Vec<Light>) {
     if !crate::tactical::hexes_shown(s) {
         return;
     }
-    let trend = crate::tactical::works_trend(s);
+    let lines = crate::tactical::hex_lines(s);
+    let none = crate::tactical::HexLines::default();
     let (w, h) = (s.camera.width / PIXEL, s.camera.height / PIXEL);
-    for hex in crate::tactical::active_hexes(s) {
-        let v = crate::tactical::hex_corners(s, hex).map(|p| [p[0] / PIXEL, p[1] / PIXEL]);
-        let c = [v.iter().map(|p| p[0]).sum::<f64>() / 6.0, v.iter().map(|p| p[1]).sum::<f64>() / 6.0];
-        let inset = |p: [f64; 2]| {
-            let (dx, dy) = (c[0] - p[0], c[1] - p[1]);
-            let d = dx.hypot(dy);
-            let k = if d > 2.0 * HEX_INSET_PX { HEX_INSET_PX / d } else { 0.0 };
-            [p[0] + dx * k, p[1] + dy * k]
-        };
-        let tr = trend.get(&hex).copied().unwrap_or(0.0);
-        let color = linear(mix(s.palette.roles.hex, s.palette.roles.text_bright, tr.max(0.0)));
-        let k = HEX_GLOW * if tr >= 0.0 { 1.0 + HEX_RISE * tr as f32 } else { 1.0 + HEX_FALL * tr as f32 };
+    let mut ring = |v: [[f64; 2]; 6], color: [f32; 3], k: f32, dash: Option<(usize, usize)>| {
         for e in 0..6 {
-            let Some((a, b)) = clip(inset(v[e]), inset(v[(e + 1) % 6]), w, h, 4.0 * HEX_DOT_R) else { continue };
-            let n = ((b[0] - a[0]).hypot(b[1] - a[1]) / HEX_DOT_PX).floor() as usize;
+            let Some((a, b)) = clip(v[e], v[(e + 1) % 6], w, h, 4.0 * HEX_DOT_R) else { continue };
+            let n =
+                (((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])).sqrt() / HEX_DOT_PX).floor() as usize;
             for i in 0..=n {
+                if dash.is_some_and(|(on, off)| i % (on + off) >= on) {
+                    continue;
+                }
                 let f = if n == 0 { 0.0 } else { i as f64 / n as f64 };
                 out.push(light(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, HEX_DOT_R, color, k));
             }
+        }
+    };
+    for hex in crate::tactical::active_hexes(s) {
+        let corners = crate::tactical::hex_corners(s, hex).map(|p| [p[0] / PIXEL, p[1] / PIXEL]);
+        let l = lines.get(&hex).unwrap_or(&none);
+        let Some(edge) = crate::tactical::inset_corners(corners, HEX_INSET_PX) else { continue };
+        if l.band_iv {
+            let c = linear(s.palette.roles.text_bright);
+            ring(edge, c, HEX_BAND_IV_GLOW, Some(crate::tactical::BAND_IV_DASH));
+        } else {
+            ring(edge, linear(s.palette.roles.hex), HEX_GLOW, None);
+        }
+        for (n, seat) in l.seats.iter().enumerate() {
+            let d = HEX_INSET_PX + crate::tactical::HEX_LINE_STEP_PX * (n + 1) as f64 / PIXEL;
+            let Some(v) = crate::tactical::inset_corners(corners, d) else { break };
+            let c = linear(crate::tactical::seat_line_color(s.palette, seat));
+            let k = HEX_SEAT_GLOW * seat.brightness as f32 * if seat.established { HEX_ESTABLISHED } else { 1.0 };
+            ring(v, c, k, None);
         }
     }
 }
@@ -455,7 +581,7 @@ mod tests {
     use crate::camera::Camera;
     use crate::palette::Palette;
     use crate::replay::{tests::TINY, Replay};
-    use crate::tactical::{plan, to_raster};
+    use crate::tactical::plan;
 
     const WHITE: [f32; 3] = [1.0, 1.0, 1.0];
 
@@ -554,54 +680,144 @@ mod tests {
         assert_eq!(std::mem::size_of::<Light>(), LIGHT_FLOATS * 4);
     }
 
-    /// **Hexes are lines of light in juicy mode too, and tell the works
-    /// trend** (T-159): every active hex is lit when the tactical grid would
-    /// be drawn and not when it would be a fill; a hex whose works grew is
-    /// brighter than the same hex flat; and a view zoomed until one hex is
-    /// many screens wide lights only what is on screen.
+    /// **Hexes are lines of light in juicy mode too, with a line per seat**
+    /// (T-159, T-162): every active hex is lit when the tactical grid would be
+    /// drawn and not when it would be a fill; each seat with works in a hex
+    /// adds a line in its color, brighter once established; a `Band IV` world
+    /// dashes the grid line bright; and a view zoomed until one hex is many
+    /// screens wide lights only what is on screen.
     #[test]
-    fn hexes_are_lines_of_light_brighter_where_works_grow() {
+    fn hexes_are_lines_of_light_with_a_line_per_seat() {
         let replay = Replay::from_json(TINY).unwrap();
         let palette = Palette::default();
-        let hex_lights = |camera: &Camera, t: f64| {
-            let view = replay.view_at(t);
+        let hex_lights = |r: &Replay, camera: &Camera, t: f64| {
+            let view = r.view_at(t);
+            let s =
+                crate::tactical::Scene { replay: r, view: &view, camera, palette: &palette, selected: None, rate: 1.0 };
+            let mut out = Vec::new();
+            hexes(&s, &mut out);
+            out
+        };
+        let mut camera = Camera::new(320.0, 200.0);
+        camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
+        let grid = linear(palette.roles.hex).map(|c| c * HEX_GLOW);
+        let is = |g: &Light, c: [f32; 3]| g.color.iter().zip(c).all(|(a, b)| (a - b).abs() < 1e-6);
+        let lit = hex_lights(&replay, &camera, 10.0);
+        assert!(lit.iter().any(|g| is(g, grid)), "the grid's line");
+        let view = replay.view_at(10.0);
+        let scene = crate::tactical::Scene {
+            replay: &replay,
+            view: &view,
+            camera: &camera,
+            palette: &palette,
+            selected: None,
+            rate: 1.0,
+        };
+        let lines = crate::tactical::hex_lines(&scene);
+        let mut seats = std::collections::BTreeSet::new();
+        for l in lines.values().flat_map(|l| &l.seats) {
+            let k = HEX_SEAT_GLOW * l.brightness as f32;
+            let c = linear(crate::tactical::seat_line_color(&palette, l)).map(|c| c * k);
+            assert!(lit.iter().any(|g| is(g, c)), "seat {}'s line, in its color at its brightness", l.seat);
+            seats.insert(l.seat);
+        }
+        assert_eq!(seats.len(), 2, "both seats hold works in the fixture");
+        let sum = |l: &[Light]| l.iter().map(|g| g.color.iter().sum::<f32>()).sum::<f32>();
+        let mut established = replay.clone();
+        for f in &mut established.frames {
+            for w in &mut f.hex_works {
+                w.work_years += 10.0 * crate::tactical::ESTABLISHED_WORK_YEARS;
+            }
+        }
+        assert!(sum(&hex_lights(&established, &camera, 10.0)) > 1.5 * sum(&lit), "established lines are bright");
+        let mut band_iv = replay.clone();
+        band_iv.frames[1].hex_works.iter_mut().for_each(|w| w.band_iv = true);
+        let dashed = linear(palette.roles.text_bright).map(|c| c * HEX_BAND_IV_GLOW);
+        let iv = hex_lights(&band_iv, &camera, 10.0);
+        assert!(iv.iter().any(|g| is(g, dashed)) && !lit.iter().any(|g| is(g, dashed)), "Band IV dashes the edge");
+
+        let mut far = camera;
+        far.scale = crate::tactical::MIN_HEX_PX * crate::tactical::PIXEL / 121.0 * 0.9;
+        assert!(hex_lights(&replay, &far, 10.0).is_empty(), "too small to draw: no lights");
+
+        let mut near = camera;
+        near.scale *= 1.0e4;
+        let close = hex_lights(&replay, &near, 10.0);
+        let screen = (320.0f64 + 200.0) * 2.0 / HEX_DOT_PX;
+        assert!(close.len() as f64 <= 4.0 * screen, "a hex wider than the screen lights the screen: {}", close.len());
+        assert!(close.iter().all(|g| (-5.0..=325.0).contains(&g.x) && (-5.0..=205.0).contains(&g.y)));
+    }
+
+    /// **Below the galaxy level a stack is a cluster of dots** (T-163): one
+    /// dot per hull in its seat's color, so losing a hull loses a dot; seats
+    /// sharing a stack square stand apart, each in its own color; and a hit
+    /// is a ring about the cluster, so the seat still shows inside it.
+    #[test]
+    fn a_stack_is_a_dot_per_hull_and_seats_stand_apart() {
+        let replay = Replay::from_json(TINY).unwrap();
+        let palette = Palette::default();
+        let mut camera = Camera::new(320.0, 200.0);
+        camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
+        camera.scale *= 40.0; // below the galaxy level
+        assert_ne!(camera.lod(), Lod::Galaxy);
+        let base = replay.view_at(0.0);
+        let five = *base.hulls.iter().find(|h| h.hull.id == 5).unwrap();
+        camera.center = [five.row.pos[0], five.row.pos[1]];
+        let crowd = |zero: u64, one: u64, hit: bool| {
+            let mut view = base.clone();
+            view.hulls.clear();
+            for k in 0..zero + one {
+                let mut c = five;
+                (c.hull.id, c.row.id, c.hull.owner, c.hit) = (100 + k, 100 + k, usize::from(k >= zero), hit && k == 0);
+                view.hulls.push(c);
+            }
+            view
+        };
+        let lights_of = |view: &crate::replay::View| {
             let s = crate::tactical::Scene {
                 replay: &replay,
-                view: &view,
-                camera,
+                view,
+                camera: &camera,
                 palette: &palette,
                 selected: None,
                 rate: 1.0,
             };
-            let mut out = Vec::new();
-            hexes(&s, &mut out);
-            (out, crate::tactical::hexes_shown(&s), crate::tactical::works_trend(&s))
+            lights(&s, &plan(&s)).scene
         };
-        let mut camera = Camera::new(320.0, 200.0);
-        camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
-        let (flat, shown, trend) = hex_lights(&camera, 0.0);
-        assert!(shown && !flat.is_empty(), "a hex 121 ly across at this zoom is lit");
-        assert!(trend.values().all(|&t| t == 0.0));
-        let (grown, _, trend) = hex_lights(&camera, 10.0);
-        assert!(trend.values().any(|&t| t > 0.0));
-        let sum = |l: &[Light]| l.iter().map(|g| g.color.iter().sum::<f32>()).sum::<f32>();
-        assert_eq!(grown.len(), flat.len(), "the same hexes, the same lines");
-        assert!(sum(&grown) > 1.5 * sum(&flat), "growing works brighten their hex: {} vs {}", sum(&grown), sum(&flat));
-        for g in &flat {
-            let c = linear(palette.roles.hex).map(|c| c * HEX_GLOW);
-            assert!(g.color.iter().zip(c).all(|(a, b)| (a - b).abs() < 1e-6), "a flat hex is its color at the glow");
-        }
-
-        let mut far = camera;
-        far.scale = crate::tactical::MIN_HEX_PX * crate::tactical::PIXEL / 121.0 * 0.9;
-        assert!(hex_lights(&far, 10.0).0.is_empty(), "too small to draw: no lights");
-
-        let mut near = camera;
-        near.scale *= 1.0e4;
-        let (close, _, _) = hex_lights(&near, 10.0);
-        let screen = (320.0f64 + 200.0) * 2.0 / HEX_DOT_PX;
-        assert!(close.len() as f64 <= 2.0 * screen, "a hex wider than the screen lights the screen: {}", close.len());
-        assert!(close.iter().all(|g| (-5.0..=325.0).contains(&g.x) && (-5.0..=205.0).contains(&g.y)));
+        let hull_r = light_scale(camera.lod()).3;
+        let dots = |l: &[Light], seat: usize| {
+            let c = linear(palette.seat(seat)).map(|c| c * 2.0);
+            l.iter()
+                .filter(|g| (g.r as f64 - CLUSTER_DOT_R * hull_r).abs() < 1e-6)
+                .filter(|g| g.color.iter().zip(c).all(|(a, b)| (a - b).abs() < 1e-5))
+                .map(|g| [g.x as f64, g.y as f64])
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(dots(&lights_of(&crowd(6, 0, false)), 0).len(), 6, "six hulls, six dots");
+        assert_eq!(dots(&lights_of(&crowd(5, 0, false)), 0).len(), 5, "one lost, one dot fewer");
+        let both = lights_of(&crowd(6, 4, true));
+        let (a, b) = (dots(&both, 0), dots(&both, 1));
+        assert_eq!((a.len(), b.len()), (6, 4));
+        let mean = |v: &[[f64; 2]]| {
+            [v.iter().map(|p| p[0]).sum::<f64>() / v.len() as f64, v.iter().map(|p| p[1]).sum::<f64>() / v.len() as f64]
+        };
+        let (ca, cb) = (mean(&a), mean(&b));
+        let reach = |v: &[[f64; 2]], c: [f64; 2]| {
+            v.iter().map(|p| ((p[0] - c[0]).powi(2) + (p[1] - c[1]).powi(2)).sqrt()).fold(0.0, f64::max)
+        };
+        let gap = ((ca[0] - cb[0]).powi(2) + (ca[1] - cb[1]).powi(2)).sqrt();
+        assert!(gap > reach(&a, ca) + reach(&b, cb), "the two seats' clusters do not overlap: {gap}");
+        let hit = linear(palette.status(Status::Hit)).map(|c| c * HIT_RING);
+        let ring: Vec<&Light> =
+            both.iter().filter(|g| g.color.iter().zip(hit).all(|(x, y)| (x - y).abs() < 1e-5)).collect();
+        assert!(ring.len() >= 8, "a hit is a ring of lights");
+        assert!(
+            ring.iter().all(|g| {
+                let d = ((g.x as f64 - ca[0]).powi(2) + (g.y as f64 - ca[1]).powi(2)).sqrt();
+                d > reach(&a, ca)
+            }),
+            "outside the hit seat's dots"
+        );
     }
 
     #[test]
@@ -633,7 +849,7 @@ mod tests {
         let (mut hdr, mut out) = (Hdr::new(1, 1), Raster::new(1, 1));
         render(&s, &ops, &mut hdr, &mut out, &ToneLut::new());
         let lum = |p: [f64; 3]| {
-            let at = to_raster(camera.project(p), PIXEL);
+            let at = camera.project(p).map(|c| (c / PIXEL).floor() as i64);
             out.get(at[0], at[1]).unwrap().iter().map(|&c| c as u32).sum::<u32>()
         };
         let apart = |p: [f64; 3], others: &[[f64; 3]]| {
@@ -679,12 +895,13 @@ mod tests {
         assert_eq!((out.w, out.h), (320, 200));
         let lum = |p: [u8; 3]| p[0] as u32 + p[1] as u32 + p[2] as u32;
         let dark = lum(out.get(0, 0).unwrap());
+        let px = |p: [f64; 3]| camera.project(p).map(|c| (c / PIXEL).floor() as i64);
         for h in &view.hulls {
-            let at = to_raster(camera.project(h.row.pos), PIXEL);
+            let at = px(h.row.pos);
             assert!(lum(out.get(at[0], at[1]).unwrap()) > dark + 60, "hull {}", h.hull.id);
         }
         for p in &replay.planets {
-            let at = to_raster(camera.project(p.pos), PIXEL);
+            let at = px(p.pos);
             assert!(lum(out.get(at[0], at[1]).unwrap()) > dark + 60, "world {}", p.id);
         }
     }

@@ -5149,6 +5149,68 @@ The Tors still brake on the course they started on and close into the Cairns'
 reach while still moving, because a picket with no post has no decision that
 holds it off at range; under fire it holds that course (warfare §8.19).
 
+### D.59 Hexes, the clipped galaxy, and a pan that moved glyphs (T-159 – T-163)
+
+**The works trend, superseded (T-159 → T-162).** The first juicy hex line
+showed a hex's works against four frames earlier, as a share of the earlier
+sum over a doubling: whiter and up to 3× brighter rising, 0.3× falling. In
+the 400-yr `expansion` replay works were flat to ~120 yr (9.12 kt in every
+frame, 1,045.73 kt at 400 yr), so the quick 60-yr replay drew every hex flat,
+and at 380 yr two hexes read bright. The author ruled that the brightness
+shows each seat's work-years, not deltas (interface ruling 25).
+
+**The clipped galaxy (T-161).** Worlds kept inside the prescribed hexes, of
+those the unclipped field generates, at seeds 1 and 7:
+
+| seats | hexes | kept |
+|---|---|---|
+| 2 | 10 | 6,236 and 6,242 of 6,729 (92.7%, 92.8%) |
+| 3 | 12 | 6,396 and 6,398 of 6,731 (95.0%, 95.1%) |
+| 6 | 19 | 9,626 and 9,620 of 10,059 (95.7%, 95.6%) |
+| 12 | 37 | 13,765 and 13,773 of 14,056 (97.9%, 98.0%) |
+| 18 | 61 | 18,502 and 18,507 of 18,718 (98.8%, 98.9%) |
+
+The first rule kept only the homeworld hexes and their neighbors, which at 12
+and 18 seats left the hexes inside the homeworld ring empty: 72.4% and 33.7%
+kept on seed 1. The author confirmed no empty center, and the enclosed hexes
+were added.
+
+Clip on against off, the standard bed (3 seats, 800 yr, seeds 1, 7, 42,
+31337, paired; a scratch harness sampling every 5 yr):
+
+| | per seed | mean ± SE |
+|---|---|---|
+| colonies at 800 yr | +0.10, −0.23, +0.06, +0.06% | −0.00% ± 0.08 |
+| colony-years | +0.09, −0.05, +0.07, −0.05% | +0.02% ± 0.04 |
+| work-years | +1.29, +1.33, +0.24, +0.28% | +0.78% ± 0.30 |
+
+Colonies and colony-years are flat. Work-years reads 2.6 SE on four seeds,
+4/4 positive; no replication set was run, so it is not established as an
+effect. Run cost: 71–95 s per run either way.
+
+Test targets, the old binary (`main` at 7fadb4a) beside the new on one
+container, two interleaved rounds: determinism 37.7 and 38.4 s against 37.4
+and 36.5 s; smoke 10.4 and 10.8 s against 10.3 and 10.3 s. A reading of 28.4 s
+for determinism earlier in the session was on the previous container.
+
+**A pan that moved glyphs (T-160).** Two lattices fixed to the screen. Stacks
+were screen cells, so a pan moved hulls between stacks; the regression test
+(hulls a third of a cell apart, the camera moved by tenths of a cell) failed
+at one tenth. Glyph pixels were each glyph's screen position rounded, so two
+stacks less than a pixel apart shared a pixel or not as the view moved — the
+author's "the pointy part of the glyph gets separated or smushed together" in
+`beams`; with the stack lattice fixed and per-glyph rounding restored, the
+same test failed at four tenths of a cell.
+
+**Juicy `beams` (T-163).** Twenty hulls at one point were twenty lights summed
+at one spot, which the tone curve saturated, so a loss changed little, and a
+hit was a flash of intensity 6 over three hull radii in the hit color, which
+covered the seat color. The first cluster pass separated seats only within one
+stack square; the two stacks fell in neighboring squares and the Tor dots
+drew inside the Cairn cluster. Grouping clusters by screen overlap separated
+them: at t 0.152 yr the 20 Cairns and the remaining Tors draw apart, and at
+0.180 yr the Tor cluster is gone.
+
 ## References
 
 - `AGENTS.md` §2 — how to search, how to read a gradient, the six traps, and the

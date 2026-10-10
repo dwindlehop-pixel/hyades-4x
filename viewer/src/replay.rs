@@ -108,6 +108,23 @@ pub struct Frame {
     pub rows: Vec<Row>,
     /// Every non-empty holding, by planet and then by seat.
     pub holdings: Vec<Holding>,
+    /// Each seat's works in each hex, by hex and then seat (T-162): filled
+    /// when the replay is read, from `works_kt` and `owner`.
+    pub hex_works: Vec<HexWorks>,
+}
+
+/// **One seat's works in one hex at one frame** (T-162).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HexWorks {
+    pub hex: (i64, i64),
+    pub seat: usize,
+    /// Works standing on the seat's worlds in the hex, kt.
+    pub kt: f64,
+    /// Those works integrated over the replay up to this frame, kt·yr — the
+    /// trapezoid over the frames.
+    pub work_years: f64,
+    /// Whether one of those worlds holds works of `Band IV` or more.
+    pub band_iv: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -341,6 +358,7 @@ impl Replay {
                 works_kt: col("works_kt"),
                 rows,
                 holdings,
+                hex_works: Vec::new(),
             });
         }
         if frames.is_empty() {
@@ -364,7 +382,7 @@ impl Replay {
             });
         }
 
-        Ok(Replay {
+        let mut replay = Replay {
             meta,
             seats,
             kinds: list("kind"),
@@ -376,7 +394,61 @@ impl Replay {
             frames,
             events,
             events_truncated: v.get("events_truncated").and_then(Value::as_bool).unwrap_or(false),
-        })
+        };
+        replay.fill_hex_works();
+        Ok(replay)
+    }
+
+    /// **Each seat's works and work-years in each hex, frame by frame**
+    /// (T-162). Work-years accumulate by the trapezoid between frames, so
+    /// they are exact at every frame for works that change linearly between
+    /// them.
+    fn fill_hex_works(&mut self) {
+        let hexes: Vec<(i64, i64)> = self.planets.iter().map(|p| self.hex_of(p.pos)).collect();
+        let mut carried: BTreeMap<((i64, i64), usize), (f64, f64)> = BTreeMap::new(); // (kt, work-years)
+        let mut last_t = self.frames.first().map_or(0.0, |f| f.t);
+        for f in &mut self.frames {
+            let mut now: BTreeMap<((i64, i64), usize), (f64, bool)> = BTreeMap::new();
+            for (i, &kt) in f.works_kt.iter().enumerate() {
+                if let (Some(seat), true) = (f.owner.get(i).copied().flatten(), kt > 0.0) {
+                    let e = now.entry((hexes[i], seat)).or_default();
+                    e.0 += kt;
+                    e.1 |= f.works.get(i).is_some_and(|&b| b >= 4.0);
+                }
+            }
+            let dt = f.t - last_t;
+            last_t = f.t;
+            let keys: std::collections::BTreeSet<_> = carried.keys().chain(now.keys()).copied().collect();
+            f.hex_works.clear();
+            for key in keys {
+                let (before, wy) = carried.get(&key).copied().unwrap_or((0.0, 0.0));
+                let (kt, band_iv) = now.get(&key).copied().unwrap_or((0.0, false));
+                let work_years = wy + 0.5 * (before + kt) * dt;
+                carried.insert(key, (kt, work_years));
+                f.hex_works.push(HexWorks { hex: key.0, seat: key.1, kt, work_years, band_iv });
+            }
+        }
+    }
+
+    /// The hex a galaxy point stands in, as lattice coordinates `(i, j)`: its
+    /// center is `hex_origin + i·a + j·b` with `a = w·(cos 30°, sin 30°)`,
+    /// `b = w·(0, 1)` and `w = √3 · hex_side_ly` (flat-top hexes, galaxy §2).
+    pub fn hex_of(&self, p: [f64; 3]) -> (i64, i64) {
+        let side = self.meta.hex_side_ly;
+        let o = self.meta.hex_origin;
+        let (x, y) = (p[0] - o[0], p[1] - o[1]);
+        // Axial coordinates of a flat-top hex: q = i, r = j.
+        let q = (2.0 / 3.0 * x) / side;
+        let r = (-x / 3.0 + 3f64.sqrt() / 3.0 * y) / side;
+        let cube = [q, r, -q - r];
+        let mut rd = cube.map(f64::round);
+        let diff = [0, 1, 2].map(|k| (rd[k] - cube[k]).abs());
+        if diff[0] > diff[1] && diff[0] > diff[2] {
+            rd[0] = -rd[1] - rd[2];
+        } else if diff[1] > diff[2] {
+            rd[1] = -rd[0] - rd[2];
+        }
+        (rd[0] as i64, rd[1] as i64)
     }
 
     /// The first frame's time.
@@ -636,6 +708,42 @@ pub(crate) mod tests {
         let later = picket(10.0);
         assert!(later.hit && later.row.wrecked, "0.25 then wrecked");
         assert!(!r.view_at(10.0).hulls.iter().find(|h| h.row.id == 5).unwrap().hit);
+    }
+
+    /// **Each seat's works and work-years by hex** (T-162): the fixture's
+    /// works, kt, are `[1, 1, 0]` owned by seats 0 and 1 at 0 yr and
+    /// `[1, 2, 0.5]` with world 2 now seat 0's at 10 yr; work-years are the
+    /// trapezoid between frames.
+    #[test]
+    fn hex_works_sum_each_seats_works_by_hex_and_integrate_them() {
+        let r = tiny();
+        let h = |i: usize| r.hex_of(r.planets[i].pos);
+        let at = |k: usize, hex, seat| {
+            r.frames[k].hex_works.iter().find(|w| w.hex == hex && w.seat == seat).copied().unwrap_or(HexWorks {
+                hex,
+                seat,
+                kt: 0.0,
+                work_years: 0.0,
+                band_iv: false,
+            })
+        };
+        // Seat 0: world 0 (1 kt), then worlds 0 and 2 (1 + 0.5 kt); seat 1: world 1 (1, then 2 kt).
+        let want0 = |hex| {
+            (
+                if hex == h(0) { 1.0 } else { 0.0 },
+                (if hex == h(0) { 1.0 } else { 0.0 }) + if hex == h(2) { 0.5 } else { 0.0 },
+            )
+        };
+        for hex in [h(0), h(1), h(2)] {
+            let (a, b) = want0(hex);
+            assert_eq!(at(0, hex, 0).kt, a);
+            assert_eq!(at(1, hex, 0).kt, b);
+            assert!((at(1, hex, 0).work_years - 0.5 * (a + b) * 10.0).abs() < 1e-12);
+        }
+        assert_eq!(at(1, h(1), 1).kt, 2.0, "seat 1 holds world 1 alone");
+        assert!((at(1, h(1), 1).work_years - 0.5 * (1.0 + 2.0) * 10.0).abs() < 1e-12);
+        assert!(r.frames.iter().all(|f| f.hex_works.windows(2).all(|p| (p[0].hex, p[0].seat) < (p[1].hex, p[1].seat))));
+        assert!(r.frames.iter().flat_map(|f| &f.hex_works).all(|w| !w.band_iv), "no Band IV works in the fixture");
     }
 
     #[test]

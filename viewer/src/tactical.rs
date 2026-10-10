@@ -183,9 +183,17 @@ pub fn wreck_glyph_share(wrecked_at: Option<f64>, t: f64, rate: f64) -> f64 {
     }
 }
 
-/// A screen point to the tactical pixel it falls in.
-pub fn to_raster(s: [f64; 2], pixel: f64) -> [i64; 2] {
-    [(s[0] / pixel).floor() as i64, (s[1] / pixel).floor() as i64]
+/// **The tactical pixel a galaxy point is drawn in** (T-160). The galaxy is
+/// rounded to pixels at the view's scale, and the pan is a whole number of
+/// pixels added to every point alike, so two points keep their pixel offset
+/// however the view is panned. Rounding each point's own screen position
+/// instead let neighbors less than a pixel apart fall in one pixel or in
+/// two as the view moved, and glyphs merged and parted.
+pub fn pixel_of(c: &Camera, p: [f64; 3]) -> [i64; 2] {
+    let k = c.scale / PIXEL;
+    let x = (p[0] * k).floor() - (c.center[0] * k).floor() + (c.width / (2.0 * PIXEL)).floor();
+    let y = (-p[1] * k).floor() - (-c.center[1] * k).floor() + (c.height / (2.0 * PIXEL)).floor();
+    [x as i64, y as i64]
 }
 
 /// **Which of two overlapping glyphs is drawn on top** (proposed, R-UI4):
@@ -247,7 +255,7 @@ pub fn plan(s: &Scene) -> Vec<Op> {
         ops.push(Op::World {
             id: p.id,
             s: sp,
-            at: to_raster(sp, PIXEL),
+            at: pixel_of(s.camera, p.pos),
             // A colony is a disc in its seat's color, a pixel wider than an
             // unowned world at every level.
             r: base + if owner.is_some() { 1.0 } else { 0.0 } + if p.home { 1.0 } else { 0.0 },
@@ -261,7 +269,7 @@ pub fn plan(s: &Scene) -> Vec<Op> {
     for h in &s.view.hulls {
         let row = &h.row;
         let sp = screen(row.pos);
-        let here = to_raster(sp, PIXEL);
+        let here = pixel_of(s.camera, row.pos);
         let key =
             GlyphKey { hull: h.hull.hull, design: h.hull.design, beams: h.hull.beams > 0, tubes: h.hull.tubes > 0 };
         let role = r.kinds.get(row.kind).map_or("", String::as_str);
@@ -283,7 +291,7 @@ pub fn plan(s: &Scene) -> Vec<Op> {
             (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
         });
         let route = match (row.in_flight && !row.wrecked, row.dest.and_then(|d| r.planets.get(d as usize))) {
-            (true, Some(to)) => Some((to_raster(screen(to.pos), PIXEL), mix(seat, pal.roles.ground, ROUTE_DIM))),
+            (true, Some(to)) => Some((pixel_of(s.camera, to.pos), mix(seat, pal.roles.ground, ROUTE_DIM))),
             _ => None,
         };
         let mut cargo = [0.0; 9];
@@ -326,17 +334,24 @@ pub fn plan(s: &Scene) -> Vec<Op> {
 /// place is wider and a stack is every hull of one owner there, drawn as a
 /// marker sized by count. Glyphs in one place overlap in [`display_order`];
 /// the one on top carries the place's count.
+/// **The stack square a galaxy point falls in** (§6.4). The squares tile the
+/// galaxy at the view's scale — not the screen — so a pan moves no hull from
+/// one stack to another (T-160).
+pub fn stack_cell(s: &Scene, p: [f64; 3]) -> (i64, i64) {
+    let cell_ly = stack_px(s.camera.lod()) as f64 * PIXEL / s.camera.scale;
+    ((p[0] / cell_ly).floor() as i64, (-p[1] / cell_ly).floor() as i64)
+}
+
 fn stack(ops: &mut [Op], s: &Scene) {
     let lod = s.camera.lod();
-    let cell_px = stack_px(lod);
     // At the galaxy level a group is one owner's armed or unarmed hulls in a
     // place; below it, one owner's hulls of one Design, role, wreck state and
     // quietness.
     type Group = (i64, i64, usize, bool, Option<(GlyphKey, usize, bool, bool)>);
     let mut groups: BTreeMap<Group, Vec<usize>> = BTreeMap::new();
     for (i, h) in s.view.hulls.iter().enumerate() {
-        let Op::Hull { at, key, quiet, .. } = ops[i] else { continue };
-        let cell = (at[0].div_euclid(cell_px), at[1].div_euclid(cell_px));
+        let Op::Hull { key, quiet, .. } = ops[i] else { continue };
+        let cell = stack_cell(s, h.row.pos);
         let kind = (lod != Lod::Galaxy).then_some((key, h.row.kind, h.row.wrecked, quiet));
         groups.entry((cell.0, cell.1, h.hull.owner, key.beams || key.tubes, kind)).or_default().push(i);
     }
@@ -656,27 +671,6 @@ fn brackets(r: &mut Raster, at: [i64; 2], d: i64, c: Rgb) {
     }
 }
 
-/// The hex a galaxy point stands in, as lattice coordinates `(i, j)`: its
-/// center is `hex_origin + i·a + j·b` with `a = w·(cos 30°, sin 30°)`,
-/// `b = w·(0, 1)` and `w = √3 · hex_side_ly` (flat-top hexes, galaxy §2).
-pub fn hex_of(replay: &Replay, p: [f64; 3]) -> (i64, i64) {
-    let side = replay.meta.hex_side_ly;
-    let o = replay.meta.hex_origin;
-    let (x, y) = (p[0] - o[0], p[1] - o[1]);
-    // Axial coordinates of a flat-top hex: q = i, r = j.
-    let q = (2.0 / 3.0 * x) / side;
-    let r = (-x / 3.0 + 3f64.sqrt() / 3.0 * y) / side;
-    let cube = [q, r, -q - r];
-    let mut rd = cube.map(f64::round);
-    let diff = [0, 1, 2].map(|k| (rd[k] - cube[k]).abs());
-    if diff[0] > diff[1] && diff[0] > diff[2] {
-        rd[0] = -rd[1] - rd[2];
-    } else if diff[1] > diff[2] {
-        rd[1] = -rd[0] - rd[2];
-    }
-    (rd[0] as i64, rd[1] as i64)
-}
-
 /// The center of hex `(i, j)`, ly.
 pub fn hex_center(replay: &Replay, (i, j): (i64, i64)) -> [f64; 2] {
     let w = 3f64.sqrt() * replay.meta.hex_side_ly;
@@ -689,7 +683,7 @@ pub fn hex_center(replay: &Replay, (i, j): (i64, i64)) -> [f64; 2] {
 pub fn active_hexes(s: &Scene) -> std::collections::BTreeSet<(i64, i64)> {
     let worlds = s.replay.planets.iter().map(|p| p.pos);
     let hulls = s.view.hulls.iter().map(|h| h.row.pos);
-    worlds.chain(hulls).map(|p| hex_of(s.replay, p)).collect()
+    worlds.chain(hulls).map(|p| s.replay.hex_of(p)).collect()
 }
 
 /// **Whether hexes are drawn at all**: a hex at least [`MIN_HEX_PX`]
@@ -701,46 +695,100 @@ pub fn hexes_shown(s: &Scene) -> bool {
 
 /// **A hex's six corners on screen**, screen pixels, in order around it.
 pub fn hex_corners(s: &Scene, h: (i64, i64)) -> [[f64; 2]; 6] {
-    let side = s.replay.meta.hex_side_ly;
-    let c = hex_center(s.replay, h);
+    hex_corners_ly(s.replay, h).map(|p| s.camera.project([p[0], p[1], 0.0]))
+}
+
+/// **A hex's six corners in the galaxy**, ly, in order around it.
+pub fn hex_corners_ly(replay: &Replay, h: (i64, i64)) -> [[f64; 2]; 6] {
+    let side = replay.meta.hex_side_ly;
+    let c = hex_center(replay, h);
     std::array::from_fn(|k| {
         let (sin, cos) = (60.0 * k as f64).to_radians().sin_cos();
-        s.camera.project([c[0] + side * cos, c[1] + side * sin, 0.0])
+        [c[0] + side * cos, c[1] + side * sin]
     })
 }
 
-/// Frames a hex's works trend looks back over (proposed, R-UI2, T-159).
-pub const TREND_FRAMES: usize = 4;
-/// The change in a hex's works, as a share of what stood there
-/// [`TREND_FRAMES`] frames before, read as the whole trend (proposed): a
-/// doubling.
-pub const TREND_FULL: f64 = 1.0;
+/// **Work-years at which a seat's hold on a hex is established** (T-162,
+/// proposed): `Band II` works — a kiloton — standing a century.
+pub const ESTABLISHED_WORK_YEARS: f64 = 100.0;
+/// The faintest seat line, as a share of full brightness (T-162, proposed).
+pub const SEAT_LINE_FLOOR: f64 = 0.25;
+/// Screen pixels between a hex's nested lines (T-162, proposed).
+pub const HEX_LINE_STEP_PX: f64 = 4.0;
 
-/// **The works trend in each hex** (T-159), from −1 (falling to nothing) to
-/// +1 (doubling or more, or built where nothing stood): the change in the
-/// hex's total works, as a mass, from [`TREND_FRAMES`] frames before the
-/// frame shown, as a share of what stood then, over [`TREND_FULL`]. Masses
-/// add across worlds where Band readings do not. Empty for a replay that
-/// does not carry works as a mass, and for hexes with no works then or now.
-pub fn works_trend(s: &Scene) -> BTreeMap<(i64, i64), f64> {
-    let frames = &s.replay.frames;
-    let now = &frames[s.view.frame];
-    let then = &frames[s.view.frame.saturating_sub(TREND_FRAMES)];
-    let mut sums: BTreeMap<(i64, i64), [f64; 2]> = BTreeMap::new();
-    for (k, f) in [now, then].into_iter().enumerate() {
-        for (p, &kt) in s.replay.planets.iter().zip(&f.works_kt) {
-            if kt > 0.0 {
-                sums.entry(hex_of(s.replay, p.pos)).or_default()[k] += kt;
-            }
-        }
-    }
-    sums.into_iter()
-        .map(|(h, [now, then])| {
-            let share = if then > 0.0 { (now - then) / then } else { f64::INFINITY };
-            (h, (share / TREND_FULL).clamp(-1.0, 1.0))
-        })
-        .collect()
+/// **One seat's line in a hex** (T-162).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SeatLine {
+    pub seat: usize,
+    /// The seat's works in the hex integrated to the instant shown, kt·yr.
+    pub work_years: f64,
+    /// [`SEAT_LINE_FLOOR`] at no work-years, rising to 1 at
+    /// [`ESTABLISHED_WORK_YEARS`].
+    pub brightness: f64,
+    pub established: bool,
 }
+
+/// **What a hex's lines show** (T-162): a line per seat with works standing
+/// in it, the seat with the most work-years outermost, and whether a world
+/// in it holds `Band IV` works.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HexLines {
+    pub seats: Vec<SeatLine>,
+    pub band_iv: bool,
+}
+
+/// **Every hex's lines at the instant shown** (T-162). Work-years run
+/// between the frame shown and the next, so a line brightens smoothly; the
+/// seats present and `Band IV` are the frame's.
+pub fn hex_lines(s: &Scene) -> BTreeMap<(i64, i64), HexLines> {
+    let frames = &s.replay.frames;
+    let f = &frames[s.view.frame];
+    let next = frames.get(s.view.frame + 1);
+    let frac = next.map_or(0.0, |n| if n.t > f.t { ((s.view.t - f.t) / (n.t - f.t)).clamp(0.0, 1.0) } else { 0.0 });
+    let mut out: BTreeMap<(i64, i64), HexLines> = BTreeMap::new();
+    for w in f.hex_works.iter().filter(|w| w.kt > 0.0) {
+        let later = next.and_then(|n| n.hex_works.iter().find(|x| x.hex == w.hex && x.seat == w.seat));
+        let work_years = w.work_years + later.map_or(0.0, |l| (l.work_years - w.work_years) * frac);
+        let e = out.entry(w.hex).or_default();
+        e.band_iv |= w.band_iv;
+        let share = (work_years / ESTABLISHED_WORK_YEARS).clamp(0.0, 1.0);
+        e.seats.push(SeatLine {
+            seat: w.seat,
+            work_years,
+            brightness: SEAT_LINE_FLOOR + (1.0 - SEAT_LINE_FLOOR) * share,
+            established: work_years >= ESTABLISHED_WORK_YEARS,
+        });
+    }
+    for l in out.values_mut() {
+        l.seats.sort_by(|a, b| b.work_years.total_cmp(&a.work_years).then(a.seat.cmp(&b.seat)));
+    }
+    out
+}
+
+/// A hex's corners moved `d` toward its center, in the corners' own units —
+/// none when the hex is too small to take the inset.
+pub fn inset_corners(v: [[f64; 2]; 6], d: f64) -> Option<[[f64; 2]; 6]> {
+    let c = [v.iter().map(|p| p[0]).sum::<f64>() / 6.0, v.iter().map(|p| p[1]).sum::<f64>() / 6.0];
+    let r = ((v[0][0] - c[0]) * (v[0][0] - c[0]) + (v[0][1] - c[1]) * (v[0][1] - c[1])).sqrt();
+    (r > 2.0 * d).then(|| v.map(|p| [p[0] + (c[0] - p[0]) * d / r, p[1] + (c[1] - p[1]) * d / r]))
+}
+
+/// The color of a seat's line: the seat's color toward the ground by its
+/// brightness, and an established line tinted toward the bright text color.
+pub fn seat_line_color(pal: &Palette, l: &SeatLine) -> Rgb {
+    let c = mix(pal.roles.ground, pal.seat(l.seat), l.brightness);
+    if l.established {
+        mix(c, pal.roles.text_bright, ESTABLISHED_TINT)
+    } else {
+        c
+    }
+}
+
+/// How far an established seat line is tinted toward the bright text color
+/// (T-162, proposed).
+pub const ESTABLISHED_TINT: f64 = 0.35;
+/// A `Band IV` border's dashes, on and off, in steps along the edge.
+pub const BAND_IV_DASH: (usize, usize) = (3, 2);
 
 /// The command view's active hexes (flat-top, a side of `hex_side_ly`, one
 /// centered on `hex_origin`), all six edges each.
@@ -748,11 +796,48 @@ fn hex_grid(s: &Scene, r: &mut Raster) {
     if !hexes_shown(s) {
         return;
     }
+    let pal = s.palette;
+    let lines = hex_lines(s);
+    let none = HexLines::default();
+    let px = |p: [f64; 2]| pixel_of(s.camera, [p[0], p[1], 0.0]);
     for h in active_hexes(s) {
-        let v = hex_corners(s, h).map(|p| to_raster(p, PIXEL));
+        let corners = hex_corners_ly(s.replay, h);
+        let l = lines.get(&h).unwrap_or(&none);
+        // The edge: the grid's line, or a dashed bright one where a world
+        // holds `Band IV` works.
+        let v = corners.map(px);
         for k in 0..6 {
             let (p, q) = (v[k], v[(k + 1) % 6]);
-            r.line(p[0], p[1], q[0], q[1], s.palette.roles.hex);
+            if l.band_iv {
+                dashed(r, p, q, BAND_IV_DASH, pal.roles.text_bright);
+            } else {
+                r.line(p[0], p[1], q[0], q[1], pal.roles.hex);
+            }
+        }
+        // A line per seat with works here, nested inward.
+        for (n, seat) in l.seats.iter().enumerate() {
+            let Some(inner) = inset_corners(corners, HEX_LINE_STEP_PX * (n + 1) as f64 / s.camera.scale) else {
+                break;
+            };
+            let v = inner.map(px);
+            let c = seat_line_color(pal, seat);
+            for k in 0..6 {
+                let (p, q) = (v[k], v[(k + 1) % 6]);
+                r.line(p[0], p[1], q[0], q[1], c);
+            }
+        }
+    }
+}
+
+/// A dashed line from `p` to `q`: `dash.0` pixels on, `dash.1` off.
+fn dashed(r: &mut Raster, p: [i64; 2], q: [i64; 2], dash: (usize, usize), c: Rgb) {
+    let n = (q[0] - p[0]).abs().max((q[1] - p[1]).abs()).max(1);
+    for i in 0..=n {
+        if (i as usize) % (dash.0 + dash.1) < dash.0 {
+            let f = i as f64 / n as f64;
+            let x = p[0] as f64 + (q[0] - p[0]) as f64 * f;
+            let y = p[1] as f64 + (q[1] - p[1]) as f64 * f;
+            r.set(x.round() as i64, y.round() as i64, c);
         }
     }
 }
@@ -806,12 +891,12 @@ mod tests {
             for op in &ops {
                 match op {
                     Op::World { id, at, .. } => {
-                        assert_eq!(*at, to_raster(f.camera.project(f.replay.planets[*id as usize].pos), PIXEL));
+                        assert_eq!(*at, pixel_of(&f.camera, f.replay.planets[*id as usize].pos));
                         worlds.push(*id);
                     }
                     Op::Hull { id, at, .. } => {
                         let h = view.hulls.iter().find(|h| h.hull.id == *id).expect("a planned hull is in the view");
-                        assert_eq!(*at, to_raster(f.camera.project(h.row.pos), PIXEL));
+                        assert_eq!(*at, pixel_of(&f.camera, h.row.pos));
                         hulls.push(*id);
                     }
                 }
@@ -872,7 +957,7 @@ mod tests {
         let s = Scene { replay: &f.replay, view: &view, camera: &cam, palette: &f.palette, selected: None, rate: 1.0 };
         let mut r = raster(&cam);
         render(&s, &mut r);
-        (r, to_raster(cam.project(view.hulls[0].row.pos), PIXEL))
+        (r, pixel_of(&cam, view.hulls[0].row.pos))
     }
 
     /// Hull 6 unarmed and moved onto an LOU, the Offensive family's Limited
@@ -1057,39 +1142,55 @@ mod tests {
         assert_eq!(r.count(hex), 0);
     }
 
-    /// **A hex's works trend is its works as a mass, then against now**
-    /// (T-159): summed over the hex's worlds, as a share of what stood
-    /// [`TREND_FRAMES`] frames before — here the first frame — over
-    /// [`TREND_FULL`].
+    /// **A hex's lines are its seats' work-years** (T-162): one per seat with
+    /// works there, the most work-years outermost, brightening from the floor
+    /// to full at the established mark and running smoothly between frames;
+    /// an established line takes the bright tint; a `Band IV` world dashes
+    /// the edge bright.
     #[test]
-    fn a_hexs_works_trend_is_the_change_in_its_summed_works_mass() {
+    fn a_hexs_lines_are_its_seats_work_years() {
         let f = fixture();
-        let trend_at = |t: f64| {
-            let view = f.replay.view_at(t);
-            let s = Scene {
-                replay: &f.replay,
-                view: &view,
-                camera: &f.camera,
-                palette: &f.palette,
-                selected: None,
-                rate: 1.0,
-            };
-            works_trend(&s)
+        let lines_at = |r: &Replay, t: f64| {
+            let view = r.view_at(t);
+            let s = Scene { replay: r, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
+            hex_lines(&s)
         };
-        // The fixture's works, kt: [1, 1, 0] at 0 yr, [1, 2, 0.5] at 10 yr.
-        let mut want: BTreeMap<(i64, i64), [f64; 2]> = BTreeMap::new();
-        for (p, (a, b)) in f.replay.planets.iter().zip([(1.0, 1.0), (1.0, 2.0), (0.0, 0.5)]) {
-            let e = want.entry(hex_of(&f.replay, p.pos)).or_default();
-            (e[0], e[1]) = (e[0] + a, e[1] + b);
+        // At 0 yr nothing has been integrated yet: every seat line is at the floor.
+        let first = lines_at(&f.replay, 0.0);
+        assert!(!first.is_empty());
+        assert!(first.values().flat_map(|l| &l.seats).all(|l| l.work_years == 0.0 && l.brightness == SEAT_LINE_FLOOR));
+        // Halfway to the second frame, work-years are halfway to its.
+        let mid = lines_at(&f.replay, 5.0);
+        for w in f.replay.frames[0].hex_works.iter().filter(|w| w.kt > 0.0) {
+            let at10 = f.replay.frames[1].hex_works.iter().find(|x| x.hex == w.hex && x.seat == w.seat).unwrap();
+            let l = mid[&w.hex].seats.iter().find(|l| l.seat == w.seat).unwrap();
+            assert!((l.work_years - 0.5 * at10.work_years).abs() < 1e-9);
+            let share = l.work_years / ESTABLISHED_WORK_YEARS;
+            assert!((l.brightness - (SEAT_LINE_FLOOR + (1.0 - SEAT_LINE_FLOOR) * share)).abs() < 1e-12);
         }
-        let later = trend_at(10.0);
-        assert_eq!(later.len(), want.len());
-        for (h, [then, now]) in want {
-            let expect = if then > 0.0 { ((now - then) / then / TREND_FULL).clamp(-1.0, 1.0) } else { 1.0 };
-            assert!((later[&h] - expect).abs() < 1e-12, "hex {h:?}: {} against {expect}", later[&h]);
+        for l in mid.values() {
+            assert!(l.seats.windows(2).all(|p| p[0].work_years >= p[1].work_years), "most work-years outermost");
+            assert!(!l.band_iv);
         }
-        assert!(later.values().any(|&t| t > 0.0), "works grew somewhere");
-        assert!(trend_at(0.0).values().all(|&t| t == 0.0), "no frame before the first: flat");
+        // Established, and Band IV.
+        let mut r = f.replay.clone();
+        for w in &mut r.frames[0].hex_works {
+            w.work_years = 2.0 * ESTABLISHED_WORK_YEARS;
+            w.band_iv = true;
+        }
+        let at = lines_at(&r, 0.0);
+        let l = at.values().next().unwrap();
+        assert!(l.band_iv && l.seats[0].established && l.seats[0].brightness == 1.0);
+        let full = f.palette.seat(l.seats[0].seat);
+        let (got, want) =
+            (seat_line_color(&f.palette, &l.seats[0]), mix(full, f.palette.roles.text_bright, ESTABLISHED_TINT));
+        assert!((got.r - want.r).abs() + (got.g - want.g).abs() + (got.b - want.b).abs() < 1e-6, "{got:?} vs {want:?}");
+        let view = r.view_at(0.0);
+        let s = Scene { replay: &r, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
+        let mut raster = raster(&f.camera);
+        paint(&s, &[], &mut raster);
+        assert!(raster.count(f.palette.roles.text_bright) > 0, "the Band IV edge is dashed bright");
+        assert!(raster.count(seat_line_color(&f.palette, &l.seats[0])) > 0, "the seat's line is drawn");
     }
 
     /// A view with copies of hull 5 at its place: `alike` more of the same
@@ -1106,6 +1207,65 @@ mod tests {
         (other.hull.id, other.hull.design) = (200, 4);
         view.hulls.push(other);
         view
+    }
+
+    /// **Panning a paused view regroups nothing** (T-160): stacks are cells
+    /// of the galaxy at the view's scale, not of the screen, so moving the
+    /// camera by any fraction of a cell keeps every stack's members, its drawn
+    /// glyph and the drawing order. On a screen-fixed lattice hulls crossed
+    /// cell edges as the view moved, and glyphs flickered in size and order.
+    #[test]
+    fn panning_keeps_every_stack_and_the_drawing_order() {
+        let f = fixture();
+        let mut view = f.replay.view_at(0.0);
+        let five = *view.hulls.iter().find(|h| h.hull.id == 5).unwrap();
+        // A row of alike hulls a third of a stack cell apart, so some pair
+        // straddles a cell edge wherever the lattice falls.
+        let cell_ly = stack_px(f.camera.lod()) as f64 * PIXEL / f.camera.scale;
+        for k in 0..12 {
+            let mut c = five;
+            (c.hull.id, c.row.id) = (300 + k, 300 + k);
+            c.row.pos[0] += k as f64 * cell_ly / 3.0;
+            view.hulls.push(c);
+        }
+        let stacks = |cam: &Camera| {
+            let s =
+                Scene { replay: &f.replay, view: &view, camera: cam, palette: &f.palette, selected: None, rate: 1.0 };
+            let ops = plan(&s);
+            let mut groups: Vec<Vec<u64>> = ops
+                .iter()
+                .filter_map(|o| match o {
+                    Op::Hull { id, count: 1.., members, .. } => {
+                        Some(if members.is_empty() { vec![*id] } else { members.clone() })
+                    }
+                    _ => None,
+                })
+                .collect();
+            groups.sort();
+            let order: Vec<u64> = drawing_order(&ops).iter().map(|&i| op_id(&ops[i])).collect();
+            // Every drawn glyph's pixel, relative to the first: a pan moves
+            // them all alike or not at all.
+            let at: Vec<[i64; 2]> = drawing_order(&ops)
+                .iter()
+                .filter_map(|&i| if let Op::Hull { at, .. } = &ops[i] { Some(*at) } else { None })
+                .collect();
+            let rel: Vec<[i64; 2]> = at.iter().map(|p| [p[0] - at[0][0], p[1] - at[0][1]]).collect();
+            (groups, order, rel)
+        };
+        let base = stacks(&f.camera);
+        let pixel_ly = PIXEL / f.camera.scale;
+        for step in 1..10 {
+            let mut cam = f.camera;
+            cam.center[0] += step as f64 * cell_ly / 10.0;
+            cam.center[1] -= step as f64 * cell_ly / 7.0;
+            assert_eq!(stacks(&cam), base, "panned {step}/10 of a cell");
+            // And by fractions of a pixel, where rounding each glyph alone
+            // merged and parted glyphs less than a pixel apart.
+            let mut cam = f.camera;
+            cam.center[0] += step as f64 * pixel_ly / 10.0;
+            cam.center[1] += step as f64 * pixel_ly / 9.0;
+            assert_eq!(stacks(&cam), base, "panned {step}/10 of a pixel");
+        }
     }
 
     #[test]
@@ -1147,10 +1307,10 @@ mod tests {
         for op in &ops {
             if let Op::Hull { id, at, .. } = op {
                 let h = view.hulls.iter().find(|h| h.hull.id == *id).unwrap();
-                assert_eq!(*at, to_raster(f.camera.project(h.row.pos), PIXEL), "hull {id} where it stands");
+                assert_eq!(*at, pixel_of(&f.camera, h.row.pos), "hull {id} where it stands");
             }
         }
-        let here = to_raster(f.camera.project(five.row.pos), PIXEL);
+        let here = pixel_of(&f.camera, five.row.pos);
         let order: Vec<usize> = drawing_order(&ops)
             .into_iter()
             .filter(|&i| matches!(&ops[i], Op::Hull { at, .. } if *at == here))
@@ -1214,7 +1374,7 @@ mod tests {
         assert!(ops.iter().any(|o| matches!(o, Op::Hull { id: 5, quiet: true, vector: None, .. })), "unladen MSV");
         let mut r = raster(&f.camera);
         paint(&s, &ops, &mut r);
-        let at = to_raster(f.camera.project(view0.hulls[0].row.pos), PIXEL);
+        let at = pixel_of(&f.camera, view0.hulls[0].row.pos);
         let inner = mix(f.palette.seat(0), f.palette.roles.ground, f.palette.fill_dim());
         assert_eq!(r.get(at[0], at[1]), Some(inner.to_ints()), "one pixel in the dimmed seat color");
         // The same hull laden is a glyph: the MSV square's corner is its
@@ -1238,7 +1398,7 @@ mod tests {
         else {
             panic!("the freighter flies to world 2")
         };
-        assert_eq!(*to, to_raster(f.camera.project(f.replay.planets[2].pos), PIXEL));
+        assert_eq!(*to, pixel_of(&f.camera, f.replay.planets[2].pos));
         assert_eq!(*c, mix(f.palette.seat(0), f.palette.roles.ground, ROUTE_DIM));
         let mut r = raster(&f.camera);
         paint(&s, &ops, &mut r);
@@ -1295,7 +1455,7 @@ mod tests {
         assert_eq!(held(2).unwrap(), vec![(f.palette.seat(1), [1, 0, 0, 0, 0, 0, 0, 0])], "a rival's mine");
         let mut r = raster(&cam);
         paint(&s, &ops, &mut r);
-        let at = to_raster(cam.project(f.replay.planets[0].pos), PIXEL);
+        let at = pixel_of(&cam, f.replay.planets[0].pos);
         let Some(Op::World { r: rad, .. }) = ops.iter().find(|o| matches!(o, Op::World { id: 0, .. })) else {
             panic!()
         };
@@ -1381,12 +1541,12 @@ mod tests {
         let side = r.meta.hex_side_ly;
         for h in [(0, 0), (1, 0), (0, 1), (-2, 3), (5, -4)] {
             let c = hex_center(&r, h);
-            assert_eq!(hex_of(&r, [c[0], c[1], 0.0]), h, "a center is its own hex");
+            assert_eq!(r.hex_of([c[0], c[1], 0.0]), h, "a center is its own hex");
             for k in 0..6 {
                 // Just inside each vertex, still this hex.
                 let a = (60.0 * k as f64).to_radians();
                 let p = [c[0] + 0.95 * side * a.cos(), c[1] + 0.95 * side * a.sin(), 0.0];
-                assert_eq!(hex_of(&r, p), h, "{h:?} vertex {k}");
+                assert_eq!(r.hex_of(p), h, "{h:?} vertex {k}");
             }
         }
         let a = hex_center(&r, (0, 0));
@@ -1402,8 +1562,8 @@ mod tests {
             Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
         let active = active_hexes(&s);
         let mut want: std::collections::BTreeSet<(i64, i64)> =
-            f.replay.planets.iter().map(|p| hex_of(&f.replay, p.pos)).collect();
-        want.extend(view.hulls.iter().map(|h| hex_of(&f.replay, h.row.pos)));
+            f.replay.planets.iter().map(|p| f.replay.hex_of(p.pos)).collect();
+        want.extend(view.hulls.iter().map(|h| f.replay.hex_of(h.row.pos)));
         assert_eq!(active, want);
         assert!(active.len() <= f.replay.planets.len() + view.hulls.len());
     }

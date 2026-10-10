@@ -100,7 +100,19 @@ RATIFIED (T-159, the author's rulings):
 
 23. **The juicy mode displays hexes** (§7.1).
 24. **The juicy mode gives a visual indication of the works trend within a
-    hex** (§7.1).
+    hex** (§7.1). *Amended by ruling 25: it shows work-years, not deltas.*
+
+RATIFIED (T-161 – T-163, the author's rulings):
+
+25. **A hex's brightness shows each seat's work-years in it, not a delta**:
+    the seat's color, a bright line on a well-established hex, one line per
+    seat where seats are intermixed, and a special line where a world holds
+    `Band IV` works (§6.5, §7.1).
+26. **The tactical mode shows hex brightness too** (§6.5).
+27. **In the juicy mode a stack's owner reads while it is under attack, and
+    a stack's loss of a hull is visible** (§7.1).
+28. **Panning a paused tactical view changes no glyph** — not its size, its
+    order, or its shape (§6.4; the bug report behind T-160).
 
 ---
 
@@ -351,7 +363,17 @@ Proposed and built, every magnitude a *placeholder*:
   its lowest-id hull stands. The square widens as the view pulls back: **3
   tactical pixels at the System level, 5 at Sector, 8 at Galaxy**. The glyph
   carries the worst damage, any hit, the sum of its members' cargo and any
-  selection.
+  selection. **The squares tile the galaxy at the view's scale, not the
+  screen** (T-160): a pan regroups nothing, and only a zoom changes the
+  stacks. On a screen-fixed lattice a paused view flickered as it was
+  panned — hulls crossed square edges, and stacks, counts, marker sizes and
+  the glyph drawn on top all changed.
+- **Positions are rounded on a lattice fixed to the galaxy** (T-160,
+  `tactical::pixel_of`): a point's tactical pixel is the galaxy rounded at the
+  view's scale, plus the pan as a whole number of pixels. A pan moves
+  everything drawn by the same number of pixels, or none. Rounding each
+  glyph's own screen position let two stacks less than a pixel apart share a
+  pixel or not as the view moved, so their outlines merged and parted.
 - **The display order** (`tactical::display_order`), bottom to top: wrecks,
   then quiet hulls (§6.6), then the rest; within each, by role — Reserve and
   Scrapped, Scout, Miner, Freighter, Colonizer, Sentry, Picket, so the fighting
@@ -393,9 +415,28 @@ view's hexes (flat-top, `hex_side_ly`, one centered on `hex_origin` — galaxy
 §2) are drawn when a hex is at least 6 tactical pixels across, and **only the
 active ones: a hex holding a world or a hull** (`tactical::active_hexes`). A
 point's hex is found by axial coordinates with cube rounding
-(`tactical::hex_of`). The level of
+(`Replay::hex_of`). The level of
 detail is set by the camera's scale: **Galaxy** below 2 screen pixels per ly,
 **Sector** to 40, **System** above; worlds grow a pixel per level.
+
+**Hex brightness** — RATIFIED that a hex shows each seat's work-years in it
+(rulings 25, 26); the form is proposed (R-UI4, T-162), every magnitude a
+*placeholder*:
+
+- **Work-years** (`Replay::fill_hex_works`, `tactical::hex_lines`): for each
+  hex and seat, the works on the seat's worlds there, as a mass (`works_kt`,
+  §3), integrated over the replay by the trapezoid between frames and run
+  smoothly between them.
+- **A line per seat with works standing in the hex**, nested inward
+  `HEX_LINE_STEP_PX` = 4 screen pixels apart, the seat with the most
+  work-years outermost. Its color is the seat's, from 25% of the way from the
+  ground (`SEAT_LINE_FLOOR`) at no work-years to the full color at
+  `ESTABLISHED_WORK_YEARS` = 100 kt·yr — a kiloton of works, `Band II`,
+  standing a century. **An established line** is tinted 35% toward the bright
+  text color (`ESTABLISHED_TINT`): the bright line.
+- **A `Band IV` world**: the hex's edge is dashed in the bright text color
+  (`BAND_IV_DASH` = 3 on, 2 off) in place of the grid's line. In the 400-yr
+  `expansion` replay one world reaches it, at 400 yr (800 kt).
 
 ### 6.6 Quiet hulls and cargo — OPEN (R-UI4)
 
@@ -457,26 +498,39 @@ author found that bright worlds made everything illegible.
 `a_hull_outshines_any_world_but_a_homeworld` pins that a lone hull renders
 brighter than any lone world other than a homeworld (appendix §D.58.5).
 
-**Hexes and the works trend** — RATIFIED that juicy mode shows hexes and the
-works trend within each (rulings 23, 24); the form is proposed (R-UI2, T-159):
+**Hexes** — RATIFIED that juicy mode shows hexes and each seat's
+work-years in them (rulings 23, 25); the form is proposed (R-UI2, T-159,
+T-162):
 
 - **Which hexes, and when**: the tactical grid's — every hex a world or a hull
   stands in, while a hex is at least `MIN_HEX_PX` tactical pixels across
   (`tactical::hexes_shown`, one predicate for both modes).
-- **The line**: lights of radius 1 px every 1.5 px, inset 2 px from the edge
-  so a shared edge reads as two lines, one per hex. Only the part of an edge
-  on screen is lit, so a hex many screens wide costs what one does.
-- **The trend** (`tactical::works_trend`): the hex's works summed as a mass
-  over its worlds, against the same sum `TREND_FRAMES` = 4 frames earlier, as
-  a share of the earlier sum, over `TREND_FULL` = 1 (a doubling), clamped to
-  −1 … +1; works built where none stood read +1. Flat, the line is the hex
-  color at intensity `HEX_GLOW` = 0.1; rising, it whitens toward the bright
-  text color and brightens up to 3×; falling, it darkens to 0.3×. Brightness
-  and whiteness only, so it never reads as a seat or a material (ruling 19).
-- The window is in frames, so it is 20 yr in the `expansion` replay and
-  0.08 yr in a fight. Works are flat for the first ~120 yr of `expansion`
-  (9.12 kt in every frame to then, 1,045.73 kt at 400 yr), so the quick
-  60-yr replay shows every hex flat.
+- **The grid's line**: lights of radius 1 px every 1.5 px, inset 2 px from the
+  edge so a shared edge reads as two lines, one per hex, in the hex color at
+  `HEX_GLOW` = 0.1; dashed in the bright text color at `HEX_BAND_IV_GLOW` =
+  0.6 where a world holds `Band IV` works. Only the part of a line on screen
+  is lit, so a hex many screens wide costs what one does.
+- **A line per seat**, nested inward as in tactical mode (§6.5), in the same
+  color, at `HEX_SEAT_GLOW` = 0.25 times its brightness — twice that
+  (`HEX_ESTABLISHED`) once established.
+- *Superseded (T-159 → T-162):* the line first showed the works **trend** — a
+  hex's works against four frames earlier, brightening and whitening as they
+  grew. The author ruled that the brightness shows work-years, not deltas
+  (ruling 25). Appendix §D.59.
+
+**Stacks below the galaxy level are clusters** (ruling 27; proposed, R-UI2,
+T-163): each seat's hulls in a stack square are a sunflower spiral of dots,
+one per hull, `CLUSTER_DOT_SPACING` = 2 hull radii apart, each a hull's light
+in the seat's color; past `CLUSTER_MAX_DOTS` = 64 the dots brighten instead.
+A lone hull is one dot where it stands, so losing a hull loses a dot.
+Clusters that would overlap on screen are one place; in a place each seat's
+hulls are one cluster, and where seats share it the clusters stand apart
+around the place's middle, `CLUSTER_GAP` = 3 hull radii apart at their
+nearest. **A hit is a ring** of lights about the cluster in the hit color
+(`HIT_RING` = 1.2 each), not a flash over it, so the seat's color shows
+inside the ring. Wrecks and quiet hulls are single lights where they stand;
+at the galaxy level every hull is a light where it stands. Tactical mode is
+unchanged: there a glyph stands on its hull (ruling 16).
 
 ### 7.2 Style — OPEN (R-UI2)
 

@@ -3,9 +3,11 @@
 //! Per `Hyades_autopilot_colonization_growth.md` §1 the simulation has *no hexes*:
 //! each star system is one point ("a planet"). This module produces exactly that
 //! field plus the seeded homeworlds. The command-view hex tiling
-//! (`Hyades_galaxy_and_autopilot.md` §1–2) is a *presentation* concern, and
-//! nothing here reads it: [`GalaxyConfig::hex_side_ly`] (70 ly a side) is
-//! carried for the command view only (R-G1). Ore color varies at the scale
+//! (`Hyades_galaxy_and_autopilot.md` §1–2) is a *presentation* concern that
+//! generation reads twice, by the author's rulings: each homeworld stands in
+//! its own hex, and a generated world outside the prescribed hexes is
+//! discarded ([`GalaxyConfig::kept_hexes`], T-161). The simulation reads no
+//! hex. Ore color varies at the scale
 //! of the **color sites** (§4.3) — randomly placed, with their own spacing and
 //! width.
 //!
@@ -582,6 +584,16 @@ pub struct GalaxyConfig {
     /// population `Band IV`, and growth is the logistic toward the
     /// homeworld's ceiling — at about 400 yr (appendix §D.42).
     pub homeworld_start_population: (BandTier, f64),
+    /// **Rings of hexes kept around the homeworld hexes** (the author's
+    /// ruling, T-161): a generated world outside them is discarded, so the
+    /// galaxy is the homeworld hexes and every hex within this many steps of
+    /// one — at 3 seats and `1`, the three starting hexes and the nine around
+    /// them. The field is generated exactly as without it, and a kept world
+    /// is the same world, so nothing about the math moved; only the worlds
+    /// past the region are gone. `None` keeps every world. The count `1` is
+    /// the author's at 3 seats; the same rule at other seat counts is
+    /// **proposed**.
+    pub hex_rings_kept: Option<u32>,
 
     pub seed: u64,
 }
@@ -618,6 +630,7 @@ impl GalaxyConfig {
             homeworld_outpost_distance_ly: 5.0,
             homeworld_outpost_band: 1.0,
             homeworld_start_population: (BandTier::II, 0.785),
+            hex_rings_kept: Some(1),
             seed,
         };
         cfg.planet_count = cfg.derived_planet_count();
@@ -768,6 +781,61 @@ impl GalaxyConfig {
             2 | 3 => self.homeworld_hexes().first().map_or((0.0, 0.0), |h| (h.x, h.y)),
             _ => (0.0, 0.0),
         }
+    }
+
+    /// **The hex a galaxy point stands in**, as axial coordinates `(q, r)` on
+    /// the command view's flat-top grid ([`Self::hex_grid_origin`],
+    /// [`Self::hex_side_ly`]) — the same reading the viewer makes.
+    pub fn hex_of(&self, x: f64, y: f64) -> (i64, i64) {
+        let (ox, oy) = self.hex_grid_origin();
+        let (x, y) = (x - ox, y - oy);
+        let q = (2.0 / 3.0 * x) / self.hex_side_ly;
+        let r = (-x / 3.0 + SQRT_3 / 3.0 * y) / self.hex_side_ly;
+        let cube = [q, r, -q - r];
+        let mut rd = cube.map(f64::round);
+        let diff = [0, 1, 2].map(|k| (rd[k] - cube[k]).abs());
+        if diff[0] > diff[1] && diff[0] > diff[2] {
+            rd[0] = -rd[1] - rd[2];
+        } else if diff[1] > diff[2] {
+            rd[1] = -rd[0] - rd[2];
+        }
+        (rd[0] as i64, rd[1] as i64)
+    }
+
+    /// **The hexes a galaxy keeps** (T-161): every hex within
+    /// [`Self::hex_rings_kept`] steps of a homeworld hex, and every hex the
+    /// ring of homeworld hexes encloses — at 12 and 18 seats that ring has an
+    /// inside, which is the ground between the empires, not the edge of the
+    /// galaxy. `None` when every world is kept.
+    pub fn kept_hexes(&self) -> Option<std::collections::BTreeSet<(i64, i64)>> {
+        let rings = self.hex_rings_kept? as i64;
+        let within = |(q, r): (i64, i64), k: i64, out: &mut std::collections::BTreeSet<(i64, i64)>| {
+            for dq in -k..=k {
+                for dr in (-k).max(-dq - k)..=k.min(-dq + k) {
+                    out.insert((q + dq, r + dr));
+                }
+            }
+        };
+        let mut kept = std::collections::BTreeSet::new();
+        let homes: Vec<(i64, i64)> = self.homeworld_hexes().iter().map(|h| self.hex_of(h.x, h.y)).collect();
+        for &h in &homes {
+            within(h, rings, &mut kept);
+        }
+        // Six or more seats ring a hex at the galactic center: everything
+        // inside the ring is kept too.
+        if self.players >= 6 {
+            let center = self.hex_of(0.0, 0.0);
+            let radius = homes
+                .iter()
+                .map(|&(q, r)| {
+                    let (dq, dr) = (q - center.0, r - center.1);
+                    (dq.abs() + dr.abs() + (dq + dr).abs()) / 2
+                })
+                .max()
+                .unwrap_or(0);
+            within(center, radius, &mut kept);
+        }
+        Some(kept)
     }
 
     /// XY scale length `L_xy` (ly) for the `Gamma(2, L_xy)` radial profile —
@@ -1225,6 +1293,16 @@ impl Galaxy {
             }
         }
 
+        // **The galaxy is its prescribed hexes** (T-161): a wild world outside
+        // them is discarded. Each world was drawn from its own fork of the
+        // stream, so a kept one is exactly the world it was.
+        if let Some(kept) = config.kept_hexes() {
+            planets.retain(|w| kept.contains(&config.hex_of(w.position.x, w.position.y)));
+            for (i, w) in planets.iter_mut().enumerate() {
+                w.id = PlanetId(i as u32);
+            }
+        }
+
         // --- homeworlds at hex centers on a vertex-transitive ring (§2, §3) ---
         let mut homeworlds = Vec::with_capacity(config.players);
         // A color-centered homeworld's own deposit: each basic under `Band I`,
@@ -1404,7 +1482,8 @@ mod tests {
     #[test]
     fn identical_ground_turns_one_wedge_to_every_seat_and_steps_colors_only_when_asked() {
         for (ground, seats) in [(Ground::ColorRotated, 3), (Ground::Identical, 3), (Ground::Identical, 2)] {
-            let cfg = GalaxyConfig { ground, ..GalaxyConfig::new(seats, 9) };
+            // The whole field, so the wedge's worlds line up by index.
+            let cfg = GalaxyConfig { ground, hex_rings_kept: None, ..GalaxyConfig::new(seats, 9) };
             let g = Galaxy::generate(cfg).unwrap();
             let wild: Vec<&Planet> = g.planets.iter().filter(|p| !p.is_homeworld && p.archetype.is_none()).collect();
             assert_eq!(cfg.symmetry_turns(), seats);
@@ -1435,7 +1514,12 @@ mod tests {
     #[test]
     fn a_color_centered_homeworld_stands_alone_among_one_site_of_each_color() {
         for ground in [Ground::Random, Ground::Identical, Ground::ColorRotated] {
-            let cfg = GalaxyConfig { ground, homeworlds: Homeworlds::ColorCentered, ..GalaxyConfig::new(3, 9) };
+            let cfg = GalaxyConfig {
+                ground,
+                homeworlds: Homeworlds::ColorCentered,
+                hex_rings_kept: None,
+                ..GalaxyConfig::new(3, 9)
+            };
             let g = Galaxy::generate(cfg).unwrap();
             // No companions: the wild ground, the homeworlds, and three planted
             // outposts per seat.
@@ -1492,8 +1576,10 @@ mod tests {
     fn the_hex_places_the_homeworlds_and_nothing_else() {
         // R-G1 and §2: the hex is a human-legible interface, and each
         // homeworld stands at the center of one. Changing the hex moves the
-        // homeworlds and their companions and no wild world.
-        let cfg = GalaxyConfig::new(3, 7);
+        // homeworlds and their companions and no wild world. (It also moves
+        // the kept region, T-161; that is pinned below, so here the whole
+        // field is kept.)
+        let cfg = GalaxyConfig { hex_rings_kept: None, ..GalaxyConfig::new(3, 7) };
         assert_eq!(cfg.hex_side_ly, 70.0);
         assert!((cfg.hex_across_flats_ly() - 121.243_556_529_821_4).abs() < 1e-9);
         let a = Galaxy::generate(cfg).unwrap();
@@ -1512,6 +1598,51 @@ mod tests {
         }
         // Three homeworlds and two companions each.
         assert_eq!(moved, 9);
+    }
+
+    /// **The galaxy is its prescribed hexes** (T-161, the author's rulings):
+    /// at 3 seats the three starting hexes and the nine around them; at every
+    /// seat count the homeworld hexes, the ring around them, and — no empty
+    /// center — everything the homeworld ring encloses. Every world stands in
+    /// a kept hex, and every kept world is exactly the world the unclipped
+    /// field had there: worlds are discarded, never redrawn.
+    #[test]
+    fn the_galaxy_is_its_prescribed_hexes_and_a_kept_world_is_unchanged() {
+        for (seats, hexes) in [(2, 10), (3, 12), (6, 19), (12, 37), (18, 61)] {
+            let cfg = GalaxyConfig::new(seats, 7);
+            let kept = cfg.kept_hexes().unwrap();
+            assert_eq!(kept.len(), hexes, "{seats} seats");
+            for h in cfg.homeworld_hexes() {
+                assert!(kept.contains(&cfg.hex_of(h.x, h.y)), "{seats} seats: a homeworld hex is kept");
+            }
+            if seats >= 6 {
+                assert!(kept.contains(&cfg.hex_of(0.0, 0.0)), "{seats} seats: no empty center");
+            }
+        }
+        let cfg = GalaxyConfig::new(3, 7);
+        let kept = cfg.kept_hexes().unwrap();
+        let clipped = Galaxy::generate(cfg).unwrap();
+        let whole = Galaxy::generate(GalaxyConfig { hex_rings_kept: None, ..cfg }).unwrap();
+        assert!(clipped.planets.len() < whole.planets.len(), "something was discarded");
+        let by_place: std::collections::BTreeMap<[u64; 3], &Planet> = whole
+            .planets
+            .iter()
+            .map(|p| ([p.position.x.to_bits(), p.position.y.to_bits(), p.position.z.to_bits()], p))
+            .collect();
+        for (i, p) in clipped.planets.iter().enumerate() {
+            assert_eq!(p.id.0 as usize, i, "ids are dense");
+            assert!(kept.contains(&cfg.hex_of(p.position.x, p.position.y)), "world {i} outside the kept hexes");
+            let key = [p.position.x.to_bits(), p.position.y.to_bits(), p.position.z.to_bits()];
+            let q = by_place.get(&key).expect("a kept world stands where the whole field had one");
+            assert_eq!(p.habitability.bands().to_bits(), q.habitability.bands().to_bits());
+            assert_eq!(p.biosphere.bands().to_bits(), q.biosphere.bands().to_bits());
+            for m in Basic::ALL {
+                assert_eq!(p.minerals.get(m).kilotons().to_bits(), q.minerals.get(m).kilotons().to_bits());
+            }
+        }
+        let outside = whole.planets.iter().filter(|p| !kept.contains(&cfg.hex_of(p.position.x, p.position.y))).count();
+        assert_eq!(clipped.planets.len() + outside, whole.planets.len(), "exactly the worlds outside are gone");
+        assert_eq!(clipped.homeworlds.len(), 3);
     }
 
     #[test]

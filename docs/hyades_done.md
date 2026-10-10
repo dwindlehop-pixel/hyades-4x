@@ -152,6 +152,59 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-163. Juicy stacks show their owner and their count under fire
+
+*Opened and built in one landing at the author's report on the `beams`
+replay: "I can't tell which seat owns which stack in juicy mode on beams when
+they are being attacked. I also can't tell when the stack decreases in
+number."* Twenty hulls at one point were twenty lights summed into one blob
+that the tone curve saturated, and a hit flash covered it. Below the galaxy
+level a stack is now a spiral of dots, one per hull in its seat's color;
+seats whose clusters would overlap stand apart; a hit is a ring about the
+cluster (`Hyades_interface.md` ruling 27, §7.1).
+
+### T-162. Hex brightness shows each seat's work-years, in both modes
+
+*Opened and built in one landing at the author's rulings: "The juicy hex
+brightness is important, but it should not show deltas. The color should show
+the work-years of the seat (with a bright line on well established hexes).
+Multiple lines for intermixed hexes. Special line for Band IV works. I need a
+tactical hex brightness, also."* Each hex carries a line per seat with works
+in it, in the seat's color, brightening with the seat's work-years there to an
+established mark, then tinted bright; the edge is dashed bright where a world
+holds `Band IV` works. Work-years are integrated per hex and seat when a
+replay is read. T-159's trend is superseded (`Hyades_interface.md` rulings
+25–26, §6.5, §7.1; magnitudes placeholders under R-UI2 and R-UI4).
+
+### T-161. The galaxy is its prescribed hexes
+
+*Opened and built in one landing at the author's rulings: "there's no purpose
+in single planet hexes. The three seat galaxy should have 3 starting hexes
+plus 9 hexes. Planets outside the prescribed hexes should be clipped and not
+generated. No need to change the math, just discard planets generated that
+fall outside the target regions", and "No empty center confirmed".*
+Generation discards every wild world outside the homeworld hexes, the ring
+around them and what the homeworld ring encloses
+(`GalaxyConfig::kept_hexes`, `hex_rings_kept` = 1); a kept world is bit for
+bit the world it was (`Hyades_galaxy_and_autopilot.md` §1; appendix §D.59).
+AGENTS.md §4's "no hexes in the engine" is amended: the simulation reads no
+hex, and generation reads two.
+
+### T-160. A paused tactical view no longer flickers as it is panned
+
+*Opened and built in one landing at the author's report: "The tactical view
+flickers when paused and panning. Glyphs change in size and ordering."*
+Two causes, both a lattice fixed to the screen. Stacks were cells of the
+screen, so a pan moved hulls between them and changed counts, marker sizes and
+the glyph drawn on top; and each glyph's pixel was its own screen position
+rounded, so in `beams` two stacks less than a pixel apart shared a pixel or
+not as the view moved — the author's second report, "the pointy part of the
+glyph gets separated or smushed together". Both now tile the galaxy at the
+view's scale, with the pan a whole number of pixels (`tactical::stack_cell`,
+`tactical::pixel_of`; `Hyades_interface.md` §6.4, ruling 28).
+`panning_keeps_every_stack_and_the_drawing_order` fails on the old stack
+lattice at a tenth of a cell and on per-glyph rounding at four tenths of one.
+
 ### T-159. Juicy hexes and the works trend within each
 
 *Opened and built in one landing at the author's rulings: "Juicy needs to
