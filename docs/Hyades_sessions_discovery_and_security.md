@@ -1,7 +1,7 @@
 # Hyades — sessions, discovery and security (Rev 1)
 
 How a player gets from a link to a seat, how a public game is found, how a
-league restricts its seats, how a match record is verified, and what the
+roster restricts the seats, how a match record is verified, and what the
 design does and does not detect when a majority of seats colludes. **This spec
 amends `Hyades_netcode.md` (Rev 4)**: it replaces the server of netcode §10
 with a static site and third-party rendezvous, and it states which attacks are
@@ -42,6 +42,17 @@ RATIFIED (T-164, the author's ruling on the first draft):
 6. **The host can kick a player. Before the game starts, an observer takes
    the kicked player's spot** (§5.1).
 
+RATIFIED (T-164, the author's rulings on the second draft):
+
+7. **No IP address is exposed in chat.** The link is the GitHub Pages site's
+   address with a payload that carries no network address, and no message a
+   person can read by holding the link carries one either (§4.4, §5.1).
+8. **League standings, rankings and results are outside the game design.** The
+   project computes none and hosts none. The game's part in league play ends at
+   restricting the seats to a roster and handing every participant a
+   verifiable match record (§5.2); what an organizer does with records is
+   theirs.
+
 ---
 
 ## 2. Terms
@@ -78,9 +89,8 @@ browser tab ── Ed25519 identity (WebCrypto) ── engine in a Worker (apply
 
 **Nothing we operate computes anything.** Pages serves files. The rendezvous
 is third-party public infrastructure that carries opaque bytes. STUN uses
-public servers. There is no TURN (§4.3). The only places computation is
-optional are a league's own repository (§5.2's GitHub Actions verifier) and a
-user who chooses to run their own relay.
+public servers. There is no TURN (§4.3). The only optional computation is a
+relay a user chooses to run themselves.
 
 **One trust rule covers every transport: authority comes from the Ed25519
 signatures inside a payload, never from the transport.** A relay's own event
@@ -136,8 +146,8 @@ Recommendation:
   IndexedDB included, after seven days of Safari use without interaction with
   the site ([Apple's 7-day cap](https://docs.didomi.io/releases-and-announcements/announcements/apple-implements-7-day-cap-on-script-writable-storage)),
   so a league key that is never backed up will be lost on some players'
-  machines. A lost key is replaced by the league organizer re-signing the
-  roster (§5.2).
+  machines. A player who loses a key sends a new one to whoever makes the
+  next roster link (§5.2).
 - **A display name is self-chosen and unauthenticated.** The client shows a
   short fingerprint of the key beside it (*placeholder*: 4 words or a glyph),
   so two players named alike are distinguishable.
@@ -150,6 +160,10 @@ A frame is self-authenticating, so every transport below carries the same
 1. **WebRTC direct**, on netcode §3.1's circulant overlay.
 2. **WebRTC through another seat** — netcode §9.2's flood-with-dedup relay.
 3. **The rendezvous itself** (§4.3), for a seat that reaches no peer.
+
+Under §4.4's recommended default, link and practice games use rung 3 alone;
+the first two rungs apply when every party has opted in to direct
+connections.
 
 ### 4.3 No TURN; frames over the rendezvous as the fallback — OPEN (R-SES3)
 
@@ -177,21 +191,31 @@ Two limits:
   relay's choice; frames are public by design (netcode §2(c)), so a relay
   keeping them leaks nothing.
 
-### 4.4 IP addresses — RATIFIED as a hazard, mitigation OPEN (R-SES4)
+### 4.4 IP addresses — RATIFIED (ruling 7) for the link and public messages; peer connections OPEN (R-SES4)
 
-**A WebRTC connection reveals each end's public IP address to the other.** A
-streamer who posts a link in Twitch chat reveals their address to every
-stranger who joins or spectates through a direct link. This is a property of
-WebRTC, not of this design, and the itch.io barrier (ruling 4) means the
-people joining are strangers.
+There are three places an address could appear, and they need separate rules.
 
-Recommendation: a **private mode**, chosen by the originator in the link and
-by any joiner for themselves, in which the client opens **no** WebRTC
-connection and uses the relay transport (§4.3) for everything. Cost: every
-frame takes a relay round trip, which is acceptable at one barrier per round.
-Signaling events are encrypted to their recipient (X25519 from WebCrypto's
-Secure Curves, or NIP-44), because SDP carries addresses and a room's topic is
-readable by anyone holding the link.
+| where | who can read it | rule |
+|---|---|---|
+| **the link** | everyone in the chat | RATIFIED: carries no address. It is the Pages URL, a room id, an engine hash, the host's public key and parameters (§5.1) |
+| **rendezvous messages** (room descriptor, join requests, announcements, signaling) | anyone holding the link, and the relay operators | RATIFIED: carry no address in readable form. Signaling, which contains WebRTC's SDP and ICE candidates and therefore addresses, is **encrypted to its one recipient** (X25519 from WebCrypto's Secure Curves, or NIP-44) |
+| **a WebRTC connection** | the one peer at the other end | OPEN, below |
+
+**A WebRTC connection reveals each end's public IP address to the peer it
+connects to.** That is a property of WebRTC. In a link game the peers are
+strangers from the chat, so a direct connection to them gives a stranger the
+address even though the chat never sees it.
+
+Recommendation: **relay-only is the default for link games and public
+practice.** The client opens no WebRTC connection and sends every frame over
+the rendezvous (§4.3); no participant or spectator learns another's address,
+and the relays learn each client's address as any web server does. Direct
+WebRTC is offered only when every party has opted in — the natural case is a
+league whose roster knows each other. Cost: every frame takes a relay round
+trip, once per barrier, and relay-only spectators read the relays rather than
+the gossip tier, which reopens §4.3's fan-out concern for a large audience.
+What would settle it: the author's ruling on the default, and R-SES1's
+prototype measuring relay latency per barrier at 18 seats.
 
 ---
 
@@ -199,9 +223,19 @@ readable by anyone holding the link.
 
 ### 5.1 The link — OPEN (R-SES5)
 
-**The link.** `https://<pages-host>/<repo>/#j=<payload>`. The payload is in the
-URL **fragment**, which the browser does not send to the server, so GitHub
-Pages never sees which room a person opened. Recommended payload, base64url:
+**The link is the game's GitHub Pages site.** For this repository:
+
+```
+https://dwindlehop-pixel.github.io/hyades-4x/#j=<payload>
+```
+
+Clicking it loads the client from Pages, the same page as the menu, and the
+client reads the payload. The payload is in the URL **fragment**, which the
+browser does not send to the server, so GitHub Pages never sees which room a
+person opened. **It contains no network address** (ruling 7): the room is
+found through the rendezvous by `room_id`, and addresses, if any are exchanged
+at all, travel encrypted to one recipient (§4.4). Recommended payload,
+base64url:
 
 | field | bytes | purpose |
 |---|---|---|
@@ -280,90 +314,33 @@ protocol, and the link's originator is the defense (step 4).
 
 ### 5.2 League play — OPEN (R-SES6)
 
-A **league** is a GitHub repository (or a directory in one) maintained by its
-organizer, served by Pages. Recommendation:
+The game provides two things for a league and nothing else (ruling 8):
+**seats restricted to a roster**, and **a verifiable match record for every
+participant** (§5.4). Who organizes a league, where its fixtures and results
+live, and how it ranks anyone are outside the design. Recommendation:
 
-- **The roster is a file**: the rostered Ed25519 public keys and display
-  names, and the league's parameters, signed by the organizer's key.
-  A player's key reaches the organizer out of band (a Discord message, a pull
-  request adding it); the client prints the key to copy.
-- **A league match link** carries the league's address and a fixture id
-  instead of an originator. The genesis seat table is exactly the fixture's
-  rostered keys, in roster order. Netcode §3.1's seat binding already refuses
-  every unlisted key, so "only rostered players may participate" needs no new
+- **A roster link is a link game whose seat table is fixed in the link.** The
+  person who makes it (the organizer, or any rostered player) lists the
+  rostered Ed25519 public keys; the client prints each player's key for them to
+  send to whoever makes the link, by any means.
+- **The roster rides in the link** when it fits: 32 bytes per key, so 18 keys
+  add 576 bytes and the link is 935 characters (computed for this repository's
+  host) — within Discord's
+  limit, over Twitch's 500. A **watch link**, without the roster, is the short
+  form for chat (§5.1's payload with a spectator flag); spectators need no
+  roster because the signed genesis carries it.
+- **Only rostered players may take a seat**: the genesis seat table is the
+  roster, and netcode §3.1's seat binding refuses every other key. No new
   mechanism.
 - **Auditing the parameters is signing genesis.** The client shows the
-  parameters, the engine hash and the card list hash, and a rostered player
-  who has not signed is not seated. A signature is non-repudiable consent
-  (netcode §7).
-- **Verification policy** defaults to netcode §8.2's Ranked preset; a league
+  parameters, the engine hash and the card list hash before a rostered player
+  signs, and a player who has not signed is not seated. A signature is
+  non-repudiable consent (netcode §7).
+- **Verification policy** defaults to netcode §8.2's Ranked preset; the link
   may name observer seats (Refereed).
-- **Anyone observes**: spectators join the gossip tier through the fixture's
-  rendezvous topic.
-- **Standings are the league's own**, computed from its verified records
-  (§5.2.1). There is no global rank (ruling 3); two leagues may rank the same
-  player differently.
-
-#### 5.2.1 How a result reaches the standings — OPEN (R-SES6)
-
-A league has no server, so its results live in its repository and its
-standings are a file that GitHub builds from them. Four machines take part,
-and three of them are GitHub's:
-
-| machine | operated by | what it does here |
-|---|---|---|
-| a player's browser | the player | holds the match record when the match ends; initiates the submission |
-| github.com | GitHub | receives the submission (an issue or a pull request) and stores the repository |
-| a GitHub Actions runner | GitHub (a short-lived Linux VM per job) | runs the league's workflow: verifies the record, then commits it and the recomputed standings |
-| GitHub Pages | GitHub | serves the standings page and the records to anyone's browser |
-
-The sequence, recommended form:
-
-1. **The match ends.** Every seat's browser holds the full transcript (§5.4).
-   The client shows **Submit to league**.
-2. **The player initiates it.** The button opens github.com in a new tab, on the
-   league repository's **issue form** "Submit a result", with the fixture id
-   filled in. The player attaches the match record file (the client has
-   downloaded it, packed as a `.zip`; which file types GitHub accepts as issue
-   attachments, and whether a workflow can fetch them anonymously, is untested) and presses **Submit new issue**. That one HTTPS request,
-   from the player's browser to github.com, is the only request the player
-   makes. It needs a GitHub account.
-3. **github.com responds** by storing the issue and firing the `issues: opened`
-   event, which starts the league's workflow on an Actions runner.
-4. **The runner verifies** in a job with read-only permissions: it downloads
-   the attachment, checks that the genesis seat table is the fixture's roster,
-   fetches the engine build named in genesis, replays the transcript natively —
-   bit-identical to the wasm32 build since T-127 (netcode H4a) — and computes
-   the §7.2 verdicts.
-5. **If every round agrees**, a second job with write permission commits the
-   record under `results/` and the recomputed `standings.json` to the main
-   branch, comments the verdict on the issue and closes it. If not, it
-   comments the verdicts and leaves the issue open for the organizer.
-6. **The commit triggers the Pages deployment.** Anyone opening the league's
-   standings page gets the new `standings.json` from Pages, and can download
-   any record from `results/` and verify it again in their own browser.
-
-No person has to act after step 2 for a conforming result. The first seat to
-submit wins; a later submission of the same fixture is compared with the
-stored record and, if it differs, the workflow comments the difference — which
-is a witness transcript for §7.1's class C.
-
-**The account requirement is the cost.** Ruling 4 (no sign-in) holds for
-playing a league match and for viewing standings; submitting needs one GitHub
-account per submission. Two alternatives, both OPEN:
-
-- **The organizer submits everything.** Players send the record file to the
-  organizer by any means (a Discord attachment); only the organizer needs an
-  account. Same workflow from step 3; slower, no account for players.
-- **A pull request instead of an issue.** The player uploads the file into
-  `results/` through github.com's web upload, which forks the repository and
-  opens a pull request. The verification job runs on the pull request with
-  read-only permissions, and the organizer clicks merge. More steps for the
-  player; the organizer approves every result by hand.
-
-What would settle it: the author choosing between player-submitted issues,
-organizer-submitted results, and pull requests; then one league fixture run
-through the chosen path end to end.
+- **Anyone observes** through the watch link.
+- **After the match** every participant and spectator can export the match
+  record and verify it (§5.4). That is the end of the game's involvement.
 
 ### 5.3 Public practice — OPEN (R-SES7)
 
@@ -569,7 +546,7 @@ There is no server to flood. What remains:
 | netcode §10 (Rev 4) | "no protocol frame ever transits the server" | still true of any server we run; frames **may** transit a third-party relay for a seat that reaches no peer (§4.3) |
 | netcode §3.2 | the spectator rendezvous sample comes from the lobby | it comes from the room's rendezvous topic |
 | netcode §3.3 | TURN must exist and be metered | **withdrawn** (§4.3); the relay transport is the last rung |
-| netcode §7 | "the lobby publishes the descriptor with the full signature set" | the originator (or the league repository) publishes it on the rendezvous; genesis gains `room_id`, `host_pubkey` or the league fixture id, and `rematch_of` |
+| netcode §7 | "the lobby publishes the descriptor with the full signature set" | the originator publishes it on the rendezvous; genesis gains `room_id`, `host_pubkey` and `rematch_of` |
 | netcode §10 | room creation gated by a challenge token | room announcement gated by proof-of-work (§7.4) |
 | netcode §11 | CSP as a response header | a meta tag; Pages sends no custom headers (§8) |
 | netcode §8.3 | the vote's failures "are identifiable — the transcript names who signed what" | true of classes A and B; **false of class C from one transcript** (§7.1) |
@@ -586,11 +563,11 @@ a pointer here meanwhile.
 | code | decision | status | what would settle it |
 |---|---|---|---|
 | **R-SES1** | Nostr as the rendezvous; relay count; a second backend | OPEN — recommended (§3.1) | a week-long prototype measuring join completion through the pinned relays and any rate limiting at an 18-seat signaling burst |
-| **R-SES2** | identity: per-tab keys for casual play, persistent backed-up keys for leagues; name plus fingerprint | OPEN — recommended (§4.1) | the author's ruling; a test of key survival in Safari |
+| **R-SES2** | identity: per-tab keys for casual play, persistent backed-up keys for roster play; name plus fingerprint | OPEN — recommended (§4.1) | the author's ruling; a test of key survival in Safari |
 | **R-SES3** | no TURN; frames over the rendezvous as the last transport | OPEN — recommended (§4.3) | the R-SES1 prototype, plus the fraction of seats that reach no peer |
-| **R-SES4** | private mode: no WebRTC, relay transport only | OPEN — recommended (§4.4) | the author's ruling on whether a streamer's address is the client's concern |
+| **R-SES4** | relay-only as the default for link and practice games; direct WebRTC only when every party opts in | OPEN — recommended (§4.4); the link and public messages carrying no address is RATIFIED (ruling 7) | the author's ruling on the default; R-SES1's relay latency per barrier |
 | **R-SES5** | link format, originator sequencing, the spectator queue, rematch host and queue order; the pre-genesis kick is RATIFIED (ruling 6) | OPEN — recommended (§5.1) | the author's ruling; whether first-received queue order is acceptable or a lottery is wanted (a lottery seeded by the rematch's joint seed resists timing races but not sybils) |
-| **R-SES6** | leagues as repositories, signed rosters; results submitted as an issue and verified and committed by an Actions workflow | OPEN — recommended (§5.2, §5.2.1) | the author choosing the submission path (player issue, organizer, or pull request); one league fixture run end to end |
+| **R-SES6** | roster links: the seat table fixed in the link, a short watch link for chat; standings and results outside the design (ruling 8) | OPEN — recommended (§5.2) | one roster match run end to end |
 | **R-SES7** | practice modes as a static table; room announcements; no ranking of the list | OPEN — recommended (§5.3) | the author choosing the two or three modes |
 | **R-SES8** | match record format and verification steps | OPEN — recommended (§5.4) | T-32 (the digest) and T-165 (the engine in the browser) |
 | **R-SES9** | light, unverified spectators | OPEN — build only if needed (§6) | T-166 |
