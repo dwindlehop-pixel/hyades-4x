@@ -48,6 +48,10 @@ const DESIGNS: [&str; 12] =
 /// spans hundredths of a light year, and at two decimals (the first format)
 /// every hull in one moved in 0.01-ly jumps whatever the sim did (T-154).
 const POSITION_DECIMALS: usize = 4;
+/// **Decimals a wreck time is written to, yr** — 0.000001 yr, about 32 s.
+/// A viewer fades a wreck over a quarter second of wall time (T-158), which
+/// at a fight's playing rate is a few thousandths of a year.
+const WRECK_DECIMALS: usize = 6;
 
 /// The materials on the Exchange's books, in [`Material`] order — what a
 /// hold carries and a holding keeps.
@@ -62,11 +66,14 @@ const CATEGORIES: [&str; 7] = ["Production", "Mining", "Vehicles", "Population",
 /// whether it is a homeworld.
 const PLANET_FIELDS: [&str; 10] = ["id", "x", "y", "z", "hab", "bio_max", "cyan", "magenta", "yellow", "home"];
 /// Per frame, one array per field, aligned to `planets`: the owning seat
-/// (`-1` unowned), population and works as Band readings.
-const FRAME_PLANET_FIELDS: [&str; 3] = ["owner", "pop", "works"];
+/// (`-1` unowned), population and works as Band readings, and works as the
+/// mass it is, kt to four significant figures — the quantity a viewer can
+/// add across worlds (T-159).
+const FRAME_PLANET_FIELDS: [&str; 4] = ["owner", "pop", "works", "works_kt"];
 /// What a hull is for its whole life, once per hull: its id, owning seat,
-/// hull type and Design (indices into `enums`), beam mounts and missile tubes.
-const HULL_FIELDS: [&str; 6] = ["id", "owner", "hull", "design", "beams", "tubes"];
+/// hull type and Design (indices into `enums`), beam mounts and missile tubes,
+/// and the time it was wrecked, yr, or `null` (T-158).
+const HULL_FIELDS: [&str; 7] = ["id", "owner", "hull", "design", "beams", "tubes", "wrecked_at"];
 /// One hull per row per frame: its id, the role its Doctrine has it on
 /// (`kind`), position ly, velocity ly/yr, acceleration ly/yr², `burn` the
 /// drive's sense, `damage` a share of structure, `flags` bit 0 in flight and
@@ -129,7 +136,10 @@ pub fn record_run(galaxy: &Galaxy, mut sim: Simulation, cfg: &ReplayConfig) -> S
         }
         let snap = sim.snapshot_at(t);
         for v in &snap.vehicles {
-            hulls.entry(v.id).or_insert(*v);
+            // What a hull is does not change; when it was wrecked is learned
+            // in the first frame after.
+            let h = hulls.entry(v.id).or_insert(*v);
+            h.wrecked_at = h.wrecked_at.or(v.wrecked_at);
         }
         frame(&mut out, &snap);
     }
@@ -141,7 +151,7 @@ pub fn record_run(galaxy: &Galaxy, mut sim: Simulation, cfg: &ReplayConfig) -> S
             out.push(',');
         }
         out.push_str(&format!(
-            "[{},{},{},{},{},{}]",
+            "[{},{},{},{},{},{},",
             v.id,
             v.owner,
             index(&HULLS, v.hull),
@@ -149,6 +159,11 @@ pub fn record_run(galaxy: &Galaxy, mut sim: Simulation, cfg: &ReplayConfig) -> S
             v.beams,
             v.tubes
         ));
+        match v.wrecked_at {
+            Some(t) => write_num(&mut out, t, WRECK_DECIMALS),
+            None => out.push_str("null"),
+        }
+        out.push(']');
     }
     out.push(']');
     events(&mut out, &sim, cfg);
@@ -277,6 +292,13 @@ fn frame(out: &mut String, snap: &Snapshot) {
         }
         write_num(out, p.infrastructure.bands(), 2);
     }
+    out.push_str("],\"works_kt\":[");
+    for (i, p) in snap.planets.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        write_sig(out, p.works.kilotons());
+    }
     out.push_str("],\"vehicles\":[");
     for (i, v) in snap.vehicles.iter().enumerate() {
         if i > 0 {
@@ -293,7 +315,7 @@ fn frame(out: &mut String, snap: &Snapshot) {
         }
         out.push_str(&format!(",{},", v.burn));
         write_num(out, v.damage, 3);
-        let flags = u8::from(v.in_flight) | (u8::from(v.wrecked) << 1);
+        let flags = u8::from(v.in_flight) | (u8::from(v.wrecked()) << 1);
         let dest = v.destination.map_or(-1, |d| d.0 as i64);
         out.push_str(&format!(",{flags},{dest},"));
         write_num(out, v.cargo.total().kilotons(), 3);
@@ -634,6 +656,11 @@ mod tests {
             }
             let snap = twin.snapshot_at(t);
             assert_eq!(f.get("t").num(), t, "frame {k} falls on its own year");
+            for (cell, p) in f.get("works_kt").arr().iter().zip(&snap.planets) {
+                let want = p.works.kilotons();
+                assert!((cell.num() - want).abs() <= 5e-4 * want, "frame {k}: works {} kt vs {want}", cell.num());
+            }
+            assert_eq!(f.get("works_kt").arr().len(), snap.planets.len());
             let vs = f.get("vehicles").arr();
             assert_eq!(vs.len(), snap.vehicles.len(), "frame {k}: every hull");
             assert!(vs.iter().all(|v| v.arr().len() == vf), "frame {k}: every field");
@@ -719,6 +746,72 @@ mod tests {
         let doc = parse(&record_run(&galaxy, sim, &capped));
         assert_eq!(doc.get("events").arr().len(), 5);
         assert_eq!(doc.get("events_truncated"), &J::Bool(true));
+    }
+
+    /// **A wreck carries the time it was wrecked** (T-158): two beam stacks
+    /// parked face to face fight; every hull the frames show wrecked has a
+    /// wreck time after the last frame it stood in and no later than the
+    /// first it is wrecked in, and a hull never wrecked has none.
+    #[test]
+    fn a_wreck_carries_the_time_it_was_wrecked() {
+        use crate::galaxy::{FleetSeeding, SeedFleet};
+        use crate::math::Vec3;
+        use crate::sim::{Class, HullType, Role};
+        let mut g = GalaxyConfig::new(2, 31);
+        g.planet_count = 200;
+        let bare = Galaxy::generate(g).unwrap();
+        let at = bare.planets[bare.homeworlds[0].0 as usize].position.add(Vec3::new(0.5, 0.0, 0.0));
+        let fleet = |seat, class| SeedFleet {
+            seat,
+            hull: HullType::LimitedContactVehicle,
+            class,
+            role: Role::Picket,
+            position: at,
+            velocity: Vec3::ZERO,
+        };
+        let fleets = vec![fleet(0, Class::Cairn), fleet(1, Class::Tor)];
+        let galaxy =
+            Galaxy::generate_with(g, FleetSeeding { spend_kt: 0.4, known_radius_ly: 0.0, fleets, twin_bill: None })
+                .unwrap();
+        let mut cfg = SimConfig::new(31);
+        cfg.horizon_years = 0.4;
+        let sim = Simulation::with_baseline(galaxy.clone(), cfg);
+        let doc = parse(&record_run(&galaxy, sim, &ReplayConfig { frame_years: 0.02, ..rc() }));
+        let hf: Vec<&str> = doc.get("hull_fields").arr().iter().map(|f| f.str()).collect();
+        let vf: Vec<&str> = doc.get("vehicle_fields").arr().iter().map(|f| f.str()).collect();
+        let (hw, flags) =
+            (hf.iter().position(|f| *f == "wrecked_at").unwrap(), vf.iter().position(|f| *f == "flags").unwrap());
+        let frames = doc.get("frames").arr();
+        let mut wrecks = 0;
+        for h in doc.get("hulls").arr() {
+            let h = h.arr();
+            let id = h[0].num();
+            // (time, wrecked) for each frame the hull is in.
+            let seen: Vec<(f64, bool)> = frames
+                .iter()
+                .filter_map(|f| {
+                    let row = f.get("vehicles").arr().iter().find(|r| r.arr()[0].num() == id)?;
+                    Some((f.get("t").num(), row.arr()[flags].num() as u8 & 2 != 0))
+                })
+                .collect();
+            match &h[hw] {
+                J::Null => assert!(seen.iter().all(|s| !s.1), "hull {id} shows wrecked with no wreck time"),
+                J::Num(tw) => {
+                    wrecks += 1;
+                    let first = seen.iter().position(|s| s.1).expect("a wreck time on a hull never shown wrecked");
+                    assert!(*tw <= seen[first].0 + 1e-6, "hull {id} wrecked at {tw}, shown at {}", seen[first].0);
+                    if first > 0 {
+                        assert!(
+                            *tw > seen[first - 1].0,
+                            "hull {id} wrecked at {tw}, standing at {}",
+                            seen[first - 1].0
+                        );
+                    }
+                }
+                other => panic!("wrecked_at is a number or null: {other:?}"),
+            }
+        }
+        assert!(wrecks > 0, "the stacks must wreck something");
     }
 
     #[test]

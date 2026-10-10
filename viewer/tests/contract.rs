@@ -37,6 +37,7 @@ fn the_viewer_reads_every_world_hull_and_event_the_engine_recorded() {
     let r = Replay::from_json(&json).expect("the viewer reads the engine's replay");
     assert_eq!(r.frames.len(), 9);
     let (mut hulls, mut laden, mut rival_mines) = (0, 0, 0);
+    let mut works = 0.0;
     for (k, f) in r.frames.iter().enumerate() {
         let t = k as f64 * 10.0;
         while twin.next_event_time().is_some_and(|n| n <= t) {
@@ -52,6 +53,9 @@ fn the_viewer_reads_every_world_hull_and_event_the_engine_recorded() {
             assert_eq!(r.designs[hull.design], v.design, "its Design");
             assert_eq!(r.hulls[hull.hull], v.hull, "its hull");
             assert_eq!(hull.owner, v.owner as usize, "its seat");
+            if let Some(w) = v.wrecked_at {
+                assert!(hull.wrecked_at.is_some_and(|got| (got - w).abs() <= 5e-7), "its wreck time");
+            }
             assert_eq!(r.kinds[row.kind], format!("{:?}", v.kind), "its role");
             assert!((row.pos[0] - v.position.x).abs() <= 0.005, "its position");
             let c = v.cargo;
@@ -78,12 +82,16 @@ fn the_viewer_reads_every_world_hull_and_event_the_engine_recorded() {
         }
         for (i, p) in snap.planets.iter().enumerate() {
             assert_eq!(f.owner[i], p.owner.map(|o| o as usize), "frame {k}: world {i}'s owner");
+            let want = p.works.kilotons();
+            assert!((f.works_kt[i] - want).abs() <= 5e-4 * want, "frame {k}: world {i}'s works, kt");
+            works += want;
         }
         hulls += f.rows.len();
     }
     assert!(hulls > 50, "the run put hulls in the frames: {hulls}");
     assert!(laden > 0, "and cargo in a hold");
     assert!(rival_mines > 0, "and a holding at a world its holder does not own");
+    assert!(works > 0.0, "and works standing on a world");
     assert!(!r.events.is_empty() && r.events.windows(2).all(|w| w[0].t <= w[1].t));
 }
 
@@ -96,7 +104,7 @@ fn the_tactical_mode_plans_every_recorded_entity() {
     let palette = Palette::default();
     for t in [0.0, 35.0, 80.0] {
         let view = r.view_at(t);
-        let s = Scene { replay: &r, view: &view, camera: &camera, palette: &palette, selected: None };
+        let s = Scene { replay: &r, view: &view, camera: &camera, palette: &palette, selected: None, rate: 1.0 };
         let ops = plan(&s);
         let worlds = ops.iter().filter(|o| matches!(o, Op::World { .. })).count();
         let drawn: u32 = ops.iter().map(|o| if let Op::Hull { count, .. } = o { *count } else { 0 }).sum();

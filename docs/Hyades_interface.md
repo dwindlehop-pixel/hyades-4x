@@ -92,6 +92,16 @@ RATIFIED (T-155, the author's ruling):
     names are placeholders (T-142), so the client shows a super by its color —
     Red, Green, Blue — until they are ratified.
 
+RATIFIED (T-158, the author's ruling):
+
+22. **A wreck fades to a pinpoint after 250 ms** of wall time (§6.6, §7.1).
+
+RATIFIED (T-159, the author's rulings):
+
+23. **The juicy mode displays hexes** (§7.1).
+24. **The juicy mode gives a visual indication of the works trend within a
+    hex** (§7.1).
+
 ---
 
 ## 2. The seam
@@ -130,11 +140,11 @@ breaking it.
 | `seats` | per seat: `archetype` (its native super), `home` (world id) |
 | `enums` | `kind` (role), `hull` (the docs' codes, LSV … GOU), `design` (the class names, Meadow … Unnamed), `category` (log categories), `material` (the eight on the Exchange's books: Cyan, Magenta, Yellow, Red, Green, Blue, Apex, Ordnance) |
 | `planet_fields`, `planets` | static per world: `id, x, y, z, hab, bio_max, cyan, magenta, yellow, home` — Bands |
-| `frame_planet_fields` | per world per frame: `owner` (−1 none), `pop`, `works` — Bands |
+| `frame_planet_fields` | per world per frame: `owner` (−1 none), `pop`, `works` — Bands — and `works_kt`, works as a mass, kt to four significant figures (T-159): masses add across worlds where Band readings do not |
 | `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight and bit 1 wrecked, dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
 | `holding_fields` | per holding per frame: `planet, seat, cyan … ordnance` — each material a **Band reading on the cost ladder** (a holding is a stock that can be spent), `null` where none of it is held (T-152) |
 | `frames` | `{t, owner[], pop[], works[], vehicles[[…]], holdings[[…]]}` — `holdings` lists every non-empty holding, an empire's at worlds it owns and at rocks it only mines, by planet and then seat |
-| `hull_fields`, `hulls` | static per hull: `id, owner, hull, design, beams, tubes` — written once, after the frames |
+| `hull_fields`, `hulls` | static per hull: `id, owner, hull, design, beams, tubes, wrecked_at` — written once, after the frames; `wrecked_at` the year it was wrecked to six decimals, or `null` (T-158) |
 | `event_fields`, `events`, `events_truncated` | `[t, category, kind, seat, text]` for every event the run's log filter collected, in time order; past the recorder's cap the list stops and the flag says so |
 
 Decisions in the format:
@@ -145,6 +155,9 @@ Decisions in the format:
   replaced).
 - **Every hull in the theater is in every frame**, a wreck included (it coasts,
   `damage = 1`). A hull recycled for its minerals is not: its mass is in a bank.
+- **A wreck carries the time it was wrecked** (T-158), and the viewer shows
+  the wreck from that instant rather than from the next frame: a fight's frame
+  is 0.02 yr, over a second of wall time at the rate a fight opens at.
 - **A number that is not finite is a fatal error** in the recorder (design law
   #16), not a value in the file.
 - **One seed records one replay, byte for byte** — a replay is a pure function
@@ -403,6 +416,13 @@ Proposed and built (T-152, the author's direction):
   material, kt, and a world's ore and holdings by material, all by in-game
   name (ruling 21). The page's glyph legend keys each stripe color to its
   material's name, from the module (`hv_text(12)`).
+- **Wrecks** — RATIFIED (ruling 22, T-158). A wreck's glyph is drawn in the
+  wreck color, unstriped, and fades toward the ground over
+  `WRECK_FADE_SECONDS` = **0.25 s of wall time** at the playback rate, leaving
+  a pinpoint: one pixel in the wreck color, which it stays. The fade is read
+  from the clock — `1 − (t − wrecked_at) / (|rate| · 0.25)` — so playing,
+  rewinding and seeking show the same frame at the same instant. A wreck in a
+  replay without wreck times is a pinpoint.
 
 ---
 
@@ -422,7 +442,8 @@ modes cannot disagree about where anything is.
 | a hull | a point in its seat's color; a quiet hull (§6.6) a quarter as bright |
 | a burning drive | a plume behind the hull (ahead of it when braking), in the drive's status color |
 | a hit | a flash in the hit color |
-| a wreck | a dim ember |
+| a wreck | a dim ember, narrowing to a pinpoint (radius 0.5 px) as its tactical glyph fades (§6.6) |
+| a hex | a dim line of lights just inside its edge, in the hex color; brighter and whiter as the works in it grow, darker as they fall |
 
 A light of intensity `I` and radius `r` adds `I / (1 + d²/r²)²` at distance
 `d`, cut at `4r`. The bloom is the buffer averaged in 4×4 blocks, box-blurred
@@ -435,6 +456,27 @@ detail (`light_scale`).
 author found that bright worlds made everything illegible.
 `a_hull_outshines_any_world_but_a_homeworld` pins that a lone hull renders
 brighter than any lone world other than a homeworld (appendix §D.58.5).
+
+**Hexes and the works trend** — RATIFIED that juicy mode shows hexes and the
+works trend within each (rulings 23, 24); the form is proposed (R-UI2, T-159):
+
+- **Which hexes, and when**: the tactical grid's — every hex a world or a hull
+  stands in, while a hex is at least `MIN_HEX_PX` tactical pixels across
+  (`tactical::hexes_shown`, one predicate for both modes).
+- **The line**: lights of radius 1 px every 1.5 px, inset 2 px from the edge
+  so a shared edge reads as two lines, one per hex. Only the part of an edge
+  on screen is lit, so a hex many screens wide costs what one does.
+- **The trend** (`tactical::works_trend`): the hex's works summed as a mass
+  over its worlds, against the same sum `TREND_FRAMES` = 4 frames earlier, as
+  a share of the earlier sum, over `TREND_FULL` = 1 (a doubling), clamped to
+  −1 … +1; works built where none stood read +1. Flat, the line is the hex
+  color at intensity `HEX_GLOW` = 0.1; rising, it whitens toward the bright
+  text color and brightens up to 3×; falling, it darkens to 0.3×. Brightness
+  and whiteness only, so it never reads as a seat or a material (ruling 19).
+- The window is in frames, so it is 20 yr in the `expansion` replay and
+  0.08 yr in a fight. Works are flat for the first ~120 yr of `expansion`
+  (9.12 kt in every frame to then, 1,045.73 kt at 400 yr), so the quick
+  60-yr replay shows every hex flat.
 
 ### 7.2 Style — OPEN (R-UI2)
 
@@ -569,7 +611,7 @@ job runs the same build and tests on every pull request.
 | code | decision | status | what would settle it |
 |---|---|---|---|
 | **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"` | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
-| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible | the author's judgment against recorded games |
+| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1) | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — revised at T-153: armed bodies solid and unarmed hollow; a 3×3 role mark per role; glyphs a pixel wider each side; a legend | the author's review on the deployed site |
 | **R-UI4** | stacking and the tactical layer: the stack square per level, the Galaxy-level owner markers, the display order, the place count, routes, holding bars, quiet hulls and cargo stripes (§6.4–§6.6) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; routes, holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18) | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |

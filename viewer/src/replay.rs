@@ -52,6 +52,9 @@ pub struct Hull {
     pub design: usize,
     pub beams: u32,
     pub tubes: u32,
+    /// When it was wrecked, years; `None` while it stands, and in a replay
+    /// recorded before the field (T-158).
+    pub wrecked_at: Option<f64>,
 }
 
 /// One hull in one frame.
@@ -98,6 +101,9 @@ pub struct Frame {
     pub owner: Vec<Option<usize>>,
     pub pop: Vec<f64>,
     pub works: Vec<f64>,
+    /// Per planet, works as a mass, kt; empty in a replay recorded before the
+    /// field (T-159).
+    pub works_kt: Vec<f64>,
     /// Hulls in id order.
     pub rows: Vec<Row>,
     /// Every non-empty holding, by planet and then by seat.
@@ -261,6 +267,7 @@ impl Replay {
         for row in v.get("hulls").and_then(Value::as_arr).ok_or("no hulls")? {
             let [id, owner, hull, design, beams, tubes] =
                 hf.read(row, ["id", "owner", "hull", "design", "beams", "tubes"])?;
+            let [wrecked_at] = hf.read_opt(row, ["wrecked_at"]);
             let id = id as u64;
             hull_table.insert(
                 id,
@@ -271,6 +278,7 @@ impl Replay {
                     design: design as usize,
                     beams: beams as u32,
                     tubes: tubes as u32,
+                    wrecked_at,
                 },
             );
         }
@@ -330,6 +338,7 @@ impl Replay {
                 owner: col("owner").into_iter().map(seat_of).collect(),
                 pop: col("pop"),
                 works: col("works"),
+                works_kt: col("works_kt"),
                 rows,
                 holdings,
             });
@@ -407,7 +416,7 @@ impl Replay {
                 if let Some(n) = next.and_then(|n| find(n, r.id)) {
                     (row.pos, row.vel) = hermite(r.pos, r.vel, n.pos, n.vel, span, frac);
                 }
-                let hit =
+                let mut hit =
                     prev.and_then(|p| find(p, r.id)).is_some_and(|p| r.damage > p.damage || (r.wrecked && !p.wrecked));
                 let hull = self.hull_table.get(&r.id).copied().unwrap_or(Hull {
                     id: r.id,
@@ -416,7 +425,13 @@ impl Replay {
                     design: self.designs.len().saturating_sub(1),
                     beams: 0,
                     tubes: 0,
+                    wrecked_at: None,
                 });
+                // A wreck between frames shows from the instant it happened,
+                // not from the next frame (T-158).
+                if !row.wrecked && hull.wrecked_at.is_some_and(|w| w <= t) {
+                    (row.wrecked, row.damage, hit) = (true, 1.0, true);
+                }
                 HullView { hull, row, hit, laden: r.cargo > 0.0 || r.settlers > 0.0 }
             })
             .collect();
@@ -459,26 +474,26 @@ pub(crate) mod tests {
                 "material": ["Cyan","Magenta","Yellow","Red","Green","Blue","Apex","Ordnance"]},
       "planet_fields": ["id","x","y","z","hab","bio_max","cyan","magenta","yellow","home"],
       "planets": [[0, 0, 0, 0, 4.2, 4.2, 0, 0, 0, 1], [1, 20, 0, 0, 4.2, 4.2, 0, 0, 0, 1], [2, 10, 5, 1, 3.1, 3, 2.5, 0, 0.1, 0]],
-      "frame_planet_fields": ["owner","pop","works"],
+      "frame_planet_fields": ["owner","pop","works","works_kt"],
       "vehicle_fields": ["id","kind","x","y","z","vx","vy","vz","accel","burn","damage","flags","dest","cargo","settlers",
                          "cargo_cyan","cargo_magenta","cargo_yellow","cargo_red","cargo_green","cargo_blue",
                          "cargo_apex","cargo_ordnance"],
       "holding_fields": ["planet","seat","cyan","magenta","yellow","red","green","blue","apex","ordnance"],
       "frames": [
-        {"t": 0, "owner": [0, 1, -1], "pop": [2.8, 2.8, 0], "works": [2, 2, 0],
+        {"t": 0, "owner": [0, 1, -1], "pop": [2.8, 2.8, 0], "works": [2, 2, 0], "works_kt": [1, 1, 0],
          "vehicles": [[5, 3, 0, 0, 0, 0, 0, 0, 0.2, 1, 0, 1, 2, 4.5, 0, 3, 0, 1.5, 0, 0, 0, 0, 0],
                       [6, 4, 20, 0, 0, 0, 0, 0, 0, 0, 0.25, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
          "holdings": [[0, 0, 2.1, 1.8, 3.25, null, null, null, null, null],
                       [2, 1, -0.4, null, null, null, null, null, null, null]]},
-        {"t": 10, "owner": [0, 1, 0], "pop": [2.9, 2.8, 1.1], "works": [2, 2, 1],
+        {"t": 10, "owner": [0, 1, 0], "pop": [2.9, 2.8, 1.1], "works": [2, 2, 1], "works_kt": [1, 2, 0.5],
          "vehicles": [[5, 3, 10, 0, 0, 2, 0, 0, 0, 0, 0, 0, 2, 4.5, 0, 3, 0, 1.5, 0, 0, 0, 0, 0],
                       [6, 7, 21, 0, 0, 0.1, 0, 0, 0, 0, 1, 3, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                       [9, 0, 0, 0, 0, 0, 0, 0, 0.5, 1, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]],
          "holdings": [[0, 0, 2.2, 1.7, 3.3, 0.5, null, null, null, null],
                       [1, 1, 1.5, 1.5, 1.5, null, null, null, null, null]]}
       ],
-      "hull_fields": ["id","owner","hull","design","beams","tubes"],
-      "hulls": [[5, 0, 1, 7, 0, 0], [6, 1, 3, 3, 2, 0], [9, 0, 0, 1, 0, 0]],
+      "hull_fields": ["id","owner","hull","design","beams","tubes","wrecked_at"],
+      "hulls": [[5, 0, 1, 7, 0, 0, null], [6, 1, 3, 3, 2, 0, 9.5], [9, 0, 0, 1, 0, 0, null]],
       "event_fields": ["t","category","kind","seat","text"],
       "events": [[2.5, 2, "VehicleSpawned", 0, "P0 builds a Spur"], [9.5, 6, "HullWrecked", 1, "P1 hull wrecked by P0"],
                  [9.9, 2, "ColonyFounded", 0, "P0 founds a colony at planet#2"]],
@@ -500,7 +515,11 @@ pub(crate) mod tests {
         assert_eq!(r.planets[2].pos, [10.0, 5.0, 1.0]);
         assert_eq!(r.planets[2].ore, [2.5, 0.0, 0.1]);
         assert!(r.planets[0].home && !r.planets[2].home);
-        assert_eq!(r.hull_table[&6], Hull { id: 6, owner: 1, hull: 3, design: 3, beams: 2, tubes: 0 });
+        assert_eq!(
+            r.hull_table[&6],
+            Hull { id: 6, owner: 1, hull: 3, design: 3, beams: 2, tubes: 0, wrecked_at: Some(9.5) }
+        );
+        assert_eq!(r.hull_table[&5].wrecked_at, None);
         assert_eq!(r.designs[r.hull_table[&5].design], "Ford");
         assert_eq!(r.frames.len(), 2);
         assert_eq!(r.frames[1].owner, vec![Some(0), Some(1), Some(0)]);
@@ -617,5 +636,14 @@ pub(crate) mod tests {
         let later = picket(10.0);
         assert!(later.hit && later.row.wrecked, "0.25 then wrecked");
         assert!(!r.view_at(10.0).hulls.iter().find(|h| h.row.id == 5).unwrap().hit);
+    }
+
+    #[test]
+    fn a_wreck_shows_from_the_instant_it_happened_not_the_next_frame() {
+        let r = tiny();
+        let picket = |t: f64| *r.view_at(t).hulls.iter().find(|h| h.row.id == 6).unwrap();
+        assert!(!picket(9.49).row.wrecked && picket(9.49).row.damage == 0.25, "standing until 9.5");
+        let w = picket(9.5);
+        assert!(w.row.wrecked && w.row.damage == 1.0 && w.hit, "wrecked at 9.5, a frame early");
     }
 }

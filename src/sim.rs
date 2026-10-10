@@ -11744,7 +11744,7 @@ impl Simulation {
                     beams: loadout.beams,
                     tubes: loadout.tubes,
                     damage,
-                    wrecked: wreck.is_some(),
+                    wrecked_at: wreck.map(|w| w.since),
                     velocity,
                     accel,
                     burn,
