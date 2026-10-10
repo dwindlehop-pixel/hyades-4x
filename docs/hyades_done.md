@@ -152,6 +152,16 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-160. A paused tactical view no longer flickers as it is panned
+
+*Opened and built in one landing at the author's report: "The tactical view
+flickers when paused and panning. Glyphs change in size and ordering."*
+Stacks were cells of the screen, so a pan moved hulls between them and
+changed counts, marker sizes and the glyph drawn on top. The cells now tile
+the galaxy at the view's scale (`Hyades_interface.md` §6.4);
+`panning_keeps_every_stack_and_the_drawing_order` fails on the old lattice at
+a tenth of a cell.
+
 ### T-159. Juicy hexes and the works trend within each
 
 *Opened and built in one landing at the author's rulings: "Juicy needs to

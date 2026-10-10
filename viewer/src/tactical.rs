@@ -334,9 +334,12 @@ fn stack(ops: &mut [Op], s: &Scene) {
     // quietness.
     type Group = (i64, i64, usize, bool, Option<(GlyphKey, usize, bool, bool)>);
     let mut groups: BTreeMap<Group, Vec<usize>> = BTreeMap::new();
+    // The cells tile the galaxy at the view's scale — not the screen — so a
+    // pan moves no hull from one stack to another (T-160).
+    let cell_ly = cell_px as f64 * PIXEL / s.camera.scale;
     for (i, h) in s.view.hulls.iter().enumerate() {
-        let Op::Hull { at, key, quiet, .. } = ops[i] else { continue };
-        let cell = (at[0].div_euclid(cell_px), at[1].div_euclid(cell_px));
+        let Op::Hull { key, quiet, .. } = ops[i] else { continue };
+        let cell = ((h.row.pos[0] / cell_ly).floor() as i64, (-h.row.pos[1] / cell_ly).floor() as i64);
         let kind = (lod != Lod::Galaxy).then_some((key, h.row.kind, h.row.wrecked, quiet));
         groups.entry((cell.0, cell.1, h.hull.owner, key.beams || key.tubes, kind)).or_default().push(i);
     }
@@ -1106,6 +1109,51 @@ mod tests {
         (other.hull.id, other.hull.design) = (200, 4);
         view.hulls.push(other);
         view
+    }
+
+    /// **Panning a paused view regroups nothing** (T-160): stacks are cells
+    /// of the galaxy at the view's scale, not of the screen, so moving the
+    /// camera by any fraction of a cell keeps every stack's members, its drawn
+    /// glyph and the drawing order. On a screen-fixed lattice hulls crossed
+    /// cell edges as the view moved, and glyphs flickered in size and order.
+    #[test]
+    fn panning_keeps_every_stack_and_the_drawing_order() {
+        let f = fixture();
+        let mut view = f.replay.view_at(0.0);
+        let five = *view.hulls.iter().find(|h| h.hull.id == 5).unwrap();
+        // A row of alike hulls a third of a stack cell apart, so some pair
+        // straddles a cell edge wherever the lattice falls.
+        let cell_ly = stack_px(f.camera.lod()) as f64 * PIXEL / f.camera.scale;
+        for k in 0..12 {
+            let mut c = five;
+            (c.hull.id, c.row.id) = (300 + k, 300 + k);
+            c.row.pos[0] += k as f64 * cell_ly / 3.0;
+            view.hulls.push(c);
+        }
+        let stacks = |cam: &Camera| {
+            let s =
+                Scene { replay: &f.replay, view: &view, camera: cam, palette: &f.palette, selected: None, rate: 1.0 };
+            let ops = plan(&s);
+            let mut groups: Vec<Vec<u64>> = ops
+                .iter()
+                .filter_map(|o| match o {
+                    Op::Hull { id, count: 1.., members, .. } => {
+                        Some(if members.is_empty() { vec![*id] } else { members.clone() })
+                    }
+                    _ => None,
+                })
+                .collect();
+            groups.sort();
+            let order: Vec<u64> = drawing_order(&ops).iter().map(|&i| op_id(&ops[i])).collect();
+            (groups, order)
+        };
+        let base = stacks(&f.camera);
+        for step in 1..10 {
+            let mut cam = f.camera;
+            cam.center[0] += step as f64 * cell_ly / 10.0;
+            cam.center[1] -= step as f64 * cell_ly / 7.0;
+            assert_eq!(stacks(&cam), base, "panned {step}/10 of a cell");
+        }
     }
 
     #[test]

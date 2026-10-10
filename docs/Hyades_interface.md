@@ -351,7 +351,11 @@ Proposed and built, every magnitude a *placeholder*:
   its lowest-id hull stands. The square widens as the view pulls back: **3
   tactical pixels at the System level, 5 at Sector, 8 at Galaxy**. The glyph
   carries the worst damage, any hit, the sum of its members' cargo and any
-  selection.
+  selection. **The squares tile the galaxy at the view's scale, not the
+  screen** (T-160): a pan regroups nothing, and only a zoom changes the
+  stacks. On a screen-fixed lattice a paused view flickered as it was
+  panned — hulls crossed square edges, and stacks, counts, marker sizes and
+  the glyph drawn on top all changed.
 - **The display order** (`tactical::display_order`), bottom to top: wrecks,
   then quiet hulls (§6.6), then the rest; within each, by role — Reserve and
   Scrapped, Scout, Miner, Freighter, Colonizer, Sentry, Picket, so the fighting
