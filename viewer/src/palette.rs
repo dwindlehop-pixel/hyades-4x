@@ -275,7 +275,7 @@ pub struct Palette {
     pub named: Vec<(&'static str, Rgb)>,
     pub roles: Roles,
     /// In [`STATUS`] order.
-    pub status: [Rgb; 9],
+    pub status: [Rgb; 10],
 }
 
 impl Palette {
@@ -398,9 +398,12 @@ pub enum Status {
     Combat,
     /// The inspector's selection.
     Selected,
+    /// Heading home off its mission (T-164): the count of a place's
+    /// retreating hulls.
+    Retreat,
 }
 
-pub const STATUS: [(Status, &str); 9] = [
+pub const STATUS: [(Status, &str); 10] = [
     (Status::Hit, "#ff2d6f"),
     (Status::Damage, "#ffb703"),
     (Status::Drive, "#4df3ff"),
@@ -410,6 +413,9 @@ pub const STATUS: [(Status, &str); 9] = [
     (Status::Laden, "#fff36b"),
     (Status::Combat, "#ff4fe1"),
     (Status::Selected, "#f2fff6"),
+    // OKLCH L 0.88, C 0.16, 25° clamped to sRGB: the point farthest from every
+    // other status, the materials, the seats and the text (T-164).
+    (Status::Retreat, "#ffaba1"),
 ];
 
 #[cfg(test)]
@@ -567,6 +573,23 @@ mod tests {
         }
         let pt = to_oklch(PLATINUM);
         assert!((pt.l - 0.84).abs() < 0.01 && pt.c < 0.02, "platinum: L {:.3} C {:.3}", pt.l, pt.c);
+    }
+
+    /// **The retreat count's color is no seat's, no material's and not the
+    /// count's own** (T-164).
+    #[test]
+    fn the_retreat_count_reads_apart_from_seats_materials_and_the_count() {
+        let p = Palette::default();
+        let r = p.status(Status::Retreat);
+        let near = |x: Rgb, what: &str| assert!(delta_e(r, x) >= 0.08, "retreat against {what}: {:.3}", delta_e(r, x));
+        for i in 0..18 {
+            near(p.seat(i), &format!("seat {i}"));
+        }
+        for m in 0..=PEOPLE {
+            near(p.material(m), &format!("material {m}"));
+        }
+        near(PLATINUM, "platinum");
+        near(p.roles.text_bright, "the count");
     }
 
     #[test]

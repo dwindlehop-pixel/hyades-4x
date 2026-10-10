@@ -2488,6 +2488,11 @@ struct World {
     /// **A wrecked hull, still on its course** (T-133, the author's ruling:
     /// "Wrecked hulls continue on their course at the moment of destruction").
     wreck: ComponentStore<Wreck>,
+    /// **A hull heading home off its mission** (T-164): the year it withdrew,
+    /// from `fire::withdraw` until it arrives home or is wrecked. Read only by
+    /// the snapshot, so a viewer can count it apart from hulls still on their
+    /// role.
+    withdrawing: ComponentStore<f64>,
     motion: ComponentStore<Motion>,
     voyage: ComponentStore<Voyage>,
     cargo: ComponentStore<Minerals>,
@@ -2707,6 +2712,7 @@ impl World {
             track: ComponentStore::new(),
             station: ComponentStore::new(),
             wreck: ComponentStore::new(),
+            withdrawing: ComponentStore::new(),
             motion: ComponentStore::new(),
             voyage: ComponentStore::new(),
             cargo: ComponentStore::new(),
@@ -6207,6 +6213,7 @@ impl Simulation {
         // Scrapping is confirmed only for an exhausted Scout (§4.1), handled
         // separately in `sys_contact_arrive`.
         self.world.role.insert(vehicle, Role::Reserve);
+        self.world.withdrawing.remove(vehicle);
         // **Unload before parking** (R-O74). A bounced Colonizer is carrying
         // people and minerals that were debited from its home center, and this
         // is where "nothing is lost" stops being a comment and becomes an
@@ -11745,6 +11752,7 @@ impl Simulation {
                     tubes: loadout.tubes,
                     damage,
                     wrecked_at: wreck.map(|w| w.since),
+                    withdrawing: wreck.is_none() && self.world.withdrawing.contains(e),
                     velocity,
                     accel,
                     burn,

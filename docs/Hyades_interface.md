@@ -114,6 +114,12 @@ RATIFIED (T-161 – T-163, the author's rulings):
 28. **Panning a paused tactical view changes no glyph** — not its size, its
     order, or its shape (§6.4; the bug report behind T-160).
 
+RATIFIED (T-164, the author's ruling):
+
+29. **A count counts only hulls still on their primary role.** A hull the
+    autopilot has sent home is counted apart, in a distinct color; a wreck is
+    in no count (§6.4, §7.1).
+
 ---
 
 ## 2. The seam
@@ -153,7 +159,7 @@ breaking it.
 | `enums` | `kind` (role), `hull` (the docs' codes, LSV … GOU), `design` (the class names, Meadow … Unnamed), `category` (log categories), `material` (the eight on the Exchange's books: Cyan, Magenta, Yellow, Red, Green, Blue, Apex, Ordnance) |
 | `planet_fields`, `planets` | static per world: `id, x, y, z, hab, bio_max, cyan, magenta, yellow, home` — Bands |
 | `frame_planet_fields` | per world per frame: `owner` (−1 none), `pop`, `works` — Bands — and `works_kt`, works as a mass, kt to four significant figures (T-159): masses add across worlds where Band readings do not |
-| `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight and bit 1 wrecked, dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
+| `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight, bit 1 wrecked and bit 2 heading home off its mission (T-164: withdrawn under fire and not yet home), dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
 | `holding_fields` | per holding per frame: `planet, seat, cyan … ordnance` — each material a **Band reading on the cost ladder** (a holding is a stock that can be spent), `null` where none of it is held (T-152) |
 | `frames` | `{t, owner[], pop[], works[], vehicles[[…]], holdings[[…]]}` — `holdings` lists every non-empty holding, an empire's at worlds it owns and at rocks it only mines, by planet and then seat |
 | `hull_fields`, `hulls` | static per hull: `id, owner, hull, design, beams, tubes, wrecked_at` — written once, after the frames; `wrecked_at` the year it was wrecked to six decimals, or `null` (T-158) |
@@ -314,6 +320,7 @@ and reads at 3:1 on the ground (`status_colors_sit_off_the_palette_apart_and_leg
 | Laden | `#fff36b` | the fill of a laden hull whose replay does not carry its cargo by material |
 | Combat | `#ff4fe1` | the log's combat rows |
 | Selected | `#f2fff6` | the selection's corner brackets |
+| Retreat | `#ffaba1` | the count of a place's hulls heading home, and their juicy cluster (T-164): OKLCH L 0.88, C 0.16, 25° clamped to sRGB, the point farthest from every other status, the materials, the seats and the text |
 
 **Materials** are drawn in the palette's own hue of their names — Cyan
 `hy_cyan`, Magenta `hy_magenta`, Yellow `hy_yellow`, Red `hy_red`, Green
@@ -363,7 +370,16 @@ Proposed and built, every magnitude a *placeholder*:
   its lowest-id hull stands. The square widens as the view pulls back: **3
   tactical pixels at the System level, 5 at Sector, 8 at Galaxy**. The glyph
   carries the worst damage, any hit, the sum of its members' cargo and any
-  selection. **The squares tile the galaxy at the view's scale, not the
+  selection. **A wreck never stacks with a live hull, at any level**, so a
+  galaxy-level marker is sized by live hulls alone (T-164).
+- **A place's counts** — RATIFIED (ruling 29, T-164): beside the glyph drawn
+  on top of a place, the number of its hulls **still on their role**, in the
+  bright text color, then the number **heading home** in the retreat color
+  (`Status::Retreat`); a wreck is in neither. The first is drawn when it is
+  more than one or when hulls are also heading home, the second when any are.
+  The engine marks a hull heading home from the moment it withdraws until it
+  arrives home or is wrecked (`VehicleSnapshot::withdrawing`, flags bit 2).
+  **The squares tile the galaxy at the view's scale, not the
   screen** (T-160): a pan regroups nothing, and only a zoom changes the
   stacks. On a screen-fixed lattice a paused view flickered as it was
   panned — hulls crossed square edges, and stacks, counts, marker sizes and
@@ -528,7 +544,9 @@ hulls are one cluster, and where seats share it the clusters stand apart
 around the place's middle, `CLUSTER_GAP` = 3 hull radii apart at their
 nearest. **A hit is a ring** of lights about the cluster in the hit color
 (`HIT_RING` = 1.2 each), not a flash over it, so the seat's color shows
-inside the ring. Wrecks and quiet hulls are single lights where they stand;
+inside the ring. **Hulls heading home are a cluster of their own in the
+retreat color** (ruling 29), so a seat's cluster counts only its hulls on
+their role. Wrecks and quiet hulls are single lights where they stand;
 at the galaxy level every hull is a light where it stands. Tactical mode is
 unchanged: there a glyph stands on its hull (ruling 16).
 

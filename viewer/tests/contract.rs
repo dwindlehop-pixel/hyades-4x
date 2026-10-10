@@ -57,6 +57,7 @@ fn the_viewer_reads_every_world_hull_and_event_the_engine_recorded() {
                 assert!(hull.wrecked_at.is_some_and(|got| (got - w).abs() <= 5e-7), "its wreck time");
             }
             assert_eq!(r.kinds[row.kind], format!("{:?}", v.kind), "its role");
+            assert_eq!((row.wrecked, row.withdrawing), (v.wrecked(), v.withdrawing), "its wreck and homeward flags");
             assert!((row.pos[0] - v.position.x).abs() <= 0.005, "its position");
             let c = v.cargo;
             let want = [c.cyan, c.magenta, c.yellow, c.red, c.green, c.blue, c.apex, c.ordnance];

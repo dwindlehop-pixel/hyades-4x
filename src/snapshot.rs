@@ -146,6 +146,10 @@ pub struct VehicleSnapshot {
     /// it had (T-133); `None` while it stands. A replay carries the time so
     /// a viewer can show the wreck from that instant (T-158).
     pub wrecked_at: Option<f64>,
+    /// **Heading home off its mission** (T-164): withdrawn under fire — past
+    /// its structure, off a post it cannot hold, or breaking off — and not
+    /// yet home. Never set on a wreck.
+    pub withdrawing: bool,
     /// Coordinate velocity now, ly/yr (`c = 1`).
     pub velocity: Vec3,
     /// **Proper acceleration the drive is flying now**, ly/yr²; `0` at rest

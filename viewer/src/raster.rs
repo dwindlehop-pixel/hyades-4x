@@ -126,7 +126,8 @@ impl Raster {
     }
 
     /// A decimal number in a 3×5 pixel font, its top-left at `(x, y)`.
-    pub fn number(&mut self, x: i64, y: i64, n: u32, c: Rgb) {
+    /// Returns the x just past the last digit's right edge.
+    pub fn number(&mut self, x: i64, y: i64, n: u32, c: Rgb) -> i64 {
         // Rows top to bottom, three bits each, high bit on the left.
         const DIGITS: [[u8; 5]; 10] = [
             [7, 5, 5, 5, 7],
@@ -149,6 +150,7 @@ impl Raster {
                 }
             }
         }
+        x + 4 * n.to_string().len() as i64 - 1
     }
 
     /// Pixels of exactly color `c`.

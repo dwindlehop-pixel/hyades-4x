@@ -70,6 +70,8 @@ pub struct Row {
     pub damage: f64,
     pub in_flight: bool,
     pub wrecked: bool,
+    /// Heading home off its mission (T-164): replay flags bit 2.
+    pub withdrawing: bool,
     pub dest: Option<u32>,
     pub cargo: f64,
     pub settlers: f64,
@@ -338,6 +340,7 @@ impl Replay {
                     damage,
                     in_flight: flags & 1 != 0,
                     wrecked: flags & 2 != 0,
+                    withdrawing: flags & 4 != 0,
                     dest: if dest >= 0.0 { Some(dest as u32) } else { None },
                     cargo,
                     settlers,
@@ -744,6 +747,17 @@ pub(crate) mod tests {
         assert!((at(1, h(1), 1).work_years - 0.5 * (1.0 + 2.0) * 10.0).abs() < 1e-12);
         assert!(r.frames.iter().all(|f| f.hex_works.windows(2).all(|p| (p[0].hex, p[0].seat) < (p[1].hex, p[1].seat))));
         assert!(r.frames.iter().flat_map(|f| &f.hex_works).all(|w| !w.band_iv), "no Band IV works in the fixture");
+    }
+
+    /// **Flags bit 2 is a hull heading home off its mission** (T-164).
+    #[test]
+    fn flags_bit_two_is_heading_home() {
+        let row = "[9, 0, 0, 0, 0, 0, 0, 0, 0.5, 1, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]";
+        assert!(TINY.contains(row));
+        let r = Replay::from_json(&TINY.replace(row, &row.replacen(", 0, 1, 2,", ", 0, 5, 2,", 1))).unwrap();
+        let h = r.frames[1].rows.iter().find(|h| h.id == 9).unwrap();
+        assert!(h.withdrawing && h.in_flight && !h.wrecked);
+        assert!(tiny().frames.iter().flat_map(|f| &f.rows).all(|h| !h.withdrawing), "absent unless set");
     }
 
     #[test]

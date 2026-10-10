@@ -112,9 +112,12 @@ pub enum Op {
         /// The ids of the hulls this glyph stands for, on the drawn one.
         members: Vec<u64>,
         /// On the glyph drawn on top in its place, the ids of every hull in
-        /// the place when there is more than one; empty otherwise. Its count
-        /// is drawn beside that glyph.
+        /// the place when there is more than one; empty otherwise.
         place: Vec<u64>,
+        /// On the glyph drawn on top in its place, the place's counts drawn
+        /// beside it (T-164): hulls still on their role, and hulls heading
+        /// home off it. A wreck is in neither.
+        counts: (u32, u32),
         /// Drawn as a marker, a square in the seat's color sized by count: one
         /// owner's hulls in one place at the galaxy level.
         marker: bool,
@@ -304,6 +307,7 @@ pub fn plan(s: &Scene) -> Vec<Op> {
             count: 1,
             members: Vec::new(),
             place: Vec::new(),
+            counts: (0, 0),
             marker: false,
             quiet,
             order: display_order(row.wrecked, quiet, role, glyph::size(code), from_home),
@@ -347,13 +351,14 @@ fn stack(ops: &mut [Op], s: &Scene) {
     // At the galaxy level a group is one owner's armed or unarmed hulls in a
     // place; below it, one owner's hulls of one Design, role, wreck state and
     // quietness.
-    type Group = (i64, i64, usize, bool, Option<(GlyphKey, usize, bool, bool)>);
+    // A wreck is never stacked with a live hull, at any level (T-164).
+    type Group = (i64, i64, usize, bool, bool, Option<(GlyphKey, usize, bool)>);
     let mut groups: BTreeMap<Group, Vec<usize>> = BTreeMap::new();
     for (i, h) in s.view.hulls.iter().enumerate() {
         let Op::Hull { key, quiet, .. } = ops[i] else { continue };
         let cell = stack_cell(s, h.row.pos);
-        let kind = (lod != Lod::Galaxy).then_some((key, h.row.kind, h.row.wrecked, quiet));
-        groups.entry((cell.0, cell.1, h.hull.owner, key.beams || key.tubes, kind)).or_default().push(i);
+        let kind = (lod != Lod::Galaxy).then_some((key, h.row.kind, quiet));
+        groups.entry((cell.0, cell.1, h.hull.owner, key.beams || key.tubes, h.row.wrecked, kind)).or_default().push(i);
     }
     let mut places: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
     for ((cx, cy, ..), mut members) in groups {
@@ -407,6 +412,8 @@ fn stack(ops: &mut [Op], s: &Scene) {
         }
         places.entry((cx, cy)).or_default().push(lead);
     }
+    let state: BTreeMap<u64, (bool, bool)> =
+        s.view.hulls.iter().map(|h| (h.hull.id, (h.row.wrecked, h.row.withdrawing))).collect();
     for leads in places.into_values() {
         // The glyph drawn last, as [`drawing_order`] sorts them.
         let top = *leads.iter().max_by_key(|&&i| (op_order(&ops[i]), op_id(&ops[i]))).unwrap();
@@ -417,9 +424,18 @@ fn stack(ops: &mut [Op], s: &Scene) {
                 Op::World { .. } => Vec::new(),
             })
             .collect();
+        let (mut on_role, mut retreating) = (0, 0);
+        for id in &all {
+            match state.get(id) {
+                Some((false, false)) => on_role += 1,
+                Some((false, true)) => retreating += 1,
+                _ => {}
+            }
+        }
         if all.len() > 1 {
-            if let Op::Hull { place, .. } = &mut ops[top] {
+            if let Op::Hull { place, counts, .. } = &mut ops[top] {
                 *place = all;
+                *counts = (on_role, retreating);
             }
         }
     }
@@ -504,7 +520,6 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
         let Op::Hull {
             at,
             count,
-            place,
             key,
             outline,
             inner,
@@ -520,6 +535,7 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
             marker,
             quiet,
             wreck,
+            counts,
             ..
         } = &ops[i]
         else {
@@ -605,8 +621,15 @@ pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache)
         if *selected {
             brackets(r, *at, half + 5, pal.status(Status::Selected));
         }
-        if place.len() > 1 {
-            r.number(at[0] + half + 4, at[1] - 2, place.len() as u32, pal.roles.text_bright);
+        // The place's counts: hulls on their role, then — in the retreat
+        // color — hulls heading home. Wrecks are in neither (T-164).
+        let (on_role, retreating) = *counts;
+        let mut x = at[0] + half + 4;
+        if on_role > 1 || (on_role > 0 && retreating > 0) {
+            x = r.number(x, at[1] - 2, on_role, pal.roles.text_bright) + 2;
+        }
+        if retreating > 0 {
+            r.number(x, at[1] - 2, retreating, pal.status(Status::Retreat));
         }
     }
 }
@@ -1191,6 +1214,58 @@ mod tests {
         paint(&s, &[], &mut raster);
         assert!(raster.count(f.palette.roles.text_bright) > 0, "the Band IV edge is dashed bright");
         assert!(raster.count(seat_line_color(&f.palette, &l.seats[0])) > 0, "the seat's line is drawn");
+    }
+
+    /// **A place counts hulls on their role, and apart from them hulls
+    /// heading home; never a wreck** (T-164, the author's ruling). The two
+    /// counts are drawn in their own colors, and a galaxy-level marker is
+    /// never sized by wrecks.
+    #[test]
+    fn a_place_counts_hulls_on_their_role_and_retreating_hulls_apart_and_no_wreck() {
+        let f = fixture();
+        let mut view = f.replay.view_at(0.0);
+        let five = *view.hulls.iter().find(|h| h.hull.id == 5).unwrap();
+        view.hulls.clear();
+        // Four on their role, two heading home, three wrecked, one place.
+        for k in 0..9u64 {
+            let mut c = five;
+            (c.hull.id, c.row.id) = (400 + k, 400 + k);
+            c.row.withdrawing = (4..6).contains(&k);
+            c.row.wrecked = k >= 6;
+            view.hulls.push(c);
+        }
+        let s =
+            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
+        let ops = plan(&s);
+        let counts: Vec<(u32, u32)> = ops
+            .iter()
+            .filter_map(|o| {
+                if let Op::Hull { counts, place, .. } = o {
+                    (place.len() > 1).then_some(*counts)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(counts, vec![(4, 2)], "four on their role, two heading home, the wrecks in neither");
+        let mut r = raster(&f.camera);
+        paint(&s, &ops, &mut r);
+        assert!(r.count(f.palette.status(Status::Retreat)) > 0, "the retreat count, in its own color");
+
+        // At the galaxy level a marker's size is its live hulls'.
+        let mut far = f.camera;
+        far.scale = 0.5;
+        assert_eq!(far.lod(), Lod::Galaxy);
+        let s = Scene { replay: &f.replay, view: &view, camera: &far, palette: &f.palette, selected: None, rate: 1.0 };
+        let ops = plan(&s);
+        let markers: Vec<(u32, bool)> = ops
+            .iter()
+            .filter_map(|o| match o {
+                Op::Hull { count, wreck, .. } if *count > 0 => Some((*count, wreck.is_some())),
+                _ => None,
+            })
+            .collect();
+        assert!(markers.contains(&(6, false)) && markers.contains(&(3, true)), "wrecks stack apart: {markers:?}");
     }
 
     /// A view with copies of hull 5 at its place: `alike` more of the same
