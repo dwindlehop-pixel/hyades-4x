@@ -29,6 +29,7 @@ named relay's live setting):
 | source | limit |
 |---|---|
 | khatru `policies/sane_defaults.go`, `ApplySaneDefaults` | `EventIPRateLimiter(2, time.Minute*3, 10)` — read as 2 tokens per 3 minutes, bucket 10 (token-bucket semantics inferred from the parameter names; the implementation was not read) |
+| the same function | `FilterIPRateLimiter(20, time.Minute, 100)` (subscription filters per IP) and `ConnectionRateLimiter(1, time.Minute*5, 100)` (connections per IP), read the same way |
 | noteguard README (Damus's strfry write-policy plugin) | `posts_per_minute = 8`, per IP |
 | rzazo24/nostr-relay-khatru README | 30 events per minute per IP, burst 60 |
 | nostr-rs-relay `config.toml` | `messages_per_sec = 5`, averaged over one minute (example) |

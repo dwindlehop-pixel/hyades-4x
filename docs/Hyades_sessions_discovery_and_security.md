@@ -69,6 +69,13 @@ RATIFIED (T-164, the author's ruling on the relay-load estimate):
     them stays a *placeholder*. §7.5 records what they change in the two
     threat models.
 
+RATIFIED (T-164, the author's ruling on rate limits):
+
+11. **Rate limits are dynamic, and the design must be robust to them.** A
+    relay may change its limits at any time, without notice, per IP, per key
+    or globally, and may publish none of it. No rule may depend on a relay's
+    published or previously observed limit staying true (§4.3.2).
+
 ---
 
 ## 2. Terms
@@ -251,19 +258,22 @@ Rules (ruling 10):
    30–45 minute target implies anyway, and which replaces §6's earlier 60 s
    placeholder. It is a floor on when a seat's client emits its commit, never
    a clock the state reads (netcode §1.1).
-3. **Relays are chosen by their NIP-11 document.** The client reads each pinned
-   relay's document at startup (a fetch to a pinned origin, §4.5 rule 2) and
-   uses a relay for frames only if it requires no proof-of-work, no NIP-42
-   authentication and no payment, and its `max_content_length` holds a frame.
-   The pinned list favors relays whose operators state a write allowance of at
-   least 2 events per minute per IP.
+3. **Relays are screened by their NIP-11 document, and ranked by what they
+   do.** The client reads each pinned relay's document at startup (a fetch to a
+   pinned origin, §4.5 rule 2) and excludes a relay that requires
+   proof-of-work, NIP-42 authentication or payment, or whose
+   `max_content_length` cannot hold a frame. The document is a screen, not a
+   forecast: NIP-11 has no field for a write rate, and a relay may change what
+   it does publish (ruling 11). Which of the remaining relays carries a seat's
+   events is decided at run time by §4.3.2.
 4. **Seats behind one address share a bucket.** Per-IP limits count every seat
    behind one carrier-grade NAT or one LAN together: at 8 per minute and 180 s
    rounds, 12 batched seats fit behind one address; at khatru's defaults, one.
    **Every event goes to every usable pinned relay.** A relay that answers
    `rate-limited:` (NIP-01's prefix) is skipped for that seat until its bucket
-   would have refilled, and the event still reaches the others; a seat is cut
-   off only if every relay rejects it.
+   would have refilled (§4.3.2 says how long that is when the relay does not
+   say), and the event still reaches the others; a seat is cut off only if
+   every relay rejects it.
 5. **Spectators read from relays only as a fallback.** Reads are not
    rate-limited in any configuration above, but they are bandwidth no operator
    prices for us: one 18-seat match read by **50,000 spectators** through one
@@ -291,6 +301,108 @@ Rules (ruling 10):
    per incident, so it costs nothing at any audience size; it is what keeps an
    observer a witness to censorship when its gossip peers are not honest
    (§7.5).
+
+#### 4.3.2 Robustness to rate limits that change — RATIFIED as a requirement (ruling 11); mechanism OPEN (R-SES17)
+
+§4.3.1 sized the load against limits as published or shipped by default. Ruling
+11 makes those numbers a starting estimate and nothing more: an operator can
+tighten a limit during a match, a shared address can spend a seat's per-IP
+budget, and a relay under load can throttle everyone. So the client treats
+rejection as a normal path, and the protocol has to stay correct and live
+whatever the relays do.
+
+**What the protocol already guarantees, whatever the relays do.** A frame is
+signed, idempotent and keyed by `(seat, round, kind)` (netcode §4), so any
+copy of it from any transport, at any time, is as good as the first.
+Correctness therefore never depends on a write being accepted. **Liveness does
+not either**: a seat whose events reach no relay before the other seats'
+patience runs out is defaulted to `pass` by timeout quorum (netcode §5.2), and
+after repeated rounds is handed to the autopilot (netcode §5.3). Rate limiting
+can cost a seat its orders; it cannot stall the match or fork the state.
+Everything below exists to make that cost rare.
+
+**Recommended client behavior (R-SES17).** Magnitudes are *placeholders*.
+
+1. **Learn each relay's limit from its replies, per relay.** The client keeps,
+   for each relay, the time until which it will not write there. A write that
+   is accepted (`OK` with `true`) clears it.
+2. **Honor a relay's backoff hint when one is given.** A proposed NIP-01
+   extension adds an optional trailing element to `OK` and `CLOSED` saying how
+   long to wait after a `rate-limited:` reply (nostr-protocol/nips#2498, open
+   as of 2026-10-09; units changed from seconds to milliseconds during review;
+   advisory and possibly approximate; a change proposed to one relay
+   implementation, nostream, sends it). The client parses `OK` and `CLOSED` as
+   arrays of any length, ignores elements it does not understand, and reads
+   the hint as a duration when it is a non-negative integer. A hint is capped
+   at the time left before the client's own patience for the current phase
+   expires; past that the relay is unusable for this phase, not something to
+   wait on, so a relay that hints an absurd delay — by fault or by design —
+   costs one relay for one phase.
+3. **Back off on its own when no hint is given.** Absence of a hint never means
+   "retry now". The client waits 15 s after a first rejection, doubling per
+   consecutive rejection to a cap of 120 s, each wait drawn ±50% at random so
+   seats behind one address do not retry in step. The same rule governs
+   reconnecting a closed websocket and re-sending a `REQ` that drew a
+   rate-limited `CLOSED`, because relays limit connections and subscriptions
+   too (khatru's defaults: 1 connection per 5 minutes per IP, burst 100; 20
+   filters per minute, burst 100 — appendix §D.60).
+4. **Hold one connection and one subscription per relay** for the match, and
+   never poll. A reconnect or a re-subscribe spends the same kind of budget a
+   write does.
+5. **Spend the write budget by urgency.** When a relay is backing off, the
+   client sends in this order: its `REVEAL` (the barrier waits on it), its
+   `COMMIT` (likewise), the host's room state, then everything else. A
+   `CHECKPOINT` is the one frame that can wait without costing anyone a turn:
+   while a seat is being limited, its checkpoints accumulate and leave in the
+   next event it sends, several frames to one event (a frame is 192 base64
+   characters, so one event holds dozens). The minimum a seat needs is
+   therefore two accepted events per round, on any one relay.
+6. **Another seat carries a frame that one relay is missing.** Each live seat
+   watches every usable relay. When a frame of its predecessor in seat order
+   (the previous live seat, cyclically) has reached at least one relay and is
+   still missing from another after 20 s, the seat republishes it there in a
+   new event under its own throwaway Nostr key, bundling every such frame it
+   carries for that round into one event. The frame's Ed25519 signature is
+   untouched, so this needs no trust (§3's trust rule). One designated carrier
+   per frame keeps the cost at most one extra event per seat per round per
+   relay, spent from a different address's budget; a carrier that is itself
+   backing off skips it.
+7. **Patience covers a backoff.** A client emits a `TIMEOUT_VOTE` (netcode
+   §5.2) no sooner than 120 s after the phase opened — the cap in rule 3 — so a
+   seat delayed by one full backoff on every relay is not defaulted for it.
+   This is a floor on when a vote is emitted; the state still changes only on
+   a quorum of signed votes in the log (netcode §1.1).
+8. **Every rejection is recorded locally** — relay, time, reply text, hint —
+   in a diagnostics log that is not part of the transcript. It is the data
+   that settles R-SES16 and R-SES17 in the prototype, and it is what a player
+   attaches to a bug report.
+
+**What changes against the threat models.** Ruling 11 adds an attacker who
+moves the limits rather than the messages, and the rules above bound it:
+
+- **An operator who hints long delays, or rejects one seat on purpose**, is a
+  relay censoring that seat — §7.5's transport censor. Rule 2's cap and §4.3.1
+  rule 4's every-relay publishing bound it to that relay; rule 6 lets other
+  seats carry the frame there from their own budgets, so a relay that rejects
+  the seat but accepts its neighbors does not keep the frame out.
+- **Someone flooding a relay's global limit** degrades that relay for every
+  seat on it at once. It looks like a relay outage and is handled as one: the
+  other relays carry the match. It is detectable only as a rejection pattern
+  across all seats on one relay, in rule 8's logs (*inference*).
+- **Someone spending a shared address's per-IP budget** (§7.5) now has to keep
+  every relay rejecting the victim for longer than rule 7's 120 s while rule 6's
+  carrier, at a different address, republishes the victim's frames wherever the
+  victim got one through. The attack still works against a victim whose writes
+  reach no relay at all (*inference*).
+- **None of it reaches integrity.** A delayed or carried frame is the same
+  frame; class A and class B detection are unchanged. Class C's relay witness
+  (§7.5) becomes stronger, because a carried copy of a reveal sits on more
+  relays.
+
+What would settle R-SES17: the R-SES1 prototype run with rule 8's log on,
+through relays whose limits are tightened during the match (a relay we run
+counts — the client code is the subject, not the relay), measuring how often a
+seat is defaulted and whether rule 6's carrier moves that number.
 
 Still OPEN under R-SES16, the magnitudes: the 180 s floor, the write
 allowance the pinned list requires, and the pinned list itself. What would
@@ -750,7 +862,7 @@ marked *inference* are reasoning, not measurement.
 | relay-only seats | **class C gets a public witness**, below; a new censor appears, below | no seat address reaches anyone but relay operators; unchanged for the streamer, who was relay-only under rule 1 already |
 | two events per round | **class A detection is delayed** by one decision: `CHECKPOINT(r)` is published when the seat commits for `r+1`, not when it finishes resolving. Equivocation proof is unchanged, because each frame inside an event is still signed alone. The last barrier's checkpoint goes out alone (§4.3.1 rule 1) | none |
 | 180 s floor per round | none: the floor gates when a client emits, never what the state becomes | stream delay stops being a practical sniping defense; the out-of-capture panel is the default (§4.5 rule 6) |
-| relays chosen by NIP-11 | fewer usable relays concentrate the transport: a seat is censored by the transport only if every usable relay drops it, and fewer relays make that cheaper (*inference*) | none: NIP-11 is fetched from pinned origins only |
+| relays screened by NIP-11, ranked at run time (§4.3.2) | fewer usable relays concentrate the transport: a seat is censored by the transport only if every usable relay drops it, and fewer relays make that cheaper (*inference*) | none: NIP-11 is fetched from pinned origins only |
 | spectators gossip, relays as fallback | **an observer can be fed by colluders**: if every gossip peer and bridge an observer has is run by the majority, they can withhold the victim's reveal and the observer loses its witness. Rule 7 closes this: a timeout quorum without a reveal triggers a one-event relay fetch | **spectators' addresses reach other spectators** (§4.5 residuals); the streamer's does not |
 | join requests to the host's inbox | none: queue order was trusted to the host before and still is | the audience no longer receives each other's requests; anyone can still read the inbox, so a request carries nothing private |
 | DTLS fingerprint signed by the seat key | removes a relay's ability to sit inside a direct link and drop frames selectively, which was a way to manufacture class C without a colluding seat | none for the streamer, who opens no direct link |
@@ -856,7 +968,8 @@ a pointer here meanwhile.
 | **R-SES13** | retention of old engine builds on Pages | OPEN | the repository's size after a year of builds |
 | **R-SES14** | a host kick after genesis: the seat goes to the autopilot, or no kick after the start | OPEN — recommended: autopilot (§5.1) | the author's ruling |
 | **R-SES15** | the streamer threat model's six rules: no peer connection from a private client, fetches only from pinned origins, fresh keys per session, no free text, proof-of-work on joins, the pending order kept off the shared view | OPEN — recommended (§4.5); the threat model itself is RATIFIED (ruling 9) | the author's ruling; a test recording every host a streamer-mode browser contacts when it opens a viewer-made link |
-| **R-SES16** | relay load: two events per seat per round (the last checkpoint alone), a 180 s floor per round, relays chosen by NIP-11, every event to every usable relay, spectators off the relays but for a targeted reveal fetch, join requests to the host's inbox | **RATIFIED** (ruling 10); the magnitudes (180 s, the required write allowance, the pinned list) are placeholders | the candidate relays' NIP-11 documents and policies, read from a network that reaches them; one 18-seat match through each, counting `rate-limited:` replies |
+| **R-SES16** | relay load: two events per seat per round (the last checkpoint alone), a 180 s floor per round, relays screened by NIP-11, every event to every usable relay, spectators off the relays but for a targeted reveal fetch, join requests to the host's inbox | **RATIFIED** (ruling 10); the magnitudes (180 s, the required write allowance, the pinned list) are placeholders | the candidate relays' NIP-11 documents and policies, read from a network that reaches them; one 18-seat match through each, counting `rate-limited:` replies |
+| **R-SES17** | robustness to rate limits that change: per-relay backoff learned from replies, the nips#2498 hint honored and capped, 15–120 s jittered backoff without one, one connection and subscription per relay, writes spent by urgency with checkpoints deferred and bundled, a designated carrier republishing a predecessor's missing frame, timeout patience of at least one backoff cap, a local rejection log | OPEN — recommended (§4.3.2); the requirement is RATIFIED (ruling 11) | the R-SES1 prototype with limits tightened mid-match, counting defaulted seats with and without the carrier |
 
 Engine work this spec depends on, already tracked: **T-30/T-42** (commit and
 reveal in the engine), **T-31** (cards; R-NET4's field widths), **T-32** (the
@@ -874,6 +987,7 @@ rendezvous layer and the link flow).
 - `Hyades_interface.md` — §2 (the seam), §3 (the replay format), §8 (the client), R-UI5
 - Nostr NIP-01 (protocol), NIP-13 (proof of work), NIP-40 (expiration), NIP-44 (encrypted payloads): https://github.com/nostr-protocol/nips
 - Trystero — serverless WebRTC matchmaking over public networks: https://github.com/dmotz/trystero
+- nostr-protocol/nips#2498 — an optional backoff parameter on `OK` and `CLOSED` after a `rate-limited:` reply (open at the time of writing): https://github.com/nostr-protocol/nips/pull/2498
 - Apple's 7-day cap on script-writable storage (Safari 13.1 / iOS 13.4): https://docs.didomi.io/releases-and-announcements/announcements/apple-implements-7-day-cap-on-script-writable-storage
 - CSP by meta tag on hosts without header control, and its limits: https://scotthelme.co.uk/launching-report-uri-js/ · https://htmhell.dev/adventcalendar/2023/7/
 - WICG Secure Curves in WebCrypto (Ed25519, X25519): https://wicg.github.io/webcrypto-secure-curves/
