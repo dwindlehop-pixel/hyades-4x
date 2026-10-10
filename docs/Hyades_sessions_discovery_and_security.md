@@ -37,6 +37,11 @@ RATIFIED (T-164, the request that opened this spec):
    succeed in an attack; **a person holding the match record, or an observer,
    must be able to detect that it happened.**
 
+RATIFIED (T-164, the author's ruling on the first draft):
+
+6. **The host can kick a player. Before the game starts, an observer takes
+   the kicked player's spot** (§5.1).
+
 ---
 
 ## 2. Terms
@@ -219,8 +224,8 @@ message limit is 500 characters, so the link fits with room for relay hints.
    before the player commits to anything.
 3. The player sends a signed **join request** with their key and name.
 4. **The originator's tab sequences the room.** It admits joiners in the order
-   it receives them until the seats are full, may remove a joiner before
-   genesis, and signs the seat table. There is no fairness rule on admission:
+   it receives them until the seats are full, may kick a seated joiner before
+   genesis (ruling 6, below), and signs the seat table. There is no fairness rule on admission:
    the link is the originator's, and anyone who disagrees with the originator's
    admissions can decline to sign genesis.
 5. Genesis proceeds per netcode §7: the jointly random galaxy seed (§7.1),
@@ -233,6 +238,28 @@ becomes a spectator: the client joins the gossip tier through the room topic
 lobby server). If the originator's tab closes before genesis, the room does
 not start. Recommendation: the client says so, and offers to make a new link
 with the same parameters.
+
+**Waiting spectators and the kick** (ruling 6). While the room fills and after
+it is full, a spectator may sign a `QUEUE` request; the originator's tab keeps
+the requests in the order it received them.
+
+- **Before genesis**, the originator signs a `KICK` naming a seated key. The
+  seat is removed from the seat table and offered to the **first spectator in
+  the queue**, who takes it by signing a join request. If the queue is empty,
+  the seat stays open to anyone holding the link. A kicked key cannot rejoin
+  that room.
+- A kick before genesis changes no game state: there is no game yet, and the
+  seat table every seat signs at genesis is the one in force. A kicked player's
+  only record of it is the originator's signed `KICK`.
+- **After genesis — OPEN (R-SES14).** The seat table is inside `session_id` and
+  a seat's key cannot be swapped without a new genesis, so an observer cannot
+  take a seat mid-match. Recommendation: a host `KICK` frame after genesis
+  hands the seat to the autopilot at the next barrier, exactly as a dropout
+  does (netcode §5.3); it is in the transcript, so every verifier sees who
+  kicked whom and when. The cost of the recommendation is a host power over an
+  opponent mid-match, which netcode does not otherwise give any seat; the
+  alternative is that the host cannot kick after the start, and a disruptive
+  player is handled by the timeout and dropout paths alone.
 
 **Rematch.** At the match's end every seat may sign a `REMATCH` intent (yes or
 no), and every spectator may sign a `QUEUE` request.
@@ -273,13 +300,70 @@ organizer, served by Pages. Recommendation:
   may name observer seats (Refereed).
 - **Anyone observes**: spectators join the gossip tier through the fixture's
   rendezvous topic.
-- **Results** are submitted as a pull request adding the match record to the
-  league repository. A **GitHub Actions workflow verifies it** with the native
-  engine, which is bit-identical to the wasm32 build since T-127 (netcode H4a),
-  and the merge is the result entering the league's table.
-- **Standings are the league's own**, computed from its verified records. There
-  is no global rank (ruling 3); two leagues may rank the same player
-  differently.
+- **Standings are the league's own**, computed from its verified records
+  (§5.2.1). There is no global rank (ruling 3); two leagues may rank the same
+  player differently.
+
+#### 5.2.1 How a result reaches the standings — OPEN (R-SES6)
+
+A league has no server, so its results live in its repository and its
+standings are a file that GitHub builds from them. Four machines take part,
+and three of them are GitHub's:
+
+| machine | operated by | what it does here |
+|---|---|---|
+| a player's browser | the player | holds the match record when the match ends; initiates the submission |
+| github.com | GitHub | receives the submission (an issue or a pull request) and stores the repository |
+| a GitHub Actions runner | GitHub (a short-lived Linux VM per job) | runs the league's workflow: verifies the record, then commits it and the recomputed standings |
+| GitHub Pages | GitHub | serves the standings page and the records to anyone's browser |
+
+The sequence, recommended form:
+
+1. **The match ends.** Every seat's browser holds the full transcript (§5.4).
+   The client shows **Submit to league**.
+2. **The player initiates it.** The button opens github.com in a new tab, on the
+   league repository's **issue form** "Submit a result", with the fixture id
+   filled in. The player attaches the match record file (the client has
+   downloaded it, packed as a `.zip`; which file types GitHub accepts as issue
+   attachments, and whether a workflow can fetch them anonymously, is untested) and presses **Submit new issue**. That one HTTPS request,
+   from the player's browser to github.com, is the only request the player
+   makes. It needs a GitHub account.
+3. **github.com responds** by storing the issue and firing the `issues: opened`
+   event, which starts the league's workflow on an Actions runner.
+4. **The runner verifies** in a job with read-only permissions: it downloads
+   the attachment, checks that the genesis seat table is the fixture's roster,
+   fetches the engine build named in genesis, replays the transcript natively —
+   bit-identical to the wasm32 build since T-127 (netcode H4a) — and computes
+   the §7.2 verdicts.
+5. **If every round agrees**, a second job with write permission commits the
+   record under `results/` and the recomputed `standings.json` to the main
+   branch, comments the verdict on the issue and closes it. If not, it
+   comments the verdicts and leaves the issue open for the organizer.
+6. **The commit triggers the Pages deployment.** Anyone opening the league's
+   standings page gets the new `standings.json` from Pages, and can download
+   any record from `results/` and verify it again in their own browser.
+
+No person has to act after step 2 for a conforming result. The first seat to
+submit wins; a later submission of the same fixture is compared with the
+stored record and, if it differs, the workflow comments the difference — which
+is a witness transcript for §7.1's class C.
+
+**The account requirement is the cost.** Ruling 4 (no sign-in) holds for
+playing a league match and for viewing standings; submitting needs one GitHub
+account per submission. Two alternatives, both OPEN:
+
+- **The organizer submits everything.** Players send the record file to the
+  organizer by any means (a Discord attachment); only the organizer needs an
+  account. Same workflow from step 3; slower, no account for players.
+- **A pull request instead of an issue.** The player uploads the file into
+  `results/` through github.com's web upload, which forks the repository and
+  opens a pull request. The verification job runs on the pull request with
+  read-only permissions, and the organizer clicks merge. More steps for the
+  player; the organizer approves every result by hand.
+
+What would settle it: the author choosing between player-submitted issues,
+organizer-submitted results, and pull requests; then one league fixture run
+through the chosen path end to end.
 
 ### 5.3 Public practice — OPEN (R-SES7)
 
@@ -505,8 +589,8 @@ a pointer here meanwhile.
 | **R-SES2** | identity: per-tab keys for casual play, persistent backed-up keys for leagues; name plus fingerprint | OPEN — recommended (§4.1) | the author's ruling; a test of key survival in Safari |
 | **R-SES3** | no TURN; frames over the rendezvous as the last transport | OPEN — recommended (§4.3) | the R-SES1 prototype, plus the fraction of seats that reach no peer |
 | **R-SES4** | private mode: no WebRTC, relay transport only | OPEN — recommended (§4.4) | the author's ruling on whether a streamer's address is the client's concern |
-| **R-SES5** | link format, originator sequencing, rematch host and queue order | OPEN — recommended (§5.1) | the author's ruling; whether first-received queue order is acceptable or a lottery is wanted (a lottery seeded by the rematch's joint seed resists timing races but not sybils) |
-| **R-SES6** | leagues as repositories, signed rosters, Actions verification | OPEN — recommended (§5.2) | one league run end to end |
+| **R-SES5** | link format, originator sequencing, the spectator queue, rematch host and queue order; the pre-genesis kick is RATIFIED (ruling 6) | OPEN — recommended (§5.1) | the author's ruling; whether first-received queue order is acceptable or a lottery is wanted (a lottery seeded by the rematch's joint seed resists timing races but not sybils) |
+| **R-SES6** | leagues as repositories, signed rosters; results submitted as an issue and verified and committed by an Actions workflow | OPEN — recommended (§5.2, §5.2.1) | the author choosing the submission path (player issue, organizer, or pull request); one league fixture run end to end |
 | **R-SES7** | practice modes as a static table; room announcements; no ranking of the list | OPEN — recommended (§5.3) | the author choosing the two or three modes |
 | **R-SES8** | match record format and verification steps | OPEN — recommended (§5.4) | T-32 (the digest) and T-165 (the engine in the browser) |
 | **R-SES9** | light, unverified spectators | OPEN — build only if needed (§6) | T-166 |
@@ -514,6 +598,7 @@ a pointer here meanwhile.
 | **R-SES11** | a per-round inputs hash | OPEN — recommended as a digest leaf (§7.2) | T-32 |
 | **R-SES12** | ejected seats keep replaying and showing their roots | OPEN — recommended (§7.3) | the author's ruling |
 | **R-SES13** | retention of old engine builds on Pages | OPEN | the repository's size after a year of builds |
+| **R-SES14** | a host kick after genesis: the seat goes to the autopilot, or no kick after the start | OPEN — recommended: autopilot (§5.1) | the author's ruling |
 
 Engine work this spec depends on, already tracked: **T-30/T-42** (commit and
 reveal in the engine), **T-31** (cards; R-NET4's field widths), **T-32** (the
