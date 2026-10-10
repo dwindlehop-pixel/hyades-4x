@@ -2155,6 +2155,12 @@ one, stop and flag it.
   that order, each stage with a gate. Cross-tree balance and counter-graph
   design are a separate workflow; this one hands off to it rather than
   inventing an edge or borrowing another tree's metric.
+- **A Design or Doctrine change that misbehaves or costs too much goes through
+  `.claude/skills/design-doctrine-workflow`** — brief, the decision as algebra
+  and an inventory of what the old rule did, bed and census, arms, read, root
+  cause, confirmation, cost, landing and record, each stage with a gate. It is
+  T-147's freight routing in `$` (appendix §D.53–§D.56) written as a method:
+  behavior is explained before throughput is traded for it.
 - **Make concrete decisions; flag open questions as R-codes.** A decision plus a
   flagged R-code beats an open-ended clarifying question. Existing families:
   `R-MC*` (mineral cost / combat), `R-L*` (loadout), `R-ARENA*`, `R-MX*` (matching),

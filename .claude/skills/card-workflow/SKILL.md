@@ -19,6 +19,9 @@ first requirement) and the design of the counter-graph. Take counter-graph edges
 as given input. If the card needs an edge that does not exist, or its value can
 only be read against another tree's metric, **stop and hand off** — do not
 invent the edge or borrow the metric.
+When the card's write moves its run the wrong way, or costs more throughput
+than it is worth, root-cause it through `.claude/skills/design-doctrine-workflow`
+and return here to measure the card.
 
 **Read first:** `AGENTS.md` §2 (measurement habits), §5 (design laws), §6
 (working agreement); `docs/Hyades_trees_and_card_value.md` §1 (voice), §2 (the

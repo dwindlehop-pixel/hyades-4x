@@ -77,7 +77,7 @@ const HULL_FIELDS: [&str; 7] = ["id", "owner", "hull", "design", "beams", "tubes
 /// One hull per row per frame: its id, the role its Doctrine has it on
 /// (`kind`), position ly, velocity ly/yr, acceleration ly/yr², `burn` the
 /// drive's sense, `damage` a share of structure, `flags` bit 0 in flight and
-/// bit 1 wrecked, `dest` a planet id or `-1`, cargo and settlers kt, and the
+/// bit 1 wrecked, bit 2 heading home off its mission (T-164), `dest` a planet id or `-1`, cargo and settlers kt, and the
 /// cargo by material, kt, in [`MATERIALS`] order.
 const VEHICLE_FIELDS: [&str; 23] = [
     "id",
@@ -315,7 +315,7 @@ fn frame(out: &mut String, snap: &Snapshot) {
         }
         out.push_str(&format!(",{},", v.burn));
         write_num(out, v.damage, 3);
-        let flags = u8::from(v.in_flight) | (u8::from(v.wrecked()) << 1);
+        let flags = u8::from(v.in_flight) | (u8::from(v.wrecked()) << 1) | (u8::from(v.withdrawing) << 2);
         let dest = v.destination.map_or(-1, |d| d.0 as i64);
         out.push_str(&format!(",{flags},{dest},"));
         write_num(out, v.cargo.total().kilotons(), 3);

@@ -990,6 +990,7 @@ impl Simulation {
         self.leave_post(e);
         let mass = self.destroy_free_hulls(&[e]);
         self.world.wreck.insert(e, Wreck { from, since: now, velocity, mass });
+        self.world.withdrawing.remove(e);
         self.armed.remove(&e);
         self.open_fire.remove(&e);
         self.stop_firing(e);
@@ -1248,6 +1249,7 @@ impl Simulation {
         // Leaving the mission: a withdrawing hull holds fire on anyone it
         // does not regard as an enemy (`Standing::fire_distance`).
         self.world.role.insert(e, Role::Reserve);
+        self.world.withdrawing.insert(e, self.clock);
         let arrive = self.course_change(e, home_pos);
         self.schedule_at(arrive, EventKind::ReturnArrive { vehicle: e });
         let pid = *self.world.planet_id.get(home).unwrap();
@@ -1449,6 +1451,34 @@ mod tests {
         let took = |e| wrecked(&sim, e).unwrap_or_else(|| damage(&sim, e));
         assert!(took(e0) > 0.0 && took(e1) > 0.0, "fire is simultaneous: {} and {}", took(e0), took(e1));
         assert!(wrecked(&sim, e0).is_some() || wrecked(&sim, e1).is_some(), "a pitched battle ends in a wreck");
+    }
+
+    /// **A hull heading home off its mission reads as withdrawing until it is
+    /// home or wrecked** (T-164): a viewer counts it apart from hulls still on
+    /// their role, and never counts a wreck.
+    #[test]
+    fn a_withdrawing_hull_reads_as_withdrawing_until_home_or_wrecked() {
+        let days = |d: f64| d / crate::combat::DAYS_PER_YEAR;
+        let (mut sim, [gun, prey]) = duel(7, cairn_gun, unarmed);
+        let find = |sim: &Simulation, e: Entity| *sim.snapshot().vehicles.iter().find(|v| v.id == e.0).unwrap();
+        assert!(!find(&sim, prey).withdrawing && !find(&sim, gun).withdrawing);
+        let left = |sim: &Simulation| {
+            sim.log().iter().any(|r| {
+                matches!(r.event, LogEvent::CourseChanged { vehicle, reason: CourseReason::Withdraw, .. } if vehicle == prey)
+            })
+        };
+        sim.config.horizon_years = 60.0;
+        while !left(&sim) {
+            assert!(sim.step(), "the prey withdraws before the queue empties");
+        }
+        let v = find(&sim, prey);
+        assert!(v.withdrawing && !v.wrecked() && v.kind == VehicleKind::Reserve, "heading home: {v:?}");
+        assert!(!find(&sim, gun).withdrawing, "the gun is still on its post");
+        run_to(&mut sim, days(30.0));
+        run_to(&mut sim, 55.0);
+        let v = find(&sim, prey);
+        assert!(!v.withdrawing, "home or wrecked, no longer withdrawing: {v:?}");
+        assert!(v.wrecked() || !v.in_flight, "it either reached home or was wrecked");
     }
 
     /// **Damage is a power, and the period only says how often it is checked**

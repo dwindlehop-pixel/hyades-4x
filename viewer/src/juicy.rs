@@ -356,13 +356,17 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
     // Below the galaxy level a stack is a cluster of dots, one per hull, so
     // its count reads and a hit does not hide whose it is (T-163).
     let clustered = s.camera.lod() != Lod::Galaxy;
-    let mut groups: std::collections::BTreeMap<((i64, i64), usize), Vec<usize>> = Default::default();
+    // Keyed by stack square, seat, and whether the hulls are heading home.
+    let mut groups: std::collections::BTreeMap<((i64, i64), usize, bool), Vec<usize>> = Default::default();
     let hull_ops: Vec<&Op> = ops.iter().filter(|o| matches!(o, Op::Hull { .. })).collect();
     for (i, (op, h)) in hull_ops.iter().zip(&s.view.hulls).enumerate() {
         let Op::Hull { s: sp, at, outline, vector, hit, quiet, wreck, .. } = op else { continue };
         let p = pos(*sp);
         if clustered && wreck.is_none() && !*quiet {
-            groups.entry((crate::tactical::stack_cell(s, h.row.pos), h.hull.owner)).or_default().push(i);
+            groups
+                .entry((crate::tactical::stack_cell(s, h.row.pos), h.hull.owner, h.row.withdrawing))
+                .or_default()
+                .push(i);
             continue;
         }
         if let Some((end, c)) = vector {
@@ -400,8 +404,10 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
         }
         [c[0] / members.len() as f64, c[1] / members.len() as f64]
     };
-    let found: Vec<(usize, Vec<usize>, [f64; 2])> =
-        groups.into_iter().map(|((_, seat), m)| (seat, m.clone(), mean(&m))).collect();
+    /// A seat, and whether its hulls here are heading home.
+    type Side = (usize, bool);
+    let found: Vec<(Side, Vec<usize>, [f64; 2])> =
+        groups.into_iter().map(|((_, seat, back), m)| ((seat, back), m.clone(), mean(&m))).collect();
     // Places: clusters joined while any two are within reach of each other.
     let mut place: Vec<usize> = (0..found.len()).collect();
     fn root(p: &mut [usize], i: usize) -> usize {
@@ -422,7 +428,7 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
             }
         }
     }
-    let mut places: std::collections::BTreeMap<usize, std::collections::BTreeMap<usize, Vec<usize>>> =
+    let mut places: std::collections::BTreeMap<usize, std::collections::BTreeMap<Side, Vec<usize>>> =
         Default::default();
     for (i, (seat, members, _)) in found.iter().enumerate() {
         let r = root(&mut place, i);
@@ -434,10 +440,12 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
         let apart = if m > 1 { (widest + CLUSTER_GAP * hull_r) / (std::f64::consts::PI / m as f64).sin() } else { 0.0 };
         let all: Vec<usize> = seats.values().flatten().copied().collect();
         let middle = mean(&all);
-        for (k, (seat, members)) in seats.iter().enumerate() {
+        for (k, ((seat, back), members)) in seats.iter().enumerate() {
             let (sin, cos) = (std::f64::consts::TAU * k as f64 / m as f64).sin_cos();
             let c = if m > 1 { [middle[0] + apart * cos, middle[1] + apart * sin] } else { mean(members) };
-            let color = linear(s.palette.seat(*seat));
+            // Hulls heading home are their own cluster, in the retreat color
+            // (T-164): the seat's own cluster counts only hulls on their role.
+            let color = linear(if *back { s.palette.status(Status::Retreat) } else { s.palette.seat(*seat) });
             let n = members.len();
             let dots = n.min(CLUSTER_MAX_DOTS);
             let k_dot = 2.0 * n as f32 / dots as f32;
@@ -794,6 +802,19 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(dots(&lights_of(&crowd(6, 0, false)), 0).len(), 6, "six hulls, six dots");
+        // Two of six heading home: a cluster of their own, in the retreat color.
+        let mut back = crowd(6, 0, false);
+        for h in back.hulls.iter_mut().take(2) {
+            h.row.withdrawing = true;
+        }
+        let l = lights_of(&back);
+        let retreat = linear(palette.status(Status::Retreat)).map(|c| c * 2.0);
+        let homeward = l
+            .iter()
+            .filter(|g| (g.r as f64 - CLUSTER_DOT_R * hull_r).abs() < 1e-6)
+            .filter(|g| g.color.iter().zip(retreat).all(|(a, b)| (a - b).abs() < 1e-5))
+            .count();
+        assert_eq!((dots(&l, 0).len(), homeward), (4, 2), "four on their role in the seat's color, two heading home");
         assert_eq!(dots(&lights_of(&crowd(5, 0, false)), 0).len(), 5, "one lost, one dot fewer");
         let both = lights_of(&crowd(6, 4, true));
         let (a, b) = (dots(&both, 0), dots(&both, 1));

@@ -152,6 +152,31 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-165. A workflow for root-causing and fixing Design and Doctrine changes
+
+*Opened and built in one landing at the author's request: "generalize the
+effort to debug the behavior and performance cost of settling hauling routes
+in `$` into a new workflow for root causing and fixing Design and Doctrine
+changes".* `.claude/skills/design-doctrine-workflow` writes T-147's freight
+routing (appendix §D.53–§D.56) and the drive-read legs (§D.19) as ten gated
+stages: brief, the decision as algebra with an inventory of what the old rule
+did, bed and census, arms, read, root cause, confirmation with a coordination
+census, cost, landing and record. `AGENTS.md` §6 and the card workflow point
+to it. No engine change.
+
+### T-164. Counts are of hulls on their role; retreat apart; no wrecks
+
+*Opened and built in one landing at the author's ruling: "Only count hulls
+that are still embarking on their primary role. If autopilot decides to
+retreat, that's a distinct count color. If a ship is wrecked, the wreck is not
+part of a count."* The engine marks a withdrawing hull from `fire::withdraw`
+until it arrives home or is wrecked (`World::withdrawing`,
+`VehicleSnapshot::withdrawing`, replay flags bit 2). A tactical place shows
+its count of hulls on their role and, in a new retreat color (`#ffaba1`), its
+count heading home; wrecks never stack with live hulls, so galaxy markers are
+sized by live hulls; juicy draws hulls heading home as their own cluster in
+the retreat color (`Hyades_interface.md` ruling 29, §3, §6.2, §6.4, §7.1).
+
 ### T-163. Juicy stacks show their owner and their count under fire
 
 *Opened and built in one landing at the author's report on the `beams`
