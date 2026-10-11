@@ -12,7 +12,7 @@ flagged **R-ACn**.*
 (`AGENTS.md` §6). The measurement record that used to be inlined here — R-AC3's
 survey sweep, R-AC19's recycling passes, R-O66's ablations, R-O68's dead branch,
 R-O86's 99% waste, the `survey_reserve` plateau, and the withdrawn R-AC20 sign
-conflict — is in **`Hyades_experiments_appendix.md` §A**, linked per decision.
+conflict — is in **`docs/experiments/` §A**, linked per decision.
 Rev 4 also reconciles the spec with everything landed through T-102: the
 `K = min(hab, bio_max)` amendment, the five-year economy tick, the closed-form
 logistic, the shell/drive model, and freight's two color fixes.
@@ -685,7 +685,7 @@ count, not a fraction — and the guard is kept rather than deleted.
 
 ## References
 
-- `Hyades_experiments_appendix.md` §A — the measurement record behind every
+- `docs/experiments/` §A — the measurement record behind every
   ratified item above
 - `Hyades_industry.md` §1 (the `K` amendment), §4 (the mining law), §6 (the
   layering algebra and the freight branch), §8.1 (refined mass traverses real

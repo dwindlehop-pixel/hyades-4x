@@ -3468,7 +3468,7 @@ pub struct SimConfig {
 /// It is by a wide margin the largest effect available on this surface, which
 /// says more about the surface than about the effect: five of the six mining
 /// *knobs* cannot be told from noise at all
-/// (`Hyades_experiments_appendix.md` §A.5). Tuning was exhausted; this
+/// (`docs/experiments/` §A.5). Tuning was exhausted; this
 /// is a term.
 pub const RECYCLE_MINING_PAIRS_DEFAULT: bool = true;
 

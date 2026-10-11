@@ -93,7 +93,7 @@ of T-codes moved and ratified decisions implemented or contradicted, which
 
 **Implemented entries are in `docs/hyades_done.md`.** Band A lists only work
 that is ready to build and not yet done. Moved there, with a status line each:
-T-154, T-153, T-152, T-151, T-150, T-149, T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
+T-168, T-154, T-153, T-152, T-151, T-150, T-149, T-133, T-132, T-130, T-127, T-129, T-126, T-125, T-124, T-123, T-122, T-121, T-120, T-119, T-118, T-117, T-116, T-115, T-114, T-113, T-112, T-111, T-109, T-110, T-96, T-101, T-100, T-98, T-94, T-91, T-90, T-81, T-88, T-01.
 
 ### T-147. Bring the card-free spread between empires to about 20 colonies
 
@@ -593,7 +593,7 @@ galaxy digests of every seat count, and gate it in CI's slow job.
 
 **Opened by the Rev 4 / Rev 2 split.** `AGENTS.md` §6 now says a spec carries
 **ratified decisions and open decisions only**, and everything else goes to
-`docs/Hyades_experiments_appendix.md` linked from the decision it supports.
+`docs/experiments/` linked from the decision it supports.
 
 **Done:** `Hyades_autopilot_colonization_growth.md` (430 → the Rev 4 register,
 history to appendix §A) and `Hyades_politics_trade_and_intelligence.md`
@@ -1696,7 +1696,47 @@ become "what does my current Role's System say to build". The dial
 
 ---
 
+### T-164. Sessions, discovery and security — ratify the spec
+
+`docs/Hyades_sessions_discovery_and_security.md` (Rev 1) designs the four entry
+points the author asked for — the link, league play, public practice, and the
+match record — on a static site with public Nostr relays as the rendezvous and
+no server we operate. Every decision in it is OPEN (R-SES1–R-SES13). It
+proposes amendments to netcode §3.2, §3.3, §7, §8.3, §10 and §11 (its §9
+lists them); netcode is edited to match when the author ratifies them.
+
+### T-165. The engine as a browser module, and the transcript verifier
+
+The engine compiled to wasm32 behind a plain interface whose only inbound call
+is `apply_orders`, run in a Worker, plus the verifier of sessions spec §5.4 and
+§7.2: check signatures, replay headless, compare roots per seat and per round,
+merge witness transcripts. A separate module from `hyades-viewer`, which must
+not link the engine (interface §2). Blocked for the root comparison on T-32.
+
+### T-167. The rendezvous layer and the link flow
+
+Sessions spec §3–§5: the `publish`/`subscribe` rendezvous over Nostr, the link
+payload, the originator's room sequencing, genesis over the rendezvous, the
+relay transport as the last rung, the room list, rematch and queue. Waits on
+R-SES1's prototype for the relay choice. Subsumes the topology, genesis and
+server items of T-37.
+
+**Advanced at T-169:** the link payload, room sequencing, join and queue to the
+host's inbox, kick, genesis and acceptances, Open games, the relay transport
+with §4.3.2's rate-limit handling and the carrier are built in `net/`
+(sessions spec §11). Remaining: rematch, roster links, direct connections and
+gossip, the jointly random seed, CBOR genesis, and everything T-165 gates.
+
 ## Band C — open question with a concrete test
+
+### T-169. Run the relay field test
+
+The relay test is built (sessions spec §11: `net/`, `web/newgame.js`, the New
+game screen) and tested against simulated relays and a loopback relay. What is
+open is the measurement: a match with real players on the pinned public relays,
+by the protocol of appendix §D.61, whose diagnostics settle R-SES16's write
+allowance and pinned list, R-SES17's magnitudes and R-SES18 (late votes).
+Needs the site deployed from `main`.
 
 
 ### T-64. One quantity type; the logistic runs on people (R-O83 closed)
@@ -4733,6 +4773,17 @@ near 20 yr/s, an ~8× margin. Measure it. Treat approaching the floor as the
 trigger to **optimize, not to shrink the scenario**.
 
 ---
+
+### T-166. wasm32 throughput at 18 seats, on a phone and a laptop
+
+Sessions spec §6. Live play needs `years_per_round / T` simulated years per
+second for a wall time `T` per round (2.2 yr/s at the placeholder `T = 180 s`
+of sessions spec §4.3.1),
+and a spectator who arrives mid-match needs several times that, or R-NET7's
+snapshot catch-up. No wasm32 figure exists; the native figures in `AGENTS.md`
+§7 are another target and mostly 3 seats. The test: the wasm32 build, 18
+seats, a full match horizon, on a mid-range phone and a laptop, reporting
+`yr/s` and `ns/event` (AGENTS.md §2). Settles R-SES9 and sizes R-NET7.
 
 ## Band D — direction only
 
