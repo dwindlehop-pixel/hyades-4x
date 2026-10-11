@@ -1705,6 +1705,9 @@ no server we operate. Every decision in it is OPEN (R-SES1–R-SES13). It
 proposes amendments to netcode §3.2, §3.3, §7, §8.3, §10 and §11 (its §9
 lists them); netcode is edited to match when the author ratifies them.
 
+**Advanced:** rulings 6–12 are in its §1; R-SES4, R-SES16 and R-SES14 (the kick
+after the start, ruling 12) are ratified.
+
 ### T-165. The engine as a browser module, and the transcript verifier
 
 The engine compiled to wasm32 behind a plain interface whose only inbound call
@@ -1722,7 +1725,7 @@ R-SES1's prototype for the relay choice. Subsumes the topology, genesis and
 server items of T-37.
 
 **Advanced at T-169:** the link payload, room sequencing, join and queue to the
-host's inbox, kick, genesis and acceptances, Open games, the relay transport
+host's inbox, kick before and after the start, genesis and acceptances, Open games, the relay transport
 with §4.3.2's rate-limit handling and the carrier are built in `net/`
 (sessions spec §11). Remaining: rematch, roster links, direct connections and
 gossip, the jointly random seed, CBOR genesis, and everything T-165 gates.

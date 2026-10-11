@@ -76,6 +76,12 @@ RATIFIED (T-164, the author's ruling on rate limits):
     or globally, and may publish none of it. No rule may depend on a relay's
     published or previously observed limit staying true (§4.3.2).
 
+RATIFIED (T-164, the author's ruling on R-SES14):
+
+12. **The host can kick a player after the match starts.** The kicked seat
+    plays the default order from a named round on, as a dropped seat does
+    (netcode §5.3), and the kick is a signed frame in the transcript (§5.1).
+
 ---
 
 ## 2. Terms
@@ -615,15 +621,21 @@ room; the originator's tab keeps the requests in the order it received them.
 - A kick before genesis changes no game state: there is no game yet, and the
   seat table every seat signs at genesis is the one in force. A kicked player's
   only record of it is the originator's signed `KICK`.
-- **After genesis — OPEN (R-SES14).** The seat table is inside `session_id` and
-  a seat's key cannot be swapped without a new genesis, so an observer cannot
-  take a seat mid-match. Recommendation: a host `KICK` frame after genesis
-  hands the seat to the autopilot at the next barrier, exactly as a dropout
-  does (netcode §5.3); it is in the transcript, so every verifier sees who
-  kicked whom and when. The cost of the recommendation is a host power over an
-  opponent mid-match, which netcode does not otherwise give any seat; the
-  alternative is that the host cannot kick after the start, and a disruptive
-  player is handled by the timeout and dropout paths alone.
+- **After genesis — RATIFIED (ruling 12, R-SES14).** The seat table is inside
+  `session_id` and a seat's key cannot be swapped without a new genesis, so an
+  observer cannot take a seat mid-match. The host signs a `KICK` frame naming
+  the seat and the first round it applies to — the first round the host has
+  not yet committed. From that round on every client treats the seat as
+  defaulted: its orders are the autopilot's (netcode §5.3), and the default
+  order while the engine is not in the browser (§11). No seat votes against a
+  kicked seat. The frame is in the transcript, so every verifier sees who
+  kicked whom and from which round. Only the seat whose key is the genesis
+  `host` key can kick; a kick by any other seat, or of the host itself, is
+  ignored. The cost, accepted by the ruling: the host holds a power over an
+  opponent mid-match that netcode gives no other seat.
+- **A kick that arrives late** — after a client resolved the round it names —
+  changes that client's result for the round, the same case as a late
+  timeout vote (R-SES18), and is logged and measured the same way.
 
 **Rematch.** At the match's end every seat may sign a `REMATCH` intent (yes or
 no), and every spectator may sign a `QUEUE` request to the new host's inbox.
@@ -944,6 +956,8 @@ by the same relay query.
 | interface §8.1 | New game "shown, not built yet" | the menu's play entries are §5's four; the relay test of §11 is BUILT there |
 | netcode §5.2 | timeout quorum ⌊N/2⌋+1 excluding the subject | capped at N−1, the seats able to vote, so two seats can time each other out (§11, R-SES19) |
 | netcode §4.3 step 9 | one frame stored per `(seat, round, kind)` | a timeout vote's key adds its subject and phase, or a seat could vote on one seat per round (§11, R-SES19) |
+| netcode §4 | four frame kinds | a fifth, `KICK` (kind 6): payload the kicked seat, round the first it applies to, key `(host seat, round, kind, subject)` (ruling 12, §5.1) |
+| netcode §5.3 | a seat goes to the autopilot by quorum vote | also by the host's `KICK`, from the round it names (ruling 12) |
 | netcode §5.2 | timeout votes make "every client … the same call at the same logical point" | false when a reveal and a quorum of votes reach clients in different orders (§11, R-SES18) |
 
 These are amendments **proposed** by an OPEN spec. Netcode is not edited to
@@ -971,7 +985,7 @@ a pointer here meanwhile.
 | **R-SES18** | late timeout votes can make clients resolve a round differently (§11) | OPEN | the field test's `late-change` count; a rule if it is not zero |
 | **R-SES19** | the relay test's departures from this spec and netcode: no engine, JSON genesis without a seed, everyone relay-only, Rust verification, quorum capped at N−1, vote key with subject and phase, carrier for acceptances (§11) | OPEN — each reconciled when T-165 lands; the quorum, vote key and acceptance carrier recommended for ratification | the author's ruling on each; T-165 |
 | **R-SES13** | retention of old engine builds on Pages | OPEN | the repository's size after a year of builds |
-| **R-SES14** | a host kick after genesis: the seat goes to the autopilot, or no kick after the start | OPEN — recommended: autopilot (§5.1) | the author's ruling |
+| **R-SES14** | a host kick after genesis: the seat goes to the autopilot, or no kick after the start | **RATIFIED** (ruling 12): the seat goes to the autopilot from the round the host's `KICK` names (§5.1) | — |
 | **R-SES15** | the streamer threat model's six rules: no peer connection from a private client, fetches only from pinned origins, fresh keys per session, no free text, proof-of-work on joins, the pending order kept off the shared view | OPEN — recommended (§4.5); the threat model itself is RATIFIED (ruling 9) | the author's ruling; a test recording every host a streamer-mode browser contacts when it opens a viewer-made link |
 | **R-SES16** | relay load: two events per seat per round (the last checkpoint alone), a 180 s floor per round, relays screened by NIP-11, every event to every usable relay, spectators off the relays but for a targeted reveal fetch, join requests to the host's inbox | **RATIFIED** (ruling 10); the magnitudes (180 s, the required write allowance, the pinned list) are placeholders | the candidate relays' NIP-11 documents and policies, read from a network that reaches them; one 18-seat match through each, counting `rate-limited:` replies |
 | **R-SES17** | robustness to rate limits that change: per-relay backoff learned from replies, the nips#2498 hint honored and capped, 15–120 s jittered backoff without one, one connection and subscription per relay, writes spent by urgency with checkpoints deferred and bundled, a designated carrier republishing a predecessor's missing frame, timeout patience of at least one backoff cap, a local rejection log | OPEN — recommended (§4.3.2); the requirement is RATIFIED (ruling 11) | the R-SES1 prototype with limits tightened mid-match, counting defaulted seats with and without the carrier |
@@ -1003,7 +1017,8 @@ non-extractable in WebCrypto and signs there (§4.1).
 **What it implements**, by section: the link payload (§5.1, 89 bytes);
 originator sequencing, join and `QUEUE` requests to the host's inbox with
 NIP-13 proof-of-work, the bounded queue, and the pre-genesis kick with the
-first queued player promoted (ruling 6, §4.5 rule 5); genesis and every
+first queued player promoted (ruling 6, §4.5 rule 5); the kick after genesis
+as a `KICK` frame, the seat passing from the round it names (ruling 12); genesis and every
 seat's signed acceptance (§5.2's audit); Open games (§5.3); relay-only seats
 with no address in the link or any readable message (rulings 7 and 10); the
 pinned relays, a CSP meta tag and the NIP-11 screen (§4.5 rule 2, §4.3.1 rule
@@ -1042,8 +1057,8 @@ after 15 s.
   start. Recommended for ratification under R-SES17.
 - **An acceptance that arrives before its genesis is held** until the genesis
   does, rather than dropped.
-- Not built: rematch, roster links (§5.2), the kick after genesis (R-SES14
-  is open), direct connections and their fingerprint binding.
+- Not built: rematch, roster links (§5.2), direct connections and their
+  fingerprint binding.
 
 **A finding the build makes measurable — R-SES18, OPEN.** A client resolves a
 round once it holds, for every seat, a valid reveal or a timeout quorum, and a

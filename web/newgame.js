@@ -151,10 +151,17 @@ function renderRoom(v) {
   }
 
   const seats = room?.seats ?? [];
-  $("room-seats").replaceChildren(...seats.map((s) => {
+  $("room-seats").replaceChildren(...seats.map((s, i) => {
     const li = el("li", `${s.name}${s.me ? " (you)" : ""}`);
     li.title = s.key;
-    if (v.host && !room.started && !s.me) li.append(button("Kick", () => net.kick(s.key)));
+    // After the start a kick hands the seat to the default order (R-SES14);
+    // the seat list is the genesis seat table, in seat order.
+    const kickedFrom = m?.seats[i]?.kicked_from ?? null;
+    if (kickedFrom !== null) li.append(el("span", ` — removed from round ${kickedFrom + 1}`, "dim"));
+    else if (v.host && !s.me && !(m && m.phase === "done")) {
+      const title = room.started ? "The seat passes every round from your next order on" : "The first player in the queue takes the seat";
+      li.append(button("Kick", () => net.kick(s.key), title));
+    }
     return li;
   }));
   const queue = room?.queue ?? [];
@@ -182,7 +189,8 @@ function renderRoom(v) {
 
   const mark = (yes, text = "✓") => el("span", yes ? text : "·", yes ? "ok" : "dim");
   table("match-seats", ["seat", "committed", "revealed", "timed out"], m.seats.map((s, i) => [
-    `${s.name}${i === m.my_seat ? " (you)" : ""}`, mark(s.committed), mark(s.revealed), s.defaulted ? el("span", "yes", "bad") : "",
+    `${s.name}${i === m.my_seat ? " (you)" : ""}`, mark(s.committed), mark(s.revealed),
+    s.kicked_from !== null && s.kicked_from <= m.round ? el("span", "removed", "bad") : s.defaulted ? el("span", "yes", "bad") : "",
   ]));
   table("match-history", ["round", "orders", "timed out", "checkpoints agree"], m.history.map((h) => {
     const agree = h.agree ? el("span", "yes", "ok") : el("span", Object.keys(h.checkpoints).length ? "no / not all in" : "waiting", "dim");
