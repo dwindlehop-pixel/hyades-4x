@@ -111,6 +111,13 @@ struct Match {
     late_changes: Vec<String>,
     auto: bool,
     chosen: Option<u16>,
+    /// The seat whose key is the room's host key, which alone signs a kick.
+    host_seat: Option<u16>,
+    /// Kicked seat → the first round it is handed to the default order:
+    /// the earliest such round among the host's kick frames held.
+    kicks: BTreeMap<u16, usize>,
+    /// The seats this client has signed a kick for, held or not yet.
+    kicks_sent: BTreeSet<u16>,
 }
 
 impl Match {
@@ -125,7 +132,12 @@ impl Match {
         (self.n() / 2 + 1).min(self.n() - 1).max(1)
     }
 
+    /// A seat defaults in a round when the host kicked it at or before that
+    /// round (R-SES14) or a timeout quorum voted against it.
     fn defaulted(&self, r: usize, s: u16) -> bool {
+        if self.kicks.get(&s).is_some_and(|&from| from <= r) {
+            return true;
+        }
         let rd = &self.rounds[r];
         [Phase::Commit, Phase::Reveal].iter().any(|&p| rd.votes.get(&(s, p)).is_some_and(|v| v.len() >= self.quorum()))
     }
@@ -787,8 +799,10 @@ impl Client {
         Ok(())
     }
 
-    /// Kick a seated player before the match starts; the first queued
-    /// spectator takes the seat (ruling 6).
+    /// Kick a seated player. Before the match starts the first queued
+    /// spectator takes the seat (ruling 6); after it starts the seat plays
+    /// the default order from the next round this host has not committed
+    /// (ruling 12, R-SES14).
     pub fn kick(&mut self, key_hex: &str, now: f64) -> Result<(), String> {
         let key: [u8; 32] = hex_array(key_hex).ok_or("not a key")?;
         if !self.host || key == self.me {
@@ -796,7 +810,7 @@ impl Client {
         }
         let room = self.room.as_mut().ok_or("no room")?;
         if room.started {
-            return Err("the match has started (R-SES14 is open)".into());
+            return self.kick_in_match(key, now);
         }
         let before = room.seats.len();
         room.seats.retain(|m| m.key != key);
@@ -810,6 +824,27 @@ impl Client {
         }
         self.note(now, "", "kicked", key_hex.to_string());
         self.publish_room(now);
+        Ok(())
+    }
+
+    fn kick_in_match(&mut self, key: [u8; 32], now: f64) -> Result<(), String> {
+        let m = self.mat.as_ref().ok_or("no match yet")?;
+        let subject = m.seats.iter().position(|k| *k == key).ok_or("not seated")? as u16;
+        if m.kicks_sent.contains(&subject) || m.kicks.contains_key(&subject) {
+            return Err("already kicked".into());
+        }
+        let r = m.current;
+        let from = if m.rounds[r].committed { r + 1 } else { r };
+        if m.done() || from >= m.rounds.len() {
+            return Err("no round left to kick from".into());
+        }
+        self.mat.as_mut().expect("checked").kicks_sent.insert(subject);
+        self.send_frames(
+            vec![(Kind::Kick, from as u32, frame::kick_payload(subject).to_vec())],
+            0,
+            format!("kick r{from}"),
+        );
+        self.note(now, "", "kicked", format!("seat {subject} from round {from}"));
         Ok(())
     }
 
@@ -863,6 +898,12 @@ impl Client {
         }
         let session = sha256(&[canonical_json(&genesis).as_bytes()]);
         let my_seat = seats.iter().position(|k| *k == self.me).map(|i| i as u16);
+        let host_seat = genesis
+            .get("host")
+            .and_then(Value::as_str)
+            .and_then(hex_array::<32>)
+            .and_then(|h| seats.iter().position(|k| *k == h))
+            .map(|i| i as u16);
         self.note(now, "", "genesis", format!("session {} seat {:?}", &hex(&session)[..12], my_seat));
         self.mat = Some(Match {
             genesis,
@@ -888,6 +929,9 @@ impl Client {
             late_changes: vec![],
             auto: true,
             chosen: None,
+            host_seat,
+            kicks: BTreeMap::new(),
+            kicks_sent: BTreeSet::new(),
         });
         for (msg, signer) in std::mem::take(&mut self.held_accepts) {
             self.on_accept(msg, signer, now);
@@ -991,6 +1035,13 @@ impl Client {
                     rd.votes.entry((subject, phase)).or_default().insert(f.seat);
                 }
             }
+            Kind::Kick => {
+                let subject = frame::read_kick(&f.payload);
+                if Some(f.seat) == m.host_seat && subject < n && subject != f.seat {
+                    let from = m.kicks.entry(subject).or_insert(r);
+                    *from = (*from).min(r);
+                }
+            }
         }
         Some(key)
     }
@@ -1070,7 +1121,9 @@ impl Client {
                 break;
             }
             let r = m.current;
-            let seat = m.my_seat;
+            // A kicked seat stops playing from its kick's round on; it still
+            // verifies, and signs its checkpoints at the end.
+            let seat = m.my_seat.filter(|s| !m.kicks.get(s).is_some_and(|&from| from <= r));
             if m.rounds[r].gate_at.is_none() && m.commit_gate(r) {
                 self.mat.as_mut().unwrap().rounds[r].gate_at = Some(now);
             }
@@ -1419,6 +1472,7 @@ impl Client {
                     "committed": rd.commits.contains_key(&s),
                     "revealed": m.valid_reveal(r, s).is_some(),
                     "defaulted": m.defaulted(r, s),
+                    "kicked_from": m.kicks.get(&s),
                 })).collect::<Vec<_>>(),
                 "history": history,
                 "equivocations": m.equivocations,

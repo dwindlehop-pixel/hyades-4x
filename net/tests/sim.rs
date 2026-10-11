@@ -445,3 +445,40 @@ fn the_host_kicks_and_the_first_queued_spectator_takes_the_seat() {
     assert!(net.run(30_000.0, |n| n.view(3)["room"]["place"] == "seat" && n.view(1)["room"]["place"] == "kicked"));
     assert!(net.clients[1].core.join("again", net.t).is_err(), "a kicked key cannot rejoin");
 }
+
+#[test]
+fn after_the_start_a_kicked_seat_passes_and_every_client_agrees_from_which_round() {
+    let mut net = Net::new(vec![Policy::default(), Policy::default()]);
+    for c in 0..3 {
+        net.add(vec![0, 1], c);
+    }
+    seat_a_room(&mut net, 3, Params { rounds: 5, ..quick() });
+    assert!(net.run(5.0 * 60_000.0, |n| n.view(0)["match"]["round"].as_u64() >= Some(1)), "round 0 resolved");
+    let key = net.view(2)["me"].as_str().unwrap().to_string();
+    let seat = net.view(2)["match"]["my_seat"].as_u64().unwrap() as usize;
+    let t = net.t;
+    net.clients[0].core.kick(&key, t).unwrap();
+    assert!(net.clients[0].core.kick(&key, t).is_err(), "a seat is kicked once");
+    let all = [0usize, 1, 2];
+    let ok = net.run(20.0 * 60_000.0, |n| finished(n, &all));
+    if !ok {
+        for c in all {
+            eprintln!("client {c}: {}\n{}", net.view(c)["match"], net.clients[c].core.diagnostics_tsv());
+        }
+    }
+    assert!(ok, "every client finished, the kicked one included");
+    net.run(30_000.0, |_| false);
+    checkpoints_agree(&net, &all);
+    let v = net.view(0);
+    let from = v["match"]["seats"][seat]["kicked_from"].as_u64().expect("the host holds its kick") as usize;
+    assert!(from >= 1, "the kick applies to a round the host had not committed");
+    for c in 1..3 {
+        assert_eq!(net.view(c)["match"]["seats"][seat]["kicked_from"].as_u64(), Some(from as u64), "client {c}");
+    }
+    for h in v["match"]["history"].as_array().unwrap() {
+        let r = h["round"].as_u64().unwrap() as usize;
+        let passed = h["defaulted"].as_array().unwrap().contains(&json!(seat));
+        assert_eq!(passed, r >= from, "round {r}: {h}");
+    }
+    assert_eq!(diag(&net, 1, "timeout-vote"), 0, "a kicked seat is not voted against");
+}

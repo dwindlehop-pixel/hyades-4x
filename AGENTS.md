@@ -23,8 +23,8 @@ is already clean, which is most of the foundation.
 player reaches a seat with no server we run — a link, a league roster, a public
 room list, a verifiable match record — and which attacks a colluding majority
 can make undetected (§7: censorship by timeout, from one transcript; §7.5:
-visible once the relays are queried). Its rulings 1–10 are ratified, including
-relay-only seats and the relay-load rules; the rest is OPEN. It proposes
+visible once the relays are queried). Its rulings 1–12 are ratified, including
+relay-only seats, the relay-load rules and the host's kick after the start; the rest is OPEN. It proposes
 amendments to netcode; read its §9 before treating netcode §10 as the
 plan.
 

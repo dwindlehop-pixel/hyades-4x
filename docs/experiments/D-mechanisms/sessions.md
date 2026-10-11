@@ -95,7 +95,12 @@ harder per minute and finishes faster; run it as a second match.
 4. Leave **Play automatically** on (or pick orders by hand) and keep the tab
    open and in front until the round table shows every round. A background tab
    may have its timers slowed by the browser, which is itself worth recording.
-5. Every player presses **Save diagnostics (.tsv)** and **Save match record
+5. *Optional, in one match only:* after round 2 the host presses **Kick** beside
+   one player's name (ruling 12). That player's seat passes from the next round
+   the host has not ordered in, and the round table on every tab should show
+   it as removed from the same round. The kicked player keeps the tab open to
+   the end; it still verifies and signs its checkpoints.
+6. Every player presses **Save diagnostics (.tsv)** and **Save match record
    (.json)** and sends both files back, saying which browser and network
    (home, mobile, VPN) they used.
 
@@ -118,6 +123,7 @@ frame the player held.
 | `round-resolved` durations, and seats timed out per round | whether 180 s and 120 s are enough (R-SES17's magnitudes) |
 | `carry` rows | how often the carrier is needed |
 | `late-change` rows; checkpoint agreement in the round table | R-SES18 |
+| in the kick match: `kicked_from` equal on every tab, and any `late-change` in the round it names | whether a kick arriving after a round resolved happens in practice (ruling 12, §5.1) |
 
 **Data.** Files go in `docs/experiments/data/D.61-<date>-<player>.tsv` and
 `.json`, per `docs/experiments/AGENTS.md`, with the browser and network noted

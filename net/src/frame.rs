@@ -31,6 +31,9 @@ pub enum Kind {
     Reveal = 2,
     Checkpoint = 3,
     TimeoutVote = 5,
+    /// The host hands a seat to the default order from a named round on
+    /// (sessions spec §5.1, R-SES14). Not in netcode §4's kind table.
+    Kick = 6,
 }
 
 impl Kind {
@@ -40,6 +43,7 @@ impl Kind {
             2 => Kind::Reveal,
             3 => Kind::Checkpoint,
             5 => Kind::TimeoutVote,
+            6 => Kind::Kick,
             _ => return None,
         })
     }
@@ -50,6 +54,7 @@ impl Kind {
             Kind::Commit | Kind::Checkpoint => 32,
             Kind::Reveal => 23,
             Kind::TimeoutVote => 3,
+            Kind::Kick => 2,
         }
     }
 }
@@ -110,14 +115,16 @@ impl Frame {
         FrameKey { seat: self.seat, round: self.round, kind: self.kind, extra: self.extra() }
     }
 
-    /// A timeout vote is one frame per (voter, round, subject, phase): the
-    /// netcode key (seat, round, kind) would let a seat vote once a round.
+    /// A timeout vote is one frame per (voter, round, subject, phase), and a
+    /// kick one per (host, round, subject): the netcode key (seat, round,
+    /// kind) would let a seat vote, or the host kick, once a round.
     fn extra(&self) -> u32 {
         match self.kind {
             Kind::TimeoutVote => {
                 let v = read_vote(&self.payload);
                 ((v.0 as u32) << 8) | v.1 as u32
             }
+            Kind::Kick => read_kick(&self.payload) as u32,
             _ => 0,
         }
     }
@@ -208,6 +215,16 @@ pub fn vote_payload(subject: u16, phase: Phase) -> [u8; 3] {
 pub fn read_vote(payload: &[u8; 32]) -> (u16, Phase) {
     let phase = if payload[2] == 0 { Phase::Commit } else { Phase::Reveal };
     (u16::from_le_bytes([payload[0], payload[1]]), phase)
+}
+
+/// KICK's payload: the seat handed to the default order. The frame's round
+/// is the first round it applies to.
+pub fn kick_payload(subject: u16) -> [u8; 2] {
+    subject.to_le_bytes()
+}
+
+pub fn read_kick(payload: &[u8; 32]) -> u16 {
+    u16::from_le_bytes([payload[0], payload[1]])
 }
 
 /// The checkpoint root while the engine is not in the browser (T-165): a
