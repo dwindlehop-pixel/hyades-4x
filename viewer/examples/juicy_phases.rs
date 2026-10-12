@@ -10,7 +10,7 @@ use std::time::Instant;
 fn main() {
     let (w, h) = (960, 600);
     let mut hdr = Hdr::new(w, h);
-    let lut = ToneLut::new();
+    let lut = ToneLut::new(hyades_viewer::palette::Palette::default().roles.ink);
     let mut out = Raster::new(w, h);
     let n = 50;
     let t = Instant::now();

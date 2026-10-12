@@ -146,6 +146,11 @@ RATIFIED (T-173 – T-178, the author's rulings):
     defined palette as the game uses it, and both modes draw in the ratified
     palette (§6.2, §8.4).
 
+RATIFIED (T-179, the author's ruling):
+
+37. **The juicy background is `ink`** — the tone map's darkest tone (§6.2,
+    §7.1).
+
 ---
 
 ## 2. The seam
@@ -345,6 +350,7 @@ values then replace the proposal in `palette.rs` and this section, and
 
 | role | source color |
 |---|---|
+| ink — the juicy background (ruling 37) | none: a neutral at OKLCH lightness `ink`, chroma 0 — `#000000` at the proposed `ink = 0.02`, `#222222` at 0.25 |
 | ground, panel, grid, hex lines | base03, base02, base01, base02 |
 | text (dim, normal, bright) | base0, base2, base3 |
 | a world (unowned) | base01 |
@@ -388,9 +394,8 @@ holding's bars and a hold's stripes (§6.5, §6.6).
 **Both modes draw only in the palette** (ruling 36): every color the tactical
 raster, the juicy light list and the page chrome use is a role, seat, status
 or material color of `Palette`, so the live editor and a ratification reach
-both. The one color outside it is the juicy background, black because it is
-the sum of no light (§7.1); whether it should be the ground role is part of
-R-UI2.
+both — the juicy background included, which is the `ink` role (ruling 37,
+§7.1).
 
 What is tested and holds whatever is approved: text at 4.5:1 on the ground and
 on a panel (WCAG 2 AA), dim text at 3:1, eighteen seats each at 3:1 on the
@@ -627,7 +632,10 @@ modes cannot disagree about where anything is.
 A light of intensity `I` and radius `r` adds `I / (1 + d²/r²)²` at distance
 `d`, cut at `4r`. The bloom is the buffer averaged in 4×4 blocks, box-blurred
 (radius 2, three passes) and added back at weight 0.35. The tone curve is
-`1 − e^(−x)` per channel, then sRGB encoding. Every magnitude here is a
+`t = 1 − e^(−x)` per channel, laid over the background — **the palette's
+`ink`** (ruling 37, T-179) — as `g + (1 − g)·t` in linear light, where `g` is
+the ink's linear value in that channel; then sRGB encoding. No light shows the
+ink, and no light, however bright, passes white. Every magnitude here is a
 *placeholder* (`juicy.rs`'s constants); the light sizes grow with the level of
 detail (`light_scale`).
 
@@ -688,8 +696,10 @@ games, and record each decision here as it is made.
 BUILT. The module computes the **light list** (`juicy::lights`); the shell
 draws it with **WebGL2** (`web/gpu.js`): instanced additive quads into a
 half-float target, the block average, the separable blur, the territory glow
-into the bloom target, and a composite pass with the tone curve. The constants
-come from the module, so the two renderers share them.
+into the bloom target, and a composite pass with the tone curve over the ink.
+The constants come from the module, so the two renderers share them; the ink
+moves with the live editor, so the shell reads it every frame
+(`hv_juicy_ground`).
 
 **The module's CPU renderer (`juicy::rasterize`) is the reference** and the
 fallback where a browser has no WebGL2 or no renderable half-float target. The
@@ -799,7 +809,7 @@ both modes; and `web/test/browser.mjs`, which opens the site in headless
 Chrome, goes from the menu through Replays to a replay, checks it renders on
 WebGL2 without a console error, checks the glyph legend shows every role's
 mark and keys the materials by in-game name, clicks a drawn hull and checks it is selected,
-compares GPU and CPU juicy (§7.3), plays, filters the log and seeks from a row,
+compares GPU and CPU juicy on the proposed palette and over a visible ink, and checks the background is the ink on both (§7.3), plays, filters the log and seeks from a row,
 drives the palette editor (a link's settings open with the page; a slider
 redraws the canvas and rewrites the link; a hand-set color reaches the settings
 line; reset returns to the proposal), returns to the menu and opens the
@@ -823,7 +833,7 @@ job runs the same build and tests on every pull request.
 | code | decision | status | what would settle it |
 |---|---|---|---|
 | **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"`; the `palette` and `forge` replays show it in play (ruling 36, T-177) | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
-| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1); paths added at T-175; whether the background is the ground role rather than black is open (§6.2) | the author's judgment against recorded games |
+| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1); paths added at T-175; the background is the palette's `ink` (ruling 37, T-179) | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — revised at T-153: armed bodies solid and unarmed hollow; a 3×3 role mark per role; glyphs a pixel wider each side; a legend | the author's review on the deployed site |
 | **R-UI4** | stacking and the tactical layer: the room a footprint keeps for counts (ruling 30 ratified places as overlapping footprints), the Galaxy-level owner markers, the display order, the place count, paths, holding bars, quiet hulls and cargo stripes (§6.4–§6.7) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18); routes replaced by paths at T-174 (rulings 32–33), their magnitudes proposed | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |

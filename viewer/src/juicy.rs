@@ -90,7 +90,8 @@ pub struct Hdr {
     pub px: Vec<[f32; 3]>,
 }
 
-fn linear(c: Rgb) -> [f32; 3] {
+/// A color as linear light, the form lights and the background add in.
+pub(crate) fn linear(c: Rgb) -> [f32; 3] {
     let f = |v: f64| {
         if v <= 0.04045 {
             v / 12.92
@@ -111,6 +112,13 @@ fn encode(v: f32) -> u8 {
 /// it rises monotonically, and no light, however bright, passes white.
 pub fn tone(x: f32) -> f32 {
     1.0 - (-x.max(0.0) * EXPOSURE).exp()
+}
+
+/// **The toned light over the background** (T-179), linear, per channel:
+/// `ground + (1 − ground) · tone(x)`. No light is the background — the
+/// palette's ink — and no light, however bright, passes white.
+pub fn over(ground: f32, x: f32) -> f32 {
+    ground + (1.0 - ground) * tone(x)
 }
 
 impl Hdr {
@@ -235,17 +243,21 @@ impl Hdr {
     pub fn resolve(&self, out: &mut Raster, lut: &ToneLut) {
         out.resize(self.w, self.h);
         for (p, o) in self.px.iter().zip(out.px.as_chunks_mut::<4>().0) {
-            o.copy_from_slice(&[lut.get(p[0]), lut.get(p[1]), lut.get(p[2]), 255]);
+            o.copy_from_slice(&[lut.get(0, p[0]), lut.get(1, p[1]), lut.get(2, p[2]), 255]);
         }
     }
 }
 
-/// [`tone`] then sRGB encoding, tabulated: two transcendentals per channel per
-/// pixel were most of a frame. Indexed by the light's own float bits —
-/// exponent and the top eight mantissa bits — so every octave of brightness
-/// gets 256 entries and no arithmetic is spent finding one.
+/// [`over`] then sRGB encoding, tabulated per channel: two transcendentals
+/// per channel per pixel were most of a frame. Indexed by the light's own
+/// float bits — exponent and the top eight mantissa bits — so every octave of
+/// brightness gets 256 entries and no arithmetic is spent finding one. Built
+/// for one background, and rebuilt when the palette's ink changes.
 #[derive(Clone, Debug, PartialEq)]
-pub struct ToneLut(Vec<u8>);
+pub struct ToneLut {
+    ground: [f32; 3],
+    tables: [Vec<u8>; 3],
+}
 
 impl ToneLut {
     /// Below this the code is 0; past `HI` the curve is within half a code of
@@ -254,28 +266,32 @@ impl ToneLut {
     const HI: f32 = 16.0;
     const SHIFT: u32 = 15;
 
-    pub fn new() -> ToneLut {
+    /// The table over `ink`, the background color.
+    pub fn new(ink: Rgb) -> ToneLut {
+        let ground = linear(ink);
         let (lo, hi) = (Self::LO.to_bits(), Self::HI.to_bits());
         let n = ((hi - lo) >> Self::SHIFT) + 1;
-        ToneLut(
+        let table = |g: f32| -> Vec<u8> {
             (0..n)
                 .map(|i| {
                     let mid = f32::from_bits(lo + (i << Self::SHIFT) + (1 << (Self::SHIFT - 1)));
-                    encode(tone(mid))
+                    encode(over(g, mid))
                 })
-                .collect(),
-        )
+                .collect()
+        };
+        ToneLut { ground, tables: ground.map(table) }
     }
 
-    pub fn get(&self, x: f32) -> u8 {
+    /// The background this table was built over, linear.
+    pub fn ground(&self) -> [f32; 3] {
+        self.ground
+    }
+
+    /// The display code of light `x` in channel `ch` (0 red, 1 green, 2 blue).
+    pub fn get(&self, ch: usize, x: f32) -> u8 {
+        let t = &self.tables[ch];
         let i = (x.max(0.0).to_bits().saturating_sub(Self::LO.to_bits()) >> Self::SHIFT) as usize;
-        self.0[i.min(self.0.len() - 1)]
-    }
-}
-
-impl Default for ToneLut {
-    fn default() -> Self {
-        ToneLut::new()
+        t[i.min(t.len() - 1)]
     }
 }
 
@@ -634,15 +650,48 @@ mod tests {
         assert!(tone(10.0) > 0.99);
     }
 
+    /// **The table is the curve over the background, to one code** (T-179):
+    /// no light is the background's own code in every channel, and bright
+    /// light is white whatever the background.
     #[test]
-    fn the_tone_table_matches_the_curve_to_one_code() {
-        let lut = ToneLut::new();
-        for i in 0..2000 {
-            let x = (i as f32 / 100.0).powi(2) / 10.0;
-            let exact = encode(tone(x)) as i32;
-            assert!((lut.get(x) as i32 - exact).abs() <= 1, "x {x}: {} against {exact}", lut.get(x));
+    fn the_tone_table_matches_the_curve_over_the_ink_to_one_code() {
+        let ink = Rgb::from_hex("#1a2433");
+        let lut = ToneLut::new(ink);
+        let g = linear(ink);
+        for (ch, &gc) in g.iter().enumerate() {
+            for i in 0..2000 {
+                let x = (i as f32 / 100.0).powi(2) / 10.0;
+                let exact = encode(over(gc, x)) as i32;
+                let got = lut.get(ch, x) as i32;
+                assert!((got - exact).abs() <= 1, "channel {ch}, x {x}: {got} against {exact}");
+            }
+            assert_eq!(lut.get(ch, 1e9), 255, "bright light is white");
         }
-        assert_eq!((lut.get(0.0), lut.get(-1.0), lut.get(1e9)), (0, 0, 255));
+        let none = [0, 1, 2].map(|ch| lut.get(ch, 0.0));
+        assert_eq!(none, [0x1a, 0x24, 0x33], "no light is the ink");
+        assert_eq!([0, 1, 2].map(|ch| lut.get(ch, -1.0)), none);
+    }
+
+    /// **The background is the palette's ink**, a neutral at the tone map's
+    /// `ink` lightness, and the editor's `ink` moves it (T-179).
+    #[test]
+    fn the_juicy_background_is_the_palettes_ink() {
+        use crate::palette::Settings;
+        let dark = Palette::default().roles.ink;
+        let light = Palette::with(Settings::parse("ink=0.2").unwrap()).roles.ink;
+        let l = |c: Rgb| crate::color::to_oklch(c).l;
+        assert!((l(dark) - 0.02).abs() < 0.01 && (l(light) - 0.2).abs() < 0.01, "{} {}", l(dark), l(light));
+        assert!((light.r - light.g).abs() < 1e-6 && (light.g - light.b).abs() < 1e-6, "a neutral");
+        let lut = ToneLut::new(light);
+        let mut out = Raster::new(1, 1);
+        Hdr::new(2, 2).resolve(&mut out, &lut);
+        let code = |v: f64| (v * 255.0).round() as u8;
+        let want = [code(light.r), code(light.g), code(light.b)];
+        let got = out.get(1, 1).unwrap();
+        assert!(
+            got.iter().zip(want).all(|(&a, b)| a.abs_diff(b) <= 1),
+            "an empty sky resolves to the ink: {got:?} {want:?}"
+        );
     }
 
     #[test]
@@ -942,7 +991,7 @@ mod tests {
         };
         let ops = plan(&s);
         let (mut hdr, mut out) = (Hdr::new(1, 1), Raster::new(1, 1));
-        render(&s, &ops, &mut hdr, &mut out, &ToneLut::new());
+        render(&s, &ops, &mut hdr, &mut out, &ToneLut::new(palette.roles.ink));
         let lum = |p: [f64; 3]| {
             let at = camera.project(p).map(|c| (c / PIXEL).floor() as i64);
             out.get(at[0], at[1]).unwrap().iter().map(|&c| c as u32).sum::<u32>()
@@ -986,7 +1035,7 @@ mod tests {
         };
         let ops = plan(&s);
         let (mut hdr, mut out) = (Hdr::new(1, 1), Raster::new(1, 1));
-        render(&s, &ops, &mut hdr, &mut out, &ToneLut::new());
+        render(&s, &ops, &mut hdr, &mut out, &ToneLut::new(palette.roles.ink));
         assert_eq!((out.w, out.h), (320, 200));
         let lum = |p: [u8; 3]| p[0] as u32 + p[1] as u32 + p[2] as u32;
         let dark = lum(out.get(0, 0).unwrap());

@@ -153,6 +153,18 @@ description of the change.
 
 ## Entries moved from Band A
 
+### T-179. The juicy background is the palette's ink
+
+*Opened and built in one landing at the author's ruling: "Use `ink` for the
+background", answering the question T-178 left under R-UI2.* A new role,
+`Roles::ink`, is a neutral at the tone map's `ink` lightness. Both juicy
+renderers lay the toned light over it as `g + (1 − g)·t` in linear light: the
+CPU tone table is built per channel over the ink and rebuilt when it changes,
+and the GPU composite takes it as a uniform each frame (`hv_juicy_ground`). At
+the proposed `ink = 0.02` it is `#000000` to the code; at `ink = 0.25` both
+renderers draw `#222222` and agree to a mean of 0.03 codes, which the browser
+test now checks (`Hyades_interface.md` ruling 37, §6.2, §7.1, §7.3).
+
 *T-173 – T-178 were opened and built in one landing at the author's request:
 "both juicy and tactical are too few frames. We need the target frame rate to
 be 30 fps or 60 fps depending upon the platform. Yr/s should not change, but
@@ -222,8 +234,8 @@ appear in no shipped replay (§3, §6.2, §8.4, appendix §D.62.4).
 
 An audit of the tactical raster, the juicy light list, `gpu.js` and the page
 chrome found every color drawn from `Palette` except the juicy background,
-which is black as the sum of no light; whether it should be the ground role is
-recorded under R-UI2 (§6.2).
+which was black as the sum of no light. The author ruled it the palette's
+`ink` (T-179) (§6.2).
 
 ### T-171. Stacks are places of overlapping footprints, so counts never overlap
 

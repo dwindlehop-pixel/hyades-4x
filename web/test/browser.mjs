@@ -117,9 +117,19 @@ try {
   const picked = await clickDrawn(page, (box, x, y) => page.mouse.click(box.x + x + 2, box.y + y + 2));
   check(picked.startsWith("Hull "), `a click on a drawn hull selects it: ${picked.split("\n")[0]}`);
 
-  // GPU juicy against the module's CPU juicy, frame by frame.
-  const diff = await page.evaluate(() => {
+  // GPU juicy against the module's CPU juicy, frame by frame — on the
+  // palette as it opened, and on one whose ink is light enough to see, so the
+  // background (the palette's ink, T-179) is compared too.
+  const compareJuicy = (line) => page.evaluate((line) => {
     const hv = window.hyades.hv(), gpu = window.hyades.gpu();
+    const was = window.hyades.text(9);
+    const setLine = (l) => {
+      const b = new TextEncoder().encode(l);
+      new Uint8Array(hv.memory.buffer, hv.hv_input(b.length), b.length).set(b);
+      return hv.hv_palette_set();
+    };
+    if (line && setLine(line) !== 0) return { error: `palette ${line} refused` };
+    const ground = [0, 1, 2].map((ch) => hv.hv_juicy_ground(ch));
     hv.hv_seek_fraction(0.3);
     hv.hv_set_mode(1);
     const c = document.getElementById("view");
@@ -128,10 +138,11 @@ try {
     const n0 = hv.hv_lights_len(0), n1 = hv.hv_lights_len(1);
     const scene = new Float32Array(hv.memory.buffer, hv.hv_lights_ptr(0), n0 * 6).slice();
     const terr = new Float32Array(hv.memory.buffer, hv.hv_lights_ptr(1), n1 * 6).slice();
-    gpu.juicy(scene, n0, terr, n1, w, h, "check");
+    gpu.juicy(scene, n0, terr, n1, w, h, ground, "check");
     const g = gpu.read("check");
     const p = hv.hv_render();
     const cpu = new Uint8Array(hv.memory.buffer, p, hv.hv_frame_w() * hv.hv_frame_h() * 4).slice();
+    if (line) setLine(was);
     if (cpu.length !== g.length) return { error: `sizes ${cpu.length} ${g.length}` };
     const d = [];
     let sum = 0, lit = 0;
@@ -142,11 +153,23 @@ try {
       if (cpu[i] + cpu[i + 1] + cpu[i + 2] > 30) lit++;
     }
     d.sort((a, b) => a - b);
-    return { lights: n0 + n1, lit, mean: sum / d.length, p99: d[Math.floor(d.length * 0.99)], max: d[d.length - 1] };
-  });
+    // The darkest pixel of each renderer: the background where no light falls.
+    const darkest = (px) => {
+      let best = [255, 255, 255];
+      for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] < best[0] + best[1] + best[2]) best = [px[i], px[i + 1], px[i + 2]];
+      return best;
+    };
+    return { lights: n0 + n1, lit, mean: sum / d.length, p99: d[Math.floor(d.length * 0.99)], max: d[d.length - 1], dark: [darkest(cpu), darkest(g)] };
+  }, line);
+  const matches = (d) => !d.error && d.mean < 1.0 && d.p99 <= 4 && d.max <= 24;
+  const diff = await compareJuicy(null);
   console.log("     GPU against CPU juicy:", JSON.stringify(diff));
   check(!diff.error && diff.lit > 100, "the juicy frame is lit");
-  check(!diff.error && diff.mean < 1.0 && diff.p99 <= 4 && diff.max <= 24, "GPU juicy matches the CPU reference (mean < 1 code, 99th percentile ≤ 4, max ≤ 24)");
+  check(matches(diff), "GPU juicy matches the CPU reference (mean < 1 code, 99th percentile ≤ 4, max ≤ 24)");
+  const inked = await compareJuicy("ink=0.25");
+  console.log("     ... with ink=0.25:", JSON.stringify(inked));
+  check(matches(inked), "GPU juicy matches the CPU reference over a visible ink");
+  check(!inked.error && inked.dark.every(([r, g, b]) => r > 20 && Math.abs(r - g) <= 2 && Math.abs(g - b) <= 2), "the juicy background is the palette's ink, a neutral, on both renderers");
   await page.evaluate(() => window.hyades.draw());
   if (shots) await page.screenshot({ path: path.join(shots, "juicy.png") });
 

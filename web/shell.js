@@ -566,7 +566,8 @@ function draw() {
         hv.hv_prepare_lights();
         const scene = new Float32Array(hv.memory.buffer, hv.hv_lights_ptr(0), hv.hv_lights_len(0) * 6);
         const terr = new Float32Array(hv.memory.buffer, hv.hv_lights_ptr(1), hv.hv_lights_len(1) * 6);
-        gpu.juicy(scene, hv.hv_lights_len(0), terr, hv.hv_lights_len(1), w, h);
+        const ground = [0, 1, 2].map((ch) => hv.hv_juicy_ground(ch));
+        gpu.juicy(scene, hv.hv_lights_len(0), terr, hv.hv_lights_len(1), w, h, ground);
       } else {
         const ptr = hv.hv_render();
         gpu.frame(bytes(ptr, hv.hv_frame_w() * hv.hv_frame_h() * 4), hv.hv_frame_w(), hv.hv_frame_h(), gpu.NEAREST);

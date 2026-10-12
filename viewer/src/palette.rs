@@ -111,6 +111,10 @@ pub fn tone_map(c: Rgb, p: &ToneMap) -> Rgb {
 /// The interface's roles, each a tone-mapped palette color.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Roles {
+    /// **The darkest tone**: a neutral at the tone map's `ink` lightness —
+    /// the juicy mode's background, the sum of no light (T-179, the author's
+    /// ruling).
+    pub ink: Rgb,
     pub ground: Rgb,
     pub panel: Rgb,
     pub grid: Rgb,
@@ -292,6 +296,7 @@ impl Palette {
             .collect();
         let get = |n: &str| named.iter().find(|(k, _)| *k == n).map(|(_, c)| *c).unwrap();
         let roles = Roles {
+            ink: from_oklch(Lch { l: settings.map.ink, c: 0.0, h: 0.0 }),
             ground: get("hy_base03"),
             panel: get("hy_base02"),
             grid: get("hy_base01"),
