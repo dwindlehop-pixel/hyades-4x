@@ -2488,7 +2488,7 @@ struct World {
     /// **A wrecked hull, still on its course** (T-133, the author's ruling:
     /// "Wrecked hulls continue on their course at the moment of destruction").
     wreck: ComponentStore<Wreck>,
-    /// **A hull heading home off its mission** (T-164): the year it withdrew,
+    /// **A hull heading home off its mission** (T-172): the year it withdrew,
     /// from `fire::withdraw` until it arrives home or is wrecked. Read only by
     /// the snapshot, so a viewer can count it apart from hulls still on their
     /// role.

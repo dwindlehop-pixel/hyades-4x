@@ -1454,7 +1454,7 @@ mod tests {
     }
 
     /// **A hull heading home off its mission reads as withdrawing until it is
-    /// home or wrecked** (T-164): a viewer counts it apart from hulls still on
+    /// home or wrecked** (T-172): a viewer counts it apart from hulls still on
     /// their role, and never counts a wreck.
     #[test]
     fn a_withdrawing_hull_reads_as_withdrawing_until_home_or_wrecked() {

@@ -99,13 +99,18 @@ impl Glyph {
     }
 }
 
-/// The glyph for a hull of `code` built to `design`, with its mounts.
-pub fn glyph(code: &str, design: &str, beams: u32, tubes: u32) -> Glyph {
-    let s: i64 = match size(code) {
+/// A glyph body's side, tactical pixels: larger for a larger hull.
+pub fn body_px(size: Size) -> i64 {
+    match size {
         Size::Limited => 9,
         Size::Medium => 11,
         Size::General => 13,
-    };
+    }
+}
+
+/// The glyph for a hull of `code` built to `design`, with its mounts.
+pub fn glyph(code: &str, design: &str, beams: u32, tubes: u32) -> Glyph {
+    let s = body_px(size(code));
     let r = s / 2;
     // Two columns either side for ears, two rows above for the spike, two
     // rows below for the gap and the tag.

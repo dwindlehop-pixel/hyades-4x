@@ -146,7 +146,7 @@ pub struct VehicleSnapshot {
     /// it had (T-133); `None` while it stands. A replay carries the time so
     /// a viewer can show the wreck from that instant (T-158).
     pub wrecked_at: Option<f64>,
-    /// **Heading home off its mission** (T-164): withdrawn under fire — past
+    /// **Heading home off its mission** (T-172): withdrawn under fire — past
     /// its structure, off a post it cannot hold, or breaking off — and not
     /// yet home. Never set on a wreck.
     pub withdrawing: bool,

@@ -114,11 +114,18 @@ RATIFIED (T-161 – T-163, the author's rulings):
 28. **Panning a paused tactical view changes no glyph** — not its size, its
     order, or its shape (§6.4; the bug report behind T-160).
 
-RATIFIED (T-164, the author's ruling):
+RATIFIED (T-172, the author's ruling):
 
 29. **A count counts only hulls still on their primary role.** A hull the
     autopilot has sent home is counted apart, in a distinct color; a wreck is
     in no count (§6.4, §7.1).
+
+RATIFIED (T-171, the author's ruling):
+
+30. **Whether hulls are one stack is a proximity threshold that follows the
+    zoom**, so counts never sit on top of each other at any zoom (§6.4; the
+    author's report on `beams`, where a lattice of stack squares put counts
+    over one another and regrouped hulls as the view zoomed).
 
 ---
 
@@ -159,7 +166,7 @@ breaking it.
 | `enums` | `kind` (role), `hull` (the docs' codes, LSV … GOU), `design` (the class names, Meadow … Unnamed), `category` (log categories), `material` (the eight on the Exchange's books: Cyan, Magenta, Yellow, Red, Green, Blue, Apex, Ordnance) |
 | `planet_fields`, `planets` | static per world: `id, x, y, z, hab, bio_max, cyan, magenta, yellow, home` — Bands |
 | `frame_planet_fields` | per world per frame: `owner` (−1 none), `pop`, `works` — Bands — and `works_kt`, works as a mass, kt to four significant figures (T-159): masses add across worlds where Band readings do not |
-| `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight, bit 1 wrecked and bit 2 heading home off its mission (T-164: withdrawn under fire and not yet home), dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
+| `vehicle_fields` | per hull per frame (positions, of hulls and of worlds, to 4 decimals of a light year since T-154 — at 2, a fight moved in 0.01-ly steps): `id, kind, x, y, z, vx, vy, vz, accel, burn, damage, flags, dest, cargo, settlers, cargo_cyan … cargo_ordnance` — ly, ly/yr, ly/yr², burn ∈ {−1, 0, +1}, damage as a share of structure, flags bit 0 in flight, bit 1 wrecked and bit 2 heading home off its mission (T-172: withdrawn under fire and not yet home), dest a world id or −1, cargo and settlers kt, then the cargo by material, kt, to four significant figures (T-152) |
 | `holding_fields` | per holding per frame: `planet, seat, cyan … ordnance` — each material a **Band reading on the cost ladder** (a holding is a stock that can be spent), `null` where none of it is held (T-152) |
 | `frames` | `{t, owner[], pop[], works[], vehicles[[…]], holdings[[…]]}` — `holdings` lists every non-empty holding, an empire's at worlds it owns and at rocks it only mines, by planet and then seat |
 | `hull_fields`, `hulls` | static per hull: `id, owner, hull, design, beams, tubes, wrecked_at` — written once, after the frames; `wrecked_at` the year it was wrecked to six decimals, or `null` (T-158) |
@@ -320,7 +327,7 @@ and reads at 3:1 on the ground (`status_colors_sit_off_the_palette_apart_and_leg
 | Laden | `#fff36b` | the fill of a laden hull whose replay does not carry its cargo by material |
 | Combat | `#ff4fe1` | the log's combat rows |
 | Selected | `#f2fff6` | the selection's corner brackets |
-| Retreat | `#ffaba1` | the count of a place's hulls heading home, and their juicy cluster (T-164): OKLCH L 0.88, C 0.16, 25° clamped to sRGB, the point farthest from every other status, the materials, the seats and the text |
+| Retreat | `#ffaba1` | the count of a place's hulls heading home, and their juicy cluster (T-172): OKLCH L 0.88, C 0.16, 25° clamped to sRGB, the point farthest from every other status, the materials, the seats and the text |
 
 **Materials** are drawn in the palette's own hue of their names — Cyan
 `hy_cyan`, Magenta `hy_magenta`, Yellow `hy_yellow`, Red `hy_red`, Green
@@ -365,21 +372,37 @@ decides which is drawn on top. The fan this replaced is in appendix §D.58.6.
 
 Proposed and built, every magnitude a *placeholder*:
 
-- **Stacks.** Hulls whose positions fall in one square **with one owner,
-  Design, role, wreck state and quietness** (§6.6) are one glyph, drawn where
-  its lowest-id hull stands. The square widens as the view pulls back: **3
-  tactical pixels at the System level, 5 at Sector, 8 at Galaxy**. The glyph
-  carries the worst damage, any hit, the sum of its members' cargo and any
-  selection. **A wreck never stacks with a live hull, at any level**, so a
-  galaxy-level marker is sized by live hulls alone (T-164).
-- **A place's counts** — RATIFIED (ruling 29, T-164): beside the glyph drawn
+- **Places** — RATIFIED (ruling 30, T-171): **hulls whose footprints overlap
+  on screen are one place**, joined transitively (`tactical::places`). A
+  footprint (`tactical::footprint`) is measured in tactical pixels about the
+  hull's own pixel: below the galaxy level, its glyph with the damage bar to
+  the left and, unless it is a wreck, room to the right for its place's two
+  counts at `COUNT_ROOM_DIGITS` = 2 digits each (placeholder); at the galaxy
+  level, the largest marker; for a quiet hull (§6.6), its pixel and the ring
+  about it. Because the reach is a fixed number of pixels, in light-years it
+  shrinks as the view zooms in: a fight parts into its hulls and a galaxy
+  gathers into clusters, zooming in only parts places, and **no count is
+  drawn over another place's glyph or count**. A place with a count of 100 or
+  more draws it up to four pixels past its footprint. The square lattice this
+  replaced (3 / 5 / 8 tactical pixels at System / Sector / Galaxy) put hulls
+  a pixel apart in two places wherever a square's edge fell between them, and
+  moved its edges as the view zoomed; appendix §D.59.
+- **Stacks.** In one place, hulls **with one owner, Design, role, wreck state
+  and quietness** (§6.6) are one glyph, drawn where its lowest-id hull
+  stands. The glyph carries the worst damage, any hit, the sum of its
+  members' cargo and any selection. **A wreck never stacks with a live hull,
+  at any level**, so a galaxy-level marker is sized by live hulls alone
+  (T-172).
+- **A place's counts** — RATIFIED (ruling 29, T-172): beside the glyph drawn
   on top of a place, the number of its hulls **still on their role**, in the
   bright text color, then the number **heading home** in the retreat color
   (`Status::Retreat`); a wreck is in neither. The first is drawn when it is
   more than one or when hulls are also heading home, the second when any are.
   The engine marks a hull heading home from the moment it withdraws until it
   arrives home or is wrecked (`VehicleSnapshot::withdrawing`, flags bit 2).
-  **The squares tile the galaxy at the view's scale, not the
+  The first count starts `COUNT_OFFSET_PX` = 6 tactical pixels past the
+  glyph's half body, clear of the hit ring and the selection brackets.
+  **Places are found in pixels of the galaxy at the view's scale, not of the
   screen** (T-160): a pan regroups nothing, and only a zoom changes the
   stacks. On a screen-fixed lattice a paused view flickered as it was
   panned — hulls crossed square edges, and stacks, counts, marker sizes and
@@ -395,8 +418,8 @@ Proposed and built, every magnitude a *placeholder*:
   Scrapped, Scout, Miner, Freighter, Colonizer, Sentry, Picket, so the fighting
   roles are on top; then by hull size, the smaller over the larger so both stay
   visible; then by distance from the seat's homeworld, the frontier over home.
-- **A place's count** — every hull in the square, whatever its owner — is drawn
-  once, in a 3×5 pixel font, beside the glyph on top.
+- **A place's counts** cover every hull in the place, whatever its owner, and
+  are drawn once, in a 3×5 pixel font, beside the glyph on top.
 - **At the Galaxy level a place's hulls are grouped by owner and by whether
   they are armed**, and each group is drawn as a **marker**: a square in the
   seat's color, solid for armed hulls and hollow for unarmed, 3, 5, 7 or 9
@@ -535,7 +558,7 @@ T-162):
   (ruling 25). Appendix §D.59.
 
 **Stacks below the galaxy level are clusters** (ruling 27; proposed, R-UI2,
-T-163): each seat's hulls in a stack square are a sunflower spiral of dots,
+T-163): each seat's hulls in a place (§6.4) are a sunflower spiral of dots,
 one per hull, `CLUSTER_DOT_SPACING` = 2 hull radii apart, each a hull's light
 in the seat's color; past `CLUSTER_MAX_DOTS` = 64 the dots brighten instead.
 A lone hull is one dot where it stands, so losing a hull loses a dot.
@@ -698,7 +721,7 @@ job runs the same build and tests on every pull request.
 | **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"` | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
 | **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1) | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — revised at T-153: armed bodies solid and unarmed hollow; a 3×3 role mark per role; glyphs a pixel wider each side; a legend | the author's review on the deployed site |
-| **R-UI4** | stacking and the tactical layer: the stack square per level, the Galaxy-level owner markers, the display order, the place count, routes, holding bars, quiet hulls and cargo stripes (§6.4–§6.6) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; routes, holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18) | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
+| **R-UI4** | stacking and the tactical layer: the room a footprint keeps for counts (ruling 30 ratified places as overlapping footprints), the Galaxy-level owner markers, the display order, the place count, routes, holding bars, quiet hulls and cargo stripes (§6.4–§6.6) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; routes, holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18) | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |
 | **R-UI6** | replay size (§3) | OPEN — recommendation attached | the first replay the author wants to keep that passes ~50 MB |
 | **R-UI7** | showing height `z` in the galaxy view (§6.1) | OPEN | the author's ruling on whether the view stays top-down |
