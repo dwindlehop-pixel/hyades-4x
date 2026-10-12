@@ -24,9 +24,6 @@ pub const HOT_ACCEL: f64 = 1.0;
 /// Hexes narrower than this many tactical pixels are not drawn: the grid
 /// would be a fill.
 pub const MIN_HEX_PX: f64 = 6.0;
-/// How far a route's color is moved from its seat's toward the ground: a
-/// route is the faintest thing drawn (proposed, R-UI4).
-pub const ROUTE_DIM: f64 = 0.9;
 /// Tactical pixels of a holding's bar per whole Band (proposed, R-UI4).
 pub const BAR_PX_PER_BAND: f64 = 2.0;
 /// A holding's tallest bar, tactical pixels: Band V.
@@ -149,8 +146,6 @@ pub enum Op {
         marks: Rgb,
         /// The drive vector's far end and color.
         vector: Option<([i64; 2], Rgb)>,
-        /// The destination's tactical pixel and the route's faint color.
-        route: Option<([i64; 2], Rgb)>,
         /// Share of structure lost, 0 to 1.
         damage: f64,
         hit: bool,
@@ -198,10 +193,19 @@ pub fn wreck_glyph_share(wrecked_at: Option<f64>, t: f64, rate: f64) -> f64 {
 /// instead let neighbors less than a pixel apart fall in one pixel or in
 /// two as the view moved, and glyphs merged and parted.
 pub fn pixel_of(c: &Camera, p: [f64; 3]) -> [i64; 2] {
+    let [x, y] = subpixel_of(c, p);
+    [x.floor() as i64, y.floor() as i64]
+}
+
+/// **Where in tactical pixels a galaxy point falls, to a fraction of one**:
+/// on the same lattice as [`pixel_of`] — the galaxy at the view's scale, plus
+/// the pan as a whole number of pixels — so a path drawn through it meets the
+/// glyph standing there, and a pan moves both alike.
+pub fn subpixel_of(c: &Camera, p: [f64; 3]) -> [f64; 2] {
     let k = c.scale / PIXEL;
-    let x = (p[0] * k).floor() - (c.center[0] * k).floor() + (c.width / (2.0 * PIXEL)).floor();
-    let y = (-p[1] * k).floor() - (-c.center[1] * k).floor() + (c.height / (2.0 * PIXEL)).floor();
-    [x as i64, y as i64]
+    let x = p[0] * k - (c.center[0] * k).floor() + (c.width / (2.0 * PIXEL)).floor();
+    let y = -p[1] * k - (-c.center[1] * k).floor() + (c.height / (2.0 * PIXEL)).floor();
+    [x, y]
 }
 
 /// **Which of two overlapping glyphs is drawn on top** (proposed, R-UI4):
@@ -274,6 +278,10 @@ pub fn plan(s: &Scene) -> Vec<Op> {
         });
     }
     let first_hull = ops.len();
+    // A mix runs through OKLab, a cube root and a power per channel, so each
+    // seat's dimmed fill is worked out once a plan, not once a hull.
+    let mut fills: BTreeMap<usize, Rgb> = BTreeMap::new();
+    let wreck_fill = mix(pal.status(Status::Wreck), pal.roles.ground, pal.fill_dim());
     for h in &s.view.hulls {
         let row = &h.row;
         let sp = screen(row.pos);
@@ -292,16 +300,16 @@ pub fn plan(s: &Scene) -> Vec<Op> {
         } else {
             (seat, pal.role(role), pal.roles.text_bright)
         };
-        let inner = mix(outline, pal.roles.ground, pal.fill_dim());
+        let inner = if row.wrecked {
+            wreck_fill
+        } else {
+            *fills.entry(h.hull.owner).or_insert_with(|| mix(seat, pal.roles.ground, pal.fill_dim()))
+        };
         let home = r.seats.get(h.hull.owner).and_then(|st| r.planets.get(st.home as usize)).map(|p| p.pos);
         let from_home = home.map_or(0.0, |o| {
             let d = [row.pos[0] - o[0], row.pos[1] - o[1], row.pos[2] - o[2]];
             (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
         });
-        let route = match (row.in_flight && !row.wrecked, row.dest.and_then(|d| r.planets.get(d as usize))) {
-            (true, Some(to)) => Some((pixel_of(s.camera, to.pos), mix(seat, pal.roles.ground, ROUTE_DIM))),
-            _ => None,
-        };
         let mut cargo = [0.0; 9];
         cargo[..8].copy_from_slice(&row.mix);
         cargo[PEOPLE] = row.settlers;
@@ -325,7 +333,6 @@ pub fn plan(s: &Scene) -> Vec<Op> {
             mark: role_mark(role),
             marks,
             vector: if quiet { None } else { vector(s, h.row, here) },
-            route,
             damage: row.damage.clamp(0.0, 1.0),
             hit: h.hit,
             laden: h.laden,
@@ -388,7 +395,10 @@ pub fn places(boxes: &[[i64; 4]]) -> Vec<usize> {
     // widest box apart, so each is checked against the 3×3 cells about it.
     let cw = boxes.iter().map(|b| b[2] - b[0] + 1).max().unwrap_or(1);
     let ch = boxes.iter().map(|b| b[3] - b[1] + 1).max().unwrap_or(1);
-    let mut cells: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
+    // Only looked up, never walked, so a hash map's order cannot reach the
+    // result: the partition, and each place's least index, are the same
+    // whichever order cells are visited in.
+    let mut cells: std::collections::HashMap<(i64, i64), Vec<usize>> = std::collections::HashMap::new();
     for (i, b) in boxes.iter().enumerate() {
         let (cx, cy) = (b[0].div_euclid(cw), b[1].div_euclid(ch));
         for dx in -1..=1 {
@@ -573,16 +583,23 @@ pub fn drawing_order(ops: &[Op]) -> Vec<usize> {
     drawn
 }
 
-/// Draws the hex grid, the routes, the worlds with their holdings, and then
-/// the hulls in [`display_order`], with glyphs from `cache` (kept between
-/// frames).
+/// Draws the hex grid, the [paths](crate::paths), the worlds with their
+/// holdings, and then the hulls in [`display_order`], with glyphs from
+/// `cache` (kept between frames).
 pub fn paint_with(s: &Scene, ops: &[Op], r: &mut Raster, cache: &mut GlyphCache) {
     let pal = s.palette;
     r.clear(pal.roles.ground);
     hex_grid(s, r);
-    for op in ops {
-        if let Op::Hull { at, route: Some((to, c)), .. } = op {
-            r.line(at[0], at[1], to[0], to[1], *c);
+    // A path is antialiased: a faint line finer than a pixel, so it moves by
+    // less than one and never hides a glyph (T-174). Coordinates are moved
+    // half a pixel so integers are pixel centers, as the line takes them.
+    let center = |p: [f64; 3]| {
+        let q = subpixel_of(s.camera, p);
+        [q[0] - 0.5, q[1] - 0.5]
+    };
+    for path in crate::paths::paths(s, ops) {
+        for w in path.points.windows(2) {
+            r.line_aa(center(w[0].pos), center(w[1].pos), w[0].color, w[0].alpha);
         }
     }
     for op in ops {
@@ -1638,26 +1655,33 @@ mod tests {
         assert_ne!(r.get(at[0] + 5, at[1] + 5), Some(seat), "quiet: no glyph");
     }
 
+    /// **A path is a faint antialiased line, under the glyphs** (T-174): the
+    /// selected freighter's path lays partial shades of its drive's color over
+    /// the ground — light finer than a pixel — and nothing else draws one.
     #[test]
-    fn a_hull_in_flight_draws_a_faint_route_to_its_destination() {
+    fn a_selected_hulls_path_is_drawn_faint_and_antialiased() {
         let f = fixture();
-        let view = f.replay.view_at(0.0);
-        let s =
-            Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected: None, rate: 1.0 };
-        let ops = plan(&s);
-        let Some(Op::Hull { route: Some((to, c)), .. }) = ops.iter().find(|o| matches!(o, Op::Hull { id: 5, .. }))
-        else {
-            panic!("the freighter flies to world 2")
+        let view = f.replay.view_at(5.0);
+        let at = |selected| {
+            let s =
+                Scene { replay: &f.replay, view: &view, camera: &f.camera, palette: &f.palette, selected, rate: 1.0 };
+            let ops = plan(&s);
+            let mut r = raster(&f.camera);
+            paint(&s, &ops, &mut r);
+            r
         };
-        assert_eq!(*to, pixel_of(&f.camera, f.replay.planets[2].pos));
-        assert_eq!(*c, mix(f.palette.seat(0), f.palette.roles.ground, ROUTE_DIM));
-        let mut r = raster(&f.camera);
-        paint(&s, &ops, &mut r);
-        assert!(r.count(*c) > 10, "the route is drawn");
-        assert!(
-            matches!(ops.iter().find(|o| matches!(o, Op::Hull { id: 6, .. })), Some(Op::Hull { route: None, .. })),
-            "a hull at rest has no route"
-        );
+        let (plain, picked) = (at(None), at(Some(Pick::Hull(5))));
+        let ground = f.palette.roles.ground.to_ints();
+        let changed: Vec<[u8; 3]> = (0..picked.h as i64)
+            .flat_map(|y| (0..picked.w as i64).map(move |x| (x, y)))
+            .filter(|&(x, y)| picked.get(x, y) != plain.get(x, y) && plain.get(x, y) == Some(ground))
+            .map(|(x, y)| picked.get(x, y).unwrap())
+            .collect();
+        assert!(changed.len() > 10, "the path crosses the ground: {}", changed.len());
+        let shades: std::collections::BTreeSet<[u8; 3]> = changed.iter().copied().collect();
+        assert!(shades.len() > 3, "antialiased: many shades, not one ink");
+        let full = crate::paths::drive_color(&f.palette, 0.0, 0).to_ints();
+        assert!(!changed.contains(&full), "faint: never the full color");
     }
 
     #[test]

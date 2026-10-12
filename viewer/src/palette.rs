@@ -275,7 +275,7 @@ pub struct Palette {
     pub named: Vec<(&'static str, Rgb)>,
     pub roles: Roles,
     /// In [`STATUS`] order.
-    pub status: [Rgb; 10],
+    pub status: [Rgb; 12],
 }
 
 impl Palette {
@@ -401,9 +401,14 @@ pub enum Status {
     /// Heading home off its mission (T-172): the count of a place's
     /// retreating hulls.
     Retreat,
+    /// A path's color where the drive gains speed: the coasting gray shifted
+    /// toward blue as hard as the burn (T-174).
+    BlueShift,
+    /// A path's color where the drive sheds speed: shifted toward red (T-174).
+    RedShift,
 }
 
-pub const STATUS: [(Status, &str); 10] = [
+pub const STATUS: [(Status, &str); 12] = [
     (Status::Hit, "#ff2d6f"),
     (Status::Damage, "#ffb703"),
     (Status::Drive, "#4df3ff"),
@@ -416,6 +421,12 @@ pub const STATUS: [(Status, &str); 10] = [
     // OKLCH L 0.88, C 0.16, 25° clamped to sRGB: the point farthest from every
     // other status, the materials, the seats and the text (T-172).
     (Status::Retreat, "#ffaba1"),
+    // OKLCH L 0.56, C 0.22, 259° and L 0.70, C 0.21, 32° clamped to sRGB:
+    // of the blues at 235°–275° and the reds at 14°–32°, the two farthest
+    // from every palette color and status, scaled by each test's floor —
+    // the ends a path's color shifts toward (T-174).
+    (Status::BlueShift, "#006bf0"),
+    (Status::RedShift, "#ff664b"),
 ];
 
 #[cfg(test)]

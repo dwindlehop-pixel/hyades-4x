@@ -127,6 +127,25 @@ RATIFIED (T-171, the author's ruling):
     author's report on `beams`, where a lattice of stack squares put counts
     over one another and regrouped hulls as the view zoomed).
 
+RATIFIED (T-173 – T-178, the author's rulings):
+
+31. **The client targets 30 or 60 frames a second, by platform.** Game years
+    per second do not change with the frame rate; frames per game year vary
+    with the playback rate (§4).
+32. **A path is drawn only for a large stack, and only its next five years
+    ahead; a hull's past is drawn only while it is selected.** A path's color
+    shows the drive's acceleration, shifted toward blue where the drive gains
+    speed and toward red where it sheds it (§6.7). *Retires the routes of
+    T-152.*
+33. **Tactical mode antialiases, so a faint line can be thinner than a
+    pixel** (§6.7).
+34. **The juicy mode shows the same paths, in its own style** (§7.1).
+35. **The `Band IV` indicator stands still until it is removed** (§6.5,
+    §7.1; the author's report of juicy-mode jitter).
+36. **The palette is ratified in play**: a replay shows a large gamut of the
+    defined palette as the game uses it, and both modes draw in the ratified
+    palette (§6.2, §8.4).
+
 ---
 
 ## 2. The seam
@@ -178,6 +197,12 @@ Decisions in the format:
   before that year applied, every hull where its motion has it then. A frame is
   never taken at "the first event after" its year (§D.58.1 is the defect this
   replaced).
+- **A replay may open densely** (T-177): the recorder's `dense = (until,
+  step)` takes frames every `step` years up to `until`, then every
+  `frame_years` (`replay::frame_times`), so one replay holds a fight frame by
+  frame and decades of traffic after it. Each frame's `t` is in the file and
+  the viewer reads frames by `t`, so the format is unchanged; `meta.frame_years`
+  is the spacing after the opening.
 - **Every hull in the theater is in every frame**, a wreck included (it coasts,
   `damage = 1`). A hull recycled for its minerals is not: its mass is in a bank.
 - **A wreck carries the time it was wrecked** (T-158), and the viewer shows
@@ -211,6 +236,15 @@ BUILT (`viewer/src/timeline.rs`).
   the earlier frame's.
 - A replay opens paused at its start, at a rate that plays it through in **60
   seconds** (*placeholder*), framed on its `focus` when it has one.
+- **Frame pacing** (ruling 31; T-173): the page draws at most
+  `targetFps` frames a second — **60, or 30 where the primary pointer is
+  coarse** (`(pointer: coarse)`, a phone or tablet), or as the link's `fps=30`
+  / `fps=60` says — skipping display refreshes faster than that. Each drawn
+  frame advances the clock by the wall time since the previous one, capped at
+  1 s (a tab back from the background does not jump), so **game years per
+  second are the rate whatever the frame rate**, and frames per game year are
+  `fps / |rate|`. The status line shows the measured frames in the last
+  second against the target, and frames per game year while playing.
 
 ---
 
@@ -256,6 +290,19 @@ client's **Palette** screen (§8.1) is a reference sheet of the same values —
 each source color beside its mapped color, every role, seat and status color —
 and shows a link's settings too.
 
+**The palette is seen in play** (ruling 36, T-177): the `palette` replay is
+eighteen seats — every seat color the largest fair table uses — with a picket
+stack of each on a ring beside seat 0's homeworld, half of them closing on the
+middle to brake, fight, take hits, wreck and withdraw past a sentry post, and
+then a century of every seat's opening traffic: scouts, miners, freighters and
+colonizers, the three basics carried, settlers aboard, ordnance, holdings, and
+established hex lines (§8.4). Its first year is framed every 0.02 yr (§3);
+watch it at ×1/16. The `forge` replay starts six homeworlds at population and
+works `Band IV`, for the `Band IV` dashes and a forge's holdings of Strange
+Matter. **What no shipped replay shows** (measured, appendix §D.62.4): the
+Blue super held or carried, any super or the apex as cargo, and the Red and
+Green supers anywhere but `expansion`'s last frame, at 400 yr.
+
 **The proposed tone map, "Earthrise"**, in OKLCH (Björn Ottosson, *A perceptual
 color space for image processing*, 2020):
 
@@ -274,7 +321,7 @@ eighteen seat colors still reaches 3:1 contrast on the ground (§D.58.3).
 BUILT (T-150). The viewer's side panel tunes every value in this section while
 the game is drawn — the tone map's six parameters and four anchors, the glyph
 dimming of an unarmed glyph's hollow body (`fill`, proposed 0.7, §6.3), and any of the 40 palette colors
-or 9 status colors set by hand (a hand-set color replaces the tone map's
+or 12 status colors set by hand (a hand-set color replaces the tone map's
 result for that name, and every role and seat drawn from it follows). Each
 change redraws both modes.
 
@@ -328,6 +375,8 @@ and reads at 3:1 on the ground (`status_colors_sit_off_the_palette_apart_and_leg
 | Combat | `#ff4fe1` | the log's combat rows |
 | Selected | `#f2fff6` | the selection's corner brackets |
 | Retreat | `#ffaba1` | the count of a place's hulls heading home, and their juicy cluster (T-172): OKLCH L 0.88, C 0.16, 25° clamped to sRGB, the point farthest from every other status, the materials, the seats and the text |
+| BlueShift | `#006bf0` | the end a path's color moves toward where the drive gains speed (§6.7, T-174): OKLCH L 0.56, C 0.22, 259° clamped to sRGB |
+| RedShift | `#ff664b` | the end a path's color moves toward where the drive sheds speed (§6.7, T-174): OKLCH L 0.70, C 0.21, 32° clamped to sRGB |
 
 **Materials** are drawn in the palette's own hue of their names — Cyan
 `hy_cyan`, Magenta `hy_magenta`, Yellow `hy_yellow`, Red `hy_red`, Green
@@ -335,6 +384,13 @@ and reads at 3:1 on the ground (`status_colors_sit_off_the_palette_apart_and_leg
 OKLCH L 0.84, C 0.012, h 250, `palette::PLATINUM`), rounds
 `hy_orange` and settlers `hy_base2` (proposed, part of R-UI1). They color a
 holding's bars and a hold's stripes (§6.5, §6.6).
+
+**Both modes draw only in the palette** (ruling 36): every color the tactical
+raster, the juicy light list and the page chrome use is a role, seat, status
+or material color of `Palette`, so the live editor and a ratification reach
+both. The one color outside it is the juicy background, black because it is
+the sum of no light (§7.1); whether it should be the ground role is part of
+R-UI2.
 
 What is tested and holds whatever is approved: text at 4.5:1 on the ground and
 on a panel (WCAG 2 AA), dim text at 3:1, eighteen seats each at 3:1 on the
@@ -446,10 +502,12 @@ reading, so the bar is the engine's own Band math (§3). Holdings are drawn at
 the Sector and System levels; at the Galaxy level they would cover the field.
 The inspector lists a selected world's holdings by seat and material, as Bands.
 
-**Routes** (T-152, the author's direction): every hull in flight with a
-destination has a line from where it stands to that world, in its seat's color
-90% of the way to the ground (`ROUTE_DIM`), drawn under everything but the hex
-grid. The command
+*Superseded (T-152 → T-174):* every hull in flight drew a **route** to its
+destination world. With hundreds of hulls in flight the lines covered the
+field, and the author found the view illegible; paths (§6.7) replace them.
+Appendix §D.62.2.
+
+The command
 view's hexes (flat-top, `hex_side_ly`, one centered on `hex_origin` — galaxy
 §2) are drawn when a hex is at least 6 tactical pixels across, and **only the
 active ones: a hex holding a world or a hull** (`tactical::active_hexes`). A
@@ -474,8 +532,11 @@ detail is set by the camera's scale: **Galaxy** below 2 screen pixels per ly,
   standing a century. **An established line** is tinted 35% toward the bright
   text color (`ESTABLISHED_TINT`): the bright line.
 - **A `Band IV` world**: the hex's edge is dashed in the bright text color
-  (`BAND_IV_DASH` = 3 on, 2 off) in place of the grid's line. In the 400-yr
-  `expansion` replay one world reaches it, at 400 yr (800 kt).
+  (`BAND_IV_DASH` = 3 on, 2 off) in place of the grid's line. The dashes are
+  counted from the hex's own corner, so they stand still as the view pans,
+  follows or zooms, until the world drops below `Band IV` (ruling 35). No
+  world in the 400-yr `expansion` replay reaches it at this commit (appendix
+  §D.62.3); the `forge` replay starts six homeworlds there.
 
 ### 6.6 Quiet hulls and cargo — OPEN (R-UI4)
 
@@ -504,6 +565,43 @@ Proposed and built (T-152, the author's direction):
   rewinding and seeking show the same frame at the same instant. A wreck in a
   replay without wreck times is a pinpoint.
 
+### 6.7 Paths — OPEN (R-UI4)
+
+RATIFIED that paths are drawn for large stacks only, five years ahead, with a
+hull's past only while it is selected, colored by the drive with a blue and a
+red shift, and antialiased (rulings 32–34, T-174). The magnitudes are
+proposed, each a *placeholder* in `viewer/src/paths.rs`:
+
+| symbol | name | proposed value | what it does |
+|---|---|---|---|
+| `PATH_MIN_STACK` | a large stack | 5 hulls | a drawn stack of at least this many hulls that is not a wreck draws its lead hull's path ahead |
+| `PATH_AHEAD_YEARS` | how far ahead | 5 yr (ruling 32) | the path ahead runs from now to five years on, or to the hull's wreck if sooner |
+| `PATH_SAMPLES`, `PATH_PAST_SAMPLES` | samples | 64, 128 | instants sampled along a path ahead and along a selected hull's past |
+| `PATH_ALPHA` | opacity | 0.7 | a path's opacity at its hull; ahead it fades to 0 at its far end, the past to a quarter at the hull's first frame |
+| `PATH_COAST` | the coasting gray | 0.45 | a coasting stretch is this share of the way from the ground to the text color |
+| `PATH_ACCEL_HALF` | half shift | 0.25 g | the acceleration at which a burning stretch is half way from the coasting gray to its shift |
+
+- **What is drawn**: the path ahead of every large stack, and for a selected
+  hull its past from its first frame and, if its stack drew none, its path
+  ahead. Small stacks and wrecks draw nothing.
+- **Where**: the replay's own motion — the same Hermite curve between frames
+  a hull is drawn on (§4; `Replay::track`), so a path and its hull cannot
+  disagree. A path ahead reads frames the clock has not reached; a replay is
+  recorded whole, so the future is in it.
+- **Color** (`paths::drive_color`): each stretch takes its frame's drive —
+  acceleration `a` (ly/yr²) and burn sign. Coasting is the gray; a burn gaining
+  speed is moved toward BlueShift and one shedding it toward RedShift by
+  `a / (a + PATH_ACCEL_HALF)` of the way (§6.2). So the color says how hard,
+  and the hue which way relative to the velocity.
+- **Tactical**: lines from Xiaolin Wu's antialiasing algorithm (Wu 1991), each
+  pixel's share of the line blended over what is drawn, so a faint line can be
+  thinner than a pixel (ruling 33). Points are placed on the same pixel lattice
+  as glyphs (`tactical::subpixel_of`), so a path meets its glyph's center.
+  Drawn over the hex grid and under every glyph.
+- **Juicy**: the same paths as a string of lights one hull radius apart,
+  radius half a hull's, at 0.6 times the path's opacity, in its colors
+  (ruling 34, §7.1).
+
 ---
 
 ## 7. The juicy mode
@@ -524,6 +622,7 @@ modes cannot disagree about where anything is.
 | a hit | a flash in the hit color |
 | a wreck | a dim ember, narrowing to a pinpoint (radius 0.5 px) as its tactical glyph fades (§6.6) |
 | a hex | a dim line of lights just inside its edge, in the hex color; brighter and whiter as the works in it grow, darker as they fall |
+| a path (§6.7) | a string of small lights along it, one hull radius apart, in its colors and fading as it does (`PATH_LIGHT_SPACING` = 1, `PATH_LIGHT_R` = 0.5 hull radius, `PATH_LIGHT` = 0.6, at most `PATH_MAX_LIGHTS` = 2,000 a frame) |
 
 A light of intensity `I` and radius `r` adds `I / (1 + d²/r²)²` at distance
 `d`, cut at `4r`. The bloom is the buffer averaged in 4×4 blocks, box-blurred
@@ -548,7 +647,11 @@ T-162):
   edge so a shared edge reads as two lines, one per hex, in the hex color at
   `HEX_GLOW` = 0.1; dashed in the bright text color at `HEX_BAND_IV_GLOW` =
   0.6 where a world holds `Band IV` works. Only the part of a line on screen
-  is lit, so a hex many screens wide costs what one does.
+  is lit, so a hex many screens wide costs what one does. **The dots and
+  dashes are counted from the edge's own corner** and only those on screen
+  lit (ruling 35, T-176): counted from where the screen cut the edge, they
+  slid along it whenever the view moved, which was the `Band IV` jitter the
+  author reported (appendix §D.62.3).
 - **A line per seat**, nested inward as in tactical mode (§6.5), in the same
   color, at `HEX_SEAT_GLOW` = 0.25 times its brightness — twice that
   (`HEX_ESTABLISHED`) once established.
@@ -687,7 +790,8 @@ Pixel 7 emulation that the theater is at least 60% of the screen's height
   (§6.2.1).
 - **`web/build.sh <out> [--quick]`** assembles the site: the module, the page,
   and replays recorded by `examples/record_replay` at that commit (expansion,
-  a beam fight, a missile-sentry fight).
+  a beam fight, the palette in play, a forge at `Band IV`, a missile-sentry
+  fight).
 
 **Tests**: the viewer crate's unit tests; the contract test (§2);
 `web/test/smoke.mjs`, which drives the module headless over every replay in
@@ -718,15 +822,15 @@ job runs the same build and tests on every pull request.
 
 | code | decision | status | what would settle it |
 |---|---|---|---|
-| **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"` | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
-| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1) | the author's judgment against recorded games |
+| **R-UI1** | the tactical palette: the tone map's parameters, the role and seat assignments, the status colors, the glyph fill (§6.2) | OPEN — proposal built, live editor built, `PALETTE_STATUS = "proposed"`; the `palette` and `forge` replays show it in play (ruling 36, T-177) | the author's ratification on the live viewer: a settings line or link (§6.2.1); its values then replace the proposal and `PALETTE_STATUS` becomes `ratified` |
+| **R-UI2** | juicy mode's style (§7.2), including its resolution on high-density screens | OPEN — first pass built; worlds dimmed at T-151 after the author found them illegible; hexes and the works trend added at T-159 with placeholder magnitudes (§7.1); paths added at T-175; whether the background is the ground role rather than black is open (§6.2) | the author's judgment against recorded games |
 | **R-UI3** | the glyph grammar (§6.3) | OPEN — revised at T-153: armed bodies solid and unarmed hollow; a 3×3 role mark per role; glyphs a pixel wider each side; a legend | the author's review on the deployed site |
-| **R-UI4** | stacking and the tactical layer: the room a footprint keeps for counts (ruling 30 ratified places as overlapping footprints), the Galaxy-level owner markers, the display order, the place count, routes, holding bars, quiet hulls and cargo stripes (§6.4–§6.6) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; routes, holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18) | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
+| **R-UI4** | stacking and the tactical layer: the room a footprint keeps for counts (ruling 30 ratified places as overlapping footprints), the Galaxy-level owner markers, the display order, the place count, paths, holding bars, quiet hulls and cargo stripes (§6.4–§6.7) | OPEN — revised at T-152: glyphs only where their hulls stand (ratified), the fan replaced by a display order; holdings, colonies by color, quiet traffic and cargo composition added at the author's direction; armed hulls stay prominent (ruling 18); routes replaced by paths at T-174 (rulings 32–33), their magnitudes proposed | the author's review on the deployed site; a census of stack sizes on a long replay if counts prove unreadable |
 | **R-UI5** | watching a game live (§2) | OPEN — recommendation attached | a decision to run the engine in the browser; the recorder's API already takes a running `Simulation` |
 | **R-UI6** | replay size (§3) | OPEN — recommendation attached | the first replay the author wants to keep that passes ~50 MB |
 | **R-UI7** | showing height `z` in the galaxy view (§6.1) | OPEN | the author's ruling on whether the view stays top-down |
 | **R-UI8** | which upstream packages the interface takes up now that it may (ruling 14) | OPEN — recommendation attached; `wasm-bindgen`/`web-sys` taken up by `net/` at T-169 (the author's choice), the viewer still on its C interface | a need the current code cannot meet. Recommendation: none yet; the first candidates are `wasm-bindgen`/`web-sys` (to retire the hand-written C interface and `shell.js`'s byte copying) and `wgpu` (to move `gpu.js` into Rust), each taken when a change would otherwise be built on the hand-rolled path |
-| **R-UI9** | the client's phone layout and touch magnitudes: the 760-pixel breakpoint, the sheets, the tap slop and pick radius (§8.2–8.3) | OPEN — proposal built | the author's use of the deployed site on a phone |
+| **R-UI9** | the client's phone layout and touch magnitudes: the 760-pixel breakpoint, the sheets, the tap slop and pick radius (§8.2–8.3), and which platforms target 30 frames a second (§4) | OPEN — proposal built; 30 fps where the primary pointer is coarse (T-173) | the author's use of the deployed site on a phone |
 
 ## References
 
@@ -736,3 +840,5 @@ job runs the same build and tests on every pull request.
 - `docs/Hyades_vehicle_roles.md` §7.1 — the Design class names
 - Björn Ottosson, *A perceptual color space for image processing* (2020) — OKLab
 - W3C, *Web Content Accessibility Guidelines 2.1*, §1.4.3 and §1.4.11 — the 4.5:1 and 3:1 contrast thresholds
+- Xiaolin Wu, *An efficient antialiasing technique*, Computer Graphics 25(4) (SIGGRAPH 1991), 143–152 — the antialiased line (§6.7)
+- You-Dong Liang and Brian A. Barsky, *A new concept and method for line clipping*, ACM Transactions on Graphics 3(1) (1984), 1–22 — clipping a line to the screen (§6.7, §7.1)

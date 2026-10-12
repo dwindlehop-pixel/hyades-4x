@@ -153,6 +153,78 @@ description of the change.
 
 ## Entries moved from Band A
 
+*T-173 – T-178 were opened and built in one landing at the author's request:
+"both juicy and tactical are too few frames. We need the target frame rate to
+be 30 fps or 60 fps depending upon the platform. Yr/s should not change, but
+frames/yr should be variable depending upon playback speed. The tactical is
+illegible because of the full path drawing. Only draw large stack paths, and
+only the forward part for the next five years, and only the past path when
+the entity is selected. Use color of the path to show the acceleration and red
+shift/blue shift the color to indicate the acceleration relative to the
+velocity. Tactical needs to antialias to make subpixel faint lines. Juicy
+should adopt the same information, but displayed in juicy style. Juicy's
+visual indicator of Band IV has a large amount of jitter. It must be
+stationary until removed. I cannot ratify the palette in isolation. I need to
+see the colors used in game. Add a replay to show a large gamut of the defined
+palette for ratification. Both juicy and tactical will use the ratified
+palette."* (`Hyades_interface.md` rulings 31–36; appendix §D.62.)
+
+### T-173. Frames are paced to 30 or 60 a second; years per second hold
+
+The page draws at most 60 frames a second, 30 where the primary pointer is
+coarse, or as the link's `fps=` says, and advances the clock by the wall time
+since the last drawn frame (capped at 1 s, from 0.25 s), so yr/s is the rate
+at any frame rate and frames per year are `fps / |rate|`. The status line
+shows measured against target fps and frames per year. A tactical frame on
+`expansion` and `palette` costs 0.5–0.7× what it did on `main` (median, two
+rounds): routes are gone and a seat's glyph fill is mixed once a frame
+(§4, appendix §D.62.1).
+
+### T-174. Paths replace routes, colored by the drive, antialiased
+
+Only a drawn stack of at least five live hulls draws a path, five years ahead
+from its lead hull, cut at the hull's wreck; a selected hull also draws its
+past from its first frame (`viewer/src/paths.rs`, `Replay::track`, which reads
+the same Hermite curve the hull is drawn on). A stretch's color is the coasting
+gray moved toward the new BlueShift where the drive gains speed and RedShift
+where it sheds it, by `a / (a + 0.25 g)`. Tactical draws paths as Xiaolin Wu
+antialiased lines clipped to the screen (`Raster::line_aa`,
+`raster::clip_segment`), under every glyph. Routes and `ROUTE_DIM` are deleted
+(§6.2, §6.5, §6.7, appendix §D.62.2).
+
+### T-175. Juicy draws the same paths as strings of lights
+
+A path is a light every hull radius along it, half a hull's radius, at 0.6
+times its opacity, in its colors, at most 2,000 a frame (§7.1).
+
+### T-176. The juicy `Band IV` dashes stand still
+
+The hex line's dots and dashes were counted from where the screen cut the
+edge, so they slid along it whenever the view moved; they are now counted from
+the edge's own corner and only those on screen are lit.
+`a_hexs_dots_move_with_the_hex_when_the_view_pans` fails on the old code
+(§6.5, §7.1, appendix §D.62.3).
+
+### T-177. The palette in play: the `palette` and `forge` replays
+
+`palette`: 18 seats, a picket stack of each on a ring by seat 0's homeworld,
+half closing to brake, fight, wreck and withdraw past a sentry post, then a
+century of every seat's traffic — 12.8 MB, with its first year framed every
+0.02 yr by the recorder's new dense opening (`ReplayConfig::dense`,
+`replay::frame_times`). `forge`: six homeworlds started at `Band IV`
+population and works, through the new galaxy setting
+`GalaxyConfig::homeworld_start_infrastructure` (default `Band II`, the value
+it replaces, so every other run is unchanged) — `Band IV` dashes and Strange
+Matter holdings, 0.47 MB. The Blue super, and any super or the apex as cargo,
+appear in no shipped replay (§3, §6.2, §8.4, appendix §D.62.4).
+
+### T-178. Both modes draw in the palette
+
+An audit of the tactical raster, the juicy light list, `gpu.js` and the page
+chrome found every color drawn from `Palette` except the juicy background,
+which is black as the sum of no light; whether it should be the ground role is
+recorded under R-UI2 (§6.2).
+
 ### T-171. Stacks are places of overlapping footprints, so counts never overlap
 
 *Opened and built in one landing at the author's report: "There needs to be a

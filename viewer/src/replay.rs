@@ -149,8 +149,21 @@ pub struct Replay {
     pub planets: Vec<Planet>,
     pub hull_table: BTreeMap<u64, Hull>,
     pub frames: Vec<Frame>,
+    /// Per hull, the first frame it is in: where its track begins.
+    pub first_frame: BTreeMap<u64, usize>,
     pub events: Vec<Event>,
     pub events_truncated: bool,
+}
+
+/// **One instant of a hull's track** ([`Replay::track`]): where it is, and
+/// its drive as its frame records it — acceleration ly/yr², and the burn's
+/// sign: +1 gaining speed, −1 shedding it, 0 coasting.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TrackPoint {
+    pub t: f64,
+    pub pos: [f64; 3],
+    pub accel: f64,
+    pub burn: i8,
 }
 
 /// A hull as the viewer shows it at one instant.
@@ -395,11 +408,47 @@ impl Replay {
             planets,
             hull_table,
             frames,
+            first_frame: BTreeMap::new(),
             events,
             events_truncated: v.get("events_truncated").and_then(Value::as_bool).unwrap_or(false),
         };
         replay.fill_hex_works();
+        for (i, f) in replay.frames.iter().enumerate() {
+            for r in &f.rows {
+                replay.first_frame.entry(r.id).or_insert(i);
+            }
+        }
         Ok(replay)
+    }
+
+    /// **A hull's track over `[from, to]`** (T-174): `samples + 1` instants
+    /// evenly spaced across the part of the span the hull is in the replay,
+    /// each on the Hermite curve the theater is drawn on ([`Self::view_at`])
+    /// with the drive its frame records. The track begins no earlier than the
+    /// hull's first frame and leaves out any instant it is not in.
+    pub fn track(&self, id: u64, from: f64, to: f64, samples: usize) -> Vec<TrackPoint> {
+        let Some(&first) = self.first_frame.get(&id) else { return Vec::new() };
+        let from = from.max(self.frames[first].t);
+        let to = to.min(self.t1());
+        if to < from || samples == 0 {
+            return Vec::new();
+        }
+        let find = |fr: &Frame| fr.rows.binary_search_by_key(&id, |r| r.id).ok().map(|k| fr.rows[k]);
+        (0..=samples)
+            .filter_map(|k| {
+                let t = from + (to - from) * k as f64 / samples as f64;
+                let i = self.frame_at(t);
+                let f = &self.frames[i];
+                let row = find(f)?;
+                let pos = match self.frames.get(i + 1).and_then(|n| find(n).map(|r| (n.t, r))) {
+                    Some((nt, n)) if nt > f.t => {
+                        hermite(row.pos, row.vel, n.pos, n.vel, nt - f.t, (t - f.t) / (nt - f.t)).0
+                    }
+                    _ => row.pos,
+                };
+                Some(TrackPoint { t, pos, accel: row.accel, burn: row.burn })
+            })
+            .collect()
     }
 
     /// **Each seat's works and work-years in each hex, frame by frame**
@@ -758,6 +807,27 @@ pub(crate) mod tests {
         let h = r.frames[1].rows.iter().find(|h| h.id == 9).unwrap();
         assert!(h.withdrawing && h.in_flight && !h.wrecked);
         assert!(tiny().frames.iter().flat_map(|f| &f.rows).all(|h| !h.withdrawing), "absent unless set");
+    }
+
+    /// **A track is the curve the theater is drawn on** (T-174): each point
+    /// is where [`Replay::view_at`] puts the hull at that instant, with its
+    /// frame's drive; it begins at the hull's first frame; an unknown hull
+    /// has none.
+    #[test]
+    fn a_track_follows_the_drawn_curve_from_the_hulls_first_frame() {
+        let r = tiny();
+        let track = r.track(5, 0.0, 10.0, 10);
+        assert_eq!(track.len(), 11);
+        for p in &track {
+            let drawn = r.view_at(p.t).hulls.iter().find(|h| h.row.id == 5).unwrap().row.pos;
+            assert_eq!(p.pos, drawn, "at {}", p.t);
+        }
+        assert_eq!((track[0].accel, track[0].burn), (0.2, 1), "the first frame's drive, burning");
+        assert_eq!((track[10].accel, track[10].burn), (0.0, 0), "the last frame's, coasting");
+        let scout = r.track(9, 0.0, 10.0, 4);
+        assert!(!scout.is_empty() && scout.iter().all(|p| p.t >= 10.0), "from its first frame: {scout:?}");
+        assert!(r.track(404, 0.0, 10.0, 4).is_empty());
+        assert!(r.track(5, 6.0, 3.0, 4).is_empty(), "an empty span");
     }
 
     #[test]

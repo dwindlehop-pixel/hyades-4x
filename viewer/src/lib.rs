@@ -19,6 +19,7 @@ pub mod json;
 pub mod juicy;
 pub mod logview;
 pub mod palette;
+pub mod paths;
 pub mod raster;
 pub mod replay;
 pub mod tactical;
