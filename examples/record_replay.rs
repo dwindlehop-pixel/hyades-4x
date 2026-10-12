@@ -2,13 +2,15 @@
 //! §2, §8).
 //!
 //! Writes each replay as `<out>/<name>.json` and an `<out>/index.json` listing
-//! them, for the web viewer (`web/`) to load. Three scenarios:
+//! them, for the web viewer (`web/`) to load. Five scenarios:
 //!
 //! | name | what it shows |
 //! |---|---|
 //! | `expansion` | three seats founding, mining and hauling over 400 yr |
 //! | `beams` | a Tor stack closing on a parked Cairn stack beside a homeworld, the fight frame by frame |
 //! | `sentries` | missile sentries at a center firing on an armed raider, rounds and point defense |
+//! | `palette` | eighteen seats, a picket stack of each on a ring by a homeworld — half closing on the middle, to fight, brake and withdraw — beside sentries and every seat's opening traffic: the palette in play, for ratification |
+//! | `forge` | six homeworlds started at population and works `Band IV`, forging from the start: the `Band IV` hex dashes and the apex held |
 //!
 //! The fights are the determinism suite's seeded fleets
 //! (`tests/determinism.rs`), placed where the mechanism must fire — except
@@ -23,6 +25,7 @@ use hyades_engine::log::{LogCategory, LogFilter};
 use hyades_engine::prelude::*;
 use hyades_engine::replay::{record_run, ReplayConfig};
 use hyades_engine::sim::Class;
+use hyades_engine::units::BandTier;
 use std::io::Write;
 
 struct Scenario {
@@ -33,6 +36,11 @@ struct Scenario {
     planets: usize,
     horizon: f64,
     frame_years: f64,
+    /// A dense opening `(until, frame_years)` before `frame_years` takes over.
+    dense: Option<(f64, f64)>,
+    /// Every homeworld's starting population and infrastructure, if not the
+    /// galaxy's default.
+    developed: Option<BandTier>,
     fleets: Vec<Fleet>,
     /// A fleet, by index, whose speed is set so that braking at its drive's
     /// acceleration brings it to rest at fleet 0's place: its velocity above
@@ -62,6 +70,8 @@ fn scenarios(quick: bool) -> Vec<Scenario> {
             planets: if quick { 150 } else { 300 },
             horizon: if quick { 60.0 } else { 400.0 },
             frame_years: 5.0,
+            dense: None,
+            developed: None,
             fleets: Vec::new(),
             closing: None,
             spend_kt: 0.0,
@@ -75,6 +85,8 @@ fn scenarios(quick: bool) -> Vec<Scenario> {
             planets: 200,
             horizon: if quick { 1.0 } else { 3.0 },
             frame_years: 0.02,
+            dense: None,
+            developed: None,
             fleets: vec![
                 picket(0, Class::Cairn, near, STILL),
                 picket(1, Class::Tor, near.add(Vec3::new(0.03, 0.0, 0.0)), Vec3::new(-1.0, 0.0, 0.0)),
@@ -84,6 +96,36 @@ fn scenarios(quick: bool) -> Vec<Scenario> {
             filter: fights,
         },
         Scenario {
+            name: "palette",
+            label: "Palette — eighteen seats' stacks meeting by a homeworld, every color in play",
+            seats: 18,
+            seed: 11,
+            planets: if quick { 300 } else { 600 },
+            horizon: if quick { 2.0 } else { 100.0 },
+            frame_years: if quick { 0.5 } else { 2.0 },
+            dense: Some((1.0, 0.02)),
+            developed: None,
+            fleets: palette_ring(),
+            closing: None,
+            spend_kt: 0.2,
+            filter: LogFilter::none().with(LogCategory::Combat).with(LogCategory::Vehicles).with(LogCategory::Cards),
+        },
+        Scenario {
+            name: "forge",
+            label: "Forge — six homeworlds at Band IV, forging from the start",
+            seats: 6,
+            seed: 11,
+            planets: if quick { 150 } else { 300 },
+            horizon: if quick { 4.0 } else { 60.0 },
+            frame_years: if quick { 2.0 } else { 1.0 },
+            dense: None,
+            developed: Some(BandTier::IV),
+            fleets: Vec::new(),
+            closing: None,
+            spend_kt: 0.0,
+            filter: LogFilter::none().with(LogCategory::Vehicles).with(LogCategory::Cards),
+        },
+        Scenario {
             name: "sentries",
             label: "Sentries — missiles from a center on an armed raider",
             seats: 3,
@@ -91,6 +133,8 @@ fn scenarios(quick: bool) -> Vec<Scenario> {
             planets: 200,
             horizon: if quick { 1.0 } else { 3.0 },
             frame_years: 0.02,
+            dense: None,
+            developed: None,
             fleets: vec![
                 (0, HullType::LimitedOffensive, Class::Butte, Role::Sentry, STILL, STILL),
                 picket(1, Class::Tor, Vec3::new(0.04, 0.0, 0.0), Vec3::new(-0.2, 0.0, 0.0)),
@@ -100,6 +144,37 @@ fn scenarios(quick: bool) -> Vec<Scenario> {
             filter: fights,
         },
     ]
+}
+
+/// **The palette scenario's fleets**: one picket stack per seat on a ring of
+/// `PALETTE_RING_LY` about a point beside seat 0's homeworld — Cairns and Tors
+/// by turns, the odd seats closing on the middle at `PALETTE_CLOSING` ly/yr so
+/// they brake, meet, fight and withdraw — and a sentry post of seat 0's at the
+/// middle. Every seat's color, the drive's and the paths' shifts, hits,
+/// damage, wrecks and retreat all come up within the first year.
+const PALETTE_RING_LY: f64 = 0.03;
+const PALETTE_CLOSING: f64 = 0.25;
+
+fn palette_ring() -> Vec<Fleet> {
+    let middle = Vec3::new(0.5, 0.0, 0.0);
+    let mut fleets: Vec<Fleet> = (0..18)
+        .map(|seat| {
+            let a = std::f64::consts::TAU * seat as f64 / 18.0;
+            let out = Vec3::new(a.cos(), a.sin(), 0.0);
+            let class = if seat % 2 == 0 { Class::Cairn } else { Class::Tor };
+            let velocity = if seat % 2 == 1 { out.scale(-PALETTE_CLOSING) } else { STILL };
+            (
+                seat,
+                HullType::LimitedContactVehicle,
+                class,
+                Role::Picket,
+                middle.add(out.scale(PALETTE_RING_LY)),
+                velocity,
+            )
+        })
+        .collect();
+    fleets.push((0, HullType::LimitedOffensive, Class::Butte, Role::Sentry, middle, STILL));
+    fleets
 }
 
 /// The galaxy with `fleets` seeded at their offsets from `home`.
@@ -137,6 +212,9 @@ fn main() {
         let started = std::time::Instant::now();
         let mut gcfg = GalaxyConfig::new(sc.seats, sc.seed);
         gcfg.planet_count = sc.planets;
+        if let Some(b) = sc.developed {
+            (gcfg.homeworld_start_population, gcfg.homeworld_start_infrastructure) = ((b, 0.0), (b, 0.0));
+        }
         let bare = Galaxy::generate(gcfg).unwrap();
         let home = bare.planets[bare.homeworlds[0].0 as usize].position;
         let mut fleets = sc.fleets.clone();
@@ -174,7 +252,13 @@ fn main() {
             let r = 0.5 * (hi[0] - lo[0]).max(hi[1] - lo[1]) + 0.05;
             (0.5 * (lo[0] + hi[0]), 0.5 * (lo[1] + hi[1]), r)
         });
-        let rc = ReplayConfig { frame_years: sc.frame_years, max_events: 50_000, label: sc.label.into(), focus };
+        let rc = ReplayConfig {
+            frame_years: sc.frame_years,
+            dense: sc.dense,
+            max_events: 50_000,
+            label: sc.label.into(),
+            focus,
+        };
         let json = record_run(&galaxy, sim, &rc);
         let file = format!("{}.json", sc.name);
         std::fs::write(format!("{out}/{file}"), &json).expect("write the replay");
@@ -182,7 +266,7 @@ fn main() {
             "{:<10} {:>7.1} kB  {:>5} frames  {:.1} s",
             sc.name,
             json.len() as f64 / 1024.0,
-            (sc.horizon / sc.frame_years).floor() as usize + 1,
+            hyades_engine::replay::frame_times(sc.horizon, &rc).len(),
             started.elapsed().as_secs_f64()
         );
         std::io::stdout().flush().ok();

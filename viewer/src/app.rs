@@ -61,7 +61,7 @@ impl Viewer {
             out: Raster::new(1, 1),
             lights: Lights::default(),
             hdr: Hdr::new(1, 1),
-            lut: ToneLut::new(),
+            lut: ToneLut::new(Palette::default().roles.ink),
             glyphs: GlyphCache::default(),
             replay,
         };
@@ -118,6 +118,10 @@ impl Viewer {
 
     /// Draws the current instant in the current mode into [`Self::out`].
     pub fn render(&mut self) -> &Raster {
+        // The juicy background is the palette's ink, which the editor moves.
+        if self.mode == Mode::Juicy && self.lut.ground() != juicy::linear(self.palette.roles.ink) {
+            self.lut = ToneLut::new(self.palette.roles.ink);
+        }
         let (view, ops) = self.planned();
         let (mut out, mut hdr, mut glyphs) =
             (std::mem::take(&mut self.out), std::mem::take(&mut self.hdr), std::mem::take(&mut self.glyphs));
@@ -458,7 +462,7 @@ mod tests {
         v.mode = Mode::Juicy;
         let cpu = v.render().clone();
         let (mut hdr, mut out) = (Hdr::default(), Raster::default());
-        juicy::rasterize(&l, 320, 200, &mut hdr, &mut out, &ToneLut::new());
+        juicy::rasterize(&l, 320, 200, &mut hdr, &mut out, &ToneLut::new(Palette::default().roles.ink));
         assert_eq!(cpu, out);
     }
 

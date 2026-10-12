@@ -18,7 +18,7 @@
 use crate::camera::Lod;
 use crate::color::Rgb;
 use crate::palette::Status;
-use crate::raster::Raster;
+use crate::raster::{clip_segment, Raster};
 use crate::tactical::{Op, Scene};
 
 /// Screen pixels per juicy pixel.
@@ -90,7 +90,8 @@ pub struct Hdr {
     pub px: Vec<[f32; 3]>,
 }
 
-fn linear(c: Rgb) -> [f32; 3] {
+/// A color as linear light, the form lights and the background add in.
+pub(crate) fn linear(c: Rgb) -> [f32; 3] {
     let f = |v: f64| {
         if v <= 0.04045 {
             v / 12.92
@@ -111,6 +112,13 @@ fn encode(v: f32) -> u8 {
 /// it rises monotonically, and no light, however bright, passes white.
 pub fn tone(x: f32) -> f32 {
     1.0 - (-x.max(0.0) * EXPOSURE).exp()
+}
+
+/// **The toned light over the background** (T-179), linear, per channel:
+/// `ground + (1 − ground) · tone(x)`. No light is the background — the
+/// palette's ink — and no light, however bright, passes white.
+pub fn over(ground: f32, x: f32) -> f32 {
+    ground + (1.0 - ground) * tone(x)
 }
 
 impl Hdr {
@@ -235,17 +243,21 @@ impl Hdr {
     pub fn resolve(&self, out: &mut Raster, lut: &ToneLut) {
         out.resize(self.w, self.h);
         for (p, o) in self.px.iter().zip(out.px.as_chunks_mut::<4>().0) {
-            o.copy_from_slice(&[lut.get(p[0]), lut.get(p[1]), lut.get(p[2]), 255]);
+            o.copy_from_slice(&[lut.get(0, p[0]), lut.get(1, p[1]), lut.get(2, p[2]), 255]);
         }
     }
 }
 
-/// [`tone`] then sRGB encoding, tabulated: two transcendentals per channel per
-/// pixel were most of a frame. Indexed by the light's own float bits —
-/// exponent and the top eight mantissa bits — so every octave of brightness
-/// gets 256 entries and no arithmetic is spent finding one.
+/// [`over`] then sRGB encoding, tabulated per channel: two transcendentals
+/// per channel per pixel were most of a frame. Indexed by the light's own
+/// float bits — exponent and the top eight mantissa bits — so every octave of
+/// brightness gets 256 entries and no arithmetic is spent finding one. Built
+/// for one background, and rebuilt when the palette's ink changes.
 #[derive(Clone, Debug, PartialEq)]
-pub struct ToneLut(Vec<u8>);
+pub struct ToneLut {
+    ground: [f32; 3],
+    tables: [Vec<u8>; 3],
+}
 
 impl ToneLut {
     /// Below this the code is 0; past `HI` the curve is within half a code of
@@ -254,28 +266,32 @@ impl ToneLut {
     const HI: f32 = 16.0;
     const SHIFT: u32 = 15;
 
-    pub fn new() -> ToneLut {
+    /// The table over `ink`, the background color.
+    pub fn new(ink: Rgb) -> ToneLut {
+        let ground = linear(ink);
         let (lo, hi) = (Self::LO.to_bits(), Self::HI.to_bits());
         let n = ((hi - lo) >> Self::SHIFT) + 1;
-        ToneLut(
+        let table = |g: f32| -> Vec<u8> {
             (0..n)
                 .map(|i| {
                     let mid = f32::from_bits(lo + (i << Self::SHIFT) + (1 << (Self::SHIFT - 1)));
-                    encode(tone(mid))
+                    encode(over(g, mid))
                 })
-                .collect(),
-        )
+                .collect()
+        };
+        ToneLut { ground, tables: ground.map(table) }
     }
 
-    pub fn get(&self, x: f32) -> u8 {
+    /// The background this table was built over, linear.
+    pub fn ground(&self) -> [f32; 3] {
+        self.ground
+    }
+
+    /// The display code of light `x` in channel `ch` (0 red, 1 green, 2 blue).
+    pub fn get(&self, ch: usize, x: f32) -> u8 {
+        let t = &self.tables[ch];
         let i = (x.max(0.0).to_bits().saturating_sub(Self::LO.to_bits()) >> Self::SHIFT) as usize;
-        self.0[i.min(self.0.len() - 1)]
-    }
-}
-
-impl Default for ToneLut {
-    fn default() -> Self {
-        ToneLut::new()
+        t[i.min(t.len() - 1)]
     }
 }
 
@@ -352,7 +368,8 @@ pub fn lights(s: &Scene, ops: &[Op]) -> Lights {
             out.scene.push(light(p[0], p[1], core, star, if ring.is_some() { HOME_CORE } else { WORLD_CORE * share }));
         }
     }
-    hexes(s, &mut out.scene);
+    hex_lights(s, &mut out.scene);
+    path_lights(s, ops, hull_r, &mut out.scene);
     // Below the galaxy level a stack is a cluster of dots, one per hull, so
     // its count reads and a hit does not hide whose it is (T-163).
     let clustered = s.camera.lod() != Lod::Galaxy;
@@ -490,23 +507,32 @@ fn ring(out: &mut Vec<Light>, c: [f64; 2], radius: f64, hull_r: f64, color: [f32
 /// grid's line dashed bright where a world holds `Band IV` works. Only the
 /// part of a line on screen is lit, so a hex many screens wide costs what
 /// one does.
-fn hexes(s: &Scene, out: &mut Vec<Light>) {
+pub fn hex_lights(s: &Scene, out: &mut Vec<Light>) {
     if !crate::tactical::hexes_shown(s) {
         return;
     }
     let lines = crate::tactical::hex_lines(s);
     let none = crate::tactical::HexLines::default();
     let (w, h) = (s.camera.width / PIXEL, s.camera.height / PIXEL);
+    // Dots are counted from each edge's own corner, along the whole edge,
+    // and only those on screen are lit: a dot belongs to its place on the
+    // hex, so a pan or a follow carries it with the hex, and the dashes of a
+    // `Band IV` edge stand still (T-176). Counting from where the screen cut
+    // the edge slid them along it whenever the view moved.
+    let m = 4.0 * HEX_DOT_R;
     let mut ring = |v: [[f64; 2]; 6], color: [f32; 3], k: f32, dash: Option<(usize, usize)>| {
         for e in 0..6 {
-            let Some((a, b)) = clip(v[e], v[(e + 1) % 6], w, h, 4.0 * HEX_DOT_R) else { continue };
-            let n =
-                (((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])).sqrt() / HEX_DOT_PX).floor() as usize;
-            for i in 0..=n {
+            let (a, b) = (v[e], v[(e + 1) % 6]);
+            let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+            let Some((p, q)) = clip_segment(a, b, [-m, -m, w + m, h + m]) else { continue };
+            let n = (len / HEX_DOT_PX).floor().max(1.0);
+            let along = |c: [f64; 2]| (c[0] - a[0]).hypot(c[1] - a[1]) / len;
+            let (first, last) = ((along(p) * n).ceil() as usize, (along(q) * n).floor() as usize);
+            for i in first..=last {
                 if dash.is_some_and(|(on, off)| i % (on + off) >= on) {
                     continue;
                 }
-                let f = if n == 0 { 0.0 } else { i as f64 / n as f64 };
+                let f = i as f64 / n;
                 out.push(light(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, HEX_DOT_R, color, k));
             }
         }
@@ -531,26 +557,48 @@ fn hexes(s: &Scene, out: &mut Vec<Light>) {
     }
 }
 
-/// The part of segment `a`–`b` inside `[−m, w + m] × [−m, h + m]`
-/// (Liang–Barsky), or `None` when none of it is.
-fn clip(a: [f64; 2], b: [f64; 2], w: f64, h: f64, m: f64) -> Option<([f64; 2], [f64; 2])> {
-    let d = [b[0] - a[0], b[1] - a[1]];
-    let (mut t0, mut t1) = (0.0f64, 1.0f64);
-    for (p, q) in [(-d[0], a[0] + m), (d[0], w + m - a[0]), (-d[1], a[1] + m), (d[1], h + m - a[1])] {
-        if p == 0.0 {
-            if q < 0.0 {
-                return None;
+/// Path lights (T-175, proposed, R-UI2): one every `PATH_LIGHT_SPACING`
+/// hull radii along a path, `PATH_LIGHT_R` hull radii wide, in the path's
+/// drive color at `PATH_LIGHT` times its opacity — the same paths tactical
+/// draws ([`crate::paths`]), as a faint line of light. At most
+/// `PATH_MAX_LIGHTS` in a frame, however many paths are drawn, and none off
+/// screen.
+pub const PATH_LIGHT_SPACING: f64 = 1.0;
+pub const PATH_LIGHT_R: f64 = 0.5;
+pub const PATH_LIGHT: f32 = 0.6;
+pub const PATH_MAX_LIGHTS: usize = 2000;
+
+/// **The paths, as lights**: marched along each path at an even spacing that
+/// carries across its segments, so a path reads as one line of light.
+fn path_lights(s: &Scene, ops: &[Op], hull_r: f64, out: &mut Vec<Light>) {
+    let (w, h) = (s.camera.width / PIXEL, s.camera.height / PIXEL);
+    let m = 4.0 * PATH_LIGHT_R * hull_r;
+    let at = |p: [f64; 3]| {
+        let q = s.camera.project(p);
+        [q[0] / PIXEL, q[1] / PIXEL]
+    };
+    let step = PATH_LIGHT_SPACING * hull_r;
+    let mut lit = 0;
+    for path in crate::paths::paths(s, ops) {
+        let mut carry = 0.0;
+        for seg in path.points.windows(2) {
+            let (a, b) = (at(seg[0].pos), at(seg[1].pos));
+            let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+            let color = linear(seg[0].color);
+            let k = PATH_LIGHT * seg[0].alpha as f32;
+            let mut d = carry;
+            while d < len && lit < PATH_MAX_LIGHTS {
+                let f = d / len;
+                let p = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+                if p[0] > -m && p[1] > -m && p[0] < w + m && p[1] < h + m {
+                    out.push(light(p[0], p[1], PATH_LIGHT_R * hull_r, color, k));
+                    lit += 1;
+                }
+                d += step;
             }
-        } else {
-            let r = q / p;
-            if p < 0.0 {
-                t0 = t0.max(r);
-            } else {
-                t1 = t1.min(r);
-            }
+            carry = d - len;
         }
     }
-    (t0 <= t1).then(|| ([a[0] + d[0] * t0, a[1] + d[1] * t0], [a[0] + d[0] * t1, a[1] + d[1] * t1]))
 }
 
 /// **The CPU renderer**: adds `lights` into `hdr` (`w × h`), blooms them and
@@ -602,15 +650,48 @@ mod tests {
         assert!(tone(10.0) > 0.99);
     }
 
+    /// **The table is the curve over the background, to one code** (T-179):
+    /// no light is the background's own code in every channel, and bright
+    /// light is white whatever the background.
     #[test]
-    fn the_tone_table_matches_the_curve_to_one_code() {
-        let lut = ToneLut::new();
-        for i in 0..2000 {
-            let x = (i as f32 / 100.0).powi(2) / 10.0;
-            let exact = encode(tone(x)) as i32;
-            assert!((lut.get(x) as i32 - exact).abs() <= 1, "x {x}: {} against {exact}", lut.get(x));
+    fn the_tone_table_matches_the_curve_over_the_ink_to_one_code() {
+        let ink = Rgb::from_hex("#1a2433");
+        let lut = ToneLut::new(ink);
+        let g = linear(ink);
+        for (ch, &gc) in g.iter().enumerate() {
+            for i in 0..2000 {
+                let x = (i as f32 / 100.0).powi(2) / 10.0;
+                let exact = encode(over(gc, x)) as i32;
+                let got = lut.get(ch, x) as i32;
+                assert!((got - exact).abs() <= 1, "channel {ch}, x {x}: {got} against {exact}");
+            }
+            assert_eq!(lut.get(ch, 1e9), 255, "bright light is white");
         }
-        assert_eq!((lut.get(0.0), lut.get(-1.0), lut.get(1e9)), (0, 0, 255));
+        let none = [0, 1, 2].map(|ch| lut.get(ch, 0.0));
+        assert_eq!(none, [0x1a, 0x24, 0x33], "no light is the ink");
+        assert_eq!([0, 1, 2].map(|ch| lut.get(ch, -1.0)), none);
+    }
+
+    /// **The background is the palette's ink**, a neutral at the tone map's
+    /// `ink` lightness, and the editor's `ink` moves it (T-179).
+    #[test]
+    fn the_juicy_background_is_the_palettes_ink() {
+        use crate::palette::Settings;
+        let dark = Palette::default().roles.ink;
+        let light = Palette::with(Settings::parse("ink=0.2").unwrap()).roles.ink;
+        let l = |c: Rgb| crate::color::to_oklch(c).l;
+        assert!((l(dark) - 0.02).abs() < 0.01 && (l(light) - 0.2).abs() < 0.01, "{} {}", l(dark), l(light));
+        assert!((light.r - light.g).abs() < 1e-6 && (light.g - light.b).abs() < 1e-6, "a neutral");
+        let lut = ToneLut::new(light);
+        let mut out = Raster::new(1, 1);
+        Hdr::new(2, 2).resolve(&mut out, &lut);
+        let code = |v: f64| (v * 255.0).round() as u8;
+        let want = [code(light.r), code(light.g), code(light.b)];
+        let got = out.get(1, 1).unwrap();
+        assert!(
+            got.iter().zip(want).all(|(&a, b)| a.abs_diff(b) <= 1),
+            "an empty sky resolves to the ink: {got:?} {want:?}"
+        );
     }
 
     #[test]
@@ -701,7 +782,7 @@ mod tests {
             let s =
                 crate::tactical::Scene { replay: r, view: &view, camera, palette: &palette, selected: None, rate: 1.0 };
             let mut out = Vec::new();
-            hexes(&s, &mut out);
+            hex_lights(&s, &mut out);
             out
         };
         let mut camera = Camera::new(320.0, 200.0);
@@ -841,10 +922,54 @@ mod tests {
 
     #[test]
     fn clipping_keeps_the_part_of_a_segment_on_screen() {
+        let clip = |a, b, w: f64, h: f64, m: f64| clip_segment(a, b, [-m, -m, w + m, h + m]);
         assert_eq!(clip([-10.0, 5.0], [20.0, 5.0], 10.0, 10.0, 0.0), Some(([0.0, 5.0], [10.0, 5.0])));
         assert_eq!(clip([2.0, 2.0], [3.0, 3.0], 10.0, 10.0, 0.0), Some(([2.0, 2.0], [3.0, 3.0])));
         assert_eq!(clip([-5.0, -5.0], [-1.0, 20.0], 10.0, 10.0, 0.0), None);
         assert_eq!(clip([5.0, -5.0], [5.0, 15.0], 10.0, 10.0, 1.0), Some(([5.0, -1.0], [5.0, 11.0])));
+    }
+
+    /// **A hex's dots stand still on it as the view pans** (T-176): after any
+    /// pan, every dot well inside the screen in both views is where the pan
+    /// moved it, wherever the screen cuts the hex's edges. Counted from the
+    /// cut, the dots slid along an edge as the view moved — the `Band IV`
+    /// dashes most visibly.
+    #[test]
+    fn a_hexs_dots_move_with_the_hex_when_the_view_pans() {
+        let mut replay = Replay::from_json(TINY).unwrap();
+        replay.frames.iter_mut().flat_map(|f| f.hex_works.iter_mut()).for_each(|w| w.band_iv = true);
+        let palette = Palette::default();
+        let mut camera = Camera::new(320.0, 200.0);
+        camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
+        camera.zoom_at([160.0, 100.0], 1.0);
+        let view = replay.view_at(10.0);
+        let dots = |c: &Camera| {
+            let s = crate::tactical::Scene {
+                replay: &replay,
+                view: &view,
+                camera: c,
+                palette: &palette,
+                selected: None,
+                rate: 1.0,
+            };
+            let mut out = Vec::new();
+            hex_lights(&s, &mut out);
+            out.iter().map(|g| [g.x as f64, g.y as f64]).collect::<Vec<_>>()
+        };
+        let (w, h) = (camera.width / PIXEL, camera.height / PIXEL);
+        let inside = |p: [f64; 2]| p[0] > 8.0 && p[1] > 8.0 && p[0] < w - 8.0 && p[1] < h - 8.0;
+        let key = |p: [f64; 2]| ((p[0] * 16.0).round() as i64, (p[1] * 16.0).round() as i64);
+        let base = dots(&camera);
+        for (dx, dy) in [(0.37, 0.0), (11.3, -7.9), (-23.0, 15.5)] {
+            let mut moved = camera;
+            moved.pan(dx, dy);
+            let after: std::collections::BTreeSet<_> = dots(&moved).into_iter().map(key).collect();
+            let expected: Vec<[f64; 2]> =
+                base.iter().map(|p| [p[0] + dx / PIXEL, p[1] + dy / PIXEL]).filter(|p| inside(*p)).collect();
+            assert!(expected.len() > 20, "dots on screen in both views");
+            let kept = expected.iter().filter(|p| after.contains(&key(**p))).count();
+            assert_eq!(kept, expected.len(), "panned ({dx}, {dy}): every dot where the pan moved it");
+        }
     }
 
     #[test]
@@ -866,7 +991,7 @@ mod tests {
         };
         let ops = plan(&s);
         let (mut hdr, mut out) = (Hdr::new(1, 1), Raster::new(1, 1));
-        render(&s, &ops, &mut hdr, &mut out, &ToneLut::new());
+        render(&s, &ops, &mut hdr, &mut out, &ToneLut::new(palette.roles.ink));
         let lum = |p: [f64; 3]| {
             let at = camera.project(p).map(|c| (c / PIXEL).floor() as i64);
             out.get(at[0], at[1]).unwrap().iter().map(|&c| c as u32).sum::<u32>()
@@ -910,7 +1035,7 @@ mod tests {
         };
         let ops = plan(&s);
         let (mut hdr, mut out) = (Hdr::new(1, 1), Raster::new(1, 1));
-        render(&s, &ops, &mut hdr, &mut out, &ToneLut::new());
+        render(&s, &ops, &mut hdr, &mut out, &ToneLut::new(palette.roles.ink));
         assert_eq!((out.w, out.h), (320, 200));
         let lum = |p: [u8; 3]| p[0] as u32 + p[1] as u32 + p[2] as u32;
         let dark = lum(out.get(0, 0).unwrap());
@@ -923,5 +1048,37 @@ mod tests {
             let at = px(p.pos);
             assert!(lum(out.get(at[0], at[1]).unwrap()) > dark + 60, "world {}", p.id);
         }
+    }
+
+    /// **Juicy draws the paths tactical draws, as lights** (T-175): none while
+    /// no stack is large and nothing is selected; for a selected hull, lights
+    /// along its past and its way ahead, never farther apart than the
+    /// spacing, and none off screen.
+    #[test]
+    fn juicy_draws_a_selected_hulls_path_as_a_string_of_lights() {
+        let replay = Replay::from_json(TINY).unwrap();
+        let palette = Palette::default();
+        let mut camera = Camera::new(320.0, 200.0);
+        camera.fit(replay.planets.iter().map(|p| p.pos), 20.0);
+        let view = replay.view_at(5.0);
+        let hull_r = light_scale(camera.lod()).3;
+        let path_of = |selected| {
+            let s = Scene { replay: &replay, view: &view, camera: &camera, palette: &palette, selected, rate: 1.0 };
+            let mut out = Vec::new();
+            path_lights(&s, &plan(&s), hull_r, &mut out);
+            out
+        };
+        assert!(path_of(None).is_empty(), "no large stack, no selection: no path");
+        let l = path_of(Some(crate::tactical::Pick::Hull(5)));
+        assert!(l.len() > 2, "the selected hull's path is lit: {}", l.len());
+        assert!(l.iter().all(|g| (g.r as f64 - PATH_LIGHT_R * hull_r).abs() < 1e-6));
+        let step = PATH_LIGHT_SPACING * hull_r;
+        let gaps = l.windows(2).map(|w| ((w[1].x - w[0].x) as f64).hypot((w[1].y - w[0].y) as f64));
+        assert!(gaps.clone().all(|d| d <= step + 1e-3), "lights no farther apart than the spacing");
+        assert!(gaps.filter(|&d| d > 0.5 * step).count() > l.len() / 2, "and mostly a spacing apart");
+        let (w, h, m) = (camera.width / PIXEL, camera.height / PIXEL, 4.0 * PATH_LIGHT_R * hull_r);
+        assert!(l
+            .iter()
+            .all(|g| (g.x as f64) > -m && (g.y as f64) > -m && (g.x as f64) < w + m && (g.y as f64) < h + m));
     }
 }

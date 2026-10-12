@@ -22,6 +22,14 @@ let dirty = true;       // something on screen is out of date
 let baseRate = 1;       // the replay's opening rate, years per second
 let direction = 1;      // +1 forward, −1 backward
 let last = performance.now();
+// Frame pacing (docs/Hyades_interface.md §8.1, the author's ruling): 60 frames
+// a second, 30 on a touch-first device; `?fps=30` or `?fps=60` overrides.
+// Game time advances by the wall time between drawn frames, so years per
+// second hold at any frame rate and frames per year are fps / rate.
+const fpsParam = Number(new URLSearchParams(location.search).get("fps"));
+const targetFps = fpsParam === 30 || fpsParam === 60 ? fpsParam : window.matchMedia("(pointer: coarse)").matches ? 30 : 60;
+let lastDraw = -Infinity;
+let drawnTimes = [];    // the last second's drawn frames, for the measured rate
 let lastLog = 0;
 let lastTime = NaN;
 
@@ -558,7 +566,8 @@ function draw() {
         hv.hv_prepare_lights();
         const scene = new Float32Array(hv.memory.buffer, hv.hv_lights_ptr(0), hv.hv_lights_len(0) * 6);
         const terr = new Float32Array(hv.memory.buffer, hv.hv_lights_ptr(1), hv.hv_lights_len(1) * 6);
-        gpu.juicy(scene, hv.hv_lights_len(0), terr, hv.hv_lights_len(1), w, h);
+        const ground = [0, 1, 2].map((ch) => hv.hv_juicy_ground(ch));
+        gpu.juicy(scene, hv.hv_lights_len(0), terr, hv.hv_lights_len(1), w, h, ground);
       } else {
         const ptr = hv.hv_render();
         gpu.frame(bytes(ptr, hv.hv_frame_w() * hv.hv_frame_h() * 4), hv.hv_frame_w(), hv.hv_frame_h(), gpu.NEAREST);
@@ -580,7 +589,14 @@ function draw() {
 }
 
 function frame(now) {
-  const dt = Math.min(0.25, (now - last) / 1000);
+  requestAnimationFrame(frame);
+  // A display refreshing faster than the target skips frames: the next frame
+  // is drawn once a target interval has passed, less half a refresh so the
+  // pacing does not slip one refresh late.
+  if (now - lastDraw < 1000 / targetFps - 4) return;
+  // Wall time since the last frame, so yr/s holds at any frame rate down to
+  // one a second; the cap keeps a tab back from the background from jumping.
+  const dt = Math.min(1.0, (now - last) / 1000);
   last = now;
   if (loaded && document.body.dataset.screen === "viewer") {
     resize();
@@ -591,7 +607,13 @@ function frame(now) {
     if (dirty) {
       draw();
       dirty = false;
-      $("status").textContent = text(0);
+      lastDraw = now;
+      drawnTimes.push(now);
+      while (drawnTimes[0] < now - 1000) drawnTimes.shift();
+      const fps = drawnTimes.length;
+      const rate = Math.abs(hv.hv_rate());
+      const perYear = hv.hv_playing() && rate > 0 ? ` · ${Math.round(fps / rate).toLocaleString()} frames/yr` : "";
+      $("status").textContent = `${text(0)} · ${fps}/${targetFps} fps${perYear}`;
       const inspector = text(1);
       $("inspector").textContent = inspector;
       const selected = !inspector.startsWith("Nothing selected");
@@ -609,7 +631,6 @@ function frame(now) {
       }
     }
   }
-  requestAnimationFrame(frame);
 }
 
 // --- input -------------------------------------------------------------------

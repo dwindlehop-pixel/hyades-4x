@@ -133,6 +133,7 @@ an identifier to its file.
 
 - **§D.58** (with subsections §D.58.1–§D.58.8) — The replay viewer: frames, sizes, the palette's ink, and the GPU against the CPU
 - **§D.59** — Hexes, the clipped galaxy, a pan that moved glyphs, and counts over counts (T-159 – T-163, T-171)
+- **§D.62** (with subsections §D.62.1–§D.62.4) — Frame pacing, paths in place of routes, the `Band IV` jitter, and the palette in play (T-173 – T-178)
 
 ### [`D-mechanisms/sessions.md`](D-mechanisms/sessions.md)
 

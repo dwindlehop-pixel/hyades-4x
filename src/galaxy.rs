@@ -584,6 +584,12 @@ pub struct GalaxyConfig {
     /// population `Band IV`, and growth is the logistic toward the
     /// homeworld's ceiling — at about 400 yr (appendix §D.42).
     pub homeworld_start_population: (BandTier, f64),
+    /// **A homeworld's starting infrastructure**, a whole Band and a fraction
+    /// of the way to the next: `Band II` (the starting development gate). One
+    /// Band of people staffs one Band of infrastructure, so a bed that raises
+    /// it raises the start population with it (the interface's palette
+    /// replay starts both at `Band IV`, T-177).
+    pub homeworld_start_infrastructure: (BandTier, f64),
     /// **Rings of hexes kept around the homeworld hexes** (the author's
     /// ruling, T-161): a generated world outside them is discarded, so the
     /// galaxy is the homeworld hexes and every hex within this many steps of
@@ -630,6 +636,7 @@ impl GalaxyConfig {
             homeworld_outpost_distance_ly: 5.0,
             homeworld_outpost_band: 1.0,
             homeworld_start_population: (BandTier::II, 0.785),
+            homeworld_start_infrastructure: (BandTier::II, 0.0),
             hex_rings_kept: Some(1),
             seed,
         };
@@ -1352,7 +1359,9 @@ impl Galaxy {
                 position,
                 habitability: Band::new(config.homeworld_ceiling),
                 biosphere: Band::new(config.homeworld_ceiling),
-                infrastructure: Band::new(2.0), // K = min = 2: the new starting development gate
+                infrastructure: Band::new(
+                    config.homeworld_start_infrastructure.0.index() as f64 + config.homeworld_start_infrastructure.1,
+                ),
                 minerals,
                 is_homeworld: true,
                 archetype: Some(archetype),
@@ -1773,6 +1782,23 @@ mod tests {
             assert_eq!(p.biosphere, Band::new(ceiling));
             assert_eq!(p.infrastructure, Band::new(2.0));
             assert_eq!(p.k(), Band::new(2.0)); // K = min = 2
+        }
+    }
+
+    /// **A homeworld's works are a setting** (T-177): `Band II` by default,
+    /// and what a bed sets otherwise — the interface's `forge` replay starts
+    /// them at `Band IV`. Nothing else about the homeworld moves.
+    #[test]
+    fn a_homeworlds_starting_works_are_the_setting() {
+        let mut cfg = GalaxyConfig::new(3, 7);
+        let base = Galaxy::generate(cfg).unwrap();
+        cfg.homeworld_start_infrastructure = (BandTier::IV, 0.0);
+        let g = Galaxy::generate(cfg).unwrap();
+        for (&hw, &bw) in g.homeworlds.iter().zip(&base.homeworlds) {
+            assert_eq!(base.planet(bw).infrastructure, Band::new(2.0));
+            assert_eq!(g.planet(hw).infrastructure, Band::new(4.0));
+            assert_eq!(g.planet(hw).position, base.planet(bw).position);
+            assert_eq!(g.planet(hw).population, base.planet(bw).population);
         }
     }
 

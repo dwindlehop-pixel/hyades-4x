@@ -111,6 +111,10 @@ pub fn tone_map(c: Rgb, p: &ToneMap) -> Rgb {
 /// The interface's roles, each a tone-mapped palette color.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Roles {
+    /// **The darkest tone**: a neutral at the tone map's `ink` lightness —
+    /// the juicy mode's background, the sum of no light (T-179, the author's
+    /// ruling).
+    pub ink: Rgb,
     pub ground: Rgb,
     pub panel: Rgb,
     pub grid: Rgb,
@@ -275,7 +279,7 @@ pub struct Palette {
     pub named: Vec<(&'static str, Rgb)>,
     pub roles: Roles,
     /// In [`STATUS`] order.
-    pub status: [Rgb; 10],
+    pub status: [Rgb; 12],
 }
 
 impl Palette {
@@ -292,6 +296,7 @@ impl Palette {
             .collect();
         let get = |n: &str| named.iter().find(|(k, _)| *k == n).map(|(_, c)| *c).unwrap();
         let roles = Roles {
+            ink: from_oklch(Lch { l: settings.map.ink, c: 0.0, h: 0.0 }),
             ground: get("hy_base03"),
             panel: get("hy_base02"),
             grid: get("hy_base01"),
@@ -401,9 +406,14 @@ pub enum Status {
     /// Heading home off its mission (T-172): the count of a place's
     /// retreating hulls.
     Retreat,
+    /// A path's color where the drive gains speed: the coasting gray shifted
+    /// toward blue as hard as the burn (T-174).
+    BlueShift,
+    /// A path's color where the drive sheds speed: shifted toward red (T-174).
+    RedShift,
 }
 
-pub const STATUS: [(Status, &str); 10] = [
+pub const STATUS: [(Status, &str); 12] = [
     (Status::Hit, "#ff2d6f"),
     (Status::Damage, "#ffb703"),
     (Status::Drive, "#4df3ff"),
@@ -416,6 +426,12 @@ pub const STATUS: [(Status, &str); 10] = [
     // OKLCH L 0.88, C 0.16, 25° clamped to sRGB: the point farthest from every
     // other status, the materials, the seats and the text (T-172).
     (Status::Retreat, "#ffaba1"),
+    // OKLCH L 0.56, C 0.22, 259° and L 0.70, C 0.21, 32° clamped to sRGB:
+    // of the blues at 235°–275° and the reds at 14°–32°, the two farthest
+    // from every palette color and status, scaled by each test's floor —
+    // the ends a path's color shifts toward (T-174).
+    (Status::BlueShift, "#006bf0"),
+    (Status::RedShift, "#ff664b"),
 ];
 
 #[cfg(test)]

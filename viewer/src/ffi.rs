@@ -122,6 +122,14 @@ pub extern "C" fn hv_juicy_constant(which: i32) -> f64 {
     }
 }
 
+/// The juicy background, the palette's ink, as linear light: channel 0 red,
+/// 1 green, 2 blue (T-179). It moves with the palette, so the GPU renderer
+/// reads it every frame.
+#[no_mangle]
+pub extern "C" fn hv_juicy_ground(ch: i32) -> f64 {
+    with(|v| crate::juicy::linear(v.palette.roles.ink).get(ch as usize).copied().unwrap_or(0.0) as f64)
+}
+
 #[no_mangle]
 pub extern "C" fn hv_frame_w() -> usize {
     with(|v| v.out.w)
@@ -380,6 +388,7 @@ pub fn palette_sheet(p: &Palette) -> String {
     }
     let ro = &p.roles;
     for (name, c) in [
+        ("ink", ro.ink),
         ("ground", ro.ground),
         ("panel", ro.panel),
         ("grid", ro.grid),

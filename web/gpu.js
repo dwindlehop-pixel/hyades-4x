@@ -8,8 +8,9 @@
 //   3. a separable box blur, BLUR_PASSES times, the last pass scaled by
 //      BLOOM_WEIGHT;
 //   4. the territory lights, additively, into the blurred target;
-//   5. a composite: the scene plus the bilinear bloom, through 1 − e^(−x·E)
-//      and sRGB encoding.
+//   5. a composite: the scene plus the bilinear bloom, through 1 − e^(−x·E),
+//      over the background — the palette's ink, g + (1 − g)·t in linear
+//      light — and sRGB encoding.
 // The constants come from the module (hv_juicy_constant), so the two
 // renderers cannot drift apart on them.
 //
@@ -102,6 +103,7 @@ precision highp float;
 uniform sampler2D scene;
 uniform sampler2D bloom;
 uniform float exposure;
+uniform vec3 ground;
 in vec2 uv;
 out vec4 o;
 float encode(float v) {
@@ -110,7 +112,7 @@ float encode(float v) {
 }
 void main() {
   vec3 x = texture(scene, uv).rgb + texture(bloom, uv).rgb;
-  vec3 t = 1.0 - exp(-max(x, 0.0) * exposure);
+  vec3 t = ground + (1.0 - ground) * (1.0 - exp(-max(x, 0.0) * exposure));
   o = vec4(encode(t.r), encode(t.g), encode(t.b), 1.0);
 }`;
 
@@ -231,9 +233,10 @@ export function createGpu(canvas, constants) {
   const K = constants.downsample, WEIGHT = constants.weight, EXPOSURE = constants.exposure;
   const RADIUS = constants.radius, PASSES = constants.passes;
 
-  /// Draws the juicy mode at `w × h` (the camera's size) into `out`: null
-  /// for the canvas, or a target name to read back.
-  function juicy(scene, sceneCount, territory, territoryCount, w, h, out = null) {
+  /// Draws the juicy mode at `w × h` (the camera's size) over `ground` (the
+  /// palette's ink, linear RGB, from hv_juicy_ground) into `out`: null for
+  /// the canvas, or a target name to read back.
+  function juicy(scene, sceneCount, territory, territoryCount, w, h, ground, out = null) {
     const hdr = target("hdr", w, h, "half", gl.LINEAR);
     const bw = Math.ceil(w / K), bh = Math.ceil(h / K);
     let a = target("bloomA", bw, bh, "half", gl.LINEAR);
@@ -260,7 +263,10 @@ export function createGpu(canvas, constants) {
     lights(territory, territoryCount, bw, bh, 1 / K);
     const dest = out ? target(out, w, h, "byte", gl.NEAREST) : null;
     bindTarget(dest);
-    fullscreen(composite, [["scene", hdr.tex], ["bloom", a.tex]], (u) => gl.uniform1f(u.exposure, EXPOSURE));
+    fullscreen(composite, [["scene", hdr.tex], ["bloom", a.tex]], (u) => {
+      gl.uniform1f(u.exposure, EXPOSURE);
+      gl.uniform3f(u.ground, ground[0], ground[1], ground[2]);
+    });
     return dest;
   }
 

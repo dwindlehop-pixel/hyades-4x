@@ -318,3 +318,119 @@ t 0.200 yr, the lattice drew the `beams` stacks' glyphs and counts over one
 another; the footprints draw one place, 7 hulls on their role and 13 heading
 home. The hit ring, radius half body + 4, covered a count's first column
 there before and after the change; the counts now start two pixels later.
+
+## D.62 Frame pacing, paths in place of routes, the `Band IV` jitter, and the palette in play (T-173 – T-178)
+
+*Supports `docs/Hyades_interface.md` rulings 31–36, §4, §6.2, §6.5, §6.7 and
+§7.1. Bed: the replays `examples/record_replay` writes at this commit. Every
+timing is a single-container reading on a shared 4-core container with no
+error bar; the A/B rows are two interleaved rounds of the same probe, and the
+spread between rounds is the only variance estimate.*
+
+### D.62.1 What a frame costs, and the pacing
+
+**Per-frame module cost**, wasm in Node (a scratch probe: four seek points
+in each replay, 60 ticks of 1/60 s each, the module's work for one frame —
+`hv_render` in tactical, `hv_prepare_lights` for the GPU juicy path, the CPU
+renderer for the fallback), `main` against this branch, round 1 / round 2,
+median ms:
+
+| replay | tactical, `main` | tactical, branch | juicy prep, `main` | juicy prep, branch | juicy CPU, `main` | juicy CPU, branch |
+|---|---|---|---|---|---|---|
+| `beams` | 0.40 / 0.43 | 0.37 / 0.43 | 0.17 / 0.24 | 0.18 / 0.19 | 30.5 / 30.2 | 29.1 / 30.1 |
+| `sentries` | 0.37 / 0.39 | 0.47 / 0.32 | 0.13 / 0.13 | 0.11 / 0.11 | 29.3 / 30.3 | 29.7 / 29.8 |
+| `expansion` | 6.29 / 5.35 | 3.70 / 4.15 | 6.65 / 6.67 | 3.51 / 4.45 | 44.2 / 43.5 | 41.7 / 46.2 |
+| `palette` | 8.09 / 8.06 | 4.28 / 4.20 | 7.91 / 7.90 | 4.35 / 4.28 | 36.7 / 38.6 | 36.4 / 35.1 |
+
+p95, `expansion` tactical: 9.53 / 10.18 on `main`, 6.13 / 6.35 on the branch;
+`palette` tactical: 24.8 / 26.0 against 13.5 / 16.6. The branch draws routes
+no longer and caches a seat's glyph fill per frame instead of mixing it per
+hull. Inference: the busy replays' tactical and juicy-prep frames cost
+0.5–0.7× what they did, and the CPU juicy fallback is unchanged at 29–46 ms,
+which caps it near 22–34 fps on this container whatever the pacing; moderate
+confidence, and a profile of the CPU renderer on a phone would change it.
+
+**In the browser** (headless Chromium, SwiftShader software WebGL2, a scratch
+probe pressing Space through the shell and reading its status line after
+3 s; 60 fps target unless stated):
+
+| replay | tactical fps | juicy fps | yr/s at the rate |
+|---|---|---|---|
+| `beams` (0.05 yr/s) | 49 | 18 | 0.050 / 0.049 |
+| `expansion` (6.67 yr/s) | 45 | 3 | 7.18 / 4.22 |
+| `palette` (1.67 yr/s) | 60 | 12 | 1.81 / 1.66 |
+| `forge` (1.00 yr/s) | 51 | 6 | 1.000 / 0.950 |
+| `expansion`, 30 fps target | 31 | 4 | 7.22 / 5.41 |
+| `palette`, 30 fps target | 31 | 11 | 1.80 / 1.62 |
+
+Two readings from it. **The excess yr/s in tactical is a fixed offset**: on
+`expansion` it is +1.66 yr at 1.5 s and +1.67 yr at 6 s of play (7.78 and
+6.94 yr/s), which is one 0.25 s step at 6.67 yr/s — the first frame after
+pressing play counts the wall time a slow frame took. **The juicy shortfall
+was the cap**: at 3–6 fps a frame lasts longer than the 0.25 s cap on `dt`,
+so the clock lost the rest; the cap is now 1 s. SwiftShader runs the GPU
+passes on the CPU, so the juicy fps here bound nothing about a device with a
+GPU; the measurement that is missing is the same probe on one.
+
+### D.62.2 Routes, superseded (T-152 → T-174)
+
+Routes drew a line from every hull in flight to its destination world, in the
+seat's color 90% of the way to the ground. On `expansion` hundreds of hulls are
+in flight at once, and the lines covered the field; the author found the view
+illegible (ruling 32). A route also said nothing about the drive: a hull
+braking into a world and one coasting past it drew the same line. Paths
+(interface §6.7) draw only large stacks, only five years ahead, and color the
+drive.
+
+### D.62.3 The `Band IV` jitter
+
+The juicy hex line is a row of dots and, on a `Band IV` hex, a row of dashes.
+Both were counted from **where the screen cut the edge**, not from the edge's
+corner, so whenever the view moved — a pan, the camera following a selection,
+a zoom — the cut point moved and every dot slid along the edge by up to one
+spacing. That is the jitter. With the camera still, a scratch probe on
+`expansion` at 30% of the replay moved no dot in 200 steps of 0.2 yr, and on
+`forge` none in 200; the dots move only with the view.
+
+The fix counts from the edge's corner and lights the dots whose positions fall
+on screen. `a_hexs_dots_move_with_the_hex_when_the_view_pans` pans by
+(0.37, 0), (11.3, −7.9) and (−23, 15.5) pixels at zoom 1 and asserts every dot
+moves with the hex; it fails on the old code and passes on the new.
+
+**No world in the 400-yr `expansion` replay reaches `Band IV` works at this
+commit** (the most is a `Band III` reading), so the dashes the author saw came
+from an earlier recording; `forge` starts six homeworlds at `Band IV`
+population and works to show them.
+
+### D.62.4 The palette in play
+
+Sizes at this commit (`examples/record_replay`): `palette` 12.8 MB, 101
+frames, 18 seats, 600 planets requested, 100 yr — 50 frames at 0.02 yr over
+the first year, then every 2 yr; `forge` 0.47 MB, 61 frames, 6 seats, 60 yr.
+A first `palette` at 40 yr with every frame 0.1 yr apart was 51.7 MB, which is
+what the dense opening (interface §3) is for.
+
+What each replay exercises (a scratch census over every row of every frame),
+with the year each first appears:
+
+| | `palette` | `forge` | `expansion` |
+|---|---|---|---|
+| seats with hulls | 18 | 6 | 3 |
+| roles | Picket, Sentry, Scout 0; Reserve, Scrapped 0.1; Miner, Freighter 8; Colonizer 72 | Scout | Scout 0; Miner, Freighter 10; Colonizer 75; Reserve 120 |
+| carried | Ordnance 0; the three basics 68; settlers 72 | — | the three basics 70; settlers 75 |
+| held | the three basics | the basics; Strange Matter 5 | the basics; Red, Green, Strange Matter 400 |
+| drive, braking, hot burn, hits, wrecks, heading home | all | drive, braking, hot | — |
+| hex lines, established | yes | yes | yes |
+| `Band IV` works | no | yes | no |
+
+Nothing shipped shows the Blue super, or any super or the apex as cargo.
+
+**Why `forge` is its own replay.** Starting `palette`'s homeworlds developed
+was tried first, at 100 yr: works `Band IV` with population `Band IV`, `II .785`,
+`III .5` and `III .9`. Every arm reached `Band IV` works, and none flew a
+colonizer or carried a basic in 100 yr: the `II .785` arm flew miners and
+freighters, and the other three no miner, freighter or colonizer at all. Inference: a
+developed homeworld spends its first century deepening and forging before
+expanding, so a replay cannot open with `Band IV` and show the expansion
+traffic within a shippable horizon; low confidence in the mechanism, which a
+census of the production decisions on that bed would settle.

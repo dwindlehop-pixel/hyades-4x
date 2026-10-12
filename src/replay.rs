@@ -26,6 +26,11 @@ pub const VERSION: u32 = 1;
 pub struct ReplayConfig {
     /// Years between frames. A viewer interpolates between them.
     pub frame_years: f64,
+    /// **A dense opening** `(until, frame_years)`: frames this close from
+    /// the start until `until` years, then every [`Self::frame_years`] — so one
+    /// replay can hold a fight frame by frame and the decades after it at a
+    /// size worth shipping (T-177). `None` spaces every frame alike.
+    pub dense: Option<(f64, f64)>,
     /// The most logged events written; past it the replay says it was
     /// truncated.
     pub max_events: usize,
@@ -119,15 +124,33 @@ const EVENT_FIELDS: [&str; 5] = ["t", "category", "kind", "seat", "text"];
 /// before that year applied, every hull where its motion has it then
 /// ([`Simulation::snapshot_at`]). A run whose events stop early still has a
 /// frame at every year to its horizon, with hulls coasting or at rest.
+/// **When a replay's frames fall**: every `frame_years` from 0 to the
+/// horizon, or, with a dense opening, every `dense.1` years up to `dense.0`
+/// and every `frame_years` from there. Each is a whole multiple of its
+/// spacing, so the times are exact and none repeats.
+pub fn frame_times(horizon: f64, cfg: &ReplayConfig) -> Vec<f64> {
+    let every = |step: f64, from: usize, to: f64| -> Vec<f64> {
+        (from..=(to / step).floor() as usize).map(|k| k as f64 * step).collect()
+    };
+    match cfg.dense {
+        Some((until, step)) if until > 0.0 && step > 0.0 => {
+            let until = until.min(horizon);
+            let mut t = every(step, 0, until);
+            let last = *t.last().unwrap();
+            t.extend(every(cfg.frame_years, 0, horizon).into_iter().filter(|&x| x > last));
+            t
+        }
+        _ => every(cfg.frame_years, 0, horizon),
+    }
+}
+
 pub fn record_run(galaxy: &Galaxy, mut sim: Simulation, cfg: &ReplayConfig) -> String {
     let mut out = String::with_capacity(1 << 20);
     header(&mut out, galaxy, &sim, cfg);
     out.push_str(",\"frames\":[");
-    let frames = (sim.horizon_years() / cfg.frame_years).floor() as usize;
     // Every hull seen, by id: what it is, written once after the frames.
     let mut hulls: std::collections::BTreeMap<u64, crate::snapshot::VehicleSnapshot> = Default::default();
-    for k in 0..=frames {
-        let t = k as f64 * cfg.frame_years;
+    for (k, t) in frame_times(sim.horizon_years(), cfg).into_iter().enumerate() {
         while sim.next_event_time().is_some_and(|n| n <= t) {
             sim.step();
         }
@@ -618,8 +641,23 @@ mod tests {
         (galaxy, sim)
     }
 
+    /// **A dense opening, then the even spacing** (T-177): frames every
+    /// `dense.1` years to `dense.0`, then on the multiples of `frame_years`
+    /// past it — exact, rising, none repeated, the last at the horizon's
+    /// multiple.
+    #[test]
+    fn a_dense_opening_frames_closely_and_then_evenly() {
+        let even = frame_times(30.0, &rc());
+        assert_eq!(even, vec![0.0, 10.0, 20.0, 30.0]);
+        let dense = frame_times(30.0, &ReplayConfig { dense: Some((1.0, 0.25)), ..rc() });
+        assert_eq!(dense, vec![0.0, 0.25, 0.5, 0.75, 1.0, 10.0, 20.0, 30.0]);
+        assert!(dense.windows(2).all(|w| w[0] < w[1]));
+        let past = frame_times(5.0, &ReplayConfig { dense: Some((9.0, 2.0)), ..rc() });
+        assert_eq!(past, vec![0.0, 2.0, 4.0], "an opening past the horizon stops at it");
+    }
+
     fn rc() -> ReplayConfig {
-        ReplayConfig { frame_years: 10.0, max_events: 100_000, label: "test".into(), focus: None }
+        ReplayConfig { frame_years: 10.0, dense: None, max_events: 100_000, label: "test".into(), focus: None }
     }
 
     /// **Every hull of every frame is in the replay, with every field the
